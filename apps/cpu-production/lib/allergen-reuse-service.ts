@@ -1,77 +1,89 @@
-import { applyReusedAuthority, buildAuthorityFromSignedPlan, clearReuse, hasOwnSignedAuthority, compositionIdentity, evaluateReuse, reuseStillValid, type AllergenCompositionAuthority, type CompositionOrder, type ReuseRefusal } from "./allergen-composition";
+import { buildAuthorityFromSignedPlan, clearReuse, compositionIdentity, evaluateReuse, hasOwnSignedAuthority, reuseValidity, type AllergenCompositionAuthority, type CompositionOrder, type ReuseRefusal, type ReuseValidity } from "./allergen-composition";
+import { releaseMatrix } from "./cpu-allergen-release";
 import type { AllergenAuthorityStore } from "./allergen-authority-store";
 import type { ProductionPlan } from "../app/lib/production-plan";
 
 type Order = CompositionOrder & { sourceBookingId?: string; sourceQuoteRevisionId?: string };
 
 export type ReuseCandidateView =
-  | { available: true; compositionId: string; origin: AllergenCompositionAuthority["origin"]; matrixSemanticHash: string }
-  | { available: false; reason: ReuseRefusal };
+  | { available: true; compositionId: string; generation: number; origin: AllergenCompositionAuthority["origin"]; matrixSemanticHash: string }
+  | { available: false; reason: ReuseRefusal | "authority_lookup_failed" };
 
-/** Called after a plan is signed. Records the composition authority; first approval wins and a retry is a no-op. */
-export async function recordSignedAuthority(store: AllergenAuthorityStore, plan: ProductionPlan, order: Order | undefined, at: string, by: string) {
-  if (!order || plan.reusedAllergenAuthority) return undefined;
-  const candidate = buildAuthorityFromSignedPlan(plan, order, at, by);
-  return candidate ? store.recordApproval(candidate, at, by) : undefined;
+/** Called after a plan is signed. Builds the authority from the stamped, signed release; the caller persists it (see orchestrator). */
+export function signedAuthorityCandidate(plan: ProductionPlan, order: Order | undefined, at: string, by: string) {
+  if (!order || plan.reusedAllergenAuthority || plan.currentAllergenRelease?.approvalMode === "reused_authority") return undefined;
+  return buildAuthorityFromSignedPlan(plan, order, at, by);
 }
 
-/** What CPU may offer for this order right now. Response-only; never mutates. */
+/** What CPU may offer for this order right now. Response-only; never mutates. A lookup failure offers nothing (fail closed). */
 export async function reuseCandidateFor(store: AllergenAuthorityStore, plan: ProductionPlan, order: Order | undefined): Promise<ReuseCandidateView> {
   const identity = compositionIdentity(order);
   if (!identity) return { available: false, reason: "composition_unavailable" };
-  const authority = await store.get(identity.compositionId);
+  let authority: AllergenCompositionAuthority | undefined;
+  try { authority = await store.get(identity.compositionId); } catch { return { available: false, reason: "authority_lookup_failed" }; }
   const decision = evaluateReuse(order, plan, authority);
-  return decision.ok && authority ? { available: true, compositionId: authority.compositionId, origin: authority.origin, matrixSemanticHash: authority.matrixSemanticHash } : { available: false, reason: decision.ok ? "authority_missing" : decision.reason };
-}
-
-/** Explicit CPU command. Repeating it on an already-adopted plan changes nothing. */
-export async function adoptReusableAuthority(store: AllergenAuthorityStore, plan: ProductionPlan, order: Order, input: { by: string; at: string }): Promise<{ plan: ProductionPlan; changed: boolean }> {
-  const identity = compositionIdentity(order);
-  if (!identity) throw Object.assign(new Error("This booking has no canonical sandwich composition, so a previous approval cannot be reused. Review it normally."), { status: 409, code: "CPU_ALLERGEN_REUSE_COMPOSITION_UNAVAILABLE" });
-  const authority = await store.get(identity.compositionId);
-  if (plan.reusedAllergenAuthority && authority && reuseStillValid(plan, order) && plan.reusedAllergenAuthority.compositionId === authority.compositionId && authority.status === "active") return { plan, changed: false };
-  const next = applyReusedAuthority(plan, order, authority as AllergenCompositionAuthority, input);
-  await store.registerReuse(identity.compositionId, plan.orderId, input.at, input.by);
-  return { plan: next, changed: true };
+  return decision.ok && authority ? { available: true, compositionId: authority.compositionId, generation: authority.generation, origin: authority.origin, matrixSemanticHash: authority.matrixSemanticHash } : { available: false, reason: decision.ok ? "authority_missing" : decision.reason };
 }
 
 /**
- * Drops reuse provenance that no longer describes the plan: composition changed (amendment), states edited by hand, the booking
- * was signed on its own authority, or the shared authority was revoked. Mutates `plan`; returns whether anything changed.
+ * THE single authoritative validity check for a reused approval. Every path that can expose, materialize, project, download or
+ * act on a reused release goes through this. It FAILS CLOSED: a lookup error is "invalid", never "valid".
  */
-export async function reconcileReuse(store: AllergenAuthorityStore, plan: ProductionPlan, order: Order | undefined, input: { by: string; at: string }) {
+export async function validateReusedApproval(store: AllergenAuthorityStore, plan: ProductionPlan, order: Order | undefined, cache?: Map<string, AllergenCompositionAuthority | undefined | Error>): Promise<ReuseValidity> {
+  const release = plan.currentAllergenRelease;
+  const reusedRelease = release?.approvalMode === "reused_authority";
+  if (!plan.reusedAllergenAuthority) return reusedRelease ? { valid: false, reason: "release_without_provenance" } : { valid: false, reason: "no_reuse_provenance" };
   const reuse = plan.reusedAllergenAuthority;
-  if (!reuse) return false;
-  if (hasOwnSignedAuthority(plan)) return clearReuse(plan, { ...input, reason: "This booking now carries its own signed allergen authority; reuse provenance was superseded." });
-  if (!reuseStillValid(plan, order)) return clearReuse(plan, { ...input, reason: "The booking composition or the reviewed states changed after a previous approval was reused; a fresh allergen review is required." });
-  const authority = await store.get(reuse.compositionId);
-  if (!authority || authority.status !== "active") return clearReuse(plan, { ...input, reason: "The previously approved allergen authority was revoked; a fresh allergen review is required." });
-  return false;
+  let authority: AllergenCompositionAuthority | undefined;
+  try {
+    const cached = cache?.get(reuse.compositionId);
+    if (cached instanceof Error) return { valid: false, reason: "authority_lookup_failed" };
+    if (cache?.has(reuse.compositionId)) authority = cached as AllergenCompositionAuthority | undefined;
+    else { authority = await store.get(reuse.compositionId); cache?.set(reuse.compositionId, authority); }
+  } catch (error) {
+    cache?.set(reuse.compositionId, error instanceof Error ? error : new Error(String(error)));
+    return { valid: false, reason: "authority_lookup_failed" };
+  }
+  const base = reuseValidity(plan, order, authority);
+  if (!base.valid) return base;
+  if (release) {
+    if (!reusedRelease) return { valid: false, reason: "release_not_reused" };
+    const bound = release.reusedAuthority;
+    if (!bound || bound.generation !== reuse.generation || bound.compositionId !== reuse.compositionId || bound.matrixSemanticHash !== reuse.matrixSemanticHash || bound.origin.releaseId !== reuse.origin.releaseId) return { valid: false, reason: "release_binding_mismatch" };
+    if (release.status === "revoked" || JSON.stringify(release.matrix) !== JSON.stringify(releaseMatrix(plan.menuItems))) return { valid: false, reason: "release_matrix_mismatch" };
+  }
+  return { valid: true };
 }
 
-/** After an origin release is revoked: revoke the shared authority and reopen every booking that adopted it. */
-export async function revokeAuthorityForRelease(store: AllergenAuthorityStore, order: Order | undefined, releaseId: string, input: { by: string; at: string; reason: string }) {
-  const identity = compositionIdentity(order);
-  if (!identity) return [] as string[];
-  const revoked = await store.revokeForOrigin(identity.compositionId, releaseId, input.at, input.by, input.reason);
-  return revoked ? revoked.reusedBy.map(item => item.orderId).filter(orderId => orderId !== revoked.origin.orderId) : [];
+/** Returns the plan with every reused-authority artifact removed and the status downgraded. Pure. */
+export function withoutReusedAuthority<T extends ProductionPlan>(plan: T): T {
+  return { ...plan, status: plan.status === "planned" ? "planning" : plan.status, currentAllergenRelease: undefined, matrixArtifact: undefined, signedMatrixArtifact: undefined, masterMatrixArtifact: undefined, siteMatrixArtifacts: undefined };
 }
 
-/** Reopens one adopting plan after its authority was revoked. Mutates; returns whether the plan changed. */
-export function reopenAdoptingPlan(plan: ProductionPlan, input: { by: string; at: string }) {
-  return clearReuse(plan, { ...input, reason: "The previously approved allergen authority was revoked; a fresh allergen review is required." });
+/**
+ * Fail closed on any read: a plan that carries reuse provenance or a reused release is returned unreviewed, with no release or
+ * artifacts, unless the shared authority contract validates right now. Response-only.
+ */
+export async function guardReusedPlan<T extends ProductionPlan>(store: AllergenAuthorityStore, plan: T, order: Order | undefined, cache?: Map<string, AllergenCompositionAuthority | undefined | Error>): Promise<T> {
+  if (!plan.reusedAllergenAuthority && plan.currentAllergenRelease?.approvalMode !== "reused_authority") return plan;
+  const validity = await validateReusedApproval(store, plan, order, cache);
+  return validity.valid ? plan : withoutReusedAuthority(plan);
 }
 
 export type ReuseView = { candidate?: ReuseCandidateView; applied?: { valid: boolean; invalidReason?: string; provenance: NonNullable<ProductionPlan["reusedAllergenAuthority"]> } };
+const REASONS: Record<string, string> = {
+  authority_revoked: "The previously approved authority was revoked.",
+  authority_lookup_failed: "The previously approved authority could not be verified.",
+  generation_mismatch: "The previously approved authority has since been re-approved; this booking needs a fresh review.",
+  composition_or_matrix_changed: "The booking composition or reviewed states changed after the approval was reused.",
+};
 
 /** Response-only view for the CPU UI: a candidate to offer, or the provenance of an adopted authority and whether it still holds. */
 export async function reuseViewFor(store: AllergenAuthorityStore, plan: ProductionPlan, order: Order | undefined): Promise<ReuseView | undefined> {
   const reuse = plan.reusedAllergenAuthority;
   if (reuse) {
-    if (!reuseStillValid(plan, order)) return { applied: { valid: false, invalidReason: "The booking composition or reviewed states changed after the approval was reused.", provenance: reuse } };
-    const authority = await store.get(reuse.compositionId);
-    if (!authority || authority.status !== "active") return { applied: { valid: false, invalidReason: "The previously approved authority was revoked.", provenance: reuse } };
-    return { applied: { valid: true, provenance: reuse } };
+    const validity = await validateReusedApproval(store, plan, order);
+    return validity.valid ? { applied: { valid: true, provenance: reuse } } : { applied: { valid: false, invalidReason: REASONS[validity.reason] || "The previously approved authority no longer applies.", provenance: reuse } };
   }
   if (hasOwnSignedAuthority(plan)) return undefined;
   const candidate = await reuseCandidateFor(store, plan, order);
@@ -79,15 +91,20 @@ export async function reuseViewFor(store: AllergenAuthorityStore, plan: Producti
 }
 
 /**
- * Fail closed on any read: a plan whose reused authority is revoked, missing or no longer describes it is returned as unreviewed
- * with no release or artifacts, immediately, regardless of whether the durable cascade has finished. Response-only.
+ * Drops reuse provenance that no longer describes the plan before a mutation persists it: composition changed (amendment),
+ * states edited by hand, the booking was signed on its own authority, or the shared authority no longer validates. A store
+ * outage aborts the mutation rather than silently keeping or dropping the approval.
  */
-export async function failClosedStaleReuse<T extends ProductionPlan>(store: AllergenAuthorityStore, plan: T, order?: Order, cache = new Map<string, AllergenCompositionAuthority | undefined>()): Promise<T> {
-  const reuse = plan.reusedAllergenAuthority;
-  if (!reuse) return plan;
-  if (!cache.has(reuse.compositionId)) cache.set(reuse.compositionId, await store.get(reuse.compositionId));
-  const authority = cache.get(reuse.compositionId);
-  const valid = authority?.status === "active" && (!order || reuseStillValid(plan, order));
-  if (valid) return plan;
-  return { ...plan, status: plan.status === "planned" ? "planning" : plan.status, currentAllergenRelease: undefined, matrixArtifact: undefined, signedMatrixArtifact: undefined, masterMatrixArtifact: undefined, siteMatrixArtifacts: undefined };
+export async function reconcileReuse(store: AllergenAuthorityStore, plan: ProductionPlan, order: Order | undefined, input: { by: string; at: string }) {
+  if (!plan.reusedAllergenAuthority) return false;
+  if (hasOwnSignedAuthority(plan)) return clearReuse(plan, { ...input, reason: "This booking now carries its own signed allergen authority; reuse provenance was superseded." });
+  const authority = await store.get(plan.reusedAllergenAuthority.compositionId);
+  const validity = reuseValidity(plan, order, authority);
+  return validity.valid ? false : clearReuse(plan, { ...input, reason: `The reused allergen approval no longer applies (${validity.reason}); a fresh allergen review is required.` });
+}
+
+/** Throws 409 unless the reused approval validates right now. Used before any materialization step acts on a reused release. */
+export async function assertReusedApprovalValid(store: AllergenAuthorityStore, plan: ProductionPlan, order: Order | undefined) {
+  const validity = await validateReusedApproval(store, plan, order);
+  if (!validity.valid) throw Object.assign(new Error(`The reused allergen approval is no longer valid (${validity.reason}); the release cannot be materialized.`), { status: 409, code: "CPU_REUSED_AUTHORITY_INVALID" });
 }

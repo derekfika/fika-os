@@ -1,13 +1,14 @@
 import type { NextRequest } from "next/server";
 import { productionQueue, productionQueueForWeek } from "./production-http-client";
 import { withReadableDestinations } from "./cpu-oploc-labels";
-import { appendCpuChange as appendProjectionChange, cpuChanges, cpuProjections, loadPlansForOrders, type CpuChangeWithPropagation, writeCpuProjectionMonotonically } from "./cpu-projection-repository";
+import { appendCpuChange as appendProjectionChange, cpuChanges, cpuProjections, type CpuChangeWithPropagation, writeCpuProjectionMonotonically } from "./cpu-projection-repository";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { ReadPackageManifest } from "@fika/server-shared/read-package";
 import { canonicalProductionDigest, canonicalProductionDigestSet, type CanonicalProductionDigest, type CanonicalProductionDigestSet } from "@fika/server-shared/canonical-production-digest";
 export { cpuProjections } from "./cpu-projection-repository";
 import type { ProductionLine, ProductionOrder, ProductionStatus } from "./production-types";
+import { loadGuardedPlansForOrders } from "./cpu-guarded-plans";
 import { effectiveProductionPlanStatus, signedAllergenReviewMatchesOrder, type ProductionPlan } from "../app/lib/production-plan";
 import { isProductionPlanMatrixComplete } from "../app/lib/production-plan-state";
 import { publishCpuProjectionPackage } from "./cpu-read-package";
@@ -44,7 +45,7 @@ export async function materialiseCpuDayProjection(request: NextRequest, serviceD
   const [rawOrders, previous] = await Promise.all([productionQueue(request, serviceDate), cpuProjections().doc(serviceDate).get()]);
   recordDataAccess({ app: "cpu-production", operation: "projection.by-service-date", source: "FIRESTORE", documents: previous.exists ? 1 : 0, firestoreReadKind: "document" });
   const orders = await withReadableDestinations(request, rawOrders);
-  const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
+  const plans = await loadGuardedPlansForOrders(orders);
   const projection: CpuDayProjection = { ...buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1), canonicalDigest: canonicalDayDigest(rawOrders, serviceDate) };
   const written = await writeCpuProjectionMonotonically(cpuProjections().doc(serviceDate), projection, { authoritativeRebuild: true });
   const current = written.projection as CpuDayProjection;
@@ -73,7 +74,7 @@ export async function rebuildCpuWeekProjection(request: NextRequest, weekCommenc
   const [rawOrders, previous] = await Promise.all([productionQueueForWeek(request, weekCommencing), cpuProjections().doc(`week:${weekCommencing}`).get()]);
   recordDataAccess({ app: "cpu-production", operation: "projection.by-week", source: "FIRESTORE", documents: previous.exists ? 1 : 0, firestoreReadKind: "document" });
   const orders = await withReadableDestinations(request, rawOrders);
-  const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
+  const plans = await loadGuardedPlansForOrders(orders);
   const projection = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   const week: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, canonicalDigest: canonicalProductionDigestSet(rawOrders), orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };
   const written = await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), week, { authoritativeRebuild: true });
@@ -170,7 +171,7 @@ export async function recoverMissingCpuWeekProjection(request: NextRequest, week
     const previous = await cpuProjections().doc(`week:${weekCommencing}`).get();
     const orders = await withReadableDestinations(request, sourceOrders);
     const normalisedOrders = orders.map(order => order.serviceDate ? order : { ...order, serviceDate: order.requiredBy.slice(0, 10) });
-    const plans = await loadPlansForOrders(normalisedOrders.map(order => order.canonicalId));
+    const plans = await loadGuardedPlansForOrders(normalisedOrders);
     const built = buildCpuDayProjection("all", normalisedOrders.filter((order) => weekDates(weekCommencing).includes(order.serviceDate || order.requiredBy.slice(0, 10))), plans, Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
     const projection: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: built.revision, lastChangeSequence: built.lastChangeSequence, canonicalDigest: canonicalProductionDigestSet(rawOrders), orders: built.orders, summary: built.summary, rebuiltAt: built.rebuiltAt };
     const written = await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), projection, { authoritativeRebuild: true });

@@ -1,54 +1,69 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compositionIdentity, buildAuthorityFromSignedPlan, type CompositionOrder } from "../lib/allergen-composition";
-import { applyApproval, memoryAllergenAuthorityStore } from "../lib/allergen-authority-store";
-import { adoptReusableAuthority, reconcileReuse, recordSignedAuthority, reuseCandidateFor, revokeAuthorityForRelease, reopenAdoptingPlan } from "../lib/allergen-reuse-service";
+import { buildAuthorityFromSignedPlan, compositionIdentity, reuseValidity, type CompositionOrder } from "../lib/allergen-composition";
+import { applyApproval, applyBeginAdoption, applyFinalizeAdoption, applyOriginRevocation } from "../lib/allergen-authority-store";
 import type { ProductionPlan } from "../app/lib/production-plan";
-
 import { CANONICAL_ALLERGEN_KEYS, normaliseOperationalAllergens } from "../../shared/allergen-contract";
+
 const states = (over: Record<string, string> = {}) => normaliseOperationalAllergens(Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(a => [a, over[a] || "clear"])));
-type L = { id: string; item: string; qty?: number; choices?: unknown[] };
+type L = { id: string; item: string; qty?: number; choices?: unknown[]; extra?: Record<string, unknown> };
 const order = (id: string, lines: L[], extra: Partial<CompositionOrder> = {}) => ({
   canonicalId: id, origin: "hospitality_booking", requiresDelivery: true, sourceBookingId: `booking:${id}`, sourceQuoteRevisionId: `quote:${id}:1`,
-  lines: lines.map(l => ({ canonicalId: `${id}:${l.id}`, sourceMenuItemId: l.item, sourceOfferingId: undefined, choices: l.choices || [], workstream: "sandwiches", customerQuantity: l.qty ?? 10, dietaries: { vegan: l.qty ?? 1 } })),
+  lines: lines.map(l => ({ canonicalId: `${id}:${l.id}`, sourceMenuItemId: l.item, sourceOfferingId: undefined, choices: l.choices || [], workstream: "sandwiches", customerQuantity: l.qty ?? 10, dietaries: { vegan: l.qty ?? 1 }, ...(l.extra || {}) })),
   ...extra,
 }) as CompositionOrder & { sourceBookingId: string; sourceQuoteRevisionId: string };
 const AT = "2026-10-12T10:00:00.000Z";
-const plan = (o: CompositionOrder, over: Record<string, Record<string, string>> = {}, extra: Partial<ProductionPlan> = {}): ProductionPlan => ({
+const plan = (o: CompositionOrder, over: Record<string, Record<string, string>> = {}): ProductionPlan => ({
   id: `production-plan:${o.canonicalId}`, orderId: o.canonicalId, status: "planned", planningNotes: "", updatedAt: AT, updatedBy: "t", audit: [],
   menuItems: o.lines.map((l, i) => ({ id: `mi:${i}`, sourceLineId: l.canonicalId, name: `Sandwich ${l.sourceMenuItemId}`, note: "", subItems: [{ id: `s:${i}`, productionItemId: `pi:${l.sourceMenuItemId}`, name: `Filling ${l.sourceMenuItemId}`, quantity: 10, allergens: states(over[l.sourceMenuItemId!] || {}) as never, note: "", evidenceStatus: "completed" as const }] })),
-  ...extra,
 }) as ProductionPlan;
-const signed = (o: CompositionOrder, releaseId: string, over: Record<string, Record<string, string>> = {}) => {
+const signed = (o: CompositionOrder, releaseId: string, over: Record<string, Record<string, string>> = {}, stamp = true) => {
   const p = plan(o, over);
   const signatures = [{ role: "production_chef", printedName: "A Chef", signedAt: AT }, { role: "head_chef_site_manager", printedName: "B Head", signedAt: AT }] as never;
   p.signedSignatures = signatures; p.signatures = signatures; p.signedMenuContentHash = "h";
-  p.currentAllergenRelease = { releaseId, version: 1, matrixContentHash: `mh:${releaseId}`, signedAt: AT, status: "current", signatures } as never;
+  p.currentAllergenRelease = { releaseId, version: 1, matrixContentHash: `mh:${releaseId}`, signedAt: AT, status: "current", signatures, ...(stamp ? { compositionId: compositionIdentity(o)?.compositionId } : {}) } as never;
   return p;
 };
-const fresh = () => memoryAllergenAuthorityStore.records.clear();
 const A = [{ id: "1", item: "item:ham" }, { id: "2", item: "item:veg" }];
+const id = (lines: L[]) => compositionIdentity(order("o", lines))?.compositionId;
 
 test("same composition across booking, customer, date, quantities and ordering yields one identity", () => {
   const a = compositionIdentity(order("o-a", [{ id: "1", item: "item:ham", qty: 10 }, { id: "2", item: "item:veg", qty: 5 }]));
-  const b = compositionIdentity(order("o-b", [{ id: "9", item: "item:veg", qty: 99 }, { id: "8", item: "item:ham", qty: 1 }]));
+  const b = compositionIdentity(order("o-b", [{ id: "9", item: "item:veg", qty: 99 }, { id: "8", item: "item:ham", qty: 1 }], { clientName: "Other", serviceDate: "2027-01-01" } as never));
   assert.ok(a && b); assert.equal(a.compositionId, b.compositionId);
 });
 test("item added, removed or canonical item ID changed gives a different identity", () => {
-  const base = compositionIdentity(order("o", A))!.compositionId;
-  assert.notEqual(base, compositionIdentity(order("o", [...A, { id: "3", item: "item:egg" }]))!.compositionId);
-  assert.notEqual(base, compositionIdentity(order("o", [A[0]]))!.compositionId);
-  assert.notEqual(base, compositionIdentity(order("o", [A[0], { id: "2", item: "item:veg2" }]))!.compositionId);
-  assert.notEqual(base, compositionIdentity(order("o", [A[0], { id: "2", item: "item:veg", choices: [{ filling: "egg" }] }]))!.compositionId);
+  const base = id(A);
+  assert.notEqual(base, id([...A, { id: "3", item: "item:egg" }]));
+  assert.notEqual(base, id([A[0]]));
+  assert.notEqual(base, id([A[0], { id: "2", item: "item:veg2" }]));
+  assert.notEqual(base, id([A[0], { id: "2", item: "item:veg", choices: [{ filling: "egg" }] }]));
 });
-test("choice ordering does not matter; display text never participates", () => {
-  const x = compositionIdentity(order("o", [{ id: "1", item: "i", choices: [{ b: 1, a: 2 }, "z"] }]))!.compositionId;
+test("choice ordering does not matter; display names never participate", () => {
+  const x = id([{ id: "1", item: "i", choices: [{ b: 1, a: 2 }, "z"] }]);
   const o2 = order("o", [{ id: "1", item: "i", choices: ["z", { a: 2, b: 1 }] }]);
   (o2.lines[0] as unknown as { itemName: string }).itemName = "Totally different name";
   assert.equal(x, compositionIdentity(o2)!.compositionId);
 });
+test("FINDING 7: production-affecting fields participate in identity (bread instructions, substitution, serving, description)", () => {
+  const base = id([{ id: "1", item: "i" }]);
+  assert.notEqual(base, id([{ id: "1", item: "i", extra: { productionInstructions: "Use sourdough" } }]));
+  assert.notEqual(base, id([{ id: "1", item: "i", extra: { substitution: "gluten free bread" } }]));
+  assert.notEqual(base, id([{ id: "1", item: "i", extra: { servingGuidance: "Serve on brioche" } }]));
+  assert.notEqual(base, id([{ id: "1", item: "i", extra: { description: "Ham and mustard" } }]));
+  assert.notEqual(id([{ id: "1", item: "i", extra: { productionInstructions: "Use sourdough" } }]), id([{ id: "1", item: "i", extra: { productionInstructions: "Use rye" } }]));
+  // whitespace-only differences are not a difference; commercial fields are not part of identity
+  assert.equal(base, id([{ id: "1", item: "i", qty: 500, extra: { productionInstructions: "   ", dietaries: { vegan: 40 } } }]));
+});
+test("FINDING 7: conflicting line-level evidence and open exceptions make an order ineligible", () => {
+  assert.equal(id([{ id: "1", item: "i", extra: { allergenEvidenceStatus: "conflicting" } }]), undefined);
+  assert.equal(id([{ id: "1", item: "i", extra: { approvedAllergenSnapshot: { allergens: {}, allergenEvidenceStatus: "conflicting" } } }]), undefined);
+  assert.equal(id([{ id: "1", item: "i", extra: { status: "exception" } }]), undefined);
+  assert.equal(id([{ id: "1", item: "i", extra: { exceptions: ["bread unavailable"] } }]), undefined);
+  assert.notEqual(id([{ id: "1", item: "i", extra: { allergenEvidenceStatus: "confirmed" } }]), id([{ id: "1", item: "i", extra: { allergenEvidenceStatus: "unreviewed" } }]));
+});
 test("ineligible orders have no identity (fresh review): missing item id, other workstream, other origin, no delivery", () => {
-  assert.equal(compositionIdentity(order("o", [{ id: "1", item: "" }])), undefined);
+  assert.equal(id([{ id: "1", item: "" }]), undefined);
   const o = order("o", A); o.lines[0].workstream = "hot"; assert.equal(compositionIdentity(o), undefined);
   assert.equal(compositionIdentity(order("o", A, { origin: "menu_planning" } as never)), undefined);
   assert.equal(compositionIdentity(order("o", A, { requiresDelivery: false })), undefined);
@@ -58,112 +73,62 @@ test("allergen snapshot on the composition: state change or MAY_CONTAIN differen
   assert.notEqual(withSnap("clear"), withSnap("contains"));
   assert.notEqual(withSnap("contains"), withSnap("may_contain"));
   assert.notEqual(withSnap("clear"), withSnap("unrecorded"));
-  assert.notEqual(withSnap("clear"), compositionIdentity(order("o", A))!.compositionId);
+  assert.notEqual(withSnap("clear"), id(A));
 });
 
-test("signed origin creates an authority; another booking reuses it with provenance and no signatures", async () => {
-  fresh(); const store = memoryAllergenAuthorityStore;
-  const origin = order("o-origin", A); const originPlan = signed(origin, "rel-1", { "item:ham": { milk: "contains" } });
-  const outcome = await recordSignedAuthority(store, originPlan, origin, AT, "chef");
-  assert.equal(outcome?.change, "created");
-  const frozenOrigin = JSON.stringify(originPlan);
-  const other = order("o-other", [{ id: "7", item: "item:veg", qty: 3 }, { id: "6", item: "item:ham", qty: 80 }]);
-  const otherPlan = plan(other, {}, { status: "planning" });
-  for (const item of otherPlan.menuItems) for (const sub of item.subItems) { sub.allergens = {} as never; sub.evidenceStatus = "not_completed"; }
-  const candidate = await reuseCandidateFor(store, otherPlan, other);
-  assert.equal(candidate.available, true);
-  const { plan: adopted, changed } = await adoptReusableAuthority(store, otherPlan, other, { by: "cpu", at: AT });
-  assert.equal(changed, true);
-  assert.equal(adopted.status, "planned");
-  assert.equal(adopted.orderId, "o-other"); assert.equal(adopted.id, "production-plan:o-other");
-  assert.equal(adopted.currentAllergenRelease, undefined); assert.equal(adopted.signedSignatures, undefined); assert.equal(adopted.signatures, undefined);
-  assert.equal(adopted.reusedAllergenAuthority?.origin.orderId, "o-origin");
-  assert.equal(adopted.reusedAllergenAuthority?.origin.releaseId, "rel-1");
-  assert.equal(adopted.reusedAllergenAuthority?.origin.signatures.length, 2);
-  const ham = adopted.menuItems.find(i => i.sourceLineId === "o-other:6")!;
-  assert.equal(ham.subItems[0].allergens.milk, "contains");
-  assert.equal(ham.subItems[0].quantity, 10);
-  assert.equal(JSON.stringify(originPlan), frozenOrigin); // historical signed record untouched
-  assert.ok(adopted.audit.some(a => a.action === "allergen-authority-reused"));
+test("a signed release must be stamped with the composition it was signed for to establish an authority", () => {
+  const o = order("o1", A);
+  assert.ok(buildAuthorityFromSignedPlan(signed(o, "r1"), o, AT, "c"));
+  assert.equal(buildAuthorityFromSignedPlan(signed(o, "r1", {}, false), o, AT, "c"), undefined, "legacy/unstamped release");
+  const changed = order("o1", [...A, { id: "3", item: "item:egg" }]);
+  assert.equal(buildAuthorityFromSignedPlan(signed(o, "r1"), changed, AT, "c"), undefined, "composition changed since signing");
 });
 
-test("repeated command is idempotent: no duplicate authority, registration or audit", async () => {
-  fresh(); const store = memoryAllergenAuthorityStore;
-  const origin = order("o-origin", A); await recordSignedAuthority(store, signed(origin, "rel-1"), origin, AT, "chef");
-  const again = await recordSignedAuthority(store, signed(origin, "rel-1"), origin, AT, "chef");
-  assert.equal(again?.change, "unchanged"); assert.equal(store.records.size, 1);
-  const other = order("o-other", A); const base = plan(other, {}, { status: "planning" });
-  const first = await adoptReusableAuthority(store, base, other, { by: "cpu", at: AT });
-  const second = await adoptReusableAuthority(store, first.plan, other, { by: "cpu", at: "2026-10-12T11:00:00.000Z" });
-  assert.equal(second.changed, false);
-  assert.equal(first.plan.audit.filter(a => a.action === "allergen-authority-reused").length, 1);
-  const auth = [...store.records.values()][0];
-  assert.equal(auth.reusedBy.filter(r => r.orderId === "o-other").length, 1);
+test("state machine: re-approval after revocation is a NEW generation and archives the old one", () => {
+  const o1 = order("o1", A); const g1 = buildAuthorityFromSignedPlan(signed(o1, "r1"), o1, AT, "c")!;
+  const revoked = applyOriginRevocation(g1, "r1", AT, "c", "corrected");
+  assert.equal(revoked.changed, true); assert.equal(revoked.authority!.status, "revoked"); assert.ok(revoked.authority!.revocation); assert.equal(revoked.authority!.cascadePending, true);
+  const o2 = order("o2", A); const cand = buildAuthorityFromSignedPlan(signed(o2, "r2"), o2, AT, "c")!;
+  const again = applyApproval(revoked.authority, cand, AT, "c");
+  assert.equal(again.change, "reactivated"); assert.equal(again.authority.generation, 2); assert.equal(again.authority.status, "active");
+  assert.equal(again.authority.revocation, undefined);
+  assert.equal(again.authority.generations[0].generation, 1); assert.equal(again.authority.generations[0].origin.releaseId, "r1");
+  assert.equal(again.authority.cascadePending, true, "generation 1 cascade is still outstanding");
+  // a revoked release can never silently come back
+  assert.equal(applyApproval(again.authority, buildAuthorityFromSignedPlan(signed(o1, "r1"), o1, AT, "c")!, AT, "c").change, "unchanged");
+  // revoking again is reported, not ignored, so durable work can be re-ensured
+  const retried = applyOriginRevocation(revoked.authority, "r1", AT, "c", "again");
+  assert.equal(retried.changed, false); assert.equal(retried.generation, 1); assert.ok(retried.authority);
+  assert.equal(applyOriginRevocation(again.authority, "r1", AT, "c", "again").generation, 1, "an archived generation is still addressable by its origin release");
 });
-
-test("reuse refused: own authority, signed plan, historical (no identity) record, revoked, different composition", async () => {
-  fresh(); const store = memoryAllergenAuthorityStore;
-  const origin = order("o-origin", A); await recordSignedAuthority(store, signed(origin, "rel-1"), origin, AT, "chef");
-  await assert.rejects(adoptReusableAuthority(store, plan(origin, {}, { status: "planning" }), origin, { by: "c", at: AT }), /OWN_AUTHORITY|own_authority/i);
-  const other = order("o-other", A);
-  await assert.rejects(adoptReusableAuthority(store, signed(other, "rel-x"), other, { by: "c", at: AT }), /PLAN_ALREADY_SIGNED|plan_already_signed/i);
-  const historical = order("o-old", [{ id: "1", item: "" }]);
-  assert.deepEqual(await reuseCandidateFor(store, plan(historical), historical), { available: false, reason: "composition_unavailable" });
-  const diff = order("o-diff", [...A, { id: "3", item: "item:egg" }]);
-  assert.deepEqual(await reuseCandidateFor(store, plan(diff, {}, { status: "planning" }), diff), { available: false, reason: "authority_missing" });
-  await revokeAuthorityForRelease(store, origin, "rel-1", { by: "c", at: AT, reason: "x" });
-  assert.deepEqual(await reuseCandidateFor(store, plan(other, {}, { status: "planning" }), other), { available: false, reason: "authority_revoked" });
+test("state machine: conflicting signed approvals revoke the generation (durable revocation intent set atomically)", () => {
+  const o1 = order("o1", A); const a = buildAuthorityFromSignedPlan(signed(o1, "r1"), o1, AT, "c")!;
+  const o2 = order("o2", A); const b = buildAuthorityFromSignedPlan(signed(o2, "r2", { "item:ham": { milk: "contains" } }), o2, AT, "c")!;
+  const out = applyApproval(a, b, AT, "c");
+  assert.equal(out.change, "revoked_conflict"); assert.equal(out.authority.status, "revoked"); assert.equal(out.authority.revocation?.releaseId, "r1"); assert.equal(out.authority.cascadePending, true);
 });
-
-test("a tampered authority fails closed", async () => {
-  fresh(); const store = memoryAllergenAuthorityStore;
-  const origin = order("o-origin", A); await recordSignedAuthority(store, signed(origin, "rel-1"), origin, AT, "chef");
-  const auth = [...store.records.values()][0]; auth.approvedMatrix[0].subItems[0].allergens.milk = "contains";
-  const other = order("o-other", A);
-  await assert.rejects(adoptReusableAuthority(store, plan(other, {}, { status: "planning" }), other, { by: "c", at: AT }), /INTEGRITY_FAILED|integrity_failed/i);
+test("FINDING 3: adoption is a compare-and-set against the exact generation and cannot commit behind a revocation", () => {
+  const o1 = order("o1", A); const g1 = buildAuthorityFromSignedPlan(signed(o1, "r1"), o1, AT, "c")!;
+  const expect = { generation: 1, releaseId: "r1", matrixSemanticHash: g1.matrixSemanticHash };
+  const lease = "2026-10-12T10:05:00.000Z";
+  const begun = applyBeginAdoption(g1, expect, "x", AT, "u", lease);
+  assert.equal(begun.outcome.ok, true); assert.equal(begun.next!.reusedBy[0].state, "pending");
+  assert.equal(applyBeginAdoption(g1, { ...expect, generation: 2 }, "x", AT, "u", lease).outcome.ok, false);
+  assert.equal(applyBeginAdoption(g1, { ...expect, matrixSemanticHash: "z" }, "x", AT, "u", lease).outcome.ok, false);
+  const revoked = applyOriginRevocation(begun.next, "r1", AT, "c", "r").authority!;
+  assert.deepEqual(applyBeginAdoption(revoked, expect, "y", AT, "u", lease).outcome, { ok: false, reason: "authority_revoked" });
+  assert.equal(applyFinalizeAdoption(revoked, 1, "x", AT).ok, false, "a pending adoption cannot finalize after revocation");
+  assert.equal(applyFinalizeAdoption(begun.next, 1, "x", AT).ok, true);
 });
-
-test("incomplete or unrecorded matrices never establish an authority", async () => {
-  fresh(); const store = memoryAllergenAuthorityStore;
-  const origin = order("o-origin", A); const p = signed(origin, "rel-1"); p.menuItems[0].subItems[0].allergens = { ...states(), milk: "unrecorded" } as never;
-  assert.equal(await recordSignedAuthority(store, p, origin, AT, "chef"), undefined);
-  assert.equal(store.records.size, 0);
-});
-
-test("amendment after reuse: composition change, manual edit, own signature and revocation each invalidate", async () => {
-  fresh(); const store = memoryAllergenAuthorityStore;
-  const origin = order("o-origin", A); await recordSignedAuthority(store, signed(origin, "rel-1"), origin, AT, "chef");
-  const other = order("o-other", A);
-  const { plan: adopted } = await adoptReusableAuthority(store, plan(other, {}, { status: "planning" }), other, { by: "cpu", at: AT });
-  const ctx = { by: "cpu", at: AT };
-  assert.equal(await reconcileReuse(store, structuredClone(adopted), other, ctx), false);
-  const amended = order("o-other", [...A, { id: "3", item: "item:egg" }]);
-  const p1 = structuredClone(adopted); assert.equal(await reconcileReuse(store, p1, amended, ctx), true); assert.equal(p1.reusedAllergenAuthority, undefined); assert.equal(p1.status, "planning");
-  const p2 = structuredClone(adopted); p2.menuItems[0].subItems[0].allergens.milk = "contains" as never;
-  assert.equal(await reconcileReuse(store, p2, other, ctx), true); assert.equal(p2.status, "planning");
-  const p3 = signed(other, "rel-own"); p3.reusedAllergenAuthority = adopted.reusedAllergenAuthority;
-  assert.equal(await reconcileReuse(store, p3, other, ctx), true); assert.ok(p3.currentAllergenRelease);
-  const reopened = await revokeAuthorityForRelease(store, origin, "rel-1", { ...ctx, reason: "origin changed" });
-  assert.deepEqual(reopened, ["o-other"]);
-  const p4 = structuredClone(adopted); assert.equal(reopenAdoptingPlan(p4, ctx), true); assert.equal(p4.status, "planning");
-  const p5 = structuredClone(adopted); assert.equal(await reconcileReuse(store, p5, other, ctx), true);
-});
-
-test("revoking an unrelated release does not revoke the authority; re-approval after revoke keeps history", async () => {
-  fresh(); const store = memoryAllergenAuthorityStore;
-  const origin = order("o-origin", A); await recordSignedAuthority(store, signed(origin, "rel-1"), origin, AT, "chef");
-  assert.deepEqual(await revokeAuthorityForRelease(store, origin, "rel-other", { by: "c", at: AT, reason: "x" }), []);
-  assert.equal([...store.records.values()][0].status, "active");
-  await revokeAuthorityForRelease(store, origin, "rel-1", { by: "c", at: AT, reason: "x" });
-  const again = order("o-again", A); await recordSignedAuthority(store, signed(again, "rel-2"), again, AT, "chef");
-  const auth = [...store.records.values()][0];
-  assert.equal(auth.status, "active"); assert.equal(auth.origin.releaseId, "rel-2"); assert.equal(auth.supersededOrigins[0].releaseId, "rel-1");
-  assert.deepEqual(auth.history.map(h => h.action), ["approved", "revoked", "re-approved"]);
-});
-
-test("conflicting signed approval for the same composition revokes rather than choosing", () => {
-  const origin = order("o1", A); const a = buildAuthorityFromSignedPlan(signed(origin, "r1"), origin, AT, "c")!;
-  const o2 = order("o2", A);
-  const b = buildAuthorityFromSignedPlan(signed(o2, "r2", { "item:ham": { milk: "contains" } }), o2, AT, "c")!;
-  assert.equal(applyApproval(a, b, AT, "c").authority.status, "revoked");
+test("reuseValidity binds the adopter to the authority generation, origin release, matrix hash, registration and live matrix", () => {
+  const o1 = order("o1", A); const g1 = buildAuthorityFromSignedPlan(signed(o1, "r1"), o1, AT, "c")!;
+  g1.reusedBy.push({ orderId: "o-other", generation: 1, state: "committed", at: AT, by: "u" });
+  const other = order("o-other", A); const p = plan(other);
+  p.reusedAllergenAuthority = { authorityId: `${g1.compositionId}#g1`, compositionId: g1.compositionId, generation: 1, identityVersion: g1.identityVersion, matrixSemanticHash: g1.matrixSemanticHash, adoptedAt: AT, adoptedBy: "u", origin: g1.origin };
+  assert.deepEqual(reuseValidity(p, other, g1), { valid: true });
+  assert.equal((reuseValidity(p, other, { ...g1, generation: 2 }) as { reason: string }).reason, "generation_mismatch");
+  assert.equal((reuseValidity(p, other, { ...g1, origin: { ...g1.origin, releaseId: "r9" } }) as { reason: string }).reason, "origin_release_mismatch");
+  assert.equal((reuseValidity(p, other, { ...g1, matrixSemanticHash: "x" }) as { reason: string }).reason, "matrix_hash_mismatch");
+  assert.equal((reuseValidity(p, other, { ...g1, reusedBy: [{ orderId: "o-other", generation: 1, state: "pending", at: AT, by: "u" }] }) as { reason: string }).reason, "adoption_not_committed");
+  assert.equal((reuseValidity(p, other, undefined) as { reason: string }).reason, "authority_missing");
 });

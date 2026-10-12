@@ -11,6 +11,8 @@ export type CpuReleaseApprovalMode = "signed" | "reused_authority";
 /** Provenance of a reused approval. These are NOT signatures of the current booking; they identify the original signed authority. */
 export type CpuReusedAuthorityProvenance = {
   compositionId: string;
+  /** The exact immutable authority generation this release was issued against. */
+  generation: number;
   identityVersion: string;
   matrixSemanticHash: string;
   adoptedAt: string;
@@ -21,6 +23,8 @@ export type CpuAllergenRelease = {
   contractVersion: "cpu-production.signed-allergen-release.v1";
   /** `reused_authority` releases carry no signatures of their own; see `reusedAuthority`. */
   approvalMode?: CpuReleaseApprovalMode;
+  /** Canonical composition identity stamped when a Hospitality sandwich release is signed; the reference a later revocation uses. */
+  compositionId?: string;
   reusedAuthority?: CpuReusedAuthorityProvenance;
   releaseId: string;
   serviceDate: string;

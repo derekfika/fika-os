@@ -18,7 +18,8 @@ import { cpuReleaseMaterializationReceiptId } from "./cpu-release-fanout";
 import { buildCpuPacketItems } from "./cpu-packet-identity";
 import { deliverCpuPropagation } from "./cpu-durable-outbox";
 import { createAllergenAuthorityStore } from "./allergen-authority-store";
-import { recordSignedAuthority } from "./allergen-reuse-service";
+import { recordSignedApproval } from "./allergen-reuse-orchestrator";
+import { assertReusedApprovalValid } from "./allergen-reuse-service";
 
 const menuContentHash = (items: PlannedMenuItem[]) => allergenMatrixContentHash(items);
 const hospitalityBase = () => (process.env.HOSPITALITY_BOOKING_BASE_URL?.trim() || "http://localhost:3300").replace(/\/$/, "");
@@ -124,6 +125,8 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
   if (!allergenReleaseLineageMatchesOrder(pending, order, stored.menuItems)) throw Object.assign(new Error("The committed CPU release no longer matches the canonical source lineage."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
   if (pending.status === "current" && pending.materializationStatus === "ready") return { plan: stored, alreadyMaterialized: true };
   if (pending.status !== "pending" && !(pending.status === "current" && pending.materializationStatus !== "ready")) throw Object.assign(new Error("The CPU allergen release is no longer materializable."), { status: 409 });
+  // A reused release is only ever materialized while its shared authority validates (re-checked again before it becomes current).
+  if (pending.approvalMode === "reused_authority") await assertReusedApprovalValid(createAllergenAuthorityStore(), stored, order as never);
   const materializationReceiptId = (phase: "started" | "prepared" | "final") => cpuReleaseMaterializationReceiptId(releaseId, order, phase);
   const preparedCandidate = structuredClone(stored);
   try {
@@ -144,6 +147,7 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     const preparedResult = await repository.saveAndAppendCpuChange(artifactCandidate, startedPlan.updatedAt, { serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: artifactCandidate.id, revision: artifactCandidate.audit.length, changeType: "allergen-release-artifacts-prepared", actorId: artifactCandidate.updatedBy, changedAt: artifactCandidate.updatedAt, idempotencyKey: materializationReceiptId("prepared") });
     const preparedPlan = resumeCpuMaterializationPhase(preparedResult, artifactCandidate, "prepared");
     await prepared.publish();
+    if (pending.approvalMode === "reused_authority") await assertReusedApprovalValid(createAllergenAuthorityStore(), preparedPlan, order as never);
     const ready = structuredClone(preparedPlan);
     ready.currentAllergenRelease = materializeCpuAllergenRelease(preparedPlan.currentAllergenRelease!, { masterArtifact: prepared.masterArtifact, derivedArtifacts: [prepared.siteArtifact], packetArtifacts: prepared.packetArtifacts });
     ready.updatedAt = new Date().toISOString();
@@ -160,7 +164,7 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     const finalPlan = resumeCpuMaterializationPhase(finalResult, ready, "final");
     // Recovery path for shared allergen authority: the outbox-driven materialization re-asserts the authority of a signed
     // release (idempotent, first approval wins) in case the sign-time recording failed after the release was committed.
-    if (release.approvalMode !== "reused_authority") await recordSignedAuthority(createAllergenAuthorityStore(), finalPlan, order, new Date().toISOString(), finalPlan.updatedBy).catch(error => console.error("[cpu-allergen-reuse] authority recovery failed", { orderId, releaseId, error: error instanceof Error ? error.message : String(error) }));
+    if (release.approvalMode !== "reused_authority") await recordSignedApproval({ store: createAllergenAuthorityStore() }, finalPlan, order, new Date().toISOString(), finalPlan.updatedBy).catch(error => console.error("[cpu-allergen-reuse] authority recovery failed", { orderId, releaseId, error: error instanceof Error ? error.message : String(error) }));
     // The release is already durably current. Attempt the staged Delivered-In
     // handoff immediately, while retaining the outbox record for recovery if
     // the consumer is unavailable or times out.

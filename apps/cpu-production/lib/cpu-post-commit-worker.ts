@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { releaseMaterializationDelivery } from "./cpu-retry-materialization";
 import { buildCpuPropagationEvents, deliverCpuPropagation } from "./cpu-durable-outbox";
-import { loadPlansForOrders } from "./cpu-projection-repository";
+import { loadGuardedPlansForOrders } from "./cpu-guarded-plans";
 import { latestCpuChangeSequence, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "./cpu-projection";
 import { productionQueue } from "./production-http-client";
 import { rebuildCpuReviewPackage } from "./cpu-review-package";
@@ -26,7 +26,7 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, worker: (item
   return results;
 }
 
-function memberFor(orderId: string, plan: Awaited<ReturnType<typeof loadPlansForOrders>>[number] | undefined): CpuMasterReviewMember {
+function memberFor(orderId: string, plan: Awaited<ReturnType<typeof loadGuardedPlansForOrders>>[number] | undefined): CpuMasterReviewMember {
   const scope = plan?.signatures?.find(signature => signature.scope)?.scope;
   return { orderId, sourceDayId: scope?.sourceDayId, sourcePublicationId: scope?.sourcePublicationId, sourcePublicationDayId: scope?.sourcePublicationDayId, sourceVersion: scope?.sourceVersion, sourceContentHash: scope?.sourceContentHash, matrixContentHash: scope?.matrixContentHash || plan?.signedMenuContentHash };
 }
@@ -35,7 +35,7 @@ function memberFor(orderId: string, plan: Awaited<ReturnType<typeof loadPlansFor
 export async function processCpuPostCommitJob(request: NextRequest, job: CpuPostCommitJob) {
   const startedAt = Date.now();
   const orders = (await productionQueue(request, job.serviceDate)).filter(order => job.orderIds.includes(order.canonicalId) && order.origin === "menu_planning" && !order.supersededBy && (order.serviceDate || order.requiredBy.slice(0, 10)) === job.serviceDate);
-  const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
+  const plans = await loadGuardedPlansForOrders(orders);
   const planByOrderId = new Map(plans.map(plan => [plan.orderId, plan]));
   const members = orders.map(order => memberFor(order.canonicalId, planByOrderId.get(order.canonicalId)));
   const masterReviewId = cpuMasterReviewId({ serviceDate: job.serviceDate, members });

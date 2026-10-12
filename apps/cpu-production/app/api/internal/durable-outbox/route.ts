@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { internalTokenAllowed } from "../../../../../shared/internal-auth";
 import { reconcileCpuProjectionsIfDue, reconcileCpuWeek, reconciliationMode } from "../../../../lib/cpu-projection-reconciliation";
+import { reconcileAuthorityCascades } from "../../../../lib/allergen-reuse-orchestrator";
+import { reuseRuntimeDeps } from "../../../../lib/allergen-reuse-runtime";
 import { deliverCpuPropagation, recoverCpuPropagation, replayCpuPropagation } from "../../../../lib/cpu-durable-outbox";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +19,7 @@ export async function POST(request: NextRequest) {
       const outcomes = []; for (const week of weeks) outcomes.push(await reconcileCpuWeek(request, week, { mode }));
       return NextResponse.json({ mode, checked: outcomes.length, outcomes });
     }
+    if (body.action === "reconcile-authority-cascades") return NextResponse.json({ cascades: await reconcileAuthorityCascades(reuseRuntimeDeps(request), body.limit) });
     if (body.action === "replay") {
       if (!body.eventId) return NextResponse.json({ error: { message: "eventId is required for replay." } }, { status: 400 });
       const event = await replayCpuPropagation(body.eventId);
@@ -25,7 +28,9 @@ export async function POST(request: NextRequest) {
     if (body.eventId) return NextResponse.json(await deliverCpuPropagation(body.eventId));
     const recovered = await recoverCpuPropagation(body.limit);
     const reconciliation = await reconcileCpuProjectionsIfDue(request).catch(error => ({ error: error instanceof Error ? error.message : "reconciliation failed" }));
-    return NextResponse.json({ recovered, reconciliation });
+    // The same bounded sweep repairs shared-authority revocation cascades whose durable work was lost or interrupted.
+    const authorityCascades = await reconcileAuthorityCascades(reuseRuntimeDeps(request), 10).catch(error => ({ error: error instanceof Error ? error.message : "authority cascade reconciliation failed" }));
+    return NextResponse.json({ recovered, reconciliation, authorityCascades });
   } catch (error) {
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "CPU outbox recovery failed." } }, { status: 500 });
   }

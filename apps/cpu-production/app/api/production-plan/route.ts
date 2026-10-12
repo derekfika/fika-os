@@ -11,9 +11,9 @@ import { rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } 
 import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
 import { createAllergenAuthorityStore } from "../../../lib/allergen-authority-store";
 import { emitCpuPlanChange } from "../../../lib/cpu-plan-change-effects";
-import { failClosedStaleReuse, reconcileReuse, recordSignedAuthority, reuseViewFor } from "../../../lib/allergen-reuse-service";
-import { applyReuseCommand, approvedMatrixChanged, cascadeAuthorityRevocation, revokeReusedRelease, type ReuseOrchestrationDeps } from "../../../lib/allergen-reuse-orchestrator";
-import { clearReuse } from "../../../lib/allergen-composition";
+import { guardReusedPlan, reconcileReuse, reuseViewFor } from "../../../lib/allergen-reuse-service";
+import { applyReuseCommand, approvedMatrixChanged, cascadeAuthorityRevocation, recordSignedApproval, revokeReusedRelease, type ReuseOrchestrationDeps } from "../../../lib/allergen-reuse-orchestrator";
+import { clearReuse, compositionIdentity } from "../../../lib/allergen-composition";
 import { requireCpuActor } from "../../../lib/cpu-access-client";
 import { hubJson } from "../../../lib/production-http-client";
 import { matrixDriveConfiguration } from "../../lib/matrix-drive-config";
@@ -119,7 +119,9 @@ function pendingReleaseFor(plan: ProductionPlan, order: ProductionOrder, timesta
   const source = matrixSignatureScope(order, menuContentHash(plan.menuItems));
   if (!source) throw Object.assign(new Error("The current source lineage is unavailable; the matrix cannot be signed."), { status: 503 });
   const previous = [...(plan.allergenReleaseHistory || [])].at(-1);
-  return buildCpuAllergenRelease({ serviceDate: source.serviceDate, sourceOrigin: source.sourceOrigin, sourceDayId: source.sourceDayId, sourcePublicationId: source.sourcePublicationId, sourcePublicationDayId: source.sourcePublicationDayId, sourceBookingId: source.sourceBookingId, sourceQuoteRevisionId: source.sourceQuoteRevisionId, sourceRevision: source.sourceRevision, sourceVersion: source.sourceVersion, sourceContentHash: source.sourceContentHash, version: Math.max(1, ...((plan.allergenReleaseHistory || []).map(item => item.version + 1))), signedAt: timestamp, signatures: plan.signatures || [], items: plan.menuItems, masterArtifact: pendingReleaseArtifact(plan, order, timestamp), derivedArtifacts: [], packetArtifacts: [], previous, status: "pending" });
+  const release = buildCpuAllergenRelease({ serviceDate: source.serviceDate, sourceOrigin: source.sourceOrigin, sourceDayId: source.sourceDayId, sourcePublicationId: source.sourcePublicationId, sourcePublicationDayId: source.sourcePublicationDayId, sourceBookingId: source.sourceBookingId, sourceQuoteRevisionId: source.sourceQuoteRevisionId, sourceRevision: source.sourceRevision, sourceVersion: source.sourceVersion, sourceContentHash: source.sourceContentHash, version: Math.max(1, ...((plan.allergenReleaseHistory || []).map(item => item.version + 1))), signedAt: timestamp, signatures: plan.signatures || [], items: plan.menuItems, masterArtifact: pendingReleaseArtifact(plan, order, timestamp), derivedArtifacts: [], packetArtifacts: [], previous, status: "pending" });
+  const compositionId = compositionIdentity(order as never)?.compositionId;
+  return compositionId ? { ...release, compositionId } : release;
 }
 // Artifact creation is intentionally no longer part of the sign command:
 // release materialization runs from the committed outbox obligation after
@@ -164,9 +166,9 @@ async function settleAllergenAuthority(request: NextRequest, input: { order: Pro
   try {
     const { order, before, plan, actor, at } = input;
     if (before && before.approvalMode !== "reused_authority" && plan.currentAllergenRelease?.releaseId !== before.releaseId && (input.explicitReopen || approvedMatrixChanged(input.beforePlan, plan, order as never))) {
-      await cascadeAuthorityRevocation(reuseDeps(request), { order: order as never, releaseId: before.releaseId, actor, actorId: input.actorId, at, reason: input.explicitReopen ? "The signed allergen review that established this approved composition was reopened." : "The approved allergen matrix that established this composition changed after signing." });
+      await cascadeAuthorityRevocation(reuseDeps(request), { compositionId: before.compositionId, releaseId: before.releaseId, actor, actorId: input.actorId, at, reason: input.explicitReopen ? "The signed allergen review that established this approved composition was reopened." : "The approved allergen matrix that established this composition changed after signing." });
     }
-    if (plan.currentAllergenRelease && plan.currentAllergenRelease.approvalMode !== "reused_authority" && !plan.reusedAllergenAuthority) await recordSignedAuthority(allergenAuthorityStore, plan, order as never, at, actor);
+    if (plan.currentAllergenRelease && plan.currentAllergenRelease.approvalMode !== "reused_authority" && !plan.reusedAllergenAuthority) await recordSignedApproval({ store: allergenAuthorityStore }, plan, order as never, at, actor);
   } catch (error) {
     console.error("[cpu-allergen-reuse] authority settlement failed", { orderId: input.plan.orderId, error: error instanceof Error ? error.message : String(error) });
   }
@@ -471,7 +473,7 @@ async function handleGet(request: NextRequest) {
       const reuseCache = new Map<string, Awaited<ReturnType<typeof allergenAuthorityStore.get>>>();
       const visiblePlans = await Promise.all(sourceOrders
         .filter(order => !(order.origin === "hospitality_booking" && order.requiresDelivery === false))
-        .map(async order => failClosedStaleReuse(allergenAuthorityStore, await mergeOriginalItems(request, planByOrderId.get(order.canonicalId) || await getPlan(request, order.canonicalId), order.canonicalId, order), order as never, reuseCache)));
+        .map(async order => guardReusedPlan(allergenAuthorityStore, await mergeOriginalItems(request, planByOrderId.get(order.canonicalId) || await getPlan(request, order.canonicalId), order.canonicalId, order), order as never, reuseCache)));
       const entries = visiblePlans.filter(plan => plan.status === "planned");
       return NextResponse.json({ plans: visiblePlans, notifications: entries.map(plan => ({ id: `notification:${plan.id}`, title: "New production plan ready for menu generation.", orderId: plan.orderId, plannedItemCount: plan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: plan.updatedAt })), menus: entries.map(plan => ({ planId: plan.id, orderId: plan.orderId, clientSite: sourceOrders.find(order => order.canonicalId === plan.orderId)?.destinationLabel || "Site not assigned", items: plan.menuItems.flatMap(item => item.subItems.map(subItem => ({ menuItem: item.name, name: subItem.name, quantity: subItem.quantity, allergens: Object.entries(subItem.allergens).filter(([, state]) => state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key) }))) })) });
     }
@@ -479,7 +481,7 @@ async function handleGet(request: NextRequest) {
       const selectedOrder = await loadOrder(request, orderId);
       const visible = Boolean(selectedOrder && !(selectedOrder.origin === "hospitality_booking" && selectedOrder.requiresDelivery === false));
       if (request.nextUrl.searchParams.get("download") === "pdf") {
-        const artifact = visible ? (await getPlan(request, orderId)).matrixArtifact : undefined;
+        const artifact = visible ? (await guardReusedPlan(allergenAuthorityStore, await getPlan(request, orderId), selectedOrder as never)).matrixArtifact : undefined;
         if (!artifact?.pdfPath || !existsSync(artifact.pdfPath)) return NextResponse.json({ error: { message: "A local PDF has not been generated for this matrix." } }, { status: 404 });
         return new NextResponse(await fs.readFile(artifact.pdfPath), { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${artifact.fileName}"` } });
       }
@@ -495,11 +497,12 @@ async function handleGet(request: NextRequest) {
       const selectedMatrixStatus = selectedPlan?.matrixArtifact && selectedOrder && (currentAllergenReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems) || reusedAuthorityReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems)) ? "ready" : selectedPlan?.currentAllergenRelease?.materializationStatus === "failed" ? "failed" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !matrixDriveConfiguration(selectedOrder).enabled ? "not_configured" : "generating" : undefined;
       const signingLineage = selectedOrder && selectedPlan ? matrixSignatureScope(selectedOrder, menuContentHash(selectedPlan.menuItems)) : undefined;
       const signedMatrixAvailable = Boolean(selectedPlan && selectedOrder && signedAllergenReviewMatchesOrder(selectedPlan, selectedOrder, selectedPlan.menuItems));
-      const reuse = selectedPlan && selectedOrder ? await reuseViewFor(allergenAuthorityStore, selectedPlan, selectedOrder).catch(() => undefined) : undefined;
+      const reuse = selectedPlan && selectedOrder ? await reuseViewFor(allergenAuthorityStore, selectedPlan, selectedOrder) : undefined;
       // A stale reuse is shown as unreviewed rather than Planned; persistence is corrected by the next CPU mutation.
-      const staleReuse = Boolean(reuse?.applied && !reuse.applied.valid);
-      const responsePlan = selectedPlan && staleReuse ? { ...selectedPlan, status: selectedPlan.status === "planned" ? "planning" as const : selectedPlan.status, currentAllergenRelease: undefined, matrixArtifact: undefined, signedMatrixArtifact: undefined, masterMatrixArtifact: undefined, siteMatrixArtifacts: undefined } : selectedPlan;
-      const approvedMatrixAvailable = Boolean(selectedPlan && selectedOrder && reusedAuthorityReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems) && !(reuse?.applied && !reuse.applied.valid));
+      // Every read goes through the one authoritative validator: a stale or unverifiable reuse is returned unreviewed.
+      const responsePlan = selectedPlan && selectedOrder ? await guardReusedPlan(allergenAuthorityStore, selectedPlan, selectedOrder as never) : selectedPlan;
+      const staleReuse = responsePlan !== selectedPlan;
+      const approvedMatrixAvailable = Boolean(selectedPlan && selectedOrder && reusedAuthorityReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems) && !staleReuse);
       return NextResponse.json({ plan: responsePlan, ...(reuse ? { reuse } : {}), approvedMatrixAvailable, signingLineage: signingLineage || null, matrixStatus: staleReuse ? undefined : selectedMatrixStatus, ...(selectedPlan?.currentAllergenRelease?.materializationError ? { matrixError: selectedPlan.currentAllergenRelease.materializationError } : {}), signedMatrixAvailable, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
     }
   } catch (error) {

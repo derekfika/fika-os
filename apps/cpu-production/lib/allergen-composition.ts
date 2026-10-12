@@ -15,8 +15,8 @@ import type { PlannedMenuItem, PlannedSubItem, ProductionPlan } from "../app/lib
  * provenance. Reuse never signs, never copies signatures, and never touches the origin plan, release or signatures.
  */
 
-export const COMPOSITION_IDENTITY_VERSION = "fika.allergen-composition.v1";
-export const AUTHORITY_SCHEMA = "fika.cpu-allergen-composition-authority.v1";
+export const COMPOSITION_IDENTITY_VERSION = "fika.allergen-composition.v2";
+export const AUTHORITY_SCHEMA = "fika.cpu-allergen-composition-authority.v2";
 /** Only these workstreams are eligible: reuse is scoped to Hospitality sandwich lunches. */
 export const REUSABLE_WORKSTREAMS = ["sandwiches"] as const;
 
@@ -26,6 +26,14 @@ export type CompositionLine = {
   sourceOfferingId?: string;
   choices?: unknown[];
   workstream?: string;
+  /** Production-affecting fields: any of these can change what is physically made, so they participate in identity. */
+  substitution?: string;
+  productionInstructions?: string;
+  servingGuidance?: string;
+  description?: string;
+  allergenEvidenceStatus?: string;
+  status?: string;
+  exceptions?: string[];
   approvedAllergenSnapshot?: { allergens: Record<string, string>; allergenEvidenceStatus?: string; mayContainNotes?: string };
 };
 export type CompositionOrder = { canonicalId: string; origin?: string; requiresDelivery?: boolean; lines: CompositionLine[] };
@@ -34,6 +42,10 @@ export type CompositionEntry = {
   itemId: string;
   offeringId: string | null;
   choices: string[];
+  /** Normalised production-affecting free text (substitution, instructions, serving guidance, description). Empty when none. */
+  production: { substitution: string; instructions: string; servingGuidance: string; description: string };
+  /** Line-level allergen evidence status; conflicting lines are never eligible. */
+  evidenceStatus: string | null;
   /** Allergen inputs carried on the composition itself. `null` means none are recorded there (never "clear"). */
   allergenInputs: null | { states: Record<string, string>; evidence: string | null; mayContainNotes: string };
 };
@@ -57,10 +69,14 @@ function normaliseChoiceValue(value: unknown): unknown {
   return typeof value === "string" ? value.trim() : value;
 }
 
-/** Only Hospitality sandwich-lunch orders whose every line carries a stable catalogue item ID have a composition identity. */
+/**
+ * Only Hospitality sandwich-lunch orders whose every line carries a stable catalogue item ID have a composition identity.
+ * A line with conflicting allergen evidence or an open production exception is never eligible: fail closed, fresh review.
+ */
 export function isCompositionEligible(order: CompositionOrder | undefined): order is CompositionOrder {
   if (!order || order.origin !== "hospitality_booking" || order.requiresDelivery === false || !order.lines?.length) return false;
-  return order.lines.every(line => Boolean(text(line.sourceMenuItemId)) && (REUSABLE_WORKSTREAMS as readonly string[]).includes(line.workstream || ""));
+  return order.lines.every(line => Boolean(text(line.sourceMenuItemId)) && (REUSABLE_WORKSTREAMS as readonly string[]).includes(line.workstream || "")
+    && line.allergenEvidenceStatus !== "conflicting" && line.approvedAllergenSnapshot?.allergenEvidenceStatus !== "conflicting" && line.status !== "exception" && !(line.exceptions && line.exceptions.length));
 }
 
 export function compositionEntryForLine(line: CompositionLine): CompositionEntry {
@@ -69,6 +85,8 @@ export function compositionEntryForLine(line: CompositionLine): CompositionEntry
     itemId: text(line.sourceMenuItemId),
     offeringId: text(line.sourceOfferingId) || null,
     choices: (line.choices || []).map(choice => canonicalJson(normaliseChoiceValue(choice))).sort(),
+    production: { substitution: text(line.substitution), instructions: text(line.productionInstructions), servingGuidance: text(line.servingGuidance), description: text(line.description) },
+    evidenceStatus: line.allergenEvidenceStatus || null,
     allergenInputs: snapshot ? { states: Object.fromEntries(Object.entries(normaliseOperationalAllergens(snapshot.allergens || {})).sort(([a], [b]) => a.localeCompare(b))), evidence: snapshot.allergenEvidenceStatus || null, mayContainNotes: text(snapshot.mayContainNotes) } : null,
   };
 }
@@ -119,20 +137,32 @@ export type AuthorityOrigin = {
   releaseId: string; releaseVersion: number; matrixContentHash: string; signedMenuContentHash?: string; signedAt: string;
   signatures: Array<{ role: string; printedName: string; signedAt: string }>;
 };
+export type AdopterState = "pending" | "committed" | "cancelled";
+export type AuthorityCascade = { startedAt: string; completedAt?: string; adopters: Record<string, { sequence?: number; done?: boolean; doneAt?: string }> };
+/**
+ * One approved authority per composition, versioned by `generation`. Each generation is immutable once approved: a revocation
+ * archives it, and a later re-approval is a NEW generation. Adopters bind to a specific generation, release and matrix hash, so
+ * an adopter of an earlier generation can never become valid against a later one.
+ */
 export type AllergenCompositionAuthority = {
   schema: typeof AUTHORITY_SCHEMA;
   compositionId: string; identityVersion: string; entries: CompositionEntry[];
+  generation: number;
   status: "active" | "revoked";
   approvedMatrix: ApprovedMatrixLine[]; matrixSemanticHash: string;
   origin: AuthorityOrigin;
-  /** Earlier origins that this composition was approved by before a revocation and re-approval (append-only). */
-  supersededOrigins: AuthorityOrigin[];
-  /** Append-only registry of orders that adopted this authority; used to reopen them if the authority is later revoked. */
-  reusedBy: Array<{ orderId: string; at: string; by: string }>;
+  /** Set atomically with status revoked when the current generation is revoked; it is the durable revocation intent. */
+  revocation?: { generation: number; releaseId: string; at: string; by: string; reason: string };
+  /** True while any revoked generation still has an incomplete adopter cascade; drives reconciliation. */
+  cascadePending: boolean;
+  /** Revoked earlier generations (append-only, immutable). */
+  generations: Array<{ generation: number; origin: AuthorityOrigin; matrixSemanticHash: string; approvedAt: string; revokedAt: string; reason: string }>;
+  /** Adopter registry per generation. pending is a leased reservation made atomically with the active check; committed follows the plan commit. */
+  reusedBy: Array<{ orderId: string; generation: number; state: AdopterState; at: string; by: string; leaseUntil?: string }>;
+  /** Durable, observable cascade progress keyed by generation. */
+  cascades: Record<string, AuthorityCascade>;
   createdAt: string;
-  /** Durable, observable progress of the adopter cascade that follows each revocation, keyed by the revoked origin release ID. */
-  cascades?: Record<string, { startedAt: string; completedAt?: string; adopters: Record<string, { sequence?: number; done?: boolean; doneAt?: string }> }>;
-  history: Array<{ action: "approved" | "re-approved" | "revoked" | "reused" | "cascade-completed"; at: string; by: string; reason?: string; releaseId?: string }>;
+  history: Array<{ action: "approved" | "re-approved" | "revoked" | "reused" | "cascade-completed"; at: string; by: string; reason?: string; releaseId?: string; generation?: number }>;
 };
 
 type SignedPlanView = Pick<ProductionPlan, "menuItems" | "signedSignatures" | "currentAllergenRelease" | "signedMenuContentHash" | "id" | "orderId">;
@@ -142,19 +172,22 @@ export function buildAuthorityFromSignedPlan(plan: SignedPlanView, order: Compos
   const identity = compositionIdentity(order);
   const release = plan.currentAllergenRelease;
   if (!identity || !release || !["current", "pending"].includes(release.status)) return undefined;
+  // The composition is stamped on the release when it is signed. A release signed before that, or for a composition that has
+  // since changed, can never establish an authority for the order's CURRENT composition.
+  if (release.compositionId !== identity.compositionId) return undefined;
   const signatures = plan.signedSignatures || release.signatures || [];
   if (!signatures.some(s => s.role === "production_chef") || !signatures.some(s => s.role === "head_chef_site_manager")) return undefined;
   const captured = captureApprovedMatrix(plan, order);
   if (!captured) return undefined;
   return {
     schema: AUTHORITY_SCHEMA, compositionId: identity.compositionId, identityVersion: identity.identityVersion, entries: identity.entries,
-    status: "active", approvedMatrix: captured.lines, matrixSemanticHash: captured.semanticHash,
+    generation: 1, status: "active", cascadePending: false, approvedMatrix: captured.lines, matrixSemanticHash: captured.semanticHash,
     origin: { orderId: plan.orderId, planId: plan.id, ...(order.sourceBookingId ? { sourceBookingId: order.sourceBookingId } : {}), ...(order.sourceQuoteRevisionId ? { quoteRevisionId: order.sourceQuoteRevisionId } : {}), releaseId: release.releaseId, releaseVersion: release.version, matrixContentHash: release.matrixContentHash, ...(plan.signedMenuContentHash ? { signedMenuContentHash: plan.signedMenuContentHash } : {}), signedAt: release.signedAt, signatures: signatures.map(s => ({ role: s.role, printedName: s.printedName, signedAt: s.signedAt })) },
-    supersededOrigins: [], reusedBy: [], createdAt: at, history: [{ action: "approved", at, by, releaseId: release.releaseId }],
+    generations: [], reusedBy: [], cascades: {}, createdAt: at, history: [{ action: "approved", at, by, releaseId: release.releaseId, generation: 1 }],
   };
 }
 
-export type ReuseRefusal = "composition_unavailable" | "authority_missing" | "authority_revoked" | "composition_mismatch" | "identity_version_mismatch" | "own_authority" | "plan_already_signed" | "plan_not_reviewable" | "authority_integrity_failed" | "origin_signatures_missing";
+export type ReuseRefusal = "composition_unavailable" | "authority_missing" | "authority_revoked" | "composition_mismatch" | "identity_version_mismatch" | "own_authority" | "plan_already_signed" | "plan_not_reviewable" | "authority_integrity_failed" | "origin_signatures_missing" | "authority_lookup_failed";
 export type ReuseDecision = { ok: true; identity: CompositionIdentity } | { ok: false; reason: ReuseRefusal };
 
 const REVIEWABLE: ProductionPlan["status"][] = ["draft", "planning", "needs_clarification"];
@@ -178,7 +211,8 @@ export function evaluateReuse(order: CompositionOrder | undefined, plan: Pick<Pr
 
 /** Provenance recorded on the REUSING plan. It points back at the origin authority; it is never a signature of this booking. */
 export type ReusedAllergenAuthority = {
-  authorityId: string; compositionId: string; identityVersion: string; matrixSemanticHash: string;
+  /** `${compositionId}#g${generation}`: the exact immutable authority generation this booking adopted. */
+  authorityId: string; compositionId: string; generation: number; identityVersion: string; matrixSemanticHash: string;
   adoptedAt: string; adoptedBy: string;
   origin: AuthorityOrigin;
 };
@@ -197,7 +231,7 @@ export function applyReusedAuthority(plan: ProductionPlan, order: CompositionOrd
     return { ...item, subItems: approved.subItems.map((sub, subIndex) => ({ id: `sub-item:${plan.orderId}:${index + 1}:${subIndex + 1}`, ...(sub.productionItemId ? { productionItemId: sub.productionItemId } : {}), name: sub.displayName || item.name, quantity: existing[subIndex]?.quantity ?? existing[0]?.quantity ?? null, allergens: { ...sub.allergens } as PlannedSubItem["allergens"], ...(sub.mayContainNotes ? { mayContainNotes: sub.mayContainNotes } : {}), note: "", evidenceStatus: "completed" as const })) };
   });
   next.status = "planned";
-  next.reusedAllergenAuthority = { authorityId: authority.compositionId, compositionId: authority.compositionId, identityVersion: authority.identityVersion, matrixSemanticHash: authority.matrixSemanticHash, adoptedAt: input.at, adoptedBy: input.by, origin: structuredClone(authority.origin) };
+  next.reusedAllergenAuthority = { authorityId: `${authority.compositionId}#g${authority.generation}`, compositionId: authority.compositionId, generation: authority.generation, identityVersion: authority.identityVersion, matrixSemanticHash: authority.matrixSemanticHash, adoptedAt: input.at, adoptedBy: input.by, origin: structuredClone(authority.origin) };
   next.updatedAt = input.at; next.updatedBy = input.by;
   next.audit = [...next.audit, { action: "allergen-authority-reused", at: input.at, by: input.by, reason: `Composition matches a previously approved sandwich set (origin release ${authority.origin.releaseId}); this booking was not signed itself.` }];
   return next;
@@ -220,4 +254,27 @@ export function clearReuse(plan: ProductionPlan, input: { by: string; at: string
   if (plan.status === "planned" && !hasOwnSignedAuthority(plan)) plan.status = "planning";
   plan.audit.push({ action: "allergen-reuse-invalidated", at: input.at, by: input.by, reason: input.reason });
   return true;
+}
+
+export type ReuseValidity = { valid: true } | { valid: false; reason: string };
+/**
+ * THE authoritative validity test for a reused approval. Every path that can expose, materialize, project, download or act on
+ * a reused release must pass through it (see allergen-reuse-service `validateReusedApproval`). Pure.
+ *
+ * Valid only if the adopter is bound to the authority's CURRENT, ACTIVE generation (same origin release and matrix hash), the
+ * composition and live matrix still match, the adopter's registration is committed, and no revocation intent is outstanding.
+ */
+export function reuseValidity(plan: Pick<ProductionPlan, "orderId" | "menuItems" | "reusedAllergenAuthority">, order: CompositionOrder | undefined, authority: AllergenCompositionAuthority | undefined): ReuseValidity {
+  const reuse = plan.reusedAllergenAuthority;
+  if (!reuse) return { valid: false, reason: "no_reuse_provenance" };
+  if (!authority) return { valid: false, reason: "authority_missing" };
+  if (authority.compositionId !== reuse.compositionId) return { valid: false, reason: "composition_mismatch" };
+  if (authority.status !== "active" || authority.revocation) return { valid: false, reason: "authority_revoked" };
+  if (authority.generation !== reuse.generation) return { valid: false, reason: "generation_mismatch" };
+  if (authority.origin.releaseId !== reuse.origin.releaseId) return { valid: false, reason: "origin_release_mismatch" };
+  if (authority.matrixSemanticHash !== reuse.matrixSemanticHash) return { valid: false, reason: "matrix_hash_mismatch" };
+  if (!reuseStillValid(plan, order)) return { valid: false, reason: "composition_or_matrix_changed" };
+  const registration = authority.reusedBy.find(entry => entry.orderId === plan.orderId && entry.generation === reuse.generation);
+  if (registration?.state !== "committed") return { valid: false, reason: "adoption_not_committed" };
+  return { valid: true };
 }
