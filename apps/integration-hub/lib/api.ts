@@ -27,6 +27,8 @@ function readableErrorMessage(error: unknown) {
 export function errorResponse(error: unknown, requestId?: string) {
   const e = error as { message?: string; status?: number; code?: string };
   const safeRequestId = requestId || crypto.randomUUID();
-  console.error("API request failed", { code: e.code || "INVALID_REQUEST", status: e.status || 400, requestId: safeRequestId });
+  // The response stays generic; the real cause (name + message, bounded) is logged against the same requestId so a masked failure is traceable.
+  const cause = error instanceof Error ? { errorName: error.name, errorMessage: error.message.slice(0, 500) } : { errorMessage: typeof e.message === "string" ? e.message.slice(0, 500) : undefined };
+  console.error("API request failed", { code: e.code || "INVALID_REQUEST", status: e.status || 400, requestId: safeRequestId, ...cause });
   return NextResponse.json({ error: { code: e.code || "INVALID_REQUEST", message: readableErrorMessage(error), requestId: safeRequestId } }, { status: e.status || 400, headers: { "x-request-id": safeRequestId } });
 }
