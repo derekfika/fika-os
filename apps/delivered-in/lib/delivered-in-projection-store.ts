@@ -11,7 +11,7 @@ import { cpuSignedBundleIsRevoked } from "./cpu-release-receipts";
 
 export const DELIVERED_IN_DATASET = "delivered-in/day";
 export const DELIVERED_IN_INDEX_DATASET = "delivered-in/projection-index";
-export const DELIVERED_IN_PROJECTION_SEMANTICS_VERSION = 2;
+export const DELIVERED_IN_PROJECTION_SEMANTICS_VERSION = 3; // 3: signed-CPU-packet entries are complete (unlisted allergens are clear)
 export const projectionManifestKey = (oplocId: string, serviceDate: string) => `${DELIVERED_IN_DATASET}/${encodeURIComponent(oplocId)}/${serviceDate}`;
 export const projectionIndexManifestKey = (oplocId: string) => `${DELIVERED_IN_INDEX_DATASET}/${encodeURIComponent(oplocId)}`;
 const addDays = (date: string, days: number) => { const value = new Date(`${date}T12:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); };

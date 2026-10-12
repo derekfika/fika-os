@@ -128,3 +128,15 @@ test("a dish the signed CPU packet marks unrecorded stays fully unrecorded and r
   assert.equal(entry.allergensVisible, false);
   assert.ok(allergensFromStates(entry.allergens).unrecorded.length > 0);
 });
+
+test("the real signed-packet shape for a no-allergen dish (no_key_allergens listed as contains) stays positively no-key and fully recorded", async () => {
+  const fullKeys = { peanuts: "unrecorded", tree_nuts: "unrecorded", gluten: "unrecorded", sesame: "unrecorded", molluscs: "unrecorded", fish: "unrecorded", soya: "unrecorded", celery: "unrecorded", shellfish: "unrecorded", eggs: "unrecorded", milk: "unrecorded", mustard: "unrecorded", lupin: "unrecorded", sulphites: "unrecorded", no_key_allergens: "contains" } as const;
+  const fullDay: ProjectedDay = { ...day, entries: [{ ...day.entries[0], allergens: { ...fullKeys } }] };
+  const projection = await buildDeliveredInDayProjection({ request, site, day: fullDay, governed: true, loadReview: async () => packetReview({ no_key_allergens: "contains" } as never, "contains") });
+  const entry = projection.entries[0];
+  assert.equal(entry.allergensVisible, true);
+  assert.equal(entry.allergens.no_key_allergens, "contains");
+  assert.equal(Object.values(entry.allergens).filter(state => state === "unrecorded").length, 0);
+  const states = allergensFromStates(entry.allergens);
+  assert.deepEqual([states.contains, states.unrecorded, states.noKeyAllergens], [[], [], true]);
+});

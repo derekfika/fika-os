@@ -40,7 +40,7 @@ export async function buildDeliveredInDayProjection(input: { request: NextReques
     // Only an entry the packet itself marks unrecorded stays unrecorded. The no-key flag is derived, not copied from Menu Planning.
     const allergenKeys = [...new Set([...Object.keys(entry.allergens), ...CANONICAL_ALLERGEN_KEYS])];
     const packetAllergens = packetReviewed?.allergens || {};
-    const hasPositive = Object.values(packetAllergens).some(state => state === "contains" || state === "may_contain");
+    const hasPositive = Object.entries(packetAllergens).some(([key, state]) => key !== "no_key_allergens" && (state === "contains" || state === "may_contain"));
     const allergens = packetReviewed && packetReviewed.allergenState !== "unrecorded"
       ? Object.fromEntries(allergenKeys.map(key => [key, key === "no_key_allergens" ? (hasPositive ? "clear" as const : "contains" as const) : packetAllergens[key] || "clear" as const]))
       : Object.fromEntries(allergenKeys.map(key => [key, "unrecorded" as const]));
