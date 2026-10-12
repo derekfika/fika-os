@@ -5,6 +5,7 @@ import type { ProjectedDay, Site } from "./projection";
 import type { DeliveredInDayProjection } from "./delivered-in-day-projection";
 import { projectionId } from "./delivered-in-day-projection";
 import { writeDeliveredInProjection } from "./delivered-in-projection-store";
+import { CANONICAL_ALLERGEN_KEYS } from "../../shared/allergen-contract";
 
 type Review = {
   entries: Map<string, { allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenState?: "clear" | "contains" | "may_contain" | "unrecorded"; mayContainNotes?: string }>;
@@ -34,9 +35,14 @@ export async function buildDeliveredInDayProjection(input: { request: NextReques
   const sourceEntries = input.day.entries.map(entry => {
     const packetId = entry.canonicalDishId || entry.sourceEntryId;
     const packetReviewed = review?.cpuReview.status === "signed" && !cpuFailure ? packetEntries?.get(packetId) : undefined;
-    const allergenKeys = Object.keys(entry.allergens);
+    // A signed CPU packet lists only what a dish contains / may contain; CPU does not let a dish be checked until every named
+    // allergen is resolved, so a reviewed packet entry is complete: anything it does not list is clear (never "unrecorded").
+    // Only an entry the packet itself marks unrecorded stays unrecorded. The no-key flag is derived, not copied from Menu Planning.
+    const allergenKeys = [...new Set([...Object.keys(entry.allergens), ...CANONICAL_ALLERGEN_KEYS])];
+    const packetAllergens = packetReviewed?.allergens || {};
+    const hasPositive = Object.values(packetAllergens).some(state => state === "contains" || state === "may_contain");
     const allergens = packetReviewed && packetReviewed.allergenState !== "unrecorded"
-      ? Object.fromEntries(allergenKeys.map(key => [key, packetReviewed.allergens[key] || "unrecorded" as const]))
+      ? Object.fromEntries(allergenKeys.map(key => [key, key === "no_key_allergens" ? (hasPositive ? "clear" as const : "contains" as const) : packetAllergens[key] || "clear" as const]))
       : Object.fromEntries(allergenKeys.map(key => [key, "unrecorded" as const]));
     const allergensVisible = review?.cpuReview.status === "signed" && !cpuFailure && packetReviewed?.allergenState !== "unrecorded" && Object.values(allergens).every(state => state !== "unrecorded");
     return {

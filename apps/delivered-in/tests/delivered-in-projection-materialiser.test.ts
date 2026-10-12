@@ -98,3 +98,33 @@ test("a dish unrecorded in the signed CPU packet is not promoted to confirmed", 
   assert.equal(projection.entries[0].allergenEvidenceStatus, "unreviewed");
   assert.equal(projection.entries[0].allergensVisible, false);
 });
+
+// A signed CPU packet lists only what a dish contains / may contain. A reviewed entry is complete, so unlisted allergens are clear.
+import { allergensFromStates } from "@fika/server-shared/menu-artifact";
+const packetReview = (allergens: Record<string, "contains" | "may_contain">, allergenState: "clear" | "contains" | "may_contain" | "unrecorded") => ({ entries: new Map([["dish:1", { allergens, allergenState }]]), cpuReview: { status: "signed" as const, signatures: [{ role: "production_chef", printedName: "Chef", signedAt: "2026-09-14T08:00:00Z" }, { role: "head_chef_site_manager", printedName: "Manager", signedAt: "2026-09-14T08:01:00Z" }], drivePdfUrl: "https://example.test/signed.pdf" }, orderIds: ["order:1"], package: { sourceBundleHash: "menu-day-hash", sourceStatus: "current" as const, sourceCompleteness: "complete" as const } });
+const noKeyOnlyDay: ProjectedDay = { ...day, entries: [{ ...day.entries[0], allergens: { no_key_allergens: "unrecorded" }, allergenEvidenceStatus: "unreviewed" as const }] };
+
+test("a reviewed no-allergen dish in the signed CPU packet is clear on every named allergen and positively no-key", async () => {
+  const projection = await buildDeliveredInDayProjection({ request, site, day: noKeyOnlyDay, governed: true, loadReview: async () => packetReview({}, "clear") });
+  const entry = projection.entries[0];
+  assert.equal(entry.allergensVisible, true);
+  assert.equal(entry.allergens.peanuts, "clear"); assert.equal(entry.allergens.sulphites, "clear"); assert.equal(entry.allergens.no_key_allergens, "contains");
+  assert.equal(Object.values(entry.allergens).includes("unrecorded"), false);
+  const states = allergensFromStates(entry.allergens);
+  assert.deepEqual([states.contains, states.mayContain, states.unrecorded, states.noKeyAllergens], [[], [], [], true], "menu generation accepts it and prints no allergen line");
+});
+
+test("positives in the signed CPU packet survive even when Menu Planning never listed those allergens, and no-key is off", async () => {
+  const projection = await buildDeliveredInDayProjection({ request, site, day: noKeyOnlyDay, governed: true, loadReview: async () => packetReview({ celery: "contains", sulphites: "contains", mustard: "may_contain" }, "contains") });
+  const entry = projection.entries[0];
+  assert.equal(entry.allergens.celery, "contains"); assert.equal(entry.allergens.mustard, "may_contain"); assert.equal(entry.allergens.milk, "clear"); assert.equal(entry.allergens.no_key_allergens, "clear");
+  const states = allergensFromStates(entry.allergens);
+  assert.deepEqual(states.contains.sort(), ["celery", "sulphites"]); assert.equal(states.noKeyAllergens, false); assert.equal(states.unrecorded.length, 0);
+});
+
+test("a dish the signed CPU packet marks unrecorded stays fully unrecorded and refuses menu generation", async () => {
+  const projection = await buildDeliveredInDayProjection({ request, site, day: noKeyOnlyDay, governed: true, loadReview: async () => packetReview({}, "unrecorded") });
+  const entry = projection.entries[0];
+  assert.equal(entry.allergensVisible, false);
+  assert.ok(allergensFromStates(entry.allergens).unrecorded.length > 0);
+});
