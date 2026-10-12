@@ -80,12 +80,33 @@ function projectionLineageMatches(entry: DeliveredInProjectionIndexEntry, projec
 function projectionSemanticsVersion(entry: DeliveredInProjectionIndexEntry) {
   return entry.projectionSemanticsVersion ?? 1;
 }
+/**
+ * `sourceSequence` has two namespaces: a publication-level withdrawal stamps the PUBLICATION version, while a day entry stamps
+ * the DAY version. They are not comparable, so a day republished after a whole-week withdrawal (publication v4 withdrawn, then
+ * publication v5 with day v2) used to be rejected as "older" forever. The publication version is recoverable from sourceVersion.
+ */
+function publicationVersionOf(entry: DeliveredInProjectionIndexEntry) {
+  const withdrawn = /^(.*):withdrawn:v(\d+)$/.exec(entry.sourceVersion);
+  if (withdrawn) return { publicationId: withdrawn[1], version: Number(withdrawn[2]), level: "publication" as const };
+  const day = /^(.*):v(\d+):day:\d+:v\d+(?::|$)/.exec(entry.sourceVersion);
+  if (day) return { publicationId: day[1], version: Number(day[2]), level: "day" as const };
+  return undefined;
+}
+function comparePublicationLevelWithdrawal(current: DeliveredInProjectionIndexEntry, incoming: DeliveredInProjectionIndexEntry) {
+  const before = publicationVersionOf(current);
+  const after = publicationVersionOf(incoming);
+  if (!before || !after || before.publicationId !== after.publicationId || before.level === after.level) return undefined;
+  // A later publication version replaces an earlier one; an older or equal version can never override a withdrawal at that version.
+  return after.version > before.version ? "advance" as const : "superseded" as const;
+}
+
 function compareIndexEntry(current: DeliveredInProjectionIndexEntry | undefined, incoming: DeliveredInProjectionIndexEntry) {
   if (!current) return "advance" as const;
   const currentSemanticsVersion = projectionSemanticsVersion(current);
   const incomingSemanticsVersion = projectionSemanticsVersion(incoming);
   if (incomingSemanticsVersion > currentSemanticsVersion) return "advance" as const;
   if (incomingSemanticsVersion < currentSemanticsVersion) return "superseded" as const;
+  if (current.state === "withdrawn" && incoming.state !== "withdrawn") { const crossLevel = comparePublicationLevelWithdrawal(current, incoming); if (crossLevel) return crossLevel; }
   if (current.sourceSequence !== undefined && incoming.sourceSequence !== undefined && incoming.sourceSequence !== current.sourceSequence) return incoming.sourceSequence < current.sourceSequence ? "superseded" as const : "advance" as const;
   if (entryLineageKey(current) === entryLineageKey(incoming)) {
     if (incoming.state === "withdrawn") return current.state === "withdrawn" ? "idempotent" as const : "advance" as const;

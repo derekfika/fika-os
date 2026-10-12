@@ -212,3 +212,25 @@ test("hosted index heads are bounded to one OPLOC/week rather than all historica
   assert.match(store, /Array\.from\(\{ length: 7 \}/);
   assert.doesNotMatch(store, /projectionIndexHeads\(\)\.doc\(stableDocumentId\(oplocId\)\)/);
 });
+
+test("a day republished after a whole-week withdrawal advances even though its day version is lower than the withdrawn publication version", () => {
+  const pub = "menu-publication:rolling-week:2026-10-12";
+  const withdrawn = { ...indexEntry("2026-10-16", "withdrawn"), projectionSemanticsVersion: 2, sourceVersion: `${pub}:withdrawn:v4`, sourceSequence: 4, sourceLineageKey: `${pub}|withdrawn|4` };
+  const republished = { ...indexEntry("2026-10-16"), projectionSemanticsVersion: 2, sourceVersion: `${pub}:v5:day:4:v2:hash`, sourceSequence: 2, sourceLineageKey: `${pub}|${pub}:v5:day:4|2|hash` };
+  assert.equal(compareDeliveredInProjectionIndexEntry(withdrawn, republished), "advance");
+});
+
+test("an older publication version can never override a later whole-week withdrawal", () => {
+  const pub = "menu-publication:rolling-week:2026-10-12";
+  const withdrawn = { ...indexEntry("2026-10-16", "withdrawn"), projectionSemanticsVersion: 2, sourceVersion: `${pub}:withdrawn:v4`, sourceSequence: 4, sourceLineageKey: `${pub}|withdrawn|4` };
+  const staleDay = { ...indexEntry("2026-10-16"), projectionSemanticsVersion: 2, sourceVersion: `${pub}:v3:day:4:v9:hash`, sourceSequence: 9, sourceLineageKey: `${pub}|${pub}:v3:day:4|9|hash` };
+  const sameVersionDay = { ...staleDay, sourceVersion: `${pub}:v4:day:4:v9:hash` };
+  assert.equal(compareDeliveredInProjectionIndexEntry(withdrawn, staleDay), "superseded", "even with a higher day version, an earlier publication cannot resurrect the day");
+  assert.equal(compareDeliveredInProjectionIndexEntry(withdrawn, sameVersionDay), "superseded", "the withdrawal at the same publication version wins");
+});
+
+test("a different publication id is never compared across namespaces", () => {
+  const withdrawn = { ...indexEntry("2026-10-16", "withdrawn"), projectionSemanticsVersion: 2, sourceVersion: "menu-publication:a:withdrawn:v4", sourceSequence: 4, sourceLineageKey: "a|withdrawn|4" };
+  const other = { ...indexEntry("2026-10-16"), projectionSemanticsVersion: 2, sourceVersion: "menu-publication:b:v1:day:4:v2:hash", sourceSequence: 2, sourceLineageKey: "b|b:v1:day:4|2|hash" };
+  assert.equal(compareDeliveredInProjectionIndexEntry(withdrawn, other), "superseded", "unchanged behaviour: falls through to the existing sequence rule");
+});
