@@ -1398,6 +1398,7 @@ function BookingPane({
     viewUrl?: string;
     fileName: string;
     driveStatus: string;
+    approvalMode?: string;
     status?: "generating" | "ready" | "not_configured" | "failed" | "error";
     error?: string;
   };
@@ -1508,6 +1509,7 @@ function BookingDetail({
     viewUrl?: string;
     fileName: string;
     driveStatus: string;
+    approvalMode?: string;
     status?: "generating" | "ready" | "not_configured" | "failed" | "error";
     error?: string;
   };
@@ -1777,7 +1779,9 @@ function BookingDetail({
               >
                 <strong>Open allergen matrix</strong>
                 <small>
-                  {matrixArtifact.driveUrl
+                  {matrixArtifact.approvalMode === "reused_authority"
+                    ? "Approved by reuse of a previously signed sandwich set (not signed for this booking)"
+                    : matrixArtifact.driveUrl
                     ? "Signed PDF in site Drive"
                     : matrixArtifact.localUrl
                       ? "Local signed PDF"

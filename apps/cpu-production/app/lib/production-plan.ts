@@ -1,6 +1,6 @@
 import type { ReusedAllergenAuthority } from "../../lib/allergen-composition";
 import type { OperationalAllergenState } from "../../../shared/allergen-contract";
-import { allergenMatrixContentHash } from "../../lib/cpu-allergen-release";
+import { allergenMatrixContentHash, releaseMatrix } from "../../lib/cpu-allergen-release";
 import { isProductionPlanMatrixComplete } from "./production-plan-state";
 import { createHash } from "node:crypto";
 export type PlanStatus = "draft" | "planning" | "planned" | "rejected" | "needs_clarification";
@@ -114,6 +114,18 @@ export function currentAllergenReleaseMatchesOrder(release: CpuAllergenRelease |
 }
 
 /** Validate release source identity before a pending release is materialized. */
+/**
+ * A materialized release whose approval is a reused composition authority. It is deliberately a SEPARATE predicate from
+ * `currentAllergenReleaseMatchesOrder`: a reused release never satisfies the signed-release test, because it has no signatures.
+ */
+export function reusedAuthorityReleaseMatchesOrder(release: CpuAllergenRelease | undefined, order: SigningLineageOrder, menuItems: PlannedMenuItem[]) {
+  const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
+  if (!release || release.approvalMode !== "reused_authority" || !release.reusedAuthority || release.status !== "current" || release.materializationStatus !== "ready" || !scope) return false;
+  if (release.signatures.length > 0 || !isProductionPlanMatrixComplete(menuItems)) return false;
+  if (JSON.stringify(release.matrix) !== JSON.stringify(releaseMatrix(menuItems))) return false;
+  return sameMatrixSignatureScope(scope, { ...release, productionOrderId: scope.productionOrderId, matrixContentHash: scope.matrixContentHash }, false);
+}
+
 export function allergenReleaseLineageMatchesOrder(release: CpuAllergenRelease | undefined, order: SigningLineageOrder, menuItems: PlannedMenuItem[]) {
   const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
   if (!release || !scope) return false;

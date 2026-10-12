@@ -1,4 +1,4 @@
-import { applyReusedAuthority, buildAuthorityFromSignedPlan, clearReuse, compositionIdentity, evaluateReuse, reuseStillValid, type AllergenCompositionAuthority, type CompositionOrder, type ReuseRefusal } from "./allergen-composition";
+import { applyReusedAuthority, buildAuthorityFromSignedPlan, clearReuse, hasOwnSignedAuthority, compositionIdentity, evaluateReuse, reuseStillValid, type AllergenCompositionAuthority, type CompositionOrder, type ReuseRefusal } from "./allergen-composition";
 import type { AllergenAuthorityStore } from "./allergen-authority-store";
 import type { ProductionPlan } from "../app/lib/production-plan";
 
@@ -42,7 +42,7 @@ export async function adoptReusableAuthority(store: AllergenAuthorityStore, plan
 export async function reconcileReuse(store: AllergenAuthorityStore, plan: ProductionPlan, order: Order | undefined, input: { by: string; at: string }) {
   const reuse = plan.reusedAllergenAuthority;
   if (!reuse) return false;
-  if (plan.currentAllergenRelease || plan.signatures?.length) return clearReuse(plan, { ...input, reason: "This booking now carries its own signed allergen authority; reuse provenance was superseded." });
+  if (hasOwnSignedAuthority(plan)) return clearReuse(plan, { ...input, reason: "This booking now carries its own signed allergen authority; reuse provenance was superseded." });
   if (!reuseStillValid(plan, order)) return clearReuse(plan, { ...input, reason: "The booking composition or the reviewed states changed after a previous approval was reused; a fresh allergen review is required." });
   const authority = await store.get(reuse.compositionId);
   if (!authority || authority.status !== "active") return clearReuse(plan, { ...input, reason: "The previously approved allergen authority was revoked; a fresh allergen review is required." });
@@ -73,7 +73,7 @@ export async function reuseViewFor(store: AllergenAuthorityStore, plan: Producti
     if (!authority || authority.status !== "active") return { applied: { valid: false, invalidReason: "The previously approved authority was revoked.", provenance: reuse } };
     return { applied: { valid: true, provenance: reuse } };
   }
-  if (plan.currentAllergenRelease || plan.signatures?.length) return undefined;
+  if (hasOwnSignedAuthority(plan)) return undefined;
   const candidate = await reuseCandidateFor(store, plan, order);
   return candidate.available ? { candidate } : undefined;
 }

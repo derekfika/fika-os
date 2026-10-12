@@ -1,6 +1,6 @@
 import { canonicalJson, sha256 } from "@fika/server-shared/read-package";
 import { isCompleteOperationalAllergenMap, normaliseOperationalAllergens } from "../../shared/allergen-contract";
-import { hasAllergenAuthority, isProductionPlanMatrixComplete } from "../app/lib/production-plan-state";
+import { isProductionPlanMatrixComplete } from "../app/lib/production-plan-state";
 import type { PlannedMenuItem, PlannedSubItem, ProductionPlan } from "../app/lib/production-plan";
 
 /**
@@ -38,6 +38,12 @@ export type CompositionEntry = {
   allergenInputs: null | { states: Record<string, string>; evidence: string | null; mayContainNotes: string };
 };
 export type CompositionIdentity = { compositionId: string; identityVersion: string; entries: CompositionEntry[] };
+
+/** Signed authority belonging to the plan itself. A release that exists only because of a reused authority does not count. */
+export function hasOwnSignedAuthority(plan: Pick<ProductionPlan, "signatures" | "signedSignatures" | "signedMenuContentHash" | "currentAllergenRelease" | "signedMatrixArtifact">) {
+  const release = plan.currentAllergenRelease;
+  return Boolean(plan.signatures?.length || plan.signedSignatures?.length || plan.signedMenuContentHash || plan.signedMatrixArtifact || (release && release.approvalMode !== "reused_authority"));
+}
 
 const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
@@ -152,7 +158,7 @@ export type ReuseDecision = { ok: true; identity: CompositionIdentity } | { ok: 
 const REVIEWABLE: ProductionPlan["status"][] = ["draft", "planning", "needs_clarification"];
 
 /** Whether `authority` may be applied to this order's plan. Pure; never mutates. */
-export function evaluateReuse(order: CompositionOrder | undefined, plan: Pick<ProductionPlan, "status" | "signatures" | "signedSignatures" | "signedMenuContentHash" | "currentAllergenRelease" | "matrixArtifact" | "signedMatrixArtifact" | "masterMatrixArtifact" | "siteMatrixArtifacts" | "reusedAllergenAuthority">, authority: AllergenCompositionAuthority | undefined): ReuseDecision {
+export function evaluateReuse(order: CompositionOrder | undefined, plan: Pick<ProductionPlan, "status" | "signatures" | "signedSignatures" | "signedMenuContentHash" | "currentAllergenRelease" | "signedMatrixArtifact" | "reusedAllergenAuthority">, authority: AllergenCompositionAuthority | undefined): ReuseDecision {
   const identity = compositionIdentity(order);
   if (!identity) return { ok: false, reason: "composition_unavailable" };
   if (!authority) return { ok: false, reason: "authority_missing" };
@@ -160,7 +166,7 @@ export function evaluateReuse(order: CompositionOrder | undefined, plan: Pick<Pr
   if (authority.identityVersion !== identity.identityVersion) return { ok: false, reason: "identity_version_mismatch" };
   if (authority.compositionId !== identity.compositionId) return { ok: false, reason: "composition_mismatch" };
   if (authority.origin.orderId === order!.canonicalId) return { ok: false, reason: "own_authority" };
-  if (hasAllergenAuthority(plan)) return { ok: false, reason: "plan_already_signed" };
+  if (hasOwnSignedAuthority(plan)) return { ok: false, reason: "plan_already_signed" };
   if (!REVIEWABLE.includes(plan.status) && plan.reusedAllergenAuthority?.compositionId !== identity.compositionId) return { ok: false, reason: "plan_not_reviewable" };
   if (!authority.origin.signatures.some(s => s.role === "production_chef") || !authority.origin.signatures.some(s => s.role === "head_chef_site_manager")) return { ok: false, reason: "origin_signatures_missing" };
   const complete = authority.approvedMatrix.length === identity.entries.length && authority.approvedMatrix.every(line => line.subItems.length > 0 && line.subItems.every(sub => isCompleteOperationalAllergenMap(sub.allergens)));
@@ -209,7 +215,7 @@ export function reuseStillValid(plan: Pick<ProductionPlan, "menuItems" | "reused
 export function clearReuse(plan: ProductionPlan, input: { by: string; at: string; reason: string }) {
   if (!plan.reusedAllergenAuthority) return false;
   plan.reusedAllergenAuthority = undefined;
-  if (plan.status === "planned" && !hasAllergenAuthority(plan)) plan.status = "planning";
+  if (plan.status === "planned" && !hasOwnSignedAuthority(plan)) plan.status = "planning";
   plan.audit.push({ action: "allergen-reuse-invalidated", at: input.at, by: input.by, reason: input.reason });
   return true;
 }
