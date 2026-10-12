@@ -21,10 +21,32 @@ export function resolveBookingSender(oplocId: string | undefined, kind: BookingN
 }
 
 export function notificationIsCurrent(message: BookingNotificationRecord, booking: CanonicalBooking) {
+  if (message.kind === "confirmed") {
+    if (message.bookingId !== booking.canonicalId || !Number.isSafeInteger(message.bookingVersion) || message.bookingVersion! < 1 || !Number.isSafeInteger(booking.version) || message.bookingVersion! > booking.version || message.commercialVersion !== (booking.commercialVersion || 1) || !message.oplocId || message.oplocId !== booking.service.oplocId) return false;
+    if (!["Sent to CPU", "Approved", "Completed"].includes(booking.lifecycleStatus)) return false;
+    const committedAt = Date.parse(message.createdAt);
+    if (!Number.isFinite(committedAt)) return false;
+    // History is ordered at the authoritative transition. Using its position also
+    // catches a replacement committed in the same millisecond as this message.
+    const history = booking.statusHistory || [];
+    const audit = booking.audit || [];
+    const isBookkeeping = (action: string) => ["workflow-complete", "workflow-quote-pdf-status"].includes(action);
+    const origin = history.findIndex(event => event.changedAt === message.createdAt && ["Sent to CPU", "Approved"].includes(event.status));
+    const laterHistory = origin >= 0 ? history.slice(origin + 1) : history.filter(event => Date.parse(event.changedAt) > committedAt);
+    if (laterHistory.some(event => {
+      if (event.status === "Completed") return false;
+      const evidence = audit.filter(entry => entry.at === event.changedAt && entry.reason === event.reason);
+      // Repeated status entries can record PDF persistence rather than a new handoff.
+      return !evidence.length || evidence.some(entry => !isBookkeeping(entry.action));
+    })) return false;
+    const isConfirmation = (action: string) => action === "booking-sent-to-cpu" || action === "workflow-approve";
+    const auditOrigin = audit.findIndex(event => event.at === message.createdAt && isConfirmation(event.action));
+    const laterAudit = auditOrigin >= 0 ? audit.slice(auditOrigin + 1) : audit.filter(event => Date.parse(event.at) > committedAt);
+    return !laterAudit.some(event => isConfirmation(event.action) || (event.action.startsWith("workflow-") && !isBookkeeping(event.action)));
+  }
   if (!message.bookingVersion || message.bookingVersion !== booking.version || message.commercialVersion !== (booking.commercialVersion || 1) || message.oplocId !== booking.service.oplocId) return false;
   if (message.kind === "cancelled") return booking.lifecycleStatus === "Cancelled";
   if (booking.lifecycleStatus === "Cancelled" || booking.lifecycleStatus === "Completed") return false;
-  if (message.kind === "confirmed") return ["Sent to CPU", "Approved"].includes(booking.lifecycleStatus);
   return true;
 }
 
