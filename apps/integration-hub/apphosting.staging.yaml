@@ -19,6 +19,10 @@ env:
     value: "true"
     availability:
       - RUNTIME
+  - variable: FIKA_HOSPITALITY_EMAIL_UAT_BOOKING_IDS
+    value: booking:mnk:7822fbccc144898ce12a7dd748e4b378
+    availability:
+      - RUNTIME
   - variable: FIKA_DATA_SOURCE_TRACE
     value: "1"
     availability:
