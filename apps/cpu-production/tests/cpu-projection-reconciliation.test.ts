@@ -82,6 +82,8 @@ test("back-off is bounded, the window is bounded, and mode defaults to off outsi
   assert.equal(reconciliationWeeks(new Date("2026-10-09T10:00:00Z")).length, 7);
   assert.equal(reconciliationWeeks(new Date("2026-10-09T10:00:00Z"))[2], "2026-10-05");
   assert.equal(reconciliationMode({} as never), "off"); assert.equal(reconciliationMode({ FIKA_RUNTIME_MODE: "staging" } as never), "enforce");
+  assert.equal(reconciliationMode({ FIKA_RUNTIME_MODE: "production" } as never), "report", "production only diagnoses by default");
+  assert.equal(reconciliationMode({ FIKA_RUNTIME_MODE: "production", FIKA_CPU_PROJECTION_RECONCILIATION: "enforce" } as never), "enforce", "enforcement in production is an explicit opt-in");
   assert.equal(reconciliationMode({ FIKA_RUNTIME_MODE: "staging", FIKA_CPU_PROJECTION_RECONCILIATION: "report" } as never), "report");
 });
 

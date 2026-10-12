@@ -22,7 +22,11 @@ export type ReconciliationMode = "off" | "report" | "enforce";
 export function reconciliationMode(env: NodeJS.ProcessEnv = process.env): ReconciliationMode {
   const configured = env.FIKA_CPU_PROJECTION_RECONCILIATION;
   if (configured === "off" || configured === "report" || configured === "enforce") return configured;
-  return ["staging", "production"].includes(env.FIKA_RUNTIME_MODE || "") ? "enforce" : "off";
+  // Staging repairs divergence automatically. Production defaults to report-only (diagnose, never rebuild) until it is
+  // deliberately switched to enforce with FIKA_CPU_PROJECTION_RECONCILIATION=enforce.
+  if (env.FIKA_RUNTIME_MODE === "staging") return "enforce";
+  if (env.FIKA_RUNTIME_MODE === "production") return "report";
+  return "off";
 }
 
 const STATE_COLLECTION = "fikaCpuProjectionReconciliationV1";
