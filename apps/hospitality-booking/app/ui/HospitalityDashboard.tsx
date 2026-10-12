@@ -105,6 +105,7 @@ export default function HospitalityDashboard({
   const [error, setError] = useState("");
   const [pending, setPending] = useState<WorkflowAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const actionInFlight = useRef(false);
   const [actionStage, setActionStage] = useState("Working…");
   const [amendmentProgress, setAmendmentProgress] = useState<AmendmentProgress | null>(null);
   const [reason, setReason] = useState("");
@@ -380,7 +381,7 @@ export default function HospitalityDashboard({
     setError("");
     const action = actionOverride || pending;
     if (!selected || !action) return;
-    setActionStage(action === "Quoted" || action === "QuotePdfRetry" ? "Creating quote…" : "Saving changes…");
+    setActionStage(action === "Production" ? "Sending to CPU…" : action === "Quoted" || action === "QuotePdfRetry" ? "Creating quote…" : "Saving changes…");
     if (action === "QuotePdfRetry") {
       const current = selected.quoteState?.revisions.find((revision) => revision.id === selected.quoteState?.currentRevisionId);
       if (!current) {
@@ -519,7 +520,8 @@ export default function HospitalityDashboard({
   };
 
   const act = async (actionOverride?: WorkflowAction | null) => {
-    if (actionBusy) return;
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
     setActionStage("Working…");
     setActionBusy(true);
     try {
@@ -529,6 +531,7 @@ export default function HospitalityDashboard({
       setPending(null);
       void load(false);
     } finally {
+      actionInFlight.current = false;
       setActionBusy(false);
       setActionStage("");
     }
@@ -1064,6 +1067,7 @@ export default function HospitalityDashboard({
                   <button
                     key={booking.canonicalId}
                     className={`booking-card ${selected?.canonicalId === booking.canonicalId ? "booking-card--selected" : ""}`}
+                    disabled={actionBusy}
                     onClick={() => setSelected(booking)}
                   >
                     <span className="booking-card__date">
@@ -1095,7 +1099,16 @@ export default function HospitalityDashboard({
               className="hospitality-dashboard__detail"
               aria-live="polite"
             >
+              <div role="status" aria-live="polite" aria-atomic="true">
+                {actionBusy && (
+                  <p className={styles.actionProgress}>
+                    <span className={styles.spinner} aria-hidden="true" />
+                    {actionStage}
+                  </p>
+                )}
+              </div>
               {selected ? (
+                <fieldset className={styles.actionControls} disabled={actionBusy} aria-busy={actionBusy} aria-label="Booking details and actions">
                 <BookingPane
                   booking={selected}
                   siteKey={site.key}
@@ -1122,6 +1135,7 @@ export default function HospitalityDashboard({
                   onGenerateMenu={generateMenu}
                   onOpenMenu={openMenu}
                 />
+                </fieldset>
               ) : (
                 <div className="hospitality-dashboard__blank">
                   <p className="eyebrow">Ready when you are</p>
