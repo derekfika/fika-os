@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import BookingPortal from "./BookingPortal";
+import RcoaBookingPortal from "./RcoaBookingPortal";
 import HospitalityDashboard from "./HospitalityDashboard";
 import styles from "./HospitalityWorkspace.module.css";
 import {
@@ -35,7 +36,7 @@ function Notice({ title, copy, action = "Return to FIKA OS" }: { title: string; 
   );
 }
 
-export default function HospitalityWorkspace() {
+export default function HospitalityWorkspace({ rcoaConfigured = false }: { rcoaConfigured?: boolean } = {}) {
   const [sites, setSites] = useState<Site[]>([]);
   const [surfaces, setSurfaces] = useState(defaultSurfaces);
   const [selectedOplocId, setSelectedOplocId] = useState("");
@@ -116,6 +117,8 @@ export default function HospitalityWorkspace() {
   if (unauthorisedOplocId) return <Notice title="Hospitality location not authorised" copy={`Your account is not authorised for ${unauthorisedOplocId}. Choose an authorised Hospitality workspace instead.`} />;
   if (!sites.length) return <Notice title="Hospitality access unavailable" copy="Your account does not currently have access to a Hospitality location." />;
   if (surface === "booking" && active && canBook) {
+    // RCoA submits through its governed portal (trusted payload + expected-OPLOC header), never the generic booking form.
+    if (active.portalSiteKey === "rcoa") return <RcoaBookingPortal configured={rcoaConfigured} />;
     return <BookingPortal siteKey={active.portalSiteKey} oplocId={active.id} siteLabel={active.label} />;
   }
   if (surface === "operations" && active && canOperate) {

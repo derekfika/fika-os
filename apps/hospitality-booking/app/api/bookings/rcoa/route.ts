@@ -27,6 +27,12 @@ export async function POST(request: NextRequest) {
       });
       recordDataAccess({ operation: "booking.create.rcoa", source: "NETWORK_UPSTREAM", documents: 0, dataset: "hospitality/bookings" });
       const bodyText = await response.text();
+      if (!response.ok) {
+        try {
+          const error = (JSON.parse(bodyText) as { error?: { code?: unknown; requestId?: unknown } }).error;
+          console.error("hospitality.booking.create.upstream-rejected", { path: "/api/bookings/rcoa", status: response.status, code: typeof error?.code === "string" ? error.code : undefined, hubRequestId: typeof error?.requestId === "string" ? error.requestId : undefined });
+        } catch { console.error("hospitality.booking.create.upstream-rejected", { path: "/api/bookings/rcoa", status: response.status }); }
+      }
       try {
         return NextResponse.json(JSON.parse(bodyText), { status: response.status });
       } catch {
