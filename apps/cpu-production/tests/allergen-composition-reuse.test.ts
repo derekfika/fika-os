@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAuthorityFromSignedPlan, compositionEntryForLine, compositionIdentity, entryKey, reuseValidity, type CompositionOrder } from "../lib/allergen-composition";
+import { canonicalJson, sha256 } from "@fika/server-shared/read-package";
+import { buildAuthorityFromSignedPlan, evaluateReuse, compositionEntryForLine, compositionIdentity, entryKey, reuseValidity, type CompositionOrder } from "../lib/allergen-composition";
 import { applyApproval, applyOriginRevocation, evaluateAuthorityTransition, AuthorityGuardFailure, authorityRequirementOf } from "../lib/allergen-authority-store";
 import type { ProductionPlan } from "../app/lib/production-plan";
 import { CANONICAL_ALLERGEN_KEYS, normaliseOperationalAllergens } from "../../shared/allergen-contract";
@@ -87,6 +88,21 @@ test("identity fields: sourceOfferingId only (current staging shape), sourceMenu
   assert.equal(compositionIdentity(order("o", [{ id: "1", item: same }]))!.identityVersion, "fika.allergen-composition.v3");
   // all previous exclusions are unchanged: ordering, quantities, display text, dietaries
   assert.equal(id([{ id: "1", offering: same, qty: 3 }, { id: "2", offering: `${same}2` }]), id([{ id: "9", offering: `${same}2`, qty: 80 }, { id: "8", offering: same }]));
+});
+test("v2 and v3 authorities cannot cross-match", () => {
+  const o1 = order("o1", [{ id: "1", offering: "x" }]);
+  const v3 = compositionIdentity(o1)!;
+  const v2Id = sha256(`fika.allergen-composition.v2
+${canonicalJson(v3.entries)}`);
+  assert.notEqual(v2Id, v3.compositionId, "the identity version is part of the hashed input, so the same entries have different v2 and v3 ids");
+  const authority = buildAuthorityFromSignedPlan(signed(o1, "r1"), o1, AT, "c")!;
+  const other = order("o2", [{ id: "1", offering: "x" }]);
+  const planX = plan(other); planX.status = "planning";
+  assert.equal(evaluateReuse(other, planX, authority).ok, true, "a v3 authority matches a v3 composition");
+  // an authority stored under a v2 id does not match the v3 composition...
+  assert.deepEqual(evaluateReuse(other, planX, { ...authority, identityVersion: "fika.allergen-composition.v2", compositionId: v2Id }), { ok: false, reason: "identity_version_mismatch" });
+  // ...and even a record forced onto the v3 composition id is refused for its version
+  assert.deepEqual(evaluateReuse(other, planX, { ...authority, identityVersion: "fika.allergen-composition.v2" }), { ok: false, reason: "identity_version_mismatch" });
 });
 test("ineligible orders have no identity (fresh review): missing item id, other workstream, other origin, no delivery", () => {
   assert.equal(id([{ id: "1", item: "" }]), undefined);
