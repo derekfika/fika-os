@@ -14,7 +14,7 @@ const { loadGuardedPlansForOrders } = await import("../lib/cpu-guarded-plans");
 const { revalidateProjectionAuthority } = await import("../lib/cpu-projection-authority");
 const { buildCpuDayProjection } = await import("../lib/cpu-projection");
 const { loadDeliveredInReviewStatuses } = await import("../lib/delivered-in-review");
-const { selectedPlanResponseBody, servicePlansResponseBody, applyReuseResponse } = await import("../lib/cpu-plan-response");
+const { selectedPlanResponseBody, servicePlansResponseBody, applyReuseResponse, finalApplyResponse } = await import("../lib/cpu-plan-response");
 const lineCases = await import("./support/line-association-cases");
 const { resetCpuOutboxForTests, listCpuOutboxForTests } = await import("../lib/cpu-durable-outbox");
 const { materializeCpuAllergenRelease } = await import("../lib/cpu-allergen-release");
@@ -808,7 +808,36 @@ test("P1-2: every apply-reused-authority response path is guarded and fails clos
   assertFailClosed(await applyReuseResponse(store, { plan: plain, order: o as never }));
   // the route answers through the builder on every path and never returns the raw reloaded plan
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
-  assert.equal((route.match(/applyReuseResponse\(/g) || []).length, 2, "new adoption and replay both use the guarded builder");
+  assert.equal((route.match(/finalApplyResponse\(/g) || []).length, 1, "the guarded final-response builder is the only constructor");
+  assert.equal((route.match(/finalise\(/g) || []).length, 2, "new adoption and replay both answer through it");
+  assert.match(route, /loadOrder: id => loadOrder\(request, id\)/, "the LATEST canonical order is reloaded for the final response");
   assert.doesNotMatch(route, /finalPlan/);
   assert.doesNotMatch(route, /reuse: \{ applied: true(, unchanged: true)? \}[^)]*NextResponse|NextResponse\.json\(\{ plan: result\.plan/);
+});
+
+test("P1 (stale order): the final apply response validates against the LATEST canonical order, reloaded after the wait", async () => {
+  const h = await harness();
+  const { o } = await h.adopt("o-other");
+  await makeReady(h, "o-other");
+  const loads: string[] = [];
+  const base = { orderId: "o-other", fallbackPlan: (await h.plans.get("o-other"))!, loadPlan: (id: string) => h.plans.get(id) };
+  // order A is still current: success
+  const ok = await finalApplyResponse(store, { ...base, loadOrder: async id => { loads.push(id); return o as never; } });
+  assert.equal(ok.status, 200); assert.deepEqual(loads, ["o-other"], "the order was reloaded for the response");
+  // identity-relevant change (bread instructions) while the command waited: the reloaded order B no longer matches the adopted composition
+  const changed = order("o-other", ITEMS, {}, { productionInstructions: "Use sourdough" });
+  for (const unchanged of [false, true]) {
+    const failed = await finalApplyResponse(store, { ...base, unchanged, loadOrder: async () => changed as never });
+    assert.equal(failed.status, 409); assert.equal((failed.body.plan as ProductionPlan).currentAllergenRelease, undefined);
+    assert.notEqual((failed.body.plan as ProductionPlan).status, "planned"); assert.deepEqual(failed.body.reuse, { applied: false });
+    assert.equal((failed.body.error as { code: string }).code, "CPU_ALLERGEN_REUSE_AUTHORITY_REVOKED");
+  }
+  // the canonical order cannot be loaded (throws or returns nothing): fail closed
+  for (const loadOrder of [async () => { throw new Error("hub unavailable"); }, async () => undefined]) {
+    const failed = await finalApplyResponse(store, { ...base, loadOrder: loadOrder as never });
+    assert.equal(failed.status, 409); assert.deepEqual(failed.body.reuse, { applied: false });
+  }
+  // the plan is reloaded too: a plan reopened meanwhile is not reported as success
+  const failed = await finalApplyResponse(store, { ...base, loadPlan: async () => planFor(o, {}, { status: "planning" }), loadOrder: async () => o as never });
+  assert.equal(failed.status, 409);
 });

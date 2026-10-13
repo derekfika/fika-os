@@ -44,11 +44,24 @@ export function servicePlansResponseBody(visiblePlans: ProductionPlan[], orders:
  * the authority is no longer valid (revoked during delivery, re-approved, unverifiable, or the adoption is gone) the response is
  * a 409 carrying the downgraded plan: it never exposes the reused release as authoritative and never reports success by reuse.
  */
-export async function applyReuseResponse(store: AllergenAuthorityStore, input: { plan: ProductionPlan; order: ProductionOrder; unchanged?: boolean; materializationDelivery?: unknown }): Promise<{ status: number; body: Record<string, unknown> }> {
+export async function applyReuseResponse(store: AllergenAuthorityStore, input: { plan: ProductionPlan; order: ProductionOrder | undefined; unchanged?: boolean; materializationDelivery?: unknown }): Promise<{ status: number; body: Record<string, unknown> }> {
   const safe = await guardReusedPlan(store, input.plan, input.order as never);
   const applied = safe === input.plan && Boolean(safe.reusedAllergenAuthority);
   if (!applied) {
     return { status: 409, body: { error: { code: "CPU_ALLERGEN_REUSE_AUTHORITY_REVOKED", message: "The approved allergen authority is no longer valid for this booking. A fresh allergen review is required." }, plan: safe, plans: [safe], reuse: { applied: false }, approvedMatrixAvailable: false, notifications: [], menus: [] } };
   }
-  return { status: 200, body: { plan: safe, reuse: { applied: true, ...(input.unchanged ? { unchanged: true } : {}) }, approvedMatrixAvailable: reusedAuthorityReleaseMatchesOrder(safe.currentAllergenRelease, input.order, safe.menuItems), ...(input.materializationDelivery ? { materializationDelivery: input.materializationDelivery } : {}) } };
+  return { status: 200, body: { plan: safe, reuse: { applied: true, ...(input.unchanged ? { unchanged: true } : {}) }, approvedMatrixAvailable: Boolean(input.order && reusedAuthorityReleaseMatchesOrder(safe.currentAllergenRelease, input.order, safe.menuItems)), ...(input.materializationDelivery ? { materializationDelivery: input.materializationDelivery } : {}) } };
+}
+
+/**
+ * Final `apply-reused-authority` response. It never validates against a snapshot captured before the command waited on
+ * delivery/materialization: it reloads the CURRENT CPU plan and the LATEST canonical order from the canonical provider and only
+ * then builds the guarded response. If the canonical order cannot be loaded, or its composition no longer matches the adopted
+ * one, the response fails closed exactly like a revoked authority.
+ */
+export async function finalApplyResponse(store: AllergenAuthorityStore, input: { orderId: string; fallbackPlan: ProductionPlan; loadPlan: (orderId: string) => Promise<ProductionPlan | undefined>; loadOrder: (orderId: string) => Promise<ProductionOrder | undefined>; unchanged?: boolean; materializationDelivery?: unknown }) {
+  const plan = (await input.loadPlan(input.orderId)) ?? input.fallbackPlan;
+  let order: ProductionOrder | undefined;
+  try { order = await input.loadOrder(input.orderId); } catch { order = undefined; }
+  return applyReuseResponse(store, { plan, order, unchanged: input.unchanged, materializationDelivery: input.materializationDelivery });
 }
