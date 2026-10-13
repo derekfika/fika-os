@@ -450,9 +450,9 @@ test("allergen checker uses the master-style purple header and four-state cells"
   assert.match(liana, /onPointerDown/);
   assert.match(liana, /Use your finger, stylus or mouse/);
   assert.match(liana, /reviewLockedByAuthority/);
-  assert.match(liana, /disabled=\{busy \|\| reviewLockedByAuthority \|\| sub\.evidenceStatus === "completed"\}/);
+  assert.match(liana, /disabled=\{readOnly \|\| sub\.evidenceStatus === "completed" \|\| !rowCanBeChecked\(sub\)\}/);
   assert.doesNotMatch(liana, /if \(planStatus === "planned"\) return/);
-  assert.match(liana, /isCompleteOperationalAllergenMap\(candidate\.allergens\)/);
+  assert.match(readFileSync(new URL("../app/ui/allergen-review-persistence.ts", import.meta.url), "utf8"), /isCompleteOperationalAllergenMap\(displayAllergenMap\(sub\.allergens\)\)/);
   assert.match(planCommandSchema, /mayContainNotes/);
   assert.match(planRoute, /allergen-matrix-signed/);
   assert.match(planRoute, /save-matrix/);
@@ -590,8 +590,10 @@ test("canonical MNK menu identities remain routable after a hand-off", () => {
 });
 
 test("Liana workflow keeps production planning separate from later completion tracking", () => {
-  assert.match(liana, /Save partial plan/);
-  assert.match(liana, /Mark as Planned/);
+  // Persistence is automatic (debounced autosave through the existing save-plan / mark-planned commands), not a manual button.
+  assert.doesNotMatch(liana, /Save partial plan/);
+  assert.doesNotMatch(liana, /Mark as Planned/);
+  assert.match(liana, /createAutosaveController/);
   assert.doesNotMatch(liana, /Actual made/);
   assert.doesNotMatch(liana, /Shortfall/);
   assert.doesNotMatch(liana, /Substitution/);
