@@ -20,7 +20,7 @@ import { CANONICAL_ALLERGEN_COLUMNS, isCompleteOperationalAllergenMap, normalise
 import { matrixColumns } from "./allergen-matrix";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 import { canonicalAllergenMatrixForHash } from "../../../shared/allergen-matrix-hash";
-import { ALLERGEN_STATE_WORDS, autosaveAction, checkRowInItems, createAutosaveController, displayAllergenMap, reviewProgress, reviewStatusCopy, rowCanBeChecked, rowUncheckedCount, signButtonState, signingGate, toggleCellInItems, type AutosaveState, type SigningBlock } from "./allergen-review-persistence";
+import { ALLERGEN_STATE_WORDS, autosaveAction, checkRowInItems, createAutosaveController, displayAllergenMap, reviewProgress, reviewStatusCopy, rowCanBeChecked, rowUncheckedCount, signButtonState, signingGate, toggleCellInItems, unrecordedAllergenMap, type AutosaveState, type SigningBlock } from "./allergen-review-persistence";
 const allergenColumns = matrixColumns;
 const productionPlanEndpoint = "/api/production-plan";
 
@@ -57,8 +57,9 @@ function menuItemLibraryKey(name: string) {
   return `menu-item:${slug || "untitled"}`;
 }
 
+// New review rows start with every allergen UNRECORDED (shown as "Not checked"); a chef must explicitly review each one.
 function emptyAllergens(): Record<string, AllergenCellState> {
-  return Object.fromEntries(CANONICAL_ALLERGEN_COLUMNS.map(([key]) => [key, "clear"]));
+  return unrecordedAllergenMap(CANONICAL_ALLERGEN_COLUMNS.map(([key]) => key));
 }
 
 function initialMenuItems(order: ProductionOrder): PlannedMenuItem[] {
