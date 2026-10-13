@@ -187,19 +187,19 @@ test("a failed materialization dispatch never fails or delays the signature, and
   } finally { globalThis.fetch = realFetch; }
 });
 
-test("Hub order reads per request: an ordinary save reads the order once; sign reads it twice (initial + safety boundary); a request that transitions Hub re-reads after the transition", opts, async () => {
+test("Hub order reads per request: an ordinary save reads the order twice (initial + the fresh pre-commit snapshot); sign twice (initial + safety boundary); repeated non-safety reads are cached", opts, async () => {
   hub.install();
   try {
-    // save-plan on a valid accepted order: exactly one read
+    // save-plan on a valid accepted order: the request read plus ONE fresh pre-commit snapshot (the freshness boundary feeding the commit and the guarded response)
     const order = makeOrder("accepted"); hub.reset(order);
     const save = await post({ action: "save-plan", orderId: order.canonicalId, menuItems: complete(order).map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, evidenceStatus: "not_completed" })) })), planningNotes: "", commandId: `sp-${unique()}-cmd` });
     assert.equal(save.status, 200, JSON.stringify(save.body.error));
-    assert.equal(hub.orderReads, 1, "one canonical read per ordinary save (was 5)");
-    // mark-planned on an already accepted order: one read (the lifecycle sync reuses it), no Hub write
+    assert.equal(hub.orderReads, 2, "two canonical reads per ordinary save: initial + fresh pre-commit snapshot (5 before the performance patch; 1 in b61d7c8, which hid a stale-composition race)");
+    // mark-planned on an already accepted order: initial + fresh pre-commit snapshot (the lifecycle sync reuses the initial read), no Hub write
     stage(order);
     const planned = await markPlanned(order);
     assert.equal(planned.status, 200);
-    assert.equal(hub.orderReads, 1);
+    assert.equal(hub.orderReads, 2);
     assert.deepEqual(hub.transitions, []);
     // mark-planned on a draft order walks Hub, so the state read before the transitions is stale and the request reads again afterwards
     const draft = makeOrder("draft"); hub.reset(draft);
@@ -207,7 +207,7 @@ test("Hub order reads per request: an ordinary save reads the order once; sign r
     assert.equal(walked.status, 200, JSON.stringify(walked.body.error));
     assert.deepEqual(hub.transitions, ["needs_review", "accepted"]);
     assert.equal(hub.orders.get(draft.canonicalId)!.status, "accepted");
-    assert.equal(hub.orderReads, 2, "the initial read (shared with the lifecycle sync) + one fresh read after the Hub transitions; no redundant identical reads");
+    assert.equal(hub.orderReads, 2, "the initial read (shared with the lifecycle sync) + one fresh read after the Hub transitions (also the pre-commit snapshot); no redundant identical reads");
   } finally { globalThis.fetch = realFetch; }
 });
 

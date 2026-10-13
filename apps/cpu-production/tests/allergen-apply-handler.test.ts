@@ -51,6 +51,8 @@ class Provider {
   /** Runs inside the post-commit materialization delivery, i.e. while the apply command is waiting. */
   onDelivery?: () => void;
   failOrderReads = false;
+  /** Runs inside the accept confirmation call: a canonical composition change that lands DURING that call. */
+  onConfirm?: () => void;
   unhandled: string[] = [];
   install() {
     globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
@@ -67,6 +69,7 @@ class Provider {
         if (order && body.status) { order.status = body.status; order.version += 1; }
         return json({ order: order ? structuredClone(order) : undefined });
       }
+      if (url.pathname.includes("/api/hospitality/production-confirmation")) { this.onConfirm?.(); return json({ status: "sent" }); }
       if (url.pathname.includes("/api/internal/cpu-release-materialize")) { this.onDelivery?.(); return json({ status: "materialized" }); }
       if (url.pathname.includes("invalidate")) return json({ ok: true });
       this.unhandled.push(`${init?.method || "GET"} ${url.href}`);
@@ -78,7 +81,7 @@ const realFetch = globalThis.fetch;
 const provider = new Provider();
 
 async function seed() {
-  provider.orders.clear(); provider.onDelivery = undefined; provider.failOrderReads = false;
+  provider.orders.clear(); provider.onDelivery = undefined; provider.failOrderReads = false; provider.onConfirm = undefined;
   const items = [`item:${unique()}:ham`, `item:${unique()}:veg`];
   const originOrder = makeOrder(`o-origin-${unique()}`, items); provider.orders.set(originOrder.canonicalId, originOrder);
   const compositionId = compositionIdentity(originOrder as never)!.compositionId;
@@ -89,7 +92,7 @@ async function seed() {
     currentAllergenRelease: { releaseId, version: 1, matrixContentHash: `mh:${releaseId}`, signedAt: AT, status: "current", signatures, compositionId, masterArtifact: { id: "m", fileName: "m.pdf", createdAt: AT, createdBy: "t", contentHash: "d".repeat(64), pdfStatus: "generated", driveStatus: "saved" }, derivedArtifacts: [], packetArtifacts: [] } as never };
   await plans.save(originPlan);
   await recordSignedApproval({ store }, originPlan, originOrder as never, AT, "chef");
-  const adopter = makeOrder(`o-adopter-${unique()}`, items, {}, originOrder.serviceDate as string); provider.orders.set(adopter.canonicalId, adopter);
+  const adopter = makeOrder(`production-order:v1:booking:mnk:o-adopter-${unique()}`, items, {}, originOrder.serviceDate as string); provider.orders.set(adopter.canonicalId, adopter);
   return { items, adopter, compositionId };
 }
 const apply = async (orderId: string, commandId = `apply-${unique()}-cmd`) => {
@@ -159,5 +162,40 @@ test(`handler[${repoMode}]: the latest canonical order cannot be loaded after de
     const s = await seed();
     provider.onDelivery = () => { provider.failOrderReads = true; };
     assertFailClosed(await apply(s.adopter.canonicalId), "order unreadable after delivery");
+  } finally { globalThis.fetch = realFetch; }
+});
+
+const accept = async (orderId: string) => {
+  const response = await route!.POST(new NextRequest("http://localhost:3400/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "accept", orderId, commandId: `accept-${unique()}-cmd` }) }));
+  return { status: response.status, body: await response.json() as Record<string, unknown> & { plan?: ProductionPlan; error?: { code?: string } } };
+};
+
+test(`handler[${repoMode}]: P1-1 — the canonical composition changes DURING the accept confirmation call: the final response guard reloads the latest order and suppresses the reused release`, opts, async () => {
+  provider.install();
+  try {
+    const s = await seed();
+    const adopted = await apply(s.adopter.canonicalId);
+    assert.equal(adopted.status, 200, JSON.stringify(adopted.body.error));
+    assert.equal(adopted.body.plan?.currentAllergenRelease?.approvalMode, "reused_authority", "the adopter holds a valid reused release before the accept");
+    // 1. the request loads canonical order A (first read) and syncs lifecycle; 2. the confirmation call is made;
+    // 3. the canonical provider advances the composition to B during that call; 4. the final guard must reload B.
+    provider.onConfirm = () => { provider.orders.set(s.adopter.canonicalId, breadChanged(provider.orders.get(s.adopter.canonicalId)!)); };
+    const result = await accept(s.adopter.canonicalId);
+    assert.deepEqual(provider.unhandled, [], "the provider stub covered every upstream call");
+    assert.ok(result.status === 200 || result.status === 409, `accept answered ${result.status}: ${JSON.stringify(result.body.error)}`);
+    assert.equal(result.body.plan?.currentAllergenRelease, undefined, "the reused release must not survive a composition change that landed during the call");
+    assert.equal(result.body.plan?.matrixArtifact, undefined);
+    assert.notEqual(result.body.plan?.status, "planned");
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test(`handler[${repoMode}]: P1-1 control — an accept with no composition change keeps its reused release readable path intact (no false suppression)`, opts, async () => {
+  provider.install();
+  try {
+    const s = await seed();
+    assert.equal((await apply(s.adopter.canonicalId)).status, 200);
+    const result = await accept(s.adopter.canonicalId);
+    assert.equal(result.status, 200, JSON.stringify(result.body.error));
+    assert.equal(result.body.plan?.currentAllergenRelease?.approvalMode, "reused_authority", "unchanged composition: the reused release remains valid");
   } finally { globalThis.fetch = realFetch; }
 });

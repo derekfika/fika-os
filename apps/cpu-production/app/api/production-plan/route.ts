@@ -217,8 +217,21 @@ function initialPlan(orderId: string, order?: Awaited<ReturnType<typeof producti
   const timestamp = now();
   return { id: `production-plan:${orderId}`, orderId, status: "draft", menuItems: (order?.lines || []).map((line, index) => ({ id: `menu-item:${orderId}:${index + 1}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:${index + 1}:1`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" }] })), planningNotes: "", updatedAt: timestamp, updatedBy: "local-fixture", audit: [{ action: "plan-created", at: timestamp, by: "local-fixture" }] };
 }
+/**
+ * A release whose materialization has not completed (pending, or current but not ready). Materialization finishes asynchronously, through
+ * the outbox, possibly on another instance, so a plan cached by THIS instance in that state is never authoritative: it is refreshed from
+ * the persisted plan on every read until the persisted plan is ready. Stable plans keep their normal caching.
+ */
+function awaitingMaterialization(plan: ProductionPlan | undefined) {
+  const release = plan?.currentAllergenRelease;
+  return Boolean(release && ["pending", "current"].includes(release.status) && release.materializationStatus !== "ready");
+}
 async function getPlan(request: NextRequest, orderId: string, knownPlan?: ProductionPlan) {
   if (knownPlan) { const normalized = normalisePlanAllergens(knownPlan); plans.set(orderId, { ...normalized, status: effectiveProductionPlanStatus(normalized) }); }
+  else if (awaitingMaterialization(plans.get(orderId))) {
+    const persisted = await planRepository.get(orderId); // the authoritative plan may have completed materialization elsewhere
+    if (persisted) { const normalized = normalisePlanAllergens(persisted); plans.set(orderId, { ...normalized, status: effectiveProductionPlanStatus(normalized) }); }
+  }
   if (!plans.has(orderId)) {
     const persisted = await planRepository.get(orderId);
     if (persisted) { const normalized = normalisePlanAllergens(persisted); plans.set(orderId, { ...normalized, status: effectiveProductionPlanStatus(normalized) }); }
@@ -389,7 +402,7 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
     updateLocalFixture(operation.orderId, current => ({ ...current, status: "planning", version: current.version + 1 }));
     plan.updatedAt = timestamp;
     plan.updatedBy = auditActor;
-    const changedOrder = await loadOrder(request, operation.orderId);
+    const changedOrder = await loadOrder(request, operation.orderId, { fresh: true }); // freshness boundary: feeds the committed event and revocation
     const authorityClause = originRevocationClause({ before: releaseBeforeReopen, beforePlan: storedPlan, plan, order: order as never, actor: auditActor, at: timestamp, explicitReopen: true });
     if (!changedOrder?.serviceDate) {
       await persistPlan(plan, storedPlan?.updatedAt, authorityClause);
@@ -456,7 +469,7 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
   const timestamp = now();
   await reconcileAllergenReuse(plan, order, auditActor, timestamp);
   plan.updatedAt = timestamp; plan.updatedBy = auditActor;
-  const changedOrder = await loadOrder(request, operation.orderId);
+  const changedOrder = await loadOrder(request, operation.orderId, { fresh: true }); // freshness boundary: feeds the committed event and revocation
   const authorityClause = originRevocationClause({ before: storedPlan?.currentAllergenRelease, beforePlan: storedPlan, plan, order: order as never, actor: auditActor, at: timestamp });
   if (!changedOrder?.serviceDate) {
     await persistPlan(plan, storedPlan?.updatedAt, authorityClause);
@@ -583,7 +596,8 @@ async function handlePost(request: NextRequest) {
     if (command.action === "retry-materialization") {
       if (!storedPlan) throw Object.assign(new Error("The persisted CPU production plan could not be loaded for materialization retry."), { status: 409, code: "CPU_PLAN_NOT_FOUND" });
       const retried = await retryCommittedCpuMaterialization({ plan: normalisePlanAllergens(storedPlan), order: currentOrder, expectedLineage: command.expectedLineage, timestamp: now() });
-      const guardedRetry = await guardReusedPlan(allergenAuthorityStore, retried.plan, currentOrder as never);
+      // the retry waited on materialization, so the final guard reads the LATEST canonical order, not the request's first read
+      const guardedRetry = await guardReusedPlan(allergenAuthorityStore, retried.plan, ((await loadOrder(request, command.orderId, { fresh: true })) || currentOrder) as never);
       return NextResponse.json({ ...retried, plan: guardedRetry, matrixArtifact: guardedRetry.matrixArtifact ?? null });
     }
     const plan = await getPlan(request, command.orderId, storedPlan);
@@ -722,7 +736,10 @@ async function handlePost(request: NextRequest) {
     }
     await reconcileAllergenReuse(plan, currentOrder, auditActor, timestamp);
     plan.updatedAt = timestamp; plan.updatedBy = auditActor;
-    const changedOrder = await loadOrder(request, command.orderId);
+    // FRESHNESS BOUNDARY: this snapshot feeds the committed event and the final guarded response, so it is read fresh whenever anything
+    // in this request (a Hub transition, the accept confirmation call, an await on other systems) could have advanced the canonical
+    // composition since the request's first read. Only `sign-matrix` reuses its own immediately preceding fresh safety read.
+    const changedOrder = await loadOrder(request, command.orderId, { fresh: command.action !== "sign-matrix" });
     const candidateReleaseForEvent = plan.currentAllergenRelease?.status === "current" && plan.currentAllergenRelease.materializationStatus === "ready" ? plan.currentAllergenRelease : revokedReleaseForEvent;
     const releaseForEvent = candidateReleaseForEvent?.packetArtifacts?.[0]?.contentHash ? candidateReleaseForEvent : undefined;
     const releaseOplocIds = changedOrder?.destinationOplocId ? [changedOrder.destinationOplocId] : [];
