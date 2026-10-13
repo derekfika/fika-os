@@ -19,6 +19,7 @@ const { compositionIdentity } = await import("../lib/allergen-composition");
 const { cpuChangeReceipts } = await import("../lib/cpu-projection-repository");
 const { CANONICAL_ALLERGEN_KEYS, normaliseOperationalAllergens } = await import("../../shared/allergen-contract");
 const lineCases = await import("./support/line-association-cases");
+const schemeCases = await import("./support/identity-scheme-cases");
 const { applyReuseResponse } = await import("../lib/cpu-plan-response");
 import type { ProductionPlan } from "../app/lib/production-plan";
 
@@ -221,4 +222,8 @@ test("Firestore: the apply response is guarded; an authority revoked after commi
   assert.equal(revoked.status, 409);
   assert.equal((revoked.body.plan as ProductionPlan).currentAllergenRelease, undefined);
   assert.deepEqual(revoked.body.reuse, { applied: false });
+});
+
+test("Firestore: sourceMenuItemId and sourceOfferingId are distinct identity fields; records identified through different fields never reuse each other's authority", opts, async () => {
+  await schemeCases.identitySchemeCases({ label: "firestore", plans, store, unique });
 });

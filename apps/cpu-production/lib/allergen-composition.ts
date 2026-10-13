@@ -15,7 +15,7 @@ import type { PlannedMenuItem, PlannedSubItem, ProductionPlan } from "../app/lib
  * provenance. Reuse never signs, never copies signatures, and never touches the origin plan, release or signatures.
  */
 
-export const COMPOSITION_IDENTITY_VERSION = "fika.allergen-composition.v2";
+export const COMPOSITION_IDENTITY_VERSION = "fika.allergen-composition.v3";
 export const AUTHORITY_SCHEMA = "fika.cpu-allergen-composition-authority.v2";
 /** Only these workstreams are eligible: reuse is scoped to Hospitality sandwich lunches. */
 export const REUSABLE_WORKSTREAMS = ["sandwiches"] as const;
@@ -39,7 +39,13 @@ export type CompositionLine = {
 export type CompositionOrder = { canonicalId: string; origin?: string; requiresDelivery?: boolean; lines: CompositionLine[] };
 
 export type CompositionEntry = {
-  itemId: string;
+  /**
+   * The two stable canonical identifiers are DISTINCT identity fields, never aliases. `itemId` is the canonical Menu Item
+   * (`sourceMenuItemId`, the legacy shape); `offeringId` is the canonical offering (`sourceOfferingId`, the current Hospitality
+   * shape). A missing one is `null`, so a record identified only by `sourceMenuItemId: "x"` and one identified only by
+   * `sourceOfferingId: "x"` have different entries and different composition identities even though the raw strings are equal.
+   */
+  itemId: string | null;
   offeringId: string | null;
   choices: string[];
   /** Normalised production-affecting free text (substitution, instructions, serving guidance, description). Empty when none. */
@@ -70,19 +76,20 @@ function normaliseChoiceValue(value: unknown): unknown {
 }
 
 /**
- * Only Hospitality sandwich-lunch orders whose every line carries a stable catalogue item ID have a composition identity.
+ * Only Hospitality sandwich-lunch orders whose every line carries at least one stable canonical identifier (`sourceMenuItemId` and/or
+ * `sourceOfferingId`) have a composition identity.
  * A line with conflicting allergen evidence or an open production exception is never eligible: fail closed, fresh review.
  */
 export function isCompositionEligible(order: CompositionOrder | undefined): order is CompositionOrder {
   if (!order || order.origin !== "hospitality_booking" || order.requiresDelivery === false || !order.lines?.length) return false;
-  return order.lines.every(line => Boolean(text(line.sourceMenuItemId)) && (REUSABLE_WORKSTREAMS as readonly string[]).includes(line.workstream || "")
+  return order.lines.every(line => Boolean(text(line.sourceMenuItemId) || text(line.sourceOfferingId)) && (REUSABLE_WORKSTREAMS as readonly string[]).includes(line.workstream || "")
     && line.allergenEvidenceStatus !== "conflicting" && line.approvedAllergenSnapshot?.allergenEvidenceStatus !== "conflicting" && line.status !== "exception" && !(line.exceptions && line.exceptions.length));
 }
 
 export function compositionEntryForLine(line: CompositionLine): CompositionEntry {
   const snapshot = line.approvedAllergenSnapshot;
   return {
-    itemId: text(line.sourceMenuItemId),
+    itemId: text(line.sourceMenuItemId) || null,
     offeringId: text(line.sourceOfferingId) || null,
     choices: (line.choices || []).map(choice => canonicalJson(normaliseChoiceValue(choice))).sort(),
     production: { substitution: text(line.substitution), instructions: text(line.productionInstructions), servingGuidance: text(line.servingGuidance), description: text(line.description) },
