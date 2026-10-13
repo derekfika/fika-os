@@ -45,10 +45,12 @@ async function syncCanonicalLifecycle(
   reason: string,
 ) {
   if (orderId.startsWith("production-order:v1:fixture:")) return undefined;
-  let order = await productionOrderDetail(request, orderId);
+  // the order this request already read (a Hub transition below invalidates it), not a second identical Hub read
+  let order = await loadOrder(request, orderId);
   if (!order) return undefined;
   const step = async (status: ProductionStatus) => {
     order = (await transitionProductionOrder(request, { action: "transition", canonicalId: orderId, expectedVersion: order!.version, status, reason })).order;
+    invalidateRequestOrder(request, orderId); // Hub changed: anything read earlier in this request is stale
   };
   if (target === "accepted" && order.status === "draft") {
     await step("needs_review");
@@ -156,7 +158,7 @@ const allergenAuthorityStore = createAllergenAuthorityStore();
 async function reconcileAllergenReuse(plan: ProductionPlan, order: ProductionOrder | undefined, actor: string, at: string) {
   if (plan.reusedAllergenAuthority && await reconcileReuse(allergenAuthorityStore, plan, order, { by: actor, at })) revokeReusedRelease(plan, { by: actor, at, reason: "The reused allergen approval no longer applies to this booking." });
 }
-const reuseDeps = (request: NextRequest): ReuseOrchestrationDeps => ({ plans: planRepository, store: allergenAuthorityStore, loadOrder: orderId => loadOrder(request, orderId), emit: input => emitCpuPlanChange(request, input) });
+const reuseDeps = (request: NextRequest): ReuseOrchestrationDeps => ({ plans: planRepository, store: allergenAuthorityStore, loadOrder: orderId => loadOrder(request, orderId, { fresh: true }), emit: input => emitCpuPlanChange(request, input) });
 /**
  * After an origin transition COMMITTED: its shared-authority revocation (if any) was already applied atomically inside the same
  * repository transaction, so this only ensures the durable cascade work exists, attempts it inline, and records a newly signed
@@ -171,7 +173,29 @@ async function settleAllergenAuthority(request: NextRequest, input: { order: Pro
     console.error("[cpu-allergen-reuse] authority follow-up failed", { orderId: input.plan.orderId, error: error instanceof Error ? error.message : String(error) });
   }
 }
-async function loadOrder(request: NextRequest, orderId: string) {
+/**
+ * Canonical Production Orders already read by THIS request, so one request never reads the same Hub order twice. The cache is keyed
+ * by the request object (a WeakMap), so nothing is ever shared across requests and there is no global staleness. A read that must be
+ * current at a safety boundary passes `fresh: true`; a Hub transition made by this request invalidates the entry.
+ */
+const requestOrderReads = new WeakMap<NextRequest, Map<string, ReturnType<typeof readCanonicalOrder>>>();
+function loadOrder(request: NextRequest, orderId: string, options: { fresh?: boolean } = {}) {
+  let reads = requestOrderReads.get(request);
+  if (!reads) { reads = new Map(); requestOrderReads.set(request, reads); }
+  const known = options.fresh ? undefined : reads.get(orderId);
+  if (known) return known;
+  const read = readCanonicalOrder(request, orderId);
+  reads.set(orderId, read);
+  // a failed read is never remembered
+  read.catch(() => { if (reads!.get(orderId) === read) reads!.delete(orderId); });
+  return read;
+}
+/** Runs work after the HTTP response (Next `after`). Outside a request scope (unit tests) it simply starts the work without awaiting it. */
+function runAfterResponse(task: () => Promise<void>) {
+  try { after(task); } catch { void task(); }
+}
+function invalidateRequestOrder(request: NextRequest, orderId: string) { requestOrderReads.get(request)?.delete(orderId); }
+async function readCanonicalOrder(request: NextRequest, orderId: string) {
   try {
     const order = await productionOrderDetail(request, orderId);
     return order || (isLocalRuntime() ? localFixtureOrders().find(item => item.canonicalId === orderId) : undefined);
@@ -569,7 +593,7 @@ async function handlePost(request: NextRequest) {
       const result = await applyReuseCommand(reuseDeps(request), { plan, storedPlan, order: currentOrder as never, actor: auditActor, actorId: actor.uid, at: timestamp, commandId: command.commandId, syncPlanned: async () => { await syncCanonicalLifecycle(request, command.orderId, "planned", "Allergen matrix planned from a previously approved identical sandwich composition."); } });
       // Every path answers through the guarded builder, and only after reloading the CURRENT plan AND the LATEST canonical order
       // (never the pre-adoption snapshot held in `currentOrder`): the command may have waited on delivery while the order changed.
-      const finalise = (extra: { unchanged?: boolean; materializationDelivery?: unknown }) => finalApplyResponse(allergenAuthorityStore, { orderId: command.orderId, fallbackPlan: result.plan, loadPlan: async id => { const stored = await planRepository.get(id); return stored ? normalisePlanAllergens(stored) : undefined; }, loadOrder: id => loadOrder(request, id), ...extra });
+      const finalise = (extra: { unchanged?: boolean; materializationDelivery?: unknown }) => finalApplyResponse(allergenAuthorityStore, { orderId: command.orderId, fallbackPlan: result.plan, loadPlan: async id => { const stored = await planRepository.get(id); return stored ? normalisePlanAllergens(stored) : undefined; }, loadOrder: id => loadOrder(request, id, { fresh: true }), ...extra }); // the LATEST canonical order, never a request-cached one
       if (!result.changed) { const replay = await finalise({ unchanged: true }); return NextResponse.json(replay.body, { status: replay.status }); }
       const delivery = await deliverCpuPropagation(result.materializationDelivery.eventId);
       const adopted = await finalise({ materializationDelivery: delivery });
@@ -656,7 +680,7 @@ async function handlePost(request: NextRequest) {
       const currentSignatureScope = matrixSignatureScope(currentOrder, currentMenuContentHash);
       if (!currentSignatureScope) throw Object.assign(new Error("The current source lineage is unavailable; the matrix cannot be signed."), { status: 503 });
       if (!sameLineage(currentSignatureScope, command.expectedLineage)) throw Object.assign(new Error("The reviewed source lineage has changed. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
-      const latestOrderForSign = await loadOrder(request, command.orderId);
+      const latestOrderForSign = await loadOrder(request, command.orderId, { fresh: true }); // the stale-lineage safety check always reads the latest Hub order
       const latestScopeForSign = latestOrderForSign && matrixSignatureScope(latestOrderForSign, currentMenuContentHash);
       if (!latestScopeForSign || !sameLineage(latestScopeForSign, command.expectedLineage)) throw Object.assign(new Error("The reviewed source lineage advanced while this signature was being prepared. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
       if (candidate.currentAllergenRelease?.status === "pending" && !command.commandId) throw Object.assign(new Error("A signed release is already awaiting materialization. Retry the release instead of signing again."), { status: 409 });
@@ -725,7 +749,18 @@ async function handlePost(request: NextRequest) {
     // A duplicate command has already staged its durable work. Replaying the
     // HTTP request must not synchronously repeat delivery or consumer effects.
     let materializationResult: { eventId: string; status: string; error?: string; attempts?: number } | undefined;
-    if (materializationDelivery && event) {
+    if (materializationDelivery && event && command.action === "sign-matrix") {
+      // The release and its materialization obligation were committed together above (`deliveries`), so the signature response never
+      // waits for PDF rendering, Drive uploads or bundling. Dispatch starts after the response; if the process dies first, the
+      // durable outbox drain delivers the same obligation. A replayed (duplicate) signature never dispatches again.
+      if (!event.duplicate) {
+        const materializationEventId = materializationDelivery.eventId;
+        runAfterResponse(async () => {
+          try { await deliverCpuPropagation(materializationEventId); }
+          catch (error) { console.error("FIKA CPU release materialization dispatch failed; the durable outbox will retry", { orderId: command.orderId, eventId: materializationEventId, error: error instanceof Error ? error.message : String(error) }); }
+        });
+      }
+    } else if (materializationDelivery && event) {
       if (command.action === "save-matrix") await replayCpuPropagation(materializationDelivery.eventId);
       materializationResult = await deliverCpuPropagation(materializationDelivery.eventId);
       const persistedAfterMaterialization = await planRepository.get(plan.orderId);
