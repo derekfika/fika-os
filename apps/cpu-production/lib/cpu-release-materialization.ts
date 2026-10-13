@@ -123,10 +123,11 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
   if (!order) throw Object.assign(new Error("The production order could not be loaded for release materialization."), { status: 503 });
   if (order.origin === "menu_planning" && order.supersededBy) throw Object.assign(new Error("The Menu Planning production order has been superseded; its CPU release cannot be materialized."), { status: 409, code: "CPU_RELEASE_SUPERSEDED_ORDER" });
   if (!allergenReleaseLineageMatchesOrder(pending, order, stored.menuItems)) throw Object.assign(new Error("The committed CPU release no longer matches the canonical source lineage."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
+  // A reused release is only ever reported or promoted while its shared authority generation validates. The repository also
+  // re-checks the same generation inside the transaction of every write below, so there is no check/commit gap.
+  if (pending.approvalMode === "reused_authority") await assertReusedApprovalValid(createAllergenAuthorityStore(), stored, order as never);
   if (pending.status === "current" && pending.materializationStatus === "ready") return { plan: stored, alreadyMaterialized: true };
   if (pending.status !== "pending" && !(pending.status === "current" && pending.materializationStatus !== "ready")) throw Object.assign(new Error("The CPU allergen release is no longer materializable."), { status: 409 });
-  // A reused release is only ever materialized while its shared authority validates (re-checked again before it becomes current).
-  if (pending.approvalMode === "reused_authority") await assertReusedApprovalValid(createAllergenAuthorityStore(), stored, order as never);
   const materializationReceiptId = (phase: "started" | "prepared" | "final") => cpuReleaseMaterializationReceiptId(releaseId, order, phase);
   const preparedCandidate = structuredClone(stored);
   try {
@@ -173,6 +174,9 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     return { plan: finalPlan, alreadyMaterialized: false, handoffResults };
   } catch (error) {
     const materializationError = error instanceof Error ? error.message : String(error);
+    // A reused release whose authority generation is no longer valid is never restored or re-marked: not even as a "failed"
+    // materialization. The revocation cascade reopens the booking; every read already fails closed on the revoked authority.
+    if (pending.approvalMode === "reused_authority" && ["CPU_REUSED_AUTHORITY_INVALID", "CPU_ALLERGEN_REUSE_AUTHORITY_REVOKED"].includes((error as { code?: string }).code || "")) throw error;
     console.error("FIKA CPU allergen release materialization failed", { app: "cpu-production", serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), releaseId, destinationOplocId: order.destinationOplocId, expectedOplocCount: 1, materializedOplocCount: 0, failedOplocCount: 1, pendingOplocCount: 1, handoffStatus: "retryable", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: materializationError });
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const current = await repository.get(orderId) || stored;

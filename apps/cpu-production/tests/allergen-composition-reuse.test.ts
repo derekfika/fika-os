@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildAuthorityFromSignedPlan, compositionIdentity, reuseValidity, type CompositionOrder } from "../lib/allergen-composition";
-import { applyApproval, applyBeginAdoption, applyFinalizeAdoption, applyOriginRevocation } from "../lib/allergen-authority-store";
+import { applyApproval, applyOriginRevocation, evaluateAuthorityTransition, AuthorityGuardFailure, authorityRequirementOf } from "../lib/allergen-authority-store";
 import type { ProductionPlan } from "../app/lib/production-plan";
 import { CANONICAL_ALLERGEN_KEYS, normaliseOperationalAllergens } from "../../shared/allergen-contract";
 
@@ -107,28 +107,46 @@ test("state machine: conflicting signed approvals revoke the generation (durable
   const out = applyApproval(a, b, AT, "c");
   assert.equal(out.change, "revoked_conflict"); assert.equal(out.authority.status, "revoked"); assert.equal(out.authority.revocation?.releaseId, "r1"); assert.equal(out.authority.cascadePending, true);
 });
-test("FINDING 3: adoption is a compare-and-set against the exact generation and cannot commit behind a revocation", () => {
+test("authority requirement: any persisted reused planned plan or pending/current reused release needs a valid generation; nothing else does", () => {
+  const o = order("o-x", A);
+  assert.equal(authorityRequirementOf(plan(o)), undefined, "an ordinary plan is unaffected");
+  const reused = plan(o); reused.reusedAllergenAuthority = { authorityId: "c#g1", compositionId: "c", generation: 1, identityVersion: "v", matrixSemanticHash: "h", adoptedAt: AT, adoptedBy: "u", origin: { releaseId: "r1" } as never };
+  assert.deepEqual(authorityRequirementOf(reused), { compositionId: "c", generation: 1, originReleaseId: "r1", matrixSemanticHash: "h", orderId: "o-x" });
+  const reopened = { ...reused, status: "planning" as const }; // reuse provenance on an unreviewed plan with no reused release is not authoritative
+  assert.equal(authorityRequirementOf(reopened), undefined);
+  assert.equal(authorityRequirementOf({ ...reopened, currentAllergenRelease: { approvalMode: "reused_authority", status: "pending" } as never }) !== undefined, true);
+  assert.equal(authorityRequirementOf({ ...reopened, reusedAllergenAuthority: undefined, currentAllergenRelease: { approvalMode: "reused_authority", status: "current" } as never }), "unbound");
+  assert.equal(authorityRequirementOf({ ...reopened, currentAllergenRelease: { approvalMode: "reused_authority", status: "revoked" } as never }), undefined, "a revoked reused release is exempt (the reopen path)");
+});
+test("transactional authority check: adoption registers atomically only against an active, exactly matching generation", () => {
   const o1 = order("o1", A); const g1 = buildAuthorityFromSignedPlan(signed(o1, "r1"), o1, AT, "c")!;
-  const expect = { generation: 1, releaseId: "r1", matrixSemanticHash: g1.matrixSemanticHash };
-  const lease = "2026-10-12T10:05:00.000Z";
-  const begun = applyBeginAdoption(g1, expect, "x", AT, "u", lease);
-  assert.equal(begun.outcome.ok, true); assert.equal(begun.next!.reusedBy[0].state, "pending");
-  assert.equal(applyBeginAdoption(g1, { ...expect, generation: 2 }, "x", AT, "u", lease).outcome.ok, false);
-  assert.equal(applyBeginAdoption(g1, { ...expect, matrixSemanticHash: "z" }, "x", AT, "u", lease).outcome.ok, false);
-  const revoked = applyOriginRevocation(begun.next, "r1", AT, "c", "r").authority!;
-  assert.deepEqual(applyBeginAdoption(revoked, expect, "y", AT, "u", lease).outcome, { ok: false, reason: "authority_revoked" });
-  assert.equal(applyFinalizeAdoption(revoked, 1, "x", AT).ok, false, "a pending adoption cannot finalize after revocation");
-  assert.equal(applyFinalizeAdoption(begun.next, 1, "x", AT).ok, true);
+  const other = order("o-other", A); const p = plan(other);
+  p.reusedAllergenAuthority = { authorityId: `${g1.compositionId}#g1`, compositionId: g1.compositionId, generation: 1, identityVersion: g1.identityVersion, matrixSemanticHash: g1.matrixSemanticHash, adoptedAt: AT, adoptedBy: "u", origin: g1.origin };
+  const read = (a: typeof g1 | undefined) => new Map([[g1.compositionId, a]]);
+  const writes = evaluateAuthorityTransition(read(g1), p, { registerAdoption: { at: AT, by: "u" } });
+  assert.equal(writes.get(g1.compositionId)!.reusedBy.length, 1);
+  assert.equal(writes.get(g1.compositionId)!.reusedBy[0].orderId, "o-other");
+  // without the adoption clause an unregistered plan cannot be persisted
+  assert.throws(() => evaluateAuthorityTransition(read(g1), p), AuthorityGuardFailure);
+  // revoked, mismatched generation / hash / origin, missing: all abort the transaction
+  const revoked = applyOriginRevocation(g1, "r1", AT, "c", "x").authority!;
+  for (const bad of [revoked, { ...g1, generation: 2 }, { ...g1, matrixSemanticHash: "z" }, { ...g1, origin: { ...g1.origin, releaseId: "r9" } }, undefined]) {
+    assert.throws(() => evaluateAuthorityTransition(read(bad), p, { registerAdoption: { at: AT, by: "u" } }), (e: Error) => e instanceof AuthorityGuardFailure && (e as AuthorityGuardFailure).code === "CPU_REUSED_AUTHORITY_INVALID");
+  }
+  // an origin mutation carries its own revocation in the same evaluation
+  const originWrites = evaluateAuthorityTransition(read(g1), plan(o1), { revoke: { compositionId: g1.compositionId, releaseId: "r1", at: AT, by: "c", reason: "reopened" } });
+  assert.equal(originWrites.get(g1.compositionId)!.status, "revoked");
+  assert.equal(originWrites.get(g1.compositionId)!.cascadePending, true);
 });
 test("reuseValidity binds the adopter to the authority generation, origin release, matrix hash, registration and live matrix", () => {
   const o1 = order("o1", A); const g1 = buildAuthorityFromSignedPlan(signed(o1, "r1"), o1, AT, "c")!;
-  g1.reusedBy.push({ orderId: "o-other", generation: 1, state: "committed", at: AT, by: "u" });
+  g1.reusedBy.push({ orderId: "o-other", generation: 1, at: AT, by: "u" });
   const other = order("o-other", A); const p = plan(other);
   p.reusedAllergenAuthority = { authorityId: `${g1.compositionId}#g1`, compositionId: g1.compositionId, generation: 1, identityVersion: g1.identityVersion, matrixSemanticHash: g1.matrixSemanticHash, adoptedAt: AT, adoptedBy: "u", origin: g1.origin };
   assert.deepEqual(reuseValidity(p, other, g1), { valid: true });
   assert.equal((reuseValidity(p, other, { ...g1, generation: 2 }) as { reason: string }).reason, "generation_mismatch");
   assert.equal((reuseValidity(p, other, { ...g1, origin: { ...g1.origin, releaseId: "r9" } }) as { reason: string }).reason, "origin_release_mismatch");
   assert.equal((reuseValidity(p, other, { ...g1, matrixSemanticHash: "x" }) as { reason: string }).reason, "matrix_hash_mismatch");
-  assert.equal((reuseValidity(p, other, { ...g1, reusedBy: [{ orderId: "o-other", generation: 1, state: "pending", at: AT, by: "u" }] }) as { reason: string }).reason, "adoption_not_committed");
+  assert.equal((reuseValidity(p, other, { ...g1, reusedBy: [] }) as { reason: string }).reason, "adoption_not_registered");
   assert.equal((reuseValidity(p, other, undefined) as { reason: string }).reason, "authority_missing");
 });

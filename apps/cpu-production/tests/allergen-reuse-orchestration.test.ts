@@ -4,13 +4,16 @@ import test from "node:test";
 
 // The real memory plan repository, memory authority store and memory outbox are used (no Firestore, no HTTP).
 process.env.FIKA_CPU_PLAN_STORE = "memory";
-const { createProductionPlanRepository } = await import("../lib/production-plan-repository");
+const { createProductionPlanRepository, repositoryTestHooks } = await import("../lib/production-plan-repository");
 const { memoryAllergenAuthorityStore } = await import("../lib/allergen-authority-store");
 const orchestrator = await import("../lib/allergen-reuse-orchestrator");
-const { applyReuseCommand, cascadeAuthorityRevocation, approvedMatrixChanged, processAuthorityRevocation, reconcileAuthorityCascades, recordSignedApproval, AUTHORITY_REVOKED_ROUTE, authorityRevocationEventId } = orchestrator;
+const { applyReuseCommand, cascadeAuthorityRevocation, approvedMatrixChanged, processAuthorityRevocation, reconcileAuthorityCascades, recordSignedApproval, originRevocationClause, runCommittedRevocation, ensureCascadeWorkForPendingAuthorities, AUTHORITY_REVOKED_ROUTE, authorityRevocationEventId } = orchestrator;
 const service = await import("../lib/allergen-reuse-service");
 const { reuseViewFor, reuseCandidateFor, guardReusedPlan, validateReusedApproval, assertReusedApprovalValid, reconcileReuse } = service;
 const { loadGuardedPlansForOrders } = await import("../lib/cpu-guarded-plans");
+const { revalidateProjectionAuthority } = await import("../lib/cpu-projection-authority");
+const { buildCpuDayProjection } = await import("../lib/cpu-projection");
+const { loadDeliveredInReviewStatuses } = await import("../lib/delivered-in-review");
 const { resetCpuOutboxForTests, listCpuOutboxForTests } = await import("../lib/cpu-durable-outbox");
 const { materializeCpuAllergenRelease } = await import("../lib/cpu-allergen-release");
 const { currentAllergenReleaseMatchesOrder, reusedAuthorityReleaseMatchesOrder, hasAllergenAuthority } = await import("../app/lib/production-plan");
@@ -23,7 +26,7 @@ const store = memoryAllergenAuthorityStore;
 const states = (over: Record<string, string> = {}) => normaliseOperationalAllergens(Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(key => [key, over[key] || "clear"])));
 const order = (id: string, items: string[], extra: Record<string, unknown> = {}, lineExtra: Record<string, unknown> = {}) => ({
   canonicalId: id, origin: "hospitality_booking", requiresDelivery: true, sourceBookingId: `booking:${id}`, sourceQuoteRevisionId: `quote:${id}:1`, currentRevision: 1, version: 1, status: "accepted",
-  serviceDate: "2026-10-20", requiredBy: "2026-10-20T11:00:00.000Z", clientName: "Customer", destinationOplocId: "oploc:test", destinationLabel: "Test site",
+  serviceDate: "2026-10-20", requiredBy: "2026-10-20T11:00:00.000Z", clientName: "Customer", exceptions: [], requirementIds: [], priority: "normal", destinationOplocId: "oploc:test", destinationLabel: "Test site",
   lines: items.map((item, index) => ({ canonicalId: `${id}:${index}`, sourceMenuItemId: item, choices: [], workstream: "sandwiches", customerQuantity: 10 + index, itemName: `Display ${index}`, ...lineExtra })),
   ...extra,
 }) as never as import("../lib/production-types").ProductionOrder & { lines: Array<{ canonicalId: string }> };
@@ -45,10 +48,10 @@ const signedPlan = (o: O, releaseId: string, over: Record<string, Record<string,
 };
 
 const ITEMS = ["item:ham", "item:veg"];
-type Failure = { afterCommit?: () => Promise<void> };
+type Failure = { afterCommit?: () => Promise<void>; emitOnce?: Error };
 let seq = 0; // the shared in-memory repository keeps idempotency receipts across tests, so command IDs must be unique
 async function harness() {
-  store.records.clear(); store.failWith = undefined; resetCpuOutboxForTests();
+  store.records.clear(); store.failWith = undefined; repositoryTestHooks.beforeAuthorityCheck = undefined; resetCpuOutboxForTests();
   const plans = createProductionPlanRepository();
   const orders = new Map<string, O>();
   const emitted: Array<{ orderId: string; changeType: string; sequence: number }> = [];
@@ -59,9 +62,9 @@ async function harness() {
   const wrapped = {
     ...plans,
     get: (id: string) => plans.get(id), getByOrderIds: (x: string[]) => plans.getByOrderIds(x), save: (p: ProductionPlan, e?: string) => plans.save(p, e),
-    saveAndAppendCpuChange: async (p: ProductionPlan, e: string | undefined, change: never) => { const r = await plans.saveAndAppendCpuChange(p, e, salt(change)); if (!r.duplicate && failure.afterCommit) { const f = failure.afterCommit; failure.afterCommit = undefined; await f(); } return r; },
+    saveAndAppendCpuChange: async (p: ProductionPlan, e: string | undefined, change: never, authority?: never) => { const r = await plans.saveAndAppendCpuChange(p, e, salt(change), authority); if (!r.duplicate && failure.afterCommit) { const f = failure.afterCommit; failure.afterCommit = undefined; await f(); } return r; },
   };
-  const deps = { plans: wrapped, store, loadOrder: async (id: string) => orders.get(id), emit: async (input: { order: { canonicalId: string }; changeType: string; sequence: number }) => { emitted.push({ orderId: input.order.canonicalId, changeType: input.changeType, sequence: input.sequence }); }, now: undefined as undefined | (() => string) };
+  const deps = { plans: wrapped, store, loadOrder: async (id: string) => orders.get(id), emit: async (input: { order: { canonicalId: string }; changeType: string; sequence: number }) => { if (failure.emitOnce) { const error = failure.emitOnce; failure.emitOnce = undefined; throw error; } emitted.push({ orderId: input.order.canonicalId, changeType: input.changeType, sequence: input.sequence }); }, now: undefined as undefined | (() => string) };
   const originOrder = order("o-origin", ITEMS); orders.set("o-origin", originOrder);
   const originPlan = signedPlan(originOrder, "rel-origin-1", { "item:ham": { milk: "contains" } });
   await plans.save(originPlan);
@@ -105,7 +108,7 @@ test("end to end: signed origin → authority → generation-bound reuse release
   assert.deepEqual(stored.menuItems.map(i => i.sourceLineId).sort(), ["o-other:0", "o-other:1"]);
   assert.equal(h.emitted.filter(e => e.orderId === "o-other" && e.changeType === "apply-reused-authority").length, 1);
   assert.ok(listCpuOutboxForTests().some(event => event.payload.route === "/api/internal/cpu-release-materialize" && event.payload.body.orderId === "o-other"), "release materialization obligation is committed");
-  assert.equal(authorityOf().reusedBy.find(item => item.orderId === "o-other")?.state, "committed");
+  assert.ok(authorityOf().reusedBy.find(item => item.orderId === "o-other"), "the adoption is registered in the same transaction as the plan");
 
   const ready = await makeReady(h, "o-other");
   assert.equal(reusedAuthorityReleaseMatchesOrder(ready.currentAllergenRelease, o as never, ready.menuItems), true);
@@ -167,9 +170,9 @@ test("durable cascade: a failure part-way through the adopters is retried from t
   const failures = { emitB: 1, commitC: 1 };
   const plans = {
     ...h.plans, get: (id: string) => h.plans.get(id), getByOrderIds: (x: string[]) => h.plans.getByOrderIds(x), save: (p: ProductionPlan, e?: string) => h.plans.save(p, e),
-    saveAndAppendCpuChange: async (p: ProductionPlan, e: string | undefined, change: never) => {
+    saveAndAppendCpuChange: async (p: ProductionPlan, e: string | undefined, change: never, authority?: never) => {
       if (p.orderId === "o-c" && failures.commitC-- > 0) throw new Error("injected commit failure for o-c");
-      const result = await h.plans.saveAndAppendCpuChange(p, e, h.salt(change));
+      const result = await h.plans.saveAndAppendCpuChange(p, e, h.salt(change), authority);
       if (!result.duplicate) commits.set(p.orderId, (commits.get(p.orderId) || 0) + 1);
       return result;
     },
@@ -266,7 +269,7 @@ test("FINDING 2: an authority-store failure fails closed everywhere and is never
   assert.equal((await guardReusedPlan(store, ready, o as never)).currentAllergenRelease?.approvalMode, "reused_authority", "valid again once the store recovers");
 });
 
-test("FINDING 3: adoption cannot commit behind a revocation or a completed cascade", async () => {
+test("FINDING 3 / P1-3: adoption is one transaction; it cannot commit behind a revocation, an expired plan preparation, or a completed cascade", async () => {
   // (a) revoked before adoption
   let h = await harness();
   await store.revokeByOrigin(h.compositionId, "rel-origin-1", AT, "head", "corrected");
@@ -274,32 +277,60 @@ test("FINDING 3: adoption cannot commit behind a revocation or a completed casca
   await assert.rejects(applyReuseCommand(h.deps as never, { plan: structuredClone(late.p), storedPlan: late.p, order: late.o as never, actor: "cpu", actorId: "u", at: AT }), /cannot be reused|no longer available/);
   assert.equal((await h.plans.get("o-late"))!.currentAllergenRelease, undefined);
 
-  // (b) revoked between the plan commit and the finalize compare-and-set
+  // (b) the authority is revoked AFTER the adopter validated but BEFORE the transaction's own check: the commit is refused and nothing is written
   h = await harness();
   const racer = await h.add("o-race");
-  h.failure.afterCommit = async () => { await store.revokeByOrigin(h.compositionId, "rel-origin-1", AT, "head", "corrected"); };
+  const before = JSON.stringify(await h.plans.get("o-race"));
+  repositoryTestHooks.beforeAuthorityCheck = async () => { repositoryTestHooks.beforeAuthorityCheck = undefined; await store.revokeByOrigin(h.compositionId, "rel-origin-1", AT, "head", "corrected"); };
   await assert.rejects(applyReuseCommand(h.deps as never, { plan: structuredClone(racer.p), storedPlan: racer.p, order: racer.o as never, actor: "cpu", actorId: "u", at: "2026-10-12T11:00:00.000Z", commandId: `reuse-race-${++seq}-command` }), (error: { code?: string }) => error.code === "CPU_ALLERGEN_REUSE_AUTHORITY_REVOKED");
-  const raced = (await h.plans.get("o-race"))!;
-  assert.equal(raced.currentAllergenRelease, undefined, "the adopter was compensated, not left authoritative");
-  assert.equal(raced.reusedAllergenAuthority, undefined);
-  assert.notEqual(raced.status, "planned");
+  assert.equal(JSON.stringify(await h.plans.get("o-race")), before, "no plan, release or change event was written");
+  assert.equal(authorityOf().reusedBy.some(item => item.orderId === "o-race"), false, "no adopter was registered");
+  assert.equal(h.emitted.length, 0);
 
-  // (c) a live reservation holds the cascade open; completion only after it finalizes/expires
+  // (c) reservation-expiry scenario: a slow adopter prepared its plan long ago; the cascade has completed since. The late commit is refused.
   h = await harness();
-  await h.add("o-reserving");
-  const reserved = await store.beginAdoption(h.compositionId, { generation: 1, releaseId: "rel-origin-1", matrixSemanticHash: authorityOf().matrixSemanticHash }, "o-reserving", AT, "u", "2099-01-01T00:00:00.000Z");
-  assert.equal(reserved.ok, true);
+  const slow = await h.add("o-slow");
+  const prepared = structuredClone(slow.p);
   await h.revoke();
-  assert.equal(authorityOf().cascades["1"]?.completedAt, undefined, "cascade stays open while a reservation is live");
-  assert.equal(await store.finalizeAdoption(h.compositionId, 1, "o-reserving", AT), false, "the reservation cannot finalize after revocation");
-  h.deps.now = () => "2100-01-01T00:00:00.000Z"; // lease expired
-  const work = listCpuOutboxForTests().find(event => event.eventId === authorityRevocationEventId(h.compositionId, 1))!.payload.body as never as Parameters<typeof processAuthorityRevocation>[1];
-  assert.equal((await processAuthorityRevocation(h.deps as never, work)).status, "complete");
-  assert.ok(authorityOf().cascades["1"].completedAt);
+  assert.ok(authorityOf().cascades["1"]?.completedAt, "the cascade completed with no adopters");
+  h.deps.now = () => "2100-01-01T00:00:00.000Z";
+  await assert.rejects(applyReuseCommand(h.deps as never, { plan: prepared, storedPlan: slow.p, order: slow.o as never, actor: "cpu", actorId: "u", at: "2026-10-12T11:00:00.000Z", commandId: `reuse-slow-${++seq}-command` }), /cannot be reused|no longer available/);
+  assert.equal((await h.plans.get("o-slow"))!.currentAllergenRelease, undefined);
+  assert.equal(authorityOf().reusedBy.length, 0, "the registry stayed final after the cascade completed");
 
-  // (d) once the cascade is complete nobody can adopt
+  // (d) once the cascade is complete nobody can adopt, and the repository itself refuses to persist a reused plan for the revoked generation
   const afterDone = await h.add("o-after");
   await assert.rejects(applyReuseCommand(h.deps as never, { plan: structuredClone(afterDone.p), storedPlan: afterDone.p, order: afterDone.o as never, actor: "cpu", actorId: "u", at: AT }), /cannot be reused|no longer available/);
+  const forged = structuredClone(afterDone.p); forged.status = "planned"; forged.reusedAllergenAuthority = { authorityId: `${h.compositionId}#g1`, compositionId: h.compositionId, generation: 1, identityVersion: authorityOf().identityVersion, matrixSemanticHash: authorityOf().matrixSemanticHash, adoptedAt: AT, adoptedBy: "x", origin: authorityOf().origin };
+  await assert.rejects(h.plans.save(forged), (error: { code?: string }) => error.code === "CPU_REUSED_AUTHORITY_INVALID");
+  await assert.rejects(h.plans.saveAndAppendCpuChange(forged, undefined, { serviceDate: "2026-10-20", entityType: "productionPlan", entityId: forged.id, revision: 1, changeType: "x", actorId: "u", changedAt: AT } as never), (error: { code?: string }) => error.code === "CPU_REUSED_AUTHORITY_INVALID");
+});
+
+test("P1-3: a crash after the adoption commit leaves a complete, valid adoption; retry resolves it, and a later revocation reopens it with no other mutation", async () => {
+  const h = await harness();
+  const { o, p } = await h.add("o-crash");
+  h.failure.emitOnce = new Error("process died after commit");
+  const commandId = `reuse-crash-${++seq}-command`;
+  await assert.rejects(applyReuseCommand(h.deps as never, { plan: structuredClone(p), storedPlan: p, order: o as never, actor: "cpu", actorId: "u", at: "2026-10-12T11:00:00.000Z", commandId }), /process died after commit/);
+  // The commit was atomic: plan, release and registry entry all exist together (there is nothing "pending" to strand).
+  const stored = (await h.plans.get("o-crash"))!;
+  assert.equal(stored.currentAllergenRelease?.approvalMode, "reused_authority");
+  assert.equal(authorityOf().reusedBy.filter(item => item.orderId === "o-crash").length, 1);
+  assert.equal((await validateReusedApproval(store, stored, o as never)).valid, true);
+  // Retry resolves the same adoption; it neither errors nor duplicates anything.
+  const retry = await applyReuseCommand(h.deps as never, { plan: structuredClone(stored), storedPlan: stored, order: o as never, actor: "cpu", actorId: "u", at: "2026-10-12T12:00:00.000Z", commandId });
+  assert.equal(retry.changed, false);
+  assert.equal(authorityOf().reusedBy.filter(item => item.orderId === "o-crash").length, 1);
+  // A plan carrying provenance whose registry entry is missing is not treated as adopted: retry (new command) re-registers atomically.
+  await store.mutate(h.compositionId, current => ({ ...current, reusedBy: [] }));
+  assert.equal((await validateReusedApproval(store, stored, o as never)).valid, false);
+  const repaired = await applyReuseCommand(h.deps as never, { plan: structuredClone(stored), storedPlan: stored, order: o as never, actor: "cpu", actorId: "u", at: "2026-10-12T12:30:00.000Z", commandId: `reuse-crash-repair-${++seq}-command` });
+  assert.equal(repaired.changed, true);
+  assert.equal(authorityOf().reusedBy.filter(item => item.orderId === "o-crash").length, 1);
+  // The crashed adopter is deterministically classified by the next revocation: reopened by the durable cascade alone.
+  await h.revoke();
+  const after = (await h.plans.get("o-crash"))!;
+  assert.equal(after.currentAllergenRelease, undefined); assert.equal(after.reusedAllergenAuthority, undefined);
 });
 
 test("FINDING 4: revocation intent and cascade work cannot be orphaned (lost enqueue, retry, conflicting approval, reconciliation)", async () => {
@@ -401,7 +432,8 @@ test("authority storage is server-only: Admin SDK access, no client SDK, deny-al
 test("the route and readers are wired through the one validator and the canonical change path", async () => {
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   assert.match(route, /applyReuseCommand\(reuseDeps\(request\)/);
-  assert.match(route, /cascadeAuthorityRevocation\(reuseDeps\(request\), \{ compositionId: before\.compositionId/);
+  assert.match(route, /runCommittedRevocation\(reuseDeps\(request\), input\.clause\)/);
+  assert.match(route, /originRevocationClause\(/);
   assert.match(route, /emitCpuPlanChange\(request, input\)/);
   assert.match(route, /guardReusedPlan\(allergenAuthorityStore, await mergeOriginalItems/);
   assert.doesNotMatch(route, /reuseViewFor\([^)]*\)\.catch/);
@@ -409,4 +441,144 @@ test("the route and readers are wired through the one validator and the canonica
   assert.match(await readFile(new URL("../app/api/internal/durable-outbox/route.ts", import.meta.url), "utf8"), /reconcileAuthorityCascades/);
   for (const file of ["cpu-projection.ts", "cpu-review-package.ts", "cpu-post-commit-worker.ts"]) assert.match(await readFile(new URL(`../lib/${file}`, import.meta.url), "utf8"), /loadGuardedPlansForOrders/, `${file} reads plans through the guard`);
   assert.match(await readFile(new URL("../lib/cpu-release-materialization.ts", import.meta.url), "utf8"), /assertReusedApprovalValid/);
+});
+
+test("P1-1: selected plan, plans[] and notifications fail closed; review/matrix status never reports a stale reused plan as ready", async () => {
+  const h = await harness();
+  const { o } = await h.adopt("o-other");
+  await makeReady(h, "o-other");
+  await store.revokeByOrigin(h.compositionId, "rel-origin-1", AT, "head", "corrected"); // no cascade yet
+  const stored = (await h.plans.get("o-other"))!;
+  // selected plan and plans[] both go through guardReusedPlan
+  const selected = await guardReusedPlan(store, stored, o as never);
+  const list = await Promise.all([stored].map(plan => guardReusedPlan(store, plan, o as never)));
+  for (const plan of [selected, ...list]) { assert.notEqual(plan.status, "planned"); assert.equal(plan.currentAllergenRelease, undefined); assert.equal(plan.matrixArtifact, undefined); }
+  assert.equal(list.filter(plan => plan.status === "planned").length, 0, "no readiness notification can be derived from the guarded list");
+  // review / matrix status
+  const statuses = await loadDeliveredInReviewStatuses({ orderIds: ["o-other"], repository: { get: id => h.plans.get(id) }, loadOrder: async id => h.orders.get(id) as never, includeMatrix: true });
+  assert.equal(statuses.length, 1);
+  const status = statuses[0] as unknown as Record<string, unknown>;
+  assert.notEqual(status.planStatus, "planned"); assert.notEqual(status.reviewed, true);
+  assert.deepEqual(status.signatureRoles, []);
+  assert.equal(status.matrixArtifact, undefined);
+  // and a store outage fails closed on the same paths
+  store.failWith = new Error("down");
+  try {
+    const outage = await loadDeliveredInReviewStatuses({ orderIds: ["o-other"], repository: { get: id => h.plans.get(id) }, loadOrder: async id => h.orders.get(id) as never, includeMatrix: true });
+    assert.notEqual((outage[0] as unknown as Record<string, unknown>).planStatus, "planned");
+  } finally { store.failWith = undefined; }
+});
+
+test("P1-1: a cached production projection cannot stay planned/ready after revocation, re-approval or an authority outage", async () => {
+  const h = await harness();
+  const { o } = await h.adopt("o-other");
+  const ready = await makeReady(h, "o-other");
+  const projection = buildCpuDayProjection("2026-10-20", [o as never], [ready]);
+  const entry = projection.orders[0];
+  assert.equal(entry.workflowStatus, "planned");
+  assert.equal(entry.reusedAuthority?.generation, 1, "the cached projection records the authority generation it relies on");
+  assert.equal(projection.summary.planned, 1);
+  const stillValid = await revalidateProjectionAuthority(projection);
+  assert.equal(stillValid.orders[0].workflowStatus, "planned");
+  // revocation, with NO cascade and NO rebuild: the cached copy is still downgraded on read
+  await store.revokeByOrigin(h.compositionId, "rel-origin-1", AT, "head", "corrected");
+  const revoked = await revalidateProjectionAuthority(projection);
+  assert.notEqual(revoked.orders[0].workflowStatus, "planned"); assert.equal(revoked.orders[0].reusedAuthorityInvalid, true); assert.equal(revoked.orders[0].reusedAuthority, undefined);
+  assert.equal(revoked.summary.planned, 0); assert.ok(revoked.orders[0].attention.length > 0);
+  // re-approval is a new generation: the cached generation-1 projection stays invalid
+  const reapproved = order("o-reapproved", ITEMS); h.orders.set("o-reapproved", reapproved);
+  await recordSignedApproval({ store }, signedPlan(reapproved, "rel-reapproved-1", { "item:ham": { milk: "contains" } }), reapproved as never, AT, "chef");
+  assert.equal(authorityOf().status, "active");
+  assert.notEqual((await revalidateProjectionAuthority(projection)).orders[0].workflowStatus, "planned");
+  // an unreadable authority fails closed
+  store.failWith = new Error("down");
+  try { assert.notEqual((await revalidateProjectionAuthority(projection)).orders[0].workflowStatus, "planned"); } finally { store.failWith = undefined; }
+  // projections without reused entries cost nothing and are returned untouched
+  const plain = buildCpuDayProjection("2026-10-20", [h.originOrder as never], [h.originPlan]);
+  assert.equal(await revalidateProjectionAuthority(plain), plain);
+});
+
+test("P1-2: materialization cannot promote, return or restore a revoked reused release", async () => {
+  const h = await harness();
+  const { o } = await h.adopt("o-other");
+  const pending = (await h.plans.get("o-other"))!;
+  const promoted: ProductionPlan = { ...pending, matrixArtifact: readyArtifact, currentAllergenRelease: materializeCpuAllergenRelease(pending.currentAllergenRelease!, { masterArtifact: readyArtifact, derivedArtifacts: [readyArtifact], packetArtifacts: [] }), updatedAt: "2026-10-12T11:05:00.000Z" };
+  // (a) revocation lands between the materializer's final validation and its commit
+  await assertReusedApprovalValid(store, pending, o as never); // final validation passes
+  repositoryTestHooks.beforeAuthorityCheck = async () => { repositoryTestHooks.beforeAuthorityCheck = undefined; await store.revokeByOrigin(h.compositionId, "rel-origin-1", AT, "head", "corrected"); };
+  await assert.rejects(h.plans.saveAndAppendCpuChange(promoted, pending.updatedAt, { serviceDate: "2026-10-20", entityType: "productionPlan", entityId: promoted.id, revision: 99, changeType: "allergen-matrix-materialized", actorId: "u", changedAt: AT, idempotencyKey: `promote-${++seq}` } as never), (error: { code?: string }) => error.code === "CPU_REUSED_AUTHORITY_INVALID");
+  const stored = (await h.plans.get("o-other"))!;
+  assert.equal(stored.currentAllergenRelease?.status, "pending", "the release was not promoted to current");
+  assert.equal(stored.matrixArtifact, undefined);
+  // (b) the already-materialized shortcut re-validates before reporting success
+  await assert.rejects(assertReusedApprovalValid(store, promoted, o as never), /no longer valid/);
+  const source = await readFile(new URL("../lib/cpu-release-materialization.ts", import.meta.url), "utf8");
+  assert.ok(source.indexOf("assertReusedApprovalValid(createAllergenAuthorityStore(), stored") < source.indexOf("return { plan: stored, alreadyMaterialized: true }"), "validity is checked before the already-materialized shortcut returns");
+  // (c) recovery/failure handling never restores or re-marks a reused release whose authority is invalid
+  const restored = structuredClone(stored); restored.currentAllergenRelease = { ...restored.currentAllergenRelease!, materializationStatus: "failed" };
+  await assert.rejects(h.plans.save(restored), (error: { code?: string }) => error.code === "CPU_REUSED_AUTHORITY_INVALID");
+  assert.match(source, /CPU_REUSED_AUTHORITY_INVALID[\s\S]{0,260}throw error/);
+});
+
+test("P1-2: recovery after the cascade already removed the adopter cannot resurrect the reused release", async () => {
+  const h = await harness();
+  await h.adopt("o-other");
+  const staleSnapshot = (await h.plans.get("o-other"))!; // what a slow materializer is holding
+  await h.revoke();
+  const reopened = (await h.plans.get("o-other"))!;
+  assert.equal(reopened.currentAllergenRelease, undefined);
+  const resurrected: ProductionPlan = { ...staleSnapshot, updatedAt: "2026-10-12T14:00:00.000Z" };
+  await assert.rejects(h.plans.save(resurrected, undefined), (error: { code?: string }) => error.code === "CPU_REUSED_AUTHORITY_INVALID");
+  await assert.rejects(h.plans.save(resurrected, staleSnapshot.updatedAt), (error: Error) => /changed elsewhere|REUSED_AUTHORITY_INVALID|not valid/.test(error.message));
+  assert.equal((await h.plans.get("o-other"))!.currentAllergenRelease, undefined);
+});
+
+test("P1-4: the origin mutation and the shared revocation are one transaction; a failed follow-up leaves a revoked authority that the worker repairs", async () => {
+  const h = await harness();
+  const { o } = await h.adopt("o-other");
+  await makeReady(h, "o-other");
+  // (a) origin transition: reopen the signed review. The revocation rides in the same repository transaction.
+  const reopened = structuredClone(h.originPlan); reopened.currentAllergenRelease = { ...reopened.currentAllergenRelease!, status: "revoked" } as never; reopened.signatures = undefined; reopened.signedSignatures = undefined; reopened.status = "planning";
+  const clause = originRevocationClause({ before: h.originPlan.currentAllergenRelease, beforePlan: h.originPlan, plan: { ...reopened, currentAllergenRelease: undefined }, order: h.originOrder as never, actor: "head", at: "2026-10-12T13:00:00.000Z", explicitReopen: true });
+  assert.ok(clause?.revoke);
+  // a failed origin write (stale version) must NOT revoke the authority: both roll back together
+  await assert.rejects(h.plans.saveAndAppendCpuChange({ ...reopened, currentAllergenRelease: undefined }, "stale-version", { serviceDate: "2026-10-20", entityType: "productionPlan", entityId: reopened.id, revision: 7, changeType: "reopen-review", actorId: "u", changedAt: AT } as never, clause), /changed elsewhere/);
+  assert.equal(authorityOf().status, "active", "no revocation without the origin change");
+  const committed = await h.plans.saveAndAppendCpuChange({ ...reopened, currentAllergenRelease: undefined }, h.originPlan.updatedAt, { serviceDate: "2026-10-20", entityType: "productionPlan", entityId: reopened.id, revision: 8, changeType: "reopen-review", actorId: "u", changedAt: AT, idempotencyKey: `origin-reopen-${++seq}` } as never, clause);
+  assert.ok(committed.sequence > 0);
+  assert.equal(authorityOf().status, "revoked", "the authority is revoked the instant the origin change commits");
+  assert.equal(authorityOf().cascadePending, true);
+  // reads of the adopter already fail closed, with no follow-up having run
+  assert.equal((await guardReusedPlan(store, (await h.plans.get("o-other"))!, o as never)).currentAllergenRelease, undefined);
+  // (b) the follow-up (enqueue / cascade) fails after the commit
+  resetCpuOutboxForTests();
+  store.failWith = new Error("authority store unavailable after origin commit");
+  await runCommittedRevocation(h.deps as never, clause).catch(() => undefined);
+  store.failWith = undefined;
+  assert.equal(listCpuOutboxForTests().length, 0, "no cascade work exists");
+  assert.equal(authorityOf().status, "revoked", "…yet the authority is not left active");
+  assert.equal((await h.plans.get("o-other"))!.reusedAllergenAuthority !== undefined, true, "the adopter is still durably stale");
+  // (c) the normal worker step reconstructs the missing work from the durable revocation intent, and the outbox delivery completes it
+  assert.equal(await ensureCascadeWorkForPendingAuthorities(store), 1);
+  const queued = listCpuOutboxForTests().find(event => event.eventId === authorityRevocationEventId(h.compositionId, 1))!;
+  assert.ok(queued && queued.payload.route === AUTHORITY_REVOKED_ROUTE);
+  assert.equal(await ensureCascadeWorkForPendingAuthorities(store), 1, "the sweep is idempotent");
+  assert.equal(listCpuOutboxForTests().filter(event => event.eventId === authorityRevocationEventId(h.compositionId, 1)).length, 1);
+  assert.equal((await processAuthorityRevocation(h.deps as never, queued.payload.body as never)).status, "complete");
+  const after = (await h.plans.get("o-other"))!;
+  assert.equal(after.currentAllergenRelease, undefined); assert.equal(after.reusedAllergenAuthority, undefined);
+  assert.equal(authorityOf().cascadePending, false);
+  assert.equal(await ensureCascadeWorkForPendingAuthorities(store), 0);
+});
+
+test("the long-lived worker runs the authority reconciliation; the persistence invariant covers every plan writer", async () => {
+  const worker = await readFile(new URL("../scripts/cpu-durable-outbox-worker.ts", import.meta.url), "utf8");
+  assert.match(worker, /ensureCascadeWorkForPendingAuthorities\(createAllergenAuthorityStore\(\)\)/);
+  assert.match(worker, /CPU_ALLERGEN_AUTHORITY_SWEEP_MS/);
+  const repo = await readFile(new URL("../lib/production-plan-repository.ts", import.meta.url), "utf8");
+  assert.equal((repo.match(/evaluateAuthorityTransition\(/g) || []).length, 3, "memory save + Firestore save + Firestore save-and-append all evaluate the authority inside their transaction");
+  assert.match(repo, /readAuthorities\(db, transaction, plan, authority\)/);
+  const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
+  assert.equal((route.match(/originRevocationClause\(/g) || []).length, 3, "all three origin transition sites carry the revocation clause");
+  assert.match(route, /\}, authorityClause\)/);
 });

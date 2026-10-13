@@ -1,3 +1,5 @@
+import { createAllergenAuthorityStore } from "./allergen-authority-store";
+import { guardReusedPlan } from "./allergen-reuse-service";
 import type { ProductionPlan } from "../app/lib/production-plan";
 import { currentAllergenReleaseMatchesOrder, effectiveProductionPlanStatus, matrixSignatureScope, signatureAuthorityForOrder, signatureMatchesScope, type MatrixSignatureScope, type PlannedMenuItem } from "../app/lib/production-plan";
 import { allergenMatrixContentHash } from "./cpu-allergen-release";
@@ -83,7 +85,9 @@ export async function loadDeliveredInReviewStatuses(input: {
     const order = await input.loadOrder(orderId);
     if (order && !(order.origin === "hospitality_booking" && order.requiresDelivery === false)) visibleOrders.push(order);
   }
-  const plans = await Promise.all(visibleOrders.map(async (order) => [order.canonicalId, await input.repository.get(order.canonicalId)] as const));
+  // Reads of reused approvals pass the one shared validator (fail closed) before any status is derived.
+  const store = createAllergenAuthorityStore();
+  const plans = await Promise.all(visibleOrders.map(async (order) => { const plan = await input.repository.get(order.canonicalId); return [order.canonicalId, plan ? await guardReusedPlan(store, plan, order as never) : plan] as const; }));
   const planByOrderId = new Map(plans);
   recordDeliveredInReadBudget({ stage: "review_status_batch", canonicalOrderDocs: visibleOrders.length, planDocs: plans.length, selectedIds: input.orderIds.length });
   return visibleOrders.map((order) => {

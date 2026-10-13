@@ -1,14 +1,11 @@
 import type { AllergenCompositionAuthority } from "./allergen-composition";
+import type { ProductionPlan } from "../app/lib/production-plan";
 
 export const ALLERGEN_COMPOSITION_AUTHORITIES_COLLECTION = "fikaCpuAllergenCompositionAuthoritiesV1";
-/** How long a pending adoption reservation blocks cascade completion before it is treated as abandoned. */
-export const ADOPTION_LEASE_MS = 5 * 60 * 1000;
 
 type A = AllergenCompositionAuthority;
 export type ApprovalOutcome = { authority: A; change: "created" | "unchanged" | "reactivated" | "revoked_conflict" };
 export type RevocationOutcome = { authority?: A; changed: boolean; /** The generation whose origin release matched, if any. */ generation?: number };
-export type AdoptionExpectation = { generation: number; releaseId: string; matrixSemanticHash: string };
-export type BeginAdoptionOutcome = { ok: true; authority: A } | { ok: false; reason: "authority_missing" | "authority_revoked" | "generation_mismatch" | "adoption_cancelled" };
 
 /** Which generations (archived plus a revoked current one) still have an incomplete adopter cascade. */
 export function incompleteCascadeGenerations(authority: A): number[] {
@@ -17,11 +14,11 @@ export function incompleteCascadeGenerations(authority: A): number[] {
 }
 const withCascadePending = (authority: A): A => ({ ...authority, cascadePending: incompleteCascadeGenerations(authority).length > 0 });
 
-function revokeCurrent(existing: A, at: string, by: string, reason: string, history: string): A {
+function revokeCurrent(existing: A, at: string, by: string, reason: string): A {
   const next = structuredClone(existing);
   next.status = "revoked";
   next.revocation = { generation: existing.generation, releaseId: existing.origin.releaseId, at, by, reason };
-  next.history.push({ action: "revoked", at, by, reason: history, releaseId: existing.origin.releaseId, generation: existing.generation });
+  next.history.push({ action: "revoked", at, by, reason, releaseId: existing.origin.releaseId, generation: existing.generation });
   return withCascadePending(next);
 }
 
@@ -32,7 +29,7 @@ export function applyApproval(existing: A | undefined, candidate: A, at: string,
   if (existing.status === "active") {
     if (existing.matrixSemanticHash === candidate.matrixSemanticHash) return { authority: structuredClone(existing), change: "unchanged" };
     // Two independent signed reviews disagree on the same composition: neither may be reused until a human reconciles them.
-    return { authority: revokeCurrent(existing, at, by, "Conflicting signed approval for the same composition.", "Conflicting signed approval for the same composition."), change: "revoked_conflict" };
+    return { authority: revokeCurrent(existing, at, by, "Conflicting signed approval for the same composition."), change: "revoked_conflict" };
   }
   const next = structuredClone(existing);
   next.generations.push({ generation: existing.generation, origin: existing.origin, matrixSemanticHash: existing.matrixSemanticHash, approvedAt: existing.history.find(item => item.generation === existing.generation && (item.action === "approved" || item.action === "re-approved"))?.at || existing.createdAt, revokedAt: existing.revocation?.at || at, reason: existing.revocation?.reason || "revoked" });
@@ -50,55 +47,12 @@ export function applyApproval(existing: A | undefined, candidate: A, at: string,
 export function applyOriginRevocation(existing: A | undefined, releaseId: string, at: string, by: string, reason: string): RevocationOutcome {
   if (!existing) return { changed: false };
   if (existing.origin.releaseId === releaseId) {
-    if (existing.status === "active") return { authority: revokeCurrent(existing, at, by, reason, reason), changed: true, generation: existing.generation };
+    if (existing.status === "active") return { authority: revokeCurrent(existing, at, by, reason), changed: true, generation: existing.generation };
     return { authority: existing, changed: false, generation: existing.generation };
   }
   const archived = existing.generations.find(item => item.origin.releaseId === releaseId);
   return archived ? { authority: existing, changed: false, generation: archived.generation } : { authority: existing, changed: false };
 }
-
-/** Pure: atomically reserve an adoption. Refused unless the authority is active, un-revoked, and exactly the expected generation. */
-export function applyBeginAdoption(existing: A | undefined, expect: AdoptionExpectation, orderId: string, at: string, by: string, leaseUntil: string): { next?: A; outcome: BeginAdoptionOutcome } {
-  if (!existing) return { outcome: { ok: false, reason: "authority_missing" } };
-  if (existing.status !== "active" || existing.revocation) return { outcome: { ok: false, reason: "authority_revoked" } };
-  if (existing.generation !== expect.generation || existing.origin.releaseId !== expect.releaseId || existing.matrixSemanticHash !== expect.matrixSemanticHash) return { outcome: { ok: false, reason: "generation_mismatch" } };
-  const entry = existing.reusedBy.find(item => item.orderId === orderId && item.generation === expect.generation);
-  if (entry?.state === "cancelled") return { outcome: { ok: false, reason: "adoption_cancelled" } };
-  if (entry?.state === "committed") return { outcome: { ok: true, authority: existing } };
-  const next = structuredClone(existing);
-  if (entry) next.reusedBy = next.reusedBy.map(item => (item === entry ? { ...item, leaseUntil } : item));
-  else next.reusedBy.push({ orderId, generation: expect.generation, state: "pending", at, by, leaseUntil });
-  return { next, outcome: { ok: true, authority: next } };
-}
-
-/** Pure compare-and-set: pending -> committed, only while the generation is still current and active. */
-export function applyFinalizeAdoption(existing: A | undefined, generation: number, orderId: string, at: string): { next?: A; ok: boolean } {
-  if (!existing || existing.status !== "active" || existing.revocation || existing.generation !== generation) return { ok: false };
-  const entry = existing.reusedBy.find(item => item.orderId === orderId && item.generation === generation);
-  if (!entry || entry.state === "cancelled") return { ok: false };
-  if (entry.state === "committed") return { ok: true };
-  const next = structuredClone(existing);
-  next.reusedBy = next.reusedBy.map(item => (item.orderId === orderId && item.generation === generation ? { orderId, generation, state: "committed" as const, at: item.at, by: item.by } : item));
-  next.history.push({ action: "reused", at, by: entry.by, reason: `Adopted by ${orderId}.`, generation });
-  return { next, ok: true };
-}
-
-/** Pure: cancel a reservation (abandoned or compensated). Committed adoptions are untouched. */
-export function applyCancelAdoption(existing: A, generation: number, orderId: string): A {
-  if (!existing.reusedBy.some(item => item.orderId === orderId && item.generation === generation && item.state === "pending")) return existing;
-  const next = structuredClone(existing);
-  next.reusedBy = next.reusedBy.map(item => (item.orderId === orderId && item.generation === generation && item.state === "pending" ? { ...item, state: "cancelled" as const, leaseUntil: undefined } : item));
-  return next;
-}
-
-/** Pending reservations whose lease has expired are abandoned; live ones block cascade completion. */
-export function applyExpirePendingAdoptions(existing: A, generation: number, now: string): A {
-  if (!existing.reusedBy.some(item => item.generation === generation && item.state === "pending" && (item.leaseUntil || "") <= now)) return existing;
-  const next = structuredClone(existing);
-  next.reusedBy = next.reusedBy.map(item => (item.generation === generation && item.state === "pending" && (item.leaseUntil || "") <= now ? { ...item, state: "cancelled" as const, leaseUntil: undefined } : item));
-  return next;
-}
-export const livePendingAdopters = (authority: A, generation: number, now: string) => authority.reusedBy.filter(item => item.generation === generation && item.state === "pending" && (item.leaseUntil || "") > now);
 
 /** Pure: one adopter's cascade progress for a generation. Idempotent; returns the same object when nothing changes. */
 export function applyCascadeStep(existing: A, generation: number, orderId: string, patch: { sequence?: number; done?: boolean }, at: string): A {
@@ -123,13 +77,89 @@ export function applyCascadeComplete(existing: A, generation: number, at: string
   return withCascadePending(next);
 }
 
+// ------------------------------------------------------------------------------------------------------------------------------
+// Transactional authority clause. These pure functions are evaluated INSIDE the plan repository's transaction, in the same
+// consistency domain as the plan write and the CPU change event. That is what makes shared-authority validity part of canonical
+// CPU state instead of an optional read guard.
+// ------------------------------------------------------------------------------------------------------------------------------
+
+/** What a caller may ask the repository to do to an authority atomically with a plan transition. */
+export type AuthorityClause = {
+  /** Adoption: register the plan's order as a committed adopter of the generation the plan is bound to. Allowed only while that generation is active. */
+  registerAdoption?: { at: string; by: string };
+  /** Origin mutation: revoke the generation established by this signed release, in the same transaction as the plan change. */
+  revoke?: { compositionId: string; releaseId: string; at: string; by: string; reason: string };
+};
+
+export type PlanAuthorityRequirement = { compositionId: string; generation: number; originReleaseId: string; matrixSemanticHash: string; orderId: string };
+/**
+ * Whether persisting this plan would make a reused authority authoritative. True for any persisted reused `planned` plan or any
+ * reused release that is `pending` or `current`. A reused release without provenance is also "requiring" and can never pass.
+ */
+export function authorityRequirementOf(plan: ProductionPlan): PlanAuthorityRequirement | "unbound" | undefined {
+  const release = plan.currentAllergenRelease;
+  const reusedRelease = release?.approvalMode === "reused_authority" && (release.status === "pending" || release.status === "current");
+  const reuse = plan.reusedAllergenAuthority;
+  if (!reusedRelease && !(reuse && plan.status === "planned")) return undefined;
+  if (!reuse) return "unbound";
+  return { compositionId: reuse.compositionId, generation: reuse.generation, originReleaseId: reuse.origin.releaseId, matrixSemanticHash: reuse.matrixSemanticHash, orderId: plan.orderId };
+}
+
+export class AuthorityGuardFailure extends Error {
+  readonly status = 409;
+  constructor(readonly code: string, message: string) { super(message); this.name = "AuthorityGuardFailure"; }
+}
+
+/** Compare-and-set check of a requirement against the stored authority. Pure. */
+export function checkRequirement(current: A | undefined, requirement: PlanAuthorityRequirement, allowRegistration: boolean): { ok: true; register: boolean } | { ok: false; reason: string } {
+  if (!current) return { ok: false, reason: "authority_missing" };
+  if (current.compositionId !== requirement.compositionId) return { ok: false, reason: "composition_mismatch" };
+  if (current.status !== "active" || current.revocation) return { ok: false, reason: "authority_revoked" };
+  if (current.generation !== requirement.generation) return { ok: false, reason: "generation_mismatch" };
+  if (current.origin.releaseId !== requirement.originReleaseId) return { ok: false, reason: "origin_release_mismatch" };
+  if (current.matrixSemanticHash !== requirement.matrixSemanticHash) return { ok: false, reason: "matrix_hash_mismatch" };
+  const registered = current.reusedBy.some(entry => entry.orderId === requirement.orderId && entry.generation === requirement.generation);
+  if (!registered && !allowRegistration) return { ok: false, reason: "adoption_not_registered" };
+  return { ok: true, register: !registered };
+}
+
+/**
+ * Evaluates the whole clause for one plan write against the authority documents read in the transaction. Returns the documents
+ * to write, or throws {@link AuthorityGuardFailure} so the transaction aborts before anything is written.
+ */
+export function evaluateAuthorityTransition(read: Map<string, A | undefined>, plan: ProductionPlan, clause?: AuthorityClause): Map<string, A> {
+  const writes = new Map<string, A>();
+  const get = (id: string) => (writes.has(id) ? writes.get(id) : read.get(id));
+  if (clause?.revoke) {
+    const outcome = applyOriginRevocation(get(clause.revoke.compositionId), clause.revoke.releaseId, clause.revoke.at, clause.revoke.by, clause.revoke.reason);
+    if (outcome.changed && outcome.authority) writes.set(clause.revoke.compositionId, outcome.authority);
+  }
+  const requirement = authorityRequirementOf(plan);
+  if (requirement === "unbound") throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", "A reused allergen release cannot be persisted without its authority-generation binding.");
+  if (requirement) {
+    const current = get(requirement.compositionId);
+    const verdict = checkRequirement(current, requirement, Boolean(clause?.registerAdoption));
+    if (!verdict.ok) throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", `The reused allergen authority is not valid at commit time (${verdict.reason}).`);
+    if (verdict.register && clause?.registerAdoption && current) {
+      const next = structuredClone(current);
+      next.reusedBy.push({ orderId: requirement.orderId, generation: requirement.generation, at: clause.registerAdoption.at, by: clause.registerAdoption.by });
+      next.history.push({ action: "reused", at: clause.registerAdoption.at, by: clause.registerAdoption.by, reason: `Adopted by ${requirement.orderId}.`, generation: requirement.generation });
+      writes.set(requirement.compositionId, next);
+    }
+  }
+  return writes;
+}
+
+/** The authority documents a plan write must read inside its transaction. */
+export function authorityIdsFor(plan: ProductionPlan, clause?: AuthorityClause): string[] {
+  const requirement = authorityRequirementOf(plan);
+  return [...new Set([clause?.revoke?.compositionId, requirement && requirement !== "unbound" ? requirement.compositionId : undefined].filter((id): id is string => Boolean(id)))];
+}
+
 export type AllergenAuthorityStore = {
   get(compositionId: string): Promise<A | undefined>;
   recordApproval(candidate: A, at: string, by: string): Promise<ApprovalOutcome>;
   revokeByOrigin(compositionId: string, releaseId: string, at: string, by: string, reason: string): Promise<RevocationOutcome>;
-  beginAdoption(compositionId: string, expect: AdoptionExpectation, orderId: string, at: string, by: string, leaseUntil: string): Promise<BeginAdoptionOutcome>;
-  finalizeAdoption(compositionId: string, generation: number, orderId: string, at: string): Promise<boolean>;
-  cancelAdoption(compositionId: string, generation: number, orderId: string): Promise<void>;
   /** Atomic read-modify-write; the mutator must be pure and idempotent. */
   mutate(compositionId: string, mutator: (current: A) => A): Promise<A | undefined>;
   /** Revoked authorities that still have an incomplete adopter cascade (bounded). */
@@ -146,15 +176,6 @@ abstract class TransactionalStore implements AllergenAuthorityStore {
   }
   revokeByOrigin(id: string, releaseId: string, at: string, by: string, reason: string) {
     return this.transact(id, current => { const outcome = applyOriginRevocation(current, releaseId, at, by, reason); return { next: outcome.changed ? outcome.authority : undefined, result: outcome }; });
-  }
-  beginAdoption(id: string, expect: AdoptionExpectation, orderId: string, at: string, by: string, leaseUntil: string) {
-    return this.transact(id, current => { const { next, outcome } = applyBeginAdoption(current, expect, orderId, at, by, leaseUntil); return { next, result: outcome }; });
-  }
-  finalizeAdoption(id: string, generation: number, orderId: string, at: string) {
-    return this.transact(id, current => { const { next, ok } = applyFinalizeAdoption(current, generation, orderId, at); return { next, result: ok }; });
-  }
-  async cancelAdoption(id: string, generation: number, orderId: string) {
-    await this.transact(id, current => { const next = current ? applyCancelAdoption(current, generation, orderId) : undefined; return { next: next && next !== current ? next : undefined, result: undefined }; });
   }
   mutate(id: string, mutator: (current: A) => A) {
     return this.transact(id, current => { if (!current) return { result: undefined }; const next = mutator(structuredClone(current)); return { next: next !== current && JSON.stringify(next) !== JSON.stringify(current) ? next : undefined, result: structuredClone(next) as A | undefined }; });

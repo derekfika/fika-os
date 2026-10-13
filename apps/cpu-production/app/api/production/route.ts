@@ -11,7 +11,8 @@ import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { normaliseProductionScope } from "../../../lib/production-scope";
 import { appendCpuChange, buildCpuDayProjection, cpuProjections, recoverMissingCpuDayProjection, recoverMissingCpuWeekProjection, listCpuChanges, listCpuWeekChanges, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import { europeLondonDate } from "../../../lib/operational-date";
-import { loadPlansForOrders } from "../../../lib/cpu-projection-repository";
+import { loadGuardedPlansForOrders } from "../../../lib/cpu-guarded-plans";
+import { revalidateProjectionAuthority } from "../../../lib/cpu-projection-authority";
 import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
 import type { ProductionOrder } from "../../../lib/production-types";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
@@ -167,7 +168,7 @@ async function handleGet(request: NextRequest) {
       const projectedIds = new Set((projection?.orders || []).map((order) => String(order.id)));
       const missing = [...canonicalById.keys()].filter((id) => !projectedIds.has(id));
       const unexpected = [...projectedIds].filter((id) => !canonicalById.has(id));
-      const expected = buildCpuDayProjection(week ? "all" : projectionDate, [...canonicalById.values()], await loadPlansForOrders([...canonicalById.keys()]));
+      const expected = buildCpuDayProjection(week ? "all" : projectionDate, [...canonicalById.values()], await loadGuardedPlansForOrders([...canonicalById.values()]));
       const projectedById = new Map((projection?.orders || []).map((order) => [String(order.id), order]));
       const fieldMismatches = expected.orders.filter((order) => {
         const actual = projectedById.get(order.id);
@@ -184,7 +185,7 @@ async function handleGet(request: NextRequest) {
           const packaged = await getCpuProjectionPackage(projectionDate, week || undefined);
           if (packaged) {
             const projection = packaged.value.projection;
-            const filtered = filterCpuProjectionForScope(projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
+            const filtered = filterCpuProjectionForScope(await revalidateProjectionAuthority(projection), normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
             recordDeliveredInReadBudget({ stage: "package_body_load", projectionDocs: 0, selectedIds: filtered.orders.length });
             return withServerTiming(NextResponse.json({ projection: filtered, package: packaged.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
           }
@@ -195,11 +196,11 @@ async function handleGet(request: NextRequest) {
         recordCpuPackageFallback("missing");
         if (week) {
           const recoveredWeek = await recoverMissingCpuWeekProjection(request, week);
-          const filtered = filterCpuProjectionForScope(recoveredWeek.projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
+          const filtered = filterCpuProjectionForScope(await revalidateProjectionAuthority(recoveredWeek.projection), normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
           return withServerTiming(NextResponse.json({ projection: filtered, package: recoveredWeek.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
         }
         const recoveredDay = await recoverMissingCpuDayProjection(request, projectionDate);
-        const filtered = filterCpuProjectionForScope(recoveredDay.projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
+        const filtered = filterCpuProjectionForScope(await revalidateProjectionAuthority(recoveredDay.projection), normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
         return withServerTiming(NextResponse.json({ projection: filtered, package: recoveredDay.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
       } else recordCpuPackageFallback("explicit-reconciliation");
       const storedStartedAt = performance.now();
@@ -224,7 +225,7 @@ async function handleGet(request: NextRequest) {
       const requiresRefresh = !stored.exists || !packageCurrent || needsReadableDestinations || needsCancellationRefresh || needsOrderRefresh;
       const refreshedProjection = requiresRefresh ? week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuDayProjection(request, projectionDate) : stored.data();
       const packageManifest = await getCpuProjectionManifest(projectionDate, week || undefined);
-      const response = NextResponse.json({ projection: refreshedProjection, package: packageManifest });
+      const response = NextResponse.json({ projection: refreshedProjection ? await revalidateProjectionAuthority(refreshedProjection as never) : refreshedProjection, package: packageManifest });
       recordDeliveredInReadBudget({ stage: requiresRefresh ? "projection_refresh" : "projection_body_load", projectionDocs: 1, canonicalOrderDocs: canonicalIds.size });
       return withServerTiming(response, { stored: storedDuration, package: packageDuration, canonical: canonicalDuration, total: performance.now() - startedAt });
     }
@@ -241,7 +242,7 @@ async function handleGet(request: NextRequest) {
       const queryStartedAt = performance.now();
       const changes = week ? await listCpuWeekChanges(after, week) : await listCpuChanges(after, projectionDate);
       const queryDuration = performance.now() - queryStartedAt;
-      const response = NextResponse.json({ changes, projection: (await cpuProjections().doc(week ? `week:${week}` : projectionDate).get()).data() || null });
+      const response = NextResponse.json({ changes, projection: await (async () => { const stored = (await cpuProjections().doc(week ? `week:${week}` : projectionDate).get()).data(); return stored ? await revalidateProjectionAuthority(stored as never) : null; })() });
       return withServerTiming(response, { changes: queryDuration, total: performance.now() - startedAt });
     }
     const id = request.nextUrl.searchParams.get("canonicalId");

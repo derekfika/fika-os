@@ -137,7 +137,6 @@ export type AuthorityOrigin = {
   releaseId: string; releaseVersion: number; matrixContentHash: string; signedMenuContentHash?: string; signedAt: string;
   signatures: Array<{ role: string; printedName: string; signedAt: string }>;
 };
-export type AdopterState = "pending" | "committed" | "cancelled";
 export type AuthorityCascade = { startedAt: string; completedAt?: string; adopters: Record<string, { sequence?: number; done?: boolean; doneAt?: string }> };
 /**
  * One approved authority per composition, versioned by `generation`. Each generation is immutable once approved: a revocation
@@ -157,8 +156,8 @@ export type AllergenCompositionAuthority = {
   cascadePending: boolean;
   /** Revoked earlier generations (append-only, immutable). */
   generations: Array<{ generation: number; origin: AuthorityOrigin; matrixSemanticHash: string; approvedAt: string; revokedAt: string; reason: string }>;
-  /** Adopter registry per generation. pending is a leased reservation made atomically with the active check; committed follows the plan commit. */
-  reusedBy: Array<{ orderId: string; generation: number; state: AdopterState; at: string; by: string; leaseUntil?: string }>;
+  /** Adopter registry per generation. An entry is written in the SAME transaction as the adopting plan and its release, so it only ever records committed adoptions. */
+  reusedBy: Array<{ orderId: string; generation: number; at: string; by: string }>;
   /** Durable, observable cascade progress keyed by generation. */
   cascades: Record<string, AuthorityCascade>;
   createdAt: string;
@@ -248,9 +247,10 @@ export function reuseStillValid(plan: Pick<ProductionPlan, "menuItems" | "reused
 }
 
 /** Drops reuse provenance (the booking falls back to ordinary review). Mutates `plan`; returns whether anything changed. */
-export function clearReuse(plan: ProductionPlan, input: { by: string; at: string; reason: string }) {
+export function clearReuse(plan: ProductionPlan, input: { by: string; at: string; reason: string; /** The approval itself is gone: the copied states must be reviewed again, never read as completed. */ reviewAgain?: boolean }) {
   if (!plan.reusedAllergenAuthority) return false;
   plan.reusedAllergenAuthority = undefined;
+  if (input.reviewAgain) for (const item of plan.menuItems) for (const sub of item.subItems) sub.evidenceStatus = "requires_review";
   if (plan.status === "planned" && !hasOwnSignedAuthority(plan)) plan.status = "planning";
   plan.audit.push({ action: "allergen-reuse-invalidated", at: input.at, by: input.by, reason: input.reason });
   return true;
@@ -275,6 +275,6 @@ export function reuseValidity(plan: Pick<ProductionPlan, "orderId" | "menuItems"
   if (authority.matrixSemanticHash !== reuse.matrixSemanticHash) return { valid: false, reason: "matrix_hash_mismatch" };
   if (!reuseStillValid(plan, order)) return { valid: false, reason: "composition_or_matrix_changed" };
   const registration = authority.reusedBy.find(entry => entry.orderId === plan.orderId && entry.generation === reuse.generation);
-  if (registration?.state !== "committed") return { valid: false, reason: "adoption_not_committed" };
+  if (!registration) return { valid: false, reason: "adoption_not_registered" };
   return { valid: true };
 }

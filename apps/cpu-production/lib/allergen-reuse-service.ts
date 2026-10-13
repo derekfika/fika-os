@@ -57,7 +57,9 @@ export async function validateReusedApproval(store: AllergenAuthorityStore, plan
 
 /** Returns the plan with every reused-authority artifact removed and the status downgraded. Pure. */
 export function withoutReusedAuthority<T extends ProductionPlan>(plan: T): T {
-  return { ...plan, status: plan.status === "planned" ? "planning" : plan.status, currentAllergenRelease: undefined, matrixArtifact: undefined, signedMatrixArtifact: undefined, masterMatrixArtifact: undefined, siteMatrixArtifacts: undefined };
+  // The approved states stay visible as a starting point but are marked for review, so no reader can treat the matrix as reviewed/complete.
+  const menuItems = plan.menuItems.map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, evidenceStatus: "requires_review" as const })) }));
+  return { ...plan, menuItems, status: plan.status === "planned" ? "planning" : plan.status, currentAllergenRelease: undefined, matrixArtifact: undefined, signedMatrixArtifact: undefined, masterMatrixArtifact: undefined, siteMatrixArtifacts: undefined };
 }
 
 /**
@@ -100,7 +102,9 @@ export async function reconcileReuse(store: AllergenAuthorityStore, plan: Produc
   if (hasOwnSignedAuthority(plan)) return clearReuse(plan, { ...input, reason: "This booking now carries its own signed allergen authority; reuse provenance was superseded." });
   const authority = await store.get(plan.reusedAllergenAuthority.compositionId);
   const validity = reuseValidity(plan, order, authority);
-  return validity.valid ? false : clearReuse(plan, { ...input, reason: `The reused allergen approval no longer applies (${validity.reason}); a fresh allergen review is required.` });
+  // When the authority itself is gone the copied states must be reviewed again; a manual edit or composition change is already a chef review.
+  const authorityGone = !validity.valid && !["composition_or_matrix_changed", "no_reuse_provenance"].includes(validity.reason);
+  return validity.valid ? false : clearReuse(plan, { ...input, reason: `The reused allergen approval no longer applies (${validity.reason}); a fresh allergen review is required.`, reviewAgain: authorityGone });
 }
 
 /** Throws 409 unless the reused approval validates right now. Used before any materialization step acts on a reused release. */

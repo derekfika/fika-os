@@ -5,22 +5,25 @@ import { releaseMaterializationDelivery } from "./cpu-retry-materialization";
 import { applyReusedAuthority, captureApprovedMatrix, clearReuse, compositionIdentity, evaluateReuse, type AllergenCompositionAuthority, type CompositionOrder } from "./allergen-composition";
 import { signedAuthorityCandidate } from "./allergen-reuse-service";
 import { enqueueCpuDelivery } from "./cpu-durable-outbox";
-import { ADOPTION_LEASE_MS, applyCascadeComplete, applyCascadeStep, applyExpirePendingAdoptions, livePendingAdopters, type AllergenAuthorityStore } from "./allergen-authority-store";
+import { applyCascadeComplete, applyCascadeStep, type AllergenAuthorityStore, type AuthorityClause } from "./allergen-authority-store";
 import type { ProductionPlanRepository } from "./production-plan-repository";
 import type { ProductionOrder } from "./production-types";
 
 /**
- * State model (see allergen-composition / allergen-authority-store):
+ * State model (see allergen-composition / allergen-authority-store / production-plan-repository):
  *
  *   authority (per composition) = generation N, status active|revoked, revocation intent, adopter registry, per-generation cascade
  *   adopter plan                = reusedAllergenAuthority { composition, generation, origin release, matrix hash } + reused release
  *
- * Adoption:  beginAdoption (atomic active/generation check + leased reservation)  ->  commit plan + release  ->  finalizeAdoption (CAS)
- *            A failed finalize compensates (the plan is reopened through the normal change path).
- * Revocation: revokeByOrigin (atomic: status revoked + revocation intent + cascadePending)  ->  durable outbox work  ->
- *            per-adopter reopen (idempotent change event + at-least-once invalidation)  ->  cascade complete (only with no live pending adopters).
- *            A reconciliation sweep re-creates the work for any revoked authority whose cascade is incomplete.
- * Every read path validates through allergen-reuse-service `validateReusedApproval` and fails closed.
+ * The plan repository enforces, INSIDE the transaction that writes a plan and its CPU change event, that any persisted reused
+ * `planned` plan / `pending` or `current` reused release is bound to an authority generation that is still active (and registered).
+ *
+ * Adoption:   ONE transaction = guard(generation active) + adopted plan + generation-bound release + committed registry entry + change event.
+ *             Nothing is reserved, so nothing can strand, expire, or commit behind a revocation.
+ * Revocation: an origin mutation that withdraws a signed approval carries the revocation in the SAME transaction as the plan change
+ *             (status revoked + revocation intent + cascadePending).  Durable outbox work and the worker reconcile the cascade;
+ *             per-adopter reopen is an idempotent change event + at-least-once invalidation; completion is recorded per generation.
+ * Reads:      every read path validates the same contract (allergen-reuse-service `validateReusedApproval`) and fails closed.
  */
 export type ReuseOrchestrationDeps = {
   plans: ProductionPlanRepository;
@@ -64,53 +67,44 @@ export function revokeReusedRelease(plan: ProductionPlan, input: { by: string; a
 /** Reopens one adopting plan (mutates): reused release revoked, provenance cleared, status back to Planning. */
 export function reopenAdoptingPlan(plan: ProductionPlan, input: { by: string; at: string; reason: string }) {
   revokeReusedRelease(plan, input);
-  return clearReuse(plan, input);
+  return clearReuse(plan, { ...input, reviewAgain: true });
 }
 
 /**
  * Explicit CPU command: adopt a previously approved composition authority AND commit the current-booking release that makes
- * it authoritative downstream. Adoption is bound to an exact authority generation and reserved atomically, so it can never
- * commit behind a revocation; a replay of an adopted plan is a no-op.
+ * it authoritative downstream, in a SINGLE repository transaction. The transaction guards that the exact authority generation
+ * is still active and registers the adoption atomically, so an adoption can never commit behind a revocation, and a crash
+ * leaves either the whole adoption or nothing. A replay of an adopted plan is a no-op.
  */
 export async function applyReuseCommand(deps: ReuseOrchestrationDeps, input: { plan: ProductionPlan; storedPlan?: ProductionPlan; order: Order; actor: string; actorId: string; at: string; commandId?: string; syncPlanned?: () => Promise<void> }) {
   const identity = compositionIdentity(input.order);
   if (!identity) throw Object.assign(new Error("This booking has no canonical sandwich composition, so a previous approval cannot be reused. Review it normally."), { status: 409, code: "CPU_ALLERGEN_REUSE_COMPOSITION_UNAVAILABLE" });
   const authority = await deps.store.get(identity.compositionId);
   const already = input.plan.reusedAllergenAuthority;
-  if (already && authority && already.generation === authority.generation && authority.status === "active" && authority.reusedBy.some(item => item.orderId === input.plan.orderId && item.generation === authority.generation && item.state === "committed")) return { plan: input.plan, changed: false as const };
+  if (already && authority && already.generation === authority.generation && authority.status === "active" && !authority.revocation && authority.reusedBy.some(item => item.orderId === input.plan.orderId && item.generation === authority.generation)) return { plan: input.plan, changed: false as const };
   const decision = evaluateReuse(input.order, input.plan, authority);
   if (!decision.ok || !authority) throw Object.assign(new Error(`The approved allergen authority cannot be reused (${decision.ok ? "authority_missing" : decision.reason}).`), { status: 409, code: `CPU_ALLERGEN_REUSE_${(decision.ok ? "authority_missing" : decision.reason).toUpperCase()}` });
-  // 1. Atomic reservation: only succeeds while this exact generation is active and not being revoked.
-  const reserved = await deps.store.beginAdoption(authority.compositionId, { generation: authority.generation, releaseId: authority.origin.releaseId, matrixSemanticHash: authority.matrixSemanticHash }, input.plan.orderId, input.at, input.actor, new Date(Date.parse(input.at) + ADOPTION_LEASE_MS).toISOString());
-  if (!reserved.ok) throw Object.assign(new Error(`The approved allergen authority is no longer available for reuse (${reserved.reason}).`), { status: 409, code: `CPU_ALLERGEN_REUSE_${reserved.reason.toUpperCase()}` });
-  // 2. Commit the adopted plan and its generation-bound release through the normal CPU change path.
-  const plan = applyReusedAuthority(input.plan, input.order, reserved.authority, { by: input.actor, at: input.at });
+  const plan = applyReusedAuthority(input.plan, input.order, authority, { by: input.actor, at: input.at });
   plan.currentAllergenRelease = pendingReusedRelease(plan, input.order, input.at);
-  plan.audit.push({ action: "allergen-reused-release-committed", at: input.at, by: input.actor, reason: `Release ${plan.currentAllergenRelease.releaseId} issued from reused authority generation ${reserved.authority.generation}; materialization follows the committed release.` });
+  plan.audit.push({ action: "allergen-reused-release-committed", at: input.at, by: input.actor, reason: `Release ${plan.currentAllergenRelease.releaseId} issued from reused authority generation ${authority.generation}; materialization follows the committed release.` });
+  if (input.syncPlanned) await input.syncPlanned();
+  plan.updatedAt = input.at; plan.updatedBy = input.actor;
+  const delivery = releaseMaterializationDelivery(plan, plan.currentAllergenRelease, input.order, input.at);
+  let event: Awaited<ReturnType<ProductionPlanRepository["saveAndAppendCpuChange"]>>;
   try {
-    if (input.syncPlanned) await input.syncPlanned();
-    plan.updatedAt = input.at; plan.updatedBy = input.actor;
-    const delivery = releaseMaterializationDelivery(plan, plan.currentAllergenRelease, input.order, input.at);
-    const event = await deps.plans.saveAndAppendCpuChange(plan, input.storedPlan?.updatedAt, {
+    event = await deps.plans.saveAndAppendCpuChange(plan, input.storedPlan?.updatedAt, {
       serviceDate: input.order.serviceDate || input.order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: "apply-reused-authority", actorId: input.actorId, changedAt: input.at,
       idempotencyKey: input.commandId || `allergen-reuse:${plan.orderId}:${plan.reusedAllergenAuthority!.authorityId}:${plan.reusedAllergenAuthority!.origin.releaseId}`,
       propagation: { sourceEntityId: plan.id, serviceDate: input.order.serviceDate || input.order.requiredBy.slice(0, 10), sourceVersion: plan.audit.length, changedAt: input.at, changeType: "amended", order: input.order, logistics: false },
       deliveries: [delivery],
-    });
-    if (event.duplicate) return { plan: event.plan || plan, changed: false as const, duplicate: true as const };
-    // 3. Compare-and-set finalize. If the generation was revoked meanwhile, compensate through the same cascade machinery.
-    const finalized = await deps.store.finalizeAdoption(authority.compositionId, reserved.authority.generation, plan.orderId, input.at);
-    if (!finalized) {
-      await reopenAdopter(deps, { compositionId: authority.compositionId, generation: reserved.authority.generation, orderId: plan.orderId, actor: input.actor, actorId: input.actorId, at: input.at, reason: "The shared allergen authority was revoked while this adoption was being committed." });
-      throw Object.assign(new Error("The approved allergen authority was revoked while it was being applied. The booking needs a fresh allergen review."), { status: 409, code: "CPU_ALLERGEN_REUSE_AUTHORITY_REVOKED" });
-    }
-    await deps.emit({ order: input.order, plan, sequence: event.sequence, changeType: "apply-reused-authority", at: input.at });
-    return { plan, changed: true as const, sequence: event.sequence, materializationDelivery: delivery };
+    }, { registerAdoption: { at: input.at, by: input.actor } });
   } catch (error) {
-    // Nothing was committed (or it was compensated): release the reservation so it cannot block a revocation cascade.
-    if ((error as { code?: string }).code !== "CPU_ALLERGEN_REUSE_AUTHORITY_REVOKED") await deps.store.cancelAdoption(authority.compositionId, reserved.authority.generation, plan.orderId).catch(() => undefined);
+    if ((error as { code?: string }).code === "CPU_REUSED_AUTHORITY_INVALID") throw Object.assign(new Error("The approved allergen authority is no longer available for reuse. The booking needs a fresh allergen review."), { status: 409, code: "CPU_ALLERGEN_REUSE_AUTHORITY_REVOKED", cause: error });
     throw error;
   }
+  if (event.duplicate) return { plan: event.plan || plan, changed: false as const, duplicate: true as const };
+  await deps.emit({ order: input.order, plan, sequence: event.sequence, changeType: "apply-reused-authority", at: input.at });
+  return { plan, changed: true as const, sequence: event.sequence, materializationDelivery: delivery };
 }
 
 export const AUTHORITY_REVOKED_ROUTE = "/api/internal/cpu-allergen-authority-revoked";
@@ -168,27 +162,46 @@ export async function reopenAdopter(deps: ReuseOrchestrationDeps, input: { compo
  */
 export async function processAuthorityRevocation(deps: ReuseOrchestrationDeps, input: RevocationWork) {
   const at = nowOf(deps);
-  let authority = await deps.store.get(input.compositionId);
+  const authority = await deps.store.get(input.compositionId);
   const revokedGeneration = authority && (authority.generation > input.generation || (authority.generation === input.generation && authority.status === "revoked"));
   if (!authority || !revokedGeneration) return { status: "not_revoked" as const, failed: [] as string[] };
-  // Abandoned reservations are cancelled; live ones keep the cascade open until they finalize (and are then compensated) or expire.
-  authority = (await deps.store.mutate(input.compositionId, current => applyExpirePendingAdoptions(current, input.generation, at))) || authority;
-  const live = livePendingAdopters(authority, input.generation, at);
+  // No adoption can commit behind a revoked generation (the repository guard rejects it), so this registry is final.
   const adopters = [...new Set(authority.reusedBy.filter(item => item.generation === input.generation).map(item => item.orderId))];
   const failed: string[] = [];
   for (const orderId of adopters) {
     try { await reopenAdopter(deps, { compositionId: input.compositionId, generation: input.generation, orderId, actor: input.actor, actorId: input.actorId, at: input.at, reason: input.reason }); } catch (error) { failed.push(`${orderId}: ${error instanceof Error ? error.message : String(error)}`); }
   }
-  if (live.length) failed.push(...live.map(item => `${item.orderId}: adoption reservation still pending until ${item.leaseUntil}`));
   if (failed.length) throw Object.assign(new Error(`Allergen authority revocation cascade incomplete (${failed.length}/${adopters.length}): ${failed.join("; ")}`), { status: 502, code: "CPU_ALLERGEN_AUTHORITY_CASCADE_INCOMPLETE" });
   await deps.store.mutate(input.compositionId, current => applyCascadeComplete(current, input.generation, at, input.actor));
   return { status: "complete" as const, failed, adopters };
 }
 
 /**
- * Revoke exactly the authority generation established by `releaseId`, using the composition stamped on the signed release (NOT
- * the origin booking's current composition). The revocation intent is atomic with the status change; durable cascade work is
- * (re)ensured on every call, including a retry against an already-revoked generation, then attempted inline.
+ * The revocation clause an origin plan transition must carry so the authority is revoked IN THE SAME TRANSACTION as the plan
+ * change that withdrew its signed approval. Returns undefined when the transition does not withdraw a stamped signed release,
+ * or when only unrelated booking metadata changed (the approved matrix is what authority validity tracks).
+ */
+export function originRevocationClause(input: { before?: ProductionPlan["currentAllergenRelease"]; beforePlan?: ProductionPlan; plan: ProductionPlan; order: Order | undefined; actor: string; at: string; explicitReopen?: boolean }): AuthorityClause | undefined {
+  const { before, plan } = input;
+  if (!before || before.approvalMode === "reused_authority" || !before.compositionId || plan.currentAllergenRelease?.releaseId === before.releaseId) return undefined;
+  if (!input.explicitReopen && !approvedMatrixChanged(input.beforePlan, plan, input.order)) return undefined;
+  return { revoke: { compositionId: before.compositionId, releaseId: before.releaseId, at: input.at, by: input.actor, reason: input.explicitReopen ? "The signed allergen review that established this approved composition was reopened." : "The approved allergen matrix that established this composition changed after signing." } };
+}
+
+/**
+ * After the origin transition committed (its revocation intent is already durable on the authority): make sure the cascade work
+ * exists and attempt it inline. Nothing here is required for safety: reads fail closed on the revoked authority, `cascadePending`
+ * lets the worker reconstruct the work, and a failure here only delays cleanup.
+ */
+export async function runCommittedRevocation(deps: ReuseOrchestrationDeps, clause: AuthorityClause | undefined) {
+  const revoke = clause?.revoke;
+  if (!revoke) return [] as string[];
+  return cascadeAuthorityRevocation(deps, { compositionId: revoke.compositionId, releaseId: revoke.releaseId, actor: revoke.by, actorId: revoke.by, at: revoke.at, reason: revoke.reason });
+}
+
+/**
+ * Revoke exactly the authority generation established by `releaseId` (idempotent: it is usually already revoked by the origin
+ * transition), then (re)ensure durable cascade work, including on a retry against an already-revoked generation, and attempt it inline.
  */
 export async function cascadeAuthorityRevocation(deps: ReuseOrchestrationDeps, input: { compositionId: string | undefined; releaseId: string; actor: string; actorId: string; at: string; reason: string }) {
   if (!input.compositionId) return [] as string[];
@@ -244,3 +257,23 @@ export function approvedMatrixChanged(before: ProductionPlan | undefined, after:
 }
 
 export { compositionIdentity };
+
+/**
+ * Worker-safe reconciliation step: for every revoked authority with an incomplete cascade, (re)create the idempotent durable
+ * outbox work item. It needs no request context or order loading, so the long-lived worker runs it on every tick; the outbox
+ * then delivers the work to the CPU internal route with its normal retry and backoff.
+ */
+export async function ensureCascadeWorkForPendingAuthorities(store: AllergenAuthorityStore, limit = 25, at = new Date().toISOString()) {
+  const pending = await store.listCascadePending(limit);
+  let ensured = 0;
+  for (const authority of pending) {
+    for (const generation of incompleteGenerations(authority)) {
+      const origin = generation === authority.generation ? authority.origin : authority.generations.find(item => item.generation === generation)!.origin;
+      const revocation = generation === authority.generation ? authority.revocation : undefined;
+      await ensureRevocationWork({ compositionId: authority.compositionId, generation, releaseId: origin.releaseId, actor: revocation?.by || "system", actorId: revocation?.by || "system", at: revocation?.at || at, reason: revocation?.reason || "Reconciled revoked allergen authority." });
+      ensured += 1;
+    }
+  }
+  return ensured;
+}
+const incompleteGenerations = (authority: AllergenCompositionAuthority) => [...authority.generations.map(item => item.generation), ...(authority.status === "revoked" ? [authority.generation] : [])].filter(generation => !authority.cascades?.[String(generation)]?.completedAt);
