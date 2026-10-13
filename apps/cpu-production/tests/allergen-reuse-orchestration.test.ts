@@ -811,7 +811,7 @@ test("P1-2: every apply-reused-authority response path is guarded and fails clos
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   assert.equal((route.match(/finalApplyResponse\(/g) || []).length, 1, "the guarded final-response builder is the only constructor");
   assert.equal((route.match(/finalise\(/g) || []).length, 2, "new adoption and replay both answer through it");
-  assert.match(route, /loadOrder: id => loadOrder\(request, id\)/, "the LATEST canonical order is reloaded for the final response");
+  assert.match(route, /loadOrder: id => loadOrder\(request, id, \{ fresh: true \}\)/, "the LATEST canonical order is reloaded for the final response");
   assert.doesNotMatch(route, /finalPlan/);
   assert.doesNotMatch(route, /reuse: \{ applied: true(, unchanged: true)? \}[^)]*NextResponse|NextResponse\.json\(\{ plan: result\.plan/);
 });
