@@ -14,6 +14,7 @@ const { loadGuardedPlansForOrders } = await import("../lib/cpu-guarded-plans");
 const { revalidateProjectionAuthority } = await import("../lib/cpu-projection-authority");
 const { buildCpuDayProjection } = await import("../lib/cpu-projection");
 const { loadDeliveredInReviewStatuses } = await import("../lib/delivered-in-review");
+const { selectedPlanResponseBody, servicePlansResponseBody } = await import("../lib/cpu-plan-response");
 const { resetCpuOutboxForTests, listCpuOutboxForTests } = await import("../lib/cpu-durable-outbox");
 const { materializeCpuAllergenRelease } = await import("../lib/cpu-allergen-release");
 const { currentAllergenReleaseMatchesOrder, reusedAuthorityReleaseMatchesOrder, hasAllergenAuthority } = await import("../app/lib/production-plan");
@@ -87,6 +88,7 @@ async function makeReady(h: H, orderId: string) {
   await h.plans.save(ready);
   return ready;
 }
+const ctxFor = (h: H) => ({ store, loadOrder: async (id: string) => h.orders.get(id) as never });
 const authorityOf = () => [...store.records.values()][0];
 
 test("end to end: signed origin → authority → generation-bound reuse release → origin correction → adopter non-authoritative and invalidated", async () => {
@@ -478,24 +480,24 @@ test("P1-1: a cached production projection cannot stay planned/ready after revoc
   assert.equal(entry.workflowStatus, "planned");
   assert.equal(entry.reusedAuthority?.generation, 1, "the cached projection records the authority generation it relies on");
   assert.equal(projection.summary.planned, 1);
-  const stillValid = await revalidateProjectionAuthority(projection);
+  const stillValid = await revalidateProjectionAuthority(projection, ctxFor(h));
   assert.equal(stillValid.orders[0].workflowStatus, "planned");
   // revocation, with NO cascade and NO rebuild: the cached copy is still downgraded on read
   await store.revokeByOrigin(h.compositionId, "rel-origin-1", AT, "head", "corrected");
-  const revoked = await revalidateProjectionAuthority(projection);
+  const revoked = await revalidateProjectionAuthority(projection, ctxFor(h));
   assert.notEqual(revoked.orders[0].workflowStatus, "planned"); assert.equal(revoked.orders[0].reusedAuthorityInvalid, true); assert.equal(revoked.orders[0].reusedAuthority, undefined);
   assert.equal(revoked.summary.planned, 0); assert.ok(revoked.orders[0].attention.length > 0);
   // re-approval is a new generation: the cached generation-1 projection stays invalid
   const reapproved = order("o-reapproved", ITEMS); h.orders.set("o-reapproved", reapproved);
   await recordSignedApproval({ store }, signedPlan(reapproved, "rel-reapproved-1", { "item:ham": { milk: "contains" } }), reapproved as never, AT, "chef");
   assert.equal(authorityOf().status, "active");
-  assert.notEqual((await revalidateProjectionAuthority(projection)).orders[0].workflowStatus, "planned");
+  assert.notEqual((await revalidateProjectionAuthority(projection, ctxFor(h))).orders[0].workflowStatus, "planned");
   // an unreadable authority fails closed
   store.failWith = new Error("down");
-  try { assert.notEqual((await revalidateProjectionAuthority(projection)).orders[0].workflowStatus, "planned"); } finally { store.failWith = undefined; }
+  try { assert.notEqual((await revalidateProjectionAuthority(projection, ctxFor(h))).orders[0].workflowStatus, "planned"); } finally { store.failWith = undefined; }
   // projections without reused entries cost nothing and are returned untouched
   const plain = buildCpuDayProjection("2026-10-20", [h.originOrder as never], [h.originPlan]);
-  assert.equal(await revalidateProjectionAuthority(plain), plain);
+  assert.equal(await revalidateProjectionAuthority(plain, ctxFor(h)), plain);
 });
 
 test("P1-2: materialization cannot promote, return or restore a revoked reused release", async () => {
@@ -577,8 +579,187 @@ test("the long-lived worker runs the authority reconciliation; the persistence i
   assert.match(worker, /CPU_ALLERGEN_AUTHORITY_SWEEP_MS/);
   const repo = await readFile(new URL("../lib/production-plan-repository.ts", import.meta.url), "utf8");
   assert.equal((repo.match(/evaluateAuthorityTransition\(/g) || []).length, 3, "memory save + Firestore save + Firestore save-and-append all evaluate the authority inside their transaction");
-  assert.match(repo, /readAuthorities\(db, transaction, plan, authority\)/);
+  assert.match(repo, /readAuthorities\(db, transaction, plan, authority, current\)/);
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   assert.equal((route.match(/originRevocationClause\(/g) || []).length, 3, "all three origin transition sites carry the revocation clause");
   assert.match(route, /\}, authorityClause\)/);
+});
+
+// ================================================================ round 3: response construction, projection composition, persistence invariants
+
+test("P1-1: the selected GET builds plan, plans[], notifications and menus from ONE guarded plan (also during an authority outage)", async () => {
+  const h = await harness();
+  const { o } = await h.adopt("o-other");
+  const ready = await makeReady(h, "o-other");
+  const valid = await selectedPlanResponseBody(store, { plan: ready, order: o as never, matrixStatus: "ready" });
+  assert.equal(valid.plan?.status, "planned");
+  assert.equal(valid.plans[0]?.currentAllergenRelease?.approvalMode, "reused_authority");
+  assert.equal(valid.notifications.length, 1, "positive control: a valid reused plan notifies");
+  assert.equal(valid.approvedMatrixAvailable, true);
+  const assertDowngraded = (body: Awaited<ReturnType<typeof selectedPlanResponseBody>>) => {
+    for (const plan of [body.plan, ...body.plans]) {
+      assert.notEqual(plan?.status, "planned");
+      assert.equal(plan?.currentAllergenRelease, undefined, "no reused release in plan or plans[]");
+      assert.equal(plan?.matrixArtifact, undefined);
+      assert.ok(plan?.menuItems.every(item => item.subItems.every(sub => sub.evidenceStatus !== "completed")), "copied states are not read as reviewed");
+    }
+    assert.equal(body.plans.length, 1);
+    assert.deepEqual(body.notifications, [], "no planned notification is emitted");
+    assert.deepEqual(body.menus, []);
+    assert.equal(body.approvedMatrixAvailable, false);
+    assert.equal(body.matrixStatus, undefined);
+  };
+  // revoked, cascade not run
+  await store.revokeByOrigin(h.compositionId, "rel-origin-1", AT, "head", "corrected");
+  assertDowngraded(await selectedPlanResponseBody(store, { plan: ready, order: o as never, matrixStatus: "ready" }));
+  // outage on a valid authority: same behaviour
+  await harnessReset(h);
+  const again = await h.adopt("o-again");
+  const readyAgain = await makeReady(h, "o-again");
+  store.failWith = new Error("authority store outage");
+  try { assertDowngraded(await selectedPlanResponseBody(store, { plan: readyAgain, order: again.o as never, matrixStatus: "ready" })); } finally { store.failWith = undefined; }
+  // service-date list: built only from the guarded set, so no notification/menu for a downgraded entry
+  store.failWith = new Error("authority store outage");
+  try {
+    const guarded = await guardReusedPlan(store, readyAgain, again.o as never);
+    assert.deepEqual(servicePlansResponseBody([guarded], [again.o as never]).notifications, []);
+    assert.deepEqual(servicePlansResponseBody([guarded], [again.o as never]).menus, []);
+  } finally { store.failWith = undefined; }
+  const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
+  assert.match(route, /selectedPlanResponseBody\(allergenAuthorityStore, \{ plan: selectedPlan/);
+  assert.match(route, /servicePlansResponseBody\(visiblePlans, sourceOrders\)/);
+  assert.doesNotMatch(route, /plans: selectedPlan \? \[selectedPlan\]/);
+  assert.doesNotMatch(route, /notifications: selectedPlan\?\.status/);
+});
+async function harnessReset(h: H) { await store.mutate(h.compositionId, current => ({ ...current, status: "active" as const, revocation: undefined, cascadePending: false })); }
+
+test("P1-2: a cached projection also requires the CURRENT canonical composition; legacy entries and outages fail closed; readiness is recomputed", async () => {
+  const h = await harness();
+  const { o } = await h.adopt("o-other");
+  const ready = await makeReady(h, "o-other");
+  const other = order("o-plain", ["item:plain"]); other.status = "ready" as never;
+  const projection = buildCpuDayProjection("2026-10-20", [o as never, other as never], [ready, planFor(other, {}, { status: "planned" })]);
+  const entry = () => projection.orders.find(item => item.id === "o-other")!;
+  assert.equal(entry().workflowStatus, "planned"); assert.equal(entry().allergenReadiness, "ready"); assert.equal((projection as { authorityBindingVersion?: number }).authorityBindingVersion, 1);
+  const ctx = ctxFor(h);
+  assert.equal((await revalidateProjectionAuthority(projection, ctx)).orders.find(item => item.id === "o-other")!.workflowStatus, "planned");
+  // (a) bread / instruction change after the projection was cached: the current canonical composition no longer matches
+  const changed = order("o-other", ITEMS, {}, { productionInstructions: "Use sourdough" }); h.orders.set("o-other", changed);
+  const afterChange = await revalidateProjectionAuthority(projection, ctx);
+  const downgradedEntry = afterChange.orders.find(item => item.id === "o-other")!;
+  assert.notEqual(downgradedEntry.workflowStatus, "planned"); assert.equal(downgradedEntry.allergenReadiness, "attention"); assert.equal(downgradedEntry.planningReadiness, "attention");
+  assert.ok(downgradedEntry.attention.some(text => /allergen review/.test(text)));
+  assert.equal(afterChange.summary.planned, 1, "summary recomputed: only the unrelated planned order remains");
+  assert.equal(afterChange.summary.attention, 1);
+  assert.equal(afterChange.orders.find(item => item.id === "o-plain")!.workflowStatus, "planned", "unrelated entries are untouched");
+  // the canonical order cannot be established -> fail closed
+  const missing = { store, loadOrder: async (id: string) => (id === "o-other" ? undefined : h.orders.get(id)) as never };
+  assert.notEqual((await revalidateProjectionAuthority(projection, missing)).orders.find(item => item.id === "o-other")!.workflowStatus, "planned");
+  const throwing = { store, loadOrder: async () => { throw new Error("hub unavailable"); } };
+  assert.notEqual((await revalidateProjectionAuthority(projection, throwing)).orders.find(item => item.id === "o-other")!.workflowStatus, "planned");
+  h.orders.set("o-other", o);
+  // (b) revoked authority
+  await store.revokeByOrigin(h.compositionId, "rel-origin-1", AT, "head", "corrected");
+  assert.notEqual((await revalidateProjectionAuthority(projection, ctx)).orders.find(item => item.id === "o-other")!.workflowStatus, "planned");
+  await harnessReset(h);
+  // (c) authority-store outage
+  store.failWith = new Error("down");
+  try { assert.notEqual((await revalidateProjectionAuthority(projection, ctx)).orders.find(item => item.id === "o-other")!.workflowStatus, "planned"); } finally { store.failWith = undefined; }
+  // (d) a historical projection without bindings: every Hospitality Planned entry is unverifiable and non-authoritative
+  const legacy = JSON.parse(JSON.stringify(projection));
+  delete legacy.authorityBindingVersion; for (const item of legacy.orders) delete item.reusedAuthority;
+  const legacyChecked = await revalidateProjectionAuthority(legacy, ctx);
+  const legacyEntry = legacyChecked.orders.find((item: { id: string }) => item.id === "o-other");
+  assert.notEqual(legacyEntry.workflowStatus, "planned"); assert.equal(legacyEntry.allergenReadiness, "attention"); assert.equal(legacyEntry.reusedAuthority, undefined);
+  assert.equal(legacyChecked.summary.planned, 0, "both Hospitality entries are unverifiable; no stale planned count survives");
+  assert.equal(legacyChecked.orders.every((item: { workflowStatus: string }) => item.workflowStatus !== "planned"), true);
+  // (e) the production route upgrades an unversioned cached package before serving it
+  const productionRoute = await readFile(new URL("../app/api/production/route.ts", import.meta.url), "utf8");
+  assert.match(productionRoute, /authorityBindingVersion\?: number \}\)\.authorityBindingVersion !== 1/);
+  assert.match(productionRoute, /loadOrder: async \(id: string\) => \(await productionOrderDetail\(request, id\)\)/);
+});
+
+test("P1-3: the repository verifies the state being persisted, not just copied provenance (matrix, release matrix, binding, registration)", async () => {
+  const h = await harness();
+  const { o } = await h.adopt("o-other");
+  const stored = (await h.plans.get("o-other"))!;
+  const change = (revision: number) => ({ serviceDate: "2026-10-20", entityType: "productionPlan", entityId: stored.id, revision, changeType: "x", actorId: "u", changedAt: AT, idempotencyKey: `p13-${++seq}` }) as never;
+  const invalid = (error: { code?: string }) => error.code === "CPU_REUSED_AUTHORITY_INVALID";
+  // allergen states mutated while the copied provenance is retained
+  const mutated = structuredClone(stored); mutated.menuItems[0].subItems[0].allergens.eggs = mutated.menuItems[0].subItems[0].allergens.eggs === "contains" ? "clear" : "contains" as never;
+  await assert.rejects(h.plans.save(mutated), invalid);
+  await assert.rejects(h.plans.saveAndAppendCpuChange(mutated, undefined, change(50)), invalid);
+  // release matrix no longer matches the plan matrix
+  const releaseDrift = structuredClone(stored); releaseDrift.currentAllergenRelease!.matrix = releaseDrift.currentAllergenRelease!.matrix.map(row => ({ ...row, allergens: { ...row.allergens, milk: "contains" } }));
+  await assert.rejects(h.plans.save(releaseDrift), invalid);
+  // release binding differs from the plan's provenance (composition / generation / origin / hash)
+  for (const patch of [{ generation: 9 }, { compositionId: "other" }, { matrixSemanticHash: "z" }] as Array<Record<string, unknown>>) {
+    const bound = structuredClone(stored); bound.currentAllergenRelease!.reusedAuthority = { ...bound.currentAllergenRelease!.reusedAuthority!, ...patch } as never;
+    await assert.rejects(h.plans.save(bound), invalid, JSON.stringify(patch));
+  }
+  const originDrift = structuredClone(stored); originDrift.currentAllergenRelease!.reusedAuthority!.origin.releaseId = "rel-other";
+  await assert.rejects(h.plans.save(originDrift), invalid);
+  // provenance copied from the authority but the adopter was never registered
+  await store.mutate(h.compositionId, current => ({ ...current, reusedBy: [] }));
+  await assert.rejects(h.plans.save(stored), invalid);
+  await store.mutate(h.compositionId, current => ({ ...current, reusedBy: [{ orderId: "o-other", generation: 1, at: AT, by: "u" }] }));
+  // names and quantities are not allergen statements: the unchanged-meaning write still passes
+  const renamed = structuredClone(stored); renamed.menuItems[0].name = "Renamed"; renamed.menuItems[0].subItems[0].quantity = 999; renamed.updatedAt = "2026-10-12T15:00:00.000Z";
+  await h.plans.save(renamed);
+  assert.equal(o.canonicalId, "o-other");
+});
+
+test("P1-4: an authority-backed signed origin cannot disappear or change while its authority stays active (bare save and saveAndAppendCpuChange)", async () => {
+  const change = (id: string, revision: number) => ({ serviceDate: "2026-10-20", entityType: "productionPlan", entityId: id, revision, changeType: "x", actorId: "u", changedAt: AT, idempotencyKey: `p14-${++seq}` }) as never;
+  // (1) the release is removed by a bare save
+  let h = await harness();
+  const removed = structuredClone(h.originPlan); removed.currentAllergenRelease = undefined; removed.signatures = undefined; removed.signedSignatures = undefined; removed.status = "planning"; removed.updatedAt = "2026-10-12T16:00:00.000Z";
+  await h.plans.save(removed);
+  assert.equal(authorityOf().status, "revoked", "the repository revoked the authority in the same write");
+  assert.equal(authorityOf().cascadePending, true);
+  // (2) the release is revoked / reopened through saveAndAppendCpuChange with NO clause
+  h = await harness();
+  const revokedRelease = structuredClone(h.originPlan); revokedRelease.currentAllergenRelease = { ...revokedRelease.currentAllergenRelease!, status: "revoked" } as never; revokedRelease.updatedAt = "2026-10-12T16:00:00.000Z";
+  await h.plans.saveAndAppendCpuChange(revokedRelease, h.originPlan.updatedAt, change(h.originPlan.id, 3));
+  assert.equal(authorityOf().status, "revoked");
+  // (3) the approved matrix changes while the release stays in place
+  h = await harness();
+  const edited = structuredClone(h.originPlan); edited.menuItems[0].subItems[0].allergens.eggs = "contains" as never; edited.updatedAt = "2026-10-12T16:00:00.000Z";
+  await h.plans.save(edited);
+  assert.equal(authorityOf().status, "revoked");
+  // (4) quantity / name / date / headcount-only changes (and materialization-style rewrites of the same release) never revoke
+  h = await harness();
+  const commercial = structuredClone(h.originPlan); commercial.menuItems[0].subItems[0].quantity = 777; commercial.menuItems[0].name = "Renamed"; commercial.planningNotes = "headcount +4"; commercial.updatedAt = "2026-10-12T16:00:00.000Z";
+  await h.plans.save(commercial);
+  await h.plans.saveAndAppendCpuChange({ ...commercial, currentAllergenRelease: { ...commercial.currentAllergenRelease!, materializationStatus: "ready" } as never, updatedAt: "2026-10-12T16:05:00.000Z" }, commercial.updatedAt, change(h.originPlan.id, 4));
+  assert.equal(authorityOf().status, "active");
+  // (5) a failed origin write (stale version) rolls the revocation back with it
+  h = await harness();
+  const stale = structuredClone(h.originPlan); stale.currentAllergenRelease = undefined; stale.status = "planning";
+  await assert.rejects(h.plans.save(stale, "not-the-current-version"), /changed elsewhere/);
+  assert.equal(authorityOf().status, "active");
+  // (6) the unstamped legacy release backs no authority, so nothing is revoked
+  h = await harness();
+  const legacyOrder = order("o-legacy-signed", ["item:legacy"]); const legacyPlan = signedPlan(legacyOrder, "rel-legacy", {}, false);
+  await h.plans.save(legacyPlan);
+  const legacyRemoved = structuredClone(legacyPlan); legacyRemoved.currentAllergenRelease = undefined; legacyRemoved.updatedAt = "2026-10-12T16:00:00.000Z";
+  await h.plans.save(legacyRemoved);
+  assert.equal(authorityOf().status, "active");
+});
+
+test("replay semantics: a committed idempotent command is answered from its receipt BEFORE optimistic concurrency (memory repository; the Firestore repository is proven identical in allergen-authority-firestore.test.ts)", async () => {
+  const stamp = `replay-${++seq}`;
+  const o = order(`o-${stamp}`, ["item:replay"]);
+  const repo = createProductionPlanRepository();
+  const base = planFor(o);
+  await repo.save(base);
+  const change = (key: string) => ({ serviceDate: "2026-10-20", entityType: "productionPlan", entityId: base.id, revision: 1, changeType: "test", actorId: "u", changedAt: AT, idempotencyKey: key }) as never;
+  const first = { ...structuredClone(base), planningNotes: "first", updatedAt: "2026-10-12T11:00:00.000Z" };
+  const applied = await repo.saveAndAppendCpuChange(first, base.updatedAt, change(stamp));
+  assert.equal(applied.duplicate, undefined);
+  const retry = await repo.saveAndAppendCpuChange({ ...first, planningNotes: "retry" }, base.updatedAt, change(stamp));
+  assert.equal(retry.duplicate, true);
+  assert.equal(retry.sequence, applied.sequence);
+  assert.equal((await repo.get(o.canonicalId))!.planningNotes, "first");
+  await assert.rejects(repo.saveAndAppendCpuChange({ ...first, planningNotes: "other" }, base.updatedAt, change(`${stamp}-other`)), /changed elsewhere/);
 });

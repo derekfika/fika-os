@@ -1,5 +1,7 @@
 import type { AllergenCompositionAuthority } from "./allergen-composition";
 import type { ProductionPlan } from "../app/lib/production-plan";
+import { authoritySemanticSubItemSet, semanticSubItemSet } from "./allergen-composition";
+import { releaseMatrix } from "./cpu-allergen-release";
 
 export const ALLERGEN_COMPOSITION_AUTHORITIES_COLLECTION = "fikaCpuAllergenCompositionAuthoritiesV1";
 
@@ -123,16 +125,39 @@ export function checkRequirement(current: A | undefined, requirement: PlanAuthor
   return { ok: true, register: !registered };
 }
 
+const PERSISTED_RELEASE_STATUSES = ["pending", "current"];
+
+/**
+ * Origin invariant. If the stamped SIGNED release that backs a shared authority is removed, revoked, replaced or reopened, or
+ * the approved matrix it backs changes, the authority must be revoked in the same transaction. Derived here from the
+ * previous and proposed persisted states, so it does not depend on any caller remembering a clause. Quantity, date, customer,
+ * headcount, names and other non-allergen changes never require a revocation.
+ */
+export function originRevocationRequired(previous: ProductionPlan | undefined, proposed: ProductionPlan): { compositionId: string; releaseId: string; at: string; by: string; reason: string } | undefined {
+  const prior = previous?.currentAllergenRelease;
+  if (!previous || !prior || prior.approvalMode === "reused_authority" || !prior.compositionId || !PERSISTED_RELEASE_STATUSES.includes(prior.status)) return undefined;
+  const next = proposed.currentAllergenRelease;
+  const stillBacking = Boolean(next && next.releaseId === prior.releaseId && PERSISTED_RELEASE_STATUSES.includes(next.status));
+  const matrixChanged = JSON.stringify(semanticSubItemSet(previous.menuItems)) !== JSON.stringify(semanticSubItemSet(proposed.menuItems));
+  if (stillBacking && !matrixChanged) return undefined;
+  return { compositionId: prior.compositionId, releaseId: prior.releaseId, at: proposed.updatedAt, by: proposed.updatedBy, reason: stillBacking ? "The approved allergen matrix that established this composition changed after signing." : "The signed allergen release that established this approved composition was removed, revoked or reopened." };
+}
+
 /**
  * Evaluates the whole clause for one plan write against the authority documents read in the transaction. Returns the documents
  * to write, or throws {@link AuthorityGuardFailure} so the transaction aborts before anything is written.
+ *
+ * For any persisted reused `planned` plan or `pending`/`current` reused release it verifies the STATE BEING PERSISTED, not only
+ * its copied provenance: composition, generation, origin release and matrix hash against the authority, the persisted plan matrix
+ * against the authority matrix, the release matrix against the plan matrix, the release binding, and the adopter registration.
  */
-export function evaluateAuthorityTransition(read: Map<string, A | undefined>, plan: ProductionPlan, clause?: AuthorityClause): Map<string, A> {
+export function evaluateAuthorityTransition(read: Map<string, A | undefined>, plan: ProductionPlan, clause?: AuthorityClause, previous?: ProductionPlan): Map<string, A> {
   const writes = new Map<string, A>();
   const get = (id: string) => (writes.has(id) ? writes.get(id) : read.get(id));
-  if (clause?.revoke) {
-    const outcome = applyOriginRevocation(get(clause.revoke.compositionId), clause.revoke.releaseId, clause.revoke.at, clause.revoke.by, clause.revoke.reason);
-    if (outcome.changed && outcome.authority) writes.set(clause.revoke.compositionId, outcome.authority);
+  const revocations = [clause?.revoke, originRevocationRequired(previous, plan)].filter((item): item is NonNullable<typeof item> => Boolean(item));
+  for (const revoke of revocations) {
+    const outcome = applyOriginRevocation(get(revoke.compositionId), revoke.releaseId, revoke.at, revoke.by, revoke.reason);
+    if (outcome.changed && outcome.authority) writes.set(revoke.compositionId, outcome.authority);
   }
   const requirement = authorityRequirementOf(plan);
   if (requirement === "unbound") throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", "A reused allergen release cannot be persisted without its authority-generation binding.");
@@ -140,6 +165,13 @@ export function evaluateAuthorityTransition(read: Map<string, A | undefined>, pl
     const current = get(requirement.compositionId);
     const verdict = checkRequirement(current, requirement, Boolean(clause?.registerAdoption));
     if (!verdict.ok) throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", `The reused allergen authority is not valid at commit time (${verdict.reason}).`);
+    if (JSON.stringify(semanticSubItemSet(plan.menuItems)) !== JSON.stringify(authoritySemanticSubItemSet(current!.approvedMatrix))) throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", "The persisted plan matrix does not match the approved authority matrix (matrix_mismatch).");
+    const release = plan.currentAllergenRelease;
+    if (release?.approvalMode === "reused_authority" && PERSISTED_RELEASE_STATUSES.includes(release.status)) {
+      const bound = release.reusedAuthority;
+      if (!bound || bound.compositionId !== requirement.compositionId || bound.generation !== requirement.generation || bound.origin.releaseId !== requirement.originReleaseId || bound.matrixSemanticHash !== requirement.matrixSemanticHash) throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", "The reused release is not bound to the same authority generation (release_binding_mismatch).");
+      if (JSON.stringify(release.matrix) !== JSON.stringify(releaseMatrix(plan.menuItems))) throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", "The reused release matrix does not match the persisted plan matrix (release_matrix_mismatch).");
+    }
     if (verdict.register && clause?.registerAdoption && current) {
       const next = structuredClone(current);
       next.reusedBy.push({ orderId: requirement.orderId, generation: requirement.generation, at: clause.registerAdoption.at, by: clause.registerAdoption.by });
@@ -151,9 +183,10 @@ export function evaluateAuthorityTransition(read: Map<string, A | undefined>, pl
 }
 
 /** The authority documents a plan write must read inside its transaction. */
-export function authorityIdsFor(plan: ProductionPlan, clause?: AuthorityClause): string[] {
+export function authorityIdsFor(plan: ProductionPlan, clause?: AuthorityClause, previous?: ProductionPlan): string[] {
   const requirement = authorityRequirementOf(plan);
-  return [...new Set([clause?.revoke?.compositionId, requirement && requirement !== "unbound" ? requirement.compositionId : undefined].filter((id): id is string => Boolean(id)))];
+  const origin = originRevocationRequired(previous, plan);
+  return [...new Set([clause?.revoke?.compositionId, origin?.compositionId, requirement && requirement !== "unbound" ? requirement.compositionId : undefined].filter((id): id is string => Boolean(id)))];
 }
 
 export type AllergenAuthorityStore = {
@@ -216,6 +249,8 @@ class FirestoreAllergenAuthorityStore extends TransactionalStore {
   }
 }
 
+/** Test/diagnostic seam: always the Firestore-backed store, regardless of runtime mode. */
+export const createFirestoreAllergenAuthorityStore = (): AllergenAuthorityStore => new FirestoreAllergenAuthorityStore();
 const memoryStore = new MemoryAllergenAuthorityStore();
 export const memoryAllergenAuthorityStore = memoryStore;
 export function createAllergenAuthorityStore(): AllergenAuthorityStore {

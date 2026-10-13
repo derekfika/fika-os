@@ -11,6 +11,7 @@ import { rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } 
 import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
 import { createAllergenAuthorityStore, type AuthorityClause } from "../../../lib/allergen-authority-store";
 import { emitCpuPlanChange } from "../../../lib/cpu-plan-change-effects";
+import { selectedPlanResponseBody, servicePlansResponseBody } from "../../../lib/cpu-plan-response";
 import { guardReusedPlan, reconcileReuse, reuseViewFor } from "../../../lib/allergen-reuse-service";
 import { applyReuseCommand, originRevocationClause, recordSignedApproval, revokeReusedRelease, runCommittedRevocation, type ReuseOrchestrationDeps } from "../../../lib/allergen-reuse-orchestrator";
 import { clearReuse, compositionIdentity } from "../../../lib/allergen-composition";
@@ -473,8 +474,7 @@ async function handleGet(request: NextRequest) {
       const visiblePlans = await Promise.all(sourceOrders
         .filter(order => !(order.origin === "hospitality_booking" && order.requiresDelivery === false))
         .map(async order => guardReusedPlan(allergenAuthorityStore, await mergeOriginalItems(request, planByOrderId.get(order.canonicalId) || await getPlan(request, order.canonicalId), order.canonicalId, order), order as never, reuseCache)));
-      const entries = visiblePlans.filter(plan => plan.status === "planned");
-      return NextResponse.json({ plans: visiblePlans, notifications: entries.map(plan => ({ id: `notification:${plan.id}`, title: "New production plan ready for menu generation.", orderId: plan.orderId, plannedItemCount: plan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: plan.updatedAt })), menus: entries.map(plan => ({ planId: plan.id, orderId: plan.orderId, clientSite: sourceOrders.find(order => order.canonicalId === plan.orderId)?.destinationLabel || "Site not assigned", items: plan.menuItems.flatMap(item => item.subItems.map(subItem => ({ menuItem: item.name, name: subItem.name, quantity: subItem.quantity, allergens: Object.entries(subItem.allergens).filter(([, state]) => state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key) }))) })) });
+      return NextResponse.json(servicePlansResponseBody(visiblePlans, sourceOrders));
     }
     if (orderId) {
       const selectedOrder = await loadOrder(request, orderId);
@@ -495,14 +495,10 @@ async function handleGet(request: NextRequest) {
       recordDeliveredInReadBudget({ stage: "selected_order_get", canonicalOrderDocs: selectedOrder ? 1 : 0, planDocs: selectedPlan ? 1 : 0, selectedIds: 1 });
       const selectedMatrixStatus = selectedPlan?.matrixArtifact && selectedOrder && (currentAllergenReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems) || reusedAuthorityReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems)) ? "ready" : selectedPlan?.currentAllergenRelease?.materializationStatus === "failed" ? "failed" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !matrixDriveConfiguration(selectedOrder).enabled ? "not_configured" : "generating" : undefined;
       const signingLineage = selectedOrder && selectedPlan ? matrixSignatureScope(selectedOrder, menuContentHash(selectedPlan.menuItems)) : undefined;
-      const signedMatrixAvailable = Boolean(selectedPlan && selectedOrder && signedAllergenReviewMatchesOrder(selectedPlan, selectedOrder, selectedPlan.menuItems));
       const reuse = selectedPlan && selectedOrder ? await reuseViewFor(allergenAuthorityStore, selectedPlan, selectedOrder) : undefined;
       // A stale reuse is shown as unreviewed rather than Planned; persistence is corrected by the next CPU mutation.
-      // Every read goes through the one authoritative validator: a stale or unverifiable reuse is returned unreviewed.
-      const responsePlan = selectedPlan && selectedOrder ? await guardReusedPlan(allergenAuthorityStore, selectedPlan, selectedOrder as never) : selectedPlan;
-      const staleReuse = responsePlan !== selectedPlan;
-      const approvedMatrixAvailable = Boolean(selectedPlan && selectedOrder && reusedAuthorityReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems) && !staleReuse);
-      return NextResponse.json({ plan: responsePlan, ...(reuse ? { reuse } : {}), approvedMatrixAvailable, signingLineage: signingLineage || null, matrixStatus: staleReuse ? undefined : selectedMatrixStatus, ...(selectedPlan?.currentAllergenRelease?.materializationError ? { matrixError: selectedPlan.currentAllergenRelease.materializationError } : {}), signedMatrixAvailable, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
+      // Every field of the response is derived from ONE guarded plan (plan, plans[], notifications, matrix flags).
+      return NextResponse.json(await selectedPlanResponseBody(allergenAuthorityStore, { plan: selectedPlan, order: selectedOrder, reuse, matrixStatus: selectedMatrixStatus, signingLineage }));
     }
   } catch (error) {
     return errorResponse(error);
@@ -744,7 +740,8 @@ async function handlePost(request: NextRequest) {
     const materializationFailed = materializationResult?.status === "failed";
     const matrixStatus = plan.matrixArtifact && changedOrder && (currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, changedOrder, plan.menuItems) || reusedAuthorityReleaseMatchesOrder(plan.currentAllergenRelease, changedOrder, plan.menuItems)) ? "ready" : plan.currentAllergenRelease?.materializationStatus === "failed" || materializationFailed ? "failed" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
     const signingLineage = changedOrder ? matrixSignatureScope(changedOrder, menuContentHash(plan.menuItems)) : undefined;
-    return NextResponse.json({ plan, signingLineage: signingLineage || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, ...(plan.currentAllergenRelease?.materializationError || materializationResult?.error ? { matrixError: plan.currentAllergenRelease?.materializationError || materializationResult?.error } : {}), materializationDelivery: materializationResult || null, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
+    const responsePlan = await guardReusedPlan(allergenAuthorityStore, plan, (changedOrder || currentOrder) as never);
+    return NextResponse.json({ plan: responsePlan, signingLineage: signingLineage || null, matrixArtifact: responsePlan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, ...(plan.currentAllergenRelease?.materializationError || materializationResult?.error ? { matrixError: plan.currentAllergenRelease?.materializationError || materializationResult?.error } : {}), materializationDelivery: materializationResult || null, notification: notification || (responsePlan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return errorResponse(error); }
 }
 

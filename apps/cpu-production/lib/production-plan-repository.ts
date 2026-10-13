@@ -64,8 +64,8 @@ export function decodeProductionPlan(value: unknown): ProductionPlan {
 
 type FirestoreDb = Awaited<typeof import("./firebase-admin")>["db"];
 type FirestoreTransaction = Parameters<Parameters<FirestoreDb["runTransaction"]>[0]>[0];
-async function readAuthorities(db: FirestoreDb, transaction: FirestoreTransaction, plan: ProductionPlan, clause?: AuthorityClause) {
-  const ids = authorityIdsFor(plan, clause);
+async function readAuthorities(db: FirestoreDb, transaction: FirestoreTransaction, plan: ProductionPlan, clause: AuthorityClause | undefined, previous: ProductionPlan | undefined) {
+  const ids = authorityIdsFor(plan, clause, previous);
   const snapshots = await Promise.all(ids.map(id => transaction.get(db.collection(ALLERGEN_COMPOSITION_AUTHORITIES_COLLECTION).doc(id))));
   return new Map(ids.map((id, index) => [id, snapshots[index].exists ? snapshots[index].data() as AllergenCompositionAuthority : undefined]));
 }
@@ -90,12 +90,11 @@ class FirestoreProductionPlanRepository implements ProductionPlanRepository {
     await db.runTransaction(async transaction => {
       const ref = collection.doc(plan.orderId);
       const snapshot = await transaction.get(ref);
-      const authorityRead = await readAuthorities(db, transaction, plan, authority);
       recordDataAccess({ app: "cpu-production", operation: "production-plan.transaction-read", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "transaction" });
       const current = snapshot.exists ? snapshot.data() as ProductionPlan : undefined;
       if (current && expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) throw conflict("Production plan changed elsewhere. Refresh and try again.");
       if (!current && expectedUpdatedAt !== undefined) throw conflict("Production plan was removed elsewhere. Refresh and try again.");
-      const authorityWrites = evaluateAuthorityTransition(authorityRead, plan, authority);
+      const authorityWrites = evaluateAuthorityTransition(await readAuthorities(db, transaction, plan, authority, current), plan, authority, current);
       transaction.set(ref, persistedPlan);
       writeAuthorities(db, transaction, authorityWrites);
     });
@@ -109,15 +108,18 @@ class FirestoreProductionPlanRepository implements ProductionPlanRepository {
       const snapshot = await transaction.get(ref);
       recordDataAccess({ app: "cpu-production", operation: "production-plan.change.transaction-read", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "transaction" });
       const current = snapshot.exists ? snapshot.data() as ProductionPlan : undefined;
-      if (current && expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) throw conflict("Production plan changed elsewhere. Refresh and try again.");
-      if (!current && expectedUpdatedAt !== undefined) throw conflict("Production plan was removed elsewhere. Refresh and try again.");
+      // Replay semantics are identical to the memory repository: an already-committed idempotent command is answered from its
+      // receipt BEFORE optimistic concurrency, so a retry after success is a duplicate (never a spurious conflict) and a stale
+      // version can never apply a command twice.
       const idempotencyKey = typeof change.idempotencyKey === "string" ? change.idempotencyKey : undefined;
       if (idempotencyKey) {
         const receipt = await transaction.get(cpuChangeReceipts().doc(idempotencyKey.replace(/[^A-Za-z0-9:_-]+/g, "_")));
         if (receipt.exists) return { sequence: Number((receipt.data()?.event as { sequence?: unknown })?.sequence || 0), duplicate: true, plan: current };
       }
+      if (current && expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) throw conflict("Production plan changed elsewhere. Refresh and try again.");
+      if (!current && expectedUpdatedAt !== undefined) throw conflict("Production plan was removed elsewhere. Refresh and try again.");
       // All reads (plan, receipt, authority documents) happen before any write; the authority check is part of this transaction.
-      const authorityWrites = evaluateAuthorityTransition(await readAuthorities(db, transaction, plan, authority), plan, authority);
+      const authorityWrites = evaluateAuthorityTransition(await readAuthorities(db, transaction, plan, authority, current), plan, authority, current);
       const event = await appendCpuChangeInTransaction(transaction, change);
       transaction.set(ref, persistedPlan);
       writeAuthorities(db, transaction, authorityWrites);
@@ -142,8 +144,8 @@ class MemoryProductionPlanRepository implements ProductionPlanRepository {
     const current = this.records.get(plan.orderId);
     if (current && expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) throw conflict("Production plan changed elsewhere. Refresh and try again.");
     if (!current && expectedUpdatedAt !== undefined) throw conflict("Production plan was removed elsewhere. Refresh and try again.");
-    const ids = authorityIdsFor(plan, authority);
-    const writes = evaluateAuthorityTransition(new Map(ids.map(id => [id, memoryAllergenAuthorityStore.records.get(id) ? structuredClone(memoryAllergenAuthorityStore.records.get(id)) : undefined])), plan, authority);
+    const ids = authorityIdsFor(plan, authority, current);
+    const writes = evaluateAuthorityTransition(new Map(ids.map(id => [id, memoryAllergenAuthorityStore.records.get(id) ? structuredClone(memoryAllergenAuthorityStore.records.get(id)) : undefined])), plan, authority, current);
     this.records.set(plan.orderId, structuredClone(compactProductionPlanForPersistence(plan)));
     for (const [id, next] of writes) memoryAllergenAuthorityStore.records.set(id, structuredClone(next));
   }
@@ -162,6 +164,8 @@ class MemoryProductionPlanRepository implements ProductionPlanRepository {
   }
 }
 
+/** Test/diagnostic seam: always the Firestore-backed repository, regardless of runtime mode. */
+export const createFirestoreProductionPlanRepository = (): ProductionPlanRepository => new FirestoreProductionPlanRepository();
 const memoryRepository = new MemoryProductionPlanRepository();
 
 export function createProductionPlanRepository(): ProductionPlanRepository {

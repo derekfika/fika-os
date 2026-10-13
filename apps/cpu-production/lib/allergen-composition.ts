@@ -278,3 +278,12 @@ export function reuseValidity(plan: Pick<ProductionPlan, "orderId" | "menuItems"
   if (!registration) return { valid: false, reason: "adoption_not_registered" };
   return { valid: true };
 }
+
+type SemanticSubItem = { productionItemId?: string | null; allergens: Record<string, string>; mayContainNotes?: string };
+const semanticKey = (sub: SemanticSubItem) => canonicalJson({ productionItemId: sub.productionItemId || null, allergens: normaliseStates(sub.allergens || {}), mayContainNotes: text(sub.mayContainNotes) });
+/**
+ * The allergen-relevant meaning of a matrix as a sorted set, independent of names, quantities, ids and ordering. Two matrices
+ * with the same set make the same allergen statements. Used by the persistence layer, which has no access to the order.
+ */
+export const semanticSubItemSet = (menuItems: Array<{ subItems: SemanticSubItem[] }>) => [...new Set(menuItems.flatMap(item => item.subItems.map(semanticKey)))].sort();
+export const authoritySemanticSubItemSet = (approvedMatrix: ApprovedMatrixLine[]) => semanticSubItemSet(approvedMatrix.map(line => ({ subItems: line.subItems })));
