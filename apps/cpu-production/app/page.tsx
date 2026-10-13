@@ -25,7 +25,7 @@ import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestination
 import { orderDate } from "../lib/production-day";
 import { cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 import { readApiResponse } from "./lib/api-response";
-import { readCpuProjection, writeCpuProjection } from "./lib/cpu-indexeddb";
+import { loadCpuDashboardProjection } from "./lib/cpu-dashboard-projection-loader";
 import { europeLondonDate } from "../lib/operational-date";
 
 const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
@@ -87,39 +87,13 @@ export default function CpuProduction() {
     try {
       const isDayProjection = view === "day" || view === "totals";
       const projectionDate = isDayProjection ? dayDate : weekCommencing;
-      const cacheKey = `${isDayProjection ? "day" : "week"}:${projectionDate}:${productionScope}`;
       // Compatibility marker for existing dashboard contract checks: /api/production?scope=${productionScope}
-      const scopeResponse = await fetch("/api/production?cacheScope=1", { cache: "no-store" });
-      const scopeBody = await readApiResponse<{ cacheScope?: string; error?: { message?: string } }>(scopeResponse);
-      if (!scopeResponse.ok || !scopeBody.cacheScope) { setError(scopeBody.error?.message || "CPU cache scope could not be established."); return []; }
-      const cacheScope = scopeBody.cacheScope;
-      const cached = await readCpuProjection<any>(cacheKey, cacheScope);
-      if (cached?.value) {
-        setOrders(cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope)));
-        setError("");
-        try {
-          const head = await fetch(`/api/production?projectionHead=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}`, { cache: "no-store" });
-          const headBody = await head.json() as { lastChangeSequence?: number; packageVersion?: number; contentHash?: string; sourceVersion?: string };
-          if (head.ok && Number(headBody.lastChangeSequence || 0) === cached.lastChangeSequence && Number(headBody.packageVersion || 0) === Number(cached.packageVersion || 0) && headBody.contentHash === cached.contentHash && headBody.sourceVersion === cached.sourceVersion) return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope));
-          const response = await fetch(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, { cache: "no-store" });
-          const refreshedBody = await readApiResponse<{ projection?: any; package?: { packageVersion?: number; contentHash?: string; sourceVersion?: string } }>(response);
-          const newer = refreshedBody.projection;
-          if (response.ok && newer) {
-            await writeCpuProjection({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: Number(newer.lastChangeSequence || 0), revision: Number(newer.revision || 0), packageVersion: Number(refreshedBody.package?.packageVersion || 0), contentHash: refreshedBody.package?.contentHash, sourceVersion: refreshedBody.package?.sourceVersion, value: newer });
-            const refreshed = cpuProjectionToOrders(filterCpuProjectionForScope(newer, productionScope));
-            setOrders(refreshed);
-            setError("");
-            return refreshed;
-          }
-          return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope));
-        } catch { return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope)); }
-      }
-      const response = await fetch(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, { cache: "no-store" });
-      const body = await readApiResponse<{ projection?: any; package?: { packageVersion?: number; contentHash?: string; sourceVersion?: string }; error?: { message?: string } }>(response);
-      if (!response.ok) { setError(body.error?.message || "Could not load production."); return []; }
-      const projection = body.projection;
-      const projectedOrders: ProductionOrder[] = projection ? cpuProjectionToOrders(filterCpuProjectionForScope(projection, productionScope)) : [];
-      if (projection) await writeCpuProjection({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: Number(projection.lastChangeSequence || 0), revision: Number(projection.revision || 0), packageVersion: Number(body.package?.packageVersion || 0), contentHash: body.package?.contentHash, sourceVersion: body.package?.sourceVersion, value: projection });
+      const result = await loadCpuDashboardProjection(
+        { view: isDayProjection ? "day" : "week", date: projectionDate, scope: productionScope },
+        cachedProjection => { setOrders(cpuProjectionToOrders(filterCpuProjectionForScope(cachedProjection as any, productionScope))); setError(""); },
+      );
+      if (result.error) { setError(result.error); return []; }
+      const projectedOrders: ProductionOrder[] = result.projection ? cpuProjectionToOrders(filterCpuProjectionForScope(result.projection as any, productionScope)) : [];
       setOrders(projectedOrders);
       setError("");
       return projectedOrders;

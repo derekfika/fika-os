@@ -1,5 +1,6 @@
 import { createAllergenAuthorityStore, type AllergenAuthorityStore } from "./allergen-authority-store";
 import { compositionIdentity, type AllergenCompositionAuthority, type CompositionOrder } from "./allergen-composition";
+import { PROJECTION_AUTHORITY_BINDING_VERSION } from "./cpu-authority-binding-version";
 
 /**
  * The authority-generation binding a compiled projection / package records for every order whose Planned state rests on a
@@ -9,7 +10,7 @@ import { compositionIdentity, type AllergenCompositionAuthority, type Compositio
  */
 export type ReusedAuthorityBinding = { compositionId: string; generation: number; originReleaseId: string; matrixSemanticHash: string };
 /** Marks projections built with reuse bindings. A projection without it may contain reused entries that cannot be told apart. */
-export const PROJECTION_AUTHORITY_BINDING_VERSION = 1;
+export { PROJECTION_AUTHORITY_BINDING_VERSION };
 export const REUSED_AUTHORITY_INVALID_ATTENTION = "The reused allergen approval is no longer valid; a fresh allergen review is required.";
 export const UNVERIFIED_LEGACY_ATTENTION = "This cached plan predates reuse verification and is being re-verified; its allergen approval is not yet confirmed.";
 

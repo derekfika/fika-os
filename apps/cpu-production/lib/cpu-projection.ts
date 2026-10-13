@@ -80,7 +80,7 @@ export async function rebuildCpuWeekProjection(request: NextRequest, weekCommenc
   const orders = await withReadableDestinations(request, rawOrders);
   const plans = await loadGuardedPlansForOrders(orders);
   const projection = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
-  const week: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, canonicalDigest: canonicalProductionDigestSet(rawOrders), orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };
+  const week: CpuWeekProjection = { authorityBindingVersion: projection.authorityBindingVersion, serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, canonicalDigest: canonicalProductionDigestSet(rawOrders), orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };
   const written = await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), week, { authoritativeRebuild: true });
   if (written.status === "superseded") return written.projection as CpuWeekProjection;
   await publishCpuProjectionPackage(written.projection as CpuWeekProjection);
@@ -146,7 +146,7 @@ export async function initialiseEmptyCpuWeekProjection(request: NextRequest, wee
       ? stored
       : (() => {
         const projection = buildCpuDayProjection("all", [], [], Number((stored as Partial<CpuWeekProjection> | undefined)?.lastChangeSequence || 0), Number((stored as Partial<CpuWeekProjection> | undefined)?.revision || 0) + 1);
-        return { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, canonicalDigest: canonicalProductionDigestSet(rawOrders), orders: [], summary: projection.summary, rebuiltAt: projection.rebuiltAt } satisfies CpuWeekProjection;
+        return { authorityBindingVersion: projection.authorityBindingVersion, serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, canonicalDigest: canonicalProductionDigestSet(rawOrders), orders: [], summary: projection.summary, rebuiltAt: projection.rebuiltAt } satisfies CpuWeekProjection;
       })();
     if (!isStoredEmptyWeekProjection(stored, weekCommencing)) await dependencies.writeProjection(weekCommencing, week);
     const manifest = await dependencies.publishPackage(week);
@@ -177,7 +177,7 @@ export async function recoverMissingCpuWeekProjection(request: NextRequest, week
     const normalisedOrders = orders.map(order => order.serviceDate ? order : { ...order, serviceDate: order.requiredBy.slice(0, 10) });
     const plans = await loadGuardedPlansForOrders(normalisedOrders);
     const built = buildCpuDayProjection("all", normalisedOrders.filter((order) => weekDates(weekCommencing).includes(order.serviceDate || order.requiredBy.slice(0, 10))), plans, Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
-    const projection: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: built.revision, lastChangeSequence: built.lastChangeSequence, canonicalDigest: canonicalProductionDigestSet(rawOrders), orders: built.orders, summary: built.summary, rebuiltAt: built.rebuiltAt };
+    const projection: CpuWeekProjection = { authorityBindingVersion: built.authorityBindingVersion, serviceDate: weekCommencing, weekCommencing, revision: built.revision, lastChangeSequence: built.lastChangeSequence, canonicalDigest: canonicalProductionDigestSet(rawOrders), orders: built.orders, summary: built.summary, rebuiltAt: built.rebuiltAt };
     const written = await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), projection, { authoritativeRebuild: true });
     const current = written.projection as CpuWeekProjection;
     const manifest = await publishCpuProjectionPackage(current);

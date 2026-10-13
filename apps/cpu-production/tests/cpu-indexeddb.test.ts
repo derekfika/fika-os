@@ -5,6 +5,7 @@ import { CPU_ALLERGEN_FRESHNESS_ERROR, loadCpuAllergenProjection } from "../app/
 import type { CpuDayProjection } from "../lib/cpu-projection";
 
 const projection: CpuDayProjection = {
+  authorityBindingVersion: 1,
   serviceDate: "2026-08-31",
   revision: 2,
   lastChangeSequence: 7,
@@ -25,6 +26,7 @@ function dependencies(overrides: { headStatus?: number; head?: Record<string, un
     packageVersion: 3,
     contentHash: "hash-v3",
     sourceVersion: "cpu-change-7",
+    authorityBindingVersion: 1,
     value: projection,
   };
   let written: unknown;
@@ -54,10 +56,11 @@ test("CPU authoritative submenu/allergen state hydrates from the server before a
 
 test("CPU projection cache is IndexedDB-only, scoped, versioned, and non-authoritative", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const loader = await readFile(new URL("../app/lib/cpu-dashboard-projection-loader.ts", import.meta.url), "utf8");
   const cache = await readFile(new URL("../app/lib/cpu-indexeddb.ts", import.meta.url), "utf8");
-  assert.match(page, /readCpuProjection/);
-  assert.match(page, /projectionHead=1/);
-  assert.doesNotMatch(page, /localStorage\.setItem\(cacheKey/);
+  assert.match(loader, /readCpuProjection/);
+  assert.match(loader, /projectionHead=1/);
+  assert.doesNotMatch(page + loader, /localStorage\.setItem\(cacheKey/);
   assert.match(cache, /schemaVersion/);
   assert.match(cache, /cacheScope/);
   assert.match(cache, /catch \{[\s\S]*Cache failures are deliberately non-fatal/);
@@ -142,7 +145,7 @@ test("integrity-corrupt CPU package fails closed without reconciliation or stale
       if (url.includes("projectionHead")) return new Response(JSON.stringify({ lastChangeSequence: 8, packageVersion: 4, contentHash: "hash-v4", sourceVersion: "cpu-change-8" }), { status: 200 });
       return new Response(JSON.stringify({ error: { code: "CPU_PROJECTION_PACKAGE_INTEGRITY_FAILURE", message: "The CPU projection package failed integrity verification." } }), { status: 503 });
     },
-    read: async () => ({ key: "day:2026-08-31", schemaVersion: 1, cacheScope: "staging:fika-os-dev:actor-1", fetchedAt: "2026-08-31T10:00:00.000Z", lastChangeSequence: 7, revision: 2, packageVersion: 3, contentHash: "hash-v3", sourceVersion: "cpu-change-7", value: projection }),
+    read: async () => ({ key: "day:2026-08-31", schemaVersion: 1, cacheScope: "staging:fika-os-dev:actor-1", fetchedAt: "2026-08-31T10:00:00.000Z", lastChangeSequence: 7, revision: 2, packageVersion: 3, contentHash: "hash-v3", sourceVersion: "cpu-change-7", authorityBindingVersion: 1, value: projection }),
     write: async () => undefined,
   }), new RegExp(CPU_ALLERGEN_FRESHNESS_ERROR));
   assert.equal(calls.some(url => url.includes("reconcile=1")), false);
