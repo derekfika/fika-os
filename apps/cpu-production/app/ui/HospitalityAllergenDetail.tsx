@@ -20,10 +20,21 @@ import { CANONICAL_ALLERGEN_COLUMNS, isCompleteOperationalAllergenMap, normalise
 import { matrixColumns } from "./allergen-matrix";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 import { canonicalAllergenMatrixForHash } from "../../../shared/allergen-matrix-hash";
+import { ALLERGEN_STATE_WORDS, autosaveAction, checkRowInItems, createAutosaveController, displayAllergenMap, reviewProgress, reviewStatusCopy, rowCanBeChecked, rowUncheckedCount, signButtonState, signingGate, toggleCellInItems, type AutosaveState, type SigningBlock } from "./allergen-review-persistence";
 const allergenColumns = matrixColumns;
 const productionPlanEndpoint = "/api/production-plan";
 
 type ReviewedLineage = MatrixSignatureScope;
+type SavePayload = { menuItems: PlannedMenuItem[]; planningNotes: string };
+const BLOCK_MESSAGES: Record<SigningBlock, string> = {
+  read_only: "This matrix is already approved. Reopen the allergen review to change it.",
+  incomplete: "Mark every row as checked before chef approval.",
+  unchecked: "Every allergen must be checked before chef approval.",
+  dirty: "Your latest changes are still being saved. Try again in a moment.",
+  saving: "Your latest changes are still being saved. Try again in a moment.",
+  error: "Your latest changes could not be saved. Retry saving before chef approval.",
+  not_planned: "The saved review is not complete yet. Wait for “Saved”, then try again.",
+};
 
 async function sha256Json(value: unknown) {
   const bytes = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
@@ -270,6 +281,39 @@ export function SignatureModal({
   );
 }
 
+export function ReopenReviewDialog({ busy, error, signatureCount, reuse, onCancel, onConfirm }: { busy: boolean; error: string; signatureCount: number; reuse: boolean; onCancel: () => void; onConfirm: () => void }) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const cancelHandler = useRef(onCancel);
+  cancelHandler.current = onCancel;
+  useEffect(() => {
+    cancelRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") cancelHandler.current(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  return (
+    <div className="signature-modal-backdrop" role="presentation">
+      <section className="signature-modal reopen-dialog" role="alertdialog" aria-modal="true" aria-labelledby="reopen-title" aria-describedby="reopen-body">
+        <header><div><small>Allergen review</small><h3 id="reopen-title">Reopen allergen review?</h3></div></header>
+        <div id="reopen-body">
+          <p><strong>The current approval will no longer be valid.</strong></p>
+          <ul>
+            <li>{signatureCount ? `The ${signatureCount === 1 ? "chef signature" : `${signatureCount} chef signatures`} on this matrix will be invalidated.` : "The current release for this matrix will be invalidated."}</li>
+            <li>Both chef roles (Production chef and Head chef / site manager) must approve the new review again.</li>
+            <li>{reuse ? "This booking's reused approval will be withdrawn." : "Any shared approval created from this matrix is revoked, so other bookings that relied on it will need an allergen review again."}</li>
+            <li>The signed record is kept as history; it is not edited.</li>
+          </ul>
+          {error && <p role="alert" className="reopen-dialog__error">{error}</p>}
+        </div>
+        <footer>
+          <button ref={cancelRef} type="button" className="button button-soft" onClick={onCancel} disabled={busy}>Keep approval</button>
+          <button type="button" className="button button-danger" onClick={onConfirm} disabled={busy} aria-busy={busy ? true : undefined}>{busy ? (<><span className="fika-spinner" aria-hidden="true" />Reopening…</>) : "Reopen and invalidate approval"}</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 export default function HospitalityAllergenDetail({
   order,
   close,
@@ -308,6 +352,72 @@ export default function HospitalityAllergenDetail({
   >([]);
   const effectiveStatus = effectiveProductionPlanStatus({ status: planStatus, menuItems });
   const reviewLockedByAuthority = hasAllergenAuthority({ signatures, matrixArtifact, currentAllergenRelease });
+  // Any signature, current release or signed artifact makes the review read-only. Nothing below can mutate it until the server has
+  // completed an explicit reopen, so viewing or clicking a signed matrix can never clear signatures or trigger a save.
+  const readOnly = reviewLockedByAuthority;
+  const fullySigned = signatures.some((item) => item.role === "production_chef") && signatures.some((item) => item.role === "head_chef_site_manager");
+  const fullySignedRef = useRef(fullySigned);
+  fullySignedRef.current = fullySigned;
+  const [autosave, setAutosave] = useState<AutosaveState>({ status: "saved" });
+  const [reopenOpen, setReopenOpen] = useState(false);
+  const [reopening, setReopening] = useState(false);
+  const [reopenError, setReopenError] = useState("");
+  const [closeBlocked, setCloseBlocked] = useState(false);
+  const sessionId = useRef(`s${Math.random().toString(36).slice(2, 10)}`);
+  const menuItemsRef = useRef(menuItems);
+  menuItemsRef.current = menuItems;
+  const planningNotesRef = useRef(planningNotes);
+  planningNotesRef.current = planningNotes;
+  const serverStatusRef = useRef<ProductionPlan["status"]>("draft");
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+  const changedRef = useRef(false);
+  const saveRef = useRef<(payload: SavePayload, revision: number) => Promise<void>>(async () => undefined);
+  const autosaveRef = useRef<ReturnType<typeof createAutosaveController<SavePayload>>>(undefined as never);
+  if (!autosaveRef.current) autosaveRef.current = createAutosaveController<SavePayload>({ save: (payload, revision) => saveRef.current(payload, revision), onChange: setAutosave });
+  // Persist through the existing commands: a partial review with `save-plan`, a complete review with `mark-planned`. The command ID is
+  // unique per session and revision, so a retry of the same state is idempotent and a new session can never be mistaken for an old one.
+  saveRef.current = async (payload, revision) => {
+    const action = autosaveAction(payload.menuItems);
+    const response = await fetch(productionPlanEndpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ orderId: order.canonicalId, actor: "production-chef", action, menuItems: payload.menuItems, planningNotes: payload.planningNotes, commandId: `autosave:${order.canonicalId}:${sessionId.current}:${revision}` }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error?.message || "The review could not be saved.");
+    changedRef.current = true;
+    const nextStatus: ProductionPlan["status"] = body.plan?.status || (action === "mark-planned" ? "planned" : "planning");
+    serverStatusRef.current = nextStatus;
+    setPlanStatus(nextStatus);
+    if (body.signingLineage) setSigningLineage(body.signingLineage);
+  };
+  useEffect(() => { autosaveRef.current.setReadOnly(readOnly); }, [readOnly]);
+  useEffect(() => () => autosaveRef.current.dispose(), []);
+  // Normal unsaved-changes protection for a browser refresh/close; nothing asynchronous is attempted during unload.
+  useEffect(() => {
+    if (autosave.status === "saved") return;
+    const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [autosave.status]);
+
+  const hydrate = (body: { plan?: ProductionPlan; reuse?: ReuseView; signingLineage?: ReviewedLineage; matrixStatus?: string }) => {
+    if (body.plan?.menuItems) {
+        const hydratedItems = mergeOriginalItems(order, body.plan.menuItems);
+        setMenuItems(hydratedItems);
+        setPlanningNotes(body.plan.planningNotes || "");
+        if ("signatures" in body.plan) setSignatures(body.plan.signatures || []);
+        if ("matrixArtifact" in body.plan) setMatrixArtifact(body.plan.matrixArtifact);
+        if ("currentAllergenRelease" in body.plan) setCurrentAllergenRelease(body.plan.currentAllergenRelease);
+        setSigningLineage(body.signingLineage || undefined);
+        setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan.matrixArtifact ? "ready" : body.plan.signatures?.length === 2 ? "artifact_pending" : undefined);
+        const hydratedStatus = effectiveProductionPlanStatus({ ...body.plan, menuItems: hydratedItems });
+      serverStatusRef.current = hydratedStatus;
+      setPlanStatus(hydratedStatus);
+        setReuse(body.reuse || undefined);
+      }
+  };
 
   useEffect(() => {
     void fetch(
@@ -315,20 +425,7 @@ export default function HospitalityAllergenDetail({
       { cache: "no-store" },
     )
       .then((response) => response.json())
-      .then((body) => {
-        if (body.plan?.menuItems) {
-          const hydratedItems = mergeOriginalItems(order, body.plan.menuItems);
-          setMenuItems(hydratedItems);
-          setPlanningNotes(body.plan.planningNotes || "");
-          if ("signatures" in body.plan) setSignatures(body.plan.signatures || []);
-          if ("matrixArtifact" in body.plan) setMatrixArtifact(body.plan.matrixArtifact);
-          if ("currentAllergenRelease" in body.plan) setCurrentAllergenRelease(body.plan.currentAllergenRelease);
-          setSigningLineage(body.signingLineage || undefined);
-          setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan.matrixArtifact ? "ready" : body.plan.signatures?.length === 2 ? "artifact_pending" : undefined);
-          setPlanStatus(effectiveProductionPlanStatus({ ...body.plan, menuItems: hydratedItems }));
-          setReuse(body.reuse || undefined);
-        }
-      })
+      .then((body) => hydrate(body))
       .catch(() =>
         setMessage("Could not load the saved draft; a new draft is shown."),
       );
@@ -357,127 +454,56 @@ export default function HospitalityAllergenDetail({
     order.guestCount ||
     order.lines.reduce((sum, line) => sum + (line.customerQuantity || 0), 0);
 
-  const markMatrixEdited = () => {
-    const hadSignedAuthority = signatures.length > 0 || Boolean(matrixArtifact || currentAllergenRelease);
-    if (!hadSignedAuthority) return;
-    setSignatures([]);
-    setMatrixArtifact(undefined);
-    setCurrentAllergenRelease(undefined);
-    setMatrixStorageStatus(undefined);
-    setPlanStatus("planning");
-    setMessage("The matrix changed. Save the amended plan and complete the new evidence before signing again.");
+  // Every content edit goes through `edit`, which refuses while read-only and otherwise records the change for autosave.
+  const edit = (next: PlannedMenuItem[], notes = planningNotesRef.current, immediate = false) => {
+    if (readOnlyRef.current) return;
+    menuItemsRef.current = next;
+    setMenuItems(next);
+    autosaveRef.current.edit({ menuItems: next, planningNotes: notes }, { immediate });
   };
-  const updateMenuItem = (id: string, change: Partial<PlannedMenuItem>) => {
-    markMatrixEdited();
-    setMenuItems((items) =>
-      items.map((item) => (item.id === id ? { ...item, ...change } : item)),
-    );
-  };
-  const updateSubItem = (
-    menuId: string,
-    subId: string,
-    change: Partial<PlannedSubItem>,
-  ) => {
-    markMatrixEdited();
-    setMenuItems((items) =>
-      items.map((item) =>
-        item.id === menuId
-          ? {
-              ...item,
-              subItems: item.subItems.map((sub) =>
-                sub.id === subId ? { ...sub, ...change } : sub,
-              ),
-            }
-        : item,
-      ),
-    );
-  };
-  const addMenuItem = () => {
-    markMatrixEdited();
-    setMenuItems((items) => [
-      ...items,
-      { id: `menu-item:${Date.now()}`, name: "", note: "", subItems: [] },
-    ]);
-  };
-  const addRows = (menuId: string, count: number) => {
-    markMatrixEdited();
-    setMenuItems((items) =>
-      items.map((item) =>
-        item.id === menuId
-          ? {
-              ...item,
-              subItems: [
-                ...item.subItems,
-                ...Array.from(
-                  { length: Math.max(1, Math.min(50, count)) },
-                  (_, index) => ({
-                    id: `sub-item:${Date.now()}:${index}`,
-                    name: "",
-                    quantity: null,
-                    allergens: emptyAllergens(),
-                    note: "",
-                    evidenceStatus: "not_completed" as const,
-                  }),
-                ),
-              ],
-            }
-        : item,
-      ),
-    );
-  };
-  const removeSubItem = (menuId: string, subId: string) => {
-    markMatrixEdited();
-    setMenuItems((items) =>
-      items.map((item) =>
-        item.id === menuId
-          ? {
-              ...item,
-              subItems: item.subItems.filter((sub) => sub.id !== subId),
-            }
-        : item,
-      ),
-    );
-  };
-  const removeMenuItem = (id: string) => {
-    markMatrixEdited();
-    setMenuItems((items) => items.filter((item) => item.id !== id));
-  };
-  const toggleCell = (menuId: string, sub: PlannedSubItem, key: string) => {
-    markMatrixEdited();
-    const allergens = toggleOperationalAllergen(sub.allergens, key as CanonicalAllergenKey);
-    updateSubItem(menuId, sub.id, {
-      allergens,
-      evidenceStatus: "not_completed",
-    });
-  };
+  const mutate = (change: (items: PlannedMenuItem[]) => PlannedMenuItem[], immediate = false) => { if (!readOnlyRef.current) edit(change(menuItemsRef.current), planningNotesRef.current, immediate); };
+  const updateMenuItem = (id: string, change: Partial<PlannedMenuItem>) =>
+    mutate((items) => items.map((item) => (item.id === id ? { ...item, ...change } : item)));
+  const updateSubItem = (menuId: string, subId: string, change: Partial<PlannedSubItem>) =>
+    mutate((items) => items.map((item) => item.id === menuId ? { ...item, subItems: item.subItems.map((sub) => sub.id === subId ? { ...sub, ...change } : sub) } : item));
+  const addMenuItem = () =>
+    mutate((items) => [...items, { id: `menu-item:${Date.now()}`, name: "", note: "", subItems: [] }]);
+  const addRows = (menuId: string, count: number) =>
+    mutate((items) => items.map((item) => item.id === menuId ? {
+      ...item,
+      subItems: [...item.subItems, ...Array.from({ length: Math.max(1, Math.min(50, count)) }, (_, index) => ({
+        id: `sub-item:${Date.now()}:${index}`, name: "", quantity: null, allergens: emptyAllergens(), note: "", evidenceStatus: "not_completed" as const,
+      }))],
+    } : item));
+  const removeSubItem = (menuId: string, subId: string) =>
+    mutate((items) => items.map((item) => item.id === menuId ? { ...item, subItems: item.subItems.filter((sub) => sub.id !== subId) } : item));
+  const removeMenuItem = (id: string) => mutate((items) => items.filter((item) => item.id !== id));
+  const toggleCell = (menuId: string, sub: PlannedSubItem, key: string) =>
+    mutate((items) => toggleCellInItems(items, menuId, sub.id, key, readOnlyRef.current));
+  // "Mark checked" never accepts a not-checked allergen: the row is only checked when every allergen has an explicit state. Saves immediately.
   const completeSubItem = (menuId: string, sub: PlannedSubItem) => {
-    if (reviewLockedByAuthority || sub.evidenceStatus === "completed") return;
-    markMatrixEdited();
-    const nextItems = menuItems.map((item) =>
-      item.id === menuId
-        ? { ...item, subItems: item.subItems.map((candidate) => candidate.id === sub.id ? { ...candidate, evidenceStatus: "completed" as const } : candidate) }
-        : item,
-    );
-    setMenuItems(nextItems);
-    const allComplete = nextItems.length > 0 && nextItems.every((item) => item.name.trim() && item.subItems.length > 0 && item.subItems.every((candidate) => candidate.name.trim() && candidate.evidenceStatus === "completed" && isCompleteOperationalAllergenMap(candidate.allergens)));
-    if (allComplete) void planCommand("mark-planned", {}, nextItems);
+    const result = checkRowInItems(menuItemsRef.current, menuId, sub.id, readOnlyRef.current);
+    if (!result.changed) {
+      if (result.reason === "not_checked") setMessage("Check every allergen in this row before marking it checked.");
+      return;
+    }
+    setMessage("");
+    edit(result.items, planningNotesRef.current, true);
   };
   const applySandwich = (menuId: string, sub: PlannedSubItem, id: string) => {
     const productionItem = savedProductionItems.find((item) => item.id === id);
-    if (!productionItem) return;
-    markMatrixEdited();
-    const nextItems = menuItems.map((item) => item.id === menuId ? { ...item, subItems: item.subItems.map((candidate) => candidate.id === sub.id ? {
+    if (!productionItem || readOnlyRef.current) return;
+    mutate((items) => items.map((item) => item.id === menuId ? { ...item, subItems: item.subItems.map((candidate) => candidate.id === sub.id ? {
       ...candidate,
       productionItemId: productionItem.id,
       name: productionItem.title,
       allergens: { ...emptyAllergens(), ...normaliseOperationalAllergens(productionItem.allergens) },
       mayContainNotes: productionItem.mayContainNotes || "",
       evidenceStatus: "not_completed" as const,
-    } : candidate) } : item);
-    setMenuItems(nextItems);
-    void planCommand("save-plan", {}, nextItems);
+    } : candidate) } : item), true);
   };
   const saveSandwich = async (menuId: string, sub: PlannedSubItem) => {
+    if (readOnlyRef.current) return; // the sandwich library is not mutated from a signed matrix
     if (!sub.name.trim()) {
       setMessage("Give the production item a title before saving it.");
       return;
@@ -514,52 +540,53 @@ export default function HospitalityAllergenDetail({
     setBusy(false);
   };
 
-  const planCommand = async (
-    action: "save-plan" | "mark-planned",
-    extra: Record<string, unknown> = {},
-    menuItemsOverride?: PlannedMenuItem[],
-  ) => {
-    setBusy(true);
+  const retrySave = () => { setCloseBlocked(false); void autosaveRef.current.retry(); };
+  // Sign: flush any pending save, re-evaluate the gate against the SAVED state, and only then open the signing dialog.
+  const requestSigning = async (role: InternalMatrixSignature["role"]) => {
+    setSigningError("");
+    const saved = await autosaveRef.current.flush();
+    const gate = signingGate({ menuItems: menuItemsRef.current, persistence: autosaveRef.current.state.status, serverPlanStatus: serverStatusRef.current, readOnly: fullySignedRef.current });
+    if (!saved || !gate.canSign) { setMessage(BLOCK_MESSAGES[saved ? gate.block || "not_planned" : "error"]); return; }
     setMessage("");
-    const response = await fetch("/api/production-plan", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        orderId: order.canonicalId,
-        actor: "production-chef",
-        action,
-        menuItems: menuItemsOverride || menuItems,
-        planningNotes,
-        ...extra,
-      }),
-    });
-    const body = await response.json();
-    if (!response.ok)
-      setMessage(
-        body.error?.message || "The production plan could not be saved.",
-      );
-    else {
-      setPlanStatus(
-        body.plan?.status ||
-          (action === "mark-planned" ? "planned" : "planning"),
-      );
-      if ("matrixArtifact" in body) setMatrixArtifact(body.matrixArtifact || undefined);
-      if ("signatures" in body) setSignatures(body.signatures || []);
-      if (body.plan && "currentAllergenRelease" in body.plan) setCurrentAllergenRelease(body.plan.currentAllergenRelease);
-      setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan?.matrixArtifact ? "ready" : body.plan?.signatures?.length === 2 ? "artifact_pending" : undefined);
-      setMessage(
-        action === "mark-planned"
-          ? "Plan marked Planned. The menu planning team can now generate the menu."
-          : "Partial plan saved. The booking status is now Planning.",
-      );
-      // Keep the detail panel open after planning so the signature controls
-      // become available in the same view.
-      await onSaved(false);
+    setSigningRole(role);
+  };
+  // Closing flushes and awaits pending work first. If the save fails the review stays open with a clear retry.
+  const handleClose = async () => {
+    const saved = await autosaveRef.current.flush();
+    if (!saved) { setCloseBlocked(true); return; }
+    if (changedRef.current) await onSaved(false).catch(() => undefined);
+    close();
+  };
+  // Reopen uses the canonical `reopen-review` operation of the production-plan API (the same command and invalidation path used
+  // everywhere else). Local state becomes editable only after the server confirms.
+  const confirmReopen = async () => {
+    setReopening(true); setReopenError("");
+    try {
+      const response = await fetch(productionPlanEndpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "batch-plan", operations: [{ action: "reopen-review", orderId: order.canonicalId, commandId: `reopen:${order.canonicalId}:${sessionId.current}:${Date.now()}` }] }) });
+      const body = await response.json().catch(() => ({}));
+      const result = Array.isArray(body.results) ? body.results[0] : undefined;
+      if (!response.ok || !result?.ok) throw new Error(result?.error || body.error?.message || "The allergen review could not be reopened.");
+      changedRef.current = true;
+      const reloaded = await fetch(`${productionPlanEndpoint}?orderId=${encodeURIComponent(order.canonicalId)}`, { cache: "no-store" }).then((r) => r.json()).catch(() => undefined);
+      // The server has withdrawn the approval; reflect exactly that.
+      setSignatures([]); setMatrixArtifact(undefined); setCurrentAllergenRelease(undefined); setMatrixStorageStatus(undefined); setReuse(undefined);
+      serverStatusRef.current = "planning"; setPlanStatus("planning");
+      if (reloaded?.plan?.menuItems) {
+        hydrate(reloaded);
+        // a still-complete review goes back to Planned through the same autosave (mark-planned), so it can be signed again
+        const reopened = mergeOriginalItems(order, reloaded.plan.menuItems);
+        if (reviewProgress(reopened).complete && reloaded.plan.status !== "planned") { readOnlyRef.current = false; autosaveRef.current.setReadOnly(false); autosaveRef.current.edit({ menuItems: reopened, planningNotes: reloaded.plan.planningNotes || "" }, { immediate: true }); }
+      }
+      setReopenOpen(false);
+      setMessage("Allergen review reopened. The previous approval is no longer valid; both chef roles must approve the new review.");
+    } catch (error) {
+      setReopenError(error instanceof Error ? error.message : "The allergen review could not be reopened.");
     }
-    setBusy(false);
+    setReopening(false);
   };
 
   const applyReusedAuthority = async () => {
+    if (!(await autosaveRef.current.flush())) { setMessage(BLOCK_MESSAGES.error); return; }
     setBusy(true);
     setMessage("Applying the previously approved allergen states…");
     try {
@@ -572,6 +599,7 @@ export default function HospitalityAllergenDetail({
       if (!response.ok) setMessage(body.error?.message || "The approved allergen states could not be applied. Review the matrix normally.");
       else {
         if (body.plan?.menuItems) setMenuItems(mergeOriginalItems(order, body.plan.menuItems));
+        serverStatusRef.current = body.plan?.status || "planned";
         setPlanStatus(body.plan?.status || "planned");
         setReuse(body.plan?.reusedAllergenAuthority ? { applied: { valid: true, provenance: body.plan.reusedAllergenAuthority } } : undefined);
         setMessage("Previously approved allergen states applied. This booking has not been signed itself.");
@@ -588,6 +616,8 @@ export default function HospitalityAllergenDetail({
     printedName: string,
     signatureDataUrl: string,
   ) => {
+    // Signing never operates on dirty, saving or failed persistence state (the server also re-checks the saved matrix hash).
+    if (autosaveRef.current.state.status !== "saved" || fullySignedRef.current) { setSigningError(BLOCK_MESSAGES.dirty); return; }
     setBusy(true);
     setSigningError("");
     setMessage("");
@@ -673,6 +703,9 @@ export default function HospitalityAllergenDetail({
     finally { setBusy(false); }
   };
 
+  // Sign is visibly disabled until the current matrix is complete AND durably saved (never during dirty / debounce / saving / error).
+  const signState = signButtonState({ menuItems, persistence: autosave.status, serverPlanStatus: planStatus, fullySigned, busy });
+
   return (
     <div
       className="liana-fullscreen"
@@ -691,7 +724,7 @@ export default function HospitalityAllergenDetail({
         </div>
         <button
           className="liana-close"
-          onClick={close}
+          onClick={() => void handleClose()}
           aria-label="Close order"
         >
           ×
@@ -756,8 +789,8 @@ export default function HospitalityAllergenDetail({
               <small>Digital master allergen checker</small>
               <h3>Production menu and sub-items</h3>
               <p>
-                Each menu item can contain multiple sub-items. Click each
-                allergen cell to cycle white → contains → MC → white.
+                Each menu item can contain multiple sub-items. Click a “Not checked” cell to record it as free from, then click again to
+                cycle contains → may contain (MC) → free from. Every allergen must be checked before chef approval.
               </p>
             </div>
             <div className="checker-count">
@@ -767,6 +800,39 @@ export default function HospitalityAllergenDetail({
               <span>sub-items checked</span>
             </div>
           </div>
+          {(() => {
+            const progress = reviewProgress(menuItems);
+            const approvedBy = signatures.map((signature) => `${signature.printedName} (${signature.role === "production_chef" ? "Production chef" : "Head chef / site manager"}, ${new Date(signature.signedAt).toLocaleString("en-GB")})`);
+            const byReuse = currentAllergenRelease?.approvalMode === "reused_authority";
+            return (
+              <>
+                {readOnly ? (
+                  <section className="allergen-approval-banner" aria-label="Allergen approval">
+                    <div>
+                      <strong>{byReuse ? "Allergen matrix approved by reuse" : fullySigned ? "Allergen matrix approved" : signatures.length ? `Partly approved · ${signatures.length} of 2 chef signatures` : "Allergen release in progress"}</strong>
+                      <p>{byReuse ? "This booking itself was not signed: the approved allergen states of a previously signed identical sandwich set were applied." : approvedBy.length ? `Approved by ${approvedBy.join("; ")}.` : "No chef signature is recorded on this release yet."} This matrix is read-only. Viewing it never changes the approval.{signatures.length === 1 ? " The other chef role can still sign." : ""}</p>
+                      {currentAllergenRelease?.releaseId && <small>{currentAllergenRelease.approvalMode === "reused_authority" ? "Approved by reuse of a previously signed sandwich set (not signed for this booking) · " : ""}Release {currentAllergenRelease.releaseId} · version {currentAllergenRelease.version}</small>}
+                    </div>
+                    <div className="allergen-approval-banner__actions">
+                      {matrixArtifact?.driveUrl && <a className="button button-soft" href={matrixArtifact.driveUrl} target="_blank" rel="noreferrer">View signed matrix (PDF)</a>}
+                      {fullySigned && !byReuse && <a className="button button-soft" href={`${productionPlanEndpoint}?orderId=${encodeURIComponent(order.canonicalId)}&download=html`} target="_blank" rel="noreferrer">View signed matrix</a>}
+                      <button type="button" className="button button-danger-soft" onClick={() => { setReopenError(""); setReopenOpen(true); }}>Reopen allergen review</button>
+                    </div>
+                  </section>
+                ) : (
+                  <section className="allergen-review-status" aria-label="Allergen review progress">
+                    <strong role="status" aria-live="polite">{reviewStatusCopy({ progress, persistence: autosave.status, serverPlanStatus: planStatus, readOnly })}</strong>
+                    <span className={`allergen-save-state allergen-save-state--${autosave.status}`} role={autosave.status === "error" ? "alert" : "status"} aria-live="polite">
+                      {autosave.status === "saving" && (<><span className="fika-spinner" aria-hidden="true" />Saving…</>)}
+                      {autosave.status === "dirty" && "Saving shortly…"}
+                      {autosave.status === "saved" && "Saved"}
+                      {autosave.status === "error" && (<>Couldn’t save: {autosave.error} <button type="button" className="button button-soft" onClick={retrySave}>Retry save</button></>)}
+                    </span>
+                  </section>
+                )}
+              </>
+            );
+          })()}
           <div className="checker-actions">
             <div className="row-controls">
               <label htmlFor="rows-to-add">Rows</label>
@@ -776,6 +842,7 @@ export default function HospitalityAllergenDetail({
                 min="1"
                 max="50"
                 value={rowsToAdd}
+                disabled={readOnly}
                 onChange={(event) =>
                   setRowsToAdd(
                     Math.max(1, Math.min(50, Number(event.target.value) || 1)),
@@ -784,6 +851,7 @@ export default function HospitalityAllergenDetail({
               />
               <button
                 type="button"
+                disabled={readOnly}
                 onClick={() => {
                   if (menuItems[0]) addRows(menuItems[0].id, rowsToAdd);
                   else addMenuItem();
@@ -812,6 +880,7 @@ export default function HospitalityAllergenDetail({
                   <span className="menu-item-number">{menuIndex + 1}</span>
                   <input
                     aria-label="Menu item name"
+                    readOnly={readOnly}
                     value={menuItem.name}
                     onChange={(event) =>
                       updateMenuItem(menuItem.id, { name: event.target.value })
@@ -821,6 +890,7 @@ export default function HospitalityAllergenDetail({
                   <button
                     type="button"
                     className="remove-link"
+                    disabled={readOnly}
                     onClick={() => removeMenuItem(menuItem.id)}
                   >
                     Remove menu item
@@ -828,6 +898,7 @@ export default function HospitalityAllergenDetail({
                 </div>
                 <input
                   className="menu-item-note"
+                  readOnly={readOnly}
                   value={menuItem.note}
                   onChange={(event) =>
                     updateMenuItem(menuItem.id, { note: event.target.value })
@@ -872,6 +943,7 @@ export default function HospitalityAllergenDetail({
                               <select
                                 className="saved-sandwich-select"
                                 aria-label={`Saved menu item for ${sub.name || "new sub-item"}`}
+                                disabled={readOnly}
                                 value={sub.productionItemId || ""}
                                 onChange={(event) =>
                                   applySandwich(
@@ -892,6 +964,7 @@ export default function HospitalityAllergenDetail({
                                 className="subitem-name-cell"
                                 rows={2}
                                 aria-label="Sub-item name"
+                                readOnly={readOnly}
                                 value={sub.name}
                                 onChange={(event) =>
                                   updateSubItem(menuItem.id, sub.id, {
@@ -906,7 +979,7 @@ export default function HospitalityAllergenDetail({
                                 <button
                                   type="button"
                                   className="save-sandwich"
-                                  disabled={busy || !sub.name.trim()}
+                                  disabled={busy || readOnly || !sub.name.trim()}
                                   onClick={() => void saveSandwich(menuItem.id, sub)}
                                 >
                                   Save menu item
@@ -914,6 +987,7 @@ export default function HospitalityAllergenDetail({
                                 <button
                                   type="button"
                                   className="remove-row"
+                                  disabled={readOnly}
                                   onClick={() =>
                                     removeSubItem(menuItem.id, sub.id)
                                   }
@@ -923,29 +997,30 @@ export default function HospitalityAllergenDetail({
                               </div>
                             </th>
                             {allergenColumns.map(([key, label]) => {
-                              const state = sub.allergens[key] || "unrecorded";
+                              const state = displayAllergenMap(sub.allergens)[key];
+                              const cellLabel = `${label} for ${sub.name || "sub-item"}: ${ALLERGEN_STATE_WORDS[state]}`;
+                              const content = state === "may_contain" ? "MC" : state === "unrecorded" ? <span className="allergen-cell__unchecked">Not checked</span> : "";
                               return (
                                 <td key={key}>
-                                  <button
-                                    type="button"
-                                    aria-label={`${label} for ${sub.name || "sub-item"}: ${state}`}
-                                    className={`allergen-cell allergen-cell--${state}`}
-                                    onClick={() =>
-                                      toggleCell(menuItem.id, sub, key)
-                                    }
-                                  >
-                                    {state === "may_contain"
-                                      ? "MC"
-                                      : state === "unrecorded"
-                                        ? "UR"
-                                        : ""}
-                                  </button>
+                                  {readOnly ? (
+                                    <span role="img" aria-label={cellLabel} className={`allergen-cell allergen-cell--${state} allergen-cell--static`}>{content}</span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      aria-label={cellLabel}
+                                      className={`allergen-cell allergen-cell--${state}`}
+                                      onClick={() => toggleCell(menuItem.id, sub, key)}
+                                    >
+                                      {content}
+                                    </button>
+                                  )}
                                 </td>
                               );
                             })}
                             <td className="may-contain-notes">
                               <textarea
                                 aria-label={`Notes for ${sub.name || "sub-item"}`}
+                                readOnly={readOnly}
                                 value={sub.mayContainNotes || ""}
                                 onChange={(event) =>
                                   updateSubItem(menuItem.id, sub.id, {
@@ -959,18 +1034,18 @@ export default function HospitalityAllergenDetail({
                               <button
                                 type="button"
                                 className={`check-button ${sub.evidenceStatus === "completed" ? "check-button--done" : ""}`}
-                                disabled={busy || reviewLockedByAuthority || sub.evidenceStatus === "completed"}
-                                aria-label={sub.evidenceStatus === "completed" ? `${sub.name || "Sub-item"}: checked` : reviewLockedByAuthority ? `${sub.name || "Sub-item"}: reopen review to amend` : `${sub.name || "Sub-item"}: mark checked`}
-                                title={reviewLockedByAuthority ? "Reopen the allergen review before amending signed authority" : sub.evidenceStatus === "completed" ? "This row is already checked" : undefined}
-                                onClick={() =>
-                                  completeSubItem(menuItem.id, sub)
-                                }
+                                disabled={readOnly || sub.evidenceStatus === "completed" || !rowCanBeChecked(sub)}
+                                aria-label={sub.evidenceStatus === "completed" ? `${sub.name || "Sub-item"}: checked` : readOnly ? `${sub.name || "Sub-item"}: approved, reopen the review to amend` : rowUncheckedCount(sub) ? `${sub.name || "Sub-item"}: ${rowUncheckedCount(sub)} allergens not checked yet` : !sub.name.trim() ? `${sub.name || "Sub-item"}: give the item a name before marking it checked` : `Mark ${sub.name} checked`}
+                                title={readOnly ? "Reopen the allergen review before amending signed authority" : sub.evidenceStatus === "completed" ? "This row is already checked" : rowUncheckedCount(sub) ? "Check every allergen in this row first" : undefined}
+                                onClick={() => completeSubItem(menuItem.id, sub)}
                               >
                                 {sub.evidenceStatus === "completed"
                                   ? "Checked"
-                                  : reviewLockedByAuthority
-                                    ? "Reopen review to amend"
-                                    : "Mark checked"}
+                                  : readOnly
+                                    ? "Approved"
+                                    : rowUncheckedCount(sub)
+                                      ? `${rowUncheckedCount(sub)} not checked`
+                                      : "Mark checked"}
                               </button>
                             </td>
                           </tr>
@@ -982,6 +1057,7 @@ export default function HospitalityAllergenDetail({
                 <button
                   type="button"
                   className="add-subitem"
+                  disabled={readOnly}
                   onClick={() => addRows(menuItem.id, rowsToAdd)}
                 >
                   + Add {rowsToAdd} row{rowsToAdd === 1 ? "" : "s"}
@@ -992,7 +1068,9 @@ export default function HospitalityAllergenDetail({
           <textarea
             className="planning-notes"
             value={planningNotes}
-            onChange={(event) => setPlanningNotes(event.target.value)}
+            readOnly={readOnly}
+            aria-label="Planning notes"
+            onChange={(event) => { if (readOnlyRef.current) return; setPlanningNotes(event.target.value); autosaveRef.current.edit({ menuItems: menuItemsRef.current, planningNotes: event.target.value }); }}
             placeholder="Planning notes for production and menu planning"
           />
           <section
@@ -1006,6 +1084,7 @@ export default function HospitalityAllergenDetail({
                 These internal attestations are recorded with the plan audit
                 history. They are not an external e-signature service.
               </p>
+              {signState.block && !fullySigned && !(readOnly && signState.block === "read_only") && <p id="sign-blocked-reason" className="allergen-sign-blocked" role="status">Chef approval is not available yet: {BLOCK_MESSAGES[signState.block]}</p>}
               {matrixStorageStatus === "not_configured" && <p role="status">Matrix storage not configured</p>}
               {matrixStorageStatus === "artifact_pending" && <p role="status">Both signatures are recorded; the final PDF is pending.</p>}
             </div>
@@ -1032,8 +1111,10 @@ export default function HospitalityAllergenDetail({
                       <button
                         type="button"
                         className="button button-purple"
-                        disabled={busy || effectiveStatus !== "planned"}
-                        onClick={() => { setSigningError(""); setSigningRole(role); }}
+                        disabled={signState.disabled}
+                        aria-describedby={signState.block ? "sign-blocked-reason" : undefined}
+                        title={signState.block ? BLOCK_MESSAGES[signState.block] : undefined}
+                        onClick={() => void requestSigning(role)}
                       >
                         Sign matrix
                       </button>
@@ -1050,6 +1131,17 @@ export default function HospitalityAllergenDetail({
         <p role="status" className="liana-message">
           {message}
         </p>
+      )}
+      {closeBlocked && (
+        <div role="alert" className="liana-message allergen-close-blocked">
+          <strong>Your latest changes could not be saved.</strong>
+          <span> Retry saving, or discard the unsaved changes and close.</span>
+          <button type="button" className="button button-soft" onClick={retrySave}>Retry save</button>
+          <button type="button" className="button button-soft" onClick={() => { setCloseBlocked(false); close(); }}>Discard changes and close</button>
+        </div>
+      )}
+      {reopenOpen && (
+        <ReopenReviewDialog busy={reopening} error={reopenError} signatureCount={signatures.length} reuse={currentAllergenRelease?.approvalMode === "reused_authority"} onCancel={() => { if (!reopening) setReopenOpen(false); }} onConfirm={() => void confirmReopen()} />
       )}
       {signingRole && (
         <SignatureModal
@@ -1074,30 +1166,22 @@ export default function HospitalityAllergenDetail({
             </button>
           ) : (
             <span className="accepted-note">
-              Accepted means the production chef can produce this order. Planned means every
-              sub-item has been checked.
+              Accepted means the production chef can produce this order. Allergen changes are saved automatically; chef approval opens once every allergen is checked and saved.
             </span>
           )}
         </div>
         <div>
-          <button className="button button-soft" onClick={close}>
+          <button className="button button-soft" onClick={() => void handleClose()}>
             Close
           </button>
-          <button
-            className="button button-soft"
-            disabled={busy}
-            onClick={() => void planCommand("save-plan")}
-          >
-            Save partial plan
-          </button>
-          <button
-            className="button button-mint"
-            disabled
-            aria-disabled="true"
-            aria-label="Mark as Planned"
-          >
-            {effectiveStatus === "planned" ? "Planned automatically" : "Complete every check to plan"}
-          </button>
+          {!readOnly && (
+            <span className={`allergen-save-state allergen-save-state--${autosave.status}`} role={autosave.status === "error" ? "alert" : "status"} aria-live="polite">
+              {autosave.status === "saving" && (<><span className="fika-spinner" aria-hidden="true" />Saving…</>)}
+              {autosave.status === "dirty" && "Saving shortly…"}
+              {autosave.status === "saved" && "All changes saved"}
+              {autosave.status === "error" && "Not saved"}
+            </span>
+          )}
         </div>
       </footer>
     </div>

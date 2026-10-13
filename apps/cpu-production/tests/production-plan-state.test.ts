@@ -61,12 +61,17 @@ test("CPU server rejects marking an actually incomplete matrix Planned", async (
   }
 });
 
-test("Hospitality detail enables completion only for an unlocked row and auto-plans the final complete row", async () => {
+test("Hospitality detail enables completion only for an unlocked, fully checked row and auto-plans through the existing mark-planned command", async () => {
   const detail = await readFile(new URL("../app/ui/HospitalityAllergenDetail.tsx", import.meta.url), "utf8");
-  assert.match(detail, /disabled=\{busy \|\| reviewLockedByAuthority \|\| sub\.evidenceStatus === "completed"\}/);
+  const helper = await readFile(new URL("../app/ui/allergen-review-persistence.ts", import.meta.url), "utf8");
+  assert.match(detail, /disabled=\{readOnly \|\| sub\.evidenceStatus === "completed" \|\| !rowCanBeChecked\(sub\)\}/);
   assert.doesNotMatch(detail, /if \(planStatus === "planned"\) return/);
-  assert.match(detail, /const allComplete = [\s\S]*isCompleteOperationalAllergenMap\(candidate\.allergens\)/);
-  assert.match(detail, /if \(allComplete\) void planCommand\("mark-planned", \{\}, nextItems\)/);
+  // "Mark checked" never accepts a not-checked allergen: the row predicate requires an explicit state for every allergen
+  assert.match(helper, /rowCanBeChecked[\s\S]*isCompleteOperationalAllergenMap\(displayAllergenMap\(sub\.allergens\)\)/);
+  assert.match(detail, /checkRowInItems\(menuItemsRef\.current, menuId, sub\.id, readOnlyRef\.current\)/);
+  // a complete review persists through mark-planned, a partial one through save-plan (the existing commands)
+  assert.match(helper, /isProductionPlanMatrixComplete\(menuItems\) \? "mark-planned" : "save-plan"/);
+  assert.match(detail, /action = autosaveAction\(payload\.menuItems\)/);
 });
 
 test("signed matrix amendments retain the explicit reopen requirement", async () => {

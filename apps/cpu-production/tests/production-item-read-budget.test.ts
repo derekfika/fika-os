@@ -41,7 +41,8 @@ test("Liana selection persists stable submenu identity and uses the authoritativ
   const plan = await readFile(new URL("../app/lib/production-plan.ts", import.meta.url), "utf8");
   assert.match(plan, /productionItemId\?: string/);
   assert.match(detail, /productionItemId: productionItem\.id/);
-  assert.match(detail, /void planCommand\("save-plan", \{\}, nextItems\)/);
+  // choosing a saved item saves immediately through the coalesced autosave (save-plan while the review is incomplete)
+  assert.match(detail, /applySandwich[\s\S]*?\} : candidate\) \} : item\), true\);/);
   assert.match(detail, /value=\{sub\.productionItemId \|\| ""\}/);
   assert.match(detail, /subItems: item\.subItems\.map/);
 });

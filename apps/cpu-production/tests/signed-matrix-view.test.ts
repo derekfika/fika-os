@@ -13,6 +13,10 @@ test("CPU signed matrix view is gated by the exact signed allergen review", () =
   assert.match(responseBuilder, /signedMatrixAvailable/);
   assert.match(responseBuilder, /signedAllergenReviewMatchesOrder\(safe, input\.order/);
   assert.match(route, /revokedReleaseDeliveries/);
-  assert.match(editor, /markMatrixEdited/);
-  assert.match(editor, /setSignatures\(\[\]\)/);
+  // A signed (or partly signed) matrix is read-only: no local code path clears signatures because of an edit. Signatures are only
+  // cleared after the server has completed the canonical reopen.
+  assert.doesNotMatch(editor, /markMatrixEdited/);
+  const clears = editor.split("setSignatures([])").length - 1;
+  assert.equal(clears, 1, "signatures are cleared in exactly one place");
+  assert.ok(editor.indexOf("setSignatures([])") > editor.indexOf("const confirmReopen"), "…and only inside the reopen confirmation, after the server result");
 });
