@@ -162,7 +162,7 @@ export default function HospitalityDashboard({
           viewUrl?: string;
           fileName: string;
           driveStatus: string;
-          status?: "generating" | "ready" | "not_configured" | "failed" | "error";
+          status?: "checking" | "generating" | "ready" | "not_configured" | "failed" | "error";
           error?: string;
         }
       | undefined
@@ -280,7 +280,7 @@ export default function HospitalityDashboard({
     const bookingId = selected.canonicalId;
     const productionOrder = productionOrders[bookingId];
     const productionOrderId = productionOrder?.canonicalId;
-    const setMatrixState = (state: { status: "generating" | "ready" | "not_configured" | "failed" | "error"; driveStatus: string; error?: string; artifact?: Record<string, unknown> }) => {
+    const setMatrixState = (state: { status: "checking" | "generating" | "ready" | "not_configured" | "failed" | "error"; driveStatus: string; error?: string; artifact?: Record<string, unknown> }) => {
       setMatrixArtifacts((current) => ({
         ...current,
         [bookingId]: {
@@ -293,13 +293,14 @@ export default function HospitalityDashboard({
         },
       }));
     };
-    setMatrixState({ status: "generating", driveStatus: "generating" });
+    // A lookup in progress is not a signed-PDF generation: only the server reporting `generating` (both signatures present) says that.
+    setMatrixState({ status: "checking", driveStatus: "checking" });
     void fetch(
       `/api/allergen-matrix?bookingId=${encodeURIComponent(bookingId)}${productionOrderId ? `&productionOrderId=${encodeURIComponent(productionOrderId)}` : ""}`,
       { cache: "no-store" },
     )
       .then(async (response) => {
-        const body = await readDashboardJson(response) as { artifact?: Record<string, unknown>; status?: "generating" | "ready" | "not_configured" | "failed" | "error"; error?: string | { message?: string } };
+        const body = await readDashboardJson(response) as { artifact?: Record<string, unknown>; status?: "checking" | "generating" | "ready" | "not_configured" | "failed" | "error"; error?: string | { message?: string } };
         if (!response.ok) throw Error(typeof body.error === "string" ? body.error : body.error?.message || `The allergen matrix could not be loaded (${response.status}).`);
         return body;
       })
@@ -1399,7 +1400,7 @@ function BookingPane({
     fileName: string;
     driveStatus: string;
     approvalMode?: string;
-    status?: "generating" | "ready" | "not_configured" | "failed" | "error";
+    status?: "checking" | "generating" | "ready" | "not_configured" | "failed" | "error";
     error?: string;
   };
   onRefreshMatrix: () => void;
@@ -1510,7 +1511,7 @@ function BookingDetail({
     fileName: string;
     driveStatus: string;
     approvalMode?: string;
-    status?: "generating" | "ready" | "not_configured" | "failed" | "error";
+    status?: "checking" | "generating" | "ready" | "not_configured" | "failed" | "error";
     error?: string;
   };
   onRefreshMatrix: () => void;
@@ -1788,6 +1789,14 @@ function BookingDetail({
                       : "Authoritative signed CPU matrix"}
                 </small>
               </a>
+            ) : matrixArtifact?.status === "checking" ? (
+              <button type="button" className="manager-document-action" disabled aria-busy="true">
+                <strong>
+                  <span className={styles.spinner} aria-hidden="true" />
+                  Checking allergen matrix…
+                </strong>
+                <small>Looking up the latest CPU allergen status</small>
+              </button>
             ) : matrixArtifact?.status === "generating" ? (
               <button type="button" className="manager-document-action" disabled aria-busy="true">
                 <strong>

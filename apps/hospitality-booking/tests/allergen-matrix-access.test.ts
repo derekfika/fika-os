@@ -19,7 +19,7 @@ test("Hospitality does not let an older generating candidate mask the current ma
   assert.match(api, /body\.matrixStatus === "generating"/);
   assert.match(api, /body\.matrixStatus === "failed"/);
   assert.match(api, /status: "error"/);
-  assert.match(dashboard, /status\?: "generating" \| "ready" \| "not_configured" \| "failed" \| "error"/);
+  assert.match(dashboard, /status\?: "checking" \| "generating" \| "ready" \| "not_configured" \| "failed" \| "error"/);
   assert.match(dashboard, /onRefreshMatrix/);
 });
 

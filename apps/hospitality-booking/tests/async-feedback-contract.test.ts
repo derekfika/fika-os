@@ -21,6 +21,13 @@ test("the allergen-matrix generating card has a spinner", () => {
   assert.match(dashboard, /<span className=\{styles\.spinner\} aria-hidden="true" \/>\s*Generating allergen matrix…/);
 });
 
+test("an allergen-matrix lookup says Checking; only a server-reported generating state mentions the signed PDF", () => {
+  assert.match(dashboard, /setMatrixState\(\{ status: "checking", driveStatus: "checking" \}\);\s*void fetch\(/);
+  assert.match(dashboard, /<span className=\{styles\.spinner\} aria-hidden="true" \/>\s*Checking allergen matrix…/);
+  assert.match(dashboard, /if \(body\.status === "generating"\) return setMatrixState\(\{ status: "generating", driveStatus: "generating" \}\);/);
+  assert.equal((dashboard.match(/The signed PDF is being prepared/g) || []).length, 1);
+});
+
 test("portal submit buttons show a spinner and aria-busy while sending", () => {
   assert.match(rcoa, /aria-busy=\{sending \? true : undefined\}>\{sending \? <><span className="fika-spinner" aria-hidden="true" \/>Sending request…<\/>/);
   assert.match(portal, /aria-busy=\{sending \? true : undefined\}>\{sending \? <><span className="fika-spinner" aria-hidden="true" \/>Sending…<\/>/);
