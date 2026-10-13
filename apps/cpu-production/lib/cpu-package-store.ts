@@ -42,4 +42,7 @@ function cloudStore(): ReadPackageStore {
   };
 }
 
-export function cpuPackageStore() { return hosted() ? cloudStore() : localStore(); }
+let storeOverrideForTests: ReadPackageStore | undefined;
+/** Test seam: lets hosted-mode package logic run against an in-memory object store. Never set in production code. */
+export function setCpuPackageStoreForTests(store: ReadPackageStore | undefined) { storeOverrideForTests = store; }
+export function cpuPackageStore() { return storeOverrideForTests || (hosted() ? cloudStore() : localStore()); }
