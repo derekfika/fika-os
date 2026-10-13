@@ -3,7 +3,7 @@ import test from "node:test";
 import { CANONICAL_ALLERGEN_KEYS } from "../../shared/allergen-contract";
 import type { PlannedMenuItem } from "../app/lib/production-plan";
 import { hasAllergenAuthority } from "../app/lib/production-plan-state";
-import { autosaveAction, checkRowInItems, createAutosaveController, displayAllergenMap, guardedEdit, reviewProgress, reviewStatusCopy, rowCanBeChecked, signButtonState, signingGate, toggleCellInItems } from "../app/ui/allergen-review-persistence";
+import { ALLERGEN_STATE_WORDS, rowUncheckedCount, autosaveAction, checkRowInItems, createAutosaveController, displayAllergenMap, guardedEdit, reviewProgress, reviewStatusCopy, rowCanBeChecked, signButtonState, signingGate, toggleCellInItems, unrecordedAllergenMap, visibleSigningBlock } from "../app/ui/allergen-review-persistence";
 
 const explicit = (state: "clear" | "contains" | "may_contain" = "clear") => Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(key => [key, state]));
 const row = (id: string, over: Partial<PlannedMenuItem["subItems"][number]> = {}): PlannedMenuItem => ({ id: `mi-${id}`, sourceLineId: `line-${id}`, name: `Item ${id}`, note: "", subItems: [{ id: `s-${id}`, name: `Filling ${id}`, quantity: 5, allergens: explicit() as never, note: "", evidenceStatus: "not_completed", ...over }] });
@@ -190,4 +190,42 @@ test("a revision that is already being saved is never queued again when the debo
   releases[1](); await settle();
   assert.equal(controller.state.status, "saved");
   assert.deepEqual(saved, [1, 2]);
+});
+
+test("a newly created review row has every required allergen unrecorded, shows Not checked, cannot be checked and cannot make the matrix signable", () => {
+  const fresh = unrecordedAllergenMap(CANONICAL_ALLERGEN_KEYS);
+  assert.equal(Object.keys(fresh).length, CANONICAL_ALLERGEN_KEYS.length);
+  assert.ok(Object.values(fresh).every(state => state === "unrecorded"), "nothing is pre-set to clear");
+  const added: PlannedMenuItem = row("new", { name: "A named new row", allergens: fresh as never, evidenceStatus: "not_completed" });
+  const items = [...completeItems(), added];
+  assert.equal(rowUncheckedCount(added.subItems[0]), CANONICAL_ALLERGEN_KEYS.length);
+  assert.ok(Object.values(displayAllergenMap(added.subItems[0].allergens)).every(state => state === "unrecorded"));
+  assert.equal(ALLERGEN_STATE_WORDS.unrecorded, "not checked");
+  assert.equal(rowCanBeChecked(added.subItems[0]), false);
+  const attempt = checkRowInItems(items, added.id, added.subItems[0].id, false);
+  assert.equal(attempt.changed, false, "Mark checked refuses a row with unrecorded allergens");
+  assert.equal(reviewProgress(items).allExplicit, false);
+  assert.equal(reviewProgress(items).complete, false);
+  assert.equal(autosaveAction(items), "save-plan", "autosave persists the new row as planning, never promoting to planned");
+  assert.deepEqual(signingGate({ menuItems: items, persistence: "saved", serverPlanStatus: "planned", readOnly: false }), { canSign: false, block: "unchecked" });
+  assert.equal(signButtonState({ menuItems: items, persistence: "saved", serverPlanStatus: "planned", fullySigned: false, busy: false }).disabled, true);
+  // only an explicit review of each allergen (one toggle each, never a bulk clear) makes it checkable
+  let reviewed = items;
+  for (const key of CANONICAL_ALLERGEN_KEYS) reviewed = toggleCellInItems(reviewed, added.id, added.subItems[0].id, key, false);
+  assert.equal(rowCanBeChecked(reviewed[2].subItems[0]), true);
+});
+
+test("the visible Sign-disabled reason names the most actionable blocker; the gate itself is unchanged", () => {
+  const incomplete = [row("1")]; // unchecked row
+  const base = { menuItems: incomplete, serverPlanStatus: "planning", fullySigned: false, busy: false };
+  assert.equal(signButtonState({ ...base, persistence: "error" }).block, "error", "1. save failed outranks an unchecked row");
+  assert.equal(signButtonState({ ...base, persistence: "saving" }).block, "saving", "2. saving");
+  assert.equal(signButtonState({ ...base, persistence: "dirty" }).block, "dirty", "2. pending");
+  assert.equal(signButtonState({ ...base, persistence: "saved" }).block, "incomplete", "3. review incomplete / unchecked rows");
+  assert.equal(signButtonState({ menuItems: completeItems(), persistence: "saved", serverPlanStatus: "planning", fullySigned: false, busy: false }).block, "not_planned", "4. not server-confirmed planned");
+  assert.equal(signButtonState({ ...base, persistence: "error", fullySigned: true }).block, "read_only", "a fully signed matrix still reports read-only");
+  // the gate decision is identical: disabled in every one of these states, enabled only when clean + complete + planned
+  for (const persistence of ["error", "saving", "dirty", "saved"] as const) assert.equal(signButtonState({ ...base, persistence }).disabled, true);
+  assert.equal(signingGate({ menuItems: incomplete, persistence: "error", serverPlanStatus: "planning", readOnly: false }).canSign, false);
+  assert.equal(visibleSigningBlock(undefined, "saved", false, false), undefined);
 });

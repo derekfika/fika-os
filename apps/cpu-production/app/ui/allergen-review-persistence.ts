@@ -94,7 +94,25 @@ export function signingGate(input: { menuItems: PlannedMenuItem[]; persistence: 
  */
 export function signButtonState(input: { menuItems: PlannedMenuItem[]; persistence: PersistenceStatus; serverPlanStatus: string; fullySigned: boolean; busy: boolean }): { disabled: boolean; block?: SigningBlock } {
   const gate = signingGate({ menuItems: input.menuItems, persistence: input.persistence, serverPlanStatus: input.serverPlanStatus, readOnly: input.fullySigned, busy: input.busy });
-  return gate.canSign ? { disabled: false } : { disabled: true, block: gate.block };
+  if (gate.canSign) return { disabled: false };
+  return { disabled: true, block: visibleSigningBlock(gate.block, input.persistence, input.fullySigned, input.busy) };
+}
+
+/**
+ * Which blocker the UI NAMES when several apply (the gate itself is unchanged): a failed save first, then a save in progress or
+ * pending, then the review itself (unchecked / incomplete), then the server-planned state.
+ */
+export function visibleSigningBlock(gateBlock: SigningBlock | undefined, persistence: PersistenceStatus, fullySigned: boolean, busy: boolean): SigningBlock | undefined {
+  if (fullySigned) return gateBlock;
+  if (persistence === "error") return "error";
+  if (persistence === "saving" || busy) return "saving";
+  if (persistence === "dirty") return "dirty";
+  return gateBlock;
+}
+
+/** A newly created review row starts with every required allergen unrecorded ("Not checked"); nothing is ever pre-set to clear. */
+export function unrecordedAllergenMap(keys: readonly string[]): Record<string, "unrecorded"> {
+  return Object.fromEntries(keys.map((key) => [key, "unrecorded" as const]));
 }
 
 /** The status line shown above the matrix. */

@@ -124,3 +124,12 @@ test("allergen, signing, generation, release and authority semantics are untouch
     assert.doesNotMatch(source, /allergen-review-persistence|autosave:\$\{/, `${path} has no knowledge of the UI persistence layer`);
   }
 });
+
+test("new review rows are created unrecorded: emptyAllergens never pre-sets clear and every creation path uses it", async () => {
+  const detail = await read("../app/ui/HospitalityAllergenDetail.tsx");
+  assert.match(block(detail, "function emptyAllergens", "function initialMenuItems"), /unrecordedAllergenMap\(CANONICAL_ALLERGEN_COLUMNS\.map/);
+  assert.doesNotMatch(block(detail, "function emptyAllergens", "function initialMenuItems"), /"clear"/);
+  assert.match(block(detail, "const addRows", "const removeSubItem"), /allergens: emptyAllergens\(\)/);
+  // saved rows are not reinterpreted: hydration of stored plans does not run through emptyAllergens
+  assert.doesNotMatch(block(detail, "const hydrate", "const edit = (next"), /emptyAllergens/);
+});
