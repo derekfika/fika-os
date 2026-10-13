@@ -675,9 +675,9 @@ test("P1-2: a cached projection also requires the CURRENT canonical composition;
   assert.notEqual(legacyEntry.workflowStatus, "planned"); assert.equal(legacyEntry.allergenReadiness, "attention"); assert.equal(legacyEntry.reusedAuthority, undefined);
   assert.equal(legacyChecked.summary.planned, 0, "both Hospitality entries are unverifiable; no stale planned count survives");
   assert.equal(legacyChecked.orders.every((item: { workflowStatus: string }) => item.workflowStatus !== "planned"), true);
-  // (e) the production route upgrades an unversioned cached package before serving it
+  // (e) the production route serves an unversioned cached package as-is and makes it safe on the RESPONSE (legacy entries downgraded above); it never rebuilds it in place at an unchanged sequence
   const productionRoute = await readFile(new URL("../app/api/production/route.ts", import.meta.url), "utf8");
-  assert.match(productionRoute, /authorityBindingVersion\?: number \}\)\.authorityBindingVersion !== 1/);
+  assert.doesNotMatch(productionRoute, /authorityBindingVersion\?: number \}\)\.authorityBindingVersion !== 1/, "no in-place rebuild of a legacy package (CPU_PACKAGE_SEQUENCE_CONFLICT)");
   assert.match(productionRoute, /loadOrder: async \(id: string\) => \(await productionOrderDetail\(request, id\)\)/);
 });
 

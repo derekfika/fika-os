@@ -186,13 +186,13 @@ async function handleGet(request: NextRequest) {
         try {
           const packaged = await getCpuProjectionPackage(projectionDate, week || undefined);
           if (packaged) {
-            // A package built before reuse bindings existed cannot prove which entries rest on a reused approval: rebuild it once.
-            let projection = packaged.value.projection;
-            let manifest = packaged.manifest;
-            if ((projection as { authorityBindingVersion?: number }).authorityBindingVersion !== 1) {
-              projection = (week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuDayProjection(request, projectionDate)) as typeof projection;
-              manifest = (await getCpuProjectionManifest(projectionDate, week || undefined)) ?? manifest;
-            }
+            // A package built before reuse bindings existed (no `authorityBindingVersion`) is served as-is and made safe on the RESPONSE:
+            // `revalidateProjectionAuthority` treats its Hospitality Planned entries as unverifiable. It is deliberately NOT rebuilt in
+            // place: a rebuild at an unchanged change sequence yields different content (the marker) and the monotonic publisher rightly
+            // rejects that as CPU_PACKAGE_SEQUENCE_CONFLICT, which made historical weeks unloadable. The package is replaced normally
+            // the next time the week actually changes (a new, higher sequence).
+            const projection = packaged.value.projection;
+            const manifest = packaged.manifest;
             const filtered = filterCpuProjectionForScope(await revalidate(projection), normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
             recordDeliveredInReadBudget({ stage: "package_body_load", projectionDocs: 0, selectedIds: filtered.orders.length });
             return withServerTiming(NextResponse.json({ projection: filtered, package: manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
