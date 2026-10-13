@@ -6,10 +6,10 @@ import type { ProductionPlan } from "../app/lib/production-plan";
 import { CANONICAL_ALLERGEN_KEYS, normaliseOperationalAllergens } from "../../shared/allergen-contract";
 
 const states = (over: Record<string, string> = {}) => normaliseOperationalAllergens(Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(a => [a, over[a] || "clear"])));
-type L = { id: string; item: string; qty?: number; choices?: unknown[]; extra?: Record<string, unknown> };
+type L = { id: string; item?: string; offering?: string; qty?: number; choices?: unknown[]; extra?: Record<string, unknown> };
 const order = (id: string, lines: L[], extra: Partial<CompositionOrder> = {}) => ({
   canonicalId: id, origin: "hospitality_booking", requiresDelivery: true, sourceBookingId: `booking:${id}`, sourceQuoteRevisionId: `quote:${id}:1`,
-  lines: lines.map(l => ({ canonicalId: `${id}:${l.id}`, sourceMenuItemId: l.item, sourceOfferingId: undefined, choices: l.choices || [], workstream: "sandwiches", customerQuantity: l.qty ?? 10, dietaries: { vegan: l.qty ?? 1 }, ...(l.extra || {}) })),
+  lines: lines.map(l => ({ canonicalId: `${id}:${l.id}`, ...(l.item ? { sourceMenuItemId: l.item } : {}), ...(l.offering ? { sourceOfferingId: l.offering } : {}), choices: l.choices || [], workstream: "sandwiches", customerQuantity: l.qty ?? 10, dietaries: { vegan: l.qty ?? 1 }, ...(l.extra || {}) })),
   ...extra,
 }) as CompositionOrder & { sourceBookingId: string; sourceQuoteRevisionId: string };
 const AT = "2026-10-12T10:00:00.000Z";
@@ -62,6 +62,31 @@ test("FINDING 7: conflicting line-level evidence and open exceptions make an ord
   assert.equal(id([{ id: "1", item: "i", extra: { status: "exception" } }]), undefined);
   assert.equal(id([{ id: "1", item: "i", extra: { exceptions: ["bread unavailable"] } }]), undefined);
   assert.notEqual(id([{ id: "1", item: "i", extra: { allergenEvidenceStatus: "confirmed" } }]), id([{ id: "1", item: "i", extra: { allergenEvidenceStatus: "unreviewed" } }]));
+});
+test("identity fields: sourceOfferingId only (current staging shape), sourceMenuItemId only (legacy), both, and neither", () => {
+  const entryOf = (l: L) => compositionIdentity(order("o", [l]))?.entries[0];
+  assert.ok(id([{ id: "1", offering: "hospitality-menu-item:mnk:deli_sandwich_lunch" }]), "offering-only is eligible");
+  assert.ok(id([{ id: "1", item: "hospitality-menu-item:mnk:deli_sandwich_lunch" }]), "item-only is eligible");
+  assert.ok(id([{ id: "1", item: "i", offering: "o" }]), "both is eligible");
+  assert.equal(id([{ id: "1" }]), undefined, "neither is ineligible");
+  assert.equal(id([{ id: "1", item: "  ", offering: " " }]), undefined, "blank identifiers do not count");
+  // the exact canonical entry shape: the two fields are preserved distinctly, a missing one is null (never copied from the other)
+  assert.deepEqual({ itemId: entryOf({ id: "1", offering: "x" })!.itemId, offeringId: entryOf({ id: "1", offering: "x" })!.offeringId }, { itemId: null, offeringId: "x" });
+  assert.deepEqual({ itemId: entryOf({ id: "1", item: "x" })!.itemId, offeringId: entryOf({ id: "1", item: "x" })!.offeringId }, { itemId: "x", offeringId: null });
+  assert.deepEqual({ itemId: entryOf({ id: "1", item: "x", offering: "y" })!.itemId, offeringId: entryOf({ id: "1", item: "x", offering: "y" })!.offeringId }, { itemId: "x", offeringId: "y" });
+  // both present: BOTH affect identity
+  const base = id([{ id: "1", item: "i", offering: "o" }]);
+  assert.notEqual(base, id([{ id: "1", item: "i2", offering: "o" }]));
+  assert.notEqual(base, id([{ id: "1", item: "i", offering: "o2" }]));
+  assert.notEqual(base, id([{ id: "1", item: "i" }]));
+  assert.notEqual(base, id([{ id: "1", offering: "o" }]));
+  // the same raw string in different fields is a DIFFERENT composition (no aliasing / cross-matching)
+  const same = "hospitality-menu-item:mnk:deli_sandwich_lunch";
+  const asItem = id([{ id: "1", item: same }]), asOffering = id([{ id: "1", offering: same }]), asBoth = id([{ id: "1", item: same, offering: same }]);
+  assert.equal(new Set([asItem, asOffering, asBoth]).size, 3);
+  assert.equal(compositionIdentity(order("o", [{ id: "1", item: same }]))!.identityVersion, "fika.allergen-composition.v3");
+  // all previous exclusions are unchanged: ordering, quantities, display text, dietaries
+  assert.equal(id([{ id: "1", offering: same, qty: 3 }, { id: "2", offering: `${same}2` }]), id([{ id: "9", offering: `${same}2`, qty: 80 }, { id: "8", offering: same }]));
 });
 test("ineligible orders have no identity (fresh review): missing item id, other workstream, other origin, no delivery", () => {
   assert.equal(id([{ id: "1", item: "" }]), undefined);

@@ -16,6 +16,7 @@ const { buildCpuDayProjection } = await import("../lib/cpu-projection");
 const { loadDeliveredInReviewStatuses } = await import("../lib/delivered-in-review");
 const { selectedPlanResponseBody, servicePlansResponseBody, applyReuseResponse, finalApplyResponse } = await import("../lib/cpu-plan-response");
 const lineCases = await import("./support/line-association-cases");
+const schemeCases = await import("./support/identity-scheme-cases");
 const { resetCpuOutboxForTests, listCpuOutboxForTests } = await import("../lib/cpu-durable-outbox");
 const { materializeCpuAllergenRelease } = await import("../lib/cpu-allergen-release");
 const { currentAllergenReleaseMatchesOrder, reusedAuthorityReleaseMatchesOrder, hasAllergenAuthority } = await import("../app/lib/production-plan");
@@ -840,4 +841,8 @@ test("P1 (stale order): the final apply response validates against the LATEST ca
   // the plan is reloaded too: a plan reopened meanwhile is not reported as success
   const failed = await finalApplyResponse(store, { ...base, loadPlan: async () => planFor(o, {}, { status: "planning" }), loadOrder: async () => o as never });
   assert.equal(failed.status, 409);
+});
+
+test("identity schemes (memory repository): sourceMenuItemId and sourceOfferingId are distinct fields; records identified through different fields never reuse each other's authority", async () => {
+  await schemeCases.identitySchemeCases({ label: "memory", plans: createProductionPlanRepository(), store, unique: () => `mem${++lineCaseCounter}${Math.random().toString(36).slice(2, 7)}` });
 });
