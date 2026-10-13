@@ -87,6 +87,16 @@ export function signingGate(input: { menuItems: PlannedMenuItem[]; persistence: 
   return input.busy ? { canSign: false, block: "saving" } : { canSign: true };
 }
 
+/**
+ * The visible state of a Sign button. It is disabled whenever the matrix is dirty (including a pending debounce), saving, in a save
+ * error, incomplete, unchecked, or not yet confirmed `planned` by the server; it is enabled only on a clean, saved, complete matrix.
+ * Clicking still flushes and re-checks (defence in depth), but an enabled button normally has nothing outstanding to flush.
+ */
+export function signButtonState(input: { menuItems: PlannedMenuItem[]; persistence: PersistenceStatus; serverPlanStatus: string; fullySigned: boolean; busy: boolean }): { disabled: boolean; block?: SigningBlock } {
+  const gate = signingGate({ menuItems: input.menuItems, persistence: input.persistence, serverPlanStatus: input.serverPlanStatus, readOnly: input.fullySigned, busy: input.busy });
+  return gate.canSign ? { disabled: false } : { disabled: true, block: gate.block };
+}
+
 /** The status line shown above the matrix. */
 export function reviewStatusCopy(input: { progress: ReviewProgress; persistence: PersistenceStatus; serverPlanStatus: string; readOnly: boolean }): string {
   if (input.readOnly) return "Allergen matrix approved. Open read-only.";
@@ -125,13 +135,21 @@ export function createAutosaveController<P>(options: { save: (payload: P, revisi
   const set = (next: AutosaveState) => { state = next; options.onChange?.(next); };
   const clearTimer = () => { if (timer !== undefined) { timers.clear(timer); timer = undefined; } };
 
+  let submittedRevision = 0; // the newest revision already handed to the coalescer (a save for it may still be in flight)
   async function flush(): Promise<boolean> {
     clearTimer();
     for (;;) {
       if (latest === undefined || savedRevision >= revision) { if (state.status !== "saved") set({ status: "saved" }); return true; }
       set({ status: "saving" });
-      try { await coalescer.submit({ payload: latest, revision }); }
-      catch (error) { set({ status: "error", error: error instanceof Error ? error.message : "The review could not be saved." }); return false; }
+      try {
+        // never queue a duplicate save of a revision that is already in flight: just wait for it
+        if (submittedRevision === revision && coalescer.pending) await coalescer.pending;
+        else { submittedRevision = revision; await coalescer.submit({ payload: latest, revision }); }
+      } catch (error) {
+        submittedRevision = 0; // a retry must really save again
+        set({ status: "error", error: error instanceof Error ? error.message : "The review could not be saved." });
+        return false;
+      }
       // edits that arrived while saving are saved by the next iteration; only then is the review clean
     }
   }

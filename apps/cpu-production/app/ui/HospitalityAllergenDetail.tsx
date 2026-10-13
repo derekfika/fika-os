@@ -20,7 +20,7 @@ import { CANONICAL_ALLERGEN_COLUMNS, isCompleteOperationalAllergenMap, normalise
 import { matrixColumns } from "./allergen-matrix";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 import { canonicalAllergenMatrixForHash } from "../../../shared/allergen-matrix-hash";
-import { ALLERGEN_STATE_WORDS, autosaveAction, checkRowInItems, createAutosaveController, displayAllergenMap, reviewProgress, reviewStatusCopy, rowCanBeChecked, rowUncheckedCount, signingGate, toggleCellInItems, type AutosaveState, type SigningBlock } from "./allergen-review-persistence";
+import { ALLERGEN_STATE_WORDS, autosaveAction, checkRowInItems, createAutosaveController, displayAllergenMap, reviewProgress, reviewStatusCopy, rowCanBeChecked, rowUncheckedCount, signButtonState, signingGate, toggleCellInItems, type AutosaveState, type SigningBlock } from "./allergen-review-persistence";
 const allergenColumns = matrixColumns;
 const productionPlanEndpoint = "/api/production-plan";
 
@@ -279,12 +279,6 @@ export function SignatureModal({
       </section>
     </div>
   );
-}
-
-/** The Sign buttons stay available while edits are only waiting to be saved (clicking flushes first) but never when the review itself is not signable. */
-function readOnlyBlocksSigning(menuItems: PlannedMenuItem[], fullySigned: boolean, persistence: AutosaveState["status"]) {
-  const gate = signingGate({ menuItems, persistence: "saved", serverPlanStatus: "planned", readOnly: fullySigned });
-  return !gate.canSign || persistence === "error";
 }
 
 export function ReopenReviewDialog({ busy, error, signatureCount, reuse, onCancel, onConfirm }: { busy: boolean; error: string; signatureCount: number; reuse: boolean; onCancel: () => void; onConfirm: () => void }) {
@@ -709,6 +703,9 @@ export default function HospitalityAllergenDetail({
     finally { setBusy(false); }
   };
 
+  // Sign is visibly disabled until the current matrix is complete AND durably saved (never during dirty / debounce / saving / error).
+  const signState = signButtonState({ menuItems, persistence: autosave.status, serverPlanStatus: planStatus, fullySigned, busy });
+
   return (
     <div
       className="liana-fullscreen"
@@ -1087,6 +1084,7 @@ export default function HospitalityAllergenDetail({
                 These internal attestations are recorded with the plan audit
                 history. They are not an external e-signature service.
               </p>
+              {signState.block && !fullySigned && !(readOnly && signState.block === "read_only") && <p id="sign-blocked-reason" className="allergen-sign-blocked" role="status">Chef approval is not available yet: {BLOCK_MESSAGES[signState.block]}</p>}
               {matrixStorageStatus === "not_configured" && <p role="status">Matrix storage not configured</p>}
               {matrixStorageStatus === "artifact_pending" && <p role="status">Both signatures are recorded; the final PDF is pending.</p>}
             </div>
@@ -1113,7 +1111,9 @@ export default function HospitalityAllergenDetail({
                       <button
                         type="button"
                         className="button button-purple"
-                        disabled={busy || readOnlyBlocksSigning(menuItems, fullySigned, autosave.status)}
+                        disabled={signState.disabled}
+                        aria-describedby={signState.block ? "sign-blocked-reason" : undefined}
+                        title={signState.block ? BLOCK_MESSAGES[signState.block] : undefined}
                         onClick={() => void requestSigning(role)}
                       >
                         Sign matrix

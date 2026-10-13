@@ -47,7 +47,9 @@ test("signing: the button flushes pending saves, re-evaluates the gate against s
   const sign = block(detail, "const signMatrix", "const accept");
   assert.match(sign, /autosaveRef\.current\.state\.status !== "saved" \|\| fullySignedRef\.current/);
   // a partly signed matrix is locked for editing but stays signable for the missing role
-  assert.match(detail, /readOnlyBlocksSigning\(menuItems, fullySigned, autosave\.status\)/);
+  assert.match(detail, /signButtonState\(\{ menuItems, persistence: autosave\.status, serverPlanStatus: planStatus, fullySigned, busy \}\)/);
+  assert.match(detail, /disabled=\{signState\.disabled\}/, "the visible Sign control follows the persistence-aware gate");
+  assert.doesNotMatch(detail, /readOnlyBlocksSigning/, "the old gate that enabled Sign while a save was pending is gone");
   assert.match(detail, /readOnly: fullySignedRef\.current/);
   assert.match(sign, /action: "sign-matrix"/); assert.match(sign, /expectedLineage/);
   assert.match(sign, /reviewedLineage\(order, menuItems, signingLineage\)/);

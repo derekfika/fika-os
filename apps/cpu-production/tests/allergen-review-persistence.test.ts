@@ -3,7 +3,7 @@ import test from "node:test";
 import { CANONICAL_ALLERGEN_KEYS } from "../../shared/allergen-contract";
 import type { PlannedMenuItem } from "../app/lib/production-plan";
 import { hasAllergenAuthority } from "../app/lib/production-plan-state";
-import { autosaveAction, checkRowInItems, createAutosaveController, displayAllergenMap, guardedEdit, reviewProgress, reviewStatusCopy, rowCanBeChecked, signingGate, toggleCellInItems } from "../app/ui/allergen-review-persistence";
+import { autosaveAction, checkRowInItems, createAutosaveController, displayAllergenMap, guardedEdit, reviewProgress, reviewStatusCopy, rowCanBeChecked, signButtonState, signingGate, toggleCellInItems } from "../app/ui/allergen-review-persistence";
 
 const explicit = (state: "clear" | "contains" | "may_contain" = "clear") => Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(key => [key, state]));
 const row = (id: string, over: Partial<PlannedMenuItem["subItems"][number]> = {}): PlannedMenuItem => ({ id: `mi-${id}`, sourceLineId: `line-${id}`, name: `Item ${id}`, note: "", subItems: [{ id: `s-${id}`, name: `Filling ${id}`, quantity: 5, allergens: explicit() as never, note: "", evidenceStatus: "not_completed", ...over }] });
@@ -144,4 +144,50 @@ test("a PARTLY signed matrix is locked for editing but still signable by the mis
   assert.deepEqual(signingGate({ menuItems: items, persistence: "saved", serverPlanStatus: "planned", readOnly: true }), { canSign: false, block: "read_only" });
   // the edit lock itself is independent: any signature locks edits
   assert.equal(hasAllergenAuthority({ signatures: [{ role: "production_chef" } as never], matrixArtifact: undefined, currentAllergenRelease: undefined } as never), true);
+});
+
+test("the visible Sign control is disabled through dirty -> debounce -> saving and enabled only after a successful save", async () => {
+  const items = completeItems();
+  const timers = manual(); let release: (() => void) | undefined; let fail = false;
+  const controller = createAutosaveController<number>({ save: () => new Promise<void>((resolve, reject) => { release = () => (fail ? reject(new Error("down")) : resolve()); }), timers });
+  const button = (serverPlanStatus = "planned", busy = false) => signButtonState({ menuItems: items, persistence: controller.state.status, serverPlanStatus, fullySigned: false, busy });
+  assert.deepEqual(button(), { disabled: false }, "clean + saved + complete + planned: enabled");
+  controller.edit(1);
+  assert.deepEqual(button(), { disabled: true, block: "dirty" }, "dirty (debounce pending): disabled");
+  assert.equal(timers.pending(), 1);
+  timers.fire(); await settle();
+  assert.equal(controller.state.status, "saving");
+  assert.deepEqual(button(), { disabled: true, block: "saving" }, "saving: disabled");
+  controller.edit(2); // an edit during the save
+  assert.deepEqual(button(), { disabled: true, block: "dirty" });
+  release!(); await settle(); timers.fire(); await settle();
+  assert.deepEqual(button(), { disabled: true, block: "saving" }, "the trailing save is still saving: disabled");
+  release!(); await settle();
+  assert.equal(controller.state.status, "saved");
+  assert.deepEqual(button(), { disabled: false }, "enabled only after the final save succeeded");
+  // failure -> error -> disabled until a retry succeeds
+  fail = true; controller.edit(3, { immediate: true }); await settle(); release!(); await settle();
+  assert.equal(controller.state.status, "error");
+  assert.deepEqual(button(), { disabled: true, block: "error" });
+  fail = false; const retry = controller.retry(); await settle(); release!(); await retry;
+  assert.deepEqual(button(), { disabled: false });
+  // other conditions that keep it disabled
+  assert.deepEqual(button("planning"), { disabled: true, block: "not_planned" }, "not server-confirmed planned");
+  assert.deepEqual(button("planned", true), { disabled: true, block: "saving" }, "busy");
+  assert.equal(signButtonState({ menuItems: [row("1")], persistence: "saved", serverPlanStatus: "planned", fullySigned: false, busy: false }).disabled, true, "incomplete / unchecked");
+  assert.equal(signButtonState({ menuItems: items, persistence: "saved", serverPlanStatus: "planned", fullySigned: true, busy: false }).disabled, true, "both required roles already signed");
+});
+
+test("a revision that is already being saved is never queued again when the debounce fires", async () => {
+  const timers = manual(); const saved: number[] = []; const releases: Array<() => void> = [];
+  const controller = createAutosaveController<number>({ save: value => new Promise<void>(resolve => { saved.push(value); releases.push(resolve); }), timers });
+  controller.edit(1, { immediate: true }); await settle();
+  controller.edit(2); // debounce pending while save 1 is in flight
+  releases[0](); await settle(); // save 1 done: the loop immediately saves revision 2
+  assert.deepEqual(saved, [1, 2]);
+  timers.fire(); await settle(); // the stale debounce fires while save 2 is still in flight
+  assert.deepEqual(saved, [1, 2], "no duplicate save of revision 2");
+  releases[1](); await settle();
+  assert.equal(controller.state.status, "saved");
+  assert.deepEqual(saved, [1, 2]);
 });

@@ -35,3 +35,5 @@
 .reopen-dialog ul{margin:8px 0 0 18px;padding:0;line-height:1.5}.reopen-dialog footer{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:16px}.reopen-dialog__error{color:var(--fika-status-danger,#a21d47);font-weight:600}
 .allergen-close-blocked{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 @media (prefers-reduced-motion: reduce){.allergen-review-status .fika-spinner,.allergen-save-state .fika-spinner,.reopen-dialog .fika-spinner{display:none!important;animation:none!important}}
+
+.matrix-signing button:disabled{opacity:.55;cursor:not-allowed}.allergen-sign-blocked{color:var(--fika-text-secondary,#4a4470);font-size:.875rem}
