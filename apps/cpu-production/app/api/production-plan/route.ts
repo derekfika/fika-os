@@ -54,21 +54,21 @@ async function syncCanonicalLifecycle(
     await step("needs_review");
   }
   if (target === "planned") {
-    // A local CPU plan can be completed directly from a newly created
-    // hospitality hand-off. Keep the governed production lifecycle in sync by
-    // walking the same explicit transitions a chef would use.
+    // `planning` / `planned` are CPU-local planning states: CPU derives them from its own plan (`workflowStatus` in the projection)
+    // and overlays them on the Production Order. They are NOT governed Hub lifecycle states (Hub's transition API does not accept
+    // them), so marking a plan planned never asks Hub for them. A newly handed-off hospitality order is only brought to the
+    // governed `accepted` state, by the same explicit transitions a chef would use; an order already at or beyond `accepted`
+    // is left exactly where it is, so repeating the command writes nothing to Hub.
     if (order.status === "draft") await step("needs_review");
     if (order.status === "needs_review") await step("accepted");
-    if (order.status === "accepted") await step("planning");
+    return order;
   }
   if (order.status !== target) {
     const allowed =
-      target === "planned" && order.status === "planning"
+      target === "accepted" && order.status === "needs_review"
         ? true
-        : target === "accepted" && order.status === "needs_review"
-          ? true
-          : ["rejected", "needs_clarification"].includes(target) &&
-              order.status === "needs_review";
+        : ["rejected", "needs_clarification"].includes(target) &&
+            order.status === "needs_review";
     if (allowed) await step(target);
   }
   return order;
