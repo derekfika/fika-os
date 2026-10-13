@@ -14,7 +14,8 @@ const { loadGuardedPlansForOrders } = await import("../lib/cpu-guarded-plans");
 const { revalidateProjectionAuthority } = await import("../lib/cpu-projection-authority");
 const { buildCpuDayProjection } = await import("../lib/cpu-projection");
 const { loadDeliveredInReviewStatuses } = await import("../lib/delivered-in-review");
-const { selectedPlanResponseBody, servicePlansResponseBody } = await import("../lib/cpu-plan-response");
+const { selectedPlanResponseBody, servicePlansResponseBody, applyReuseResponse } = await import("../lib/cpu-plan-response");
+const lineCases = await import("./support/line-association-cases");
 const { resetCpuOutboxForTests, listCpuOutboxForTests } = await import("../lib/cpu-durable-outbox");
 const { materializeCpuAllergenRelease } = await import("../lib/cpu-allergen-release");
 const { currentAllergenReleaseMatchesOrder, reusedAuthorityReleaseMatchesOrder, hasAllergenAuthority } = await import("../app/lib/production-plan");
@@ -303,7 +304,7 @@ test("FINDING 3 / P1-3: adoption is one transaction; it cannot commit behind a r
   // (d) once the cascade is complete nobody can adopt, and the repository itself refuses to persist a reused plan for the revoked generation
   const afterDone = await h.add("o-after");
   await assert.rejects(applyReuseCommand(h.deps as never, { plan: structuredClone(afterDone.p), storedPlan: afterDone.p, order: afterDone.o as never, actor: "cpu", actorId: "u", at: AT }), /cannot be reused|no longer available/);
-  const forged = structuredClone(afterDone.p); forged.status = "planned"; forged.reusedAllergenAuthority = { authorityId: `${h.compositionId}#g1`, compositionId: h.compositionId, generation: 1, identityVersion: authorityOf().identityVersion, matrixSemanticHash: authorityOf().matrixSemanticHash, adoptedAt: AT, adoptedBy: "x", origin: authorityOf().origin };
+  const forged = structuredClone(afterDone.p); forged.status = "planned"; forged.reusedAllergenAuthority = { authorityId: `${h.compositionId}#g1`, compositionId: h.compositionId, generation: 1, identityVersion: authorityOf().identityVersion, matrixSemanticHash: authorityOf().matrixSemanticHash, adoptedAt: AT, adoptedBy: "x", lineBindings: {}, origin: authorityOf().origin };
   await assert.rejects(h.plans.save(forged), (error: { code?: string }) => error.code === "CPU_REUSED_AUTHORITY_INVALID");
   await assert.rejects(h.plans.saveAndAppendCpuChange(forged, undefined, { serviceDate: "2026-10-20", entityType: "productionPlan", entityId: forged.id, revision: 1, changeType: "x", actorId: "u", changedAt: AT } as never), (error: { code?: string }) => error.code === "CPU_REUSED_AUTHORITY_INVALID");
 });
@@ -762,4 +763,52 @@ test("replay semantics: a committed idempotent command is answered from its rece
   assert.equal(retry.sequence, applied.sequence);
   assert.equal((await repo.get(o.canonicalId))!.planningNotes, "first");
   await assert.rejects(repo.saveAndAppendCpuChange({ ...first, planningNotes: "other" }, base.updatedAt, change(`${stamp}-other`)), /changed elsewhere/);
+});
+
+let lineCaseCounter = 0;
+test("P1-1 (memory repository): line association is preserved for reused plans and for origin invalidation", async () => {
+  const env = { label: "memory", plans: createProductionPlanRepository(), store, unique: () => `mem${++lineCaseCounter}${Math.random().toString(36).slice(2, 7)}` };
+  await lineCases.reusedPlanLineCases(env);
+  await lineCases.originLineCases(env);
+});
+
+test("P1-2: every apply-reused-authority response path is guarded and fails closed (new, replay, revoked during delivery, store outage)", async () => {
+  const h = await harness();
+  const { o } = await h.adopt("o-other");
+  const ready = await makeReady(h, "o-other");
+  // newly applied adoption and idempotent replay while the authority is valid
+  const fresh = await applyReuseResponse(store, { plan: ready, order: o as never, materializationDelivery: { status: "delivered" } });
+  assert.equal(fresh.status, 200); assert.equal((fresh.body.reuse as { applied: boolean }).applied, true);
+  assert.equal((fresh.body.plan as ProductionPlan).status, "planned"); assert.equal(fresh.body.approvedMatrixAvailable, true);
+  const replay = await applyReuseResponse(store, { plan: ready, order: o as never, unchanged: true });
+  assert.equal(replay.status, 200); assert.equal((replay.body.reuse as { unchanged?: boolean }).unchanged, true);
+  const assertFailClosed = (response: Awaited<ReturnType<typeof applyReuseResponse>>) => {
+    assert.equal(response.status, 409, "never HTTP 200");
+    const plan = response.body.plan as ProductionPlan;
+    assert.notEqual(plan.status, "planned");
+    assert.equal(plan.currentAllergenRelease, undefined, "the reused release is not exposed as authoritative");
+    assert.equal(plan.matrixArtifact, undefined);
+    assert.deepEqual(response.body.reuse, { applied: false }, "no success by reuse is reported");
+    assert.equal(response.body.approvedMatrixAvailable, false);
+    assert.deepEqual(response.body.notifications, []);
+  };
+  // authority-store outage while the response is being constructed (new adoption AND replay)
+  store.failWith = new Error("authority store outage during response construction");
+  try {
+    assertFailClosed(await applyReuseResponse(store, { plan: ready, order: o as never, materializationDelivery: { status: "delivered" } }));
+    assertFailClosed(await applyReuseResponse(store, { plan: ready, order: o as never, unchanged: true }));
+  } finally { store.failWith = undefined; }
+  // the authority is revoked DURING post-commit delivery: the plan was reloaded after delivery, then the response is built
+  const reloadedAfterDelivery = (await h.plans.get("o-other"))!;
+  await store.revokeByOrigin(h.compositionId, "rel-origin-1", AT, "head", "revoked while the delivery was in flight");
+  assertFailClosed(await applyReuseResponse(store, { plan: reloadedAfterDelivery, order: o as never, materializationDelivery: { status: "delivered" } }));
+  assertFailClosed(await applyReuseResponse(store, { plan: reloadedAfterDelivery, order: o as never, unchanged: true }));
+  // an adoption that no longer exists (reopened concurrently) is not reported as success either
+  const plain = planFor(o, {}, { status: "planning" });
+  assertFailClosed(await applyReuseResponse(store, { plan: plain, order: o as never }));
+  // the route answers through the builder on every path and never returns the raw reloaded plan
+  const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
+  assert.equal((route.match(/applyReuseResponse\(/g) || []).length, 2, "new adoption and replay both use the guarded builder");
+  assert.doesNotMatch(route, /finalPlan/);
+  assert.doesNotMatch(route, /reuse: \{ applied: true(, unchanged: true)? \}[^)]*NextResponse|NextResponse\.json\(\{ plan: result\.plan/);
 });

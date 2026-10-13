@@ -1,5 +1,5 @@
 import { buildAuthorityFromSignedPlan, clearReuse, compositionIdentity, evaluateReuse, hasOwnSignedAuthority, reuseValidity, type AllergenCompositionAuthority, type CompositionOrder, type ReuseRefusal, type ReuseValidity } from "./allergen-composition";
-import { releaseMatrix } from "./cpu-allergen-release";
+import { releaseMatrixMatchesPlan } from "./cpu-allergen-release";
 import type { AllergenAuthorityStore } from "./allergen-authority-store";
 import type { ProductionPlan } from "../app/lib/production-plan";
 
@@ -50,7 +50,7 @@ export async function validateReusedApproval(store: AllergenAuthorityStore, plan
     if (!reusedRelease) return { valid: false, reason: "release_not_reused" };
     const bound = release.reusedAuthority;
     if (!bound || bound.generation !== reuse.generation || bound.compositionId !== reuse.compositionId || bound.matrixSemanticHash !== reuse.matrixSemanticHash || bound.origin.releaseId !== reuse.origin.releaseId) return { valid: false, reason: "release_binding_mismatch" };
-    if (release.status === "revoked" || JSON.stringify(release.matrix) !== JSON.stringify(releaseMatrix(plan.menuItems))) return { valid: false, reason: "release_matrix_mismatch" };
+    if (release.status === "revoked" || !releaseMatrixMatchesPlan(release.matrix, plan.menuItems)) return { valid: false, reason: "release_matrix_mismatch" };
   }
   return { valid: true };
 }

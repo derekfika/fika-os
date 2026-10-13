@@ -11,7 +11,7 @@ import { rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } 
 import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
 import { createAllergenAuthorityStore, type AuthorityClause } from "../../../lib/allergen-authority-store";
 import { emitCpuPlanChange } from "../../../lib/cpu-plan-change-effects";
-import { selectedPlanResponseBody, servicePlansResponseBody } from "../../../lib/cpu-plan-response";
+import { applyReuseResponse, selectedPlanResponseBody, servicePlansResponseBody } from "../../../lib/cpu-plan-response";
 import { guardReusedPlan, reconcileReuse, reuseViewFor } from "../../../lib/allergen-reuse-service";
 import { applyReuseCommand, originRevocationClause, recordSignedApproval, revokeReusedRelease, runCommittedRevocation, type ReuseOrchestrationDeps } from "../../../lib/allergen-reuse-orchestrator";
 import { clearReuse, compositionIdentity } from "../../../lib/allergen-composition";
@@ -567,11 +567,12 @@ async function handlePost(request: NextRequest) {
     const timestamp = now();
     if (command.action === "apply-reused-authority") {
       const result = await applyReuseCommand(reuseDeps(request), { plan, storedPlan, order: currentOrder as never, actor: auditActor, actorId: actor.uid, at: timestamp, commandId: command.commandId, syncPlanned: async () => { await syncCanonicalLifecycle(request, command.orderId, "planned", "Allergen matrix planned from a previously approved identical sandwich composition."); } });
-      if (!result.changed) return NextResponse.json({ plan: result.plan, reuse: { applied: true, unchanged: true } });
+      // Every path answers through the guarded response builder; the plan is reloaded after any post-commit delivery work.
+      if (!result.changed) { const reloaded = await planRepository.get(command.orderId); const replay = await applyReuseResponse(allergenAuthorityStore, { plan: reloaded ? normalisePlanAllergens(reloaded) : result.plan, order: currentOrder, unchanged: true }); return NextResponse.json(replay.body, { status: replay.status }); }
       const delivery = await deliverCpuPropagation(result.materializationDelivery.eventId);
       const persisted = await planRepository.get(command.orderId);
-      const finalPlan = persisted ? normalisePlanAllergens(persisted) : result.plan;
-      return NextResponse.json({ plan: finalPlan, reuse: { applied: true }, approvedMatrixAvailable: reusedAuthorityReleaseMatchesOrder(finalPlan.currentAllergenRelease, currentOrder, finalPlan.menuItems), materializationDelivery: delivery });
+      const adopted = await applyReuseResponse(allergenAuthorityStore, { plan: persisted ? normalisePlanAllergens(persisted) : result.plan, order: currentOrder, materializationDelivery: delivery });
+      return NextResponse.json(adopted.body, { status: adopted.status });
     }
     const releaseBeforeCommand = storedPlan?.currentAllergenRelease;
     let notification: { status: string; reason?: string } | undefined;

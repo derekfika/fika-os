@@ -1,3 +1,4 @@
+import { normaliseOperationalAllergens } from "../../shared/allergen-contract";
 import { createHash } from "node:crypto";
 import type { InternalMatrixSignature, MatrixArtifact, PlannedMenuItem } from "../app/lib/production-plan";
 import { canonicalAllergenMatrixForHash } from "../../shared/allergen-matrix-hash";
@@ -67,6 +68,18 @@ export function allergenMatrixContentHash(items: PlannedMenuItem[]) { return jso
 
 export function releaseMatrix(items: PlannedMenuItem[]) {
   return items.flatMap(item => item.subItems.map((sub, index) => ({ menuItemId: `${item.id}:${sub.id || index}`, dishName: sub.name || item.name, allergens: { ...sub.allergens } })));
+}
+
+/**
+ * Whether a release matrix states the same allergen facts as the plan, row for row. Rows are matched by their stable
+ * `${menuItem.id}:${subItem.id}` identity, so each statement stays attached to its own row; display names, quantities and
+ * ordering are not allergen statements and never matter.
+ */
+export function releaseMatrixMatchesPlan(matrix: CpuAllergenRelease["matrix"], items: PlannedMenuItem[]) {
+  const states = (allergens: Record<string, string>) => JSON.stringify(Object.entries(normaliseOperationalAllergens(allergens || {})).sort(([a], [b]) => (a < b ? -1 : 1)));
+  const plan = new Map<string, string>(items.flatMap(item => item.subItems.map((sub, index): [string, string] => [`${item.id}:${sub.id || index}`, states(sub.allergens)])));
+  if (plan.size !== matrix.length || new Set(matrix.map(row => row.menuItemId)).size !== matrix.length) return false;
+  return matrix.every(row => plan.get(row.menuItemId) === states(row.allergens));
 }
 
 export function allergenReleaseDelta(previous: CpuAllergenRelease | undefined, nextItems: PlannedMenuItem[]): CpuReleaseDelta[] {

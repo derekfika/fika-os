@@ -1,6 +1,6 @@
 import type { ReusedAllergenAuthority } from "../../lib/allergen-composition";
 import type { OperationalAllergenState } from "../../../shared/allergen-contract";
-import { allergenMatrixContentHash, releaseMatrix } from "../../lib/cpu-allergen-release";
+import { allergenMatrixContentHash, releaseMatrixMatchesPlan } from "../../lib/cpu-allergen-release";
 import { isProductionPlanMatrixComplete } from "./production-plan-state";
 import { createHash } from "node:crypto";
 export type PlanStatus = "draft" | "planning" | "planned" | "rejected" | "needs_clarification";
@@ -122,7 +122,7 @@ export function reusedAuthorityReleaseMatchesOrder(release: CpuAllergenRelease |
   const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
   if (!release || release.approvalMode !== "reused_authority" || !release.reusedAuthority || release.status !== "current" || release.materializationStatus !== "ready" || !scope) return false;
   if (release.signatures.length > 0 || !isProductionPlanMatrixComplete(menuItems)) return false;
-  if (JSON.stringify(release.matrix) !== JSON.stringify(releaseMatrix(menuItems))) return false;
+  if (!releaseMatrixMatchesPlan(release.matrix, menuItems)) return false;
   return sameMatrixSignatureScope(scope, { ...release, productionOrderId: scope.productionOrderId, matrixContentHash: scope.matrixContentHash }, false);
 }
 

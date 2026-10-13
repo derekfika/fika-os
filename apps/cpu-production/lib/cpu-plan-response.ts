@@ -37,3 +37,18 @@ export function servicePlansResponseBody(visiblePlans: ProductionPlan[], orders:
   const entries = visiblePlans.filter(plan => plan.status === "planned");
   return { plans: visiblePlans, notifications: entries.map(notificationFor), menus: entries.map(plan => menuFor(plan, orders.find(order => order.canonicalId === plan.orderId))) };
 }
+
+/**
+ * `POST apply-reused-authority` response, for EVERY path (new adoption, idempotent replay, after post-commit delivery). The plan
+ * is reloaded by the caller after any asynchronous work and then passes through the same `guardReusedPlan` as the GET paths. If
+ * the authority is no longer valid (revoked during delivery, re-approved, unverifiable, or the adoption is gone) the response is
+ * a 409 carrying the downgraded plan: it never exposes the reused release as authoritative and never reports success by reuse.
+ */
+export async function applyReuseResponse(store: AllergenAuthorityStore, input: { plan: ProductionPlan; order: ProductionOrder; unchanged?: boolean; materializationDelivery?: unknown }): Promise<{ status: number; body: Record<string, unknown> }> {
+  const safe = await guardReusedPlan(store, input.plan, input.order as never);
+  const applied = safe === input.plan && Boolean(safe.reusedAllergenAuthority);
+  if (!applied) {
+    return { status: 409, body: { error: { code: "CPU_ALLERGEN_REUSE_AUTHORITY_REVOKED", message: "The approved allergen authority is no longer valid for this booking. A fresh allergen review is required." }, plan: safe, plans: [safe], reuse: { applied: false }, approvedMatrixAvailable: false, notifications: [], menus: [] } };
+  }
+  return { status: 200, body: { plan: safe, reuse: { applied: true, ...(input.unchanged ? { unchanged: true } : {}) }, approvedMatrixAvailable: reusedAuthorityReleaseMatchesOrder(safe.currentAllergenRelease, input.order, safe.menuItems), ...(input.materializationDelivery ? { materializationDelivery: input.materializationDelivery } : {}) } };
+}

@@ -1,7 +1,7 @@
 import type { AllergenCompositionAuthority } from "./allergen-composition";
 import type { ProductionPlan } from "../app/lib/production-plan";
-import { authoritySemanticSubItemSet, semanticSubItemSet } from "./allergen-composition";
-import { releaseMatrix } from "./cpu-allergen-release";
+import { lineAwareMatrixChanged, reusedMatrixMismatch } from "./allergen-composition";
+import { releaseMatrixMatchesPlan } from "./cpu-allergen-release";
 
 export const ALLERGEN_COMPOSITION_AUTHORITIES_COLLECTION = "fikaCpuAllergenCompositionAuthoritiesV1";
 
@@ -93,7 +93,7 @@ export type AuthorityClause = {
   revoke?: { compositionId: string; releaseId: string; at: string; by: string; reason: string };
 };
 
-export type PlanAuthorityRequirement = { compositionId: string; generation: number; originReleaseId: string; matrixSemanticHash: string; orderId: string };
+export type PlanAuthorityRequirement = { compositionId: string; generation: number; originReleaseId: string; matrixSemanticHash: string; orderId: string; lineBindings: Record<string, string> };
 /**
  * Whether persisting this plan would make a reused authority authoritative. True for any persisted reused `planned` plan or any
  * reused release that is `pending` or `current`. A reused release without provenance is also "requiring" and can never pass.
@@ -104,7 +104,7 @@ export function authorityRequirementOf(plan: ProductionPlan): PlanAuthorityRequi
   const reuse = plan.reusedAllergenAuthority;
   if (!reusedRelease && !(reuse && plan.status === "planned")) return undefined;
   if (!reuse) return "unbound";
-  return { compositionId: reuse.compositionId, generation: reuse.generation, originReleaseId: reuse.origin.releaseId, matrixSemanticHash: reuse.matrixSemanticHash, orderId: plan.orderId };
+  return { compositionId: reuse.compositionId, generation: reuse.generation, originReleaseId: reuse.origin.releaseId, matrixSemanticHash: reuse.matrixSemanticHash, orderId: plan.orderId, lineBindings: reuse.lineBindings };
 }
 
 export class AuthorityGuardFailure extends Error {
@@ -138,7 +138,7 @@ export function originRevocationRequired(previous: ProductionPlan | undefined, p
   if (!previous || !prior || prior.approvalMode === "reused_authority" || !prior.compositionId || !PERSISTED_RELEASE_STATUSES.includes(prior.status)) return undefined;
   const next = proposed.currentAllergenRelease;
   const stillBacking = Boolean(next && next.releaseId === prior.releaseId && PERSISTED_RELEASE_STATUSES.includes(next.status));
-  const matrixChanged = JSON.stringify(semanticSubItemSet(previous.menuItems)) !== JSON.stringify(semanticSubItemSet(proposed.menuItems));
+  const matrixChanged = lineAwareMatrixChanged(previous.menuItems, proposed.menuItems);
   if (stillBacking && !matrixChanged) return undefined;
   return { compositionId: prior.compositionId, releaseId: prior.releaseId, at: proposed.updatedAt, by: proposed.updatedBy, reason: stillBacking ? "The approved allergen matrix that established this composition changed after signing." : "The signed allergen release that established this approved composition was removed, revoked or reopened." };
 }
@@ -165,12 +165,17 @@ export function evaluateAuthorityTransition(read: Map<string, A | undefined>, pl
     const current = get(requirement.compositionId);
     const verdict = checkRequirement(current, requirement, Boolean(clause?.registerAdoption));
     if (!verdict.ok) throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", `The reused allergen authority is not valid at commit time (${verdict.reason}).`);
-    if (JSON.stringify(semanticSubItemSet(plan.menuItems)) !== JSON.stringify(authoritySemanticSubItemSet(current!.approvedMatrix))) throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", "The persisted plan matrix does not match the approved authority matrix (matrix_mismatch).");
+    // Line-aware: each canonical line's own reviewed sub-items must equal ITS approved entry, so statements cannot be moved between lines.
+    const mismatch = reusedMatrixMismatch(plan.menuItems, requirement.lineBindings, current!.approvedMatrix);
+    if (mismatch) throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", `The persisted plan matrix does not match the approved authority matrix (${mismatch}).`);
+    // The line bindings are fixed at adoption; a later write of the same generation may not re-associate lines.
+    const priorReuse = previous?.reusedAllergenAuthority;
+    if (priorReuse && priorReuse.compositionId === requirement.compositionId && priorReuse.generation === requirement.generation && JSON.stringify(priorReuse.lineBindings || {}) !== JSON.stringify(requirement.lineBindings)) throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", "The canonical line bindings of an adopted authority are immutable (line_bindings_changed).");
     const release = plan.currentAllergenRelease;
     if (release?.approvalMode === "reused_authority" && PERSISTED_RELEASE_STATUSES.includes(release.status)) {
       const bound = release.reusedAuthority;
       if (!bound || bound.compositionId !== requirement.compositionId || bound.generation !== requirement.generation || bound.origin.releaseId !== requirement.originReleaseId || bound.matrixSemanticHash !== requirement.matrixSemanticHash) throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", "The reused release is not bound to the same authority generation (release_binding_mismatch).");
-      if (JSON.stringify(release.matrix) !== JSON.stringify(releaseMatrix(plan.menuItems))) throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", "The reused release matrix does not match the persisted plan matrix (release_matrix_mismatch).");
+      if (!releaseMatrixMatchesPlan(release.matrix, plan.menuItems)) throw new AuthorityGuardFailure("CPU_REUSED_AUTHORITY_INVALID", "The reused release matrix does not match the persisted plan matrix (release_matrix_mismatch).");
     }
     if (verdict.register && clause?.registerAdoption && current) {
       const next = structuredClone(current);

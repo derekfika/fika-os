@@ -18,6 +18,8 @@ const { guardReusedPlan } = await import("../lib/allergen-reuse-service");
 const { compositionIdentity } = await import("../lib/allergen-composition");
 const { cpuChangeReceipts } = await import("../lib/cpu-projection-repository");
 const { CANONICAL_ALLERGEN_KEYS, normaliseOperationalAllergens } = await import("../../shared/allergen-contract");
+const lineCases = await import("./support/line-association-cases");
+const { applyReuseResponse } = await import("../lib/cpu-plan-response");
 import type { ProductionPlan } from "../app/lib/production-plan";
 
 const plans = createFirestoreProductionPlanRepository();
@@ -196,4 +198,27 @@ test("Firestore: two simultaneous identical commands commit exactly once", opts,
 
 test("Firestore authority documents live in the server-only collection", opts, async () => {
   assert.equal(ALLERGEN_COMPOSITION_AUTHORITIES_COLLECTION, "fikaCpuAllergenCompositionAuthoritiesV1");
+});
+
+test("Firestore: cross-line reassignment of a reused plan's approved sub-items is rejected (flattened set unchanged); ordering and quantity-only changes pass", opts, async () => {
+  await lineCases.reusedPlanLineCases({ label: "firestore", plans, store, unique });
+});
+
+test("Firestore: cross-line reassignment of a signed origin's matrix revokes its authority in the same transaction", opts, async () => {
+  await lineCases.originLineCases({ label: "firestore", plans, store, unique });
+});
+
+test("Firestore: the apply response is guarded; an authority revoked after commit never yields a successful reuse response", opts, async () => {
+  const s = await scenario();
+  const a = await s.add();
+  await s.adopt(a);
+  const stored = (await plans.get(a.o.canonicalId))!;
+  const ok = await applyReuseResponse(store, { plan: stored, order: a.o as never });
+  assert.equal(ok.status, 200);
+  await store.revokeByOrigin(s.compositionId, s.releaseId, AT, "head", "revoked during delivery");
+  const reloaded = (await plans.get(a.o.canonicalId))!;
+  const revoked = await applyReuseResponse(store, { plan: reloaded, order: a.o as never });
+  assert.equal(revoked.status, 409);
+  assert.equal((revoked.body.plan as ProductionPlan).currentAllergenRelease, undefined);
+  assert.deepEqual(revoked.body.reuse, { applied: false });
 });

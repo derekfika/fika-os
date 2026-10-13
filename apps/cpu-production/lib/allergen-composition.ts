@@ -212,6 +212,8 @@ export function evaluateReuse(order: CompositionOrder | undefined, plan: Pick<Pr
 export type ReusedAllergenAuthority = {
   /** `${compositionId}#g${generation}`: the exact immutable authority generation this booking adopted. */
   authorityId: string; compositionId: string; generation: number; identityVersion: string; matrixSemanticHash: string;
+  /** Canonical order line id -> composition entry key, fixed at adoption and immutable for the generation. It keeps each reviewed sub-item attached to its own line. */
+  lineBindings: Record<string, string>;
   adoptedAt: string; adoptedBy: string;
   origin: AuthorityOrigin;
 };
@@ -230,7 +232,8 @@ export function applyReusedAuthority(plan: ProductionPlan, order: CompositionOrd
     return { ...item, subItems: approved.subItems.map((sub, subIndex) => ({ id: `sub-item:${plan.orderId}:${index + 1}:${subIndex + 1}`, ...(sub.productionItemId ? { productionItemId: sub.productionItemId } : {}), name: sub.displayName || item.name, quantity: existing[subIndex]?.quantity ?? existing[0]?.quantity ?? null, allergens: { ...sub.allergens } as PlannedSubItem["allergens"], ...(sub.mayContainNotes ? { mayContainNotes: sub.mayContainNotes } : {}), note: "", evidenceStatus: "completed" as const })) };
   });
   next.status = "planned";
-  next.reusedAllergenAuthority = { authorityId: `${authority.compositionId}#g${authority.generation}`, compositionId: authority.compositionId, generation: authority.generation, identityVersion: authority.identityVersion, matrixSemanticHash: authority.matrixSemanticHash, adoptedAt: input.at, adoptedBy: input.by, origin: structuredClone(authority.origin) };
+  const lineBindings = Object.fromEntries(next.menuItems.map(item => { const line = order.lines.find(candidate => candidate.canonicalId === item.sourceLineId); return [item.sourceLineId as string, entryKey(compositionEntryForLine(line!))] as const; }));
+  next.reusedAllergenAuthority = { authorityId: `${authority.compositionId}#g${authority.generation}`, compositionId: authority.compositionId, generation: authority.generation, lineBindings, identityVersion: authority.identityVersion, matrixSemanticHash: authority.matrixSemanticHash, adoptedAt: input.at, adoptedBy: input.by, origin: structuredClone(authority.origin) };
   next.updatedAt = input.at; next.updatedBy = input.by;
   next.audit = [...next.audit, { action: "allergen-authority-reused", at: input.at, by: input.by, reason: `Composition matches a previously approved sandwich set (origin release ${authority.origin.releaseId}); this booking was not signed itself.` }];
   return next;
@@ -281,9 +284,47 @@ export function reuseValidity(plan: Pick<ProductionPlan, "orderId" | "menuItems"
 
 type SemanticSubItem = { productionItemId?: string | null; allergens: Record<string, string>; mayContainNotes?: string };
 const semanticKey = (sub: SemanticSubItem) => canonicalJson({ productionItemId: sub.productionItemId || null, allergens: normaliseStates(sub.allergens || {}), mayContainNotes: text(sub.mayContainNotes) });
+const sortedUnique = (keys: string[]) => [...new Set(keys)].sort();
+
 /**
- * The allergen-relevant meaning of a matrix as a sorted set, independent of names, quantities, ids and ordering. Two matrices
- * with the same set make the same allergen statements. Used by the persistence layer, which has no access to the order.
+ * THE line-aware semantic matrix. Maps each canonical line key to the sorted, de-duplicated allergen statements of ITS OWN
+ * reviewed sub-items. Names, quantities, sub-item ids and ordering never participate, but the association between a canonical
+ * line and its sub-items always does, so moving an approved sub-item from line A to line B changes the representation even
+ * when the plan's flattened set of statements is unchanged.
+ *
+ * Line key = the stable canonical order-line id (`sourceLineId`); a row with no line id is keyed by its own row id.
+ * Used by BOTH the reused-plan-versus-authority check and automatic origin-authority invalidation.
  */
-export const semanticSubItemSet = (menuItems: Array<{ subItems: SemanticSubItem[] }>) => [...new Set(menuItems.flatMap(item => item.subItems.map(semanticKey)))].sort();
-export const authoritySemanticSubItemSet = (approvedMatrix: ApprovedMatrixLine[]) => semanticSubItemSet(approvedMatrix.map(line => ({ subItems: line.subItems })));
+export const lineKeyOf = (item: { sourceLineId?: string; id: string }) => item.sourceLineId || `row:${item.id}`;
+export function lineAwareSemanticMatrix(menuItems: Array<{ sourceLineId?: string; id: string; subItems: SemanticSubItem[] }>): Record<string, string[]> {
+  const byLine = new Map<string, string[]>();
+  for (const item of menuItems) byLine.set(lineKeyOf(item), [...(byLine.get(lineKeyOf(item)) || []), ...item.subItems.map(semanticKey)]);
+  return Object.fromEntries([...byLine.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([key, keys]) => [key, sortedUnique(keys)]));
+}
+/** The authority matrix in the same shape, keyed by composition entry key. */
+export const authorityEntrySemanticMatrix = (approvedMatrix: ApprovedMatrixLine[]): Record<string, string[]> =>
+  Object.fromEntries([...approvedMatrix].sort((a, b) => (a.entryKey < b.entryKey ? -1 : a.entryKey > b.entryKey ? 1 : 0)).map(line => [line.entryKey, sortedUnique(line.subItems.map(semanticKey))]));
+/** Whether the allergen statements of ANY canonical line changed (including moving statements between lines). */
+export const lineAwareMatrixChanged = (before: Parameters<typeof lineAwareSemanticMatrix>[0], after: Parameters<typeof lineAwareSemanticMatrix>[0]) => JSON.stringify(lineAwareSemanticMatrix(before)) !== JSON.stringify(lineAwareSemanticMatrix(after));
+
+/**
+ * Line-by-line comparison of a reused plan with its authority matrix. Every plan line must be bound to a composition entry,
+ * its own sub-items must equal THAT entry's approved sub-items, and every approved entry must be covered by at least one line.
+ * Returns a mismatch description, or undefined when the persisted matrix is the approved one.
+ */
+export function reusedMatrixMismatch(menuItems: Array<{ sourceLineId?: string; id: string; subItems: SemanticSubItem[] }>, lineBindings: Record<string, string> | undefined, approvedMatrix: ApprovedMatrixLine[]): string | undefined {
+  if (!lineBindings || !Object.keys(lineBindings).length) return "line_bindings_missing";
+  const planLines = lineAwareSemanticMatrix(menuItems);
+  const entries = authorityEntrySemanticMatrix(approvedMatrix);
+  const covered = new Set<string>();
+  for (const [lineKey, statements] of Object.entries(planLines)) {
+    const entryKey = lineBindings[lineKey];
+    if (!entryKey) return `line_unbound:${lineKey}`;
+    const approved = entries[entryKey];
+    if (!approved) return `entry_unknown:${lineKey}`;
+    if (JSON.stringify(statements) !== JSON.stringify(approved)) return `line_matrix_mismatch:${lineKey}`;
+    covered.add(entryKey);
+  }
+  for (const entryKey of Object.keys(entries)) if (!covered.has(entryKey)) return "entry_not_covered";
+  return undefined;
+}
