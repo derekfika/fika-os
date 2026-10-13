@@ -17,11 +17,15 @@ import { productionOrderDetail } from "./production-http-client";
 import { cpuReleaseMaterializationReceiptId } from "./cpu-release-fanout";
 import { buildCpuPacketItems } from "./cpu-packet-identity";
 import { deliverCpuPropagation } from "./cpu-durable-outbox";
+import { createAllergenAuthorityStore } from "./allergen-authority-store";
+import { recordSignedApproval } from "./allergen-reuse-orchestrator";
+import { assertReusedApprovalValid } from "./allergen-reuse-service";
 
 const menuContentHash = (items: PlannedMenuItem[]) => allergenMatrixContentHash(items);
 const hospitalityBase = () => (process.env.HOSPITALITY_BOOKING_BASE_URL?.trim() || "http://localhost:3300").replace(/\/$/, "");
 export const CPU_RELEASE_RECONCILIATION_DELAY_MS = 60_000;
 
+const reusedApprovalFor = (plan: ProductionPlan) => plan.currentAllergenRelease?.approvalMode === "reused_authority" ? plan.currentAllergenRelease.reusedAuthority : undefined;
 const durableArtifact = (artifact: MatrixArtifact | undefined): artifact is MatrixArtifact => Boolean(artifact?.pdfStatus === "generated" && artifact.driveStatus === "saved" && artifact.driveFileId && artifact.contentHash);
 function rendererFailure(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -63,8 +67,9 @@ export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: Pro
   if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before saving the matrix."), { status: 422 });
   if (!matrixDriveConfiguration(order).enabled) throw Object.assign(new Error("A configured Drive workspace is required before signing the CPU allergen bundle."), { status: 503 });
   const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
-  const signatures = plan.signatures || [];
-  if (!signatures.some(signature => signature.role === "production_chef") || !signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures are required for release materialization."), { status: 422 });
+  const reused = reusedApprovalFor(plan);
+  const signatures = reused ? [] : plan.signatures || [];
+  if (!reused && (!signatures.some(signature => signature.role === "production_chef") || !signatures.some(signature => signature.role === "head_chef_site_manager"))) throw Object.assign(new Error("Both required signatures are required for release materialization."), { status: 422 });
   if (!order.destinationOplocId) throw Object.assign(new Error("The signed CPU allergen checker requires a canonical OPLOC output."), { status: 422 });
   const persistPdf = async (kind: "master" | "site", fileName: string, html: string, existing?: MatrixArtifact): Promise<{ kind: "master" | "site"; artifact: MatrixArtifact }> => {
     if (durableArtifact(existing)) return { kind, artifact: existing };
@@ -79,15 +84,22 @@ export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: Pro
     return { kind, artifact: { id: `allergen-${kind}:${serviceDate}:${contentHash.slice(0, 16)}`, bookingId: order.sourceBookingId, fileName, createdAt: timestamp, createdBy: actor, contentHash, html, ...(pdfPath ? { pdfPath, localUrl: `${(process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400").replace(/\/$/, "")}/api/production-plan?orderId=${encodeURIComponent(order.canonicalId)}&download=pdf` } : {}), pdfStatus: "generated" as const, driveFileId: body.saved.fileId, driveUrl: body.saved.driveUrl, driveStatus: "saved" as const } satisfies MatrixArtifact };
   };
   const withSource = (item: PlannedMenuItem) => ({ ...item, id: `${order.canonicalId}:${item.id}`, name: order.destinationOplocId ? `${order.destinationOplocId} · ${item.name}` : item.name });
-  const masterHtml = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems.map(withSource), signatures);
+  const masterHtml = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems.map(withSource), signatures, reused);
   const releaseToken = (plan.currentAllergenRelease?.releaseId || "uncommitted").replace(/[^A-Za-z0-9_-]+/g, "-");
   const master = durableArtifact(options.masterArtifact)
     ? options.masterArtifact
     : durableArtifact(plan.masterMatrixArtifact)
       ? plan.masterMatrixArtifact
       : (await persistPdf("master", `CPU-Master-${serviceDate}-${releaseToken}.pdf`, masterHtml, plan.masterMatrixArtifact)).artifact;
-  const siteHtml = allergenMatrixHtml({ clientName: order.clientName, destinationLabel: order.destinationLabel || order.destinationOplocId || "Unassigned destination", serviceType: order.serviceType, serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems.map(withSource), signatures);
+  const siteHtml = allergenMatrixHtml({ clientName: order.clientName, destinationLabel: order.destinationLabel || order.destinationOplocId || "Unassigned destination", serviceType: order.serviceType, serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems.map(withSource), signatures, reused);
   const site = (await persistPdf("site", `${order.destinationLabel || order.destinationOplocId || "Unassigned"}-${serviceDate}-${releaseToken}-Allergen-Matrix.pdf`.replace(/[^A-Za-z0-9._-]+/g, "_"), siteHtml, plan.siteMatrixArtifacts?.[order.destinationOplocId])).artifact;
+  if (reused) {
+    // A reused approval has no signatures, so it never enters the signed daily OPLOC bundle contract (which requires both
+    // signatures). Its authority is the CPU release itself, carried to consumers with approvalMode "reused_authority".
+    plan.masterMatrixArtifact = master;
+    plan.siteMatrixArtifacts = { [order.destinationOplocId]: site };
+    return { siteArtifact: site, masterArtifact: master, packetArtifacts: [] as MatrixArtifact[], publish: async () => undefined };
+  }
   const packageStore = cpuPackageStore();
   const sourceScope = matrixSignatureScope(order, menuContentHash(plan.menuItems));
   if (!sourceScope) throw Object.assign(new Error("The current source lineage is unavailable; the signed matrix cannot be materialized."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
@@ -111,6 +123,9 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
   if (!order) throw Object.assign(new Error("The production order could not be loaded for release materialization."), { status: 503 });
   if (order.origin === "menu_planning" && order.supersededBy) throw Object.assign(new Error("The Menu Planning production order has been superseded; its CPU release cannot be materialized."), { status: 409, code: "CPU_RELEASE_SUPERSEDED_ORDER" });
   if (!allergenReleaseLineageMatchesOrder(pending, order, stored.menuItems)) throw Object.assign(new Error("The committed CPU release no longer matches the canonical source lineage."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
+  // A reused release is only ever reported or promoted while its shared authority generation validates. The repository also
+  // re-checks the same generation inside the transaction of every write below, so there is no check/commit gap.
+  if (pending.approvalMode === "reused_authority") await assertReusedApprovalValid(createAllergenAuthorityStore(), stored, order as never);
   if (pending.status === "current" && pending.materializationStatus === "ready") return { plan: stored, alreadyMaterialized: true };
   if (pending.status !== "pending" && !(pending.status === "current" && pending.materializationStatus !== "ready")) throw Object.assign(new Error("The CPU allergen release is no longer materializable."), { status: 409 });
   const materializationReceiptId = (phase: "started" | "prepared" | "final") => cpuReleaseMaterializationReceiptId(releaseId, order, phase);
@@ -133,6 +148,7 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     const preparedResult = await repository.saveAndAppendCpuChange(artifactCandidate, startedPlan.updatedAt, { serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: artifactCandidate.id, revision: artifactCandidate.audit.length, changeType: "allergen-release-artifacts-prepared", actorId: artifactCandidate.updatedBy, changedAt: artifactCandidate.updatedAt, idempotencyKey: materializationReceiptId("prepared") });
     const preparedPlan = resumeCpuMaterializationPhase(preparedResult, artifactCandidate, "prepared");
     await prepared.publish();
+    if (pending.approvalMode === "reused_authority") await assertReusedApprovalValid(createAllergenAuthorityStore(), preparedPlan, order as never);
     const ready = structuredClone(preparedPlan);
     ready.currentAllergenRelease = materializeCpuAllergenRelease(preparedPlan.currentAllergenRelease!, { masterArtifact: prepared.masterArtifact, derivedArtifacts: [prepared.siteArtifact], packetArtifacts: prepared.packetArtifacts });
     ready.updatedAt = new Date().toISOString();
@@ -147,6 +163,9 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     })() : [];
     const finalResult = await repository.saveAndAppendCpuChange(ready, preparedPlan.updatedAt, { serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: ready.id, revision: ready.audit.length, changeType: "allergen-release-materialized", actorId: ready.updatedBy, changedAt: ready.updatedAt, idempotencyKey: materializationReceiptId("final"), deliveries });
     const finalPlan = resumeCpuMaterializationPhase(finalResult, ready, "final");
+    // Recovery path for shared allergen authority: the outbox-driven materialization re-asserts the authority of a signed
+    // release (idempotent, first approval wins) in case the sign-time recording failed after the release was committed.
+    if (release.approvalMode !== "reused_authority") await recordSignedApproval({ store: createAllergenAuthorityStore() }, finalPlan, order, new Date().toISOString(), finalPlan.updatedBy).catch(error => console.error("[cpu-allergen-reuse] authority recovery failed", { orderId, releaseId, error: error instanceof Error ? error.message : String(error) }));
     // The release is already durably current. Attempt the staged Delivered-In
     // handoff immediately, while retaining the outbox record for recovery if
     // the consumer is unavailable or times out.
@@ -155,6 +174,9 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     return { plan: finalPlan, alreadyMaterialized: false, handoffResults };
   } catch (error) {
     const materializationError = error instanceof Error ? error.message : String(error);
+    // A reused release whose authority generation is no longer valid is never restored or re-marked: not even as a "failed"
+    // materialization. The revocation cascade reopens the booking; every read already fails closed on the revoked authority.
+    if (pending.approvalMode === "reused_authority" && ["CPU_REUSED_AUTHORITY_INVALID", "CPU_ALLERGEN_REUSE_AUTHORITY_REVOKED"].includes((error as { code?: string }).code || "")) throw error;
     console.error("FIKA CPU allergen release materialization failed", { app: "cpu-production", serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), releaseId, destinationOplocId: order.destinationOplocId, expectedOplocCount: 1, materializedOplocCount: 0, failedOplocCount: 1, pendingOplocCount: 1, handoffStatus: "retryable", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: materializationError });
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const current = await repository.get(orderId) || stored;

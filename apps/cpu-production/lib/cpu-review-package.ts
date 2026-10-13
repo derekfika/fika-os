@@ -8,7 +8,7 @@ import { cpuProjectionContentHash } from "./cpu-projection-repository";
 import { getCurrentHostedCpuPackage, publishMonotonicCpuPackage } from "./cpu-read-package";
 import { reviewStatusForPlan } from "./delivered-in-review";
 import { productionQueue } from "./production-http-client";
-import { loadPlansForOrders } from "./cpu-projection-repository";
+import { loadGuardedPlansForOrders } from "./cpu-guarded-plans";
 import type { NextRequest } from "next/server";
 import { normaliseOperationalAllergens } from "../../shared/allergen-contract";
 
@@ -103,7 +103,7 @@ export async function publishCpuReviewPackage(projection: CpuReviewProjection): 
 
 export async function rebuildCpuReviewPackage(request: NextRequest, serviceDate: string, oplocId: string, lastChangeSequence = 0) {
   const orders = (await productionQueue(request, serviceDate)).filter(order => order.origin === "menu_planning");
-  const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
+  const plans = await loadGuardedPlansForOrders(orders);
   const previous = await cpuPackageStore().getManifest(packageKey(serviceDate, oplocId));
   const sourceSequence = lastChangeSequence || Number(previous?.sourceVersion?.replace("cpu-change-", "") || 0);
   const built = buildCpuReviewProjection(serviceDate, oplocId, orders, plans, (previous?.packageVersion || 0) + 1, sourceSequence);

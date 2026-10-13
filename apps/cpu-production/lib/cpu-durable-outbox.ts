@@ -232,7 +232,7 @@ function routeBase(consumer: CpuPropagationConsumer) {
 /** Keep ordinary invalidations short while allowing bounded CPU materialisation to finish. */
 export function cpuDeliveryTimeoutMs(consumer: CpuPropagationConsumer, route: string) {
   if (consumer !== "cpu-production") return CPU_DELIVERY_TIMEOUT_MS.default;
-  if (route === "/api/internal/cpu-release-materialize") return CPU_DELIVERY_TIMEOUT_MS.materialization;
+  if (route === "/api/internal/cpu-release-materialize" || route === "/api/internal/cpu-allergen-authority-revoked") return CPU_DELIVERY_TIMEOUT_MS.materialization;
   if (route === "/api/internal/cpu-post-commit") return CPU_DELIVERY_TIMEOUT_MS.postCommit;
   return CPU_DELIVERY_TIMEOUT_MS.default;
 }

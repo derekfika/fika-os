@@ -1,3 +1,4 @@
+import { normaliseOperationalAllergens } from "../../shared/allergen-contract";
 import { createHash } from "node:crypto";
 import type { InternalMatrixSignature, MatrixArtifact, PlannedMenuItem } from "../app/lib/production-plan";
 import { canonicalAllergenMatrixForHash } from "../../shared/allergen-matrix-hash";
@@ -6,8 +7,26 @@ export type CpuReleaseStatus = "pending" | "current" | "revoked" | "superseded";
 export type CpuReleaseMaterializationStatus = "pending" | "ready" | "failed";
 export type CpuReleaseSignature = InternalMatrixSignature & { valid: boolean };
 export type CpuReleaseDelta = { menuItemId: string; dishName: string; allergen: string; previously: string; now: string };
+/** How the approval behind a release was obtained. Absent means a signed release (every historical release). */
+export type CpuReleaseApprovalMode = "signed" | "reused_authority";
+/** Provenance of a reused approval. These are NOT signatures of the current booking; they identify the original signed authority. */
+export type CpuReusedAuthorityProvenance = {
+  compositionId: string;
+  /** The exact immutable authority generation this release was issued against. */
+  generation: number;
+  identityVersion: string;
+  matrixSemanticHash: string;
+  adoptedAt: string;
+  adoptedBy: string;
+  origin: { orderId: string; planId: string; sourceBookingId?: string; quoteRevisionId?: string; releaseId: string; releaseVersion: number; matrixContentHash: string; signedAt: string; signatures: Array<{ role: string; printedName: string; signedAt: string }> };
+};
 export type CpuAllergenRelease = {
   contractVersion: "cpu-production.signed-allergen-release.v1";
+  /** `reused_authority` releases carry no signatures of their own; see `reusedAuthority`. */
+  approvalMode?: CpuReleaseApprovalMode;
+  /** Canonical composition identity stamped when a Hospitality sandwich release is signed; the reference a later revocation uses. */
+  compositionId?: string;
+  reusedAuthority?: CpuReusedAuthorityProvenance;
   releaseId: string;
   serviceDate: string;
   sourceOrigin?: "menu_planning" | "hospitality_booking";
@@ -49,6 +68,18 @@ export function allergenMatrixContentHash(items: PlannedMenuItem[]) { return jso
 
 export function releaseMatrix(items: PlannedMenuItem[]) {
   return items.flatMap(item => item.subItems.map((sub, index) => ({ menuItemId: `${item.id}:${sub.id || index}`, dishName: sub.name || item.name, allergens: { ...sub.allergens } })));
+}
+
+/**
+ * Whether a release matrix states the same allergen facts as the plan, row for row. Rows are matched by their stable
+ * `${menuItem.id}:${subItem.id}` identity, so each statement stays attached to its own row; display names, quantities and
+ * ordering are not allergen statements and never matter.
+ */
+export function releaseMatrixMatchesPlan(matrix: CpuAllergenRelease["matrix"], items: PlannedMenuItem[]) {
+  const states = (allergens: Record<string, string>) => JSON.stringify(Object.entries(normaliseOperationalAllergens(allergens || {})).sort(([a], [b]) => (a < b ? -1 : 1)));
+  const plan = new Map<string, string>(items.flatMap(item => item.subItems.map((sub, index): [string, string] => [`${item.id}:${sub.id || index}`, states(sub.allergens)])));
+  if (plan.size !== matrix.length || new Set(matrix.map(row => row.menuItemId)).size !== matrix.length) return false;
+  return matrix.every(row => plan.get(row.menuItemId) === states(row.allergens));
 }
 
 export function allergenReleaseDelta(previous: CpuAllergenRelease | undefined, nextItems: PlannedMenuItem[]): CpuReleaseDelta[] {
@@ -98,6 +129,29 @@ export function buildCpuAllergenRelease(input: {
   return {
     contractVersion: "cpu-production.signed-allergen-release.v1", releaseId: `cpu-allergen-release:${input.serviceDate}:${input.sourcePublicationDayId || `${input.sourceBookingId}:${input.sourceQuoteRevisionId}`}:v${input.version}`, serviceDate: input.serviceDate, ...(input.sourceOrigin ? { sourceOrigin: input.sourceOrigin } : {}), ...(input.sourceDayId ? { sourceDayId: input.sourceDayId } : {}), ...(input.sourcePublicationId ? { sourcePublicationId: input.sourcePublicationId } : {}), ...(input.sourcePublicationDayId ? { sourcePublicationDayId: input.sourcePublicationDayId } : {}), ...(input.sourceBookingId ? { sourceBookingId: input.sourceBookingId } : {}), ...(input.sourceQuoteRevisionId ? { sourceQuoteRevisionId: input.sourceQuoteRevisionId } : {}), ...(input.sourceRevision ? { sourceRevision: input.sourceRevision } : {}), sourceVersion: input.sourceVersion, sourceContentHash: input.sourceContentHash, version: input.version, matrixContentHash, signedAt: input.signedAt,
     signatures: input.signatures.map(signature => ({ ...signature, valid: true })), ...(input.previous ? { previousReleaseId: input.previous.releaseId } : {}), status: input.status || "current", materializationStatus: input.status === "pending" ? "pending" : "ready", masterArtifact: input.masterArtifact, derivedArtifacts: [...input.derivedArtifacts], packetArtifacts: [...input.packetArtifacts], matrix, deltaFromPrevious: allergenReleaseDelta(input.previous, input.items),
+  };
+}
+
+/**
+ * A pending release for a booking whose allergen approval is a reused composition authority. It belongs to the current
+ * booking/order, carries the reused approved matrix, references the originating signed release as provenance and holds NO
+ * signatures. Downstream consumers distinguish it by `approvalMode`.
+ */
+export function buildReusedCpuAllergenRelease(input: {
+  serviceDate: string; sourceBookingId: string; sourceQuoteRevisionId: string; sourceRevision: number; sourceVersion: number; sourceContentHash: string;
+  version: number; items: PlannedMenuItem[]; masterArtifact: MatrixArtifact; previous?: CpuAllergenRelease; reusedAuthority: CpuReusedAuthorityProvenance;
+}): CpuAllergenRelease {
+  if (!Number.isInteger(input.version) || input.version < 1) throw new Error("A release version is required.");
+  if (!input.sourceBookingId || !input.sourceQuoteRevisionId || !Number.isInteger(input.sourceRevision) || input.sourceRevision < 1) throw new Error("A canonical Hospitality Booking and Quote source identity is required for a release.");
+  if (!Number.isInteger(input.sourceVersion) || input.sourceVersion < 1) throw new Error("A source revision is required for a release.");
+  requireHash(input.sourceContentHash, "sourceContentHash");
+  const matrix = releaseMatrix(input.items);
+  return {
+    contractVersion: "cpu-production.signed-allergen-release.v1", approvalMode: "reused_authority", reusedAuthority: input.reusedAuthority,
+    releaseId: `cpu-allergen-release:${input.serviceDate}:${input.sourceBookingId}:${input.sourceQuoteRevisionId}:v${input.version}`, serviceDate: input.serviceDate, sourceOrigin: "hospitality_booking",
+    sourceBookingId: input.sourceBookingId, sourceQuoteRevisionId: input.sourceQuoteRevisionId, sourceRevision: input.sourceRevision, sourceVersion: input.sourceVersion, sourceContentHash: input.sourceContentHash,
+    version: input.version, matrixContentHash: jsonHash(matrix), signedAt: input.reusedAuthority.adoptedAt, signatures: [], ...(input.previous ? { previousReleaseId: input.previous.releaseId } : {}),
+    status: "pending", materializationStatus: "pending", masterArtifact: input.masterArtifact, derivedArtifacts: [], packetArtifacts: [], matrix, deltaFromPrevious: allergenReleaseDelta(input.previous, input.items),
   };
 }
 

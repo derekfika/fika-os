@@ -9,6 +9,7 @@ type CpuPlanBody = {
   matrixStatus?: "generating" | "ready" | "not_configured" | "failed";
   matrixError?: string;
   signedMatrixAvailable?: boolean;
+  approvedMatrixAvailable?: boolean;
   error?: { message?: string; code?: string };
 };
 
@@ -49,6 +50,7 @@ export async function GET(request: NextRequest) {
           viewUrl: viewUrlFor(candidate),
           ...(release?.releaseId ? { releaseId: release.releaseId } : {}),
           ...(release?.version ? { releaseVersion: release.version } : {}),
+          ...(release?.approvalMode ? { approvalMode: release.approvalMode } : {}),
           ...(release?.sourceContentHash ? { sourceContentHash: release.sourceContentHash } : {}),
         }, status: "ready" });
       }
@@ -56,7 +58,7 @@ export async function GET(request: NextRequest) {
       if (body.matrixStatus === "generating") return NextResponse.json({ artifact: null, status: "generating" });
       if (body.matrixStatus === "not_configured") return NextResponse.json({ artifact: null, status: "not_configured" });
       if (body.matrixStatus === "ready") return NextResponse.json({ artifact: null, status: "error", error: "CPU reports a ready allergen matrix without a persisted artifact." }, { status: 502 });
-      if (body.signedMatrixAvailable) return NextResponse.json({ artifact: { fileName: "signed-allergen-matrix.html", driveStatus: "not_configured", viewUrl: viewUrlFor(candidate) }, status: "ready" });
+      if (body.signedMatrixAvailable || body.approvedMatrixAvailable) return NextResponse.json({ artifact: { fileName: "signed-allergen-matrix.html", driveStatus: "not_configured", viewUrl: viewUrlFor(candidate) }, status: "ready" });
       if (body.plan) return NextResponse.json({ artifact: null, status: "not_configured", error: "The current CPU Production Order has no signed allergen matrix." });
     }
     return NextResponse.json({ artifact: null, status: "not_configured", error: "The current CPU Production Order could not be found." }, { status: 404 });

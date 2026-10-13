@@ -1,5 +1,6 @@
+import type { ReusedAllergenAuthority } from "../../lib/allergen-composition";
 import type { OperationalAllergenState } from "../../../shared/allergen-contract";
-import { allergenMatrixContentHash } from "../../lib/cpu-allergen-release";
+import { allergenMatrixContentHash, releaseMatrixMatchesPlan } from "../../lib/cpu-allergen-release";
 import { isProductionPlanMatrixComplete } from "./production-plan-state";
 import { createHash } from "node:crypto";
 export type PlanStatus = "draft" | "planning" | "planned" | "rejected" | "needs_clarification";
@@ -33,7 +34,7 @@ export type InternalMatrixSignature = { role: "production_chef" | "head_chef_sit
 export type MatrixArtifact = { id: string; bookingId: string; fileName: string; createdAt: string; createdBy: string; contentHash: string; html?: string; pdfPath?: string; localUrl?: string; pdfStatus: "generated" | "unavailable"; driveFileId?: string; driveUrl?: string; driveStatus: "saved" | "not_configured" | "failed"; bundleId?: string; packetContentHash?: string; packetObjectName?: string; sourceRevision?: number; sourceContentHash?: string };
 export type CpuAllergenRelease = import("../../lib/cpu-allergen-release").CpuAllergenRelease;
 /** A production menu item may contain several separately checked sub-items. */
-export type ProductionPlan = { id: string; orderId: string; status: PlanStatus; acceptedBy?: string; acceptedAt?: string; rejectionReason?: string; clarificationNote?: string; menuItems: PlannedMenuItem[]; planningNotes: string; masterReviewId?: string; signatures?: InternalMatrixSignature[]; matrixArtifact?: MatrixArtifact; masterMatrixArtifact?: MatrixArtifact; siteMatrixArtifacts?: Record<string, MatrixArtifact>; signedMenuContentHash?: string; signedSignatures?: InternalMatrixSignature[]; signedMatrixArtifact?: MatrixArtifact; currentAllergenRelease?: CpuAllergenRelease; allergenReleaseHistory?: CpuAllergenRelease[]; updatedAt: string; updatedBy: string; audit: Array<{ action: string; at: string; by: string; reason?: string }> };
+export type ProductionPlan = { id: string; orderId: string; status: PlanStatus; acceptedBy?: string; acceptedAt?: string; rejectionReason?: string; clarificationNote?: string; menuItems: PlannedMenuItem[]; planningNotes: string; masterReviewId?: string; signatures?: InternalMatrixSignature[]; matrixArtifact?: MatrixArtifact; masterMatrixArtifact?: MatrixArtifact; siteMatrixArtifacts?: Record<string, MatrixArtifact>; signedMenuContentHash?: string; signedSignatures?: InternalMatrixSignature[]; signedMatrixArtifact?: MatrixArtifact; currentAllergenRelease?: CpuAllergenRelease; allergenReleaseHistory?: CpuAllergenRelease[]; reusedAllergenAuthority?: ReusedAllergenAuthority; updatedAt: string; updatedBy: string; audit: Array<{ action: string; at: string; by: string; reason?: string }> };
 
 export { effectiveProductionPlanStatus, hasAllergenAuthority, isProductionPlanMatrixComplete, mergeMissingProductionOrderLines } from "./production-plan-state";
 
@@ -113,6 +114,18 @@ export function currentAllergenReleaseMatchesOrder(release: CpuAllergenRelease |
 }
 
 /** Validate release source identity before a pending release is materialized. */
+/**
+ * A materialized release whose approval is a reused composition authority. It is deliberately a SEPARATE predicate from
+ * `currentAllergenReleaseMatchesOrder`: a reused release never satisfies the signed-release test, because it has no signatures.
+ */
+export function reusedAuthorityReleaseMatchesOrder(release: CpuAllergenRelease | undefined, order: SigningLineageOrder, menuItems: PlannedMenuItem[]) {
+  const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
+  if (!release || release.approvalMode !== "reused_authority" || !release.reusedAuthority || release.status !== "current" || release.materializationStatus !== "ready" || !scope) return false;
+  if (release.signatures.length > 0 || !isProductionPlanMatrixComplete(menuItems)) return false;
+  if (!releaseMatrixMatchesPlan(release.matrix, menuItems)) return false;
+  return sameMatrixSignatureScope(scope, { ...release, productionOrderId: scope.productionOrderId, matrixContentHash: scope.matrixContentHash }, false);
+}
+
 export function allergenReleaseLineageMatchesOrder(release: CpuAllergenRelease | undefined, order: SigningLineageOrder, menuItems: PlannedMenuItem[]) {
   const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
   if (!release || !scope) return false;

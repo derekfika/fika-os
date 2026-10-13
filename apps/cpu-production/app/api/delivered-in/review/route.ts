@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { productionQueue } from "../../../../lib/production-http-client";
-import { loadPlansForOrders } from "../../../../lib/cpu-projection-repository";
+import { loadGuardedPlansForOrders } from "../../../../lib/cpu-guarded-plans";
 import { allergenMatrixHtml } from "../../../ui/allergen-matrix";
 import { renderPdfToBuffer } from "../../../lib/local-pdf";
 import { getCpuReviewPackage, recordCpuReviewFallback, rebuildCpuReviewPackage } from "../../../../lib/cpu-review-package";
@@ -63,7 +63,7 @@ async function handleGet(request: NextRequest) {
       }
     } else recordCpuReviewFallback("explicit-reconciliation");
     const orders = (await productionQueue(request, serviceDate)).filter(order => order.origin === "menu_planning");
-    const planRecords = await loadPlansForOrders(orders.map(order => order.canonicalId));
+    const planRecords = await loadGuardedPlansForOrders(orders);
     const plans = new Map(planRecords.map(plan => [plan.orderId, plan as ReviewPlan]));
     const signatures = new Map<string, ReviewSignature>();
     for (const plan of plans.values()) for (const signature of plan.signatures || []) signatures.set(signature.role, signature);

@@ -1,5 +1,7 @@
 "use client";
 
+import { ReusedAllergenAuthorityNotice } from "./ReusedAllergenAuthorityNotice";
+import type { ReuseView } from "../../lib/allergen-reuse-service";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
 import { cpuServiceWindow } from "../../lib/production-presentation";
@@ -289,6 +291,7 @@ export default function HospitalityAllergenDetail({
   const [currentAllergenRelease, setCurrentAllergenRelease] = useState<ProductionPlan["currentAllergenRelease"]>();
   const [signingLineage, setSigningLineage] = useState<ReviewedLineage>();
   const [signingError, setSigningError] = useState("");
+  const [reuse, setReuse] = useState<ReuseView>();
   const [matrixStorageStatus, setMatrixStorageStatus] = useState<"not_configured" | "ready" | "artifact_pending">();
   const [planStatus, setPlanStatus] =
     useState<ProductionPlan["status"]>("draft");
@@ -323,6 +326,7 @@ export default function HospitalityAllergenDetail({
           setSigningLineage(body.signingLineage || undefined);
           setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan.matrixArtifact ? "ready" : body.plan.signatures?.length === 2 ? "artifact_pending" : undefined);
           setPlanStatus(effectiveProductionPlanStatus({ ...body.plan, menuItems: hydratedItems }));
+          setReuse(body.reuse || undefined);
         }
       })
       .catch(() =>
@@ -555,6 +559,30 @@ export default function HospitalityAllergenDetail({
     setBusy(false);
   };
 
+  const applyReusedAuthority = async () => {
+    setBusy(true);
+    setMessage("Applying the previously approved allergen states…");
+    try {
+      const response = await fetch("/api/production-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "apply-reused-authority", orderId: order.canonicalId, commandId: `reuse:${order.canonicalId}:${Date.now()}` }),
+      });
+      const body = await response.json();
+      if (!response.ok) setMessage(body.error?.message || "The approved allergen states could not be applied. Review the matrix normally.");
+      else {
+        if (body.plan?.menuItems) setMenuItems(mergeOriginalItems(order, body.plan.menuItems));
+        setPlanStatus(body.plan?.status || "planned");
+        setReuse(body.plan?.reusedAllergenAuthority ? { applied: { valid: true, provenance: body.plan.reusedAllergenAuthority } } : undefined);
+        setMessage("Previously approved allergen states applied. This booking has not been signed itself.");
+        await onSaved(false);
+      }
+    } catch {
+      setMessage("The approved allergen states could not be applied. Review the matrix normally.");
+    }
+    setBusy(false);
+  };
+
   const signMatrix = async (
     role: InternalMatrixSignature["role"],
     printedName: string,
@@ -721,6 +749,7 @@ export default function HospitalityAllergenDetail({
             </span>
           </div>
         )}
+        <ReusedAllergenAuthorityNotice reuse={reuse} busy={busy} onApply={() => void applyReusedAuthority()} />
         <section className="checker-shell">
           <div className="checker-title">
             <div>

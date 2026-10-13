@@ -1,22 +1,24 @@
 import type { NextRequest } from "next/server";
 import { productionQueue, productionQueueForWeek } from "./production-http-client";
 import { withReadableDestinations } from "./cpu-oploc-labels";
-import { appendCpuChange as appendProjectionChange, cpuChanges, cpuProjections, loadPlansForOrders, type CpuChangeWithPropagation, writeCpuProjectionMonotonically } from "./cpu-projection-repository";
+import { appendCpuChange as appendProjectionChange, cpuChanges, cpuProjections, type CpuChangeWithPropagation, writeCpuProjectionMonotonically } from "./cpu-projection-repository";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { ReadPackageManifest } from "@fika/server-shared/read-package";
 import { canonicalProductionDigest, canonicalProductionDigestSet, type CanonicalProductionDigest, type CanonicalProductionDigestSet } from "@fika/server-shared/canonical-production-digest";
 export { cpuProjections } from "./cpu-projection-repository";
 import type { ProductionLine, ProductionOrder, ProductionStatus } from "./production-types";
+import { loadGuardedPlansForOrders } from "./cpu-guarded-plans";
+import { PROJECTION_AUTHORITY_BINDING_VERSION, type ReusedAuthorityBinding } from "./cpu-projection-authority";
 import { effectiveProductionPlanStatus, signedAllergenReviewMatchesOrder, type ProductionPlan } from "../app/lib/production-plan";
 import { isProductionPlanMatrixComplete } from "../app/lib/production-plan-state";
 import { publishCpuProjectionPackage } from "./cpu-read-package";
 
 export type CpuChangeEvent = { sequence: number; serviceDate: string; entityType: "productionOrder" | "productionPlan"; entityId: string; revision: number; changeType: string; actorId: string; changedAt: string; idempotencyKey?: string };
 export type CpuProjectionLine = { sourceLineId: string; sourceBookingLineId?: string; sourceMenuItemId?: string; name: string; quantity: number; unit: string; productionQuantity?: number; productionUnit?: string; dietaries: Record<string, unknown>; allergenEvidenceStatus?: ProductionLine["allergenEvidenceStatus"]; approvedAllergenSnapshot?: ProductionLine["approvedAllergenSnapshot"]; notes?: string };
-export type CpuProjectionOrder = { id: string; serviceDate: string; requiredBy: string; serviceWindow: ProductionOrder["serviceWindow"]; origin?: string; sourceReference?: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string; destinationOplocId?: string; destinationLabel?: string; clientName?: string; serviceType?: string; productionCategory?: ProductionOrder["productionCategory"]; requiresDelivery?: boolean; pax?: number; priority: ProductionOrder["priority"]; status: ProductionStatus; workflowStatus?: ProductionStatus; cancellationNotice?: string; productionScope?: string; quantities: CpuProjectionLine[]; bookingDietaries?: Record<string, unknown>; bookingNotes?: string; allergenReadiness: string; planningReadiness: string; attention: string[]; version: number };
-export type CpuDayProjection = { serviceDate: string; revision: number; lastChangeSequence: number; projectionContentHash?: string; /** Fingerprint of the canonical Hub orders (id|version|status, cancelled included) this projection was built from. */ canonicalDigest?: CanonicalProductionDigest; orders: CpuProjectionOrder[]; summary: { orders: number; ready: number; attention: number; planned: number; totalUnits: number }; rebuiltAt: string };
-export type CpuWeekProjection = { serviceDate: string; weekCommencing: string; revision: number; lastChangeSequence: number; projectionContentHash?: string; canonicalDigest?: CanonicalProductionDigestSet; orders: CpuProjectionOrder[]; summary: CpuDayProjection["summary"]; rebuiltAt: string };
+export type CpuProjectionOrder = { id: string; serviceDate: string; requiredBy: string; serviceWindow: ProductionOrder["serviceWindow"]; origin?: string; sourceReference?: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string; destinationOplocId?: string; destinationLabel?: string; clientName?: string; serviceType?: string; productionCategory?: ProductionOrder["productionCategory"]; requiresDelivery?: boolean; pax?: number; priority: ProductionOrder["priority"]; status: ProductionStatus; workflowStatus?: ProductionStatus; cancellationNotice?: string; productionScope?: string; quantities: CpuProjectionLine[]; bookingDietaries?: Record<string, unknown>; bookingNotes?: string; allergenReadiness: string; planningReadiness: string; attention: string[]; version: number; reusedAuthority?: ReusedAuthorityBinding; reusedAuthorityInvalid?: boolean };
+export type CpuDayProjection = { /** Present on projections built with reused-authority bindings; absent on older cached projections. */ authorityBindingVersion?: number; serviceDate: string; revision: number; lastChangeSequence: number; projectionContentHash?: string; /** Fingerprint of the canonical Hub orders (id|version|status, cancelled included) this projection was built from. */ canonicalDigest?: CanonicalProductionDigest; orders: CpuProjectionOrder[]; summary: { orders: number; ready: number; attention: number; planned: number; totalUnits: number }; rebuiltAt: string };
+export type CpuWeekProjection = { authorityBindingVersion?: number; serviceDate: string; weekCommencing: string; revision: number; lastChangeSequence: number; projectionContentHash?: string; canonicalDigest?: CanonicalProductionDigestSet; orders: CpuProjectionOrder[]; summary: CpuDayProjection["summary"]; rebuiltAt: string };
 export const appendCpuChange = (input: Omit<CpuChangeEvent, "sequence"> & CpuChangeWithPropagation) => appendProjectionChange(input);
 export async function listCpuChanges(after: number, serviceDate: string) { const snapshot = await cpuChanges().where("serviceDate", "==", serviceDate).where("sequence", ">", after).orderBy("sequence", "asc").get(); recordDataAccess({ app: "cpu-production", operation: "changes.service-date", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" }); return snapshot.docs.map((doc) => doc.data() as CpuChangeEvent); }
 export async function latestCpuChangeSequence(serviceDate: string) { const snapshot = await cpuChanges().where("serviceDate", "==", serviceDate).orderBy("sequence", "desc").limit(1).get(); recordDataAccess({ app: "cpu-production", operation: "changes.latest-service-date", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" }); return Number((snapshot.docs[0]?.data() as { sequence?: unknown } | undefined)?.sequence || 0); }
@@ -32,9 +34,12 @@ export function buildCpuDayProjection(serviceDate: string, orders: ProductionOrd
   const publicationIdByOrderId = new Map(orders.map((order) => [order.canonicalId, order.sourcePublicationId]));
   const projectedWithPublicationIdentity = projected.map((item) => {
     const sourcePublicationId = publicationIdByOrderId.get(item.id);
-    return sourcePublicationId ? { ...item, sourcePublicationId } : item;
+    const withIdentity = sourcePublicationId ? { ...item, sourcePublicationId } : item;
+    // An order whose Planned state rests on a reused allergen approval records the exact authority generation it relies on.
+    const reuse = planByOrder.get(item.id)?.reusedAllergenAuthority;
+    return reuse && item.workflowStatus === "planned" ? { ...withIdentity, reusedAuthority: { compositionId: reuse.compositionId, generation: reuse.generation, originReleaseId: reuse.origin.releaseId, matrixSemanticHash: reuse.matrixSemanticHash } } : withIdentity;
   });
-  return { serviceDate, revision, lastChangeSequence, orders: projectedWithPublicationIdentity, summary: { orders: projectedWithPublicationIdentity.length, ready: projectedWithPublicationIdentity.filter((order) => order.planningReadiness === "ready").length, attention: projectedWithPublicationIdentity.filter((order) => order.attention.length > 0).length, planned: projectedWithPublicationIdentity.filter((order) => order.workflowStatus === "planned").length, totalUnits: projectedWithPublicationIdentity.reduce((sum, order) => sum + order.quantities.reduce((total, item) => total + item.quantity, 0), 0) }, rebuiltAt: now };
+  return { authorityBindingVersion: PROJECTION_AUTHORITY_BINDING_VERSION, serviceDate, revision, lastChangeSequence, orders: projectedWithPublicationIdentity, summary: { orders: projectedWithPublicationIdentity.length, ready: projectedWithPublicationIdentity.filter((order) => order.planningReadiness === "ready").length, attention: projectedWithPublicationIdentity.filter((order) => order.attention.length > 0).length, planned: projectedWithPublicationIdentity.filter((order) => order.workflowStatus === "planned").length, totalUnits: projectedWithPublicationIdentity.reduce((sum, order) => sum + order.quantities.reduce((total, item) => total + item.quantity, 0), 0) }, rebuiltAt: now };
 }
 
 /** Digest of the canonical orders (cancelled included) for one service day - the same tuple the Hub digest endpoint buckets by. */
@@ -44,7 +49,7 @@ export async function materialiseCpuDayProjection(request: NextRequest, serviceD
   const [rawOrders, previous] = await Promise.all([productionQueue(request, serviceDate), cpuProjections().doc(serviceDate).get()]);
   recordDataAccess({ app: "cpu-production", operation: "projection.by-service-date", source: "FIRESTORE", documents: previous.exists ? 1 : 0, firestoreReadKind: "document" });
   const orders = await withReadableDestinations(request, rawOrders);
-  const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
+  const plans = await loadGuardedPlansForOrders(orders);
   const projection: CpuDayProjection = { ...buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1), canonicalDigest: canonicalDayDigest(rawOrders, serviceDate) };
   const written = await writeCpuProjectionMonotonically(cpuProjections().doc(serviceDate), projection, { authoritativeRebuild: true });
   const current = written.projection as CpuDayProjection;
@@ -73,7 +78,7 @@ export async function rebuildCpuWeekProjection(request: NextRequest, weekCommenc
   const [rawOrders, previous] = await Promise.all([productionQueueForWeek(request, weekCommencing), cpuProjections().doc(`week:${weekCommencing}`).get()]);
   recordDataAccess({ app: "cpu-production", operation: "projection.by-week", source: "FIRESTORE", documents: previous.exists ? 1 : 0, firestoreReadKind: "document" });
   const orders = await withReadableDestinations(request, rawOrders);
-  const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
+  const plans = await loadGuardedPlansForOrders(orders);
   const projection = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   const week: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, canonicalDigest: canonicalProductionDigestSet(rawOrders), orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };
   const written = await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), week, { authoritativeRebuild: true });
@@ -170,7 +175,7 @@ export async function recoverMissingCpuWeekProjection(request: NextRequest, week
     const previous = await cpuProjections().doc(`week:${weekCommencing}`).get();
     const orders = await withReadableDestinations(request, sourceOrders);
     const normalisedOrders = orders.map(order => order.serviceDate ? order : { ...order, serviceDate: order.requiredBy.slice(0, 10) });
-    const plans = await loadPlansForOrders(normalisedOrders.map(order => order.canonicalId));
+    const plans = await loadGuardedPlansForOrders(normalisedOrders);
     const built = buildCpuDayProjection("all", normalisedOrders.filter((order) => weekDates(weekCommencing).includes(order.serviceDate || order.requiredBy.slice(0, 10))), plans, Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
     const projection: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: built.revision, lastChangeSequence: built.lastChangeSequence, canonicalDigest: canonicalProductionDigestSet(rawOrders), orders: built.orders, summary: built.summary, rebuiltAt: built.rebuiltAt };
     const written = await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), projection, { authoritativeRebuild: true });
