@@ -4,6 +4,7 @@ import { filterCpuProjectionForScope } from "../../lib/cpu-dashboard-adapter";
 import type { CpuDayProjection } from "../../lib/cpu-projection";
 import type { ProductionScope } from "../../lib/production-scope";
 import { readCpuProjection, writeCpuProjection, type CpuProjectionCacheEntry } from "./cpu-indexeddb";
+import { authorityMarkerOf, isTrustedCachedProjection } from "./cpu-cache-trust";
 
 type PackageIdentity = { packageVersion?: number; contentHash?: string; sourceVersion?: string };
 type ProjectionResponse = { projection?: CpuDayProjection; package?: PackageIdentity; error?: { code?: string; message?: string } };
@@ -75,7 +76,8 @@ export async function loadCpuAllergenProjection(serviceDate: string, scope: Prod
   const cacheKey = `day:${serviceDate}`;
   const cacheScope = scopeBody.cacheScope;
   const cached = await dependencies.read(cacheKey, cacheScope);
-  if (cached?.value) {
+  // A cached projection that is not authority-bound (historical package / entry cached before the marker) is never trusted: fetch the body.
+  if (cached?.value && isTrustedCachedProjection(cached)) {
     try {
       const headResponse = await dependencies.fetch(`/api/production?projectionHead=1&serviceDate=${encodeURIComponent(serviceDate)}`, { cache: "no-store" });
       if (!headResponse.ok) throw new Error(CPU_ALLERGEN_FRESHNESS_ERROR);
@@ -88,7 +90,7 @@ export async function loadCpuAllergenProjection(serviceDate: string, scope: Prod
       if (unchanged) return { projection: filterCpuProjectionForScope(cached.value, scope), cacheHit: true, package: { packageVersion: cached.packageVersion, contentHash: cached.contentHash, sourceVersion: cached.sourceVersion } };
 
       const refreshedBody = await loadPublishedDay(serviceDate, scope, dependencies);
-      await dependencies.write({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: refreshedBody.projection.lastChangeSequence, revision: refreshedBody.projection.revision, packageVersion: refreshedBody.package?.packageVersion, contentHash: refreshedBody.package?.contentHash, sourceVersion: refreshedBody.package?.sourceVersion, value: refreshedBody.projection });
+      await dependencies.write({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: refreshedBody.projection.lastChangeSequence, revision: refreshedBody.projection.revision, packageVersion: refreshedBody.package?.packageVersion, contentHash: refreshedBody.package?.contentHash, sourceVersion: refreshedBody.package?.sourceVersion, authorityBindingVersion: authorityMarkerOf(refreshedBody.projection), value: refreshedBody.projection });
       return { projection: filterCpuProjectionForScope(refreshedBody.projection, scope), cacheHit: false, package: refreshedBody.package };
     } catch (cause) {
       throw cause instanceof Error && cause.message === CPU_ALLERGEN_FRESHNESS_ERROR
@@ -98,6 +100,6 @@ export async function loadCpuAllergenProjection(serviceDate: string, scope: Prod
   }
 
   const body = await loadPublishedDay(serviceDate, scope, dependencies);
-  await dependencies.write({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: body.projection.lastChangeSequence, revision: body.projection.revision, packageVersion: body.package?.packageVersion, contentHash: body.package?.contentHash, sourceVersion: body.package?.sourceVersion, value: body.projection });
+  await dependencies.write({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: body.projection.lastChangeSequence, revision: body.projection.revision, packageVersion: body.package?.packageVersion, contentHash: body.package?.contentHash, sourceVersion: body.package?.sourceVersion, authorityBindingVersion: authorityMarkerOf(body.projection), value: body.projection });
   return { projection: filterCpuProjectionForScope(body.projection, scope), cacheHit: false, package: body.package };
 }

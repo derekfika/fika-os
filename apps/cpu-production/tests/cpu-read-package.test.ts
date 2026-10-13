@@ -212,7 +212,7 @@ test("non-empty missing week package refuses empty-week masquerading", async () 
 });
 
 test("CPU dashboard stores package metadata and package delivery precedes source reconciliation", async () => {
-  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const page = await readFile(new URL("../app/lib/cpu-dashboard-projection-loader.ts", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/production/route.ts", import.meta.url), "utf8");
   const indexedDb = await readFile(new URL("../app/lib/cpu-indexeddb.ts", import.meta.url), "utf8");
   assert.match(page, /packageVersion/);

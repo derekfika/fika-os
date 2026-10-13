@@ -13,6 +13,8 @@ export type CpuProjectionCacheEntry<T = unknown> = {
   packageVersion?: number;
   contentHash?: string;
   sourceVersion?: string;
+  /** The `authorityBindingVersion` of the cached projection. Absent/different means a historical package: never trusted from this cache. */
+  authorityBindingVersion?: number;
   value: T;
 };
 export type CpuProjectionCacheIdentity = { schemaVersion: number; packageVersion?: number; contentHash?: string; sourceVersion?: string };

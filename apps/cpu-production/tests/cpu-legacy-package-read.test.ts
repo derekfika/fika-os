@@ -23,7 +23,10 @@ const opts = { skip: emulatorUp ? false : "Firestore emulator is not running (FI
 
 const { NextRequest } = await import("next/server");
 const { buildCpuDayProjection } = await import("../lib/cpu-projection");
-const { publishCpuProjectionPackage, getCpuProjectionManifest } = await import("../lib/cpu-read-package");
+const { publishCpuProjectionPackage, getCpuProjectionManifest, getCpuProjectionPackage } = await import("../lib/cpu-read-package");
+const { rebuildCpuWeekProjection } = await import("../lib/cpu-projection");
+const { createHash } = await import("node:crypto");
+const { readFileSync } = await import("node:fs");
 const { UNVERIFIED_LEGACY_ATTENTION } = await import("../lib/cpu-projection-authority");
 const { canonicalProductionDigestSet } = await import("@fika/server-shared/canonical-production-digest");
 const route = emulatorUp ? await import("../app/api/production/route") : undefined;
@@ -89,4 +92,91 @@ test("an integrity-corrupt legacy package still fails closed (503) and is not si
   assert.equal(result.status, 503);
   assert.equal(result.body.error?.code, "CPU_PROJECTION_PACKAGE_INTEGRITY_FAILURE");
   assert.equal((await getCpuProjectionManifest(week, week))?.packageVersion, manifest.packageVersion, "no self-healing rebuild after an integrity failure");
+});
+
+// ---- fresh packages carry the marker; historical payloads are never rewritten ---------------------------------------------------
+type StubOrder = ReturnType<typeof order>;
+const hubOrders = new Map<string, StubOrder[]>();
+const unhandled: string[] = [];
+const realFetch = globalThis.fetch;
+const installHub = () => {
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    const url = new URL(typeof input === "string" ? input : (input as { url?: string }).url || String(input));
+    const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+    if (url.pathname === "/api/production" && (init?.method || "GET") === "GET") {
+      const week = url.searchParams.get("weekCommencing");
+      if (week) return json({ orders: (hubOrders.get(week) || []).map(item => structuredClone(item)) });
+      const id = url.searchParams.get("canonicalId");
+      if (id) { const found = [...hubOrders.values()].flat().find(item => item.canonicalId === id); return found ? json({ order: structuredClone(found) }) : json({ error: { message: "not found" } }, 404); }
+      return json({ orders: [] });
+    }
+    if (url.pathname.includes("/api/oplocs") || url.pathname.includes("oploc")) return json({ oplocs: [] });
+    unhandled.push(`${init?.method || "GET"} ${url.href}`);
+    return json({ error: { message: `unhandled test URL ${url.href}` } }, 404);
+  }) as typeof fetch;
+};
+const sha = (path_: string) => createHash("sha256").update(readFileSync(path_)).digest("hex");
+const rebuildRequest = () => new NextRequest("http://localhost:3400/api/production?projection=1", { method: "GET" });
+
+test("historical package: loads fail-safe, is not republished on read, and no marker is ever added to its payload", opts, async () => {
+  installHub();
+  try {
+    const week = nextWeek();
+    const orders = [order(`production-order:v1:menu-planning:${run}:hist`, week)];
+    hubOrders.set(week, orders);
+    const manifest = await publishLegacyWeek(week, orders);
+    const objectPath = path.join(snapshotDir, manifest.objectName);
+    const before = sha(objectPath);
+    const loaded = await loadWeek(week);
+    assert.equal(loaded.status, 200, JSON.stringify(loaded.body.error));
+    assert.equal(loaded.body.projection?.authorityBindingVersion, undefined, "the served legacy projection is not stamped with a marker on read");
+    const stored = await getCpuProjectionPackage(week, week);
+    assert.equal((stored!.value.projection as { authorityBindingVersion?: number }).authorityBindingVersion, undefined, "the stored historical payload has no marker");
+    assert.equal(sha(objectPath), before, "the historical package object is byte-identical after the read");
+    assert.equal((await getCpuProjectionManifest(week, week))?.packageVersion, manifest.packageVersion, "not republished on read");
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test("a genuine mutation of a legacy week publishes a HIGHER sequence whose package carries the marker; the historical object is untouched", opts, async () => {
+  installHub();
+  try {
+    const week = nextWeek();
+    const orders = [order(`production-order:v1:menu-planning:${run}:mut`, week)];
+    hubOrders.set(week, orders);
+    const legacy = await publishLegacyWeek(week, orders);
+    const legacyPath = path.join(snapshotDir, legacy.objectName);
+    const legacyBytes = sha(legacyPath);
+    // what a real mutation does after appending its change event: rebuild the week at the event's (higher) sequence
+    const rebuilt = await rebuildCpuWeekProjection(rebuildRequest(), week, 685);
+    assert.equal(rebuilt.authorityBindingVersion, 1, "the freshly built week projection records the authority-binding version");
+    const manifest = (await getCpuProjectionManifest(week, week))!;
+    assert.equal(manifest.sourceVersion, "cpu-change-685", "published under the higher sequence");
+    assert.ok(Number(manifest.packageVersion) > Number(legacy.packageVersion), "a new package version, never an in-place rewrite");
+    const fresh = await getCpuProjectionPackage(week, week);
+    assert.equal((fresh!.value.projection as { authorityBindingVersion?: number }).authorityBindingVersion, 1, "the NEW package carries the marker");
+    assert.equal(sha(legacyPath), legacyBytes, "the historical package object was not modified");
+    // and it now loads as a modern, trustable package
+    const loaded = await loadWeek(week);
+    assert.equal(loaded.status, 200, JSON.stringify(loaded.body.error));
+    assert.equal(loaded.body.projection?.authorityBindingVersion, 1);
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test("every new week package builder (rebuild, missing-package recovery, empty week) stamps the marker", opts, async () => {
+  installHub();
+  try {
+    // missing package, canonical orders present -> recovery builder
+    const populated = nextWeek();
+    hubOrders.set(populated, [order(`production-order:v1:menu-planning:${run}:rec`, populated)]);
+    const recovered = await loadWeek(populated);
+    assert.equal(recovered.status, 200, JSON.stringify(recovered.body.error));
+    assert.equal(recovered.body.projection?.authorityBindingVersion, 1, "missing-package recovery builds a marked package");
+    // missing package, no canonical orders -> empty-week builder
+    const empty = nextWeek();
+    hubOrders.set(empty, []);
+    const initialised = await loadWeek(empty);
+    assert.equal(initialised.status, 200, JSON.stringify(initialised.body.error));
+    assert.equal(initialised.body.projection?.authorityBindingVersion, 1, "an initialised empty week is a marked package");
+    assert.deepEqual(unhandled, [], "the Hub stub covered every upstream call");
+  } finally { globalThis.fetch = realFetch; }
 });
