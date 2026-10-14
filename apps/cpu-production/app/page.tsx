@@ -81,6 +81,27 @@ export default function CpuProduction() {
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  // Tablet layout only: the sidebar and the operations rail become drawers (CSS keeps them in place on desktop).
+  const [navOpen, setNavOpen] = useState(false);
+  const [railOpen, setRailOpen] = useState(false);
+  const navToggleRef = useRef<HTMLButtonElement>(null);
+  const railToggleRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const railRef = useRef<HTMLElement>(null);
+  const closeDrawers = () => { setNavOpen(false); setRailOpen(false); };
+  useEffect(() => {
+    if (!navOpen && !railOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const returnTo = navOpen ? navToggleRef.current : railToggleRef.current;
+      setNavOpen(false); setRailOpen(false);
+      returnTo?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    // move focus into the drawer that just opened
+    (navOpen ? sidebarRef.current : railRef.current)?.querySelector<HTMLElement>("button")?.focus();
+    return () => window.removeEventListener("keydown", onKey);
+  }, [navOpen, railOpen]);
   const load = async (showFeedback = false): Promise<ProductionOrder[]> => {
     if (!dayDate || !weekCommencing) return [];
     if (showFeedback) setRefreshing(true);
@@ -144,6 +165,7 @@ export default function CpuProduction() {
     if (!response.ok) { setError(body.error?.message || "The cancelled booking could not be acknowledged."); return; }
     await load(true);
   };
+  const attentionCount = visible.filter((order) => Boolean(cpuAttentionLabel(order))).length;
   const sourceTotals = useMemo(() => totalsVisible.reduce<Record<string, Record<string, number>>>((sum, order) => {
     const source = cpuSourceLabel(order);
     const bucket = sum[source] || (sum[source] = {});
@@ -152,7 +174,13 @@ export default function CpuProduction() {
   }, {}), [totalsVisible]);
   return (
     <main className="cpu-app-shell">
-      <aside className="cpu-sidebar">
+      <div className="cpu-tablet-bar">
+        <button type="button" ref={navToggleRef} className="cpu-tablet-menu" aria-label="Open navigation menu" aria-expanded={navOpen} aria-controls="cpu-sidebar" onClick={() => { setRailOpen(false); setNavOpen((open) => !open); }}><span aria-hidden="true">☰</span> Menu</button>
+        <strong className="cpu-tablet-title">CPU Production</strong>
+        <button type="button" ref={railToggleRef} className="cpu-tablet-ops" aria-expanded={railOpen} aria-controls="cpu-operations-rail" onClick={() => { setNavOpen(false); setRailOpen((open) => !open); }}>Today &amp; attention{attentionCount > 0 && <span className="cpu-tablet-badge" aria-label={`${attentionCount} need attention`}>{attentionCount}</span>}</button>
+      </div>
+      {(navOpen || railOpen) && <div className="cpu-drawer-backdrop" aria-hidden="true" onClick={closeDrawers} />}
+      <aside id="cpu-sidebar" ref={sidebarRef} className={`cpu-sidebar${navOpen ? " is-open" : ""}`}>
         <div className="cpu-brand">FIKA OS</div>
         <div className="cpu-sidebar-label">CPU PRODUCTION</div>
         <nav aria-label="CPU Production navigation" className="cpu-sidebar-nav">
@@ -160,7 +188,7 @@ export default function CpuProduction() {
             ["▦", "Overview", "calendar"], ["◷", "Day", "day"], ["☷", "Queue", "queue"],
             ["▤", "Run sheet", "run-sheet"], ["▥", "Totals", "totals"],
           ].map(([icon, label, target]) => (
-            <button type="button" key={label} className={view === target ? "selected" : ""} onClick={() => setView(target as View)}>
+            <button type="button" key={label} className={view === target ? "selected" : ""} onClick={() => { setView(target as View); setNavOpen(false); }}>
               <span>{icon}</span>{label}
             </button>
           ))}
@@ -323,7 +351,7 @@ export default function CpuProduction() {
         {view === "run-sheet" && <RunSheet orders={visible} />}
         {view === "totals" && <Totals sourceTotals={sourceTotals} orders={totalsVisible} date={date || dayDate} />}
         </section>
-        <OperationsRail orders={visible} date={date || todayKey} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} />
+        <OperationsRail railRef={railRef} orders={visible} date={date || todayKey} open={(order) => { setRailOpen(false); void openOrder(order); }} onCancelBooking={acknowledgeCancelledBooking} isOpen={railOpen} onClose={() => { setRailOpen(false); railToggleRef.current?.focus(); }} />
         </div>
       </div>
       </div>
@@ -364,13 +392,15 @@ export default function CpuProduction() {
   );
 }
 
-function OperationsRail({ orders, date, open, onCancelBooking }: { orders: ProductionOrder[]; date: string; open: (order: ProductionOrder) => void; onCancelBooking: (order: ProductionOrder) => void }) {
+function OperationsRail({ orders, date, open, onCancelBooking, isOpen, onClose, railRef }: { orders: ProductionOrder[]; date: string; open: (order: ProductionOrder) => void; onCancelBooking: (order: ProductionOrder) => void; isOpen: boolean; onClose: () => void; railRef: React.RefObject<HTMLElement | null> }) {
   const todayOrders = orders
     .filter((order) => order.requiredBy.startsWith(date))
     .sort((a, b) => a.requiredBy.localeCompare(b.requiredBy));
   const attention = orders.filter((order) => Boolean(cpuAttentionLabel(order)));
   const attentionByStatus = (status: string) => attention.filter((order) => cpuAttentionKey(order) === status).length;
-  return <aside className="cpu-operations-rail">
+  // On desktop this stays the right-hand rail. On tablet it is an inspector drawer (see cpu-tablet.css) opened from the top bar.
+  return <aside id="cpu-operations-rail" ref={railRef} aria-label="Today's production and attention" className={`cpu-operations-rail${isOpen ? " is-open" : ""}`}>
+    <button type="button" className="cpu-rail-close" onClick={onClose} aria-label="Close today and attention panel">Close ×</button>
     <section className="cpu-rail-panel">
       <div className="cpu-rail-heading"><div><span className="cpu-eyebrow">LIVE OPERATIONS</span><h2>Today&apos;s production</h2></div><button type="button" aria-label="More options">•••</button></div>
       <div className="cpu-booking-list">{todayOrders.length ? todayOrders.map((order) => { const lifecycle = cpuLifecycle(order); return <button type="button" className={`cpu-booking cpu-booking--${order.cancellationNotice ? "cancelled" : lifecycle}`} key={order.canonicalId} onClick={() => open(order)}><time>{cpuRequiredTime(order)}</time><div><strong>{order.clientName || cpuDestinationLabel(order)}</strong><small>{cpuSourceLabel(order)} · {cpuDestinationLabel(order)}{order.guestCount !== undefined ? `　♙ ${order.guestCount} guests` : ""}</small></div><span className={`cpu-mini-status cpu-mini-status--${order.cancellationNotice ? "cancelled" : lifecycle}`}>{order.cancellationNotice ? "Cancelled" : cpuLifecycleLabels[lifecycle]}</span><b>›</b></button>; }) : <div className="cpu-empty cpu-empty--rail"><h3>No production scheduled today</h3><p>Real CPU work for this date will appear here.</p></div>}</div>
