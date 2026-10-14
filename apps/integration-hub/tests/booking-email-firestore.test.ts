@@ -16,14 +16,14 @@ test("canonical transitions atomically queue distinct lifecycle obligations; ret
   assert.equal(process.env.FIKA_RUNTIME_MODE || "local", "local");
   const key = `email-test-${crypto.randomUUID()}`;
   const now = new Date().toISOString();
-  const menu = { canonicalId: `hospitality-menu-item:${key}`, dataHash: "test", entityType: "Hospitality Menu Item", lifecycleStatus: "published", record: { lifecycleState: "active", name: "Test lunch", unitPrice: 12, providerMappings: [{ provider: "mnk-booking-platform", sourceItemId: key }] } } as CanonicalRecord;
-  const payload = { bookingId: key, siteId: `oploc:${key}`, site: key, submittedAt: now, client: { name: "Test Host", companyName: "Test", email: "host@example.test" }, event: { eventDate: "2026-10-19", startTime: "12:00", guestCount: 3 }, order: { items: [{ itemId: key, unitPrice: .01, quantity: 3, lineTotal: .01 }], netTotal: .01 } };
+  const menu = { canonicalId: `hospitality-menu-item:${key}`, dataHash: "test", entityType: "Hospitality Menu Item", lifecycleStatus: "published", record: { lifecycleState: "active", name: "Test lunch", unitPrice: 12, providerMappings: [{ provider: "cfc-hospitality-brochure", sourceItemId: key }] } } as CanonicalRecord;
+  const payload = { bookingId: key, siteId: "cfc", site: "CFC", submittedAt: now, client: { name: "Test Host", companyName: "Test", email: "host@example.test" }, event: { eventDate: "2026-10-19", startTime: "12:00", guestCount: 3 }, order: { items: [{ itemId: key, unitPrice: .01, quantity: 3, lineTotal: .01 }], netTotal: .01 } };
   const mappingRef = db.collection("integrationHubSourceMappings").doc(key);
   const oploc = `oploc:${key}`;
   await db.collection("integrationHubCanonical").doc(stableDocumentId(menu.canonicalId)).set(menu);
   await db.collection("integrationHubCanonical").doc(stableDocumentId(oploc)).set({ canonicalId: oploc, entityType: "OPLOC", lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active" } });
   const actor = { uid: "test-multi-site-manager", role: "integration-admin" } as Actor;
-  await mappingRef.set({ sourceIdentifier: key, sourceEntityType: "provider-location", mappingStatus: "confirmed", oplocId: oploc });
+  await mappingRef.set({ sourceProvider: "hospitality-booking-platform", sourceIdentifier: "cfc", sourceEntityType: "provider-location", mappingStatus: "confirmed", oplocId: oploc });
   const ingested = await ingestMnkBooking(payload);
   let booking: CanonicalBooking = ingested.booking;
   assert.equal(ingested.created, true);

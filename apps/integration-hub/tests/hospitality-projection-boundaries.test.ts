@@ -29,7 +29,7 @@ test("Hospitality portal mapping authorization uses an exact bounded lookup", ()
 });
 
 test("Hospitality booking ingest does not enumerate canonical or source-mapping collections", () => {
-  const ingest = service.slice(service.indexOf("export async function ingestMnkBooking"));
+  const ingest = service.slice(service.indexOf("async function ingestBooking("));
   assert.doesNotMatch(ingest, /transaction\.get\(canonical\(\)\)/);
   assert.doesNotMatch(ingest, /transaction\.get\(sourceMappings\(\)\)/);
   assert.match(ingest, /where\("entityType", "==", "Hospitality Menu Item"\)/);
