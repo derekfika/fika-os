@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
 import { cpuProjectionToOrders } from "../../lib/cpu-dashboard-adapter";
 import { loadCpuAllergenProjection } from "../lib/cpu-allergen-projection-loader";
+import { redirectExpiredCpuSession } from "../lib/cpu-session-navigation";
 import AllergenReviewMatrix from "../ui/AllergenReviewMatrix";
 import { SignatureModal } from "../ui/HospitalityAllergenDetail";
 import { buildAllergenReviewRows, deliveredInMenuOrdersForServiceDate, destination, orderDate } from "../../lib/production-day";
@@ -163,6 +164,7 @@ export default function CpuAllergenReviewPage() {
     const orderIds = masterOrders.map(order => order.canonicalId);
     const orderLabels = Object.fromEntries(masterOrders.map(order => [order.canonicalId, destination(order)]));
     const response = await fetch(`/api/production-plan?matrixStatus=1&orderIds=${encodeURIComponent(orderIds.join(","))}`, { cache: "no-store" });
+    redirectExpiredCpuSession(response);
     if (!response.ok) throw new Error("Signature status could not be refreshed. Reload the review before continuing.");
     const body = await response.json() as { matrixStatuses?: MatrixStatus[] };
     const statuses = body.matrixStatuses || [];
@@ -242,6 +244,7 @@ export default function CpuAllergenReviewPage() {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ action: "retry-materialization", orderId: order.canonicalId, expectedLineage }),
           });
+          redirectExpiredCpuSession(response);
           const body = await response.json().catch(() => undefined) as { error?: { code?: string; message?: string }; materializationDelivery?: { status?: string } | null } | undefined;
           const deliveryStatus = body?.materializationDelivery?.status;
           if (body?.error?.code === "CPU_RELEASE_ALREADY_CURRENT") return undefined;
@@ -334,6 +337,7 @@ export default function CpuAllergenReviewPage() {
           attestation: "I confirm that I reviewed the complete CPU Delivered-In service-date allergen matrix and the recorded evidence is accurate to the best of my knowledge.",
         }),
       });
+      redirectExpiredCpuSession(response);
       const body = await response.json() as {
         error?: { message?: string };
         results?: Array<{ orderId: string; ok: boolean; error?: string }>;
@@ -390,6 +394,7 @@ export default function CpuAllergenReviewPage() {
           operations: masterOrders.map(order => ({ action: "reopen-review", orderId: order.canonicalId })),
         }),
       });
+      redirectExpiredCpuSession(response);
       const body = await response.json() as { results?: Array<{ ok: boolean; error?: string }> };
       if (!response.ok || body.results?.some(result => !result.ok)) {
         throw new Error(body.results?.find(result => !result.ok)?.error || "The allergen review could not be reopened.");

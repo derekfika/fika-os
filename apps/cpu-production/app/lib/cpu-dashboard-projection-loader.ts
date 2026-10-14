@@ -2,6 +2,7 @@
 
 import { readCpuProjection, writeCpuProjection, type CpuProjectionCacheEntry } from "./cpu-indexeddb";
 import { authorityMarkerOf, isTrustedCachedProjection } from "./cpu-cache-trust";
+import { redirectExpiredCpuSession } from "./cpu-session-navigation";
 
 /**
  * The CPU dashboard's projection load: IndexedDB-first with a manifest head check, extracted from the page so the real cache-hit
@@ -21,7 +22,10 @@ export type CpuDashboardLoadInput = { view: "day" | "week"; date: string; scope:
 export type CpuDashboardLoadResult = { projection?: Projection; error?: string; cacheHit?: boolean; bodyRequests: number };
 
 const defaults = (): CpuDashboardLoaderDependencies => ({ fetch: globalThis.fetch.bind(globalThis), read: (key, cacheScope) => readCpuProjection<Projection>(key, cacheScope), write: writeCpuProjection });
-const readBody = async <T>(response: Response) => await response.json().catch(() => ({})) as T;
+const readBody = async <T>(response: Response) => {
+  redirectExpiredCpuSession(response);
+  return await response.json().catch(() => ({})) as T;
+};
 
 export async function loadCpuDashboardProjection(input: CpuDashboardLoadInput, onCached?: (projection: Projection) => void, dependencies: CpuDashboardLoaderDependencies = defaults()): Promise<CpuDashboardLoadResult> {
   const isDay = input.view === "day";
@@ -48,8 +52,10 @@ export async function loadCpuDashboardProjection(input: CpuDashboardLoadInput, o
     try {
       const head = await dependencies.fetch(`/api/production?projectionHead=1&${target}`, { cache: "no-store" });
       const headBody = await readBody<{ lastChangeSequence?: number; packageVersion?: number; contentHash?: string; sourceVersion?: string }>(head);
+      if (head.status === 401) return { error: "Your FIKA OS session has expired. Sign in again to continue.", bodyRequests };
       if (head.ok && Number(headBody.lastChangeSequence || 0) === cached.lastChangeSequence && Number(headBody.packageVersion || 0) === Number(cached.packageVersion || 0) && headBody.contentHash === cached.contentHash && headBody.sourceVersion === cached.sourceVersion) return { projection: cached.value, cacheHit: true, bodyRequests };
       const { response, body } = await fetchBody();
+      if (response.status === 401) return { error: "Your FIKA OS session has expired. Sign in again to continue.", bodyRequests };
       if (response.ok && body.projection) { await store(body.projection, body.package); return { projection: body.projection, bodyRequests }; }
       return { projection: cached.value, bodyRequests };
     } catch { return { projection: cached.value, bodyRequests }; }

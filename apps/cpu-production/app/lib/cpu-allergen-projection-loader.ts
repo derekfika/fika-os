@@ -5,6 +5,7 @@ import type { CpuDayProjection } from "../../lib/cpu-projection";
 import type { ProductionScope } from "../../lib/production-scope";
 import { readCpuProjection, writeCpuProjection, type CpuProjectionCacheEntry } from "./cpu-indexeddb";
 import { authorityMarkerOf, isTrustedCachedProjection } from "./cpu-cache-trust";
+import { redirectExpiredCpuSession } from "./cpu-session-navigation";
 
 type PackageIdentity = { packageVersion?: number; contentHash?: string; sourceVersion?: string };
 type ProjectionResponse = { projection?: CpuDayProjection; package?: PackageIdentity; error?: { code?: string; message?: string } };
@@ -43,6 +44,7 @@ function hasAuthoritativeIdentity(head: ProjectionHead, cached: ProjectionCacheE
 }
 
 async function json<T>(response: Response) {
+  redirectExpiredCpuSession(response);
   return await response.json().catch(() => ({})) as T;
 }
 
@@ -80,6 +82,7 @@ export async function loadCpuAllergenProjection(serviceDate: string, scope: Prod
   if (cached?.value && isTrustedCachedProjection(cached)) {
     try {
       const headResponse = await dependencies.fetch(`/api/production?projectionHead=1&serviceDate=${encodeURIComponent(serviceDate)}`, { cache: "no-store" });
+      redirectExpiredCpuSession(headResponse);
       if (!headResponse.ok) throw new Error(CPU_ALLERGEN_FRESHNESS_ERROR);
       const head = await json<ProjectionHead>(headResponse);
       const unchanged = hasAuthoritativeIdentity(head, cached)

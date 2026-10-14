@@ -1,4 +1,7 @@
+import { redirectExpiredCpuSession } from "./cpu-session-navigation";
+
 export async function readApiResponse<T>(response: Response): Promise<T> {
+  redirectExpiredCpuSession(response);
   const text = await response.text();
   try {
     return JSON.parse(text) as T;
