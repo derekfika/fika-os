@@ -246,5 +246,5 @@ test("explicit CPU reconciliation treats package absence as a refresh reason", a
   const reconciliation = route.slice(route.indexOf("const storedStartedAt"));
   assert.match(reconciliation, /cpuProjectionPackageIsCurrent/);
   assert.match(reconciliation, /!packageCurrent/);
-  assert.match(reconciliation, /rebuildCpuDayProjection\(request, projectionDate, undefined, \{ recoverPackageDivergence: true \}\)/, \"explicit reconciliation is one of the two callers that may request authoritative divergence recovery\");
+  assert.match(reconciliation, /rebuildCpuDayProjection\(request, projectionDate, undefined, \{ recoverPackageDivergence: true \}\)/, "explicit reconciliation is one of the callers that may request authoritative divergence recovery");
 });
