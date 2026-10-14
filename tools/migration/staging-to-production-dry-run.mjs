@@ -56,6 +56,7 @@ const hash = (doc) => createHash("sha256").update(JSON.stringify(doc.fields || {
 const TEST_DISH = /^(dish:Thursday Dish Revised|menu-item:local:fika-autouat-|sandwich:deli-style-sandwich-lunch:test-)/i;
 const HUB_MIGRATE_TYPES = new Set(["OPLOC", "Address", "Hospitality Menu Item", "Hospitality Menu Offering", "Hospitality Menu Price", "Hospitality Brochure Import"]);
 const HUB_DEV_STAFFING = new Set(["Site Role Assignment", "Site Staffing Requirement", "Staffing Role"]);
+const HISTORICAL_PUBLISHED_WEEKS = new Set(["rolling-week:2026-08-31", "rolling-week:2026-09-07", "rolling-week:2026-09-14", "rolling-week:2026-09-21", "rolling-week:2026-10-05", "rolling-week:2026-10-12"]);
 const MISTAKEN_MAPPING = (f) => f.sourceProvider === "mnk-booking-platform" && f.sourceEntityType === "site-label" && ["angel-court", "one angel court"].includes(String(f.sourceIdentifier));
 
 /** returns { action: MIGRATE|DO_NOT_MIGRATE|REVIEW, reason } for a doc of a root collection. `ctx` carries cross-collection sets. */
@@ -66,7 +67,7 @@ function classify(collection, doc, f, ctx) {
       if (HUB_MIGRATE_TYPES.has(f.entityType)) return { action: "MIGRATE", reason: `governed master/reference record (${f.entityType})` };
       if (HUB_DEV_STAFFING.has(f.entityType)) return { action: "DO_NOT_MIGRATE", reason: "development-model staffing record created by the local Codex staffing import" };
       if (["Service Arrangement", "Service Definition", "Operational Area", "Operational Area Type", "Equipment Type", "Equipment Asset"].includes(f.entityType)) return { action: "REVIEW", reason: "governed operational configuration created as development model; business must confirm for production (Delivered-In access depends on Service Arrangements)" };
-      if (["Employment", "Legend"].includes(f.entityType)) return { action: "REVIEW", reason: "BrightHR-derived personal/HR record in needs-review; not required by the launch apps; privacy review first" };
+      if (["Employment", "Legend"].includes(f.entityType)) return { action: "DO_NOT_MIGRATE", reason: "APPROVED EXCLUSION: BrightHR-derived HR/personal record; reviewed separately after launch" };
       if (["Product Category", "Site", "Hospitality Brochure Candidate"].includes(f.entityType)) return { action: "REVIEW", reason: "legacy import / draft candidate in needs-review or draft; confirm production need" };
       return { action: "REVIEW", reason: "unclassified canonical entity type" };
     case "integrationHubSourceMappings":
@@ -80,13 +81,15 @@ function classify(collection, doc, f, ctx) {
     case "fikaMenuPlanningCatalogue":
       return TEST_DISH.test(id) ? { action: "DO_NOT_MIGRATE", reason: "UAT/test dish" } : { action: "MIGRATE", reason: "saved dish / recipe catalogue record (stable ID preserved)" };
     case "fikaMenuPlanningWeeks":
-      return f.status === "imported" ? { action: "MIGRATE", reason: "historical imported Meal Planner week (no publication state)" } : { action: "REVIEW", reason: `week status '${f.status}' is tied to staging publications/UAT; migrating it would carry publication state` };
+      if (f.status === "imported") return { action: "MIGRATE", reason: "historical imported Meal Planner week (no publication state)" };
+      if (f.status === "published" && idOf(doc).endsWith(":day") === false && HISTORICAL_PUBLISHED_WEEKS.has(id.split("/").pop())) return { action: "MIGRATE", transform: "stripPublicationState", reason: "APPROVED: historical week 31 Aug - 12 Oct migrated as historical planning data with ALL publication state stripped" };
+      return { action: "DO_NOT_MIGRATE", reason: `APPROVED EXCLUSION: week status '${f.status}' (19 Oct draft) is not migrated at this stage` };
     case "fikaCpuProductionItemsV1":
       return TEST_DISH.test(id) ? { action: "DO_NOT_MIGRATE", reason: "UAT/test saved sandwich" } : { action: "MIGRATE", reason: "saved sandwich/production item library (allergen checker)" };
     case "authmodApplications":
       return { action: "MIGRATE", reason: "application registry (no user identity data)" };
     case "authmodAccessHeads": case "authmodAppAssignments": case "authmodAuthorityGrants": case "authmodCustodianAssignments": case "authmodIdentities": case "authmodSiteAssignments":
-      return { action: "REVIEW", reason: "AUTHMOD access data is bound to STAGING Firebase Auth UIDs; production access must be established deliberately (fail-closed)" };
+      return { action: "DO_NOT_MIGRATE", reason: "APPROVED EXCLUSION: staging UID-bound AUTHMOD identity/grant/assignment data is never copied; production access is bootstrapped from production Firebase Auth identities by email" };
     default:
       return { action: "DO_NOT_MIGRATE", reason: EXCLUDE_REASON[collection] || "not on the migration allow-list" };
   }
@@ -132,7 +135,7 @@ async function main() {
       let status = "create";
       if (!tgt.error && tgt.ids.includes(c)) { const g = await call(`${api(TARGET)}/${idOf(r.d)}`); if (g.ok) status = hash({ fields: g.body.fields }) === hash(r.d) ? "identical" : "conflict"; }
       tally.destination[status === "create" ? "toCreate" : status]++;
-      create.push({ sourcePath: `${SOURCE}/${idOf(r.d)}`, destinationPath: `${TARGET}/${idOf(r.d)}`, status });
+      create.push({ sourcePath: `${SOURCE}/${idOf(r.d)}`, destinationPath: `${TARGET}/${idOf(r.d)}`, status, ...(r.transform ? { transform: r.transform } : {}) });
     }
     report.collections[c] = tally;
   }
