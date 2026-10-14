@@ -127,7 +127,14 @@ async function recoverDivergedHostedPackage(store: ReadPackageStore, ref: Fireba
   // Corruption is never repaired here: the old package must still verify, otherwise this stays an integrity failure.
   const oldBytes = await store.get(observed.manifest.objectName);
   if (!oldBytes) throw new Error(`Read package ${observed.manifest.objectName} is unavailable.`);
-  decodeReadPackage<{ projection: CpuProjectionPackage }>(observed.manifest, oldBytes);
+  const predecessor = decodeReadPackage<{ projection: CpuProjectionPackage }>(observed.manifest, oldBytes); // also verifies the content hash
+  // The predecessor must be internally consistent with the head that is being replaced, otherwise this is not a divergence we can reason
+  // about (and not something to repair): fail closed, publish and promote nothing.
+  if (cpuProjectionContentHash(predecessor.projection) !== observed.sourceHash
+    || observed.manifest.sourceHash !== observed.sourceHash
+    || sequenceOf(observed.manifest) !== observed.sourceSequence) {
+    throw Object.assign(new Error("The current CPU package is inconsistent with its head; it will not be used as a recovery predecessor."), { code: "CPU_PACKAGE_RECOVERY_PREDECESSOR_INCONSISTENT", status: 409 });
+  }
   if (encoded.manifest.objectName === observed.manifest.objectName) throw staleRecovery();
   // A NEW immutable object. The old one is never overwritten.
   await store.putImmutable(encoded.manifest.objectName, encoded.bytes, encoded.manifest.contentHash);
@@ -140,12 +147,15 @@ async function recoverDivergedHostedPackage(store: ReadPackageStore, ref: Fireba
     const head = snapshot.exists ? snapshot.data() as CpuPackageHead : undefined;
     const document = await transaction.get(cpuProjections().doc(recovery.authoritativeDocumentId));
     const stored = document.data() as { lastChangeSequence?: number; projectionContentHash?: string } | undefined;
+    const documentUnchanged = document.exists && Number(stored?.lastChangeSequence || 0) === incomingSequence && stored?.projectionContentHash === sourceHash;
+    // The authoritative document must STILL hold the incoming content for any outcome, including settling on a winner: if it changed
+    // after the winner promoted, the winner's package no longer represents it, so this recovery is stale (reload and retry).
+    if (!documentUnchanged) throw staleRecovery();
     // another recoverer already promoted a package for exactly this authoritative content: settle on it
     if (head?.state === "current" && head.manifest && head.sourceSequence === incomingSequence && head.sourceHash === sourceHash && head.manifest.packageVersion > observed.packageVersion) return head.manifest;
     const headUnchanged = head?.state === "current" && head.manifest !== undefined && head.sourceSequence === observed.sourceSequence && head.sourceHash === observed.sourceHash
       && head.manifest.packageVersion === observed.packageVersion && head.manifest.contentHash === observed.contentHash;
-    const documentUnchanged = document.exists && Number(stored?.lastChangeSequence || 0) === incomingSequence && stored?.projectionContentHash === sourceHash;
-    if (!headUnchanged || !documentUnchanged) throw staleRecovery();
+    if (!headUnchanged) throw staleRecovery();
     transaction.set(ref, {
       state: "current", sourceSequence: incomingSequence, sourceHash, manifest: encoded.manifest, updatedAt: new Date().toISOString(),
       recovery: { reason: "authoritative_divergence", at: new Date().toISOString(), replaced: { packageVersion: observed.packageVersion, contentHash: observed.contentHash, sourceHash: observed.sourceHash } },

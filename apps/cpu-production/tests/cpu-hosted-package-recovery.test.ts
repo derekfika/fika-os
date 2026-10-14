@@ -254,3 +254,55 @@ test("recoverMissingCpuWeekProjection (the real load-time recovery) repairs the 
     assert.equal(store.puts.length, putsBefore, "reading does not publish anything");
   } finally { globalThis.fetch = realFetch; }
 });
+
+// ---- review round: settle-on-winner must still honour the authoritative-document CAS; predecessor must be internally consistent ---------
+test("settle-on-winner cannot bypass the authoritative-document CAS: if the document changed after the winner promoted, the loser is STALE, not 'recovered'", opts, async () => {
+  const date = nextWeek();
+  const seed = await seedDivergence("week", date);
+  const hashX = cpuProjectionContentHash(seed.newProjection);
+  const version = seed.oldManifest.packageVersion + 1;
+  const encodeX = () => encodeReadPackage("snapshots/cpu-production/projection-week", version, { projection: seed.newProjection }, 2, {
+    contractVersion: "cpu-production.projection.v1", sourceVersion: `cpu-change-${SEQ}`, sourceHash: hashX, scope: `week:${date}`,
+  });
+  // Y: the authoritative document changes again, still at sequence N
+  const projectionY = weekProjection(date, [order(`production-order:v1:menu-planning:${run}:Y-${date}`, date)]);
+  let winner: { packageVersion: number; objectName: string } | undefined;
+  // recoverers A and B both observed the old head + document X. A promotes X, the document becomes Y, THEN B reaches its final transaction.
+  store.onPut = async () => {
+    store.onPut = undefined;
+    winner = await publishMonotonicCpuPackage(store, seed.key, encodeX(), hashX, { divergenceRecovery: { authoritativeDocumentId: seed.id } });
+    await setDocument(seed.id, projectionY as never);
+  };
+  await assert.rejects(
+    () => publishMonotonicCpuPackage(store, seed.key, encodeX(), hashX, { divergenceRecovery: { authoritativeDocumentId: seed.id } }),
+    (error: { code?: string }) => error.code === "CPU_PACKAGE_RECOVERY_STALE",
+    "B must NOT return A's package as a successful recovery once the document no longer holds X",
+  );
+  assert.ok(winner, "A did promote X");
+  const head = (await readHead(seed.key))!;
+  assert.equal(head.manifest.objectName, winner!.objectName, "B did not alter the head A promoted");
+  // the document now holds Y while the head holds X: the next recovery (for Y) is a fresh, separately validated promotion
+  const next = await publishCpuProjectionPackage(projectionY, { authoritativeDivergenceRecovery: true });
+  assert.ok(next.packageVersion > version);
+  assert.equal((await readHead(seed.key))!.sourceHash, cpuProjectionContentHash(projectionY));
+});
+
+for (const variant of ["head source hash", "manifest source hash", "manifest sequence"] as const) {
+  test(`recovery predecessor hardening: a package with valid bytes but inconsistent ${variant} metadata is never used as a predecessor`, opts, async () => {
+    const date = nextWeek();
+    const seed = await seedDivergence("week", date);
+    const head = (await readHead(seed.key))!;
+    const tampered = structuredClone(head);
+    if (variant === "head source hash") tampered.sourceHash = "f".repeat(64);
+    if (variant === "manifest source hash") tampered.manifest.sourceHash = "e".repeat(64);
+    if (variant === "manifest sequence") tampered.manifest.sourceVersion = `cpu-change-${SEQ - 1}`;
+    await headRef(seed.key).set(tampered);
+    const putsBefore = store.puts.length;
+    await assert.rejects(
+      () => publishCpuProjectionPackage(seed.newProjection, { authoritativeDivergenceRecovery: true }),
+      (error: { code?: string }) => variant === "manifest sequence" ? true : error.code === "CPU_PACKAGE_RECOVERY_PREDECESSOR_INCONSISTENT",
+    );
+    assert.deepEqual(await readHead(seed.key), tampered, "nothing was promoted");
+    assert.equal(store.puts.length, putsBefore, "nothing was published");
+  });
+}
