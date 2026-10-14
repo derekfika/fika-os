@@ -3,7 +3,7 @@ import path from "node:path";
 import { FieldValue } from "firebase-admin/firestore";
 import { db } from "./firebase-admin";
 import { parseAngelCourtWorkbook, type AngelCourtInboxMetadata } from "./angel-court-inbox";
-import { ingestMnkBooking, type MnkBookingPayload } from "./hospitality-booking-service";
+import { ingestCalendarBooking, type MnkBookingPayload } from "./hospitality-booking-service";
 import { hydrateCalendarAttachments, listCpuCalendarEvents } from "./google-calendar-client";
 
 export const CPU_CALENDAR_ADAPTER_VERSION = "fika.cpu-calendar-adapter.v1";
@@ -134,7 +134,7 @@ export async function runCpuCalendarScan(options: { force?: boolean; now?: Date 
       const needsReview = candidate.warnings.length > 0 || candidate.items.length === 0;
       const ref = db.collection("cpuCalendarCandidates").doc(sourceKey.replace(/[^A-Za-z0-9_-]/g, "_"));
       if (needsReview) { review += 1; await ref.set({ sourceKey, calendarId: CPU_CALENDAR_ID, calendarEventId: event.id, event, candidate, sourcePayload: payload, runId: run.id, reviewState: "needs_review", updatedAt: FieldValue.serverTimestamp() }, { merge: true }); continue; }
-      const result = await ingestMnkBooking(payload);
+      const result = await ingestCalendarBooking(payload);
       if (result.created) imported += 1; else updated += 1;
       await ref.set({ sourceKey, calendarId: CPU_CALENDAR_ID, calendarEventId: event.id, event, candidate, sourcePayload: payload, canonicalBookingId: result.booking.canonicalId, runId: run.id, reviewState: "ingested", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     }

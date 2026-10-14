@@ -38,7 +38,7 @@ test("notification identity is deterministic per booking event version", () => {
 test("RCoA booking notifications use the client brand without changing the shared lifecycle", () => {
   const rcoa = {
     ...booking,
-    source: { ...booking.source, sourceBookingId: "RCOA-20261005103000-AB12" },
+    source: { ...booking.source, provider: "rcoa-booking-platform", sourceBookingId: "RCOA-20261005103000-AB12" },
     service: { ...booking.service, portalSiteId: "rcoa", portalSiteLabel: "RCoA Hospitality" },
   } as CanonicalBooking;
   const submitted = buildBookingSubmittedEmail(rcoa);

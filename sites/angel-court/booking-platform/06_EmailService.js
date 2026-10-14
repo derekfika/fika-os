@@ -115,6 +115,7 @@ function buildBookingNotificationText_(booking, eventType) {
       booking.event.floorLevel,
       booking.event.roomOrArea
     ].filter(Boolean).join(" / "),
+    buildingChargeSummary_(booking.order.buildingCharges),
     "Estimated total: " + formatNotificationMoney_(booking.order.netTotal),
     "",
     "This request is subject to confirmation. The hospitality team will contact you once it has been reviewed.",
@@ -146,8 +147,9 @@ function buildBookingNotificationHtml_(booking, eventType) {
       booking.event.floorLevel,
       booking.event.roomOrArea
     ].filter(Boolean).join(" / ")],
+  ].concat(buildingChargeEmailRows_(booking.order.buildingCharges), [
     ["Estimated total", formatNotificationMoney_(booking.order.netTotal)]
-  ];
+  ]);
 
   return [
     '<div style="font-family:Avenir,Arial,sans-serif;color:#323437;max-width:620px">',
@@ -183,6 +185,21 @@ function buildBookingNotificationHtml_(booking, eventType) {
 
 function formatNotificationMoney_(value) {
   return "GBP " + Number(value || 0).toFixed(2);
+}
+
+function buildingChargeSummary_(charges) {
+  return buildingChargeEmailRows_(charges).map(function(row) {
+    return row[0] + ": " + row[1];
+  }).join("\n");
+}
+
+function buildingChargeEmailRows_(charges) {
+  if (!charges) return [];
+  return [
+    charges.housekeeping && charges.housekeeping.total > 0 ? ["Housekeeping", formatNotificationMoney_(charges.housekeeping.total)] : null,
+    charges.security && charges.security.total > 0 ? ["Security", formatNotificationMoney_(charges.security.total)] : null,
+    charges.aircon && charges.aircon.total > 0 ? ["Aircon after 7pm", formatNotificationMoney_(charges.aircon.total)] : null
+  ].filter(Boolean);
 }
 
 function escapeNotificationHtml_(value) {
