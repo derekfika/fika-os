@@ -45,7 +45,9 @@ export function buildCpuDayProjection(serviceDate: string, orders: ProductionOrd
 /** Digest of the canonical orders (cancelled included) for one service day - the same tuple the Hub digest endpoint buckets by. */
 export const canonicalDayDigest = (rawOrders: ProductionOrder[], serviceDate: string) => canonicalProductionDigest(rawOrders.filter((order) => order.serviceDate === serviceDate));
 
-export async function materialiseCpuDayProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number) {
+/** `recoverPackageDivergence` is passed ONLY by explicit recovery/reconciliation, never by event-driven rebuilds (see cpu-read-package). */
+export type CpuRebuildOptions = { recoverPackageDivergence?: boolean };
+export async function materialiseCpuDayProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number, options: CpuRebuildOptions = {}) {
   const [rawOrders, previous] = await Promise.all([productionQueue(request, serviceDate), cpuProjections().doc(serviceDate).get()]);
   recordDataAccess({ app: "cpu-production", operation: "projection.by-service-date", source: "FIRESTORE", documents: previous.exists ? 1 : 0, firestoreReadKind: "document" });
   const orders = await withReadableDestinations(request, rawOrders);
@@ -53,19 +55,19 @@ export async function materialiseCpuDayProjection(request: NextRequest, serviceD
   const projection: CpuDayProjection = { ...buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1), canonicalDigest: canonicalDayDigest(rawOrders, serviceDate) };
   const written = await writeCpuProjectionMonotonically(cpuProjections().doc(serviceDate), projection, { authoritativeRebuild: true });
   const current = written.projection as CpuDayProjection;
-  const manifest = await publishCpuProjectionPackage(current);
+  const manifest = await publishCpuProjectionPackage(current, { authoritativeDivergenceRecovery: options.recoverPackageDivergence });
   recordDeliveredInReadBudget({ stage: "day_projection_rebuild", projectionDocs: 1, selectedIds: orders.length, rebuildScopes: 1 });
   return { projection: current, manifest };
 }
 
-export async function rebuildCpuDayProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number) {
-  return (await materialiseCpuDayProjection(request, serviceDate, lastChangeSequence)).projection;
+export async function rebuildCpuDayProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number, options: CpuRebuildOptions = {}) {
+  return (await materialiseCpuDayProjection(request, serviceDate, lastChangeSequence, options)).projection;
 }
 
 const missingDayRecoveryInFlight = new Map<string, Promise<{ projection: CpuDayProjection; manifest: ReadPackageManifest }>>();
 
 /** Missing derived data is rebuildable; callers must exclude integrity failures first. */
-export async function recoverMissingCpuDayProjection(request: NextRequest, serviceDate: string, materialise = materialiseCpuDayProjection) {
+export async function recoverMissingCpuDayProjection(request: NextRequest, serviceDate: string, materialise: (request: NextRequest, serviceDate: string) => Promise<{ projection: CpuDayProjection; manifest: ReadPackageManifest }> = (r, d) => materialiseCpuDayProjection(r, d, undefined, { recoverPackageDivergence: true })) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) throw Object.assign(new Error("A bounded service date is required."), { status: 400 });
   const existing = missingDayRecoveryInFlight.get(serviceDate);
   if (existing) return existing;
@@ -74,7 +76,7 @@ export async function recoverMissingCpuDayProjection(request: NextRequest, servi
   return recovery;
 }
 
-export async function rebuildCpuWeekProjection(request: NextRequest, weekCommencing: string, lastChangeSequence?: number) {
+export async function rebuildCpuWeekProjection(request: NextRequest, weekCommencing: string, lastChangeSequence?: number, options: CpuRebuildOptions = {}) {
   const [rawOrders, previous] = await Promise.all([productionQueueForWeek(request, weekCommencing), cpuProjections().doc(`week:${weekCommencing}`).get()]);
   recordDataAccess({ app: "cpu-production", operation: "projection.by-week", source: "FIRESTORE", documents: previous.exists ? 1 : 0, firestoreReadKind: "document" });
   const orders = await withReadableDestinations(request, rawOrders);
@@ -83,7 +85,7 @@ export async function rebuildCpuWeekProjection(request: NextRequest, weekCommenc
   const week: CpuWeekProjection = { authorityBindingVersion: projection.authorityBindingVersion, serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, canonicalDigest: canonicalProductionDigestSet(rawOrders), orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };
   const written = await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), week, { authoritativeRebuild: true });
   if (written.status === "superseded") return written.projection as CpuWeekProjection;
-  await publishCpuProjectionPackage(written.projection as CpuWeekProjection);
+  await publishCpuProjectionPackage(written.projection as CpuWeekProjection, { authoritativeDivergenceRecovery: options.recoverPackageDivergence });
   recordDeliveredInReadBudget({ stage: "week_projection_rebuild", projectionDocs: 1, selectedIds: orders.length, rebuildScopes: 1 });
   return written.projection as CpuWeekProjection;
 }
@@ -103,7 +105,7 @@ const defaultEmptyWeekDependencies: EmptyWeekInitialisationDependencies = {
   loadOrders: productionQueueForWeek,
   readProjection: async (weekCommencing) => cpuProjections().doc(`week:${weekCommencing}`).get(),
   writeProjection: async (weekCommencing, projection) => { await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), projection, { authoritativeRebuild: true }); },
-  publishPackage: publishCpuProjectionPackage,
+  publishPackage: projection => publishCpuProjectionPackage(projection, { authoritativeDivergenceRecovery: true }),
 };
 
 function isStoredEmptyWeekProjection(value: unknown, weekCommencing: string): value is CpuWeekProjection {
@@ -180,7 +182,7 @@ export async function recoverMissingCpuWeekProjection(request: NextRequest, week
     const projection: CpuWeekProjection = { authorityBindingVersion: built.authorityBindingVersion, serviceDate: weekCommencing, weekCommencing, revision: built.revision, lastChangeSequence: built.lastChangeSequence, canonicalDigest: canonicalProductionDigestSet(rawOrders), orders: built.orders, summary: built.summary, rebuiltAt: built.rebuiltAt };
     const written = await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), projection, { authoritativeRebuild: true });
     const current = written.projection as CpuWeekProjection;
-    const manifest = await publishCpuProjectionPackage(current);
+    const manifest = await publishCpuProjectionPackage(current, { authoritativeDivergenceRecovery: true });
     recordDeliveredInReadBudget({ stage: "week_projection_recovery", projectionDocs: previous.exists ? 1 : 0, selectedIds: orders.length, rebuildScopes: 1 });
     return { projection: current, manifest };
   })().finally(() => missingWeekRecoveryInFlight.delete(weekCommencing));
