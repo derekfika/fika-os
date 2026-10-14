@@ -24,6 +24,15 @@ test("menu readiness follows the current amended Production Order identity", () 
   assert.match(dashboard, /body\.error\?\.message \|\| body\.readiness\?\.reason/);
 });
 
+test("Completed bookings keep additional charges and a revised quote available, without any hand-off or lifecycle action", () => {
+  assert.match(dashboard, /return \["New", "Reviewed", "Quoted", "Completed"\]\.includes\(status\);/);
+  // a Completed booking with a stale quote offers ONLY the revised quote
+  assert.match(dashboard, /if \(booking\.lifecycleStatus === "Completed" && isBookingQuoteStale\(booking\)\) return \["Quoted"\];/);
+  // the hand-off stays gated on Quoted/Approved, and the Production Order of a Completed booking still stands after a charge revision
+  assert.match(dashboard, /\["Quoted", "Approved"\]\.includes\(booking\.lifecycleStatus\) && Boolean\(current && !isBookingQuoteStale/);
+  assert.match(dashboard, /booking\.lifecycleStatus === "Completed" && Boolean\(booking\.quoteState\?\.revisions\.some/);
+});
+
 test("shared Hospitality dashboard exposes governed additional charges and stale-quote recovery", () => {
   assert.match(dashboard, /action: "set-additional-charges"/);
   assert.match(dashboard, /Manage charges/);

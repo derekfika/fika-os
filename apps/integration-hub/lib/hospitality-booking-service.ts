@@ -1197,8 +1197,9 @@ export async function executeBookingWorkflow(
         ],
       };
       // A quote is not ready for CPU hand-off until its PDF has been persisted.
-      // Keep the active workflow in Quoted; Approved remains a legacy read value.
-      next.lifecycleStatus = "Quoted";
+      // Keep the active workflow in Quoted; Approved remains a legacy read value. A COMPLETED Booking regenerating its quote (for example
+      // after a charge change) stays Completed: it is a new commercial revision only, never a lifecycle change and never a new hand-off.
+      next.lifecycleStatus = current.lifecycleStatus === "Completed" ? "Completed" : "Quoted";
     }
     if (command.action === "quote-pdf-status") {
       next.quoteState = {
