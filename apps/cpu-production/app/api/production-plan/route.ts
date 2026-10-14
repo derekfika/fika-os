@@ -604,7 +604,7 @@ async function handlePost(request: NextRequest) {
     const expectedUpdatedAt = storedPlan?.updatedAt;
     const timestamp = now();
     if (command.action === "apply-reused-authority") {
-      const result = await applyReuseCommand(reuseDeps(request), { plan, storedPlan, order: currentOrder as never, actor: auditActor, actorId: actor.uid, at: timestamp, commandId: command.commandId, syncPlanned: async () => { await syncCanonicalLifecycle(request, command.orderId, "planned", "Allergen matrix planned from a previously approved identical sandwich composition."); } });
+      const result = await applyReuseCommand(reuseDeps(request), { plan, storedPlan, order: currentOrder as never, actor: auditActor, actorId: actor.uid, at: timestamp, commandId: command.commandId, syncPlanned: async () => { await syncCanonicalLifecycle(request, command.orderId, "planned", "Allergen matrix planned from a previously approved identical sandwich composition."); return (await loadOrder(request, command.orderId, { fresh: true })) as never; } });
       // Every path answers through the guarded builder, and only after reloading the CURRENT plan AND the LATEST canonical order
       // (never the pre-adoption snapshot held in `currentOrder`): the command may have waited on delivery while the order changed.
       const finalise = (extra: { unchanged?: boolean; materializationDelivery?: unknown }) => finalApplyResponse(allergenAuthorityStore, { orderId: command.orderId, fallbackPlan: result.plan, loadPlan: async id => { const stored = await planRepository.get(id); return stored ? normalisePlanAllergens(stored) : undefined; }, loadOrder: id => loadOrder(request, id, { fresh: true }), ...extra }); // the LATEST canonical order, never a request-cached one

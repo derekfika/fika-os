@@ -76,7 +76,7 @@ export function reopenAdoptingPlan(plan: ProductionPlan, input: { by: string; at
  * is still active and registers the adoption atomically, so an adoption can never commit behind a revocation, and a crash
  * leaves either the whole adoption or nothing. A replay of an adopted plan is a no-op.
  */
-export async function applyReuseCommand(deps: ReuseOrchestrationDeps, input: { plan: ProductionPlan; storedPlan?: ProductionPlan; order: Order; actor: string; actorId: string; at: string; commandId?: string; syncPlanned?: () => Promise<void> }) {
+export async function applyReuseCommand(deps: ReuseOrchestrationDeps, input: { plan: ProductionPlan; storedPlan?: ProductionPlan; order: Order; actor: string; actorId: string; at: string; commandId?: string; syncPlanned?: () => Promise<Order | void> }) {
   const identity = compositionIdentity(input.order);
   if (!identity) throw Object.assign(new Error("This booking has no canonical sandwich composition, so a previous approval cannot be reused. Review it normally."), { status: 409, code: "CPU_ALLERGEN_REUSE_COMPOSITION_UNAVAILABLE" });
   const authority = await deps.store.get(identity.compositionId);
@@ -84,18 +84,22 @@ export async function applyReuseCommand(deps: ReuseOrchestrationDeps, input: { p
   if (already && authority && already.generation === authority.generation && authority.status === "active" && !authority.revocation && authority.reusedBy.some(item => item.orderId === input.plan.orderId && item.generation === authority.generation)) return { plan: input.plan, changed: false as const };
   const decision = evaluateReuse(input.order, input.plan, authority);
   if (!decision.ok || !authority) throw Object.assign(new Error(`The approved allergen authority cannot be reused (${decision.ok ? "authority_missing" : decision.reason}).`), { status: 409, code: `CPU_ALLERGEN_REUSE_${(decision.ok ? "authority_missing" : decision.reason).toUpperCase()}` });
-  const plan = applyReusedAuthority(input.plan, input.order, authority, { by: input.actor, at: input.at });
-  plan.currentAllergenRelease = pendingReusedRelease(plan, input.order, input.at);
+  // ORDERING: the planned sync is a governed Hub transition that advances the Production Order version (and its source lineage).
+  // It must complete BEFORE the release is built, otherwise the release is bound to the pre-transition order and can never
+  // materialise (lineage mismatch). Everything below uses the order as it is AFTER the transition.
+  const synced = input.syncPlanned ? await input.syncPlanned() : undefined;
+  const order = (synced || input.order) as Order;
+  const plan = applyReusedAuthority(input.plan, order, authority, { by: input.actor, at: input.at });
+  plan.currentAllergenRelease = pendingReusedRelease(plan, order, input.at);
   plan.audit.push({ action: "allergen-reused-release-committed", at: input.at, by: input.actor, reason: `Release ${plan.currentAllergenRelease.releaseId} issued from reused authority generation ${authority.generation}; materialization follows the committed release.` });
-  if (input.syncPlanned) await input.syncPlanned();
   plan.updatedAt = input.at; plan.updatedBy = input.actor;
-  const delivery = releaseMaterializationDelivery(plan, plan.currentAllergenRelease, input.order, input.at);
+  const delivery = releaseMaterializationDelivery(plan, plan.currentAllergenRelease, order, input.at);
   let event: Awaited<ReturnType<ProductionPlanRepository["saveAndAppendCpuChange"]>>;
   try {
     event = await deps.plans.saveAndAppendCpuChange(plan, input.storedPlan?.updatedAt, {
-      serviceDate: input.order.serviceDate || input.order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: "apply-reused-authority", actorId: input.actorId, changedAt: input.at,
+      serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: "apply-reused-authority", actorId: input.actorId, changedAt: input.at,
       idempotencyKey: input.commandId || `allergen-reuse:${plan.orderId}:${plan.reusedAllergenAuthority!.authorityId}:${plan.reusedAllergenAuthority!.origin.releaseId}`,
-      propagation: { sourceEntityId: plan.id, serviceDate: input.order.serviceDate || input.order.requiredBy.slice(0, 10), sourceVersion: plan.audit.length, changedAt: input.at, changeType: "amended", order: input.order, logistics: false },
+      propagation: { sourceEntityId: plan.id, serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), sourceVersion: plan.audit.length, changedAt: input.at, changeType: "amended", order, logistics: false },
       deliveries: [delivery],
     }, { registerAdoption: { at: input.at, by: input.actor } });
   } catch (error) {
@@ -103,7 +107,7 @@ export async function applyReuseCommand(deps: ReuseOrchestrationDeps, input: { p
     throw error;
   }
   if (event.duplicate) return { plan: event.plan || plan, changed: false as const, duplicate: true as const };
-  await deps.emit({ order: input.order, plan, sequence: event.sequence, changeType: "apply-reused-authority", at: input.at });
+  await deps.emit({ order, plan, sequence: event.sequence, changeType: "apply-reused-authority", at: input.at });
   return { plan, changed: true as const, sequence: event.sequence, materializationDelivery: delivery };
 }
 

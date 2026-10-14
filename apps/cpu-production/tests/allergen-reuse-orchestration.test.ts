@@ -846,3 +846,31 @@ test("P1 (stale order): the final apply response validates against the LATEST ca
 test("identity schemes (memory repository): sourceMenuItemId and sourceOfferingId are distinct fields; records identified through different fields never reuse each other's authority", async () => {
   await schemeCases.identitySchemeCases({ label: "memory", plans: createProductionPlanRepository(), store, unique: () => `mem${++lineCaseCounter}${Math.random().toString(36).slice(2, 7)}` });
 });
+
+test("apply ordering: the planned sync (Hub version bump) completes BEFORE the release is built, so the release binds to the post-sync order", async () => {
+  const h = await harness();
+  const { o, p } = await h.add("o-synced");
+  let syncCalls = 0;
+  const syncPlanned = async () => { syncCalls++; const bumped = { ...o, version: (o as never as { version: number }).version + 1 } as O; h.orders.set("o-synced", bumped); return bumped as never; };
+  const result = await applyReuseCommand(h.deps as never, { plan: structuredClone(p), storedPlan: p, order: o as never, actor: "cpu", actorId: "u", at: "2026-10-12T11:00:00.000Z", commandId: `reuse-sync-${++seq}-command`, syncPlanned });
+  assert.equal(result.changed, true);
+  assert.equal(syncCalls, 1);
+  const stored = (await h.plans.get("o-synced"))!;
+  const synced = h.orders.get("o-synced")!;
+  const { matrixSignatureScope } = await import("../app/lib/production-plan");
+  assert.equal(stored.currentAllergenRelease?.sourceContentHash, matrixSignatureScope(synced as never, "x")?.sourceContentHash, "release lineage hash is the post-transition order's, not the stale pre-sync one");
+  assert.notEqual(stored.currentAllergenRelease?.sourceContentHash, matrixSignatureScope(o as never, "x")?.sourceContentHash);
+  const ready = await makeReady(h, "o-synced");
+  assert.equal(reusedAuthorityReleaseMatchesOrder(ready.currentAllergenRelease, synced as never, ready.menuItems), true, "the committed release matches the current order, so it can materialise");
+  assert.equal(reusedAuthorityReleaseMatchesOrder(ready.currentAllergenRelease, o as never, ready.menuItems), false, "and would not match the stale pre-sync order");
+  assert.ok(authorityOf().reusedBy.find(item => item.orderId === "o-synced" && item.generation === 1), "reusedBy evidence registered at the authority generation");
+  assert.ok(stored.audit.some(entry => entry.action === "allergen-reused-release-committed"));
+});
+
+test("apply ordering is pinned in source: syncPlanned is awaited before the release is built", async () => {
+  const source = await readFile(new URL("../lib/allergen-reuse-orchestrator.ts", import.meta.url), "utf8");
+  const body = source.slice(source.indexOf("export async function applyReuseCommand"));
+  assert.ok(body.indexOf("await input.syncPlanned()") > 0 && body.indexOf("await input.syncPlanned()") < body.indexOf("pendingReusedRelease(plan, order"), "sync must precede release construction");
+  const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
+  assert.match(route, /syncPlanned: async \(\) => \{[^}]*loadOrder\(request, command\.orderId, \{ fresh: true \}\)/);
+});
