@@ -12,7 +12,7 @@ import { translateAuthmodFirestoreError } from "../lib/authmod-core/firestore-re
 
 const actor: AuthPrincipal = { type: "interactive", id: "admin", displayName: "Test admin", email: "admin@fikacatering.com", identityKind: "person" };
 const decoded = (overrides: Record<string, unknown> = {}) => ({ uid: "firebase:uid", email: "user@fikacatering.com", email_verified: true, auth_time: Math.floor(Date.now() / 1000), ...overrides }) as never;
-const request = (cookie?: string) => ({ cookies: { get: (name: string) => name === "fika_os_session" && cookie ? { value: cookie } : undefined } });
+const request = (cookie?: string) => ({ cookies: { get: (name: string) => name === sessionCookieConfig().name && cookie ? { value: cookie } : undefined } });
 
 test("session cookie exchange uses Firebase session-cookie API and bounded lifetime", async () => {
   let received = 0;
