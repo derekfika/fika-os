@@ -1,5 +1,5 @@
 # Firebase App Hosting PRODUCTION configuration for Integration Hub.
-# Project: fika-os (production). NEVER point this at fika-os-dev. Backend environment name must be 'production'.
+# Project: fika-os (production). NEVER point this at the development or staging project. Backend environment name must be 'production'.
 # Values marked REPLACE_ME_* are business decisions/infrastructure not created yet; tools/migration/check-production-config.mjs refuses to pass while any remain.
 env:
   # Customer email delivery stays OFF at launch. The UAT recipient variables from staging are intentionally not carried across.

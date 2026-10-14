@@ -1,5 +1,5 @@
 # Firebase App Hosting PRODUCTION configuration for Hospitality Booking.
-# Project: fika-os (production). NEVER point this at fika-os-dev. Backend environment name must be 'production'.
+# Project: fika-os (production). NEVER point this at the development or staging project. Backend environment name must be 'production'.
 # Values marked REPLACE_ME_* are business decisions/infrastructure not created yet; tools/migration/check-production-config.mjs refuses to pass while any remain.
 env:
   - variable: FIKA_DATA_SOURCE_TRACE
@@ -47,12 +47,9 @@ env:
   - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     availability: [RUNTIME]
-  # Secret Manager and is never exposed in repository configuration.
-  - variable: GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION
-    value: REPLACE_ME_PRODUCTION_CPU_DRIVE_OWNER_EMAIL
-    availability: [RUNTIME]
+  # GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION intentionally NOT set: no production owner is decided. CPU allergen PDF Drive storage fails closed until it is.
   - variable: FIKA_PDF_RENDERER_URL
-    value: REPLACE_ME_PRODUCTION_PDF_RENDERER_URL
+    value: REPLACE_ME_PENDING_INFRA_PDF_RENDERER_URL
     availability: [RUNTIME]
   - variable: FIKA_PDF_RENDERER_TOKEN
     secret: FIKA_PDF_RENDERER_TOKEN
@@ -60,8 +57,4 @@ env:
   - variable: NEXT_PUBLIC_FIKA_HUB_URL
     value: https://os.fikacatering.com
     availability: [BUILD, RUNTIME]
-  # RCoA (urgent: the client already has the production URL). Owner mailbox for RCoA quote/allergen Drive output.
-  - variable: GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_BE0BECBE_B6CF_4D7F_9C1E_F36E689FEAB2
-    value: REPLACE_ME_PRODUCTION_RCOA_DRIVE_OWNER_EMAIL
-    availability:
-      - RUNTIME
+  # RCoA, Angel Court, CFC and Munich Re Drive owners are intentionally NOT set until confirmed (quote PDF / send-to-CPU stay blocked for them; booking submission needs no Drive).

@@ -1,5 +1,5 @@
 # Firebase App Hosting PRODUCTION configuration for CPU Production.
-# Project: fika-os (production). NEVER point this at fika-os-dev. Backend environment name must be 'production'.
+# Project: fika-os (production). NEVER point this at the development or staging project. Backend environment name must be 'production'.
 # Values marked REPLACE_ME_* are business decisions/infrastructure not created yet; tools/migration/check-production-config.mjs refuses to pass while any remain.
 env:
   - variable: FIKA_DATA_SOURCE_TRACE
@@ -38,15 +38,12 @@ env:
   - variable: HOSPITALITY_BOOKING_BASE_URL
     value: https://hospitality.fikacatering.com
     availability: [BUILD, RUNTIME]
-  # optional because the adapter resolves the default CPU Production path.
-  - variable: GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION
-    value: REPLACE_ME_PRODUCTION_CPU_DRIVE_OWNER_EMAIL
-    availability: [RUNTIME]
+  # GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION intentionally NOT set: no production owner is decided. CPU allergen PDF Drive storage fails closed until it is.
   - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     availability: [RUNTIME]
   - variable: FIKA_PDF_RENDERER_URL
-    value: REPLACE_ME_PRODUCTION_PDF_RENDERER_URL
+    value: REPLACE_ME_PENDING_INFRA_PDF_RENDERER_URL
     availability: [RUNTIME]
   - variable: FIKA_PDF_RENDERER_TOKEN
     secret: FIKA_PDF_RENDERER_TOKEN
