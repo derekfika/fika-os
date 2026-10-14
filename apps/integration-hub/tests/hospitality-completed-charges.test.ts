@@ -27,13 +27,14 @@ const site = (id: string, unitNet: number) => ({ id, kind: "manual" as const, ca
 async function bookingFixture(stopAt: "Quoted" | "Completed" = "Completed") {
   const key = `completed-charges-${crypto.randomUUID()}`;
   const now = new Date().toISOString();
-  const menu = { canonicalId: `hospitality-menu-item:${key}`, dataHash: "test", entityType: "Hospitality Menu Item", lifecycleStatus: "published", record: { lifecycleState: "active", name: "Test lunch", unitPrice: 12, providerMappings: [{ provider: "mnk-booking-platform", sourceItemId: key }] } } as CanonicalRecord;
-  const oploc = `oploc:${key}`;
-  const payload = { bookingId: key, siteId: oploc, site: key, submittedAt: now, client: { name: "Test Host", companyName: "Test", email: "host@example.test" }, event: { eventDate: "2026-10-19", startTime: "12:00", guestCount: 3 }, order: { items: [{ itemId: key, unitPrice: .01, quantity: 3, lineTotal: .01 }], netTotal: .01 } };
-  const mappingRef = db.collection("integrationHubSourceMappings").doc(key);
+  const menu = { canonicalId: `hospitality-menu-item:${key}`, dataHash: "test", entityType: "Hospitality Menu Item", lifecycleStatus: "published", record: { lifecycleState: "active", name: "Test lunch", unitPrice: 12, providerMappings: [{ provider: "angel-court-hospitality-brochure", sourceItemId: key }] } } as CanonicalRecord;
+  // The shared portal accepts only the recognised stable site key and exactly one confirmed hospitality-booking-platform mapping for it.
+  const oploc = "oploc:completed-charges-angel-court";
+  const payload = { bookingId: key, siteId: "angel-court", site: "One Angel Court", submittedAt: now, client: { name: "Test Host", companyName: "Test", email: "host@example.test" }, event: { eventDate: "2026-10-19", startTime: "12:00", guestCount: 3 }, order: { items: [{ itemId: key, unitPrice: .01, quantity: 3, lineTotal: .01 }], netTotal: .01 } };
+  const mappingRef = db.collection("integrationHubSourceMappings").doc("completed-charges-hospitality-booking-platform-angel-court");
   await db.collection("integrationHubCanonical").doc(stableDocumentId(menu.canonicalId)).set(menu);
   await db.collection("integrationHubCanonical").doc(stableDocumentId(oploc)).set({ canonicalId: oploc, entityType: "OPLOC", lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active" } });
-  await mappingRef.set({ sourceIdentifier: key, sourceEntityType: "provider-location", mappingStatus: "confirmed", oplocId: oploc });
+  await mappingRef.set({ sourceProvider: "hospitality-booking-platform", sourceIdentifier: "angel-court", sourceEntityType: "provider-location", mappingStatus: "confirmed", oplocId: oploc });
   let booking: CanonicalBooking = (await ingestMnkBooking(payload)).booking;
   booking = (await executeBookingWorkflow(actor, booking.canonicalId, booking.version, { action: "quote" })).booking;
   const revisionId = booking.quoteState!.currentRevisionId!;
