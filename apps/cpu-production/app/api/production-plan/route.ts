@@ -258,6 +258,17 @@ async function getPlan(request: NextRequest, orderId: string, knownPlan?: Produc
   return plans.get(orderId)!;
 }
 
+/**
+ * The plan for a SELECTED-order read. The per-instance `plans` map is only a request-to-request convenience; the persisted plan is
+ * authoritative, and another Cloud Run instance may have applied/revoked/re-released since this instance cached its copy. Passing the
+ * freshly read persisted plan refreshes the cache entry (one bounded document read), so a GET can never serve a stale draft.
+ */
+async function getPlanForSelectedRead(request: NextRequest, orderId: string) {
+  const stored = await planRepository.get(orderId);
+  if (!stored && !isLocalRuntime()) plans.delete(orderId);
+  return getPlan(request, orderId, stored);
+}
+
 async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<ReturnType<typeof actorFor>>, command: z.infer<typeof MasterSignCommand>) {
   // CPU master signatures are the authority for this review. Menu Planning's
   // allergenSignoff remains its own source field and is deliberately not used
@@ -517,11 +528,11 @@ async function handleGet(request: NextRequest) {
       const selectedOrder = await loadOrder(request, orderId);
       const visible = Boolean(selectedOrder && !(selectedOrder.origin === "hospitality_booking" && selectedOrder.requiresDelivery === false));
       if (request.nextUrl.searchParams.get("download") === "pdf") {
-        const artifact = visible ? (await guardReusedPlan(allergenAuthorityStore, await getPlan(request, orderId), selectedOrder as never)).matrixArtifact : undefined;
+        const artifact = visible ? (await guardReusedPlan(allergenAuthorityStore, await getPlanForSelectedRead(request, orderId), selectedOrder as never)).matrixArtifact : undefined;
         if (!artifact?.pdfPath || !existsSync(artifact.pdfPath)) return NextResponse.json({ error: { message: "A local PDF has not been generated for this matrix." } }, { status: 404 });
         return new NextResponse(await fs.readFile(artifact.pdfPath), { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${artifact.fileName}"` } });
       }
-      const selectedPlan = visible ? await mergeOriginalItems(request, await getPlan(request, orderId), orderId, selectedOrder) : undefined;
+      const selectedPlan = visible ? await mergeOriginalItems(request, await getPlanForSelectedRead(request, orderId), orderId, selectedOrder) : undefined;
       if (request.nextUrl.searchParams.get("download") === "html") {
         if (!selectedPlan || !selectedOrder || !signedAllergenReviewMatchesOrder(selectedPlan, selectedOrder, selectedPlan.menuItems)) {
           return NextResponse.json({ error: { message: "The fully signed allergen matrix is not available for this production order." } }, { status: 404 });

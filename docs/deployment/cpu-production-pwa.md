@@ -4,6 +4,8 @@ Date: 2026-10-14. Scope: CPU Production only. Branch: `codex/cpu-production-pwa`
 
 Baseline: verified CPU staging revision `fika-cpu-production-staging-build-2026-10-14-003`, App Hosting build `build-2026-10-14-003`, source `5ef17b20927bd75234e4666194edfabf3a7de663`. This is the combined CPU staging/reuse lineage including the tablet responsive merge. The task branch starts at that exact commit; it does not incorporate the separate Hospitality provenance branch. Recorded fetched origin/main: `008bed112381b6a0072785dd2b72fae7bb438c14`.
 
+Before rollout, staging advanced to build `build-2026-10-14-004` at `1fddece505b7e8928548c3b475b11b22ce7d60b4`, containing the separately validated selected-plan cache fix. The first PWA build (`build-2026-10-14-005`) was cancelled before deployment; the task branch incorporates that newer staging commit and repeats validation so the PWA rollout preserves the fix.
+
 ## Installation contract
 
 - Manifest: `https://cpu-staging.fikacatering.com/manifest.webmanifest`.

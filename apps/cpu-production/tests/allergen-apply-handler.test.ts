@@ -199,3 +199,31 @@ test(`handler[${repoMode}]: P1-1 control — an accept with no composition chang
     assert.equal(result.body.plan?.currentAllergenRelease?.approvalMode, "reused_authority", "unchanged composition: the reused release remains valid");
   } finally { globalThis.fetch = realFetch; }
 });
+
+const getSelected = async (orderId: string) => {
+  const response = await route!.GET(new NextRequest(`http://localhost:3400/api/production-plan?orderId=${encodeURIComponent(orderId)}`));
+  return { status: response.status, body: await response.json() as { plan?: ProductionPlan; reuse?: { candidate?: { available?: boolean }; applied?: unknown } } };
+};
+
+test(`handler[${repoMode}]: a selected-plan GET never serves a per-instance cached plan after another instance advanced the plan`, opts, async () => {
+  provider.install();
+  try {
+    const s = await seed();
+    // This instance reads the plan first: a draft with the reuse candidate, and the module-level cache now holds it.
+    const first = await getSelected(s.adopter.canonicalId);
+    assert.equal(first.status, 200);
+    assert.equal(first.body.plan?.status, "draft");
+    assert.equal(first.body.reuse?.candidate?.available, true);
+    // ANOTHER instance applies the reuse (committed straight to the shared repository; this instance's cache is not touched).
+    const stored = (await plans.get(s.adopter.canonicalId)) || structuredClone(first.body.plan!);
+    const moved: ProductionPlan = { ...structuredClone(stored), status: "planning", planningNotes: `advanced-elsewhere-${unique()}`, updatedAt: "2026-10-12T12:00:00.000Z", updatedBy: "other-instance" };
+    await plans.save(moved, (await plans.get(s.adopter.canonicalId))?.updatedAt);
+    const second = await getSelected(s.adopter.canonicalId);
+    assert.equal(second.body.plan?.planningNotes, moved.planningNotes, "the GET reflects the persisted plan, not this instance's stale cached draft");
+    assert.notEqual(second.body.plan?.status, "draft");
+    // and it keeps following later persisted changes (revocation/re-release are plan writes too)
+    const later: ProductionPlan = { ...structuredClone(moved), planningNotes: `advanced-again-${unique()}`, updatedAt: "2026-10-12T13:00:00.000Z" };
+    await plans.save(later, moved.updatedAt);
+    assert.equal((await getSelected(s.adopter.canonicalId)).body.plan?.planningNotes, later.planningNotes);
+  } finally { globalThis.fetch = realFetch; }
+});
