@@ -38,14 +38,14 @@ const menu: PortalMenuItem[] = localRcoaMenuCatalogue.items
     servingInfo: item.pricing.servingInfo,
   }));
 
-function requestFor(item?: PortalMenuItem) {
+function requestFor(item?: PortalMenuItem, eventType: "breakfast" | "lunch" = "breakfast") {
   return {
     bookingId: "RCOA-20261005103000-AB12",
     submittedAt: "2026-10-05T10:30:00.000Z",
     client: { name: "Casey Guest", email: "casey@example.test", phone: "020 0000 0000", companyName: "College" },
     event: { eventDate: "2026-10-20", startTime: "10:00", guestCount: 12, floorLevel: "First floor" },
     order: {
-      eventType: "breakfast" as const,
+      eventType,
       items: item ? [{
         itemId: item.id,
         quantity: Math.max(1, item.minimumQuantity || 1),
@@ -58,14 +58,81 @@ function requestFor(item?: PortalMenuItem) {
 }
 
 test("RCoA menu snapshot preserves source identities, options, notices, VAT, and missing safety data", () => {
-  assert.equal(localRcoaMenuCatalogue.source.itemCount, 43);
-  assert.equal(localRcoaMenuCatalogue.items.length, 43);
+  assert.equal(localRcoaMenuCatalogue.source.itemCount, 46);
+  assert.equal(localRcoaMenuCatalogue.items.length, 46);
   assert.equal(localRcoaMenuCatalogue.categories.length, 14);
-  assert.equal(new Set(localRcoaMenuCatalogue.items.map((item) => item.source.sourceItemId)).size, 43);
+  assert.equal(new Set(localRcoaMenuCatalogue.items.map((item) => item.source.sourceItemId)).size, 46);
   assert.ok(localRcoaMenuCatalogue.items.every((item) => item.pricing.vatRate === 0.2));
-  assert.ok(localRcoaMenuCatalogue.items.every((item) => item.dietaryInformation.length === 0 && item.allergenInformation.length === 0));
+  assert.ok(localRcoaMenuCatalogue.items.every((item) => item.dietaryInformation.length === 0));
+  assert.deepEqual(localRcoaMenuCatalogue.items.find((item) => item.source.sourceItemId === "tray_bake_box")?.allergenInformation, ["Nuts"]);
   assert.match(localRcoaMenuCatalogue.validationReport.missingCanonicalFields.find((field) => field.field === "allergenInformation")?.reason || "", /empty list is not a clear declaration/);
   assert.ok(localRcoaMenuCatalogue.items.some((item) => item.optionGroups.length > 0));
+});
+
+test("RCoA requested commercial values and distinct traybake variants come from the canonical menu", () => {
+  const byId = new Map(localRcoaMenuCatalogue.items.map((item) => [item.source.sourceItemId, item]));
+  const cookie = byId.get("cookie_box")!;
+  assert.equal(cookie.name, "Cookie Box");
+  assert.equal(cookie.pricing.unitPrice, 64);
+  assert.equal(cookie.pricing.servingInfo, "Feeds 20 people");
+
+  const loaf = byId.get("loaf_cake")!;
+  assert.equal(loaf.name, "Loaf Cake");
+  assert.equal(loaf.pricing.unitPrice, 38);
+  assert.equal(loaf.pricing.servingInfo, "Feeds 14 people");
+
+  const doughnuts = byId.get("doughnut_box")!;
+  assert.equal(doughnuts.name, "Doughnut Box");
+  assert.equal(doughnuts.pricing.unitPrice, 42);
+  assert.equal(doughnuts.pricing.servingInfo, "Feeds 12 people");
+
+  const containsNuts = byId.get("tray_bake_box")!;
+  const nutFree = byId.get("tray_bake_box_nut_free")!;
+  assert.notEqual(containsNuts.canonicalId, nutFree.canonicalId);
+  assert.equal(containsNuts.name, "Traybake Box — Contains Nuts");
+  assert.equal(nutFree.name, "Traybake Box — Nut Free");
+  for (const item of [containsNuts, nutFree]) {
+    assert.equal(item.pricing.unitPrice, 75);
+    assert.equal(item.pricing.servingInfo, "Feeds 24 or 48 smaller bites");
+  }
+});
+
+test("Propper Salads preserves all four named menu pairs and validates totals at and above its minimum", () => {
+  const item = localRcoaMenuCatalogue.items.find((candidate) => candidate.source.sourceItemId === "glow_bowl")!;
+  assert.equal(item.name, "Propper Salads");
+  assert.equal(item.pricing.unitPrice, 12.5);
+  assert.equal(item.orderingConstraints.minimumQuantity, 25);
+  assert.equal(item.source.sourceItemId, "glow_bowl", "existing menu identity remains stable");
+  assert.deepEqual(item.optionGroups[0].options.map((option) => option.label), [
+    "Menu 1 — Cajun Chicken & Avo Mex Bowl",
+    "Menu 1 — Vegan BBQ & Avo Mex Bowl",
+    "Menu 2 — Hot Honey Roasted Sweet Potato Jerk Chicken & Quinoa Bowl",
+    "Menu 2 — Hot Honey Roasted Sweet Potato & Quinoa Bowl",
+    "Menu 3 — Roasted Miso Salmon & Edamame Bowl",
+    "Menu 3 — Char-Sui Smoked Tofu & Edamame Bowl",
+    "Menu 4 — Mediterranean Chicken & Halloumi Bowl",
+    "Menu 4 — Mediterranean Falafel Bowl",
+  ]);
+  assert.match(item.description || "", /Char-Sui Smoked Tofu & Edamame Bowl/);
+
+  const draft = createEmptyRcoaDraft();
+  draft.lines = [{ itemId: "glow_bowl", quantity: 25, choices: { bowl: "Menu 1 — Cajun Chicken & Avo Mex Bowl" } }];
+  assert.equal(calculateRcoaTotal(draft.lines, menu), 312.5);
+  draft.lines[0].quantity = 26;
+  assert.equal(calculateRcoaTotal(draft.lines, menu), 325);
+
+  const request = requestFor(menu.find((candidate) => candidate.id === "glow_bowl")!, "lunch");
+  request.event.guestCount = 25;
+  request.order.items[0].quantity = 25;
+  request.order.items[0].choices = [{ id: "bowl", value: "Menu 1 — Cajun Chicken & Avo Mex Bowl" }];
+  const minimum = buildTrustedRcoaHubPayload(request);
+  assert.equal(minimum.order.items[0].unitPrice, 12.5);
+  assert.equal(minimum.order.items[0].lineTotal, 312.5);
+  request.order.items[0].quantity = 26;
+  const aboveMinimum = buildTrustedRcoaHubPayload(request);
+  assert.equal(aboveMinimum.order.items[0].lineTotal, 325);
+  request.order.items[0].quantity = 24;
+  assert.throws(() => buildTrustedRcoaHubPayload(request), /requires a minimum quantity of 25/);
 });
 
 test("RCoA occasion categories and menu search filter the shared compatibility menu", () => {

@@ -40,6 +40,7 @@ const sourceRows: Array<[string, string, string, number, string]> = [
     "Per person · minimum 10",
   ],
   ["salad-boxes", "Salad Boxes", "Lunch", 25, "Medium box serves 8"],
+  ["propper-salads", "Propper Salads", "Lunch", 12.5, "Per person · minimum 25"],
   [
     "exotic-fruit-box",
     "Exotic Fruit Box",
@@ -47,6 +48,11 @@ const sourceRows: Array<[string, string, string, number, string]> = [
     52.5,
     "Medium box feeds up to 20",
   ],
+  ["cookie-box", "Cookie Box", "Sweet treats", 64, "Feeds 20 people"],
+  ["loaf-cake", "Loaf Cake", "Sweet treats", 38, "Feeds 14 people"],
+  ["traybake-box-contains-nuts", "Traybake Box — Contains Nuts", "Sweet treats", 75, "Feeds 24 or 48 smaller bites"],
+  ["traybake-box-nut-free", "Traybake Box — Nut Free", "Sweet treats", 75, "Feeds 24 or 48 smaller bites"],
+  ["doughnut-box", "Doughnut Box", "Sweet treats", 42, "Feeds 12 people"],
   ["mini-traybake-bites", "Mini traybake bites", "Sweet treats", 6, "Serves 4"],
   ["cake-slice", "Cake slice", "Sweet treats", 3.5, "Per person"],
   ["fika-canapes", "Fika Canapes", "Canapes", 30, "Per person · 6 items"],
@@ -85,6 +91,7 @@ const sourceRows: Array<[string, string, string, number, string]> = [
 // Keep the catalogue fallback for entries where the brochure supplies no
 // useful descriptive copy, rather than inventing ingredients or dietary data.
 const brochureDescriptions: Record<string, string> = {
+  "propper-salads": "Menu 1: Cajun Chicken & Avo Mex Bowl or Vegan BBQ & Avo Mex Bowl. Menu 2: Hot Honey Roasted Sweet Potato Jerk Chicken & Quinoa Bowl or Hot Honey Roasted Sweet Potato & Quinoa Bowl. Menu 3: Roasted Miso Salmon & Edamame Bowl or Char-Sui Smoked Tofu & Edamame Bowl. Menu 4: Mediterranean Chicken & Halloumi Bowl or Mediterranean Falafel Bowl.",
   "mini-pastries":
     "A selection of mini Danish and bite-size chocolate muffins. Garnish with cut strawberries and icing sugar.",
   "savoury-croissants":
@@ -165,9 +172,24 @@ const items: HospitalityMenuItem[] = sourceRows.map(
       suggestionLabel: servingInfo,
       suggestionUnit: "serving",
     },
-    optionGroups: [],
+    optionGroups: sourceItemId === "propper-salads" ? [{
+      id: "bowl",
+      label: "Choose Propper Salads option",
+      selectionType: "select",
+      required: true,
+      options: [
+        { id: "bowl:menu-1-cajun-chicken-avo-mex-bowl", label: "Menu 1 — Cajun Chicken & Avo Mex Bowl" },
+        { id: "bowl:menu-1-vegan-bbq-avo-mex-bowl", label: "Menu 1 — Vegan BBQ & Avo Mex Bowl" },
+        { id: "bowl:menu-2-hot-honey-roasted-sweet-potato-jerk-chicken-quinoa-bowl", label: "Menu 2 — Hot Honey Roasted Sweet Potato Jerk Chicken & Quinoa Bowl" },
+        { id: "bowl:menu-2-hot-honey-roasted-sweet-potato-quinoa-bowl", label: "Menu 2 — Hot Honey Roasted Sweet Potato & Quinoa Bowl" },
+        { id: "bowl:menu-3-roasted-miso-salmon-edamame-bowl", label: "Menu 3 — Roasted Miso Salmon & Edamame Bowl" },
+        { id: "bowl:menu-3-char-sui-smoked-tofu-edamame-bowl", label: "Menu 3 — Char-Sui Smoked Tofu & Edamame Bowl" },
+        { id: "bowl:menu-4-mediterranean-chicken-halloumi-bowl", label: "Menu 4 — Mediterranean Chicken & Halloumi Bowl" },
+        { id: "bowl:menu-4-mediterranean-falafel-bowl", label: "Menu 4 — Mediterranean Falafel Bowl" },
+      ],
+    }] : [],
     dietaryInformation: [],
-    allergenInformation: [],
+    allergenInformation: sourceItemId === "traybake-box-contains-nuts" ? ["Nuts"] : [],
     lifecycleState: "active",
     sortOrder: index,
   }),

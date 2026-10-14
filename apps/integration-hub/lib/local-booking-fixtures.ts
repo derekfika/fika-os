@@ -60,7 +60,7 @@ function makeBooking(spec: FixtureSpec): CanonicalBooking {
   return {
     canonicalId, entityType: "Booking", schemaVersion: "0.1.0", version: 1,
     lifecycleStatus: spec.status, createdAt: CREATED_AT, createdBy: "local-fixture", updatedAt: CREATED_AT, updatedBy: "local-fixture",
-    source: { provider: "mnk-booking-platform", sourceBookingId: spec.ref, submissionTimestamp: CREATED_AT, contractVersion: "fika.booking-ingestion.mnk.v1", originalPayload },
+    source: { provider: "hospitality-booking-platform", sourceBookingId: spec.ref, submissionTimestamp: CREATED_AT, contractVersion: "fika.booking-ingestion.mnk.v1", originalPayload },
     client: originalPayload.client,
     service: { ...originalPayload.event, portalSiteId: spec.site, portalSiteLabel: spec.siteLabel, oplocId: `oploc:${spec.site}` },
     order: { ...originalPayload.order, currency: "GBP", vatTotal: total * 0.2, grossTotal: total * 1.2, items: spec.items.map((line) => ({ ...line, menuItemId: `hospitality-menu-item:${spec.site}:${line.itemId}` })) },

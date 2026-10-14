@@ -144,6 +144,50 @@ function adaptClientBookingForDashboard_(booking) {
       itemId: item.itemId
     };
   });
+  const charges = booking.order.buildingCharges || {};
+  if (charges.housekeeping && charges.housekeeping.total > 0) {
+    dashboardItems.push({
+      section: "Building Charges",
+      name: "Housekeeping",
+      detail: "One resource for " + charges.housekeeping.hours + " hours",
+      info: formatBuildingChargeMoney_(charges.housekeeping.rate) + " per hour",
+      qty: charges.housekeeping.hours,
+      time: booking.event.startTime,
+      comment: "Angel Court building charge",
+      unitPrice: charges.housekeeping.rate,
+      lineTotal: charges.housekeeping.total,
+      itemId: "angel_court_housekeeping"
+    });
+  }
+  if (charges.security && charges.security.total > 0) {
+    const perResource = roundMoney_(charges.security.hoursPerResource * charges.security.rate);
+    dashboardItems.push({
+      section: "Building Charges",
+      name: "Security",
+      detail: charges.security.hoursPerResource + " hours per resource",
+      info: charges.security.count + (charges.security.count === 1 ? " resource at " : " resources at ") + formatBuildingChargeMoney_(charges.security.rate) + " per hour",
+      qty: charges.security.count,
+      time: booking.event.startTime,
+      comment: "Angel Court building charge",
+      unitPrice: perResource,
+      lineTotal: charges.security.total,
+      itemId: "angel_court_security"
+    });
+  }
+  if (charges.aircon && charges.aircon.total > 0) {
+    dashboardItems.push({
+      section: "Building Charges",
+      name: "Aircon after 7pm",
+      detail: charges.aircon.hours + " hours after 7pm",
+      info: formatBuildingChargeMoney_(charges.aircon.rate) + " per hour",
+      qty: charges.aircon.hours,
+      time: "19:00 onwards",
+      comment: "Angel Court building charge",
+      unitPrice: charges.aircon.rate,
+      lineTotal: charges.aircon.total,
+      itemId: "angel_court_aircon_after_7pm"
+    });
+  }
 
   const notes = buildDashboardNotes_(booking);
   const validationErrors = [];
@@ -207,6 +251,10 @@ function hasChoiceValue_(value) {
 
 function formatChoiceValue_(value) {
   return Array.isArray(value) ? value.join(", ") : String(value || "");
+}
+
+function formatBuildingChargeMoney_(value) {
+  return "£" + Number(value || 0).toFixed(2);
 }
 
 function appendDashboardBooking_(sheet, booking) {
@@ -421,12 +469,22 @@ function buildDashboardNotes_(booking) {
     "Requested by: " + booking.client.name + " (" + booking.client.companyName + ")",
     booking.specialInstructions ? "Special instructions: " + booking.specialInstructions : "",
     booking.client.invoiceReference ? "Invoice reference: " + booking.client.invoiceReference : "",
+    buildingChargeNotes_(booking.order.buildingCharges),
     booking.event.roomOrArea ? "Room / area: " + booking.event.roomOrArea : "",
     booking.event.deliveryPoint ? "Delivery point: " + booking.event.deliveryPoint : "",
     dietary !== "None declared" ? "Dietaries: " + dietary : "Dietaries: None declared",
     booking.dietaries.allergyDetails ? "ALLERGIES: " + booking.dietaries.allergyDetails : "",
     warningSummary_(booking.warnings) ? "Warnings: " + warningSummary_(booking.warnings) : "",
     booking.event.onsiteContactName ? "Onsite contact: " + booking.event.onsiteContactName + " " + booking.event.onsiteContactPhone : ""
+  ].filter(Boolean).join("\n");
+}
+
+function buildingChargeNotes_(charges) {
+  if (!charges) return "";
+  return [
+    charges.housekeeping && charges.housekeeping.total > 0 ? "Housekeeping: £" + charges.housekeeping.total.toFixed(2) : "",
+    charges.security && charges.security.total > 0 ? "Security: £" + charges.security.total.toFixed(2) : "",
+    charges.aircon && charges.aircon.total > 0 ? "Aircon after 7pm: £" + charges.aircon.total.toFixed(2) : ""
   ].filter(Boolean).join("\n");
 }
 

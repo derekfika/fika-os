@@ -1689,7 +1689,7 @@ function BookingDetail({
         )}
         {!canManageBookingCharges(booking.lifecycleStatus) && (
           <p className="additional-charges-summary__help">
-            After CPU hand-off, change commercial intent through the governed Booking amendment workflow.
+            Charges can be changed on new, reviewed, quoted and completed bookings. Otherwise change commercial intent through the governed Booking amendment workflow.
           </p>
         )}
       </section>
@@ -2792,8 +2792,10 @@ function pretty(value: string) {
     .replace(/([A-Z])/g, " $1")
     .replace(/^./, (character) => character.toUpperCase());
 }
+// Mirrors the Hub's commercial-editing guard (COMMERCIAL_EDITABLE_STATUSES): charges, and the revised quote reflecting them, stay
+// maintainable on a Completed booking. The server enforces the same rule; this only decides what the UI offers.
 function canManageBookingCharges(status: Status) {
-  return ["New", "Reviewed", "Quoted"].includes(status);
+  return ["New", "Reviewed", "Quoted", "Completed"].includes(status);
 }
 function isBookingQuoteStale(booking: CanonicalBooking) {
   const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
@@ -2810,11 +2812,18 @@ function availableActions(booking: CanonicalBooking, productionOrder?: Productio
     return ["Production"];
   }
   if (booking.lifecycleStatus === "Sent to CPU" && productionOrder) return ["Completed"];
+  // A Completed booking whose charges changed offers only the revised quote; it never offers a hand-off or a lifecycle change.
+  if (booking.lifecycleStatus === "Completed" && isBookingQuoteStale(booking)) return ["Quoted"];
   return [];
 }
 function productionOrderMatchesCurrentQuote(booking: CanonicalBooking, productionOrder?: ProductionOrder) {
   const currentRevisionId = booking.quoteState?.currentRevisionId;
-  return Boolean(productionOrder && currentRevisionId && productionOrder.sourceReferences.quoteRevisionId === currentRevisionId);
+  if (!productionOrder || !currentRevisionId) return false;
+  if (productionOrder.sourceReferences.quoteRevisionId === currentRevisionId) return true;
+  // A COMPLETED booking can only have a newer revision through a commercial (charge) change: menu changes go through the governed
+  // amendment, which reopens the booking and issues a replacement hand-off. Its Production Order, built from an earlier revision of
+  // this booking, therefore still stands and is never offered for reissue.
+  return booking.lifecycleStatus === "Completed" && Boolean(booking.quoteState?.revisions.some((revision) => revision.id === productionOrder.sourceReferences.quoteRevisionId));
 }
 
 function quoteReadyForCpu(booking: CanonicalBooking) {

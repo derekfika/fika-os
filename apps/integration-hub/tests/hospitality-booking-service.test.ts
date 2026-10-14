@@ -10,7 +10,7 @@ const bookingServiceSource = readFileSync(new URL("../lib/hospitality-booking-se
 const menu = (state: "active" | "archived" = "active"): CanonicalRecord => ({ canonicalId: "hospitality-menu-item:abc12345", entityType: "Hospitality Menu Item", lifecycleStatus: "published", dataHash: "x", record: { lifecycleState: state, name: "Breakfast box", category: "Breakfast", unitPrice: 12, vatRate: .2, providerMappings: [{ provider: "mnk-booking-platform", sourceItemId: "breakfast_box" }], dietaryInformation: [], allergenInformation: [] } });
 const payload = { bookingId: "MNK-ONE", submittedAt: "2026-07-30T10:00:00.000Z", site: "MNK", siteId: "mnk", client: { name: "Host", email: "host@example.com", companyName: "Client" }, event: { eventDate: "2026-08-10", startTime: "12:00", guestCount: 10 }, order: { eventType: "lunch", items: [{ itemId: "breakfast_box", unitPrice: 12, quantity: 2, lineTotal: 24 }], netTotal: 24 } };
 test("active canonical menu mappings are exposed to the MNK portal", () => { const result = menuForMnkPortal([menu(), menu("archived")]); assert.equal(result.menu.length, 1); assert.equal(result.menu[0].id, "breakfast_box"); });
-test("an MNK payload keeps its existing canonical ID and provider provenance", () => { const result = buildMnkCanonicalBooking(payload, [menu()], "2026-07-30T10:01:00.000Z"); assert.equal(result.booking.canonicalId, "booking:mnk:a60b2ecb2b226c4d56b61460830a38a6"); assert.equal(result.booking.canonicalId, canonicalBookingId("MNK-ONE")); assert.equal(result.booking.source.provider, "mnk-booking-platform"); assert.equal(result.booking.order.items[0].menuItemId, "hospitality-menu-item:abc12345"); assert.equal(result.booking.lifecycleStatus, "New"); assert.equal(result.booking.source.originalPayload.bookingId, "MNK-ONE"); });
+test("a new MNK portal payload keeps its existing canonical ID with shared application provenance", () => { const result = buildMnkCanonicalBooking(payload, [menu()], "2026-07-30T10:01:00.000Z"); assert.equal(result.booking.canonicalId, "booking:mnk:a60b2ecb2b226c4d56b61460830a38a6"); assert.equal(result.booking.canonicalId, canonicalBookingId("MNK-ONE")); assert.equal(result.booking.source.provider, "hospitality-booking-platform"); assert.equal(result.booking.order.items[0].menuItemId, "hospitality-menu-item:abc12345"); assert.equal(result.booking.lifecycleStatus, "New"); assert.equal(result.booking.source.originalPayload.bookingId, "MNK-ONE"); });
 test("inactive or unmapped menu items cannot enter a new canonical Booking", () => { assert.throws(() => buildMnkCanonicalBooking(payload, [menu("archived")])); });
 test("site-scoped compatibility menus retain a booking snapshot while canonical mappings are being promoted", () => {
   const angelPayload = { ...payload, bookingId: "ANGEL-ONE", site: "Angel Court", siteId: "angel-court", order: { ...payload.order, items: [{ ...payload.order.items[0], itemId: "deli-style-sandwich", quantity: 10, unitPrice: 10.95, lineTotal: 10.95 }] } };
@@ -100,7 +100,7 @@ test("RCoA expected OPLOC must match its unique confirmed mapping and active can
   assert.throws(() => assertExpectedRcoaOploc(expected, expected, undefined), /not an active canonical destination/);
 });
 test("RCoA OPLOC equality guard runs before all booking, audit and notification transaction writes", () => {
-  const start = bookingServiceSource.indexOf("export async function ingestMnkBooking(");
+  const start = bookingServiceSource.indexOf("async function ingestBooking(");
   const end = bookingServiceSource.indexOf("export async function notifyBookingConfirmedForProductionOrder(", start);
   const ingestion = bookingServiceSource.slice(start, end);
   const destinationGuard = ingestion.indexOf("if (isRcoa) assertExpectedRcoaOploc(expectedRcoaOplocId, destinationId, destinationOplocId);");
@@ -111,12 +111,12 @@ test("RCoA OPLOC equality guard runs before all booking, audit and notification 
 });
 test("a legacy canonical OPLOC payload cannot switch MNK out of strict provider mode", () => {
   const legacyPayload = { ...payload, siteId: "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f", order: { ...payload.order, items: [{ ...payload.order.items[0], itemId: "unmapped-item" }] } };
-  assert.throws(() => buildMnkCanonicalBooking(legacyPayload, [menu()]), /not mapped/);
+  assert.throws(() => buildMnkCanonicalBooking(legacyPayload, [menu()]), /stable recognised Hospitality portal site key/);
 });
 test("canonical booking ID is deterministic across retry payloads", () => { assert.equal(canonicalBookingId("MNK-ONE"), canonicalBookingId("MNK-ONE")); });
 test("governed Hospitality site mapping supplies the canonical destination OPLOC", () => {
   const records: CanonicalRecord[] = [{ canonicalId: "oploc:mnk", entityType: "OPLOC", lifecycleStatus: "published", publicationStatus: "published", dataHash: "x", record: { lifecycleState: "active" } }];
-  const mappings = [{ sourceIdentifier: "mnk", sourceEntityType: "provider-location", mappingStatus: "confirmed", oplocId: "oploc:mnk" }];
+  const mappings = [{ sourceProvider: "hospitality-booking-platform", sourceIdentifier: "mnk", sourceEntityType: "provider-location", mappingStatus: "confirmed", oplocId: "oploc:mnk" }];
   assert.equal(resolveHospitalityDestinationOploc({ siteId: "mnk" }, mappings, records), "oploc:mnk");
   const result = buildMnkCanonicalBooking(payload, [menu()], "2026-07-30T10:01:00.000Z");
   result.booking.service.oplocId = "oploc:mnk";

@@ -176,7 +176,7 @@
           event.target.closest(".field")?.classList.remove("invalid");
           persist(true);
           if (CONTACT_FIELDS.includes(event.target.name)) saveContactProfileIfEnabled();
-          if (event.target.name === "event.guestCount") renderMenu();
+          if (event.target.name === "event.guestCount" || event.target.name === "client.email" || event.target.name === "client.clientCompanyName") renderMenu();
           renderSummary();
           renderDateGuidance();
         }
@@ -273,7 +273,10 @@
         requireField("event.eventDate", "Choose an event date.", errors);
         requireField("event.startTime", "Choose a start or service time.", errors);
         if (eventType().id === "bespoke") requireField("event.endTime", "Choose an end time for bespoke events.", errors);
-        if (Number(value("event.guestCount")) < 1) errors.push("Add the number of guests.");
+        const guests = Number(value("event.guestCount"));
+        if (!Number.isFinite(guests) || guests < 1) errors.push("Add the number of guests.");
+        if (isGallagherBooking() && (!Number.isFinite(guests) || guests < 5)) errors.push("Gallagher bookings require at least 5 guests.");
+        if (guests >= 100) requireField("event.endTime", "Choose an end time for bookings of 100 guests or more.", errors);
         if (!value("event.floorLevel") && !value("event.roomOrArea") && !value("event.deliveryPoint")) errors.push("Add a floor, room or delivery point.");
         if (value("event.eventDate") && new Date(value("event.eventDate") + "T23:59:59") < new Date()) errors.push("The event date cannot be in the past.");
         if (value("event.endTime") && value("event.endTime") <= value("event.startTime")) errors.push("The end time must be after the start time.");
@@ -283,8 +286,10 @@
         if (!selected.length) errors.push("Choose at least one menu item.");
         selected.forEach(line => {
           const item = menuItem(line.itemId);
-          if (line.quantity < item.minimumQuantity) errors.push(item.name + " requires at least " + item.minimumQuantity + ".");
-          if (item.minimumGuests && Number(value("event.guestCount")) < item.minimumGuests) errors.push(item.name + " requires at least " + item.minimumGuests + " guests.");
+          const minimumQuantity = effectiveMinimum(item.minimumQuantity);
+          const minimumGuests = effectiveMinimum(item.minimumGuests);
+          if (line.quantity < minimumQuantity) errors.push(item.name + " requires at least " + minimumQuantity + ".");
+          if (minimumGuests && Number(value("event.guestCount")) < minimumGuests) errors.push(item.name + " requires at least " + minimumGuests + " guests.");
           item.choices.forEach(group => {
             if (group.required && !hasChoiceValue(line.choices[group.id])) errors.push("Choose an option for " + item.name + ".");
           });
@@ -354,7 +359,7 @@
         '<div>' +
         '<h3>' + escapeHtml(item.name) + '</h3>' +
         description +
-        '<p>' + escapeHtml(item.servingInfo) + escapeHtml(notice) + '</p>' +
+        '<p>' + escapeHtml(displayServingInfo(item)) + escapeHtml(notice) + '</p>' +
         '<p class="menu-price">' + money.format(item.unitPrice) + ' unit price</p>' +
         suggestionHtml +
         '</div>' +
@@ -414,7 +419,7 @@
       const line = ensureLine(id);
       const wasSelected = line.quantity > 0;
       const next = Math.max(0, line.quantity + delta);
-      line.quantity = next > 0 && line.quantity === 0 ? Math.max(next, item.minimumQuantity || 1) : next;
+      line.quantity = next > 0 && line.quantity === 0 ? Math.max(next, effectiveMinimum(item.minimumQuantity) || 1) : next;
       updateAfterItemChange(id, wasSelected !== (line.quantity > 0));
     }
 
@@ -519,6 +524,15 @@
         const item = menuItem(line.itemId);
         return '<div class="summary-item"><div><strong>' + line.quantity + ' x ' + escapeHtml(item.name || "Menu item") + '</strong><small>' + money.format(line.quantity * item.unitPrice) + '</small></div></div>';
       }).join("") : '<div class="summary-empty summary-empty-menu"><strong>No menu items yet.</strong><span>Choose from the menu to build your request.</span></div>';
+      const charges = buildingCharges();
+      const chargeRows = [
+        ["Housekeeping", charges.housekeeping.total],
+        ["Security", charges.security.total],
+        ["Aircon after 7pm", charges.aircon.total]
+      ].filter(row => row[1] > 0);
+      if (chargeRows.length) {
+        $("#summary-items").insertAdjacentHTML("beforeend", '<div class="summary-item"><div><strong>Building charges</strong></div></div>' + chargeRows.map(row => '<div class="summary-item"><div><strong>' + escapeHtml(row[0]) + '</strong><small>' + money.format(row[1]) + '</small></div></div>').join(""));
+      }
 
       const totalElement = $("#summary-total");
       const nextTotal = money.format(total());
@@ -573,6 +587,7 @@
         '</div>' +
         '<div class="review-block"><h3>Menu</h3>' +
         menuRows +
+        buildingChargeReviewRows_() +
         reviewRow("Estimated total", money.format(total())) +
         '<p class="fine-print" style="color:var(--muted)">' + escapeHtml(config.site.copy.vatNote) + '</p>' +
         '</div>';
@@ -808,8 +823,68 @@
       return Object.values(state.items).filter(line => line.quantity > 0 && menuItem(line.itemId));
     }
 
+    function isGallagherBooking() {
+      const company = String(value("client.clientCompanyName") || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      const email = String(value("client.email") || "").trim().toLowerCase();
+      const at = email.lastIndexOf("@");
+      return company === "gallagher" || (at > -1 && email.slice(at + 1) === "redington.co.uk");
+    }
+
+    function effectiveMinimum(minimum) {
+      const amount = Number(minimum || 0);
+      return isGallagherBooking() && amount > 5 ? 5 : amount;
+    }
+
+    function displayServingInfo(item) {
+      let servingInfo = String(item.servingInfo || "");
+      if (!isGallagherBooking()) return servingInfo;
+      servingInfo = servingInfo.replace(/minimum\s+(\d+)\s+guests?/gi, (match, amount) => "minimum " + effectiveMinimum(amount) + " guests");
+      return servingInfo.replace(/minimum\s+(\d+)\b/gi, (match, amount) => "minimum " + effectiveMinimum(amount));
+    }
+
+    function buildingCharges() {
+      const guests = Number(value("event.guestCount") || 0);
+      const start = clockMinutes(value("event.startTime"));
+      const end = clockMinutes(value("event.endTime"));
+      const duration = start !== null && end !== null && end > start ? (end - start) / 60 : 0;
+      const securityCount = Math.floor(guests / 100);
+      const housekeepingHours = guests >= 100 ? duration : 0;
+      const securityHours = securityCount ? Math.max(duration, 8) : 0;
+      const airconHours = start !== null && end !== null && end > start ? Math.max(0, end - Math.max(start, 19 * 60)) / 60 : 0;
+      const housekeepingTotal = roundMoney(housekeepingHours * 23.68);
+      const securityTotal = roundMoney(securityCount * securityHours * 29.95);
+      const airconTotal = roundMoney(airconHours * 200);
+      return {
+        housekeeping: { hours: housekeepingHours, rate: 23.68, total: housekeepingTotal },
+        security: { count: securityCount, hoursPerResource: securityHours, rate: 29.95, total: securityTotal },
+        aircon: { hours: airconHours, rate: 200, total: airconTotal },
+        total: roundMoney(housekeepingTotal + securityTotal + airconTotal)
+      };
+    }
+
+    function clockMinutes(value) {
+      const match = /^(\d{2}):(\d{2})$/.exec(String(value || ""));
+      if (!match) return null;
+      const hours = Number(match[1]);
+      const minutes = Number(match[2]);
+      return hours < 24 && minutes < 60 ? hours * 60 + minutes : null;
+    }
+
+    function roundMoney(value) {
+      return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+    }
+
+    function buildingChargeReviewRows_() {
+      const charges = buildingCharges();
+      const rows = [];
+      if (charges.housekeeping.total) rows.push(reviewRow("Housekeeping", money.format(charges.housekeeping.total)));
+      if (charges.security.total) rows.push(reviewRow("Security", money.format(charges.security.total)));
+      if (charges.aircon.total) rows.push(reviewRow("Aircon after 7pm", money.format(charges.aircon.total)));
+      return rows.length ? '<h4>Building charges</h4>' + rows.join("") : "";
+    }
+
     function total() {
-      return selectedItems().reduce((sum, line) => sum + menuItem(line.itemId).unitPrice * line.quantity, 0);
+      return roundMoney(selectedItems().reduce((sum, line) => sum + menuItem(line.itemId).unitPrice * line.quantity, 0) + buildingCharges().total);
     }
 
     function noticeText() {
@@ -871,7 +946,7 @@
       const serves = Number(item && item.serves || 0);
       if (!guests || !serves || item.suggestionType !== "ceil_by_guests") return null;
       const quantity = Math.max(
-        Number(item.minimumQuantity || 1),
+        effectiveMinimum(item.minimumQuantity || 1),
         Math.ceil(guests / serves)
       );
       return {

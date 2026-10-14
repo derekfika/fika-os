@@ -25,11 +25,11 @@ test("completion is available after a saved quote for CPU and site-produced book
 test("production-order identity is deterministic for idempotent hand-off", () => { assert.equal(productionOrderId("booking:mnk:one"), productionOrderId("booking:mnk:one")); });
 test("an amendment can reopen a completed or cancelled Booking while retaining commercial history", () => { const patch = { client: { name: "Host", email: "host@example.test", companyName: "Client" }, service: { eventDate: "2026-08-01", startTime: "12:00", guestCount: 10 }, order: { items: [{ itemId: "lunch", unitPrice: 9, quantity: 10 }] }, deliveryChargeRequired: true }; assert.doesNotThrow(() => assertWorkflowCommand({ lifecycleStatus: "Quoted" }, { action: "amend", reason: "Client changed delivery room.", patch })); assert.doesNotThrow(() => assertWorkflowCommand({ lifecycleStatus: "Completed" }, { action: "amend", reason: "Client amended the booking after completion.", patch })); assert.doesNotThrow(() => assertWorkflowCommand({ lifecycleStatus: "Cancelled" }, { action: "amend", reason: "Client reinstated the booking.", patch })); });
 
-test("additional charges are directly editable only in the active quoting lifecycle", () => {
-  for (const lifecycleStatus of ["New", "Reviewed", "Quoted"] as const) {
+test("additional charges are directly editable in the active quoting lifecycle and on Completed bookings", () => {
+  for (const lifecycleStatus of ["New", "Reviewed", "Quoted", "Completed"] as const) {
     assert.doesNotThrow(() => assertWorkflowCommand({ lifecycleStatus }, { action: "set-additional-charges", charges: [] }));
   }
-  for (const lifecycleStatus of ["Sent to CPU", "Completed", "Cancelled"] as const) {
+  for (const lifecycleStatus of ["Sent to CPU", "Cancelled"] as const) {
     assert.throws(() => assertWorkflowCommand({ lifecycleStatus }, { action: "set-additional-charges", charges: [] }), /governed amendment workflow/);
   }
 });

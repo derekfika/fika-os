@@ -110,7 +110,8 @@ test("Angel Court menu fixture retains brochure content without inventing allerg
     localAngelCourtMenuCatalogue.items.find((item) => item.name === "Mini traybake bites")?.description,
     "Brownie, brookies, caramel shortbread and blondies.",
   );
-  assert.ok(localAngelCourtMenuCatalogue.items.every((item) => item.dietaryInformation.length === 0 && item.allergenInformation.length === 0));
+  assert.ok(localAngelCourtMenuCatalogue.items.every((item) => item.dietaryInformation.length === 0));
+  assert.deepEqual(localAngelCourtMenuCatalogue.items.find((item) => item.name === "Traybake Box — Contains Nuts")?.allergenInformation, ["Nuts"]);
   assert.equal(localAngelCourtMenuCatalogue.source.path, "New Brochure Angel Court_Hospitality_2026.pptx");
 });
 
@@ -124,7 +125,8 @@ test("CFC has a separate branded route and brochure-derived menu fixture", () =>
   assert.equal(fs.existsSync(new URL("../public/brand/cfc/cfc-positive-logo.svg", import.meta.url)), true);
   assert.ok(localCfcMenuCatalogue.items.length >= 30);
   assert.ok(localCfcMenuCatalogue.items.some((item) => item.name === "Deli Style Sandwich Lunch"));
-  assert.ok(localCfcMenuCatalogue.items.every((item) => item.dietaryInformation.length === 0 && item.allergenInformation.length === 0));
+  assert.ok(localCfcMenuCatalogue.items.every((item) => item.dietaryInformation.length === 0));
+  assert.deepEqual(localCfcMenuCatalogue.items.find((item) => item.name === "Traybake Box — Contains Nuts")?.allergenInformation, ["Nuts"]);
 });
 
 test("Munich Re has a separate portal, dashboard and generic brochure menu fixture", () => {
@@ -138,7 +140,8 @@ test("Munich Re has a separate portal, dashboard and generic brochure menu fixtu
   assert.ok(localMunichReMenuCatalogue.items.length >= 30);
   assert.ok(localMunichReMenuCatalogue.items.some((item) => item.name === "Deli Style Sandwich Lunch"));
   assert.equal(localMunichReMenuCatalogue.source.path, "Fika Hospitality Brochure_2026.pptx");
-  assert.ok(localMunichReMenuCatalogue.items.every((item) => item.dietaryInformation.length === 0 && item.allergenInformation.length === 0));
+  assert.ok(localMunichReMenuCatalogue.items.every((item) => item.dietaryInformation.length === 0));
+  assert.deepEqual(localMunichReMenuCatalogue.items.find((item) => item.name === "Traybake Box — Contains Nuts")?.allergenInformation, ["Nuts"]);
 });
 
 test("each branded portal exposes its own browser title", () => {
