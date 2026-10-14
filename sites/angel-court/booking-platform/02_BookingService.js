@@ -39,9 +39,13 @@ function buildServerBooking_(payload) {
   const acknowledgementPayload = payload.acknowledgements || {};
   const noticePolicyAccepted = Boolean(acknowledgementPayload.noticePolicyAccepted);
 
-  const items = recalculateOrderItems_(order.items || [], Number(event.guestCount || 0));
+  const guestCount = Number(event.guestCount || 0);
+  const isGallagher = isGallagherBooking_(client);
+  const items = recalculateOrderItems_(order.items || [], guestCount, isGallagher);
   const eventType = findEventType_(order.eventType);
   const warnings = buildWarnings_(event, eventType, items, dietaries, now);
+  const foodNetTotal = roundMoney_(items.reduce(function(total, item) { return total + item.lineTotal; }, 0));
+  const buildingCharges = calculateBuildingCharges_(event);
 
   return {
     bookingId: generateBookingId_(now),
@@ -73,7 +77,9 @@ function buildServerBooking_(payload) {
     order: {
       eventType: eventType ? eventType.id : clean_(order.eventType),
       items: items,
-      netTotal: roundMoney_(items.reduce(function(total, item) { return total + item.lineTotal; }, 0)),
+      foodNetTotal: foodNetTotal,
+      buildingCharges: buildingCharges,
+      netTotal: roundMoney_(foodNetTotal + buildingCharges.total),
       vatNote: SITE_CONFIG.copy.vatNote
     },
     dietaries: {
@@ -109,7 +115,24 @@ function buildServerBooking_(payload) {
   };
 }
 
-function recalculateOrderItems_(requestedItems, guestCount) {
+function isGallagherBooking_(client) {
+  const company = normalizeCompanyName_(client && client.clientCompanyName);
+  const email = clean_(client && client.email).toLowerCase();
+  const at = email.lastIndexOf("@");
+  const domain = at > -1 ? email.slice(at + 1) : "";
+  return company === "gallagher" || domain === "redington.co.uk";
+}
+
+function normalizeCompanyName_(value) {
+  return clean_(value).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function effectiveProductMinimum_(minimum, isGallagher) {
+  const value = Number(minimum || 0);
+  return isGallagher && value > 5 ? 5 : value;
+}
+
+function recalculateOrderItems_(requestedItems, guestCount, isGallagher) {
   const menuById = {};
   MENU_SCHEMA.forEach(function(item) { menuById[item.id] = item; });
 
@@ -119,6 +142,10 @@ function recalculateOrderItems_(requestedItems, guestCount) {
     if (!schemaItem || !schemaItem.available || quantity < 1) return null;
 
     const selectedChoices = validateChoices_(schemaItem, requested.choices || []);
+    const minimumQuantity = effectiveProductMinimum_(schemaItem.minimumQuantity, isGallagher);
+    const minimumGuests = schemaItem.minimumGuests === null
+      ? null
+      : effectiveProductMinimum_(schemaItem.minimumGuests, isGallagher);
     return {
       category: schemaItem.category,
       itemId: schemaItem.id,
@@ -132,13 +159,43 @@ function recalculateOrderItems_(requestedItems, guestCount) {
       timeRequired: clean_(requested.timeRequired),
       choices: selectedChoices,
       comments: clean_(requested.comments),
-      minimumOrder: schemaItem.minimumQuantity,
-      minimumGuests: schemaItem.minimumGuests,
+      minimumOrder: minimumQuantity,
+      minimumGuests: minimumGuests,
       noticeRequiredDays: schemaItem.noticeRequiredDays,
-      minimumOrderMet: quantity >= schemaItem.minimumQuantity,
-      minimumGuestsMet: !schemaItem.minimumGuests || guestCount >= schemaItem.minimumGuests
+      minimumOrderMet: quantity >= minimumQuantity,
+      minimumGuestsMet: !minimumGuests || guestCount >= minimumGuests
     };
   }).filter(Boolean);
+}
+
+function calculateBuildingCharges_(event) {
+  const guestCount = Number(event.guestCount || 0);
+  const start = parseClockMinutes_(event.startTime);
+  const end = parseClockMinutes_(event.endTime);
+  const durationHours = start !== null && end !== null && end > start ? (end - start) / 60 : 0;
+  const housekeepingHours = guestCount >= 100 ? durationHours : 0;
+  const securityCount = Math.floor(guestCount / 100);
+  const securityHours = securityCount ? Math.max(durationHours, 8) : 0;
+  const afterSevenHours = start !== null && end !== null && end > start
+    ? Math.max(0, end - Math.max(start, 19 * 60)) / 60
+    : 0;
+  const housekeeping = roundMoney_(housekeepingHours * 23.68);
+  const security = roundMoney_(securityCount * securityHours * 29.95);
+  const aircon = roundMoney_(afterSevenHours * 200);
+  return {
+    housekeeping: { hours: housekeepingHours, rate: 23.68, total: housekeeping },
+    security: { count: securityCount, hoursPerResource: securityHours, rate: 29.95, total: security },
+    aircon: { hours: afterSevenHours, rate: 200, total: aircon },
+    total: roundMoney_(housekeeping + security + aircon)
+  };
+}
+
+function parseClockMinutes_(value) {
+  const match = /^(\d{2}):(\d{2})$/.exec(clean_(value));
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return hours < 24 && minutes < 60 ? hours * 60 + minutes : null;
 }
 
 function validateChoices_(item, requestedChoices) {
@@ -175,6 +232,7 @@ function validateBookingRequest_(booking) {
   const errors = [];
   const c = booking.client;
   const e = booking.event;
+  const isGallagher = isGallagherBooking_(c);
   const eventType = findEventType_(booking.order.eventType);
 
   if (!c.name) errors.push("Your name is required.");
@@ -188,7 +246,10 @@ function validateBookingRequest_(booking) {
   if (!/^\d{2}:\d{2}$/.test(e.startTime)) errors.push("Start time is required.");
   if (eventType && eventType.id === "bespoke" && !/^\d{2}:\d{2}$/.test(e.endTime)) errors.push("End time is required for bespoke events.");
   if (e.endTime && e.endTime <= e.startTime) errors.push("End time must be after the start time.");
-  if (e.guestCount < 1) errors.push("Guest count must be at least 1.");
+  if (!isFinite(e.guestCount) || e.guestCount < 1) errors.push("Guest count must be at least 1.");
+  if (isGallagher && (!isFinite(e.guestCount) || e.guestCount < 5)) errors.push("Gallagher bookings require at least 5 guests.");
+  if (e.guestCount >= 100 && parseClockMinutes_(e.startTime) === null) errors.push("A valid start time is required for bookings of 100 guests or more.");
+  if (e.guestCount >= 100 && parseClockMinutes_(e.endTime) === null) errors.push("A valid end time is required for bookings of 100 guests or more.");
   if (!e.floorLevel && !e.roomOrArea && !e.deliveryPoint) errors.push("Add a floor, room or delivery point.");
   if (!eventType) errors.push("Choose an event type.");
   if (eventType && !eventType.allowsEmptyOrder && !booking.order.items.length) errors.push("Choose at least one menu item.");

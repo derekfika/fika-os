@@ -49,6 +49,34 @@ function runBookingPlatformTests() {
   missingClientCompanyPayload.client.clientCompanyName = "";
   const missingAcknowledgementPayload = JSON.parse(JSON.stringify(payload));
   missingAcknowledgementPayload.acknowledgements.noticePolicyAccepted = false;
+  const gallagherFour = testBookingPayload_(payload, { client: { clientCompanyName: "Gallagher" }, event: { guestCount: 4 } });
+  const gallagherFive = testBookingPayload_(payload, { client: { clientCompanyName: "GALLAGHER" }, event: { guestCount: 5 } });
+  const gallagherInvalidGuests = testBookingPayload_(payload, { client: { clientCompanyName: "Gallagher" }, event: { guestCount: "not-a-number" } });
+  const gallagherMissingReference = testBookingPayload_(payload, { client: { clientCompanyName: "Gallagher", invoiceReference: "" } });
+  const gallagherSmallMin = recalculateOrderItems_([{ itemId: "nibble_bowls", quantity: 3 }], 5, true)[0];
+  const gallagherTenMin = recalculateOrderItems_([{ itemId: "baps", quantity: 5 }], 5, true)[0];
+  const standardTenMin = recalculateOrderItems_([{ itemId: "baps", quantity: 10 }], 20, false)[0];
+  const charges100FourHours = calculateBuildingCharges_({ guestCount: 100, startTime: "09:00", endTime: "13:00" });
+  const chargeBoundaries = [99, 100, 199, 200, 299, 300].map(function(guests) {
+    return calculateBuildingCharges_({ guestCount: guests, startTime: "09:00", endTime: "13:00" }).security.count;
+  });
+  const noEndLarge = testBookingPayload_(payload, { event: { guestCount: 100, endTime: "" } });
+  const missingEndSmall = testBookingPayload_(payload, { event: { guestCount: 99, endTime: "" } });
+  const aircon18to21 = calculateBuildingCharges_({ guestCount: 99, startTime: "18:00", endTime: "21:00" });
+  const aircon1930to21 = calculateBuildingCharges_({ guestCount: 99, startTime: "19:30", endTime: "21:00" });
+  const airconEndingAt19 = calculateBuildingCharges_({ guestCount: 99, startTime: "18:00", endTime: "19:00" });
+  const chargePayload = testBookingPayload_(payload, {
+    event: { guestCount: 100, startTime: "09:00", endTime: "13:00" },
+    order: { eventType: "bespoke", items: [] }
+  });
+  const chargeBooking = buildServerBooking_(chargePayload);
+  const chargeDashboard = adaptClientBookingForDashboard_(chargeBooking);
+  const chargeNotification = buildBookingNotificationText_(chargeBooking, "Bespoke enquiry");
+  const airconChargeBooking = buildServerBooking_(testBookingPayload_(payload, {
+    event: { guestCount: 99, startTime: "18:00", endTime: "21:00" },
+    order: { eventType: "bespoke", items: [] }
+  }));
+  const airconChargeDashboard = adaptClientBookingForDashboard_(airconChargeBooking);
 
   const tests = [
     { name: "valid payload passes", ok: validation.ok },
@@ -80,9 +108,42 @@ function runBookingPlatformTests() {
     { name: "spreadsheet ID extraction", ok: extractSpreadsheetId_("1ExampleSpreadsheetId123456789") === "1ExampleSpreadsheetId123456789" },
     { name: "sheet gid is rejected", ok: extractSpreadsheetId_("123456789") === "" },
     { name: "notification recipients parse", ok: parseNotificationRecipients_("one@example.com; two@example.com\none@example.com").valid.length === 2 },
-    { name: "invalid notification recipient is reported", ok: parseNotificationRecipients_("valid@example.com, not-an-email").invalid[0] === "not-an-email" }
+    { name: "invalid notification recipient is reported", ok: parseNotificationRecipients_("valid@example.com, not-an-email").invalid[0] === "not-an-email" },
+    { name: "client company Gallagher is detected", ok: isGallagherBooking_({ clientCompanyName: "Gallagher", email: "person@example.com" }) },
+    { name: "company normalization is case and punctuation insensitive", ok: isGallagherBooking_({ clientCompanyName: " G.A.L.L.A.G.H.E.R! ", email: "person@example.com" }) },
+    { name: "Gallagher-ish is not detected", ok: !isGallagherBooking_({ clientCompanyName: "Gallagher-ish", email: "person@example.com" }) },
+    { name: "exact Redington email domain is detected", ok: isGallagherBooking_({ clientCompanyName: "Other", email: "frontofhouse@redington.co.uk" }) },
+    { name: "email substring or subdomain is not detected", ok: !isGallagherBooking_({ clientCompanyName: "Other", email: "person@notredington.co.uk" }) && !isGallagherBooking_({ clientCompanyName: "Other", email: "person@sub.redington.co.uk" }) },
+    { name: "Gallagher booking with 4 guests is rejected", ok: validateBookingRequest_(buildServerBooking_(gallagherFour)).errors.some(function(error) { return error.indexOf("at least 5 guests") !== -1; }) },
+    { name: "Gallagher booking with 5 guests is accepted", ok: validateBookingRequest_(buildServerBooking_(gallagherFive)).ok },
+    { name: "Gallagher non-numeric guest count is rejected", ok: !validateBookingRequest_(buildServerBooking_(gallagherInvalidGuests)).ok },
+    { name: "Gallagher product minimum 10 is capped at 5", ok: gallagherTenMin.minimumOrder === 5 && gallagherTenMin.minimumOrderMet },
+    { name: "Gallagher product minimum 6 is capped at 5", ok: effectiveProductMinimum_(6, true) === 5 },
+    { name: "Gallagher product minimum 3 remains 3", ok: gallagherSmallMin.minimumOrder === 3 },
+    { name: "non-Gallagher product minimum is unchanged", ok: standardTenMin.minimumOrder === 10 },
+    { name: "Gallagher missing invoice reference is rejected server-side", ok: validateBookingRequest_(buildServerBooking_(gallagherMissingReference)).errors.some(function(error) { return error.indexOf("Reference number is required") !== -1; }) },
+    { name: "99 guests have no housekeeping or security", ok: calculateBuildingCharges_({ guestCount: 99, startTime: "09:00", endTime: "13:00" }).housekeeping.total === 0 && calculateBuildingCharges_({ guestCount: 99, startTime: "09:00", endTime: "13:00" }).security.total === 0 },
+    { name: "100 guests and four hours calculate one-housekeeper and eight-hour security charges", ok: charges100FourHours.housekeeping.total === 94.72 && charges100FourHours.housekeeping.hours === 4 && charges100FourHours.security.count === 1 && charges100FourHours.security.total === 239.6 },
+    { name: "housekeeping stays at one resource as guest count rises", ok: calculateBuildingCharges_({ guestCount: 300, startTime: "09:00", endTime: "13:00" }).housekeeping.total === 94.72 },
+    { name: "security counts at 99/100/199/200/299/300 boundaries", ok: JSON.stringify(chargeBoundaries) === JSON.stringify([0, 1, 1, 2, 2, 3]) },
+    { name: "100+ guests without end time are rejected", ok: !validateBookingRequest_(buildServerBooking_(noEndLarge)).ok },
+    { name: "99 guests without end time remain valid", ok: validateBookingRequest_(buildServerBooking_(missingEndSmall)).ok },
+    { name: "18:00-21:00 charges two aircon hours", ok: aircon18to21.aircon.hours === 2 && aircon18to21.aircon.total === 400 },
+    { name: "19:30-21:00 charges one and a half aircon hours", ok: aircon1930to21.aircon.hours === 1.5 && aircon1930to21.aircon.total === 300 },
+    { name: "event ending at 19:00 has no aircon charge", ok: airconEndingAt19.aircon.total === 0 },
+    { name: "building charges appear as separate quote rows and email lines", ok: ["Housekeeping", "Security"].every(function(label) { return chargeDashboard.items.some(function(item) { return item.name === label && item.section === "Building Charges"; }) && chargeNotification.indexOf(label + ":") !== -1; }) },
+    { name: "aircon appears as its own quote row", ok: airconChargeDashboard.items.some(function(item) { return item.name === "Aircon after 7pm" && item.lineTotal === 400; }) },
+    { name: "building charges enter existing management fee and VAT totals", ok: chargeDashboard.totalPrice === charges100FourHours.total && chargeDashboard.mgmtFee === 26.75 && chargeDashboard.netPrice === 361.07 && chargeDashboard.vat === 72.21 && chargeDashboard.grossPrice === 433.28 }
   ];
   return { ok: tests.every(function(test) { return test.ok; }), tests: tests };
+}
+
+function testBookingPayload_(base, updates) {
+  const result = JSON.parse(JSON.stringify(base));
+  Object.keys(updates || {}).forEach(function(section) {
+    result[section] = Object.assign(result[section] || {}, updates[section]);
+  });
+  return result;
 }
 
 function futureWeekday_(daysAhead) {
