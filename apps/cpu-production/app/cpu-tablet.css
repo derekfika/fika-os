@@ -1,0 +1,184 @@
+/*
+ * CPU Production — tablet layout (10–11 inch, portrait and landscape). Loaded last; changes NOTHING at desktop widths.
+ *
+ * Tablet (max-width 1200px):
+ *  - the permanent left sidebar becomes a navigation drawer opened from a sticky top bar;
+ *  - the two right-hand rail panels leave the persistent layout and become an inspector drawer ("Today & attention");
+ *  - the calendar/timeline takes the full page width, with its week navigation sticky;
+ *  - controls reach roughly 44px touch targets, calendar card text stops truncating, and any unavoidable horizontal
+ *    scrolling is contained inside the calendar surface (never the page).
+ * Uses the shared FIKA OS semantic tokens (docs/STYLE-GUIDE.md); the scrim is derived from the primary text token.
+ */
+.cpu-tablet-bar,
+.cpu-rail-close { display: none; }
+
+@media (max-width: 1200px) {
+  .cpu-app-shell {
+    --cpu-scrim: color-mix(in srgb, var(--fika-text-primary, #24115c) 45%, transparent);
+    --cpu-tablet-bar-height: 56px;
+    display: block;
+  }
+
+  /* ---- sticky top bar: menu, title, today & attention ------------------------------------------------------------------------ */
+  .cpu-app-shell .cpu-tablet-bar {
+    position: sticky; top: 0; z-index: 60;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    min-height: var(--cpu-tablet-bar-height); padding: 6px 24px;
+    background: var(--fika-surface-card, #fff); border-bottom: 1px solid var(--fika-border-default, #d8d3ed);
+  }
+  .cpu-app-shell .cpu-tablet-bar button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 44px; min-width: 44px; padding: 0 16px;
+    border: 1px solid var(--fika-border-default, #d8d3ed); border-radius: 8px;
+    background: var(--fika-surface-card, #fff); color: var(--fika-action-primary, #4f34c7);
+    font: inherit; font-size: 0.9375rem; font-weight: 700; cursor: pointer;
+  }
+  .cpu-app-shell .cpu-tablet-bar button:focus-visible { outline: 3px solid var(--fika-focus-ring, #5135c9); outline-offset: 2px; }
+  .cpu-app-shell .cpu-tablet-title { color: var(--fika-text-primary, #24115c); font-size: 1rem; }
+  .cpu-app-shell .cpu-tablet-badge {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding: 0 6px;
+    border-radius: 12px; background: var(--fika-action-primary, #4f34c7); color: #fff; font-size: 0.8125rem;
+  }
+
+  /* ---- drawers: sidebar (left) and operations rail (right) ------------------------------------------------------------------ */
+  .cpu-app-shell .cpu-drawer-backdrop { position: fixed; inset: 0; z-index: 70; background: var(--cpu-scrim); }
+  .cpu-app-shell .cpu-sidebar,
+  .cpu-app-shell .cpu-operations-rail {
+    position: fixed; top: 0; bottom: 0; z-index: 80; height: 100dvh; max-height: 100dvh; overflow-y: auto;
+    visibility: hidden; transition: transform 0.2s ease, visibility 0s linear 0.2s;
+  }
+  .cpu-app-shell .cpu-sidebar { left: 0; width: min(300px, 86vw); flex: none; transform: translateX(-100%); padding-bottom: 32px; }
+  .cpu-app-shell .cpu-operations-rail {
+    right: 0; width: min(460px, 94vw); transform: translateX(100%); align-content: start; gap: 12px; padding: 12px 16px 32px;
+    background: var(--fika-surface-page, #f5f3fa); box-shadow: 0 0 40px color-mix(in srgb, var(--fika-text-primary, #24115c) 28%, transparent);
+  }
+  .cpu-app-shell .cpu-sidebar.is-open,
+  .cpu-app-shell .cpu-operations-rail.is-open { transform: none; visibility: visible; transition: transform 0.2s ease; }
+  .cpu-app-shell .cpu-rail-close {
+    display: inline-flex; align-items: center; justify-content: center; justify-self: end; min-height: 44px; padding: 0 16px;
+    border: 1px solid var(--fika-border-default, #d8d3ed); border-radius: 8px; background: var(--fika-surface-card, #fff);
+    color: var(--fika-action-primary, #4f34c7); font: inherit; font-weight: 700; cursor: pointer;
+  }
+  .cpu-app-shell .cpu-rail-close:focus-visible { outline: 3px solid var(--fika-focus-ring, #5135c9); outline-offset: 2px; }
+  .cpu-app-shell .cpu-sidebar-nav button { min-height: 48px; font-size: 1rem; }
+  .cpu-app-shell .cpu-rail-panel button, .cpu-app-shell .cpu-attention-row { min-height: 44px; }
+
+  /* ---- page: compact hero, full-width content ---------------------------------------------------------------------------------- */
+  .cpu-app-shell .cpu-workspace { width: 100%; }
+  .cpu-app-shell .cpu-header { min-height: 0; padding: 18px 24px 22px; }
+  .cpu-app-shell .cpu-header h1 { font-size: clamp(1.75rem, 4vw, 2.5rem); line-height: 1.05; }
+  .cpu-app-shell .cpu-header > div > p:last-child,
+  .cpu-app-shell .cpu-header > small { display: none; }
+  .cpu-app-shell .cpu-main { max-width: none; padding: 16px 24px 48px; }
+  .cpu-app-shell .cpu-dashboard-columns { grid-template-columns: minmax(0, 1fr); }
+  .cpu-app-shell .cpu-summary { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; }
+  .cpu-app-shell .cpu-summary button { min-height: 56px; padding: 8px 6px; }
+  .cpu-app-shell .cpu-production-scope { gap: 8px; }
+  .cpu-app-shell .cpu-production-scope button { min-height: 44px; font-size: 0.9375rem; }
+  .cpu-app-shell .cpu-production-panel { padding: 14px 14px 16px; }
+
+  /* ---- toolbar / filters: touch-sized ------------------------------------------------------------------------------------------- */
+  .cpu-app-shell .cpu-toolbar { flex-wrap: wrap; align-items: center; }
+  .cpu-app-shell .cpu-header-tools button { min-height: 44px; min-width: 44px; }
+  .cpu-app-shell .cpu-toolbar-actions button { min-width: 44px; }
+  .cpu-app-shell .cpu-toolbar-actions button,
+  .cpu-app-shell .cpu-filters button,
+  .cpu-app-shell .cpu-filters input,
+  .cpu-app-shell .cpu-filters select { min-height: 44px; font-size: 0.9375rem; }
+  .cpu-app-shell .cpu-filters { flex-wrap: wrap; gap: 12px; align-items: end; }
+
+  /* ---- calendar: the dominant surface ----------------------------------------------------------------------------------------- */
+  .cpu-app-shell .production-calendar { margin: 0 0 16px; padding: 12px 14px 16px; }
+  .cpu-app-shell .calendar-header {
+    position: sticky; top: var(--cpu-tablet-bar-height); z-index: 30; margin: 0 -14px 12px; padding: 10px 14px;
+    background: var(--fika-surface-card, #fff); border-bottom: 1px solid var(--fika-border-default, #d8d3ed);
+  }
+  .cpu-app-shell .calendar-header h2 { white-space: normal; font-size: clamp(1.1rem, 2.6vw, 1.5rem); }
+  .cpu-app-shell .calendar-nav button { min-height: 44px; min-width: 44px; font-size: 0.9375rem; }
+  /* five working days; where the surface is too narrow the GRID scrolls inside the calendar, never the page */
+  .cpu-app-shell .calendar-grid {
+    grid-template-columns: repeat(5, minmax(176px, 1fr)); gap: 10px; overflow-x: auto; overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity; padding-bottom: 6px;
+  }
+  .cpu-app-shell .calendar-day { scroll-snap-align: start; padding: 10px; }
+  .cpu-app-shell .calendar-day > header { flex-wrap: wrap; gap: 6px; }
+  .cpu-app-shell .calendar-day-open { min-height: 44px; min-width: 44px; padding: 0 12px; font-size: 0.875rem; }
+  .cpu-app-shell .calendar-day-summary,
+  .cpu-app-shell .calendar-day-summary span { font-size: 0.8125rem; }
+
+  /* ---- order cards: readable, no truncation ---------------------------------------------------------------------------------- */
+  .cpu-app-shell .production-card { padding: 12px; gap: 8px; min-height: 44px; }
+  .cpu-app-shell .production-card-top { flex-wrap: wrap; row-gap: 4px; align-items: flex-start; }
+  .cpu-app-shell .production-card-top strong { flex: 1 1 auto; font-size: 0.75rem; white-space: normal; overflow: visible; text-overflow: clip; }
+  .cpu-app-shell .production-card-top .calendar-status { flex: none; }
+  .cpu-app-shell .calendar-status { font-size: 0.75rem; }
+  .cpu-app-shell .production-card h3,
+  .cpu-app-shell .production-card-destination h3 { font-size: 0.9375rem; line-height: 1.25; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; overflow-wrap: anywhere; }
+  .cpu-app-shell .production-card p,
+  .cpu-app-shell .production-card-client { font-size: 0.8125rem !important; }
+  .cpu-app-shell .production-card-quantities { font-size: 0.8125rem; }
+  .cpu-app-shell .production-card-quantities b { font-size: 0.8125rem; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+  .cpu-app-shell .production-card-dietaries { font-size: 0.8125rem !important; }
+  .cpu-app-shell .production-card-meta { font-size: 0.75rem; flex-wrap: wrap; }
+  .cpu-app-shell .production-card-allergens { min-height: 44px; font-size: 0.875rem; }
+  /* long labels wrap instead of ending in an ellipsis */
+  .cpu-app-shell .calendar-day :is(.calendar-day-summary, .calendar-day-summary *, .production-card-allergens, .production-card-client, .production-card-dietaries, .production-card-quantities span, .production-card-meta span) {
+    white-space: normal !important; text-overflow: clip !important; overflow: visible !important; overflow-wrap: anywhere;
+  }
+  .cpu-app-shell .calendar-day .production-card-allergens { line-height: 1.25; text-align: center; padding: 8px 10px; }
+
+  /* every interactive control in the working views reaches a touch-sized target (day list, queue table, run sheet, totals) */
+  .cpu-app-shell :is(.production-day, .cpu-queue, .cpu-table, .run-sheet, .cpu-totals, .totals-view) :is(button, [role="button"], select, input:not([type="checkbox"]):not([type="radio"])) { min-height: 44px; }
+  .cpu-app-shell .cpu-table button { min-width: 44px; padding-inline: 12px; }
+  .cpu-app-shell .cpu-table td, .cpu-app-shell .cpu-table th { padding-block: 10px; }
+
+  /* ---- order detail drawer, dialogs and editors ---------------------------------------------------------------------------- */
+  .cpu-app-shell .production-order-detail { width: min(560px, 100%); }
+  .cpu-app-shell :is(.production-order-detail, .hospitality-production-detail, .delivered-in-production-detail, .grab-and-go-order-detail) { width: min(560px, 100%); }
+  .cpu-app-shell :is(.production-order-detail, .hospitality-production-detail, .delivered-in-production-detail, .grab-and-go-order-detail) :is(button, a.button, select, input:not([type="checkbox"]):not([type="radio"])) { min-height: 44px; min-width: 44px; }
+  .cpu-app-shell .reopen-dialog { max-height: calc(100dvh - 32px); overflow: auto; }
+  .cpu-app-shell .signature-modal { max-height: calc(100dvh - 24px); }
+  .cpu-app-shell .liana-fullscreen .button,
+  .cpu-app-shell .liana-fullscreen .check-button,
+  .cpu-app-shell .liana-fullscreen .matrix-signing button { min-height: 44px; }
+  .cpu-app-shell .liana-fixed-actions { padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+  .cpu-app-shell .allergen-cell { min-height: 48px; }
+  .cpu-app-shell .liana-fullscreen :is(button, select, input:not([type="checkbox"]):not([type="radio"])) { min-height: 44px; }
+  .cpu-app-shell .liana-fullscreen :is(.remove-link, .remove-row, .save-sandwich, .liana-close) { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 0 12px; }
+  .cpu-app-shell .liana-fullscreen-header { padding: 16px 20px; }
+  .cpu-app-shell .liana-content { padding: 16px 20px 160px; }
+  .cpu-app-shell .liana-content :is(.menu-items, .checker-shell) { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+  .cpu-app-shell .menu-item-panel { min-width: 0; max-width: 100%; }
+  .cpu-app-shell .liana-fixed-actions { padding-inline: 20px; }
+  /* the matrix fits a landscape tablet without scrolling (narrower allergen columns); on portrait it scrolls inside its own frame */
+  .cpu-app-shell .allergen-table-wrap { max-width: 100%; overflow-x: auto; }
+  .cpu-app-shell .allergen-checker { min-width: 0; table-layout: fixed; }
+  .cpu-app-shell .allergen-checker col.allergen-col--name { width: 150px; }
+  .cpu-app-shell .allergen-checker col.allergen-col--allergen { width: 38px; }
+  .cpu-app-shell .allergen-checker col.allergen-col--notes { width: 130px; }
+  .cpu-app-shell .allergen-checker col.allergen-col--check { width: 100px; }
+  .cpu-app-shell .allergen-checker .check-button { min-width: 0; width: 100%; white-space: normal; }
+  .cpu-app-shell .matrix-signing-row { flex-wrap: wrap; gap: 12px; }
+  .cpu-app-shell .matrix-signing-controls { flex-wrap: wrap; justify-content: flex-start; }
+  .cpu-app-shell .allergen-approval-banner,
+  .cpu-app-shell .allergen-review-status { flex-wrap: wrap; }
+}
+
+/* landscape tablets: the five days share the full width (no inner scrolling) */
+@media (min-width: 1000px) and (max-width: 1200px) {
+  .cpu-app-shell .calendar-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); overflow-x: visible; }
+}
+
+/* narrower tablets / portrait: the working week scrolls inside the calendar with wider day columns */
+@media (max-width: 900px) {
+  .cpu-app-shell .calendar-grid { grid-template-columns: repeat(5, minmax(220px, 1fr)); }
+  .cpu-app-shell .cpu-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .cpu-app-shell .cpu-header { padding: 14px 16px 18px; }
+  .cpu-app-shell .cpu-main { padding: 12px 16px 40px; }
+  .cpu-app-shell .cpu-tablet-bar { padding: 6px 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cpu-app-shell .cpu-sidebar,
+  .cpu-app-shell .cpu-operations-rail { transition: none; }
+}
