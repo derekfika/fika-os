@@ -1,0 +1,102 @@
+# Firebase App Hosting PRODUCTION configuration for Integration Hub.
+# Project: fika-os (production). NEVER point this at fika-os-dev. Backend environment name must be 'production'.
+# Values marked REPLACE_ME_* are business decisions/infrastructure not created yet; tools/migration/check-production-config.mjs refuses to pass while any remain.
+env:
+  # Customer email delivery stays OFF at launch. The UAT recipient variables from staging are intentionally not carried across.
+  - variable: FIKA_HOSPITALITY_EMAIL_SENDERS_JSON
+    value: '{"oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f":{"from":"mnk@fikacatering.com","replyTo":"mnk@fikacatering.com","authenticatedAccount":"mnk@fikacatering.com","displayName":"FIKA Hospitality at MNK","verifiedSendAs":true,"enabled":["submitted","confirmed","amended","cancelled"]}}'
+    availability:
+      - RUNTIME
+  - variable: FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED
+    value: "false"
+    availability:
+      - RUNTIME
+  - variable: FIKA_DATA_SOURCE_TRACE
+    value: "1"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIKA_RUNTIME_MODE
+    value: production
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIREBASE_PROJECT_ID
+    value: fika-os
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIKA_SNAPSHOT_BUCKET
+    value: fika-os-prod-read-packages-europe-west4
+    availability:
+      - RUNTIME
+  - variable: FIKA_ALLOWED_EMAIL_DOMAINS
+    value: fikacatering.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIKA_APP_HOSPITALITY_URL
+    value: https://hospitality.fikacatering.com/manage
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIKA_APP_CPU_URL
+    value: https://cpu.fikacatering.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: CPU_PRODUCTION_BASE_URL
+    value: https://cpu.fikacatering.com
+    availability:
+      - RUNTIME
+  - variable: FIKA_APP_LOGISTICS_URL
+    value: https://logistics.fikacatering.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIKA_LOGISTICS_BASE_URL
+    value: https://logistics.fikacatering.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIKA_APP_MENU_PLANNING_URL
+    value: https://menuplanner.fikacatering.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIKA_APP_DELIVERED_IN_URL
+    value: https://delivered-in.fikacatering.com
+    availability:
+      - BUILD
+      - RUNTIME
+  # customer/staff returnTo values use the cookie-compatible custom hostname.
+  - variable: FIKA_ALLOWED_APP_ORIGINS
+    value: https://cpu.fikacatering.com,https://logistics.fikacatering.com,https://menuplanner.fikacatering.com,https://hospitality.fikacatering.com,https://delivered-in.fikacatering.com,https://fika-os-prod-hospitality--fika-os.europe-west4.hosted.app,https://fika-os-prod-cpu--fika-os.europe-west4.hosted.app
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIKA_SESSION_COOKIE_DOMAIN
+    value: .fikacatering.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: BRIGHTHR_MODE
+    value: fixture
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: SQUARE_MODE
+    value: fixture
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: MNK_CANON_BRIDGE_TOKEN
+    secret: MNK_CANON_BRIDGE_TOKEN
+    availability:
+      - RUNTIME
+  - variable: FIKA_INTERNAL_API_TOKEN
+    secret: FIKA_INTERNAL_API_TOKEN@1
+    availability:
+      - RUNTIME
+  # GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON_MAILER is intentionally NOT wired while customer email delivery is OFF.
+  # Add it (with a production mailer service account authorised for Gmail send) only when delivery is enabled.
