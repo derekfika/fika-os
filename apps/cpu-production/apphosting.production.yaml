@@ -38,7 +38,12 @@ env:
   - variable: HOSPITALITY_BOOKING_BASE_URL
     value: https://hospitality.fikacatering.com
     availability: [BUILD, RUNTIME]
-  # GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION intentionally NOT set: no production owner is decided. CPU allergen PDF Drive storage fails closed until it is.
+  # No production owner is decided for CPU allergen PDF Drive storage. The base apphosting.yaml carries a STAGING value for this key, so it is
+  # explicitly overridden with an empty value: the Drive adapter treats empty as 'not configured' and fails closed until an owner is confirmed.
+  - variable: GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION
+    value: ""
+    availability:
+      - RUNTIME
   - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     availability: [RUNTIME]
