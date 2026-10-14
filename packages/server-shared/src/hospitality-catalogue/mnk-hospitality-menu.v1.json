@@ -2,8 +2,8 @@
   "schemaVersion": "fika.hospitality-menu-catalogue.v1",
   "generatedAt": "deterministic-from-source",
   "source": {
-    "path": "sites/mnk/booking-platform/01_MenuData.js",
-    "itemCount": 43
+    "path": "FIKA OS MNK conversion with site menu source plus FIKA OS commercial overrides",
+    "itemCount": 46
   },
   "categories": [
     {
@@ -430,14 +430,14 @@
         "sourcePath": "01_MenuData.js:MENU_SCHEMA",
         "sourceItemId": "cookie_box"
       },
-      "name": "Freshly Baked Cookie Box",
+      "name": "Cookie Box",
       "description": "24 freshly baked mixed cookies including milk chocolate, double chocolate, white chocolate, chocolate chip and Carnivals Smarties cookies.",
       "category": "Sweet treats",
       "pricing": {
-        "unitPrice": 40,
+        "unitPrice": 64,
         "currency": "GBP",
         "basis": "per_item",
-        "servingInfo": "Box of 24",
+        "servingInfo": "Feeds 20 people",
         "vatRate": null
       },
       "orderingConstraints": {
@@ -462,14 +462,14 @@
         "sourcePath": "01_MenuData.js:MENU_SCHEMA",
         "sourceItemId": "tray_bake_box"
       },
-      "name": "Tray Bake Box",
+      "name": "Traybake Box — Contains Nuts",
       "description": "Medium box contains 24 pieces and can be cut into 48 smaller bites. Example flavours include caramel Rolo brownie, caramelised biscuit brownie, raspberry & white chocolate blondies, and lemon & white chocolate blondies.",
       "category": "Sweet treats",
       "pricing": {
         "unitPrice": 75,
         "currency": "GBP",
         "basis": "per_item",
-        "servingInfo": "Box of 24 pieces",
+        "servingInfo": "Feeds 24 or 48 smaller bites",
         "vatRate": null
       },
       "orderingConstraints": {
@@ -483,7 +483,9 @@
       },
       "optionGroups": [],
       "dietaryInformation": [],
-      "allergenInformation": [],
+      "allergenInformation": [
+        "Nuts"
+      ],
       "lifecycleState": "active",
       "sortOrder": 110
     },
@@ -1254,18 +1256,18 @@
         "sourcePath": "01_MenuData.js:MENU_SCHEMA",
         "sourceItemId": "glow_bowl"
       },
-      "name": "Fika Glow Bowl",
-      "description": "Individual salad bowl. Choose avocado Mex, sweet potato & quinoa, Mediterranean veg, or Asian prawn & edamame.",
+      "name": "Propper Salads",
+      "description": "Menu 1 — Cajun Chicken & Avo Mex Bowl; Menu 1 — Vegan BBQ & Avo Mex Bowl; Menu 2 — Hot Honey Roasted Sweet Potato Jerk Chicken & Quinoa Bowl; Menu 2 — Hot Honey Roasted Sweet Potato & Quinoa Bowl; Menu 3 — Roasted Miso Salmon & Edamame Bowl; Menu 3 — Char-Sui Smoked Tofu & Edamame Bowl; Menu 4 — Mediterranean Chicken & Halloumi Bowl; Menu 4 — Mediterranean Falafel Bowl",
       "category": "Salads & Sushi",
       "pricing": {
-        "unitPrice": 12.95,
+        "unitPrice": 12.5,
         "currency": "GBP",
         "basis": "per_item",
-        "servingInfo": "Per person",
+        "servingInfo": "Per person · minimum 25",
         "vatRate": null
       },
       "orderingConstraints": {
-        "minimumQuantity": 8,
+        "minimumQuantity": 25,
         "minimumGuests": 8,
         "noticeRequiredDays": 3,
         "serves": null,
@@ -1276,29 +1278,41 @@
       "optionGroups": [
         {
           "id": "bowl",
-          "label": "Choose bowl",
+          "label": "Choose Propper Salads option",
           "selectionType": "select",
           "required": true,
           "options": [
             {
-              "id": "bowl:avocado-mex-bowl",
-              "label": "Avocado Mex Bowl"
+              "id": "bowl:menu-1-cajun-chicken-avo-mex-bowl",
+              "label": "Menu 1 — Cajun Chicken & Avo Mex Bowl"
             },
             {
-              "id": "bowl:sweet-potato-quinoa-bowl",
-              "label": "Sweet Potato & Quinoa Bowl"
+              "id": "bowl:menu-1-vegan-bbq-avo-mex-bowl",
+              "label": "Menu 1 — Vegan BBQ & Avo Mex Bowl"
             },
             {
-              "id": "bowl:mediterranean-veg-bowl",
-              "label": "Mediterranean Veg Bowl"
+              "id": "bowl:menu-2-hot-honey-roasted-sweet-potato-jerk-chicken-quinoa-bowl",
+              "label": "Menu 2 — Hot Honey Roasted Sweet Potato Jerk Chicken & Quinoa Bowl"
             },
             {
-              "id": "bowl:asian-prawn-edamame-bowl",
-              "label": "Asian Prawn & Edamame Bowl"
+              "id": "bowl:menu-2-hot-honey-roasted-sweet-potato-quinoa-bowl",
+              "label": "Menu 2 — Hot Honey Roasted Sweet Potato & Quinoa Bowl"
             },
             {
-              "id": "bowl:mixed",
-              "label": "Mixed"
+              "id": "bowl:menu-3-roasted-miso-salmon-edamame-bowl",
+              "label": "Menu 3 — Roasted Miso Salmon & Edamame Bowl"
+            },
+            {
+              "id": "bowl:menu-3-char-sui-smoked-tofu-edamame-bowl",
+              "label": "Menu 3 — Char-Sui Smoked Tofu & Edamame Bowl"
+            },
+            {
+              "id": "bowl:menu-4-mediterranean-chicken-halloumi-bowl",
+              "label": "Menu 4 — Mediterranean Chicken & Halloumi Bowl"
+            },
+            {
+              "id": "bowl:menu-4-mediterranean-falafel-bowl",
+              "label": "Menu 4 — Mediterranean Falafel Bowl"
             }
           ]
         }
@@ -1724,11 +1738,107 @@
       "allergenInformation": [],
       "lifecycleState": "active",
       "sortOrder": 510
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:loaf_cake",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "loaf_cake"
+      },
+      "name": "Loaf Cake",
+      "description": "Loaf cake.",
+      "category": "Sweet treats",
+      "pricing": {
+        "unitPrice": 38,
+        "currency": "GBP",
+        "basis": "per item",
+        "servingInfo": "Feeds 14 people",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 14,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "people",
+        "suggestionUnit": "people"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 10000
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:tray_bake_box_nut_free",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "tray_bake_box_nut_free"
+      },
+      "name": "Traybake Box — Nut Free",
+      "description": "Nut free traybake box. Feeds 24 or 48 smaller bites.",
+      "category": "Sweet treats",
+      "pricing": {
+        "unitPrice": 75,
+        "currency": "GBP",
+        "basis": "per item",
+        "servingInfo": "Feeds 24 or 48 smaller bites",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 24,
+        "suggestionType": "fixed",
+        "suggestionLabel": "boxes",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 10001
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:doughnut_box",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "doughnut_box"
+      },
+      "name": "Doughnut Box",
+      "description": "Doughnut box.",
+      "category": "Sweet treats",
+      "pricing": {
+        "unitPrice": 42,
+        "currency": "GBP",
+        "basis": "per item",
+        "servingInfo": "Feeds 12 people",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "people",
+        "suggestionUnit": "people"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 10002
     }
   ],
   "validationReport": {
-    "sourceItemCount": 43,
-    "generatedItemCount": 43,
+    "sourceItemCount": 46,
+    "generatedItemCount": 46,
     "missingCanonicalFields": [
       {
         "sourceId": "bloom_filter_coffee",
@@ -1872,11 +1982,6 @@
       },
       {
         "sourceId": "tray_bake_box",
-        "field": "allergenInformation",
-        "reason": "Legacy source provides an empty allergen list."
-      },
-      {
-        "sourceId": "tray_bake_box",
         "field": "vatRate",
         "reason": "Legacy menu source does not provide an item-level VAT rate."
       },
@@ -2372,6 +2477,51 @@
       },
       {
         "sourceId": "bespoke_event",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "loaf_cake",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "loaf_cake",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "loaf_cake",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "tray_bake_box_nut_free",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "tray_bake_box_nut_free",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "tray_bake_box_nut_free",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "doughnut_box",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "doughnut_box",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "doughnut_box",
         "field": "vatRate",
         "reason": "Legacy menu source does not provide an item-level VAT rate."
       }
