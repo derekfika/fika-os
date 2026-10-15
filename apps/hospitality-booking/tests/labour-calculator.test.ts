@@ -98,3 +98,40 @@ test("operator UI exposes no NI, pension, VAT, on-cost or rate-entry fields", ()
   const exported = lib.slice(lib.indexOf("export type LabourRole"));
   assert.doesNotMatch(exported, /basicRate|pension|nin\b/i);
 });
+
+test("new charges can only be built from the locked approved table (no rate or multiplier input is honoured)", () => {
+  // Extra rate/multiplier fields smuggled into the input are ignored: the result always comes from the locked table.
+  const smuggled = { roleId: "kp", staffCount: 1, hours: 1, overtime: false, hourlyRate: 1, multiplier: 5 } as unknown as Parameters<typeof calculateLabour>[0];
+  const r = calculateLabour(smuggled);
+  assert.ok(r.ok);
+  if (r.ok) {
+    assert.equal(r.value.hourlyRate, 17.7);
+    assert.equal(r.value.multiplier, 1);
+    assert.equal(r.value.net, 17.7);
+  }
+  // Unapproved roles (e.g. a manager-invented custom role) cannot be priced at all.
+  assert.equal(calculateLabour({ roleId: "role_custom", staffCount: 1, hours: 1, overtime: false }).ok, false);
+  assert.equal(calculateLabour({ roleId: "", staffCount: 1, hours: 1, overtime: false }).ok, false);
+});
+
+test("the save path writes only calculator output; there is no custom-rate, legacy-edit or rate-settings path", () => {
+  const save = dashboard.slice(dashboard.indexOf("const saveLine ="), dashboard.indexOf("const saveChanges ="));
+  assert.match(save, /calculateLabour\(\{ roleId: editor\.roleId/);
+  assert.match(save, /hourlyRate: result\.value\.hourlyRate, multiplier: result\.value\.multiplier/);
+  assert.doesNotMatch(save, /Number\(editor\.(hourlyRate|multiplier)\)|editor\.legacy|roleLabel: editor/);
+  assert.doesNotMatch(dashboard, /LEGACY_ROLE|Custom role|Role name<input|Add another labour role|labourRates=\{|hourly net rate/i);
+  // Settings keep the Hub contract field but expose no editor for it.
+  assert.doesNotMatch(dashboard, /labourRates: labourRates\.(map|filter)|\[\.\.\.labourRates/);
+  // Legacy (non-approved) saved lines are view/remove only: Edit is offered for approved lines only.
+  assert.match(dashboard, /isApprovedLabourLine\(charge\.labour\) \? <button type="button" onClick=\{\(\) => openLabourEditor\(charge\)\}/);
+  assert.match(dashboard, /if \(!isApprovedLabourLine\(charge\.labour\)\) return;/);
+});
+
+test("legacy and approved saved lines are distinguished by role identity and exact locked rate, not rateSource", () => {
+  const kp = { roleId: "kp", hourlyRate: 17.7, multiplier: 1 };
+  assert.equal(isApprovedLabourLine(kp), true);
+  assert.equal(isApprovedLabourLine({ ...kp, hourlyRate: 22 }), false);
+  assert.equal(isApprovedLabourLine({ ...kp, roleId: "foh-assistant" }), false);
+  assert.equal(isApprovedLabourLine({ ...kp, roleId: undefined }), false);
+  assert.equal(isApprovedLabourLine({ ...kp, multiplier: 2 }), false);
+});

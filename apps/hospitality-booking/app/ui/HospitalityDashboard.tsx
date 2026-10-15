@@ -2051,22 +2051,16 @@ function BookingDetail({
 }
 
 type ManualChargeEditor = { kind: "manual"; id?: string; category: "equipment" | "service" | "other"; label: string; quantity: string; unitNet: string };
-/** Operators pick an approved role, staff, hours and Normal/Overtime. `legacy` keeps a pre-existing non-approved saved rate untouched. */
-const LEGACY_ROLE = "legacy";
-type LabourChargeEditor = { kind: "labour"; id?: string; label: string; roleId: string; staffCount: string; hoursPerPerson: string; overtime: boolean; legacy?: BookingAdditionalChargeLabour };
+/** Operators pick only an approved role, staff, hours and Normal/Overtime; rates are locked in lib/labour-rates.ts. */
+type LabourChargeEditor = { kind: "labour"; id?: string; label: string; roleId: string; staffCount: string; hoursPerPerson: string; overtime: boolean };
 type ChargeEditor = ManualChargeEditor | LabourChargeEditor;
 
 function labourEditorValues(editor: LabourChargeEditor) {
-  const staffCount = Number(editor.staffCount);
-  const hours = Number(editor.hoursPerPerson);
-  if (editor.roleId === LEGACY_ROLE && editor.legacy) {
-    const net = Math.round((staffCount * hours * editor.legacy.hourlyRate * editor.legacy.multiplier + Number.EPSILON) * 100) / 100;
-    return { valid: Number.isFinite(net), roleLabel: editor.legacy.roleLabel, hourlyRate: editor.legacy.hourlyRate, multiplier: editor.legacy.multiplier, net: Number.isFinite(net) ? net : 0 };
-  }
-  const result = calculateLabour({ roleId: editor.roleId, staffCount, hours, overtime: editor.overtime });
+  const result = calculateLabour({ roleId: editor.roleId, staffCount: Number(editor.staffCount), hours: Number(editor.hoursPerPerson), overtime: editor.overtime });
+  const role = findApprovedRole(editor.roleId);
   return result.ok
-    ? { valid: true as const, roleLabel: result.value.role.label, hourlyRate: result.value.hourlyRate, multiplier: result.value.multiplier, net: result.value.net }
-    : { valid: false as const, roleLabel: findApprovedRole(editor.roleId)?.label ?? "", hourlyRate: findApprovedRole(editor.roleId)?.normalRate ?? 0, multiplier: editor.overtime ? OVERTIME_MULTIPLIER : 1, net: 0 };
+    ? { valid: true as const, roleLabel: result.value.role.label, net: result.value.net }
+    : { valid: false as const, roleLabel: role?.label ?? "", net: 0 };
 }
 
 function storedChargeInput(charge: NonNullable<CanonicalBooking["additionalCharges"]>[number]): BookingAdditionalChargeInput {
@@ -2155,8 +2149,9 @@ function AdditionalChargesModal({
   const openLabourEditor = (charge?: Extract<BookingAdditionalChargeInput, { kind: "labour" }>) => {
     setError("");
     if (charge) {
-      const approved = isApprovedLabourLine(charge.labour);
-      setEditor({ kind: "labour", id: charge.id, label: charge.label, roleId: approved ? charge.labour.roleId! : LEGACY_ROLE, staffCount: String(charge.labour.staffCount), hoursPerPerson: String(charge.labour.hoursPerPerson), overtime: charge.labour.multiplier === OVERTIME_MULTIPLIER, ...(approved ? {} : { legacy: structuredClone(charge.labour) }) });
+      // Only lines at an approved locked rate can be edited; legacy lines are view/remove-only (see the line list).
+      if (!isApprovedLabourLine(charge.labour)) return;
+      setEditor({ kind: "labour", id: charge.id, label: charge.label, roleId: charge.labour.roleId!, staffCount: String(charge.labour.staffCount), hoursPerPerson: String(charge.labour.hoursPerPerson), overtime: charge.labour.multiplier === OVERTIME_MULTIPLIER });
       return;
     }
     setEditor({ kind: "labour", label: "", roleId: APPROVED_LABOUR_ROLES[0].id, staffCount: "1", hoursPerPerson: "1", overtime: false });
@@ -2182,22 +2177,14 @@ function AdditionalChargesModal({
     } else {
       const staffCount = Number(editor.staffCount);
       const hoursPerPerson = Number(editor.hoursPerPerson);
-      let labour: BookingAdditionalChargeLabour;
-      if (editor.roleId === LEGACY_ROLE && editor.legacy) {
-        // Pre-existing saved rate: only staff/hours may change; the saved rate and multiplier are preserved as-is.
-        if (!Number.isInteger(staffCount) || staffCount < 1 || staffCount > MAX_STAFF || !Number.isFinite(hoursPerPerson) || hoursPerPerson <= 0 || hoursPerPerson > MAX_HOURS) {
-          setError(`Enter a whole number of staff (1 to ${MAX_STAFF}) and hours above 0 (up to ${MAX_HOURS}).`);
-          return;
-        }
-        labour = { ...editor.legacy, staffCount, hoursPerPerson };
-      } else {
-        const result = calculateLabour({ roleId: editor.roleId, staffCount, hours: hoursPerPerson, overtime: editor.overtime });
-        if (!result.ok) {
-          setError(result.error);
-          return;
-        }
-        labour = { roleId: result.value.role.id, roleLabel: result.value.role.label, staffCount, hoursPerPerson, hourlyRate: result.value.hourlyRate, multiplier: result.value.multiplier, rateSource: "custom" };
+      const result = calculateLabour({ roleId: editor.roleId, staffCount, hours: hoursPerPerson, overtime: editor.overtime });
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
+      // rateSource stays "custom" only because the Hub contract's other value ("configured") validates against
+      // manager-saved settings rates. The locked provenance is the approved roleId + exact approved normal rate (isApprovedLabourLine).
+      const labour: BookingAdditionalChargeLabour = { roleId: result.value.role.id, roleLabel: result.value.role.label, staffCount, hoursPerPerson, hourlyRate: result.value.hourlyRate, multiplier: result.value.multiplier, rateSource: "custom" };
       const label = editor.label.trim() || `${labour.roleLabel} labour`;
       const line: Extract<BookingAdditionalChargeInput, { kind: "labour" }> = { id: editor.id || newStableId(), kind: "labour", category: "labour", label, labour };
       if (previewChargeNet(line) <= 0 || previewChargeNet(line) > 1_000_000) {
@@ -2246,7 +2233,7 @@ function AdditionalChargesModal({
               </div>
               <strong className="additional-charge-row__amount">£{previewChargeNet(charge).toFixed(2)} net</strong>
               <div className="additional-charge-row__actions">
-                <button type="button" onClick={() => charge.kind === "manual" ? openManualEditor(charge) : openLabourEditor(charge)}>Edit</button>
+                {charge.kind === "manual" ? <button type="button" onClick={() => openManualEditor(charge)}>Edit</button> : isApprovedLabourLine(charge.labour) ? <button type="button" onClick={() => openLabourEditor(charge)}>Edit</button> : <span className="additional-charge-legacy">Legacy rate · remove to replace</span>}
                 <button type="button" onClick={() => setCharges((current) => current.filter((currentCharge) => currentCharge.id !== charge.id))}>Remove</button>
               </div>
             </article>
@@ -2269,7 +2256,6 @@ function AdditionalChargesModal({
           <form className="additional-charge-editor" onSubmit={saveLine}>
             <h3>{editor.id ? "Edit labour charge" : "Labour calculator"}</h3>
             <label>Role<select value={editor.roleId} onChange={(event) => changeLabour({ roleId: event.target.value })}>
-              {editor.legacy && <option value={LEGACY_ROLE}>{editor.legacy.roleLabel} · saved rate (£{editor.legacy.hourlyRate.toFixed(2)}/hr × {editor.legacy.multiplier})</option>}
               {APPROVED_LABOUR_ROLES.map((role) => <option key={role.id} value={role.id}>{role.label}</option>)}
             </select></label>
             <label>Charge label<input value={editor.label} placeholder={`${editorLabour?.roleLabel || "Labour"} labour`} maxLength={120} onChange={(event) => changeLabour({ label: event.target.value })} /></label>
@@ -2277,10 +2263,10 @@ function AdditionalChargesModal({
               <label>Number of staff<input type="number" min="1" max={MAX_STAFF} step="1" value={editor.staffCount} onChange={(event) => changeLabour({ staffCount: event.target.value })} required /></label>
               <label>Hours per person<input type="number" min="0.25" max={MAX_HOURS} step="0.25" value={editor.hoursPerPerson} onChange={(event) => changeLabour({ hoursPerPerson: event.target.value })} required /></label>
             </div>
-            {editor.roleId !== LEGACY_ROLE && <label>Rate<select value={editor.overtime ? "overtime" : "normal"} onChange={(event) => changeLabour({ overtime: event.target.value === "overtime" })}><option value="normal">Normal</option><option value="overtime">Overtime</option></select></label>}
+            <label>Rate<select value={editor.overtime ? "overtime" : "normal"} onChange={(event) => changeLabour({ overtime: event.target.value === "overtime" })}><option value="normal">Normal</option><option value="overtime">Overtime</option></select></label>
             <div className="additional-charge-editor__preview" role="status" aria-live="polite">
               <strong>{editor.label.trim() || `${editorLabour?.roleLabel || "Labour"} labour`}</strong>
-              <span>{editor.staffCount || "0"} staff × {Number(editor.hoursPerPerson || 0).toFixed(2)} hrs × {editor.roleId === LEGACY_ROLE ? `£${editorLabour?.hourlyRate.toFixed(2)} × ${editorLabour?.multiplier}` : `£${(editor.overtime ? (findApprovedRole(editor.roleId)?.overtimeRate ?? 0) : (findApprovedRole(editor.roleId)?.normalRate ?? 0)).toFixed(2)}/hr${editor.overtime ? " (overtime)" : ""}`}</span>
+              <span>{editor.staffCount || "0"} staff × {Number(editor.hoursPerPerson || 0).toFixed(2)} hrs × £{(editor.overtime ? (findApprovedRole(editor.roleId)?.overtimeRate ?? 0) : (findApprovedRole(editor.roleId)?.normalRate ?? 0)).toFixed(2)}/hr{editor.overtime ? " (overtime)" : ""}</span>
               <b>£{labourPreview.toFixed(2)} net</b>
             </div>
             <footer><button type="button" onClick={() => setEditor(null)}>Cancel</button><button className="primary">{editor.id ? "Update labour charge" : "Add labour charge"}</button></footer>
