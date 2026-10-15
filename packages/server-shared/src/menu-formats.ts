@@ -180,8 +180,8 @@ export const SITE_BRANDING: SiteBranding[] = [
     formats: {
       tablet: { master: "mnk-tablet-v1", envKeys: ["GOOGLE_MENU_TEMPLATE_ID_MNK", "GOOGLE_MENU_TEMPLATE_ID"] },
       "flat-label": { master: "mnk-flat-label-v1", envKeys: MNK_LABEL_ENV },
-      // Defined from the label deck's fold-over page but deliberately not offered until a real tent layout is approved.
-      "tent-label": { master: "mnk-tent-label-v1", envKeys: MNK_LABEL_ENV, available: false },
+      // The fold-over page (slide 1) of the same MNK Label Template deck as the flat labels.
+      "tent-label": { master: "mnk-tent-label-v1", envKeys: MNK_LABEL_ENV },
     },
   },
   {

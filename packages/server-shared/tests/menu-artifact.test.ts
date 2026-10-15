@@ -123,10 +123,16 @@ test("template resolution is site and format based and fails safely", () => {
   assert.equal(resolveMenuTemplate({ siteKey: "mnk" }, { GOOGLE_MENU_TEMPLATE_ID: "legacy-tpl" }).templateId, "legacy-tpl", "legacy MNK env name still works");
   assert.equal(resolveMenuTemplate({ siteKey: "mnk", templateIdOverride: "https://docs.google.com/presentation/d/override-tpl/edit" }, mnkEnv).templateId, "override-tpl");
   assert.equal(resolveMenuTemplate({ siteKey: "mnk", format: "flat-label", templateIdOverride: "override-tpl" }, mnkEnv).templateId, "tpl-mnk-labels", "a tablet override is never used as a label master");
-  assert.deepEqual(menuFormatsForSite("mnk"), ["tablet", "flat-label"], "tent labels are not offered until a real tent layout is approved");
+  assert.deepEqual(menuFormatsForSite("mnk"), ["tablet", "flat-label", "tent-label"]);
+  const tent = resolveMenuTemplate({ siteKey: "mnk", format: "tent-label" }, mnkEnv);
+  assert.equal(tent.key, "mnk-tent-label-v1");
+  assert.equal(tent.templateId, "tpl-mnk-labels", "tent uses the MNK Label Template deck, the same as flat labels");
+  assert.equal((LAYOUT_MASTERS[tent.key] as LabelMaster).masterSlideIndex, 0, "tent is slide 1 of the label deck");
+  assert.equal((LAYOUT_MASTERS[template("flat-label").key] as LabelMaster).masterSlideIndex, 1, "flat labels stay on slide 2");
+  assert.equal(template("tablet").key, "mnk-tablet-v1");
   assert.deepEqual(menuFormatsForSite("angel-court"), ["tablet"]);
   assert.deepEqual(menuFormatsForSite("unknown"), []);
-  assert.throws(() => template("tent-label"), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_FORMAT_UNSUPPORTED" && /does not offer/.test(error.message));
+  assert.throws(() => resolveMenuTemplate({ siteKey: "angel-court", format: "tent-label" }, { GOOGLE_MENU_TEMPLATE_ID_ANGEL_COURT: "tpl-ac" }), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_FORMAT_UNSUPPORTED" && /does not support the "tent-label"/.test(error.message));
   assert.equal(LAYOUT_MASTERS[resolveMenuTemplate({ siteKey: "angel-court" }, { GOOGLE_MENU_TEMPLATE_ID_ANGEL_COURT: "tpl-ac" }).key].kind, "tablet");
   assert.throws(() => resolveMenuTemplate({ siteKey: "mnk" }, {}), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_NOT_CONFIGURED" && error.status === 409 && /GOOGLE_MENU_TEMPLATE_ID_MNK/.test(error.message));
   assert.throws(() => resolveMenuTemplate({ siteKey: "mnk", format: "flat-label" }, { GOOGLE_MENU_TEMPLATE_ID_MNK: "tpl-mnk" }), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_NOT_CONFIGURED" && /GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK/.test(error.message));

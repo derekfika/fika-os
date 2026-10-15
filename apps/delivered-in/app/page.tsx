@@ -210,79 +210,82 @@ function SiteMenuControls({
     }
   };
   return (
-    <div className="ops-action-row">
-      <span className={`menu-state menu-state-${state.status}`}>
-        {!signed
-          ? "Waiting for CPU checker sign-off"
-          : state.status === "current"
-            ? "Site menu current"
-            : state.status === "stale"
-              ? "Site menu needs refresh"
-              : "Site menu not generated"}
-      </span>
-      {signed && artifact && (
-        <a
-          className="ops-link"
-          href={artifact.driveUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          View menu ↗
-        </a>
-      )}
-      {signed && canGenerate && formats.length > 1 && (
-        <label className="ops-field-inline">
-          <span className="sr-only">Menu format</span>
-          <select
-            aria-label="Menu format"
-            value={format}
-            onChange={(event) => setFormat(event.target.value as typeof format)}
+    <div className="ops-action-row ops-menu-controls">
+      <div className="ops-menu-control-row">
+        {signed && canGenerate && formats.length > 1 && (
+          <label className="ops-menu-format-field">
+            <span>Menu format</span>
+            <select
+              value={format}
+              onChange={(event) => setFormat(event.target.value as typeof format)}
+              disabled={busy}
+            >
+              {formats.map((value) => (
+                <option key={value} value={value}>{FORMAT_LABELS[value] || value}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        {signed && canGenerate && (
+          <button
+            className="ops-button ops-button-secondary ops-menu-generate"
+            onClick={() => void generate()}
             disabled={busy}
+            aria-busy={busy ? true : undefined}
           >
-            {formats.map((value) => (
-              <option key={value} value={value}>{FORMAT_LABELS[value] || value}</option>
-            ))}
-          </select>
-        </label>
-      )}
-      {signed && canGenerate && (
-        <button
-          className="ops-button ops-button-secondary"
-          onClick={() => void generate()}
-          disabled={busy}
-          aria-busy={busy ? true : undefined}
-        >
-          {busy
-            ? <><span className="fika-spinner" aria-hidden="true" />{format !== "tablet" ? `Generating ${FORMAT_LABELS[format].toLowerCase()}…` : "Generating site menu…"}</>
-            : format !== "tablet"
-              ? `${labelState?.status === "none" || !labelState ? "Generate" : "Regenerate"} ${FORMAT_LABELS[format].toLowerCase()}`
-              : state.status === "none"
-                ? "Generate site menu"
-                : "Regenerate site menu"}
-        </button>
-      )}
-      {signed && !canGenerate && (
-        <span className="menu-state menu-state-none">Menu generation needs the Delivered-In generate permission</span>
-      )}
-      {signed && labelState && (
-        <span className={`menu-state menu-state-${labelState.status === "outdated" ? "stale" : labelState.status === "current" ? "current" : "none"}`}>
-          {labelState.status === "current"
-            ? `${FORMAT_LABELS[format]} current`
-            : labelState.status === "outdated"
-              ? `${FORMAT_LABELS[format]} OUTDATED — menu or allergens changed; regenerate to reprint`
-              : `${FORMAT_LABELS[format]} not generated`}
+            {busy
+              ? <><span className="fika-spinner" aria-hidden="true" />{format !== "tablet" ? `Generating ${FORMAT_LABELS[format].toLowerCase()}…` : "Generating site menu…"}</>
+              : format !== "tablet"
+                ? `${labelState?.status === "none" || !labelState ? "Generate" : "Regenerate"} ${FORMAT_LABELS[format].toLowerCase()}`
+                : state.status === "none"
+                  ? "Generate site menu"
+                  : "Regenerate site menu"}
+          </button>
+        )}
+        {signed && !canGenerate && (
+          <span className="menu-state menu-state-none">Menu generation needs the Delivered-In generate permission</span>
+        )}
+      </div>
+      <div className="ops-menu-status-list">
+        <span className={`menu-state menu-state-${state.status}`}>
+          {!signed
+            ? "Waiting for CPU checker sign-off"
+            : state.status === "current"
+              ? "Site menu current"
+              : state.status === "stale"
+                ? "Site menu needs refresh"
+                : "Site menu not generated"}
         </span>
-      )}
-      {signed && labelState?.artifact && (
-        <a className="ops-link" href={labelState.artifact.driveUrl} target="_blank" rel="noopener noreferrer">
-          View {FORMAT_LABELS[format].toLowerCase()}{labelState.status === "outdated" ? " (outdated)" : ""} ↗
-        </a>
-      )}
-      {error && (
-        <span className="ops-error" role="alert">
-          {error}
-        </span>
-      )}
+        {signed && artifact && (
+          <a
+            className="ops-link"
+            href={artifact.driveUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View menu ↗
+          </a>
+        )}
+        {signed && labelState && (
+          <span className={`menu-state menu-state-${labelState.status === "outdated" ? "stale" : labelState.status === "current" ? "current" : "none"}`}>
+            {labelState.status === "current"
+              ? `${FORMAT_LABELS[format]} current`
+              : labelState.status === "outdated"
+                ? `${FORMAT_LABELS[format]} OUTDATED — menu or allergens changed; regenerate to reprint`
+                : `${FORMAT_LABELS[format]} not generated`}
+          </span>
+        )}
+        {signed && labelState?.artifact && (
+          <a className="ops-link" href={labelState.artifact.driveUrl} target="_blank" rel="noopener noreferrer">
+            View {FORMAT_LABELS[format].toLowerCase()}{labelState.status === "outdated" ? " (outdated)" : ""} ↗
+          </a>
+        )}
+        {error && (
+          <span className="ops-error" role="alert">
+            {error}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

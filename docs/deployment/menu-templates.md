@@ -62,8 +62,7 @@ A site/format with no layout or an unconfigured deck fails with `MENU_FORMAT_UNS
 size or card grid does not match the layout master fails with `MENU_TEMPLATE_MISMATCH` instead of producing a misaligned sheet.
 
 Hospitality dashboard: the booking panel shows a **Menu format** picker only when the site supports more than one format (`menuFormatsForSite`: MNK =
-Tablet menu + Flat labels; Angel Court = tablet only, so no picker). **Tent labels are defined (`available: false`) but hidden and refused until a real tent
-layout is approved.** `POST /api/menus` takes `format` (default `tablet`); the dashboard keeps one current output per booking per format and flags it
+Tablet menu + Flat labels + Tent labels; Angel Court = tablet only, so no picker). **Tent labels (slide 1 of the MNK Label Template) are offered for MNK;** a site's format can still be hidden/refused with `available: false` in `SITE_BRANDING`. `POST /api/menus` takes `format` (default `tablet`); the dashboard keeps one current output per booking per format and flags it
 outdated when the CPU plan changes. Delivered-In: the same picker, fed by `GET /api/delivered-in/site-menu` (`formats`, `labels`).
 
 Labels are **never auto-regenerated**. Delivered-In records each label format separately (own current record, `format` on the artifact) and `siteLabelState` flags it

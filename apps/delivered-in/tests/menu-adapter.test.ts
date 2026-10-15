@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MenuArtifactError, buildMenuSlidesRequests, menuArtifactKey, planMenuLayout, resolveMenuTemplate, type SlidesPresentation } from "@fika/server-shared/menu-artifact";
+import { MenuArtifactError, LAYOUT_MASTERS, assertMenuOutputFormat, buildMenuSlidesRequests, menuArtifactKey, menuFormatsForSite, menuSiteKeyForOploc, planMenuLayout, resolveMenuTemplate, type SlidesPresentation } from "@fika/server-shared/menu-artifact";
 import { deliveredInMenuFromDay, deliveredInMenuSiteKey } from "../lib/menu-adapter";
 import { projectPublishedWeeks, type ProjectedDay, type SourceDay, type SourcePublication } from "../lib/projection";
 import { siteLabelState, siteMenuState, type SiteMenuArtifact } from "../lib/site-menu";
@@ -91,6 +91,24 @@ test("sites without a shared template are outside the shared path and fail safel
   const [projected] = project([sourceDay()]);
   assert.throws(() => deliveredInMenuFromDay(projected, haleon), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_SITE_UNSUPPORTED");
   assert.throws(() => resolveMenuTemplate({ siteKey: "mnk" }, {}), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_NOT_CONFIGURED");
+});
+
+test("the Delivered-In formats list for MNK offers tablet, flat-label and tent-label; Tent resolves to slide 1 of the MNK Label Template", () => {
+  assert.deepEqual(menuFormatsForSite(menuSiteKeyForOploc(MNK)), ["tablet", "flat-label", "tent-label"]);
+  assert.equal(assertMenuOutputFormat("tent-label"), "tent-label");
+  const env = { ...mnkEnv, GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK: "tpl-labels" };
+  const tent = resolveMenuTemplate({ oplocId: MNK, format: "tent-label" }, env);
+  const flat = resolveMenuTemplate({ oplocId: MNK, format: "flat-label" }, env);
+  assert.equal(tent.key, "mnk-tent-label-v1");
+  assert.equal(tent.templateId, "tpl-labels", "same MNK Label Template deck as flat labels");
+  assert.equal(tent.templateId, flat.templateId);
+  assert.equal((LAYOUT_MASTERS[tent.key] as { masterSlideIndex: number }).masterSlideIndex, 0, "tent = slide 1");
+  assert.equal((LAYOUT_MASTERS[flat.key] as { masterSlideIndex: number }).masterSlideIndex, 1, "flat unchanged = slide 2");
+  assert.equal(resolveMenuTemplate({ oplocId: MNK }, env).key, "mnk-tablet-v1", "tablet unchanged");
+  const menu = deliveredInMenuFromDay(project([sourceDay()])[0], site);
+  const plan = planMenuLayout(menu, "tent-label");
+  assert.equal(plan.format, "tent-label");
+  assert.equal(plan.pages.flatMap(layoutPage => layoutPage.elements).filter(element => element.type === "text").length, 3, "one tent card per dish");
 });
 
 test("the same current-day Delivered-In menu renders as flat labels with one dish per label and distinct artifact identity", () => {
