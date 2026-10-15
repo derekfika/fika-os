@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { FormEvent } from "react";
 import { MailSearch, RefreshCw, Settings } from "lucide-react";
 import type { BookingAdditionalChargeInput, CanonicalBooking, ProductionOrder, DashboardQuoteSettings, LabourRateSetting } from "@/lib/canonical-types";
 import { dailyRunSheetHtml } from "../../lib/run-sheet";
+import { bookingRequestedItems, bookingRoutingStatus, NO_CPU_PRODUCTION_MESSAGE, productionRequirement, type ProductionRequirement } from "../../lib/booking-presentation";
 import { quoteHtml } from "../../lib/quote-document";
 import { fetchQuoteRequest } from "../../lib/quote-request";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
@@ -12,6 +13,7 @@ import { MENU_FORMAT_OPTIONS, menuFormatsForSiteKey, menuOutputKey, mnkMenuHtml 
 import type { MenuFormat, MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";
 import { HospitalityGroupDetail } from "./HospitalityGroupDetail";
+import { RequestedItemsList } from "./RequestedItemsList";
 import type { HospitalityBookingGroup } from "../../../shared/hospitality-group-quotes";
 import { hospitalitySiteThemeStyle, portalSite, type PortalSiteKey } from "@/lib/portal-sites";
 import { hospitalityWorkspacePath } from "@/lib/hospitality-workspace";
@@ -103,6 +105,10 @@ export default function HospitalityDashboard({
   const [standaloneIds, setStandaloneIds] = useState<Set<string>>(new Set());
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const selectedGroup = groups.find(group => group.id === selectedGroupId);
+  const groupChildren = useMemo(
+    () => selectedGroup ? selectedGroup.services.flatMap(service => { const child = bookings.find(b => b.canonicalId === service.bookingId); return child ? [{ booking: child, time: service.time, requirement: productionRequirement([service.routing?.status ?? bookingRoutingStatus(child)]) }] : []; }).sort((a, b) => a.time.localeCompare(b.time)) : [],
+    [selectedGroup, bookings],
+  );
   const selectBooking = (booking: CanonicalBooking) => { setSelectedGroupId(null); setSelected(booking); };
   const selectGroup = (group: HospitalityBookingGroup) => { setSelectedGroupId(group.id); setSelected(null); setAmendment(null); };
   const [productionOrders, setProductionOrders] = useState<
@@ -287,11 +293,17 @@ export default function HospitalityDashboard({
     finally { setScanBusy(false); }
   };
 
+  // Booking-level production state: the single selected booking, or every service of the selected group that is not produced in house.
+  const productionTargets = useMemo(
+    () => selected
+      ? productionRequirement([bookingRoutingStatus(selected)]) === "none" ? [] : [selected]
+      : groupChildren.filter(child => child.requirement !== "none").map(child => child.booking),
+    [selected, groupChildren],
+  );
+  const productionTargetsKey = productionTargets.map(target => `${target.canonicalId}:${target.version}:${productionOrders[target.canonicalId]?.canonicalId}:${productionOrders[target.canonicalId]?.version}:${productionOrders[target.canonicalId]?.updatedAt}`).join("|");
+
   useEffect(() => {
-    if (!selected) return;
-    const bookingId = selected.canonicalId;
-    const productionOrder = productionOrders[bookingId];
-    const productionOrderId = productionOrder?.canonicalId;
+    const refreshMatrix = (bookingId: string, productionOrderId?: string) => {
     const setMatrixState = (state: { status: "checking" | "generating" | "ready" | "not_configured" | "failed" | "error"; driveStatus: string; error?: string; artifact?: Record<string, unknown> }) => {
       setMatrixArtifacts((current) => ({
         ...current,
@@ -324,12 +336,12 @@ export default function HospitalityDashboard({
         setMatrixState({ status: "error", driveStatus: "error", error: "The Hospitality dashboard received no current allergen matrix artifact." });
       })
       .catch((cause) => setMatrixState({ status: "error", driveStatus: "error", error: (cause as Error).message }));
-  }, [selected?.canonicalId, selected?.version, productionOrders[selected?.canonicalId || ""]?.canonicalId, productionOrders[selected?.canonicalId || ""]?.version, productionOrders[selected?.canonicalId || ""]?.updatedAt, matrixRefreshTick]);
+    };
+    productionTargets.forEach(target => refreshMatrix(target.canonicalId, productionOrders[target.canonicalId]?.canonicalId));
+  }, [productionTargetsKey, matrixRefreshTick]);
 
   useEffect(() => {
-    if (!selected) return;
-    const bookingId = selected.canonicalId;
-    const productionOrderId = productionOrders[bookingId]?.canonicalId;
+    const refreshReadiness = (bookingId: string, productionOrderId?: string) => {
     void fetch(`/api/menus?bookingId=${encodeURIComponent(bookingId)}&readiness=1${productionOrderId ? `&productionOrderId=${encodeURIComponent(productionOrderId)}` : ""}`, { cache: "no-store" })
       .then(async (response) => {
         const body = await readDashboardJson(response) as { readiness?: { available: boolean; reason: string }; error?: { message?: string } };
@@ -338,19 +350,21 @@ export default function HospitalityDashboard({
       })
       .then((body) => setMenuReadiness((current) => ({ ...current, [bookingId]: body.readiness || { available: false, reason: "Menu readiness is unavailable." } })))
       .catch((cause) => setMenuReadiness((current) => ({ ...current, [bookingId]: { available: false, reason: (cause as Error).message } })));
-  }, [selected?.canonicalId, selected?.version, productionOrders[selected?.canonicalId || ""]?.canonicalId, productionOrders[selected?.canonicalId || ""]?.updatedAt]);
+    };
+    productionTargets.forEach(target => refreshReadiness(target.canonicalId, productionOrders[target.canonicalId]?.canonicalId));
+  }, [productionTargetsKey]);
 
   // CPU planning is a shared projection, so keep an open manager panel current
   // while the production team is working without requiring a manual refresh.
   useEffect(() => {
-    if (!selected) return;
+    if (!selected && !selectedGroupId) return;
     // Keep the manager view reasonably fresh without turning every open tab
     // into a high-frequency Firestore read loop.
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void load();
     }, 30_000);
     return () => window.clearInterval(timer);
-  }, [selected?.canonicalId, site.key]);
+  }, [selected?.canonicalId, selectedGroupId, site.key]);
 
   const signInLocally = async () => {
     const response = await fetch("/api/local-session", { method: "POST" });
@@ -406,27 +420,30 @@ export default function HospitalityDashboard({
     return statusBody.booking as CanonicalBooking;
   };
 
-  const performAction = async (actionOverride?: WorkflowAction | null) => {
+  const performAction = async (actionOverride?: WorkflowAction | null, target?: CanonicalBooking) => {
+    const subject = target ?? selected;
+    // A group service is acted on in place: showing its result must not select the service.
+    const showBooking = (next: CanonicalBooking | null) => { if (!target) setSelected(next); };
     setError("");
     setNotice("");
     const action = actionOverride || pending;
-    if (!selected || !action) return;
+    if (!subject || !action) return;
     setActionStage(action === "Production" ? "Sending to CPU…" : action === "Quoted" || action === "QuotePdfRetry" ? "Creating quote…" : "Saving changes…");
     if (action === "QuotePdfRetry") {
-      const current = selected.quoteState?.revisions.find((revision) => revision.id === selected.quoteState?.currentRevisionId);
+      const current = subject.quoteState?.revisions.find((revision) => revision.id === subject.quoteState?.currentRevisionId);
       if (!current) {
         setError("The current quote revision could not be found. Reload the booking before retrying.");
         setPending(null);
         return;
       }
-      try { setSelected(await persistQuotePdf(selected, current)); setError(""); } catch (cause) { setError((cause as Error).message); }
+      try { showBooking(await persistQuotePdf(subject, current)); setError(""); } catch (cause) { setError((cause as Error).message); }
       setPending(null);
       void load(false);
       return;
     }
     const base = {
-      canonicalId: selected.canonicalId,
-      expectedVersion: selected.version,
+      canonicalId: subject.canonicalId,
+      expectedVersion: subject.version,
     };
     const command =
       action === "Amend" && amendment
@@ -442,7 +459,7 @@ export default function HospitalityDashboard({
             ? {
                 ...base,
                 action: "quote",
-                regenerate: Boolean(selected.quoteState?.currentRevisionId),
+                regenerate: Boolean(subject.quoteState?.currentRevisionId),
               }
             : action === "Production"
                 ? { ...base, action: "production-handoff" }
@@ -475,7 +492,7 @@ export default function HospitalityDashboard({
       return;
     }
     if (body.status === "no_cpu_production_required") setNotice(body.message || "No CPU production required: every item on this booking is produced in house.");
-    setSelected(body.booking || selected);
+    showBooking(body.booking || subject);
     if (action === "Quoted" && body.booking) {
       setActionStage("Saving quote PDF…");
       let pdfSaved = false;
@@ -500,7 +517,7 @@ export default function HospitalityDashboard({
           else {
             pdfSaved = true;
             const savedBooking = statusBody.booking || body.booking;
-            setSelected(savedBooking);
+            showBooking(savedBooking);
           }
         }
       } catch (cause) {
@@ -522,7 +539,7 @@ export default function HospitalityDashboard({
             }),
           }, "The quote PDF failure status could not be recorded.");
           const failureBody = await readDashboardJson(failureResponse);
-          if (failureResponse.ok && failureBody.booking) setSelected(failureBody.booking);
+          if (failureResponse.ok && failureBody.booking) showBooking(failureBody.booking);
         } catch {
           // The refresh below reconciles a write whose response could not be confirmed.
         }
@@ -532,7 +549,7 @@ export default function HospitalityDashboard({
       setActionStage("Completing booking…");
       const refreshedResponse = await fetch(`/api/dashboard-bookings?site=${encodeURIComponent(site.key)}${oplocId ? `&oploc=${encodeURIComponent(oplocId)}` : ""}`, { cache: "no-store" });
       const refreshedBody = await refreshedResponse.json();
-      const refreshed = refreshedBody.bookings?.find((booking: CanonicalBooking) => booking.canonicalId === selected.canonicalId) as CanonicalBooking | undefined;
+      const refreshed = refreshedBody.bookings?.find((booking: CanonicalBooking) => booking.canonicalId === subject.canonicalId) as CanonicalBooking | undefined;
       if (refreshed) {
         const completedResponse = await fetch("/api/dashboard-bookings", {
           method: "POST",
@@ -541,7 +558,7 @@ export default function HospitalityDashboard({
         });
         const completedBody = await completedResponse.json();
         if (!completedResponse.ok) setError(completedBody.error?.message || "The booking was sent to CPU but could not be marked complete.");
-        else setSelected(completedBody.booking || refreshed);
+        else showBooking(completedBody.booking || refreshed);
       }
     }
     setPending(null);
@@ -550,13 +567,13 @@ export default function HospitalityDashboard({
     void load(action !== "Quoted");
   };
 
-  const act = async (actionOverride?: WorkflowAction | null) => {
+  const act = async (actionOverride?: WorkflowAction | null, target?: CanonicalBooking) => {
     if (actionInFlight.current) return;
     actionInFlight.current = true;
     setActionStage("Working…");
     setActionBusy(true);
     try {
-      await performAction(actionOverride);
+      await performAction(actionOverride, target);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The booking action failed. Please try again.");
       setPending(null);
@@ -870,6 +887,12 @@ export default function HospitalityDashboard({
   const selectedMenuOutput = selected
     ? menuOutputs[menuOutputKey(selected.canonicalId, activeMenuFormat)]
     : undefined;
+  // Same freshness rule for any booking: a menu is stale once its CPU plan has moved on.
+  const isMenuStale = (bookingId: string) => {
+    const output = menuOutputs[menuOutputKey(bookingId, activeMenuFormat)];
+    const order = productionOrders[bookingId];
+    return Boolean(output?.planUpdatedAt && order?.updatedAt && output.planUpdatedAt < order.updatedAt);
+  };
   const selectedMenuStale = Boolean(
     selectedMenuOutput?.planUpdatedAt &&
       selectedProductionOrder?.updatedAt &&
@@ -1059,7 +1082,7 @@ export default function HospitalityDashboard({
                 className="hospitality-dashboard__run-sheet-trigger"
                 onClick={openRunSheetRange}
               >
-                Run sheet PDF
+                Run sheet
               </button>
               <label>
                 Show
@@ -1150,8 +1173,35 @@ export default function HospitalityDashboard({
                   </p>
                 )}
               </div>
-              {selectedGroup && <HospitalityGroupDetail group={selectedGroup} busy={actionBusy} onQuote={() => void generateGroupQuote()} onService={id => { setSelected(bookings.find(b => b.canonicalId === id) || null); setAmendment(null); }} />}
-              {selected && selectedGroup && <h3>Service operations · {selected.service.startTime} · {selected.order.eventType?.replaceAll("_", " ")}</h3>}
+              {selectedGroup && <HospitalityGroupDetail group={selectedGroup} busy={actionBusy} onQuote={() => void generateGroupQuote()} production={
+                <fieldset className={styles.actionControls} disabled={actionBusy} aria-busy={actionBusy} aria-label="Booking production actions">
+                  {productionRequirement(selectedGroup.services.map(service => service.routing?.status)) === "none"
+                    ? <ProductionTools booking={groupChildren[0]?.booking as CanonicalBooking} requirement="none" siteLabel={currentSiteLabel} menuStale={false} menuReady={false} menuReadyReason="" onRefreshMatrix={() => undefined} menuBusy={menuBusy} menuFormat={activeMenuFormat} menuFormats={supportedMenuFormats} onMenuFormatChange={setMenuFormat} onAction={() => undefined} onGenerateMenu={generateMenu} onOpenMenu={openMenu} />
+                    : groupChildren.filter(child => child.requirement !== "none").map(child => (
+                      <ProductionTools
+                        key={child.booking.canonicalId}
+                        heading={`${child.time} service`}
+                        booking={child.booking}
+                        requirement={child.requirement}
+                        siteLabel={currentSiteLabel}
+                        productionOrder={productionOrders[child.booking.canonicalId]}
+                        menuOutput={menuOutputs[menuOutputKey(child.booking.canonicalId, activeMenuFormat)]}
+                        menuStale={isMenuStale(child.booking.canonicalId)}
+                        menuReady={Boolean(menuReadiness[child.booking.canonicalId]?.available)}
+                        menuReadyReason={menuReadiness[child.booking.canonicalId]?.reason || "Waiting for menu items and allergen information."}
+                        matrixArtifact={matrixArtifacts[child.booking.canonicalId]}
+                        onRefreshMatrix={() => setMatrixRefreshTick((current) => current + 1)}
+                        menuBusy={menuBusy}
+                        menuFormat={activeMenuFormat}
+                        menuFormats={supportedMenuFormats}
+                        onMenuFormatChange={setMenuFormat}
+                        onAction={(action) => void act(action, child.booking)}
+                        onGenerateMenu={generateMenu}
+                        onOpenMenu={openMenu}
+                      />
+                    ))}
+                </fieldset>
+              } />}
               {selected ? (
                 <fieldset className={styles.actionControls} disabled={actionBusy} aria-busy={actionBusy} aria-label="Booking details and actions">
                 <BookingPane
@@ -1324,8 +1374,9 @@ export default function HospitalityDashboard({
               <p className="eyebrow">Operational run sheet</p>
               <h2>Choose a date range</h2>
               <p>
-                Generate one scan-first PDF for the selected bookings. It
-                defaults to the visible Monday-to-Friday week.
+                Open one scan-first run sheet for the selected bookings; save or
+                print it as a PDF from the document. It defaults to the visible
+                Monday-to-Friday week.
               </p>
               <div className="amendment-grid">
                 <label>
@@ -1372,7 +1423,7 @@ export default function HospitalityDashboard({
                 <button type="button" onClick={() => setRunSheetOpen(false)}>
                   Cancel
                 </button>
-                <button className="primary">Generate run sheet PDF</button>
+                <button className="primary">Open run sheet</button>
               </footer>
             </form>
           </div>
@@ -1499,6 +1550,292 @@ function BookingPane({
       onGenerateMenu={onGenerateMenu}
       onOpenMenu={onOpenMenu}
     />
+  );
+}
+
+function ProductionTools({
+  booking, requirement, siteLabel, productionOrder, menuOutput, menuStale, menuReady, menuReadyReason, matrixArtifact, onRefreshMatrix,
+  menuBusy, menuFormat, menuFormats, onMenuFormatChange, onAction, onGenerateMenu, onOpenMenu, leading, heading,
+}: {
+  booking: CanonicalBooking;
+  requirement: ProductionRequirement;
+  siteLabel: string;
+  productionOrder?: ProductionOrder;
+  menuOutput?: MenuOutput;
+  menuStale: boolean;
+  menuReady: boolean;
+  menuReadyReason: string;
+  matrixArtifact?: {
+    html?: string;
+    localUrl?: string;
+    driveUrl?: string;
+    viewUrl?: string;
+    fileName: string;
+    driveStatus: string;
+    approvalMode?: string;
+    status?: "checking" | "generating" | "ready" | "not_configured" | "failed" | "error";
+    error?: string;
+  };
+  onRefreshMatrix: () => void;
+  menuBusy: boolean;
+  menuFormat: MenuFormat;
+  menuFormats: MenuFormat[];
+  onMenuFormatChange: (format: MenuFormat) => void;
+  onAction: (action: WorkflowAction) => void;
+  onGenerateMenu: (booking: CanonicalBooking) => Promise<void>;
+  onOpenMenu: (output: MenuOutput) => void;
+  /** Quote control for a single-service booking, rendered inside the document group. */
+  leading?: ReactNode;
+  /** Names the service a row belongs to when several are listed (e.g. its time). */
+  heading?: string;
+}) {
+  if (requirement === "none") {
+    return (
+      <div className="production-tools production-tools--locked" role="group" aria-label={heading ? `Production for ${heading}` : "Production"}>
+        {heading && <p className="manager-document-actions__title">{heading}</p>}
+        <p className="workflow-callout" role="status">{NO_CPU_PRODUCTION_MESSAGE}</p>
+        <button type="button" className="manager-cpu-action" disabled>
+          <strong>CPU production locked</strong>
+          <small>Nothing in this booking is produced by CPU</small>
+        </button>
+        <div className="manager-document-actions" role="group" aria-label="Quote, allergen matrix and menu">
+          {leading}
+          <button type="button" className="manager-document-action" disabled><strong>Allergen matrix locked</strong><small>Not needed without CPU-produced items</small></button>
+          <button type="button" className="manager-document-action" disabled><strong>Menu generation locked</strong><small>Not needed without CPU-produced items</small></button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="production-tools" role="group" aria-label={heading ? `Production for ${heading}` : "Production"}>
+      {heading && <p className="manager-document-actions__title">{heading}</p>}
+          <button
+            type="button"
+            className="manager-cpu-action"
+            disabled={Boolean(productionOrderMatchesCurrentQuote(booking, productionOrder)) || !quoteReadyForCpu(booking) || booking.deliveryChargeRequired === false}
+            onClick={() => onAction("Production")}
+          >
+            <strong>{productionOrderMatchesCurrentQuote(booking, productionOrder) ? "Sent to CPU" : "Send to CPU"}</strong>
+            <small>
+              {productionOrderMatchesCurrentQuote(booking, productionOrder)
+                ? "Production hand-off recorded"
+                : booking.deliveryChargeRequired === false
+                  ? "The site will produce this booking internally"
+                  : quoteReadyForCpu(booking)
+                    ? "Send this quoted booking to production"
+                    : "Available after the quote PDF is saved to Drive"}
+            </small>
+          </button>
+      <div className="manager-document-actions" role="group" aria-label="Quote, allergen matrix and menu">
+        {leading}
+            {matrixArtifact?.driveUrl || matrixArtifact?.localUrl || matrixArtifact?.viewUrl ? (
+              <a
+                className="manager-document-action"
+                href={matrixArtifact.driveUrl || matrixArtifact.localUrl || matrixArtifact.viewUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <strong>Open allergen matrix</strong>
+                <small>
+                  {matrixArtifact.approvalMode === "reused_authority"
+                    ? "Approved by reuse of a previously signed sandwich set (not signed for this booking)"
+                    : matrixArtifact.driveUrl
+                    ? "Signed PDF in site Drive"
+                    : matrixArtifact.localUrl
+                      ? "Local signed PDF"
+                      : "Authoritative signed CPU matrix"}
+                </small>
+              </a>
+            ) : matrixArtifact?.status === "checking" ? (
+              <button type="button" className="manager-document-action" disabled aria-busy="true">
+                <strong>
+                  <span className={styles.spinner} aria-hidden="true" />
+                  Checking allergen matrix…
+                </strong>
+                <small>Looking up the latest CPU allergen status</small>
+              </button>
+            ) : matrixArtifact?.status === "generating" ? (
+              <button type="button" className="manager-document-action" disabled aria-busy="true">
+                <strong>
+                  <span className={styles.spinner} aria-hidden="true" />
+                  Generating allergen matrix…
+                </strong>
+                <small>The signed PDF is being prepared</small>
+              </button>
+            ) : matrixArtifact?.status === "failed" || matrixArtifact?.status === "error" ? (
+              <button type="button" className="manager-document-action" onClick={onRefreshMatrix}>
+                <MatrixDiagnostics bookingId={booking.canonicalId} detail={matrixArtifact.error} />
+                <strong>Allergen matrix unavailable</strong>
+                <small>We couldn&apos;t load the latest CPU allergen data. Try again.</small>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="manager-document-action"
+                disabled
+              >
+                <strong>Open allergen matrix</strong>
+                <small>{matrixArtifact?.status === "not_configured" ? "Signed matrix storage is not configured" : "Available after signing"}</small>
+              </button>
+            )}
+            {menuFormats.length > 1 && (
+            <label className="manager-menu-format">
+              <span className="manager-menu-format__label">Menu format</span>
+              <select
+                value={menuFormat}
+                onChange={(event) => onMenuFormatChange(event.target.value as MenuFormat)}
+                disabled={menuBusy}
+              >
+                {MENU_FORMAT_OPTIONS.filter((option) => menuFormats.includes(option.value)).map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <small>{MENU_FORMAT_OPTIONS.find((option) => option.value === menuFormat)?.hint}</small>
+            </label>
+            )}
+            {menuOutput ? (
+              <>
+                <button
+                  type="button"
+                  className="manager-document-action"
+                  onClick={() => onOpenMenu(menuOutput)}
+                >
+                  <strong>Open menu</strong>
+                  <small>{menuStale ? "Open the previous generated menu" : `${siteLabel} menu`}</small>
+                </button>
+                <button
+                  type="button"
+                  className="manager-document-action"
+                  onClick={() => void onGenerateMenu(booking)}
+                  disabled={menuBusy || !menuReady}
+                  aria-busy={menuBusy ? true : undefined}
+                >
+                  <strong>
+                    {menuBusy ? (
+                      <>
+                        <span className={styles.spinner} aria-hidden="true" />
+                        Generating menu…
+                      </>
+                    ) : "Regenerate menu"}
+                  </strong>
+                  <small>
+                    {menuBusy
+                      ? "This can take a few seconds. Please keep this page open."
+                      : menuStale
+                      ? "Allergen or production details have changed"
+                    : menuReadyReason}
+                  </small>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="manager-document-action"
+                onClick={() => void onGenerateMenu(booking)}
+                disabled={menuBusy || !menuReady}
+                aria-busy={menuBusy ? true : undefined}
+              >
+                <strong>
+                  {menuBusy ? (
+                    <>
+                      <span className={styles.spinner} aria-hidden="true" />
+                      Generating menu…
+                    </>
+                  ) : "Generate menu"}
+                </strong>
+                <small>{menuBusy ? "This can take a few seconds. Please keep this page open." : menuReady ? "Generate from the Planned CPU revision" : menuReadyReason}</small>
+              </button>
+            )}
+      </div>
+          <div className="menu-output-actions manager-legacy-output">
+            <p className="output-block__label">Hospitality menu</p>
+            <p className="workflow-callout">
+              {menuOutput && !menuStale
+                ? `${siteLabel} menu generated from the planned CPU revision.`
+                : menuOutput
+                  ? "The CPU allergen or production revision changed. Regenerate the menu before service."
+                : "Generate this menu after the production team marks the CPU plan Planned."}
+            </p>
+            {menuOutput && !menuStale ? (
+              <>
+                <button type="button" onClick={() => onOpenMenu(menuOutput)}>
+                  Open menu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void onGenerateMenu(booking)}
+                  disabled={menuBusy || !menuReady}
+                >
+                  {menuBusy ? "Regenerating…" : "Regenerate menu"}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void onGenerateMenu(booking)}
+                disabled={menuBusy || !menuReady}
+              >
+                {menuBusy ? "Generating…" : menuOutput ? `Regenerate ${siteLabel} menu` : `Generate ${siteLabel} menu`}
+              </button>
+            )}
+          </div>
+          {matrixArtifact && (
+            <div className="menu-output-actions manager-legacy-output">
+              <p className="output-block__label">Signed allergen checker</p>
+              <p
+                className={`workflow-callout workflow-reference workflow-reference--${matrixArtifact.driveStatus}`}
+              >
+                Allergen matrix:{" "}
+                {matrixArtifact.driveStatus === "saved"
+                  ? "saved to the site Google Drive."
+                  : matrixArtifact.viewUrl
+                    ? "available as the signed CPU view; Drive storage needs attention."
+                  : "available locally; Drive needs attention."}
+              </p>
+              <div className="output-block__links">
+                {matrixArtifact.driveUrl && (
+                  <a
+                    className="button"
+                    href={matrixArtifact.driveUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open Drive PDF
+                  </a>
+                )}
+                {!matrixArtifact.driveUrl && matrixArtifact.localUrl && (
+                  <a
+                    className="button"
+                    href={matrixArtifact.localUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open local PDF
+                  </a>
+                )}
+                {!matrixArtifact.driveUrl && matrixArtifact.html && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = URL.createObjectURL(
+                        new Blob([matrixArtifact.html!], { type: "text/html" }),
+                      );
+                      window.open(url, "_blank", "noopener,noreferrer");
+                      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                    }}
+                  >
+                    Open local matrix
+                  </button>
+                )}
+                {!matrixArtifact.driveUrl && !matrixArtifact.localUrl && matrixArtifact.viewUrl && (
+                  <a className="button" href={matrixArtifact.viewUrl} target="_blank" rel="noreferrer">
+                    Open signed matrix
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+    </div>
   );
 }
 
@@ -1685,22 +2022,7 @@ function BookingDetail({
           </div>
           <strong>£{booking.order.grossTotal.toFixed(2)}</strong>
         </div>
-        <ul className="booking-detail__items">
-          {booking.order.items.map((item, index) => (
-            <li key={`${item.itemId}-${index}`}>
-              <span>
-                <b>
-                  {item.quantity} × {item.itemName || item.itemId}
-                </b>
-                {booking.cpuRouting?.lines.find((line) => line.index === index) && (
-                  <small className="booking-detail__cpu-state" data-cpu-state={booking.cpuRouting.lines.find((line) => line.index === index)!.state}>{booking.cpuRouting.lines.find((line) => line.index === index)!.label}</small>
-                )}
-                {item.servingInfo && <small>{item.servingInfo}</small>}
-              </span>
-              <strong>£{item.lineTotal.toFixed(2)}</strong>
-            </li>
-          ))}
-        </ul>
+        <RequestedItemsList rows={bookingRequestedItems(booking)} />
         <div className="booking-detail__total">
           <span>
             Net £{booking.order.netTotal.toFixed(2)} · VAT £
@@ -1771,24 +2093,25 @@ function BookingDetail({
               <strong>{productionOrderMatchesCurrentQuote(booking, productionOrder) ? productionOrder?.state : productionOrder ? "Ready to reissue" : "Not started"}</strong>
             </div>
           </div>
-          <button
-            type="button"
-            className="manager-cpu-action"
-            disabled={Boolean(productionOrderMatchesCurrentQuote(booking, productionOrder)) || !quoteReadyForCpu(booking) || booking.deliveryChargeRequired === false}
-            onClick={() => onAction("Production")}
-          >
-            <strong>{productionOrderMatchesCurrentQuote(booking, productionOrder) ? "Sent to CPU" : "Send to CPU"}</strong>
-            <small>
-              {productionOrderMatchesCurrentQuote(booking, productionOrder)
-                ? "Production hand-off recorded"
-                : booking.deliveryChargeRequired === false
-                  ? "The site will produce this booking internally"
-                  : quoteReadyForCpu(booking)
-                    ? "Send this quoted booking to production"
-                    : "Available after the quote PDF is saved to Drive"}
-            </small>
-          </button>
-          <div className="manager-document-actions" role="group" aria-label="Quote, allergen matrix and menu">
+          <ProductionTools
+            booking={booking}
+            requirement={productionRequirement([bookingRoutingStatus(booking)])}
+            siteLabel={siteLabel}
+            productionOrder={productionOrder}
+            menuOutput={menuOutput}
+            menuStale={menuStale}
+            menuReady={menuReady}
+            menuReadyReason={menuReadyReason}
+            matrixArtifact={matrixArtifact}
+            onRefreshMatrix={onRefreshMatrix}
+            menuBusy={menuBusy}
+            menuFormat={menuFormat}
+            menuFormats={menuFormats}
+            onMenuFormatChange={onMenuFormatChange}
+            onAction={onAction}
+            onGenerateMenu={onGenerateMenu}
+            onOpenMenu={onOpenMenu}
+            leading={<>
             <p className="manager-document-actions__title">Quote, allergens and menu</p>
             <button
               type="button"
@@ -1817,213 +2140,8 @@ function BookingDetail({
                   : "Quote not generated"}
               </small>
             </button>
-            {matrixArtifact?.driveUrl || matrixArtifact?.localUrl || matrixArtifact?.viewUrl ? (
-              <a
-                className="manager-document-action"
-                href={matrixArtifact.driveUrl || matrixArtifact.localUrl || matrixArtifact.viewUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <strong>Open allergen matrix</strong>
-                <small>
-                  {matrixArtifact.approvalMode === "reused_authority"
-                    ? "Approved by reuse of a previously signed sandwich set (not signed for this booking)"
-                    : matrixArtifact.driveUrl
-                    ? "Signed PDF in site Drive"
-                    : matrixArtifact.localUrl
-                      ? "Local signed PDF"
-                      : "Authoritative signed CPU matrix"}
-                </small>
-              </a>
-            ) : matrixArtifact?.status === "checking" ? (
-              <button type="button" className="manager-document-action" disabled aria-busy="true">
-                <strong>
-                  <span className={styles.spinner} aria-hidden="true" />
-                  Checking allergen matrix…
-                </strong>
-                <small>Looking up the latest CPU allergen status</small>
-              </button>
-            ) : matrixArtifact?.status === "generating" ? (
-              <button type="button" className="manager-document-action" disabled aria-busy="true">
-                <strong>
-                  <span className={styles.spinner} aria-hidden="true" />
-                  Generating allergen matrix…
-                </strong>
-                <small>The signed PDF is being prepared</small>
-              </button>
-            ) : matrixArtifact?.status === "failed" || matrixArtifact?.status === "error" ? (
-              <button type="button" className="manager-document-action" onClick={onRefreshMatrix}>
-                <MatrixDiagnostics bookingId={booking.canonicalId} detail={matrixArtifact.error} />
-                <strong>Allergen matrix unavailable</strong>
-                <small>We couldn&apos;t load the latest CPU allergen data. Try again.</small>
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="manager-document-action"
-                disabled
-              >
-                <strong>Open allergen matrix</strong>
-                <small>{matrixArtifact?.status === "not_configured" ? "Signed matrix storage is not configured" : "Available after signing"}</small>
-              </button>
-            )}
-            {menuFormats.length > 1 && (
-            <label className="manager-menu-format">
-              <span className="manager-menu-format__label">Menu format</span>
-              <select
-                value={menuFormat}
-                onChange={(event) => onMenuFormatChange(event.target.value as MenuFormat)}
-                disabled={menuBusy}
-              >
-                {MENU_FORMAT_OPTIONS.filter((option) => menuFormats.includes(option.value)).map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-              <small>{MENU_FORMAT_OPTIONS.find((option) => option.value === menuFormat)?.hint}</small>
-            </label>
-            )}
-            {menuOutput ? (
-              <>
-                <button
-                  type="button"
-                  className="manager-document-action"
-                  onClick={() => onOpenMenu(menuOutput)}
-                >
-                  <strong>Open menu</strong>
-                  <small>{menuStale ? "Open the previous generated menu" : `${siteLabel} menu`}</small>
-                </button>
-                <button
-                  type="button"
-                  className="manager-document-action"
-                  onClick={() => void onGenerateMenu(booking)}
-                  disabled={menuBusy || !menuReady}
-                  aria-busy={menuBusy ? true : undefined}
-                >
-                  <strong>
-                    {menuBusy ? (
-                      <>
-                        <span className={styles.spinner} aria-hidden="true" />
-                        Generating menu…
-                      </>
-                    ) : "Regenerate menu"}
-                  </strong>
-                  <small>
-                    {menuBusy
-                      ? "This can take a few seconds. Please keep this page open."
-                      : menuStale
-                      ? "Allergen or production details have changed"
-                    : menuReadyReason}
-                  </small>
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="manager-document-action"
-                onClick={() => void onGenerateMenu(booking)}
-                disabled={menuBusy || !menuReady}
-                aria-busy={menuBusy ? true : undefined}
-              >
-                <strong>
-                  {menuBusy ? (
-                    <>
-                      <span className={styles.spinner} aria-hidden="true" />
-                      Generating menu…
-                    </>
-                  ) : "Generate menu"}
-                </strong>
-                <small>{menuBusy ? "This can take a few seconds. Please keep this page open." : menuReady ? "Generate from the Planned CPU revision" : menuReadyReason}</small>
-              </button>
-            )}
-          </div>
-          <div className="menu-output-actions manager-legacy-output">
-            <p className="output-block__label">Hospitality menu</p>
-            <p className="workflow-callout">
-              {menuOutput && !menuStale
-                ? `${siteLabel} menu generated from the planned CPU revision.`
-                : menuOutput
-                  ? "The CPU allergen or production revision changed. Regenerate the menu before service."
-                : "Generate this menu after the production team marks the CPU plan Planned."}
-            </p>
-            {menuOutput && !menuStale ? (
-              <>
-                <button type="button" onClick={() => onOpenMenu(menuOutput)}>
-                  Open menu
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void onGenerateMenu(booking)}
-                  disabled={menuBusy || !menuReady}
-                >
-                  {menuBusy ? "Regenerating…" : "Regenerate menu"}
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void onGenerateMenu(booking)}
-                disabled={menuBusy || !menuReady}
-              >
-                {menuBusy ? "Generating…" : menuOutput ? `Regenerate ${siteLabel} menu` : `Generate ${siteLabel} menu`}
-              </button>
-            )}
-          </div>
-          {matrixArtifact && (
-            <div className="menu-output-actions manager-legacy-output">
-              <p className="output-block__label">Signed allergen checker</p>
-              <p
-                className={`workflow-callout workflow-reference workflow-reference--${matrixArtifact.driveStatus}`}
-              >
-                Allergen matrix:{" "}
-                {matrixArtifact.driveStatus === "saved"
-                  ? "saved to the site Google Drive."
-                  : matrixArtifact.viewUrl
-                    ? "available as the signed CPU view; Drive storage needs attention."
-                  : "available locally; Drive needs attention."}
-              </p>
-              <div className="output-block__links">
-                {matrixArtifact.driveUrl && (
-                  <a
-                    className="button"
-                    href={matrixArtifact.driveUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open Drive PDF
-                  </a>
-                )}
-                {!matrixArtifact.driveUrl && matrixArtifact.localUrl && (
-                  <a
-                    className="button"
-                    href={matrixArtifact.localUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open local PDF
-                  </a>
-                )}
-                {!matrixArtifact.driveUrl && matrixArtifact.html && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const url = URL.createObjectURL(
-                        new Blob([matrixArtifact.html!], { type: "text/html" }),
-                      );
-                      window.open(url, "_blank", "noopener,noreferrer");
-                      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-                    }}
-                  >
-                    Open local matrix
-                  </button>
-                )}
-                {!matrixArtifact.driveUrl && !matrixArtifact.localUrl && matrixArtifact.viewUrl && (
-                  <a className="button" href={matrixArtifact.viewUrl} target="_blank" rel="noreferrer">
-                    Open signed matrix
-                  </a>
-                )}
-              </div>
-            </div>
-          )}
+            </>}
+          />
         </section>
       </div>
       <details className="booking-detail__audit">

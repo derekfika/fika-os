@@ -20,7 +20,7 @@ test("weekly cards expose the scan-first operational details", () => {
 
 test("run sheets are generated from one global date-range action", () => {
   assert.match(source, /Choose a date range/);
-  assert.match(source, /Generate run sheet PDF/);
+  assert.match(source, /Open run sheet/);
   assert.match(source, /runSheetFrom/);
   assert.doesNotMatch(source, /onRunSheet=\{/);
   assert.doesNotMatch(source, /Daily run sheet/);

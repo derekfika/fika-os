@@ -18,11 +18,13 @@ test("dashboard consumes the Hub projection, suppresses grouped children and off
   assert.match(dashboard, /!booking.bookingGroup \|\| !\["Quoted", "QuotePdfRetry"\]/);
 });
 
-test("group detail retains ordered services, routing and totals with labelled service operations", () => {
+test("group detail is one booking with one chronological item list and no service selection", () => {
   const source = read("../app/ui/HospitalityGroupDetail.tsx");
-  for (const text of ["All day schedule", "group.services.map", "service.bookingId", "service.routing?.statusLabel", "service.lines.map", "service.charges.map", "group.totals.gross", "Open {service.time} service operations", "Group editing and cancellation are not available", "Retry group quote", "group.quote.stale"]) assert.ok(source.includes(text), text);
-  assert.match(source, /<details[\s\S]*<summary>/);
+  for (const text of ["groupRequestedItems(group)", "RequestedItemsList", "What was requested", "service.charges.map", "group.totals.gross", "Group editing and cancellation are not available", "Retry group quote", "group.quote.stale", "{production}"]) assert.ok(source.includes(text), text);
+  for (const text of ["<details", "<summary", "All day schedule", "onService", "service operations"]) assert.ok(!source.includes(text), `removed: ${text}`);
   assert.doesNotMatch(source, /window\.(alert|confirm|prompt)/);
+  const dashboard = read("../app/ui/HospitalityDashboard.tsx");
+  assert.ok(!dashboard.includes("Service operations ·")); assert.ok(!dashboard.includes("onService="));
   const css = read("../app/ui/HospitalityGroupDetail.module.css");
   assert.match(css, /:focus-visible/); assert.match(css, /min-height: 44px/); assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b/i);
 });
