@@ -204,8 +204,8 @@ test("grouped RCoA quote uses the canonical Hospitality quote branding, not FIKA
   const h = harness(); const q = await generateHospitalityGroupQuote(h.command(), h.context);
   const html = hospitalityGroupQuoteHtml(q);
   assert.doesNotMatch(html, /FIKA OS|wordmark/);
-  assert.match(html, /<header class="masthead"><img class="logo" src="data:image\/png;base64,[^"]+" alt="FIKA" \/>(?:<img class="site-logo" src="[^"]+" alt="RCoA" \/>|<div class="masthead-label">RCoA<\/div>)<\/header>/);
-  assert.ok(html.indexOf('alt="FIKA"') < html.indexOf("RCoA</div>") || html.includes('alt="RCoA"'));
+  assert.match(html, /<header class="masthead"><img class="logo" src="data:image\/png;base64,[^"]+" alt="FIKA" \/><img class="site-logo site-logo--reversed" src="data:image\/svg\+xml;base64,[^"]+" alt="RCoA" \/><\/header>/);
+  assert.doesNotMatch(html, /<div class="masthead-label"/);
   assert.match(html, /font-family:Vim/); assert.match(html, /font-family:Gilroy/); assert.match(html, /<table class="order">/);
   assert.equal((html.match(/<section class="schedule-service">/g) || []).length, q.snapshots.length);
   const times = q.snapshots.map(s => html.indexOf(`${s.service.startTime} —`)); assert.ok(times.every(i => i > 0)); assert.deepEqual([...times].sort((a, b) => a - b), times);

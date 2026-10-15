@@ -27,7 +27,7 @@ export type QuoteDocumentSnapshot = {
  */
 export const HOSPITALITY_QUOTE_BRAND_CONFIG: Record<string, { label: string; reversedLogo?: boolean }> = {
   mnk: { label: "MNK", reversedLogo: true },
-  rcoa: { label: "RCoA" },
+  rcoa: { label: "RCoA", reversedLogo: true },
   "angel-court": { label: "Angel Court" },
   cfc: { label: "CFC" },
   "munich-re": { label: "Munich Re" },

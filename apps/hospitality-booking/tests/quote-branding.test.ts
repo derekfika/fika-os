@@ -26,7 +26,8 @@ test("platform branding resolves deterministically from the booking's portal sit
   assert.equal(resolveQuoteBranding({ portalSiteId: "mnk" }).reversedLogo, true);
   for (const id of ["angel-court", "cfc", "munich-re"]) assert.equal(resolveQuoteBranding({ portalSiteId: id }).logo, SITE_LOGO_DATA_URIS[id]);
   const rcoa = resolveQuoteBranding({ portalSiteId: "rcoa" });
-  assert.equal(rcoa.label, "RCoA"); assert.equal(rcoa.logo, SITE_LOGO_DATA_URIS.rcoa);
+  assert.equal(rcoa.label, "RCoA"); assert.equal(rcoa.logo, SITE_LOGO_DATA_URIS.rcoa); assert.match(rcoa.logo!, /^data:image\/svg\+xml;base64,/); assert.ok(rcoa.reversedLogo);
+  const html = render("rcoa", "RCoA"); assert.ok(html.includes(`class="site-logo site-logo--reversed" src="${SITE_LOGO_DATA_URIS.rcoa}" alt="RCoA"`)); assert.doesNotMatch(html, /<div class="masthead-label"/);
   assert.ok(!render("rcoa").includes(SITE_LOGO_DATA_URIS.mnk));
 });
 
@@ -34,7 +35,6 @@ test("missing optional branding falls back to a text label without breaking gene
   const unknown = render("not-a-site", "Somewhere"); assert.match(unknown, /masthead-label">Somewhere/); assert.ok(unknown.includes(FIKA_LOGO_DATA_URI));
   assert.match(render(undefined, undefined), /masthead-label">Hospitality/);
   assert.match(render("__proto__"), /masthead-label">Hospitality/);
-  if (!SITE_LOGO_DATA_URIS.rcoa) assert.match(render("rcoa", "RCoA"), /masthead-label">RCoA/);
 });
 
 test("grouped-body option keeps the canonical shell and totals but swaps the body", () => {
