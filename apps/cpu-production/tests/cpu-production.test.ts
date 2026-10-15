@@ -19,6 +19,7 @@ const liana = readFileSync(
   new URL("../app/ui/HospitalityAllergenDetail.tsx", import.meta.url),
   "utf8",
 );
+const allergenCellState = readFileSync(new URL("../app/ui/allergen-cell-state.ts", import.meta.url), "utf8");
 const calendar = readFileSync(
   new URL("../app/ui/ProductionCalendar.tsx", import.meta.url),
   "utf8",
@@ -377,9 +378,9 @@ test("Liana production view captures nested menu items and sub-item allergen evi
   assert.match(liana, /Add rows/);
   assert.match(liana, /Add rows/);
   assert.match(liana, /allergen-cell--\$\{state\}/);
-  assert.match(liana, /may_contain/);
+  assert.match(allergenCellState, /may_contain/);
   assert.match(liana, /toggleOperationalAllergen/);
-  assert.match(liana, /CANONICAL_ALLERGEN_COLUMNS/);
+  assert.match(liana, /matrixColumns/);
   assert.match(liana, /sourceLineId/);
   assert.match(liana, /mergeOriginalItems/);
   assert.doesNotMatch(liana, /portions/);
@@ -388,7 +389,7 @@ test("Liana production view captures nested menu items and sub-item allergen evi
   assert.match(liana, /order\.guestCount/);
   assert.match(liana, /order\.lines\.reduce/);
   assert.match(liana, /sourceLineId/);
-  assert.match(liana, /CANONICAL_ALLERGEN_COLUMNS/);
+  assert.match(liana, /matrixColumns/);
   assert.match(liana, /Saved menu item/);
   assert.match(liana, /Save menu item/);
   assert.match(liana, /\/api\/sandwiches/);
