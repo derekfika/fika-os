@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { resolveHospitalityRouting } from "./hospitality-menu-routing";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
 import { assertPermission } from "./authmod";
@@ -28,42 +29,27 @@ export type ProductionDashboardView = CpuProductionWorkstream;
 
 /** Read-only projection consumed by the CPU dashboards. */
 export async function hospitalityMenuProductionRouting(menuItemIds?: string[]): Promise<Record<string, ProductionDashboardView[]>> {
-  const wanted = menuItemIds ? [...new Set(menuItemIds.filter(Boolean))] : undefined;
-  const snapshot = wanted
-    ? await Promise.all(wanted.map(id => menuProductionRouting().doc(stableDocumentId(id)).get()))
-    : await menuProductionRouting().get();
-  const documents = (Array.isArray(snapshot) ? snapshot.filter(item => item.exists) : snapshot.docs).filter(document => !document.data()?.supersededBy);
-  const saved = Object.fromEntries(documents.map(document => {
-    const data = document.data() || {};
-    const adapted = adaptCpuProductionWorkstreams(Array.isArray(data.workstreams) ? data.workstreams : Array.isArray(data.views) ? data.views : []);
-    if (adapted.unknown.length) throw new Error(`Unknown CPU production workstream value in ${document.id}: ${adapted.unknown.join(", ")}.`);
-    return [String(data.menuItemId || document.id), adapted.workstreams];
-  }));
-  // Keep historical provider lines visible in the intended role view when a
-  // restored local workspace has not yet recreated its explicit routing
-  // decisions. Explicit Connections decisions always win.
-  const routing: Record<string, ProductionDashboardView[]> = {
-    ...LEGACY_HOSPITALITY_MENU_ROUTING,
-    ...saved,
-  };
-
-  // Current MNK production hand-offs carry canonical IDs whose suffix is the
-  // exact legacy source key. Add those aliases without a broad canonical
-  // collection read (which is unsafe for large local workspaces).
-  for (const [sourceKey, views] of Object.entries(routing)) {
+  const fallback: Record<string, ProductionDashboardView[]> = { ...LEGACY_HOSPITALITY_MENU_ROUTING };
+  for (const [sourceKey, views] of Object.entries(fallback)) fallback[`hospitality-menu-item:mnk:${sourceKey}`] = views;
+  const merges = db.collection("integrationHubHospitalityMenuItemMerges");
+  if (menuItemIds) {
+    return resolveHospitalityRouting(menuItemIds.filter(Boolean), {
+      routing: async id => (await menuProductionRouting().doc(stableDocumentId(id)).get()).data(),
+      merge: async id => (await merges.doc(stableDocumentId(id)).get()).data(),
+    }, fallback);
+  }
+  // Catalogue-wide callers retain the full projection, using the same chain semantics as bounded reads.
+  const [routingSnapshot, mergeSnapshot] = await Promise.all([menuProductionRouting().get(), merges.get()]);
+  const routes = new Map(routingSnapshot.docs.map(doc => [String(doc.data().menuItemId || doc.id), doc.data()]));
+  for (const [sourceKey, route] of routes) {
+    if (sourceKey.includes(":")) continue;
     const canonicalId = `hospitality-menu-item:mnk:${sourceKey}`;
-    if (!routing[canonicalId]) routing[canonicalId] = views;
+    if (!routes.has(canonicalId)) routes.set(canonicalId, route);
   }
-
-  // A merged-away Menu Item keeps resolving: orders, quotes and Production Orders that still carry its ID inherit the
-  // surviving canonical item's single routing decision. The merge map is small (one document per merged item).
-  const merges = await db.collection("integrationHubHospitalityMenuItemMerges").get();
-  for (const merge of merges.docs) {
-    const { sourceMenuItemId, survivorMenuItemId } = merge.data() as { sourceMenuItemId?: string; survivorMenuItemId?: string };
-    if (sourceMenuItemId && survivorMenuItemId && routing[survivorMenuItemId]) routing[sourceMenuItemId] = routing[survivorMenuItemId];
-  }
-
-  return routing;
+  const mappings = new Map(mergeSnapshot.docs.map(doc => [String(doc.data().sourceMenuItemId || doc.id), doc.data()]));
+  return resolveHospitalityRouting([...Object.keys(fallback), ...routes.keys(), ...mappings.keys()], {
+    routing: async id => routes.get(id), merge: async id => mappings.get(id),
+  }, fallback);
 }
 
 export type ConnectionCommand =

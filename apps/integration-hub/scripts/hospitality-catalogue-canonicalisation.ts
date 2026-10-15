@@ -15,7 +15,7 @@
  * Review groups are never applied.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { applyOperations, buildCanonicalisationPlan, inventory, routingReviewRows, verifyMergeInvariants, type CatalogueSnapshot, type MergeOperation } from "../lib/hospitality-catalogue-canonicalisation";
+import { applyOperations, buildCanonicalisationPlan, inventory, routingReviewRows, verifyMergeInvariants, type CatalogueSnapshot, type MergeGroup } from "../lib/hospitality-catalogue-canonicalisation";
 
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(name);
@@ -35,47 +35,11 @@ async function loadLive(project: string): Promise<CatalogueSnapshot> {
   return { items, offerings, prices, routing: routing.docs.map(document => ({ ...(document.data() as { menuItemId: string; workstreams: string[]; version?: number; supersededBy?: string }) })), merges: merges.docs.map(document => document.data() as { sourceMenuItemId: string; survivorMenuItemId: string }) };
 }
 
-async function applyPlan(project: string, operations: MergeOperation[], groupId: string) {
+async function applyPlan(project: string, group: MergeGroup) {
   const { getApps, initializeApp } = await import("firebase-admin/app");
   const { getFirestore } = await import("firebase-admin/firestore");
-  const { stableDocumentId } = await import("../lib/canonical-editor");
-  const { parseCanonical } = await import("../lib/schemas");
-  const { sha256 } = await import("../lib/profiler");
-  const db = getFirestore(getApps()[0] || initializeApp({ projectId: project }));
-  const canonical = db.collection("integrationHubCanonical"); const routing = db.collection("integrationHubHospitalityMenuProductionRouting");
-  const merges = db.collection("integrationHubHospitalityMenuItemMerges"); const audit = db.collection("integrationHubGovernanceAudit");
-  const actor = "migration:hospitality-catalogue-canonicalisation"; const now = new Date().toISOString();
-  await db.runTransaction(async transaction => {
-    const docs = new Map<string, FirebaseFirestore.DocumentSnapshot>();
-    const read = async (ref: FirebaseFirestore.DocumentReference) => { if (!docs.has(ref.path)) docs.set(ref.path, await transaction.get(ref)); return docs.get(ref.path)!; };
-    // All reads first.
-    for (const operation of operations) {
-      if (operation.op === "update-survivor") await read(canonical.doc(stableDocumentId(operation.itemId)));
-      if (operation.op === "repoint-offering") await read(canonical.doc(stableDocumentId(operation.offeringId)));
-      if (operation.op === "archive-item") await read(canonical.doc(stableDocumentId(operation.itemId)));
-      if (operation.op === "copy-routing") await read(routing.doc(stableDocumentId(operation.toItemId)));
-      if (operation.op === "supersede-routing") await read(routing.doc(stableDocumentId(operation.itemId)));
-    }
-    const rewrite = (snapshot: FirebaseFirestore.DocumentSnapshot, entityType: "Hospitality Menu Item" | "Hospitality Menu Offering", change: (record: Record<string, unknown>) => Record<string, unknown>) => {
-      const current = snapshot.data(); if (!current) throw new Error(`Missing ${entityType} ${snapshot.id}.`);
-      const record = change({ ...current.record, version: Number(current.record.version || 0) + 1, updatedAt: now, updatedBy: actor });
-      const parsed = parseCanonical(entityType, record); if (!parsed.success) throw new Error(`${entityType} ${current.canonicalId} would be invalid: ${parsed.error.issues[0]?.message}`);
-      transaction.set(snapshot.ref, { ...current, record, dataHash: sha256(JSON.stringify(record)) });
-    };
-    for (const operation of operations) {
-      if (operation.op === "update-survivor") rewrite(await read(canonical.doc(stableDocumentId(operation.itemId))), "Hospitality Menu Item", record => ({ ...record, providerMappings: operation.providerMappings }));
-      else if (operation.op === "repoint-offering") {
-        const snapshot = await read(canonical.doc(stableDocumentId(operation.offeringId)));
-        if (snapshot.data()?.record.hospitalityMenuItemId === operation.toItemId) continue; // already applied
-        rewrite(snapshot, "Hospitality Menu Offering", record => ({ ...record, hospitalityMenuItemId: operation.toItemId, ...(operation.configurationPatch ? { configuration: { ...(record.configuration as object | undefined), ...operation.configurationPatch } } : {}) }));
-      }
-      else if (operation.op === "archive-item") { const snapshot = await read(canonical.doc(stableDocumentId(operation.itemId))); if (snapshot.data()?.record.lifecycleState !== "archived") rewrite(snapshot, "Hospitality Menu Item", record => ({ ...record, lifecycleState: "archived" })); }
-      else if (operation.op === "copy-routing") { const snapshot = await read(routing.doc(stableDocumentId(operation.toItemId))); if (!snapshot.exists) transaction.set(snapshot.ref, { menuItemId: operation.toItemId, workstreams: operation.workstreams, version: 1, createdAt: now, updatedAt: now, updatedBy: actor, inheritedFrom: operation.fromItemId }); }
-      else if (operation.op === "supersede-routing") { const snapshot = await read(routing.doc(stableDocumentId(operation.itemId))); if (snapshot.exists) transaction.set(snapshot.ref, { supersededBy: operation.supersededBy, supersededAt: now }, { merge: true }); }
-      else if (operation.op === "record-merge") transaction.set(merges.doc(stableDocumentId(operation.sourceItemId)), { sourceMenuItemId: operation.sourceItemId, survivorMenuItemId: operation.survivorItemId, mergedAt: now, mergedBy: actor }, { merge: true });
-    }
-    transaction.create(audit.doc(`canonicalisation-${groupId}-${Date.now()}`), { action: "Hospitality Menu Items canonicalised", entityReference: groupId, actorId: actor, timestamp: now, reason: "Approved catalogue canonicalisation: site copies merged into one canonical Menu Item.", operations: operations.length });
-  });
+  const { applyCanonicalisationGroup } = await import("../lib/hospitality-catalogue-apply");
+  return applyCanonicalisationGroup(getFirestore(getApps()[0] || initializeApp({ projectId: project })), group);
 }
 
 const project = value("--project");
@@ -102,5 +66,5 @@ if (flag("--apply")) {
   if (value("--plan-hash") !== plan.planHash) throw new Error(`--plan-hash does not match the freshly computed plan (${plan.planHash}). Re-review before applying.`);
   if (process.env.FIKA_CATALOGUE_CANONICALISATION_APPROVED !== plan.planHash) throw new Error("FIKA_CATALOGUE_CANONICALISATION_APPROVED must equal the plan hash: the migration needs a separate explicit approval.");
   if (invariantProblems.length) throw new Error(`Dry run violates invariants: ${invariantProblems.join("; ")}`);
-  for (const group of plan.groups) { await applyPlan(project, group.operations, group.id); console.log(`applied ${group.id} (${group.name})`); }
+  for (const group of plan.groups) { await applyPlan(project, group); console.log(`applied ${group.id} (${group.name})`); }
 }

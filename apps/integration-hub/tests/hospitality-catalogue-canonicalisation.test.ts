@@ -186,9 +186,9 @@ test("the Hub merge command and routing projection keep one routing decision per
   assert.match(service, /different production routing decisions/);
   assert.match(service, /supersededBy: survivor\.canonicalId/);
   assert.match(service, /inheritedFrom: source\.canonicalId/);
-  assert.match(service, /integrationHubHospitalityMenuItemMerges"\)\.get\(\)/);
-  assert.match(service, /routing\[sourceMenuItemId\] = routing\[survivorMenuItemId\]/);
-  assert.match(service, /!document\.data\(\)\?\.supersededBy/);
+  assert.match(service, /resolveHospitalityRouting/);
+  assert.match(service, /merges.doc\(stableDocumentId\(id\)\).get\(\)/);
+
 });
 
 test("brochure review refuses to create a second canonical item for a product that already exists", () => {

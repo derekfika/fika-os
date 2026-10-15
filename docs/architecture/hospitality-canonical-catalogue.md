@@ -97,6 +97,26 @@ Re-run the report against the real target at approval time; this table is a poin
 6. **Verify on staging:** the Hub routing screen shows one row per product; an MNK order and a CPU hand-off for a merged product still route; the MNK portal menu is unchanged.
 7. **Production** only after steps 1–6 are repeated against production data and the plan hash is re-approved. `--apply` against project `fika-os` additionally requires `--allow-production`.
 
+## Review blocker corrections (2026-10-15)
+
+Bounded routing reads fetch merge documents by requested stable Item ID and follow only the resolved survivor chain (maximum 32 merge-document reads per chain, with shared reads coalesced within a request). Only the terminal routing document is read. A current Item normally costs one merge lookup and one routing lookup; a one-hop merged Item costs two merge lookups and one routing lookup. Cold and warm requests use this same bounded shape; no cross-request cache or periodic work is added. Cycles, malformed/overlong chains and superseded decisions fail closed. Historical IDs return the survivor decision under the original requested ID. Catalogue-wide callers retain their existing full projection path.
+
+Each merge group contains a detached expected snapshot of all member Items (including provider mappings), member routing/merge documents and source/survivor Offerings. These expectations participate in the reviewed plan hash. Apply rereads those records inside the group's Firestore transaction and compares their complete stable hashes before any writes. Scoped Offering queries detect new or repointed Offerings as well as changed records; there are no full-collection reads in a group transaction. The read shape is one audit receipt, three direct document reads and one scoped Offering query per member, plus reads of reviewed Offerings no longer returned by those queries. This explicitly invoked maintenance operation adds no recurring reads.
+
+Changed or newly appearing relevant state aborts the whole group with a stale-plan/conflict diagnostic and requires regeneration and review. The merge is never recomputed under the old approval. Post-merge invariants are checked again before committing. A deterministic governance audit receipt commits atomically with the group and records reviewed/committed state hashes. An exact unchanged retry is a no-op; changes after a successful apply reject replay. CLI restart still recomputes the remaining live plan, so an interrupted run requires review and approval of the new remaining plan hash. Existing approval/environment/production gates and review-only groups remain unchanged.
+
+No migration or deployment was performed for these corrections.
+
+### Correction validation
+
+- Focused catalogue, contract, routing and apply suites: 43/43 pass using `npx tsx --test tests/hospitality-catalogue-canonicalisation.test.ts tests/hospitality-catalogue-contract.test.ts tests/hospitality-menu-routing.test.ts tests/hospitality-catalogue-apply.test.ts tests/hospitality-routing-suggestions.test.ts` from Integration Hub.
+- `npm run typecheck`, `npm run build` and `git diff --check`: pass.
+- The unfiltered `npm test` run stalled on Firestore-dependent tests in both the corrected branch and unchanged `main` at `615cd9bb9a3b5ce6a30b7dba59fec5d9f919b36a`. A repeat with `--test-timeout=30000 --test-force-exit` confirmed the first database-dependent timeout; these runs were terminated rather than treated as passing.
+- Completed broader comparison: enumerate `tests/*.test.ts` and `tests/*.test.cjs`, exclude the five files below, and run `npx tsx --test --test-force-exit <relative test paths>`. Corrected branch: 531 pass / 13 fail (544 total). Unchanged main: 495 pass / the same 13 fail (508 total). No new failure names in the completed comparison.
+- Excluded files requiring Firestore: `booking-email-firestore.test.ts`, `fulfilment-projection.test.ts`, `logistics-event-identity.test.ts`, `production-domain.test.ts`, `production-fulfilment-reconciliation.test.ts`. No live/emulator cross-app end-to-end success is claimed. Apply regressions use an isolated transactional adapter, with no persistent writes.
+
+The 13 baseline failures reproduced on main concern: ADDR-001 acceptance; session-cookie rejection; canonical-boundary pagination; BrightHR completeness; the Connections home CSS import; service/allocation confirmation; three Delivered-In access assertions; Logistics admission tracing; two Service Definition package assertions; and staffing cancellation. This is a larger pre-existing failure set in this environment than the two previously documented below. These unrelated tests/source files were not modified.
+
 ## Rollback plan
 
 * Nothing is deleted. Archived Items keep their record (`lifecycleState: archived`), their provider mappings and their original ID; the merge map records source → survivor; source routing records are kept with `supersededBy`; every group writes a governance audit entry.

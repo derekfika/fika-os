@@ -84,6 +84,7 @@ export type MergeGroup = {
   evidence: { sharedSourceIds: string[] }; notes: string[];
   offeringsRepointed: number; routing: { state: "none" | "inherit" | "agree"; workstreams: string[]; from?: string };
   operations: MergeOperation[];
+  expectedState: CatalogueSnapshot;
 };
 export type CanonicalisationPlan = {
   groups: MergeGroup[]; review: ReviewGroup[]; unmatched: string[];
@@ -166,7 +167,7 @@ export function buildCanonicalisationPlan(snapshot: CatalogueSnapshot): Canonica
     for (const source of sources) { operations.push({ op: "archive-item", itemId: source.canonicalId, mergedInto: survivor.canonicalId }, { op: "record-merge", sourceItemId: source.canonicalId, survivorItemId: survivor.canonicalId }); merged.add(source.canonicalId); }
     merged.add(survivor.canonicalId);
     const shared = sourceIdentities(survivor).filter(id => sources.every(source => sourceIdentities(source).includes(id)));
-    groups.push({ id: hash(memberIds.slice().sort()).slice(0, 16), memberIds: memberIds.slice().sort(), survivorId: survivor.canonicalId, sourceIds: sources.map(source => source.canonicalId).sort(), name: text(survivor.record.name), category: text(survivor.record.category), evidence: { sharedSourceIds: shared }, notes: [...notes], offeringsRepointed: repointed, routing: routingState, operations });
+    groups.push({ id: hash(memberIds.slice().sort()).slice(0, 16), memberIds: memberIds.slice().sort(), survivorId: survivor.canonicalId, sourceIds: sources.map(source => source.canonicalId).sort(), name: text(survivor.record.name), category: text(survivor.record.category), evidence: { sharedSourceIds: shared }, notes: [...notes], offeringsRepointed: repointed, routing: routingState, operations: structuredClone(operations), expectedState: groupSnapshot(snapshot, memberIds) });
   }
 
   // An item that already has an identity-matched twin is a known, distinct product: never suggest it as a duplicate of something else.
@@ -182,7 +183,20 @@ export function buildCanonicalisationPlan(snapshot: CatalogueSnapshot): Canonica
     routingRecordsInherited: operations.filter(operation => operation.op === "copy-routing").length, routingRecordsSuperseded: operations.filter(operation => operation.op === "supersede-routing").length,
     reviewGroups: review.length, unmatchedItems: unmatched.length, itemsAfter: items.length - groups.reduce((sum, group) => sum + group.sourceIds.length, 0),
   };
-  return { groups, review, unmatched, summary, planHash: hash({ groups: groups.map(group => ({ id: group.id, operations: group.operations })) }) };
+  return { groups, review, unmatched, summary, planHash: hash({ groups: groups.map(group => ({ id: group.id, operations: group.operations, expectedState: group.expectedState })) }) };
+}
+
+/** Full reviewed documents, including provider mappings, and absent routing/merge records.
+ * Survivor offerings also determine duplicate safety and survivor selection.
+ */
+export function groupSnapshot(snapshot: CatalogueSnapshot, memberIds: string[]): CatalogueSnapshot {
+  const ids = new Set(memberIds);
+  return structuredClone({
+    items: snapshot.items.filter(item => ids.has(item.canonicalId)).sort((a, b) => a.canonicalId.localeCompare(b.canonicalId)),
+    offerings: snapshot.offerings.filter(item => ids.has(String(item.record.hospitalityMenuItemId))).sort((a, b) => a.canonicalId.localeCompare(b.canonicalId)),
+    routing: snapshot.routing.filter(row => ids.has(row.menuItemId)).sort((a, b) => a.menuItemId.localeCompare(b.menuItemId)),
+    merges: (snapshot.merges || []).filter(row => ids.has(row.sourceMenuItemId)).sort((a, b) => a.sourceMenuItemId.localeCompare(b.sourceMenuItemId)),
+  });
 }
 
 /** Applies the declarative operations to an in-memory snapshot (dry-run and tests). Never mutates its input. */
