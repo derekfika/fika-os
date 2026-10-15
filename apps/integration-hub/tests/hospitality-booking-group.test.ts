@@ -25,6 +25,6 @@ test("a booking without a group is unchanged: no bookingGroup field is added", (
 
 test("the Hub booking endpoint accepts the optional bookingGroup and keeps the strict schema otherwise", () => {
   const route = readFileSync(new URL("../app/api/bookings/mnk/route.ts", import.meta.url), "utf8");
-  assert.match(route, /bookingGroup: z\.object\(\{ id: z\.string\(\)\.min\(1\)\.max\(240\), sequence: z\.number\(\)\.int\(\)\.min\(1\)\.max\(20\), size: z\.number\(\)\.int\(\)\.min\(2\)\.max\(20\) \}\)\.strict\(\)/);
+  assert.match(route, /bookingGroup: z\.object\(\{ id: z\.string\(\)\.min\(1\)\.max\(240\), sequence: z\.number\(\)\.int\(\)\.min\(1\)\.max\(20\), size: z\.number\(\)\.int\(\)\.min\(1\)\.max\(20\) \}\)\.strict\(\)/);
   assert.match(route, /\}\)\.strict\(\);/);
 });

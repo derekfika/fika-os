@@ -5,11 +5,11 @@ import { isValidRcoaLondonWallTime, RCOA_MAX_SERVICES, rcoaAllowsEmptyOrder, rco
 const eventTypeIds = rcoaEventTypes.map((event) => event.id) as [string, ...string[]];
 
 const RCOA_REFERENCE = /^RCOA-[A-Z0-9-]{8,80}$/i;
-/** Structured link between the ordinary bookings created from one multi-service form submission. */
+/** Structured link between the ordinary bookings created from one All Day Hospitality request (one booking per service row). */
 export const RcoaBookingGroupSchema = z.object({
   id: z.string().regex(RCOA_REFERENCE),
   sequence: z.number().int().min(1).max(RCOA_MAX_SERVICES),
-  size: z.number().int().min(2).max(RCOA_MAX_SERVICES),
+  size: z.number().int().min(1).max(RCOA_MAX_SERVICES),
 }).strict();
 
 export const RcoaBookingRequestSchema = z.object({

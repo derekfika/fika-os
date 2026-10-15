@@ -5,8 +5,8 @@ import { hubFetch } from "@/lib/hub";
 import { buildRcoaGroupHubPayloads } from "@/lib/rcoa-booking-group";
 
 /**
- * One public RCoA submission with several service moments. Every moment is validated BEFORE anything is created; then one ordinary
- * canonical RCoA Booking is created per moment, in sequence, through the same governed Hub path as a single booking. Child
+ * One public All Day Hospitality request. Every service row is validated BEFORE anything is created; then one ordinary
+ * canonical RCoA Booking is created per service row, in sequence, through the same governed Hub path as a single booking. Child
  * references are deterministic (`<group>-01..NN`), so a retry of the whole group replays safely: existing children come back as
  * `created: false` and only the missing ones are created. Group success is reported only when every child exists.
  */

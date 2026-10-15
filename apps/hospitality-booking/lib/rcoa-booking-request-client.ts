@@ -41,16 +41,21 @@ export function buildRcoaClientRequest(
   };
 }
 
-import { composeRcoaDraft, rcoaChildReference, type RcoaGroupDraft } from "./rcoa-portal";
+import { composeServiceDraft, sortedAllDayServices, type AllDayDraft } from "./rcoa-all-day";
+import { rcoaChildReference } from "./rcoa-portal";
 
 /**
- * One request per service moment. A single moment keeps exactly today's request (same reference, no group metadata); several
- * moments get deterministic child references `<groupId>-01..NN` plus structured `bookingGroup` metadata.
+ * One request per service row, submitted in time order. Child references are deterministic `<groupId>-01..NN` and every child carries
+ * the structured `bookingGroup` link, so a retry of the same request produces the same identities.
  */
-export function buildRcoaGroupClientRequests(group: RcoaGroupDraft, menu: readonly PortalMenuItem[], identity: { groupId: string; submittedAt: string }) {
-  const size = group.moments.length;
-  return group.moments.map((_, index) => {
-    const base = buildRcoaClientRequest(composeRcoaDraft(group, index), menu, { bookingId: size === 1 ? identity.groupId : rcoaChildReference(identity.groupId, index + 1), submittedAt: identity.submittedAt });
-    return size === 1 ? base : { ...base, bookingGroup: { id: identity.groupId, sequence: index + 1, size } };
-  });
+export function buildAllDayClientRequests(draft: AllDayDraft, menu: readonly PortalMenuItem[], identity: { groupId: string; submittedAt: string }) {
+  const services = sortedAllDayServices(draft);
+  const size = services.length;
+  return {
+    bookingGroup: { id: identity.groupId, size },
+    requests: services.map((service, index) => ({
+      ...buildRcoaClientRequest(composeServiceDraft(draft, service.id), menu, { bookingId: rcoaChildReference(identity.groupId, index + 1), submittedAt: identity.submittedAt }),
+      bookingGroup: { id: identity.groupId, sequence: index + 1, size },
+    })),
+  };
 }

@@ -4,20 +4,20 @@ import { RCOA_MAX_SERVICES, rcoaChildReference } from "./rcoa-portal";
 
 const RCOA_REFERENCE = /^RCOA-[A-Z0-9-]{8,80}$/i;
 
-/** One public submission with several service moments: the group id plus one ordinary RCoA request per moment. */
+/** One All Day Hospitality request: the group id plus one ordinary RCoA request per service row. */
 export const RcoaGroupSubmissionSchema = z.object({
-  bookingGroup: z.object({ id: z.string().regex(RCOA_REFERENCE), size: z.number().int().min(2).max(RCOA_MAX_SERVICES) }).strict(),
-  requests: z.array(RcoaBookingRequestSchema).min(2).max(RCOA_MAX_SERVICES),
+  bookingGroup: z.object({ id: z.string().regex(RCOA_REFERENCE), size: z.number().int().min(1).max(RCOA_MAX_SERVICES) }).strict(),
+  requests: z.array(RcoaBookingRequestSchema).min(1).max(RCOA_MAX_SERVICES),
 }).strict();
 
 export type RcoaTrustedHubPayload = ReturnType<typeof buildTrustedRcoaHubPayload>;
 
 /** The extra line staff see in the booking notes for every linked booking (structured metadata is authoritative). */
-export const rcoaGroupNote = (groupId: string, sequence: number, size: number) => `RCoA multi-service request ${groupId}: service ${sequence} of ${size}.`;
+export const rcoaGroupNote = (groupId: string, sequence: number, size: number) => `All Day Hospitality request ${groupId}: service ${sequence} of ${size}.`;
 
 /**
- * Validates the WHOLE group before anything is created and returns the trusted Hub payloads in sequence order.
- * Throws (and so creates nothing) if any moment is invalid or the group is inconsistent. Pure: no I/O.
+ * Validates the WHOLE request before anything is created and returns the trusted Hub payloads in sequence order.
+ * Throws (and so creates nothing) if any service is invalid or the request is inconsistent. Pure: no I/O.
  */
 export function buildRcoaGroupHubPayloads(value: unknown): { groupId: string; payloads: RcoaTrustedHubPayload[] } {
   const submission = RcoaGroupSubmissionSchema.parse(value);

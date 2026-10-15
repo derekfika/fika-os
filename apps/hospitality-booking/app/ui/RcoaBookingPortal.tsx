@@ -4,19 +4,28 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { portalBookingId, type PortalMenuItem } from "@/lib/mnk-contract";
 import { hospitalitySiteThemeStyle, portalSite } from "@/lib/portal-sites";
 import {
-  addRcoaMoment,
-  applyRcoaDraft,
+  addAllDayService,
+  applyAllDayDefaults,
+  applyServiceItems,
+  applySharedView,
+  changeAllDayServiceCategory,
+  composeServiceDraft,
+  composeSharedView,
+  createEmptyAllDay,
+  duplicateAllDayService,
+  RCOA_ALL_DAY,
+  removeAllDayService,
+  sortedAllDayServices,
+  summarizeAllDay,
+  updateAllDayService,
+  validateAllDay,
+  type AllDayDraft,
+} from "@/lib/rcoa-all-day";
+import {
   calculateRcoaTotal,
-  composeRcoaDraft,
   createEmptyRcoaDraft,
-  createEmptyRcoaGroup,
-  duplicateRcoaMoment,
-  groupFromDraft,
   RCOA_MAX_SERVICES,
-  removeRcoaMoment,
-  setRcoaMultiple,
-  validateRcoaGroup,
-  type RcoaGroupDraft,
+  type RcoaEventType,
   filterRcoaMenu,
   rcoaAcknowledgementLabels,
   rcoaAllowedCategories,
@@ -30,16 +39,17 @@ import {
   type RcoaChoiceValue,
   type RcoaLine,
 } from "@/lib/rcoa-portal";
-import { buildRcoaGroupClientRequests } from "@/lib/rcoa-booking-request-client";
+import { buildAllDayClientRequests, buildRcoaClientRequest } from "@/lib/rcoa-booking-request-client";
 import styles from "./RcoaBookingPortal.module.css";
 
 const stepLabels = ["Occasion", "Contact", "Event", "Menu", "Dietaries", "Review"];
+const allDayStepLabels = ["Offering", "Event details", "Build your day", "Dietaries", "Review"];
+const summaryKey = "fika-rcoa-confirmed-summary:v1";
+const attemptKey = "fika-rcoa-submit-attempt:v1";
 const draftKey = "fika-rcoa-booking-draft:v1";
 const contactKey = "fika-rcoa-remembered-contact:v1";
 const requestIdKey = "fika-rcoa-request-id:v1";
 const submissionKey = "fika-rcoa-confirmed-request:v1";
-const summaryKey = "fika-rcoa-confirmed-summary:v1";
-const attemptKey = "fika-rcoa-submit-attempt:v1";
 const dietaryFields = [
   ["vegetarian", "Vegetarian"],
   ["vegan", "Vegan"],
@@ -80,35 +90,44 @@ function safeDraft(value: unknown): RcoaBookingDraft | undefined {
   };
 }
 
-function safeGroup(value: unknown): RcoaGroupDraft | undefined {
+function safeAllDay(value: unknown): AllDayDraft | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const candidate = value as Partial<RcoaGroupDraft> & { moments?: unknown };
-  if (!Array.isArray(candidate.moments)) { const legacy = safeDraft(value); return legacy ? groupFromDraft(legacy) : undefined; }
-  const empty = createEmptyRcoaGroup();
-  const moments = (candidate.moments as Array<Partial<RcoaGroupDraft["moments"][number]>>)
-    .filter((moment) => moment && typeof moment.occasion === "string" && Array.isArray(moment.lines))
-    .slice(0, RCOA_MAX_SERVICES)
-    .map((moment, index) => ({ ...empty.moments[0], ...moment, id: typeof moment.id === "string" ? moment.id : `restored-${index}`, event: { ...empty.moments[0].event, ...(moment.event || {}) }, dietaries: { ...empty.moments[0].dietaries, ...(moment.dietaries || {}) }, lines: (moment.lines || []).filter((line): line is RcoaLine => Boolean(line && typeof line.itemId === "string" && Number.isFinite(line.quantity))) }));
-  if (!moments.length) return undefined;
+  const candidate = value as Partial<AllDayDraft>;
+  if (!Array.isArray(candidate.services) || !candidate.services.length) return undefined;
+  const empty = createEmptyAllDay();
   return {
     ...empty, ...candidate,
     contact: { ...empty.contact, ...(candidate.contact || {}) },
+    dietaries: { ...empty.dietaries, ...(candidate.dietaries || {}) },
     acknowledgements: { ...empty.acknowledgements, ...(candidate.acknowledgements || {}) },
-    multiple: Boolean(candidate.multiple) || moments.length > 1,
-    moments,
-    activeIndex: Math.max(0, Math.min(moments.length - 1, Number(candidate.activeIndex) || 0)),
+    services: candidate.services.slice(0, RCOA_MAX_SERVICES).map((service, index) => ({
+      id: typeof service?.id === "string" ? service.id : `restored-${index}`, category: typeof service?.category === "string" ? service.category : "", startTime: typeof service?.startTime === "string" ? service.startTime : "",
+      guestCount: Number.isFinite(service?.guestCount) ? service.guestCount : 0, location: typeof service?.location === "string" ? service.location : "", notes: typeof service?.notes === "string" ? service.notes : "",
+      lines: (Array.isArray(service?.lines) ? service.lines : []).filter((line): line is RcoaLine => Boolean(line && typeof line.itemId === "string" && Number.isFinite(line.quantity))),
+    })),
   };
 }
 
 export default function RcoaBookingPortal({ configured }: { configured: boolean }) {
   const site = portalSite("rcoa");
   const theme = hospitalitySiteThemeStyle(site) as CSSProperties;
-  const [group, setGroup] = useState<RcoaGroupDraft>(createEmptyRcoaGroup);
-  const draft = useMemo(() => composeRcoaDraft(group), [group]);
-  const setDraft = (update: RcoaBookingDraft | ((current: RcoaBookingDraft) => RcoaBookingDraft)) =>
-    setGroup((previous) => applyRcoaDraft(previous, typeof update === "function" ? update(composeRcoaDraft(previous)) : update));
+  // Two flows share this screen: the ordinary single-offering booking (unchanged) and All Day Hospitality.
+  const [flow, setFlow] = useState<"standard" | "all-day">("standard");
+  const [standardDraft, setStandardDraft] = useState<RcoaBookingDraft>(createEmptyRcoaDraft);
+  const [allDay, setAllDay] = useState<AllDayDraft>(createEmptyAllDay);
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+  const [removeConfirmId, setRemoveConfirmId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<Array<{ time: string; label: string; guests: number }> | null>(null);
-  const [confirmRemove, setConfirmRemove] = useState(false);
+  // The item screen, contact, dietaries and acknowledgements all operate on an ordinary RcoaBookingDraft: a service row while choosing its
+  // items, otherwise the shared event. This is what lets the existing catalogue rules and validation apply unchanged.
+  const editingService = editingServiceId ? allDay.services.find((service) => service.id === editingServiceId) : undefined;
+  const draft = useMemo<RcoaBookingDraft>(() => flow === "standard" ? standardDraft : editingService ? composeServiceDraft(allDay, editingService.id) : composeSharedView(allDay), [flow, standardDraft, allDay, editingService]);
+  const setDraft = (update: RcoaBookingDraft | ((current: RcoaBookingDraft) => RcoaBookingDraft)) => {
+    if (flow === "standard") { setStandardDraft(update); return; }
+    if (editingServiceId) { setAllDay((previous) => applyServiceItems(previous, editingServiceId, typeof update === "function" ? update(composeServiceDraft(previous, editingServiceId)) : update)); return; }
+    setAllDay((previous) => applySharedView(previous, typeof update === "function" ? update(composeSharedView(previous)) : update));
+  };
+  const labels = flow === "all-day" ? allDayStepLabels : stepLabels;
   const [step, setStep] = useState(0);
   const [menu, setMenu] = useState<PortalMenuItem[]>([]);
   const [menuLoading, setMenuLoading] = useState(true);
@@ -142,13 +161,23 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
       const stableRequestId = storedRequestId && /^RCOA-[A-Z0-9-]{8,80}$/i.test(storedRequestId) ? storedRequestId : newRequestId;
       setBookingId(stableRequestId);
       window.localStorage.setItem(requestIdKey, stableRequestId);
-      const savedDraft = hasConfirmedRequest ? undefined : JSON.parse(window.localStorage.getItem(draftKey) || "null");
-      const restored = savedDraft ? safeGroup(savedDraft) : undefined;
-      if (hasConfirmedRequest) { try { const summary = JSON.parse(window.localStorage.getItem(summaryKey) || "null"); if (Array.isArray(summary) && summary.length > 1) setConfirmation(summary); } catch { /* optional */ } }
-      if (restored) {
-        setGroup(restored);
-        setStep(Math.max(0, Math.min(stepLabels.length - 1, Number((savedDraft as { step?: number }).step) || 0)));
-        setRestoredDraft(true);
+      const saved = hasConfirmedRequest ? undefined : JSON.parse(window.localStorage.getItem(draftKey) || "null");
+      if (hasConfirmedRequest) { try { const summary = JSON.parse(window.localStorage.getItem(summaryKey) || "null"); if (Array.isArray(summary) && summary.length) setConfirmation(summary); } catch { /* optional */ } }
+      if (saved && saved.flow === "all-day") {
+        const restoredAllDay = safeAllDay(saved.allDay);
+        if (restoredAllDay) {
+          setFlow("all-day");
+          setAllDay(restoredAllDay);
+          setStep(Math.max(0, Math.min(allDayStepLabels.length - 1, Number(saved.step) || 0)));
+          setRestoredDraft(true);
+        }
+      } else {
+        const restored = safeDraft(saved);
+        if (restored) {
+          setStandardDraft(restored);
+          setStep(Math.max(0, Math.min(stepLabels.length - 1, Number((restored as RcoaBookingDraft & { step?: number }).step) || 0)));
+          setRestoredDraft(true);
+        }
       }
       const savedContact = JSON.parse(window.localStorage.getItem(contactKey) || "null") as RcoaBookingDraft["contact"] | null;
       if (savedContact && typeof savedContact === "object") {
@@ -165,11 +194,11 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   useEffect(() => {
     if (!draftReady || reference) return;
     try {
-      window.localStorage.setItem(draftKey, JSON.stringify({ ...group, step }));
+      window.localStorage.setItem(draftKey, JSON.stringify(flow === "all-day" ? { flow, allDay, step } : { ...standardDraft, step }));
     } catch {
       // A full or unavailable browser store must not block a booking request.
     }
-  }, [draftReady, group, step, reference]);
+  }, [draftReady, flow, standardDraft, allDay, step, reference]);
 
   useEffect(() => {
     if (!draftReady) return;
@@ -266,6 +295,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   };
 
   const changeOccasion = (occasion: RcoaBookingDraft["occasion"]) => {
+    setFlow("standard");
     const retainedLines = retainRcoaLinesForOccasion(draft.lines, occasion, menu);
     const removedCount = draft.lines.length - retainedLines.length;
     setDraft((current) => ({ ...current, occasion, lines: retainRcoaLinesForOccasion(current.lines, occasion, menu) }));
@@ -273,7 +303,67 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
     setMessage(removedCount ? `${removedCount} menu selection${removedCount === 1 ? " was" : "s were"} removed because ${removedCount === 1 ? "it is" : "they are"} not available for this occasion.` : "");
   };
 
+  // ---- All Day Hospitality ---------------------------------------------------------------------------------------------------
+  const focusField = (field: string) => window.setTimeout(() => {
+    const target = document.querySelector<HTMLElement>(`[data-rcoa-field="${CSS.escape(field)}"]`);
+    (target?.matches("input, select, textarea, button") ? target : target?.querySelector<HTMLElement>("input, select, textarea, button") || target)?.focus();
+  }, 0);
+
+  const chooseAllDay = () => { setFlow("all-day"); setEditingServiceId(null); setErrors({}); setMessage(""); };
+
+  const goToAllDayStep = (nextStep: number) => {
+    if (nextStep > step) {
+      const failure = validateAllDay(allDay, menu);
+      if (failure && failure.step <= step) {
+        setErrors(failure.errors);
+        setMessage("Please review the highlighted information before continuing.");
+        focusField(Object.keys(failure.errors)[0]);
+        return;
+      }
+    }
+    setErrors({});
+    setMessage("");
+    if (nextStep === 2) setAllDay((current) => applyAllDayDefaults(current));
+    setStep(Math.max(0, Math.min(allDayStepLabels.length - 1, nextStep)));
+  };
+
+  const openItems = (serviceId: string) => {
+    const service = allDay.services.find((candidate) => candidate.id === serviceId);
+    if (!service?.category) { setErrors({ [`service:${serviceId}`]: "Choose a service type first." }); focusField(`service:${serviceId}`); return; }
+    setErrors({}); setMessage(""); setSearch(""); setCategory("all"); setEditingServiceId(serviceId);
+    window.scrollTo({ top: 0 });
+  };
+  const closeItems = (validate: boolean) => {
+    if (validate) {
+      const itemErrors = validateRcoaStep(3, draft, menu);
+      if (Object.keys(itemErrors).length) {
+        const guestError = Object.entries(itemErrors).find(([key]) => key.startsWith("guests:"));
+        setErrors(guestError ? { items: `${guestError[1]} Change the guest count for this service on your day.` } : itemErrors);
+        setMessage("Please review the highlighted information before saving.");
+        return;
+      }
+    }
+    setErrors({}); setMessage(""); setEditingServiceId(null);
+  };
+  const changeServiceCategory = (serviceId: string, category: RcoaEventType | "") => {
+    const result = changeAllDayServiceCategory(allDay, serviceId, category, menu);
+    setAllDay(result.draft);
+    setMessage(result.removed ? `${result.removed} menu selection${result.removed === 1 ? " was" : "s were"} removed because ${result.removed === 1 ? "it is" : "they are"} not available for this service.` : "");
+  };
+  const addService = () => { setAllDay((current) => addAllDayService(current)); setMessage(""); };
+  const duplicateService = (serviceId: string) => { setAllDay((current) => duplicateAllDayService(current, serviceId)); setMessage("Service duplicated with its type, guests, location and items. Choose the new time."); };
+  const removeService = (serviceId: string) => { setAllDay((current) => removeAllDayService(current, serviceId)); setRemoveConfirmId(null); setErrors({}); setMessage("Service removed."); };
+  const itemSummary = (lines: RcoaLine[]) => {
+    const picked = lines.flatMap((line) => { const item = menu.find((candidate) => candidate.id === line.itemId); return item && line.quantity > 0 ? [item.name] : []; });
+    return picked.length ? `${picked.length} item${picked.length === 1 ? "" : "s"}: ${picked.slice(0, 2).join(", ")}${picked.length > 2 ? ` +${picked.length - 2} more` : ""}` : "No items yet";
+  };
+  const allDaySummary = summarizeAllDay(allDay);
+  const view = flow === "standard"
+    ? (["occasion", "contact", "event", "menu", "dietaries", "review"] as const)[step]
+    : editingServiceId ? "menu" : (["occasion", "details", "build", "dietaries", "review"] as const)[step];
+
   const goToStep = (nextStep: number) => {
+    if (flow === "all-day") { goToAllDayStep(nextStep); return; }
     const validation = validateRcoaStep(step, draft, menu);
     if (nextStep > step && Object.keys(validation).length) {
       setErrors(validation);
@@ -298,27 +388,17 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
     setStep(Math.max(0, Math.min(stepLabels.length - 1, nextStep)));
   };
 
-  const describeServices = (candidate: RcoaGroupDraft) => candidate.moments.map((moment, index) => {
-    const view = composeRcoaDraft(candidate, index);
-    return { time: `${moment.event.startTime}${moment.event.endTime ? `–${moment.event.endTime}` : ""}`, label: rcoaEventTypes.find((event) => event.id === view.occasion)?.label || "Service", guests: moment.event.guestCount };
-  });
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (sendingRef.current) return;
-    // Every service is validated BEFORE anything is created.
-    const failure = validateRcoaGroup(group, menu);
+  const submitAllDay = async () => {
+    // Every service row is validated BEFORE anything is created.
+    const failure = validateAllDay(allDay, menu);
     if (failure) {
-      setGroup((current) => ({ ...current, activeIndex: failure.index }));
       setStep(failure.step);
       setErrors(failure.errors);
-      setMessage(group.moments.length > 1 && failure.step !== 5 && failure.step !== 1 ? `Service ${failure.index + 1}: please review the highlighted information before sending.` : failure.step === 5 ? "Please confirm each acknowledgement before sending your request." : "Please review the highlighted information before sending.");
+      setMessage(failure.step === 4 ? "Please confirm each acknowledgement before sending your request." : "Please review the highlighted information before sending.");
+      focusField(Object.keys(failure.errors)[0]);
       return;
     }
-    if (!rcoaConfigured) {
-      setMessage("RCoA booking is not available until the governed site mapping is configured.");
-      return;
-    }
+    if (!rcoaConfigured) { setMessage("RCoA booking is not available until the governed site mapping is configured."); return; }
     sendingRef.current = true;
     setSending(true);
     setErrors({});
@@ -327,28 +407,23 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
       const stableRequestId = bookingId || portalBookingId("rcoa");
       if (!bookingId) setBookingId(stableRequestId);
       try { window.localStorage.setItem(requestIdKey, stableRequestId); } catch { /* The in-memory ID still protects retries in this page. */ }
-      const requests = buildRcoaGroupClientRequests(group, menu, { groupId: stableRequestId, submittedAt: new Date().toISOString() });
-      const signature = JSON.stringify(requests.map(({ submittedAt: _submittedAt, ...rest }) => rest));
-      // A retry must resend the same request. If part of an earlier attempt was already received, edits cannot be applied silently.
+      const submission = buildAllDayClientRequests(allDay, menu, { groupId: stableRequestId, submittedAt: new Date().toISOString() });
+      const signature = JSON.stringify(submission.requests.map(({ submittedAt: _submittedAt, ...rest }) => rest));
+      // A retry resends the same request. If part of an earlier attempt was already received, edits cannot be applied silently.
       let previous: { groupId?: string; signature?: string; completed?: number } | null = null;
       try { previous = JSON.parse(window.localStorage.getItem(attemptKey) || "null"); } catch { previous = null; }
       if (previous && previous.groupId === stableRequestId && (previous.completed || 0) > 0 && previous.signature !== signature) {
         setMessage("Part of your earlier request was already received, so it cannot be changed here. Please contact the hospitality team to amend it, or use Start again to send a new request.");
         return;
       }
-      const single = requests.length === 1;
-      const response = await fetch(single ? "/api/bookings/rcoa" : "/api/bookings/rcoa/group", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(single ? requests[0] : { bookingGroup: { id: stableRequestId, size: requests.length }, requests }),
-      });
+      const response = await fetch("/api/bookings/rcoa/group", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(submission) });
       const result = await response.json();
       if (!response.ok) {
         try { window.localStorage.setItem(attemptKey, JSON.stringify({ groupId: stableRequestId, signature, completed: Number(result.group?.completed) || 0 })); } catch { /* optional */ }
         throw new Error(result.error?.message || "We could not send your request. Your saved draft is still available.");
       }
-      const services = describeServices(group);
-      setConfirmation(services.length > 1 ? services : null);
+      const services = sortedAllDayServices(allDay).map((service) => ({ time: service.startTime, label: rcoaEventTypes.find((event) => event.id === service.category)?.label || "Service", guests: service.guestCount }));
+      setConfirmation(services);
       setReference(stableRequestId);
       try {
         window.localStorage.setItem(submissionKey, stableRequestId);
@@ -365,17 +440,60 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
     }
   };
 
-  const selectService = (index: number) => { setGroup((current) => ({ ...current, activeIndex: index })); setErrors({}); setMessage(""); setConfirmRemove(false); };
-  const addService = () => { if (group.moments.length >= RCOA_MAX_SERVICES) return; setGroup((current) => addRcoaMoment(current)); setStep(0); setErrors({}); setConfirmRemove(false); setMessage(`Service ${group.moments.length + 1} added. Choose its occasion, then its time and menu.`); };
-  const duplicateService = () => { if (group.moments.length >= RCOA_MAX_SERVICES) return; setGroup((current) => duplicateRcoaMoment(current, current.activeIndex)); setStep(2); setErrors({}); setConfirmRemove(false); setMessage("Service duplicated with its menu, guests and location. Choose the new time."); };
-  const removeService = () => { setGroup((current) => removeRcoaMoment(current, current.activeIndex)); setConfirmRemove(false); setErrors({}); setMessage("Service removed."); };
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (sendingRef.current) return;
+    if (flow === "all-day") { await submitAllDay(); return; }
+    const validation = validateRcoaStep(5, draft, menu);
+    if (Object.keys(validation).length) {
+      setErrors(validation);
+      setMessage("Please confirm each acknowledgement before sending your request.");
+      return;
+    }
+    if (!rcoaConfigured) {
+      setMessage("RCoA booking is not available until the governed site mapping is configured.");
+      return;
+    }
+    sendingRef.current = true;
+    setSending(true);
+    setErrors({});
+    setMessage("");
+    try {
+      const stableRequestId = bookingId || portalBookingId("rcoa");
+      if (!bookingId) setBookingId(stableRequestId);
+      try { window.localStorage.setItem(requestIdKey, stableRequestId); } catch { /* The in-memory ID still protects retries in this page. */ }
+      const body = buildRcoaClientRequest(draft, menu, { bookingId: stableRequestId, submittedAt: new Date().toISOString() });
+      const response = await fetch("/api/bookings/rcoa", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error?.message || "We could not send your request. Your saved draft is still available.");
+      setReference(body.bookingId);
+      try {
+        window.localStorage.setItem(submissionKey, body.bookingId);
+        window.localStorage.removeItem(draftKey);
+      } catch { /* A confirmed request stays confirmed even when browser storage is unavailable. */ }
+      setRestoredDraft(false);
+    } catch (cause) {
+      setMessage((cause as Error).message || "We could not send your request. Your saved draft is still available.");
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
+  };
 
   const reset = () => {
     const newRequestId = portalBookingId("rcoa");
     setBookingId(newRequestId);
-    setGroup({ ...createEmptyRcoaGroup(), contact: rememberContact ? group.contact : createEmptyRcoaGroup().contact });
+    const sharedContact = rememberContact ? draft.contact : createEmptyRcoaDraft().contact;
+    setFlow("standard");
+    setStandardDraft({ ...createEmptyRcoaDraft(), contact: sharedContact });
+    setAllDay({ ...createEmptyAllDay(), contact: sharedContact });
+    setEditingServiceId(null);
+    setRemoveConfirmId(null);
     setConfirmation(null);
-    setConfirmRemove(false);
     setStep(0);
     setSearch("");
     setCategory("all");
@@ -424,9 +542,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
       {reference ? (
         <section className={styles.confirmation} aria-labelledby="rcoa-confirm-title">
           <p className={styles.eyebrow}>Request received</p>
-          <h2 id="rcoa-confirm-title">{confirmation ? "Booking request submitted" : "Thank you. We will take it from here."}</h2>
-          {confirmation && <><p>{confirmation.length} services requested.</p>
-            <ul className={styles.confirmationList}>{confirmation.map((service, index) => <li key={`${service.time}-${index}`}><strong>{service.time}</strong> — {service.label} — {service.guests} guests</li>)}</ul></>}
+          <h2 id="rcoa-confirm-title">{confirmation ? "All Day Hospitality request submitted" : "Thank you. We will take it from here."}</h2>
+          {confirmation && <ul className={styles.confirmationList}>{confirmation.map((service, index) => <li key={`${service.time}-${index}`}><strong>{service.time}</strong> — {service.label} — {service.guests} guests</li>)}</ul>}
           <p>Your reference is <strong>{reference}</strong>.</p>
           <p>The hospitality team will review availability, labour, equipment and VAT before confirming your booking.</p>
           <button className={styles.primaryButton} type="button" onClick={reset}>Make another booking</button>
@@ -434,8 +551,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
       ) : (
         <div className={styles.appShell}>
           <nav className={styles.stepper} aria-label="Booking progress">
-            {stepLabels.map((label, index) => (
-              <button key={label} type="button" className={index === step ? styles.stepActive : index < step ? styles.stepComplete : styles.step} disabled={index > step} aria-current={index === step ? "step" : undefined} onClick={() => goToStep(index)}>
+            {labels.map((label, index) => (
+              <button key={label} type="button" className={index === step ? styles.stepActive : index < step ? styles.stepComplete : styles.step} disabled={index > step} aria-current={index === step ? "step" : undefined} onClick={() => { setEditingServiceId(null); goToStep(index); }}>
                 <span>0{index + 1}</span>{label}
               </button>
             ))}
@@ -445,27 +562,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
             {message && <p className={styles.formMessage} role="alert" aria-live="polite">{message}</p>}
             {menuError && <p className={styles.formMessage} role="alert">{menuError}</p>}
 
-            {group.multiple && [0, 2, 3, 4].includes(step) && (
-              <nav className={styles.servicesBar} aria-label="Services in this booking">
-                <ul className={styles.serviceTabs}>
-                  {group.moments.map((moment, index) => (
-                    <li key={moment.id}>
-                      <button type="button" className={index === group.activeIndex ? styles.serviceTabActive : styles.serviceTab} aria-current={index === group.activeIndex ? "true" : undefined} onClick={() => selectService(index)}>
-                        <strong>Service {index + 1}</strong><span>{moment.event.startTime || "Time not set"}{moment.event.guestCount ? ` · ${moment.event.guestCount} guests` : ""}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <div className={styles.serviceActions}>
-                  <button type="button" className={styles.secondaryButton} onClick={addService} disabled={group.moments.length >= RCOA_MAX_SERVICES}>Add another service</button>
-                  <button type="button" className={styles.secondaryButton} onClick={duplicateService} disabled={group.moments.length >= RCOA_MAX_SERVICES}>Duplicate service</button>
-                  <button type="button" className={styles.secondaryButton} onClick={() => setConfirmRemove(true)} disabled={group.moments.length <= 1}>Remove service</button>
-                </div>
-                {confirmRemove && <div className={styles.removeConfirm} role="alertdialog" aria-label={`Remove service ${group.activeIndex + 1}`}><span>Remove service {group.activeIndex + 1} and its menu?</span><button type="button" className={styles.dangerButton} onClick={removeService}>Remove</button><button type="button" className={styles.secondaryButton} onClick={() => setConfirmRemove(false)}>Keep</button></div>}
-              </nav>
-            )}
-
-            {step === 0 && (
+            {view === "occasion" && (
               <section aria-labelledby="rcoa-occasion-title">
                 <div className={styles.sectionHeading}>
                   <p className={styles.eyebrow}>Your occasion</p><h2 id="rcoa-occasion-title">What are we arranging?</h2>
@@ -477,13 +574,16 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                       <strong>{event.label}</strong><span>{event.id === "bespoke" ? "A tailored proposal for a special event." : `Plan ${event.label.toLocaleLowerCase("en-GB")} hospitality at the College.`}</span>
                     </button>
                   ))}
+                  <button className={flow === "all-day" ? styles.occasionSelected : styles.occasion} type="button" aria-pressed={flow === "all-day"} onClick={chooseAllDay}>
+                    <strong>{RCOA_ALL_DAY.label}</strong><span>{RCOA_ALL_DAY.description}</span>
+                  </button>
                 </div>
                 <ErrorMessage field="occasion" errors={errors} />
                 {draft.occasion && <div className={styles.guidance} role="status"><strong>Notice guidance</strong><span>{currentEvent?.noticeType === "large" ? "Please allow at least seven working days for larger events." : "Please allow at least 72 hours for standard requests."} Availability will be confirmed by the hospitality team.</span></div>}
               </section>
             )}
 
-            {step === 1 && (
+            {(view === "contact" || view === "details") && (
               <section aria-labelledby="rcoa-contact-title">
                 <div className={styles.sectionHeading}><p className={styles.eyebrow}>Contact details</p><h2 id="rcoa-contact-title">Who should we speak to?</h2></div>
                 <div className={styles.fieldGrid}>
@@ -500,18 +600,67 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
               </section>
             )}
 
-            {step === 2 && (
+            {view === "details" && (
+              <section aria-labelledby="rcoa-allday-event-title">
+                <div className={styles.sectionHeading}><p className={styles.eyebrow}>All Day Hospitality</p><h2 id="rcoa-allday-event-title">Tell us about the event.</h2><p>Entered once. The guest count and location below pre-fill each service, and you can change them service by service.</p></div>
+                <div className={styles.fieldGrid}>
+                  <label className={`${styles.field} ${styles.fieldWide}`}><span>Event, lecture or meeting name <small>(optional)</small></span><input value={allDay.eventName} onChange={(event) => setAllDay((current) => ({ ...current, eventName: event.target.value }))} /></label>
+                  <label className={styles.field}><span>Event date *</span><input {...fieldProps("eventDate", errors)} data-rcoa-field="eventDate" type="date" value={allDay.eventDate} onChange={(event) => setAllDay((current) => ({ ...current, eventDate: event.target.value }))} /><ErrorMessage field="eventDate" errors={errors} /></label>
+                  <label className={styles.field}><span>Usual number of guests</span><input type="number" min="1" step="1" value={allDay.defaultGuests || ""} onChange={(event) => setAllDay((current) => ({ ...current, defaultGuests: Number(event.target.value || 0) }))} /></label>
+                  <label className={styles.field}><span>Usual room or location</span><input value={allDay.defaultLocation} onChange={(event) => setAllDay((current) => ({ ...current, defaultLocation: event.target.value }))} placeholder="e.g. Lecture Hall" /></label>
+                  <label className={styles.field}><span>Floor level</span><input value={allDay.floorLevel} onChange={(event) => setAllDay((current) => ({ ...current, floorLevel: event.target.value }))} placeholder="e.g. 7" /></label>
+                  <label className={styles.field}><span>Onsite contact name</span><input value={allDay.onsiteContactName} onChange={(event) => setAllDay((current) => ({ ...current, onsiteContactName: event.target.value }))} /></label>
+                  <label className={styles.field}><span>Onsite contact phone</span><input type="tel" value={allDay.onsiteContactPhone} onChange={(event) => setAllDay((current) => ({ ...current, onsiteContactPhone: event.target.value }))} /></label>
+                </div>
+              </section>
+            )}
+
+            {view === "build" && (
+              <section aria-labelledby="rcoa-build-title">
+                <div className={styles.sectionHeading}><p className={styles.eyebrow}>All Day Hospitality</p><h2 id="rcoa-build-title">Build your day</h2><p>Add each catering service for {allDay.eventName.trim() || "your event"}{allDay.eventDate ? ` on ${allDay.eventDate}` : ""}. Choose a time and service type, then add items from the usual menu.</p></div>
+                <div className={styles.dayBoard}>
+                <div className={styles.dayHeader} aria-hidden="true"><span>Time</span><span>Service</span><span>Guests</span><span>Location</span><span>Items</span><span>Actions</span></div>
+                <ul className={styles.dayList} aria-label="Services in your day">
+                  {allDay.services.map((service) => {
+                    const hasItems = service.lines.some((line) => line.quantity > 0);
+                    return (
+                      <li className={styles.dayRow} key={service.id} data-service-row={service.id}>
+                        <label className={styles.dayCell}><span className={styles.cellLabel}>Time</span><input {...fieldProps(`startTime:${service.id}`, errors)} data-rcoa-field={`startTime:${service.id}`} type="time" value={service.startTime} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { startTime: event.target.value }))} /><ErrorMessage field={`startTime:${service.id}`} errors={errors} /></label>
+                        <label className={styles.dayCell}><span className={styles.cellLabel}>Service</span>
+                          <select {...fieldProps(`service:${service.id}`, errors)} data-rcoa-field={`service:${service.id}`} value={service.category} onChange={(event) => changeServiceCategory(service.id, event.target.value as RcoaEventType | "")}>
+                            <option value="">Choose a service</option>
+                            {rcoaEventTypes.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
+                          </select><ErrorMessage field={`service:${service.id}`} errors={errors} /></label>
+                        <label className={styles.dayCell}><span className={styles.cellLabel}>Guests</span><input {...fieldProps(`guestCount:${service.id}`, errors)} data-rcoa-field={`guestCount:${service.id}`} type="number" min="1" step="1" value={service.guestCount || ""} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { guestCount: Number(event.target.value || 0) }))} /><ErrorMessage field={`guestCount:${service.id}`} errors={errors} /></label>
+                        <label className={styles.dayCell}><span className={styles.cellLabel}>Location</span><input {...fieldProps(`location:${service.id}`, errors)} data-rcoa-field={`location:${service.id}`} value={service.location} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { location: event.target.value }))} placeholder="e.g. Lecture Hall" /><ErrorMessage field={`location:${service.id}`} errors={errors} /></label>
+                        <div className={styles.dayCell}><span className={styles.cellLabel}>Items</span>
+                          <span className={styles.daySummaryText}>{itemSummary(service.lines)}</span>
+                          <button type="button" className={styles.secondaryButton} data-rcoa-field={`items:${service.id}`} onClick={() => openItems(service.id)}>{hasItems ? "Edit items" : "Add items"}</button>
+                          <ErrorMessage field={`items:${service.id}`} errors={errors} /></div>
+                        <div className={`${styles.dayCell} ${styles.dayActions}`}><span className={styles.cellLabel}>Actions</span>
+                          <button type="button" className={styles.secondaryButton} onClick={() => duplicateService(service.id)} disabled={allDay.services.length >= RCOA_MAX_SERVICES}>Duplicate</button>
+                          <button type="button" className={styles.secondaryButton} onClick={() => setRemoveConfirmId(service.id)} disabled={allDay.services.length <= 1}>Remove</button></div>
+                        <label className={`${styles.dayCell} ${styles.dayNote}`}><span className={styles.cellLabel}>Note for this service <small>(optional)</small></span><input value={service.notes} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { notes: event.target.value }))} /></label>
+                        {removeConfirmId === service.id && <div className={styles.removeConfirm} role="alertdialog" aria-label="Remove this service"><span>Remove this service and its items?</span><button type="button" className={styles.dangerButton} onClick={() => removeService(service.id)}>Remove</button><button type="button" className={styles.secondaryButton} onClick={() => setRemoveConfirmId(null)}>Keep</button></div>}
+                      </li>
+                    );
+                  })}
+                </ul>
+                </div>
+                <button type="button" className={styles.secondaryButton} onClick={addService} disabled={allDay.services.length >= RCOA_MAX_SERVICES}>+ Add service</button>
+                <div className={styles.daySummary} role="status">
+                  <strong>{allDaySummary.count} service{allDaySummary.count === 1 ? "" : "s"}</strong>
+                  {allDaySummary.first && <span>{allDaySummary.first}{allDaySummary.last !== allDaySummary.first ? ` – ${allDaySummary.last}` : ""}</span>}
+                  {allDaySummary.maxGuests > 0 && <span>{allDaySummary.minGuests === allDaySummary.maxGuests ? `${allDaySummary.maxGuests} guests each` : `Guest counts vary from ${allDaySummary.minGuests}–${allDaySummary.maxGuests}`}</span>}
+                </div>
+              </section>
+            )}
+
+            {view === "event" && (
               <section aria-labelledby="rcoa-event-title">
                 <div className={styles.sectionHeading}><p className={styles.eyebrow}>Event details</p><h2 id="rcoa-event-title">When and where?</h2></div>
-                <fieldset className={styles.multiQuestion}>
-                  <legend>Does this booking have multiple services?</legend>
-                  <label className={styles.multiOption}><input type="radio" name="rcoa-multiple" checked={!group.multiple} disabled={group.moments.length > 1} onChange={() => setGroup((current) => setRcoaMultiple(current, false))} /><span>No</span></label>
-                  <label className={styles.multiOption}><input type="radio" name="rcoa-multiple" checked={group.multiple} onChange={() => setGroup((current) => setRcoaMultiple(current, true))} /><span>Yes</span></label>
-                  {group.moments.length > 1 && <small>Remove the extra services to switch back to a single service.</small>}
-                  {group.multiple && <small>Give each service its own time, guests, location and menu. Your details and notes are entered once.</small>}
-                </fieldset>
                 <div className={styles.fieldGrid}>
-                  <label className={styles.field}><span>{group.multiple ? "Event date (all services) *" : "Event date *"}</span><input {...fieldProps("eventDate", errors)} data-rcoa-field="eventDate" type="date" value={draft.event.eventDate} onChange={(event) => updateEvent("eventDate", event.target.value)} /><ErrorMessage field="eventDate" errors={errors} /></label>
+                  <label className={styles.field}><span>Event date *</span><input {...fieldProps("eventDate", errors)} data-rcoa-field="eventDate" type="date" value={draft.event.eventDate} onChange={(event) => updateEvent("eventDate", event.target.value)} /><ErrorMessage field="eventDate" errors={errors} /></label>
                   <label className={styles.field}><span>Number of guests *</span><input {...fieldProps("guestCount", errors)} data-rcoa-field="guestCount" type="number" min="1" step="1" value={draft.event.guestCount || ""} onChange={(event) => updateEvent("guestCount", Number(event.target.value || 0))} /><ErrorMessage field="guestCount" errors={errors} /></label>
                   <label className={styles.field}><span>Start / service time *</span><input {...fieldProps("startTime", errors)} data-rcoa-field="startTime" type="time" value={draft.event.startTime} onChange={(event) => updateEvent("startTime", event.target.value)} /><ErrorMessage field="startTime" errors={errors} /></label>
                   <label className={styles.field}><span>End time</span><input {...fieldProps("endTime", errors)} data-rcoa-field="endTime" type="time" value={draft.event.endTime} onChange={(event) => updateEvent("endTime", event.target.value)} /><ErrorMessage field="endTime" errors={errors} /></label>
@@ -526,8 +675,9 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
               </section>
             )}
 
-            {step === 3 && (
+            {view === "menu" && (
               <section aria-labelledby="rcoa-menu-title">
+                {editingService && <div className={styles.pickerBanner} role="status"><strong>Choosing items for {editingService.startTime || "this service"} · {rcoaEventTypes.find((type) => type.id === editingService.category)?.label} · {editingService.guestCount} guests</strong>{warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}
                 <div className={styles.menuHeading}>
                   <div className={styles.sectionHeading}><p className={styles.eyebrow}>Build your menu</p><h2 id="rcoa-menu-title">Choose what feels right.</h2></div>
                   <label className={styles.searchBox}><span>Search menu</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Try fruit, sushi or canapes" /></label>
@@ -587,7 +737,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
               </section>
             )}
 
-            {step === 4 && (
+            {view === "dietaries" && (
               <section aria-labelledby="rcoa-dietary-title">
                 <div className={styles.sectionHeading}><p className={styles.eyebrow}>Dietaries &amp; allergens</p><h2 id="rcoa-dietary-title">Help us look after everyone.</h2><p>Tell us what you know now. The team will confirm final requirements with you.</p></div>
                 <label className={styles.switchRow}><input type="checkbox" checked={draft.dietaries.hasDietaries} onChange={(event) => updateDietary("hasDietaries", event.target.checked)} /><span>There are dietary requirements for this booking</span></label>
@@ -601,33 +751,38 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
               </section>
             )}
 
-            {step === 5 && (
+            {view === "review" && (
               <section aria-labelledby="rcoa-review-title">
                 <div className={styles.sectionHeading}><p className={styles.eyebrow}>Review</p><h2 id="rcoa-review-title">One last look.</h2></div>
-                {group.multiple ? (
+                {flow === "all-day" && (
                   <>
                     <div className={styles.reviewBlock}>
-                      <h3>Your details</h3>
-                      <p>{draft.contact.name} · {draft.contact.email} · {draft.contact.companyName}{draft.contact.invoiceReference ? ` · ${draft.contact.invoiceReference}` : ""}</p>
-                      <p>{draft.event.eventDate || "Date not set"} · {group.moments.length} service{group.moments.length === 1 ? "" : "s"}</p>
+                      <h3>{allDay.eventName.trim() || "Your event"}</h3>
+                      <p>{allDay.contact.name} · {allDay.contact.email} · {allDay.contact.companyName}{allDay.contact.invoiceReference ? ` · ${allDay.contact.invoiceReference}` : ""}</p>
+                      <p>{allDay.eventDate || "Date not set"} · {allDaySummary.count} service{allDaySummary.count === 1 ? "" : "s"}</p>
                       <button type="button" className={styles.textButton} onClick={() => goToStep(1)}>Edit details</button>
                     </div>
-                    {group.moments.map((moment, index) => {
-                      const view = composeRcoaDraft(group, index);
-                      const items = view.lines.flatMap((line) => { const item = menu.find((candidate) => candidate.id === line.itemId); return item && line.quantity > 0 ? [{ line, item }] : []; });
+                    {sortedAllDayServices(allDay).map((service) => {
+                      const items = service.lines.flatMap((line) => { const item = menu.find((candidate) => candidate.id === line.itemId); return item && line.quantity > 0 ? [{ line, item }] : []; });
                       return (
-                        <div className={styles.reviewBlock} key={moment.id}>
-                          <h3>Service {index + 1} — {rcoaEventTypes.find((event) => event.id === view.occasion)?.label || "Occasion"}</h3>
-                          <p>{moment.event.startTime || "Time not set"}{moment.event.endTime ? `–${moment.event.endTime}` : ""} · {moment.event.guestCount || 0} guests · {[moment.event.floorLevel, moment.event.roomOrArea, moment.event.deliveryPoint].filter(Boolean).join(" · ") || "Location not set"}</p>
-                          {items.length ? items.map(({ line, item }) => <p key={item.id}>{line.quantity} × {item.name} · {money.format(item.unitPrice * line.quantity)}</p>) : <p>{view.occasion === "bespoke" ? "Menu to be discussed with the team." : "No menu items selected"}</p>}
-                          <p>{dietaryFields.filter(([key]) => view.dietaries[key] > 0).map(([key, label]) => `${label}: ${view.dietaries[key]}`).join(" · ") || "No dietary counts recorded"}{view.dietaries.allergyDetails ? ` · ${view.dietaries.allergyDetails}` : ""}</p>
-                          <button type="button" className={styles.textButton} onClick={() => { selectService(index); setStep(2); }}>Edit this service</button>
+                        <div className={styles.reviewBlock} key={service.id}>
+                          <h3>{service.startTime || "Time not set"} — {rcoaEventTypes.find((type) => type.id === service.category)?.label || "Service"}</h3>
+                          <p>{service.guestCount || 0} guests · {service.location || "Location not set"}</p>
+                          {items.length ? items.map(({ line, item }) => <p key={item.id}>{line.quantity} × {item.name} · {money.format(item.unitPrice * line.quantity)}</p>) : <p>No menu items selected</p>}
+                          {service.notes.trim() && <p>Note: {service.notes.trim()}</p>}
                         </div>
                       );
                     })}
-                    <button type="button" className={styles.secondaryButton} onClick={addService} disabled={group.moments.length >= RCOA_MAX_SERVICES}>Add another service</button>
+                    <button type="button" className={styles.textButton} onClick={() => goToStep(2)}>Edit your day</button>
+                    <div className={styles.reviewBlock}>
+                      <h3>Dietaries &amp; allergens</h3>
+                      <p>{dietaryFields.filter(([key]) => allDay.dietaries[key] > 0).map(([key, label]) => `${label}: ${allDay.dietaries[key]}`).join(" · ") || "No dietary counts recorded"}</p>
+                      <p>{allDay.dietaries.allergyDetails || "No allergy details recorded"}</p>
+                      <button type="button" className={styles.textButton} onClick={() => goToStep(3)}>Edit dietaries</button>
+                    </div>
                   </>
-                ) : (<>
+                )}
+                {flow === "standard" && (<>
                 <div className={styles.reviewBlock}>
                   <h3>{currentEvent?.label || "Occasion"}</h3>
                   <p>{draft.contact.name} · {draft.contact.email} · {draft.contact.companyName}</p>
@@ -647,7 +802,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                   <button type="button" className={styles.textButton} onClick={() => goToStep(4)}>Edit dietaries</button>
                 </div>
                 </>)}
-                <label className={`${styles.field} ${styles.fieldWide}`}><span>{group.multiple ? "Overall notes for all services" : "Special instructions"}</span><textarea rows={3} value={draft.specialInstructions} onChange={(event) => setDraft((current) => ({ ...current, specialInstructions: event.target.value }))} placeholder="Access, setup, presentation or anything else the team should know" /></label>
+                <label className={`${styles.field} ${styles.fieldWide}`}><span>{flow === "all-day" ? "General notes for the event" : "Special instructions"}</span><textarea rows={3} value={draft.specialInstructions} onChange={(event) => setDraft((current) => ({ ...current, specialInstructions: event.target.value }))} placeholder="Access, setup, presentation or anything else the team should know" /></label>
                 <div className={styles.acknowledgements}>
                   {(Object.entries(rcoaAcknowledgementLabels) as Array<[keyof RcoaBookingDraft["acknowledgements"], string]>).map(([key, label]) => {
                     const fieldKey = `acknowledgement:${key}`;
@@ -659,23 +814,41 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
               </section>
             )}
 
+            {editingServiceId ? (
+              <footer className={styles.formActions}>
+                <button type="button" className={styles.secondaryButton} onClick={() => closeItems(false)}>Back to your day</button>
+                <button type="button" className={styles.primaryButton} onClick={() => closeItems(true)}>Save items</button>
+              </footer>
+            ) : (
             <footer className={styles.formActions}>
-              <button type="button" className={styles.secondaryButton} disabled={step === 0 || sending} onClick={() => goToStep(group.multiple && group.activeIndex > 0 && step === 2 ? 0 : step - 1)}>Back</button>
-              {step < stepLabels.length - 1
-                ? <button type="button" className={styles.primaryButton} onClick={() => goToStep(group.multiple && group.activeIndex > 0 && step === 0 ? 2 : step + 1)}>Continue</button>
+              <button type="button" className={styles.secondaryButton} disabled={step === 0 || sending} onClick={() => goToStep(step - 1)}>Back</button>
+              {step < labels.length - 1
+                ? <button type="button" className={styles.primaryButton} onClick={() => goToStep(step + 1)}>Continue</button>
                 : <button type="submit" className={styles.primaryButton} disabled={sending || !bookingId || !rcoaConfigured} aria-busy={sending ? true : undefined}>{sending ? <><span className="fika-spinner" aria-hidden="true" />Sending request…</> : "Send booking request"}</button>}
             </footer>
+            )}
           </form>
 
           <aside className={styles.summary} aria-label="Your request">
             <div className={styles.summaryHeading}><p className={styles.eyebrow}>Your request</p><span className={styles.savedStatus} role="status">{draftReady ? "Progress saved" : "Saving progress…"}</span></div>
-            {group.multiple && <ol className={styles.summaryServices}>{group.moments.map((moment, index) => <li key={moment.id} className={index === group.activeIndex ? styles.summaryServiceActive : undefined}><span>Service {index + 1} · {moment.event.startTime || "time not set"}</span><small>{rcoaEventTypes.find((event) => event.id === moment.occasion)?.label || "No occasion yet"}{moment.event.guestCount ? ` · ${moment.event.guestCount} guests` : ""}</small></li>)}</ol>}
-            <div className={styles.summaryMeta}>{group.multiple ? `Editing service ${group.activeIndex + 1} of ${group.moments.length}` : (currentEvent?.label || "No occasion selected yet.")}{draft.event.eventDate ? ` · ${draft.event.eventDate}` : ""}{draft.event.guestCount ? ` · ${draft.event.guestCount} guests` : ""}</div>
+            {flow === "all-day" ? (
+              <>
+                <div className={styles.summaryMeta}>{allDay.eventName.trim() || "All Day Hospitality"}{allDay.eventDate ? ` · ${allDay.eventDate}` : ""}</div>
+                <div className={styles.summaryItems}>
+                  {sortedAllDayServices(allDay).map((service) => <div className={styles.summaryItem} key={service.id}><span>{service.startTime || "Time not set"} · {rcoaEventTypes.find((type) => type.id === service.category)?.label || "Service"}{service.guestCount ? ` · ${service.guestCount} guests` : ""}</span><strong>{money.format(calculateRcoaTotal(service.lines, menu))}</strong></div>)}
+                </div>
+                <div className={styles.summaryTotal}><span>Estimated total (all services)</span><strong>{money.format(allDay.services.reduce((sum, service) => sum + calculateRcoaTotal(service.lines, menu), 0))}</strong></div>
+              </>
+            ) : (
+              <>
+            <div className={styles.summaryMeta}>{currentEvent?.label || "No occasion selected yet."}{draft.event.eventDate ? ` · ${draft.event.eventDate}` : ""}{draft.event.guestCount ? ` · ${draft.event.guestCount} guests` : ""}</div>
             <div className={styles.summaryItems}>
               {selected.map(({ line, item }) => <div className={styles.summaryItem} key={item.id}><span>{line.quantity} × {item.name}</span><strong>{money.format(item.unitPrice * line.quantity)}</strong></div>)}
               {!selected.length && <p>{draft.occasion === "bespoke" ? "Menu to be discussed with the team." : "Your menu choices will appear here."}</p>}
             </div>
-            <div className={styles.summaryTotal}><span>{group.multiple ? "Estimated total (all services)" : "Estimated total"}</span><strong>{money.format(group.multiple ? group.moments.reduce((sum, _moment, index) => sum + calculateRcoaTotal(composeRcoaDraft(group, index).lines, menu), 0) : total)}</strong></div>
+            <div className={styles.summaryTotal}><span>Estimated total</span><strong>{money.format(total)}</strong></div>
+              </>
+            )}
             <p className={styles.finePrint}>Indicative prices exclude VAT and are subject to confirmation, labour and hire equipment where applicable.</p>
             {warnings.length > 0 && <div className={styles.summaryWarnings}><strong>Notice guidance</strong>{warnings.slice(0, 3).map((warning) => <span key={warning}>{warning}</span>)}</div>}
           </aside>
