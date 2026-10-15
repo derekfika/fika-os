@@ -11,7 +11,7 @@ import { stageFulfilmentEvent } from "./fulfilment-projection";
 import { stageCpuProjectionEvent } from "./cpu-projection-outbox";
 import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requirement";
 import { explicitMenuProductionRouting, hospitalityMenuProductionRouting } from "./connections-service";
-import { planRcoaCpuHandoff, rcoaRoutingKeys, RCOA_PROVIDER, routingRequiredMessage, type RcoaRoutingOutcome } from "./rcoa-cpu-routing";
+import { planRcoaCpuHandoff, rcoaRoutingKeys, RCOA_PROVIDER, routingBlockedMessage, type RcoaRoutingPlan } from "./rcoa-cpu-routing";
 import { adaptCpuProductionWorkstreams } from "../../shared/production-workstreams";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
@@ -49,10 +49,11 @@ const explicitMnkConversions: Record<string, { multiplier: number; unit: string;
   deli_sandwich_lunch: { multiplier: 3, unit: "piece", rule: "MNK catalogue serving rule: three pieces per person." },
 };
 
-function routingRequired(unmapped: Array<{ itemId: string; itemName: string }>) {
-  const error = conflict(routingRequiredMessage(unmapped)) as Error & { code?: string; unmappedItems?: unknown };
-  error.code = "ROUTING_REQUIRED";
-  error.unmappedItems = unmapped;
+function routingBlocked(plan: RcoaRoutingPlan) {
+  const error = conflict(routingBlockedMessage(plan)) as Error & { code?: string; routingRequired?: unknown; routingConflicts?: unknown };
+  error.code = plan.required.length ? "ROUTING_REQUIRED" : "ROUTING_CONFLICT";
+  error.routingRequired = plan.required.map(line => ({ itemId: line.itemId, itemName: line.itemName }));
+  error.routingConflicts = plan.conflicts.map(line => ({ itemId: line.itemId, itemName: line.itemName }));
   return error;
 }
 
@@ -72,13 +73,13 @@ export async function createProductionFromApprovedBooking(actor: Actor, bookingI
     const booking = bookingSnapshot.data() as CanonicalBooking;
     if (!['Quoted', 'Approved'].includes(booking.lifecycleStatus)) throw conflict("Generate a current quote before sending this Booking to CPU.");
     if (booking.deliveryChargeRequired === false) throw conflict("CPU delivery is not selected for this Booking, so no CPU production hand-off is required.");
-    const rcoaPlan: RcoaRoutingOutcome | undefined = booking.source?.provider === RCOA_PROVIDER ? planRcoaCpuHandoff(booking.order.items, explicitRouting) : undefined;
-    if (rcoaPlan?.status === "routing_required") throw routingRequired(rcoaPlan.unmapped);
-    if (rcoaPlan?.status === "no_cpu_production_required") {
+    const rcoaPlan: RcoaRoutingPlan | undefined = booking.source?.provider === RCOA_PROVIDER ? planRcoaCpuHandoff(booking.order.items, explicitRouting) : undefined;
+    if (rcoaPlan && (rcoaPlan.status === "routing_required" || rcoaPlan.status === "routing_conflict")) throw routingBlocked(rcoaPlan);
+    if (rcoaPlan?.status === "no_cpu_production") {
       // Everything on this booking is produced in house: Hospitality keeps the complete booking and CPU gets NO order (never an empty one).
       const base = await transaction.get(orders().doc(stableDocumentId(productionOrderV1Id(bookingId))));
       if (base.exists && (base.data() as ProductionOrder).status !== "amended") throw conflict("This booking now has no CPU lines but a Production Order already exists. Amend or cancel that Production Order in CPU instead of handing off again.");
-      return { created: false, status: "no_cpu_production_required" as const, requirement: undefined, order: undefined, inHouseLineCount: rcoaPlan.inHouse.length };
+      return { created: false, status: "no_cpu_production_required" as const, requirement: undefined, order: undefined, inHouseLineCount: rcoaPlan.lines.length };
     }
     if (!booking.service.oplocId?.trim()) throw conflict("A delivery-requiring Hospitality Production Order needs a confirmed canonical destination OPLOC.");
     const quote = booking.quoteState?.revisions.find(item => item.id === booking.quoteState?.currentRevisionId);
@@ -120,7 +121,7 @@ export async function createProductionFromApprovedBooking(actor: Actor, bookingI
     const requirementId = productionRequirementId(bookingId, quote.id);
     const requirement: ProductionRequirement = { canonicalId: requirementId, entityType: "Production Requirement", schemaVersion: PRODUCTION_SCHEMA_VERSION, version: 1, sourceBookingId: bookingId, sourceBookingRevision: booking.version, sourceQuoteRevisionId: quote.id, productionLocationId: booking.service.oplocId, requestedServiceDate: booking.service.eventDate, serviceWindow: { startTime: booking.service.startTime, ...(booking.service.endTime ? { endTime: booking.service.endTime } : {}) }, requiredBy: `${booking.service.eventDate}T${booking.service.startTime}`, status: "needs_review", sourceSnapshot: { booking: structuredClone(booking), quote: structuredClone(quote.snapshot) }, createdAt: now, createdBy: actor.uid, updatedAt: now, updatedBy: actor.uid, audit: [{ action: "production-requirement-created", at: now, by: actor.uid, newState: "needs_review", reason: "Created from Booking and current Quote Revision.", idempotencyKey }] };
     const exceptions: ProductionException[] = [];
-    const rcoaRouted = new Map(rcoaPlan?.status === "produce" ? rcoaPlan.lines.map(line => [line.index, line.classification] as const) : []);
+    const rcoaRouted = new Map(rcoaPlan?.status === "cpu_required" ? rcoaPlan.cpuLines.map(line => [line.index, line.workstream] as const) : []);
     const lines: ProductionLine[] = booking.order.items.flatMap((item, index) => {
       if (rcoaPlan && !rcoaRouted.has(index)) return []; // In house: stays on the Hospitality booking only
       return [(() => {

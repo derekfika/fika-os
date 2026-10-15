@@ -878,6 +878,14 @@
   :global(.booking-detail__section-title > strong) {
     font-size: 1.5rem;
   }
+  :global(.booking-detail__cpu-state) {
+    font-weight: 700;
+    color: var(--fika-text-secondary);
+  }
+  :global(.booking-detail__cpu-state[data-cpu-state="routing_required"]),
+  :global(.booking-detail__cpu-state[data-cpu-state="routing_conflict"]) {
+    color: var(--fika-status-danger);
+  }
   :global(.booking-detail__items) {
     display: grid;
     gap: 0;

@@ -4,73 +4,107 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
-import { executeBookingWorkflow, ingestMnkBooking, createProductionOrder, type CanonicalBooking } from "../lib/hospitality-booking-service";
+import { bookingWorkspace, executeBookingWorkflow, ingestMnkBooking, createProductionOrder, type CanonicalBooking } from "../lib/hospitality-booking-service";
 import { createProductionFromApprovedBooking } from "../lib/production-domain";
-import { classifyRcoaLine, planRcoaCpuHandoff, rcoaRoutingKeys } from "../lib/rcoa-cpu-routing";
+import { classifyRcoaLine, planRcoaCpuHandoff, rcoaRoutingKeys, routingBlockedMessage } from "../lib/rcoa-cpu-routing";
+import { planRcoaRoutingBootstrap } from "../lib/rcoa-routing-bootstrap";
+import { LEGACY_HOSPITALITY_MENU_ROUTING } from "../lib/connections-service";
+import { localMnkMenuCatalogue, localRcoaMenuCatalogue } from "@fika/server-shared/hospitality-catalogue";
 import type { Actor } from "../lib/auth";
 import type { CanonicalRecord } from "../lib/types";
 
 /**
- * Per-item RCoA CPU routing: Hospitality keeps the complete booking; only lines explicitly routed to Sandwiches/Hospitality reach CPU.
- * Pure rules always run; the hand-off tests run through the real service against the Firestore emulator:
+ * Per-item RCoA CPU routing from the governed Production visibility records: Hospitality keeps the complete booking; only lines routed to
+ * exactly one of Sandwiches/Hospitality reach CPU. Pure rules always run; the hand-off tests run through the real service against the
+ * Firestore emulator:
  *   firebase emulators:exec --only firestore --project demo-fika-os --config apps/integration-hub/firebase.json \
  *     "cd apps/integration-hub && npx tsx --test tests/rcoa-cpu-routing.test.ts"
  */
 const P = "hospitality-menu-item:rcoa:";
 const line = (itemId: string, itemName = itemId) => ({ itemId, itemName });
-// explicit saved decisions (document exists => decided; [] => In house)
+// governed records: a record existing IS the decision; [] = In house; an absent key = never classified
 const routing = {
   [`${P}specialty_tea_coffee`]: [],
   [`${P}mini_pastries`]: ["hospitality"],
   [`${P}deli_sandwich_lunch`]: ["sandwiches"],
   [`${P}exotic_fruit_box`]: ["hospitality"],
   [`${P}delivered_only`]: ["delivered_in"],
+  [`${P}both_flags`]: ["sandwiches", "hospitality"],
+  [`${P}bad_value`]: ["not-a-workstream"],
 } as Record<string, string[]>;
+const states = (items: string[]) => planRcoaCpuHandoff(items.map((id) => line(id)), routing).lines.map((l) => l.state);
 
-test("1/6. all items In house -> no CPU order is planned (not an error)", () => {
-  assert.deepEqual(planRcoaCpuHandoff([line("specialty_tea_coffee", "Specialty Tea & Coffee")], routing), { status: "no_cpu_production_required", inHouse: [{ index: 0 }] });
+test("state semantics A-F: empty record = In house; sandwiches; hospitality; delivered_in only = not CPU; MISSING = Routing required; both = Routing conflict", () => {
+  assert.deepEqual(states(["specialty_tea_coffee", "deli_sandwich_lunch", "mini_pastries", "delivered_only", "bagel_box", "both_flags"]), ["in_house", "cpu_sandwiches", "cpu_hospitality", "in_house", "routing_required", "routing_conflict"]);
+  assert.equal(classifyRcoaLine(line("bad_value"), routing), "routing_required", "an unrecognised value is not a governed decision");
+  assert.equal(classifyRcoaLine(line("cookie_box"), {}), "routing_required", "legacy defaults are never consulted for RCoA; missing is not In house");
+});
+
+test("1/6. all items In house (explicit empty records, or Delivered-In only) -> No CPU production, no Production Order", () => {
+  const plan = planRcoaCpuHandoff([line("specialty_tea_coffee"), line("delivered_only")], routing);
+  assert.equal(plan.status, "no_cpu_production");
+  assert.deepEqual(plan.cpuLines, []);
 });
 
 test("2. Tea & Coffee (In house) + Mini Pastries (Hospitality) -> CPU gets the pastries only", () => {
   const plan = planRcoaCpuHandoff([line("specialty_tea_coffee"), line("mini_pastries")], routing);
-  assert.deepEqual(plan, { status: "produce", lines: [{ index: 1, classification: "hospitality" }], inHouse: [{ index: 0 }] });
+  assert.equal(plan.status, "cpu_required");
+  assert.deepEqual(plan.cpuLines, [{ index: 1, workstream: "hospitality" }]);
 });
 
-test("3/4. Sandwiches and Hospitality-only bookings route to their workstreams", () => {
-  assert.deepEqual(planRcoaCpuHandoff([line("deli_sandwich_lunch")], routing), { status: "produce", lines: [{ index: 0, classification: "sandwiches" }], inHouse: [] });
-  assert.deepEqual(planRcoaCpuHandoff([line("exotic_fruit_box")], routing), { status: "produce", lines: [{ index: 0, classification: "hospitality" }], inHouse: [] });
+test("3/4/5. Sandwiches, Hospitality-only and mixed bookings route each CPU line to its own single workstream", () => {
+  assert.deepEqual(planRcoaCpuHandoff([line("deli_sandwich_lunch")], routing).cpuLines, [{ index: 0, workstream: "sandwiches" }]);
+  assert.deepEqual(planRcoaCpuHandoff([line("exotic_fruit_box")], routing).cpuLines, [{ index: 0, workstream: "hospitality" }]);
+  const mixed = planRcoaCpuHandoff([line("exotic_fruit_box"), line("specialty_tea_coffee"), line("deli_sandwich_lunch")], routing);
+  assert.deepEqual(mixed.cpuLines, [{ index: 0, workstream: "hospitality" }, { index: 2, workstream: "sandwiches" }]);
 });
 
-test("5. mixed Sandwiches + Hospitality + In house keeps only the first two, with their own workstreams", () => {
-  const plan = planRcoaCpuHandoff([line("exotic_fruit_box"), line("specialty_tea_coffee"), line("deli_sandwich_lunch")], routing);
-  assert.deepEqual(plan, { status: "produce", lines: [{ index: 0, classification: "hospitality" }, { index: 2, classification: "sandwiches" }], inHouse: [{ index: 1 }] });
-});
-
-test("7. an unmapped item fails closed and names the exact item(s); nothing is guessed, defaulted or dropped", () => {
-  const plan = planRcoaCpuHandoff([line("mini_pastries"), line("bagel_box", "Bagel Box"), line("delivered_only", "Odd item")], routing);
+test("7. any Routing required or Routing conflict line blocks the whole hand-off and names the exact item(s)", () => {
+  const plan = planRcoaCpuHandoff([line("mini_pastries"), line("bagel_box", "Bagel Box"), line("both_flags", "Odd Item")], routing);
   assert.equal(plan.status, "routing_required");
-  assert.deepEqual(plan.status === "routing_required" && plan.unmapped.map((item) => [item.index, item.itemName]), [[1, "Bagel Box"], [2, "Odd item"]]);
-  // legacy transitional defaults (e.g. cookie_box -> hospitality) are NOT a decision for RCoA
-  assert.equal(classifyRcoaLine(line("cookie_box"), {}), undefined);
-  assert.equal(classifyRcoaLine(line("mini_pastries"), { [`${P}mini_pastries`]: ["not-a-workstream"] }), undefined);
+  assert.deepEqual(plan.required.map((l) => l.itemName), ["Bagel Box"]);
+  assert.deepEqual(plan.conflicts.map((l) => l.itemName), ["Odd Item"]);
+  const message = routingBlockedMessage(plan);
+  assert.match(message, /Routing required.*Bagel Box/);
+  assert.match(message, /Routing conflict: Odd Item/);
+  assert.equal(planRcoaCpuHandoff([line("both_flags")], routing).status, "routing_conflict");
 });
 
-test("8. an empty booking never produces an empty Production Order", () => {
-  assert.deepEqual(planRcoaCpuHandoff([], routing), { status: "no_cpu_production_required", inHouse: [] });
-});
+test("8. an empty booking never produces an empty Production Order", () => assert.equal(planRcoaCpuHandoff([], routing).status, "no_cpu_production"));
 
 test("routing keys: canonical menu item id first, then the RCoA canonical id derived from the stable source item id", () => {
   assert.deepEqual(rcoaRoutingKeys({ itemId: "mini_pastries", menuItemId: `${P}mini_pastries` }), [`${P}mini_pastries`]);
   assert.deepEqual(rcoaRoutingKeys({ itemId: "mini_pastries" }), [`${P}mini_pastries`]);
 });
 
-test("9. only RCoA bookings are filtered: non-RCoA hand-off keeps its existing behaviour; Hub UI and handoff use the one routing collection", () => {
+test("bootstrap plan: 45/46 exact stable-key matches; the 8 legacy decisions become governed records; everything else stays Unclassified; nothing overwritten", () => {
+  const active = <T extends { lifecycleState: string }>(items: readonly T[]) => items.filter((item) => item.lifecycleState === "active");
+  const toItem = (item: (typeof localRcoaMenuCatalogue.items)[number]) => ({ sourceItemId: item.source.sourceItemId, name: item.name, category: item.category, canonicalId: item.canonicalId });
+  const input = { legacy: LEGACY_HOSPITALITY_MENU_ROUTING, rcoaItems: active(localRcoaMenuCatalogue.items).map(toItem), mnkItems: active(localMnkMenuCatalogue.items).map(toItem) };
+  const plan = planRcoaRoutingBootstrap({ ...input, existing: {} });
+  assert.equal(plan.matchedByStableKey.length, 45);
+  assert.deepEqual(plan.unmatchedKeys, ["house_filter_coffee"]);
+  assert.deepEqual(plan.create.map((r) => [r.sourceItemId, r.workstreams.join()]).sort(), [["cookie_box", "hospitality"], ["deli_sandwich_lunch", "sandwiches"], ["exotic_fruit_box", "hospitality"], ["filled_savoury_croissant", "hospitality"], ["large_pastries", "hospitality"], ["mini_pastries", "hospitality"], ["tray_bake_box", "hospitality"], ["vegan_savoury_croissant", "hospitality"]]);
+  assert.equal(plan.unclassified.length, 38);
+  assert.ok(plan.unclassified.some((item) => item.sourceItemId === "specialty_tea_coffee"), "Tea & Coffee is NOT guessed");
+  assert.ok(!plan.create.some((r) => r.sourceItemId === "tray_bake_box_nut_free"), "nothing inferred from names/categories");
+  const rerun = planRcoaRoutingBootstrap({ ...input, existing: { [`${P}mini_pastries`]: ["sandwiches"], [`${P}cookie_box`]: ["hospitality"] } });
+  assert.deepEqual(rerun.conflicts.map((c) => c.canonicalId), [`${P}mini_pastries`], "a differing governed record is reported, never overwritten");
+  assert.ok(!rerun.create.some((r) => r.sourceItemId === "mini_pastries" || r.sourceItemId === "cookie_box"));
+});
+
+test("9. only RCoA bookings are filtered; non-RCoA keeps its behaviour; one routing store; dashboard and Hub UI use the governed states", () => {
   const domain = readFileSync(new URL("../lib/production-domain.ts", import.meta.url), "utf8");
   assert.match(domain, /booking\.source\?\.provider === RCOA_PROVIDER/);
   assert.match(domain, /adaptCpuProductionWorkstreams\(assignments\)\.workstreams\[0\] \|\| "unassigned"/, "non-RCoA fallback unchanged");
   const service = readFileSync(new URL("../lib/connections-service.ts", import.meta.url), "utf8");
   assert.equal((service.match(/db\.collection\("integrationHubHospitalityMenuProductionRouting"\)/g) || []).length, 1, "a single routing store");
-  assert.match(readFileSync(new URL("../scripts/promote-local-portal-menu-items.ts", import.meta.url), "utf8"), /localRcoaMenuCatalogue/);
+  const ui = readFileSync(new URL("../app/ui/Connections.tsx", import.meta.url), "utf8");
+  for (const text of ["Unclassified", "In house", "Routing conflict", "Delivered-In only"]) assert.ok(ui.includes(text), text);
+  const dashboard = readFileSync(new URL("../../hospitality-booking/app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8");
+  assert.match(dashboard, /booking\.cpuRouting/);
+  const labels = readFileSync(new URL("../lib/rcoa-cpu-routing.ts", import.meta.url), "utf8");
+  for (const label of ["In house", "CPU · Sandwiches", "CPU · Hospitality", "Routing required", "Routing conflict", "CPU required", "No CPU production"]) assert.ok(labels.includes(label), label);
 });
 
 // ---- real hand-off against the emulator ----
@@ -79,8 +113,9 @@ const opts = { skip: emulatorUp ? false : "Firestore emulator is not running (FI
 const actor = { uid: "test-rcoa-routing", role: "integration-admin" } as Actor;
 const routingCollection = () => db.collection("integrationHubHospitalityMenuProductionRouting");
 const ordersFor = async (bookingId: string) => (await db.collection("fikaProductionOrdersV1").where("sourceBookingId", "==", bookingId).get()).docs.map((doc) => doc.data());
+type Line = { itemId: string; itemName: string; quantity: number };
 
-async function rcoaFixture(items: Array<{ itemId: string; itemName: string; quantity: number }>, decisions: Record<string, string[]>) {
+async function rcoaFixture(items: Line[], decisions: Record<string, string[]>) {
   const key = `rcoa-routing-${crypto.randomUUID()}`;
   const now = new Date().toISOString();
   const oploc = `oploc:${key}`;
@@ -106,9 +141,11 @@ async function rcoaFixture(items: Array<{ itemId: string; itemName: string; quan
     cleanup: async () => { await mappingRef.delete(); await Promise.all(Object.keys(decisions).map((id) => routingCollection().doc(stableDocumentId(id)).delete())); },
   };
 }
+const tea: Line = { itemId: "specialty_tea_coffee", itemName: "Specialty Tea & Coffee", quantity: 1 };
+const pastries: Line = { itemId: "mini_pastries", itemName: "Mini Pastries", quantity: 20 };
 
-test("hand-off: Tea & Coffee (In house) + Mini Pastries (Hospitality) -> Production Order with the pastries only; booking keeps both", opts, async () => {
-  const f = await rcoaFixture([{ itemId: "specialty_tea_coffee", itemName: "Specialty Tea & Coffee", quantity: 1 }, { itemId: "mini_pastries", itemName: "Mini Pastries", quantity: 20 }], { [`${P}specialty_tea_coffee`]: [], [`${P}mini_pastries`]: ["hospitality"] });
+test("hand-off: Tea & Coffee (explicit In house) + Mini Pastries (Hospitality) -> Production Order with the pastries only; booking keeps both", opts, async () => {
+  const f = await rcoaFixture([tea, pastries], { [`${P}specialty_tea_coffee`]: [], [`${P}mini_pastries`]: ["hospitality"] });
   try {
     const result = await createProductionFromApprovedBooking(actor, f.bookingId, `rcoa-${f.bookingId}`);
     assert.equal(result.created, true);
@@ -129,8 +166,8 @@ test("hand-off: sandwich lunch keeps the governed three-pieces-per-person conver
   } finally { await f.cleanup(); }
 });
 
-test("hand-off: all items In house -> explicit 'no CPU production required', no Production Order, booking not marked Sent to CPU", opts, async () => {
-  const f = await rcoaFixture([{ itemId: "specialty_tea_coffee", itemName: "Specialty Tea & Coffee", quantity: 1 }], { [`${P}specialty_tea_coffee`]: [] });
+test("hand-off: all In house (empty record + Delivered-In only) -> explicit 'no CPU production required', no Production Order, not marked Sent to CPU", opts, async () => {
+  const f = await rcoaFixture([tea, { itemId: "delivered_only", itemName: "Delivered-In only item", quantity: 2 }], { [`${P}specialty_tea_coffee`]: [], [`${P}delivered_only`]: ["delivered_in"] });
   try {
     const outcome = await createProductionOrder(actor, f.bookingId, f.version);
     assert.equal(outcome.status, "no_cpu_production_required");
@@ -140,10 +177,36 @@ test("hand-off: all items In house -> explicit 'no CPU production required', no 
   } finally { await f.cleanup(); }
 });
 
-test("hand-off: an unmapped item fails closed (Routing required), names the item and creates no partial Production Order", opts, async () => {
-  const f = await rcoaFixture([{ itemId: "mini_pastries", itemName: "Mini Pastries", quantity: 20 }, { itemId: "bagel_box", itemName: "Bagel Box", quantity: 5 }], { [`${P}mini_pastries`]: ["hospitality"] });
+test("hand-off: a MISSING routing record fails closed (Routing required), names the item and creates no partial Production Order", opts, async () => {
+  const f = await rcoaFixture([pastries, { itemId: "bagel_box", itemName: "Bagel Box", quantity: 5 }], { [`${P}mini_pastries`]: ["hospitality"] });
   try {
     await assert.rejects(() => createProductionFromApprovedBooking(actor, f.bookingId, `rcoa-${f.bookingId}`), (error: Error & { code?: string }) => error.code === "ROUTING_REQUIRED" && /Routing required/.test(error.message) && /Bagel Box/.test(error.message) && !/Mini Pastries/.test(error.message));
     assert.equal((await ordersFor(f.bookingId)).length, 0);
+  } finally { await f.cleanup(); }
+});
+
+test("hand-off: Sandwiches AND Hospitality on one item is a Routing conflict: no arbitrary pick, no partial Production Order", opts, async () => {
+  const f = await rcoaFixture([pastries, { itemId: "both_flags", itemName: "Both Flags Item", quantity: 5 }], { [`${P}mini_pastries`]: ["hospitality"], [`${P}both_flags`]: ["sandwiches", "hospitality"] });
+  try {
+    await assert.rejects(() => createProductionFromApprovedBooking(actor, f.bookingId, `rcoa-${f.bookingId}`), (error: Error & { code?: string }) => error.code === "ROUTING_CONFLICT" && /Routing conflict/.test(error.message) && /Both Flags Item/.test(error.message));
+    assert.equal((await ordersFor(f.bookingId)).length, 0);
+  } finally { await f.cleanup(); }
+});
+
+test("dashboard feed: the booking workspace derives per-line and booking-level CPU state from the governed records, not deliveryChargeRequired", opts, async () => {
+  const f = await rcoaFixture([tea, pastries, { itemId: "bagel_box", itemName: "Bagel Box", quantity: 5 }], { [`${P}specialty_tea_coffee`]: [], [`${P}mini_pastries`]: ["hospitality"] });
+  try {
+    await db.collection("fikaBookings").doc(f.bookingId).update({ deliveryChargeRequired: false });
+    const workspace = (await bookingWorkspace(undefined, undefined, true)) as { cpuRouting?: Record<string, { status: string; statusLabel: string; lines: Array<{ label: string }> }> };
+    const view = workspace.cpuRouting?.[f.bookingId];
+    assert.ok(view, "an RCoA booking carries a routing view");
+    assert.equal(view.status, "routing_required");
+    assert.equal(view.statusLabel, "Routing required");
+    assert.deepEqual(view.lines.map((l) => l.label), ["In house", "CPU · Hospitality", "Routing required"]);
+    await routingCollection().doc(stableDocumentId(`${P}bagel_box`)).set({ menuItemId: `${P}bagel_box`, workstreams: ["sandwiches"], version: 1 });
+    const done = ((await bookingWorkspace(undefined, undefined, true)) as { cpuRouting?: Record<string, { statusLabel: string; lines: Array<{ label: string }> }> }).cpuRouting![f.bookingId];
+    assert.equal(done.statusLabel, "CPU required");
+    assert.deepEqual(done.lines.map((l) => l.label), ["In house", "CPU · Hospitality", "CPU · Sandwiches"]);
+    await routingCollection().doc(stableDocumentId(`${P}bagel_box`)).delete();
   } finally { await f.cleanup(); }
 });

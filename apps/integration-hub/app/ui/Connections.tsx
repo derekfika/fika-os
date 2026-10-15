@@ -1065,13 +1065,18 @@ function HospitalityMenuProductionRoutingPanel({
                     {item.category} · {item.lifecycleState} ·{" "}
                     {item.publicationStatus}
                   </p>
-                  <p className={decided ? "menu-routing-state" : "menu-routing-state menu-routing-state--required"} data-routing-state={decided ? (selected.length ? "routed" : "in-house") : "required"}>
-                    {!decided
-                      ? "Routing required — not classified yet. RCoA bookings cannot be handed off to CPU until this is set."
-                      : selected.length
-                        ? `Routed to ${selected.map((value) => CPU_PRODUCTION_WORKSTREAM_LABELS[value]).join(" + ")}`
-                        : "In house — stays on the Hospitality booking and is never sent to CPU"}
-                  </p>
+                  {(() => {
+                    const conflict = selected.includes("sandwiches") && selected.includes("hospitality");
+                    const state = !decided ? "unclassified" : conflict ? "conflict" : selected.length === 0 ? "in-house" : selected.every((value) => value === "delivered_in") ? "delivered-in-only" : "routed";
+                    const text = {
+                      unclassified: "Unclassified — no routing record yet. RCoA bookings containing this item cannot be handed off to CPU until it is classified.",
+                      conflict: "Routing conflict — Sandwiches and Hospitality are both ticked. A Hospitality hand-off needs exactly one CPU workstream or none.",
+                      "in-house": "In house — saved with no production visibility; stays on the Hospitality booking and is never sent to CPU",
+                      "delivered-in-only": "Delivered-In only — not sent to CPU by Hospitality hand-off",
+                      routed: `CPU · ${selected.filter((value) => value !== "delivered_in").map((value) => CPU_PRODUCTION_WORKSTREAM_LABELS[value]).join(" + ")}${selected.includes("delivered_in") ? " (also visible in Delivered-In)" : ""}`,
+                    }[state];
+                    return <p className={state === "unclassified" || state === "conflict" ? "menu-routing-state menu-routing-state--required" : "menu-routing-state"} data-routing-state={state}>{text}</p>;
+                  })()}
                   <div className="menu-routing-scopes">
                     <strong>Site availability</strong>
                     {item.scopes.length ? (

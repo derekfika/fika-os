@@ -184,7 +184,7 @@ export default function HospitalityDashboard({
       const body = await response.json();
       if (!response.ok)
         throw Error(body.error?.message || "Could not load Bookings.");
-      setBookings(body.bookings);
+      setBookings(body.cpuRouting ? body.bookings.map((item: CanonicalBooking) => body.cpuRouting[item.canonicalId] ? { ...item, cpuRouting: body.cpuRouting[item.canonicalId] } : item) : body.bookings);
       setProductionOrders(body.productionOrders || {});
       setMatrixRefreshTick((current) => current + 1);
       setQuoteSettings(body.quoteSettings || null);
@@ -1636,7 +1636,9 @@ function BookingDetail({
         {booking.client.invoiceReference && (
           <Fact label="Invoice / PO" value={booking.client.invoiceReference} />
         )}
-        <Fact label="Produced by CPU" value={booking.deliveryChargeRequired === false ? "No" : "Yes"} />
+        {booking.cpuRouting
+          ? <Fact label="CPU production" value={booking.cpuRouting.statusLabel} />
+          : <Fact label="Produced by CPU" value={booking.deliveryChargeRequired === false ? "No" : "Yes"} />}
       </div>
       <section className="booking-detail__section">
         <div className="booking-detail__section-title">
@@ -1653,6 +1655,9 @@ function BookingDetail({
                 <b>
                   {item.quantity} × {item.itemName || item.itemId}
                 </b>
+                {booking.cpuRouting?.lines.find((line) => line.index === index) && (
+                  <small className="booking-detail__cpu-state" data-cpu-state={booking.cpuRouting.lines.find((line) => line.index === index)!.state}>{booking.cpuRouting.lines.find((line) => line.index === index)!.label}</small>
+                )}
                 {item.servingInfo && <small>{item.servingInfo}</small>}
               </span>
               <strong>£{item.lineTotal.toFixed(2)}</strong>

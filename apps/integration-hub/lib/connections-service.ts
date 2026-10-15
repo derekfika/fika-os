@@ -28,7 +28,9 @@ export type ProductionDashboardView = CpuProductionWorkstream;
 // Transitional provider identities retained by older hospitality hand-offs.
 // These are stable source keys, not display-name matching. They remain only
 // until those historical offerings are reconciled to canonical Menu Items.
-const LEGACY_HOSPITALITY_MENU_ROUTING: Record<string, ProductionDashboardView[]> = {
+// DEPRECATED runtime fallback for NON-RCoA providers only. RCoA hand-off ignores it and uses governed records exclusively; it is exported solely as the
+// one-time bootstrap source for scripts/bootstrap-rcoa-production-routing.ts.
+export const LEGACY_HOSPITALITY_MENU_ROUTING: Record<string, ProductionDashboardView[]> = {
   "deli-style-sandwich": ["sandwiches"],
   // The canonical MNK migration retained the source key with underscores.
   // Keep both spellings while restored/local workspaces catch up with their
