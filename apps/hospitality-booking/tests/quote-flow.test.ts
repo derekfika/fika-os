@@ -38,8 +38,6 @@ test("shared Hospitality dashboard exposes governed additional charges and stale
   assert.match(dashboard, /Manage charges/);
   assert.match(dashboard, /Additional charges subtotal/);
   assert.match(dashboard, /Labour calculator/);
-  assert.match(dashboard, /Use configured rate/);
-  assert.match(dashboard, /Enter a custom net rate/);
   assert.match(dashboard, /Quote needs regeneration/);
   assert.match(dashboard, /current\.stale/);
   assert.match(dashboard, /additionalCharges/);
@@ -53,11 +51,9 @@ test("additional-charge manager preserves unsaved edits and provides accessible 
   assert.match(dashboard, /aria-modal="true"/);
   assert.match(dashboard, /document\.addEventListener\("keydown"/);
   assert.match(dashboard, /additional-charge-editor__grid/);
-  assert.match(dashboard, /Use configured rate/);
-  assert.match(dashboard, /1\.5×/);
-  assert.match(dashboard, /2×/);
-  assert.match(dashboard, /event\.target\.value === "custom" \? "1\.25"/);
-  assert.match(dashboard, /Custom multiplier<input type="number" min="0\.25" max="5" step="0\.05"/);
+  // Labour calculator is now approved TCTE roles + Normal/Overtime only (tests/labour-calculator.test.ts).
+  assert.match(dashboard, /APPROVED_LABOUR_ROLES/);
+  assert.doesNotMatch(dashboard, /Custom multiplier|Use configured rate/);
 });
 
 test("manager document actions: quote PDF only, loading state, plain-language allergen copy, labelled format control", () => {
