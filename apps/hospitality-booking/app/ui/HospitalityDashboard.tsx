@@ -1637,7 +1637,7 @@ function BookingDetail({
           <Fact label="Invoice / PO" value={booking.client.invoiceReference} />
         )}
         {booking.cpuRouting
-          ? <Fact label="CPU production" value={booking.cpuRouting.statusLabel} />
+          ? <Fact label={booking.cpuRouting.enforced === false ? "CPU production (advisory)" : "CPU production"} value={booking.cpuRouting.statusLabel} />
           : <Fact label="Produced by CPU" value={booking.deliveryChargeRequired === false ? "No" : "Yes"} />}
       </div>
       <section className="booking-detail__section">

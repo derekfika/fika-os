@@ -42,7 +42,8 @@ import { localBookingFixtures } from "./local-booking-fixtures";
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { explicitMenuProductionRouting } from "./connections-service";
-import { planRcoaCpuHandoff, rcoaRoutingKeys, RCOA_BOOKING_LABELS, RCOA_LINE_LABELS, RCOA_PROVIDER } from "./rcoa-cpu-routing";
+import { BOOKING_LABELS, hospitalityPlatformOf, isGovernedRoutingPlatform, LINE_LABELS, planHospitalityCpuRouting, routingKeys } from "./hospitality-cpu-routing";
+import { LEGACY_HOSPITALITY_MENU_ROUTING } from "./connections-service";
 import type { Transaction } from "firebase-admin/firestore";
 import { createDomainEvent } from "../../shared/domain-events";
 import { stageDomainEvent } from "./domain-event-outbox";
@@ -1029,16 +1030,18 @@ export async function bookingWorkspace(siteId?: string, authorisedOplocId?: stri
       }
       return [booking.canonicalId, undefined] as const;
     });
-  // RCoA lines are routed per item from the governed Production visibility records (never from deliveryChargeRequired). Direct reads by id, de-duplicated.
-  const rcoaRows = rows.filter((booking) => booking.source?.provider === RCOA_PROVIDER);
-  const explicitRouting = rcoaRows.length ? await explicitMenuProductionRouting(rcoaRows.flatMap((booking) => booking.order.items.flatMap((item) => rcoaRoutingKeys(item)))) : {};
-  const cpuRouting = Object.fromEntries(rcoaRows.map((booking) => {
-    const plan = planRcoaCpuHandoff(booking.order.items, explicitRouting);
-    return [booking.canonicalId, { status: plan.status, statusLabel: RCOA_BOOKING_LABELS[plan.status], lines: plan.lines.map((line) => ({ index: line.index, state: line.state, label: RCOA_LINE_LABELS[line.state] })) }];
+  // Every Hospitality platform shows the same per-line / booking-level CPU state, derived from the platform's own governed Production visibility records
+  // (never from deliveryChargeRequired). Platforms not yet governed fall back to the legacy map for display only (`enforced: false`). Direct reads by id, de-duplicated.
+  const routed = rows.flatMap((booking) => { const platform = hospitalityPlatformOf(booking); return platform ? [{ booking, platform }] : []; });
+  const explicitRouting = routed.length ? await explicitMenuProductionRouting(routed.flatMap(({ booking, platform }) => booking.order.items.flatMap((item) => routingKeys(item, platform)))) : {};
+  const cpuRouting = Object.fromEntries(routed.map(({ booking, platform }) => {
+    const enforced = isGovernedRoutingPlatform(platform);
+    const plan = planHospitalityCpuRouting(booking.order.items, platform, explicitRouting, enforced ? undefined : LEGACY_HOSPITALITY_MENU_ROUTING);
+    return [booking.canonicalId, { status: plan.status, statusLabel: BOOKING_LABELS[plan.status], platform, enforced, lines: plan.lines.map((line) => ({ index: line.index, state: line.state, label: LINE_LABELS[line.state], source: line.source })) }];
   }));
   return {
     bookings: rows,
-    ...(rcoaRows.length ? { cpuRouting } : {}),
+    ...(routed.length ? { cpuRouting } : {}),
     productionOrders: Object.fromEntries(orders),
     quoteSettings: await getDashboardQuoteSettings(dashboardIdForSite(siteId)),
     ...(truncated ? { truncated: true } : {}),

@@ -7,16 +7,16 @@ import { connectionsOverview, saveConnectionCommand } from "../lib/connections-s
 import { readFileSync } from "node:fs";
 import { groupMenuItems, groupRoutingSummary, memberRoutingState, platformLabel } from "../lib/menu-routing-grouping";
 import { trustedPublicOrder } from "../lib/hospitality-price-trust";
-import { buildRcoaCanonicalMenuItem, planRcoaPromotion, type PromotionExisting, type RcoaBrochureItem } from "../lib/rcoa-menu-promotion";
+import { buildCanonicalMenuItem, planBrochurePromotion, type PromotionExisting, type BrochureItem } from "../lib/hospitality-menu-promotion";
 import type { Actor } from "../lib/auth";
 import type { CanonicalRecord } from "../lib/types";
 
 const NOW = "2026-10-15T12:00:00.000Z";
-const brochure = localRcoaMenuCatalogue.items as unknown as RcoaBrochureItem[];
+const brochure = localRcoaMenuCatalogue.items as unknown as BrochureItem[];
 const P = "hospitality-menu-item:rcoa:";
 
 test("promoted records are schema-valid, deterministic, keep the stable source key and carry no provider mapping", () => {
-  const records = brochure.map((item) => buildRcoaCanonicalMenuItem(item, NOW));
+  const records = brochure.map((item) => buildCanonicalMenuItem(item, NOW));
   assert.equal(records.length, 46);
   assert.equal(new Set(records.map((r) => r.canonicalId)).size, 46);
   for (const [index, record] of records.entries()) {
@@ -27,24 +27,24 @@ test("promoted records are schema-valid, deterministic, keep the stable source k
     assert.deepEqual(record.record.providerMappings, [], "no mapping: RCoA pricing/validation stays on the server brochure");
     assert.equal(record.entityType, "Hospitality Menu Item");
   }
-  assert.deepEqual(brochure.map((item) => buildRcoaCanonicalMenuItem(item, NOW).dataHash), records.map((r) => r.dataHash), "deterministic");
+  assert.deepEqual(brochure.map((item) => buildCanonicalMenuItem(item, NOW).dataHash), records.map((r) => r.dataHash), "deterministic");
 });
 
 test("promotion plan is idempotent and never touches other sites: create all when empty, reuse identical, report differing, ignore MNK", () => {
-  const empty = planRcoaPromotion(brochure, new Map());
+  const empty = planBrochurePromotion(brochure, new Map());
   assert.equal(empty.create.length, 46);
   assert.ok(empty.create.every((item) => item.canonicalId.startsWith(P)), "only RCoA identities are ever created");
   const existing = new Map<string, PromotionExisting>(brochure.map((item) => [item.canonicalId, { canonicalId: item.canonicalId, name: item.name, category: item.category, sourceItemId: item.source.sourceItemId }]));
   existing.set("hospitality-menu-item:mnk:mini_pastries", { canonicalId: "hospitality-menu-item:mnk:mini_pastries", name: "Mini Pastries", category: "Breakfast" });
-  const rerun = planRcoaPromotion(brochure, existing);
+  const rerun = planBrochurePromotion(brochure, existing);
   assert.deepEqual([rerun.create.length, rerun.reused.length, rerun.conflicts.length], [0, 46, 0]);
   existing.set(`${P}mini_pastries`, { canonicalId: `${P}mini_pastries`, name: "Something else", category: "Breakfast" });
-  const differing = planRcoaPromotion(brochure, existing);
+  const differing = planBrochurePromotion(brochure, existing);
   assert.deepEqual(differing.conflicts.map((c) => c.canonicalId), [`${P}mini_pastries`], "a differing record is reported, never overwritten");
 });
 
 test("RCoA booking pricing and validation are unchanged by the promoted (unmapped) items", () => {
-  const records = brochure.map((item) => buildRcoaCanonicalMenuItem(item, NOW));
+  const records = brochure.map((item) => buildCanonicalMenuItem(item, NOW));
   const catalogueItem = brochure.find((item) => item.source.sourceItemId === "mini_pastries") as unknown as { pricing: { unitPrice: number } };
   const payload = { bookingId: "RCOA-TEST", siteId: "rcoa", site: "RCoA", submittedAt: NOW, client: { name: "x", companyName: "x", email: "x@example.test" }, event: { eventDate: "2026-12-10", startTime: "09:00", guestCount: 10 }, order: { items: [{ itemId: "mini_pastries", quantity: 5, unitPrice: 0.01, lineTotal: 0.05 }], netTotal: 0.05 } } as never;
   const trusted = trustedPublicOrder(payload, records, "rcoa");
@@ -70,7 +70,7 @@ const actor = { uid: "test-rcoa-promotion", role: "integration-admin" } as Actor
 const routing = (id: string) => db.collection("integrationHubHospitalityMenuProductionRouting").doc(stableDocumentId(id));
 
 test("Hub overview lists all 46 promoted RCoA items; the 8 bound routing records show their status, the other 38 are Unclassified; saves persist", opts, async () => {
-  const records = brochure.map((item) => buildRcoaCanonicalMenuItem(item, NOW));
+  const records = brochure.map((item) => buildCanonicalMenuItem(item, NOW));
   const bound: Record<string, string[]> = { cookie_box: ["hospitality"], tray_bake_box: ["hospitality"], exotic_fruit_box: ["hospitality"], mini_pastries: ["hospitality"], large_pastries: ["hospitality"], filled_savoury_croissant: ["hospitality"], vegan_savoury_croissant: ["hospitality"], deli_sandwich_lunch: ["sandwiches"] };
   for (const record of records) await db.collection("integrationHubCanonical").doc(stableDocumentId(record.canonicalId)).set(record);
   for (const [key, workstreams] of Object.entries(bound)) await routing(`${P}${key}`).set({ menuItemId: `${P}${key}`, workstreams, version: 1 });
@@ -143,7 +143,7 @@ const rawDoc = async (id: string) => { const snap = await routing(id).get(); ret
 test("2/3/4. saving the RCoA item changes only the RCoA record (MNK byte-for-byte unchanged), and saving MNK changes only MNK", opts, async () => {
   await routing(MNK).set({ menuItemId: MNK, workstreams: ["hospitality"], version: 3, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-02-02T00:00:00.000Z", updatedBy: "someone" });
   await db.collection("integrationHubCanonical").doc(stableDocumentId(MNK)).set({ canonicalId: MNK, entityType: "Hospitality Menu Item", lifecycleStatus: "published", publicationStatus: "published", dataHash: "x", record: { name: "Mini Pastries", category: "Breakfast", lifecycleState: "active", providerMappings: [] } });
-  const rcoaRecord = buildRcoaCanonicalMenuItem(brochure.find((item) => item.canonicalId === RCOA)!, NOW);
+  const rcoaRecord = buildCanonicalMenuItem(brochure.find((item) => item.canonicalId === RCOA)!, NOW);
   await db.collection("integrationHubCanonical").doc(stableDocumentId(RCOA)).set(rcoaRecord);
   try {
     const mnkBefore = await rawDoc(MNK);

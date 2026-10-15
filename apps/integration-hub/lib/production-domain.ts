@@ -11,7 +11,7 @@ import { stageFulfilmentEvent } from "./fulfilment-projection";
 import { stageCpuProjectionEvent } from "./cpu-projection-outbox";
 import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requirement";
 import { explicitMenuProductionRouting, hospitalityMenuProductionRouting } from "./connections-service";
-import { planRcoaCpuHandoff, rcoaRoutingKeys, RCOA_PROVIDER, routingBlockedMessage, type RcoaRoutingPlan } from "./rcoa-cpu-routing";
+import { hospitalityPlatformOf, isGovernedRoutingPlatform, planHospitalityCpuRouting, routingBlockedMessage, routingKeys, type RoutingPlan } from "./hospitality-cpu-routing";
 import { adaptCpuProductionWorkstreams } from "../../shared/production-workstreams";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
@@ -49,7 +49,7 @@ const explicitMnkConversions: Record<string, { multiplier: number; unit: string;
   deli_sandwich_lunch: { multiplier: 3, unit: "piece", rule: "MNK catalogue serving rule: three pieces per person." },
 };
 
-function routingBlocked(plan: RcoaRoutingPlan) {
+function routingBlocked(plan: RoutingPlan) {
   const error = conflict(routingBlockedMessage(plan)) as Error & { code?: string; routingRequired?: unknown; routingConflicts?: unknown };
   error.code = plan.required.length ? "ROUTING_REQUIRED" : "ROUTING_CONFLICT";
   error.routingRequired = plan.required.map(line => ({ itemId: line.itemId, itemName: line.itemName }));
@@ -63,17 +63,20 @@ export function productionOrderV1Id(bookingId: string, bookingVersion?: number) 
 export async function createProductionFromApprovedBooking(actor: Actor, bookingId: string, idempotencyKey: string, conversions: Record<string, { quantity: number; unit: string }> = {}) {
   if (!idempotencyKey.trim()) throw conflict("An idempotency key is required for production hand-off.");
   const routing = await hospitalityMenuProductionRouting();
-  // RCoA bookings are routed PER ITEM from explicit saved decisions only (In house / Sandwiches / Hospitality). Targeted reads by id.
+  // Bookings of a GOVERNED platform are routed PER ITEM from that platform's own saved decisions only (In house / Sandwiches / Hospitality).
+  // Other platforms keep the transitional behaviour until they are promoted and classified. Targeted reads by id.
   const preview = (await bookings().doc(bookingId).get()).data() as CanonicalBooking | undefined;
-  const isRcoa = preview?.source?.provider === RCOA_PROVIDER;
-  const explicitRouting = isRcoa ? await explicitMenuProductionRouting((preview?.order.items || []).flatMap(item => rcoaRoutingKeys(item))) : {};
+  const previewPlatform = preview ? hospitalityPlatformOf(preview) : undefined;
+  const governedPlatform = isGovernedRoutingPlatform(previewPlatform);
+  const explicitRouting = governedPlatform && previewPlatform ? await explicitMenuProductionRouting((preview?.order.items || []).flatMap(item => routingKeys(item, previewPlatform))) : {};
   return db.runTransaction(async transaction => {
     const bookingSnapshot = await transaction.get(bookings().doc(bookingId));
     if (!bookingSnapshot.exists) throw conflict("Booking was not found.");
     const booking = bookingSnapshot.data() as CanonicalBooking;
     if (!['Quoted', 'Approved'].includes(booking.lifecycleStatus)) throw conflict("Generate a current quote before sending this Booking to CPU.");
     if (booking.deliveryChargeRequired === false) throw conflict("CPU delivery is not selected for this Booking, so no CPU production hand-off is required.");
-    const rcoaPlan: RcoaRoutingPlan | undefined = booking.source?.provider === RCOA_PROVIDER ? planRcoaCpuHandoff(booking.order.items, explicitRouting) : undefined;
+    const platform = hospitalityPlatformOf(booking);
+    const rcoaPlan: RoutingPlan | undefined = platform && isGovernedRoutingPlatform(platform) ? planHospitalityCpuRouting(booking.order.items, platform, explicitRouting) : undefined;
     if (rcoaPlan && (rcoaPlan.status === "routing_required" || rcoaPlan.status === "routing_conflict")) throw routingBlocked(rcoaPlan);
     if (rcoaPlan?.status === "no_cpu_production") {
       // Everything on this booking is produced in house: Hospitality keeps the complete booking and CPU gets NO order (never an empty one).

@@ -1,4 +1,7 @@
 /**
+ * LOCAL EMULATOR ONLY. This legacy script writes provider mappings, which switch the booking price validator to the canonical record (that holds no price).
+ * Do NOT run it against staging/production; use promote-hospitality-menu-items.ts (unmapped, deterministic, idempotent) instead.
+ *
  * Promote the checked-in development menu catalogues into canonical
  * Hospitality Menu Item records in the local emulator only.
  *
@@ -11,9 +14,9 @@ import { stableDocumentId } from "../lib/canonical-editor";
 import { parseCanonical } from "../lib/schemas";
 import { sha256 } from "../lib/profiler";
 import type { CanonicalRecord } from "../lib/types";
-import { localMnkMenuCatalogue, localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue, localRcoaMenuCatalogue } from "@fika/server-shared/hospitality-catalogue";
+import { localMnkMenuCatalogue, localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue } from "@fika/server-shared/hospitality-catalogue";
 
-const catalogues = [localMnkMenuCatalogue, localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue, localRcoaMenuCatalogue];
+const catalogues = [localMnkMenuCatalogue, localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue];
 const actorId = "migration:portal-menu-catalogues";
 const now = new Date().toISOString();
 const canonical = db.collection("integrationHubCanonical");

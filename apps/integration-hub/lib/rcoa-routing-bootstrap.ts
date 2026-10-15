@@ -1,4 +1,4 @@
-import { RCOA_MENU_ITEM_PREFIX } from "./rcoa-cpu-routing";
+const RCOA_MENU_ITEM_PREFIX = "hospitality-menu-item:rcoa:";
 
 /**
  * One-time bootstrap: copy the transitional legacy routing decisions onto the equivalent RCoA canonical Menu Items as GOVERNED

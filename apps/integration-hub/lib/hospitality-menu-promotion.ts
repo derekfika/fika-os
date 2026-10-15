@@ -3,17 +3,17 @@ import { sha256 } from "./profiler";
 import type { CanonicalRecord } from "./types";
 
 /**
- * Promotes the RCoA brochure into canonical Hospitality Menu Items so the items can be governed (Production visibility) in Hub.
- *
- * Identity: canonicalId `hospitality-menu-item:rcoa:<stable source key>` (the brochure's own canonical id); the stable source key is also kept
- * in `ownership.providerOwned.sourceItemId`.
+ * Promotes a Hospitality platform's brochure (RCoA, Angel Court, CFC, Munich Re, ...) into canonical Hospitality Menu Items so each item can be
+ * governed (Production visibility) in Hub. Deterministic and idempotent: identity is the brochure's own canonical id
+ * `hospitality-menu-item:<platform>:<stable platform-specific source key>`; the source key is also kept in `ownership.providerOwned.sourceItemId`.
+ * Promotion NEVER creates routing records, so promoted items show Unclassified until someone decides.
  *
  * `providerMappings` is deliberately EMPTY. The booking price validator (`hospitality-price-trust.ts`) prefers a canonical item that carries a
  * provider mapping for the portal, and canonical Menu Items hold no price or option groups (the schema is strict; prices live on Offering/Price
- * records). Mapping RCoA now would therefore make every RCoA booking fail with "catalogue price unavailable". Without a mapping, RCoA bookings
- * keep pricing and validating from the versioned server brochure exactly as before, and the routing records bind by the derived canonical id.
+ * records). Mapping a platform now would make its bookings fail with "catalogue price unavailable". Without a mapping, bookings keep pricing and
+ * validating from the versioned server brochure exactly as before, and routing binds by the derived canonical id.
  */
-export type RcoaBrochureItem = {
+export type BrochureItem = {
   canonicalId: string;
   source: { provider: string; sourcePath: string; sourceItemId: string };
   name: string;
@@ -24,16 +24,17 @@ export type RcoaBrochureItem = {
   lifecycleState: string;
 };
 
-export const RCOA_PROMOTION_ACTOR = "migration:rcoa-brochure-promotion";
+export const promotionActor = (platform: string) => `migration:${platform}-brochure-promotion`;
 
-export function buildRcoaCanonicalMenuItem(item: RcoaBrochureItem, now: string): CanonicalRecord {
+export function buildCanonicalMenuItem(item: BrochureItem, now: string, platform = "rcoa"): CanonicalRecord {
+  const actor = promotionActor(platform);
   const record = {
     schemaVersion: "0.1.0",
     version: 1,
     createdAt: now,
-    createdBy: RCOA_PROMOTION_ACTOR,
+    createdBy: actor,
     updatedAt: now,
-    updatedBy: RCOA_PROMOTION_ACTOR,
+    updatedBy: actor,
     active: true,
     externalIdentities: [],
     provenanceIds: [`portal-catalogue:${item.source.provider}`],
@@ -54,11 +55,11 @@ export function buildRcoaCanonicalMenuItem(item: RcoaBrochureItem, now: string):
 }
 
 export type PromotionExisting = { canonicalId: string; name: string; category: string; sourceItemId?: string };
-export type RcoaPromotionPlan = { create: RcoaBrochureItem[]; reused: string[]; conflicts: Array<{ canonicalId: string; reason: string }>; skipped: Array<{ canonicalId: string; reason: string }> };
+export type PromotionPlan = { create: BrochureItem[]; reused: string[]; conflicts: Array<{ canonicalId: string; reason: string }>; skipped: Array<{ canonicalId: string; reason: string }> };
 
 /** Idempotent plan: create what is missing, reuse what is already the same identity, report (never overwrite) anything that differs. */
-export function planRcoaPromotion(items: readonly RcoaBrochureItem[], existing: ReadonlyMap<string, PromotionExisting>): RcoaPromotionPlan {
-  const plan: RcoaPromotionPlan = { create: [], reused: [], conflicts: [], skipped: [] };
+export function planBrochurePromotion(items: readonly BrochureItem[], existing: ReadonlyMap<string, PromotionExisting>): PromotionPlan {
+  const plan: PromotionPlan = { create: [], reused: [], conflicts: [], skipped: [] };
   const seen = new Set<string>();
   for (const item of items) {
     if (item.lifecycleState !== "active") { plan.skipped.push({ canonicalId: item.canonicalId, reason: "not an active brochure item" }); continue; }
