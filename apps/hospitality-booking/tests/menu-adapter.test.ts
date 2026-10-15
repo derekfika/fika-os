@@ -95,8 +95,8 @@ test("each booking keeps one current output per format, and every format is offe
   assert.notEqual(menuOutputKey("booking:1", "flat-label"), menuOutputKey("booking:1", "tablet"));
 });
 
-test("the dashboard offers only the formats each site's renderer supports (tent labels stay hidden)", () => {
+test("the dashboard offers only the formats each site's renderer supports (MNK: tablet, flat and tent)", () => {
   for (const siteKey of ["mnk", "angel-court", "unknown"]) assert.deepEqual(menuFormatsForSiteKey(siteKey), menuFormatsForSite(siteKey), `client list matches the renderer for ${siteKey}`);
-  assert.deepEqual(menuFormatsForSiteKey("mnk"), ["tablet", "flat-label"]);
+  assert.deepEqual(menuFormatsForSiteKey("mnk"), ["tablet", "flat-label", "tent-label"]);
   assert.equal(menuFormatsForSiteKey("angel-court").length, 1, "one format -> no picker is shown");
 });
