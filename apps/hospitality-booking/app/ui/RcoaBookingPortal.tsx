@@ -4,8 +4,19 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { portalBookingId, type PortalMenuItem } from "@/lib/mnk-contract";
 import { hospitalitySiteThemeStyle, portalSite } from "@/lib/portal-sites";
 import {
+  addRcoaMoment,
+  applyRcoaDraft,
   calculateRcoaTotal,
+  composeRcoaDraft,
   createEmptyRcoaDraft,
+  createEmptyRcoaGroup,
+  duplicateRcoaMoment,
+  groupFromDraft,
+  RCOA_MAX_SERVICES,
+  removeRcoaMoment,
+  setRcoaMultiple,
+  validateRcoaGroup,
+  type RcoaGroupDraft,
   filterRcoaMenu,
   rcoaAcknowledgementLabels,
   rcoaAllowedCategories,
@@ -19,7 +30,7 @@ import {
   type RcoaChoiceValue,
   type RcoaLine,
 } from "@/lib/rcoa-portal";
-import { buildRcoaClientRequest } from "@/lib/rcoa-booking-request-client";
+import { buildRcoaGroupClientRequests } from "@/lib/rcoa-booking-request-client";
 import styles from "./RcoaBookingPortal.module.css";
 
 const stepLabels = ["Occasion", "Contact", "Event", "Menu", "Dietaries", "Review"];
@@ -27,6 +38,8 @@ const draftKey = "fika-rcoa-booking-draft:v1";
 const contactKey = "fika-rcoa-remembered-contact:v1";
 const requestIdKey = "fika-rcoa-request-id:v1";
 const submissionKey = "fika-rcoa-confirmed-request:v1";
+const summaryKey = "fika-rcoa-confirmed-summary:v1";
+const attemptKey = "fika-rcoa-submit-attempt:v1";
 const dietaryFields = [
   ["vegetarian", "Vegetarian"],
   ["vegan", "Vegan"],
@@ -67,10 +80,35 @@ function safeDraft(value: unknown): RcoaBookingDraft | undefined {
   };
 }
 
+function safeGroup(value: unknown): RcoaGroupDraft | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Partial<RcoaGroupDraft> & { moments?: unknown };
+  if (!Array.isArray(candidate.moments)) { const legacy = safeDraft(value); return legacy ? groupFromDraft(legacy) : undefined; }
+  const empty = createEmptyRcoaGroup();
+  const moments = (candidate.moments as Array<Partial<RcoaGroupDraft["moments"][number]>>)
+    .filter((moment) => moment && typeof moment.occasion === "string" && Array.isArray(moment.lines))
+    .slice(0, RCOA_MAX_SERVICES)
+    .map((moment, index) => ({ ...empty.moments[0], ...moment, id: typeof moment.id === "string" ? moment.id : `restored-${index}`, event: { ...empty.moments[0].event, ...(moment.event || {}) }, dietaries: { ...empty.moments[0].dietaries, ...(moment.dietaries || {}) }, lines: (moment.lines || []).filter((line): line is RcoaLine => Boolean(line && typeof line.itemId === "string" && Number.isFinite(line.quantity))) }));
+  if (!moments.length) return undefined;
+  return {
+    ...empty, ...candidate,
+    contact: { ...empty.contact, ...(candidate.contact || {}) },
+    acknowledgements: { ...empty.acknowledgements, ...(candidate.acknowledgements || {}) },
+    multiple: Boolean(candidate.multiple) || moments.length > 1,
+    moments,
+    activeIndex: Math.max(0, Math.min(moments.length - 1, Number(candidate.activeIndex) || 0)),
+  };
+}
+
 export default function RcoaBookingPortal({ configured }: { configured: boolean }) {
   const site = portalSite("rcoa");
   const theme = hospitalitySiteThemeStyle(site) as CSSProperties;
-  const [draft, setDraft] = useState<RcoaBookingDraft>(createEmptyRcoaDraft);
+  const [group, setGroup] = useState<RcoaGroupDraft>(createEmptyRcoaGroup);
+  const draft = useMemo(() => composeRcoaDraft(group), [group]);
+  const setDraft = (update: RcoaBookingDraft | ((current: RcoaBookingDraft) => RcoaBookingDraft)) =>
+    setGroup((previous) => applyRcoaDraft(previous, typeof update === "function" ? update(composeRcoaDraft(previous)) : update));
+  const [confirmation, setConfirmation] = useState<Array<{ time: string; label: string; guests: number }> | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const [step, setStep] = useState(0);
   const [menu, setMenu] = useState<PortalMenuItem[]>([]);
   const [menuLoading, setMenuLoading] = useState(true);
@@ -104,10 +142,12 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
       const stableRequestId = storedRequestId && /^RCOA-[A-Z0-9-]{8,80}$/i.test(storedRequestId) ? storedRequestId : newRequestId;
       setBookingId(stableRequestId);
       window.localStorage.setItem(requestIdKey, stableRequestId);
-      const restored = hasConfirmedRequest ? undefined : safeDraft(JSON.parse(window.localStorage.getItem(draftKey) || "null"));
+      const savedDraft = hasConfirmedRequest ? undefined : JSON.parse(window.localStorage.getItem(draftKey) || "null");
+      const restored = savedDraft ? safeGroup(savedDraft) : undefined;
+      if (hasConfirmedRequest) { try { const summary = JSON.parse(window.localStorage.getItem(summaryKey) || "null"); if (Array.isArray(summary) && summary.length > 1) setConfirmation(summary); } catch { /* optional */ } }
       if (restored) {
-        setDraft(restored);
-        setStep(Math.max(0, Math.min(stepLabels.length - 1, Number((restored as RcoaBookingDraft & { step?: number }).step) || 0)));
+        setGroup(restored);
+        setStep(Math.max(0, Math.min(stepLabels.length - 1, Number((savedDraft as { step?: number }).step) || 0)));
         setRestoredDraft(true);
       }
       const savedContact = JSON.parse(window.localStorage.getItem(contactKey) || "null") as RcoaBookingDraft["contact"] | null;
@@ -125,11 +165,11 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   useEffect(() => {
     if (!draftReady || reference) return;
     try {
-      window.localStorage.setItem(draftKey, JSON.stringify({ ...draft, step }));
+      window.localStorage.setItem(draftKey, JSON.stringify({ ...group, step }));
     } catch {
       // A full or unavailable browser store must not block a booking request.
     }
-  }, [draftReady, draft, step, reference]);
+  }, [draftReady, group, step, reference]);
 
   useEffect(() => {
     if (!draftReady) return;
@@ -258,13 +298,21 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
     setStep(Math.max(0, Math.min(stepLabels.length - 1, nextStep)));
   };
 
+  const describeServices = (candidate: RcoaGroupDraft) => candidate.moments.map((moment, index) => {
+    const view = composeRcoaDraft(candidate, index);
+    return { time: `${moment.event.startTime}${moment.event.endTime ? `–${moment.event.endTime}` : ""}`, label: rcoaEventTypes.find((event) => event.id === view.occasion)?.label || "Service", guests: moment.event.guestCount };
+  });
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (sendingRef.current) return;
-    const validation = validateRcoaStep(5, draft, menu);
-    if (Object.keys(validation).length) {
-      setErrors(validation);
-      setMessage("Please confirm each acknowledgement before sending your request.");
+    // Every service is validated BEFORE anything is created.
+    const failure = validateRcoaGroup(group, menu);
+    if (failure) {
+      setGroup((current) => ({ ...current, activeIndex: failure.index }));
+      setStep(failure.step);
+      setErrors(failure.errors);
+      setMessage(group.moments.length > 1 && failure.step !== 5 && failure.step !== 1 ? `Service ${failure.index + 1}: please review the highlighted information before sending.` : failure.step === 5 ? "Please confirm each acknowledgement before sending your request." : "Please review the highlighted information before sending.");
       return;
     }
     if (!rcoaConfigured) {
@@ -279,17 +327,33 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
       const stableRequestId = bookingId || portalBookingId("rcoa");
       if (!bookingId) setBookingId(stableRequestId);
       try { window.localStorage.setItem(requestIdKey, stableRequestId); } catch { /* The in-memory ID still protects retries in this page. */ }
-      const body = buildRcoaClientRequest(draft, menu, { bookingId: stableRequestId, submittedAt: new Date().toISOString() });
-      const response = await fetch("/api/bookings/rcoa", {
+      const requests = buildRcoaGroupClientRequests(group, menu, { groupId: stableRequestId, submittedAt: new Date().toISOString() });
+      const signature = JSON.stringify(requests.map(({ submittedAt: _submittedAt, ...rest }) => rest));
+      // A retry must resend the same request. If part of an earlier attempt was already received, edits cannot be applied silently.
+      let previous: { groupId?: string; signature?: string; completed?: number } | null = null;
+      try { previous = JSON.parse(window.localStorage.getItem(attemptKey) || "null"); } catch { previous = null; }
+      if (previous && previous.groupId === stableRequestId && (previous.completed || 0) > 0 && previous.signature !== signature) {
+        setMessage("Part of your earlier request was already received, so it cannot be changed here. Please contact the hospitality team to amend it, or use Start again to send a new request.");
+        return;
+      }
+      const single = requests.length === 1;
+      const response = await fetch(single ? "/api/bookings/rcoa" : "/api/bookings/rcoa/group", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(single ? requests[0] : { bookingGroup: { id: stableRequestId, size: requests.length }, requests }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error?.message || "We could not send your request. Your saved draft is still available.");
-      setReference(body.bookingId);
+      if (!response.ok) {
+        try { window.localStorage.setItem(attemptKey, JSON.stringify({ groupId: stableRequestId, signature, completed: Number(result.group?.completed) || 0 })); } catch { /* optional */ }
+        throw new Error(result.error?.message || "We could not send your request. Your saved draft is still available.");
+      }
+      const services = describeServices(group);
+      setConfirmation(services.length > 1 ? services : null);
+      setReference(stableRequestId);
       try {
-        window.localStorage.setItem(submissionKey, body.bookingId);
+        window.localStorage.setItem(submissionKey, stableRequestId);
+        window.localStorage.setItem(summaryKey, JSON.stringify(services));
+        window.localStorage.removeItem(attemptKey);
         window.localStorage.removeItem(draftKey);
       } catch { /* A confirmed request stays confirmed even when browser storage is unavailable. */ }
       setRestoredDraft(false);
@@ -301,10 +365,17 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
     }
   };
 
+  const selectService = (index: number) => { setGroup((current) => ({ ...current, activeIndex: index })); setErrors({}); setMessage(""); setConfirmRemove(false); };
+  const addService = () => { if (group.moments.length >= RCOA_MAX_SERVICES) return; setGroup((current) => addRcoaMoment(current)); setStep(0); setErrors({}); setConfirmRemove(false); setMessage(`Service ${group.moments.length + 1} added. Choose its occasion, then its time and menu.`); };
+  const duplicateService = () => { if (group.moments.length >= RCOA_MAX_SERVICES) return; setGroup((current) => duplicateRcoaMoment(current, current.activeIndex)); setStep(2); setErrors({}); setConfirmRemove(false); setMessage("Service duplicated with its menu, guests and location. Choose the new time."); };
+  const removeService = () => { setGroup((current) => removeRcoaMoment(current, current.activeIndex)); setConfirmRemove(false); setErrors({}); setMessage("Service removed."); };
+
   const reset = () => {
     const newRequestId = portalBookingId("rcoa");
     setBookingId(newRequestId);
-    setDraft({ ...createEmptyRcoaDraft(), contact: rememberContact ? draft.contact : createEmptyRcoaDraft().contact });
+    setGroup({ ...createEmptyRcoaGroup(), contact: rememberContact ? group.contact : createEmptyRcoaGroup().contact });
+    setConfirmation(null);
+    setConfirmRemove(false);
     setStep(0);
     setSearch("");
     setCategory("all");
@@ -316,6 +387,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
     try {
       window.localStorage.removeItem(draftKey);
       window.localStorage.removeItem(submissionKey);
+      window.localStorage.removeItem(summaryKey);
+      window.localStorage.removeItem(attemptKey);
       window.localStorage.setItem(requestIdKey, newRequestId);
     } catch { /* Storage is optional. */ }
   };
@@ -351,7 +424,9 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
       {reference ? (
         <section className={styles.confirmation} aria-labelledby="rcoa-confirm-title">
           <p className={styles.eyebrow}>Request received</p>
-          <h2 id="rcoa-confirm-title">Thank you. We will take it from here.</h2>
+          <h2 id="rcoa-confirm-title">{confirmation ? "Booking request submitted" : "Thank you. We will take it from here."}</h2>
+          {confirmation && <><p>{confirmation.length} services requested.</p>
+            <ul className={styles.confirmationList}>{confirmation.map((service, index) => <li key={`${service.time}-${index}`}><strong>{service.time}</strong> — {service.label} — {service.guests} guests</li>)}</ul></>}
           <p>Your reference is <strong>{reference}</strong>.</p>
           <p>The hospitality team will review availability, labour, equipment and VAT before confirming your booking.</p>
           <button className={styles.primaryButton} type="button" onClick={reset}>Make another booking</button>
@@ -369,6 +444,26 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
           <form className={styles.formPanel} onSubmit={submit}>
             {message && <p className={styles.formMessage} role="alert" aria-live="polite">{message}</p>}
             {menuError && <p className={styles.formMessage} role="alert">{menuError}</p>}
+
+            {group.multiple && [0, 2, 3, 4].includes(step) && (
+              <nav className={styles.servicesBar} aria-label="Services in this booking">
+                <ul className={styles.serviceTabs}>
+                  {group.moments.map((moment, index) => (
+                    <li key={moment.id}>
+                      <button type="button" className={index === group.activeIndex ? styles.serviceTabActive : styles.serviceTab} aria-current={index === group.activeIndex ? "true" : undefined} onClick={() => selectService(index)}>
+                        <strong>Service {index + 1}</strong><span>{moment.event.startTime || "Time not set"}{moment.event.guestCount ? ` · ${moment.event.guestCount} guests` : ""}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className={styles.serviceActions}>
+                  <button type="button" className={styles.secondaryButton} onClick={addService} disabled={group.moments.length >= RCOA_MAX_SERVICES}>Add another service</button>
+                  <button type="button" className={styles.secondaryButton} onClick={duplicateService} disabled={group.moments.length >= RCOA_MAX_SERVICES}>Duplicate service</button>
+                  <button type="button" className={styles.secondaryButton} onClick={() => setConfirmRemove(true)} disabled={group.moments.length <= 1}>Remove service</button>
+                </div>
+                {confirmRemove && <div className={styles.removeConfirm} role="alertdialog" aria-label={`Remove service ${group.activeIndex + 1}`}><span>Remove service {group.activeIndex + 1} and its menu?</span><button type="button" className={styles.dangerButton} onClick={removeService}>Remove</button><button type="button" className={styles.secondaryButton} onClick={() => setConfirmRemove(false)}>Keep</button></div>}
+              </nav>
+            )}
 
             {step === 0 && (
               <section aria-labelledby="rcoa-occasion-title">
@@ -408,8 +503,15 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
             {step === 2 && (
               <section aria-labelledby="rcoa-event-title">
                 <div className={styles.sectionHeading}><p className={styles.eyebrow}>Event details</p><h2 id="rcoa-event-title">When and where?</h2></div>
+                <fieldset className={styles.multiQuestion}>
+                  <legend>Does this booking have multiple services?</legend>
+                  <label className={styles.multiOption}><input type="radio" name="rcoa-multiple" checked={!group.multiple} disabled={group.moments.length > 1} onChange={() => setGroup((current) => setRcoaMultiple(current, false))} /><span>No</span></label>
+                  <label className={styles.multiOption}><input type="radio" name="rcoa-multiple" checked={group.multiple} onChange={() => setGroup((current) => setRcoaMultiple(current, true))} /><span>Yes</span></label>
+                  {group.moments.length > 1 && <small>Remove the extra services to switch back to a single service.</small>}
+                  {group.multiple && <small>Give each service its own time, guests, location and menu. Your details and notes are entered once.</small>}
+                </fieldset>
                 <div className={styles.fieldGrid}>
-                  <label className={styles.field}><span>Event date *</span><input {...fieldProps("eventDate", errors)} data-rcoa-field="eventDate" type="date" value={draft.event.eventDate} onChange={(event) => updateEvent("eventDate", event.target.value)} /><ErrorMessage field="eventDate" errors={errors} /></label>
+                  <label className={styles.field}><span>{group.multiple ? "Event date (all services) *" : "Event date *"}</span><input {...fieldProps("eventDate", errors)} data-rcoa-field="eventDate" type="date" value={draft.event.eventDate} onChange={(event) => updateEvent("eventDate", event.target.value)} /><ErrorMessage field="eventDate" errors={errors} /></label>
                   <label className={styles.field}><span>Number of guests *</span><input {...fieldProps("guestCount", errors)} data-rcoa-field="guestCount" type="number" min="1" step="1" value={draft.event.guestCount || ""} onChange={(event) => updateEvent("guestCount", Number(event.target.value || 0))} /><ErrorMessage field="guestCount" errors={errors} /></label>
                   <label className={styles.field}><span>Start / service time *</span><input {...fieldProps("startTime", errors)} data-rcoa-field="startTime" type="time" value={draft.event.startTime} onChange={(event) => updateEvent("startTime", event.target.value)} /><ErrorMessage field="startTime" errors={errors} /></label>
                   <label className={styles.field}><span>End time</span><input {...fieldProps("endTime", errors)} data-rcoa-field="endTime" type="time" value={draft.event.endTime} onChange={(event) => updateEvent("endTime", event.target.value)} /><ErrorMessage field="endTime" errors={errors} /></label>
@@ -502,6 +604,30 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
             {step === 5 && (
               <section aria-labelledby="rcoa-review-title">
                 <div className={styles.sectionHeading}><p className={styles.eyebrow}>Review</p><h2 id="rcoa-review-title">One last look.</h2></div>
+                {group.multiple ? (
+                  <>
+                    <div className={styles.reviewBlock}>
+                      <h3>Your details</h3>
+                      <p>{draft.contact.name} · {draft.contact.email} · {draft.contact.companyName}{draft.contact.invoiceReference ? ` · ${draft.contact.invoiceReference}` : ""}</p>
+                      <p>{draft.event.eventDate || "Date not set"} · {group.moments.length} service{group.moments.length === 1 ? "" : "s"}</p>
+                      <button type="button" className={styles.textButton} onClick={() => goToStep(1)}>Edit details</button>
+                    </div>
+                    {group.moments.map((moment, index) => {
+                      const view = composeRcoaDraft(group, index);
+                      const items = view.lines.flatMap((line) => { const item = menu.find((candidate) => candidate.id === line.itemId); return item && line.quantity > 0 ? [{ line, item }] : []; });
+                      return (
+                        <div className={styles.reviewBlock} key={moment.id}>
+                          <h3>Service {index + 1} — {rcoaEventTypes.find((event) => event.id === view.occasion)?.label || "Occasion"}</h3>
+                          <p>{moment.event.startTime || "Time not set"}{moment.event.endTime ? `–${moment.event.endTime}` : ""} · {moment.event.guestCount || 0} guests · {[moment.event.floorLevel, moment.event.roomOrArea, moment.event.deliveryPoint].filter(Boolean).join(" · ") || "Location not set"}</p>
+                          {items.length ? items.map(({ line, item }) => <p key={item.id}>{line.quantity} × {item.name} · {money.format(item.unitPrice * line.quantity)}</p>) : <p>{view.occasion === "bespoke" ? "Menu to be discussed with the team." : "No menu items selected"}</p>}
+                          <p>{dietaryFields.filter(([key]) => view.dietaries[key] > 0).map(([key, label]) => `${label}: ${view.dietaries[key]}`).join(" · ") || "No dietary counts recorded"}{view.dietaries.allergyDetails ? ` · ${view.dietaries.allergyDetails}` : ""}</p>
+                          <button type="button" className={styles.textButton} onClick={() => { selectService(index); setStep(2); }}>Edit this service</button>
+                        </div>
+                      );
+                    })}
+                    <button type="button" className={styles.secondaryButton} onClick={addService} disabled={group.moments.length >= RCOA_MAX_SERVICES}>Add another service</button>
+                  </>
+                ) : (<>
                 <div className={styles.reviewBlock}>
                   <h3>{currentEvent?.label || "Occasion"}</h3>
                   <p>{draft.contact.name} · {draft.contact.email} · {draft.contact.companyName}</p>
@@ -520,7 +646,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                   <p>{draft.dietaries.allergyDetails || "No allergy details recorded"}</p>
                   <button type="button" className={styles.textButton} onClick={() => goToStep(4)}>Edit dietaries</button>
                 </div>
-                <label className={`${styles.field} ${styles.fieldWide}`}><span>Special instructions</span><textarea rows={3} value={draft.specialInstructions} onChange={(event) => setDraft((current) => ({ ...current, specialInstructions: event.target.value }))} placeholder="Access, setup, presentation or anything else the team should know" /></label>
+                </>)}
+                <label className={`${styles.field} ${styles.fieldWide}`}><span>{group.multiple ? "Overall notes for all services" : "Special instructions"}</span><textarea rows={3} value={draft.specialInstructions} onChange={(event) => setDraft((current) => ({ ...current, specialInstructions: event.target.value }))} placeholder="Access, setup, presentation or anything else the team should know" /></label>
                 <div className={styles.acknowledgements}>
                   {(Object.entries(rcoaAcknowledgementLabels) as Array<[keyof RcoaBookingDraft["acknowledgements"], string]>).map(([key, label]) => {
                     const fieldKey = `acknowledgement:${key}`;
@@ -533,21 +660,22 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
             )}
 
             <footer className={styles.formActions}>
-              <button type="button" className={styles.secondaryButton} disabled={step === 0 || sending} onClick={() => goToStep(step - 1)}>Back</button>
+              <button type="button" className={styles.secondaryButton} disabled={step === 0 || sending} onClick={() => goToStep(group.multiple && group.activeIndex > 0 && step === 2 ? 0 : step - 1)}>Back</button>
               {step < stepLabels.length - 1
-                ? <button type="button" className={styles.primaryButton} onClick={() => goToStep(step + 1)}>Continue</button>
+                ? <button type="button" className={styles.primaryButton} onClick={() => goToStep(group.multiple && group.activeIndex > 0 && step === 0 ? 2 : step + 1)}>Continue</button>
                 : <button type="submit" className={styles.primaryButton} disabled={sending || !bookingId || !rcoaConfigured} aria-busy={sending ? true : undefined}>{sending ? <><span className="fika-spinner" aria-hidden="true" />Sending request…</> : "Send booking request"}</button>}
             </footer>
           </form>
 
           <aside className={styles.summary} aria-label="Your request">
             <div className={styles.summaryHeading}><p className={styles.eyebrow}>Your request</p><span className={styles.savedStatus} role="status">{draftReady ? "Progress saved" : "Saving progress…"}</span></div>
-            <div className={styles.summaryMeta}>{currentEvent?.label || "No occasion selected yet."}{draft.event.eventDate ? ` · ${draft.event.eventDate}` : ""}{draft.event.guestCount ? ` · ${draft.event.guestCount} guests` : ""}</div>
+            {group.multiple && <ol className={styles.summaryServices}>{group.moments.map((moment, index) => <li key={moment.id} className={index === group.activeIndex ? styles.summaryServiceActive : undefined}><span>Service {index + 1} · {moment.event.startTime || "time not set"}</span><small>{rcoaEventTypes.find((event) => event.id === moment.occasion)?.label || "No occasion yet"}{moment.event.guestCount ? ` · ${moment.event.guestCount} guests` : ""}</small></li>)}</ol>}
+            <div className={styles.summaryMeta}>{group.multiple ? `Editing service ${group.activeIndex + 1} of ${group.moments.length}` : (currentEvent?.label || "No occasion selected yet.")}{draft.event.eventDate ? ` · ${draft.event.eventDate}` : ""}{draft.event.guestCount ? ` · ${draft.event.guestCount} guests` : ""}</div>
             <div className={styles.summaryItems}>
               {selected.map(({ line, item }) => <div className={styles.summaryItem} key={item.id}><span>{line.quantity} × {item.name}</span><strong>{money.format(item.unitPrice * line.quantity)}</strong></div>)}
               {!selected.length && <p>{draft.occasion === "bespoke" ? "Menu to be discussed with the team." : "Your menu choices will appear here."}</p>}
             </div>
-            <div className={styles.summaryTotal}><span>Estimated total</span><strong>{money.format(total)}</strong></div>
+            <div className={styles.summaryTotal}><span>{group.multiple ? "Estimated total (all services)" : "Estimated total"}</span><strong>{money.format(group.multiple ? group.moments.reduce((sum, _moment, index) => sum + calculateRcoaTotal(composeRcoaDraft(group, index).lines, menu), 0) : total)}</strong></div>
             <p className={styles.finePrint}>Indicative prices exclude VAT and are subject to confirmation, labour and hire equipment where applicable.</p>
             {warnings.length > 0 && <div className={styles.summaryWarnings}><strong>Notice guidance</strong>{warnings.slice(0, 3).map((warning) => <span key={warning}>{warning}</span>)}</div>}
           </aside>

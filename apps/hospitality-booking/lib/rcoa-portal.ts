@@ -228,3 +228,106 @@ export function validateRcoaStep(step: number, draft: RcoaBookingDraft, menu: re
   }
   return errors;
 }
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Multi-service request model. One public form submission may hold several service moments; each moment later becomes one
+// ordinary canonical RCoA Booking (single service time). The wizard still edits ONE moment at a time through the composed
+// RcoaBookingDraft view, so the existing step UI and validation are reused unchanged.
+// ---------------------------------------------------------------------------------------------------------------------------
+export const RCOA_MAX_SERVICES = 8;
+export type RcoaMomentEvent = Omit<RcoaBookingDraft["event"], "eventDate">;
+export type RcoaMoment = { id: string; occasion: RcoaBookingDraft["occasion"]; event: RcoaMomentEvent; lines: RcoaLine[]; dietaries: RcoaDietaries };
+export type RcoaGroupDraft = {
+  contact: RcoaBookingDraft["contact"];
+  eventDate: string;
+  specialInstructions: string;
+  acknowledgements: RcoaBookingDraft["acknowledgements"];
+  /** The customer's answer to "Does this booking have multiple services?" (default No: the existing single-service flow). */
+  multiple: boolean;
+  moments: RcoaMoment[];
+  activeIndex: number;
+};
+
+let momentCounter = 0;
+export const newRcoaMomentId = () => `moment-${Date.now().toString(36)}-${(momentCounter += 1)}`;
+
+export function createEmptyRcoaMoment(id = newRcoaMomentId()): RcoaMoment {
+  const empty = createEmptyRcoaDraft();
+  const { eventDate: _eventDate, ...event } = empty.event;
+  void _eventDate;
+  return { id, occasion: "", event, lines: [], dietaries: empty.dietaries };
+}
+
+/** Wraps a legacy single draft as a one-moment group (used to restore drafts saved before multi-service existed). */
+export function groupFromDraft(draft: RcoaBookingDraft, id = newRcoaMomentId()): RcoaGroupDraft {
+  const { eventDate, ...event } = draft.event;
+  return {
+    contact: draft.contact, eventDate, specialInstructions: draft.specialInstructions, acknowledgements: draft.acknowledgements,
+    multiple: false, moments: [{ id, occasion: draft.occasion, event, lines: draft.lines, dietaries: draft.dietaries }], activeIndex: 0,
+  };
+}
+
+export function createEmptyRcoaGroup(): RcoaGroupDraft { return groupFromDraft(createEmptyRcoaDraft()); }
+
+/** The single-moment view the existing wizard steps and validators work on. */
+export function composeRcoaDraft(group: RcoaGroupDraft, index = group.activeIndex): RcoaBookingDraft {
+  const moment = group.moments[index] || group.moments[0];
+  return {
+    occasion: moment.occasion,
+    contact: group.contact,
+    event: { eventDate: group.eventDate, ...moment.event },
+    lines: moment.lines,
+    dietaries: moment.dietaries,
+    specialInstructions: group.specialInstructions,
+    acknowledgements: group.acknowledgements,
+  };
+}
+
+/** Writes an edited single-moment view back: shared fields to the group, moment fields to the moment at `index`. */
+export function applyRcoaDraft(group: RcoaGroupDraft, draft: RcoaBookingDraft, index = group.activeIndex): RcoaGroupDraft {
+  const { eventDate, ...event } = draft.event;
+  const moments = group.moments.map((moment, position) => position === index ? { ...moment, occasion: draft.occasion, event, lines: draft.lines, dietaries: draft.dietaries } : moment);
+  return { ...group, contact: draft.contact, eventDate, specialInstructions: draft.specialInstructions, acknowledgements: draft.acknowledgements, moments };
+}
+
+/** Answering No is only possible with a single service left (extra services are never dropped silently). */
+export function setRcoaMultiple(group: RcoaGroupDraft, multiple: boolean): RcoaGroupDraft {
+  if (!multiple && group.moments.length > 1) return group;
+  return { ...group, multiple, activeIndex: multiple ? group.activeIndex : 0 };
+}
+
+export function addRcoaMoment(group: RcoaGroupDraft, id?: string): RcoaGroupDraft {
+  if (group.moments.length >= RCOA_MAX_SERVICES) return group;
+  return { ...group, moments: [...group.moments, createEmptyRcoaMoment(id)], activeIndex: group.moments.length };
+}
+
+/** Copies occasion, items, guest count and location; the customer must choose the new time. */
+export function duplicateRcoaMoment(group: RcoaGroupDraft, index: number, id?: string): RcoaGroupDraft {
+  if (group.moments.length >= RCOA_MAX_SERVICES || !group.moments[index]) return group;
+  const source = group.moments[index];
+  const copy: RcoaMoment = { ...structuredClone(source), id: id ?? newRcoaMomentId(), event: { ...structuredClone(source.event), startTime: "", endTime: "" } };
+  const moments = [...group.moments.slice(0, index + 1), copy, ...group.moments.slice(index + 1)];
+  return { ...group, moments, activeIndex: index + 1 };
+}
+
+export function removeRcoaMoment(group: RcoaGroupDraft, index: number): RcoaGroupDraft {
+  if (group.moments.length <= 1 || !group.moments[index]) return group;
+  const moments = group.moments.filter((_, position) => position !== index);
+  return { ...group, moments, activeIndex: Math.max(0, Math.min(moments.length - 1, group.activeIndex > index ? group.activeIndex - 1 : group.activeIndex === index ? Math.min(index, moments.length - 1) : group.activeIndex)) };
+}
+
+/** Deterministic child reference. The group id is the stable per-form request id; children never use independent random ids. */
+export function rcoaChildReference(groupId: string, sequence: number) { return `${groupId}-${String(sequence).padStart(2, "0")}`; }
+
+/** Validates EVERY moment (and the shared contact/acknowledgement steps) before anything is created. Returns the first failure. */
+export function validateRcoaGroup(group: RcoaGroupDraft, menu: readonly PortalMenuItem[]): { index: number; step: number; errors: Record<string, string> } | undefined {
+  for (let index = 0; index < group.moments.length; index += 1) {
+    const draft = composeRcoaDraft(group, index);
+    for (const step of index === 0 ? [0, 1, 2, 3, 4] : [0, 2, 3, 4]) {
+      const errors = validateRcoaStep(step, draft, menu);
+      if (Object.keys(errors).length) return { index, step, errors };
+    }
+  }
+  const shared = validateRcoaStep(5, composeRcoaDraft(group, 0), menu);
+  return Object.keys(shared).length ? { index: 0, step: 5, errors: shared } : undefined;
+}

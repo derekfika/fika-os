@@ -56,8 +56,13 @@ export const RCOA_BOOKING_INGESTION_CONTRACT_VERSION =
 export const HOSPITALITY_MENU_READ_CONTRACT_VERSION =
   "fika.hospitality-menu-read.v1";
 
+/** Optional link between ordinary bookings created from one multi-service form submission (RCoA). Informational; never identity. */
+export type BookingGroupLink = { id: string; sequence: number; size: number };
+
 export type MnkBookingPayload = {
   bookingId: string;
+  /** Present only on linked multi-service bookings; retained in the immutable original payload. */
+  bookingGroup?: BookingGroupLink;
   submittedAt: string;
   status?: string;
   site?: string;
@@ -157,6 +162,8 @@ export type CanonicalBooking = {
   };
   dietaries: Record<string, unknown>;
   acknowledgements: Record<string, unknown>;
+  /** Optional structured link to sibling bookings from the same multi-service submission. */
+  bookingGroup?: BookingGroupLink;
   notes?: string;
   attachments: string[];
   statusHistory: Array<{
@@ -586,6 +593,7 @@ function buildCanonicalBooking(
       },
       dietaries: structuredClone(payload.dietaries || {}),
       acknowledgements: structuredClone(payload.acknowledgements || {}),
+      ...(payload.bookingGroup ? { bookingGroup: structuredClone(payload.bookingGroup) } : {}),
       ...(optional(payload.specialInstructions)
         ? { notes: optional(payload.specialInstructions) }
         : {}),

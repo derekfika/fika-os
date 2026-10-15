@@ -1975,3 +1975,147 @@
     max-width: 128px;
   }
 }
+
+/* ---- Multi-service request (RCoA). Reuses the existing tokens; every control is at least 44px and stays usable at tablet/phone widths. ---- */
+.multiQuestion {
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--fika-border-default, #ded8e8);
+  border-radius: 10px;
+  background: var(--fika-surface-card, #fff);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  align-items: center;
+}
+.multiQuestion legend {
+  padding: 0 6px;
+  font-weight: 700;
+  color: var(--fika-text-primary, #241f33);
+}
+.multiQuestion small {
+  flex-basis: 100%;
+  color: var(--fika-text-secondary, #655d70);
+  font-size: 13px;
+}
+.multiOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  min-width: 88px;
+  padding: 0 14px;
+  border: 1px solid var(--fika-border-default, #cfc9d9);
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.multiOption input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--fika-action-primary, #4f34c7);
+}
+.multiOption:focus-within {
+  outline: 3px solid var(--fika-focus-ring, #4f34c7);
+  outline-offset: 2px;
+}
+.servicesBar {
+  margin: 0 0 18px;
+  padding: 12px;
+  border: 1px solid var(--fika-border-default, #ded8e8);
+  border-radius: 10px;
+  background: var(--fika-surface-subtle, #f4f1f7);
+}
+.serviceTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+.serviceTab,
+.serviceTabActive {
+  display: grid;
+  gap: 2px;
+  min-height: 44px;
+  min-width: 132px;
+  padding: 8px 14px;
+  border: 1px solid var(--fika-border-default, #cfc9d9);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--fika-text-primary, #241f33);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.serviceTabActive {
+  border-color: var(--fika-action-primary, #4f34c7);
+  box-shadow: inset 0 0 0 1px var(--fika-action-primary, #4f34c7);
+}
+.serviceTab span,
+.serviceTabActive span {
+  font-size: 13px;
+  color: var(--fika-text-secondary, #655d70);
+}
+.serviceTab:focus-visible,
+.serviceTabActive:focus-visible,
+.multiOption input:focus-visible {
+  outline: 3px solid var(--fika-focus-ring, #4f34c7);
+  outline-offset: 2px;
+}
+.serviceActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.removeConfirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--fika-status-danger, #a32121);
+  border-radius: 8px;
+  background: #fff;
+}
+.summaryServices {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.summaryServices li {
+  display: grid;
+  padding: 8px 10px;
+  border: 1px solid var(--fika-border-default, #ded8e8);
+  border-radius: 8px;
+  background: #fff;
+}
+.summaryServices small {
+  color: var(--fika-text-secondary, #655d70);
+}
+.summaryServiceActive {
+  border-color: var(--fika-action-primary, #4f34c7) !important;
+}
+.confirmationList {
+  margin: 12px 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 17px;
+}
+@media (max-width: 760px) {
+  .serviceTab,
+  .serviceTabActive {
+    flex: 1 1 100%;
+  }
+  .serviceActions > button {
+    flex: 1 1 100%;
+  }
+  .multiOption {
+    flex: 1 1 40%;
+  }
+}

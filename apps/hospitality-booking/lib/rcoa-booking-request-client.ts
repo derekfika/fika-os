@@ -40,3 +40,17 @@ export function buildRcoaClientRequest(
     specialInstructions: draft.specialInstructions,
   };
 }
+
+import { composeRcoaDraft, rcoaChildReference, type RcoaGroupDraft } from "./rcoa-portal";
+
+/**
+ * One request per service moment. A single moment keeps exactly today's request (same reference, no group metadata); several
+ * moments get deterministic child references `<groupId>-01..NN` plus structured `bookingGroup` metadata.
+ */
+export function buildRcoaGroupClientRequests(group: RcoaGroupDraft, menu: readonly PortalMenuItem[], identity: { groupId: string; submittedAt: string }) {
+  const size = group.moments.length;
+  return group.moments.map((_, index) => {
+    const base = buildRcoaClientRequest(composeRcoaDraft(group, index), menu, { bookingId: size === 1 ? identity.groupId : rcoaChildReference(identity.groupId, index + 1), submittedAt: identity.submittedAt });
+    return size === 1 ? base : { ...base, bookingGroup: { id: identity.groupId, sequence: index + 1, size } };
+  });
+}

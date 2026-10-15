@@ -1,11 +1,20 @@
 import { z } from "zod";
 import { localRcoaMenuCatalogue } from "./local-rcoa-menu";
-import { isValidRcoaLondonWallTime, rcoaAllowsEmptyOrder, rcoaEventTypes, rcoaVatNote } from "./rcoa-portal";
+import { isValidRcoaLondonWallTime, RCOA_MAX_SERVICES, rcoaAllowsEmptyOrder, rcoaChildReference, rcoaEventTypes, rcoaVatNote } from "./rcoa-portal";
 
 const eventTypeIds = rcoaEventTypes.map((event) => event.id) as [string, ...string[]];
 
+const RCOA_REFERENCE = /^RCOA-[A-Z0-9-]{8,80}$/i;
+/** Structured link between the ordinary bookings created from one multi-service form submission. */
+export const RcoaBookingGroupSchema = z.object({
+  id: z.string().regex(RCOA_REFERENCE),
+  sequence: z.number().int().min(1).max(RCOA_MAX_SERVICES),
+  size: z.number().int().min(2).max(RCOA_MAX_SERVICES),
+}).strict();
+
 export const RcoaBookingRequestSchema = z.object({
-  bookingId: z.string().regex(/^RCOA-[A-Z0-9-]{8,80}$/i),
+  bookingId: z.string().regex(RCOA_REFERENCE),
+  bookingGroup: RcoaBookingGroupSchema.optional(),
   submittedAt: z.string().datetime(),
   client: z.object({
     name: z.string().trim().min(1).max(200),
@@ -87,6 +96,10 @@ function selectedChoices(
 
 export function buildTrustedRcoaHubPayload(value: unknown) {
   const request = RcoaBookingRequestSchema.parse(value);
+  if (request.bookingGroup) {
+    if (request.bookingGroup.sequence > request.bookingGroup.size) throw new Error("The service position is outside its request.");
+    if (request.bookingId.toUpperCase() !== rcoaChildReference(request.bookingGroup.id, request.bookingGroup.sequence).toUpperCase()) throw new Error("The booking reference does not match its request group.");
+  }
   if (!isValidRcoaLondonWallTime(request.event.eventDate, request.event.startTime)) {
     throw new Error("The start time does not occur in Europe/London on the selected date.");
   }
@@ -139,6 +152,7 @@ export function buildTrustedRcoaHubPayload(value: unknown) {
 
   return {
     bookingId: request.bookingId,
+    ...(request.bookingGroup ? { bookingGroup: request.bookingGroup } : {}),
     submittedAt: request.submittedAt,
     status: "New",
     site: "RCoA Hospitality",
