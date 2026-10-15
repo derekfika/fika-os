@@ -4,7 +4,7 @@ import { gallagherDashboardBookings } from "@/lib/hospitality-booking-service";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 function requireGallagherBridge(request: NextRequest) {
-  const expected = process.env.GALLAGHER_DASHBOARD_BRIDGE_TOKEN;
+  const expected = process.env.GALLAGHER_DASHBOARD_BRIDGE_TOKEN?.trim();
   if (!expected) throw Object.assign(new Error("The Gallagher dashboard bridge is not configured."), { status: 503 });
   if (request.headers.get("x-fika-gallagher-bridge-token") !== expected) {
     throw Object.assign(new Error("Gallagher dashboard bridge access denied."), { status: 401 });
