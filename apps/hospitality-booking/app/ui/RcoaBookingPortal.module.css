@@ -259,6 +259,9 @@
   margin-bottom: 24px;
 }
 
+.allDayEventSection { margin-top: var(--space-7, 48px); }
+@media (max-width: 600px) { .allDayEventSection { margin-top: var(--space-5, 24px); } }
+
 .sectionHeading h2,
 .confirmation h2 {
   margin: 0;

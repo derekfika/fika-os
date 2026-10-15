@@ -26,6 +26,7 @@
     ,"./durable-outbox": "./src/durable-outbox.ts"
     ,"./canonical-production-digest": "./src/canonical-production-digest.ts"
     ,"./menu-artifact": "./src/menu-artifact.ts"
+    ,"./pdf-renderer": "./src/pdf-renderer.ts"
     ,"./hospitality-catalogue": "./src/hospitality-catalogue/index.ts"
   }
 }

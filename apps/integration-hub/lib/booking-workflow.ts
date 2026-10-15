@@ -3,7 +3,7 @@ import type { BookingAdditionalCharge, BookingAdditionalChargeInput } from "./ho
 export type BookingStatus = "New" | "Reviewed" | "Quoted" | "Sent to CPU" | "Approved" | "Completed" | "Cancelled";
 export type ReviewChecks = { commercialIntent: boolean; serviceTiming: boolean; deliveryContext: boolean; dietaryRequirements: boolean };
 export type QuotePdfStatus = "pending" | "saved" | "failed";
-export type QuoteRevision = { id: string; revision: number; createdAt: string; createdBy: string; commercialVersion: number; snapshot: unknown; documentReference: string; stale: boolean; pdfStatus?: QuotePdfStatus; driveFileId?: string; driveUrl?: string; pdfError?: string };
+export type QuoteRevision = { id: string; revision: number; createdAt: string; createdBy: string; commercialVersion: number; snapshot: unknown; documentReference: string; groupQuoteId?: string; stale: boolean; pdfStatus?: QuotePdfStatus; driveFileId?: string; driveUrl?: string; pdfError?: string };
 export type DashboardWorkflow = { review?: { checks: ReviewChecks; reviewedAt: string; reviewedBy: string; notes?: string }; completion?: { completedAt: string; completedBy: string; notes?: string }; cancellation?: { reason: string; calendarOutcome: "not_requested" | "not_configured"; productionOutcome: "not_requested" | "cancel_requested" | "cancelled" | "no_active_production_order"; notificationOutcome: "not_requested" | "not_configured" } };
 export type WorkflowCommand =
   | { action: "review"; checks: Partial<ReviewChecks>; notes?: string }

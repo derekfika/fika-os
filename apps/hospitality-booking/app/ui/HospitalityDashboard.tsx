@@ -11,6 +11,8 @@ import { amendmentPatchDto } from "../../lib/amendment-dto";
 import { MENU_FORMAT_OPTIONS, menuFormatsForSiteKey, menuOutputKey, mnkMenuHtml } from "../../lib/mnk-menu-output";
 import type { MenuFormat, MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";
+import { HospitalityGroupDetail } from "./HospitalityGroupDetail";
+import type { HospitalityBookingGroup } from "../../../shared/hospitality-group-quotes";
 import { hospitalitySiteThemeStyle, portalSite, type PortalSiteKey } from "@/lib/portal-sites";
 import { hospitalityWorkspacePath } from "@/lib/hospitality-workspace";
 
@@ -97,6 +99,12 @@ export default function HospitalityDashboard({
   const currentSiteLabel = siteLabel.trim() || site.theme.shortLabel;
   const themeStyle = hospitalitySiteThemeStyle(site) as CSSProperties;
   const [bookings, setBookings] = useState<CanonicalBooking[]>([]);
+  const [groups, setGroups] = useState<HospitalityBookingGroup[]>([]);
+  const [standaloneIds, setStandaloneIds] = useState<Set<string>>(new Set());
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const selectedGroup = groups.find(group => group.id === selectedGroupId);
+  const selectBooking = (booking: CanonicalBooking) => { setSelectedGroupId(null); setSelected(booking); };
+  const selectGroup = (group: HospitalityBookingGroup) => { setSelectedGroupId(group.id); setSelected(null); setAmendment(null); };
   const [productionOrders, setProductionOrders] = useState<
     Record<string, ProductionOrder | undefined>
   >({});
@@ -185,6 +193,9 @@ export default function HospitalityDashboard({
       if (!response.ok)
         throw Error(body.error?.message || "Could not load Bookings.");
       setBookings(body.cpuRouting ? body.bookings.map((item: CanonicalBooking) => body.cpuRouting[item.canonicalId] ? { ...item, cpuRouting: body.cpuRouting[item.canonicalId] } : item) : body.bookings);
+      setGroups(body.bookingGroups || []);
+      setStandaloneIds(new Set((body.dashboardBookings || body.bookings).map((item: CanonicalBooking) => item.canonicalId)));
+      if (body.groupWarnings?.length) setNotice(body.groupWarnings.map((w: { message: string }) => w.message).join(" "));
       setProductionOrders(body.productionOrders || {});
       setMatrixRefreshTick((current) => current + 1);
       setQuoteSettings(body.quoteSettings || null);
@@ -352,16 +363,17 @@ export default function HospitalityDashboard({
   };
 
   const visible = useMemo(
-    () => bookings.filter((item) => !filter || item.lifecycleStatus === filter),
-    [bookings, filter],
+    () => bookings.filter((item) => standaloneIds.has(item.canonicalId) && (!filter || item.lifecycleStatus === filter)),
+    [bookings, standaloneIds, filter],
   );
-  const newCount = bookings.filter(
-    (item) => item.lifecycleStatus === "New",
+  const visibleGroups = groups.filter(group => !filter || group.status === filter);
+  const newCount = groups.filter(group => group.status === "New").length + bookings.filter(
+    (item) => standaloneIds.has(item.canonicalId) && item.lifecycleStatus === "New",
   ).length;
   const readyForCpuCount = bookings.filter((item) => item.deliveryChargeRequired !== false && quoteReadyForCpu(item)).length;
-  const attentionCount = bookings.filter(
+  const attentionCount = groups.filter(group => ["New", "Quote preparing"].includes(group.status)).length + bookings.filter(
     (item) =>
-      item.lifecycleStatus === "New" || item.lifecycleStatus === "Reviewed",
+      standaloneIds.has(item.canonicalId) && (item.lifecycleStatus === "New" || item.lifecycleStatus === "Reviewed"),
   ).length;
   const scanStepIndex = inboxScanSteps.findIndex(({ key }) => key === scanPhase);
   const scanProgress = scanPhase === "complete"
@@ -369,6 +381,18 @@ export default function HospitalityDashboard({
     : scanPhase === "error"
       ? "0%"
       : `${((scanStepIndex + 1) / inboxScanSteps.length) * 100}%`;
+
+  const generateGroupQuote = async () => {
+    if (!selectedGroup || actionInFlight.current) return;
+    actionInFlight.current = true; setActionBusy(true); setActionStage("Preparing the group quote and saving one PDF…"); setError("");
+    try {
+      const response = await fetchQuoteRequest("/api/booking-groups/quote", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookingGroupId: selectedGroup.id, expectedVersion: selectedGroup.version, expectedSourceHash: selectedGroup.sourceHash }) }, "The group quote is still being prepared. Refresh, then retry this group to resume safely.", 180_000);
+      const body = await readDashboardJson(response);
+      if (!response.ok) throw new Error(body.error?.message || "The group quote could not be prepared.");
+      setNotice(body.quote?.status === "complete" ? "One group quote PDF has been saved." : body.quote?.status === "superseded" ? "The services changed during quote preparation. Generate an updated quote for the current services." : body.quote?.error || "Quote preparation is in progress. Refresh to check its result, or retry after an interruption.");
+    } catch (cause) { setError((cause as Error).message); }
+    finally { await load(false); actionInFlight.current = false; setActionBusy(false); }
+  };
 
   const persistQuotePdf = async (booking: CanonicalBooking, quote: { id: string; revision: number }) => {
     const saved = await saveQuoteDocument({ name: quoteFilename(booking.canonicalId, booking.client.companyName, "pdf"), html: quoteHtml(booking), canonicalId: booking.canonicalId });
@@ -1018,7 +1042,10 @@ export default function HospitalityDashboard({
             bookings={visible}
             week={calendarWeek}
             onWeekChange={setCalendarWeek}
-            onSelect={setSelected}
+            onSelect={selectBooking}
+            groups={visibleGroups}
+            onSelectGroup={selectGroup}
+            busy={actionBusy}
             selectedId={selected?.canonicalId}
           />
           <div className="hospitality-dashboard__controls">
@@ -1044,6 +1071,8 @@ export default function HospitalityDashboard({
                   {statuses.map((status) => (
                     <option key={status}>{status}</option>
                   ))}
+                  <option>Quote preparing</option>
+                  <option>Partially processed</option>
                 </select>
               </label>
             </div>
@@ -1071,13 +1100,18 @@ export default function HospitalityDashboard({
                   Refreshing canonical Bookings…
                 </p>
               )}
+              {!loading && visibleGroups.map(group => <button key={group.id} className={`booking-card ${selectedGroupId === group.id ? "booking-card--selected" : ""}`} disabled={actionBusy} onClick={() => selectGroup(group)}>
+                <span className="booking-card__date">{formatDate(group.eventDate)}<small>{group.firstTime}–{group.lastTime}</small></span>
+                <span className="booking-card__content"><strong>{group.client.companyName}</strong><small>All Day Hospitality · {group.services.length} services</small><span>{group.services.every(s => s.guests === group.services[0].guests) ? group.services[0].guests + " pax" : "Guests vary by service"} · £{group.totals.gross.toFixed(2)}</span></span>
+                <span className="booking-status">{group.status}</span>
+              </button>)}
               {!loading &&
                 visible.map((booking) => (
                   <button
                     key={booking.canonicalId}
                     className={`booking-card ${selected?.canonicalId === booking.canonicalId ? "booking-card--selected" : ""}`}
                     disabled={actionBusy}
-                    onClick={() => setSelected(booking)}
+                    onClick={() => selectBooking(booking)}
                   >
                     <span className="booking-card__date">
                       {formatDate(booking.service.eventDate)}
@@ -1097,7 +1131,7 @@ export default function HospitalityDashboard({
                     <StatusPill status={booking.lifecycleStatus} />
                   </button>
                 ))}
-              {!loading && !visible.length && (
+              {!loading && !visible.length && !visibleGroups.length && (
                 <p className="hospitality-dashboard__empty">
                   No canonical Bookings match this view.
                 </p>
@@ -1116,6 +1150,8 @@ export default function HospitalityDashboard({
                   </p>
                 )}
               </div>
+              {selectedGroup && <HospitalityGroupDetail group={selectedGroup} busy={actionBusy} onQuote={() => void generateGroupQuote()} onService={id => { setSelected(bookings.find(b => b.canonicalId === id) || null); setAmendment(null); }} />}
+              {selected && selectedGroup && <h3>Service operations · {selected.service.startTime} · {selected.order.eventType?.replaceAll("_", " ")}</h3>}
               {selected ? (
                 <fieldset className={styles.actionControls} disabled={actionBusy} aria-busy={actionBusy} aria-label="Booking details and actions">
                 <BookingPane
@@ -1149,7 +1185,7 @@ export default function HospitalityDashboard({
                   onOpenMenu={openMenu}
                 />
                 </fieldset>
-              ) : (
+              ) : !selectedGroup ? (
                 <div className="hospitality-dashboard__blank">
                   <p className="eyebrow">Ready when you are</p>
                   <h2>Select a booking</h2>
@@ -1158,7 +1194,7 @@ export default function HospitalityDashboard({
                     operational actions will appear here.
                   </p>
                 </div>
-              )}
+              ) : null}
             </section>
           </div>
         </section>
@@ -1548,12 +1584,12 @@ function BookingDetail({
   return (
     <>
       <div className="booking-detail__actions">
-        <button type="button" onClick={() => onAmend(booking)}>
+        {!booking.bookingGroup && <button type="button" onClick={() => onAmend(booking)}>
           {["Completed", "Cancelled"].includes(booking.lifecycleStatus)
             ? "Reopen and amend booking"
             : "Edit booking"}
-        </button>
-        {!["Completed", "Cancelled"].includes(booking.lifecycleStatus) && (
+        </button>}
+        {!booking.bookingGroup && !["Completed", "Cancelled"].includes(booking.lifecycleStatus) && (
           <button
             type="button"
             className="danger"
@@ -1563,7 +1599,7 @@ function BookingDetail({
           </button>
         )}
         {availableActions(booking, productionOrder)
-          .filter((action) => action !== "Production")
+          .filter((action) => action !== "Production" && (!booking.bookingGroup || !["Quoted", "QuotePdfRetry"].includes(action)))
           .map((action) => (
             <button
               key={action}
@@ -1759,7 +1795,7 @@ function BookingDetail({
               className="manager-document-action"
               disabled={quoteBusy || !booking.quoteState?.currentRevisionId || quoteNeedsRegeneration || booking.quoteState.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId)?.pdfStatus !== "saved"}
               aria-busy={quoteBusy ? true : undefined}
-              onClick={() => onOpenQuote(booking)}
+              onClick={() => { const current = booking.quoteState?.revisions.find(r => r.id === booking.quoteState?.currentRevisionId); if (booking.bookingGroup && current?.driveUrl) window.open(current.driveUrl, "_blank", "noopener,noreferrer"); else onOpenQuote(booking); }}
             >
               <strong>
                 {quoteBusy ? (
@@ -2281,12 +2317,18 @@ function AdditionalChargesModal({
 
 function CalendarView({
   bookings,
+  groups,
+  onSelectGroup,
+  busy,
   week,
   onWeekChange,
   onSelect,
   selectedId,
 }: {
   bookings: CanonicalBooking[];
+  groups: HospitalityBookingGroup[];
+  onSelectGroup: (group: HospitalityBookingGroup) => void;
+  busy: boolean;
   week: Date;
   onWeekChange: (week: Date) => void;
   onSelect: (booking: CanonicalBooking) => void;
@@ -2385,6 +2427,7 @@ function CalendarView({
           );
           return (
             <div className="calendar-day" key={key}>
+              {groups.filter(group => group.eventDate === key).map(group => <button className="calendar-booking" type="button" key={group.id} disabled={busy} onClick={() => onSelectGroup(group)}><span>{group.firstTime}–{group.lastTime} · {group.services.length} services</span><strong>{group.client.companyName}</strong><small>All Day Hospitality · {group.status}</small></button>)}
               {dailyBookings.map((booking) => {
                 const dietaryCount = Object.entries(
                   booking.dietaries || {},
@@ -2400,6 +2443,7 @@ function CalendarView({
                     }
                     type="button"
                     key={booking.canonicalId}
+                    disabled={busy}
                     onClick={() => onSelect(booking)}
                   >
                     <span>
@@ -2423,7 +2467,7 @@ function CalendarView({
                   </button>
                 );
               })}
-              {!dailyBookings.length && (
+              {!dailyBookings.length && !groups.some(group => group.eventDate === key) && (
                 <p className="calendar-day__empty">No bookings</p>
               )}
             </div>

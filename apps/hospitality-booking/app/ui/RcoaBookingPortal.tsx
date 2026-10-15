@@ -604,7 +604,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
             )}
 
             {view === "details" && (
-              <section aria-labelledby="rcoa-allday-event-title">
+              <section className={styles.allDayEventSection} aria-labelledby="rcoa-allday-event-title">
                 <div className={styles.sectionHeading}><p className={styles.eyebrow}>All Day Hospitality</p><h2 id="rcoa-allday-event-title">Tell us about the event.</h2><p>Entered once. The guest count and location below pre-fill each service, and you can change them service by service.</p></div>
                 <div className={styles.fieldGrid}>
                   <label className={`${styles.field} ${styles.fieldWide}`}><span>Event, lecture or meeting name <small>(optional)</small></span><input value={allDay.eventName} onChange={(event) => setAllDay((current) => ({ ...current, eventName: event.target.value }))} /></label>

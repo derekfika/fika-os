@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { hospitalityGroupProjection } from "./hospitality-group-projection";
 import { trustedPublicOrder } from "./hospitality-price-trust";
 import { loadMnkBookingCatalogue, mnkBookingPricingRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
@@ -1088,6 +1089,7 @@ export async function bookingWorkspace(siteId?: string, authorisedOplocId?: stri
   }));
   return {
     bookings: rows,
+    ...await hospitalityGroupProjection(rows, cpuRouting),
     ...(routed.length ? { cpuRouting } : {}),
     productionOrders: Object.fromEntries(orders),
     quoteSettings: await getDashboardQuoteSettings(dashboardIdForSite(siteId)),
@@ -1107,6 +1109,8 @@ export async function executeBookingWorkflow(
     if (!snapshot.exists) throw conflict("Booking was not found.");
     const current = snapshot.data() as CanonicalBooking;
     assertBookingExpectedVersion(current.version, expectedVersion, command.action);
+    if (current.bookingGroup?.id && command.action === "quote") throw conflict("Generate the consolidated quote from the booking group.");
+    if (command.action === "quote-pdf-status" && current.quoteState?.revisions.find(q => q.id === command.revisionId)?.groupQuoteId) throw conflict("Group quote artifacts are owned by the group quote workflow.");
     assertWorkflowCommand(current, command);
     const now = new Date().toISOString();
     const nextVersion = current.version + 1;
