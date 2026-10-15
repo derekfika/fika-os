@@ -140,6 +140,12 @@ type MenuProductionItem = {
   publicationStatus: string;
   scopes: Array<{ oplocId: string; label: string; operationalAreaId?: string }>;
   workstreams: CpuProductionWorkstream[];
+  routingDecided: boolean;
+  routingSuggestion: {
+    workstreams: CpuProductionWorkstream[];
+    confidence: "medium" | "none";
+    reason: string;
+  };
   sourceIds?: string[];
 };
 
@@ -926,11 +932,16 @@ function HospitalityMenuProductionRoutingPanel({
   const [includeArchived, setIncludeArchived] = useState(false);
   const [editor, setEditor] = useState<MenuProductionItem | "new" | null>(null);
   const [confirmation, setConfirmation] = useState<MenuProductionItem | null>(null);
+  const [bulkReviewed, setBulkReviewed] = useState<Record<string, boolean>>({});
+  const [bulkDraft, setBulkDraft] = useState<Record<string, { workstreams: CpuProductionWorkstream[]; inHouse: boolean }>>({});
+  const [bulkProgress, setBulkProgress] = useState<{ completed: number; total: number; current?: string } | null>(null);
   const [form, setForm] = useState({ name: "", category: "", description: "", lifecycleState: "active" as "active" | "archived" });
   useEffect(() => {
     setDraft(
       Object.fromEntries(items.map((item) => [item.canonicalId, item.workstreams])),
     );
+    setBulkDraft((current) => Object.fromEntries(items.filter((item) => !item.routingDecided && item.lifecycleState !== "archived").map((item) => [item.canonicalId, current[item.canonicalId] || { workstreams: item.routingSuggestion.workstreams, inHouse: false }])));
+    setBulkReviewed((current) => Object.fromEntries(items.filter((item) => !item.routingDecided && item.lifecycleState !== "archived").map((item) => [item.canonicalId, current[item.canonicalId] || false])));
   }, [items]);
   const visible = groupMenuItems(items.filter((item) => includeArchived || item.lifecycleState !== "archived")).filter((item) =>
     `${item.name} ${item.category} ${item.canonicalId} ${(item.sourceIds || []).join(" ")}`
@@ -1019,6 +1030,46 @@ function HospitalityMenuProductionRoutingPanel({
       setSaving("");
     }
   }
+  const bulkItems = items.filter((item) => !item.routingDecided && item.lifecycleState !== "archived").filter((item) => `${item.name} ${item.category} ${item.canonicalId}`.toLocaleLowerCase("en-GB").includes(query.trim().toLocaleLowerCase("en-GB")));
+  const approvedBulkItems = bulkItems.filter((item) => bulkReviewed[item.canonicalId]);
+  function toggleBulkWorkstream(id: string, workstream: CpuProductionWorkstream) {
+    setBulkDraft((current) => {
+      const draft = current[id] || { workstreams: [], inHouse: false };
+      const workstreams = draft.workstreams.includes(workstream) ? draft.workstreams.filter((value) => value !== workstream) : [...draft.workstreams, workstream];
+      return { ...current, [id]: { workstreams, inHouse: false } };
+    });
+  }
+  async function saveReviewedBulk() {
+    const invalid = approvedBulkItems.find((item) => {
+      const decision = bulkDraft[item.canonicalId];
+      return !decision || (!decision.inHouse && decision.workstreams.length === 0);
+    });
+    if (invalid) { setMessage(`Choose a CPU workstream or “No CPU / in house” for ${invalid.name} before saving.`); return; }
+    if (!approvedBulkItems.length) return;
+    setMessage(""); setBulkProgress({ completed: 0, total: approvedBulkItems.length });
+    let completed = 0;
+    for (const item of approvedBulkItems) {
+      setBulkProgress({ completed, total: approvedBulkItems.length, current: item.name });
+      try {
+        const decision = bulkDraft[item.canonicalId];
+        const send = () => fetch("/api/connections", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save-hospitality-menu-production-routing", menuItemId: item.canonicalId, workstreams: decision.inHouse ? [] : decision.workstreams, onlyIfUnrouted: true }) });
+        let response = await send();
+        if (response.status === 401 && (await refreshSession())) response = await send();
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error?.message || "The routing decision could not be saved.");
+        completed += 1;
+        setBulkProgress({ completed, total: approvedBulkItems.length, current: item.name });
+      } catch (error) {
+        setMessage(`${completed} of ${approvedBulkItems.length} reviewed decisions saved. ${item.name}: ${(error as Error).message} Reload the list to reconcile saved items.`);
+        setBulkProgress(null);
+        await reloadOverview();
+        return;
+      }
+    }
+    await refreshSession(); await reloadOverview();
+    setMessage(`${completed} reviewed routing decision${completed === 1 ? "" : "s"} saved through the governed routing command.`);
+    setBulkProgress(null); setBulkReviewed({});
+  }
   return (
     <section className="connection-workspace menu-routing-workspace">
       <div className="connection-workspace__intro">
@@ -1045,6 +1096,27 @@ function HospitalityMenuProductionRoutingPanel({
         <p className="form-help" role="status">
           {message}
         </p>
+      )}
+      {bulkItems.length > 0 && (
+        <section className="menu-routing-bulk" aria-labelledby="bulk-routing-title">
+          <div className="menu-routing-bulk__header">
+            <div><h2 id="bulk-routing-title">Review unclassified items</h2><p>{bulkItems.length} active canonical item{bulkItems.length === 1 ? "" : "s"} without a routing record. Suggestions use exact provider source IDs only; item names are not used to infer routing.</p></div>
+            <button className="primary" type="button" disabled={!canManage || !approvedBulkItems.length || Boolean(bulkProgress)} onClick={() => void saveReviewedBulk()}>{bulkProgress ? "Saving reviewed decisions…" : `Save ${approvedBulkItems.length} reviewed`}</button>
+          </div>
+          {bulkProgress && <div className="menu-routing-progress" role="status" aria-live="polite"><progress aria-label="Routing save progress" value={bulkProgress.completed} max={bulkProgress.total} /> <span>Saving {bulkProgress.completed} of {bulkProgress.total}{bulkProgress.current ? ` · ${bulkProgress.current}` : ""}. Keep this page open.</span></div>}
+          <div className="menu-routing-bulk__list">
+            {bulkItems.map((item) => {
+              const decision = bulkDraft[item.canonicalId] || { workstreams: [], inHouse: false };
+              return <article className="menu-routing-bulk__row" key={item.canonicalId}>
+                <div className="menu-routing-bulk__item"><label><input type="checkbox" checked={Boolean(bulkReviewed[item.canonicalId])} disabled={!canManage || Boolean(bulkProgress)} onChange={(event) => setBulkReviewed((current) => ({ ...current, [item.canonicalId]: event.target.checked }))} /> Review and approve</label><h3>{item.name}</h3><p>{item.category} · {item.canonicalId}</p><p><strong>Suggestion · {item.routingSuggestion.confidence === "medium" ? "Medium confidence" : "No evidence"}</strong> — {item.routingSuggestion.reason}</p></div>
+                <fieldset disabled={!canManage || Boolean(bulkProgress)}><legend>Operator decision</legend>
+                  {(["sandwiches", "hospitality", "delivered_in"] as CpuProductionWorkstream[]).map((workstream) => <label key={workstream}><input type="checkbox" checked={decision.workstreams.includes(workstream)} onChange={() => toggleBulkWorkstream(item.canonicalId, workstream)} /> {CPU_PRODUCTION_WORKSTREAM_LABELS[workstream]}</label>)}
+                  <label><input type="checkbox" checked={decision.inHouse} onChange={(event) => setBulkDraft((current) => ({ ...current, [item.canonicalId]: { workstreams: [], inHouse: event.target.checked } }))} /> No CPU / in house</label>
+                </fieldset>
+              </article>;
+            })}
+          </div>
+        </section>
       )}
       {visible.length ? (
         <div className="menu-routing-list">

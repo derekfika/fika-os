@@ -13,7 +13,7 @@ export const DESTINATION_PROJECT = "fika-os-dev";
 export const DESTINATION_DATABASE = "(default)";
 export const CORE_ENTITY_TYPES = ["OPLOC", "Address", "Hospitality Menu Item", "Hospitality Menu Offering", "Hospitality Menu Price"] as const;
 export const EXPECTED_CORE_COUNTS: Record<CoreEntityType, number> = { OPLOC: 23, Address: 7, "Hospitality Menu Item": 43, "Hospitality Menu Offering": 43, "Hospitality Menu Price": 42 };
-export const PROVENANCE_COLLECTIONS = ["integrationHubCanonicalRevisions", "integrationHubSourceMappings", "integrationHubGovernanceAudit"] as const;
+export const PROVENANCE_COLLECTIONS = ["integrationHubCanonicalRevisions", "integrationHubSourceMappings", "integrationHubGovernanceAudit", "integrationHubHospitalityMenuProductionRouting"] as const;
 export const PROTECTED_COLLECTION_PREFIXES = ["authmod"] as const;
 export const PROTECTED_COLLECTIONS = [
   "authmodIdentities", "authmodCustodianAssignments", "authmodApplications", "authmodSiteAssignments",
@@ -263,6 +263,7 @@ export async function runDryRun(options: { sourceExport?: string; execute?: bool
       integrationHubCanonicalRevisions: await readCollection(source.db, "integrationHubCanonicalRevisions"),
       integrationHubSourceMappings: await readCollection(source.db, "integrationHubSourceMappings"),
       integrationHubGovernanceAudit: await readCollection(source.db, "integrationHubGovernanceAudit"),
+      integrationHubHospitalityMenuProductionRouting: await readCollection(source.db, "integrationHubHospitalityMenuProductionRouting"),
     };
     const selected = selectBatch1(canonical, provenanceDocs);
     const selectedRecords = [...selected.core, ...selected.provenance];

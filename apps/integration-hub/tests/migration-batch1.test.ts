@@ -21,15 +21,23 @@ test("selection excludes unallowlisted entities and selects directly related pro
   const legend = fake("legend-doc", { canonicalId: "legend:one", entityType: "Legend", publicationStatus: "published", lifecycleStatus: "published" });
   const revision = fake("revision-doc", { canonicalId: "oploc:one", entityType: "OPLOC" });
   const unrelated = fake("unrelated-doc", { canonicalId: "oploc:other", entityType: "OPLOC" });
-  const result = selectBatch1([selectedCanonical, address, legend, unrelated], { integrationHubCanonicalRevisions: [revision], integrationHubSourceMappings: [], integrationHubGovernanceAudit: [] });
+  const result = selectBatch1([selectedCanonical, address, legend, unrelated], { integrationHubCanonicalRevisions: [revision], integrationHubSourceMappings: [], integrationHubGovernanceAudit: [], integrationHubHospitalityMenuProductionRouting: [] });
   assert.deepEqual(result.core.map(item => item.canonicalId), ["oploc:one", "address:one"]);
   assert.deepEqual(result.provenance.map(item => item.id), ["revision-doc"]);
 });
 
 test("published OPLOCs use lifecycle status when legacy publicationStatus is absent", () => {
   const oploc = fake("oploc-legacy-publication", { canonicalId: "oploc:legacy-publication", entityType: "OPLOC", lifecycleStatus: "published" });
-  const selected = selectBatch1([oploc], { integrationHubCanonicalRevisions: [], integrationHubSourceMappings: [], integrationHubGovernanceAudit: [] });
+  const selected = selectBatch1([oploc], { integrationHubCanonicalRevisions: [], integrationHubSourceMappings: [], integrationHubGovernanceAudit: [], integrationHubHospitalityMenuProductionRouting: [] });
   assert.deepEqual(selected.core.map(record => record.canonicalId), ["oploc:legacy-publication"]);
+});
+
+test("batch 1 carries menu production routing with its selected canonical menu item", () => {
+  const menu = fake("menu-doc", { canonicalId: "hospitality-menu-item:mnk:cookie_box", entityType: "Hospitality Menu Item", publicationStatus: "published", lifecycleStatus: "published", record: { name: "Cookies" } });
+  const routing = fake("hospitality-menu-item_mnk_cookie_box", { menuItemId: "hospitality-menu-item:mnk:cookie_box", workstreams: ["hospitality"], version: 1 });
+  const unrelated = fake("other-route", { menuItemId: "hospitality-menu-item:other:item", workstreams: ["sandwiches"] });
+  const selected = selectBatch1([menu], { integrationHubCanonicalRevisions: [], integrationHubSourceMappings: [], integrationHubGovernanceAudit: [], integrationHubHospitalityMenuProductionRouting: [routing, unrelated] });
+  assert.deepEqual(selected.provenance.filter(record => record.collection === "integrationHubHospitalityMenuProductionRouting").map(record => record.id), ["hospitality-menu-item_mnk_cookie_box"]);
 });
 
 test("hash is deterministic and preserves document identity separately", () => {

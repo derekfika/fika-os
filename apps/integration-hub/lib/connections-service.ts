@@ -17,6 +17,7 @@ import {
 import { sha256 } from "./profiler";
 import type { CanonicalRecord } from "./types";
 import { adaptCpuProductionWorkstreams, type CpuProductionWorkstream } from "../../shared/production-workstreams";
+import { LEGACY_HOSPITALITY_MENU_ROUTING, suggestHospitalityMenuRouting } from "./hospitality-routing-suggestions";
 
 const canonical = () => db.collection("integrationHubCanonical");
 const revisions = () => db.collection("integrationHubCanonicalRevisions");
@@ -24,26 +25,6 @@ const audit = () => db.collection("integrationHubGovernanceAudit");
 const menuProductionRouting = () => db.collection("integrationHubHospitalityMenuProductionRouting");
 
 export type ProductionDashboardView = CpuProductionWorkstream;
-
-// Transitional provider identities retained by older hospitality hand-offs.
-// These are stable source keys, not display-name matching. They remain only
-// until those historical offerings are reconciled to canonical Menu Items.
-const LEGACY_HOSPITALITY_MENU_ROUTING: Record<string, ProductionDashboardView[]> = {
-  "deli-style-sandwich": ["sandwiches"],
-  // The canonical MNK migration retained the source key with underscores.
-  // Keep both spellings while restored/local workspaces catch up with their
-  // explicit Connections routing records.
-  "deli_sandwich_lunch": ["sandwiches"],
-  "exotic-fruit-box": ["hospitality"],
-  "exotic_fruit_box": ["hospitality"],
-  "mini-traybake-bites": ["hospitality"],
-  "mini_pastries": ["hospitality"],
-  "filled_savoury_croissant": ["hospitality"],
-  "cookie_box": ["hospitality"],
-  "large_pastries": ["hospitality"],
-  "tray_bake_box": ["hospitality"],
-  "vegan_savoury_croissant": ["hospitality"],
-};
 
 /** Read-only projection consumed by the CPU dashboards. */
 export async function hospitalityMenuProductionRouting(menuItemIds?: string[]): Promise<Record<string, ProductionDashboardView[]>> {
@@ -87,6 +68,7 @@ export type ConnectionCommand =
       action: "save-hospitality-menu-production-routing";
       menuItemId: string;
       workstreams: CpuProductionWorkstream[];
+      onlyIfUnrouted?: boolean;
     }
   | {
       action: "save-employment-connection";
@@ -158,6 +140,8 @@ export async function connectionsOverview() {
       version: Number(record.record.version || 1),
       lifecycleState: String(record.record.lifecycleState || "active"),
       publicationStatus: record.publicationStatus,
+      routingDecided: routingSnapshot.docs.some(doc => doc.id === stableDocumentId(record.canonicalId)),
+      routingSuggestion: suggestHospitalityMenuRouting(record.record.providerMappings),
       scopes: records.filter(candidate => candidate.entityType === "Hospitality Menu Offering" && candidate.record.hospitalityMenuItemId === record.canonicalId).map(offering => ({ oplocId: String(offering.record.oplocId), label: String(records.find(candidate => candidate.canonicalId === offering.record.oplocId)?.record.approvedName || offering.record.oplocId), operationalAreaId: offering.record.operationalAreaId ? String(offering.record.operationalAreaId) : undefined })).filter((scope, index, all) => all.findIndex(candidate => candidate.oplocId === scope.oplocId && candidate.operationalAreaId === scope.operationalAreaId) === index),
       workstreams: (() => {
         const routing = routingSnapshot.docs.find(doc => doc.id === stableDocumentId(record.canonicalId))?.data();
@@ -478,13 +462,17 @@ export async function saveConnectionCommand(
     });
   } else if (command.action === "save-hospitality-menu-production-routing") {
     assertPermission(actor, "canonical.edit");
-    const item = await canonical().doc(stableDocumentId(command.menuItemId)).get();
-    if (!item.exists || (item.data() as CanonicalRecord).entityType !== "Hospitality Menu Item") throw new Error("Choose a valid Hospitality Menu Item.");
     const now = new Date().toISOString();
     const ref = menuProductionRouting().doc(stableDocumentId(command.menuItemId));
-    const current = (await ref.get()).data() || {};
+    const itemRef = canonical().doc(stableDocumentId(command.menuItemId));
     const workstreams = Array.from(new Set(command.workstreams));
     await db.runTransaction(async transaction => {
+      const itemSnapshot = await transaction.get(itemRef);
+      const currentSnapshot = await transaction.get(ref);
+      const item = itemSnapshot.data() as CanonicalRecord | undefined;
+      if (!itemSnapshot.exists || item?.entityType !== "Hospitality Menu Item" || item.record.lifecycleState === "archived") throw new Error("Choose an active Hospitality Menu Item.");
+      if (command.onlyIfUnrouted && currentSnapshot.exists) throw new Error("This item already has a routing decision. Reload the review list before saving.");
+      const current = currentSnapshot.data() || {};
       transaction.set(ref, { menuItemId: command.menuItemId, workstreams, version: Number(current.version || 0) + 1, createdAt: current.createdAt || now, updatedAt: now, updatedBy: actor.uid }, { merge: true });
       transaction.create(audit().doc(crypto.randomUUID()), { action: "Hospitality Menu Item production workstream routing updated", entityReference: command.menuItemId, actorId: actor.uid, actorName: actor.name, timestamp: now, reason: `Assigned to ${workstreams.length ? workstreams.join(" and ") : "no"} production workstream${workstreams.length === 1 ? "" : "s"}.` });
     });

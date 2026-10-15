@@ -10,6 +10,7 @@ export type EmulatorInventory = {
   exportedAt: string;
   collections: { path: string; documentCount: number; contentHash: string; schemaVersions: string[] }[];
   aggregateHash: string;
+  hospitalityMenuProductionRouting?: { path: "integrationHubHospitalityMenuProductionRouting"; documentCount: number; contentHash: string | null };
   exportFiles?: { path: string; bytes: number; sha256: string }[];
 };
 
@@ -48,7 +49,8 @@ export async function createInventory(exportRoot?: string): Promise<EmulatorInve
   const collections: EmulatorInventory["collections"] = [];
   for (const collection of await db.listCollections()) await inspectCollection(collection, collections);
   collections.sort((a, b) => a.path.localeCompare(b.path));
-  const inventory: EmulatorInventory = { format: "fika.integration-hub-emulator-inventory.v1", projectId: process.env.FIREBASE_PROJECT_ID || "", exportedAt: new Date().toISOString(), collections, aggregateHash: crypto.createHash("sha256").update(stable(collections)).digest("hex") };
+  const routingCollection = collections.find(collection => collection.path === "integrationHubHospitalityMenuProductionRouting");
+  const inventory: EmulatorInventory = { format: "fika.integration-hub-emulator-inventory.v1", projectId: process.env.FIREBASE_PROJECT_ID || "", exportedAt: new Date().toISOString(), collections, aggregateHash: crypto.createHash("sha256").update(stable(collections)).digest("hex"), hospitalityMenuProductionRouting: { path: "integrationHubHospitalityMenuProductionRouting", documentCount: routingCollection?.documentCount || 0, contentHash: routingCollection?.contentHash || null } };
   if (exportRoot && fs.existsSync(exportRoot)) inventory.exportFiles = walk(exportRoot).filter(file => path.basename(file) !== "inventory.json").map(file => ({ path: path.relative(exportRoot, file).replaceAll("\\", "/"), bytes: fs.statSync(file).size, sha256: crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex") })).sort((a, b) => a.path.localeCompare(b.path));
   return inventory;
 }

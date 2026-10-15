@@ -79,7 +79,7 @@ export async function runBatch2(options: { sourceExport?: string; execute?: bool
     const destinationApp = initializeApp({ projectId: "fika-os-dev" }, `fika-batch2-destination-${process.pid}`);
     const destination = getFirestore(destinationApp);
     const canonical = await readCollection(source.db, "integrationHubCanonical");
-    const provenanceDocs = { integrationHubCanonicalRevisions: await readCollection(source.db, "integrationHubCanonicalRevisions"), integrationHubSourceMappings: await readCollection(source.db, "integrationHubSourceMappings"), integrationHubGovernanceAudit: await readCollection(source.db, "integrationHubGovernanceAudit") };
+    const provenanceDocs = { integrationHubCanonicalRevisions: await readCollection(source.db, "integrationHubCanonicalRevisions"), integrationHubSourceMappings: await readCollection(source.db, "integrationHubSourceMappings"), integrationHubGovernanceAudit: await readCollection(source.db, "integrationHubGovernanceAudit"), integrationHubHospitalityMenuProductionRouting: await readCollection(source.db, "integrationHubHospitalityMenuProductionRouting") };
     const selected = selectBatch2(canonical, provenanceDocs);
     const batch1Ids = new Set(canonical.filter(document => BATCH1_ENTITY_TYPES.has(String(document.data().entityType))).map(document => String(document.data().canonicalId || "")).filter(Boolean));
     const selectedRecords = [...selected.core, ...selected.provenance];
