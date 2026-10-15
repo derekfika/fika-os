@@ -1,3 +1,5 @@
+import { governedLabourViolation } from "../../shared/hospitality-labour-rates";
+
 export type BookingAdditionalChargeCategory = "labour" | "equipment" | "service" | "other";
 export type LabourRateSetting = { id: string; label: string; hourlyRate?: number };
 
@@ -22,7 +24,7 @@ export type BookingAdditionalChargeInput =
         hoursPerPerson: number;
         hourlyRate: number;
         multiplier: number;
-        rateSource: "configured" | "custom";
+        rateSource: "governed" | "configured" | "custom";
       };
     };
 
@@ -103,7 +105,7 @@ export function calculateAdditionalCharge(input: BookingAdditionalChargeInput) {
 
   if (input.category !== "labour") fail("Labour charges must use the labour category.");
   const labour = input.labour;
-  if (!labour || !["configured", "custom"].includes(labour.rateSource)) fail("Choose a valid labour rate source.");
+  if (!labour || !["governed", "configured", "custom"].includes(labour.rateSource)) fail("Choose a valid labour rate source.");
   const roleLabel = String(labour.roleLabel || "").trim();
   if (!roleLabel || roleLabel.length > 100) fail("Labour roles must have a name of 1 to 100 characters.");
   if (labour.roleId !== undefined && !/^[A-Za-z0-9_-]{1,80}$/.test(labour.roleId)) fail("The selected labour role is invalid.");
@@ -113,8 +115,8 @@ export function calculateAdditionalCharge(input: BookingAdditionalChargeInput) {
   requirePositive(labour.hourlyRate, "Hourly rate", 1000);
   if (!Number.isFinite(labour.multiplier) || labour.multiplier < 0.25 || labour.multiplier > 5)
     fail("The rate multiplier must be between 0.25× and 5×.");
-  if (labour.rateSource === "configured" && !labour.roleId)
-    fail("A configured labour rate must reference a configured role.");
+  if ((labour.rateSource === "configured" || labour.rateSource === "governed") && !labour.roleId)
+    fail("A configured or governed labour rate must reference a role.");
 
   const canonicalLabour = { ...labour, roleLabel };
   const quantity = labour.staffCount * labour.hoursPerPerson;
@@ -132,6 +134,10 @@ export function validateStoredAdditionalCharge(charge: BookingAdditionalCharge) 
   if (calculated.quantity !== charge.quantity || calculated.unitNet !== charge.unitNet || calculated.netTotal !== charge.netTotal)
     fail("A stored additional charge does not match its server-calculated amount. Review the Booking before quoting.");
   return calculated;
+}
+
+function labourContent(existing: Extract<BookingAdditionalCharge, { kind: "labour" }>) {
+  return { id: existing.id, kind: existing.kind, category: existing.category, label: existing.label, quantity: existing.quantity, unitNet: existing.unitNet, netTotal: existing.netTotal, labour: existing.labour };
 }
 
 export function normalizeBookingAdditionalCharges(
@@ -158,6 +164,13 @@ export function normalizeBookingAdditionalCharges(
         fail("That configured labour rate is unavailable or has changed. Refresh the rate or enter a custom hourly rate.");
     }
     const content = { ...calculated, ...(calculated.kind === "labour" ? { labour: structuredClone(calculated.labour) } : {}) };
+    if (calculated.kind === "labour") {
+      // CEO-approved labour rates are locked. Only a NEW or CHANGED line is held to the governed table;
+      // an unchanged stored line (including a legacy custom/configured rate) is preserved exactly as saved.
+      const unchangedStored = existing?.kind === "labour" && JSON.stringify(labourContent(existing)) === JSON.stringify(content);
+      const violation = unchangedStored ? null : governedLabourViolation(calculated.labour);
+      if (violation) fail(violation);
+    }
     if (existing) {
       const oldContent = existing.kind === "labour"
         ? { id: existing.id, kind: existing.kind, category: existing.category, label: existing.label, quantity: existing.quantity, unitNet: existing.unitNet, netTotal: existing.netTotal, labour: existing.labour }

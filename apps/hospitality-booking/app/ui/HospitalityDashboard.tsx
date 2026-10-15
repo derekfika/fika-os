@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { FormEvent } from "react";
 import { MailSearch, RefreshCw, Settings } from "lucide-react";
-import type { BookingAdditionalChargeInput, CanonicalBooking, ProductionOrder, DashboardQuoteSettings, LabourRateSetting } from "@/lib/canonical-types";
+import type { BookingAdditionalChargeInput, BookingAdditionalChargeLabour, CanonicalBooking, ProductionOrder, DashboardQuoteSettings, LabourRateSetting } from "@/lib/canonical-types";
 import { dailyRunSheetHtml } from "../../lib/run-sheet";
 import { quoteHtml } from "../../lib/quote-document";
+import { APPROVED_LABOUR_ROLES, MAX_HOURS, MAX_STAFF, OVERTIME_MULTIPLIER, calculateLabour, findApprovedRole, isApprovedLabourLine } from "../../lib/labour-rates";
 import { fetchQuoteRequest } from "../../lib/quote-request";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
 import { MENU_FORMAT_OPTIONS, menuFormatsForSiteKey, menuOutputKey, mnkMenuHtml } from "../../lib/mnk-menu-output";
@@ -1158,7 +1159,6 @@ export default function HospitalityDashboard({
                   booking={selected}
                   siteKey={site.key}
                   siteLabel={currentSiteLabel}
-                  labourRates={quoteSettings?.labourRates ?? defaultLabourRates}
                   productionOrder={selectedProductionOrder}
                   menuOutput={selectedMenuOutput}
                   menuStale={selectedMenuStale}
@@ -1397,7 +1397,6 @@ function BookingPane({
   booking,
   siteKey,
   siteLabel,
-  labourRates,
   productionOrder,
   menuOutput,
   menuStale,
@@ -1426,7 +1425,6 @@ function BookingPane({
   booking: CanonicalBooking;
   siteKey: PortalSiteKey;
   siteLabel: string;
-  labourRates: LabourRateSetting[];
   productionOrder?: ProductionOrder;
   menuOutput?: MenuOutput;
   menuStale: boolean;
@@ -1477,7 +1475,6 @@ function BookingPane({
     <BookingDetail
       booking={booking}
       siteLabel={siteLabel}
-      labourRates={labourRates}
       productionOrder={productionOrder}
       menuOutput={menuOutput}
       menuStale={menuStale}
@@ -1513,7 +1510,6 @@ function MatrixDiagnostics({ bookingId, detail }: { bookingId: string; detail?: 
 function BookingDetail({
   booking,
   siteLabel,
-  labourRates,
   productionOrder,
   menuOutput,
   menuStale,
@@ -1537,7 +1533,6 @@ function BookingDetail({
 }: {
   booking: CanonicalBooking;
   siteLabel: string;
-  labourRates: LabourRateSetting[];
   productionOrder?: ProductionOrder;
   menuOutput?: MenuOutput;
   menuStale: boolean;
@@ -2043,7 +2038,6 @@ function BookingDetail({
       {additionalChargesOpen && (
         <AdditionalChargesModal
           booking={booking}
-          labourRates={labourRates}
           busy={additionalChargeBusy}
           onCancel={() => setAdditionalChargesOpen(false)}
           onSave={async (charges) => {
@@ -2057,8 +2051,17 @@ function BookingDetail({
 }
 
 type ManualChargeEditor = { kind: "manual"; id?: string; category: "equipment" | "service" | "other"; label: string; quantity: string; unitNet: string };
-type LabourChargeEditor = { kind: "labour"; id?: string; label: string; roleId?: string; roleLabel: string; staffCount: string; hoursPerPerson: string; hourlyRate: string; multiplier: string; rateSource: "configured" | "custom" };
+/** Operators pick only an approved role, staff, hours and Normal/Overtime; rates are locked in lib/labour-rates.ts. */
+type LabourChargeEditor = { kind: "labour"; id?: string; label: string; roleId: string; staffCount: string; hoursPerPerson: string; overtime: boolean };
 type ChargeEditor = ManualChargeEditor | LabourChargeEditor;
+
+function labourEditorValues(editor: LabourChargeEditor) {
+  const result = calculateLabour({ roleId: editor.roleId, staffCount: Number(editor.staffCount), hours: Number(editor.hoursPerPerson), overtime: editor.overtime });
+  const role = findApprovedRole(editor.roleId);
+  return result.ok
+    ? { valid: true as const, roleLabel: result.value.role.label, net: result.value.net }
+    : { valid: false as const, roleLabel: role?.label ?? "", net: 0 };
+}
 
 function storedChargeInput(charge: NonNullable<CanonicalBooking["additionalCharges"]>[number]): BookingAdditionalChargeInput {
   if (charge.kind === "manual") return { id: charge.id, kind: "manual", category: charge.category, label: charge.label, quantity: charge.quantity, unitNet: charge.unitNet };
@@ -2084,13 +2087,11 @@ function newStableId() {
 
 function AdditionalChargesModal({
   booking,
-  labourRates,
   busy,
   onCancel,
   onSave,
 }: {
   booking: CanonicalBooking;
-  labourRates: LabourRateSetting[];
   busy: boolean;
   onCancel: () => void;
   onSave: (charges: BookingAdditionalChargeInput[]) => Promise<void>;
@@ -2108,13 +2109,6 @@ function AdditionalChargesModal({
   busyRef.current = busy || saving;
   const hasChanges = JSON.stringify(charges) !== original.current;
   const subtotal = charges.reduce((total, charge) => total + previewChargeNet(charge), 0);
-  const labourRateOptions = editor?.kind === "labour" && editor.roleId && !labourRates.some((rate) => rate.id === editor.roleId)
-    ? [...labourRates, { id: editor.roleId, label: editor.roleLabel, hourlyRate: Number(editor.hourlyRate) }]
-    : labourRates;
-  const storedEditorCharge = editor?.kind === "labour" && editor.id
-    ? booking.additionalCharges?.find((charge) => charge.id === editor.id)
-    : undefined;
-  const keepsStoredConfiguredRate = editor?.kind === "labour" && storedEditorCharge?.kind === "labour" && storedEditorCharge.labour.roleId === editor.roleId && storedEditorCharge.labour.rateSource === "configured" && storedEditorCharge.labour.hourlyRate === Number(editor.hourlyRate);
 
   useEffect(() => {
     const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -2155,11 +2149,12 @@ function AdditionalChargesModal({
   const openLabourEditor = (charge?: Extract<BookingAdditionalChargeInput, { kind: "labour" }>) => {
     setError("");
     if (charge) {
-      setEditor({ kind: "labour", id: charge.id, label: charge.label, roleId: charge.labour.roleId, roleLabel: charge.labour.roleLabel, staffCount: String(charge.labour.staffCount), hoursPerPerson: String(charge.labour.hoursPerPerson), hourlyRate: String(charge.labour.hourlyRate), multiplier: String(charge.labour.multiplier), rateSource: charge.labour.rateSource });
+      // Only lines at an approved locked rate can be edited; legacy lines are view/remove-only (see the line list).
+      if (!isApprovedLabourLine(charge.labour)) return;
+      setEditor({ kind: "labour", id: charge.id, label: charge.label, roleId: charge.labour.roleId!, staffCount: String(charge.labour.staffCount), hoursPerPerson: String(charge.labour.hoursPerPerson), overtime: charge.labour.multiplier === OVERTIME_MULTIPLIER });
       return;
     }
-    const firstRate = labourRates.find((rate) => Number(rate.hourlyRate) > 0);
-    setEditor({ kind: "labour", label: "", roleId: firstRate?.id, roleLabel: firstRate?.label || "", staffCount: "1", hoursPerPerson: "1", hourlyRate: firstRate ? String(firstRate.hourlyRate) : "", multiplier: "1", rateSource: firstRate ? "configured" : "custom" });
+    setEditor({ kind: "labour", label: "", roleId: APPROVED_LABOUR_ROLES[0].id, staffCount: "1", hoursPerPerson: "1", overtime: false });
   };
   const changeLabour = (patch: Partial<LabourChargeEditor>) => setEditor((current) => current?.kind === "labour" ? { ...current, ...patch } : current);
   const saveLine = (event: FormEvent<HTMLFormElement>) => {
@@ -2180,27 +2175,17 @@ function AdditionalChargesModal({
       }
       setCharges((current) => editor.id ? current.map((charge) => charge.id === editor.id ? line : charge) : [...current, line]);
     } else {
-      const selectedRate = editor.roleId ? labourRateOptions.find((rate) => rate.id === editor.roleId) : undefined;
-      const labour = {
-        ...(editor.roleId ? { roleId: editor.roleId } : {}),
-        roleLabel: editor.roleLabel.trim(),
-        staffCount: Number(editor.staffCount),
-        hoursPerPerson: Number(editor.hoursPerPerson),
-        hourlyRate: Number(editor.hourlyRate),
-        multiplier: Number(editor.multiplier),
-        rateSource: editor.rateSource,
-      } as const;
+      const staffCount = Number(editor.staffCount);
+      const hoursPerPerson = Number(editor.hoursPerPerson);
+      const result = calculateLabour({ roleId: editor.roleId, staffCount, hours: hoursPerPerson, overtime: editor.overtime });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      // "governed" = the CEO-approved locked table; the Hub re-validates role, exact rate and 1×/1.5× for every new or changed line.
+      const labour: BookingAdditionalChargeLabour = { roleId: result.value.role.id, roleLabel: result.value.role.label, staffCount, hoursPerPerson, hourlyRate: result.value.hourlyRate, multiplier: result.value.multiplier, rateSource: "governed" };
       const label = editor.label.trim() || `${labour.roleLabel} labour`;
       const line: Extract<BookingAdditionalChargeInput, { kind: "labour" }> = { id: editor.id || newStableId(), kind: "labour", category: "labour", label, labour };
-      if (!labour.roleLabel || !Number.isInteger(labour.staffCount) || labour.staffCount < 1 || !Number.isFinite(labour.hoursPerPerson) || labour.hoursPerPerson <= 0 || !Number.isFinite(labour.hourlyRate) || labour.hourlyRate <= 0 || !Number.isFinite(labour.multiplier) || labour.multiplier < 0.25 || labour.multiplier > 5) {
-        setError("Enter a role, staff count, hours, positive hourly rate and multiplier between 0.25× and 5×.");
-        return;
-      }
-      const matchesConfiguredRate = Number(selectedRate?.hourlyRate) > 0 && selectedRate?.hourlyRate === labour.hourlyRate;
-      if (editor.rateSource === "configured" && !matchesConfiguredRate && !keepsStoredConfiguredRate) {
-        setError("That configured role rate is unavailable. Choose a configured rate or enter a custom hourly rate.");
-        return;
-      }
       if (previewChargeNet(line) <= 0 || previewChargeNet(line) > 1_000_000) {
         setError("The calculated labour total must be greater than £0 and no more than £1,000,000.");
         return;
@@ -2220,9 +2205,8 @@ function AdditionalChargesModal({
       setSaving(false);
     }
   };
-  const labourPreview = editor?.kind === "labour"
-    ? previewChargeNet({ id: editor.id || "charge-preview", kind: "labour", category: "labour", label: editor.label || `${editor.roleLabel} labour`, labour: { ...(editor.roleId ? { roleId: editor.roleId } : {}), roleLabel: editor.roleLabel, staffCount: Number(editor.staffCount), hoursPerPerson: Number(editor.hoursPerPerson), hourlyRate: Number(editor.hourlyRate), multiplier: Number(editor.multiplier), rateSource: editor.rateSource } })
-    : 0;
+  const editorLabour = editor?.kind === "labour" ? labourEditorValues(editor) : undefined;
+  const labourPreview = editorLabour?.valid ? editorLabour.net : 0;
 
   return (
     <div className="modal-backdrop additional-charges-backdrop" role="presentation">
@@ -2248,7 +2232,7 @@ function AdditionalChargesModal({
               </div>
               <strong className="additional-charge-row__amount">£{previewChargeNet(charge).toFixed(2)} net</strong>
               <div className="additional-charge-row__actions">
-                <button type="button" onClick={() => charge.kind === "manual" ? openManualEditor(charge) : openLabourEditor(charge)}>Edit</button>
+                {charge.kind === "manual" ? <button type="button" onClick={() => openManualEditor(charge)}>Edit</button> : isApprovedLabourLine(charge.labour) ? <button type="button" onClick={() => openLabourEditor(charge)}>Edit</button> : <span className="additional-charge-legacy">Legacy rate · remove to replace</span>}
                 <button type="button" onClick={() => setCharges((current) => current.filter((currentCharge) => currentCharge.id !== charge.id))}>Remove</button>
               </div>
             </article>
@@ -2270,36 +2254,18 @@ function AdditionalChargesModal({
         {editor?.kind === "labour" && (
           <form className="additional-charge-editor" onSubmit={saveLine}>
             <h3>{editor.id ? "Edit labour charge" : "Labour calculator"}</h3>
-            <label>Role<select value={editor.roleId || "custom"} onChange={(event) => {
-              if (event.target.value === "custom") changeLabour({ roleId: undefined, roleLabel: "", hourlyRate: "", rateSource: "custom" });
-              else {
-                const role = labourRates.find((rate) => rate.id === event.target.value);
-                const configured = Number(role?.hourlyRate) > 0;
-                changeLabour({ roleId: role?.id, roleLabel: role?.label || "", hourlyRate: configured ? String(role?.hourlyRate) : "", rateSource: configured ? "configured" : "custom" });
-              }
-            }}><option value="custom">Custom role</option>{labourRateOptions.map((rate) => <option key={rate.id} value={rate.id}>{rate.label}{Number(rate.hourlyRate) > 0 ? ` · £${Number(rate.hourlyRate).toFixed(2)}/hr` : " · rate not configured"}</option>)}</select></label>
-            {!editor.roleId && <label>Role name<input value={editor.roleLabel} maxLength={100} onChange={(event) => changeLabour({ roleLabel: event.target.value })} required /></label>}
-            <label>Charge label<input value={editor.label} placeholder={`${editor.roleLabel || "Labour"} labour`} maxLength={120} onChange={(event) => changeLabour({ label: event.target.value })} /></label>
-            <div className="additional-charge-editor__grid">
-              <label>Staff count<input type="number" min="1" max="100" step="1" value={editor.staffCount} onChange={(event) => changeLabour({ staffCount: event.target.value })} required /></label>
-              <label>Hours per person<input type="number" min="0.25" max="168" step="0.25" value={editor.hoursPerPerson} onChange={(event) => changeLabour({ hoursPerPerson: event.target.value })} required /></label>
-            </div>
-            <label>Hourly rate source<select value={editor.rateSource} onChange={(event) => {
-              const source = event.target.value as LabourChargeEditor["rateSource"];
-              const configuredRate = Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate);
-              changeLabour({ rateSource: source, hourlyRate: source === "configured" && configuredRate > 0 ? String(configuredRate) : editor.hourlyRate });
-            }}>
-              <option value="custom">Enter a custom net rate</option>
-              {Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate) > 0 && <option value="configured">{keepsStoredConfiguredRate && Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate) !== Number(editor.hourlyRate) ? `Keep saved rate (£${Number(editor.hourlyRate).toFixed(2)}; current default £${Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate).toFixed(2)})` : `Use configured rate (£${Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate).toFixed(2)})`}</option>}
+            <label>Role<select value={editor.roleId} onChange={(event) => changeLabour({ roleId: event.target.value })}>
+              {APPROVED_LABOUR_ROLES.map((role) => <option key={role.id} value={role.id}>{role.label}</option>)}
             </select></label>
-            <label>Base hourly rate (£ net)<input type="number" min="0.01" max="1000" step="0.01" value={editor.hourlyRate} disabled={editor.rateSource === "configured"} onChange={(event) => changeLabour({ hourlyRate: event.target.value })} required /></label>
+            <label>Charge label<input value={editor.label} placeholder={`${editorLabour?.roleLabel || "Labour"} labour`} maxLength={120} onChange={(event) => changeLabour({ label: event.target.value })} /></label>
             <div className="additional-charge-editor__grid">
-              <label>Rate multiplier<select value={["1", "1.5", "2"].includes(editor.multiplier) ? editor.multiplier : "custom"} onChange={(event) => changeLabour({ multiplier: event.target.value === "custom" ? "1.25" : event.target.value })}><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="custom">Custom</option></select></label>
-              {!["1", "1.5", "2"].includes(editor.multiplier) && <label>Custom multiplier<input type="number" min="0.25" max="5" step="0.05" value={editor.multiplier} onChange={(event) => changeLabour({ multiplier: event.target.value })} required /></label>}
+              <label>Number of staff<input type="number" min="1" max={MAX_STAFF} step="1" value={editor.staffCount} onChange={(event) => changeLabour({ staffCount: event.target.value })} required /></label>
+              <label>Hours per person<input type="number" min="0.25" max={MAX_HOURS} step="0.25" value={editor.hoursPerPerson} onChange={(event) => changeLabour({ hoursPerPerson: event.target.value })} required /></label>
             </div>
+            <label>Rate<select value={editor.overtime ? "overtime" : "normal"} onChange={(event) => changeLabour({ overtime: event.target.value === "overtime" })}><option value="normal">Normal</option><option value="overtime">Overtime</option></select></label>
             <div className="additional-charge-editor__preview" role="status" aria-live="polite">
-              <strong>{editor.label.trim() || `${editor.roleLabel || "Labour"} labour`}</strong>
-              <span>{editor.staffCount || "0"} staff × {Number(editor.hoursPerPerson || 0).toFixed(2)} hrs × £{Number(editor.hourlyRate || 0).toFixed(2)} × {editor.multiplier}</span>
+              <strong>{editor.label.trim() || `${editorLabour?.roleLabel || "Labour"} labour`}</strong>
+              <span>{editor.staffCount || "0"} staff × {Number(editor.hoursPerPerson || 0).toFixed(2)} hrs × £{(editor.overtime ? (findApprovedRole(editor.roleId)?.overtimeRate ?? 0) : (findApprovedRole(editor.roleId)?.normalRate ?? 0)).toFixed(2)}/hr{editor.overtime ? " (overtime)" : ""}</span>
               <b>£{labourPreview.toFixed(2)} net</b>
             </div>
             <footer><button type="button" onClick={() => setEditor(null)}>Cancel</button><button className="primary">{editor.id ? "Update labour charge" : "Add labour charge"}</button></footer>
@@ -3190,7 +3156,6 @@ function DashboardSettingsModal({
   onCancel: () => void;
   onSave: () => void;
 }) {
-  const labourRates = settings.labourRates ?? defaultLabourRates;
   return (
     <div className="modal-backdrop" role="presentation">
       <form
@@ -3294,47 +3259,6 @@ function DashboardSettingsModal({
                 }
               />
             </label>
-            <section className="hospitality-labour-rates" aria-labelledby="hospitality-labour-rates-title">
-              <div>
-                <h3 id="hospitality-labour-rates-title">Labour rates</h3>
-                <p>Optional net hourly rates for the labour calculator. Existing Booking charges keep the rate saved on their line.</p>
-              </div>
-              <div className="hospitality-labour-rates__list">
-                {labourRates.map((rate, index) => (
-                  <div className="hospitality-labour-rates__row" key={rate.id}>
-                    <label>
-                      Role
-                      <input
-                        value={rate.label}
-                        maxLength={100}
-                        onChange={(event) => onChange({
-                          ...settings,
-                          labourRates: labourRates.map((current, currentIndex) => currentIndex === index ? { ...current, label: event.target.value } : current),
-                        })}
-                      />
-                    </label>
-                    <label>
-                      Hourly net rate (£)
-                      <input
-                        type="number"
-                        min="0"
-                        max="1000"
-                        step="0.01"
-                        value={rate.hourlyRate ?? ""}
-                        onChange={(event) => onChange({
-                          ...settings,
-                          labourRates: labourRates.map((current, currentIndex) => currentIndex === index
-                            ? { ...current, ...(event.target.value === "" ? { hourlyRate: undefined } : { hourlyRate: Number(event.target.value) }) }
-                            : current),
-                        })}
-                      />
-                    </label>
-                    <button type="button" aria-label={`Remove ${rate.label || "labour role"}`} onClick={() => onChange({ ...settings, labourRates: labourRates.filter((_, currentIndex) => currentIndex !== index) })}>Remove</button>
-                  </div>
-                ))}
-              </div>
-              <button type="button" className="hospitality-labour-rates__add" onClick={() => onChange({ ...settings, labourRates: [...labourRates, { id: `role_${newStableId()}`, label: "New role" }] })}>Add another labour role</button>
-            </section>
             <label>
               VAT rate (%)
               <input

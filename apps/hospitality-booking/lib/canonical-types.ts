@@ -29,7 +29,7 @@ export type BookingAdditionalChargeLabour = {
   hoursPerPerson: number;
   hourlyRate: number;
   multiplier: number;
-  rateSource: "configured" | "custom";
+  rateSource: "governed" | "configured" | "custom";
 };
 type BookingAdditionalChargeBase = {
   id: string;
