@@ -34,3 +34,5 @@
 .menu-routing-merge label { display: grid; gap: var(--space-1); color: var(--color-text-secondary); font-size: var(--text-xs); font-weight: 700; }
 .menu-routing-merge button { background: var(--color-surface) !important; color: var(--color-brand-primary) !important; border: 1px solid var(--color-border) !important; }
 @media (max-width: 760px) { .menu-routing-row { grid-template-columns: 1fr; } .menu-routing-row fieldset button { width: 100%; } }
+.menu-routing-row p.menu-routing-state { font-weight: 600; color: var(--color-text-primary); }
+.menu-routing-row p.menu-routing-state--required { color: var(--color-status-danger); }

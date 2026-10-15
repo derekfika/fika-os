@@ -1460,6 +1460,16 @@ export async function createProductionOrder(
     canonicalId,
     `hospitality:${canonicalId}:v${expectedVersion}`,
   );
+  if (result.status === "no_cpu_production_required" || !result.order) {
+    // Explicit outcome, not an error: every item is produced in house, so CPU receives no Production Order.
+    return {
+      created: false as const,
+      status: "no_cpu_production_required" as const,
+      message: "No CPU production required: every item on this booking is produced in house. The Hospitality booking is unchanged.",
+      inHouseLineCount: "inHouseLineCount" in result ? result.inHouseLineCount : 0,
+      productionOrder: undefined,
+    };
+  }
   const order = result.order;
   const projectionPropagation = await propagateProductionChanges([{ order, changeType: "created", idempotencyKey: `cpu-projection:${order.canonicalId}:v${order.version}` }]);
   const logisticsProjection = await deliverLogisticsProjectionForProductionOrder(order);

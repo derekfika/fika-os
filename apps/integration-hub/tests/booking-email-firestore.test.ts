@@ -51,7 +51,7 @@ test("canonical transitions atomically queue distinct lifecycle obligations; ret
   assert.equal(JSON.stringify((await db.collection("fikaBookingNotifications").doc(submitted.notificationId).get()).data()), bytes);
   assert.equal((await db.collection("fikaBookingNotifications").where("bookingId", "==", booking.canonicalId).limit(10).get()).size, 4);
   assert.equal(await bookingEmailStore.arm(confirmation.id, "wrong-claim", now), false);
-  assert.ok(handoff.order.canonicalId);
+  assert.ok(handoff.order!.canonicalId);
   await mappingRef.delete();
 });
 

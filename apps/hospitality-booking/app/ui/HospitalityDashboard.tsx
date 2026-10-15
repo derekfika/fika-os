@@ -103,6 +103,7 @@ export default function HospitalityDashboard({
   const [selected, setSelected] = useState<CanonicalBooking | null>(null);
   const [filter, setFilter] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [pending, setPending] = useState<WorkflowAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const actionInFlight = useRef(false);
@@ -383,6 +384,7 @@ export default function HospitalityDashboard({
 
   const performAction = async (actionOverride?: WorkflowAction | null) => {
     setError("");
+    setNotice("");
     const action = actionOverride || pending;
     if (!selected || !action) return;
     setActionStage(action === "Production" ? "Sending to CPU…" : action === "Quoted" || action === "QuotePdfRetry" ? "Creating quote…" : "Saving changes…");
@@ -448,6 +450,7 @@ export default function HospitalityDashboard({
       setError(message);
       return;
     }
+    if (body.status === "no_cpu_production_required") setNotice(body.message || "No CPU production required: every item on this booking is produced in house.");
     setSelected(body.booking || selected);
     if (action === "Quoted" && body.booking) {
       setActionStage("Saving quote PDF…");
@@ -1045,6 +1048,7 @@ export default function HospitalityDashboard({
               </label>
             </div>
           </div>
+          {notice && <div className="hospitality-dashboard__notice" role="status">{notice}</div>}
           {error && (
             <div className="hospitality-dashboard__error" role="alert">
               <span>{error}</span>

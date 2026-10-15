@@ -140,6 +140,8 @@ type MenuProductionItem = {
   publicationStatus: string;
   scopes: Array<{ oplocId: string; label: string; operationalAreaId?: string }>;
   workstreams: CpuProductionWorkstream[];
+  /** A saved routing record exists (an empty list is the deliberate "In house" decision; no record = Routing required). */
+  routingDecided?: boolean;
   sourceIds?: string[];
 };
 
@@ -173,6 +175,7 @@ function groupMenuItems(items: MenuProductionItem[]) {
             ) === index,
         ),
         workstreams: current.workstreams,
+        routingDecided: Boolean(current.routingDecided && item.routingDecided),
       });
   }
   return [...grouped.values()];
@@ -922,6 +925,7 @@ function HospitalityMenuProductionRoutingPanel({
     Object.fromEntries(items.map((item) => [item.canonicalId, item.workstreams])),
   );
   const [saving, setSaving] = useState("");
+  const [decidedIds, setDecidedIds] = useState<string[]>([]);
   const [message, setMessage] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
   const [editor, setEditor] = useState<MenuProductionItem | "new" | null>(null);
@@ -985,7 +989,8 @@ function HospitalityMenuProductionRoutingPanel({
         : [...selected, workstream];
       return { ...current, [id]: next };
     });
-  async function save(item: MenuProductionItem) {
+  async function save(item: MenuProductionItem, forceInHouse = false) {
+    if (forceInHouse) setDraft((current) => ({ ...current, [item.canonicalId]: [] }));
     setSaving(item.canonicalId);
     setMessage("");
     try {
@@ -997,7 +1002,7 @@ function HospitalityMenuProductionRoutingPanel({
             body: JSON.stringify({
               action: "save-hospitality-menu-production-routing",
               menuItemId,
-              workstreams: draft[menuItemId] || draft[item.canonicalId] || [],
+              workstreams: forceInHouse ? [] : draft[menuItemId] || draft[item.canonicalId] || [],
             }),
           });
         let response = await send();
@@ -1010,6 +1015,7 @@ function HospitalityMenuProductionRoutingPanel({
               "The production view routing could not be saved.",
           );
       }
+      setDecidedIds((current) => [...current, item.canonicalId]);
       setMessage(
         `${item.name} routing saved for ${(item.sourceIds || [item.canonicalId]).length} canonical record${(item.sourceIds || [item.canonicalId]).length === 1 ? "" : "s"}.`,
       );
@@ -1050,6 +1056,7 @@ function HospitalityMenuProductionRoutingPanel({
         <div className="menu-routing-list">
           {visible.map((item) => {
             const selected = draft[item.canonicalId] || [];
+            const decided = Boolean(item.routingDecided) || decidedIds.includes(item.canonicalId);
             return (
               <article className="menu-routing-row" key={item.canonicalId}>
                 <div>
@@ -1057,6 +1064,13 @@ function HospitalityMenuProductionRoutingPanel({
                   <p>
                     {item.category} · {item.lifecycleState} ·{" "}
                     {item.publicationStatus}
+                  </p>
+                  <p className={decided ? "menu-routing-state" : "menu-routing-state menu-routing-state--required"} data-routing-state={decided ? (selected.length ? "routed" : "in-house") : "required"}>
+                    {!decided
+                      ? "Routing required — not classified yet. RCoA bookings cannot be handed off to CPU until this is set."
+                      : selected.length
+                        ? `Routed to ${selected.map((value) => CPU_PRODUCTION_WORKSTREAM_LABELS[value]).join(" + ")}`
+                        : "In house — stays on the Hospitality booking and is never sent to CPU"}
                   </p>
                   <div className="menu-routing-scopes">
                     <strong>Site availability</strong>
@@ -1124,6 +1138,14 @@ function HospitalityMenuProductionRoutingPanel({
                     onClick={() => void save(item)}
                   >
                     {saving === item.canonicalId ? "Saving…" : "Save routing"}
+                  </button>
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={saving === item.canonicalId}
+                    onClick={() => void save(item, true)}
+                  >
+                    Save as In house
                   </button>
                 </fieldset>
               </article>

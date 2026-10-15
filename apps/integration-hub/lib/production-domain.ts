@@ -10,7 +10,8 @@ import { stageDomainEvent } from "./domain-event-outbox";
 import { stageFulfilmentEvent } from "./fulfilment-projection";
 import { stageCpuProjectionEvent } from "./cpu-projection-outbox";
 import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requirement";
-import { hospitalityMenuProductionRouting } from "./connections-service";
+import { explicitMenuProductionRouting, hospitalityMenuProductionRouting } from "./connections-service";
+import { planRcoaCpuHandoff, rcoaRoutingKeys, RCOA_PROVIDER, routingRequiredMessage, type RcoaRoutingOutcome } from "./rcoa-cpu-routing";
 import { adaptCpuProductionWorkstreams } from "../../shared/production-workstreams";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
@@ -48,18 +49,37 @@ const explicitMnkConversions: Record<string, { multiplier: number; unit: string;
   deli_sandwich_lunch: { multiplier: 3, unit: "piece", rule: "MNK catalogue serving rule: three pieces per person." },
 };
 
+function routingRequired(unmapped: Array<{ itemId: string; itemName: string }>) {
+  const error = conflict(routingRequiredMessage(unmapped)) as Error & { code?: string; unmappedItems?: unknown };
+  error.code = "ROUTING_REQUIRED";
+  error.unmappedItems = unmapped;
+  return error;
+}
+
 export function productionRequirementId(bookingId: string, quoteRevisionId: string) { return `production-requirement:${bookingId}:${quoteRevisionId}`; }
 export function productionOrderV1Id(bookingId: string, bookingVersion?: number) { return `production-order:v1:${bookingId}${bookingVersion && bookingVersion > 1 ? `:r${bookingVersion}` : ""}`; }
 
 export async function createProductionFromApprovedBooking(actor: Actor, bookingId: string, idempotencyKey: string, conversions: Record<string, { quantity: number; unit: string }> = {}) {
   if (!idempotencyKey.trim()) throw conflict("An idempotency key is required for production hand-off.");
   const routing = await hospitalityMenuProductionRouting();
+  // RCoA bookings are routed PER ITEM from explicit saved decisions only (In house / Sandwiches / Hospitality). Targeted reads by id.
+  const preview = (await bookings().doc(bookingId).get()).data() as CanonicalBooking | undefined;
+  const isRcoa = preview?.source?.provider === RCOA_PROVIDER;
+  const explicitRouting = isRcoa ? await explicitMenuProductionRouting((preview?.order.items || []).flatMap(item => rcoaRoutingKeys(item))) : {};
   return db.runTransaction(async transaction => {
     const bookingSnapshot = await transaction.get(bookings().doc(bookingId));
     if (!bookingSnapshot.exists) throw conflict("Booking was not found.");
     const booking = bookingSnapshot.data() as CanonicalBooking;
     if (!['Quoted', 'Approved'].includes(booking.lifecycleStatus)) throw conflict("Generate a current quote before sending this Booking to CPU.");
     if (booking.deliveryChargeRequired === false) throw conflict("CPU delivery is not selected for this Booking, so no CPU production hand-off is required.");
+    const rcoaPlan: RcoaRoutingOutcome | undefined = booking.source?.provider === RCOA_PROVIDER ? planRcoaCpuHandoff(booking.order.items, explicitRouting) : undefined;
+    if (rcoaPlan?.status === "routing_required") throw routingRequired(rcoaPlan.unmapped);
+    if (rcoaPlan?.status === "no_cpu_production_required") {
+      // Everything on this booking is produced in house: Hospitality keeps the complete booking and CPU gets NO order (never an empty one).
+      const base = await transaction.get(orders().doc(stableDocumentId(productionOrderV1Id(bookingId))));
+      if (base.exists && (base.data() as ProductionOrder).status !== "amended") throw conflict("This booking now has no CPU lines but a Production Order already exists. Amend or cancel that Production Order in CPU instead of handing off again.");
+      return { created: false, status: "no_cpu_production_required" as const, requirement: undefined, order: undefined, inHouseLineCount: rcoaPlan.inHouse.length };
+    }
     if (!booking.service.oplocId?.trim()) throw conflict("A delivery-requiring Hospitality Production Order needs a confirmed canonical destination OPLOC.");
     const quote = booking.quoteState?.revisions.find(item => item.id === booking.quoteState?.currentRevisionId);
     if (!quote || quote.stale || quote.id !== booking.quoteState?.currentRevisionId) throw conflict("A current Quote Revision is required.");
@@ -100,14 +120,18 @@ export async function createProductionFromApprovedBooking(actor: Actor, bookingI
     const requirementId = productionRequirementId(bookingId, quote.id);
     const requirement: ProductionRequirement = { canonicalId: requirementId, entityType: "Production Requirement", schemaVersion: PRODUCTION_SCHEMA_VERSION, version: 1, sourceBookingId: bookingId, sourceBookingRevision: booking.version, sourceQuoteRevisionId: quote.id, productionLocationId: booking.service.oplocId, requestedServiceDate: booking.service.eventDate, serviceWindow: { startTime: booking.service.startTime, ...(booking.service.endTime ? { endTime: booking.service.endTime } : {}) }, requiredBy: `${booking.service.eventDate}T${booking.service.startTime}`, status: "needs_review", sourceSnapshot: { booking: structuredClone(booking), quote: structuredClone(quote.snapshot) }, createdAt: now, createdBy: actor.uid, updatedAt: now, updatedBy: actor.uid, audit: [{ action: "production-requirement-created", at: now, by: actor.uid, newState: "needs_review", reason: "Created from Booking and current Quote Revision.", idempotencyKey }] };
     const exceptions: ProductionException[] = [];
-    const lines: ProductionLine[] = booking.order.items.map((item, index) => {
+    const rcoaRouted = new Map(rcoaPlan?.status === "produce" ? rcoaPlan.lines.map(line => [line.index, line.classification] as const) : []);
+    const lines: ProductionLine[] = booking.order.items.flatMap((item, index) => {
+      if (rcoaPlan && !rcoaRouted.has(index)) return []; // In house: stays on the Hospitality booking only
+      return [(() => {
       const configured = conversions[item.itemId];
       const explicitRule = explicitMnkConversions[item.itemId] || Object.entries(explicitMnkConversions).find(([key]) => item.itemId.endsWith(`:${key}`))?.[1];
       const conversion = configured ? { quantity: configured.quantity, unit: configured.unit, rule: "Explicit production conversion configuration." } : explicitRule ? { quantity: item.quantity * explicitRule.multiplier, unit: explicitRule.unit, rule: explicitRule.rule } : undefined;
       const assignments = [item.menuItemId, item.itemId].filter((value): value is string => Boolean(value)).flatMap(value => routing[value] || []);
-      const workstream: ProductionWorkstream = adaptCpuProductionWorkstreams(assignments).workstreams[0] || "unassigned";
+      const workstream: ProductionWorkstream = rcoaRouted.get(index) || adaptCpuProductionWorkstreams(assignments).workstreams[0] || "unassigned";
       const line: ProductionLine = { canonicalId: `production-line:${bookingId}:${index + 1}`, sourceBookingLineId: `${bookingId}:line:${index + 1}`, ...(item.menuItemId ? { sourceMenuItemId: item.menuItemId } : {}), itemName: item.itemName || item.itemId, ...(item.description ? { description: item.description } : {}), customerQuantity: item.quantity, customerUnit: item.servingInfo || "ordered unit", ...(conversion ? { productionQuantity: conversion.quantity, productionUnit: conversion.unit, conversionSnapshot: { ...conversion, rule: "Explicit configured production conversion." } } : {}), ...(item.choices ? { choices: structuredClone(item.choices) } : {}), ...(item.servingInfo ? { servingGuidance: item.servingInfo } : {}), ...(item.comments ? { productionInstructions: item.comments } : {}), dietaries: structuredClone(booking.dietaries), status: conversion ? "ready" : "exception", sortOrder: index, workstream };
-      return { ...line, status: conversion ? "ready" : "pending" };
+      return { ...line, status: conversion ? "ready" : "pending" } as ProductionLine;
+      })()];
     });
     const amendmentNotice = existingBase?.status === "amended"
       ? `Booking amended: ${existingBase.guestCount ?? "?"} pax → ${booking.service.guestCount} pax; ${existingBase.lines.map(line => `${line.itemName} ${line.customerQuantity}`).join(", ")} → ${lines.map(line => `${line.itemName} ${line.customerQuantity}`).join(", ")}.`

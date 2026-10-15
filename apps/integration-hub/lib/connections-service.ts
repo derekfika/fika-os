@@ -77,6 +77,23 @@ export async function hospitalityMenuProductionRouting(menuItemIds?: string[]): 
   return routing;
 }
 
+/**
+ * Explicit saved routing decisions ONLY (no transitional legacy defaults). A document existing IS the decision: an empty `workstreams`
+ * list is a deliberate "In house" choice, an absent document is "Routing required". Direct document reads by id, never a collection scan.
+ */
+export async function explicitMenuProductionRouting(menuItemIds: string[]): Promise<Record<string, string[]>> {
+  const wanted = [...new Set(menuItemIds.filter(Boolean))];
+  const snapshots = await Promise.all(wanted.map(id => menuProductionRouting().doc(stableDocumentId(id)).get()));
+  const result: Record<string, string[]> = {};
+  snapshots.forEach((snapshot, index) => {
+    if (!snapshot.exists) return;
+    const data = snapshot.data() || {};
+    const values = Array.isArray(data.workstreams) ? data.workstreams : Array.isArray(data.views) ? data.views : [];
+    result[wanted[index]] = values.map(String);
+  });
+  return result;
+}
+
 export type ConnectionCommand =
   | {
       action: "merge-hospitality-menu-items";
@@ -159,6 +176,7 @@ export async function connectionsOverview() {
       lifecycleState: String(record.record.lifecycleState || "active"),
       publicationStatus: record.publicationStatus,
       scopes: records.filter(candidate => candidate.entityType === "Hospitality Menu Offering" && candidate.record.hospitalityMenuItemId === record.canonicalId).map(offering => ({ oplocId: String(offering.record.oplocId), label: String(records.find(candidate => candidate.canonicalId === offering.record.oplocId)?.record.approvedName || offering.record.oplocId), operationalAreaId: offering.record.operationalAreaId ? String(offering.record.operationalAreaId) : undefined })).filter((scope, index, all) => all.findIndex(candidate => candidate.oplocId === scope.oplocId && candidate.operationalAreaId === scope.operationalAreaId) === index),
+      routingDecided: routingSnapshot.docs.some(doc => doc.id === stableDocumentId(record.canonicalId)),
       workstreams: (() => {
         const routing = routingSnapshot.docs.find(doc => doc.id === stableDocumentId(record.canonicalId))?.data();
         const adapted = adaptCpuProductionWorkstreams((routing?.workstreams || routing?.views || []) as unknown[]);

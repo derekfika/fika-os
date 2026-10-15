@@ -11,9 +11,9 @@ import { stableDocumentId } from "../lib/canonical-editor";
 import { parseCanonical } from "../lib/schemas";
 import { sha256 } from "../lib/profiler";
 import type { CanonicalRecord } from "../lib/types";
-import { localMnkMenuCatalogue, localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue } from "@fika/server-shared/hospitality-catalogue";
+import { localMnkMenuCatalogue, localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue, localRcoaMenuCatalogue } from "@fika/server-shared/hospitality-catalogue";
 
-const catalogues = [localMnkMenuCatalogue, localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue];
+const catalogues = [localMnkMenuCatalogue, localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue, localRcoaMenuCatalogue];
 const actorId = "migration:portal-menu-catalogues";
 const now = new Date().toISOString();
 const canonical = db.collection("integrationHubCanonical");

@@ -71,7 +71,7 @@ test("booking charge route schema accepts commercial inputs and rejects client-s
 
 test("Hospitality Production Order catering lines are still built only from Booking menu items", () => {
   const productionDomain = readFileSync(new URL("../lib/production-domain.ts", import.meta.url), "utf8");
-  assert.match(productionDomain, /const lines: ProductionLine\[\] = booking\.order\.items\.map/);
+  assert.match(productionDomain, /const lines: ProductionLine\[\] = booking\.order\.items\.(?:flatMap|map)/);
   assert.doesNotMatch(productionDomain, /booking\.additionalCharges\.map/);
   assert.match(productionDomain, /sourceQuoteRevisionId: quote\.id/);
 });

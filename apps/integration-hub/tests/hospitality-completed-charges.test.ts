@@ -42,7 +42,7 @@ async function bookingFixture(stopAt: "Quoted" | "Completed" = "Completed") {
   let orderRef = db.collection("fikaProductionOrdersV1").doc(stableDocumentId(productionOrderId(booking.canonicalId)));
   if (stopAt === "Completed") {
     const handoff = await createProductionFromApprovedBooking(actor, booking.canonicalId, key);
-    orderRef = db.collection("fikaProductionOrdersV1").doc(stableDocumentId(handoff.order.canonicalId));
+    orderRef = db.collection("fikaProductionOrdersV1").doc(stableDocumentId(handoff.order!.canonicalId));
     booking = (await db.collection("fikaBookings").doc(booking.canonicalId).get()).data() as CanonicalBooking;
     booking = (await executeBookingWorkflow(actor, booking.canonicalId, booking.version, { action: "complete" })).booking;
     assert.equal(booking.lifecycleStatus, "Completed");
