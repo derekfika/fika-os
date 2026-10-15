@@ -32,14 +32,25 @@ env:
   - variable: GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_66E621FA_6E6F_4F46_9AED_462313ABBE8F
     value: mnk@fikacatering.com
     availability: [RUNTIME]
-  # GOOGLE_MENU_PARENT_FOLDER_ID_* intentionally omitted: the adapter resolves FIKA OS / Hospitality / Menus automatically.
-  # Add an explicit production parent folder only if the business wants menus in a specific existing folder.
+  # Angel Court owner is keyed by its governed OPLOC; quote/matrix/menu folders live in Hub dashboard settings.
+  - variable: GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_24A93500_D75D_4FE0_8BEB_672D36F9DA10
+    value: seven@fikacatering.com
+    availability: [RUNTIME]
+  # Angel Court parent is a per-OPLOC fallback; its googleMenuFolderId dashboard setting takes precedence.
+  - variable: GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_24A93500_D75D_4FE0_8BEB_672D36F9DA10
+    value: 1opIa9eW5OPAkD4zQcwiMvTmmc36U0jRc
+    availability: [RUNTIME]
+  # Other sites without explicit menu parents resolve the existing FIKA OS / Hospitality / Menus default.
   # Approved MNK Google Slides decks (site-scoped): tablet menu and flat/tent label master.
   - variable: GOOGLE_MENU_TEMPLATE_ID_MNK
     value: 1A3xn63KiCrxrnro3SWJO9FdNf2Y_QIrA8rc7V3K8ToE
     availability: [RUNTIME]
   - variable: GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK
     value: 1st025DPvfJ_I6rj8Ad_BguLbpo00GT4bGS0uwCvQfIc
+    availability: [RUNTIME]
+  # Approved Angel Court Hospitality tablet deck. Flat and tent labels remain unsupported for this site.
+  - variable: GOOGLE_MENU_TEMPLATE_ID_ANGEL_COURT
+    value: 1LsxxcW1hhxCtJQZ3jAA4WIhEY0jRQWlBENL4ulqDpis
     availability: [RUNTIME]
   - variable: MNK_CANON_BRIDGE_TOKEN
     secret: MNK_CANON_BRIDGE_TOKEN
@@ -57,4 +68,4 @@ env:
   - variable: NEXT_PUBLIC_FIKA_HUB_URL
     value: https://os.fikacatering.com
     availability: [BUILD, RUNTIME]
-  # RCoA, Angel Court, CFC and Munich Re Drive owners are intentionally NOT set until confirmed (quote PDF / send-to-CPU stay blocked for them; booking submission needs no Drive).
+  # RCoA, CFC and Munich Re Drive owners are intentionally NOT set until confirmed.

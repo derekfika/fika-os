@@ -4,7 +4,7 @@
 env:
   # Customer email delivery stays OFF at launch. The UAT recipient variables from staging are intentionally not carried across.
   - variable: FIKA_HOSPITALITY_EMAIL_SENDERS_JSON
-    value: '{"oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f":{"from":"mnk@fikacatering.com","replyTo":"mnk@fikacatering.com","authenticatedAccount":"mnk@fikacatering.com","displayName":"FIKA Hospitality at MNK","verifiedSendAs":true,"enabled":["submitted","confirmed","amended","cancelled"]}}'
+    value: '{"oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f":{"from":"mnk@fikacatering.com","replyTo":"mnk@fikacatering.com","authenticatedAccount":"mnk@fikacatering.com","displayName":"FIKA Hospitality at MNK","verifiedSendAs":true,"enabled":["submitted","confirmed","amended","cancelled"]},"oploc:24a93500-d75d-4fe0-8beb-672d36f9da10":{"from":"seven@fikacatering.com","replyTo":"seven@fikacatering.com","authenticatedAccount":"seven@fikacatering.com","displayName":"One Angel Court Hospitality","verifiedSendAs":false,"enabled":["submitted","confirmed","amended","cancelled"]}}'
     availability:
       - RUNTIME
   - variable: FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED
