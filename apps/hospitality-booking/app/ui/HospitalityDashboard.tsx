@@ -103,6 +103,7 @@ export default function HospitalityDashboard({
   const [selected, setSelected] = useState<CanonicalBooking | null>(null);
   const [filter, setFilter] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [pending, setPending] = useState<WorkflowAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const actionInFlight = useRef(false);
@@ -183,7 +184,7 @@ export default function HospitalityDashboard({
       const body = await response.json();
       if (!response.ok)
         throw Error(body.error?.message || "Could not load Bookings.");
-      setBookings(body.bookings);
+      setBookings(body.cpuRouting ? body.bookings.map((item: CanonicalBooking) => body.cpuRouting[item.canonicalId] ? { ...item, cpuRouting: body.cpuRouting[item.canonicalId] } : item) : body.bookings);
       setProductionOrders(body.productionOrders || {});
       setMatrixRefreshTick((current) => current + 1);
       setQuoteSettings(body.quoteSettings || null);
@@ -383,6 +384,7 @@ export default function HospitalityDashboard({
 
   const performAction = async (actionOverride?: WorkflowAction | null) => {
     setError("");
+    setNotice("");
     const action = actionOverride || pending;
     if (!selected || !action) return;
     setActionStage(action === "Production" ? "Sending to CPU…" : action === "Quoted" || action === "QuotePdfRetry" ? "Creating quote…" : "Saving changes…");
@@ -448,6 +450,7 @@ export default function HospitalityDashboard({
       setError(message);
       return;
     }
+    if (body.status === "no_cpu_production_required") setNotice(body.message || "No CPU production required: every item on this booking is produced in house.");
     setSelected(body.booking || selected);
     if (action === "Quoted" && body.booking) {
       setActionStage("Saving quote PDF…");
@@ -1045,6 +1048,7 @@ export default function HospitalityDashboard({
               </label>
             </div>
           </div>
+          {notice && <div className="hospitality-dashboard__notice" role="status">{notice}</div>}
           {error && (
             <div className="hospitality-dashboard__error" role="alert">
               <span>{error}</span>
@@ -1633,7 +1637,9 @@ function BookingDetail({
         {booking.client.invoiceReference && (
           <Fact label="Invoice / PO" value={booking.client.invoiceReference} />
         )}
-        <Fact label="Produced by CPU" value={booking.deliveryChargeRequired === false ? "No" : "Yes"} />
+        {booking.cpuRouting
+          ? <Fact label={booking.cpuRouting.enforced === false ? "CPU production (advisory)" : "CPU production"} value={booking.cpuRouting.statusLabel} />
+          : <Fact label="Produced by CPU" value={booking.deliveryChargeRequired === false ? "No" : "Yes"} />}
       </div>
       <section className="booking-detail__section">
         <div className="booking-detail__section-title">
@@ -1650,6 +1656,9 @@ function BookingDetail({
                 <b>
                   {item.quantity} × {item.itemName || item.itemId}
                 </b>
+                {booking.cpuRouting?.lines.find((line) => line.index === index) && (
+                  <small className="booking-detail__cpu-state" data-cpu-state={booking.cpuRouting.lines.find((line) => line.index === index)!.state}>{booking.cpuRouting.lines.find((line) => line.index === index)!.label}</small>
+                )}
                 {item.servingInfo && <small>{item.servingInfo}</small>}
               </span>
               <strong>£{item.lineTotal.toFixed(2)}</strong>

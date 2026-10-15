@@ -41,6 +41,9 @@ import { deliverLogisticsProjectionForProductionOrder } from "./logistics-projec
 import { localBookingFixtures } from "./local-booking-fixtures";
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
+import { explicitMenuProductionRouting } from "./connections-service";
+import { BOOKING_LABELS, hospitalityPlatformOf, isGovernedRoutingPlatform, LINE_LABELS, planHospitalityCpuRouting, routingKeys } from "./hospitality-cpu-routing";
+import { LEGACY_HOSPITALITY_MENU_ROUTING } from "./connections-service";
 import type { Transaction } from "firebase-admin/firestore";
 import { createDomainEvent } from "../../shared/domain-events";
 import { stageDomainEvent } from "./domain-event-outbox";
@@ -1035,8 +1038,18 @@ export async function bookingWorkspace(siteId?: string, authorisedOplocId?: stri
       }
       return [booking.canonicalId, undefined] as const;
     });
+  // Every Hospitality platform shows the same per-line / booking-level CPU state, derived from the platform's own governed Production visibility records
+  // (never from deliveryChargeRequired). Platforms not yet governed fall back to the legacy map for display only (`enforced: false`). Direct reads by id, de-duplicated.
+  const routed = rows.flatMap((booking) => { const platform = hospitalityPlatformOf(booking); return platform ? [{ booking, platform }] : []; });
+  const explicitRouting = routed.length ? await explicitMenuProductionRouting(routed.flatMap(({ booking, platform }) => booking.order.items.flatMap((item) => routingKeys(item, platform)))) : {};
+  const cpuRouting = Object.fromEntries(routed.map(({ booking, platform }) => {
+    const enforced = isGovernedRoutingPlatform(platform);
+    const plan = planHospitalityCpuRouting(booking.order.items, platform, explicitRouting, enforced ? undefined : LEGACY_HOSPITALITY_MENU_ROUTING);
+    return [booking.canonicalId, { status: plan.status, statusLabel: BOOKING_LABELS[plan.status], platform, enforced, lines: plan.lines.map((line) => ({ index: line.index, state: line.state, label: LINE_LABELS[line.state], source: line.source })) }];
+  }));
   return {
     bookings: rows,
+    ...(routed.length ? { cpuRouting } : {}),
     productionOrders: Object.fromEntries(orders),
     quoteSettings: await getDashboardQuoteSettings(dashboardIdForSite(siteId)),
     ...(truncated ? { truncated: true } : {}),
@@ -1468,6 +1481,16 @@ export async function createProductionOrder(
     canonicalId,
     `hospitality:${canonicalId}:v${expectedVersion}`,
   );
+  if (result.status === "no_cpu_production_required" || !result.order) {
+    // Explicit outcome, not an error: every item is produced in house, so CPU receives no Production Order.
+    return {
+      created: false as const,
+      status: "no_cpu_production_required" as const,
+      message: "No CPU production required: every item on this booking is produced in house. The Hospitality booking is unchanged.",
+      inHouseLineCount: "inHouseLineCount" in result ? result.inHouseLineCount : 0,
+      productionOrder: undefined,
+    };
+  }
   const order = result.order;
   const projectionPropagation = await propagateProductionChanges([{ order, changeType: "created", idempotencyKey: `cpu-projection:${order.canonicalId}:v${order.version}` }]);
   const logisticsProjection = await deliverLogisticsProjectionForProductionOrder(order);

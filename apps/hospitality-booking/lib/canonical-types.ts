@@ -17,6 +17,8 @@ export type CanonicalBooking = {
   quoteState?: { currentRevisionId?: string; revisions: Array<{ id: string; revision: number; createdAt: string; commercialVersion?: number; stale?: boolean; snapshot: Record<string, unknown>; driveUrl?: string; driveFileId?: string; pdfStatus?: string }> };
   dashboardWorkflow?: Record<string, unknown>;
   deliveryChargeRequired?: boolean;
+  /** Derived server-side from the governed Production visibility records (RCoA bookings only); never persisted. */
+  cpuRouting?: { status: "cpu_required" | "no_cpu_production" | "routing_required" | "routing_conflict"; statusLabel: string; platform?: string; /** false while the platform is not governed yet: display only (legacy fallback), the hand-off is not filtered */ enforced?: boolean; lines: Array<{ index: number; state: string; label: string; source?: string }> };
 };
 
 export type BookingAdditionalChargeCategory = "labour" | "equipment" | "service" | "other";

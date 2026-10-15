@@ -114,7 +114,7 @@ test("portal provenance transition against an isolated disposable Firestore emul
     const quoteId = `quote:${angel.canonicalId}:r1`;
     assert.equal(booking.quoteState?.currentRevisionId, quoteId);
     booking = (await executeBookingWorkflow(actor, booking.canonicalId, booking.version, { action: "quote-pdf-status", revisionId: quoteId, status: "saved", driveFileId: "isolated-fixture-no-drive-write" })).booking;
-    const order = (await createProductionFromApprovedBooking(actor, booking.canonicalId, "identity-handoff" )).order;
+    const order = (await createProductionFromApprovedBooking(actor, booking.canonicalId, "identity-handoff" )).order!;
     assert.equal(order.canonicalId, productionOrderV1Id(angel.canonicalId));
     assert.equal(order.sourceBookingId, angel.canonicalId);
     assert.equal(order.sourceQuoteRevisionId, quoteId);

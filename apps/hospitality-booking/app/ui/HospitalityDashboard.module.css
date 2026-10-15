@@ -298,6 +298,13 @@
     color: var(--muted);
     line-height: 1.45;
   }
+  :global(.hospitality-dashboard__notice) {
+    padding: 12px 16px;
+    border: 1px solid var(--fika-status-info);
+    border-radius: 8px;
+    background: var(--fika-status-info-surface);
+    color: var(--fika-text-primary);
+  }
   :global(.hospitality-dashboard__error) {
     display: flex;
     align-items: center;
@@ -870,6 +877,14 @@
   }
   :global(.booking-detail__section-title > strong) {
     font-size: 1.5rem;
+  }
+  :global(.booking-detail__cpu-state) {
+    font-weight: 700;
+    color: var(--fika-text-secondary);
+  }
+  :global(.booking-detail__cpu-state[data-cpu-state="routing_required"]),
+  :global(.booking-detail__cpu-state[data-cpu-state="routing_conflict"]) {
+    color: var(--fika-status-danger);
   }
   :global(.booking-detail__items) {
     display: grid;

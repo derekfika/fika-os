@@ -28,7 +28,9 @@ export type ProductionDashboardView = CpuProductionWorkstream;
 // Transitional provider identities retained by older hospitality hand-offs.
 // These are stable source keys, not display-name matching. They remain only
 // until those historical offerings are reconciled to canonical Menu Items.
-const LEGACY_HOSPITALITY_MENU_ROUTING: Record<string, ProductionDashboardView[]> = {
+// DEPRECATED runtime fallback for NON-RCoA providers only. RCoA hand-off ignores it and uses governed records exclusively; it is exported solely as the
+// one-time bootstrap source for scripts/bootstrap-rcoa-production-routing.ts.
+export const LEGACY_HOSPITALITY_MENU_ROUTING: Record<string, ProductionDashboardView[]> = {
   "deli-style-sandwich": ["sandwiches"],
   // The canonical MNK migration retained the source key with underscores.
   // Keep both spellings while restored/local workspaces catch up with their
@@ -75,6 +77,23 @@ export async function hospitalityMenuProductionRouting(menuItemIds?: string[]): 
   }
 
   return routing;
+}
+
+/**
+ * Explicit saved routing decisions ONLY (no transitional legacy defaults). A document existing IS the decision: an empty `workstreams`
+ * list is a deliberate "In house" choice, an absent document is "Routing required". Direct document reads by id, never a collection scan.
+ */
+export async function explicitMenuProductionRouting(menuItemIds: string[]): Promise<Record<string, string[]>> {
+  const wanted = [...new Set(menuItemIds.filter(Boolean))];
+  const snapshots = await Promise.all(wanted.map(id => menuProductionRouting().doc(stableDocumentId(id)).get()));
+  const result: Record<string, string[]> = {};
+  snapshots.forEach((snapshot, index) => {
+    if (!snapshot.exists) return;
+    const data = snapshot.data() || {};
+    const values = Array.isArray(data.workstreams) ? data.workstreams : Array.isArray(data.views) ? data.views : [];
+    result[wanted[index]] = values.map(String);
+  });
+  return result;
 }
 
 export type ConnectionCommand =
@@ -159,6 +178,7 @@ export async function connectionsOverview() {
       lifecycleState: String(record.record.lifecycleState || "active"),
       publicationStatus: record.publicationStatus,
       scopes: records.filter(candidate => candidate.entityType === "Hospitality Menu Offering" && candidate.record.hospitalityMenuItemId === record.canonicalId).map(offering => ({ oplocId: String(offering.record.oplocId), label: String(records.find(candidate => candidate.canonicalId === offering.record.oplocId)?.record.approvedName || offering.record.oplocId), operationalAreaId: offering.record.operationalAreaId ? String(offering.record.operationalAreaId) : undefined })).filter((scope, index, all) => all.findIndex(candidate => candidate.oplocId === scope.oplocId && candidate.operationalAreaId === scope.operationalAreaId) === index),
+      routingDecided: routingSnapshot.docs.some(doc => doc.id === stableDocumentId(record.canonicalId)),
       workstreams: (() => {
         const routing = routingSnapshot.docs.find(doc => doc.id === stableDocumentId(record.canonicalId))?.data();
         const adapted = adaptCpuProductionWorkstreams((routing?.workstreams || routing?.views || []) as unknown[]);

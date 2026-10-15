@@ -1,4 +1,7 @@
 /**
+ * LOCAL EMULATOR ONLY. This legacy script writes provider mappings, which switch the booking price validator to the canonical record (that holds no price).
+ * Do NOT run it against staging/production; use promote-hospitality-menu-items.ts (unmapped, deterministic, idempotent) instead.
+ *
  * Promote the checked-in development menu catalogues into canonical
  * Hospitality Menu Item records in the local emulator only.
  *
