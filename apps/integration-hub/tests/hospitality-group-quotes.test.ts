@@ -199,3 +199,16 @@ test("Firestore adapter commits all child quote sections together and replays on
   const latest = (await db.collection("fikaBookings").doc(children[3].canonicalId).get()).data() as CanonicalBooking;
   await assert.rejects(executeBookingWorkflow(actor, latest.canonicalId, latest.version, { action: "quote" }), /consolidated quote/);
 });
+
+test("grouped RCoA quote uses the canonical Hospitality quote branding, not FIKA OS or a grouped-only style", async () => {
+  const h = harness(); const q = await generateHospitalityGroupQuote(h.command(), h.context);
+  const html = hospitalityGroupQuoteHtml(q);
+  assert.doesNotMatch(html, /FIKA OS|wordmark/);
+  assert.match(html, /<header class="masthead"><img class="logo" src="data:image\/png;base64,[^"]+" alt="FIKA" \/><img class="site-logo site-logo--reversed" src="data:image\/svg\+xml;base64,[^"]+" alt="RCoA" \/><\/header>/);
+  assert.doesNotMatch(html, /<div class="masthead-label"/);
+  assert.match(html, /font-family:Vim/); assert.match(html, /font-family:Gilroy/); assert.match(html, /<table class="order">/);
+  assert.equal((html.match(/<section class="schedule-service">/g) || []).length, q.snapshots.length);
+  const times = q.snapshots.map(s => html.indexOf(`${s.service.startTime} —`)); assert.ok(times.every(i => i > 0)); assert.deepEqual([...times].sort((a, b) => a - b), times);
+  assert.equal((html.match(/Service subtotal \(net\)/g) || []).length, q.snapshots.length);
+  assert.equal(hospitalityGroupQuoteHtml(q), html, "rendering is deterministic for the immutable group quote");
+});

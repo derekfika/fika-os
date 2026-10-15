@@ -9,6 +9,8 @@ const siteAssets = {
   "angel-court": await asset("public/brand/angel-court/angel-court-bank-logo.png", "image/png"),
   cfc: await asset("public/brand/cfc/cfc-positive-logo.svg", "image/svg+xml"),
   "munich-re": await asset("public/brand/munich-re/munich-re-logo.svg", "image/svg+xml"),
+  // Local copy of the RCoA logo already configured as `portalSites.rcoa.logoPath`, so quote PDFs never depend on the external URL at render time.
+  rcoa: await asset("public/brand/rcoa/rcoa-logo-white.svg", "image/svg+xml"),
 };
 const output = `// Generated from app-local, checked-in brand assets. Do not edit manually.\nexport const FIKA_LOGO_DATA_URI = ${JSON.stringify(await asset("public/fika-logo-white.png", "image/png"))};\nexport const VIM_HEAVY_DATA_URI = ${JSON.stringify(await asset("public/fonts/Vim-Heavy.otf", "font/otf"))};\nexport const GILROY_REGULAR_DATA_URI = ${JSON.stringify(await asset("public/fonts/GILROY-REGULAR.TTF", "font/ttf"))};\nexport const GILROY_BLACK_DATA_URI = ${JSON.stringify(await asset("public/fonts/GILROY-BLACK.TTF", "font/ttf"))};\n`;
-await writeFile(resolve(root, "lib/quote-brand-assets.generated.ts"), `${output}export const SITE_LOGO_DATA_URIS: Record<string, string> = ${JSON.stringify(siteAssets)};\n`);
+await writeFile(resolve(root, "../shared/hospitality-quote-brand-assets.generated.ts"), `${output}export const SITE_LOGO_DATA_URIS: Record<string, string> = ${JSON.stringify(siteAssets)};\n`);
