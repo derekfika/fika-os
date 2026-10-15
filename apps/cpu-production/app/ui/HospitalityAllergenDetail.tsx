@@ -14,8 +14,9 @@ import type {
 import { effectiveProductionPlanStatus, hasAllergenAuthority } from "../lib/production-plan-state";
 import "./hospitality-allergen-detail.css";
 import { mayContainNotes } from "./allergen-matrix";
-import { CANONICAL_ALLERGEN_COLUMNS, isCompleteOperationalAllergenMap, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
+import { isCompleteOperationalAllergenMap, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
 import { matrixColumns } from "./allergen-matrix";
+import { cellLabel, cellState, emptyAllergens, hydrateSavedAllergens } from "./allergen-cell-state";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 import { canonicalAllergenMatrixForHash } from "../../../shared/allergen-matrix-hash";
 const allergenColumns = matrixColumns;
@@ -42,10 +43,6 @@ function menuItemLibraryKey(name: string) {
   if (isDeliStyleParent(name)) return DELI_STYLE_PARENT_KEY;
   const slug = name.trim().toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
   return `menu-item:${slug || "untitled"}`;
-}
-
-function emptyAllergens(): Record<string, AllergenCellState> {
-  return Object.fromEntries(CANONICAL_ALLERGEN_COLUMNS.map(([key]) => [key, "clear"]));
 }
 
 function initialMenuItems(order: ProductionOrder): PlannedMenuItem[] {
@@ -466,7 +463,7 @@ export default function HospitalityAllergenDetail({
       ...candidate,
       productionItemId: productionItem.id,
       name: productionItem.title,
-      allergens: { ...emptyAllergens(), ...normaliseOperationalAllergens(productionItem.allergens) },
+      allergens: hydrateSavedAllergens(productionItem.allergens),
       mayContainNotes: productionItem.mayContainNotes || "",
       evidenceStatus: "not_completed" as const,
     } : candidate) } : item);
@@ -894,22 +891,19 @@ export default function HospitalityAllergenDetail({
                               </div>
                             </th>
                             {allergenColumns.map(([key, label]) => {
-                              const state = sub.allergens[key] || "unrecorded";
+                              const state = cellState(sub.allergens, key);
                               return (
                                 <td key={key}>
                                   <button
                                     type="button"
                                     aria-label={`${label} for ${sub.name || "sub-item"}: ${state}`}
+                                    title={state === "unrecorded" ? "Not yet assessed" : undefined}
                                     className={`allergen-cell allergen-cell--${state}`}
                                     onClick={() =>
                                       toggleCell(menuItem.id, sub, key)
                                     }
                                   >
-                                    {state === "may_contain"
-                                      ? "MC"
-                                      : state === "unrecorded"
-                                        ? "UR"
-                                        : ""}
+                                    {cellLabel(state)}
                                   </button>
                                 </td>
                               );
