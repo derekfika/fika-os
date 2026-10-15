@@ -13,11 +13,13 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
+    "gallagher:pin-hash": "node scripts/create-gallagher-pin-hash.mjs",
     "generate:mnk-menu": "node scripts/convert-mnk-menu.mjs",
     "auth:google-menu": "node scripts/google-menu-auth.mjs"
   },
   "dependencies": {
     "@fika/server-shared": "file:../../packages/server-shared",
+    "google-auth-library": "^10.9.1",
     "lucide-react": "^0.468.0",
     "next": "^16.2.12",
     "react": "^19.2.6",

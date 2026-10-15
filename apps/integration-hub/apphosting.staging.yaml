@@ -1,6 +1,12 @@
 # Firebase App Hosting staging configuration for the Integration Hub.
 # Configure the backend root directory as apps/integration-hub.
 env:
+  # Read-only canonical booking contract consumed by Hospitality after the
+  # Gallagher PIN gate. Use the same staging-only value in both runtimes.
+  - variable: GALLAGHER_DASHBOARD_BRIDGE_TOKEN
+    secret: GALLAGHER_DASHBOARD_BRIDGE_TOKEN
+    availability:
+      - RUNTIME
   # Manual lifecycle UAT only. Runtime Booking IDs must be explicitly selected
   # before enabling delivery; a missing selection fails closed for all candidates.
   - variable: FIKA_HOSPITALITY_EMAIL_UAT_RECIPIENT
