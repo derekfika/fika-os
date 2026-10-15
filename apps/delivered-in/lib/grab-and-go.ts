@@ -4,14 +4,14 @@ export type GrabAndGoCategory = "grab_250ml" | "stacking_salad_750ml";
 export type GrabAndGoProduct = GrabAndGoProductContract;
 export type GrabAndGoLine = { productId: string; quantity: number; productName: string; category: GrabAndGoCategory; sortOrder: number; price?: number };
 export type GrabAndGoHistoryEntry = { version: number; action: "submitted" | "amended" | "cancelled"; status: "submitted" | "cancelled"; at: string; actor: string; lines: GrabAndGoLine[] };
-export type GrabAndGoOrder = { orderId: string; oplocId: string; deliveryDate: string; rotationWeek: number; status: "submitted" | "cancelled"; submittedAt: string; updatedAt: string; updatedBy: string; lines: GrabAndGoLine[]; version: number; history: GrabAndGoHistoryEntry[] };
+export type GrabAndGoOrder = { /** Display/linkage metadata only; never read by production handoff. */ standingOrderId?: string; standingOrderOccurrenceDate?: string; orderId: string; oplocId: string; deliveryDate: string; rotationWeek: number; status: "submitted" | "cancelled"; submittedAt: string; updatedAt: string; updatedBy: string; lines: GrabAndGoLine[]; version: number; history: GrabAndGoHistoryEntry[] };
 
 export const ROTATION_WEEK_1_ANCHOR = process.env.GRAB_N_GO_ROTATION_WEEK_1_DATE || "2026-08-24";
 export const ORDER_CUTOFF_HOUR = 12;
 export const DELIVERY_WEEKDAYS = ["Monday", "Wednesday"] as const;
 
 const LONDON_DATE_FORMATTER = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" });
-const londonDateString = (date: Date) => { const parts = Object.fromEntries(LONDON_DATE_FORMATTER.formatToParts(date).filter(part => part.type !== "literal").map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day}`; };
+export const londonDateString = (date: Date) => { const parts = Object.fromEntries(LONDON_DATE_FORMATTER.formatToParts(date).filter(part => part.type !== "literal").map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day}`; };
 const dateOnly = (value: string | Date) => { const date = typeof value === "string" ? value.slice(0, 10) : londonDateString(value); return new Date(`${date}T00:00:00Z`); };
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 const addDays = (date: Date, days: number) => { const next = new Date(date); next.setUTCDate(next.getUTCDate() + days); return next; };
@@ -53,7 +53,7 @@ function snapshotLines(lines: Array<{ productId: string; quantity: number }>, pr
   return result;
 }
 
-export function applyOrderAction(existing: GrabAndGoOrder | undefined, input: { action: "submit" | "amend" | "cancel"; oplocId: string; deliveryDate: string; rotationWeek: number; lines?: Array<{ productId: string; quantity: number }>; actor: string; expectedVersion?: number; at?: string }, products: GrabAndGoProduct[]) {
+export function applyOrderAction(existing: GrabAndGoOrder | undefined, input: { action: "submit" | "amend" | "cancel"; oplocId: string; deliveryDate: string; rotationWeek: number; lines?: Array<{ productId: string; quantity: number }>; actor: string; expectedVersion?: number; at?: string; standing?: { standingOrderId: string; occurrenceDate: string } }, products: GrabAndGoProduct[]) {
   const at = input.at || new Date().toISOString();
   if (!isBeforeOrderCutoff(input.deliveryDate, new Date(at))) throw Object.assign(new Error("This Grab & Go order is read-only after the 12:00 cutoff for next-day production."), { status: 409 });
   if (existing && (existing.oplocId !== input.oplocId || existing.deliveryDate !== input.deliveryDate)) throw Object.assign(new Error("This order does not belong to the selected site and delivery date."), { status: 403 });
@@ -70,6 +70,6 @@ export function applyOrderAction(existing: GrabAndGoOrder | undefined, input: { 
     if (!active || active.status === "cancelled") throw Object.assign(new Error("Amend requires an existing active Grab & Go order."), { status: 404 });
     if (input.expectedVersion !== active.version) throw Object.assign(new Error(`This Grab & Go order changed elsewhere (expected version ${active.version}). Refresh and try again.`), { status: 409 });
   }
-  const lines = snapshotLines(input.lines || [], products, input.deliveryDate); const action = existing ? "amended" as const : "submitted" as const; const version = existing ? existing.version + 1 : 1; const order: GrabAndGoOrder = existing ? { ...existing, status: "submitted", rotationWeek: input.rotationWeek, updatedAt: at, updatedBy: input.actor, lines, version, history: [...existing.history, { version, action, status: "submitted", at, actor: input.actor, lines: structuredClone(lines) }] } : { orderId: orderIdFor(input.oplocId, input.deliveryDate), oplocId: input.oplocId, deliveryDate: input.deliveryDate, rotationWeek: input.rotationWeek, status: "submitted", submittedAt: at, updatedAt: at, updatedBy: input.actor, lines, version, history: [{ version, action, status: "submitted", at, actor: input.actor, lines: structuredClone(lines) }] };
+  const lines = snapshotLines(input.lines || [], products, input.deliveryDate); const action = existing ? "amended" as const : "submitted" as const; const version = existing ? existing.version + 1 : 1; const order: GrabAndGoOrder = existing ? { ...existing, status: "submitted", rotationWeek: input.rotationWeek, updatedAt: at, updatedBy: input.actor, lines, version, history: [...existing.history, { version, action, status: "submitted", at, actor: input.actor, lines: structuredClone(lines) }] } : { ...(input.standing ? { standingOrderId: input.standing.standingOrderId, standingOrderOccurrenceDate: input.standing.occurrenceDate } : {}), orderId: orderIdFor(input.oplocId, input.deliveryDate), oplocId: input.oplocId, deliveryDate: input.deliveryDate, rotationWeek: input.rotationWeek, status: "submitted", submittedAt: at, updatedAt: at, updatedBy: input.actor, lines, version, history: [{ version, action, status: "submitted", at, actor: input.actor, lines: structuredClone(lines) }] };
   return order;
 }
