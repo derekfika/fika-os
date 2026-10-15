@@ -570,6 +570,9 @@
     align-items: start;
     gap: 22px;
   }
+  :global(.hospitality-dashboard__grid):has([data-group-editing="true"]) {
+    grid-template-columns: minmax(260px, 0.3fr) minmax(0, 1fr);
+  }
   :global(.hospitality-dashboard__queue) {
     max-height: 690px;
     overflow: auto;
@@ -1306,7 +1309,8 @@
       width: 100%;
       max-width: 600px;
     }
-    :global(.hospitality-dashboard__grid) {
+    :global(.hospitality-dashboard__grid),
+    :global(.hospitality-dashboard__grid):has([data-group-editing="true"]) {
       grid-template-columns: 1fr;
     }
     :global(.hospitality-dashboard__queue) {

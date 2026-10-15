@@ -14,7 +14,7 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
   const ready = group.quote?.status === "complete" && !group.quote.stale;
   const statesEligible = group.services.every(s => ["New", "Reviewed", "Quoted", "Completed", "Sent to CPU"].includes(s.lifecycleStatus));
   const eligible = !(group.quote?.status === "integrity_failed" && !group.quote.stale) && statesEligible;
-  return <section className={styles.group} aria-label="All Day Hospitality booking">
+  return <section className={styles.group} data-group-editing={editing ? "true" : undefined} aria-label="All Day Hospitality booking">
     <header><p className="eyebrow">All Day Hospitality · {group.status}</p><h2>{group.client.companyName}</h2><p>{group.client.name} · {group.client.email}{group.client.phone ? ` · ${group.client.phone}` : ""}</p>
       {group.eventName && <h3>{group.eventName}</h3>}
       <p>{new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${group.eventDate}T12:00:00Z`))} · {group.services.length} services · {group.firstTime}–{group.lastTime}</p>
@@ -31,13 +31,13 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
     {group.quote?.status === "artifact_pending" && <p role="status">Quote preparation is in progress. Refresh to check the result, or retry to resume after an interruption.</p>}
     {group.quote?.error && <p role="alert">{group.quote.error}</p>}
     {group.quote?.stale && group.quote.status === "complete" && <p role="status">The previous quote is retained for history. Generate an updated group quote for the current services.</p>}
-    <section className={styles.requested} aria-labelledby="group-requested-heading">
+    {!editing && <section className={styles.requested} aria-labelledby="group-requested-heading">
       <p className="eyebrow">Commercial snapshot</p>
       <h3 id="group-requested-heading">What was requested</h3>
       <RequestedItemsList rows={groupRequestedItems(group)} />
       {group.services.flatMap(service => service.charges.map((charge, i) => <p key={`${service.bookingId}:${i}`} className={styles.charge}>{service.time} — {charge.label}: {money(charge.net)}{charge.detail ? ` · ${charge.detail}` : ""}</p>))}
-    </section>
+    </section>}
     {!editing && production}
-    <dl className={styles.totals}><div><dt>Items subtotal</dt><dd>{money(group.totals.itemsNet)}</dd></div><div><dt>Additional charges</dt><dd>{money(group.totals.chargesNet)}</dd></div><div><dt>Total net</dt><dd>{money(group.totals.net)}</dd></div><div><dt>VAT as recorded</dt><dd>{money(group.totals.vat)}</dd></div><div><dt>Grand total</dt><dd>{money(group.totals.gross)}</dd></div></dl>
+    {!editing && <dl className={styles.totals}><div><dt>Items subtotal</dt><dd>{money(group.totals.itemsNet)}</dd></div><div><dt>Additional charges</dt><dd>{money(group.totals.chargesNet)}</dd></div><div><dt>Total net</dt><dd>{money(group.totals.net)}</dd></div><div><dt>VAT as recorded</dt><dd>{money(group.totals.vat)}</dd></div><div><dt>Grand total</dt><dd>{money(group.totals.gross)}</dd></div></dl>}
   </section>;
 }
