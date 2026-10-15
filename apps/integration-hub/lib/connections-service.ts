@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { resolveHospitalityRouting } from "./hospitality-menu-routing";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
 import { assertPermission } from "./authmod";
@@ -28,34 +29,27 @@ export type ProductionDashboardView = CpuProductionWorkstream;
 
 /** Read-only projection consumed by the CPU dashboards. */
 export async function hospitalityMenuProductionRouting(menuItemIds?: string[]): Promise<Record<string, ProductionDashboardView[]>> {
-  const wanted = menuItemIds ? [...new Set(menuItemIds.filter(Boolean))] : undefined;
-  const snapshot = wanted
-    ? await Promise.all(wanted.map(id => menuProductionRouting().doc(stableDocumentId(id)).get()))
-    : await menuProductionRouting().get();
-  const documents = Array.isArray(snapshot) ? snapshot.filter(item => item.exists) : snapshot.docs;
-  const saved = Object.fromEntries(documents.map(document => {
-    const data = document.data() || {};
-    const adapted = adaptCpuProductionWorkstreams(Array.isArray(data.workstreams) ? data.workstreams : Array.isArray(data.views) ? data.views : []);
-    if (adapted.unknown.length) throw new Error(`Unknown CPU production workstream value in ${document.id}: ${adapted.unknown.join(", ")}.`);
-    return [String(data.menuItemId || document.id), adapted.workstreams];
-  }));
-  // Keep historical provider lines visible in the intended role view when a
-  // restored local workspace has not yet recreated its explicit routing
-  // decisions. Explicit Connections decisions always win.
-  const routing: Record<string, ProductionDashboardView[]> = {
-    ...LEGACY_HOSPITALITY_MENU_ROUTING,
-    ...saved,
-  };
-
-  // Current MNK production hand-offs carry canonical IDs whose suffix is the
-  // exact legacy source key. Add those aliases without a broad canonical
-  // collection read (which is unsafe for large local workspaces).
-  for (const [sourceKey, views] of Object.entries(routing)) {
-    const canonicalId = `hospitality-menu-item:mnk:${sourceKey}`;
-    if (!routing[canonicalId]) routing[canonicalId] = views;
+  const fallback: Record<string, ProductionDashboardView[]> = { ...LEGACY_HOSPITALITY_MENU_ROUTING };
+  for (const [sourceKey, views] of Object.entries(fallback)) fallback[`hospitality-menu-item:mnk:${sourceKey}`] = views;
+  const merges = db.collection("integrationHubHospitalityMenuItemMerges");
+  if (menuItemIds) {
+    return resolveHospitalityRouting(menuItemIds.filter(Boolean), {
+      routing: async id => (await menuProductionRouting().doc(stableDocumentId(id)).get()).data(),
+      merge: async id => (await merges.doc(stableDocumentId(id)).get()).data(),
+    }, fallback);
   }
-
-  return routing;
+  // Catalogue-wide callers retain the full projection, using the same chain semantics as bounded reads.
+  const [routingSnapshot, mergeSnapshot] = await Promise.all([menuProductionRouting().get(), merges.get()]);
+  const routes = new Map(routingSnapshot.docs.map(doc => [String(doc.data().menuItemId || doc.id), doc.data()]));
+  for (const [sourceKey, route] of routes) {
+    if (sourceKey.includes(":")) continue;
+    const canonicalId = `hospitality-menu-item:mnk:${sourceKey}`;
+    if (!routes.has(canonicalId)) routes.set(canonicalId, route);
+  }
+  const mappings = new Map(mergeSnapshot.docs.map(doc => [String(doc.data().sourceMenuItemId || doc.id), doc.data()]));
+  return resolveHospitalityRouting([...Object.keys(fallback), ...routes.keys(), ...mappings.keys()], {
+    routing: async id => routes.get(id), merge: async id => mappings.get(id),
+  }, fallback);
 }
 
 export type ConnectionCommand =
@@ -140,7 +134,7 @@ export async function connectionsOverview() {
       version: Number(record.record.version || 1),
       lifecycleState: String(record.record.lifecycleState || "active"),
       publicationStatus: record.publicationStatus,
-      routingDecided: routingSnapshot.docs.some(doc => doc.id === stableDocumentId(record.canonicalId)),
+      routingDecided: routingSnapshot.docs.some(doc => doc.id === stableDocumentId(record.canonicalId) && !doc.data()?.supersededBy),
       routingSuggestion: suggestHospitalityMenuRouting(record.record.providerMappings),
       scopes: records.filter(candidate => candidate.entityType === "Hospitality Menu Offering" && candidate.record.hospitalityMenuItemId === record.canonicalId).map(offering => ({ oplocId: String(offering.record.oplocId), label: String(records.find(candidate => candidate.canonicalId === offering.record.oplocId)?.record.approvedName || offering.record.oplocId), operationalAreaId: offering.record.operationalAreaId ? String(offering.record.operationalAreaId) : undefined })).filter((scope, index, all) => all.findIndex(candidate => candidate.oplocId === scope.oplocId && candidate.operationalAreaId === scope.operationalAreaId) === index),
       workstreams: (() => {
@@ -442,6 +436,14 @@ export async function saveConnectionCommand(
         if (existingKeys.has(key)) throw new Error(`The merge would create a duplicate offering for ${offering.record.oplocId}. Resolve that site offering first.`);
         existingKeys.add(key);
       }
+      // Production routing is stored once, on the surviving canonical item. Read both decisions before any write.
+      const sourceRoutingRef = menuProductionRouting().doc(stableDocumentId(source.canonicalId));
+      const survivorRoutingRef = menuProductionRouting().doc(stableDocumentId(survivor.canonicalId));
+      const sourceRouting = (await transaction.get(sourceRoutingRef)).data();
+      const survivorRoutingSnapshot = await transaction.get(survivorRoutingRef);
+      const survivorRouting = survivorRoutingSnapshot.data();
+      const routingKey = (value: Record<string, unknown> | undefined) => JSON.stringify([...adaptCpuProductionWorkstreams(Array.isArray(value?.workstreams) ? value.workstreams as unknown[] : Array.isArray(value?.views) ? value.views as unknown[] : []).workstreams].sort());
+      if (sourceRouting && !sourceRouting.supersededBy && survivorRouting && !survivorRouting.supersededBy && routingKey(sourceRouting) !== routingKey(survivorRouting)) throw new Error("The two Menu Items have different production routing decisions. Resolve the routing on one of them before merging.");
       const identities = new Map<string, Record<string, unknown>>();
       const survivorMappings = (Array.isArray(survivor.record.providerMappings) ? survivor.record.providerMappings : []) as Record<string, unknown>[];
       const sourceMappings = (Array.isArray(source.record.providerMappings) ? source.record.providerMappings : []) as Record<string, unknown>[];
@@ -452,6 +454,10 @@ export async function saveConnectionCommand(
       if (!survivorParsed.success || !sourceParsed.success) throw new Error("The merge failed Menu Item validation.");
       transaction.set(canonical().doc(stableDocumentId(survivor.canonicalId)), { ...survivor, record: survivorRecord, dataHash: sha256(JSON.stringify(survivorRecord)) });
       transaction.set(canonical().doc(stableDocumentId(source.canonicalId)), { ...source, record: sourceRecord, dataHash: sha256(JSON.stringify(sourceRecord)) });
+      if (sourceRouting && !sourceRouting.supersededBy) {
+        if (!survivorRoutingSnapshot.exists) transaction.set(survivorRoutingRef, { menuItemId: survivor.canonicalId, workstreams: Array.isArray(sourceRouting.workstreams) ? sourceRouting.workstreams : adaptCpuProductionWorkstreams(Array.isArray(sourceRouting.views) ? sourceRouting.views as unknown[] : []).workstreams, version: 1, createdAt: now, updatedAt: now, updatedBy: actor.uid, inheritedFrom: source.canonicalId });
+        transaction.set(sourceRoutingRef, { supersededBy: survivor.canonicalId, supersededAt: now }, { merge: true });
+      }
       transaction.set(db.collection("integrationHubHospitalityMenuItemMerges").doc(stableDocumentId(source.canonicalId)), { sourceMenuItemId: source.canonicalId, survivorMenuItemId: survivor.canonicalId, mergedAt: now, mergedBy: actor.uid }, { merge: true });
       for (const offering of sourceOfferings) {
         const nextRecord = { ...offering.record, hospitalityMenuItemId: survivor.canonicalId, version: Number(offering.record.version || 0) + 1, updatedAt: now, updatedBy: actor.uid };

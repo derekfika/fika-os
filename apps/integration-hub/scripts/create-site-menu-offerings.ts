@@ -3,6 +3,7 @@ import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
 import { parseCanonical } from "../lib/schemas";
 import { sha256 } from "../lib/profiler";
+import { resolveCanonicalItemForSource } from "../lib/hospitality-catalogue-canonicalisation";
 import { localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue } from "@fika/server-shared/hospitality-catalogue";
 
 const effectiveFrom = "2026-01-01";
@@ -26,7 +27,9 @@ const now = new Date().toISOString();
 
 for (const [site, oplocId, catalogue] of sites) {
   for (const source of catalogue.items) {
-    const itemId = source.canonicalId;
+    // Offer the shared canonical Item when this product already exists; otherwise the site-sourced Item that was promoted for it.
+    const twin = resolveCanonicalItemForSource([...itemById.values()], { siteKey: site, sourceItemId: source.source.sourceItemId, name: source.name, category: source.category, dietaryInformation: source.dietaryInformation, allergenInformation: source.allergenInformation });
+    const itemId = itemById.has(source.canonicalId) ? source.canonicalId : twin?.canonicalId ?? source.canonicalId;
     if (!itemById.has(itemId)) {
       report.missingItems.push(itemId);
       continue;
