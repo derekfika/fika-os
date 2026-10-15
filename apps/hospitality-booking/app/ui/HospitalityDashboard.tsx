@@ -1629,6 +1629,7 @@ function BookingDetail({
         <Fact label="Guests" value={`${booking.service.guestCount} pax`} />
         <Fact label="Where" value={location} />
         <Fact label="Request ID" value={booking.source.sourceBookingId} />
+        {booking.bookingGroup && <Fact label="Request group" value={`${booking.bookingGroup.id} · service ${booking.bookingGroup.sequence} of ${booking.bookingGroup.size}`} />}
         {booking.client.invoiceReference && (
           <Fact label="Invoice / PO" value={booking.client.invoiceReference} />
         )}

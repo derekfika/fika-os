@@ -228,3 +228,9 @@ export function validateRcoaStep(step: number, draft: RcoaBookingDraft, menu: re
   }
   return errors;
 }
+
+/** The All Day Hospitality offering creates one linked ordinary booking per service row; this is the upper bound for one request. */
+export const RCOA_MAX_SERVICES = 12;
+
+/** Deterministic child reference. The group id is the stable per-form request id; children never use independent random ids. */
+export function rcoaChildReference(groupId: string, sequence: number) { return `${groupId}-${String(sequence).padStart(2, "0")}`; }

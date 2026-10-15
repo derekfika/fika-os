@@ -8,6 +8,7 @@ import {
 } from "@/lib/mnk-contract";
 import { hospitalitySiteThemeStyle, portalSite, type PortalSiteConfig, type PortalSiteKey } from "@/lib/portal-sites";
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "@/lib/gallagher-rules";
+import { quantityFromInput, quantityMinimumMessage, stepQuantityDown, stepQuantityUp } from "@/lib/quantity-entry";
 
 type ChoiceValue = string | string[];
 type Line = {
@@ -323,9 +324,8 @@ export default function BookingPortal({
   );
   const setQuantity = (item: PortalMenuItem, quantity: number) =>
     setLines((current) => {
-      const minimum = minimumQuantityFor(item, gallagher);
-      const requested = Number.isFinite(quantity) ? Math.floor(quantity) : 0;
-      const nextQuantity = requested > 0 ? Math.max(minimum, requested) : 0;
+      // Free entry: the minimum is not applied while typing (it turned 10 into 80). It is reported on blur and blocks Continue in step validation.
+      const nextQuantity = quantityFromInput(quantity);
       return nextQuantity > 0
         ? [
             ...current.filter((line) => line.itemId !== item.id),
@@ -1047,6 +1047,7 @@ function Plan({
   gallagher,
   errors,
 }: any) {
+  const [touched, setTouched] = useState<string[]>([]);
   return (
     <section>
       <p className="eyebrow">Build your menu</p>
@@ -1130,37 +1131,34 @@ function Plan({
                   </label>
                 );
               })}
-              <div className="stepper">
-                <button
-                  type="button"
-                  aria-label={`Remove one ${item.name}`}
-                  onClick={() => {
-                    const minimum = minimumQuantityFor(item, gallagher);
-                    const current = line?.quantity || 0;
-                    setQuantity(item, current > minimum ? current - 1 : 0);
-                  }}
-                >
-                  −
-                </button>
-                <input
-                  {...fieldA11y(`quantity:${item.id}`, errors)}
-                  data-booking-field={`quantity:${item.id}`}
-                  aria-label={`${item.name} quantity`}
-                    min={minimumQuantityFor(item, gallagher)}
-                  type="number"
-                  value={line?.quantity || ""}
-                  onChange={(event) =>
-                    setQuantity(item, Number(event.target.value || 0))
-                  }
-                />
-                <button
-                  type="button"
-                  aria-label={`Add one ${item.name}`}
-                  onClick={() => setQuantity(item, (line?.quantity || 0) + 1)}
-                >
-                  +
-                </button>
-              </div>
+              {(() => {
+                const minimum = minimumQuantityFor(item, gallagher);
+                const minimumMessage = quantityMinimumMessage(line?.quantity || 0, minimum);
+                const showMinimum = Boolean(minimumMessage) && (touched.includes(item.id) || Boolean(errors[`quantity:${item.id}`]));
+                const touch = () => setTouched((current: string[]) => current.includes(item.id) ? current : [...current, item.id]);
+                return (
+                  <>
+                    <div className="stepper">
+                      <button type="button" aria-label={`Remove one ${item.name}`} onClick={() => setQuantity(item, stepQuantityDown(line?.quantity || 0, minimum, true))}>−</button>
+                      <input
+                        aria-invalid={showMinimum || undefined}
+                        aria-describedby={showMinimum ? inlineErrorId(`quantity:${item.id}`) : undefined}
+                        data-booking-field={`quantity:${item.id}`}
+                        aria-label={`${item.name} quantity`}
+                        min={minimum}
+                        type="number"
+                        inputMode="numeric"
+                        value={line?.quantity || ""}
+                        onChange={(event) => setQuantity(item, quantityFromInput(event.target.value))}
+                        onBlur={touch}
+                        onKeyDown={(event) => { if (event.key === "Enter") touch(); }}
+                      />
+                      <button type="button" aria-label={`Add one ${item.name}`} onClick={() => setQuantity(item, stepQuantityUp(line?.quantity || 0, minimum))}>+</button>
+                    </div>
+                    {showMinimum && <p className="inline-validation-error" id={inlineErrorId(`quantity:${item.id}`)} role="alert">{minimumMessage}</p>}
+                  </>
+                );
+              })()}
               {minimumQuantityFor(item, gallagher) > 1 && (
                 <p className="minimum-quantity-note">
                   Minimum {minimumQuantityFor(item, gallagher)} boxes
@@ -1171,7 +1169,7 @@ function Plan({
         })}
       </div>
       <ValidationMessage field="menu" errors={errors} />
-      {Object.keys(errors).filter((field) => field.startsWith("quantity:")).map((field) => <ValidationMessage key={field} field={field} errors={errors} />)}
+      {Object.keys(errors).filter((field) => field.startsWith("quantity:") && !visible.some((item: PortalMenuItem) => `quantity:${item.id}` === field)).map((field) => <ValidationMessage key={field} field={field} errors={errors} />)}
     </section>
   );
 }
