@@ -10,6 +10,8 @@
 .group button:disabled { background: var(--fika-surface-subtle); color: var(--fika-text-secondary); border-color: var(--fika-border-default); }
 .group button:focus-visible, .group a:focus-visible, .service summary:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 3px; }
 .help { color: var(--fika-text-secondary); font-size: 14px; }
+.requested, .production { border-top: 1px solid var(--fika-border-default); padding: 16px 0; }
+.charge { color: var(--fika-text-secondary); margin: 8px 0; }
 .service { border-top: 1px solid var(--fika-border-default); padding: 16px 0; }
 .service summary { display: list-item; cursor: pointer; min-height: 44px; }
 .service summary > * { display: block; margin: 4px 0; }
