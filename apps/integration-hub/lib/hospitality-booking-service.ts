@@ -1,4 +1,8 @@
 import crypto from "node:crypto";
+import { hospitalityGroupProjection } from "./hospitality-group-projection";
+import { explicitMenuProductionRouting } from "./connections-service";
+import { LEGACY_HOSPITALITY_MENU_ROUTING } from "./hospitality-routing-suggestions";
+import { BOOKING_LABELS, hospitalityPlatformOf, isGovernedRoutingPlatform, LINE_LABELS, planHospitalityCpuRouting, routingKeys } from "./hospitality-cpu-routing";
 import { trustedPublicOrder } from "./hospitality-price-trust";
 import { loadMnkBookingCatalogue, mnkBookingPricingRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
@@ -53,7 +57,10 @@ export const RCOA_BOOKING_INGESTION_CONTRACT_VERSION =
 export const HOSPITALITY_MENU_READ_CONTRACT_VERSION =
   "fika.hospitality-menu-read.v1";
 
+export type BookingGroupLink = { id: string; sequence: number; size: number };
+
 export type MnkBookingPayload = {
+  bookingGroup?: BookingGroupLink;
   bookingId: string;
   submittedAt: string;
   status?: string;
@@ -152,6 +159,7 @@ export type CanonicalBooking = {
   };
   dietaries: Record<string, unknown>;
   acknowledgements: Record<string, unknown>;
+  bookingGroup?: BookingGroupLink;
   notes?: string;
   attachments: string[];
   statusHistory: Array<{
@@ -566,6 +574,7 @@ export function buildMnkCanonicalBooking(
       },
       dietaries: structuredClone(payload.dietaries || {}),
       acknowledgements: structuredClone(payload.acknowledgements || {}),
+      ...(payload.bookingGroup ? { bookingGroup: structuredClone(payload.bookingGroup) } : {}),
       ...(optional(payload.specialInstructions)
         ? { notes: optional(payload.specialInstructions) }
         : {}),
@@ -973,8 +982,19 @@ export async function bookingWorkspace(siteId?: string, authorisedOplocId?: stri
       }
       return [booking.canonicalId, undefined] as const;
     });
+  // Every Hospitality platform shows the same per-line / booking-level CPU state, derived from the platform's own governed Production visibility records
+  // (never from deliveryChargeRequired). Platforms not yet governed fall back to the legacy map for display only (`enforced: false`). Direct reads by id, de-duplicated.
+  const routed = rows.flatMap((booking) => { const platform = hospitalityPlatformOf(booking); return platform ? [{ booking, platform }] : []; });
+  const explicitRouting = routed.length ? await explicitMenuProductionRouting(routed.flatMap(({ booking, platform }) => booking.order.items.flatMap((item) => routingKeys(item, platform)))) : {};
+  const cpuRouting = Object.fromEntries(routed.map(({ booking, platform }) => {
+    const enforced = isGovernedRoutingPlatform(platform);
+    const plan = planHospitalityCpuRouting(booking.order.items, platform, explicitRouting, enforced ? undefined : LEGACY_HOSPITALITY_MENU_ROUTING);
+    return [booking.canonicalId, { status: plan.status, statusLabel: BOOKING_LABELS[plan.status], platform, enforced, lines: plan.lines.map((line) => ({ index: line.index, state: line.state, label: LINE_LABELS[line.state], source: line.source })) }];
+  }));
   return {
     bookings: rows,
+    ...await hospitalityGroupProjection(rows, cpuRouting),
+    ...(routed.length ? { cpuRouting } : {}),
     productionOrders: Object.fromEntries(orders),
     quoteSettings: await getDashboardQuoteSettings(dashboardIdForSite(siteId)),
     ...(truncated ? { truncated: true } : {}),
@@ -993,6 +1013,8 @@ export async function executeBookingWorkflow(
     if (!snapshot.exists) throw conflict("Booking was not found.");
     const current = snapshot.data() as CanonicalBooking;
     assertBookingExpectedVersion(current.version, expectedVersion, command.action);
+    if (current.bookingGroup?.id && command.action === "quote") throw conflict("Generate the consolidated quote from the booking group.");
+    if (command.action === "quote-pdf-status" && current.quoteState?.revisions.find(q => q.id === command.revisionId)?.groupQuoteId) throw conflict("Group quote artifacts are owned by the group quote workflow.");
     assertWorkflowCommand(current, command);
     const now = new Date().toISOString();
     const nextVersion = current.version + 1;
@@ -1198,7 +1220,7 @@ export async function executeBookingWorkflow(
       };
       // A quote is not ready for CPU hand-off until its PDF has been persisted.
       // Keep the active workflow in Quoted; Approved remains a legacy read value.
-      next.lifecycleStatus = "Quoted";
+      next.lifecycleStatus = current.lifecycleStatus === "Completed" ? "Completed" : "Quoted";
     }
     if (command.action === "quote-pdf-status") {
       next.quoteState = {
@@ -1405,6 +1427,16 @@ export async function createProductionOrder(
     canonicalId,
     `hospitality:${canonicalId}:v${expectedVersion}`,
   );
+  if (result.status === "no_cpu_production_required" || !result.order) {
+    // Explicit outcome, not an error: every item is produced in house, so CPU receives no Production Order.
+    return {
+      created: false as const,
+      status: "no_cpu_production_required" as const,
+      message: "No CPU production required: every item on this booking is produced in house. The Hospitality booking is unchanged.",
+      inHouseLineCount: "inHouseLineCount" in result ? result.inHouseLineCount : 0,
+      productionOrder: undefined,
+    };
+  }
   const order = result.order;
   const projectionPropagation = await propagateProductionChanges([{ order, changeType: "created", idempotencyKey: `cpu-projection:${order.canonicalId}:v${order.version}` }]);
   const logisticsProjection = await deliverLogisticsProjectionForProductionOrder(order);

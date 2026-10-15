@@ -3,7 +3,7 @@ import type { BookingAdditionalCharge, BookingAdditionalChargeInput } from "./ho
 export type BookingStatus = "New" | "Reviewed" | "Quoted" | "Sent to CPU" | "Approved" | "Completed" | "Cancelled";
 export type ReviewChecks = { commercialIntent: boolean; serviceTiming: boolean; deliveryContext: boolean; dietaryRequirements: boolean };
 export type QuotePdfStatus = "pending" | "saved" | "failed";
-export type QuoteRevision = { id: string; revision: number; createdAt: string; createdBy: string; commercialVersion: number; snapshot: unknown; documentReference: string; stale: boolean; pdfStatus?: QuotePdfStatus; driveFileId?: string; driveUrl?: string; pdfError?: string };
+export type QuoteRevision = { id: string; revision: number; createdAt: string; createdBy: string; commercialVersion: number; snapshot: unknown; documentReference: string; groupQuoteId?: string; stale: boolean; pdfStatus?: QuotePdfStatus; driveFileId?: string; driveUrl?: string; pdfError?: string };
 export type DashboardWorkflow = { review?: { checks: ReviewChecks; reviewedAt: string; reviewedBy: string; notes?: string }; completion?: { completedAt: string; completedBy: string; notes?: string }; cancellation?: { reason: string; calendarOutcome: "not_requested" | "not_configured"; productionOutcome: "not_requested" | "cancel_requested" | "cancelled" | "no_active_production_order"; notificationOutcome: "not_requested" | "not_configured" } };
 export type WorkflowCommand =
   | { action: "review"; checks: Partial<ReviewChecks>; notes?: string }
@@ -63,13 +63,22 @@ export function applyQuotePdfPersistence(revisions: QuoteRevision[], currentRevi
   } : revision);
 }
 
+/**
+ * Lifecycle statuses in which commercial charges, and the revised quote that reflects them, may be maintained directly.
+ * `Completed` is included on purpose: a handed-off Booking is auto-completed, yet its additional charges (labour, equipment,
+ * building/site, other) stay commercially editable. Charges are commercial only: they never change the lifecycle, the Production
+ * Order or the production lineage, and the hand-off itself stays gated on Quoted/Approved. `Sent to CPU` and `Cancelled` remain closed.
+ */
+export const COMMERCIAL_EDITABLE_STATUSES = ["New", "Reviewed", "Quoted", "Completed"] as const;
+export const isCommerciallyEditable = (lifecycleStatus: BookingStatus) => (COMMERCIAL_EDITABLE_STATUSES as readonly string[]).includes(lifecycleStatus);
+
 export function assertWorkflowCommand(booking: { lifecycleStatus: BookingStatus; commercialVersion?: number; quoteState?: { currentRevisionId?: string; revisions: QuoteRevision[] } }, command: WorkflowCommand) {
   if (command.action === "review") {
     if (booking.lifecycleStatus !== "New") throw workflowError("Only a new Booking can be reviewed.");
   }
-  if (command.action === "quote" && !["New", "Reviewed", "Quoted"].includes(booking.lifecycleStatus)) throw workflowError("Generate a quote only for a new or active Booking.");
-  if (command.action === "set-additional-charges" && !["New", "Reviewed", "Quoted"].includes(booking.lifecycleStatus))
-    throw workflowError("Additional charges can be changed directly only before CPU hand-off. Reopen the Booking through its governed amendment workflow to change commercial intent after hand-off.");
+  if (command.action === "quote" && !isCommerciallyEditable(booking.lifecycleStatus)) throw workflowError("Generate a quote only for a new, active or completed Booking.");
+  if (command.action === "set-additional-charges" && !isCommerciallyEditable(booking.lifecycleStatus))
+    throw workflowError("Additional charges can be changed directly before CPU hand-off and on a completed Booking. Reopen the Booking through its governed amendment workflow to change commercial intent in any other state.");
   if (command.action === "amend" && !command.reason.trim()) throw workflowError("An amendment reason is required.");
   if (command.action === "approve") throw workflowError("Quote approval has been removed. Send the current quote to CPU instead.");
   if (command.action === "complete") {

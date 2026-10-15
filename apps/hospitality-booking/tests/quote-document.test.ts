@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { quoteHtml } from "../lib/quote-document";
-import { FIKA_LOGO_DATA_URI, SITE_LOGO_DATA_URIS } from "../lib/quote-brand-assets.generated";
+import { FIKA_LOGO_DATA_URI, SITE_LOGO_DATA_URIS } from "../../shared/hospitality-quote-brand-assets.generated";
 
 test("quote branding uses immutable portal identity and self-contained existing assets", () => {
   const render = (portalSiteId: string, portalSiteLabel: string) => quoteHtml({

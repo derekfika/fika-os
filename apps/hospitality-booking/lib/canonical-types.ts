@@ -1,3 +1,4 @@
+import type { HospitalityRoutingProjection } from "../../shared/hospitality-routing-contract";
 export type CanonicalBooking = {
   canonicalId: string;
   entityType: "Booking";
@@ -9,7 +10,7 @@ export type CanonicalBooking = {
   client: { name: string; email: string; phone?: string; companyName: string; requester?: { name: string; email: string; phone?: string; companyName: string }; clientName?: string; clientCompany?: string; invoiceReference?: string };
   service: { eventDate: string; startTime: string; endTime?: string; guestCount: number; floorLevel?: string; roomOrArea?: string; deliveryPoint?: string; onsiteContactName?: string; onsiteContactPhone?: string; portalSiteId?: string; portalSiteLabel?: string; oplocId?: string; operationalAreaId?: string; serviceArrangementId?: string };
   order: { eventType?: string; items: Array<{ itemId: string; itemName?: string; category?: string; description?: string; servingInfo?: string; unitPrice: number; quantity: number; lineTotal: number; choices?: unknown[]; comments?: string; menuItemId?: string }>; netTotal: number; vatNote?: string; currency: "GBP"; vatTotal: number; grossTotal: number };
-  dietaries: Record<string, unknown>; acknowledgements: Record<string, unknown>; notes?: string; attachments: string[];
+  dietaries: Record<string, unknown>; acknowledgements: Record<string, unknown>; bookingGroup?: { id: string; sequence: number; size: number }; notes?: string; attachments: string[];
   statusHistory: Array<{ status: CanonicalBooking["lifecycleStatus"]; changedAt: string; changedBy: string; reason: string }>;
   audit: Array<{ action: string; at: string; by: string; reason: string }>;
   commercialVersion?: number;
@@ -17,6 +18,8 @@ export type CanonicalBooking = {
   quoteState?: { currentRevisionId?: string; revisions: Array<{ id: string; revision: number; createdAt: string; commercialVersion?: number; stale?: boolean; snapshot: Record<string, unknown>; driveUrl?: string; driveFileId?: string; pdfStatus?: string }> };
   dashboardWorkflow?: Record<string, unknown>;
   deliveryChargeRequired?: boolean;
+  /** Derived server-side from the governed Production visibility records (all Hospitality platforms); never persisted. */
+  cpuRouting?: HospitalityRoutingProjection;
 };
 
 export type BookingAdditionalChargeCategory = "labour" | "equipment" | "service" | "other";
@@ -27,7 +30,7 @@ export type BookingAdditionalChargeLabour = {
   hoursPerPerson: number;
   hourlyRate: number;
   multiplier: number;
-  rateSource: "configured" | "custom";
+  rateSource: "governed" | "configured" | "custom";
 };
 type BookingAdditionalChargeBase = {
   id: string;

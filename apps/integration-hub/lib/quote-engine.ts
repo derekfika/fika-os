@@ -24,7 +24,7 @@ export type QuoteChargeLabour = {
   hoursPerPerson: number;
   hourlyRate: number;
   multiplier: number;
-  rateSource: "configured" | "custom";
+  rateSource: "governed" | "configured" | "custom";
 };
 export type QuoteCharge = {
   code: "delivery" | "management_fee" | "housekeeping" | "security" | "aircon" | "venue_hire" | "booking_additional";

@@ -259,6 +259,9 @@
   margin-bottom: 24px;
 }
 
+.allDayEventSection { margin-top: var(--space-7, 48px); }
+@media (max-width: 600px) { .allDayEventSection { margin-top: var(--space-5, 24px); } }
+
 .sectionHeading h2,
 .confirmation h2 {
   margin: 0;
@@ -1974,4 +1977,256 @@
     width: auto;
     max-width: 128px;
   }
+}
+/* ---- All Day Hospitality: "Build your day" reads as an itinerary. Each service is one schedule entry: title and summary first, then the
+   editable core fields, then its items with the one primary action; Duplicate/Remove/Add note are quiet text actions. ---- */
+.eventDateLine {
+  margin: 4px 0 0;
+  color: var(--fika-text-muted, #7a7285);
+  font-size: 15px;
+}
+.dayList {
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 14px;
+}
+.dayRow {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px 12px;
+  border: 1px solid var(--fika-border-default, #e4dfec);
+  border-radius: 12px;
+  background: var(--fika-surface-card, #fff);
+}
+.serviceHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.serviceNumber {
+  color: var(--fika-text-muted, #7a7285);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.serviceTitle {
+  margin: 2px 0 0;
+  font-size: 22px;
+  line-height: 1.2;
+  color: var(--fika-text-primary, #241f33);
+}
+.serviceMeta {
+  margin: 4px 0 0;
+  color: var(--fika-text-secondary, #655d70);
+  font-size: 15px;
+}
+.serviceMinor {
+  display: flex;
+  gap: 2px;
+}
+.textAction {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--hospitality-site-accent, #2c1951);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.textAction:hover:not(:disabled) {
+  background: var(--fika-surface-subtle, #f4f1f7);
+  text-decoration: underline;
+}
+.textAction:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.textActionDanger {
+  color: var(--fika-status-danger, #a32121);
+}
+.textAction:focus-visible,
+.itemsButton:focus-visible,
+.addService:focus-visible {
+  outline: 3px solid var(--fika-focus-ring, #4f34c7);
+  outline-offset: 2px;
+}
+.dayBoard {
+  container-type: inline-size;
+}
+.serviceFields {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1.3fr) 88px minmax(0, 1.1fr);
+  gap: 10px 12px;
+}
+@container (max-width: 480px) {
+  .serviceFields {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.dayCell {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  min-width: 0;
+}
+.cellLabel {
+  color: var(--fika-text-muted, #7a7285);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.dayCell input,
+.dayCell select {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--fika-surface-subtle, #f4f1f7);
+  color: inherit;
+  font: inherit;
+}
+.dayCell input:hover,
+.dayCell select:hover {
+  border-color: var(--fika-border-default, #cfc9d9);
+}
+.dayCell input:focus-visible,
+.dayCell select:focus-visible {
+  outline: 3px solid var(--fika-focus-ring, #4f34c7);
+  outline-offset: 1px;
+  background: #fff;
+}
+.dayCell input[aria-invalid="true"],
+.dayCell select[aria-invalid="true"] {
+  border-color: var(--fika-status-danger, #a32121);
+  background: #fff;
+}
+.serviceItems {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--fika-surface-subtle, #ece8f3);
+}
+.serviceItemList {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+.serviceItemList ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fika-text-primary, #241f33);
+}
+.serviceItemList small {
+  color: var(--fika-text-muted, #7a7285);
+  font-weight: 400;
+}
+.noItems {
+  margin: 0;
+  color: var(--fika-text-secondary, #655d70);
+}
+.itemsButton {
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--fika-action-primary, #4f34c7);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.itemsButton:hover {
+  background: var(--fika-action-primary-hover, #3d27a8);
+}
+.addNote {
+  justify-self: start;
+  margin-top: -6px;
+}
+.noteBlock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+.noteBlock > .dayCell {
+  flex: 1 1 260px;
+}
+.addService {
+  width: 100%;
+  min-height: 52px;
+  border: 1.5px dashed var(--fika-border-default, #cfc9d9);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--hospitality-site-accent, #2c1951);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.addService:hover:not(:disabled) {
+  background: var(--fika-surface-subtle, #f4f1f7);
+}
+.addService:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.removeConfirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--fika-status-danger, #a32121);
+  border-radius: 8px;
+  background: #fff;
+}
+.daySummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  align-items: center;
+  margin: 16px 0 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--fika-surface-subtle, #f4f1f7);
+}
+.pickerBanner {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--fika-action-primary, #4f34c7);
+  border-radius: 10px;
+  background: var(--fika-surface-subtle, #f4f1f7);
+}
+.pickerBanner span {
+  color: var(--fika-text-secondary, #655d70);
+  font-size: 14px;
+}
+.confirmationList {
+  margin: 12px 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 17px;
 }
