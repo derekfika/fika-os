@@ -34,7 +34,7 @@ function fakeDb() {
   });
   const runTransaction = (callback: any) => { const operation = queue.then(async () => {
     const writes: Array<[any, any, boolean]> = [];
-    const result = await callback({ get: async (ref: any) => snapshot(ref), set: (ref: any, data: any) => writes.push([ref, data, false]), create: (ref: any, data: any) => writes.push([ref, data, true]) });
+    const result = await callback({ get: async (ref: any) => { if (writes.length) throw new Error("Firestore transactions require all reads to be executed before all writes."); return snapshot(ref); }, set: (ref: any, data: any) => writes.push([ref, data, false]), create: (ref: any, data: any) => writes.push([ref, data, true]) });
     for (const [ref, , create] of writes) if (create && records.has(ref.path)) throw new Error("already exists");
     for (const [ref, data] of writes) records.set(ref.path, structuredClone(data));
     return result; }); queue = operation.then(() => undefined, () => undefined); return operation; };

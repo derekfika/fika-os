@@ -193,9 +193,9 @@ export async function commitStandingOccurrenceHosted(input: { standingOrderId: s
     const [snapshot, existing] = await Promise.all([transaction.get(ref), transaction.get(orderRef)]);
     const next = advance(snapshot.exists ? snapshot.data() as StandingOrder : undefined);
     if (!next) return "conflict" as const;
-    transaction.set(ref, next);
-    if (existing.exists) return "skipped-existing-order" as const;
-    await stageGrabHandoff(transaction, input.order); transaction.set(orderRef, input.order); return "created" as const;
+    // Firestore requires every read (including the handoff-event read inside stageGrabHandoff) before any write.
+    if (existing.exists) { transaction.set(ref, next); return "skipped-existing-order" as const; }
+    await stageGrabHandoff(transaction, input.order); transaction.set(ref, next); transaction.set(orderRef, input.order); return "created" as const;
   });
 }
 export function listGrabAndGoEvents() { return read().events.map(event => structuredClone(event)); }
