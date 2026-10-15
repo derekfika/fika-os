@@ -290,20 +290,18 @@ test("an invalid service row stops the whole request before ANY Hub call", async
   } finally { restore(); }
 });
 
-test("13. responsive contract: aligned schedule on desktop/tablet, one touch-friendly card per service on narrow screens", () => {
+test("13. responsive contract: itinerary cards, one structured field row on desktop/tablet, stacked touch-friendly fields on narrow screens", () => {
   const css = readFileSync(new URL("../app/ui/RcoaBookingPortal.module.css", import.meta.url), "utf8");
-  assert.match(css, /\.dayHeader,\s*\.dayRow \{[^}]*grid-template-columns: 112px/);
+  assert.match(css, /\.serviceFields \{[^}]*grid-template-columns: 116px/);
   assert.match(css, /\.dayCell input,\s*\.dayCell select \{[^}]*min-height: 44px/);
+  assert.match(css, /\.textAction \{[^}]*min-height: 44px/);
   assert.match(css, /\.dayBoard \{\s*container-type: inline-size/);
-  const medium = css.slice(css.indexOf("@container (max-width: 860px)"), css.indexOf("@container (max-width: 560px)"));
-  assert.match(medium, /\.dayHeader \{\s*display: none/);
-  assert.match(medium, /\.cellLabel \{\s*display: block/);
-  const narrow = css.slice(css.indexOf("@container (max-width: 560px)"));
+  const narrow = css.slice(css.indexOf("@container (max-width: 480px)"));
   assert.match(narrow, /grid-template-columns: 1fr 1fr/);
-  assert.match(narrow, /\.dayActions > button/);
   assert.match(css, /\.dayCell input:focus-visible/);
+  assert.match(css, /\.textAction:focus-visible/);
   const portal = readFileSync(new URL("../app/ui/RcoaBookingPortal.tsx", import.meta.url), "utf8");
-  for (const label of ["Build your day", "+ Add service", "Edit items", "Add items", "Duplicate", "Remove"]) assert.ok(portal.includes(label), label);
+  for (const label of ["Build your day", "+ Add service", "Edit items", "Add items", "Duplicate", "Remove", "+ Add note", "No items selected yet", "Add each service in the order it will happen."]) assert.ok(portal.includes(label), label);
 });
 
 test("the shared event view feeds the existing contact, dietaries and notes screens", () => {

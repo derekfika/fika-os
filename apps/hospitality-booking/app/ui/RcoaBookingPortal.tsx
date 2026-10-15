@@ -117,6 +117,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   const [allDay, setAllDay] = useState<AllDayDraft>(createEmptyAllDay);
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [removeConfirmId, setRemoveConfirmId] = useState<string | null>(null);
+  const [openNoteIds, setOpenNoteIds] = useState<string[]>([]);
   const [confirmation, setConfirmation] = useState<Array<{ time: string; label: string; guests: number }> | null>(null);
   // The item screen, contact, dietaries and acknowledgements all operate on an ordinary RcoaBookingDraft: a service row while choosing its
   // items, otherwise the shared event. This is what lets the existing catalogue rules and validation apply unchanged.
@@ -353,10 +354,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   const addService = () => { setAllDay((current) => addAllDayService(current)); setMessage(""); };
   const duplicateService = (serviceId: string) => { setAllDay((current) => duplicateAllDayService(current, serviceId)); setMessage("Service duplicated with its type, guests, location and items. Choose the new time."); };
   const removeService = (serviceId: string) => { setAllDay((current) => removeAllDayService(current, serviceId)); setRemoveConfirmId(null); setErrors({}); setMessage("Service removed."); };
-  const itemSummary = (lines: RcoaLine[]) => {
-    const picked = lines.flatMap((line) => { const item = menu.find((candidate) => candidate.id === line.itemId); return item && line.quantity > 0 ? [item.name] : []; });
-    return picked.length ? `${picked.length} item${picked.length === 1 ? "" : "s"}: ${picked.slice(0, 2).join(", ")}${picked.length > 2 ? ` +${picked.length - 2} more` : ""}` : "No items yet";
-  };
+  const selectedItems = (lines: RcoaLine[]) => lines.flatMap((line) => { const item = menu.find((candidate) => candidate.id === line.itemId); return item && line.quantity > 0 ? [{ name: item.name, quantity: line.quantity }] : []; });
+  const longDate = (iso: string) => /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${iso}T12:00:00Z`)) : "";
   const allDaySummary = summarizeAllDay(allDay);
   const view = flow === "standard"
     ? (["occasion", "contact", "event", "menu", "dietaries", "review"] as const)[step]
@@ -617,37 +616,67 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
 
             {view === "build" && (
               <section aria-labelledby="rcoa-build-title">
-                <div className={styles.sectionHeading}><p className={styles.eyebrow}>All Day Hospitality</p><h2 id="rcoa-build-title">Build your day</h2><p>Add each catering service for {allDay.eventName.trim() || "your event"}{allDay.eventDate ? ` on ${allDay.eventDate}` : ""}. Choose a time and service type, then add items from the usual menu.</p></div>
-                <div className={styles.dayBoard}>
-                <div className={styles.dayHeader} aria-hidden="true"><span>Time</span><span>Service</span><span>Guests</span><span>Location</span><span>Items</span><span>Actions</span></div>
-                <ul className={styles.dayList} aria-label="Services in your day">
-                  {allDay.services.map((service) => {
-                    const hasItems = service.lines.some((line) => line.quantity > 0);
+                <div className={styles.sectionHeading}>
+                  <p className={styles.eyebrow}>All Day Hospitality</p><h2 id="rcoa-build-title">Build your day</h2>
+                  <p>Add each service in the order it will happen. Choose a time, service type and menu for each one.</p>
+                  {longDate(allDay.eventDate) && <p className={styles.eventDateLine}>{longDate(allDay.eventDate)}</p>}
+                </div>
+                <ol className={styles.dayList} aria-label="Services in your day">
+                  {allDay.services.map((service, index) => {
+                    const items = selectedItems(service.lines);
+                    const typeLabel = rcoaEventTypes.find((type) => type.id === service.category)?.label;
+                    const title = service.startTime && typeLabel ? `${service.startTime} — ${typeLabel}` : service.startTime || typeLabel || "New service";
+                    const meta = [service.guestCount > 0 ? `${service.guestCount} guests` : "", service.location.trim()].filter(Boolean).join(" · ");
+                    const noteOpen = Boolean(service.notes) || openNoteIds.includes(service.id);
                     return (
                       <li className={styles.dayRow} key={service.id} data-service-row={service.id}>
-                        <label className={styles.dayCell}><span className={styles.cellLabel}>Time</span><input {...fieldProps(`startTime:${service.id}`, errors)} data-rcoa-field={`startTime:${service.id}`} type="time" value={service.startTime} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { startTime: event.target.value }))} /><ErrorMessage field={`startTime:${service.id}`} errors={errors} /></label>
-                        <label className={styles.dayCell}><span className={styles.cellLabel}>Service</span>
-                          <select {...fieldProps(`service:${service.id}`, errors)} data-rcoa-field={`service:${service.id}`} value={service.category} onChange={(event) => changeServiceCategory(service.id, event.target.value as RcoaEventType | "")}>
-                            <option value="">Choose a service</option>
-                            {rcoaEventTypes.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
-                          </select><ErrorMessage field={`service:${service.id}`} errors={errors} /></label>
-                        <label className={styles.dayCell}><span className={styles.cellLabel}>Guests</span><input {...fieldProps(`guestCount:${service.id}`, errors)} data-rcoa-field={`guestCount:${service.id}`} type="number" min="1" step="1" value={service.guestCount || ""} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { guestCount: Number(event.target.value || 0) }))} /><ErrorMessage field={`guestCount:${service.id}`} errors={errors} /></label>
-                        <label className={styles.dayCell}><span className={styles.cellLabel}>Location</span><input {...fieldProps(`location:${service.id}`, errors)} data-rcoa-field={`location:${service.id}`} value={service.location} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { location: event.target.value }))} placeholder="e.g. Lecture Hall" /><ErrorMessage field={`location:${service.id}`} errors={errors} /></label>
-                        <div className={styles.dayCell}><span className={styles.cellLabel}>Items</span>
-                          <span className={styles.daySummaryText}>{itemSummary(service.lines)}</span>
-                          <button type="button" className={styles.secondaryButton} data-rcoa-field={`items:${service.id}`} onClick={() => openItems(service.id)}>{hasItems ? "Edit items" : "Add items"}</button>
-                          <ErrorMessage field={`items:${service.id}`} errors={errors} /></div>
-                        <div className={`${styles.dayCell} ${styles.dayActions}`}><span className={styles.cellLabel}>Actions</span>
-                          <button type="button" className={styles.secondaryButton} onClick={() => duplicateService(service.id)} disabled={allDay.services.length >= RCOA_MAX_SERVICES}>Duplicate</button>
-                          <button type="button" className={styles.secondaryButton} onClick={() => setRemoveConfirmId(service.id)} disabled={allDay.services.length <= 1}>Remove</button></div>
-                        <label className={`${styles.dayCell} ${styles.dayNote}`}><span className={styles.cellLabel}>Note for this service <small>(optional)</small></span><input value={service.notes} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { notes: event.target.value }))} /></label>
+                        <div className={styles.serviceHead}>
+                          <div>
+                            <span className={styles.serviceNumber}>Service {index + 1}</span>
+                            <h3 className={styles.serviceTitle}>{title}</h3>
+                            {meta && <p className={styles.serviceMeta}>{meta}</p>}
+                          </div>
+                          <div className={styles.serviceMinor}>
+                            <button type="button" className={styles.textAction} onClick={() => duplicateService(service.id)} disabled={allDay.services.length >= RCOA_MAX_SERVICES}>Duplicate</button>
+                            <button type="button" className={`${styles.textAction} ${styles.textActionDanger}`} onClick={() => setRemoveConfirmId(service.id)} disabled={allDay.services.length <= 1}>Remove</button>
+                          </div>
+                        </div>
                         {removeConfirmId === service.id && <div className={styles.removeConfirm} role="alertdialog" aria-label="Remove this service"><span>Remove this service and its items?</span><button type="button" className={styles.dangerButton} onClick={() => removeService(service.id)}>Remove</button><button type="button" className={styles.secondaryButton} onClick={() => setRemoveConfirmId(null)}>Keep</button></div>}
+                        <div className={styles.dayBoard}>
+                          <div className={styles.serviceFields}>
+                            <label className={styles.dayCell}><span className={styles.cellLabel}>Time</span><input {...fieldProps(`startTime:${service.id}`, errors)} data-rcoa-field={`startTime:${service.id}`} type="time" value={service.startTime} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { startTime: event.target.value }))} /><ErrorMessage field={`startTime:${service.id}`} errors={errors} /></label>
+                            <label className={styles.dayCell}><span className={styles.cellLabel}>Service</span>
+                              <select {...fieldProps(`service:${service.id}`, errors)} data-rcoa-field={`service:${service.id}`} value={service.category} onChange={(event) => changeServiceCategory(service.id, event.target.value as RcoaEventType | "")}>
+                                <option value="">Choose a service</option>
+                                {rcoaEventTypes.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
+                              </select><ErrorMessage field={`service:${service.id}`} errors={errors} /></label>
+                            <label className={styles.dayCell}><span className={styles.cellLabel}>Guests</span><input {...fieldProps(`guestCount:${service.id}`, errors)} data-rcoa-field={`guestCount:${service.id}`} type="number" min="1" step="1" value={service.guestCount || ""} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { guestCount: Number(event.target.value || 0) }))} /><ErrorMessage field={`guestCount:${service.id}`} errors={errors} /></label>
+                            <label className={styles.dayCell}><span className={styles.cellLabel}>Location</span><input {...fieldProps(`location:${service.id}`, errors)} data-rcoa-field={`location:${service.id}`} value={service.location} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { location: event.target.value }))} placeholder="e.g. Lecture Hall" /><ErrorMessage field={`location:${service.id}`} errors={errors} /></label>
+                          </div>
+                        </div>
+                        <div className={styles.serviceItems}>
+                          <div className={styles.serviceItemList}>
+                            <span className={styles.cellLabel}>Items</span>
+                            {items.length
+                              ? <ul>{items.map((item) => <li key={item.name}>{item.name}<small> ×{item.quantity}</small></li>)}</ul>
+                              : <p className={styles.noItems}>No items selected yet</p>}
+                            <ErrorMessage field={`items:${service.id}`} errors={errors} />
+                          </div>
+                          <button type="button" className={styles.itemsButton} data-rcoa-field={`items:${service.id}`} onClick={() => openItems(service.id)}>{items.length ? "Edit items" : "Add items"}</button>
+                        </div>
+                        {noteOpen ? (
+                          <div className={styles.noteBlock}>
+                            <label className={styles.dayCell}><span className={styles.cellLabel}>Note for this service</span><input value={service.notes} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { notes: event.target.value }))} placeholder="Anything the team should know about this service" /></label>
+                            <button type="button" className={styles.textAction} onClick={() => { setAllDay((current) => updateAllDayService(current, service.id, { notes: "" })); setOpenNoteIds((current) => current.filter((id) => id !== service.id)); }}>Remove note</button>
+                          </div>
+                        ) : (
+                          <button type="button" className={`${styles.textAction} ${styles.addNote}`} onClick={() => setOpenNoteIds((current) => [...current, service.id])}>+ Add note</button>
+                        )}
                       </li>
                     );
                   })}
-                </ul>
-                </div>
-                <button type="button" className={styles.secondaryButton} onClick={addService} disabled={allDay.services.length >= RCOA_MAX_SERVICES}>+ Add service</button>
+                </ol>
+                <button type="button" className={styles.addService} onClick={addService} disabled={allDay.services.length >= RCOA_MAX_SERVICES}>+ Add service</button>
                 <div className={styles.daySummary} role="status">
                   <strong>{allDaySummary.count} service{allDaySummary.count === 1 ? "" : "s"}</strong>
                   {allDaySummary.first && <span>{allDaySummary.first}{allDaySummary.last !== allDaySummary.first ? ` – ${allDaySummary.last}` : ""}</span>}

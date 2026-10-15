@@ -1975,46 +1975,107 @@
     max-width: 128px;
   }
 }
-
-/* ---- All Day Hospitality: "Build your day" schedule. Desktop/tablet = aligned rows; narrow screens = one touch-friendly card per service. ---- */
-.dayHeader,
-.dayRow {
-  display: grid;
-  grid-template-columns: 112px minmax(150px, 1.3fr) 84px minmax(130px, 1.1fr) minmax(190px, 1.6fr) auto;
-  gap: 10px 12px;
-  align-items: start;
-}
-.dayHeader {
-  padding: 0 14px 8px;
-  color: var(--fika-text-secondary, #655d70);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+/* ---- All Day Hospitality: "Build your day" reads as an itinerary. Each service is one schedule entry: title and summary first, then the
+   editable core fields, then its items with the one primary action; Duplicate/Remove/Add note are quiet text actions. ---- */
+.eventDateLine {
+  margin: 4px 0 0;
+  color: var(--fika-text-muted, #7a7285);
+  font-size: 15px;
 }
 .dayList {
   margin: 0 0 14px;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 10px;
+  gap: 14px;
 }
 .dayRow {
-  position: relative;
-  padding: 14px;
-  border: 1px solid var(--fika-border-default, #ded8e8);
-  border-radius: 10px;
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px 12px;
+  border: 1px solid var(--fika-border-default, #e4dfec);
+  border-radius: 12px;
   background: var(--fika-surface-card, #fff);
+}
+.serviceHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.serviceNumber {
+  color: var(--fika-text-muted, #7a7285);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.serviceTitle {
+  margin: 2px 0 0;
+  font-size: 22px;
+  line-height: 1.2;
+  color: var(--fika-text-primary, #241f33);
+}
+.serviceMeta {
+  margin: 4px 0 0;
+  color: var(--fika-text-secondary, #655d70);
+  font-size: 15px;
+}
+.serviceMinor {
+  display: flex;
+  gap: 2px;
+}
+.textAction {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--hospitality-site-accent, #2c1951);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.textAction:hover:not(:disabled) {
+  background: var(--fika-surface-subtle, #f4f1f7);
+  text-decoration: underline;
+}
+.textAction:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.textActionDanger {
+  color: var(--fika-status-danger, #a32121);
+}
+.textAction:focus-visible,
+.itemsButton:focus-visible,
+.addService:focus-visible {
+  outline: 3px solid var(--fika-focus-ring, #4f34c7);
+  outline-offset: 2px;
+}
+.dayBoard {
+  container-type: inline-size;
+}
+.serviceFields {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1.3fr) 88px minmax(0, 1.1fr);
+  gap: 10px 12px;
+}
+@container (max-width: 480px) {
+  .serviceFields {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 .dayCell {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   align-content: start;
   min-width: 0;
 }
 .cellLabel {
-  display: none;
-  color: var(--fika-text-secondary, #655d70);
+  color: var(--fika-text-muted, #7a7285);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -2026,38 +2087,107 @@
   min-height: 44px;
   box-sizing: border-box;
   padding: 8px 10px;
-  border: 1px solid var(--fika-border-default, #cfc9d9);
+  border: 1px solid transparent;
   border-radius: 8px;
-  background: #fff;
+  background: var(--fika-surface-subtle, #f4f1f7);
   color: inherit;
   font: inherit;
+}
+.dayCell input:hover,
+.dayCell select:hover {
+  border-color: var(--fika-border-default, #cfc9d9);
 }
 .dayCell input:focus-visible,
 .dayCell select:focus-visible {
   outline: 3px solid var(--fika-focus-ring, #4f34c7);
-  outline-offset: 2px;
+  outline-offset: 1px;
+  background: #fff;
 }
 .dayCell input[aria-invalid="true"],
 .dayCell select[aria-invalid="true"] {
   border-color: var(--fika-status-danger, #a32121);
+  background: #fff;
 }
-.daySummaryText {
+.serviceItems {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--fika-surface-subtle, #ece8f3);
+}
+.serviceItemList {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+.serviceItemList ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fika-text-primary, #241f33);
+}
+.serviceItemList small {
+  color: var(--fika-text-muted, #7a7285);
+  font-weight: 400;
+}
+.noItems {
+  margin: 0;
   color: var(--fika-text-secondary, #655d70);
+}
+.itemsButton {
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--fika-action-primary, #4f34c7);
+  color: #fff;
+  font: inherit;
   font-size: 14px;
-  overflow-wrap: anywhere;
+  font-weight: 700;
+  cursor: pointer;
 }
-.dayActions {
-  grid-auto-flow: column;
-  gap: 8px;
+.itemsButton:hover {
+  background: var(--fika-action-primary-hover, #3d27a8);
 }
-.dayNote {
-  grid-column: 1 / -1;
+.addNote {
+  justify-self: start;
+  margin-top: -6px;
 }
-.dayNote .cellLabel {
-  display: block;
+.noteBlock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+.noteBlock > .dayCell {
+  flex: 1 1 260px;
+}
+.addService {
+  width: 100%;
+  min-height: 52px;
+  border: 1.5px dashed var(--fika-border-default, #cfc9d9);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--hospitality-site-accent, #2c1951);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.addService:hover:not(:disabled) {
+  background: var(--fika-surface-subtle, #f4f1f7);
+}
+.addService:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .removeConfirm {
-  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2096,41 +2226,4 @@
   display: grid;
   gap: 6px;
   font-size: 17px;
-}
-/* The schedule sizes itself to the room it actually has (the summary can sit beside it), not to the viewport:
-   one line per service when wide, two lines at medium width, one touch-friendly card per service when narrow. */
-.dayBoard {
-  container-type: inline-size;
-}
-@container (max-width: 860px) {
-  .dayHeader {
-    display: none;
-  }
-  .dayRow {
-    grid-template-columns: 124px minmax(0, 1.4fr) 92px minmax(0, 1fr);
-  }
-  .dayRow > .dayCell:nth-child(5) {
-    grid-column: 1 / 3;
-  }
-  .dayRow > .dayActions {
-    grid-column: 3 / -1;
-  }
-  .cellLabel {
-    display: block;
-  }
-}
-@container (max-width: 560px) {
-  .dayRow {
-    grid-template-columns: 1fr 1fr;
-  }
-  .dayRow > .dayCell:nth-child(2),
-  .dayRow > .dayCell:nth-child(4),
-  .dayRow > .dayCell:nth-child(5),
-  .dayRow > .dayActions {
-    grid-column: 1 / -1;
-  }
-  .dayActions > button,
-  .dayCell > button {
-    width: 100%;
-  }
 }
