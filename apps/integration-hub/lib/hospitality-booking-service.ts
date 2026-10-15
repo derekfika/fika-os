@@ -197,6 +197,45 @@ type IngestionResult = {
 };
 const bookings = () => db.collection("fikaBookings");
 
+/** Narrow, read-only service contract for the PIN-gated Gallagher customer ledger. */
+export async function gallagherDashboardBookings() {
+  const snapshot = await bookings()
+    .where("service.portalSiteId", "==", "angel-court")
+    .limit(501)
+    .get();
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.gallagher-dashboard.bookings", source: "FIRESTORE", dataset: "fikaBookings", documents: snapshot.size, estimatedBillableReads: snapshot.size, firestoreReadKind: "query" });
+  if (snapshot.size > 500) throw Object.assign(new Error("The Gallagher booking result exceeds the safe display limit."), { status: 503 });
+  const normalize = (value: unknown) => String(value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-GB");
+  const matches = (booking: CanonicalBooking) => {
+    const company = booking.client.requester?.companyName || booking.client.companyName;
+    const requesterEmail = booking.client.requester?.email || booking.client.email;
+    const email = normalize(requesterEmail);
+    const at = email.lastIndexOf("@");
+    const domain = at > 0 && email.indexOf("@") === at ? email.slice(at + 1).replace(/\.$/, "") : "";
+    return normalize(company) === "gallagher" || domain === "redington.co.uk";
+  };
+  return snapshot.docs.map((document) => document.data() as CanonicalBooking).filter(matches).map((booking) => ({
+    canonicalId: booking.canonicalId,
+    lifecycleStatus: booking.lifecycleStatus,
+    createdAt: booking.createdAt,
+    updatedAt: booking.updatedAt,
+    source: {
+      sourceBookingId: booking.source.sourceBookingId,
+      provider: booking.source.provider,
+      originalPayload: {
+        legacyBookingId: (booking as CanonicalBooking & { legacyBookingId?: string }).legacyBookingId,
+        legacyBookingReference: (booking.source.originalPayload as unknown as Record<string, unknown>)?.legacyBookingReference,
+      },
+    },
+    client: booking.client,
+    service: booking.service,
+    order: booking.order,
+    quoteState: booking.quoteState,
+    notes: booking.notes,
+    legacyBookingId: (booking as CanonicalBooking & { legacyBookingId?: string }).legacyBookingId,
+  }));
+}
+
 export async function getBookingByCanonicalId(canonicalId: string) {
   const snapshot = await bookings().doc(canonicalId).get();
   recordDataAccess({ app: "integration-hub", operation: "hospitality.booking.by-id", source: "FIRESTORE", dataset: "fikaBookings", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
