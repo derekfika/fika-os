@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertAuthorisedOploc } from "@/lib/projection";
 import { deliveredInErrorBody, resolveAccess } from "@/lib/server";
-import { changeStandingOrder, createStandingOrder } from "@/lib/grab-and-go-standing-service";
+import { changeStandingOrder, createStandingOrder, generateDueStandingOrders } from "@/lib/grab-and-go-standing-service";
+import { getGrabAndGoCataloguePackage } from "@/lib/grab-and-go-catalogue-client";
+import { openAttention, type StandingOrder } from "@/lib/grab-and-go-standing";
+import { deliverGrabHandoff, grabHandoffEvent, grabHandoffId } from "../../../../../lib/grab-and-go-handoff";
+import { forwardProductionMaterialisation } from "../../../../../lib/production-client";
 import { listStandingOrdersHosted } from "@/lib/grab-and-go-store";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
@@ -12,6 +16,14 @@ async function authorisedSite(request: NextRequest, requested?: string) {
   if (!selected) throw Object.assign(new Error("Select an OPLOC with Grab & Go enabled first."), { status: 422 });
   assertAuthorisedOploc(resolved.access, selected);
   return { selected, access: resolved.access };
+}
+/** After a fix to a template with an open attention record, retry that template now so a same-morning fix is not missed by the next day's run. Best effort; the daily job remains authoritative. */
+async function retryIfNeedsAttention(template: StandingOrder) {
+  if (!openAttention(template).length) return;
+  try {
+    const hosted = ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || ""); const products = (await getGrabAndGoCataloguePackage()).catalogue.products;
+    await generateDueStandingOrders({ products, standingOrderId: template.standingOrderId, deliver: order => hosted ? deliverGrabHandoff(grabHandoffId(order)) : forwardProductionMaterialisation(grabHandoffEvent(order).payload, { allowPending: true }) });
+  } catch { /* the next scheduled run will retry */ }
 }
 const noStore = { headers: { "Cache-Control": "no-store, max-age=0" } };
 
@@ -25,7 +37,7 @@ async function handleGet(request: NextRequest) {
 
 async function handlePost(request: NextRequest) {
   try {
-    const body = await request.json() as { oplocId?: string; action?: string; deliveryDate?: string; standingOrderId?: string; expectedVersion?: number; weekdays?: unknown; endDate?: unknown };
+    const body = await request.json() as { oplocId?: string; action?: string; deliveryDate?: string; standingOrderId?: string; expectedVersion?: number; weekdays?: unknown; endDate?: unknown; lines?: unknown };
     const { selected, access } = await authorisedSite(request, body.oplocId);
     if (body.action === "create") {
       if (!body.deliveryDate) return NextResponse.json({ error: { message: "The order to convert is required." } }, { status: 422 });
@@ -34,11 +46,11 @@ async function handlePost(request: NextRequest) {
     if (!body.standingOrderId || !Number.isInteger(body.expectedVersion)) return NextResponse.json({ error: { message: "A standing order and its current version are required." } }, { status: 422 });
     const base = { oplocId: selected, standingOrderId: body.standingOrderId, expectedVersion: body.expectedVersion!, actor: access.email };
     switch (body.action) {
-      case "edit": return NextResponse.json({ standingOrder: await changeStandingOrder({ ...base, change: { action: "edit", weekdays: body.weekdays, endDate: body.endDate === undefined ? undefined : body.endDate } }) });
+      case "edit": { const standingOrder = await changeStandingOrder({ ...base, change: { action: "edit", weekdays: body.weekdays, endDate: body.endDate, lines: body.lines } }); await retryIfNeedsAttention(standingOrder); return NextResponse.json({ standingOrder }); }
       case "pause": case "resume": case "stop": return NextResponse.json({ standingOrder: await changeStandingOrder({ ...base, change: { action: body.action } }) });
       case "update-from-order":
         if (!body.deliveryDate) return NextResponse.json({ error: { message: "The order to copy is required." } }, { status: 422 });
-        return NextResponse.json({ standingOrder: await changeStandingOrder({ ...base, change: { action: "update-from-order", deliveryDate: body.deliveryDate } }) });
+        { const standingOrder = await changeStandingOrder({ ...base, change: { action: "update-from-order", deliveryDate: body.deliveryDate } }); await retryIfNeedsAttention(standingOrder); return NextResponse.json({ standingOrder }); }
       default: return NextResponse.json({ error: { message: "Unknown standing-order action." } }, { status: 422 });
     }
   } catch (error) { return NextResponse.json(deliveredInErrorBody(error, "The standing order could not be saved."), { status: Number((error as { status?: number }).status) || 502 }); }

@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { GrabAndGoOrder } from "./grab-and-go";
-import type { StandingOrder } from "./grab-and-go-standing";
+import { resolveAttention, type StandingOrder } from "./grab-and-go-standing";
 import { claimEvent, createDomainEvent, eventIsDue, markEventDelivered, markEventFailed, type DurableDomainEvent } from "../../shared/domain-events";
 import { appDataPath } from "../../shared/app-data-path";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
@@ -164,6 +164,12 @@ export async function saveStandingOrderHosted(next: StandingOrder, expectedVersi
   return next;
 }
 
+/** Transactional read-modify-write of one template. `mutate` returns the next template, or undefined for "no change" (nothing is written). */
+export async function updateStandingOrderHosted(standingOrderId: string, mutate: (current: StandingOrder) => StandingOrder | undefined) {
+  if (!hosted()) return withTransaction(stored => { const list = stored.standingOrders ||= []; const index = list.findIndex(item => item.standingOrderId === standingOrderId); if (index < 0) return undefined; const next = mutate(list[index]); if (next) list[index] = next; return next; });
+  return db.runTransaction(async transaction => { const ref = standingRef(standingOrderId); const snapshot = await transaction.get(ref); if (!snapshot.exists) return undefined; const next = mutate(snapshot.data() as StandingOrder); if (next) transaction.set(ref, next); return next; });
+}
+
 /**
  * Atomically records one occurrence. Idempotent on standingOrderId + occurrenceDate: the order id is deterministic
  * (site + date), the template must still be active and sitting at `expectedLast`, and the template pointer advances in
@@ -173,7 +179,7 @@ export async function saveStandingOrderHosted(next: StandingOrder, expectedVersi
 export async function commitStandingOccurrenceHosted(input: { standingOrderId: string; expectedLast: string; occurrenceDate: string; order: GrabAndGoOrder; at: string }): Promise<StandingCommit> {
   const advance = (template: StandingOrder | undefined) => {
     if (!template || template.status !== "active" || template.lastOccurrenceDate !== input.expectedLast || input.order.standingOrderId !== template.standingOrderId || input.order.oplocId !== template.oplocId || input.order.deliveryDate !== input.occurrenceDate) return undefined;
-    return { ...template, lastOccurrenceDate: input.occurrenceDate, updatedAt: input.at };
+    return { ...template, lastOccurrenceDate: input.occurrenceDate, updatedAt: input.at, ...(template.attention ? { attention: resolveAttention(template, input.occurrenceDate, input.at) } : {}) };
   };
   if (!hosted()) return withTransaction(stored => {
     const list = stored.standingOrders ||= []; const index = list.findIndex(item => item.standingOrderId === input.standingOrderId); const next = advance(list[index]);

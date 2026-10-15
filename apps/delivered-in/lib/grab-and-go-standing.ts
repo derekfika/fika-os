@@ -5,11 +5,14 @@ export const STANDING_WEEKDAYS = ["Monday", "Wednesday"] as const;
 export type StandingWeekday = typeof STANDING_WEEKDAYS[number];
 export type StandingOrderStatus = "active" | "paused" | "stopped";
 export type StandingOrderLine = { productId: string; quantity: number };
+export type AttentionEntry = { occurrenceDate: string; state: "open" | "missed" | "resolved"; reason: "unavailable-lines"; productIds: string[]; productNames: string[]; firstDetectedAt: string; updatedAt: string };
 export type StandingOrder = {
   standingOrderId: string; oplocId: string; weekdays: StandingWeekday[]; lines: StandingOrderLine[]; status: StandingOrderStatus;
   sourceOrderId: string; endDate?: string;
   /** Latest occurrence date this template has produced (or the source order's date). Advanced atomically with order creation. */
   lastOccurrenceDate: string;
+  /** Audit log of occurrences that could not be created (newest last, capped). Open = still fixable before cut-off. */
+  attention?: AttentionEntry[];
   createdBy: string; createdAt: string; updatedBy: string; updatedAt: string; version: number;
 };
 
@@ -65,18 +68,56 @@ export function londonToday(now: Date) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
+export type LineProblem = { productId: string; productName: string; reason: "unavailable" | "invalid-quantity" };
+
 /**
- * Builds the occurrence through the canonical submit action. Template lines that the catalogue does not offer on
- * that date/rotation week are omitted (and reported); an occurrence with no valid lines is not created.
+ * Builds the occurrence through the canonical submit action and FAILS CLOSED: if any template line is unavailable for
+ * that date/rotation week, unknown to the catalogue, or has an invalid quantity, no order is built and the problems are returned.
  */
-export function buildOccurrenceOrder(template: StandingOrder, occurrenceDate: string, products: GrabAndGoProduct[], now = new Date()) {
+export function buildOccurrenceOrder(template: StandingOrder, occurrenceDate: string, products: GrabAndGoProduct[], now = new Date()): { order: GrabAndGoOrder; problems: [] } | { order: undefined; problems: LineProblem[] } {
   assertServiceDay(occurrenceDate);
-  const available = new Set(productsForDeliveryDate(products, occurrenceDate).map(product => product.productId));
-  const lines = template.lines.filter(line => available.has(line.productId)); const dropped = template.lines.filter(line => !available.has(line.productId)).map(line => line.productId);
-  if (!lines.length) return { order: undefined, dropped };
-  const order = applyOrderAction(undefined, { action: "submit", oplocId: template.oplocId, deliveryDate: occurrenceDate, rotationWeek: rotationWeekForDate(occurrenceDate), lines, actor: `standing-order:${template.standingOrderId}`, at: now.toISOString(), standing: { standingOrderId: template.standingOrderId, occurrenceDate } }, products);
-  return { order, dropped };
+  const available = new Set(productsForDeliveryDate(products, occurrenceDate).map(product => product.productId)); const names = new Map(products.map(product => [product.productId, product.name]));
+  const problems: LineProblem[] = [];
+  for (const line of template.lines) {
+    const productName = names.get(line.productId) || line.productId;
+    if (!Number.isInteger(line.quantity) || line.quantity < 1) problems.push({ productId: line.productId, productName, reason: "invalid-quantity" });
+    else if (!available.has(line.productId)) problems.push({ productId: line.productId, productName, reason: "unavailable" });
+  }
+  if (!template.lines.length) problems.push({ productId: "", productName: "No items configured", reason: "unavailable" });
+  if (problems.length) return { order: undefined, problems };
+  const order = applyOrderAction(undefined, { action: "submit", oplocId: template.oplocId, deliveryDate: occurrenceDate, rotationWeek: rotationWeekForDate(occurrenceDate), lines: template.lines, actor: `standing-order:${template.standingOrderId}`, at: now.toISOString(), standing: { standingOrderId: template.standingOrderId, occurrenceDate } }, products);
+  if (order.lines.length !== template.lines.length) throw fail("Standing order line count changed during creation; refusing a partial order.", 409);
+  return { order, problems: [] };
 }
+
+const ATTENTION_CAP = 10;
+/**
+ * Pure, idempotent attention bookkeeping. Returns the updated template only when something actually changed
+ * (so repeated scheduler runs write nothing and never create duplicate records).
+ * - `found` is the failed occurrence being evaluated now (an open record keyed by occurrenceDate).
+ * - Open records whose cut-off has passed become "missed" (audit retained); other open records not being evaluated are "resolved" (superseded).
+ */
+export function reconcileAttention(template: StandingOrder, now: Date, found?: { occurrenceDate: string; problems: LineProblem[] }): StandingOrder | undefined {
+  const at = now.toISOString(); let changed = false;
+  let entries = (template.attention || []).map(entry => ({ ...entry }));
+  for (const entry of entries) if (entry.state === "open" && entry.occurrenceDate !== found?.occurrenceDate) { entry.state = isBeforeOrderCutoff(entry.occurrenceDate, now) ? "resolved" : "missed"; entry.updatedAt = at; changed = true; }
+  if (found) {
+    const productIds = found.problems.map(problem => problem.productId).sort(); const productNames = found.problems.map(problem => problem.productName).sort();
+    const existing = entries.find(entry => entry.occurrenceDate === found.occurrenceDate);
+    if (!existing) { entries.push({ occurrenceDate: found.occurrenceDate, state: "open", reason: "unavailable-lines", productIds, productNames, firstDetectedAt: at, updatedAt: at }); changed = true; }
+    else if (existing.state !== "open" || existing.productIds.join("|") !== productIds.join("|")) { Object.assign(existing, { state: "open", productIds, productNames, updatedAt: at }); changed = true; }
+  }
+  if (!changed) return undefined;
+  if (entries.length > ATTENTION_CAP) entries = entries.slice(-ATTENTION_CAP);
+  return { ...template, attention: entries, updatedAt: at, version: template.version + 1 };
+}
+
+/** Marks the open record for a successfully created / already-satisfied occurrence as resolved. */
+export function resolveAttention(template: StandingOrder, occurrenceDate: string, at: string): StandingOrder["attention"] {
+  return (template.attention || []).map(entry => entry.occurrenceDate === occurrenceDate && entry.state === "open" ? { ...entry, state: "resolved" as const, updatedAt: at } : entry);
+}
+
+export const openAttention = (template: StandingOrder) => (template.attention || []).filter(entry => entry.state === "open");
 
 export const standingOrderIdFor = (sourceOrderId: string) => `standing:${sourceOrderId}`;
 export { orderIdFor };
@@ -90,6 +131,17 @@ export function createTemplate(input: { source: GrabAndGoOrder; weekdays: unknow
   return { standingOrderId: standingOrderIdFor(source.orderId), oplocId: source.oplocId, weekdays, lines: source.lines.map(line => ({ productId: line.productId, quantity: line.quantity })), status: "active", sourceOrderId: source.orderId, ...(endDate ? { endDate } : {}), lastOccurrenceDate: source.deliveryDate, createdBy: input.actor, createdAt: input.at, updatedBy: input.actor, updatedAt: input.at, version: 1 };
 }
 
+export function normaliseLines(input: unknown): StandingOrderLine[] {
+  if (!Array.isArray(input) || !input.length) throw fail("A standing order needs at least one item.");
+  const seen = new Set<string>();
+  return input.map(raw => {
+    const line = raw as { productId?: unknown; quantity?: unknown };
+    if (typeof line?.productId !== "string" || !line.productId || seen.has(line.productId)) throw fail("Each item must be listed once.");
+    if (!Number.isInteger(line.quantity) || (line.quantity as number) < 1) throw fail("Quantities must be whole numbers of at least 1.");
+    seen.add(line.productId); return { productId: line.productId, quantity: line.quantity as number };
+  });
+}
+
 export function normaliseEndDate(value: unknown, notBefore?: string) {
   if (value === undefined || value === null || value === "") return undefined;
   if (!isIsoDate(value)) throw fail("End date must be a calendar date.");
@@ -98,7 +150,7 @@ export function normaliseEndDate(value: unknown, notBefore?: string) {
 }
 
 export type StandingOrderAction =
-  | { action: "edit"; weekdays?: unknown; endDate?: unknown }
+  | { action: "edit"; weekdays?: unknown; endDate?: unknown; lines?: unknown }
   | { action: "pause" } | { action: "resume" } | { action: "stop" }
   | { action: "update-from-order"; order: GrabAndGoOrder };
 
@@ -112,6 +164,7 @@ export function transitionTemplate(current: StandingOrder, change: StandingOrder
     case "stop": return { ...base, status: "stopped" };
     case "edit": {
       const next: StandingOrder = { ...base, weekdays: change.weekdays === undefined ? current.weekdays : normaliseWeekdays(change.weekdays) };
+      if (change.lines !== undefined) next.lines = normaliseLines(change.lines);
       if (change.endDate !== undefined) { const endDate = normaliseEndDate(change.endDate); if (endDate) next.endDate = endDate; else delete next.endDate; }
       return next;
     }

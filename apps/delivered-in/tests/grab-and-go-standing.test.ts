@@ -191,14 +191,59 @@ for (const mode of ["local", "staging"] as const) {
     assert.equal((await env.run(at("2026-10-29"))).outcomes[0].occurrenceDate, "2026-11-02");
   });
 
-  test(name("end date stops generation; unavailable products are dropped; nothing valid is not created"), async t => {
-    const env = environment(t, mode); await env.manualOrder("2026-10-19", { "p:mon-only": 1, "p:a": 2 }); const template = await env.convert("2026-10-19", ["Monday", "Wednesday"], "2026-10-21");
-    const wednesday = await env.run(at("2026-10-20")); assert.deepEqual(wednesday.outcomes[0].droppedProductIds, ["p:mon-only"]);
-    assert.deepEqual((await env.orders())[1].lines.map(line => line.productId), ["p:a"]);
-    assert.equal((await env.run(at("2026-10-22"))).outcomes[0].reason, "ended");
-    assert.equal((await env.orders()).length, 2); assert.ok(template.endDate);
-    const env2 = environment(t, mode); await env2.manualOrder("2026-10-19", { "p:mon-only": 1 }); await env2.convert();
-    assert.equal((await env2.run(at("2026-10-20"))).outcomes[0].result, "no-valid-lines"); assert.equal((await env2.orders()).length, 1);
+  test(name("end date stops generation"), async t => {
+    const env = environment(t, mode); await env.manualOrder("2026-10-19"); await env.convert("2026-10-19", ["Monday", "Wednesday"], "2026-10-21");
+    assert.equal((await env.run(at("2026-10-20"))).created, 1);
+    assert.equal((await env.run(at("2026-10-22"))).outcomes[0].reason, "ended"); assert.equal((await env.orders()).length, 2);
+  });
+
+  test(name("FAIL CLOSED: an unavailable line creates no partial order, does not advance, and records attention exactly once"), async t => {
+    const env = environment(t, mode); await env.manualOrder("2026-10-19", { "p:mon-only": 1, "p:a": 2 }); const template = await env.convert();
+    const first = await env.run(at("2026-10-20")); const outcome = first.outcomes[0];
+    assert.equal(first.created, 0); assert.equal(outcome.result, "needs-attention"); assert.equal(outcome.occurrenceDate, "2026-10-21"); assert.equal(outcome.attentionRecorded, true);
+    assert.deepEqual(outcome.unavailableProducts, [{ productId: "p:mon-only", productName: "Monday only", reason: "unavailable" }]);
+    assert.deepEqual((await env.orders()).map(order => order.deliveryDate), ["2026-10-19"], "no partial Wednesday order");
+    const stored = (await env.store.getStandingOrderHosted(template.standingOrderId))!;
+    assert.equal(stored.lastOccurrenceDate, "2026-10-19"); assert.equal(stored.attention?.length, 1); assert.equal(stored.attention?.[0].state, "open");
+    assert.deepEqual(stored.attention?.[0].productNames, ["Monday only"]); assert.equal(stored.attention?.[0].occurrenceDate, "2026-10-21");
+    for (const hour of [7, 9, 11]) { const again = (await env.run(at("2026-10-20", hour))).outcomes[0]; assert.equal(again.result, "needs-attention"); assert.equal(again.attentionRecorded, false); }
+    const after = (await env.store.getStandingOrderHosted(template.standingOrderId))!; assert.equal(after.version, stored.version, "repeat runs write nothing"); assert.equal(after.attention?.length, 1);
+    await Promise.all([env.run(at("2026-10-20", 8)), env.run(at("2026-10-20", 8), env.instance())]);
+    assert.equal((await env.store.getStandingOrderHosted(template.standingOrderId))!.attention?.length, 1); assert.equal((await env.orders()).length, 1);
+  });
+
+  test(name("FAIL CLOSED: unknown product and invalid quantity are also reported, never dropped"), async t => {
+    const env = environment(t, mode); await env.manualOrder("2026-10-19"); const template = await env.convert();
+    await env.store.updateStandingOrderHosted(template.standingOrderId, current => ({ ...current, version: current.version + 1, lines: [{ productId: "p:a", quantity: 0 }, { productId: "p:gone", quantity: 2 }, { productId: "p:b", quantity: 1 }] }));
+    const outcome = (await env.run(at("2026-10-20"))).outcomes[0]; assert.equal(outcome.result, "needs-attention");
+    assert.deepEqual(outcome.unavailableProducts?.map(item => [item.productId, item.reason]), [["p:a", "invalid-quantity"], ["p:gone", "unavailable"]]);
+    assert.equal((await env.orders()).length, 1);
+  });
+
+  test(name("FAIL CLOSED + cut-off: a failed date is never created late; it is marked missed and the next valid date is used"), async t => {
+    const env = environment(t, mode); await env.manualOrder("2026-10-19", { "p:mon-only": 1, "p:a": 2 }); const template = await env.convert();
+    await env.run(at("2026-10-20")); // Wed 21 fails (attention open)
+    const late = (await env.run(at("2026-10-20", 13)))                       // Tuesday 13:00 > Wednesday's 12:00 Tuesday cut-off
+    assert.equal(late.outcomes[0].occurrenceDate, "2026-10-26"); assert.equal(late.outcomes[0].result, "created");
+    assert.deepEqual((await env.orders()).map(order => order.deliveryDate), ["2026-10-19", "2026-10-26"], "Wednesday 21 Oct is never created");
+    assert.deepEqual((await env.orders())[1].lines.map(line => line.productId), ["p:mon-only", "p:a"], "Monday has every configured line");
+    const stored = (await env.store.getStandingOrderHosted(template.standingOrderId))!;
+    assert.deepEqual(stored.attention?.map(entry => [entry.occurrenceDate, entry.state]), [["2026-10-21", "missed"]], "audit record retained"); assert.equal(stored.lastOccurrenceDate, "2026-10-26");
+    for (const when of [at("2026-10-21"), at("2026-10-22")]) await env.run(when);
+    assert.equal((await env.orders()).length, 2); assert.equal((await env.store.getStandingOrderHosted(template.standingOrderId))!.attention?.length, 1);
+    // A missed run on the day itself must not create the Wednesday either.
+    assert.ok(!(await env.orders()).some(order => order.deliveryDate === "2026-10-21"));
+  });
+
+  test(name("FAIL CLOSED: fixing the standing order before cut-off creates the order and resolves the attention record"), async t => {
+    const env = environment(t, mode); await env.manualOrder("2026-10-19", { "p:mon-only": 1, "p:a": 2 }); const template = await env.convert();
+    await env.run(at("2026-10-20")); const current = (await env.store.getStandingOrderHosted(template.standingOrderId))!;
+    await assert.rejects(() => env.service.changeStandingOrder({ oplocId: OPLOC, standingOrderId: template.standingOrderId, expectedVersion: current.version, change: { action: "edit", lines: [] }, actor: "x" }), (error: any) => error.status === 422);
+    await assert.rejects(() => env.service.changeStandingOrder({ oplocId: OPLOC, standingOrderId: template.standingOrderId, expectedVersion: current.version, change: { action: "edit", lines: [{ productId: "p:a", quantity: 1.5 }] }, actor: "x" }), (error: any) => error.status === 422);
+    await env.service.changeStandingOrder({ oplocId: OPLOC, standingOrderId: template.standingOrderId, expectedVersion: current.version, change: { action: "edit", lines: [{ productId: "p:a", quantity: 2 }] }, actor: "staff" });
+    const result = await env.run(at("2026-10-20", 9)); assert.equal(result.outcomes[0].result, "created");
+    assert.deepEqual((await env.orders())[1].lines.map(line => [line.productId, line.quantity]), [["p:a", 2]], "only the explicitly edited lines");
+    assert.deepEqual((await env.store.getStandingOrderHosted(template.standingOrderId))!.attention?.map(entry => entry.state), ["resolved"]);
   });
 
   test(name("an order that already exists for the date is never overwritten"), async t => {
