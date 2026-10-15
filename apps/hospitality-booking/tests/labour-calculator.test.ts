@@ -135,3 +135,12 @@ test("legacy and approved saved lines are distinguished by role identity and exa
   assert.equal(isApprovedLabourLine({ ...kp, roleId: undefined }), false);
   assert.equal(isApprovedLabourLine({ ...kp, multiplier: 2 }), false);
 });
+
+test("new calculator lines are stored with the governed rate source and the shared locked table", () => {
+  assert.match(dashboard, /multiplier: result\.value\.multiplier, rateSource: "governed"/);
+  assert.doesNotMatch(dashboard, /rateSource: "custom"/);
+  const shared = readFileSync(new URL("../../shared/hospitality-labour-rates.ts", import.meta.url), "utf8");
+  assert.match(shared, /export function governedLabourViolation/);
+  const hospitalityLib = readFileSync(new URL("../lib/labour-rates.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(hospitalityLib, /normalRate:/, "no duplicated rate literals outside the shared module");
+});

@@ -2182,9 +2182,8 @@ function AdditionalChargesModal({
         setError(result.error);
         return;
       }
-      // rateSource stays "custom" only because the Hub contract's other value ("configured") validates against
-      // manager-saved settings rates. The locked provenance is the approved roleId + exact approved normal rate (isApprovedLabourLine).
-      const labour: BookingAdditionalChargeLabour = { roleId: result.value.role.id, roleLabel: result.value.role.label, staffCount, hoursPerPerson, hourlyRate: result.value.hourlyRate, multiplier: result.value.multiplier, rateSource: "custom" };
+      // "governed" = the CEO-approved locked table; the Hub re-validates role, exact rate and 1×/1.5× for every new or changed line.
+      const labour: BookingAdditionalChargeLabour = { roleId: result.value.role.id, roleLabel: result.value.role.label, staffCount, hoursPerPerson, hourlyRate: result.value.hourlyRate, multiplier: result.value.multiplier, rateSource: "governed" };
       const label = editor.label.trim() || `${labour.roleLabel} labour`;
       const line: Extract<BookingAdditionalChargeInput, { kind: "labour" }> = { id: editor.id || newStableId(), kind: "labour", category: "labour", label, labour };
       if (previewChargeNet(line) <= 0 || previewChargeNet(line) > 1_000_000) {
