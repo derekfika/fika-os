@@ -142,5 +142,5 @@ test("dashboard has no per-service Send to CPU and keeps the existing production
   assert.match(dashboard, /sendPendingServices\(productionRows/);
   assert.match(dashboard, /booking\.bookingGroup\s*\?\s*<p className="muted">CPU production, allergens and menus are managed once/);
   const detail = readFileSync(new URL("../app/ui/HospitalityGroupDetail.tsx", import.meta.url), "utf8");
-  assert.match(detail, /\{production\}/);
+  assert.match(detail, /\{!editing && production\}/);
 });

@@ -117,10 +117,10 @@ export async function generateHospitalityGroupQuote(command: GroupQuoteCommand, 
         const sectionId = `${stored.id}:service:${child.bookingGroup!.sequence}`;
         const at = now(); const reason = `Consolidated group quote ${stored.id} saved to Drive.`;
         const next: CanonicalBooking = { ...child, version: child.version + 1, updatedAt: at, updatedBy: context.actorId,
-          lifecycleStatus: child.lifecycleStatus === "Completed" ? "Completed" : "Quoted",
+          lifecycleStatus: ["Completed", "Sent to CPU"].includes(child.lifecycleStatus) ? child.lifecycleStatus : "Quoted",
           order: { ...child.order, netTotal: stored.snapshots[i].totals.net.amount, vatTotal: stored.snapshots[i].totals.vat.amount, grossTotal: stored.snapshots[i].totals.gross.amount },
           quoteState: { currentRevisionId: sectionId, revisions: [...revisions.map(r => ({ ...r, stale: true })), { id: sectionId, revision: revisions.length + 1, createdAt: stored.createdAt, createdBy: stored.createdBy, commercialVersion: child.commercialVersion || 1, snapshot: stored.snapshots[i], documentReference: stored.id, groupQuoteId: stored.id, stale: false, pdfStatus: "saved", driveFileId: artifact.fileId, driveUrl: artifact.driveUrl }] },
-          statusHistory: [...child.statusHistory, { status: child.lifecycleStatus === "Completed" ? "Completed" : "Quoted", changedAt: at, changedBy: context.actorId, reason }],
+          statusHistory: [...child.statusHistory, { status: ["Completed", "Sent to CPU"].includes(child.lifecycleStatus) ? child.lifecycleStatus : "Quoted", changedAt: at, changedBy: context.actorId, reason }],
           audit: [...child.audit, { action: "workflow-group-quote", at, by: context.actorId, reason }],
         };
         tx.putChild(next);

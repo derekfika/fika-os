@@ -1,3 +1,4 @@
+import { groupLifecycleStatus } from "../../shared/hospitality-group-lifecycle";
 import { createHash } from "node:crypto";
 import type { CanonicalBooking } from "./hospitality-booking-service";
 import type { QuoteCommercialSnapshot } from "./quote-engine";
@@ -87,19 +88,19 @@ export function groupCommercialState(id: string, children: CanonicalBooking[]) {
   return { ordered, snapshots, sourceHash, totals };
 }
 
-export function projectBookingGroup(id: string, children: CanonicalBooking[], quote?: HospitalityGroupQuote, version = 0, routing: Record<string, HospitalityGroupService["routing"]> = {}): HospitalityBookingGroup {
+export function projectBookingGroup(id: string, children: CanonicalBooking[], quote?: HospitalityGroupQuote, version = 0, routing: Record<string, HospitalityGroupService["routing"]> = {}, production: Record<string, HospitalityGroupService["production"]> = {}): HospitalityBookingGroup {
   const { ordered, snapshots, sourceHash, totals } = groupCommercialState(id, children);
-  const statuses = new Set(ordered.map(b => b.lifecycleStatus));
   const current = quote?.status === "complete" && quote.sourceHash === sourceHash;
-  const status = statuses.size === 1 && statuses.has("Cancelled") ? "Cancelled" : statuses.size === 1 && statuses.has("Completed") ? "Completed" : statuses.size > 1 ? "Partially processed" : quote && quote.sourceHash === sourceHash && ["artifact_pending", "failed"].includes(quote.status) ? "Quote preparing" : current ? "Quoted" : statuses.has("New") || statuses.has("Reviewed") ? "New" : "Partially processed";
   const services: HospitalityGroupService[] = ordered.map((b, i) => ({ bookingId: b.canonicalId, sourceReference: b.source.sourceBookingId, commercialVersion: b.commercialVersion || 1, lifecycleStatus: b.lifecycleStatus, serviceType: b.order.eventType || "Hospitality", time: b.service.startTime, ...(b.service.endTime ? { endTime: b.service.endTime } : {}), location: b.service.roomOrArea || b.service.deliveryPoint || b.service.floorLevel || "Location to confirm", guests: b.service.guestCount,
     lines: snapshots[i].order.lines.map(l => ({ name: l.name, ...(l.description ? { description: l.description } : {}), quantity: l.quantity, unitNet: l.unitNet.amount, net: l.lineNet.amount, ...(l.choices ? { choices: l.choices } : {}), ...(l.comments ? { comments: l.comments } : {}) })),
     charges: snapshots[i].charges.map(c => ({ label: c.label, net: c.net.amount, ...(c.detail ? { detail: c.detail } : {}) })),
     totals: Object.fromEntries(Object.entries(snapshots[i].totals).filter(([key]) => key !== "vatRate").map(([key, value]) => [key, (value as { amount: number }).amount])) as GroupMoneyTotals,
+    ...(production[b.canonicalId] ? { production: production[b.canonicalId] } : {}),
     ...(routing[b.canonicalId] ? { routing: routing[b.canonicalId] } : {}),
   }));
-  return { kind: "booking-group", id, reference: id, version, sourceHash, client: ordered[0].client, eventDate: ordered[0].service.eventDate, eventName: ordered[0].notes?.match(/^Event: (.+)$/m)?.[1], firstTime: services[0].time, lastTime: services.flatMap(s => [s.time, s.endTime || s.time]).sort().at(-1)!, status, services, totals,
-    ...(quote ? { quote: { id: quote.id, revision: quote.revision, sourceHash: quote.sourceHash, status: quote.status, createdAt: quote.createdAt, updatedAt: quote.updatedAt, stale: !current, ...(current && quote.artifact.driveUrl ? { driveUrl: quote.artifact.driveUrl } : {}), ...(quote.error ? { error: quote.error } : {}) } } : {}),
+  const group: HospitalityBookingGroup = { kind: "booking-group", id, reference: id, version, sourceHash, client: ordered[0].client, eventDate: ordered[0].service.eventDate, eventName: ordered[0].notes?.match(/^Event: (.+)$/m)?.[1], firstTime: services[0].time, lastTime: services.flatMap(s => [s.time, s.endTime || s.time]).sort().at(-1)!, status: "New", services, totals,
+    ...(quote ? { quote: { id: quote.id, revision: quote.revision, sourceHash: quote.sourceHash, status: quote.status, createdAt: quote.createdAt, updatedAt: quote.updatedAt, stale: quote.sourceHash !== sourceHash || quote.status === "superseded", ...(current && quote.artifact.driveUrl ? { driveUrl: quote.artifact.driveUrl } : {}), ...(quote.error ? { error: quote.error } : {}) } } : {}),
     routing: { cpuServices: services.filter(s => s.routing?.status === "cpu_required").length, inHouseServices: services.filter(s => s.routing?.status === "no_cpu_production").length, warnings: services.filter(s => !s.routing || ["routing_required", "routing_conflict"].includes(s.routing.status)).length },
   };
+  return { ...group, status: groupLifecycleStatus(group) };
 }

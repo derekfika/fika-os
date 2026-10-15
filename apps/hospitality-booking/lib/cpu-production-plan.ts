@@ -23,7 +23,7 @@ export function isCpuLineState(state: string) {
 export function serviceCpuRequirement(input: { routing?: ServiceRouting; deliveryChargeRequired?: boolean; itemCount?: number }): ServiceCpuRequirement {
   const { routing } = input;
   if (!routing || routing.enforced === false) return input.deliveryChargeRequired === false ? "no_cpu" : "cpu";
-  if (!routing.lines.length) return "unresolved";
+  if (!routing.lines.length) return routing.status === "no_cpu_production" && input.itemCount === 0 ? "no_cpu" : "unresolved";
   if (routing.lines.some(line => line.state === "routing_required" || line.state === "routing_conflict" || !(isCpuLineState(line.state) || line.state === "in_house"))) return "unresolved";
   return routing.lines.some(line => isCpuLineState(line.state)) ? "cpu" : "no_cpu";
 }
@@ -34,9 +34,11 @@ export function isBookingQuoteStale(booking: CanonicalBooking) {
 }
 
 export function productionOrderMatchesCurrentQuote(booking: CanonicalBooking, productionOrder?: ProductionOrder) {
+  if (booking.lifecycleStatus !== "Completed" && isBookingQuoteStale(booking)) return false;
   const currentRevisionId = booking.quoteState?.currentRevisionId;
   if (!productionOrder || !currentRevisionId) return false;
   if (productionOrder.sourceReferences.quoteRevisionId === currentRevisionId) return true;
+  if (booking.bookingGroup && booking.quoteState?.revisions.some(revision => revision.id === productionOrder.sourceReferences.quoteRevisionId && revision.commercialVersion === (booking.commercialVersion || 1))) return true;
   // A COMPLETED booking can only have a newer revision through a commercial (charge) change: menu changes go through the governed
   // amendment, which reopens the booking and issues a replacement hand-off. Its Production Order, built from an earlier revision of
   // this booking, therefore still stands and is never offered for reissue.
@@ -53,12 +55,12 @@ export type ServiceProductionRow = { bookingId: string; label: string; requireme
 export type ServiceResult = { status: "sent" | "failed"; message?: string };
 
 export function planServiceProduction(booking: CanonicalBooking, productionOrder: ProductionOrder | undefined, label: string, results: Readonly<Record<string, ServiceResult | undefined>> = {}): ServiceProductionRow {
-  const requirement = serviceCpuRequirement({ routing: booking.cpuRouting, deliveryChargeRequired: booking.deliveryChargeRequired });
-  const hasProductionOrder = Boolean(productionOrder) && requirement === "cpu";
+  const requirement = serviceCpuRequirement({ routing: booking.cpuRouting, deliveryChargeRequired: booking.deliveryChargeRequired, itemCount: booking.order?.items.length });
+  const hasProductionOrder = productionOrderMatchesCurrentQuote(booking, productionOrder) && requirement === "cpu";
   const base = { bookingId: booking.canonicalId, label, requirement, hasProductionOrder };
   if (requirement === "no_cpu") return { ...base, state: "no_cpu" };
   if (requirement === "unresolved") return { ...base, state: "unresolved" };
-  if (productionOrderMatchesCurrentQuote(booking, productionOrder) || results[booking.canonicalId]?.status === "sent") return { ...base, state: "sent" };
+  if (productionOrderMatchesCurrentQuote(booking, productionOrder) || !isBookingQuoteStale(booking) && results[booking.canonicalId]?.status === "sent") return { ...base, state: "sent" };
   return { ...base, state: quoteReadyForCpu(booking) ? "pending" : "awaiting_quote" };
 }
 

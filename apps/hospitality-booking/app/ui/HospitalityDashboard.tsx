@@ -307,17 +307,18 @@ export default function HospitalityDashboard({
   const documentTargetKey = documentTargets.map(b => `${b.canonicalId}:${b.version}:${productionOrders[b.canonicalId]?.canonicalId}:${productionOrders[b.canonicalId]?.version}:${productionOrders[b.canonicalId]?.updatedAt}`).join("|");
 
   useEffect(() => {
+    let cancelled = false;
     for (const target of documentTargets) {
     const bookingId = target.canonicalId;
     const productionOrder = productionOrders[bookingId];
     const productionOrderId = productionOrder?.canonicalId;
     const setMatrixState = (state: { status: "checking" | "generating" | "ready" | "not_configured" | "failed" | "error"; driveStatus: string; error?: string; artifact?: Record<string, unknown> }) => {
+      if (cancelled) return;
       setMatrixArtifacts((current) => ({
         ...current,
         [bookingId]: {
-          ...(current[bookingId] || {}),
           ...(state.artifact || {}),
-          fileName: typeof state.artifact?.fileName === "string" ? state.artifact.fileName : current[bookingId]?.fileName || "",
+          fileName: typeof state.artifact?.fileName === "string" ? state.artifact.fileName : "",
           driveStatus: state.driveStatus,
           status: state.status,
           ...(state.error ? { error: state.error } : { error: undefined }),
@@ -344,21 +345,25 @@ export default function HospitalityDashboard({
       })
       .catch((cause) => setMatrixState({ status: "error", driveStatus: "error", error: (cause as Error).message }));
     }
+    return () => { cancelled = true; };
   }, [documentTargetKey, matrixRefreshTick]);
 
   useEffect(() => {
+    let cancelled = false;
     for (const target of documentTargets) {
     const bookingId = target.canonicalId;
     const productionOrderId = productionOrders[bookingId]?.canonicalId;
+    setMenuReadiness(current => ({ ...current, [bookingId]: { available: false, reason: "Checking current menu readiness…" } }));
     void fetch(`/api/menus?bookingId=${encodeURIComponent(bookingId)}&readiness=1${productionOrderId ? `&productionOrderId=${encodeURIComponent(productionOrderId)}` : ""}`, { cache: "no-store" })
       .then(async (response) => {
         const body = await readDashboardJson(response) as { readiness?: { available: boolean; reason: string }; error?: { message?: string } };
         if (!response.ok) throw Error(body.error?.message || body.readiness?.reason || `Menu readiness is unavailable (${response.status}).`);
         return body;
       })
-      .then((body) => setMenuReadiness((current) => ({ ...current, [bookingId]: body.readiness || { available: false, reason: "Menu readiness is unavailable." } })))
-      .catch((cause) => setMenuReadiness((current) => ({ ...current, [bookingId]: { available: false, reason: (cause as Error).message } })));
+      .then((body) => { if (!cancelled) setMenuReadiness((current) => ({ ...current, [bookingId]: body.readiness || { available: false, reason: "Menu readiness is unavailable." } })); })
+      .catch((cause) => { if (!cancelled) setMenuReadiness((current) => ({ ...current, [bookingId]: { available: false, reason: (cause as Error).message } })); });
     }
+    return () => { cancelled = true; };
   }, [documentTargetKey]);
 
   // CPU planning is a shared projection, so keep an open manager panel current
@@ -391,8 +396,8 @@ export default function HospitalityDashboard({
   const newCount = groups.filter(group => group.status === "New").length + bookings.filter(
     (item) => standaloneIds.has(item.canonicalId) && item.lifecycleStatus === "New",
   ).length;
-  const readyForCpuCount = bookings.filter((item) => item.deliveryChargeRequired !== false && quoteReadyForCpu(item)).length;
-  const attentionCount = groups.filter(group => ["New", "Quote preparing"].includes(group.status)).length + bookings.filter(
+  const readyForCpuCount = groups.filter(g => g.status === "Ready for CPU").length + bookings.filter((item) => standaloneIds.has(item.canonicalId) && item.deliveryChargeRequired !== false && quoteReadyForCpu(item)).length;
+  const attentionCount = groups.filter(group => ["New", "Quote preparing", "Awaiting routing", "Awaiting quote", "Partially processed", "Needs attention"].includes(group.status)).length + bookings.filter(
     (item) =>
       standaloneIds.has(item.canonicalId) && (item.lifecycleStatus === "New" || item.lifecycleStatus === "Reviewed"),
   ).length;
@@ -931,7 +936,7 @@ export default function HospitalityDashboard({
   const isMenuStale = (bookingId: string) => {
     const output = menuOutputs[bookingId];
     const order = productionOrders[bookingId];
-    return Boolean(output?.planUpdatedAt && order?.updatedAt && output.planUpdatedAt < order.updatedAt);
+    return Boolean(output?.planUpdatedAt && (order?.updatedAt || order?.createdAt) && output.planUpdatedAt < (order.updatedAt || order.createdAt));
   };
   const selectedMenuStale = Boolean(
     selectedMenuOutput?.planUpdatedAt &&
@@ -943,10 +948,10 @@ export default function HospitalityDashboard({
     const child = bookings.find(b => b.canonicalId === row.bookingId);
     if (!child || !row.hasProductionOrder) return null;
     const matrix = matrixArtifacts[child.canonicalId];
-    const matrixUrl = matrix?.driveUrl || matrix?.localUrl || matrix?.viewUrl;
+    const matrixUrl = matrix?.status === "ready" ? matrix.driveUrl || matrix.localUrl || matrix.viewUrl : undefined;
     const order = productionOrders[child.canonicalId];
     const output = menuOutputs[child.canonicalId];
-    const stale = Boolean(output?.planUpdatedAt && order?.updatedAt && output.planUpdatedAt < order.updatedAt);
+    const stale = Boolean(output?.planUpdatedAt && (order?.updatedAt || order?.createdAt) && output.planUpdatedAt < (order.updatedAt || order.createdAt));
     const ready = Boolean(menuReadiness[child.canonicalId]?.available);
     return <div className={panelStyles.docs} role="group" aria-label={`${row.label} allergens and menu`}>
       {matrixUrl
@@ -1152,7 +1157,7 @@ export default function HospitalityDashboard({
                   onChange={(event) => setFilter(event.target.value)}
                 >
                   <option value="">All statuses</option>
-                  {statuses.map((status) => (
+                  {Array.from(new Set([...statuses, "Awaiting routing", "Awaiting quote", "Ready for CPU", "Quote preparing", "Partially processed", "Needs attention"])).map((status) => (
                     <option key={status}>{status}</option>
                   ))}
                   <option>Quote preparing</option>
@@ -1234,7 +1239,7 @@ export default function HospitalityDashboard({
                   </p>
                 )}
               </div>
-              {selectedGroup && <HospitalityGroupDetail group={selectedGroup} busy={actionBusy} production={productionPanel} onQuote={() => void generateGroupQuote()} />}
+              {selectedGroup && <HospitalityGroupDetail group={selectedGroup} onBusyChange={busy => { actionInFlight.current = busy; setActionBusy(busy); }} site={site.key} oplocId={bookings.find(b => b.canonicalId === selectedGroup.services[0]?.bookingId)?.service.oplocId || ""} onAmended={async () => { setServiceResults({}); setMatrixArtifacts({}); setMenuReadiness({}); await load(); }} busy={actionBusy} production={productionPanel} onQuote={() => void generateGroupQuote()} />}
               {selected ? (
                 <fieldset className={styles.actionControls} disabled={actionBusy} aria-busy={actionBusy} aria-label="Booking details and actions">
                 <BookingPane

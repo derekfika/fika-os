@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hubUserFetch } from "@/lib/hub";
+import { hydrateGroupProgress } from "@/lib/group-progress";
+import { cpuForwardedHeaders, cpuProductionBaseUrl } from "@/lib/cpu-production";
 import { recordDataAccess, setDataTraceOutcome, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 async function readHubJson(response: Response) {
@@ -24,6 +26,13 @@ export async function GET(request: NextRequest) {
     const response = await hubUserFetch(path, request.headers.get("cookie"));
     recordDataAccess({ operation: "booking.list", source: "NETWORK_UPSTREAM", documents: 0, dataset: "hospitality/bookings" });
     const body = await readHubJson(response);
+    if (response.ok && body.bookingGroups?.length) body.bookingGroups = await hydrateGroupProgress(body.bookingGroups, async ids => {
+      const upstream = await fetch(`${cpuProductionBaseUrl()}/api/production-plan?reviewStatus=1&orderIds=${encodeURIComponent(ids.join(","))}`, { headers: cpuForwardedHeaders(request), cache: "no-store", signal: AbortSignal.timeout(15_000) });
+      if (!upstream.ok) throw new Error("CPU completion status is unavailable.");
+      const result = await upstream.json();
+      if (!Array.isArray(result.reviewStatuses)) throw new Error("CPU completion response is invalid.");
+      return result.reviewStatuses;
+    });
     return NextResponse.json(body, { status: response.status });
   } catch (error) { setDataTraceOutcome("ERROR");
     return NextResponse.json(

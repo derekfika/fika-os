@@ -3,6 +3,13 @@
 .group p { line-height: 1.5; }
 .total { display: block; font-size: 24px; margin: 16px 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.editor { display: grid; gap: 16px; margin-top: 24px; }
+.editor fieldset { min-width: 0; padding: 16px; border: 1px solid var(--fika-border-default); border-radius: 8px; }
+.editor label { display: grid; gap: 8px; color: var(--fika-text-primary); }
+.editor input, .editor textarea, .editor select { min-height: 44px; max-width: 100%; padding: 8px; font: inherit; color: var(--fika-text-primary); background: var(--fika-surface-card); border: 1px solid var(--fika-border-default); border-radius: 8px; }
+.editor :is(input, textarea, select, button):focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 16px; }
+.itemEditor { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; margin-bottom: 16px; }
 .group button, .group a { min-height: 44px; padding: 12px 16px; border: 1px solid var(--fika-border-default); border-radius: 8px; color: var(--fika-text-primary); background: var(--fika-surface-card); font: inherit; cursor: pointer; }
 .group button:disabled { color: var(--fika-text-secondary); cursor: default; }
 .group button:global(.primary) { background: var(--fika-action-primary); color: var(--fika-surface-card); border-color: var(--fika-action-primary); }

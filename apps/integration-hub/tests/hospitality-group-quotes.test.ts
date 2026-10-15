@@ -68,7 +68,7 @@ test("one immutable quote/version and artifact; replay preserves child revisions
   assert.deepEqual(h.rows().map(b => b.deliveryChargeRequired), before.map(b => b.deliveryChargeRequired));
   assert.deepEqual(h.rows().map(b => b.service), before.map(b => b.service));
   assert.ok(h.rows().every(b => b.quoteState!.revisions[0].driveFileId === q.artifact.fileId));
-  assert.equal(projectBookingGroup(GROUP, h.rows(), q, 1).status, "Quoted");
+  assert.equal(projectBookingGroup(GROUP, h.rows(), q, 1).status, "Awaiting routing");
   assert.equal(projectBookingGroup(GROUP, h.rows(), q, 1).quote?.stale, false);
   const html = hospitalityGroupQuoteHtml(q);
   for (const s of q.snapshots) { assert.ok(html.includes(s.order.lines[0].name)); assert.ok(html.includes(s.service.startTime)); }
@@ -135,14 +135,14 @@ test("a corrupted frozen snapshot fails closed before artifact creation", async 
   const q = await generateHospitalityGroupQuote(cmd, h.context); assert.equal(q.status, "integrity_failed"); assert.equal(h.files.size, 0); assert.ok(h.rows().every(b => b.lifecycleStatus === "New"));
 });
 
-test("derived status reflects mixed/cancelled/completed service states; routing remains per service", () => {
+test("child lifecycle labels cannot bypass required routing and quote work", () => {
   const children = childrenFixture();
   const routing = Object.fromEntries(children.map((b, i) => [b.canonicalId, { status: i % 2 ? "cpu_required" : "no_cpu_production", statusLabel: i % 2 ? "CPU · Hospitality" : "In house", lines: [{ index: 0, state: i % 2 ? "cpu" : "in_house", label: "Test routing" }] }]));
-  assert.equal(projectBookingGroup(GROUP, children).status, "New");
+  assert.equal(projectBookingGroup(GROUP, children).status, "Awaiting routing");
   children[0].lifecycleStatus = "Completed"; const mixed = projectBookingGroup(GROUP, children, undefined, 0, routing);
-  assert.equal(mixed.status, "Partially processed"); assert.equal(mixed.routing.cpuServices, 2); assert.equal(mixed.routing.inHouseServices, 2);
+  assert.equal(mixed.status, "New"); assert.equal(mixed.routing.cpuServices, 2); assert.equal(mixed.routing.inHouseServices, 2);
   children.forEach(c => c.lifecycleStatus = "Cancelled"); assert.equal(projectBookingGroup(GROUP, children).status, "Cancelled");
-  children.forEach(c => c.lifecycleStatus = "Completed"); assert.equal(projectBookingGroup(GROUP, children).status, "Completed");
+  children.forEach(c => c.lifecycleStatus = "Completed"); assert.equal(projectBookingGroup(GROUP, children).status, "Awaiting routing");
 });
 
 test("current historical child snapshots and post-quote charges retain captured policy/amounts", async () => {

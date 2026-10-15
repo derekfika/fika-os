@@ -7,6 +7,7 @@ export type HospitalityGroupService = {
   lines: Array<{ name: string; description?: string; quantity: number; unitNet: number; net: number; choices?: unknown[]; comments?: string }>;
   charges: Array<{ label: string; net: number; detail?: string }>;
   totals: GroupMoneyTotals;
+  production?: { orderId: string; version: number; sourceRevision: number; status: string; quoteRevisionId: string; quoteCurrent: boolean };
   routing?: { status: string; statusLabel: string; lines: Array<{ index: number; state: string; label: string }> };
 };
 export type HospitalityGroupQuoteState = {
@@ -17,7 +18,7 @@ export type HospitalityBookingGroup = {
   kind: "booking-group"; id: string; reference: string; version: number; sourceHash: string;
   client: { name: string; companyName: string; email: string; phone?: string; invoiceReference?: string };
   eventDate: string; eventName?: string; firstTime: string; lastTime: string;
-  status: "New" | "Quote preparing" | "Quoted" | "Partially processed" | "Cancelled" | "Completed";
+  status: "New" | "Quote preparing" | "Quoted" | "Awaiting quote" | "Awaiting routing" | "Ready for CPU" | "Sent to CPU" | "Needs attention" | "Partially processed" | "Cancelled" | "Completed";
   services: HospitalityGroupService[]; totals: GroupMoneyTotals; quote?: HospitalityGroupQuoteState;
   routing: { cpuServices: number; inHouseServices: number; warnings: number };
 };
