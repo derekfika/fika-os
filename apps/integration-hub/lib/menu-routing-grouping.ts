@@ -1,8 +1,7 @@
 /**
- * Hub Connections shows ONE row per human-facing menu name so Production visibility can be set once and applied to every matching site
- * record (existing, deliberate UX; canonical records and offerings stay separate). The row must still report the governed state of its
- * member records truthfully: a row is only "decided" when EVERY member has a saved routing record, and the flags shown come from the
- * decided members rather than from whichever record happened to sort first.
+ * Hub Connections shows ONE row per human-facing menu name, but grouping is PRESENTATION ONLY. Every canonical Hospitality Menu Item keeps
+ * its own independent governed routing record; display-name equality is not canonical identity, so nothing here propagates a decision from
+ * one record to another. The aggregate state below is read-only information derived from the member records and never implies a mutation.
  */
 export type GroupableItem = {
   canonicalId: string;
@@ -47,4 +46,31 @@ export function groupMenuItems<T extends GroupableItem>(items: readonly T[]): Ar
       routingInconsistent: decided.some((member) => !sameSet(member.workstreams, decided[0].workstreams)),
     };
   });
+}
+
+export type RoutingState = "unclassified" | "in-house" | "delivered-in-only" | "routed" | "conflict";
+/** The governed state of ONE canonical item. No saved record is Unclassified, never In house. */
+export function memberRoutingState(workstreams: readonly string[], decided: boolean): RoutingState {
+  if (!decided) return "unclassified";
+  if (workstreams.includes("sandwiches") && workstreams.includes("hospitality")) return "conflict";
+  if (!workstreams.length) return "in-house";
+  return workstreams.every((value) => value === "delivered_in") ? "delivered-in-only" : "routed";
+}
+export const MEMBER_ROUTING_LABELS: Record<RoutingState, string> = { unclassified: "Unclassified", "in-house": "In house", "delivered-in-only": "Delivered-In only", routed: "CPU", conflict: "Routing conflict" };
+
+export type GroupRoutingSummary = "unclassified" | "partly-classified" | "mixed-routing" | "conflict" | "consistent";
+export function groupRoutingSummary(members: ReadonlyArray<{ workstreams: readonly string[]; routingDecided: boolean }>): GroupRoutingSummary {
+  const states = members.map((member) => memberRoutingState(member.workstreams, member.routingDecided));
+  if (states.includes("conflict")) return "conflict";
+  const decided = members.filter((member) => member.routingDecided);
+  if (!decided.length) return "unclassified";
+  if (decided.length < members.length) return "partly-classified";
+  return decided.every((member) => sameSet(member.workstreams, decided[0].workstreams)) ? "consistent" : "mixed-routing";
+}
+
+const PLATFORM_LABELS: Record<string, string> = { mnk: "MNK", rcoa: "RCoA", "angel-court": "Angel Court", cfc: "CFC", "munich-re": "Munich Re" };
+/** Which platform a canonical id belongs to, for display only (hospitality-menu-item:<platform>:<key>). */
+export function platformLabel(canonicalId: string): string {
+  const platform = canonicalId.split(":")[1] || "";
+  return PLATFORM_LABELS[platform] || platform.toUpperCase() || canonicalId;
 }

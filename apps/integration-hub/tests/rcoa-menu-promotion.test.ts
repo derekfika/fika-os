@@ -4,7 +4,8 @@ import { localMnkMenuCatalogue, localRcoaMenuCatalogue } from "@fika/server-shar
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { db } from "../lib/firebase-admin";
 import { connectionsOverview, saveConnectionCommand } from "../lib/connections-service";
-import { groupMenuItems } from "../lib/menu-routing-grouping";
+import { readFileSync } from "node:fs";
+import { groupMenuItems, groupRoutingSummary, memberRoutingState, platformLabel } from "../lib/menu-routing-grouping";
 import { trustedPublicOrder } from "../lib/hospitality-price-trust";
 import { buildRcoaCanonicalMenuItem, planRcoaPromotion, type PromotionExisting, type RcoaBrochureItem } from "../lib/rcoa-menu-promotion";
 import type { Actor } from "../lib/auth";
@@ -104,5 +105,64 @@ test("Hub overview lists all 46 promoted RCoA items; the 8 bound routing records
   } finally {
     for (const record of records) await db.collection("integrationHubCanonical").doc(stableDocumentId(record.canonicalId)).delete();
     for (const item of brochure) await routing(item.canonicalId).delete();
+  }
+});
+
+// ---- grouping is presentation only: every canonical item keeps its own independent routing record ----
+const MNK = "hospitality-menu-item:mnk:mini_pastries";
+const RCOA = `${P}mini_pastries`;
+const routingRow = (id: string) => ({ canonicalId: id, name: "Mini Pastries", lifecycleState: "active", scopes: [], workstreams: [] as string[], routingDecided: false });
+
+test("1. a same-name MNK + RCoA row exposes BOTH underlying states, each labelled by platform", () => {
+  const [row] = groupMenuItems([{ ...routingRow(MNK), workstreams: ["hospitality"], routingDecided: true }, routingRow(RCOA)]);
+  assert.equal(row.members.length, 2);
+  const byPlatform = Object.fromEntries(row.members.map((m) => [platformLabel(m.canonicalId), memberRoutingState(m.workstreams, m.routingDecided)]));
+  assert.deepEqual(byPlatform, { MNK: "routed", RCoA: "unclassified" });
+});
+
+test("5. aggregate state is derived from the children: Partly classified, Mixed routing, Conflict, consistent, Unclassified", () => {
+  const m = (workstreams: string[], routingDecided: boolean) => ({ workstreams, routingDecided });
+  assert.equal(groupRoutingSummary([m(["hospitality"], true), m([], false)]), "partly-classified");
+  assert.equal(groupRoutingSummary([m(["hospitality"], true), m(["sandwiches"], true)]), "mixed-routing");
+  assert.equal(groupRoutingSummary([m(["hospitality"], true), m(["sandwiches", "hospitality"], true)]), "conflict");
+  assert.equal(groupRoutingSummary([m([], true), m([], true)]), "consistent");
+  assert.equal(groupRoutingSummary([m([], false), m([], false)]), "unclassified");
+});
+
+test("6. same-name grouping is presentation only: the UI saves exactly one canonical id and nothing in grouping writes", () => {
+  const ui = readFileSync(new URL("../app/ui/Connections.tsx", import.meta.url), "utf8");
+  assert.match(ui, /menuItemId: member\.canonicalId, workstreams/);
+  assert.doesNotMatch(ui, /for \(const menuItemId of item\.sourceIds/, "no loop over every same-name record");
+  assert.doesNotMatch(ui, /draft\[menuItemId\] \|\| draft\[item\.canonicalId\]/, "no fall-back to another record's draft");
+  const grouping = readFileSync(new URL("../lib/menu-routing-grouping.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(grouping, /firebase|fetch\(|db|\.doc\(|saveConnectionCommand/);
+});
+
+const rawDoc = async (id: string) => { const snap = await routing(id).get(); return snap.exists ? { data: JSON.stringify(snap.data()), updateTime: snap.updateTime!.toMillis() } : undefined; };
+
+test("2/3/4. saving the RCoA item changes only the RCoA record (MNK byte-for-byte unchanged), and saving MNK changes only MNK", opts, async () => {
+  await routing(MNK).set({ menuItemId: MNK, workstreams: ["hospitality"], version: 3, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-02-02T00:00:00.000Z", updatedBy: "someone" });
+  await db.collection("integrationHubCanonical").doc(stableDocumentId(MNK)).set({ canonicalId: MNK, entityType: "Hospitality Menu Item", lifecycleStatus: "published", publicationStatus: "published", dataHash: "x", record: { name: "Mini Pastries", category: "Breakfast", lifecycleState: "active", providerMappings: [] } });
+  const rcoaRecord = buildRcoaCanonicalMenuItem(brochure.find((item) => item.canonicalId === RCOA)!, NOW);
+  await db.collection("integrationHubCanonical").doc(stableDocumentId(RCOA)).set(rcoaRecord);
+  try {
+    const mnkBefore = await rawDoc(MNK);
+    assert.equal(await rawDoc(RCOA), undefined);
+    await saveConnectionCommand(actor, { action: "save-hospitality-menu-production-routing", menuItemId: RCOA, workstreams: ["sandwiches"] });
+    assert.deepEqual((await routing(RCOA).get()).data()?.workstreams, ["sandwiches"]);
+    assert.deepEqual(await rawDoc(MNK), mnkBefore, "MNK routing is byte-for-byte unchanged (data and update time)");
+
+    const rcoaBefore = await rawDoc(RCOA);
+    await saveConnectionCommand(actor, { action: "save-hospitality-menu-production-routing", menuItemId: MNK, workstreams: [] });
+    assert.deepEqual((await routing(MNK).get()).data()?.workstreams, []);
+    assert.deepEqual(await rawDoc(RCOA), rcoaBefore, "saving MNK leaves RCoA untouched");
+
+    const overview = (await connectionsOverview()) as unknown as { menuItems: Array<{ canonicalId: string; workstreams: string[]; routingDecided: boolean; name: string; lifecycleState: string; scopes: never[] }> };
+    const [row] = groupMenuItems(overview.menuItems.filter((item) => item.canonicalId === MNK || item.canonicalId === RCOA));
+    assert.equal(groupRoutingSummary(row.members), "mixed-routing");
+  } finally {
+    await routing(MNK).delete(); await routing(RCOA).delete();
+    await db.collection("integrationHubCanonical").doc(stableDocumentId(MNK)).delete();
+    await db.collection("integrationHubCanonical").doc(stableDocumentId(RCOA)).delete();
   }
 });

@@ -36,3 +36,5 @@
 @media (max-width: 760px) { .menu-routing-row { grid-template-columns: 1fr; } .menu-routing-row fieldset button { width: 100%; } }
 .menu-routing-row p.menu-routing-state { font-weight: 600; color: var(--color-text-primary); }
 .menu-routing-row p.menu-routing-state--required { color: var(--color-status-danger); }
+.menu-routing-members { display: grid; gap: var(--space-3); }
+.menu-routing-members fieldset { min-width: 0; }

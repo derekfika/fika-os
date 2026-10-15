@@ -29,7 +29,7 @@ import EquipmentTypesPanel from "./EquipmentTypesPanel";
 import ServicesWorkspace from "./ServicesWorkspace";
 import "./MenuRoutingPanel.css";
 import { CPU_PRODUCTION_WORKSTREAM_LABELS, type CpuProductionWorkstream } from "../../../shared/production-workstreams";
-import { groupMenuItems } from "../../lib/menu-routing-grouping";
+import { groupMenuItems, groupRoutingSummary, memberRoutingState, platformLabel } from "../../lib/menu-routing-grouping";
 import { readCachedManifests, readCachedOverview, revalidateCachedManifests, writeCachedOverview } from "./integration-cache-client";
 import type { CacheDataset } from "@/lib/integration-cache-shared";
 
@@ -890,7 +890,7 @@ function HospitalityMenuProductionRoutingPanel({
   const [draft, setDraft] = useState<
     Record<string, CpuProductionWorkstream[]>
   >(() =>
-    Object.fromEntries(groupMenuItems(items).map((item) => [item.canonicalId, item.workstreams])),
+    Object.fromEntries(items.map((item) => [item.canonicalId, item.workstreams])),
   );
   const [saving, setSaving] = useState("");
   const [decidedIds, setDecidedIds] = useState<string[]>([]);
@@ -901,7 +901,7 @@ function HospitalityMenuProductionRoutingPanel({
   const [form, setForm] = useState({ name: "", category: "", description: "", lifecycleState: "active" as "active" | "archived" });
   useEffect(() => {
     setDraft(
-      Object.fromEntries(groupMenuItems(items).map((item) => [item.canonicalId, item.workstreams])),
+      Object.fromEntries(items.map((item) => [item.canonicalId, item.workstreams])),
     );
   }, [items]);
   const visible = groupMenuItems(items.filter((item) => includeArchived || item.lifecycleState !== "archived")).filter((item) =>
@@ -957,36 +957,26 @@ function HospitalityMenuProductionRoutingPanel({
         : [...selected, workstream];
       return { ...current, [id]: next };
     });
-  async function save(item: MenuProductionItem, forceInHouse = false) {
-    if (forceInHouse) setDraft((current) => ({ ...current, [item.canonicalId]: [] }));
-    setSaving(item.canonicalId);
+  /** Saves the governed routing record of exactly ONE canonical Menu Item. Grouping by name is presentation only; nothing propagates. */
+  async function saveMember(member: { canonicalId: string }, label: string, name: string, forceInHouse = false) {
+    const workstreams = forceInHouse ? [] : draft[member.canonicalId] || [];
+    if (forceInHouse) setDraft((current) => ({ ...current, [member.canonicalId]: [] }));
+    setSaving(member.canonicalId);
     setMessage("");
     try {
-      for (const menuItemId of item.sourceIds || [item.canonicalId]) {
-        const send = () =>
-          fetch("/api/connections", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              action: "save-hospitality-menu-production-routing",
-              menuItemId,
-              workstreams: forceInHouse ? [] : draft[menuItemId] || draft[item.canonicalId] || [],
-            }),
-          });
-        let response = await send();
-        if (response.status === 401 && (await refreshSession()))
-          response = await send();
-        const body = await response.json();
-        if (!response.ok)
-          throw new Error(
-            body.error?.message ||
-              "The production view routing could not be saved.",
-          );
-      }
-      setDecidedIds((current) => [...current, item.canonicalId]);
-      setMessage(
-        `${item.name} routing saved for ${(item.sourceIds || [item.canonicalId]).length} canonical record${(item.sourceIds || [item.canonicalId]).length === 1 ? "" : "s"}.`,
-      );
+      const send = () =>
+        fetch("/api/connections", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "save-hospitality-menu-production-routing", menuItemId: member.canonicalId, workstreams }),
+        });
+      let response = await send();
+      if (response.status === 401 && (await refreshSession())) response = await send();
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message || "The production view routing could not be saved.");
+      setDecidedIds((current) => [...current, member.canonicalId]);
+      setMessage(`${name} · ${label} routing saved. Other platforms were not changed.`);
+      await reloadOverview();
     } catch (error) {
       setMessage((error as Error).message);
     } finally {
@@ -998,9 +988,10 @@ function HospitalityMenuProductionRoutingPanel({
       <div className="connection-workspace__intro">
         <span>Production view routing</span>
         <p>
-          One row is shown per menu name to make setup quick. Site offerings
-          remain separate, and saving a row applies the chosen visibility to
-          every matching canonical record.
+          One row is shown per menu name to keep the list short, but every
+          platform's item has its own routing record. Saving one platform
+          changes only that platform; it never changes another platform's
+          record.
         </p>
       </div>
       <label className="connection-search">
@@ -1023,8 +1014,8 @@ function HospitalityMenuProductionRoutingPanel({
       {visible.length ? (
         <div className="menu-routing-list">
           {visible.map((item) => {
-            const selected = draft[item.canonicalId] || [];
-            const decided = Boolean(item.routingDecided) || decidedIds.includes(item.canonicalId);
+            const members = item.members || [];
+            const summary = groupRoutingSummary(members);
             return (
               <article className="menu-routing-row" key={item.canonicalId}>
                 <div>
@@ -1033,20 +1024,9 @@ function HospitalityMenuProductionRoutingPanel({
                     {item.category} · {item.lifecycleState} ·{" "}
                     {item.publicationStatus}
                   </p>
-                  {(() => {
-                    const conflict = selected.includes("sandwiches") && selected.includes("hospitality");
-                    const state = item.routingInconsistent ? "inconsistent" : item.routingPartial ? "partial" : !decided ? "unclassified" : conflict ? "conflict" : selected.length === 0 ? "in-house" : selected.every((value) => value === "delivered_in") ? "delivered-in-only" : "routed";
-                    const text = {
-                      inconsistent: "Site records disagree — their saved Production visibility differs. Saving applies the ticked visibility to all of them.",
-                      partial: "Partly classified — only some site records have a routing decision (Unclassified for the rest). Saving applies the ticked visibility to all of them.",
-                      unclassified: "Unclassified — no routing record yet. RCoA bookings containing this item cannot be handed off to CPU until it is classified.",
-                      conflict: "Routing conflict — Sandwiches and Hospitality are both ticked. A Hospitality hand-off needs exactly one CPU workstream or none.",
-                      "in-house": "In house — saved with no production visibility; stays on the Hospitality booking and is never sent to CPU",
-                      "delivered-in-only": "Delivered-In only — not sent to CPU by Hospitality hand-off",
-                      routed: `CPU · ${selected.filter((value) => value !== "delivered_in").map((value) => CPU_PRODUCTION_WORKSTREAM_LABELS[value]).join(" + ")}${selected.includes("delivered_in") ? " (also visible in Delivered-In)" : ""}`,
-                    }[state];
-                    return <p className={state === "unclassified" || state === "conflict" || state === "partial" || state === "inconsistent" ? "menu-routing-state menu-routing-state--required" : "menu-routing-state"} data-routing-state={state}>{text}</p>;
-                  })()}
+                  <p className={summary === "consistent" ? "menu-routing-state" : "menu-routing-state menu-routing-state--required"} data-routing-summary={summary}>
+                    {{ unclassified: "Unclassified on every platform", "partly-classified": "Partly classified — some platforms have no routing record yet", "mixed-routing": "Mixed routing — platforms are routed differently", conflict: "Routing conflict — a platform has both Sandwiches and Hospitality", consistent: "Same routing on every platform" }[summary]}
+                  </p>
                   <div className="menu-routing-scopes">
                     <strong>Site availability</strong>
                     {item.scopes.length ? (
@@ -1078,51 +1058,39 @@ function HospitalityMenuProductionRoutingPanel({
                     <button type="button" className="secondary" disabled={!canManage} onClick={() => openEditor(item)}>Edit</button>
                     <button type="button" className="danger" disabled={!canManage || saving === item.canonicalId} onClick={() => setConfirmation(item)}>{item.lifecycleState === "archived" ? "Restore" : "Archive"}</button>
                   </div>
-                  <fieldset
-                  disabled={!canManage || item.lifecycleState === "archived"}
-                >
-                  <legend>Production visibility</legend>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={selected.includes("sandwiches")}
-                      onChange={() => toggle(item.canonicalId, "sandwiches")}
-                    />{" "}
-                    {CPU_PRODUCTION_WORKSTREAM_LABELS.sandwiches}
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={selected.includes("hospitality")}
-                      onChange={() => toggle(item.canonicalId, "hospitality")}
-                    />{" "}
-                    {CPU_PRODUCTION_WORKSTREAM_LABELS.hospitality}
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={selected.includes("delivered_in")}
-                      onChange={() => toggle(item.canonicalId, "delivered_in")}
-                    />{" "}
-                    {CPU_PRODUCTION_WORKSTREAM_LABELS.delivered_in}
-                  </label>
-                  <button
-                    className="primary"
-                    type="button"
-                    disabled={saving === item.canonicalId}
-                    onClick={() => void save(item)}
-                  >
-                    {saving === item.canonicalId ? "Saving…" : "Save routing"}
-                  </button>
-                  <button
-                    className="secondary"
-                    type="button"
-                    disabled={saving === item.canonicalId}
-                    onClick={() => void save(item, true)}
-                  >
-                    Save as In house
-                  </button>
-                </fieldset>
+                  <div className="menu-routing-members">
+                    {members.map((member) => {
+                      const label = platformLabel(member.canonicalId);
+                      const selected = draft[member.canonicalId] || [];
+                      const decided = member.routingDecided || decidedIds.includes(member.canonicalId);
+                      const state = memberRoutingState(selected, decided);
+                      const text = {
+                        unclassified: "Unclassified — no routing record yet",
+                        "in-house": "In house — never sent to CPU",
+                        "delivered-in-only": "Delivered-In only — not sent to CPU by Hospitality",
+                        conflict: "Routing conflict — choose Sandwiches or Hospitality, not both",
+                        routed: `CPU · ${selected.filter((value) => value !== "delivered_in").map((value) => CPU_PRODUCTION_WORKSTREAM_LABELS[value]).join(" + ")}${selected.includes("delivered_in") ? " (also Delivered-In)" : ""}`,
+                      }[state];
+                      return (
+                        <fieldset key={member.canonicalId} data-routing-member={member.canonicalId} disabled={!canManage || item.lifecycleState === "archived"}>
+                          <legend>{label} · <code>{member.canonicalId}</code></legend>
+                          <p className={state === "unclassified" || state === "conflict" ? "menu-routing-state menu-routing-state--required" : "menu-routing-state"} data-routing-state={state}>{text}</p>
+                          {(["sandwiches", "hospitality", "delivered_in"] as const).map((workstream) => (
+                            <label key={workstream}>
+                              <input type="checkbox" checked={selected.includes(workstream)} onChange={() => toggle(member.canonicalId, workstream)} />{" "}
+                              {CPU_PRODUCTION_WORKSTREAM_LABELS[workstream]}
+                            </label>
+                          ))}
+                          <button className="primary" type="button" disabled={saving === member.canonicalId} onClick={() => void saveMember(member, label, item.name)}>
+                            {saving === member.canonicalId ? "Saving…" : `Save ${label} routing`}
+                          </button>
+                          <button className="secondary" type="button" disabled={saving === member.canonicalId} onClick={() => void saveMember(member, label, item.name, true)}>
+                            Save {label} as In house
+                          </button>
+                        </fieldset>
+                      );
+                    })}
+                  </div>
               </article>
             );
           })}
