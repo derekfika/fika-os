@@ -11,6 +11,7 @@ import { stableDocumentId } from "../lib/canonical-editor";
 import { parseCanonical } from "../lib/schemas";
 import { sha256 } from "../lib/profiler";
 import type { CanonicalRecord } from "../lib/types";
+import { resolveCanonicalItemForSource } from "../lib/hospitality-catalogue-canonicalisation";
 import { localMnkMenuCatalogue, localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue } from "@fika/server-shared/hospitality-catalogue";
 
 const catalogues = [localMnkMenuCatalogue, localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue];
@@ -46,7 +47,17 @@ function toRecord(item: (typeof localMnkMenuCatalogue.items)[number]): Canonical
   return { canonicalId: item.canonicalId, entityType: "Hospitality Menu Item", record, dataHash: sha256(JSON.stringify(record)), lifecycleStatus: "published", publicationStatus: "published", publishedAt: now };
 }
 
-const records = catalogues.flatMap(catalogue => catalogue.items.map(toRecord));
+// One canonical catalogue: an entry whose product is already a canonical Item (same exact source id, name, category and
+// allergen data) is covered by that Item rather than creating a second, site-prefixed copy. Sites differ at the Offering.
+const existingItems = (await canonical.where("entityType", "==", "Hospitality Menu Item").get()).docs.map(document => document.data() as CanonicalRecord);
+const covered: Array<{ source: string; canonicalItem: string }> = [];
+const seen: CanonicalRecord[] = [...existingItems];
+const records = catalogues.flatMap(catalogue => catalogue.items.flatMap(source => {
+  const siteKey = /^hospitality-menu-item:([a-z][a-z0-9-]*):/.exec(source.canonicalId)?.[1] ?? "unknown";
+  const twin = resolveCanonicalItemForSource(seen, { siteKey, sourceItemId: source.source.sourceItemId, name: source.name, category: source.category, dietaryInformation: source.dietaryInformation, allergenInformation: source.allergenInformation });
+  if (twin && twin.canonicalId !== source.canonicalId) { covered.push({ source: source.canonicalId, canonicalItem: twin.canonicalId }); return []; }
+  const record = toRecord(source); seen.push(record); return [record];
+}));
 const byId = new Map(records.map(record => [record.canonicalId, record]));
 if (byId.size !== records.length) throw new Error("Duplicate canonical menu item IDs detected across portal catalogues.");
 
@@ -63,4 +74,4 @@ for (let offset = 0; offset < missing.length; offset += 400) {
   }
   await batch.commit();
 }
-console.log(JSON.stringify({ catalogues: catalogues.length, sourceItems: records.length, created: missing.length, reused: records.length - missing.length - conflicts.length, conflicts, status: "published reusable items; conflicts preserved for review" }, null, 2));
+console.log(JSON.stringify({ catalogues: catalogues.length, sourceItems: records.length, coveredByExistingCanonicalItem: covered, created: missing.length, reused: records.length - missing.length - conflicts.length, conflicts, status: "published reusable items; conflicts preserved for review" }, null, 2));

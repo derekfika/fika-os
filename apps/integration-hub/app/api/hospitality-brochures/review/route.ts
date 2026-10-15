@@ -8,7 +8,7 @@ import { db } from "@/lib/firebase-admin";
 import type { CanonicalRecord } from "@/lib/types";
 
 const Command = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("save"), candidateId: z.string().min(8), proposedName: z.string().optional(), proposedCategory: z.string().optional(), proposedItemId: z.string().min(8).optional(), oplocId: z.string().min(8).optional(), operationalAreaId: z.string().min(8).optional(), offeringMode: z.enum(["standard", "quote_only"]).optional(), priceAmount: z.number().nonnegative().optional(), vatRate: z.number().min(0).max(1).optional(), effectiveFrom: z.string().date().optional() }).strict(),
+  z.object({ action: z.literal("save"), candidateId: z.string().min(8), proposedName: z.string().optional(), proposedCategory: z.string().optional(), proposedItemId: z.string().min(8).optional(), oplocId: z.string().min(8).optional(), operationalAreaId: z.string().min(8).optional(), offeringMode: z.enum(["standard", "quote_only"]).optional(), priceAmount: z.number().nonnegative().optional(), vatRate: z.number().min(0).max(1).optional(), effectiveFrom: z.string().date().optional(), confirmDistinctItem: z.boolean().optional() }).strict(),
   z.object({ action: z.literal("ignore"), candidateId: z.string().min(8), ignoreReason: z.string().trim().min(1).max(1000) }).strict(),
   z.object({ action: z.literal("publish"), candidateId: z.string().min(8) }).strict(),
   z.object({ action: z.literal("publish-import"), brochureImportId: z.string().min(8) }).strict(),

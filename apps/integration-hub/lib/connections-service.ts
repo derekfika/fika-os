@@ -32,7 +32,7 @@ export async function hospitalityMenuProductionRouting(menuItemIds?: string[]): 
   const snapshot = wanted
     ? await Promise.all(wanted.map(id => menuProductionRouting().doc(stableDocumentId(id)).get()))
     : await menuProductionRouting().get();
-  const documents = Array.isArray(snapshot) ? snapshot.filter(item => item.exists) : snapshot.docs;
+  const documents = (Array.isArray(snapshot) ? snapshot.filter(item => item.exists) : snapshot.docs).filter(document => !document.data()?.supersededBy);
   const saved = Object.fromEntries(documents.map(document => {
     const data = document.data() || {};
     const adapted = adaptCpuProductionWorkstreams(Array.isArray(data.workstreams) ? data.workstreams : Array.isArray(data.views) ? data.views : []);
@@ -53,6 +53,14 @@ export async function hospitalityMenuProductionRouting(menuItemIds?: string[]): 
   for (const [sourceKey, views] of Object.entries(routing)) {
     const canonicalId = `hospitality-menu-item:mnk:${sourceKey}`;
     if (!routing[canonicalId]) routing[canonicalId] = views;
+  }
+
+  // A merged-away Menu Item keeps resolving: orders, quotes and Production Orders that still carry its ID inherit the
+  // surviving canonical item's single routing decision. The merge map is small (one document per merged item).
+  const merges = await db.collection("integrationHubHospitalityMenuItemMerges").get();
+  for (const merge of merges.docs) {
+    const { sourceMenuItemId, survivorMenuItemId } = merge.data() as { sourceMenuItemId?: string; survivorMenuItemId?: string };
+    if (sourceMenuItemId && survivorMenuItemId && routing[survivorMenuItemId]) routing[sourceMenuItemId] = routing[survivorMenuItemId];
   }
 
   return routing;
@@ -140,7 +148,7 @@ export async function connectionsOverview() {
       version: Number(record.record.version || 1),
       lifecycleState: String(record.record.lifecycleState || "active"),
       publicationStatus: record.publicationStatus,
-      routingDecided: routingSnapshot.docs.some(doc => doc.id === stableDocumentId(record.canonicalId)),
+      routingDecided: routingSnapshot.docs.some(doc => doc.id === stableDocumentId(record.canonicalId) && !doc.data()?.supersededBy),
       routingSuggestion: suggestHospitalityMenuRouting(record.record.providerMappings),
       scopes: records.filter(candidate => candidate.entityType === "Hospitality Menu Offering" && candidate.record.hospitalityMenuItemId === record.canonicalId).map(offering => ({ oplocId: String(offering.record.oplocId), label: String(records.find(candidate => candidate.canonicalId === offering.record.oplocId)?.record.approvedName || offering.record.oplocId), operationalAreaId: offering.record.operationalAreaId ? String(offering.record.operationalAreaId) : undefined })).filter((scope, index, all) => all.findIndex(candidate => candidate.oplocId === scope.oplocId && candidate.operationalAreaId === scope.operationalAreaId) === index),
       workstreams: (() => {
@@ -442,6 +450,14 @@ export async function saveConnectionCommand(
         if (existingKeys.has(key)) throw new Error(`The merge would create a duplicate offering for ${offering.record.oplocId}. Resolve that site offering first.`);
         existingKeys.add(key);
       }
+      // Production routing is stored once, on the surviving canonical item. Read both decisions before any write.
+      const sourceRoutingRef = menuProductionRouting().doc(stableDocumentId(source.canonicalId));
+      const survivorRoutingRef = menuProductionRouting().doc(stableDocumentId(survivor.canonicalId));
+      const sourceRouting = (await transaction.get(sourceRoutingRef)).data();
+      const survivorRoutingSnapshot = await transaction.get(survivorRoutingRef);
+      const survivorRouting = survivorRoutingSnapshot.data();
+      const routingKey = (value: Record<string, unknown> | undefined) => JSON.stringify([...adaptCpuProductionWorkstreams(Array.isArray(value?.workstreams) ? value.workstreams as unknown[] : Array.isArray(value?.views) ? value.views as unknown[] : []).workstreams].sort());
+      if (sourceRouting && !sourceRouting.supersededBy && survivorRouting && !survivorRouting.supersededBy && routingKey(sourceRouting) !== routingKey(survivorRouting)) throw new Error("The two Menu Items have different production routing decisions. Resolve the routing on one of them before merging.");
       const identities = new Map<string, Record<string, unknown>>();
       const survivorMappings = (Array.isArray(survivor.record.providerMappings) ? survivor.record.providerMappings : []) as Record<string, unknown>[];
       const sourceMappings = (Array.isArray(source.record.providerMappings) ? source.record.providerMappings : []) as Record<string, unknown>[];
@@ -452,6 +468,10 @@ export async function saveConnectionCommand(
       if (!survivorParsed.success || !sourceParsed.success) throw new Error("The merge failed Menu Item validation.");
       transaction.set(canonical().doc(stableDocumentId(survivor.canonicalId)), { ...survivor, record: survivorRecord, dataHash: sha256(JSON.stringify(survivorRecord)) });
       transaction.set(canonical().doc(stableDocumentId(source.canonicalId)), { ...source, record: sourceRecord, dataHash: sha256(JSON.stringify(sourceRecord)) });
+      if (sourceRouting && !sourceRouting.supersededBy) {
+        if (!survivorRoutingSnapshot.exists) transaction.set(survivorRoutingRef, { menuItemId: survivor.canonicalId, workstreams: Array.isArray(sourceRouting.workstreams) ? sourceRouting.workstreams : adaptCpuProductionWorkstreams(Array.isArray(sourceRouting.views) ? sourceRouting.views as unknown[] : []).workstreams, version: 1, createdAt: now, updatedAt: now, updatedBy: actor.uid, inheritedFrom: source.canonicalId });
+        transaction.set(sourceRoutingRef, { supersededBy: survivor.canonicalId, supersededAt: now }, { merge: true });
+      }
       transaction.set(db.collection("integrationHubHospitalityMenuItemMerges").doc(stableDocumentId(source.canonicalId)), { sourceMenuItemId: source.canonicalId, survivorMenuItemId: survivor.canonicalId, mergedAt: now, mergedBy: actor.uid }, { merge: true });
       for (const offering of sourceOfferings) {
         const nextRecord = { ...offering.record, hospitalityMenuItemId: survivor.canonicalId, version: Number(offering.record.version || 0) + 1, updatedAt: now, updatedBy: actor.uid };

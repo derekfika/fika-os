@@ -7,6 +7,7 @@ import { sha256 } from "./profiler";
 import { parseCanonical } from "./schemas";
 import type { CanonicalRecord } from "./types";
 import { listCanonicalRecordsByTypes } from "./canonical-oplocs";
+import { existingCandidatesForNewItem } from "./hospitality-catalogue-canonicalisation";
 
 export const HOSPITALITY_PORTAL_READ_CONTRACT_VERSION = "fika.hospitality-menu-read.v2";
 type MenuEntity = "Hospitality Menu Item" | "Hospitality Menu Offering" | "Hospitality Menu Price" | "Hospitality Brochure Import" | "Hospitality Brochure Candidate";
@@ -41,7 +42,7 @@ function overlap(a: CanonicalRecord, b: Record<string, unknown>) {
   return aFrom <= bTo && bFrom <= aTo;
 }
 
-export type BrochureCandidateInput = { candidateId: string; proposedName?: string; proposedCategory?: string; proposedItemId?: string; oplocId?: string; operationalAreaId?: string; offeringMode?: OfferingMode; priceAmount?: number; vatRate?: number; effectiveFrom?: string; action: "save" | "ignore" | "publish"; ignoreReason?: string };
+export type BrochureCandidateInput = { candidateId: string; proposedName?: string; proposedCategory?: string; proposedItemId?: string; oplocId?: string; operationalAreaId?: string; offeringMode?: OfferingMode; priceAmount?: number; vatRate?: number; effectiveFrom?: string; action: "save" | "ignore" | "publish"; ignoreReason?: string; /** Reviewer confirms this is a genuinely different product from every existing catalogue item with the same name. */ confirmDistinctItem?: boolean };
 
 /** Applies only explicit reviewer choices; it never infers a mapping from brochure wording. */
 export async function reviewBrochureCandidate(actor: Actor, input: BrochureCandidateInput) {
@@ -64,6 +65,10 @@ export async function reviewBrochureCandidate(actor: Actor, input: BrochureCandi
     const records: CanonicalRecord[] = [];
     if (!itemId) {
       if (!input.proposedName?.trim() || !input.proposedCategory?.trim()) throw problem("Choose an existing Menu Item, or provide the proposed item name and category.");
+      // One canonical catalogue: a site brochure selects an existing item first. A new item is created only when nothing matches.
+      const activeItems = (await transaction.get(canonical().where("entityType", "==", "Hospitality Menu Item"))).docs.map(document => document.data() as CanonicalRecord);
+      const existing = existingCandidatesForNewItem(activeItems, { name: input.proposedName });
+      if (existing.length && !input.confirmDistinctItem) throw problem(`A canonical Menu Item with this name already exists (${existing.join(", ")}). Select it as the existing item so this site offers it, rather than creating a duplicate.`);
       itemId = generateCanonicalId("Hospitality Menu Item");
       const itemRecord = { ...base(actor, "Hospitality Menu Item", itemId, now), name: input.proposedName.trim(), category: input.proposedCategory.trim(), lifecycleState: "active", dietaryInformation: [], allergenInformation: [], providerMappings: [{ provider: "hospitality-brochure", sourceItemId: candidate.canonicalId, sourceVersion: String(source.brochureImportId) }] };
       validate("Hospitality Menu Item", itemRecord); const item = asCanonical("Hospitality Menu Item", itemRecord, "draft"); transaction.create(canonical().doc(stableDocumentId(itemId)), item); records.push(item);
@@ -126,6 +131,8 @@ export async function publishReviewedBrochureImport(actor: Actor, brochureImport
   return { brochureImportId, candidateCount: candidates.length, records };
 }
 
+/** Site-local presentation overrides live on the Offering; identity, allergens and routing stay on the canonical Item. */
+const localText = (configuration: unknown, key: "displayName" | "description") => { const value = (configuration as Record<string, unknown> | undefined)?.[key]; return typeof value === "string" && value.trim() ? value.trim() : undefined; };
 export type HospitalityPortalReadRequest = { oplocId: string; operationalAreaId?: string; serviceDate: string; serviceContext?: string };
 export function hospitalityPortalReadFromRecords(records: CanonicalRecord[], request: HospitalityPortalReadRequest) {
   const all = records;
@@ -137,8 +144,8 @@ export function hospitalityPortalReadFromRecords(records: CanonicalRecord[], req
     const prices = all.filter(record => record.entityType === "Hospitality Menu Price" && activePublished(record) && record.record.lifecycleState === "active" && String(record.record.hospitalityMenuOfferingId) === offering.canonicalId && dateApplies(record, request.serviceDate));
     if (prices.some(price => typeof price.record.amount !== "number" || !Number.isFinite(price.record.amount) || price.record.amount < 0 || typeof price.record.vatRate !== "number" || !Number.isFinite(price.record.vatRate))) return [];
     const configuration = offering.record.configuration && typeof offering.record.configuration === "object" ? structuredClone(offering.record.configuration) : undefined;
-    if (mode === "standard") { if (prices.length !== 1) return []; const price = prices[0]; return [{ offeringId: offering.canonicalId, itemId: item.canonicalId, name: String(item.record.name), description: item.record.description ? String(item.record.description) : undefined, category: String(item.record.category), offeringMode: mode, configuration, constraints: { minimumQuantity: offering.record.minimumQuantity, minimumGuests: offering.record.minimumGuests, noticeRequiredDays: offering.record.noticeRequiredDays }, price: { priceId: price.canonicalId, amount: Number(price.record.amount), currency: "GBP" as const, vatRate: Number(price.record.vatRate) }, dietaryInformation: Array.isArray(item.record.dietaryInformation) ? item.record.dietaryInformation.map(String) : [], allergenInformation: Array.isArray(item.record.allergenInformation) ? item.record.allergenInformation.map(String) : [] }]; }
-    if (prices.length) return []; return [{ offeringId: offering.canonicalId, itemId: item.canonicalId, name: String(item.record.name), description: item.record.description ? String(item.record.description) : undefined, category: String(item.record.category), offeringMode: mode, configuration, constraints: { minimumQuantity: offering.record.minimumQuantity, minimumGuests: offering.record.minimumGuests, noticeRequiredDays: offering.record.noticeRequiredDays }, quoteRequired: true, dietaryInformation: Array.isArray(item.record.dietaryInformation) ? item.record.dietaryInformation.map(String) : [], allergenInformation: Array.isArray(item.record.allergenInformation) ? item.record.allergenInformation.map(String) : [] }];
+    if (mode === "standard") { if (prices.length !== 1) return []; const price = prices[0]; return [{ offeringId: offering.canonicalId, itemId: item.canonicalId, name: localText(configuration, "displayName") ?? String(item.record.name), description: localText(configuration, "description") ?? (item.record.description ? String(item.record.description) : undefined), category: String(item.record.category), offeringMode: mode, configuration, constraints: { minimumQuantity: offering.record.minimumQuantity, minimumGuests: offering.record.minimumGuests, noticeRequiredDays: offering.record.noticeRequiredDays }, price: { priceId: price.canonicalId, amount: Number(price.record.amount), currency: "GBP" as const, vatRate: Number(price.record.vatRate) }, dietaryInformation: Array.isArray(item.record.dietaryInformation) ? item.record.dietaryInformation.map(String) : [], allergenInformation: Array.isArray(item.record.allergenInformation) ? item.record.allergenInformation.map(String) : [] }]; }
+    if (prices.length) return []; return [{ offeringId: offering.canonicalId, itemId: item.canonicalId, name: localText(configuration, "displayName") ?? String(item.record.name), description: localText(configuration, "description") ?? (item.record.description ? String(item.record.description) : undefined), category: String(item.record.category), offeringMode: mode, configuration, constraints: { minimumQuantity: offering.record.minimumQuantity, minimumGuests: offering.record.minimumGuests, noticeRequiredDays: offering.record.noticeRequiredDays }, quoteRequired: true, dietaryInformation: Array.isArray(item.record.dietaryInformation) ? item.record.dietaryInformation.map(String) : [], allergenInformation: Array.isArray(item.record.allergenInformation) ? item.record.allergenInformation.map(String) : [] }];
   });
   return { contractVersion: HOSPITALITY_PORTAL_READ_CONTRACT_VERSION, source: "canonical" as const, request: { ...request }, offerings };
 }
