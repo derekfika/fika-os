@@ -141,23 +141,23 @@ async function rcoaFixture(items: Line[], decisions: Record<string, string[]>) {
     cleanup: async () => { await mappingRef.delete(); await Promise.all(Object.keys(decisions).map((id) => routingCollection().doc(stableDocumentId(id)).delete())); },
   };
 }
-const tea: Line = { itemId: "specialty_tea_coffee", itemName: "Specialty Tea & Coffee", quantity: 1 };
-const pastries: Line = { itemId: "mini_pastries", itemName: "Mini Pastries", quantity: 20 };
+const tea: Line = { itemId: "rt_tea_coffee", itemName: "Specialty Tea & Coffee", quantity: 1 };
+const pastries: Line = { itemId: "rt_mini_pastries", itemName: "Mini Pastries", quantity: 20 };
 
 test("hand-off: Tea & Coffee (explicit In house) + Mini Pastries (Hospitality) -> Production Order with the pastries only; booking keeps both", opts, async () => {
-  const f = await rcoaFixture([tea, pastries], { [`${P}specialty_tea_coffee`]: [], [`${P}mini_pastries`]: ["hospitality"] });
+  const f = await rcoaFixture([tea, pastries], { [`${P}rt_tea_coffee`]: [], [`${P}rt_mini_pastries`]: ["hospitality"] });
   try {
     const result = await createProductionFromApprovedBooking(actor, f.bookingId, `rcoa-${f.bookingId}`);
     assert.equal(result.created, true);
     assert.deepEqual(result.order!.lines.map((l) => [l.itemName, l.workstream]), [["Mini Pastries", "hospitality"]]);
     assert.equal(result.order!.lines[0].sourceBookingLineId, `${f.bookingId}:line:2`, "traceable to the original booking line");
     const booking = (await db.collection("fikaBookings").doc(f.bookingId).get()).data() as CanonicalBooking;
-    assert.deepEqual(booking.order.items.map((i) => i.itemId), ["specialty_tea_coffee", "mini_pastries"], "Hospitality retains the complete booking");
+    assert.deepEqual(booking.order.items.map((i) => i.itemId), ["rt_tea_coffee", "rt_mini_pastries"], "Hospitality retains the complete booking");
   } finally { await f.cleanup(); }
 });
 
 test("hand-off: sandwich lunch keeps the governed three-pieces-per-person conversion and the sandwiches workstream", opts, async () => {
-  const f = await rcoaFixture([{ itemId: "deli_sandwich_lunch", itemName: "Deli Style Sandwich Lunch", quantity: 10 }], { [`${P}deli_sandwich_lunch`]: ["sandwiches"] });
+  const f = await rcoaFixture([{ itemId: "rt:deli_sandwich_lunch", itemName: "Deli Style Sandwich Lunch", quantity: 10 }], { [`${P}rt:deli_sandwich_lunch`]: ["sandwiches"] });
   try {
     const order = (await createProductionFromApprovedBooking(actor, f.bookingId, `rcoa-${f.bookingId}`)).order!;
     assert.equal(order.lines[0].workstream, "sandwiches");
@@ -167,7 +167,7 @@ test("hand-off: sandwich lunch keeps the governed three-pieces-per-person conver
 });
 
 test("hand-off: all In house (empty record + Delivered-In only) -> explicit 'no CPU production required', no Production Order, not marked Sent to CPU", opts, async () => {
-  const f = await rcoaFixture([tea, { itemId: "delivered_only", itemName: "Delivered-In only item", quantity: 2 }], { [`${P}specialty_tea_coffee`]: [], [`${P}delivered_only`]: ["delivered_in"] });
+  const f = await rcoaFixture([tea, { itemId: "rt_delivered_only", itemName: "Delivered-In only item", quantity: 2 }], { [`${P}rt_tea_coffee`]: [], [`${P}rt_delivered_only`]: ["delivered_in"] });
   try {
     const outcome = await createProductionOrder(actor, f.bookingId, f.version);
     assert.equal(outcome.status, "no_cpu_production_required");
@@ -178,7 +178,7 @@ test("hand-off: all In house (empty record + Delivered-In only) -> explicit 'no 
 });
 
 test("hand-off: a MISSING routing record fails closed (Routing required), names the item and creates no partial Production Order", opts, async () => {
-  const f = await rcoaFixture([pastries, { itemId: "bagel_box", itemName: "Bagel Box", quantity: 5 }], { [`${P}mini_pastries`]: ["hospitality"] });
+  const f = await rcoaFixture([pastries, { itemId: "rt_bagel_box", itemName: "Bagel Box", quantity: 5 }], { [`${P}rt_mini_pastries`]: ["hospitality"] });
   try {
     await assert.rejects(() => createProductionFromApprovedBooking(actor, f.bookingId, `rcoa-${f.bookingId}`), (error: Error & { code?: string }) => error.code === "ROUTING_REQUIRED" && /Routing required/.test(error.message) && /Bagel Box/.test(error.message) && !/Mini Pastries/.test(error.message));
     assert.equal((await ordersFor(f.bookingId)).length, 0);
@@ -186,7 +186,7 @@ test("hand-off: a MISSING routing record fails closed (Routing required), names 
 });
 
 test("hand-off: Sandwiches AND Hospitality on one item is a Routing conflict: no arbitrary pick, no partial Production Order", opts, async () => {
-  const f = await rcoaFixture([pastries, { itemId: "both_flags", itemName: "Both Flags Item", quantity: 5 }], { [`${P}mini_pastries`]: ["hospitality"], [`${P}both_flags`]: ["sandwiches", "hospitality"] });
+  const f = await rcoaFixture([pastries, { itemId: "rt_both_flags", itemName: "Both Flags Item", quantity: 5 }], { [`${P}rt_mini_pastries`]: ["hospitality"], [`${P}rt_both_flags`]: ["sandwiches", "hospitality"] });
   try {
     await assert.rejects(() => createProductionFromApprovedBooking(actor, f.bookingId, `rcoa-${f.bookingId}`), (error: Error & { code?: string }) => error.code === "ROUTING_CONFLICT" && /Routing conflict/.test(error.message) && /Both Flags Item/.test(error.message));
     assert.equal((await ordersFor(f.bookingId)).length, 0);
@@ -194,7 +194,7 @@ test("hand-off: Sandwiches AND Hospitality on one item is a Routing conflict: no
 });
 
 test("dashboard feed: the booking workspace derives per-line and booking-level CPU state from the governed records, not deliveryChargeRequired", opts, async () => {
-  const f = await rcoaFixture([tea, pastries, { itemId: "bagel_box", itemName: "Bagel Box", quantity: 5 }], { [`${P}specialty_tea_coffee`]: [], [`${P}mini_pastries`]: ["hospitality"] });
+  const f = await rcoaFixture([tea, pastries, { itemId: "rt_bagel_box", itemName: "Bagel Box", quantity: 5 }], { [`${P}rt_tea_coffee`]: [], [`${P}rt_mini_pastries`]: ["hospitality"] });
   try {
     await db.collection("fikaBookings").doc(f.bookingId).update({ deliveryChargeRequired: false });
     const workspace = (await bookingWorkspace(undefined, undefined, true)) as { cpuRouting?: Record<string, { status: string; statusLabel: string; lines: Array<{ label: string }> }> };
@@ -203,10 +203,10 @@ test("dashboard feed: the booking workspace derives per-line and booking-level C
     assert.equal(view.status, "routing_required");
     assert.equal(view.statusLabel, "Routing required");
     assert.deepEqual(view.lines.map((l) => l.label), ["In house", "CPU · Hospitality", "Routing required"]);
-    await routingCollection().doc(stableDocumentId(`${P}bagel_box`)).set({ menuItemId: `${P}bagel_box`, workstreams: ["sandwiches"], version: 1 });
+    await routingCollection().doc(stableDocumentId(`${P}rt_bagel_box`)).set({ menuItemId: `${P}rt_bagel_box`, workstreams: ["sandwiches"], version: 1 });
     const done = ((await bookingWorkspace(undefined, undefined, true)) as { cpuRouting?: Record<string, { statusLabel: string; lines: Array<{ label: string }> }> }).cpuRouting![f.bookingId];
     assert.equal(done.statusLabel, "CPU required");
     assert.deepEqual(done.lines.map((l) => l.label), ["In house", "CPU · Hospitality", "CPU · Sandwiches"]);
-    await routingCollection().doc(stableDocumentId(`${P}bagel_box`)).delete();
+    await routingCollection().doc(stableDocumentId(`${P}rt_bagel_box`)).delete();
   } finally { await f.cleanup(); }
 });

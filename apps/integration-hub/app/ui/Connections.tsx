@@ -29,6 +29,7 @@ import EquipmentTypesPanel from "./EquipmentTypesPanel";
 import ServicesWorkspace from "./ServicesWorkspace";
 import "./MenuRoutingPanel.css";
 import { CPU_PRODUCTION_WORKSTREAM_LABELS, type CpuProductionWorkstream } from "../../../shared/production-workstreams";
+import { groupMenuItems } from "../../lib/menu-routing-grouping";
 import { readCachedManifests, readCachedOverview, revalidateCachedManifests, writeCachedOverview } from "./integration-cache-client";
 import type { CacheDataset } from "@/lib/integration-cache-shared";
 
@@ -143,43 +144,10 @@ type MenuProductionItem = {
   /** A saved routing record exists (an empty list is the deliberate "In house" decision; no record = Routing required). */
   routingDecided?: boolean;
   sourceIds?: string[];
+  routingPartial?: boolean;
+  routingInconsistent?: boolean;
 };
 
-function groupMenuItems(items: MenuProductionItem[]) {
-  const grouped = new Map<string, MenuProductionItem>();
-  // Prefer an active record as the representative when the same display name
-  // has both current and archived site-scoped records.
-  for (const item of [...items].sort((a, b) =>
-    Number(b.lifecycleState === "active") - Number(a.lifecycleState === "active"),
-  )) {
-    // Routing is intentionally aligned by human-facing menu name across site
-    // records. Canonical records and their site-scoped offerings remain
-    // separate; this only keeps production-view visibility consistent.
-    const key = item.name.trim().toLocaleLowerCase("en-GB");
-    const current = grouped.get(key);
-    if (!current) grouped.set(key, { ...item, sourceIds: [item.canonicalId] });
-    else
-      grouped.set(key, {
-        ...current,
-        lifecycleState:
-          current.lifecycleState === "active" || item.lifecycleState === "active"
-            ? "active"
-            : item.lifecycleState,
-        sourceIds: [...(current.sourceIds || []), item.canonicalId],
-        scopes: [...current.scopes, ...item.scopes].filter(
-          (scope, index, all) =>
-            all.findIndex(
-              (candidate) =>
-                candidate.oplocId === scope.oplocId &&
-                candidate.operationalAreaId === scope.operationalAreaId,
-            ) === index,
-        ),
-        workstreams: current.workstreams,
-        routingDecided: Boolean(current.routingDecided && item.routingDecided),
-      });
-  }
-  return [...grouped.values()];
-}
 type Editor =
   | { kind: "role"; current?: StaffingRole }
   | { kind: "requirement"; current?: Requirement; oplocId: string }
@@ -922,7 +890,7 @@ function HospitalityMenuProductionRoutingPanel({
   const [draft, setDraft] = useState<
     Record<string, CpuProductionWorkstream[]>
   >(() =>
-    Object.fromEntries(items.map((item) => [item.canonicalId, item.workstreams])),
+    Object.fromEntries(groupMenuItems(items).map((item) => [item.canonicalId, item.workstreams])),
   );
   const [saving, setSaving] = useState("");
   const [decidedIds, setDecidedIds] = useState<string[]>([]);
@@ -933,7 +901,7 @@ function HospitalityMenuProductionRoutingPanel({
   const [form, setForm] = useState({ name: "", category: "", description: "", lifecycleState: "active" as "active" | "archived" });
   useEffect(() => {
     setDraft(
-      Object.fromEntries(items.map((item) => [item.canonicalId, item.workstreams])),
+      Object.fromEntries(groupMenuItems(items).map((item) => [item.canonicalId, item.workstreams])),
     );
   }, [items]);
   const visible = groupMenuItems(items.filter((item) => includeArchived || item.lifecycleState !== "archived")).filter((item) =>
@@ -1067,15 +1035,17 @@ function HospitalityMenuProductionRoutingPanel({
                   </p>
                   {(() => {
                     const conflict = selected.includes("sandwiches") && selected.includes("hospitality");
-                    const state = !decided ? "unclassified" : conflict ? "conflict" : selected.length === 0 ? "in-house" : selected.every((value) => value === "delivered_in") ? "delivered-in-only" : "routed";
+                    const state = item.routingInconsistent ? "inconsistent" : item.routingPartial ? "partial" : !decided ? "unclassified" : conflict ? "conflict" : selected.length === 0 ? "in-house" : selected.every((value) => value === "delivered_in") ? "delivered-in-only" : "routed";
                     const text = {
+                      inconsistent: "Site records disagree — their saved Production visibility differs. Saving applies the ticked visibility to all of them.",
+                      partial: "Partly classified — only some site records have a routing decision (Unclassified for the rest). Saving applies the ticked visibility to all of them.",
                       unclassified: "Unclassified — no routing record yet. RCoA bookings containing this item cannot be handed off to CPU until it is classified.",
                       conflict: "Routing conflict — Sandwiches and Hospitality are both ticked. A Hospitality hand-off needs exactly one CPU workstream or none.",
                       "in-house": "In house — saved with no production visibility; stays on the Hospitality booking and is never sent to CPU",
                       "delivered-in-only": "Delivered-In only — not sent to CPU by Hospitality hand-off",
                       routed: `CPU · ${selected.filter((value) => value !== "delivered_in").map((value) => CPU_PRODUCTION_WORKSTREAM_LABELS[value]).join(" + ")}${selected.includes("delivered_in") ? " (also visible in Delivered-In)" : ""}`,
                     }[state];
-                    return <p className={state === "unclassified" || state === "conflict" ? "menu-routing-state menu-routing-state--required" : "menu-routing-state"} data-routing-state={state}>{text}</p>;
+                    return <p className={state === "unclassified" || state === "conflict" || state === "partial" || state === "inconsistent" ? "menu-routing-state menu-routing-state--required" : "menu-routing-state"} data-routing-state={state}>{text}</p>;
                   })()}
                   <div className="menu-routing-scopes">
                     <strong>Site availability</strong>
