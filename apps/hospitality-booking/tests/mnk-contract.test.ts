@@ -190,9 +190,9 @@ test("summer rolls require three boxes while retaining flavour choices across po
   assert.ok(mnk?.optionGroups.some((group) => group.id === "flavour"));
 });
 
-test("shared booking portal clamps summer rolls to the governed minimum", () => {
+test("shared booking portal validates summer rolls against the governed minimum", () => {
   const portal = fs.readFileSync(new URL("../app/ui/BookingPortal.tsx", import.meta.url), "utf8");
-  assert.match(portal, /Math\.max\(minimum, requested\)/);
+  assert.match(portal, /quantityMinimumMessage/);
   assert.match(portal, /requires at least \$\{minimum\}/);
   assert.match(portal, /minimumQuantityFor\(item, gallagher\)/);
 });

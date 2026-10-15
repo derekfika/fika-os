@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { brandedQuoteDocumentHtml, calculateQuoteSnapshot, compactBrandedQuoteDocumentHtml, defaultDashboardQuoteSettings } from "../lib/quote-engine";
-import { normalizeBookingAdditionalCharges, type BookingAdditionalChargeInput } from "../lib/hospitality-additional-charges";
+import { normalizeBookingAdditionalCharges, type BookingAdditionalCharge, type BookingAdditionalChargeInput } from "../lib/hospitality-additional-charges";
 
 const booking = { canonicalId: "booking:test", client: { name: "Derek", companyName: "Client", email: "derek@example.test" }, service: { eventDate: "2026-08-01", startTime: "12:00", guestCount: 10, portalSiteLabel: "MNK" }, order: { items: [{ itemId: "lunch", itemName: "Lunch", quantity: 10, unitPrice: 9 }] }, dietaries: {} };
 test("shared quote engine applies a dashboard management fee, per-booking delivery and VAT", () => { const settings = defaultDashboardQuoteSettings("mnk-hospitality"); settings.managementFee = { mode: "percentage", value: 10, label: "Management fee" }; const quote = calculateQuoteSnapshot({ ...booking, deliveryChargeRequired: true }, settings); assert.equal(quote.totals.itemsNet.amount, 90); assert.equal(quote.charges.find(charge => charge.code === "delivery")?.net.amount, 35); assert.equal(quote.charges.find(charge => charge.code === "management_fee")?.net.amount, 12.5); assert.equal(quote.totals.net.amount, 137.5); assert.equal(quote.totals.vat.amount, 27.5); assert.equal(quote.totals.gross.amount, 165); });
@@ -33,6 +33,14 @@ test("compact quote renderer uses human-readable service details and hides the f
 const manualCharge = (id: string, label: string, quantity: number, unitNet: number, category: "equipment" | "service" | "other" = "equipment"): BookingAdditionalChargeInput => ({ id, kind: "manual", category, label, quantity, unitNet });
 const addCharges = (charges: BookingAdditionalChargeInput[], rates = defaultDashboardQuoteSettings("mnk-hospitality").labourRates || []) => normalizeBookingAdditionalCharges(charges, [], rates, "manager-1", "2026-10-05T10:00:00.000Z");
 
+// A pre-lock labour line (Chef @ £22 × 1.5) already stored on a Booking: legacy rates stay readable and quotable exactly as saved.
+const legacyChefInput = (id: string, rateSource: "configured" | "custom"): BookingAdditionalChargeInput => ({ id, kind: "labour", category: "labour", label: "Chef labour", labour: { roleId: "chef", roleLabel: "Chef", staffCount: 2, hoursPerPerson: 5, hourlyRate: 22, multiplier: 1.5, rateSource } });
+const legacyChefCharges = (id: string, rateSource: "configured" | "custom", rates: NonNullable<Parameters<typeof addCharges>[1]>) => {
+  const input = legacyChefInput(id, rateSource);
+  const stored = { ...input, quantity: 10, unitNet: 33, netTotal: 330, createdAt: "2026-09-01T10:00:00.000Z", createdBy: "manager-0", updatedAt: "2026-09-01T10:00:00.000Z", updatedBy: "manager-0" } as BookingAdditionalCharge;
+  return normalizeBookingAdditionalCharges([input], [stored], rates, "manager-1", "2026-10-05T10:00:00.000Z");
+};
+
 test("an empty additional-charge list leaves the existing quote snapshot unchanged", () => {
   const settings = defaultDashboardQuoteSettings("mnk-hospitality");
   const withoutField = calculateQuoteSnapshot({ ...booking, deliveryChargeRequired: true }, settings);
@@ -57,10 +65,10 @@ test("multiple manual charge lines sum once in the additional-charge subtotal", 
   assert.equal(quote.totals.chargesNet.amount, 240);
 });
 
-test("labour is server-calculated and snapshots the complete rate calculation", () => {
+test("legacy stored labour is server-calculated and snapshots the complete rate calculation", () => {
   const settings = defaultDashboardQuoteSettings("mnk-hospitality");
   settings.labourRates = [{ id: "chef", label: "Chef", hourlyRate: 22 }];
-  const charges = addCharges([{ id: "chef-labour", kind: "labour", category: "labour", label: "Chef labour", labour: { roleId: "chef", roleLabel: "Chef", staffCount: 2, hoursPerPerson: 5, hourlyRate: 22, multiplier: 1.5, rateSource: "configured" } }], settings.labourRates);
+  const charges = legacyChefCharges("chef-labour", "configured", settings.labourRates);
   const quote = calculateQuoteSnapshot({ ...booking, deliveryChargeRequired: false, additionalCharges: charges }, settings);
   const charge = quote.charges.find((item) => item.code === "booking_additional");
   assert.equal(charge?.net.amount, 330);
@@ -94,10 +102,18 @@ test("manual charges do not change the existing management-fee base or compound"
 test("quote documents show labour detail while keeping internal charge IDs hidden", () => {
   const settings = defaultDashboardQuoteSettings("mnk-hospitality");
   settings.labourRates = [{ id: "chef", label: "Chef", hourlyRate: 22 }];
-  const charges = addCharges([{ id: "internal-labour-id", kind: "labour", category: "labour", label: "Chef labour", labour: { roleId: "chef", roleLabel: "Chef", staffCount: 2, hoursPerPerson: 5, hourlyRate: 22, multiplier: 1.5, rateSource: "configured" } }], settings.labourRates);
+  const charges = legacyChefCharges("internal-labour-id", "configured", settings.labourRates);
   const snapshot = calculateQuoteSnapshot({ ...booking, deliveryChargeRequired: false, additionalCharges: charges }, settings);
   const html = brandedQuoteDocumentHtml(snapshot, { id: "quote:test:r1", revision: 1, createdAt: "2026-10-05T10:00:00Z" });
   assert.match(html, /Chef labour/);
   assert.match(html, /2 staff × 5\.00 hrs × £22\.00 × 1\.5/);
   assert.doesNotMatch(html, /internal-labour-id/);
+});
+
+test("a new governed labour line is quoted at the locked rate and overtime multiplier", () => {
+  const charges = addCharges([{ id: "governed-kp-01", kind: "labour", category: "labour", label: "KP labour", labour: { roleId: "kp", roleLabel: "KP", staffCount: 2, hoursPerPerson: 4, hourlyRate: 17.7, multiplier: 1.5, rateSource: "governed" } }]);
+  const quote = calculateQuoteSnapshot({ ...booking, deliveryChargeRequired: false, additionalCharges: charges }, defaultDashboardQuoteSettings("mnk-hospitality"));
+  const charge = quote.charges.find((item) => item.code === "booking_additional");
+  assert.equal(charge?.net.amount, 212.4);
+  assert.equal(charge?.labour?.rateSource, "governed");
 });

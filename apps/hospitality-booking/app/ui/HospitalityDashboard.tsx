@@ -1,16 +1,24 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { MailSearch, RefreshCw, Settings } from "lucide-react";
-import type { BookingAdditionalChargeInput, CanonicalBooking, ProductionOrder, DashboardQuoteSettings, LabourRateSetting } from "@/lib/canonical-types";
+import type { BookingAdditionalChargeInput, BookingAdditionalChargeLabour, CanonicalBooking, ProductionOrder, DashboardQuoteSettings, LabourRateSetting } from "@/lib/canonical-types";
 import { dailyRunSheetHtml } from "../../lib/run-sheet";
+import { bookingRequestedItems } from "../../lib/booking-presentation";
 import { quoteHtml } from "../../lib/quote-document";
+import { APPROVED_LABOUR_ROLES, MAX_HOURS, MAX_STAFF, OVERTIME_MULTIPLIER, calculateLabour, findApprovedRole, isApprovedLabourLine } from "../../lib/labour-rates";
 import { fetchQuoteRequest } from "../../lib/quote-request";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
 import { mnkMenuHtml } from "../../lib/mnk-menu-output";
 import type { MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";
+import { HospitalityGroupDetail } from "./HospitalityGroupDetail";
+import { BookingProductionPanel } from "./BookingProductionPanel";
+import panelStyles from "./BookingProductionPanel.module.css";
+import { isBookingQuoteStale, planServiceProduction, productionOrderMatchesCurrentQuote, quoteReadyForCpu, serviceCpuRequirement, sendPendingServices, type ServiceProductionRow, type ServiceResult } from "../../lib/cpu-production-plan";
+import { RequestedItemsList } from "./RequestedItemsList";
+import type { HospitalityBookingGroup } from "../../../shared/hospitality-group-quotes";
 import { hospitalitySiteThemeStyle, portalSite, type PortalSiteKey } from "@/lib/portal-sites";
 import { hospitalityWorkspacePath } from "@/lib/hospitality-workspace";
 
@@ -75,7 +83,7 @@ async function saveQuoteDocument(payload: { name: string; html: string; canonica
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
-    }, "Quote PDF saving timed out. The dashboard remains available; use Retry quote PDF save once the Drive service is responding.");
+    }, "Quote PDF saving timed out. The dashboard remains available; use Retry quote generation once the Drive service is responding.");
     const body = await readDashboardJson(response) as { error?: { message?: string }; saved?: { fileId?: string; driveUrl?: string } };
     if (response.ok && body.saved?.fileId) return body.saved;
     lastMessage = body.error?.message || lastMessage;
@@ -97,12 +105,19 @@ export default function HospitalityDashboard({
   const currentSiteLabel = siteLabel.trim() || site.theme.shortLabel;
   const themeStyle = hospitalitySiteThemeStyle(site) as CSSProperties;
   const [bookings, setBookings] = useState<CanonicalBooking[]>([]);
+  const [groups, setGroups] = useState<HospitalityBookingGroup[]>([]);
+  const [standaloneIds, setStandaloneIds] = useState<Set<string>>(new Set());
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const selectedGroup = groups.find(group => group.id === selectedGroupId);
+  const selectBooking = (booking: CanonicalBooking) => { setSelectedGroupId(null); setSelected(booking); };
+  const selectGroup = (group: HospitalityBookingGroup) => { setSelectedGroupId(group.id); setSelected(null); setAmendment(null); };
   const [productionOrders, setProductionOrders] = useState<
     Record<string, ProductionOrder | undefined>
   >({});
   const [selected, setSelected] = useState<CanonicalBooking | null>(null);
   const [filter, setFilter] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [pending, setPending] = useState<WorkflowAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const actionInFlight = useRef(false);
@@ -159,13 +174,14 @@ export default function HospitalityDashboard({
           viewUrl?: string;
           fileName: string;
           driveStatus: string;
-          status?: "generating" | "ready" | "not_configured" | "failed" | "error";
+          status?: "checking" | "generating" | "ready" | "not_configured" | "failed" | "error";
           error?: string;
         }
       | undefined
     >
   >({});
   const [matrixRefreshTick, setMatrixRefreshTick] = useState(0);
+  const [serviceResults, setServiceResults] = useState<Record<string, ServiceResult | undefined>>({});
   // Menu outputs change only when a menu is regenerated. Avoid rereading the
   // whole output collection on every dashboard refresh.
   const menuCacheLoadedAt = useRef(0);
@@ -180,7 +196,10 @@ export default function HospitalityDashboard({
       const body = await response.json();
       if (!response.ok)
         throw Error(body.error?.message || "Could not load Bookings.");
-      setBookings(body.bookings);
+      setBookings(body.cpuRouting ? body.bookings.map((item: CanonicalBooking) => body.cpuRouting[item.canonicalId] ? { ...item, cpuRouting: body.cpuRouting[item.canonicalId] } : item) : body.bookings);
+      setGroups(body.bookingGroups || []);
+      setStandaloneIds(new Set((body.dashboardBookings || body.bookings).map((item: CanonicalBooking) => item.canonicalId)));
+      if (body.groupWarnings?.length) setNotice(body.groupWarnings.map((w: { message: string }) => w.message).join(" "));
       setProductionOrders(body.productionOrders || {});
       setMatrixRefreshTick((current) => current + 1);
       setQuoteSettings(body.quoteSettings || null);
@@ -272,12 +291,27 @@ export default function HospitalityDashboard({
     finally { setScanBusy(false); }
   };
 
+  // Booking-level production: one grouped booking (or one single booking) is planned from each service's own items and governed routing.
+  const productionRows: ServiceProductionRow[] = selectedGroup
+    ? selectedGroup.services.flatMap(service => {
+        const child = bookings.find(b => b.canonicalId === service.bookingId);
+        if (!child) return [];
+        const withRouting = child.cpuRouting || !service.routing ? child : { ...child, cpuRouting: service.routing as CanonicalBooking["cpuRouting"] };
+        return [planServiceProduction(withRouting, productionOrders[service.bookingId], `${service.time} · ${service.serviceType.replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase())}`, serviceResults)];
+      })
+    : selected ? [planServiceProduction(selected, productionOrders[selected.canonicalId], `${selected.service.startTime} · ${selected.order.eventType?.replaceAll("_", " ") || "Booking"}`, serviceResults)] : [];
+  // Allergen matrices and menus are per CPU-producing service (domain relationship unchanged); a group looks up only those, never No CPU services.
+  const documentTargets = selectedGroup
+    ? productionRows.filter(row => row.requirement === "cpu" && row.hasProductionOrder).flatMap(row => bookings.find(b => b.canonicalId === row.bookingId) || [])
+    : selected && productionRows.some(row => row.requirement === "cpu" && row.hasProductionOrder) ? [selected] : [];
+  const documentTargetKey = documentTargets.map(b => `${b.canonicalId}:${b.version}:${productionOrders[b.canonicalId]?.canonicalId}:${productionOrders[b.canonicalId]?.version}:${productionOrders[b.canonicalId]?.updatedAt}`).join("|");
+
   useEffect(() => {
-    if (!selected) return;
-    const bookingId = selected.canonicalId;
+    for (const target of documentTargets) {
+    const bookingId = target.canonicalId;
     const productionOrder = productionOrders[bookingId];
     const productionOrderId = productionOrder?.canonicalId;
-    const setMatrixState = (state: { status: "generating" | "ready" | "not_configured" | "failed" | "error"; driveStatus: string; error?: string; artifact?: Record<string, unknown> }) => {
+    const setMatrixState = (state: { status: "checking" | "generating" | "ready" | "not_configured" | "failed" | "error"; driveStatus: string; error?: string; artifact?: Record<string, unknown> }) => {
       setMatrixArtifacts((current) => ({
         ...current,
         [bookingId]: {
@@ -290,13 +324,14 @@ export default function HospitalityDashboard({
         },
       }));
     };
-    setMatrixState({ status: "generating", driveStatus: "generating" });
+    // A lookup in progress is not a signed-PDF generation: only the server reporting `generating` (both signatures present) says that.
+    setMatrixState({ status: "checking", driveStatus: "checking" });
     void fetch(
       `/api/allergen-matrix?bookingId=${encodeURIComponent(bookingId)}${productionOrderId ? `&productionOrderId=${encodeURIComponent(productionOrderId)}` : ""}`,
       { cache: "no-store" },
     )
       .then(async (response) => {
-        const body = await readDashboardJson(response) as { artifact?: Record<string, unknown>; status?: "generating" | "ready" | "not_configured" | "failed" | "error"; error?: string | { message?: string } };
+        const body = await readDashboardJson(response) as { artifact?: Record<string, unknown>; status?: "checking" | "generating" | "ready" | "not_configured" | "failed" | "error"; error?: string | { message?: string } };
         if (!response.ok) throw Error(typeof body.error === "string" ? body.error : body.error?.message || `The allergen matrix could not be loaded (${response.status}).`);
         return body;
       })
@@ -308,11 +343,12 @@ export default function HospitalityDashboard({
         setMatrixState({ status: "error", driveStatus: "error", error: "The Hospitality dashboard received no current allergen matrix artifact." });
       })
       .catch((cause) => setMatrixState({ status: "error", driveStatus: "error", error: (cause as Error).message }));
-  }, [selected?.canonicalId, selected?.version, productionOrders[selected?.canonicalId || ""]?.canonicalId, productionOrders[selected?.canonicalId || ""]?.version, productionOrders[selected?.canonicalId || ""]?.updatedAt, matrixRefreshTick]);
+    }
+  }, [documentTargetKey, matrixRefreshTick]);
 
   useEffect(() => {
-    if (!selected) return;
-    const bookingId = selected.canonicalId;
+    for (const target of documentTargets) {
+    const bookingId = target.canonicalId;
     const productionOrderId = productionOrders[bookingId]?.canonicalId;
     void fetch(`/api/menus?bookingId=${encodeURIComponent(bookingId)}&readiness=1${productionOrderId ? `&productionOrderId=${encodeURIComponent(productionOrderId)}` : ""}`, { cache: "no-store" })
       .then(async (response) => {
@@ -322,19 +358,20 @@ export default function HospitalityDashboard({
       })
       .then((body) => setMenuReadiness((current) => ({ ...current, [bookingId]: body.readiness || { available: false, reason: "Menu readiness is unavailable." } })))
       .catch((cause) => setMenuReadiness((current) => ({ ...current, [bookingId]: { available: false, reason: (cause as Error).message } })));
-  }, [selected?.canonicalId, selected?.version, productionOrders[selected?.canonicalId || ""]?.canonicalId, productionOrders[selected?.canonicalId || ""]?.updatedAt]);
+    }
+  }, [documentTargetKey]);
 
   // CPU planning is a shared projection, so keep an open manager panel current
   // while the production team is working without requiring a manual refresh.
   useEffect(() => {
-    if (!selected) return;
+    if (!selected && !selectedGroupId) return;
     // Keep the manager view reasonably fresh without turning every open tab
     // into a high-frequency Firestore read loop.
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void load();
     }, 30_000);
     return () => window.clearInterval(timer);
-  }, [selected?.canonicalId, site.key]);
+  }, [selected?.canonicalId, selectedGroupId, site.key]);
 
   const signInLocally = async () => {
     const response = await fetch("/api/local-session", { method: "POST" });
@@ -347,16 +384,17 @@ export default function HospitalityDashboard({
   };
 
   const visible = useMemo(
-    () => bookings.filter((item) => !filter || item.lifecycleStatus === filter),
-    [bookings, filter],
+    () => bookings.filter((item) => standaloneIds.has(item.canonicalId) && (!filter || item.lifecycleStatus === filter)),
+    [bookings, standaloneIds, filter],
   );
-  const newCount = bookings.filter(
-    (item) => item.lifecycleStatus === "New",
+  const visibleGroups = groups.filter(group => !filter || group.status === filter);
+  const newCount = groups.filter(group => group.status === "New").length + bookings.filter(
+    (item) => standaloneIds.has(item.canonicalId) && item.lifecycleStatus === "New",
   ).length;
   const readyForCpuCount = bookings.filter((item) => item.deliveryChargeRequired !== false && quoteReadyForCpu(item)).length;
-  const attentionCount = bookings.filter(
+  const attentionCount = groups.filter(group => ["New", "Quote preparing"].includes(group.status)).length + bookings.filter(
     (item) =>
-      item.lifecycleStatus === "New" || item.lifecycleStatus === "Reviewed",
+      standaloneIds.has(item.canonicalId) && (item.lifecycleStatus === "New" || item.lifecycleStatus === "Reviewed"),
   ).length;
   const scanStepIndex = inboxScanSteps.findIndex(({ key }) => key === scanPhase);
   const scanProgress = scanPhase === "complete"
@@ -365,38 +403,88 @@ export default function HospitalityDashboard({
       ? "0%"
       : `${((scanStepIndex + 1) / inboxScanSteps.length) * 100}%`;
 
+  const generateGroupQuote = async () => {
+    if (!selectedGroup || actionInFlight.current) return;
+    actionInFlight.current = true; setActionBusy(true); setActionStage("Preparing the group quote and saving one PDF…"); setError("");
+    try {
+      const response = await fetchQuoteRequest("/api/booking-groups/quote", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookingGroupId: selectedGroup.id, expectedVersion: selectedGroup.version, expectedSourceHash: selectedGroup.sourceHash }) }, "The group quote is still being prepared. Refresh, then retry this group to resume safely.", 180_000);
+      const body = await readDashboardJson(response);
+      if (!response.ok) throw new Error(body.error?.message || "The group quote could not be prepared.");
+      setNotice(body.quote?.status === "complete" ? "One group quote PDF has been saved." : body.quote?.status === "superseded" ? "The services changed during quote preparation. Generate an updated quote for the current services." : body.quote?.error || "Quote preparation is in progress. Refresh to check its result, or retry after an interruption.");
+    } catch (cause) { setError((cause as Error).message); }
+    finally { await load(false); actionInFlight.current = false; setActionBusy(false); }
+  };
+
+  /** The EXISTING per-service production command (unchanged payload), then the existing automatic completion. Returns a compact result. */
+  const sendBookingToCpu = async (booking: CanonicalBooking): Promise<ServiceResult> => {
+    const response = await fetch("/api/dashboard-bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ canonicalId: booking.canonicalId, expectedVersion: booking.version, action: "production-handoff" }) });
+    const body = await readDashboardJson(response);
+    if (!response.ok) return { status: "failed", message: body.error?.message || "Could not send this service to CPU." };
+    if (body.status === "no_cpu_production_required") return { status: "failed", message: body.message || "CPU reports no production is required for this service. Review its item routing." };
+    const refreshedResponse = await fetch(`/api/dashboard-bookings?site=${encodeURIComponent(site.key)}${oplocId ? `&oploc=${encodeURIComponent(oplocId)}` : ""}`, { cache: "no-store" });
+    const refreshedBody = await refreshedResponse.json();
+    const refreshed = refreshedBody.bookings?.find((item: CanonicalBooking) => item.canonicalId === booking.canonicalId) as CanonicalBooking | undefined;
+    if (!refreshed) return { status: "sent" };
+    const completedResponse = await fetch("/api/dashboard-bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ canonicalId: refreshed.canonicalId, expectedVersion: refreshed.version, action: "complete", notes: "Automatically completed after CPU hand-off." }) });
+    const completedBody = await completedResponse.json();
+    if (!completedResponse.ok) return { status: "sent", message: completedBody.error?.message || "Sent to CPU, but the booking could not be marked complete." };
+    if (selected?.canonicalId === booking.canonicalId) setSelected(completedBody.booking || refreshed);
+    return { status: "sent" };
+  };
+
+  /** The single booking-level Send to CPU action: runs the existing production command for each pending CPU-producing service only. */
+  const sendProductionToCpu = async () => {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true; setActionBusy(true); setActionStage("Sending to CPU…"); setError(""); setNotice("");
+    try {
+      const outcome = await sendPendingServices(productionRows, async bookingId => {
+        const booking = bookings.find(b => b.canonicalId === bookingId);
+        if (!booking) return { status: "failed", message: "This service is no longer available. Refresh and retry." };
+        return sendBookingToCpu(booking);
+      });
+      setServiceResults(current => ({ ...current, ...outcome }));
+      const failedCount = Object.values(outcome).filter(result => result.status === "failed").length;
+      if (failedCount) setError(`${failedCount === 1 ? "One service was" : `${failedCount} services were`} not sent to CPU. Services already sent are unaffected; use Send to CPU to retry the rest.`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Sending to CPU failed. Please try again."); }
+    finally { await load(false); actionInFlight.current = false; setActionBusy(false); setActionStage(""); }
+  };
+
   const persistQuotePdf = async (booking: CanonicalBooking, quote: { id: string; revision: number }) => {
     const saved = await saveQuoteDocument({ name: quoteFilename(booking.canonicalId, booking.client.companyName, "pdf"), html: quoteHtml(booking), canonicalId: booking.canonicalId });
     const statusResponse = await fetchQuoteRequest("/api/dashboard-bookings", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ canonicalId: booking.canonicalId, expectedVersion: booking.version, action: "quote-pdf-status", revisionId: quote.id, status: "saved", driveFileId: saved.fileId, driveUrl: saved.driveUrl }),
-    }, "Quote PDF was saved, but recording its status timed out. Use Retry quote PDF save from the dashboard.");
+    }, "Quote PDF was saved, but recording its status timed out. Use Retry quote generation from the dashboard.");
     const statusBody = await readDashboardJson(statusResponse) as { error?: { message?: string }; booking?: CanonicalBooking };
     if (!statusResponse.ok) throw new Error(statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.");
     return statusBody.booking as CanonicalBooking;
   };
 
-  const performAction = async (actionOverride?: WorkflowAction | null) => {
+  const performAction = async (actionOverride?: WorkflowAction | null, target?: CanonicalBooking) => {
+    const subject = target ?? selected;
+    // A group service is acted on in place: showing its result must not select the service.
+    const showBooking = (next: CanonicalBooking | null) => { if (!target) setSelected(next); };
     setError("");
+    setNotice("");
     const action = actionOverride || pending;
-    if (!selected || !action) return;
+    if (!subject || !action) return;
     setActionStage(action === "Production" ? "Sending to CPU…" : action === "Quoted" || action === "QuotePdfRetry" ? "Creating quote…" : "Saving changes…");
     if (action === "QuotePdfRetry") {
-      const current = selected.quoteState?.revisions.find((revision) => revision.id === selected.quoteState?.currentRevisionId);
+      const current = subject.quoteState?.revisions.find((revision) => revision.id === subject.quoteState?.currentRevisionId);
       if (!current) {
         setError("The current quote revision could not be found. Reload the booking before retrying.");
         setPending(null);
         return;
       }
-      try { setSelected(await persistQuotePdf(selected, current)); setError(""); } catch (cause) { setError((cause as Error).message); }
+      try { showBooking(await persistQuotePdf(subject, current)); setError(""); } catch (cause) { setError((cause as Error).message); }
       setPending(null);
       void load(false);
       return;
     }
     const base = {
-      canonicalId: selected.canonicalId,
-      expectedVersion: selected.version,
+      canonicalId: subject.canonicalId,
+      expectedVersion: subject.version,
     };
     const command =
       action === "Amend" && amendment
@@ -412,7 +500,7 @@ export default function HospitalityDashboard({
             ? {
                 ...base,
                 action: "quote",
-                regenerate: Boolean(selected.quoteState?.currentRevisionId),
+                regenerate: Boolean(subject.quoteState?.currentRevisionId),
               }
             : action === "Production"
                 ? { ...base, action: "production-handoff" }
@@ -444,7 +532,8 @@ export default function HospitalityDashboard({
       setError(message);
       return;
     }
-    setSelected(body.booking || selected);
+    if (body.status === "no_cpu_production_required") setNotice(body.message || "No CPU production required: every item on this booking is produced in house.");
+    showBooking(body.booking || subject);
     if (action === "Quoted" && body.booking) {
       setActionStage("Saving quote PDF…");
       let pdfSaved = false;
@@ -460,7 +549,7 @@ export default function HospitalityDashboard({
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ canonicalId: body.booking.canonicalId, expectedVersion: body.booking.version, action: "quote-pdf-status", revisionId: quote.id, status: "saved", driveFileId: saved.fileId, driveUrl: saved.driveUrl }),
-          }, "Quote PDF was saved, but recording its status timed out. Use Retry quote PDF save from the dashboard.");
+          }, "Quote PDF was saved, but recording its status timed out. Use Retry quote generation from the dashboard.");
           const statusBody = await readDashboardJson(statusResponse);
           if (!statusResponse.ok) {
             const message = statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.";
@@ -469,7 +558,7 @@ export default function HospitalityDashboard({
           else {
             pdfSaved = true;
             const savedBooking = statusBody.booking || body.booking;
-            setSelected(savedBooking);
+            showBooking(savedBooking);
           }
         }
       } catch (cause) {
@@ -491,7 +580,7 @@ export default function HospitalityDashboard({
             }),
           }, "The quote PDF failure status could not be recorded.");
           const failureBody = await readDashboardJson(failureResponse);
-          if (failureResponse.ok && failureBody.booking) setSelected(failureBody.booking);
+          if (failureResponse.ok && failureBody.booking) showBooking(failureBody.booking);
         } catch {
           // The refresh below reconciles a write whose response could not be confirmed.
         }
@@ -501,7 +590,7 @@ export default function HospitalityDashboard({
       setActionStage("Completing booking…");
       const refreshedResponse = await fetch(`/api/dashboard-bookings?site=${encodeURIComponent(site.key)}${oplocId ? `&oploc=${encodeURIComponent(oplocId)}` : ""}`, { cache: "no-store" });
       const refreshedBody = await refreshedResponse.json();
-      const refreshed = refreshedBody.bookings?.find((booking: CanonicalBooking) => booking.canonicalId === selected.canonicalId) as CanonicalBooking | undefined;
+      const refreshed = refreshedBody.bookings?.find((booking: CanonicalBooking) => booking.canonicalId === subject.canonicalId) as CanonicalBooking | undefined;
       if (refreshed) {
         const completedResponse = await fetch("/api/dashboard-bookings", {
           method: "POST",
@@ -510,7 +599,7 @@ export default function HospitalityDashboard({
         });
         const completedBody = await completedResponse.json();
         if (!completedResponse.ok) setError(completedBody.error?.message || "The booking was sent to CPU but could not be marked complete.");
-        else setSelected(completedBody.booking || refreshed);
+        else showBooking(completedBody.booking || refreshed);
       }
     }
     setPending(null);
@@ -519,13 +608,13 @@ export default function HospitalityDashboard({
     void load(action !== "Quoted");
   };
 
-  const act = async (actionOverride?: WorkflowAction | null) => {
+  const act = async (actionOverride?: WorkflowAction | null, target?: CanonicalBooking) => {
     if (actionInFlight.current) return;
     actionInFlight.current = true;
     setActionStage("Working…");
     setActionBusy(true);
     try {
-      await performAction(actionOverride);
+      await performAction(actionOverride, target);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The booking action failed. Please try again.");
       setPending(null);
@@ -584,7 +673,7 @@ export default function HospitalityDashboard({
       const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
       if (isBookingQuoteStale(booking)) throw new Error("Quote needs regeneration before it can be opened as current.");
       if (current?.driveUrl && current.pdfStatus === "saved") window.open(current.driveUrl, "_blank", "noopener,noreferrer");
-      else openPrintSheet(quoteHtml(booking));
+      else throw new Error("The quote PDF isn't ready yet. Use Retry quote generation.");
     } catch (cause) {
       setError((cause as Error).message);
     }
@@ -838,11 +927,38 @@ export default function HospitalityDashboard({
   const selectedMenuOutput = selected
     ? menuOutputs[selected.canonicalId]
     : undefined;
+  // Same freshness rule for any booking: a menu is stale once its CPU plan has moved on.
+  const isMenuStale = (bookingId: string) => {
+    const output = menuOutputs[bookingId];
+    const order = productionOrders[bookingId];
+    return Boolean(output?.planUpdatedAt && order?.updatedAt && output.planUpdatedAt < order.updatedAt);
+  };
   const selectedMenuStale = Boolean(
     selectedMenuOutput?.planUpdatedAt &&
       selectedProductionOrder?.updatedAt &&
       selectedMenuOutput.planUpdatedAt < selectedProductionOrder.updatedAt,
   );
+
+  const renderGroupDocuments = (row: ServiceProductionRow) => {
+    const child = bookings.find(b => b.canonicalId === row.bookingId);
+    if (!child || !row.hasProductionOrder) return null;
+    const matrix = matrixArtifacts[child.canonicalId];
+    const matrixUrl = matrix?.driveUrl || matrix?.localUrl || matrix?.viewUrl;
+    const order = productionOrders[child.canonicalId];
+    const output = menuOutputs[child.canonicalId];
+    const stale = Boolean(output?.planUpdatedAt && order?.updatedAt && output.planUpdatedAt < order.updatedAt);
+    const ready = Boolean(menuReadiness[child.canonicalId]?.available);
+    return <div className={panelStyles.docs} role="group" aria-label={`${row.label} allergens and menu`}>
+      {matrixUrl
+        ? <a href={matrixUrl} target="_blank" rel="noreferrer">Open allergen matrix</a>
+        : matrix?.status === "failed" || matrix?.status === "error"
+          ? <button type="button" onClick={() => setMatrixRefreshTick(current => current + 1)}>Allergen matrix unavailable · retry</button>
+          : <button type="button" disabled aria-busy={matrix?.status === "checking" || matrix?.status === "generating" ? true : undefined}>{matrix?.status === "checking" ? "Checking allergen matrix…" : matrix?.status === "generating" ? "Generating allergen matrix…" : "Allergen matrix after signing"}</button>}
+      {output && <button type="button" onClick={() => openMenu(output)}>Open menu{stale ? " (previous)" : ""}</button>}
+      <button type="button" disabled={menuBusy || !ready} aria-busy={menuBusy ? true : undefined} title={ready ? undefined : menuReadiness[child.canonicalId]?.reason} onClick={() => void generateMenu(child)}>{menuBusy ? "Generating menu…" : output ? "Regenerate menu" : "Generate menu"}</button>
+    </div>;
+  };
+  const productionPanel = <BookingProductionPanel rows={productionRows} results={serviceResults} busy={actionBusy} onSend={() => void sendProductionToCpu()} renderDocuments={selectedGroup ? renderGroupDocuments : undefined} />;
 
   return (
     <div className={styles.scope}>
@@ -1010,7 +1126,10 @@ export default function HospitalityDashboard({
             bookings={visible}
             week={calendarWeek}
             onWeekChange={setCalendarWeek}
-            onSelect={setSelected}
+            onSelect={selectBooking}
+            groups={visibleGroups}
+            onSelectGroup={selectGroup}
+            busy={actionBusy}
             selectedId={selected?.canonicalId}
           />
           <div className="hospitality-dashboard__controls">
@@ -1024,7 +1143,7 @@ export default function HospitalityDashboard({
                 className="hospitality-dashboard__run-sheet-trigger"
                 onClick={openRunSheetRange}
               >
-                Run sheet PDF
+                Run sheet
               </button>
               <label>
                 Show
@@ -1036,10 +1155,13 @@ export default function HospitalityDashboard({
                   {statuses.map((status) => (
                     <option key={status}>{status}</option>
                   ))}
+                  <option>Quote preparing</option>
+                  <option>Partially processed</option>
                 </select>
               </label>
             </div>
           </div>
+          {notice && <div className="hospitality-dashboard__notice" role="status">{notice}</div>}
           {error && (
             <div className="hospitality-dashboard__error" role="alert">
               <span>{error}</span>
@@ -1062,13 +1184,18 @@ export default function HospitalityDashboard({
                   Refreshing canonical Bookings…
                 </p>
               )}
+              {!loading && visibleGroups.map(group => <button key={group.id} className={`booking-card ${selectedGroupId === group.id ? "booking-card--selected" : ""}`} disabled={actionBusy} onClick={() => selectGroup(group)}>
+                <span className="booking-card__date">{formatDate(group.eventDate)}<small>{group.firstTime}–{group.lastTime}</small></span>
+                <span className="booking-card__content"><strong>{group.client.companyName}</strong><small>All Day Hospitality · {group.services.length} services</small><span>{group.services.every(s => s.guests === group.services[0].guests) ? group.services[0].guests + " pax" : "Guests vary by service"} · £{group.totals.gross.toFixed(2)}</span></span>
+                <span className="booking-status">{group.status}</span>
+              </button>)}
               {!loading &&
                 visible.map((booking) => (
                   <button
                     key={booking.canonicalId}
                     className={`booking-card ${selected?.canonicalId === booking.canonicalId ? "booking-card--selected" : ""}`}
                     disabled={actionBusy}
-                    onClick={() => setSelected(booking)}
+                    onClick={() => selectBooking(booking)}
                   >
                     <span className="booking-card__date">
                       {formatDate(booking.service.eventDate)}
@@ -1088,7 +1215,7 @@ export default function HospitalityDashboard({
                     <StatusPill status={booking.lifecycleStatus} />
                   </button>
                 ))}
-              {!loading && !visible.length && (
+              {!loading && !visible.length && !visibleGroups.length && (
                 <p className="hospitality-dashboard__empty">
                   No canonical Bookings match this view.
                 </p>
@@ -1107,13 +1234,13 @@ export default function HospitalityDashboard({
                   </p>
                 )}
               </div>
+              {selectedGroup && <HospitalityGroupDetail group={selectedGroup} busy={actionBusy} production={productionPanel} onQuote={() => void generateGroupQuote()} />}
               {selected ? (
                 <fieldset className={styles.actionControls} disabled={actionBusy} aria-busy={actionBusy} aria-label="Booking details and actions">
                 <BookingPane
                   booking={selected}
                   siteKey={site.key}
                   siteLabel={currentSiteLabel}
-                  labourRates={quoteSettings?.labourRates ?? defaultLabourRates}
                   productionOrder={selectedProductionOrder}
                   menuOutput={selectedMenuOutput}
                   menuStale={selectedMenuStale}
@@ -1122,6 +1249,7 @@ export default function HospitalityDashboard({
                   matrixArtifact={matrixArtifacts[selected.canonicalId]}
                   onRefreshMatrix={() => setMatrixRefreshTick((current) => current + 1)}
                   menuBusy={menuBusy}
+                  quoteBusy={actionBusy}
                   setPending={setPending}
                   amendment={amendment}
                   onAmend={openAmendment}
@@ -1134,9 +1262,10 @@ export default function HospitalityDashboard({
                   onAction={(action) => void act(action)}
                   onGenerateMenu={generateMenu}
                   onOpenMenu={openMenu}
+                  productionPanel={productionPanel}
                 />
                 </fieldset>
-              ) : (
+              ) : !selectedGroup ? (
                 <div className="hospitality-dashboard__blank">
                   <p className="eyebrow">Ready when you are</p>
                   <h2>Select a booking</h2>
@@ -1145,7 +1274,7 @@ export default function HospitalityDashboard({
                     operational actions will appear here.
                   </p>
                 </div>
-              )}
+              ) : null}
             </section>
           </div>
         </section>
@@ -1275,8 +1404,9 @@ export default function HospitalityDashboard({
               <p className="eyebrow">Operational run sheet</p>
               <h2>Choose a date range</h2>
               <p>
-                Generate one scan-first PDF for the selected bookings. It
-                defaults to the visible Monday-to-Friday week.
+                Open one scan-first run sheet for the selected bookings; save or
+                print it as a PDF from the document. It defaults to the visible
+                Monday-to-Friday week.
               </p>
               <div className="amendment-grid">
                 <label>
@@ -1323,7 +1453,7 @@ export default function HospitalityDashboard({
                 <button type="button" onClick={() => setRunSheetOpen(false)}>
                   Cancel
                 </button>
-                <button className="primary">Generate run sheet PDF</button>
+                <button className="primary">Open run sheet</button>
               </footer>
             </form>
           </div>
@@ -1348,7 +1478,6 @@ function BookingPane({
   booking,
   siteKey,
   siteLabel,
-  labourRates,
   productionOrder,
   menuOutput,
   menuStale,
@@ -1357,6 +1486,7 @@ function BookingPane({
   matrixArtifact,
   onRefreshMatrix,
   menuBusy,
+  quoteBusy,
   setPending,
   amendment,
   onAmend,
@@ -1369,11 +1499,12 @@ function BookingPane({
   onAction,
   onGenerateMenu,
   onOpenMenu,
+  productionPanel,
 }: {
+  productionPanel: ReactNode;
   booking: CanonicalBooking;
   siteKey: PortalSiteKey;
   siteLabel: string;
-  labourRates: LabourRateSetting[];
   productionOrder?: ProductionOrder;
   menuOutput?: MenuOutput;
   menuStale: boolean;
@@ -1386,11 +1517,13 @@ function BookingPane({
     viewUrl?: string;
     fileName: string;
     driveStatus: string;
-    status?: "generating" | "ready" | "not_configured" | "failed" | "error";
+    approvalMode?: string;
+    status?: "checking" | "generating" | "ready" | "not_configured" | "failed" | "error";
     error?: string;
   };
   onRefreshMatrix: () => void;
   menuBusy: boolean;
+  quoteBusy: boolean;
   setPending: (status: WorkflowAction) => void;
   amendment: Amendment | null;
   onAmend: (booking: CanonicalBooking) => void;
@@ -1419,7 +1552,6 @@ function BookingPane({
     <BookingDetail
       booking={booking}
       siteLabel={siteLabel}
-      labourRates={labourRates}
       productionOrder={productionOrder}
       menuOutput={menuOutput}
       menuStale={menuStale}
@@ -1428,6 +1560,7 @@ function BookingPane({
       matrixArtifact={matrixArtifact}
       onRefreshMatrix={onRefreshMatrix}
       menuBusy={menuBusy}
+      quoteBusy={quoteBusy}
       setPending={setPending}
       onAmend={onAmend}
       onOpenQuote={onOpenQuote}
@@ -1436,14 +1569,21 @@ function BookingPane({
       onAction={onAction}
       onGenerateMenu={onGenerateMenu}
       onOpenMenu={onOpenMenu}
+      productionPanel={productionPanel}
     />
   );
+}
+
+function MatrixDiagnostics({ bookingId, detail }: { bookingId: string; detail?: string }) {
+  useEffect(() => {
+    if (detail) console.warn("FIKA allergen matrix unavailable", { bookingId, detail });
+  }, [bookingId, detail]);
+  return null;
 }
 
 function BookingDetail({
   booking,
   siteLabel,
-  labourRates,
   productionOrder,
   menuOutput,
   menuStale,
@@ -1452,6 +1592,7 @@ function BookingDetail({
   matrixArtifact,
   onRefreshMatrix,
   menuBusy,
+  quoteBusy,
   setPending,
   onAmend,
   onOpenQuote,
@@ -1460,10 +1601,11 @@ function BookingDetail({
   onAction,
   onGenerateMenu,
   onOpenMenu,
+  productionPanel,
 }: {
+  productionPanel: ReactNode;
   booking: CanonicalBooking;
   siteLabel: string;
-  labourRates: LabourRateSetting[];
   productionOrder?: ProductionOrder;
   menuOutput?: MenuOutput;
   menuStale: boolean;
@@ -1476,11 +1618,13 @@ function BookingDetail({
     viewUrl?: string;
     fileName: string;
     driveStatus: string;
-    status?: "generating" | "ready" | "not_configured" | "failed" | "error";
+    approvalMode?: string;
+    status?: "checking" | "generating" | "ready" | "not_configured" | "failed" | "error";
     error?: string;
   };
   onRefreshMatrix: () => void;
   menuBusy: boolean;
+  quoteBusy: boolean;
   setPending: (status: WorkflowAction) => void;
   onAmend: (booking: CanonicalBooking) => void;
   onOpenQuote: (booking: CanonicalBooking) => void;
@@ -1505,12 +1649,12 @@ function BookingDetail({
   return (
     <>
       <div className="booking-detail__actions">
-        <button type="button" onClick={() => onAmend(booking)}>
+        {!booking.bookingGroup && <button type="button" onClick={() => onAmend(booking)}>
           {["Completed", "Cancelled"].includes(booking.lifecycleStatus)
             ? "Reopen and amend booking"
             : "Edit booking"}
-        </button>
-        {!["Completed", "Cancelled"].includes(booking.lifecycleStatus) && (
+        </button>}
+        {!booking.bookingGroup && !["Completed", "Cancelled"].includes(booking.lifecycleStatus) && (
           <button
             type="button"
             className="danger"
@@ -1520,39 +1664,38 @@ function BookingDetail({
           </button>
         )}
         {availableActions(booking, productionOrder)
-          .filter((action) => action !== "Production")
+          .filter((action) => action !== "Production" && (!booking.bookingGroup || !["Quoted", "QuotePdfRetry"].includes(action)))
           .map((action) => (
             <button
               key={action}
               type="button"
               className="primary"
+              disabled={quoteBusy && (action === "Quoted" || action === "QuotePdfRetry")}
+              aria-busy={quoteBusy && (action === "Quoted" || action === "QuotePdfRetry") ? true : undefined}
               onClick={() => {
+                if (quoteBusy) return;
                 if (action === "Quoted") onAction(action);
                 else setPending(action);
               }}
             >
-              {action === "Reviewed"
+              {quoteBusy && (action === "Quoted" || action === "QuotePdfRetry") ? (
+                <>
+                  <span className={styles.spinner} aria-hidden="true" />
+                  Generating quote…
+                </>
+              ) : action === "Reviewed"
                 ? "Review booking"
                 : action === "Quoted"
                   ? booking.quoteState?.currentRevisionId && isBookingQuoteStale(booking)
                     ? "Regenerate quote"
                     : booking.quoteState?.currentRevisionId ? "Open quote" : "Generate quote"
                   : action === "QuotePdfRetry"
-                    ? "Retry quote PDF save"
+                    ? "Retry quote generation"
                     : action === "Completed"
                       ? "Mark complete"
                       : "Send to CPU"}
             </button>
           ))}
-        {quoteReadyForCpu(booking) && !productionOrderMatchesCurrentQuote(booking, productionOrder) && booking.deliveryChargeRequired !== false && (
-          <button
-            type="button"
-            className="primary"
-            onClick={() => onAction("Production")}
-          >
-            Send to CPU
-          </button>
-        )}
       </div>
       <header className="booking-detail__header">
         <div>
@@ -1582,10 +1725,13 @@ function BookingDetail({
         <Fact label="Guests" value={`${booking.service.guestCount} pax`} />
         <Fact label="Where" value={location} />
         <Fact label="Request ID" value={booking.source.sourceBookingId} />
+        {booking.bookingGroup && <Fact label="Request group" value={`${booking.bookingGroup.id} · service ${booking.bookingGroup.sequence} of ${booking.bookingGroup.size}`} />}
         {booking.client.invoiceReference && (
           <Fact label="Invoice / PO" value={booking.client.invoiceReference} />
         )}
-        <Fact label="Produced by CPU" value={booking.deliveryChargeRequired === false ? "No" : "Yes"} />
+        {booking.cpuRouting
+          ? <Fact label={booking.cpuRouting.enforced === false ? "CPU production (advisory)" : "CPU production"} value={booking.cpuRouting.statusLabel} />
+          : <Fact label="Produced by CPU" value={booking.deliveryChargeRequired === false ? "No" : "Yes"} />}
       </div>
       <section className="booking-detail__section">
         <div className="booking-detail__section-title">
@@ -1595,19 +1741,7 @@ function BookingDetail({
           </div>
           <strong>£{booking.order.grossTotal.toFixed(2)}</strong>
         </div>
-        <ul className="booking-detail__items">
-          {booking.order.items.map((item, index) => (
-            <li key={`${item.itemId}-${index}`}>
-              <span>
-                <b>
-                  {item.quantity} × {item.itemName || item.itemId}
-                </b>
-                {item.servingInfo && <small>{item.servingInfo}</small>}
-              </span>
-              <strong>£{item.lineTotal.toFixed(2)}</strong>
-            </li>
-          ))}
-        </ul>
+        <RequestedItemsList rows={bookingRequestedItems(booking)} />
         <div className="booking-detail__total">
           <span>
             Net £{booking.order.netTotal.toFixed(2)} · VAT £
@@ -1642,7 +1776,7 @@ function BookingDetail({
         )}
         {!canManageBookingCharges(booking.lifecycleStatus) && (
           <p className="additional-charges-summary__help">
-            After CPU hand-off, change commercial intent through the governed Booking amendment workflow.
+            Charges can be changed on new, reviewed, quoted and completed bookings. Otherwise change commercial intent through the governed Booking amendment workflow.
           </p>
         )}
       </section>
@@ -1673,46 +1807,40 @@ function BookingDetail({
               <span>Booking</span>
               <strong>{workflowLabel(booking.lifecycleStatus)}</strong>
             </div>
-            <div>
-              <span>CPU plan</span>
-              <strong>{productionOrderMatchesCurrentQuote(booking, productionOrder) ? productionOrder?.state : productionOrder ? "Ready to reissue" : "Not started"}</strong>
-            </div>
           </div>
-          <button
-            type="button"
-            className="manager-cpu-action"
-            disabled={Boolean(productionOrderMatchesCurrentQuote(booking, productionOrder)) || !quoteReadyForCpu(booking) || booking.deliveryChargeRequired === false}
-            onClick={() => onAction("Production")}
-          >
-            <strong>{productionOrderMatchesCurrentQuote(booking, productionOrder) ? "Sent to CPU" : "Send to CPU"}</strong>
-            <small>
-              {productionOrderMatchesCurrentQuote(booking, productionOrder)
-                ? "Production hand-off recorded"
-                : booking.deliveryChargeRequired === false
-                  ? "The site will produce this booking internally"
-                  : quoteReadyForCpu(booking)
-                    ? "Send this quoted booking to production"
-                    : "Available after the quote PDF is saved to Drive"}
-            </small>
-          </button>
-          <div className="manager-document-actions">
+          {booking.bookingGroup
+            ? <p className="muted">CPU production, allergens and menus are managed once for the whole booking, not per service.</p>
+            : productionPanel}
+          <div className="manager-document-actions" role="group" aria-label="Quote, allergen matrix and menu">
+            <p className="manager-document-actions__title">Quote, allergens and menu</p>
             <button
               type="button"
               className="manager-document-action"
-              disabled={!booking.quoteState?.currentRevisionId || quoteNeedsRegeneration}
-              onClick={() => onOpenQuote(booking)}
+              disabled={quoteBusy || !booking.quoteState?.currentRevisionId || quoteNeedsRegeneration || booking.quoteState.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId)?.pdfStatus !== "saved"}
+              aria-busy={quoteBusy ? true : undefined}
+              onClick={() => { const current = booking.quoteState?.revisions.find(r => r.id === booking.quoteState?.currentRevisionId); if (booking.bookingGroup && current?.driveUrl) window.open(current.driveUrl, "_blank", "noopener,noreferrer"); else onOpenQuote(booking); }}
             >
-              <strong>{quoteNeedsRegeneration ? "Quote needs regeneration" : "Open quote"}</strong>
+              <strong>
+                {quoteBusy ? (
+                  <>
+                    <span className={styles.spinner} aria-hidden="true" />
+                    Generating quote…
+                  </>
+                ) : quoteNeedsRegeneration ? "Quote needs regeneration" : "Open quote"}
+              </strong>
               <small>
-                {quoteNeedsRegeneration
+                {quoteBusy
+                  ? "Preparing the quote PDF"
+                  : quoteNeedsRegeneration
                   ? "The previous revision is retained for history"
                   : booking.quoteState?.currentRevisionId
                   ? booking.quoteState.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId)?.pdfStatus === "saved"
                     ? "Current quote PDF in Drive"
-                    : "PDF persistence required before CPU hand-off"
+                    : "Quote PDF not saved yet. Use Retry quote generation."
                   : "Quote not generated"}
               </small>
             </button>
+            {!booking.bookingGroup && serviceCpuRequirement({ routing: booking.cpuRouting, deliveryChargeRequired: booking.deliveryChargeRequired }) === "cpu" && (<>
             {matrixArtifact?.driveUrl || matrixArtifact?.localUrl || matrixArtifact?.viewUrl ? (
               <a
                 className="manager-document-action"
@@ -1722,22 +1850,36 @@ function BookingDetail({
               >
                 <strong>Open allergen matrix</strong>
                 <small>
-                  {matrixArtifact.driveUrl
+                  {matrixArtifact.approvalMode === "reused_authority"
+                    ? "Approved by reuse of a previously signed sandwich set (not signed for this booking)"
+                    : matrixArtifact.driveUrl
                     ? "Signed PDF in site Drive"
                     : matrixArtifact.localUrl
                       ? "Local signed PDF"
                       : "Authoritative signed CPU matrix"}
                 </small>
               </a>
+            ) : matrixArtifact?.status === "checking" ? (
+              <button type="button" className="manager-document-action" disabled aria-busy="true">
+                <strong>
+                  <span className={styles.spinner} aria-hidden="true" />
+                  Checking allergen matrix…
+                </strong>
+                <small>Looking up the latest CPU allergen status</small>
+              </button>
             ) : matrixArtifact?.status === "generating" ? (
               <button type="button" className="manager-document-action" disabled aria-busy="true">
-                <strong>Generating allergen matrix…</strong>
+                <strong>
+                  <span className={styles.spinner} aria-hidden="true" />
+                  Generating allergen matrix…
+                </strong>
                 <small>The signed PDF is being prepared</small>
               </button>
             ) : matrixArtifact?.status === "failed" || matrixArtifact?.status === "error" ? (
               <button type="button" className="manager-document-action" onClick={onRefreshMatrix}>
-                <strong>Allergen matrix needs retry</strong>
-                <small>{matrixArtifact.error || "Reload the current CPU allergen matrix."}</small>
+                <MatrixDiagnostics bookingId={booking.canonicalId} detail={matrixArtifact.error} />
+                <strong>Allergen matrix unavailable</strong>
+                <small>We couldn&apos;t load the latest CPU allergen data. Try again.</small>
               </button>
             ) : (
               <button
@@ -1749,6 +1891,7 @@ function BookingDetail({
                 <small>{matrixArtifact?.status === "not_configured" ? "Signed matrix storage is not configured" : "Available after signing"}</small>
               </button>
             )}
+
             {menuOutput ? (
               <>
                 <button
@@ -1764,10 +1907,20 @@ function BookingDetail({
                   className="manager-document-action"
                   onClick={() => void onGenerateMenu(booking)}
                   disabled={menuBusy || !menuReady}
+                  aria-busy={menuBusy ? true : undefined}
                 >
-                  <strong>Regenerate menu</strong>
+                  <strong>
+                    {menuBusy ? (
+                      <>
+                        <span className={styles.spinner} aria-hidden="true" />
+                        Generating menu…
+                      </>
+                    ) : "Regenerate menu"}
+                  </strong>
                   <small>
-                    {menuStale
+                    {menuBusy
+                      ? "This can take a few seconds. Please keep this page open."
+                      : menuStale
                       ? "Allergen or production details have changed"
                     : menuReadyReason}
                   </small>
@@ -1779,12 +1932,22 @@ function BookingDetail({
                 className="manager-document-action"
                 onClick={() => void onGenerateMenu(booking)}
                 disabled={menuBusy || !menuReady}
+                aria-busy={menuBusy ? true : undefined}
               >
-                <strong>Generate menu</strong>
-                <small>{menuReady ? "Generate from the Planned CPU revision" : menuReadyReason}</small>
+                <strong>
+                  {menuBusy ? (
+                    <>
+                      <span className={styles.spinner} aria-hidden="true" />
+                      Generating menu…
+                    </>
+                  ) : "Generate menu"}
+                </strong>
+                <small>{menuBusy ? "This can take a few seconds. Please keep this page open." : menuReady ? "Generate from the Planned CPU revision" : menuReadyReason}</small>
               </button>
             )}
+            </>)}
           </div>
+          {!booking.bookingGroup && serviceCpuRequirement({ routing: booking.cpuRouting, deliveryChargeRequired: booking.deliveryChargeRequired }) === "cpu" && (<>
           <div className="menu-output-actions manager-legacy-output">
             <p className="output-block__label">Hospitality menu</p>
             <p className="workflow-callout">
@@ -1873,6 +2036,7 @@ function BookingDetail({
               </div>
             </div>
           )}
+          </>)}
         </section>
       </div>
       <details className="booking-detail__audit">
@@ -1892,7 +2056,6 @@ function BookingDetail({
       {additionalChargesOpen && (
         <AdditionalChargesModal
           booking={booking}
-          labourRates={labourRates}
           busy={additionalChargeBusy}
           onCancel={() => setAdditionalChargesOpen(false)}
           onSave={async (charges) => {
@@ -1906,8 +2069,17 @@ function BookingDetail({
 }
 
 type ManualChargeEditor = { kind: "manual"; id?: string; category: "equipment" | "service" | "other"; label: string; quantity: string; unitNet: string };
-type LabourChargeEditor = { kind: "labour"; id?: string; label: string; roleId?: string; roleLabel: string; staffCount: string; hoursPerPerson: string; hourlyRate: string; multiplier: string; rateSource: "configured" | "custom" };
+/** Operators pick only an approved role, staff, hours and Normal/Overtime; rates are locked in lib/labour-rates.ts. */
+type LabourChargeEditor = { kind: "labour"; id?: string; label: string; roleId: string; staffCount: string; hoursPerPerson: string; overtime: boolean };
 type ChargeEditor = ManualChargeEditor | LabourChargeEditor;
+
+function labourEditorValues(editor: LabourChargeEditor) {
+  const result = calculateLabour({ roleId: editor.roleId, staffCount: Number(editor.staffCount), hours: Number(editor.hoursPerPerson), overtime: editor.overtime });
+  const role = findApprovedRole(editor.roleId);
+  return result.ok
+    ? { valid: true as const, roleLabel: result.value.role.label, net: result.value.net }
+    : { valid: false as const, roleLabel: role?.label ?? "", net: 0 };
+}
 
 function storedChargeInput(charge: NonNullable<CanonicalBooking["additionalCharges"]>[number]): BookingAdditionalChargeInput {
   if (charge.kind === "manual") return { id: charge.id, kind: "manual", category: charge.category, label: charge.label, quantity: charge.quantity, unitNet: charge.unitNet };
@@ -1933,13 +2105,11 @@ function newStableId() {
 
 function AdditionalChargesModal({
   booking,
-  labourRates,
   busy,
   onCancel,
   onSave,
 }: {
   booking: CanonicalBooking;
-  labourRates: LabourRateSetting[];
   busy: boolean;
   onCancel: () => void;
   onSave: (charges: BookingAdditionalChargeInput[]) => Promise<void>;
@@ -1957,13 +2127,6 @@ function AdditionalChargesModal({
   busyRef.current = busy || saving;
   const hasChanges = JSON.stringify(charges) !== original.current;
   const subtotal = charges.reduce((total, charge) => total + previewChargeNet(charge), 0);
-  const labourRateOptions = editor?.kind === "labour" && editor.roleId && !labourRates.some((rate) => rate.id === editor.roleId)
-    ? [...labourRates, { id: editor.roleId, label: editor.roleLabel, hourlyRate: Number(editor.hourlyRate) }]
-    : labourRates;
-  const storedEditorCharge = editor?.kind === "labour" && editor.id
-    ? booking.additionalCharges?.find((charge) => charge.id === editor.id)
-    : undefined;
-  const keepsStoredConfiguredRate = editor?.kind === "labour" && storedEditorCharge?.kind === "labour" && storedEditorCharge.labour.roleId === editor.roleId && storedEditorCharge.labour.rateSource === "configured" && storedEditorCharge.labour.hourlyRate === Number(editor.hourlyRate);
 
   useEffect(() => {
     const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -2004,11 +2167,12 @@ function AdditionalChargesModal({
   const openLabourEditor = (charge?: Extract<BookingAdditionalChargeInput, { kind: "labour" }>) => {
     setError("");
     if (charge) {
-      setEditor({ kind: "labour", id: charge.id, label: charge.label, roleId: charge.labour.roleId, roleLabel: charge.labour.roleLabel, staffCount: String(charge.labour.staffCount), hoursPerPerson: String(charge.labour.hoursPerPerson), hourlyRate: String(charge.labour.hourlyRate), multiplier: String(charge.labour.multiplier), rateSource: charge.labour.rateSource });
+      // Only lines at an approved locked rate can be edited; legacy lines are view/remove-only (see the line list).
+      if (!isApprovedLabourLine(charge.labour)) return;
+      setEditor({ kind: "labour", id: charge.id, label: charge.label, roleId: charge.labour.roleId!, staffCount: String(charge.labour.staffCount), hoursPerPerson: String(charge.labour.hoursPerPerson), overtime: charge.labour.multiplier === OVERTIME_MULTIPLIER });
       return;
     }
-    const firstRate = labourRates.find((rate) => Number(rate.hourlyRate) > 0);
-    setEditor({ kind: "labour", label: "", roleId: firstRate?.id, roleLabel: firstRate?.label || "", staffCount: "1", hoursPerPerson: "1", hourlyRate: firstRate ? String(firstRate.hourlyRate) : "", multiplier: "1", rateSource: firstRate ? "configured" : "custom" });
+    setEditor({ kind: "labour", label: "", roleId: APPROVED_LABOUR_ROLES[0].id, staffCount: "1", hoursPerPerson: "1", overtime: false });
   };
   const changeLabour = (patch: Partial<LabourChargeEditor>) => setEditor((current) => current?.kind === "labour" ? { ...current, ...patch } : current);
   const saveLine = (event: FormEvent<HTMLFormElement>) => {
@@ -2029,27 +2193,17 @@ function AdditionalChargesModal({
       }
       setCharges((current) => editor.id ? current.map((charge) => charge.id === editor.id ? line : charge) : [...current, line]);
     } else {
-      const selectedRate = editor.roleId ? labourRateOptions.find((rate) => rate.id === editor.roleId) : undefined;
-      const labour = {
-        ...(editor.roleId ? { roleId: editor.roleId } : {}),
-        roleLabel: editor.roleLabel.trim(),
-        staffCount: Number(editor.staffCount),
-        hoursPerPerson: Number(editor.hoursPerPerson),
-        hourlyRate: Number(editor.hourlyRate),
-        multiplier: Number(editor.multiplier),
-        rateSource: editor.rateSource,
-      } as const;
+      const staffCount = Number(editor.staffCount);
+      const hoursPerPerson = Number(editor.hoursPerPerson);
+      const result = calculateLabour({ roleId: editor.roleId, staffCount, hours: hoursPerPerson, overtime: editor.overtime });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      // "governed" = the CEO-approved locked table; the Hub re-validates role, exact rate and 1×/1.5× for every new or changed line.
+      const labour: BookingAdditionalChargeLabour = { roleId: result.value.role.id, roleLabel: result.value.role.label, staffCount, hoursPerPerson, hourlyRate: result.value.hourlyRate, multiplier: result.value.multiplier, rateSource: "governed" };
       const label = editor.label.trim() || `${labour.roleLabel} labour`;
       const line: Extract<BookingAdditionalChargeInput, { kind: "labour" }> = { id: editor.id || newStableId(), kind: "labour", category: "labour", label, labour };
-      if (!labour.roleLabel || !Number.isInteger(labour.staffCount) || labour.staffCount < 1 || !Number.isFinite(labour.hoursPerPerson) || labour.hoursPerPerson <= 0 || !Number.isFinite(labour.hourlyRate) || labour.hourlyRate <= 0 || !Number.isFinite(labour.multiplier) || labour.multiplier < 0.25 || labour.multiplier > 5) {
-        setError("Enter a role, staff count, hours, positive hourly rate and multiplier between 0.25× and 5×.");
-        return;
-      }
-      const matchesConfiguredRate = Number(selectedRate?.hourlyRate) > 0 && selectedRate?.hourlyRate === labour.hourlyRate;
-      if (editor.rateSource === "configured" && !matchesConfiguredRate && !keepsStoredConfiguredRate) {
-        setError("That configured role rate is unavailable. Choose a configured rate or enter a custom hourly rate.");
-        return;
-      }
       if (previewChargeNet(line) <= 0 || previewChargeNet(line) > 1_000_000) {
         setError("The calculated labour total must be greater than £0 and no more than £1,000,000.");
         return;
@@ -2069,9 +2223,8 @@ function AdditionalChargesModal({
       setSaving(false);
     }
   };
-  const labourPreview = editor?.kind === "labour"
-    ? previewChargeNet({ id: editor.id || "charge-preview", kind: "labour", category: "labour", label: editor.label || `${editor.roleLabel} labour`, labour: { ...(editor.roleId ? { roleId: editor.roleId } : {}), roleLabel: editor.roleLabel, staffCount: Number(editor.staffCount), hoursPerPerson: Number(editor.hoursPerPerson), hourlyRate: Number(editor.hourlyRate), multiplier: Number(editor.multiplier), rateSource: editor.rateSource } })
-    : 0;
+  const editorLabour = editor?.kind === "labour" ? labourEditorValues(editor) : undefined;
+  const labourPreview = editorLabour?.valid ? editorLabour.net : 0;
 
   return (
     <div className="modal-backdrop additional-charges-backdrop" role="presentation">
@@ -2097,7 +2250,7 @@ function AdditionalChargesModal({
               </div>
               <strong className="additional-charge-row__amount">£{previewChargeNet(charge).toFixed(2)} net</strong>
               <div className="additional-charge-row__actions">
-                <button type="button" onClick={() => charge.kind === "manual" ? openManualEditor(charge) : openLabourEditor(charge)}>Edit</button>
+                {charge.kind === "manual" ? <button type="button" onClick={() => openManualEditor(charge)}>Edit</button> : isApprovedLabourLine(charge.labour) ? <button type="button" onClick={() => openLabourEditor(charge)}>Edit</button> : <span className="additional-charge-legacy">Legacy rate · remove to replace</span>}
                 <button type="button" onClick={() => setCharges((current) => current.filter((currentCharge) => currentCharge.id !== charge.id))}>Remove</button>
               </div>
             </article>
@@ -2119,36 +2272,18 @@ function AdditionalChargesModal({
         {editor?.kind === "labour" && (
           <form className="additional-charge-editor" onSubmit={saveLine}>
             <h3>{editor.id ? "Edit labour charge" : "Labour calculator"}</h3>
-            <label>Role<select value={editor.roleId || "custom"} onChange={(event) => {
-              if (event.target.value === "custom") changeLabour({ roleId: undefined, roleLabel: "", hourlyRate: "", rateSource: "custom" });
-              else {
-                const role = labourRates.find((rate) => rate.id === event.target.value);
-                const configured = Number(role?.hourlyRate) > 0;
-                changeLabour({ roleId: role?.id, roleLabel: role?.label || "", hourlyRate: configured ? String(role?.hourlyRate) : "", rateSource: configured ? "configured" : "custom" });
-              }
-            }}><option value="custom">Custom role</option>{labourRateOptions.map((rate) => <option key={rate.id} value={rate.id}>{rate.label}{Number(rate.hourlyRate) > 0 ? ` · £${Number(rate.hourlyRate).toFixed(2)}/hr` : " · rate not configured"}</option>)}</select></label>
-            {!editor.roleId && <label>Role name<input value={editor.roleLabel} maxLength={100} onChange={(event) => changeLabour({ roleLabel: event.target.value })} required /></label>}
-            <label>Charge label<input value={editor.label} placeholder={`${editor.roleLabel || "Labour"} labour`} maxLength={120} onChange={(event) => changeLabour({ label: event.target.value })} /></label>
-            <div className="additional-charge-editor__grid">
-              <label>Staff count<input type="number" min="1" max="100" step="1" value={editor.staffCount} onChange={(event) => changeLabour({ staffCount: event.target.value })} required /></label>
-              <label>Hours per person<input type="number" min="0.25" max="168" step="0.25" value={editor.hoursPerPerson} onChange={(event) => changeLabour({ hoursPerPerson: event.target.value })} required /></label>
-            </div>
-            <label>Hourly rate source<select value={editor.rateSource} onChange={(event) => {
-              const source = event.target.value as LabourChargeEditor["rateSource"];
-              const configuredRate = Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate);
-              changeLabour({ rateSource: source, hourlyRate: source === "configured" && configuredRate > 0 ? String(configuredRate) : editor.hourlyRate });
-            }}>
-              <option value="custom">Enter a custom net rate</option>
-              {Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate) > 0 && <option value="configured">{keepsStoredConfiguredRate && Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate) !== Number(editor.hourlyRate) ? `Keep saved rate (£${Number(editor.hourlyRate).toFixed(2)}; current default £${Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate).toFixed(2)})` : `Use configured rate (£${Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate).toFixed(2)})`}</option>}
+            <label>Role<select value={editor.roleId} onChange={(event) => changeLabour({ roleId: event.target.value })}>
+              {APPROVED_LABOUR_ROLES.map((role) => <option key={role.id} value={role.id}>{role.label}</option>)}
             </select></label>
-            <label>Base hourly rate (£ net)<input type="number" min="0.01" max="1000" step="0.01" value={editor.hourlyRate} disabled={editor.rateSource === "configured"} onChange={(event) => changeLabour({ hourlyRate: event.target.value })} required /></label>
+            <label>Charge label<input value={editor.label} placeholder={`${editorLabour?.roleLabel || "Labour"} labour`} maxLength={120} onChange={(event) => changeLabour({ label: event.target.value })} /></label>
             <div className="additional-charge-editor__grid">
-              <label>Rate multiplier<select value={["1", "1.5", "2"].includes(editor.multiplier) ? editor.multiplier : "custom"} onChange={(event) => changeLabour({ multiplier: event.target.value === "custom" ? "1.25" : event.target.value })}><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="custom">Custom</option></select></label>
-              {!["1", "1.5", "2"].includes(editor.multiplier) && <label>Custom multiplier<input type="number" min="0.25" max="5" step="0.05" value={editor.multiplier} onChange={(event) => changeLabour({ multiplier: event.target.value })} required /></label>}
+              <label>Number of staff<input type="number" min="1" max={MAX_STAFF} step="1" value={editor.staffCount} onChange={(event) => changeLabour({ staffCount: event.target.value })} required /></label>
+              <label>Hours per person<input type="number" min="0.25" max={MAX_HOURS} step="0.25" value={editor.hoursPerPerson} onChange={(event) => changeLabour({ hoursPerPerson: event.target.value })} required /></label>
             </div>
+            <label>Rate<select value={editor.overtime ? "overtime" : "normal"} onChange={(event) => changeLabour({ overtime: event.target.value === "overtime" })}><option value="normal">Normal</option><option value="overtime">Overtime</option></select></label>
             <div className="additional-charge-editor__preview" role="status" aria-live="polite">
-              <strong>{editor.label.trim() || `${editor.roleLabel || "Labour"} labour`}</strong>
-              <span>{editor.staffCount || "0"} staff × {Number(editor.hoursPerPerson || 0).toFixed(2)} hrs × £{Number(editor.hourlyRate || 0).toFixed(2)} × {editor.multiplier}</span>
+              <strong>{editor.label.trim() || `${editorLabour?.roleLabel || "Labour"} labour`}</strong>
+              <span>{editor.staffCount || "0"} staff × {Number(editor.hoursPerPerson || 0).toFixed(2)} hrs × £{(editor.overtime ? (findApprovedRole(editor.roleId)?.overtimeRate ?? 0) : (findApprovedRole(editor.roleId)?.normalRate ?? 0)).toFixed(2)}/hr{editor.overtime ? " (overtime)" : ""}</span>
               <b>£{labourPreview.toFixed(2)} net</b>
             </div>
             <footer><button type="button" onClick={() => setEditor(null)}>Cancel</button><button className="primary">{editor.id ? "Update labour charge" : "Add labour charge"}</button></footer>
@@ -2166,12 +2301,18 @@ function AdditionalChargesModal({
 
 function CalendarView({
   bookings,
+  groups,
+  onSelectGroup,
+  busy,
   week,
   onWeekChange,
   onSelect,
   selectedId,
 }: {
   bookings: CanonicalBooking[];
+  groups: HospitalityBookingGroup[];
+  onSelectGroup: (group: HospitalityBookingGroup) => void;
+  busy: boolean;
   week: Date;
   onWeekChange: (week: Date) => void;
   onSelect: (booking: CanonicalBooking) => void;
@@ -2270,6 +2411,7 @@ function CalendarView({
           );
           return (
             <div className="calendar-day" key={key}>
+              {groups.filter(group => group.eventDate === key).map(group => <button className="calendar-booking" type="button" key={group.id} disabled={busy} onClick={() => onSelectGroup(group)}><span>{group.firstTime}–{group.lastTime} · {group.services.length} services</span><strong>{group.client.companyName}</strong><small>All Day Hospitality · {group.status}</small></button>)}
               {dailyBookings.map((booking) => {
                 const dietaryCount = Object.entries(
                   booking.dietaries || {},
@@ -2285,6 +2427,7 @@ function CalendarView({
                     }
                     type="button"
                     key={booking.canonicalId}
+                    disabled={busy}
                     onClick={() => onSelect(booking)}
                   >
                     <span>
@@ -2308,7 +2451,7 @@ function CalendarView({
                   </button>
                 );
               })}
-              {!dailyBookings.length && (
+              {!dailyBookings.length && !groups.some(group => group.eventDate === key) && (
                 <p className="calendar-day__empty">No bookings</p>
               )}
             </div>
@@ -2687,12 +2830,10 @@ function pretty(value: string) {
     .replace(/([A-Z])/g, " $1")
     .replace(/^./, (character) => character.toUpperCase());
 }
+// Mirrors the Hub's commercial-editing guard (COMMERCIAL_EDITABLE_STATUSES): charges, and the revised quote reflecting them, stay
+// maintainable on a Completed booking. The server enforces the same rule; this only decides what the UI offers.
 function canManageBookingCharges(status: Status) {
-  return ["New", "Reviewed", "Quoted"].includes(status);
-}
-function isBookingQuoteStale(booking: CanonicalBooking) {
-  const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
-  return Boolean(current && (current.stale || (current.commercialVersion !== undefined && current.commercialVersion !== (booking.commercialVersion || 1))));
+  return ["New", "Reviewed", "Quoted", "Completed"].includes(status);
 }
 function availableActions(booking: CanonicalBooking, productionOrder?: ProductionOrder): WorkflowAction[] {
   if (booking.lifecycleStatus === "New") return ["Quoted"];
@@ -2705,16 +2846,9 @@ function availableActions(booking: CanonicalBooking, productionOrder?: Productio
     return ["Production"];
   }
   if (booking.lifecycleStatus === "Sent to CPU" && productionOrder) return ["Completed"];
+  // A Completed booking whose charges changed offers only the revised quote; it never offers a hand-off or a lifecycle change.
+  if (booking.lifecycleStatus === "Completed" && isBookingQuoteStale(booking)) return ["Quoted"];
   return [];
-}
-function productionOrderMatchesCurrentQuote(booking: CanonicalBooking, productionOrder?: ProductionOrder) {
-  const currentRevisionId = booking.quoteState?.currentRevisionId;
-  return Boolean(productionOrder && currentRevisionId && productionOrder.sourceReferences.quoteRevisionId === currentRevisionId);
-}
-
-function quoteReadyForCpu(booking: CanonicalBooking) {
-  const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
-  return ["Quoted", "Approved"].includes(booking.lifecycleStatus) && Boolean(current && !isBookingQuoteStale(booking) && current.pdfStatus === "saved" && current.driveFileId);
 }
 function commandTitle(action: WorkflowAction) {
   return (
@@ -3022,7 +3156,6 @@ function DashboardSettingsModal({
   onCancel: () => void;
   onSave: () => void;
 }) {
-  const labourRates = settings.labourRates ?? defaultLabourRates;
   return (
     <div className="modal-backdrop" role="presentation">
       <form
@@ -3126,47 +3259,6 @@ function DashboardSettingsModal({
                 }
               />
             </label>
-            <section className="hospitality-labour-rates" aria-labelledby="hospitality-labour-rates-title">
-              <div>
-                <h3 id="hospitality-labour-rates-title">Labour rates</h3>
-                <p>Optional net hourly rates for the labour calculator. Existing Booking charges keep the rate saved on their line.</p>
-              </div>
-              <div className="hospitality-labour-rates__list">
-                {labourRates.map((rate, index) => (
-                  <div className="hospitality-labour-rates__row" key={rate.id}>
-                    <label>
-                      Role
-                      <input
-                        value={rate.label}
-                        maxLength={100}
-                        onChange={(event) => onChange({
-                          ...settings,
-                          labourRates: labourRates.map((current, currentIndex) => currentIndex === index ? { ...current, label: event.target.value } : current),
-                        })}
-                      />
-                    </label>
-                    <label>
-                      Hourly net rate (£)
-                      <input
-                        type="number"
-                        min="0"
-                        max="1000"
-                        step="0.01"
-                        value={rate.hourlyRate ?? ""}
-                        onChange={(event) => onChange({
-                          ...settings,
-                          labourRates: labourRates.map((current, currentIndex) => currentIndex === index
-                            ? { ...current, ...(event.target.value === "" ? { hourlyRate: undefined } : { hourlyRate: Number(event.target.value) }) }
-                            : current),
-                        })}
-                      />
-                    </label>
-                    <button type="button" aria-label={`Remove ${rate.label || "labour role"}`} onClick={() => onChange({ ...settings, labourRates: labourRates.filter((_, currentIndex) => currentIndex !== index) })}>Remove</button>
-                  </div>
-                ))}
-              </div>
-              <button type="button" className="hospitality-labour-rates__add" onClick={() => onChange({ ...settings, labourRates: [...labourRates, { id: `role_${newStableId()}`, label: "New role" }] })}>Add another labour role</button>
-            </section>
             <label>
               VAT rate (%)
               <input

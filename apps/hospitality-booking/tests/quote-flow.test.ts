@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-const dashboard = readFileSync(new URL("../app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8");
+const dashboard = readFileSync(new URL("../app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8") + readFileSync(new URL("../lib/cpu-production-plan.ts", import.meta.url), "utf8"); // helpers moved to lib/cpu-production-plan.ts
 const menusRoute = readFileSync(new URL("../app/api/menus/route.ts", import.meta.url), "utf8");
 
 test("quote generation stays on the dashboard and bounds remote persistence waits", () => {
@@ -10,7 +10,8 @@ test("quote generation stays on the dashboard and bounds remote persistence wait
   assert.match(dashboard, /fetchQuoteRequest/);
   assert.match(dashboard, /import \{ fetchQuoteRequest \} from/);
   assert.match(dashboard, /void load\(action !== "Quoted"\)/);
-  assert.match(dashboard, /Retry quote PDF save/);
+  assert.match(dashboard, /Retry quote generation/);
+  assert.doesNotMatch(dashboard, /Retry quote PDF save/);
 });
 
 test("menu readiness follows the current amended Production Order identity", () => {
@@ -23,13 +24,20 @@ test("menu readiness follows the current amended Production Order identity", () 
   assert.match(dashboard, /body\.error\?\.message \|\| body\.readiness\?\.reason/);
 });
 
+test("Completed bookings keep additional charges and a revised quote available, without any hand-off or lifecycle action", () => {
+  assert.match(dashboard, /return \["New", "Reviewed", "Quoted", "Completed"\]\.includes\(status\);/);
+  // a Completed booking with a stale quote offers ONLY the revised quote
+  assert.match(dashboard, /if \(booking\.lifecycleStatus === "Completed" && isBookingQuoteStale\(booking\)\) return \["Quoted"\];/);
+  // the hand-off stays gated on Quoted/Approved, and the Production Order of a Completed booking still stands after a charge revision
+  assert.match(dashboard, /\["Quoted", "Approved"\]\.includes\(booking\.lifecycleStatus\) && Boolean\(current && !isBookingQuoteStale/);
+  assert.match(dashboard, /booking\.lifecycleStatus === "Completed" && Boolean\(booking\.quoteState\?\.revisions\.some/);
+});
+
 test("shared Hospitality dashboard exposes governed additional charges and stale-quote recovery", () => {
   assert.match(dashboard, /action: "set-additional-charges"/);
   assert.match(dashboard, /Manage charges/);
   assert.match(dashboard, /Additional charges subtotal/);
   assert.match(dashboard, /Labour calculator/);
-  assert.match(dashboard, /Use configured rate/);
-  assert.match(dashboard, /Enter a custom net rate/);
   assert.match(dashboard, /Quote needs regeneration/);
   assert.match(dashboard, /current\.stale/);
   assert.match(dashboard, /additionalCharges/);
@@ -43,9 +51,24 @@ test("additional-charge manager preserves unsaved edits and provides accessible 
   assert.match(dashboard, /aria-modal="true"/);
   assert.match(dashboard, /document\.addEventListener\("keydown"/);
   assert.match(dashboard, /additional-charge-editor__grid/);
-  assert.match(dashboard, /Use configured rate/);
-  assert.match(dashboard, /1\.5×/);
-  assert.match(dashboard, /2×/);
-  assert.match(dashboard, /event\.target\.value === "custom" \? "1\.25"/);
-  assert.match(dashboard, /Custom multiplier<input type="number" min="0\.25" max="5" step="0\.05"/);
+  // Labour calculator is now approved TCTE roles + Normal/Overtime only (tests/labour-calculator.test.ts).
+  assert.match(dashboard, /APPROVED_LABOUR_ROLES/);
+  assert.doesNotMatch(dashboard, /Custom multiplier|Use configured rate/);
+});
+
+test("manager document actions: quote PDF only, loading state, plain-language allergen copy", () => {
+  // The HTML intermediate is never opened by the operator: Open quote needs the saved PDF.
+  const openQuote = dashboard.slice(dashboard.indexOf("const openQuote ="), dashboard.indexOf("const generateMenu"));
+  assert.doesNotMatch(openQuote, /openPrintSheet/);
+  assert.match(openQuote, /current\.pdfStatus === "saved"/);
+  // Inline loading state that blocks repeat activation of quote generation.
+  assert.match(dashboard, /Generating quote…/);
+  assert.match(dashboard, /disabled=\{quoteBusy && \(action === "Quoted" \|\| action === "QuotePdfRetry"\)\}/);
+  assert.match(dashboard, /if \(quoteBusy\) return;/);
+  // Allergen failure copy is operator-facing; the technical detail goes to diagnostics only.
+  assert.match(dashboard, /Allergen matrix unavailable/);
+  assert.match(dashboard, /couldn&apos;t load the latest CPU allergen data\. Try again\./);
+  assert.doesNotMatch(dashboard, /<small>\{matrixArtifact\.error/);
+  assert.match(dashboard, /console\.warn\("FIKA allergen matrix unavailable"/);
+
 });

@@ -21,7 +21,7 @@ const LabourChargeInput = z.object({
     hoursPerPerson: z.number().positive().max(168),
     hourlyRate: z.number().positive().max(1000),
     multiplier: z.number().min(0.25).max(5),
-    rateSource: z.enum(["configured", "custom"]),
+    rateSource: z.enum(["governed", "configured", "custom"]),
   }).strict(),
 }).strict();
 

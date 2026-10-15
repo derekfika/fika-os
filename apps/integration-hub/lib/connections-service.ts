@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import type { Transaction } from "firebase-admin/firestore";
 import { resolveHospitalityRouting } from "./hospitality-menu-routing";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
@@ -25,6 +26,8 @@ const revisions = () => db.collection("integrationHubCanonicalRevisions");
 const audit = () => db.collection("integrationHubGovernanceAudit");
 const menuProductionRouting = () => db.collection("integrationHubHospitalityMenuProductionRouting");
 
+export { LEGACY_HOSPITALITY_MENU_ROUTING } from "./hospitality-routing-suggestions";
+
 export type ProductionDashboardView = CpuProductionWorkstream;
 
 /** Read-only projection consumed by the CPU dashboards. */
@@ -50,6 +53,14 @@ export async function hospitalityMenuProductionRouting(menuItemIds?: string[]): 
   return resolveHospitalityRouting([...Object.keys(fallback), ...routes.keys(), ...mappings.keys()], {
     routing: async id => routes.get(id), merge: async id => mappings.get(id),
   }, fallback);
+}
+
+/** Governed decisions only: absence is unresolved, an explicit empty list means No CPU. */
+export async function explicitMenuProductionRouting(menuItemIds: string[], transaction?: Transaction): Promise<Record<string, string[]>> {
+  return resolveHospitalityRouting(menuItemIds.filter(Boolean), {
+    routing: async id => { const ref = menuProductionRouting().doc(stableDocumentId(id)); return (await (transaction ? transaction.get(ref) : ref.get())).data(); },
+    merge: async id => { const ref = db.collection("integrationHubHospitalityMenuItemMerges").doc(stableDocumentId(id)); return (await (transaction ? transaction.get(ref) : ref.get())).data(); },
+  }, {});
 }
 
 export type ConnectionCommand =
