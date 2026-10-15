@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { quantityFromInput, quantityMinimumMessage, stepQuantityDown, stepQuantityUp } from "@/lib/quantity-entry";
 import { portalBookingId, type PortalMenuItem } from "@/lib/mnk-contract";
 import { hospitalitySiteThemeStyle, portalSite } from "@/lib/portal-sites";
 import {
@@ -118,6 +119,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [removeConfirmId, setRemoveConfirmId] = useState<string | null>(null);
   const [openNoteIds, setOpenNoteIds] = useState<string[]>([]);
+  const [quantityTouched, setQuantityTouched] = useState<string[]>([]);
+  const touchQuantity = (itemId: string) => setQuantityTouched((current) => current.includes(itemId) ? current : [...current, itemId]);
   const [confirmation, setConfirmation] = useState<Array<{ time: string; label: string; guests: number }> | null>(null);
   // The item screen, contact, dietaries and acknowledgements all operate on an ordinary RcoaBookingDraft: a service row while choosing its
   // items, otherwise the shared event. This is what lets the existing catalogue rules and validation apply unchanged.
@@ -279,7 +282,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
 
   const setQuantity = (item: PortalMenuItem, requested: number) => {
     setDraft((current) => {
-      const quantity = requested > 0 ? Math.max(rcoaMinimumQuantity(item), Math.floor(requested)) : 0;
+      // Free entry: the minimum is not applied here (it ran on every keystroke and turned 10 into 80). It is reported on blur and by step validation.
+      const quantity = quantityFromInput(requested);
       const existing = current.lines.find((line) => line.itemId === item.id);
       const lines = quantity > 0
         ? [...current.lines.filter((line) => line.itemId !== item.id), { itemId: item.id, quantity, choices: existing?.choices || {} }]
@@ -746,15 +750,25 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                               }
                               return <label className={styles.choiceSelect} key={group.id}>{group.label}{group.required ? " *" : ""}<select data-rcoa-field={fieldKey} aria-invalid={Boolean(fieldError)} aria-describedby={fieldError ? fieldErrorId(fieldKey) : undefined} value={typeof value === "string" ? value : ""} onChange={(event) => setChoice(item, group.id, event.target.value)}><option value="">Choose…</option>{group.options.map((option) => <option key={option.id} value={option.label}>{option.label}</option>)}</select>{fieldError && <span className={styles.fieldError} id={fieldErrorId(fieldKey)}>{fieldError}</span>}</label>;
                             })}
-                            <div className={styles.quantityRow}>
-                              <label>Quantity <input aria-label={`${item.name} quantity`} data-rcoa-field={`quantity:${item.id}`} aria-invalid={Boolean(errors[`quantity:${item.id}`])} aria-describedby={errors[`quantity:${item.id}`] ? fieldErrorId(`quantity:${item.id}`) : undefined} type="number" min={rcoaMinimumQuantity(item)} step="1" value={line?.quantity || ""} onChange={(event) => setQuantity(item, Number(event.target.value || 0))} /></label>
-                              <button type="button" aria-label={`Remove one ${item.name}`} onClick={() => setQuantity(item, (line?.quantity || 0) - 1)}>−</button>
-                              <button type="button" aria-label={`Add one ${item.name}`} onClick={() => setQuantity(item, (line?.quantity || 0) + 1)}>+</button>
-                            </div>
+                            {(() => {
+                              const minimum = rcoaMinimumQuantity(item);
+                              const minimumMessage = quantityMinimumMessage(line?.quantity || 0, minimum);
+                              const showMinimum = Boolean(minimumMessage) && (quantityTouched.includes(item.id) || Boolean(errors[`quantity:${item.id}`]));
+                              const errorId = fieldErrorId(`quantity:${item.id}`);
+                              return (
+                                <>
+                                  <div className={styles.quantityRow}>
+                                    <label>Quantity <input aria-label={`${item.name} quantity`} data-rcoa-field={`quantity:${item.id}`} aria-invalid={showMinimum || undefined} aria-describedby={showMinimum ? errorId : undefined} type="number" min={minimum} step="1" inputMode="numeric" value={line?.quantity || ""} onChange={(event) => setQuantity(item, quantityFromInput(event.target.value))} onBlur={() => touchQuantity(item.id)} onKeyDown={(event) => { if (event.key === "Enter") touchQuantity(item.id); }} /></label>
+                                    <button type="button" aria-label={`Remove one ${item.name}`} onClick={() => setQuantity(item, stepQuantityDown(line?.quantity || 0, minimum, false))}>−</button>
+                                    <button type="button" aria-label={`Add one ${item.name}`} onClick={() => setQuantity(item, stepQuantityUp(line?.quantity || 0, minimum))}>+</button>
+                                  </div>
+                                  {showMinimum && <span className={styles.fieldError} id={errorId} role="alert">{minimumMessage}</span>}
+                                </>
+                              );
+                            })()}
                             {suggestion && <button className={styles.suggestionButton} type="button" onClick={() => setQuantity(item, suggestion)}>{item.suggestionLabel || "Suggested quantity"}: {suggestion} {item.suggestionUnit || "units"}</button>}
                             {item.minimumQuantity && item.minimumQuantity > 1 && <small>Minimum order: {item.minimumQuantity}</small>}
                             {item.minimumGuests && item.minimumGuests > 1 && <small>Minimum guests: {item.minimumGuests}</small>}
-                            {errors[`quantity:${item.id}`] && <span className={styles.fieldError} id={fieldErrorId(`quantity:${item.id}`)}>{errors[`quantity:${item.id}`]}</span>}
                           </div>
                         </article>
                       );
