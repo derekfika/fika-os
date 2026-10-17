@@ -4,17 +4,17 @@
 
 This document's earlier Firebase Auth and DWD status below is historical and has been superseded by the later read-only verification in `production-drive-launch-preflight-2026-10-17.md`: Google sign-in/provider and production domains were verified; production Drive DWD was used successfully for the listed read-only Drive preflight. OAuth web-client secret rotation is a post-cutover security task at Derek's direction.
 
-**Cutover remains HOLD.** The live first-administrator path is still unresolved: the existing Derek AUTHMOD identity has no production UID binding or Administer grant, and the repository has no governed production one-time administrator bootstrap. The existing sign-in identity-binding flow does not grant administrator authority. Do not bypass this with a direct Firestore edit or `fullAccess`.
+**Cutover remains HOLD for the remaining sign-in and operational Drive gates.** The SOL-approved AUTHMOD policy migration is complete: Derek's existing identity now has the approved organisation-scoped Hub Administer grant, while the production Firebase UID remains unbound and `fullAccess=false`. After Google sign-in, the existing fail-closed Hub identity-binding flow can bind Derek's UID; no one-time first-admin bootstrap command is needed. Do not bypass the governed sign-in/binding flow or set `fullAccess`.
 
 The verified Drive configuration is also incomplete for a full operational rollout. Hospitality's per-dashboard quote/menu/matrix settings are absent from production and cannot be safely replaced by one shared folder root. MNK lacks its approved owner/folder/template values; CPU and Delivered-In lack approved owner/output roots (and Delivered-In's template). RCoA menu generation remains deferred because no approved template mapping exists. See the later Drive preflight record for exact IDs, pass/deferred states and config already prepared locally.
 
-No rollout, Git push, application-writer restoration, production Firestore mutation, email enablement or recovery-job activation was performed while these gates remain open. Keep application writers frozen, email off and recovery jobs paused.
+No rollout, Git push, application-writer restoration, business-data mutation, email enablement or recovery-job activation was performed while these gates remain open. The separately approved AUTHMOD policy migration changed only the approved policy collections and receipt; its exact execution is recorded in `production-authmod-policy-migration-2026-10-17.md`. Keep application writers frozen, email off and recovery jobs paused.
 
 ## Current verdict
 
-**HOLD — Google sign-in, initial AUTHMOD administrator enrollment, and production Workspace Drive access are not ready.** No application was deployed, no Git push occurred, no application Firestore writer was restored, and no production Firestore business data was changed in this task.
+**HOLD — remaining sign-in and operation-specific production Drive gates are not ready.** The AUTHMOD policy migration is complete, but Derek must still complete production Google sign-in so the existing identity-binding flow can bind the production UID. No application was deployed, no Git push occurred, no application Firestore writer was restored, and no production business data was changed in this task.
 
-The production Firestore bootstrap remains the previously verified 2,259-document exact set. The six application runtime identities remain frozen for Firestore writes; the three recovery jobs remain paused; customer email remains unavailable/off.
+The original production Firestore bootstrap remains intact at 2,259 documents; the separately migrated AUTHMOD policy and receipt add 121 documents (2,380 total). The six application runtime identities remain frozen for Firestore writes; the three recovery jobs remain paused; customer email remains unavailable/off.
 
 ## Firebase Authentication
 
@@ -47,11 +47,11 @@ The intended Derek identity already exists:
 - `authid:32fa3852-01d6-475f-bc7c-3204b3cdbdf7`
 - active identity; normalized email `derek@fikacatering.com`
 - production Firebase UID/provider binding is currently absent, as required by the bootstrap transform
-- `fullAccess=false`; no AUTHMOD Administer grant exists
+- `fullAccess=false`; the approved migration added an organisation-scoped `integration-hub` / `authmod` / `Administer` grant and a Hub app assignment. No Firebase UID was copied or assigned.
 
 After valid Google sign-in, Integration Hub's existing `resolveSessionIdentity` flow verifies the Firebase token and allowed company email, looks up the unique active email identity, binds the Firebase UID through the governed `bindExternalIdentity` mutation, and emits `auth-identity-bound` audit evidence. It fails closed for duplicates, inactive identities, unknown email, invalid/old tokens, or unavailable authority.
 
-That flow only binds identity; it does **not** grant Administer authority. Existing `grantAuthmodAdmin` requires an already-authorized AUTHMOD administrator. The only existing bootstrap scripts are staging-only or local-only. **No production one-time administrator bootstrap command exists.** Do not use `fullAccess`, a direct Firestore edit, or a staging script as a shortcut. A reviewed, one-time, production-only bootstrap path must be implemented and approved before Derek can become the first administrator. It must bind only this existing identity, grant only the explicit Administer authority, and produce durable actor/reason/target/before-after audit evidence.
+That flow only binds identity; authority now comes from the completed SOL-approved migration, which created the three production-native enrollment records and durable migration audit receipt. Therefore, **a first-admin bootstrap command is unnecessary**. After successful sign-in, the governed binding flow can bind Derek's production UID to this existing identity and the migrated Administer authority becomes effective. The flow remains fail-closed for invalid, duplicate, inactive, or unknown identities.
 
 ## Workspace Drive DWD
 
@@ -110,7 +110,7 @@ Use `firebase apphosting:rollouts:create --project=fika-os --git-commit <EXACT_R
 
 Keep all six Firestore writers frozen during rollout and non-mutating smoke. After auth, Admin enrollment and read-only smoke gates pass, restore `roles/datastore.user` project binding only for the five identities that had that role removed, one at a time, before the first approved write smoke for that app:
 
-1. Hub, only after the reviewed one-time initial Admin enrollment has succeeded; it is needed for AUTHMOD and identity binding.
+1. Hub, only after Derek's production sign-in has bound his UID to the existing identity and read-only AUTHMOD smoke passes; it is needed for AUTHMOD and future identity binding.
 2. Menu Planning, before first governed menu write/publication smoke.
 3. CPU Production, before first production write/release smoke.
 4. Logistics, before first logistics mutation/recovery operation (recovery Scheduler remains paused until separately approved).
