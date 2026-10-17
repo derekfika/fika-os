@@ -31,72 +31,202 @@ function packageHeadId(key: string) { return key.replace(/[^A-Za-z0-9:_-]+/g, "_
 function sequenceOf(manifest: ReadPackageManifest | undefined) { return Number(manifest?.sourceVersion?.replace("cpu-change-", "") || 0); }
 function packageConflict(sequence: number) { return Object.assign(new Error(`CPU package sequence ${sequence} has conflicting content.`), { code: "CPU_PACKAGE_SEQUENCE_CONFLICT", status: 409 }); }
 
-async function publishHostedCpuPackage(store: ReadPackageStore, key: string, encoded: { manifest: ReadPackageManifest; bytes: Uint8Array }, sourceHash: string) {
+type CpuPackageHeadSnapshot = { exists: boolean; data(): unknown };
+export type CpuPackageHeadTransaction = { get(ref: unknown): Promise<CpuPackageHeadSnapshot>; set(ref: unknown, value: unknown): unknown };
+export type CpuPackagePublicationDiagnostic = {
+  event: "cpu.package.publication";
+  stage: string;
+  outcome: "started" | "read" | "absent" | "staged" | "committed" | "completed" | "verified" | "failed" | "idempotent" | "superseded";
+  requestId?: string;
+  dataset: string;
+  scope?: string;
+  project?: string;
+  database: string;
+  runtimeIdentity?: string;
+  resourceClass: "firestore-document" | "gcs-manifest" | "gcs-immutable-object";
+  resource: string;
+  packageVersion: number;
+  sourceSequence: number;
+  errorName?: string;
+  errorCode?: string | number;
+};
+export type CpuPackagePublicationAdapters = {
+  headRef: unknown;
+  headPath: string;
+  runTransaction<T>(callback: (transaction: CpuPackageHeadTransaction) => Promise<T>): Promise<T>;
+  log?(diagnostic: CpuPackagePublicationDiagnostic): void;
+};
+export type CpuPackagePublicationContext = { requestId?: string };
+
+function safeRequestId(value: string | undefined) { return value ? value.replace(/[^A-Za-z0-9._:-]/g, "_").slice(0, 128) : undefined; }
+function safeErrorCode(error: unknown) {
+  if (!error || typeof error !== "object") return undefined;
+  const code = (error as { code?: unknown; status?: unknown; statusCode?: unknown }).code ?? (error as { status?: unknown }).status ?? (error as { statusCode?: unknown }).statusCode;
+  if (typeof code === "number") return code;
+  return typeof code === "string" ? code.replace(/[^A-Za-z0-9_.:/-]/g, "_").slice(0, 80) : undefined;
+}
+function defaultPublicationLog(diagnostic: CpuPackagePublicationDiagnostic) {
+  const line = JSON.stringify(diagnostic);
+  if (diagnostic.outcome === "failed") console.error(line);
+  else console.info(line);
+}
+function publicationDiagnostic(manifest: ReadPackageManifest, key: string, stage: string, outcome: CpuPackagePublicationDiagnostic["outcome"], resourceClass: CpuPackagePublicationDiagnostic["resourceClass"], resource: string, context: CpuPackagePublicationContext, error?: unknown): CpuPackagePublicationDiagnostic {
+  const errorName = error && typeof error === "object" && "name" in error && typeof error.name === "string" ? error.name.slice(0, 80) : undefined;
+  return {
+    event: "cpu.package.publication", stage, outcome,
+    ...(safeRequestId(context.requestId) ? { requestId: safeRequestId(context.requestId) } : {}),
+    dataset: manifest.dataset, ...(manifest.scope ? { scope: manifest.scope } : { scope: key }),
+    ...(process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT ? { project: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT } : {}),
+    database: "(default)",
+    ...(process.env.FIKA_RUNTIME_SERVICE_ACCOUNT || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ? { runtimeIdentity: process.env.FIKA_RUNTIME_SERVICE_ACCOUNT || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL } : {}),
+    resourceClass, resource, packageVersion: manifest.packageVersion, sourceSequence: sequenceOf(manifest),
+    ...(errorName ? { errorName } : {}), ...(safeErrorCode(error) !== undefined ? { errorCode: safeErrorCode(error) } : {}),
+  };
+}
+function emitPublicationDiagnostic(adapters: Pick<CpuPackagePublicationAdapters, "log"> | undefined, diagnostic: CpuPackagePublicationDiagnostic) {
+  try { (adapters?.log || defaultPublicationLog)(diagnostic); } catch { /* Diagnostics must not change package publication semantics. */ }
+}
+function defaultHostedPublicationAdapters(key: string): CpuPackagePublicationAdapters {
   const ref = cpuProjectionPackageHeads().doc(packageHeadId(key));
-  const prepared = await db.runTransaction(async transaction => {
-    const snapshot = await transaction.get(ref);
-    const head = snapshot.exists ? snapshot.data() as CpuPackageHead : undefined;
-    const currentSequence = Math.max(Number(head?.sourceSequence ?? -1), Number(head?.pending?.sourceSequence ?? -1));
-    const incomingSequence = sequenceOf(encoded.manifest);
-    if (incomingSequence < currentSequence) {
-      if (head?.state === "current" && head.manifest) return { action: "superseded" as const, manifest: head.manifest };
-      throw Object.assign(new Error("CPU package materialisation is superseded and has no current package."), { code: "CPU_PACKAGE_SUPERSEDED", status: 409 });
-    }
-    if (head?.state === "current" && incomingSequence === head.sourceSequence) {
-      if (head.sourceHash !== sourceHash) throw packageConflict(incomingSequence);
-      return { action: "idempotent" as const, manifest: head.manifest };
-    }
-    if (head?.pending && incomingSequence === head.pending.sourceSequence && (head.pending.sourceHash !== sourceHash || head.pending.manifest.contentHash !== encoded.manifest.contentHash)) throw packageConflict(incomingSequence);
-    transaction.set(ref, { state: "pending", sourceSequence: head?.sourceSequence ?? -1, sourceHash: head?.sourceHash || "", ...(head?.manifest ? { manifest: head.manifest } : {}), pending: { sourceSequence: incomingSequence, sourceHash, manifest: encoded.manifest }, updatedAt: new Date().toISOString() });
-    return { action: "publish" as const };
-  });
+  return {
+    headRef: ref, headPath: ref.path,
+    runTransaction: callback => db.runTransaction(transaction => callback(transaction as unknown as CpuPackageHeadTransaction)),
+  };
+}
+
+/** Hosted publisher exposed with adapters so stage failures can be tested without cloud access. */
+export async function publishHostedCpuPackage(store: ReadPackageStore, key: string, encoded: { manifest: ReadPackageManifest; bytes: Uint8Array }, sourceHash: string, adapters = defaultHostedPublicationAdapters(key), context: CpuPackagePublicationContext = {}) {
+  const { manifest } = encoded;
+  const headResource = adapters.headPath;
+  const objectResource = manifest.objectName;
+  let pendingWriteStaged = false;
+  let prepared: { action: "superseded"; manifest?: ReadPackageManifest } | { action: "idempotent"; manifest?: ReadPackageManifest } | { action: "publish" };
+  emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "package-head-read", "started", "firestore-document", headResource, context));
+  try {
+    prepared = await adapters.runTransaction(async transaction => {
+      let snapshot: CpuPackageHeadSnapshot;
+      try { snapshot = await transaction.get(adapters.headRef); }
+      catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "package-head-read", "failed", "firestore-document", headResource, context, error)); throw error; }
+      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "package-head-read", snapshot.exists ? "read" : "absent", "firestore-document", headResource, context));
+      const head = snapshot.exists ? snapshot.data() as CpuPackageHead : undefined;
+      const currentSequence = Math.max(Number(head?.sourceSequence ?? -1), Number(head?.pending?.sourceSequence ?? -1));
+      const incomingSequence = sequenceOf(manifest);
+      if (incomingSequence < currentSequence) {
+        if (head?.state === "current" && head.manifest) return { action: "superseded" as const, manifest: head.manifest };
+        throw Object.assign(new Error("CPU package materialisation is superseded and has no current package."), { code: "CPU_PACKAGE_SUPERSEDED", status: 409 });
+      }
+      if (head?.state === "current" && incomingSequence === head.sourceSequence) {
+        if (head.sourceHash !== sourceHash) throw packageConflict(incomingSequence);
+        return { action: "idempotent" as const, manifest: head.manifest };
+      }
+      if (head?.pending && incomingSequence === head.pending.sourceSequence && (head.pending.sourceHash !== sourceHash || head.pending.manifest.contentHash !== manifest.contentHash)) throw packageConflict(incomingSequence);
+      pendingWriteStaged = true;
+      transaction.set(adapters.headRef, { state: "pending", sourceSequence: head?.sourceSequence ?? -1, sourceHash: head?.sourceHash || "", ...(head?.manifest ? { manifest: head.manifest } : {}), pending: { sourceSequence: incomingSequence, sourceHash, manifest }, updatedAt: new Date().toISOString() });
+      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "pending-head-write", "staged", "firestore-document", headResource, context));
+      return { action: "publish" as const };
+    });
+    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, pendingWriteStaged ? "pending-head-commit" : "package-head-transaction", pendingWriteStaged ? "committed" : "read", "firestore-document", headResource, context));
+  } catch (error) {
+    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, pendingWriteStaged ? "pending-head-commit" : "package-head-read", "failed", "firestore-document", headResource, context, error));
+    throw error;
+  }
   if (prepared.action === "superseded") {
-    if (!prepared.manifest) throw Object.assign(new Error("CPU package materialisation was superseded before a current package existed."), { code: "CPU_PACKAGE_SUPERSEDED", status: 409 });
+    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "package-head-read", "superseded", "firestore-document", headResource, context));
+    if (!prepared.manifest) throw Object.assign(new Error("CPU package materialisation is superseded before a current package exists."), { code: "CPU_PACKAGE_SUPERSEDED", status: 409 });
     return prepared.manifest;
   }
   if (prepared.action === "idempotent") {
-    const manifest = prepared.manifest!;
-    const bytes = await store.get(manifest.objectName);
-    if (!bytes) throw new Error(`Read package ${manifest.objectName} was not persisted.`);
-    const saved = decodeReadPackage<{ projection: CpuProjectionPackage }>(manifest, bytes);
-    if (cpuProjectionContentHash(saved.projection) !== sourceHash) throw packageConflict(sequenceOf(manifest));
-    return manifest;
+    const currentManifest = prepared.manifest!;
+    emitPublicationDiagnostic(adapters, publicationDiagnostic(currentManifest, key, "package-head-read", "idempotent", "firestore-document", headResource, context));
+    let bytes: Uint8Array | undefined;
+    try { bytes = await store.get(currentManifest.objectName); }
+    catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(currentManifest, key, "idempotent-integrity-readback", "failed", "gcs-immutable-object", currentManifest.objectName, context, error)); throw error; }
+    if (!bytes) { const error = new Error(`Read package ${currentManifest.objectName} was not persisted.`); emitPublicationDiagnostic(adapters, publicationDiagnostic(currentManifest, key, "idempotent-integrity-readback", "failed", "gcs-immutable-object", currentManifest.objectName, context, error)); throw error; }
+    try {
+      const saved = decodeReadPackage<{ projection: CpuProjectionPackage }>(currentManifest, bytes);
+      if (cpuProjectionContentHash(saved.projection) !== sourceHash) throw packageConflict(sequenceOf(currentManifest));
+    } catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(currentManifest, key, "idempotent-integrity-readback", "failed", "gcs-immutable-object", currentManifest.objectName, context, error)); throw error; }
+    emitPublicationDiagnostic(adapters, publicationDiagnostic(currentManifest, key, "idempotent-integrity-readback", "verified", "gcs-immutable-object", currentManifest.objectName, context));
+    return currentManifest;
   }
   try {
-    await store.putImmutable(encoded.manifest.objectName, encoded.bytes, encoded.manifest.contentHash);
-    const persisted = await store.get(encoded.manifest.objectName);
-    if (!persisted) throw new Error(`Read package ${encoded.manifest.objectName} was not persisted.`);
-    decodeReadPackage<{ projection: CpuProjectionPackage }>(encoded.manifest, persisted);
-    const promoted = await db.runTransaction(async transaction => {
-      const snapshot = await transaction.get(ref);
-      const head = snapshot.exists ? snapshot.data() as CpuPackageHead : undefined;
-      const incomingSequence = sequenceOf(encoded.manifest);
-      if (head?.state === "current" && head.sourceSequence === incomingSequence) {
-        if (head.sourceHash !== sourceHash || head.manifest?.contentHash !== encoded.manifest.contentHash) throw packageConflict(incomingSequence);
-        return head.manifest!;
-      }
-      if (Number(head?.pending?.sourceSequence ?? -1) !== incomingSequence || head?.pending?.sourceHash !== sourceHash || head.pending.manifest.contentHash !== encoded.manifest.contentHash) {
-        if (head?.state === "current" && head.manifest) return head.manifest;
-        throw Object.assign(new Error("CPU package materialisation was superseded before promotion."), { code: "CPU_PACKAGE_SUPERSEDED", status: 409 });
-      }
-      transaction.set(ref, { state: "current", sourceSequence: incomingSequence, sourceHash, manifest: encoded.manifest, updatedAt: new Date().toISOString() });
-      return encoded.manifest;
-    });
+    let objectExists: boolean;
+    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "immutable-object-existence", "started", "gcs-immutable-object", objectResource, context));
+    try { objectExists = await store.has(objectResource); }
+    catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "immutable-object-existence", "failed", "gcs-immutable-object", objectResource, context, error)); throw error; }
+    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "immutable-object-existence", objectExists ? "read" : "absent", "gcs-immutable-object", objectResource, context));
+    if (!objectExists) {
+      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "immutable-object-create", "started", "gcs-immutable-object", objectResource, context));
+      try { await store.putImmutable(objectResource, encoded.bytes, manifest.contentHash); }
+      catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "immutable-object-create", "failed", "gcs-immutable-object", objectResource, context, error)); throw error; }
+      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "immutable-object-create", "completed", "gcs-immutable-object", objectResource, context));
+    }
+    let persisted: Uint8Array | undefined;
+    try { persisted = await store.get(objectResource); }
+    catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "integrity-readback", "failed", "gcs-immutable-object", objectResource, context, error)); throw error; }
+    if (!persisted) { const error = new Error(`Read package ${objectResource} was not persisted.`); emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "integrity-readback", "failed", "gcs-immutable-object", objectResource, context, error)); throw error; }
+    try { decodeReadPackage<{ projection: CpuProjectionPackage }>(manifest, persisted); }
+    catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "integrity-readback", "failed", "gcs-immutable-object", objectResource, context, error)); throw error; }
+    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "integrity-readback", "verified", "gcs-immutable-object", objectResource, context));
+
+    let promotionWriteStaged = false;
+    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "current-head-promotion-read", "started", "firestore-document", headResource, context));
+    let promoted: ReadPackageManifest;
+    try {
+      promoted = await adapters.runTransaction(async transaction => {
+        let snapshot: CpuPackageHeadSnapshot;
+        try { snapshot = await transaction.get(adapters.headRef); }
+        catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "current-head-promotion-read", "failed", "firestore-document", headResource, context, error)); throw error; }
+        emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "current-head-promotion-read", snapshot.exists ? "read" : "absent", "firestore-document", headResource, context));
+        const head = snapshot.exists ? snapshot.data() as CpuPackageHead : undefined;
+        const incomingSequence = sequenceOf(manifest);
+        if (head?.state === "current" && head.sourceSequence === incomingSequence) {
+          if (head.sourceHash !== sourceHash || head.manifest?.contentHash !== manifest.contentHash) throw packageConflict(incomingSequence);
+          return head.manifest!;
+        }
+        if (Number(head?.pending?.sourceSequence ?? -1) !== incomingSequence || head?.pending?.sourceHash !== sourceHash || head.pending.manifest.contentHash !== manifest.contentHash) {
+          if (head?.state === "current" && head.manifest) return head.manifest;
+          throw Object.assign(new Error("CPU package materialisation was superseded before promotion."), { code: "CPU_PACKAGE_SUPERSEDED", status: 409 });
+        }
+        promotionWriteStaged = true;
+        transaction.set(adapters.headRef, { state: "current", sourceSequence: incomingSequence, sourceHash, manifest, updatedAt: new Date().toISOString() });
+        emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "current-head-promotion-write", "staged", "firestore-document", headResource, context));
+        return manifest;
+      });
+      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, promotionWriteStaged ? "current-head-promotion-commit" : "current-head-promotion-transaction", promotionWriteStaged ? "committed" : "read", "firestore-document", headResource, context));
+    } catch (error) {
+      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, promotionWriteStaged ? "current-head-promotion-commit" : "current-head-promotion-read", "failed", "firestore-document", headResource, context, error));
+      throw error;
+    }
     return promoted;
   } catch (error) {
-    await db.runTransaction(async transaction => {
-      const snapshot = await transaction.get(ref);
-      const head = snapshot.exists ? snapshot.data() as CpuPackageHead : undefined;
-      if (head?.pending?.sourceSequence === sequenceOf(encoded.manifest) && head.pending.sourceHash === sourceHash && head.pending.manifest.contentHash === encoded.manifest.contentHash) {
-        transaction.set(ref, { ...head, state: "failed", failure: { message: error instanceof Error ? error.message : "CPU package materialisation failed.", at: new Date().toISOString() }, updatedAt: new Date().toISOString() });
-      }
-    });
+    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-read", "started", "firestore-document", headResource, context));
+    let cleanupWriteStaged = false;
+    let cleanupFailureStage = "failure-cleanup-read";
+    try {
+      await adapters.runTransaction(async transaction => {
+        let snapshot: CpuPackageHeadSnapshot;
+        try { snapshot = await transaction.get(adapters.headRef); }
+        catch (cleanupReadError) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-read", "failed", "firestore-document", headResource, context, cleanupReadError)); throw cleanupReadError; }
+        emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-read", snapshot.exists ? "read" : "absent", "firestore-document", headResource, context));
+        const head = snapshot.exists ? snapshot.data() as CpuPackageHead : undefined;
+        if (head?.pending?.sourceSequence === sequenceOf(manifest) && head.pending.sourceHash === sourceHash && head.pending.manifest.contentHash === manifest.contentHash) {
+          cleanupWriteStaged = true;
+          cleanupFailureStage = "failure-cleanup-commit";
+          transaction.set(adapters.headRef, { ...head, state: "failed", failure: { message: error instanceof Error ? error.message : "CPU package materialisation failed.", at: new Date().toISOString() }, updatedAt: new Date().toISOString() });
+          emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-write", "staged", "firestore-document", headResource, context));
+        }
+      });
+      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-commit", cleanupWriteStaged ? "committed" : "read", "firestore-document", headResource, context));
+    } catch (cleanupError) {
+      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, cleanupFailureStage, "failed", "firestore-document", headResource, context, cleanupError));
+    }
     throw error;
   }
 }
 
-export async function publishMonotonicCpuPackage(store: ReadPackageStore, key: string, encoded: { manifest: ReadPackageManifest; bytes: Uint8Array }, sourceHash: string) {
-  if (hostedPackageRuntime()) return publishHostedCpuPackage(store, key, encoded, sourceHash);
+export async function publishMonotonicCpuPackage(store: ReadPackageStore, key: string, encoded: { manifest: ReadPackageManifest; bytes: Uint8Array }, sourceHash: string, adapters?: CpuPackagePublicationAdapters, context: CpuPackagePublicationContext = {}) {
+  if (hostedPackageRuntime()) return publishHostedCpuPackage(store, key, encoded, sourceHash, adapters || defaultHostedPublicationAdapters(key), context);
   const previous = await store.getManifest(key);
   const incomingSequence = sequenceOf(encoded.manifest);
   if (previous && incomingSequence < sequenceOf(previous)) return previous;
@@ -133,13 +263,19 @@ export async function getCurrentHostedCpuPackage<T>(store: ReadPackageStore, key
   return { manifest: head.manifest, value };
 }
 
-export async function publishCpuProjectionPackage(projection: CpuProjectionPackage): Promise<ReadPackageManifest> {
+export async function publishCpuProjectionPackage(projection: CpuProjectionPackage, context: CpuPackagePublicationContext = {}, dependencies: { store?: ReadPackageStore; adapters?: CpuPackagePublicationAdapters } = {}): Promise<ReadPackageManifest> {
     const key = keyFor(projection);
   const existing = publicationInFlight.get(key);
   if (existing) return existing;
   const publication = (async () => {
-    const store = cpuPackageStore();
-    const previous = await store.getManifest(key);
+      const store = dependencies.store || cpuPackageStore();
+    const manifestProbe = { dataset: datasetFor(projection), scope: scopeFor(projection), packageVersion: 0, sourceVersion: `cpu-change-${projection.lastChangeSequence}` } as ReadPackageManifest;
+    const resource = `manifests/${key}.json`;
+    emitPublicationDiagnostic(dependencies.adapters, publicationDiagnostic(manifestProbe, key, "manifest-retrieval", "started", "gcs-manifest", resource, context));
+    let previous: ReadPackageManifest | undefined;
+    try { previous = await store.getManifest(key); }
+    catch (error) { emitPublicationDiagnostic(dependencies.adapters, publicationDiagnostic(manifestProbe, key, "manifest-retrieval", "failed", "gcs-manifest", resource, context, error)); throw error; }
+    emitPublicationDiagnostic(dependencies.adapters, publicationDiagnostic(previous || manifestProbe, key, "manifest-retrieval", previous ? "read" : "absent", "gcs-manifest", resource, context));
     const version = (previous?.packageVersion || 0) + 1;
     const value = { projection };
     const encoded = encodeReadPackage(datasetFor(projection), version, value, projection.orders.length, {
@@ -148,7 +284,7 @@ export async function publishCpuProjectionPackage(projection: CpuProjectionPacka
       sourceHash: cpuProjectionContentHash(projection),
       scope: scopeFor(projection),
     });
-    return publishMonotonicCpuPackage(store, key, encoded, cpuProjectionContentHash(projection));
+    return publishMonotonicCpuPackage(store, key, encoded, cpuProjectionContentHash(projection), dependencies.adapters, context);
   })().finally(() => publicationInFlight.delete(key));
   publicationInFlight.set(key, publication);
   return publication;

@@ -6,6 +6,7 @@ import test from "node:test";
 import { decodeReadPackage, encodeReadPackage } from "@fika/server-shared/read-package";
 import { cpuProjectionPackageIsCurrent, publishCpuProjectionPackage, getCpuProjectionPackage, publishMonotonicCpuPackage } from "../lib/cpu-read-package";
 import { downloadCpuPackageBytes } from "../lib/cpu-package-store";
+import { cpuProjectionContentHash } from "../lib/cpu-projection-repository";
 import { cpuProjectionCacheEntryMatches } from "../app/lib/cpu-indexeddb";
 import { buildCpuDayProjection, recoverMissingCpuDayProjection, initialiseEmptyCpuWeekProjection, type CpuDayProjection, type CpuWeekProjection, type EmptyWeekInitialisationDependencies } from "../lib/cpu-projection";
 import { europeLondonDate } from "../lib/operational-date";
@@ -194,6 +195,31 @@ test("unseen empty week normal-read initialisation publishes one valid zero-orde
   assert.deepEqual(second?.projection, result?.projection);
   assert.equal(writes, 1);
   assert.equal(publications, 2);
+});
+
+test("valid stored empty week reuses its projection identity without another projection write", async () => {
+  const weekCommencing = "2030-01-14";
+  const stored: CpuWeekProjection = {
+    serviceDate: weekCommencing, weekCommencing, revision: 7, lastChangeSequence: 23,
+    orders: [], summary: { orders: 0, ready: 0, attention: 0, planned: 0, totalUnits: 0 },
+    rebuiltAt: "2030-01-13T18:00:00.000Z", projectionContentHash: "stored-identity-hash",
+  };
+  let writes = 0;
+  let published: CpuWeekProjection | undefined;
+  const dependencies: EmptyWeekInitialisationDependencies = {
+    loadOrders: async () => [],
+    readProjection: async () => ({ exists: true, data: () => stored }),
+    writeProjection: async () => { writes += 1; },
+    publishPackage: async value => { published = value; return encodeReadPackage("snapshots/cpu-production/projection-week", 2, { projection: value }, 0).manifest; },
+  };
+  const result = await initialiseEmptyCpuWeekProjection(undefined as never, weekCommencing, dependencies);
+  assert.deepEqual(result?.projection, stored);
+  assert.deepEqual(published, stored);
+  assert.equal(result?.projection.revision, 7);
+  assert.equal(result?.projection.lastChangeSequence, 23);
+  assert.equal(result?.projection.projectionContentHash, "stored-identity-hash");
+  assert.equal(writes, 0);
+  assert.equal(cpuProjectionContentHash(stored), cpuProjectionContentHash(published!));
 });
 
 test("non-empty missing week package refuses empty-week masquerading", async () => {

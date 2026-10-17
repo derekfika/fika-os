@@ -12,6 +12,41 @@ export async function downloadCpuPackageBytes(file: { download(options?: { decom
   return bytes;
 }
 
+function storageStatus(error: unknown) {
+  if (!error || typeof error !== "object") return undefined;
+  const candidate = error as { code?: unknown; statusCode?: unknown; response?: { statusCode?: unknown } };
+  for (const value of [candidate.code, candidate.statusCode, candidate.response?.statusCode]) {
+    const numeric = typeof value === "number" ? value : typeof value === "string" && /^\d{3}$/.test(value) ? Number(value) : undefined;
+    if (numeric !== undefined) return numeric;
+  }
+  return undefined;
+}
+
+export function isCpuStorageNotFound(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { code?: unknown; statusCode?: unknown; response?: { statusCode?: unknown } };
+  return storageStatus(error) === 404 || candidate.code === "storage/object-not-found";
+}
+
+/** Hosted manifests are absent only for an actual GCS 404; all other failures are operational errors. */
+export async function downloadCpuManifestBytes(file: { download(options?: { decompress?: boolean }): Promise<[Buffer]> }) {
+  try {
+    const [bytes] = await file.download();
+    return bytes;
+  } catch (error) {
+    if (isCpuStorageNotFound(error)) return undefined;
+    throw error;
+  }
+}
+
+export function parseCpuManifestBytes(bytes: Uint8Array, objectName: string): ReadPackageManifest {
+  try {
+    return JSON.parse(Buffer.from(bytes).toString("utf8")) as ReadPackageManifest;
+  } catch (cause) {
+    throw Object.assign(new Error(`CPU read-package manifest ${objectName} contains invalid JSON.`, { cause }), { code: "CPU_PACKAGE_MANIFEST_INVALID" });
+  }
+}
+
 function localStore(): ReadPackageStore {
   const file = (name: string) => path.join(localRoot(), name);
   return {
@@ -37,7 +72,7 @@ function cloudStore(): ReadPackageStore {
     // the manifest from being published.
     async get(name) { try { return await downloadCpuPackageBytes(bucket.file(name)); } catch (error) { if ((error as { code?: number }).code === 404) return undefined; throw error; } },
     async has(name) { const [exists] = await bucket.file(name).exists(); return exists; },
-    async getManifest(key) { const [bytes] = await bucket.file(`manifests/${key}.json`).download().catch(() => [undefined] as const); return bytes ? JSON.parse(bytes.toString("utf8")) as ReadPackageManifest : undefined; },
+    async getManifest(key) { const objectName = `manifests/${key}.json`; const bytes = await downloadCpuManifestBytes(bucket.file(objectName)); return bytes ? parseCpuManifestBytes(bytes, objectName) : undefined; },
     async putManifest(key, manifest) { await bucket.file(`manifests/${key}.json`).save(JSON.stringify(manifest), { resumable: false, metadata: { contentType: "application/json" } }); },
   };
 }

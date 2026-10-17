@@ -159,3 +159,14 @@ test("CPU projection compare-and-write is monotonic across independent workers",
   assert.equal(compareMonotonicProjectionWrite(current, { ...newer, revision: 99, rebuiltAt: "later" }).status, "idempotent");
   assert.throws(() => compareMonotonicProjectionWrite(current, { ...newer, orders: [order("order:conflict")] }), /conflicting content/);
 });
+
+test("projection hash ordering remains compatible and reordered same-sequence content conflicts", () => {
+  const first = { serviceDate: "2036-02-02", lastChangeSequence: 5, revision: 1, orders: [{ id: "order:1", fields: { a: 1, b: 2 } }] };
+  const reordered = { serviceDate: "2036-02-02", lastChangeSequence: 5, revision: 2, orders: [{ id: "order:1", fields: { b: 2, a: 1 } }] };
+  const firstHash = cpuProjectionContentHash(first);
+  const reorderedHash = cpuProjectionContentHash(reordered);
+  assert.notEqual(firstHash, reorderedHash);
+  const stored = { ...first, projectionContentHash: firstHash };
+  const incoming = { ...reordered, projectionContentHash: reorderedHash };
+  assert.throws(() => compareMonotonicProjectionWrite(stored, incoming), /conflicting content/);
+});

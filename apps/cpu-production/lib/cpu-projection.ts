@@ -16,6 +16,7 @@ export type CpuProjectionLine = { sourceLineId: string; sourceBookingLineId?: st
 export type CpuProjectionOrder = { id: string; serviceDate: string; requiredBy: string; serviceWindow: ProductionOrder["serviceWindow"]; origin?: string; sourceReference?: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string; destinationOplocId?: string; destinationLabel?: string; clientName?: string; serviceType?: string; productionCategory?: ProductionOrder["productionCategory"]; requiresDelivery?: boolean; pax?: number; priority: ProductionOrder["priority"]; status: ProductionStatus; workflowStatus?: ProductionStatus; cancellationNotice?: string; productionScope?: string; quantities: CpuProjectionLine[]; bookingDietaries?: Record<string, unknown>; bookingNotes?: string; allergenReadiness: string; planningReadiness: string; attention: string[]; version: number };
 export type CpuDayProjection = { serviceDate: string; revision: number; lastChangeSequence: number; projectionContentHash?: string; orders: CpuProjectionOrder[]; summary: { orders: number; ready: number; attention: number; planned: number; totalUnits: number }; rebuiltAt: string };
 export type CpuWeekProjection = { serviceDate: string; weekCommencing: string; revision: number; lastChangeSequence: number; projectionContentHash?: string; orders: CpuProjectionOrder[]; summary: CpuDayProjection["summary"]; rebuiltAt: string };
+function cpuPackagePublicationContext(request: NextRequest) { return { requestId: request.headers.get("x-request-id") || request.headers.get("x-cloud-trace-context") || request.headers.get("traceparent") || undefined }; }
 export const appendCpuChange = (input: Omit<CpuChangeEvent, "sequence"> & CpuChangeWithPropagation) => appendProjectionChange(input);
 export async function listCpuChanges(after: number, serviceDate: string) { const snapshot = await cpuChanges().where("serviceDate", "==", serviceDate).where("sequence", ">", after).orderBy("sequence", "asc").get(); recordDataAccess({ app: "cpu-production", operation: "changes.service-date", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" }); return snapshot.docs.map((doc) => doc.data() as CpuChangeEvent); }
 export async function latestCpuChangeSequence(serviceDate: string) { const snapshot = await cpuChanges().where("serviceDate", "==", serviceDate).orderBy("sequence", "desc").limit(1).get(); recordDataAccess({ app: "cpu-production", operation: "changes.latest-service-date", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" }); return Number((snapshot.docs[0]?.data() as { sequence?: unknown } | undefined)?.sequence || 0); }
@@ -44,7 +45,7 @@ export async function materialiseCpuDayProjection(request: NextRequest, serviceD
   const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   const written = await writeCpuProjectionMonotonically(cpuProjections().doc(serviceDate), projection);
   const current = written.projection as CpuDayProjection;
-  const manifest = await publishCpuProjectionPackage(current);
+  const manifest = await publishCpuProjectionPackage(current, cpuPackagePublicationContext(request));
   recordDeliveredInReadBudget({ stage: "day_projection_rebuild", projectionDocs: 1, selectedIds: orders.length, rebuildScopes: 1 });
   return { projection: current, manifest };
 }
@@ -74,7 +75,7 @@ export async function rebuildCpuWeekProjection(request: NextRequest, weekCommenc
   const week: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };
   const written = await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), week);
   if (written.status === "superseded") return written.projection as CpuWeekProjection;
-  await publishCpuProjectionPackage(written.projection as CpuWeekProjection);
+  await publishCpuProjectionPackage(written.projection as CpuWeekProjection, cpuPackagePublicationContext(request));
   recordDeliveredInReadBudget({ stage: "week_projection_rebuild", projectionDocs: 1, selectedIds: orders.length, rebuildScopes: 1 });
   return written.projection as CpuWeekProjection;
 }
@@ -171,7 +172,7 @@ export async function recoverMissingCpuWeekProjection(request: NextRequest, week
     const projection: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: built.revision, lastChangeSequence: built.lastChangeSequence, orders: built.orders, summary: built.summary, rebuiltAt: built.rebuiltAt };
     const written = await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), projection);
     const current = written.projection as CpuWeekProjection;
-    const manifest = await publishCpuProjectionPackage(current);
+    const manifest = await publishCpuProjectionPackage(current, cpuPackagePublicationContext(request));
     recordDeliveredInReadBudget({ stage: "week_projection_recovery", projectionDocs: previous.exists ? 1 : 0, selectedIds: orders.length, rebuildScopes: 1 });
     return { projection: current, manifest };
   })().finally(() => missingWeekRecoveryInFlight.delete(weekCommencing));
