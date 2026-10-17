@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyPlan, assertApproval, buildPlan, firestoreValue, sha256, validateJournal, validateResumableDestination, verifySavedPlan } from "./engine.mjs";
+import { readFileSync } from "node:fs";
+import { applyPlan, assertApproval, buildPlan, firestoreValue, menuCatalogueSourceIdentity, sha256, validateJournal, validateResumableDestination, verifyFinalDestination, verifySavedPlan } from "./engine.mjs";
 
 const sv = stringValue => ({ stringValue });
 const record = (path, fields, updateTime = "2026-10-17T00:00:00Z") => ({ path, fields, updateTime });
@@ -26,14 +27,39 @@ test("builds deterministic exact-path plan, explicit exclusions and identity tra
   assert.equal(firestoreValue(sv("firebase")), "firebase");
 });
 
-test("inventory timestamp is excluded from planHash while stale package head is excluded", () => {
-  const data = source([record("fikaMenuPlanningCatalogueManifests/catalogue", { sourceHash: sv("stale") }), record("fikaMenuPlanningCatalogue/dish:1", { name: sv("current source") })]);
+test("inventory timestamp is excluded from planHash and current Menu Planning head is retained", () => {
+  const dish = { canonicalId: "dish:1", name: "current source" };
+  const expectedHash = sha256({ schemaVersion: 1, items: [dish] });
+  const data = source([record("fikaMenuPlanningCatalogueManifests/catalogue", { sourceHash: sv(expectedHash) }), record("fikaMenuPlanningCatalogue/dish:1", { kind: sv("dish"), record: { mapValue: { fields: { canonicalId: sv("dish:1"), name: sv("current source") } } } })]);
   const first = buildPlan({ ...data, generatedAt: "2026-10-17T00:00:00Z" }, destination([]));
   const second = buildPlan({ ...data, generatedAt: "2026-10-17T01:00:00Z" }, destination([]));
   assert.equal(first.planHash, second.planHash);
-  assert.equal(first.retainedCount, 1);
-  assert.equal(first.excludedCount, 1);
-  assert.equal(first.actions.find(item => item.path === "fikaMenuPlanningCatalogueManifests/catalogue").reason, "stale-menu-catalogue-package-head");
+  assert.equal(first.retainedCount, 2);
+  assert.equal(first.excludedCount, 0);
+  assert.equal(first.actions.find(item => item.path === "fikaMenuPlanningCatalogueManifests/catalogue").action, "create");
+  assert.equal(first.menuCatalogue.sourceRecordCount, 1);
+  assert.equal(first.menuCatalogue.matchesHead, true);
+  assert.deepEqual(first.invariantProblems, []);
+});
+
+test("Menu Planning source identity matches publisher semantics and ignores sandwiches", () => {
+  const dish = { canonicalId: "dish:1", name: "Dish" };
+  const sandwich = { canonicalId: "sandwich:1", name: "Sandwich" };
+  const encode = value => {
+    if (value === null) return { nullValue: null };
+    if (typeof value === "string") return sv(value);
+    if (typeof value === "number") return { integerValue: String(value) };
+    if (typeof value === "boolean") return { booleanValue: value };
+    if (Array.isArray(value)) return { arrayValue: { values: value.map(encode) } };
+    return { mapValue: { fields: Object.fromEntries(Object.entries(value).map(([key, child]) => [key, encode(child)])) } };
+  };
+  const result = menuCatalogueSourceIdentity([
+    record("fikaMenuPlanningCatalogue/dish:1", { kind: sv("dish"), record: encode(dish) }),
+    record("fikaMenuPlanningCatalogue/sandwich:1", { kind: sv("sandwich"), record: encode(sandwich) }),
+  ]);
+  assert.equal(result.sourceRecordCount, 1);
+  assert.equal(result.nonDishRecordCount, 1);
+  assert.equal(result.sourceHash, sha256({ schemaVersion: 1, items: [dish] }));
 });
 
 test("requires both explicit hash approvals and zero invariant problems", () => {
@@ -84,6 +110,25 @@ test("source inventory hash includes missing-parent placeholders without countin
   assert.deepEqual(complete.sourcePlaceholders, ["orphan/parent"]);
   assert.notEqual(complete.planHash, buildPlan(source([record("ordinary/doc", {})]), destination([])).planHash);
   assert.match(complete.invariantProblems[0], /missing-parent placeholder/);
+});
+
+test("CLI recursively traverses showMissing placeholders and verifies the final destination exact set", () => {
+  const cli = readFileSync(new URL("./cli.mjs", import.meta.url), "utf8");
+  assert.match(cli, /showMissing:\s*"true"/);
+  assert.match(cli, /const missing = document\.fields === undefined/);
+  assert.match(cli, /listCollectionIds\(project, documentPath\)/);
+  assert.match(cli, /verifyFinalDestination\(approvedPlan, destinationAfter\)/);
+});
+
+test("final destination verification rejects missing, extra, changed and placeholder paths", () => {
+  const path = "integrationHubCanonical/item:final";
+  const sourceRecord = record(path, { entityType: sv("Hospitality Menu Item") });
+  const plan = buildPlan(source([sourceRecord]), destination([]));
+  assert.deepEqual(verifyFinalDestination(plan, destination([sourceRecord])), { verifiedDocumentCount: 1, verifiedPlaceholderCount: 0 });
+  assert.throws(() => verifyFinalDestination(plan, destination([])), /missing planned/);
+  assert.throws(() => verifyFinalDestination(plan, destination([sourceRecord, record("unexpected/doc", {})])), /unexpected document/);
+  assert.throws(() => verifyFinalDestination(plan, destination([record(path, { entityType: sv("changed") })])), /differs from the plan/);
+  assert.throws(() => verifyFinalDestination(plan, { ...destination([sourceRecord]), placeholders: [{ path: "orphan/parent" }] }), /missing-parent placeholder/);
 });
 
 test("non-empty destination is an apply-blocking invariant even without path collision", () => {

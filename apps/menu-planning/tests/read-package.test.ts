@@ -4,7 +4,8 @@ import { test } from "node:test";
 import { decodeReadPackage, encodeReadPackage, immutableObjectName } from "@fika/server-shared/read-package";
 import { cataloguePackageMatchesSource, getCatalogueReadPackage, publishCataloguePackage } from "../lib/catalogue-read-package";
 import { getCatalogueManifest } from "../lib/catalogue-manifest";
-import { catalogueSourceVersion } from "../lib/catalogue-source";
+import { catalogueSourceHash, catalogueSourceVersion } from "../lib/catalogue-source";
+import { menuCatalogueSourceIdentity } from "../../../tools/firestore-bootstrap/engine.mjs";
 
 test("read packages are immutable gzip objects with verifiable hashes", () => {
   const encoded = encodeReadPackage("snapshots/menu-planning/catalogue", 7, { entries: [{ id: "dish-1" }] }, 1);
@@ -51,6 +52,24 @@ test("successful catalogue package publication records the exact source identity
   assert.equal(manifest.sourceHash, source.sourceHash);
   assert.equal(manifest.sourceVersion, catalogueSourceVersion(source.sourceRevision!, source.sourceHash!));
   assert.equal((publishedManifest as any).sourceHash, source.sourceHash);
+});
+
+test("bootstrap verifier computes the same dish-only source hash as the package publisher", () => {
+  const dish = { canonicalId: "dish:one", name: "Soup", status: "active", revision: 3 };
+  const sandwich = { canonicalId: "sandwich:one", name: "Sandwich", status: "active", revision: 1 };
+  const encode = (value: any): any => value === null ? { nullValue: null }
+    : typeof value === "string" ? { stringValue: value }
+    : typeof value === "number" ? { integerValue: String(value) }
+    : typeof value === "boolean" ? { booleanValue: value }
+    : Array.isArray(value) ? { arrayValue: { values: value.map(encode) } }
+    : ({ mapValue: { fields: Object.fromEntries(Object.entries(value).map(([key, child]) => [key, encode(child)])) } });
+  const identity = menuCatalogueSourceIdentity([
+    { path: "fikaMenuPlanningCatalogue/dish:one", fields: { kind: { stringValue: "dish" }, record: encode(dish) } },
+    { path: "fikaMenuPlanningCatalogue/sandwich:one", fields: { kind: { stringValue: "sandwich" }, record: encode(sandwich) } },
+  ] as any);
+  assert.equal(identity.sourceRecordCount, 1);
+  assert.equal(identity.nonDishRecordCount, 1);
+  assert.equal(identity.sourceHash, catalogueSourceHash([dish as any]));
 });
 
 test("older materialisers cannot certify a newer source and current state never regresses", () => {

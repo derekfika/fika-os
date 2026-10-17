@@ -14,6 +14,7 @@ const RETAINED_ROOTS = new Set([
   "integrationHubHospitalityMenuProductionRouting",
   "integrationHubSourceMappings",
   "fikaMenuPlanningCatalogue",
+  "fikaMenuPlanningCatalogueManifests",
 ]);
 
 const RETAIN_REASONS = {
@@ -26,6 +27,7 @@ const RETAIN_REASONS = {
   integrationHubHospitalityMenuProductionRouting: "Hub-owned production routing decisions",
   integrationHubSourceMappings: "source-to-canonical mappings",
   fikaMenuPlanningCatalogue: "canonical Menu Planning catalogue, including archived history records",
+  fikaMenuPlanningCatalogueManifests: "verified Menu Planning catalogue package head for the retained canonical dish source",
 };
 
 const TRANSFORMS = [
@@ -43,7 +45,6 @@ const EXCLUSION_RULES = [
   { id: "derived-cross-domain-operations", roots: ["fikaDomainEventInboxV1", "fikaDomainEventsV1", "fikaFulfilmentRequirementsV1", "fikaProductionOrdersV1", "fikaProductionRequirements"], reason: "cross-domain operational events and derived Production/Fulfilment closure" },
   { id: "staging-audit-and-catalogue-migration-state", roots: ["integrationHubGovernanceAudit"], reason: "staging-side canonical governance audit evidence; preserve source-side and do not relabel as production" },
   { id: "environment-specific-bootstrap-state", roots: ["fikaDashboardQuoteSettings", "fikaMenuPlanningCatalogueCleanup", "integrationHubCacheManifests"], reason: "staging-specific folder settings, migration receipts and rebuildable cache metadata" },
-  { id: "stale-menu-catalogue-package-head", roots: ["fikaMenuPlanningCatalogueManifests"], reason: "staging package sourceHash does not match the freshly recomputed 404-record catalogue; rebuild before publishing the production head" },
 ];
 
 export function firestoreValue(value) {
@@ -85,6 +86,30 @@ export function sourceStateHash(inventory) {
   const records = (inventory.records || []).map(record => [fullPath(record), sourceRecordHash(record)]).sort(([a], [b]) => a.localeCompare(b));
   const placeholders = [...(inventory.placeholders || [])].map(item => typeof item === "string" ? item : item.path).sort();
   return sha256({ records, placeholders });
+}
+
+/** Match Menu Planning's catalogueSourceHash contract (schema v1, dish rows
+ * only, ordered by canonicalId). The collection also contains sandwiches,
+ * which are not inputs to the catalogue package and must not affect identity.
+ */
+export function menuCatalogueSourceIdentity(records) {
+  const sourceRecords = records.filter(record => fullPath(record)?.split("/")[0] === "fikaMenuPlanningCatalogue");
+  const dishes = sourceRecords
+    .filter(record => firestoreValue(record.fields?.kind) === "dish")
+    .map(record => firestoreValue(record.fields?.record) ?? firestoreValue(record.fields || {}))
+    .sort((left, right) => String(left?.canonicalId || "").localeCompare(String(right?.canonicalId || "")));
+  const manifest = records.find(record => fullPath(record) === "fikaMenuPlanningCatalogueManifests/catalogue");
+  const headSourceHash = firestoreValue(manifest?.fields?.sourceHash) ?? null;
+  const sourceHash = sha256({ schemaVersion: 1, items: dishes });
+  return {
+    collection: "fikaMenuPlanningCatalogue",
+    manifestPath: "fikaMenuPlanningCatalogueManifests/catalogue",
+    sourceRecordCount: dishes.length,
+    nonDishRecordCount: sourceRecords.length - dishes.length,
+    sourceHash,
+    headSourceHash,
+    matchesHead: typeof headSourceHash === "string" && headSourceHash === sourceHash,
+  };
 }
 
 export function transformRecord(record) {
@@ -157,6 +182,8 @@ export function buildPlan(sourceInventory, destinationInventory) {
   if (destinationConflicts.length) invariantProblems.push(`destination already contains ${destinationConflicts.length} planned document path(s)`);
 
   const sourceHash = sourceStateHash(sourceInventory);
+  const menuCatalogue = menuCatalogueSourceIdentity(records);
+  if (menuCatalogue.sourceRecordCount > 0 && !menuCatalogue.matchesHead) invariantProblems.push("Menu Planning catalogue manifest sourceHash does not match the publisher's dish-only catalogue source identity");
   const destinationHash = sourceStateHash(destinationInventory);
   const retainedCount = actions.filter(item => item.action.startsWith("create")).length;
   const excludedCount = actions.filter(item => item.action === "exclude").length;
@@ -165,6 +192,7 @@ export function buildPlan(sourceInventory, destinationInventory) {
     sourceProject: SOURCE_PROJECT,
     destinationProject: DESTINATION_PROJECT,
     sourceHash,
+    menuCatalogue,
     destinationHash,
     sourcePlaceholders,
     destinationPlaceholders,
@@ -254,6 +282,28 @@ export function validateResumableDestination(plan, inventory) {
   }
   if (expected.size) throw new Error(`Destination baseline documents are missing: ${[...expected.keys()].slice(0, 5).join(", ")}.`);
   return { verifiedBaselineDocuments: plan.destinationBaseline.length, verifiedResumedDocuments: plan.actions.filter(item => item.action.startsWith("create")).length - allowedNew.size };
+}
+
+export function verifyFinalDestination(plan, inventory) {
+  if (inventory.project !== DESTINATION_PROJECT) throw new Error(`Expected destination project ${DESTINATION_PROJECT}.`);
+  const placeholders = [...(inventory.placeholders || [])].map(item => typeof item === "string" ? item : item.path);
+  if (placeholders.length) throw new Error(`Final destination contains ${placeholders.length} missing-parent placeholder(s).`);
+  const expected = new Map();
+  for (const item of plan.destinationBaseline) expected.set(item.path, { kind: "baseline", hash: item.hash });
+  for (const action of plan.actions.filter(item => item.action.startsWith("create"))) expected.set(action.path, { kind: "planned", hash: action.targetHash });
+  const seen = new Set();
+  for (const record of inventory.records || []) {
+    const path = fullPath(record);
+    if (!path || seen.has(path)) throw new Error(`Final destination has a missing or duplicate document path: ${path || "<missing>"}.`);
+    seen.add(path);
+    const item = expected.get(path);
+    if (!item) throw new Error(`Final destination contains an unexpected document at ${path}.`);
+    const actual = item.kind === "baseline" ? sourceRecordHash(record) : sha256({ path, fields: record.fields || {} });
+    if (actual !== item.hash) throw new Error(`Final destination document differs from the plan at ${path}.`);
+    expected.delete(path);
+  }
+  if (expected.size) throw new Error(`Final destination is missing planned document(s): ${[...expected.keys()].slice(0, 5).join(", ")}.`);
+  return { verifiedDocumentCount: seen.size, verifiedPlaceholderCount: 0 };
 }
 
 export const planPolicy = { retainedRoots: [...RETAINED_ROOTS].sort(), retainedReasons: RETAIN_REASONS, transforms: TRANSFORMS, exclusions: EXCLUSION_RULES };

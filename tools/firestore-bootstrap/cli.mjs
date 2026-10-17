@@ -12,6 +12,7 @@ import {
   sourceStateHash,
   validateResumableDestination,
   validateJournal,
+  verifyFinalDestination,
   verifySavedPlan,
 } from "./engine.mjs";
 
@@ -175,7 +176,9 @@ if (apply) {
   }, entries);
   const sourceAfter = await inventory(SOURCE_PROJECT);
   if (sourceStateHash(sourceAfter) !== approvedPlan.sourceHash) throw new Error("Source changed during apply. The completed journal is preserved; stop and review before any retry.");
-  console.log(JSON.stringify({ mode: "apply", planHash: approvedPlan.planHash, verifiedResume: resume, journalPath }, null, 2));
+  const destinationAfter = await inventory(DESTINATION_PROJECT);
+  const finalDestinationVerification = verifyFinalDestination(approvedPlan, destinationAfter);
+  console.log(JSON.stringify({ mode: "apply", planHash: approvedPlan.planHash, verifiedResume: resume, finalDestinationVerification, journalPath }, null, 2));
 } else {
   const report = { ...plan, inventoryGeneratedAt: source.generatedAt, sourceCollectionCount: source.collectionCount, destinationCollectionCount: destination.collectionCount, policy: planPolicy };
   await writeFile(output, JSON.stringify(plan, null, 2), { mode: 0o600 });
