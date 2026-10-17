@@ -1,5 +1,13 @@
 # Production application cutover gates — 2026-10-17
 
+## Latest status — CPU diagnostics release deployed; projection recovery held (2026-10-17)
+
+- Deployed only the SOL-approved CPU diagnostics release at exact SHA `6de875d8c47eda6a55c4cdb2d5851995b53c04cb` to `fika-os-prod-cpu` (repository `derekfika-fika-os`, root `/apps/cpu-production`). App Hosting build and rollout ID: `build-2026-10-17-007`; Cloud Build `18f69b51-0ade-4318-a590-8c5967c268fc` succeeded; rollout succeeded; Cloud Run revision `fika-os-prod-cpu-build-2026-10-17-007` is ready and receives 100% traffic. Both CPU custom and hosted `/api/build-info` endpoints reported the exact SHA; both `/icon.svg` endpoints returned HTTP 200. Hub and Menu health checks remained HTTP 200. No other backend was deployed.
+- CPU runtime remains on production project `fika-os` as `fika-prod-cpu@fika-os.iam.gserviceaccount.com` with `roles/datastore.viewer` only; no `roles/datastore.user` restoration was made. The six application writer freeze/restoration state was not changed by this task.
+- Read-only post-rollout inspection found the intended empty-week projection still at `fikaCpuProductionDayProjectionsV1/week:2026-10-19`, revision 1, sequence 0, zero orders, content hash `afc64c825c68aeef3280ddf8608c27f581d8267b03485a4047d1cdaee15a84d5`. The matching package-head document remains absent; the GCS manifest and projection-week object prefix remain absent. No recovery URL was invoked and no matching recovery request appeared in the post-deployment log query. No Firestore operational data or Drive object was written by this deployment task.
+- The three production recovery Scheduler jobs remain PAUSED. Hub's live `FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED` remains `false`; no mailer/Gmail secret is present. CPU runtime has no Workspace DWD or Drive owner environment values, and its production Drive path remains fail-closed. App Hosting automatic rollout is disabled across production backends; only the manually submitted CPU rollout above was performed.
+- Status: **HOLD — controlled empty-week projection/package recovery remains unperformed and requires its separately governed authorization; keep CPU viewer-only.** Do not retry or restore CPU write access as part of this diagnostics release record.
+
 ## Latest status — CPU Production fresh release held (2026-10-17)
 
 This section supersedes the earlier CPU note below where it described the missing-package recovery write as a read-only design defect. Recovery of a missing hosted package is the intended lazy/self-healing path; the safe cutover action is to bootstrap its exact derived scope before the viewer-only smoke.
