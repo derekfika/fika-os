@@ -56,6 +56,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     bookingEndpoint: "/api/bookings/mnk",
     portalPath: "/angel-court",
     oplocAliases: ["angel court", "one angel court"],
+    canonicalOplocId: "oploc:24a93500-d75d-4fe0-8beb-672d36f9da10",
     theme: {
       shortLabel: "Angel Court",
       heroBackground: "linear-gradient(116deg, #63666a 0 52%, #62baea 52%)",

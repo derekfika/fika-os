@@ -24,6 +24,8 @@ import type { RoutingDoc } from "./hospitality-catalogue-canonicalisation";
 
 export const CATALOGUE_DATASET = "integration-hub/hospitality-catalogue";
 export const CATALOGUE_MANIFEST_KEY = "integration-hub/hospitality-catalogue";
+export const PUBLIC_CATALOGUE_DATASET = "hospitality-booking/catalogue";
+export const PUBLIC_CATALOGUE_MANIFEST_KEY = "hospitality-booking/catalogue";
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
 const published = (record: CanonicalRecord) => record.lifecycleStatus === "published" && record.publicationStatus === "published";
@@ -83,6 +85,18 @@ export async function publishCataloguePackage(pkg: CataloguePackage, store: Read
   return { status: "published", manifest: await publishReadPackage<CataloguePackage>(store, CATALOGUE_MANIFEST_KEY, candidate) };
 }
 
+/** Public booking projection. Production routing and Hub-only metadata never leave the private package. */
+export async function publishPublicCataloguePackage(pkg: CataloguePackage, store: ReadPackageStore = oplocPackageStore()): Promise<PublishOutcome> {
+  const previous = await store.getManifest(PUBLIC_CATALOGUE_MANIFEST_KEY);
+  const publicPackage = { ...pkg, items: pkg.items.map(({ routing: _routing, ...item }) => item) };
+  const candidate = encodeReadPackage(PUBLIC_CATALOGUE_DATASET, (previous?.packageVersion || 0) + 1, publicPackage, pkg.items.length + pkg.exceptions.length, { schemaVersion: CATALOGUE_PACKAGE_SCHEMA_VERSION, contractVersion: CATALOGUE_PACKAGE_CONTRACT });
+  // Hash-only object names let an already-issued immutable URL continue to work
+  // after the mutable manifest advances to a newer package.
+  candidate.manifest.objectName = `${PUBLIC_CATALOGUE_DATASET}/${candidate.manifest.contentHash}.json.gz`;
+  if (previous && previous.contentHash === candidate.manifest.contentHash && previous.schemaVersion === CATALOGUE_PACKAGE_SCHEMA_VERSION && await store.has(previous.objectName)) return { status: "unchanged", manifest: previous };
+  return { status: "published", manifest: await publishReadPackage(store, PUBLIC_CATALOGUE_MANIFEST_KEY, candidate) };
+}
+
 /** Bounded rebuild: 4 entityType queries + routing. Coalesced so concurrent mutations share one rebuild. */
 export async function rebuildCataloguePackage(store?: ReadPackageStore): Promise<PublishOutcome> {
   if (inflight.current) return inflight.current;
@@ -94,7 +108,9 @@ export async function rebuildCataloguePackage(store?: ReadPackageStore): Promise
     recordDataAccess({ app: "integration-hub", operation: "hospitality-catalogue.package.rebuild", source: "FIRESTORE", documents: records.length + routing.size });
     const of = (type: string) => records.filter(record => record.entityType === type);
     const pkg = buildCataloguePackage({ items: of("Hospitality Menu Item"), offerings: of("Hospitality Menu Offering"), prices: of("Hospitality Menu Price"), oplocs: of("OPLOC"), routing: routing.docs.map(doc => doc.data() as RoutingDoc) }, new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()));
-    return publishCataloguePackage(pkg, store);
+    const internal = await publishCataloguePackage(pkg, store);
+    await publishPublicCataloguePackage(pkg, store);
+    return internal;
   })().finally(() => { inflight.current = undefined; });
   return inflight.current;
 }
@@ -109,6 +125,14 @@ export async function getCataloguePackageBytes(contentHash: string, store: ReadP
   if (!manifest || manifest.contentHash !== contentHash) return undefined;
   const bytes = await store.get(manifest.objectName);
   return bytes ? { manifest, bytes } : undefined;
+}
+
+/** Raw gzip bytes for the public package, including prior immutable hash URLs. */
+export async function getPublicCataloguePackageManifest(store: ReadPackageStore = oplocPackageStore()) { return store.getManifest(PUBLIC_CATALOGUE_MANIFEST_KEY); }
+export async function getPublicCataloguePackageBytes(contentHash: string, store: ReadPackageStore = oplocPackageStore()) {
+  if (!/^[0-9a-f]{64}$/.test(contentHash)) return undefined;
+  const bytes = await store.get(`${PUBLIC_CATALOGUE_DATASET}/${contentHash}.json.gz`);
+  return bytes ? { bytes } : undefined;
 }
 
 /** Best-effort invalidation after a catalogue mutation: never fails the mutation, always reports freshness explicitly. */

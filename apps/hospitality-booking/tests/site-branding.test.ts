@@ -144,5 +144,5 @@ test("unknown site keys and unrelated OPLOCs do not fall back to MNK", () => {
 test("CFC, Munich Re and Angel Court retain their own canonical display identities", () => {
   assert.equal(portalSiteForAuthorisedOploc({ id: "oploc:cfc", label: "CFC" })?.theme.shortLabel, "CFC");
   assert.equal(portalSiteForAuthorisedOploc({ id: "oploc:munich-re", label: "Munich RE" })?.theme.shortLabel, "Munich Re");
-  assert.equal(portalSiteForAuthorisedOploc({ id: "oploc:angel-court", label: "Angel Court" })?.theme.shortLabel, "Angel Court");
+  assert.equal(portalSiteForAuthorisedOploc({ id: "oploc:24a93500-d75d-4fe0-8beb-672d36f9da10", label: "Angel Court" })?.theme.shortLabel, "Angel Court");
 });

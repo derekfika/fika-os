@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet("integration-hub", "menu-planning", "cpu-production", "delivered-in", "logistics")]
+  [ValidateSet("integration-hub", "hospitality-booking", "menu-planning", "cpu-production", "delivered-in", "logistics")]
   [string]$App
 )
 
@@ -20,6 +20,7 @@ if ($sha -notmatch '^[0-9a-fA-F]{40}$') { throw "Refusing staging rollout becaus
 
 $backends = @{
   "integration-hub" = "fika-os-staging"
+  "hospitality-booking" = "fika-hospitality-staging"
   "menu-planning" = "fika-menu-planning-staging"
   "cpu-production" = "fika-cpu-production-staging"
   "delivered-in" = "fika-delivered-in-staging"

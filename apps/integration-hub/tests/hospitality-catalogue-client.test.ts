@@ -4,10 +4,12 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import test from "node:test";
 import { loadHospitalityCatalogue, validCachedRecord, type CachedCatalogue, type CatalogueCacheStore, type CatalogueLoadDeps, type CatalogueManifest } from "../lib/hospitality-catalogue-client";
 import { CATALOGUE_PACKAGE_CONTRACT, CATALOGUE_PACKAGE_SCHEMA_VERSION, type CataloguePackage } from "../lib/hospitality-effective-offering";
+import { CATALOGUE_CLIENT_SCHEMA_VERSION } from "@fika/server-shared/hospitality-catalogue-client";
 
-const catalogue = (marker: string): CataloguePackage => ({ schemaVersion: CATALOGUE_PACKAGE_SCHEMA_VERSION, contract: CATALOGUE_PACKAGE_CONTRACT, items: [{ id: marker, name: marker, category: "Food", defaultPrices: [], dietaryInformation: [], allergenInformation: [], routing: "in_house" }], exceptions: [], oplocs: [{ id: "oploc:a", label: "A" }] });
-const encode = (value: CataloguePackage) => { const bytes = gzipSync(Buffer.from(JSON.stringify(value)), { level: 9 }); return { bytes: new Uint8Array(bytes), hash: createHash("sha256").update(bytes).digest("hex") }; };
-const manifestFor = (hash: string, schemaVersion = CATALOGUE_PACKAGE_SCHEMA_VERSION): CatalogueManifest => ({ dataset: "x", packageVersion: 1, schemaVersion, contractVersion: CATALOGUE_PACKAGE_CONTRACT, objectName: "x", compression: "gzip", contentHash: hash, compressedSize: 1, uncompressedSize: 2, recordCount: 1, generatedAt: "2026-10-17T00:00:00.000Z" });
+const catalogue = (marker: string): CataloguePackage => ({ schemaVersion: CATALOGUE_PACKAGE_SCHEMA_VERSION, contract: CATALOGUE_PACKAGE_CONTRACT, items: [{ id: marker, name: marker, category: "Food", defaultPrices: [], dietaryInformation: [], allergenInformation: [] }], exceptions: [], oplocs: [{ id: "oploc:a", label: "A" }] });
+const sizes = new Map<string, number>();
+const encode = (value: CataloguePackage) => { const bytes = gzipSync(Buffer.from(JSON.stringify(value)), { level: 9 }); const hash = createHash("sha256").update(bytes).digest("hex"); sizes.set(hash, bytes.length); return { bytes: new Uint8Array(bytes), hash }; };
+const manifestFor = (hash: string, schemaVersion = CATALOGUE_PACKAGE_SCHEMA_VERSION): CatalogueManifest => ({ dataset: "integration-hub/hospitality-catalogue", packageVersion: 1, schemaVersion, contractVersion: CATALOGUE_PACKAGE_CONTRACT, objectName: `integration-hub/hospitality-catalogue/v1-${hash}.json.gz`, compression: "gzip", contentHash: hash, compressedSize: sizes.get(hash) || 1, uncompressedSize: 2, recordCount: 1, generatedAt: "2026-10-17T00:00:00.000Z" });
 
 function harness(options: { cached?: unknown; manifest?: CatalogueManifest | Error; packages?: Record<string, Uint8Array>; readThrows?: boolean; writeThrows?: boolean } = {}) {
   const counters = { manifest: 0, download: 0, writes: 0, clears: 0 };
@@ -26,7 +28,7 @@ function harness(options: { cached?: unknown; manifest?: CatalogueManifest | Err
   };
   return { deps, counters, current: () => record };
 }
-const cachedRecord = (value: CataloguePackage, hash: string): CachedCatalogue => ({ id: "current", clientSchemaVersion: CATALOGUE_PACKAGE_SCHEMA_VERSION, packageSchemaVersion: CATALOGUE_PACKAGE_SCHEMA_VERSION, contentHash: hash, packageVersion: 1, generatedAt: "2026-10-16T00:00:00.000Z", catalogue: value });
+const cachedRecord = (value: CataloguePackage, hash: string): CachedCatalogue => ({ id: "current", clientSchemaVersion: CATALOGUE_CLIENT_SCHEMA_VERSION, packageSchemaVersion: CATALOGUE_PACKAGE_SCHEMA_VERSION, contentHash: hash, payloadHash: createHash("sha256").update(JSON.stringify(value)).digest("hex"), packageVersion: 1, generatedAt: "2026-10-16T00:00:00.000Z", catalogue: value });
 
 test("first load downloads once, verifies the hash, caches it; the next startup is a cache hit with NO package download", async () => {
   const pkg = catalogue("v1"); const { bytes, hash } = encode(pkg);
@@ -72,6 +74,21 @@ test("an unreachable manifest never passes a cached catalogue off as current; wi
   await assert.rejects(loadHospitalityCatalogue(harness({ manifest: new Error("offline") }).deps), /offline/);
 });
 
+test("a changed manifest whose package is unreachable uses a valid cache only as explicitly unverified", async () => {
+  const cached = catalogue("previous"), fresh = catalogue("next"), old = encode(cached), next = encode(fresh);
+  const h = harness({ cached: cachedRecord(cached, old.hash), manifest: manifestFor(next.hash) });
+  const result = await loadHospitalityCatalogue(h.deps);
+  assert.equal(result.source, "cache-unverified"); assert.equal(result.contentHash, old.hash); assert.equal(result.downloaded, false);
+  assert.ok(result.notes.some(note => /could not be downloaded/.test(note)));
+});
+
+test("cache payload changes without its checksum are discarded", async () => {
+  const original = catalogue("original"), changed = catalogue("tampered"), pkg = encode(original);
+  const h = harness({ cached: { ...cachedRecord(original, pkg.hash), catalogue: changed }, manifest: manifestFor(pkg.hash), packages: { [pkg.hash]: pkg.bytes } });
+  const result = await loadHospitalityCatalogue(h.deps);
+  assert.equal(result.source, "network"); assert.equal(result.catalogue.items[0].id, "original");
+});
+
 test("integrity and schema failures are refused, and a failed cache write is not fatal", async () => {
   const pkg = catalogue("v1"); const { bytes, hash } = encode(pkg);
   const tampered = new Uint8Array(bytes); tampered[10] ^= 0xff;
@@ -83,7 +100,8 @@ test("integrity and schema failures are refused, and a failed cache write is not
 
 test("normal startup performs no Firestore access at all (the loader has no Firestore dependency)", async () => {
   const { readFileSync } = await import("node:fs");
-  const source = readFileSync(`${process.cwd()}/lib/hospitality-catalogue-client.ts`, "utf8");
+  const source = readFileSync(`${process.cwd()}/../../packages/server-shared/src/hospitality-catalogue-client.ts`, "utf8");
   assert.doesNotMatch(source, /from "[^"]*(firebase|firestore|firebase-admin)[^"]*"/i); assert.doesNotMatch(source, /integrationHubCanonical|collection\(/);
-  assert.match(source, /request\.onupgradeneeded[\s\S]*deleteObjectStore/, "a schema bump drops the old object store");
+  assert.match(source, /CATALOGUE_CLIENT_CACHE_DB = `fika-hospitality-booking-catalogue-v/, "client schema uses an app-owned versioned IndexedDB name");
+  assert.match(source, /payloadHash/);
 });

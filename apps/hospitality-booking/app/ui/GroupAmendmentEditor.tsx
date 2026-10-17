@@ -4,6 +4,7 @@ import type { CanonicalBooking } from "../../lib/canonical-types";
 import type { HospitalityBookingGroup } from "../../../shared/hospitality-group-quotes";
 import type { PortalMenuItem } from "../../lib/mnk-contract";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
+import { loadHospitalityPortalMenu } from "../../lib/hospitality-portal-catalogue";
 import styles from "./HospitalityGroupDetail.module.css";
 
 export function GroupAmendmentEditor({ group, site, oplocId, onCancel, onSaved, onBusyChange }: { group: HospitalityBookingGroup; site: string; oplocId: string; onCancel(): void; onSaved(): Promise<void>; onBusyChange(busy: boolean): void }) {
@@ -27,10 +28,8 @@ export function GroupAmendmentEditor({ group, site, oplocId, onCancel, onSaved, 
       if (!bookings?.length || !body.sourceHash || bookings.some(b => b.bookingGroup?.id !== group.id)) throw new Error("The current booking services could not be loaded. Refresh and try again.");
       if (cancelled) return;
       setSource({ group: { ...group, sourceHash: body.sourceHash }, bookings }); setDrafts(structuredClone(bookings));
-      const catalogue = await fetch(`/api/reference-data?site=${encodeURIComponent(site)}&oplocId=${encodeURIComponent(oplocId)}`, { signal: controller.signal });
-      if (!catalogue.ok) throw new Error("The menu catalogue could not be loaded. Existing items remain editable; refresh before adding items.");
-      const reference = await catalogue.json();
-      if (!cancelled) setMenu(reference.menu || []);
+      const catalogue = await loadHospitalityPortalMenu(site as import("../../lib/portal-sites").PortalSiteKey, oplocId, { signal: controller.signal });
+      if (!cancelled) setMenu(catalogue.menu);
     })().catch(cause => { if (!cancelled) setError(cause instanceof Error ? cause.message : "Booking load failed."); });
     return () => { cancelled = true; controller.abort(); };
   }, [group.id, site, oplocId]);

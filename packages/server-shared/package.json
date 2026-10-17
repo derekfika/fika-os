@@ -28,5 +28,7 @@
     ,"./menu-artifact": "./src/menu-artifact.ts"
     ,"./pdf-renderer": "./src/pdf-renderer.ts"
     ,"./hospitality-catalogue": "./src/hospitality-catalogue/index.ts"
+    ,"./hospitality-effective-offering": "./src/hospitality-effective-offering.ts"
+    ,"./hospitality-catalogue-client": "./src/hospitality-catalogue-client.ts"
   }
 }

@@ -41,6 +41,7 @@ import {
   type RcoaLine,
 } from "@/lib/rcoa-portal";
 import { buildAllDayClientRequests, buildRcoaClientRequest } from "@/lib/rcoa-booking-request-client";
+import { loadHospitalityPortalMenu } from "@/lib/hospitality-portal-catalogue";
 import styles from "./RcoaBookingPortal.module.css";
 
 const stepLabels = ["Occasion", "Contact", "Event", "Menu", "Dietaries", "Review"];
@@ -136,6 +137,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   const [menu, setMenu] = useState<PortalMenuItem[]>([]);
   const [menuLoading, setMenuLoading] = useState(true);
   const [menuError, setMenuError] = useState("");
+  const [catalogueWarning, setCatalogueWarning] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [rememberContact, setRememberContact] = useState(false);
@@ -216,15 +218,11 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
 
   useEffect(() => {
     let active = true;
-    fetch("/api/reference-data?site=rcoa", { cache: "no-store" })
-      .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.error?.message || "The RCoA menu could not be loaded.");
-        return body;
-      })
-      .then((body) => {
+    loadHospitalityPortalMenu("rcoa")
+      .then(({ menu: nextMenu, catalogue }) => {
         if (!active) return;
-        setMenu((Array.isArray(body.menu) ? body.menu : []).filter((item: PortalMenuItem) => Number.isFinite(item.unitPrice)));
+        setMenu(nextMenu);
+        setCatalogueWarning(catalogue.source === "cache-unverified" ? "Showing the last saved menu. Its current version could not be verified; check your connection and refresh before submitting." : "");
       })
       .catch((cause) => { if (active) setMenuError((cause as Error).message); })
       .finally(() => { if (active) setMenuLoading(false); });
@@ -540,6 +538,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
           <div className={styles.heroGuide} aria-label="Booking overview"><span>Choose</span><i aria-hidden="true" /><span>Plan</span><i aria-hidden="true" /><span>Submit</span></div>
         </div>
       </section>
+
+      {catalogueWarning && <p className="catalogue-warning" role="status">{catalogueWarning}</p>}
 
       {restoredDraft && <p className={styles.restoredNotice} role="status">Your unfinished booking has been restored.</p>}
       {reference ? (

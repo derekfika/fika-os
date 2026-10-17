@@ -71,7 +71,7 @@ test("MNK manager workspace resolves the canonical OPLOC and rejects Funding Cir
     undefined,
   );
   assert.equal(portalSiteForAuthorisedOploc({ id: canonicalMnk, label: "MNK" })?.key, "mnk");
-  assert.equal(portalSiteForAuthorisedOploc({ id: "oploc:angel-court", label: "One Angel Court" })?.key, "angel-court");
+  assert.equal(portalSiteForAuthorisedOploc({ id: "oploc:24a93500-d75d-4fe0-8beb-672d36f9da10", label: "One Angel Court" })?.key, "angel-court");
   assert.equal(portalSiteForAuthorisedOploc({ id: "oploc:cfc", label: "CFC" })?.key, "cfc");
   assert.equal(portalSiteForAuthorisedOploc({ id: "oploc:munich-re", label: "Munich RE" })?.key, "munich-re");
 });

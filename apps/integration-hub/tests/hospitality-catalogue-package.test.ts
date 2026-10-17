@@ -3,7 +3,7 @@ import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { decodeReadPackage, type ReadPackageManifest, type ReadPackageStore } from "@fika/server-shared/read-package";
-import { buildCataloguePackage, CATALOGUE_MANIFEST_KEY, publishCataloguePackage, type PackageSource } from "../lib/hospitality-catalogue-package";
+import { buildCataloguePackage, CATALOGUE_MANIFEST_KEY, getPublicCataloguePackageBytes, publishCataloguePackage, publishPublicCataloguePackage, PUBLIC_CATALOGUE_MANIFEST_KEY, type PackageSource } from "../lib/hospitality-catalogue-package";
 import { resolveSiteCatalogue, type CataloguePackage } from "../lib/hospitality-effective-offering";
 import type { CanonicalRecord } from "../lib/types";
 
@@ -73,4 +73,19 @@ test("gzip artifact: content-addressed immutable object, hash over the compresse
   assert.equal(manifests.get(CATALOGUE_MANIFEST_KEY)!.schemaVersion, 1); assert.equal(manifest.compression, "gzip");
   const tampered = new Uint8Array(stored); tampered[tampered.length - 9] ^= 0xff;
   assert.throws(() => decodeReadPackage(manifest, tampered), /integrity check failed/, "integrity failure stays fail-closed");
+});
+
+test("public package omits internal CPU routing and keeps old hash-addressed objects immutable", async () => {
+  const { store, objects, manifests } = memoryStore();
+  const first = buildCataloguePackage(source(), TODAY);
+  const one = await publishPublicCataloguePackage(first, store);
+  const bytes = objects.get(one.manifest.objectName)!;
+  const body = decodeReadPackage<CataloguePackage>(one.manifest, bytes);
+  assert.equal(one.manifest.dataset, "hospitality-booking/catalogue");
+  assert.equal(one.manifest.objectName, `hospitality-booking/catalogue/${one.manifest.contentHash}.json.gz`);
+  assert.equal(Object.hasOwn(body.items[0], "routing"), false, "booking clients receive no production routing data");
+  const updated = { ...first, items: first.items.map((item, index) => index === 0 ? { ...item, name: "Updated" } : item) };
+  await publishPublicCataloguePackage(updated, store);
+  assert.notEqual(manifests.get(PUBLIC_CATALOGUE_MANIFEST_KEY)!.contentHash, one.manifest.contentHash);
+  assert.deepEqual((await getPublicCataloguePackageBytes(one.manifest.contentHash, store))?.bytes, bytes, "the previous immutable object remains addressable after the manifest advances");
 });

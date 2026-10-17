@@ -9,6 +9,7 @@ import {
 import { hospitalitySiteThemeStyle, portalSite, type PortalSiteConfig, type PortalSiteKey } from "@/lib/portal-sites";
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "@/lib/gallagher-rules";
 import { quantityFromInput, quantityMinimumMessage, stepQuantityDown, stepQuantityUp } from "@/lib/quantity-entry";
+import { loadHospitalityPortalMenu } from "@/lib/hospitality-portal-catalogue";
 
 type ChoiceValue = string | string[];
 type Line = {
@@ -147,6 +148,7 @@ export default function BookingPortal({
   const currentSiteLabel = siteLabel?.trim() || site.theme.shortLabel;
   const themeStyle = hospitalitySiteThemeStyle(site) as CSSProperties;
   const [menu, setMenu] = useState<PortalMenuItem[]>([]);
+  const [catalogueWarning, setCatalogueWarning] = useState("");
   const [occasion, setOccasion] = useState("");
   const [step, setStep] = useState(0);
   const [category, setCategory] = useState("");
@@ -280,18 +282,14 @@ export default function BookingPortal({
   }, [draftReady]);
 
   useEffect(() => {
-    fetch(`/api/reference-data?site=${encodeURIComponent(site.key)}${oplocId ? `&oplocId=${encodeURIComponent(oplocId)}` : ""}`)
-      .then((response) => response.json())
-      .then((data) => {
-        const validMenu = (Array.isArray(data.menu) ? data.menu : []).filter(
-          (item: PortalMenuItem) => typeof item.unitPrice === "number" && Number.isFinite(item.unitPrice),
-        );
-        setMenu(validMenu);
-      })
-      .catch(() =>
-        setError(`The ${site.label} catalogue could not be loaded.`),
-      );
-  }, [site.key, site.label]);
+    let active = true;
+    void loadHospitalityPortalMenu(site.key, oplocId).then(({ menu: nextMenu, catalogue }) => {
+      if (!active) return;
+      setMenu(nextMenu);
+      setCatalogueWarning(catalogue.source === "cache-unverified" ? "Showing the last saved menu. Its current version could not be verified; check your connection and refresh before submitting." : "");
+    }).catch(() => { if (active) setError(`The ${site.label} catalogue could not be loaded. Check your connection and try again.`); });
+    return () => { active = false; };
+  }, [site.key, site.label, oplocId]);
   const categories = useMemo(
     () =>
       (allowed[occasion] || []).filter((category) =>
@@ -645,6 +643,7 @@ export default function BookingPortal({
     <main className={`mnk ${site.cssClass} hospitality-site-themed`} data-surface="client-branded-portal" data-client-brand={site.key} style={themeStyle}>
       <Top site={site} siteLabel={currentSiteLabel} dashboardMode={dashboardMode} onStartAgain={() => setResetOpen(true)} />
       {restoredDraft && <p className="draft-restored" role="status">Your unfinished booking has been restored.</p>}
+      {catalogueWarning && <p className="catalogue-warning" role="status">{catalogueWarning}</p>}
       {resetOpen && <ResetModal onCancel={() => setResetOpen(false)} onConfirm={resetBooking} />}
       <section className="mnk-hero">
         <p className="eyebrow">{currentSiteLabel} · {site.theme.heroEyebrow}</p>
