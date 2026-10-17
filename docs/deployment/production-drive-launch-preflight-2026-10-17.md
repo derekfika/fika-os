@@ -67,3 +67,37 @@ RCoA/Angel Court Allergens and Menus folder IDs are **verified but not wired**. 
 ## Changelog and validation
 
 Validation: field-masked Firebase provider/domain readback, auth-handler HEAD check, Drive DWD preflight for all listed folders/templates, production YAML parse/readback, secret IAM policy readback, six-runtime Firestore role readback, Scheduler readback, and recursive production Firestore inventory. No app tests were needed for the YAML-only change.
+
+## Live Drive routing recheck — 2026-10-17
+
+The approved operational Drive assets were rechecked using the production DWD secret in process memory and the Drive-only scope `https://www.googleapis.com/auth/drive`. The delegated identities matched `rcoa@fikacatering.com` and `seven@fikacatering.com`. All six approved folders were untrashed Drive folders with `canAddChildren=true` and ownership matching the delegated identity. The approved One Angel Court tablet template was an untrashed Google Slides presentation with `canCopy=true`. No Drive write endpoint was called. Deferred flat/tent templates and any other Drive assets were not rechecked or enabled.
+
+The exact production settings documents are still absent:
+
+| Dashboard | Firestore path | Before state | Proposed routing fields |
+|---|---|---|---|
+| RCoA (`rcoa-hospitality`) | `fikaDashboardQuoteSettings/f43545c4a4a76ad4b151a36c0e0a2f865542cb913830c389c31426b59312bbca` | Document absent; Hub resolves the existing RCoA code defaults (version 1) | `googleQuoteFolderId=1SMd9V_3wTwLAKpXJxj0VacDosRsJBFKR`; `googleMatrixFolderId=1-RuVcoHccoKDuk3kBym-5n3RuF9ncn3X`; `googleMenuFolderId=1dEY_-fr_MD1iZmIZ0hfzaDcBhpFPz1Ij`; no menu template |
+| One Angel Court (`angel-court-hospitality`) | `fikaDashboardQuoteSettings/c41775be78cd0b323322ed9a111db9d8565b4fa6b08f34e69937410b7bc5ba12` | Document absent; Hub resolves the existing Angel Court code defaults (version 1) | `googleQuoteFolderId=18dLsE5Xatj5v6BnxOZFVYspJRWPRx5bO`; `googleMatrixFolderId=1H3U3JxbECLYfgUSVJxkeQfI3CQ5ooD6X`; `googleMenuFolderId=1opIa9eW5OPAkD4zQcwiMvTmmc36U0jRc`; `googleMenuTemplateId=1bkaXTTCStSDqo_YZOCnTZbHzaAzzzIAWIL6ooS1EEGw` |
+
+The exact effective before-state defaults, from `defaultDashboardQuoteSettings`, are:
+
+- RCoA: `version=1`; management fee `{mode: fixed, value: 0, label: Management fee}`; delivery charge `{enabled: true, amount: 35, label: CPU delivery charge}`; labour roles `[chef, FOH Assistant, KP]`; `vatRate=0.2`; no `buildingCharges`.
+- One Angel Court: `version=1`; management fee `{mode: percentage, value: 8, label: Angel Court management fee}`; the same delivery charge and labour roles; building charges enabled with housekeeping `23.68/hour`, security `29.95/hour` and `8` minimum hours, aircon `200` after hour `19`, and venue hire disabled with amount `1000`; `vatRate=0.2`.
+
+The proposed create state is exactly those per-dashboard defaults with only the routing fields in the table added, `version=2`, and `updatedAt`/`updatedBy` set by the existing service at execution time (the actor would be Derek's existing bound production identity; the UID is intentionally not repeated here). No `googleDriveFolderId` generic root is proposed. The RCoA template remains unset. This is a preview only; no settings field was written.
+
+No production Firestore settings mutation was made. The Hub owns these settings and the existing write path is `POST /api/hospitality-bookings` with `action=save-quote-settings`; it requires an authenticated Hub administrator and uses the existing `saveDashboardQuoteSettings` transaction. Derek signed in to the production launcher in the Codex in-app browser, which displayed his existing Integration Administrator session. The production `/hub` route nevertheless continued to present its Google sign-in gate and exposed no dashboard-settings form or save action. The production Hospitality UI that calls this route is not deployed (both its custom and hosted URLs returned HTTP 404). Derek's human gcloud identity cannot impersonate the Hub runtime because it has no `roles/iam.serviceAccountTokenCreator` binding on that service account. No new IAM grant was added and no direct human-principal Firestore write was substituted for the governed route.
+
+If the existing route is later invoked through an approved authenticated operator UI, it will materialize each dashboard's code defaults unchanged, add only the routing fields above, set version 2, and set `updatedAt`/`updatedBy` through the existing service. Expected Firestore mutation count is two document creates. Current count remains zero. RCoA menu output remains fail-closed without a template; MNK's template/output remains deferred; no generic root is used in place of the distinct per-dashboard destinations.
+
+Current safety readback: Hub runtime retains `roles/datastore.user`; Menu, CPU, Hospitality, Logistics, and Delivered-In do not. The three recovery jobs remain PAUSED. No mailer/email/Gmail-named Secret Manager secret was found; Hub and Hospitality production config keep `FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED=false`. The DWD secret-level accessor set remains Hub, CPU, Hospitality, and Delivered-In only; no Menu or Logistics runtime access was added. No app deployment, Git push, AUTHMOD mutation, or staging mutation occurred.
+
+### Current Drive-specific cutover classification
+
+| App | Drive-dependent path | Current classification |
+|---|---|---|
+| Menu Planning | No Drive requirement in the production config; menu packages use the approved package path | READY from the Drive gate |
+| CPU Production | Signed allergen matrix Drive materialization requires DWD plus a configured CPU owner; production owner/output root is absent | Base app READY; Drive materialization deferred/fail-closed |
+| Hospitality Booking | RCoA and One Angel Court require distinct dashboard folder settings; Angel Court tablet requires the approved Slides template | BLOCKED for the requested routing until the two settings documents are created; RCoA menu template and MNK remain deferred |
+| Logistics | No Drive requirement in the production config | READY from the Drive gate |
+| Delivered-In | Site menu document generation requires configured owner, output folder, and template; none is approved in production | Base app READY; document generation deferred/fail-closed |
