@@ -170,7 +170,7 @@ if (apply) {
     adapters: {
     readSource: documentPath => readDocument(SOURCE_PROJECT, documentPath),
     readDestination: documentPath => readDocument(DESTINATION_PROJECT, documentPath),
-    createDestination,
+    createDestination: createDocument,
     },
     async refreshSourceInventory() { return inventory(SOURCE_PROJECT); },
     async refreshDestinationInventory() { return inventory(DESTINATION_PROJECT); },
