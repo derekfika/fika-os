@@ -15,10 +15,10 @@ export function rowMatches(row: CatalogueRow, filters: CatalogueFilters) {
   if (filters.status !== "all" && row.status !== filters.status) return false;
   if (filters.category && row.category !== filters.category) return false;
   if (filters.route !== "all" && row.routing.state !== filters.route) return false;
-  if (filters.oplocId && !row.offerings.some(offering => offering.status === "active" && offering.oplocId === filters.oplocId)) return false;
+  if (filters.oplocId && !row.availableAt.includes(filters.oplocId)) return false;
   if (filters.hasOverrides && !row.overrideCount) return false;
   if (filters.needsReview && !row.needsReview.length) return false;
-  if (filters.priceNotSet && (row.defaultPrice || !row.offerings.some(offering => offering.mode === "standard" && offering.status === "active"))) return false;
+  if (filters.priceNotSet && (row.defaultPrice || row.status !== "active")) return false;
   const query = norm(filters.query.trim());
   if (query) {
     const haystack = norm([row.name, row.category, row.description, ...row.sourceIds, ...row.providerMappings.flatMap(mapping => [mapping.provider, mapping.sourceItemId])].join(" "));
@@ -61,17 +61,16 @@ export function summariseCounts(rows: CatalogueRow[]): CataloguePayload["counts"
 }
 
 // ----- sites ---------------------------------------------------------------------------------------------------
-/** Locations "Select all sites" covers: active and hospitality-capable per the server (never inactive/archived ones). */
-export const selectableSites = (oplocs: CataloguePayload["oplocs"]) => oplocs.filter(oploc => oploc.active && oploc.hospitality);
+/** "Select all sites" = every active, non-archived OPLOC. */
+export const selectableSites = (oplocs: CataloguePayload["oplocs"]) => oplocs.filter(oploc => oploc.active);
 
-/** Compact availability text for the table: "All sites" when every selectable site has an active Offering. */
+/** Compact availability text: "All sites" unless sparse exceptions exclude some. Availability is the default; only exclusions are stored. */
 export function sitesSummary(row: CatalogueRow, oplocs: CataloguePayload["oplocs"]) {
-  const selectable = selectableSites(oplocs);
-  const offered = new Set(row.availableAt);
-  if (!offered.size) return "Not available anywhere";
-  if (selectable.length > 0 && selectable.every(oploc => offered.has(oploc.oplocId))) return "All sites";
-  const labels = [...offered].map(id => oplocLabel(oplocs, id));
-  return labels.length <= 2 ? labels.join(", ") : `${labels.length} of ${selectable.length || labels.length} sites`;
+  const total = selectableSites(oplocs).length;
+  if (row.status !== "active" || !row.availableAt.length) return "Not available anywhere";
+  if (!row.unavailableAt.length) return "All sites";
+  const excluded = row.unavailableAt.map(id => oplocLabel(oplocs, id));
+  return excluded.length <= 2 ? `All sites except ${excluded.join(", ")}` : `${row.availableAt.length} of ${total || row.availableAt.length} sites`;
 }
 
 // ----- selection -----------------------------------------------------------------------------------------------
@@ -102,14 +101,17 @@ export function bulkImpact(draft: BulkDraft, selected: CatalogueRow[], oplocs: C
   lines.push({ label: "Price", value: draft.price ? `Set company default to ${formatMoney(draft.price.amount)} on ${plural(n, "item")}` : "Unchanged" });
   lines.push({ label: "Minimum", value: draft.minimum ? (draft.minimum.mode === "set" ? `Set company default to ${draft.minimum.value} on ${plural(n, "item")}` : `Clear the company default on ${plural(n, "item")}; sites inheriting it will have no minimum`) : "Unchanged" });
   if (draft.sites) {
-    const names = draft.sites.oplocIds.map(id => oplocLabel(oplocs, id)); const wanted = new Set(draft.sites.oplocIds);
-    const offered = (row: CatalogueRow) => new Set(row.availableAt);
-    const adds = selected.reduce((sum, row) => sum + [...wanted].filter(id => !offered(row).has(id)).length, 0);
-    const removes = selected.reduce((sum, row) => sum + (draft.sites!.mode === "remove" ? [...wanted].filter(id => offered(row).has(id)).length : draft.sites!.mode === "replace" ? row.availableAt.filter(id => !wanted.has(id)).length : 0), 0);
+    const names = draft.sites.oplocIds.map(id => oplocLabel(oplocs, id)); const wanted = new Set(draft.sites.oplocIds); const all = selectableSites(oplocs).map(oploc => oploc.oplocId);
     const list = names.length > 4 ? `${names.length} sites` : names.join(", ");
-    if (draft.sites.mode === "add") lines.push({ label: "Site availability", value: `Add ${list}: ${plural(adds, "new offering")}; new offerings inherit company price and minimum` });
-    else if (draft.sites.mode === "remove") lines.push({ label: "Site availability", value: `Remove ${list}: ${plural(removes, "offering")} disabled (overrides and history kept)`, tone: "danger" });
-    else lines.push({ label: "Site availability", value: `Replace with ${list}: ${plural(adds, "offering")} added, ${plural(removes, "offering")} disabled (overrides and history kept)`, ...(removes ? { tone: "danger" as const } : {}) });
+    const clears = selected.reduce((sum, row) => sum + [...wanted].filter(id => row.unavailableAt.includes(id)).length, 0);
+    const records = selected.reduce((sum, row) => sum + [...wanted].filter(id => !row.unavailableAt.includes(id)).length, 0);
+    if (draft.sites.mode === "add") lines.push({ label: "Site availability", value: `Add ${list}: ${plural(clears, "exception")} cleared so the item is available there again. Nothing new is stored for sites that are already available; sites inherit the company price and minimum.` });
+    else if (draft.sites.mode === "remove") lines.push({ label: "Site availability", value: `Remove ${list}: ${plural(records, "site exception")} recorded as unavailable (overrides and history kept).`, tone: "danger" });
+    else {
+      const excludedSites = all.filter(id => !wanted.has(id)); const newExclusions = selected.reduce((sum, row) => sum + excludedSites.filter(id => !row.unavailableAt.includes(id)).length, 0);
+      const clearable = selected.reduce((sum, row) => sum + row.unavailableAt.filter(id => wanted.has(id)).length, 0);
+      lines.push({ label: "Site availability", value: excludedSites.length === 0 ? `Replace with ${list}: available at ALL ${all.length} sites. ${plural(clearable, "exception")} cleared; no per-site records are created.` : `Replace with ${list}: ${plural(newExclusions, "site exception")} recorded for the ${excludedSites.length} site${excludedSites.length === 1 ? "" : "s"} left out; exceptions for included sites are cleared.`, ...(newExclusions ? { tone: "danger" as const } : {}) });
+    }
   } else lines.push({ label: "Site availability", value: "Unchanged" });
   lines.push({ label: "Existing site overrides", value: "Preserved" });
   return lines;

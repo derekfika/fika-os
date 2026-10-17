@@ -5,7 +5,7 @@
  *   full load (screen open / explicit reload): 4 bounded entityType queries (Items, Offerings, Prices, OPLOCs; <=1000 each),
  *     + routing collection + merge records + review decisions. ~400 documents for today’s ~90 Items; no scans of unrelated entities.
  *   after the operator’s own mutation: targeted refresh of only the touched Items =
- *     per Item: 1 item doc + 1 relation query (Offerings + Item-scoped Prices) + 1 query for Offering Prices + 1 routing doc.
+ *     per Item: 1 item doc + 1 relation query (site exceptions + Item-scoped Prices) + 1 query for exception Prices + 1 routing doc, plus ~24 OPLOC documents once.
  *   no polling, no listeners.
  */
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
@@ -17,18 +17,16 @@ import { listCanonicalRecordsByTypes } from "./canonical-oplocs";
 import type { CanonicalRecord } from "./types";
 import type { RoutingDoc } from "./hospitality-catalogue-canonicalisation";
 import { buildCataloguePayload, buildCatalogueRows, type ReviewDecisionDoc } from "./hospitality-catalogue-read-model";
+import { isActiveOplocRecord } from "./hospitality-catalogue-oploc";
 import { REVIEW_DECISIONS_COLLECTION } from "./hospitality-catalogue-admin";
 import type { CataloguePayload, CatalogueRow } from "./hospitality-catalogue-types";
 
 const canonical = () => db.collection("integrationHubCanonical");
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 
-/** The ONE definition of a Hospitality site: an active OPLOC whose canonical record carries the governed `hospitalityEnabled` marker. Never inferred from Offerings, names, environment or hard-coded ids. */
-export const isHospitalitySite = (record: CanonicalRecord) => record.entityType === "OPLOC" && record.lifecycleStatus !== "archived" && record.record.lifecycleState === "active" && record.record.hospitalityEnabled === true;
-
 function oplocViews(records: CanonicalRecord[]): CataloguePayload["oplocs"] {
   return records.filter(record => record.entityType === "OPLOC" && record.lifecycleStatus !== "archived")
-    .map(record => ({ oplocId: record.canonicalId, label: text(record.record.approvedName) || "Unnamed location", active: record.record.lifecycleState === "active", hospitality: isHospitalitySite(record) }))
+    .map(record => ({ oplocId: record.canonicalId, label: text(record.record.approvedName) || "Unnamed location", active: isActiveOplocRecord(record) }))
     .sort((a, b) => a.label.localeCompare(b.label, "en-GB"));
 }
 
@@ -51,6 +49,7 @@ export async function loadCataloguePayload(actor: Actor): Promise<CataloguePaylo
 /** Targeted post-mutation refresh: only the touched Items. Duplicate-candidate flags need the full load, so the client re-derives those. */
 export async function loadCatalogueRows(itemIds: string[]): Promise<CatalogueRow[]> {
   const ids = [...new Set(itemIds)];
+  const oplocRecords = (await canonical().where("entityType", "==", "OPLOC").get()).docs.map(doc => doc.data() as CanonicalRecord); // availability is the default at every active OPLOC (~24 documents)
   const loaded = await Promise.all(ids.map(async id => {
     const [item, relations, route] = await Promise.all([
       canonical().doc(stableDocumentId(id)).get(),
@@ -70,6 +69,6 @@ export async function loadCatalogueRows(itemIds: string[]): Promise<CatalogueRow
   const present = loaded.filter(entry => entry.item);
   return buildCatalogueRows({
     items: present.map(entry => entry.item!), offerings: present.flatMap(entry => entry.offerings), prices: present.flatMap(entry => entry.prices),
-    routing: present.flatMap(entry => (entry.route ? [entry.route] : [])),
+    routing: present.flatMap(entry => (entry.route ? [entry.route] : [])), oplocs: oplocViews(oplocRecords).map(oploc => ({ oplocId: oploc.oplocId, active: oploc.active })),
   }).rows;
 }

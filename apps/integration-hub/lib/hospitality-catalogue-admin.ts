@@ -22,6 +22,8 @@ import { parseCanonical } from "./schemas";
 import type { CanonicalRecord } from "./types";
 import { existingCandidatesForNewItem, normaliseName, sourceIdentities } from "./hospitality-catalogue-canonicalisation";
 import { currentPrice, reviewGroupId, routingStateOf, ukBusinessDate } from "./hospitality-catalogue-read-model";
+import { isActiveOplocRecord } from "./hospitality-catalogue-oploc";
+import { isRedundantException, type PackageException, type PricePeriod } from "./hospitality-effective-offering";
 import { ROUTING_CHOICES, ROUTING_CHOICE_LABELS, ROUTING_CHOICE_WORKSTREAMS, type RoutingChoice } from "./hospitality-catalogue-types";
 
 const canonical = () => db.collection("integrationHubCanonical");
@@ -48,8 +50,8 @@ const vat = (value: unknown) => {
 };
 const quantity = (value: unknown, label: string) => { if (typeof value !== "number" || !Number.isInteger(value) || value < 1) throw problem(`${label} must be a whole number of 1 or more.`); return value; };
 /** Copy of a record without the named fields (sparse overrides are removed, never stored as null). */
-/** Server-side twin of the picker rule (see isHospitalitySite): an Offering may only be created at an active location carrying the governed hospitalityEnabled marker. */
-const isHospitalityOploc = (oploc: CanonicalRecord) => oploc.record.lifecycleState === "active" && oploc.lifecycleStatus !== "archived" && oploc.record.hospitalityEnabled === true;
+/** An exception can only be recorded for an active, non-archived OPLOC (all active OPLOCs are Hospitality-capable). */
+const isActiveOploc = isActiveOplocRecord;
 const without = (record: Record<string, unknown>, ...keys: string[]) => { const copy = { ...record }; for (const key of keys) delete copy[key]; return copy; };
 const dayBefore = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
@@ -60,9 +62,10 @@ export type CatalogueCommand =
   | { action: "set-default-price"; itemId: string; expectedVersion: number; price: PriceInput }
   | { action: "set-routing"; itemId: string; routing: RoutingChoice; expectedRoutingVersion: number }
   | { action: "set-item-status"; itemId: string; expectedVersion: number; status: "active" | "archived" }
-  | { action: "add-offering"; itemId: string; expectedVersion: number; oplocId: string; operationalAreaId?: string; mode?: "standard" | "quote_only" }
-  | { action: "set-offering-status"; offeringId: string; expectedVersion: number; status: "active" | "archived" }
-  | { action: "set-offering-override"; offeringId: string; expectedVersion: number; price?: PriceInput | null; minimumQuantity?: number | null; displayName?: string | null; description?: string | null }
+  /** Availability is the default everywhere; this records or clears a sparse `available:false` exception for one OPLOC. */
+  | { action: "set-site-availability"; itemId: string; expectedVersion: number; oplocId: string; available: boolean }
+  /** Sparse site override (price / minimum / wording). The exception record is created on demand and retired again once it states nothing beyond the defaults. */
+  | { action: "set-site-override"; itemId: string; expectedVersion: number; oplocId: string; price?: PriceInput | null; minimumQuantity?: number | null; displayName?: string | null; description?: string | null }
   | { action: "adopt-company-default"; itemId: string; expectedVersion: number; price: PriceInput; minimumQuantity?: number | null; confirmed: boolean }
   | { action: "merge-items"; survivorItemId: string; sourceItemIds: string[]; expectedVersions: Record<string, number>; groupId?: string }
   | { action: "record-review-decision"; memberIds: string[]; decision: "keep_separate" | "defer" };
@@ -144,6 +147,45 @@ async function allItems(ctx: Ctx) {
 const labelOf = (choice: RoutingChoice) => ROUTING_CHOICE_LABELS[choice];
 
 // ---------------------------------------------------------------------------------------------------------------------
+// ---- sparse site exceptions --------------------------------------------------------------------------------------
+/** Deterministic id of the site-wide exception for one Item at one OPLOC: a concurrent duplicate create collides instead of forking. */
+const exceptionIdFor = (itemId: string, oplocId: string) => `hospitality-menu-offering:site-${crypto.createHash("sha256").update(`${itemId}|${oplocId}`).digest("hex").slice(0, 32)}`;
+const pricePeriod = (price: CanonicalRecord): PricePeriod => ({ amount: Number(price.record.amount), vatRate: Number(price.record.vatRate), from: text(price.record.effectiveFrom), ...(text(price.record.effectiveTo) ? { to: text(price.record.effectiveTo) } : {}) });
+const livePeriods = (prices: CanonicalRecord[]) => prices.filter(price => price.record.lifecycleState === "active" && price.lifecycleStatus !== "archived").map(pricePeriod);
+async function activeOplocIds(ctx: Ctx) { return (await readQuery(ctx, canonical().where("entityType", "==", "OPLOC"))).docs.map(doc => doc.data() as CanonicalRecord).filter(isActiveOploc).map(record => record.canonicalId).sort(); }
+type ItemChildren = { offerings: CanonicalRecord[]; itemPrices: CanonicalRecord[] };
+const siteWide = (children: ItemChildren, oplocId: string) => children.offerings.filter(offering => offering.record.oplocId === oplocId && !offering.record.operationalAreaId);
+
+/** True when a stored record states nothing beyond the company defaults (it has no effect and should not exist). */
+function noEffect(record: Record<string, unknown>, ownPrices: CanonicalRecord[], item: CanonicalRecord, itemPrices: CanonicalRecord[], today: string) {
+  const configuration = (record.configuration || {}) as Record<string, unknown>;
+  const exception: PackageException = { id: text(record.canonicalId), itemId: text(record.hospitalityMenuItemId), oplocId: text(record.oplocId), ...(text(record.operationalAreaId) ? { operationalAreaId: text(record.operationalAreaId) } : {}), mode: record.offeringMode === "quote_only" ? "quote_only" : "standard", available: record.available !== false, prices: livePeriods(ownPrices.filter(price => price.record.hospitalityMenuOfferingId === record.canonicalId)), ...(typeof record.minimumQuantity === "number" ? { minimumQuantity: record.minimumQuantity } : {}), ...(typeof record.minimumGuests === "number" ? { minimumGuests: record.minimumGuests } : {}), ...(typeof record.noticeRequiredDays === "number" ? { noticeRequiredDays: record.noticeRequiredDays } : {}), ...(text(configuration.displayName) ? { displayName: text(configuration.displayName) } : {}), ...(text(configuration.description) ? { description: text(configuration.description) } : {}), ...(Object.keys(without(configuration, "displayName", "description")).length ? { configuration: without(configuration, "displayName", "description") } : {}) };
+  const sameConfiguration = exception.configuration && JSON.stringify(exception.configuration) === JSON.stringify(item.record.configuration);
+  return isRedundantException(sameConfiguration ? { ...exception, configuration: undefined } : exception, { defaultPrices: livePeriods(itemPrices), defaultMinimumQuantity: typeof item.record.defaultMinimumQuantity === "number" ? item.record.defaultMinimumQuantity : undefined, defaultNoticeRequiredDays: typeof item.record.defaultNoticeRequiredDays === "number" ? item.record.defaultNoticeRequiredDays : undefined, defaultMinimumGuests: typeof item.record.defaultMinimumGuests === "number" ? item.record.defaultMinimumGuests : undefined }, today);
+}
+const retire = (ctx: Ctx, offering: CanonicalRecord, reason: "item-archived" | "redundant-default", note: string, record: Record<string, unknown> = offering.record) => stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, record), lifecycleState: "archived", retiredReason: reason }, offering, note);
+
+/** Applies availability edits as SPARSE exceptions. Returns "+oploc" (made available / exception cleared) and "-oploc" (exception recorded). */
+function applySiteEdits(ctx: Ctx, item: CanonicalRecord, children: ItemChildren, ownPrices: CanonicalRecord[], edits: Array<{ oplocId: string; available: boolean }>, today: string) {
+  const touched: string[] = [];
+  for (const edit of edits) {
+    const records = siteWide(children, edit.oplocId); const active = records.find(offering => offering.record.lifecycleState !== "archived"); const retired = records.find(offering => offering.record.lifecycleState === "archived");
+    if (!edit.available) {
+      if (active) { if (active.record.available === false) continue; stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, active.record), available: false }, active, "Site availability exception recorded."); }
+      else if (retired) stage(ctx, "Hospitality Menu Offering", { ...without(bump(ctx, retired.record), "retiredReason"), lifecycleState: "active", available: false }, retired, "Site availability exception recorded (earlier record revived).");
+      else stage(ctx, "Hospitality Menu Offering", { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Offering", canonicalId: exceptionIdFor(item.canonicalId, edit.oplocId), hospitalityMenuItemId: item.canonicalId, oplocId: edit.oplocId, offeringMode: "standard" as const, lifecycleState: "active" as const, available: false }, undefined, "Site availability exception recorded.");
+      touched.push(`-${edit.oplocId}`);
+    } else {
+      if (!active || active.record.available !== false) continue; // already available: inheritance needs no record
+      const cleared = without(bump(ctx, active.record), "available");
+      if (noEffect(cleared, ownPrices, item, children.itemPrices, today)) retire(ctx, active, "redundant-default", "Availability exception cleared; the record stated nothing else, so it is retired.");
+      else stage(ctx, "Hospitality Menu Offering", cleared, active, "Availability exception cleared.");
+      touched.push(`+${edit.oplocId}`);
+    }
+  }
+  return touched;
+}
+
 async function createItem(ctx: Ctx, command: Extract<CatalogueCommand, { action: "create-item" }>): Promise<CatalogueCommandResult> {
   const name = command.name.trim(), category = command.category.trim();
   if (!name) throw problem("Give the item a name."); if (!category) throw problem("Choose a category.");
@@ -154,7 +196,7 @@ async function createItem(ctx: Ctx, command: Extract<CatalogueCommand, { action:
   const minimum = command.defaultMinimumQuantity === undefined ? undefined : quantity(command.defaultMinimumQuantity, "Default minimum");
   const itemId = `hospitality-menu-item:${crypto.createHash("sha256").update(`catalogue-create:${command.requestId}`).digest("hex").slice(0, 32)}`;
   const itemRef = canonical().doc(stableDocumentId(itemId));
-  const [itemSnapshot, items, ...oplocSnapshots] = await Promise.all([readDoc(ctx, itemRef), allItems(ctx), ...oplocIds.map(id => readDoc(ctx, canonical().doc(stableDocumentId(id))))]);
+  const [itemSnapshot, items, activeIds] = await Promise.all([readDoc(ctx, itemRef), allItems(ctx), activeOplocIds(ctx)]);
   if (itemSnapshot.exists) return { itemIds: [itemId], reload: false, message: "This item was already created." }; // replay-safe retry
   const sameName = existingCandidatesForNewItem(items, { name });
   if (sameName.length) throw problem(`An item called “${name}” already exists in the catalogue. Open it and make it available at the site instead of creating a duplicate.`, 409);
@@ -163,13 +205,15 @@ async function createItem(ctx: Ctx, command: Extract<CatalogueCommand, { action:
     const clash = items.find(item => !isArchived(item) && sourceIdentities(item).includes(mapping.sourceItemId));
     if (clash) throw problem(`Provider reference “${mapping.sourceItemId}” is already mapped to “${text(clash.record.name)}”.`, 409);
   }
-  oplocSnapshots.forEach((snapshot, index) => { const oploc = asRecord(snapshot); if (!oploc || oploc.entityType !== "OPLOC" || !isHospitalityOploc(oploc)) throw problem(`Site ${index + 1} is not an active Hospitality-enabled location.`); });
+  oplocIds.forEach((id, index) => { if (!activeIds.includes(id)) throw problem(`Site ${index + 1} is not an active location.`); });
+  const excluded = activeIds.filter(id => !oplocIds.includes(id));
   const record = { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Item" as const, canonicalId: itemId, name, category, ...(command.description?.trim() ? { description: command.description.trim() } : {}), lifecycleState: "active" as const, ...(minimum !== undefined ? { defaultMinimumQuantity: minimum } : {}), dietaryInformation: [] as string[], allergenInformation: [] as string[], providerMappings: command.providerMappings || [] };
   stage(ctx, "Hospitality Menu Item", record, undefined, "Hospitality Catalogue item created.");
   if (price) stage(ctx, "Hospitality Menu Price", { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Price", canonicalId: generateCanonicalId("Hospitality Menu Price"), hospitalityMenuItemId: itemId, amount: price.amount, currency: "GBP" as const, vatRate: price.vatRate, effectiveFrom: ukBusinessDate(), lifecycleState: "active" as const }, undefined, "Company default price set at creation.");
-  for (const oplocId of oplocIds) stage(ctx, "Hospitality Menu Offering", { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Offering", canonicalId: generateCanonicalId("Hospitality Menu Offering"), hospitalityMenuItemId: itemId, oplocId, offeringMode: "standard" as const, lifecycleState: "active" as const }, undefined, "Offering created with the item.");
+  // Availability is the default at every active OPLOC: only the sites the operator EXCLUDED get a (sparse) exception record.
+  for (const oplocId of excluded) stage(ctx, "Hospitality Menu Offering", { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Offering", canonicalId: exceptionIdFor(itemId, oplocId), hospitalityMenuItemId: itemId, oplocId, offeringMode: "standard" as const, lifecycleState: "active" as const, available: false }, undefined, "Site exception recorded at creation.");
   ctx.tx.create(routingCollection().doc(stableDocumentId(itemId)), { menuItemId: itemId, workstreams: ROUTING_CHOICE_WORKSTREAMS[command.routing], version: 1, createdAt: ctx.now, updatedAt: ctx.now, updatedBy: ctx.actor.uid });
-  auditEvent(ctx, "Hospitality Catalogue item created", itemId, `Created “${name}” (${labelOf(command.routing)}) at ${oplocIds.length} site${oplocIds.length === 1 ? "" : "s"}.`, { itemId, after: { name, category, routing: command.routing, defaultPrice: price, defaultMinimumQuantity: minimum, oplocIds } });
+  auditEvent(ctx, "Hospitality Catalogue item created", itemId, `Created “${name}” (${labelOf(command.routing)}), available at ${oplocIds.length} of ${activeIds.length} sites${excluded.length ? ` (${excluded.length} exception${excluded.length === 1 ? "" : "s"})` : ""}.`, { itemId, after: { name, category, routing: command.routing, defaultPrice: price, defaultMinimumQuantity: minimum, availableAt: oplocIds.length, unavailableOplocIds: excluded } });
   return { itemIds: [itemId], reload: false, message: `“${name}” created.` };
 }
 
@@ -228,89 +272,83 @@ async function setRouting(ctx: Ctx, command: Extract<CatalogueCommand, { action:
 
 async function setItemStatus(ctx: Ctx, command: Extract<CatalogueCommand, { action: "set-item-status" }>): Promise<CatalogueCommandResult> {
   const itemRef = canonical().doc(stableDocumentId(command.itemId));
-  const [snapshot, items] = await Promise.all([readDoc(ctx, itemRef), command.status === "active" ? allItems(ctx) : Promise.resolve([] as CanonicalRecord[])]);
+  const [snapshot, items, children] = await Promise.all([readDoc(ctx, itemRef), command.status === "active" ? allItems(ctx) : Promise.resolve([] as CanonicalRecord[]), itemChildren(ctx, command.itemId)]);
   const item = requireItem(snapshot); expectVersion(item, command.expectedVersion, "This item");
   const archived = item.record.lifecycleState === "archived";
   if (command.status === "archived" && archived) throw problem("This item is already archived.");
   if (command.status === "active" && !archived) throw problem("This item is already active.");
   if (command.status === "active" && items.some(other => other.canonicalId !== item.canonicalId && !isArchived(other) && normaliseName(other.record.name) === normaliseName(item.record.name))) throw problem(`Another active item is already called “${text(item.record.name)}”; restoring this one would create a duplicate.`, 409);
   stage(ctx, "Hospitality Menu Item", { ...bump(ctx, item.record), lifecycleState: command.status }, item, command.status === "archived" ? "Hospitality Catalogue item archived." : "Hospitality Catalogue item restored.");
-  auditEvent(ctx, command.status === "archived" ? "Hospitality Catalogue item archived" : "Hospitality Catalogue item restored", item.canonicalId, `${command.status === "archived" ? "Archived" : "Restored"} “${text(item.record.name)}”. Offerings, prices, routing and history are retained.`, { itemId: item.canonicalId, before: { lifecycleState: item.record.lifecycleState }, after: { lifecycleState: command.status } });
+  // An archived Item must have NO active effective site availability: its exception records are retired with it (kept for history) and revived on restore.
+  let touched = 0;
+  if (command.status === "archived") { for (const offering of children.offerings.filter(candidate => candidate.record.lifecycleState !== "archived")) { retire(ctx, offering, "item-archived", "Retired with the archived Item."); touched++; } }
+  else for (const offering of children.offerings.filter(candidate => candidate.record.lifecycleState === "archived" && candidate.record.retiredReason === "item-archived")) { stage(ctx, "Hospitality Menu Offering", { ...without(bump(ctx, offering.record), "retiredReason"), lifecycleState: "active" }, offering, "Revived with the restored Item."); touched++; }
+  auditEvent(ctx, command.status === "archived" ? "Hospitality Catalogue item archived" : "Hospitality Catalogue item restored", item.canonicalId, `${command.status === "archived" ? "Archived" : "Restored"} “${text(item.record.name)}”. Prices, routing and history are retained; ${touched} site exception record${touched === 1 ? "" : "s"} ${command.status === "archived" ? "retired" : "revived"}.`, { itemId: item.canonicalId, before: { lifecycleState: item.record.lifecycleState }, after: { lifecycleState: command.status }, exceptionRecordsChanged: touched });
   return { itemIds: [item.canonicalId], reload: false, message: command.status === "archived" ? "Item archived. It no longer appears on booking menus; history is kept." : "Item restored." };
 }
 
-async function addOffering(ctx: Ctx, command: Extract<CatalogueCommand, { action: "add-offering" }>): Promise<CatalogueCommandResult> {
+async function setSiteAvailability(ctx: Ctx, command: Extract<CatalogueCommand, { action: "set-site-availability" }>): Promise<CatalogueCommandResult> {
   const itemRef = canonical().doc(stableDocumentId(command.itemId));
-  const [itemSnapshot, oplocSnapshot] = await Promise.all([readDoc(ctx, itemRef), readDoc(ctx, canonical().doc(stableDocumentId(command.oplocId)))]);
+  const [itemSnapshot, children, activeIds] = await Promise.all([readDoc(ctx, itemRef), itemChildren(ctx, command.itemId), activeOplocIds(ctx)]);
   const item = requireItem(itemSnapshot); expectVersion(item, command.expectedVersion, "This item");
-  if (isArchived(item)) throw problem("Restore the item before making it available at a site.");
-  const oploc = asRecord(oplocSnapshot);
-  if (!oploc || oploc.entityType !== "OPLOC" || !isHospitalityOploc(oploc)) throw problem("Choose an active Hospitality-enabled location.");
-  const mode = command.mode || "standard"; const key = `${command.oplocId}|${command.operationalAreaId || ""}|${mode}`;
-  const { offerings } = await itemChildren(ctx, item.canonicalId);
-  const existing = offerings.find(offering => `${offering.record.oplocId}|${offering.record.operationalAreaId || ""}|${offering.record.offeringMode}` === key);
-  if (existing && existing.record.lifecycleState !== "archived") throw problem("This item is already available at that site.", 409);
-  if (existing) stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, existing.record), lifecycleState: "active" }, existing, "Offering re-enabled.");
-  else stage(ctx, "Hospitality Menu Offering", { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Offering", canonicalId: generateCanonicalId("Hospitality Menu Offering"), hospitalityMenuItemId: item.canonicalId, oplocId: command.oplocId, ...(command.operationalAreaId ? { operationalAreaId: command.operationalAreaId } : {}), offeringMode: mode, lifecycleState: "active" as const }, undefined, "Offering created.");
-  stage(ctx, "Hospitality Menu Item", bump(ctx, item.record), item, "Offering added (item version touched).");
-  auditEvent(ctx, "Hospitality Catalogue offering enabled", item.canonicalId, `“${text(item.record.name)}” made available at a site.`, { itemId: item.canonicalId, oplocId: command.oplocId, operationalAreaId: command.operationalAreaId, reEnabled: Boolean(existing) });
-  return { itemIds: [item.canonicalId], reload: false, message: "Available at the site. It inherits the company default price and minimum." };
+  if (isArchived(item)) throw problem("Restore the item before changing where it is available.");
+  if (!activeIds.includes(command.oplocId)) throw problem("Choose an active location.");
+  const ownPrices = await offeringPrices(ctx, children.offerings.map(offering => offering.canonicalId));
+  const touched = applySiteEdits(ctx, item, children, ownPrices, [{ oplocId: command.oplocId, available: command.available }], ukBusinessDate());
+  if (!touched.length) throw problem(command.available ? "This item is already available at that site." : "This item is already unavailable at that site.", 409);
+  stage(ctx, "Hospitality Menu Item", bump(ctx, item.record), item, "Site availability changed (item version touched).");
+  auditEvent(ctx, command.available ? "Hospitality Catalogue offering enabled" : "Hospitality Catalogue offering disabled", item.canonicalId, `“${text(item.record.name)}” ${command.available ? "made available again" : "made unavailable"} at a site.`, { itemId: item.canonicalId, oplocId: command.oplocId, before: { available: !command.available }, after: { available: command.available } });
+  return { itemIds: [item.canonicalId], reload: false, message: command.available ? "Available at the site again. It inherits the company price and minimum." : "Marked unavailable at the site. History and overrides are kept." };
 }
 
-async function setOfferingStatus(ctx: Ctx, command: Extract<CatalogueCommand, { action: "set-offering-status" }>): Promise<CatalogueCommandResult> {
-  const snapshot = await readDoc(ctx, canonical().doc(stableDocumentId(command.offeringId)));
-  const offering = asRecord(snapshot);
-  if (!offering || offering.entityType !== "Hospitality Menu Offering") throw problem("Offering was not found.", 404);
-  expectVersion(offering, command.expectedVersion, "This site offering");
-  if (offering.record.lifecycleState === command.status) throw problem(`This site offering is already ${command.status === "active" ? "enabled" : "disabled"}.`);
-  stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, offering.record), lifecycleState: command.status }, offering, command.status === "active" ? "Offering enabled." : "Offering disabled (retained for history).");
-  const itemId = text(offering.record.hospitalityMenuItemId);
-  auditEvent(ctx, command.status === "active" ? "Hospitality Catalogue offering enabled" : "Hospitality Catalogue offering disabled", itemId, `Site availability ${command.status === "active" ? "enabled" : "disabled"}. Overrides are retained.`, { itemId, offeringId: offering.canonicalId, oplocId: offering.record.oplocId, before: { lifecycleState: offering.record.lifecycleState }, after: { lifecycleState: command.status } });
-  return { itemIds: [itemId], reload: false, message: command.status === "active" ? "Enabled at the site." : "Disabled at the site. Its overrides and history are kept." };
-}
-
-async function setOfferingOverride(ctx: Ctx, command: Extract<CatalogueCommand, { action: "set-offering-override" }>): Promise<CatalogueCommandResult> {
-  const offeringRef = canonical().doc(stableDocumentId(command.offeringId));
-  const offeringSnapshot = await readDoc(ctx, offeringRef); const offering = asRecord(offeringSnapshot);
-  if (!offering || offering.entityType !== "Hospitality Menu Offering") throw problem("Offering was not found.", 404);
-  expectVersion(offering, command.expectedVersion, "This site offering");
-  const itemId = text(offering.record.hospitalityMenuItemId);
-  const [itemSnapshot, ownPrices, children] = await Promise.all([readDoc(ctx, canonical().doc(stableDocumentId(itemId))), offeringPrices(ctx, [offering.canonicalId]), itemChildren(ctx, itemId)]);
-  const item = requireItem(itemSnapshot);
+async function setSiteOverride(ctx: Ctx, command: Extract<CatalogueCommand, { action: "set-site-override" }>): Promise<CatalogueCommandResult> {
+  const itemRef = canonical().doc(stableDocumentId(command.itemId));
+  const [itemSnapshot, children, activeIds] = await Promise.all([readDoc(ctx, itemRef), itemChildren(ctx, command.itemId), activeOplocIds(ctx)]);
+  const item = requireItem(itemSnapshot); expectVersion(item, command.expectedVersion, "This item");
   if (isArchived(item)) throw problem("Restore the item before editing site overrides.");
-  if (offering.record.lifecycleState === "archived") throw problem("Enable the site offering before editing its overrides.");
+  if (!activeIds.includes(command.oplocId)) throw problem("Choose an active location.");
   if (command.price === undefined && command.minimumQuantity === undefined && command.displayName === undefined && command.description === undefined) throw problem("Nothing to change.");
+  const ownPrices = await offeringPrices(ctx, children.offerings.map(offering => offering.canonicalId));
   const today = ukBusinessDate(); const defaultPrice = currentPrice(children.itemPrices, today);
-  const before: Record<string, unknown> = {}, after: Record<string, unknown> = {}; let record: Record<string, unknown> = bump(ctx, offering.record);
+  const records = siteWide(children, command.oplocId); const existing = records.find(offering => offering.record.lifecycleState !== "archived"); const retired = records.find(offering => offering.record.lifecycleState === "archived");
+  const offeringId = existing?.canonicalId ?? retired?.canonicalId ?? exceptionIdFor(item.canonicalId, command.oplocId);
+  const own = ownPrices.filter(price => price.record.hospitalityMenuOfferingId === offeringId);
+  const before: Record<string, unknown> = {}, after: Record<string, unknown> = {};
+  let record: Record<string, unknown> = existing ? bump(ctx, existing.record) : retired ? { ...without(bump(ctx, retired.record), "retiredReason"), lifecycleState: "active" } : { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Offering", canonicalId: offeringId, hospitalityMenuItemId: item.canonicalId, oplocId: command.oplocId, offeringMode: "standard" as const, lifecycleState: "active" as const };
+  const prior = existing ?? retired;
+  if (record.offeringMode === "quote_only" && command.price) throw problem("Quote-only offerings cannot have a price.");
+  // The exception record must exist before a Price can be scoped to it.
   if (command.price !== undefined) {
-    const current = currentPrice(ownPrices, today); before.price = current ? { amount: current.record.amount, vatRate: current.record.vatRate } : null;
-    if (command.price === null) { if (!archiveScopedPrices(ctx, ownPrices, "Site price override reset to company default.").length) throw problem("This site has no price override to reset."); after.price = null; }
+    const current = currentPrice(own, today); before.price = current ? { amount: current.record.amount, vatRate: current.record.vatRate } : null;
+    if (command.price === null) { if (!archiveScopedPrices(ctx, own, "Site price override reset to company default.").length) throw problem("This site has no price override to reset."); after.price = null; }
     else {
-      if (offering.record.offeringMode === "quote_only") throw problem("Quote-only offerings cannot have a price.");
       const input = { amount: money(command.price.amount, "Site price"), vatRate: vat(command.price.vatRate ?? defaultPrice?.record.vatRate as number | undefined) };
       if (defaultPrice && defaultPrice.record.amount === input.amount && defaultPrice.record.vatRate === input.vatRate) throw problem("That equals the company default. Use “Reset to company default” instead of storing a duplicate.");
-      replaceScopedPrice(ctx, { offeringId: offering.canonicalId }, ownPrices, input, today, "Site price override set."); after.price = input;
+      replaceScopedPrice(ctx, { offeringId }, own, input, today, "Site price override set."); after.price = input;
     }
   }
   if (command.minimumQuantity !== undefined) {
-    before.minimumQuantity = offering.record.minimumQuantity ?? null;
+    before.minimumQuantity = record.minimumQuantity ?? null;
     if (command.minimumQuantity === null) { record = without(record, "minimumQuantity"); after.minimumQuantity = null; }
-    else {
-      const minimum = quantity(command.minimumQuantity, "Site minimum");
-      if (minimum === item.record.defaultMinimumQuantity) throw problem("That equals the company default minimum. Use “Reset to company default” instead.");
-      record = { ...record, minimumQuantity: minimum }; after.minimumQuantity = minimum;
-    }
+    else { const minimum = quantity(command.minimumQuantity, "Site minimum"); if (minimum === item.record.defaultMinimumQuantity) throw problem("That equals the company default minimum. Use “Reset to company default” instead."); record = { ...record, minimumQuantity: minimum }; after.minimumQuantity = minimum; }
   }
   if (command.displayName !== undefined || command.description !== undefined) {
-    const configuration = { ...((offering.record.configuration || {}) as Record<string, unknown>) };
+    const configuration = { ...((record.configuration || {}) as Record<string, unknown>) };
     if (command.displayName !== undefined) { before.displayName = configuration.displayName ?? null; if (command.displayName === null || !command.displayName.trim()) delete configuration.displayName; else configuration.displayName = command.displayName.trim(); after.displayName = configuration.displayName ?? null; }
     if (command.description !== undefined) { before.description = configuration.description ?? null; if (command.description === null || !command.description.trim()) delete configuration.description; else configuration.description = command.description.trim(); after.description = configuration.description ?? null; }
-    if (Object.keys(configuration).length) record = { ...record, configuration }; else record = without(record, "configuration");
+    record = Object.keys(configuration).length ? { ...record, configuration } : without(record, "configuration");
   }
-  stage(ctx, "Hospitality Menu Offering", record, offering, "Site override changed.");
-  const action = command.price === null || command.minimumQuantity === null ? "Hospitality Catalogue override removed" : "Hospitality Catalogue override set";
-  auditEvent(ctx, action, itemId, `Site override changed for “${text(item.record.name)}”.`, { itemId, offeringId: offering.canonicalId, oplocId: offering.record.oplocId, before, after });
-  return { itemIds: [itemId], reload: false, message: command.price === null || command.minimumQuantity === null ? "Reset to company default." : "Override saved." };
+  // After the patch the record is retired again if it states nothing beyond the company defaults ("no exception merely to say: available with defaults").
+  const priceAfter = command.price === null ? undefined : command.price !== undefined ? { amount: command.price.amount, vatRate: vat(command.price.vatRate ?? defaultPrice?.record.vatRate as number | undefined) } : currentPrice(own, today) ? { amount: Number(currentPrice(own, today)!.record.amount), vatRate: Number(currentPrice(own, today)!.record.vatRate) } : undefined;
+  const syntheticOwn = priceAfter ? [{ canonicalId: "x", entityType: "Hospitality Menu Price", record: { hospitalityMenuOfferingId: offeringId, amount: priceAfter.amount, vatRate: priceAfter.vatRate, effectiveFrom: today, lifecycleState: "active" }, lifecycleStatus: "published" } as unknown as CanonicalRecord] : [];
+  const redundant = noEffect(record, syntheticOwn, item, children.itemPrices, today);
+  if (redundant && !prior) throw problem("Nothing to store: that matches the company defaults.");
+  if (redundant) stage(ctx, "Hospitality Menu Offering", { ...record, lifecycleState: "archived", retiredReason: "redundant-default" }, prior, "Site exception retired: it now matches the company defaults.");
+  else stage(ctx, "Hospitality Menu Offering", record, prior, "Site override changed.");
+  stage(ctx, "Hospitality Menu Item", bump(ctx, item.record), item, "Site override changed (item version touched).");
+  const removing = command.price === null || command.minimumQuantity === null;
+  auditEvent(ctx, removing ? "Hospitality Catalogue override removed" : "Hospitality Catalogue override set", item.canonicalId, `Site override changed for “${text(item.record.name)}”.`, { itemId: item.canonicalId, oplocId: command.oplocId, before, after });
+  return { itemIds: [item.canonicalId], reload: false, message: removing ? "Reset to company default." : "Override saved." };
 }
 
 async function adoptCompanyDefault(ctx: Ctx, command: Extract<CatalogueCommand, { action: "adopt-company-default" }>): Promise<CatalogueCommandResult> {
@@ -331,7 +369,11 @@ async function adoptCompanyDefault(ctx: Ctx, command: Extract<CatalogueCommand, 
     const current = currentPrice(own, today);
     if (current && current.record.amount === input.amount && current.record.vatRate === input.vatRate) { archiveScopedPrices(ctx, own, "Site price equalled the adopted company default; override removed."); redundantPrices++; }
     if (minimum !== undefined && record.minimumQuantity === minimum) { record = without(record, "minimumQuantity"); redundantMinimums++; changed = true; }
-    if (changed) stage(ctx, "Hospitality Menu Offering", bump(ctx, record), offering, "Site minimum equalled the adopted company default; override removed.");
+    // A site record that now states nothing beyond the new company defaults is retired (history kept); otherwise only the redundant minimum is dropped.
+    const remainingPrice = current && !(current.record.amount === input.amount && current.record.vatRate === input.vatRate) ? [current] : [];
+    const nowRedundant = noEffect(record, remainingPrice, { ...item, record: { ...item.record, ...(minimum !== undefined ? { defaultMinimumQuantity: minimum } : {}) } } as CanonicalRecord, [{ canonicalId: "x", entityType: "Hospitality Menu Price", record: { hospitalityMenuItemId: item.canonicalId, amount: input.amount, vatRate: input.vatRate, effectiveFrom: "1970-01-01", lifecycleState: "active" }, lifecycleStatus: "published" } as unknown as CanonicalRecord], today);
+    if (nowRedundant) retire(ctx, offering, "redundant-default", "Site record states nothing beyond the adopted company defaults; retired.", record);
+    else if (changed) stage(ctx, "Hospitality Menu Offering", bump(ctx, record), offering, "Site minimum equalled the adopted company default; override removed.");
   }
   stage(ctx, "Hospitality Menu Item", { ...bump(ctx, without(item.record, "defaultMinimumQuantity")), ...(minimum !== undefined ? { defaultMinimumQuantity: minimum } : {}) }, item, "Company default adopted.");
   auditEvent(ctx, "Hospitality Catalogue default price changed", item.canonicalId, `Operator confirmed a company default for “${text(item.record.name)}”; equal site values became inherited. Different site values stay as overrides.`, { itemId: item.canonicalId, before: null, after: { ...input, defaultMinimumQuantity: minimum ?? null }, redundantPricesRemoved: redundantPrices, redundantMinimumsRemoved: redundantMinimums });
@@ -424,9 +466,8 @@ export async function runCatalogueCommand(actor: Actor, command: CatalogueComman
       case "set-default-price": return setDefaultPrice(ctx, command);
       case "set-routing": return setRouting(ctx, command);
       case "set-item-status": return setItemStatus(ctx, command);
-      case "add-offering": return addOffering(ctx, command);
-      case "set-offering-status": return setOfferingStatus(ctx, command);
-      case "set-offering-override": return setOfferingOverride(ctx, command);
+      case "set-site-availability": return setSiteAvailability(ctx, command);
+      case "set-site-override": return setSiteOverride(ctx, command);
       case "adopt-company-default": return adoptCompanyDefault(ctx, command);
       case "merge-items": return mergeItems(ctx, command);
       case "record-review-decision": return recordReviewDecision(ctx, command);
@@ -463,15 +504,15 @@ export function validateBulkSpec(spec: BulkSpec) {
   return ids.sort();
 }
 
-async function bulkOne(ctx: Ctx, itemId: string, spec: BulkSpec): Promise<BulkItemResult> {
+async function bulkOne(ctx: Ctx, itemId: string, spec: BulkSpec, activeIds: string[]): Promise<BulkItemResult> {
   const receiptRef = audit().doc(`bulk-${spec.operationId}-${crypto.createHash("sha256").update(itemId).digest("hex").slice(0, 24)}`);
   const itemRef = canonical().doc(stableDocumentId(itemId)); const routeRef = routingCollection().doc(stableDocumentId(itemId));
   const siteIds = spec.sites ? [...new Set(spec.sites.oplocIds)] : [];
-  const [receipt, itemSnapshot, routeSnapshot, children, ...oplocSnapshots] = await Promise.all([
+  const [receipt, itemSnapshot, routeSnapshot, children] = await Promise.all([
     readDoc(ctx, receiptRef), readDoc(ctx, itemRef), spec.production ? readDoc(ctx, routeRef) : Promise.resolve(undefined),
-    spec.price || spec.sites ? itemChildren(ctx, itemId) : Promise.resolve({ offerings: [] as CanonicalRecord[], itemPrices: [] as CanonicalRecord[] }),
-    ...(spec.sites && spec.sites.mode !== "remove" ? siteIds.map(id => readDoc(ctx, canonical().doc(stableDocumentId(id)))) : []),
+    spec.price || spec.sites || spec.archive ? itemChildren(ctx, itemId) : Promise.resolve({ offerings: [] as CanonicalRecord[], itemPrices: [] as CanonicalRecord[] }),
   ]);
+  const ownPrices = spec.sites ? await offeringPrices(ctx, children.offerings.map(offering => offering.canonicalId)) : [];
   if (receipt.exists) return { itemId, status: "already_applied", message: "Already applied by an earlier attempt of this operation." };
   const item = requireItem(itemSnapshot); const name = text(item.record.name);
   expectVersion(item, spec.expectedVersions[itemId], `“${name}”`);
@@ -480,6 +521,7 @@ async function bulkOne(ctx: Ctx, itemId: string, spec: BulkSpec): Promise<BulkIt
   if (spec.archive) {
     if (archived) return { itemId, status: "failed", message: `“${name}” is already archived.` };
     stage(ctx, "Hospitality Menu Item", { ...bump(ctx, item.record), lifecycleState: "archived" }, item, "Archived by bulk operation.");
+    for (const offering of children.offerings.filter(candidate => candidate.record.lifecycleState !== "archived")) retire(ctx, offering, "item-archived", "Retired with the archived Item (bulk operation).");
     before.lifecycleState = "active"; after.lifecycleState = "archived"; changed = true;
   } else {
     if (archived) return { itemId, status: "failed", message: `“${name}” is archived. Restore it before editing.` };
@@ -507,22 +549,13 @@ async function bulkOne(ctx: Ctx, itemId: string, spec: BulkSpec): Promise<BulkIt
       if (item.record.defaultMinimumQuantity !== next) { before.defaultMinimumQuantity = item.record.defaultMinimumQuantity ?? null; after.defaultMinimumQuantity = next ?? null; record = next === undefined ? without(record, "defaultMinimumQuantity") : { ...record, defaultMinimumQuantity: next }; changed = true; }
     }
     if (spec.sites) {
-      if (spec.sites.mode !== "remove") oplocSnapshots.forEach((snapshot, index) => { const oploc = asRecord(snapshot); if (!oploc || oploc.entityType !== "OPLOC" || !isHospitalityOploc(oploc)) throw problem(`Site ${index + 1} is not an active Hospitality-enabled location.`); });
+      // Availability is the default at every active OPLOC. Only EXCLUSIONS are stored: add clears an exception, remove records one, replace
+      // excludes every active site that is not selected. Selecting all sites therefore stores nothing.
+      const unknown = siteIds.filter(id => !activeIds.includes(id)); if (unknown.length) throw problem(`${unknown.length} selected site${unknown.length === 1 ? " is" : "s are"} not active locations.`);
       const wanted = new Set(siteIds);
-      const enable = spec.sites.mode === "remove" ? new Set<string>() : wanted;
-      const disable = spec.sites.mode === "add" ? new Set<string>() : spec.sites.mode === "remove" ? wanted : new Set(children.offerings.filter(o => o.record.lifecycleState !== "archived" && !wanted.has(text(o.record.oplocId))).map(o => text(o.record.oplocId)));
-      for (const oplocId of enable) {
-        const existing = children.offerings.find(o => o.record.oplocId === oplocId && !o.record.operationalAreaId && o.record.offeringMode === "standard");
-        if (children.offerings.some(o => o.record.oplocId === oplocId && o.record.lifecycleState !== "archived")) continue;
-        if (existing) stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, existing.record), lifecycleState: "active" }, existing, "Offering re-enabled by bulk operation.");
-        else stage(ctx, "Hospitality Menu Offering", { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Offering", canonicalId: generateCanonicalId("Hospitality Menu Offering"), hospitalityMenuItemId: itemId, oplocId, offeringMode: "standard" as const, lifecycleState: "active" as const }, undefined, "Offering created by bulk operation (inherits company defaults).");
-        touchedSites.push(`+${oplocId}`); changed = true;
-      }
-      for (const oplocId of disable) for (const offering of children.offerings.filter(o => o.record.oplocId === oplocId && o.record.lifecycleState !== "archived")) {
-        stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, offering.record), lifecycleState: "archived" }, offering, "Offering disabled by bulk operation (overrides and history retained).");
-        touchedSites.push(`-${oplocId}`); changed = true;
-      }
-      if (touchedSites.length) { before.sites = "see removed"; after.sites = touchedSites; }
+      const edits = spec.sites.mode === "add" ? siteIds.map(oplocId => ({ oplocId, available: true })) : spec.sites.mode === "remove" ? siteIds.map(oplocId => ({ oplocId, available: false })) : activeIds.map(oplocId => ({ oplocId, available: wanted.has(oplocId) }));
+      touchedSites.push(...applySiteEdits(ctx, item, children, ownPrices, edits, today));
+      if (touchedSites.length) { before.sites = "see sites"; after.sites = touchedSites; changed = true; }
     }
     if (changed) stage(ctx, "Hospitality Menu Item", bump(ctx, record), item, "Hospitality Catalogue bulk update (item version touched).");
   }
@@ -535,12 +568,49 @@ export async function runBulkCatalogueUpdate(actor: Actor, spec: BulkSpec): Prom
   assertPermission(actor, "hospitality.catalogue.manage");
   const ids = validateBulkSpec(spec);
   const results: BulkItemResult[] = [];
+  // Active OPLOCs are read ONCE for the whole operation (not per Item): bounded, ~24 documents.
+  const activeIds = spec.sites ? (await db.collection("integrationHubCanonical").where("entityType", "==", "OPLOC").get()).docs.map(doc => doc.data() as CanonicalRecord).filter(isActiveOploc).map(record => record.canonicalId).sort() : [];
   for (const itemId of ids) {
-    try { results.push(await db.runTransaction(tx => bulkOne({ tx, actor, now: new Date().toISOString() }, itemId, spec))); }
+    try { results.push(await db.runTransaction(tx => bulkOne({ tx, actor, now: new Date().toISOString() }, itemId, spec, activeIds))); }
     catch (error) { results.push({ itemId, status: "failed", message: (error as Error).message }); }
   }
   const succeeded = results.filter(result => result.status !== "failed").length, failed = results.length - succeeded;
   const kinds = [spec.production && "production", spec.price && "default price", spec.minimum && "default minimum", spec.sites && `sites:${spec.sites.mode}`, spec.archive && "archive"].filter(Boolean);
   await audit().doc(`bulk-${spec.operationId}`).set({ action: "Hospitality Catalogue bulk operation", entityReference: spec.operationId, actorId: actor.uid, actorName: actor.name, timestamp: new Date().toISOString(), reason: `${kinds.join(", ")} on ${ids.length} item${ids.length === 1 ? "" : "s"}: ${succeeded} succeeded, ${failed} failed.`, details: JSON.parse(JSON.stringify({ bulkOperationId: spec.operationId, operations: kinds, itemIds: ids, oplocIds: spec.sites?.oplocIds ?? [], succeeded, failed, results })) }, { merge: true });
   return { operationId: spec.operationId, results, succeeded, failed, message: failed ? `${succeeded} of ${results.length} items updated; ${failed} could not be changed.` : `${succeeded} item${succeeded === 1 ? "" : "s"} updated.` };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// GOVERNED RETIREMENT of Offering records that must not exist in the sparse model (redundant default availability, or records still active
+// on an archived Item). Retired = archived with a reason: nothing is deleted, history and ids stay valid, effective availability is unchanged
+// for redundant records and removed for records on archived Items. One transaction per record, version-guarded, replay-safe receipts.
+// ---------------------------------------------------------------------------------------------------------------------
+export type RetireTarget = { offeringId: string; expectedVersion: number };
+export type RetireResult = { offeringId: string; status: "retired" | "already_retired" | "failed"; message: string };
+export async function retireOfferingRecords(actor: Actor, spec: { operationId: string; reason: "redundant-default" | "item-archived"; targets: RetireTarget[]; /** When set, a record is only retired if it was created by this actor and is still at version 1 (never edited). */ requireCreatedBy?: string }): Promise<RetireResult[]> {
+  assertPermission(actor, "hospitality.catalogue.manage");
+  if (!spec.operationId || spec.operationId.length < 8) throw problem("A retirement needs an operation id.");
+  const results: RetireResult[] = [];
+  for (const target of [...spec.targets].sort((a, b) => a.offeringId.localeCompare(b.offeringId))) {
+    try {
+      results.push(await db.runTransaction(async tx => {
+        const ctx: Ctx = { tx, actor, now: new Date().toISOString() };
+        const ref = canonical().doc(stableDocumentId(target.offeringId));
+        const receiptRef = audit().doc(`retire-${spec.operationId}-${crypto.createHash("sha256").update(target.offeringId).digest("hex").slice(0, 24)}`);
+        const [snapshot, receipt] = await Promise.all([readDoc(ctx, ref), readDoc(ctx, receiptRef)]);
+        const offering = asRecord(snapshot);
+        if (receipt.exists) return { offeringId: target.offeringId, status: "already_retired" as const, message: "Already retired by an earlier attempt of this operation." };
+        if (!offering || offering.entityType !== "Hospitality Menu Offering") throw problem("Offering record was not found.", 404);
+        if (offering.record.lifecycleState === "archived") return { offeringId: target.offeringId, status: "already_retired" as const, message: "Already archived." };
+        expectVersion(offering, target.expectedVersion, "This offering record");
+        if (spec.requireCreatedBy && (offering.record.createdBy !== spec.requireCreatedBy || Number(offering.record.version) !== 1)) throw problem("This record was not created by the expected operation or has been edited since; it is left untouched.", 409);
+        if (spec.reason === "redundant-default" && (offering.record.available === false || offering.record.minimumQuantity !== undefined || offering.record.configuration !== undefined)) throw problem("This record carries a site difference and is not redundant; it is left untouched.", 409);
+        retire(ctx, offering, spec.reason, spec.reason === "item-archived" ? "Retired: the Item is archived." : "Retired: redundant default availability (the sparse model stores exceptions only).");
+        const itemId = text(offering.record.hospitalityMenuItemId);
+        tx.create(receiptRef, { action: "Hospitality Catalogue site record retired", entityReference: itemId, actorId: actor.uid, actorName: actor.name, timestamp: ctx.now, reason: spec.reason === "item-archived" ? "Site record retired because its Item is archived." : "Site record retired: it stated nothing beyond the company defaults.", details: { retireOperationId: spec.operationId, offeringId: target.offeringId, itemId, oplocId: offering.record.oplocId, reason: spec.reason, before: { lifecycleState: "active", version: offering.record.version }, after: { lifecycleState: "archived", retiredReason: spec.reason } } });
+        return { offeringId: target.offeringId, status: "retired" as const, message: "Retired." };
+      }));
+    } catch (error) { results.push({ offeringId: target.offeringId, status: "failed", message: (error as Error).message }); }
+  }
+  return results;
 }

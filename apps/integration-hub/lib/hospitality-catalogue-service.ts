@@ -8,15 +8,15 @@ import { parseCanonical } from "./schemas";
 import type { CanonicalRecord } from "./types";
 import { listCanonicalRecordsByTypes } from "./canonical-oplocs";
 import { existingCandidatesForNewItem } from "./hospitality-catalogue-canonicalisation";
+import { buildCataloguePackage } from "./hospitality-catalogue-package";
+import { resolveSiteCatalogue } from "./hospitality-effective-offering";
 
-export const HOSPITALITY_PORTAL_READ_CONTRACT_VERSION = "fika.hospitality-menu-read.v2";
+export const HOSPITALITY_PORTAL_READ_CONTRACT_VERSION = "fika.hospitality-menu-read.v3";
 type MenuEntity = "Hospitality Menu Item" | "Hospitality Menu Offering" | "Hospitality Menu Price" | "Hospitality Brochure Import" | "Hospitality Brochure Candidate";
 type OfferingMode = "standard" | "quote_only";
 const canonical = () => db.collection("integrationHubCanonical");
-const revisions = () => db.collection("integrationHubCanonicalRevisions");
 const audit = () => db.collection("integrationHubGovernanceAudit");
 const problem = (message: string) => Object.assign(new Error(message), { status: 422 });
-const activePublished = (record: CanonicalRecord) => record.lifecycleStatus === "published" && record.publicationStatus === "published" && record.record.lifecycleState === "active";
 
 function base(actor: Actor, entityType: MenuEntity, canonicalId: string, now: string) {
   return { schemaVersion: "0.1.0", version: 1, createdAt: now, createdBy: actor.uid, updatedAt: now, updatedBy: actor.uid, active: true, externalIdentities: [], provenanceIds: [], ownership: { providerOwned: {}, fikaOwned: {} }, entityType, canonicalId };
@@ -29,11 +29,6 @@ function asCanonical(entityType: MenuEntity, record: Record<string, unknown>, st
 function validate(entityType: MenuEntity, record: Record<string, unknown>) {
   const parsed = parseCanonical(entityType, record);
   if (!parsed.success) throw problem(`${entityType} validation failed: ${parsed.error.issues[0]?.message || "Review the values."}`);
-}
-
-function dateApplies(record: CanonicalRecord, date: string) {
-  const from = String(record.record.effectiveFrom || ""); const to = String(record.record.effectiveTo || "");
-  return (!from || from <= date) && (!to || to >= date);
 }
 
 function overlap(a: CanonicalRecord, b: Record<string, unknown>) {
@@ -131,31 +126,22 @@ export async function publishReviewedBrochureImport(actor: Actor, brochureImport
   return { brochureImportId, candidateCount: candidates.length, records };
 }
 
-/** Site-local presentation overrides live on the Offering; identity, allergens and routing stay on the canonical Item. */
-const localText = (configuration: unknown, key: "displayName" | "description") => { const value = (configuration as Record<string, unknown> | undefined)?.[key]; return typeof value === "string" && value.trim() ? value.trim() : undefined; };
 export type HospitalityPortalReadRequest = { oplocId: string; operationalAreaId?: string; serviceDate: string; serviceContext?: string };
+/**
+ * Portal read = canonical records -> compact package -> the ONE effective-offering resolver. Every active Item is available at every
+ * active OPLOC unless a sparse exception says otherwise. OPLOC liveness is enforced whenever OPLOC records are supplied (both
+ * authoritative loaders supply them); a caller that supplies none (unit fixtures) is treated as asking about an active OPLOC.
+ */
 export function hospitalityPortalReadFromRecords(records: CanonicalRecord[], request: HospitalityPortalReadRequest) {
-  const all = records;
-  const itemById = new Map(all.filter(record => record.entityType === "Hospitality Menu Item").map(record => [record.canonicalId, record]));
-  const eligibleOfferings = all.filter(record => record.entityType === "Hospitality Menu Offering" && activePublished(record) && String(record.record.oplocId) === request.oplocId && (!record.record.operationalAreaId || String(record.record.operationalAreaId) === request.operationalAreaId));
-  const offerings: Array<Record<string, unknown>> = eligibleOfferings.flatMap<Record<string, unknown>>(offering => {
-    const item = itemById.get(String(offering.record.hospitalityMenuItemId)); if (!item || !activePublished(item)) return [];
-    const mode = offering.record.offeringMode as OfferingMode;
-    const livePrice = (record: CanonicalRecord) => record.entityType === "Hospitality Menu Price" && activePublished(record) && record.record.lifecycleState === "active" && dateApplies(record, request.serviceDate);
-    const overridePrices = all.filter(record => livePrice(record) && String(record.record.hospitalityMenuOfferingId) === offering.canonicalId);
-    // Sparse inheritance: a standard Offering without its own Price inherits the company-default Price held on its Item. Quote-only never inherits.
-    const prices = overridePrices.length || mode !== "standard" ? overridePrices : all.filter(record => livePrice(record) && String(record.record.hospitalityMenuItemId) === item.canonicalId);
-    const minimumQuantity = offering.record.minimumQuantity ?? item.record.defaultMinimumQuantity;
-    if (prices.some(price => typeof price.record.amount !== "number" || !Number.isFinite(price.record.amount) || price.record.amount < 0 || typeof price.record.vatRate !== "number" || !Number.isFinite(price.record.vatRate))) return [];
-    const configuration = offering.record.configuration && typeof offering.record.configuration === "object" ? structuredClone(offering.record.configuration) : undefined;
-    if (mode === "standard") { if (prices.length !== 1) return []; const price = prices[0]; return [{ offeringId: offering.canonicalId, itemId: item.canonicalId, name: localText(configuration, "displayName") ?? String(item.record.name), description: localText(configuration, "description") ?? (item.record.description ? String(item.record.description) : undefined), category: String(item.record.category), offeringMode: mode, configuration, constraints: { minimumQuantity, minimumGuests: offering.record.minimumGuests, noticeRequiredDays: offering.record.noticeRequiredDays }, price: { priceId: price.canonicalId, amount: Number(price.record.amount), currency: "GBP" as const, vatRate: Number(price.record.vatRate) }, dietaryInformation: Array.isArray(item.record.dietaryInformation) ? item.record.dietaryInformation.map(String) : [], allergenInformation: Array.isArray(item.record.allergenInformation) ? item.record.allergenInformation.map(String) : [] }]; }
-    if (prices.length) return []; return [{ offeringId: offering.canonicalId, itemId: item.canonicalId, name: localText(configuration, "displayName") ?? String(item.record.name), description: localText(configuration, "description") ?? (item.record.description ? String(item.record.description) : undefined), category: String(item.record.category), offeringMode: mode, configuration, constraints: { minimumQuantity, minimumGuests: offering.record.minimumGuests, noticeRequiredDays: offering.record.noticeRequiredDays }, quoteRequired: true, dietaryInformation: Array.isArray(item.record.dietaryInformation) ? item.record.dietaryInformation.map(String) : [], allergenInformation: Array.isArray(item.record.allergenInformation) ? item.record.allergenInformation.map(String) : [] }];
-  });
+  const of = (type: string) => records.filter(record => record.entityType === type);
+  const pkg = buildCataloguePackage({ items: of("Hospitality Menu Item"), offerings: of("Hospitality Menu Offering"), prices: of("Hospitality Menu Price"), oplocs: of("OPLOC"), routing: [] }, request.serviceDate);
+  const catalogue = of("OPLOC").length ? pkg : { ...pkg, oplocs: [{ id: request.oplocId, label: request.oplocId }] };
+  const offerings = resolveSiteCatalogue(catalogue, request.oplocId, { serviceDate: request.serviceDate, operationalAreaId: request.operationalAreaId }).map(offering => { const { source, ...rest } = offering; void source; return rest; });
   return { contractVersion: HOSPITALITY_PORTAL_READ_CONTRACT_VERSION, source: "canonical" as const, request: { ...request }, offerings };
 }
 
 export async function hospitalityPortalReadContract(request: HospitalityPortalReadRequest) {
-  const records = await listCanonicalRecordsByTypes(["Hospitality Menu Item", "Hospitality Menu Offering", "Hospitality Menu Price"]); return hospitalityPortalReadFromRecords(records as CanonicalRecord[], request);
+  const records = await listCanonicalRecordsByTypes(["Hospitality Menu Item", "Hospitality Menu Offering", "Hospitality Menu Price", "OPLOC"]); return hospitalityPortalReadFromRecords(records as CanonicalRecord[], request);
 }
 
 export function assertNoPriceForQuoteOnly(offering: CanonicalRecord, price: CanonicalRecord) {

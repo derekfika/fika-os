@@ -33,29 +33,38 @@ const livePrices = async (filter: { itemId?: string; offeringId?: string }) => {
   return (await canonical().where(field, "==", filter.itemId || filter.offeringId).get()).docs.map(doc => doc.data() as CanonicalRecord).filter(record => record.entityType === "Hospitality Menu Price");
 };
 const auditFor = async (entityReference: string) => (await audit().where("entityReference", "==", entityReference).get()).docs.map(doc => doc.data());
-const newOploc = (key: string, suffix: string) => seed("OPLOC", `oploc:cat-${key}-${suffix}`, { approvedName: `Site ${suffix} ${key}`, lifecycleState: "active", hospitalityEnabled: true });
+const newOploc = (key: string, suffix: string) => seed("OPLOC", `oploc:cat-${key}-${suffix}`, { approvedName: `Site ${suffix} ${key}`, lifecycleState: "active" });
+const activeOplocIds = async () => (await loadCataloguePayload(admin)).oplocs.filter(oploc => oploc.active).map(oploc => oploc.oplocId);
+const exceptionsOf = async (itemId: string) => (await canonical().where("record.hospitalityMenuItemId", "==", itemId).get()).docs.map(doc => doc.data() as CanonicalRecord).filter(record => record.entityType === "Hospitality Menu Offering");
 const unique = () => randomUUID().replace(/-/g, "").slice(0, 12);
 const createInput = (key: string, oplocIds: string[], extra: Record<string, unknown> = {}) => ({ action: "create-item" as const, requestId: `req-${key}-${unique()}`, name: `Test Item ${key}`, category: "Drinks", routing: "cpu_hospitality" as const, defaultPrice: { amount: 3 }, oplocIds, ...extra });
 
-test("create-item writes Item + default Price + Offerings + routing + audit atomically, replays safely and refuses duplicates", { skip: !enabled }, async () => {
+test("create-item writes Item + default Price + routing + audit atomically; availability is the default so ONLY excluded sites get an exception; replays safely and refuses duplicates", { skip: !enabled }, async () => {
   const key = unique(); const [a, b] = [await newOploc(key, "a"), await newOploc(key, "b")];
+  const activeBefore = await activeOplocIds();
   const input = createInput(key, [a, b], { defaultMinimumQuantity: 6 });
   const created = await run(input); const itemId = created.itemIds[0];
   assert.match(itemId, /^hospitality-menu-item:[0-9a-f]{32}$/, "company-wide id, never site-prefixed");
   const item = await get(itemId); assert.equal(item?.record.defaultMinimumQuantity, 6); assert.equal(item?.record.lifecycleState, "active");
   const defaults = await livePrices({ itemId }); assert.equal(defaults.length, 1); assert.equal(defaults[0].record.amount, 3); assert.equal(defaults[0].record.effectiveFrom, ukBusinessDate());
-  const offerings = (await canonical().where("record.hospitalityMenuItemId", "==", itemId).get()).docs.map(doc => doc.data() as CanonicalRecord).filter(record => record.entityType === "Hospitality Menu Offering");
-  assert.equal(offerings.length, 2); assert.ok(offerings.every(offering => offering.record.minimumQuantity === undefined), "sparse: defaults are not copied into Offerings");
-  assert.equal((await livePrices({ offeringId: offerings[0].canonicalId })).length, 0, "no price duplicated onto the Offering");
+  const exceptions = await exceptionsOf(itemId); const activeAfter = await activeOplocIds();
+  assert.ok(exceptions.length >= activeBefore.length - 2 && exceptions.length <= activeAfter.length - 2, "one exception per EXCLUDED active site; none for the two selected");
+  assert.ok(exceptions.every(exception => exception.record.available === false && exception.record.lifecycleState === "active" && ![a, b].includes(String(exception.record.oplocId))), "exceptions only exclude");
+  assert.ok(exceptions.every(exception => exception.record.minimumQuantity === undefined), "defaults are never copied onto site records");
   assert.deepEqual((await routing().doc(stableDocumentId(itemId)).get()).data()?.workstreams, ["hospitality"]);
   const events = await auditFor(itemId); assert.equal(events.length, 1); assert.equal(events[0].actorId, admin.uid); assert.equal(events[0].action, "Hospitality Catalogue item created"); assert.equal(events[0].details.after.name, input.name);
 
   const replay = await run(input); assert.equal(replay.message, "This item was already created."); // double click / retry
-  assert.equal((await auditFor(itemId)).length, 1); assert.equal((await livePrices({ itemId })).length, 1);
+  assert.equal((await auditFor(itemId)).length, 1); assert.equal((await livePrices({ itemId })).length, 1); assert.equal((await exceptionsOf(itemId)).length, exceptions.length);
+
+  // Selecting EVERY active site stores nothing at all
+  const everyKey = unique(); const allActive = await activeOplocIds();
+  const all = await run(createInput(everyKey, allActive)); const stored = await exceptionsOf(all.itemIds[0]);
+  assert.ok(stored.length <= (await activeOplocIds()).length - allActive.length, "select all sites = zero availability fan-out (only OPLOCs added concurrently by other tests could appear)");
 
   await rejects(run({ ...createInput(key, [a]), name: input.name.toUpperCase() }), /already exists/);
   await rejects(run(createInput(`${key}x`, [])), /at least one site/);
-  await rejects(run({ ...createInput(`${key}y`, [a, "oploc:does-not-exist-anywhere"]) }), /not an active Hospitality-enabled location/);
+  await rejects(run({ ...createInput(`${key}y`, [a, "oploc:does-not-exist-anywhere"]) }), /not an active location/);
   assert.equal((await canonical().where("record.name", "==", `Test Item ${key}y`).get()).size, 0, "a failed create writes nothing");
   await rejects(run({ ...createInput(`${key}z`, [a]), routing: undefined as never }), /production route/);
   await rejects(run({ ...createInput(`${key}w`, [a]), defaultPrice: { amount: 1.234 } }), /two decimal places/);
@@ -93,47 +102,43 @@ test("edit, default price change, stale editors and audit before/after", { skip:
   const all = await livePrices({ itemId }); assert.equal(all.filter(price => price.record.amount === 4 && price.record.lifecycleState === "active").length, 1);
 });
 
-test("offerings: enable, disable, re-enable and duplicate refusal; sparse overrides inherit, override and reset safely", { skip: !enabled }, async () => {
+test("sparse exceptions: unavailable and override records appear only when a site differs and retire themselves once redundant; defaults reach every non-overridden site", { skip: !enabled }, async () => {
   const key = unique(); const [a, b] = [await newOploc(key, "a"), await newOploc(key, "b")];
-  const { itemIds: [itemId] } = await run(createInput(key, [a], { defaultMinimumQuantity: 5 }));
-  await run({ action: "add-offering", itemId, expectedVersion: 1, oplocId: b });
-  await rejects(run({ action: "add-offering", itemId, expectedVersion: 2, oplocId: b }), /already available/);
-  const rows = await loadCatalogueRows([itemId]); const row = rows[0];
-  const offeringB = row.offerings.find(offering => offering.oplocId === b)!;
-  assert.equal(offeringB.price.source, "inherits"); assert.equal(offeringB.minimum.effective, 5);
+  const { itemIds: [itemId] } = await run(createInput(key, await activeOplocIds(), { defaultMinimumQuantity: 5 }));
+  const version = async () => (await loadCatalogueRows([itemId]))[0].version;
+  const siteException = async (oplocId: string) => (await exceptionsOf(itemId)).filter(record => record.record.oplocId === oplocId);
+  assert.equal((await siteException(a)).length, 0, "available everywhere by default: no record");
 
-  await rejects(run({ action: "set-offering-override", offeringId: offeringB.offeringId, expectedVersion: offeringB.version, price: { amount: 3 } }), /equals the company default/);
-  await rejects(run({ action: "set-offering-override", offeringId: offeringB.offeringId, expectedVersion: offeringB.version, minimumQuantity: 5 }), /equals the company default minimum/);
-  await run({ action: "set-offering-override", offeringId: offeringB.offeringId, expectedVersion: offeringB.version, price: { amount: 3.8 }, minimumQuantity: 12 });
-  let current = (await loadCatalogueRows([itemId]))[0].offerings.find(offering => offering.offeringId === offeringB.offeringId)!;
-  assert.equal(current.price.source, "overrides"); assert.equal(current.price.effective?.amount, 3.8); assert.equal(current.minimum.source, "overrides"); assert.equal(current.minimum.effective, 12);
+  await run({ action: "set-site-availability", itemId, expectedVersion: await version(), oplocId: a, available: false });
+  let blocked = await siteException(a); assert.equal(blocked.length, 1); assert.equal(blocked[0].record.available, false);
+  assert.ok(!(await loadCatalogueRows([itemId]))[0].availableAt.includes(a)); assert.ok((await loadCatalogueRows([itemId]))[0].availableAt.includes(b));
+  await rejects(run({ action: "set-site-availability", itemId, expectedVersion: await version(), oplocId: a, available: false }), /already unavailable/);
+  await run({ action: "set-site-availability", itemId, expectedVersion: await version(), oplocId: a, available: true });
+  blocked = await siteException(a); assert.equal(blocked.length, 1); assert.equal(blocked[0].record.lifecycleState, "archived", "the exception record is retired once it says nothing"); assert.equal(blocked[0].record.retiredReason, "redundant-default");
+  assert.ok((await loadCatalogueRows([itemId]))[0].availableAt.includes(a));
+  await rejects(run({ action: "set-site-availability", itemId, expectedVersion: await version(), oplocId: a, available: true }), /already available/);
 
-  // concurrent override edits: the second editor, holding the old version, fails safely
-  await rejects(run({ action: "set-offering-override", offeringId: offeringB.offeringId, expectedVersion: offeringB.version, price: { amount: 4.1 } }), /changed elsewhere/);
+  const v0 = await version(); const overridesBefore = (await loadCatalogueRows([itemId]))[0].overrideCount;
+  await rejects(run({ action: "set-site-override", itemId, expectedVersion: v0, oplocId: b, price: { amount: 3 } }), /equals the company default/);
+  await rejects(run({ action: "set-site-override", itemId, expectedVersion: v0, oplocId: b, minimumQuantity: 5 }), /equals the company default minimum/);
+  await run({ action: "set-site-override", itemId, expectedVersion: v0, oplocId: b, price: { amount: 3.8 }, minimumQuantity: 12 });
+  let row = (await loadCatalogueRows([itemId]))[0]; const override = row.offerings.find(offering => offering.oplocId === b && offering.status === "active")!;
+  assert.equal(override.price.source, "overrides"); assert.equal(override.price.effective?.amount, 3.8); assert.equal(override.minimum.effective, 12); assert.equal(row.overrideCount, overridesBefore + 2, "exactly the price and minimum overrides were added");
+  await rejects(run({ action: "set-site-override", itemId, expectedVersion: v0, oplocId: b, price: { amount: 4.1 } }), /changed elsewhere/); // concurrent editor with the old version
 
-  // changing the company default moves every NON-overridden Offering and leaves the override alone
-  await run({ action: "set-default-price", itemId, expectedVersion: 2, price: { amount: 4.25 } });
-  const afterDefault = (await loadCatalogueRows([itemId]))[0];
-  assert.equal(afterDefault.offerings.find(offering => offering.oplocId === a)!.price.effective?.amount, 4.25);
-  assert.equal(afterDefault.offerings.find(offering => offering.oplocId === b)!.price.effective?.amount, 3.8);
+  await run({ action: "set-default-price", itemId, expectedVersion: await version(), price: { amount: 4.25 } });
+  row = (await loadCatalogueRows([itemId]))[0];
+  assert.equal(row.defaultPrice?.amount, 4.25); assert.equal(row.offerings.find(offering => offering.oplocId === b && offering.status === "active")!.price.effective?.amount, 3.8, "the default change never touches an override");
+  assert.equal((await siteException(a)).filter(record => record.record.lifecycleState !== "archived").length, 0, "and creates no override anywhere else");
 
-  current = afterDefault.offerings.find(offering => offering.offeringId === offeringB.offeringId)!;
-  await run({ action: "set-offering-override", offeringId: current.offeringId, expectedVersion: current.version, price: null, minimumQuantity: null });
-  const reset = (await loadCatalogueRows([itemId]))[0].offerings.find(offering => offering.offeringId === current.offeringId)!;
-  assert.equal(reset.price.source, "inherits"); assert.equal(reset.price.effective?.amount, 4.25); assert.equal(reset.minimum.source, "inherits");
-  const archivedPrices = (await livePrices({ offeringId: current.offeringId })); assert.ok(archivedPrices.length >= 1 && archivedPrices.every(price => price.record.lifecycleState === "archived"), "reset archives, never deletes");
-  await rejects(run({ action: "set-offering-override", offeringId: reset.offeringId, expectedVersion: reset.version, price: null }), /no price override to reset/);
-
-  await run({ action: "set-offering-override", offeringId: reset.offeringId, expectedVersion: reset.version, displayName: "Local name", description: "Local words" });
-  const wording = (await loadCatalogueRows([itemId]))[0].offerings.find(offering => offering.offeringId === reset.offeringId)!; assert.equal(wording.displayName, "Local name");
-
-  await run({ action: "set-offering-status", offeringId: wording.offeringId, expectedVersion: wording.version, status: "archived" });
-  const disabled = (await loadCatalogueRows([itemId]))[0]; assert.deepEqual(disabled.availableAt, [a]);
-  await rejects(run({ action: "set-offering-status", offeringId: wording.offeringId, expectedVersion: wording.version, status: "archived" }), /changed elsewhere/);
-  await run({ action: "add-offering", itemId, expectedVersion: disabled.version, oplocId: b }); // re-enables the same Offering, no duplicate
-  const reenabled = await loadCatalogueRows([itemId]); assert.equal(reenabled[0].offerings.filter(offering => offering.oplocId === b).length, 1); assert.equal(reenabled[0].offerings.find(offering => offering.oplocId === b)!.displayName, "Local name", "re-enabling keeps its previous local wording");
+  await run({ action: "set-site-override", itemId, expectedVersion: await version(), oplocId: b, price: null, minimumQuantity: null });
+  const retired = (await siteException(b)); assert.ok(retired.every(record => record.record.lifecycleState === "archived" && record.record.retiredReason === "redundant-default"), "reset retires the record: no exception merely to state the defaults");
+  assert.ok((await livePrices({ offeringId: retired[0].canonicalId })).every(price => price.record.lifecycleState === "archived"), "override Prices are archived, never deleted");
+  await run({ action: "set-site-override", itemId, expectedVersion: await version(), oplocId: b, displayName: "Local name", description: "Local words" });
+  const wording = (await siteException(b)).filter(record => record.record.lifecycleState !== "archived"); assert.equal(wording.length, 1); assert.equal(wording[0].canonicalId, retired[0].canonicalId, "the same record is revived (stable identity)");
+  await rejects(run({ action: "set-site-override", itemId, expectedVersion: await version(), oplocId: b, price: null }), /no price override to reset/);
   const events = (await auditFor(itemId)).map(event => event.action);
-  for (const action of ["Hospitality Catalogue offering enabled", "Hospitality Catalogue override set", "Hospitality Catalogue override removed", "Hospitality Catalogue offering disabled"]) assert.ok(events.includes(action), action);
+  for (const action of ["Hospitality Catalogue offering disabled", "Hospitality Catalogue offering enabled", "Hospitality Catalogue override set", "Hospitality Catalogue override removed"]) assert.ok(events.includes(action), action);
 });
 
 test("routing: explicit choice only, stale and repeated first-time saves fail, archived items refused", { skip: !enabled }, async () => {
@@ -202,7 +207,7 @@ test("merge-items collapses duplicates, keeps every Offering/Price/override and 
   assert.equal((await db.collection("integrationHubHospitalityMenuItemMerges").doc(stableDocumentId(rcoa)).get()).data()?.survivorMenuItemId, mnk);
   assert.equal((await db.collection(REVIEW_DECISIONS_COLLECTION).get()).docs.some(doc => doc.data().decision === "merge" && doc.data().survivorItemId === mnk), true);
   assert.equal((await auditFor(mnk)).filter(event => event.action === "Hospitality Catalogue items merged").length, 1);
-  const [row] = await loadCatalogueRows([mnk]); assert.equal(row.availableAt.length, 2); assert.equal(row.routing.state, "cpu_hospitality");
+  const [row] = await loadCatalogueRows([mnk]); assert.equal(row.unavailableAt.length, 0, "the merged Item is available everywhere by default"); assert.ok(row.offerings.filter(offering => offering.status === "active").length >= 2, "both legacy exception records were repointed, not dropped"); assert.equal(row.routing.state, "cpu_hospitality");
 });
 
 test("adopt-company-default: operator-confirmed default makes equal site prices inherit and keeps differing ones as overrides", { skip: !enabled }, async () => {

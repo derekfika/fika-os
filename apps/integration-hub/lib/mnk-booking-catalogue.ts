@@ -2,7 +2,7 @@ import { hospitalityPortalReadFromRecords, type HospitalityPortalReadRequest } f
 import type { CanonicalRecord } from "./types";
 import type { MnkBookingPayload } from "./hospitality-booking-service";
 
-/** Read only the Offerings/Prices related to the submitted stable Item IDs. */
+/** Read only what the effective-offering resolver needs for the submitted stable Item IDs: their sparse site exceptions, company-default and exception Prices, and the one OPLOC (liveness). */
 export async function loadMnkBookingCatalogue(items: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, read: (field: string, ids: string[]) => Promise<CanonicalRecord[]>) {
   const requested = new Set(payload.order.items.map(item => item.itemId));
   const itemIds = items.filter(item => item.entityType === "Hospitality Menu Item" && (requested.has(item.canonicalId) || (Array.isArray(item.record.providerMappings) && item.record.providerMappings.some(raw => {
@@ -15,9 +15,12 @@ export async function loadMnkBookingCatalogue(items: CanonicalRecord[], payload:
     for (let index = 0; index < distinct.length; index += 30) records.push(...await read(field, distinct.slice(index, index + 30)));
     return records;
   };
-  const offerings = (await boundedRead("record.hospitalityMenuItemId", itemIds)).filter(record => record.entityType === "Hospitality Menu Offering" && record.record.oplocId === oplocId);
-  const prices = [...await boundedRead("record.hospitalityMenuOfferingId", offerings.map(record => record.canonicalId)), ...await boundedRead("record.hospitalityMenuItemId", itemIds)].filter(record => record.entityType === "Hospitality Menu Price");
-  return [...items, ...offerings, ...prices];
+  // One bounded read by stable Item id returns both sparse site exceptions and company-default Prices (they share this field).
+  const related = await boundedRead("record.hospitalityMenuItemId", itemIds);
+  const offerings = related.filter(record => record.entityType === "Hospitality Menu Offering" && record.record.oplocId === oplocId);
+  const prices = [...related.filter(record => record.entityType === "Hospitality Menu Price"), ...await boundedRead("record.hospitalityMenuOfferingId", offerings.map(record => record.canonicalId))].filter(record => record.entityType === "Hospitality Menu Price");
+  const oploc = (await read("canonicalId", [oplocId])).filter(record => record.entityType === "OPLOC");
+  return [...items, ...offerings, ...prices, ...oploc];
 }
 
 /** Server-owned adapter into the existing strict price validator; no client prices. */

@@ -257,43 +257,44 @@ function RoutingEditor({ row, canManage, send }: { row: CatalogueRow; canManage:
   </section>;
 }
 
-function OfferingEditor({ row, offering, label, canManage, send, itemInactive }: { row: CatalogueRow; offering: CatalogueOfferingView; label: string; canManage: boolean; send: Send; itemInactive: boolean }) {
-  const [open, setOpen] = useState(false);
-  const [fields, setFields] = useSyncedState({ price: offering.price.override ? String(offering.price.override.amount) : "", minimum: offering.minimum.override !== undefined ? String(offering.minimum.override) : "", displayName: offering.displayName || "", description: offering.description || "" }, `${offering.offeringId}:${offering.version}:${offering.price.override?.priceId}`);
+/** One site's sparse exception (or a synthetic inherit-everything view while the operator is about to create one). */
+function SiteExceptionEditor({ row, oplocId, offering, label, canManage, send, itemInactive, startOpen = false }: { row: CatalogueRow; oplocId: string; offering?: CatalogueOfferingView; label: string; canManage: boolean; send: Send; itemInactive: boolean; startOpen?: boolean }) {
+  const view: CatalogueOfferingView = offering ?? { offeringId: "", version: 0, oplocId, mode: "standard", status: "active", available: true, noEffect: true, price: row.defaultPrice ? { source: "inherits", effective: row.defaultPrice } : { source: "none" }, minimum: row.defaultMinimumQuantity !== undefined ? { source: "inherits", effective: row.defaultMinimumQuantity } : { source: "none" } };
+  const [open, setOpen] = useState(startOpen);
+  const [fields, setFields] = useSyncedState({ price: view.price.override ? String(view.price.override.amount) : "", minimum: view.minimum.override !== undefined ? String(view.minimum.override) : "", displayName: view.displayName || "", description: view.description || "" }, `${row.itemId}:${row.version}:${oplocId}`);
   const { price, minimum, displayName, description } = fields;
   const setPrice = (value: string) => setFields(previous => ({ ...previous, price: value })), setMinimum = (value: string) => setFields(previous => ({ ...previous, minimum: value })), setDisplayName = (value: string) => setFields(previous => ({ ...previous, displayName: value })), setDescription = (value: string) => setFields(previous => ({ ...previous, description: value }));
   const { busy, error, setError, run } = useAction(send);
   const disabled = !canManage || busy || itemInactive;
-  const base = { offeringId: offering.offeringId, expectedVersion: offering.version };
-  const active = offering.status === "active";
+  const base = { itemId: row.itemId, expectedVersion: row.version, oplocId };
   async function savePrice() {
     const amount = numberOrUndefined(price); if (amount === undefined || Number.isNaN(amount)) { setError("Enter a site price, for example 4.50."); return; }
-    await run({ action: "set-offering-override", ...base, price: { amount } });
+    await run({ action: "set-site-override", ...base, price: { amount } });
   }
   async function saveMinimum() {
     const value = numberOrUndefined(minimum); if (value === undefined || Number.isNaN(value)) { setError("Enter a whole-number site minimum."); return; }
-    await run({ action: "set-offering-override", ...base, minimumQuantity: value });
+    await run({ action: "set-site-override", ...base, minimumQuantity: value });
   }
-  return <li className={`hc-offering ${active ? "" : "is-off"}`}>
+  return <li className={`hc-offering ${view.available ? "" : "is-off"}`}>
     <div className="hc-offering__head">
-      <strong>{label}{offering.operationalAreaId ? " · specific area" : ""}</strong>
-      <label className="hc-switch"><input type="checkbox" checked={active} disabled={disabled} onChange={event => void run({ action: "set-offering-status", ...base, status: event.target.checked ? "active" : "archived" })} /> {active ? "Available" : "Not available"}</label>
+      <strong>{label}{view.operationalAreaId ? " · specific area" : ""}</strong>
+      <label className="hc-switch"><input type="checkbox" checked={view.available} disabled={disabled || Boolean(view.operationalAreaId)} onChange={event => void run({ action: "set-site-availability", ...base, available: event.target.checked })} /> {view.available ? "Available" : "Not available"}</label>
     </div>
-    {active && <dl className="hc-offering__values">
-      <div><dt>Price</dt><dd>{offering.mode === "quote_only" ? <SourceTag source="quote_only" /> : <><SourceTag source={offering.price.source} /> {offering.price.effective ? formatMoney(offering.price.effective.amount) : ""}{offering.price.redundant ? <small> (same as company default)</small> : null}</>}</dd></div>
-      <div><dt>Minimum</dt><dd><SourceTag source={offering.minimum.source} /> {offering.minimum.effective ?? ""}</dd></div>
-      {(offering.displayName || offering.description) && <div><dt>Local wording</dt><dd><SourceTag source="overrides" /> {offering.displayName || "Custom description"}</dd></div>}
+    {view.available && <dl className="hc-offering__values">
+      <div><dt>Price</dt><dd>{view.mode === "quote_only" ? <SourceTag source="quote_only" /> : <><SourceTag source={view.price.source} /> {view.price.effective ? formatMoney(view.price.effective.amount) : ""}{view.price.redundant ? <small> (same as company default)</small> : null}</>}</dd></div>
+      <div><dt>Minimum</dt><dd><SourceTag source={view.minimum.source} /> {view.minimum.effective ?? ""}</dd></div>
+      {(view.displayName || view.description) && <div><dt>Local wording</dt><dd><SourceTag source="overrides" /> {view.displayName || "Custom description"}</dd></div>}
     </dl>}
-    {active && canManage && !itemInactive && <>
+    {view.available && canManage && !itemInactive && <>
       <button type="button" className="hc-btn hc-btn--text" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? "Hide site settings" : "Site settings"}</button>
       {open && <div className="hc-override">
-        {offering.mode === "standard" && <div className="hc-override__row"><Field label="Site price (£, ex VAT)" hint={offering.price.source === "overrides" ? "This site overrides the company default." : "Leave empty to inherit the company default."}><input inputMode="decimal" value={price} onChange={event => setPrice(event.target.value)} disabled={disabled} /></Field>
-          <div className="hc-override__actions"><button type="button" className="hc-btn" disabled={disabled || !price.trim()} onClick={() => void savePrice()}>Save price override</button>{offering.price.source === "overrides" && <button type="button" className="hc-btn hc-btn--text" disabled={disabled} onClick={() => void run({ action: "set-offering-override", ...base, price: null })}>Reset to company default</button>}</div></div>}
-        <div className="hc-override__row"><Field label="Site minimum quantity" hint={offering.minimum.source === "overrides" ? "This site overrides the company default." : "Leave empty to inherit the company default."}><input inputMode="numeric" value={minimum} onChange={event => setMinimum(event.target.value)} disabled={disabled} /></Field>
-          <div className="hc-override__actions"><button type="button" className="hc-btn" disabled={disabled || !minimum.trim()} onClick={() => void saveMinimum()}>Save minimum override</button>{offering.minimum.source === "overrides" && <button type="button" className="hc-btn hc-btn--text" disabled={disabled} onClick={() => void run({ action: "set-offering-override", ...base, minimumQuantity: null })}>Reset to company default</button>}</div></div>
+        {view.mode === "standard" && <div className="hc-override__row"><Field label="Site price (£, ex VAT)" hint={view.price.source === "overrides" ? "This site overrides the company default." : "Leave empty to inherit the company default."}><input inputMode="decimal" value={price} onChange={event => setPrice(event.target.value)} disabled={disabled} /></Field>
+          <div className="hc-override__actions"><button type="button" className="hc-btn" disabled={disabled || !price.trim()} onClick={() => void savePrice()}>Save price override</button>{view.price.source === "overrides" && <button type="button" className="hc-btn hc-btn--text" disabled={disabled} onClick={() => void run({ action: "set-site-override", ...base, price: null })}>Reset to company default</button>}</div></div>}
+        <div className="hc-override__row"><Field label="Site minimum quantity" hint={view.minimum.source === "overrides" ? "This site overrides the company default." : "Leave empty to inherit the company default."}><input inputMode="numeric" value={minimum} onChange={event => setMinimum(event.target.value)} disabled={disabled} /></Field>
+          <div className="hc-override__actions"><button type="button" className="hc-btn" disabled={disabled || !minimum.trim()} onClick={() => void saveMinimum()}>Save minimum override</button>{view.minimum.source === "overrides" && <button type="button" className="hc-btn hc-btn--text" disabled={disabled} onClick={() => void run({ action: "set-site-override", ...base, minimumQuantity: null })}>Reset to company default</button>}</div></div>
         <div className="hc-override__row"><Field label="Name shown at this site" hint="Optional. Leave empty to use the company item name."><input value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={disabled} maxLength={240} /></Field>
           <Field label="Description shown at this site" hint="Optional."><textarea value={description} onChange={event => setDescription(event.target.value)} disabled={disabled} maxLength={1000} rows={2} /></Field>
-          <div className="hc-override__actions"><button type="button" className="hc-btn" disabled={disabled} onClick={() => void run({ action: "set-offering-override", ...base, displayName: displayName.trim() || null, description: description.trim() || null })}>Save site wording</button></div></div>
+          <div className="hc-override__actions"><button type="button" className="hc-btn" disabled={disabled} onClick={() => void run({ action: "set-site-override", ...base, displayName: displayName.trim() || null, description: description.trim() || null })}>Save site wording</button></div></div>
         {error && <p role="alert" className="hc-error">{error}</p>}
       </div>}
     </>}
@@ -332,6 +333,8 @@ function ItemPanel({ row, payload, canManage, send, onClose }: { row: CatalogueR
   const [confirmArchive, setConfirmArchive] = useState(false);
   const currentSites = row.availableAt.filter(id => selectableSites(payload.oplocs).some(oploc => oploc.oplocId === id));
   const [siteSet, setSiteSet] = useSyncedState<string[]>(currentSites, `${row.itemId}:${row.version}`);
+  const [newSite, setNewSite] = useState("");
+  const exceptionOfferings = row.offerings.filter(offering => offering.status === "active" && !offering.noEffect);
   const sameSites = siteSet.length === currentSites.length && siteSet.every(id => currentSites.includes(id));
   const save = useAction(send), archive = useAction(send), add = useAction(send);
   const dialog = useDialog(onClose, save.busy || archive.busy || add.busy);
@@ -368,12 +371,21 @@ function ItemPanel({ row, payload, canManage, send, onClose }: { row: CatalogueR
         {!inactive && canManage && <AdoptDefault row={row} send={send} oplocs={payload.oplocs} />}
 
         <section className="hc-section" aria-labelledby="hc-sites-title"><h3 id="hc-sites-title">Available at</h3>
-          {row.offerings.length === 0 ? <p className="hc-hint">Not offered at any site yet.</p> : <ul className="hc-offerings">{row.offerings.map(offering => <OfferingEditor key={offering.offeringId} row={row} offering={offering} label={oplocLabel(payload.oplocs, offering.oplocId)} canManage={canManage} send={send} itemInactive={inactive} />)}</ul>}
+          <p className="hc-hint">{inactive ? "Archived items are not available anywhere." : row.unavailableAt.length === 0 ? `Available at all ${selectableSites(payload.oplocs).length} sites by default. Only exceptions are stored.` : `Available at ${row.availableAt.length} of ${selectableSites(payload.oplocs).length} sites. Not available at: ${row.unavailableAt.map(id => oplocLabel(payload.oplocs, id)).join(", ")}.`}</p>
           {canManage && !inactive && selectableSites(payload.oplocs).length > 0 && <div className="hc-add-site">
             <SitePicker legend="Site availability" sites={selectableSites(payload.oplocs)} value={siteSet} onChange={setSiteSet} disabled={add.busy} />
-            <p className="hc-hint">{siteSet.length === 0 ? "Choose at least one site, or switch individual sites off above." : `Saving makes ${row.name} available at exactly these ${siteSet.length} site${siteSet.length === 1 ? "" : "s"}. Sites removed are disabled; their overrides and history are kept. New sites inherit the company price and minimum.`}</p>
+            <p className="hc-hint">{siteSet.length === 0 ? "Choose at least one site." : `Saving makes ${row.name} available at exactly these ${siteSet.length} site${siteSet.length === 1 ? "" : "s"}. Only the sites left out are recorded, as exceptions; site overrides and history are kept.`}</p>
             <button type="button" className="hc-btn" disabled={add.busy || siteSet.length === 0 || sameSites} onClick={() => void add.run({ action: "bulk-update", operationId: newRequestId(), itemIds: [row.itemId], expectedVersions: { [row.itemId]: row.version }, sites: { mode: "replace", oplocIds: siteSet } })}>{add.busy ? "Saving…" : "Save availability"}</button></div>}
           {add.error && <p role="alert" className="hc-error">{add.error}</p>}
+        </section>
+
+        <section className="hc-section" aria-labelledby="hc-exc-title"><h3 id="hc-exc-title">Site exceptions</h3>
+          <p className="hc-hint">Sites that differ from the company item (price, minimum, wording, notice or availability). A site with no exception simply uses the company defaults.</p>
+          {exceptionOfferings.length === 0 && !newSite ? <p className="hc-hint">No site exceptions.</p> : <ul className="hc-offerings">
+            {exceptionOfferings.map(offering => <SiteExceptionEditor key={offering.offeringId} row={row} oplocId={offering.oplocId} offering={offering} label={oplocLabel(payload.oplocs, offering.oplocId)} canManage={canManage} send={send} itemInactive={inactive} />)}
+            {newSite && <SiteExceptionEditor key={`new-${newSite}`} row={row} oplocId={newSite} label={oplocLabel(payload.oplocs, newSite)} canManage={canManage} send={send} itemInactive={inactive} startOpen />}
+          </ul>}
+          {canManage && !inactive && <div className="hc-add-site"><Field label="Add an exception for a site"><select value={newSite} onChange={event => setNewSite(event.target.value)}><option value="">Choose a site…</option>{selectableSites(payload.oplocs).filter(oploc => !exceptionOfferings.some(offering => offering.oplocId === oploc.oplocId)).map(oploc => <option key={oploc.oplocId} value={oploc.oplocId}>{oploc.label}</option>)}</select></Field></div>}
         </section>
 
         <details className="hc-section hc-advanced"><summary>Source and governance details</summary>
@@ -427,7 +439,7 @@ function AddItemModal({ payload, send, onClose }: { payload: CataloguePayload; s
         <fieldset className="hc-radios"><legend>Production route (required)</legend>
           {ROUTING_CHOICES.map(option => <label key={option}><input type="radio" name="add-route" checked={route === option} onChange={() => setRoute(option)} /> {ROUTING_CHOICE_LABELS[option]}</label>)}
         </fieldset>
-        <SitePicker legend="Available at (choose at least one site)" sites={selectableSites(payload.oplocs)} value={sites} onChange={setSites} disabled={busy} />
+        <SitePicker legend="Available at (all sites by default; untick to exclude)" sites={selectableSites(payload.oplocs)} value={sites} onChange={setSites} disabled={busy} />
         {error && <p role="alert" className="hc-error">{error}</p>}
       </div>
       <footer><button type="button" className="hc-btn" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" className="hc-btn hc-btn--primary" disabled={busy || !ready}>{busy ? "Creating…" : "Create item"}</button></footer>
@@ -442,12 +454,12 @@ function ReviewGroupModal({ group, payload, canManage, send, onClose }: { group:
   const { busy, error, run } = useAction(send);
   const dialog = useDialog(onClose, busy);
   const same = (pick: (row: CatalogueRow) => string) => new Set(members.map(pick)).size <= 1;
-  const sitePrices = (row: CatalogueRow) => row.offerings.filter(offering => offering.status === "active").map(offering => `${oplocLabel(payload.oplocs, offering.oplocId)}: ${offering.price.effective ? formatMoney(offering.price.effective.amount) : "no price"}${offering.minimum.effective !== undefined ? `, min ${offering.minimum.effective}` : ""}`).join("; ") || "None";
+  const sitePrices = (row: CatalogueRow) => `Company default ${row.defaultPrice ? formatMoney(row.defaultPrice.amount) : "not set"}${row.defaultMinimumQuantity !== undefined ? `, min ${row.defaultMinimumQuantity}` : ""}${row.offerings.filter(offering => offering.status === "active" && !offering.noEffect).map(offering => `; ${oplocLabel(payload.oplocs, offering.oplocId)}: ${offering.price.effective ? formatMoney(offering.price.effective.amount) : "no price"}${offering.minimum.effective !== undefined ? `, min ${offering.minimum.effective}` : ""}`).join("")}`;
   const lines: Array<[string, (row: CatalogueRow) => string]> = [
     ["Name", row => row.name], ["Category", row => row.category],
     ["Supplier references", row => row.providerMappings.map(mapping => `${mapping.provider}: ${mapping.sourceItemId}`).join("; ") || row.sourceIds.join("; ") || "None"],
     ["Allergens", row => row.allergenInformation.join(", ") || "None recorded"], ["Dietary", row => row.dietaryInformation.join(", ") || "None recorded"],
-    ["Available at", row => row.availableAt.map(id => oplocLabel(payload.oplocs, id)).join(", ") || "None"], ["Prices and minimums by site", sitePrices],
+    ["Available at", row => sitesSummary(row, payload.oplocs)], ["Prices and minimums", sitePrices],
     ["Production", row => ROUTING_STATE_LABELS[row.routing.state]],
   ];
   const safetyDiffers = !same(row => row.allergenInformation.join("|")) || !same(row => row.dietaryInformation.join("|"));
@@ -482,7 +494,7 @@ function SitePicker({ legend, sites, value, onChange, disabled }: { legend: stri
   const shown = sites.filter(site => site.label.toLocaleLowerCase("en-GB").includes(query.trim().toLocaleLowerCase("en-GB")));
   return <fieldset className="hc-radios hc-sites"><legend>{legend}</legend>
     <div className="hc-sites__bar">
-      <span role="status" aria-live="polite">{value.length} of {sites.length} Hospitality site{sites.length === 1 ? "" : "s"} selected</span>
+      <span role="status" aria-live="polite">{value.length} of {sites.length} site{sites.length === 1 ? "" : "s"} selected</span>
       <button type="button" className="hc-btn hc-btn--text" disabled={disabled || value.length === sites.length} onClick={() => onChange(sites.map(site => site.oplocId))}>Select all sites</button>
       <button type="button" className="hc-btn hc-btn--text" disabled={disabled || value.length === 0} onClick={() => onChange([])}>Clear all</button>
     </div>

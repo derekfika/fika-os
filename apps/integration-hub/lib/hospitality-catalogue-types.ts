@@ -40,6 +40,11 @@ export type CatalogueOfferingView = {
   operationalAreaId?: string;
   mode: "standard" | "quote_only";
   status: "active" | "archived";
+  /** SPARSE EXCEPTION: `false` = the Item is NOT offered at this site. Absent/true = available (the default everywhere). */
+  available: boolean;
+  /** A stored record that states nothing beyond the company defaults (legacy). It has no effect and is retired by migration. */
+  noEffect: boolean;
+  retiredReason?: "item-archived" | "redundant-default";
   displayName?: string;
   description?: string;
   price: { source: PriceSource; effective?: CataloguePriceView; override?: CataloguePriceView; redundant?: boolean };
@@ -58,8 +63,9 @@ export type CatalogueRow = {
   defaultPrice?: CataloguePriceView;
   defaultMinimumQuantity?: number;
   offerings: CatalogueOfferingView[];
-  /** Distinct active OPLOC ids where the item is currently available. */
+  /** Active OPLOC ids where the Item is available: every active OPLOC except sparse `available:false` exceptions (empty if the Item is archived). */
   availableAt: string[];
+  unavailableAt: string[];
   overrideCount: number;
   /** Reasons this row needs an operator; empty when nothing is outstanding. */
   needsReview: Array<"routing_required" | "routing_conflict" | "price_missing" | "duplicate_candidate">;
@@ -79,8 +85,8 @@ export type PriceMigrationView =
   | { status: "operator_required"; reason: string; values: Array<{ oplocId: string; offeringId: string; amount?: number; vatRate?: number; minimumQuantity?: number }>; minimumQuantity?: number };
 
 export type ReviewGroupView = { id: string; memberIds: string[]; reasons: string[]; decision?: "merge" | "keep_separate" | "defer"; decidedAt?: string; decidedBy?: string };
-/** `hospitality` = selectable by "Select all sites" (an active location the catalogue may offer items at). */
-export type CatalogueOplocView = { oplocId: string; label: string; active: boolean; hospitality: boolean };
+/** Every active OPLOC is Hospitality-capable; "Select all sites" = every active location. */
+export type CatalogueOplocView = { oplocId: string; label: string; active: boolean };
 export type CataloguePayload = {
   generatedAt: string;
   canManage: boolean;

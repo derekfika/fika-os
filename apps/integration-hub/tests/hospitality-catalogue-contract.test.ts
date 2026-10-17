@@ -22,16 +22,20 @@ test("MNK generated IDs remain stable when the same explicit migration configura
   assert.deepEqual(first.candidates.map((candidate: any) => [candidate.itemId, candidate.offeringId, candidate.priceId]), second.candidates.map((candidate: any) => [candidate.itemId, candidate.offeringId, candidate.priceId]));
 });
 
-test("portal contract exposes only active published in-scope offers and preserves quote-only pricing boundary", () => {
+test("portal contract: availability is the default at every active OPLOC; quote-only is a sparse area exception; an unavailable exception removes the item", () => {
   const item = record("Hospitality Menu Item", "hospitality-menu-item:one", { name: "Lunch", category: "Lunch", dietaryInformation: [], allergenInformation: [] });
-  const standard = record("Hospitality Menu Offering", "hospitality-menu-offering:one", { hospitalityMenuItemId: item.canonicalId, oplocId: "oploc:mnk-test", offeringMode: "standard" });
+  const defaultPrice = record("Hospitality Menu Price", "hospitality-menu-price:one", { hospitalityMenuItemId: item.canonicalId, amount: 12, vatRate: .2, effectiveFrom: "2026-01-01" });
   const quote = record("Hospitality Menu Offering", "hospitality-menu-offering:two", { hospitalityMenuItemId: item.canonicalId, oplocId: "oploc:mnk-test", operationalAreaId: "operational-area:one", offeringMode: "quote_only" });
-  const price = record("Hospitality Menu Price", "hospitality-menu-price:one", { hospitalityMenuOfferingId: standard.canonicalId, amount: 12, vatRate: .2, effectiveFrom: "2026-01-01" });
-  const outside = record("Hospitality Menu Offering", "hospitality-menu-offering:outside", { hospitalityMenuItemId: item.canonicalId, oplocId: "oploc:elsewhere", offeringMode: "standard" });
-  const response = hospitalityPortalReadFromRecords([item, standard, quote, price, outside], { oplocId: "oploc:mnk-test", operationalAreaId: "operational-area:one", serviceDate: "2026-07-30" });
-  const standardResult = response.offerings.find(offering => offering.offeringMode === "standard") as { price?: { amount: number } } | undefined;
-  const quoteResult = response.offerings.find(offering => offering.offeringMode === "quote_only") as { quoteRequired?: boolean } | undefined;
-  assert.equal(response.offerings.length, 2); assert.equal(standardResult?.price?.amount, 12); assert.equal(quoteResult?.quoteRequired, true); assert.equal("price" in (quoteResult || {}), false);
+  const blocked = record("Hospitality Menu Offering", "hospitality-menu-offering:blocked", { hospitalityMenuItemId: item.canonicalId, oplocId: "oploc:blocked", offeringMode: "standard", available: false });
+  const oploc = (id: string) => record("OPLOC", id, { approvedName: id, lifecycleState: "active" });
+  const records = [item, defaultPrice, quote, blocked, oploc("oploc:mnk-test"), oploc("oploc:elsewhere"), oploc("oploc:blocked")];
+  const read = (oplocId: string, operationalAreaId?: string) => hospitalityPortalReadFromRecords(records, { oplocId, operationalAreaId, serviceDate: "2026-07-30" }).offerings as Array<Record<string, any>>;
+  assert.equal(read("oploc:elsewhere")[0].price.amount, 12, "no record exists for this site: pure inheritance");
+  assert.equal(read("oploc:elsewhere")[0].offeringId, "hospitality-offering:hospitality-menu-item:one@oploc:elsewhere", "stable inherited key");
+  assert.equal(read("oploc:mnk-test").length, 1); assert.equal(read("oploc:mnk-test")[0].price.amount, 12, "outside the area exception the site inherits");
+  const areaQuote = read("oploc:mnk-test", "operational-area:one"); assert.equal(areaQuote.length, 1); assert.equal(areaQuote[0].quoteRequired, true); assert.equal("price" in areaQuote[0], false, "quote-only never carries a price");
+  assert.equal(read("oploc:blocked").length, 0, "an available:false exception removes the item at that site only");
+  assert.equal(read("oploc:not-an-oploc").length, 0, "unknown/inactive OPLOC: unavailable");
 });
 
 test("unpublished, inactive, out-of-date and ambiguous standard prices never reach a new portal read", () => {

@@ -27,7 +27,7 @@ const rejects = (promise: Promise<unknown>, pattern: RegExp) => assert.rejects(p
 
 async function world() {
   const key = unique();
-  const oplocs = [await seed("OPLOC", `oploc:bulk-${key}-a`, { approvedName: `Alpha ${key}`, lifecycleState: "active", hospitalityEnabled: true }), await seed("OPLOC", `oploc:bulk-${key}-b`, { approvedName: `Bravo ${key}`, lifecycleState: "active", hospitalityEnabled: true }), await seed("OPLOC", `oploc:bulk-${key}-c`, { approvedName: `Charlie ${key}`, lifecycleState: "active", hospitalityEnabled: true })];
+  const oplocs = [await seed("OPLOC", `oploc:bulk-${key}-a`, { approvedName: `Alpha ${key}`, lifecycleState: "active" }), await seed("OPLOC", `oploc:bulk-${key}-b`, { approvedName: `Bravo ${key}`, lifecycleState: "active" }), await seed("OPLOC", `oploc:bulk-${key}-c`, { approvedName: `Charlie ${key}`, lifecycleState: "active" })];
   const retired = await seed("OPLOC", `oploc:bulk-${key}-old`, { approvedName: `Retired ${key}`, lifecycleState: "merged", mergedIntoOplocId: oplocs[0] });
   const items: string[] = [];
   for (const [index, route] of [["x", ["hospitality"]], ["y", ["sandwiches"]], ["z", []]] as const) {
@@ -67,31 +67,48 @@ test("bulk company price and minimum preserve site overrides and never create re
   await rejects(runBulkCatalogueUpdate(admin, w.spec({ price: { amount: -1 } }, [x])), /price of zero or more/); await rejects(runBulkCatalogueUpdate(admin, w.spec({ price: { amount: 1.239 } }, [x])), /two decimal/);
 });
 
-test("bulk sites: add, remove and replace change availability only; overrides, history and prices survive", { skip: !enabled }, async () => {
+test("bulk sites are SPARSE: remove records exclusions, add clears them, replace excludes only what is left out; select-all stores nothing", { skip: !enabled }, async () => {
   const w = await world(); const [x, y] = w.items; const [a, b, c] = w.oplocs;
-  await runBulkCatalogueUpdate(admin, w.spec({ sites: { mode: "add", oplocIds: [b, c] } }, [x, y]));
-  let rx = await w.row(x); assert.deepEqual(rx.availableAt.sort(), [a, b, c].sort());
-  const added = rx.offerings.find(offering => offering.oplocId === b)!; assert.equal(added.price.source, "inherits"); assert.equal(added.minimum.source, "inherits"); assert.equal(rx.overrideCount, 2, "only the pre-existing overrides");
-  await runBulkCatalogueUpdate(admin, await w.fresh([x, y], { sites: { mode: "remove", oplocIds: [a] } }));
-  rx = await w.row(x); assert.deepEqual(rx.availableAt.sort(), [b, c].sort());
-  const hidden = rx.offerings.find(offering => offering.oplocId === a)!; assert.equal(hidden.status, "archived"); assert.equal(hidden.price.override?.amount, 3.9, "override retained on the disabled offering");
-  await runBulkCatalogueUpdate(admin, await w.fresh([x, y], { sites: { mode: "replace", oplocIds: [a, c] } }));
-  rx = await w.row(x); assert.deepEqual(rx.availableAt.sort(), [a, c].sort());
-  assert.equal(rx.offerings.find(offering => offering.oplocId === a)!.price.effective?.amount, 3.9, "re-enabled Offering kept its override");
-  assert.equal(rx.offerings.filter(offering => offering.oplocId === a).length, 1, "no duplicate Offering");
-  const retiredAttempt = await runBulkCatalogueUpdate(admin, await w.fresh([x], { sites: { mode: "add", oplocIds: [w.retired] } }));
-  assert.equal(retiredAttempt.results[0].status, "failed"); assert.match(retiredAttempt.results[0].message, /not an active Hospitality-enabled location/); assert.equal(retiredAttempt.failed, 1);
-  await rejects(runBulkCatalogueUpdate(admin, w.spec({ sites: { mode: "replace", oplocIds: [] } }, [x])), /at least one site/);
+  const exceptionRecords = async (itemId: string) => (await canonical().where("record.hospitalityMenuItemId", "==", itemId).get()).docs.map(doc => doc.data() as CanonicalRecord).filter(record => record.entityType === "Hospitality Menu Offering");
+  const active = async (itemId: string) => (await exceptionRecords(itemId)).filter(record => record.record.lifecycleState !== "archived");
+  let baseline = (await active(y)).length;
+  const everything = (await loadCataloguePayload(admin)).oplocs.filter(oploc => oploc.active).map(oploc => oploc.oplocId);
+  const all = await runBulkCatalogueUpdate(admin, await w.fresh([x, y], { sites: { mode: "replace", oplocIds: everything } }));
+  const excludedAfterAll = (await active(y)).filter(record => record.record.available === false).map(record => String(record.record.oplocId));
+  assert.ok(excludedAfterAll.every(id => !everything.includes(id)), "SELECT ALL SITES stores no exclusion for any selected site (an OPLOC another test adds concurrently may be excluded, never a selected one)");
+  assert.equal(all.failed, 0); baseline = (await active(y)).length;
+
+  const removal = await runBulkCatalogueUpdate(admin, await w.fresh([x, y], { sites: { mode: "remove", oplocIds: [b] } })); assert.equal(removal.failed, 0);
+  assert.equal((await active(y)).length, baseline + 1, "removing ONE site for an Item adds exactly ONE exception record");
+  assert.equal((await active(y)).filter(record => record.record.available === false).map(record => record.record.oplocId).join(), b);
+  assert.ok(!(await w.row(y)).availableAt.includes(b)); assert.ok((await w.row(y)).availableAt.includes(c));
+
+  await runBulkCatalogueUpdate(admin, await w.fresh([x, y], { sites: { mode: "add", oplocIds: [b] } }));
+  assert.equal((await active(y)).length, baseline, "re-adding the site retires its exception: the stored record disappears again");
+  assert.equal((await exceptionRecords(y)).filter(record => record.record.oplocId === b && record.record.retiredReason === "redundant-default").length, 1, "retired, never deleted");
+
+  await runBulkCatalogueUpdate(admin, await w.fresh([x, y], { sites: { mode: "replace", oplocIds: everything.filter(id => id !== c) } }));
+  const excluded = (await active(y)).filter(record => record.record.available === false).map(record => String(record.record.oplocId));
+  assert.ok(excluded.includes(c) && !excluded.includes(a) && !excluded.includes(b), "replace excludes the site left out and nothing that was selected");
+  assert.ok(excluded.every(id => id === c || !everything.includes(id)), "(other tests may add OPLOCs concurrently to the shared emulator; those are excluded too, never a selected one)");
+  await runBulkCatalogueUpdate(admin, await w.fresh([x, y], { sites: { mode: "replace", oplocIds: everything } }));
+  assert.equal((await active(y)).filter(record => record.record.available === false && everything.includes(String(record.record.oplocId))).length, 0, "replace with everything clears the exclusion for every selected site");
+
+  // an existing override survives site removal and re-adding on the SAME record
+  const rx = await w.row(x); const override = rx.offerings.find(offering => offering.oplocId === a)!; assert.equal(override.price.effective?.amount, 3.9);
+  await runBulkCatalogueUpdate(admin, await w.fresh([x], { sites: { mode: "remove", oplocIds: [a] } }));
+  assert.equal((await w.row(x)).offerings.find(offering => offering.oplocId === a)!.available, false); assert.equal((await w.row(x)).offerings.find(offering => offering.oplocId === a)!.price.override?.amount, 3.9, "the override is retained on the exception");
+  await runBulkCatalogueUpdate(admin, await w.fresh([x], { sites: { mode: "add", oplocIds: [a] } }));
+  const back = (await w.row(x)).offerings.find(offering => offering.oplocId === a)!; assert.equal(back.available, true); assert.equal(back.price.effective?.amount, 3.9, "available again with its override intact");
+  const unknown = await runBulkCatalogueUpdate(admin, await w.fresh([x], { sites: { mode: "add", oplocIds: [w.retired] } }));
+  assert.equal(unknown.results[0].status, "failed"); assert.match(unknown.results[0].message, /not active locations/);
+  await assert.rejects(runBulkCatalogueUpdate(admin, await w.fresh([x], { sites: { mode: "replace", oplocIds: [] } })), /at least one site/);
 });
 
-test("Select all sites is driven by the live registry: retired locations are flagged out", { skip: !enabled }, async () => {
+test("Select all sites is driven by the live OPLOC registry: every ACTIVE location, never retired ones", { skip: !enabled }, async () => {
   const w = await world(); const payload = await loadCataloguePayload(admin);
-  for (const id of w.oplocs) { const site = payload.oplocs.find(entry => entry.oplocId === id)!; assert.equal(site.active, true); assert.equal(site.hospitality, true); }
-  const unmarked = await seed("OPLOC", `oploc:bulk-${w.key}-plain`, { approvedName: `Unmarked ${w.key}`, lifecycleState: "active" });
-  const plain = (await loadCataloguePayload(admin)).oplocs.find(entry => entry.oplocId === unmarked)!; assert.equal(plain.active, true); assert.equal(plain.hospitality, false, "an active location without the marker is not a Hospitality site");
-  const refused = await runBulkCatalogueUpdate(admin, await w.fresh([w.items[0]], { sites: { mode: "add", oplocIds: [unmarked] } }));
-  assert.equal(refused.results[0].status, "failed"); assert.match(refused.results[0].message, /Hospitality-enabled/, "the server enforces the rule, not just the picker");
-  const retired = payload.oplocs.find(entry => entry.oplocId === w.retired)!; assert.equal(retired.active, false); assert.equal(retired.hospitality, false);
+  for (const id of w.oplocs) assert.equal(payload.oplocs.find(entry => entry.oplocId === id)!.active, true);
+  assert.equal(payload.oplocs.find(entry => entry.oplocId === w.retired)!.active, false, "a merged/retired location is not selectable");
 });
 
 test("stale versions fail per item without blocking the rest, are reported explicitly, and a retry is idempotent", { skip: !enabled }, async () => {
@@ -137,7 +154,7 @@ test("bulk archive keeps historical references and only archives selected active
 
 test("bulk operations write per-item audit events and a summary with actor, operation, items, sites and counts", { skip: !enabled }, async () => {
   const w = await world(); const [x, y] = w.items;
-  const spec = w.spec({ production: "cpu_sandwiches", sites: { mode: "add", oplocIds: [w.oplocs[1]] } }, [x, y]); const result = await runBulkCatalogueUpdate(admin, spec);
+  const spec = w.spec({ production: "cpu_sandwiches", sites: { mode: "remove", oplocIds: [w.oplocs[1]] } }, [x, y]); const result = await runBulkCatalogueUpdate(admin, spec);
   const summary = (await audit().doc(`bulk-${spec.operationId}`).get()).data()!;
   assert.equal(summary.actorId, admin.uid); assert.equal(summary.details.succeeded, 2); assert.equal(summary.details.failed, 0); assert.deepEqual(summary.details.itemIds.sort(), [x, y].sort()); assert.deepEqual(summary.details.oplocIds, [w.oplocs[1]]); assert.ok(summary.details.operations.includes("production"));
   const events = (await audit().where("details.bulkOperationId", "==", spec.operationId).get()).docs.map(doc => doc.data()).filter(event => event.action === "Hospitality Catalogue bulk update");

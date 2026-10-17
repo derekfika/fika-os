@@ -5,6 +5,7 @@ import { requireActor } from "@/lib/auth";
 import { assertPermission } from "@/lib/authmod";
 import { runBulkCatalogueUpdate, runCatalogueCommand, type BulkSpec, type CatalogueCommand } from "@/lib/hospitality-catalogue-admin";
 import { loadCataloguePayload, loadCatalogueRows } from "@/lib/hospitality-catalogue-loader";
+import { republishAfterMutation } from "@/lib/hospitality-catalogue-package";
 import { ROUTING_CHOICES } from "@/lib/hospitality-catalogue-types";
 
 const Id = z.string().min(8).max(160);
@@ -17,9 +18,8 @@ const Command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("set-default-price"), itemId: Id, expectedVersion: Version, price: Price }).strict(),
   z.object({ action: z.literal("set-routing"), itemId: Id, routing: Routing, expectedRoutingVersion: z.number().int().nonnegative() }).strict(),
   z.object({ action: z.literal("set-item-status"), itemId: Id, expectedVersion: Version, status: z.enum(["active", "archived"]) }).strict(),
-  z.object({ action: z.literal("add-offering"), itemId: Id, expectedVersion: Version, oplocId: Id, operationalAreaId: Id.optional(), mode: z.enum(["standard", "quote_only"]).optional() }).strict(),
-  z.object({ action: z.literal("set-offering-status"), offeringId: Id, expectedVersion: Version, status: z.enum(["active", "archived"]) }).strict(),
-  z.object({ action: z.literal("set-offering-override"), offeringId: Id, expectedVersion: Version, price: Price.nullable().optional(), minimumQuantity: z.number().int().positive().nullable().optional(), displayName: z.string().max(240).nullable().optional(), description: z.string().max(1000).nullable().optional() }).strict(),
+  z.object({ action: z.literal("set-site-availability"), itemId: Id, expectedVersion: Version, oplocId: Id, available: z.boolean() }).strict(),
+  z.object({ action: z.literal("set-site-override"), itemId: Id, expectedVersion: Version, oplocId: Id, price: Price.nullable().optional(), minimumQuantity: z.number().int().positive().nullable().optional(), displayName: z.string().max(240).nullable().optional(), description: z.string().max(1000).nullable().optional() }).strict(),
   z.object({ action: z.literal("adopt-company-default"), itemId: Id, expectedVersion: Version, price: Price, minimumQuantity: z.number().int().positive().nullable().optional(), confirmed: z.boolean() }).strict(),
   z.object({ action: z.literal("merge-items"), survivorItemId: Id, sourceItemIds: z.array(Id).min(1).max(10), expectedVersions: z.record(z.string(), Version), groupId: z.string().max(64).optional() }).strict(),
   z.object({ action: z.literal("record-review-decision"), memberIds: z.array(Id).min(2).max(12), decision: z.enum(["keep_separate", "defer"]) }).strict(),
@@ -51,11 +51,14 @@ export async function POST(request: NextRequest) {
     if (body?.action === "bulk-update") {
       const outcome = await runBulkCatalogueUpdate(actor, BulkCommand.parse(body) as unknown as BulkSpec);
       const touched = outcome.results.filter(result => result.status === "applied" || result.status === "already_applied").map(result => result.itemId);
-      return NextResponse.json({ message: outcome.message, bulk: outcome, rows: touched.length ? await loadCatalogueRows(touched) : [] }, noStore);
+      const pkg = touched.length ? await republishAfterMutation() : "unchanged";
+      return NextResponse.json({ message: outcome.message, bulk: outcome, package: pkg, rows: touched.length ? await loadCatalogueRows(touched) : [] }, noStore);
     }
     const result = await runCatalogueCommand(actor, Command.parse(body) as CatalogueCommand);
     // Merges and review decisions change group structure: return a full reload. Everything else refreshes only the touched items.
-    if (result.reload) return NextResponse.json({ message: result.message, payload: await loadCataloguePayload(actor) }, noStore);
-    return NextResponse.json({ message: result.message, rows: await loadCatalogueRows(result.itemIds) }, noStore);
+    // Every governed catalogue mutation deterministically republishes the compact catalogue package (unchanged content => same identity, nothing new stored).
+    const pkg = await republishAfterMutation();
+    if (result.reload) return NextResponse.json({ message: result.message, package: pkg, payload: await loadCataloguePayload(actor) }, noStore);
+    return NextResponse.json({ message: result.message, package: pkg, rows: await loadCatalogueRows(result.itemIds) }, noStore);
   } catch (error) { return errorResponse(error); }
 }

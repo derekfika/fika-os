@@ -15,7 +15,8 @@ const wrap = (entityType: string, canonicalId: string, record: Data): CanonicalR
 const item = (id: string, name: string, extra: Data = {}) => wrap("Hospitality Menu Item", id, { name, category: "Drinks", lifecycleState: "active", dietaryInformation: [], allergenInformation: [], providerMappings: [], ...extra });
 const offering = (id: string, itemId: string, oplocId: string, extra: Data = {}) => wrap("Hospitality Menu Offering", id, { hospitalityMenuItemId: itemId, oplocId, offeringMode: "standard", lifecycleState: "active", ...extra });
 const price = (id: string, scope: { offeringId?: string; itemId?: string }, amount: number, extra: Data = {}) => wrap("Hospitality Menu Price", id, { ...(scope.offeringId ? { hospitalityMenuOfferingId: scope.offeringId } : { hospitalityMenuItemId: scope.itemId }), amount, currency: "GBP", vatRate: 0.2, effectiveFrom: "2026-01-01", lifecycleState: "active", ...extra });
-const build = (input: Partial<Parameters<typeof buildCatalogueRows>[0]>) => buildCatalogueRows({ items: [], offerings: [], prices: [], routing: [], today: TODAY, ...input });
+const SITES = ["oploc:a", "oploc:b", "oploc:c", "oploc:q"].map(oplocId => ({ oplocId, active: true }));
+const build = (input: Partial<Parameters<typeof buildCatalogueRows>[0]>) => buildCatalogueRows({ items: [], offerings: [], prices: [], routing: [], today: TODAY, oplocs: SITES, ...input });
 
 test("one row per canonical Item aggregates offerings and resolves inherited vs overridden price and minimum", () => {
   const coffee = item("hospitality-menu-item:coffee", "Filter Coffee", { defaultMinimumQuantity: 10 });
@@ -57,7 +58,7 @@ test("unresolved routing and missing prices are counted as needing review; archi
   const a = item("hospitality-menu-item:a", "Unrouted Cake");
   const b = item("hospitality-menu-item:b", "Routed Cake");
   const gone = item("hospitality-menu-item:gone", "Old Cake", { lifecycleState: "archived" });
-  const payload = buildCataloguePayload({ items: [a, b, gone], offerings: [offering("o:a", a.canonicalId, "oploc:a"), offering("o:b", b.canonicalId, "oploc:a")], prices: [price("p:b", { offeringId: "o:b" }, 2)], routing: [{ menuItemId: b.canonicalId, workstreams: ["hospitality"], version: 1 }], today: TODAY }, [{ oplocId: "oploc:a", label: "Site A", active: true, hospitality: true }], true);
+  const payload = buildCataloguePayload({ items: [a, b, gone], offerings: [], prices: [price("p:b", { itemId: b.canonicalId }, 2)], routing: [{ menuItemId: b.canonicalId, workstreams: ["hospitality"], version: 1 }], today: TODAY }, [{ oplocId: "oploc:a", label: "Site A", active: true }], true);
   const rowA = payload.rows.find(row => row.name === "Unrouted Cake")!;
   assert.deepEqual(rowA.needsReview, ["routing_required", "price_missing"]);
   assert.equal(payload.rows.find(row => row.name === "Routed Cake")!.needsReview.length, 0);
@@ -111,7 +112,7 @@ test("canonicalisation collapses site-prefixed copies into one catalogue Item; o
   assert.equal(plan.groups.length, 1); assert.equal(plan.review.length, 0);
   const after = applyOperations(snapshot, plan.groups.flatMap(group => group.operations));
   assert.deepEqual(verifyMergeInvariants(snapshot, after), []);
-  const result = buildCatalogueRows({ items: after.items, offerings: after.offerings, prices: snapshot.prices!, routing: after.routing, merges: after.merges, today: TODAY });
+  const result = buildCatalogueRows({ items: after.items, offerings: after.offerings, prices: snapshot.prices!, routing: after.routing, merges: after.merges, today: TODAY, oplocs: [{ oplocId: "oploc:mnk", active: true }, { oplocId: "oploc:rcoa", active: true }] });
   const active = result.rows.filter(row => row.status === "active");
   assert.equal(active.length, 1, "one catalogue Item per product");
   assert.equal(active[0].offerings.length, 2); assert.deepEqual(active[0].availableAt.sort(), ["oploc:mnk", "oploc:rcoa"]);
@@ -140,7 +141,7 @@ test("ambiguous groups stay review-held and never auto-merge; decisions are hono
 
 test("search, filters and sorting", () => {
   const items = [item("hospitality-menu-item:a", "Zesty Wrap", { category: "Lunch", defaultMinimumQuantity: 2, providerMappings: [{ provider: "mnk", sourceItemId: "zesty_wrap_01" }] }), item("hospitality-menu-item:b", "Apple Cake", { category: "Cake" }), item("hospitality-menu-item:c", "Old Bun", { category: "Cake", lifecycleState: "archived" })];
-  const rows = build({ items, offerings: [offering("o:a", "hospitality-menu-item:a", "oploc:a", { minimumQuantity: 4 }), offering("o:b", "hospitality-menu-item:b", "oploc:b")], prices: [price("p:ad", { itemId: "hospitality-menu-item:a" }, 8), price("p:a", { offeringId: "o:a" }, 9), price("p:b", { offeringId: "o:b" }, 2)], routing: [{ menuItemId: "hospitality-menu-item:a", workstreams: ["sandwiches"], version: 1 }] }).rows;
+  const rows = build({ oplocs: [{ oplocId: "oploc:a", active: true }, { oplocId: "oploc:b", active: true }], items, offerings: [offering("o:a", "hospitality-menu-item:a", "oploc:a", { minimumQuantity: 4 }), offering("o:ab", "hospitality-menu-item:a", "oploc:b", { available: false })], prices: [price("p:ad", { itemId: "hospitality-menu-item:a" }, 8), price("p:a", { offeringId: "o:a" }, 9), price("p:b", { offeringId: "o:b" }, 2)], routing: [{ menuItemId: "hospitality-menu-item:a", workstreams: ["sandwiches"], version: 1 }] }).rows;
   const names = (filters: Partial<typeof EMPTY_FILTERS>) => rows.filter(row => rowMatches(row, { ...EMPTY_FILTERS, ...filters })).map(row => row.name);
   assert.deepEqual(names({}), ["Apple Cake", "Zesty Wrap"], "archived hidden by default");
   assert.deepEqual(names({ status: "archived" }), ["Old Bun"]); assert.equal(names({ status: "all" }).length, 3);
@@ -148,12 +149,11 @@ test("search, filters and sorting", () => {
   assert.deepEqual(names({ query: "APPLE" }), ["Apple Cake"]);
   assert.deepEqual(names({ category: "Lunch" }), ["Zesty Wrap"]);
   assert.deepEqual(names({ route: "cpu_sandwiches" }), ["Zesty Wrap"]); assert.deepEqual(names({ route: "routing_required" }), ["Apple Cake"]);
-  assert.deepEqual(names({ oplocId: "oploc:b" }), ["Apple Cake"]);
+  assert.deepEqual(names({ oplocId: "oploc:b" }), ["Apple Cake"], "an available:false exception removes Zesty Wrap from site b; everything else is available everywhere by default");
   assert.deepEqual(names({ hasOverrides: true }), ["Zesty Wrap"]); assert.deepEqual(names({ needsReview: true }), ["Apple Cake"]);
-  assert.deepEqual(names({ priceNotSet: true }), ["Apple Cake"], "Apple Cake has only a site value and no company default");
-  assert.equal(rows.find(row => row.name === "Apple Cake")!.offerings[0].price.source, "site_only", "a site price with no company default is not an override of anything");
+  assert.deepEqual(names({ priceNotSet: true }), ["Apple Cake"], "Apple Cake has no company default price");
   const ordered = (key: "name" | "category" | "production" | "price", direction: "asc" | "desc") => sortRows(rows.filter(row => row.status === "active"), { key, direction }).map(row => row.name);
-  assert.deepEqual(ordered("name", "desc"), ["Zesty Wrap", "Apple Cake"]); assert.deepEqual(ordered("price", "asc"), ["Apple Cake", "Zesty Wrap"]); assert.deepEqual(ordered("production", "asc"), ["Zesty Wrap", "Apple Cake"]);
+  assert.deepEqual(ordered("name", "desc"), ["Zesty Wrap", "Apple Cake"]); assert.deepEqual(ordered("price", "asc"), ["Zesty Wrap", "Apple Cake"], "unpriced items sort last"); assert.deepEqual(ordered("production", "asc"), ["Zesty Wrap", "Apple Cake"]);
 });
 
 test("UK business date uses Europe/London across the BST boundary, not the UTC slice", () => {

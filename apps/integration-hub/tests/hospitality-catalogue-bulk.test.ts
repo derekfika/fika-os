@@ -9,23 +9,23 @@ import type { CanonicalRecord } from "../lib/types";
 
 const wrap = (entityType: string, canonicalId: string, record: Record<string, unknown>) => ({ canonicalId, entityType, record: { version: 1, canonicalId, ...record }, dataHash: "x", lifecycleStatus: "published", publicationStatus: "published" }) as unknown as CanonicalRecord;
 const sites: CataloguePayload["oplocs"] = [
-  { oplocId: "oploc:a", label: "Alpha", active: true, hospitality: true }, { oplocId: "oploc:b", label: "Bravo", active: true, hospitality: true }, { oplocId: "oploc:c", label: "Charlie", active: true, hospitality: true },
-  { oplocId: "oploc:old", label: "Old Site", active: false, hospitality: true }, { oplocId: "oploc:other", label: "Not Hospitality", active: true, hospitality: false },
+  { oplocId: "oploc:a", label: "Alpha", active: true }, { oplocId: "oploc:b", label: "Bravo", active: true }, { oplocId: "oploc:c", label: "Charlie", active: true },
+  { oplocId: "oploc:old", label: "Old Site", active: false }, { oplocId: "oploc:other", label: "Not Hospitality", active: true },
 ];
-const row = (name: string, extra: Partial<CatalogueRow> = {}): CatalogueRow => ({ itemId: `hospitality-menu-item:${name}`, version: 1, name, category: "Drinks", description: "", status: "active", routing: { state: "cpu_hospitality", workstreams: ["hospitality"], version: 1 }, offerings: [], availableAt: [], overrideCount: 0, needsReview: [], sourceIds: [], providerMappings: [], dietaryInformation: [], allergenInformation: [], priceMigration: { status: "not_needed" }, ...extra });
+const row = (name: string, extra: Partial<CatalogueRow> = {}): CatalogueRow => ({ itemId: `hospitality-menu-item:${name}`, version: 1, name, category: "Drinks", description: "", status: "active", routing: { state: "cpu_hospitality", workstreams: ["hospitality"], version: 1 }, offerings: [], availableAt: [], unavailableAt: [], overrideCount: 0, needsReview: [], sourceIds: [], providerMappings: [], dietaryInformation: [], allergenInformation: [], priceMigration: { status: "not_needed" }, ...extra });
 
-test("Select all sites covers only active Hospitality locations: inactive and non-Hospitality ones are excluded", () => {
-  assert.deepEqual(selectableSites(sites).map(site => site.oplocId), ["oploc:a", "oploc:b", "oploc:c"]);
+test("Select all sites means every ACTIVE OPLOC (all active FIKA locations are Hospitality-capable); inactive ones are excluded", () => {
+  assert.deepEqual(selectableSites(sites).map(site => site.oplocId), ["oploc:a", "oploc:b", "oploc:c", "oploc:other"]);
   assert.deepEqual(selectableSites([]), []);
 });
 
-test("availability shows All sites when every selectable site is offered, and stays compact otherwise", () => {
-  assert.equal(sitesSummary(row("x", { availableAt: ["oploc:a", "oploc:b", "oploc:c"] }), sites), "All sites");
-  assert.equal(sitesSummary(row("x", { availableAt: ["oploc:a", "oploc:b", "oploc:c", "oploc:old"] }), sites), "All sites", "a retired extra site does not hide All sites");
-  assert.equal(sitesSummary(row("x", { availableAt: ["oploc:a"] }), sites), "Alpha");
-  assert.equal(sitesSummary(row("x", { availableAt: ["oploc:a", "oploc:b"] }), sites), "Alpha, Bravo");
+test("availability reads All sites unless sparse exceptions exclude some", () => {
+  const all = ["oploc:a", "oploc:b", "oploc:c", "oploc:other"];
+  assert.equal(sitesSummary(row("x", { availableAt: all, unavailableAt: [] }), sites), "All sites");
+  assert.equal(sitesSummary(row("x", { availableAt: all.slice(1), unavailableAt: ["oploc:a"] }), sites), "All sites except Alpha");
+  assert.equal(sitesSummary(row("x", { availableAt: ["oploc:c"], unavailableAt: ["oploc:a", "oploc:b", "oploc:other"] }), sites), "1 of 4 sites");
   assert.equal(sitesSummary(row("x", { availableAt: [] }), sites), "Not available anywhere");
-  assert.equal(sitesSummary(row("x", { availableAt: ["oploc:a", "oploc:b", "oploc:other"] }), sites), "3 of 3 sites", "never claims All sites unless every selectable site is offered");
+  assert.equal(sitesSummary(row("x", { status: "archived", availableAt: all }), sites), "Not available anywhere", "an archived Item is available nowhere");
 });
 
 test("selection: individual, select all shown, clear, and it follows the active/archived filter", () => {
@@ -42,16 +42,18 @@ test("selection: individual, select all shown, clear, and it follows the active/
 });
 
 test("impact preview states exactly what will change, flags mixed routes, and always says overrides are preserved", () => {
-  const rows = [row("A", { availableAt: ["oploc:a"] }), row("B", { routing: { state: "in_house", workstreams: [], version: 1 }, availableAt: ["oploc:a", "oploc:b"] }), row("C", { routing: { state: "routing_required", workstreams: [], version: 0 } })];
+  const rows = [row("A", { availableAt: ["oploc:b", "oploc:c", "oploc:other"], unavailableAt: ["oploc:a"] }), row("B", { routing: { state: "in_house", workstreams: [], version: 1 } }), row("C", { routing: { state: "routing_required", workstreams: [], version: 0 } })];
   const lines = bulkImpact({ production: "in_house", price: { amount: 4.5 }, sites: { mode: "add", oplocIds: ["oploc:a", "oploc:b"] } }, rows, sites);
   const text = (label: string) => lines.find(line => line.label === label)?.value ?? "";
   assert.match(text("Production"), /2 items → No CPU \/ In house \(1 already set\)/);
   assert.ok(lines.some(line => line.label === "Mixed current routes" && line.tone === "warning"));
   assert.match(text("Price"), /Set company default to £4\.50 on 3 items/); assert.equal(text("Minimum"), "Unchanged");
-  assert.match(text("Site availability"), /Add Alpha, Bravo: 3 new offerings/); assert.equal(text("Existing site overrides"), "Preserved");
+  assert.match(text("Site availability"), /Add Alpha, Bravo: 1 exception cleared/); assert.match(text("Site availability"), /Nothing new is stored/); assert.equal(text("Existing site overrides"), "Preserved");
   const removal = bulkImpact({ sites: { mode: "remove", oplocIds: ["oploc:a"] } }, rows, sites).find(line => line.label === "Site availability")!;
-  assert.equal(removal.tone, "danger"); assert.match(removal.value, /2 offerings disabled \(overrides and history kept\)/);
-  const replace = bulkImpact({ sites: { mode: "replace", oplocIds: ["oploc:c"] } }, rows, sites).find(line => line.label === "Site availability")!; assert.match(replace.value, /3 offerings added, 3 offerings disabled/);
+  assert.equal(removal.tone, "danger"); assert.match(removal.value, /2 site exceptions recorded as unavailable \(overrides and history kept\)/);
+  const everything = bulkImpact({ sites: { mode: "replace", oplocIds: ["oploc:a", "oploc:b", "oploc:c", "oploc:other"] } }, rows, sites).find(line => line.label === "Site availability")!;
+  assert.match(everything.value, /available at ALL 4 sites/); assert.match(everything.value, /no per-site records are created/); assert.equal(everything.tone, undefined, "selecting all sites is not destructive");
+  const replace = bulkImpact({ sites: { mode: "replace", oplocIds: ["oploc:c"] } }, rows, sites).find(line => line.label === "Site availability")!; assert.match(replace.value, /8 site exceptions recorded for the 3 sites left out/);
   const archive = bulkImpact({ archive: true }, rows, sites); assert.equal(archive[0].tone, "danger"); assert.match(archive[0].value, /3 items will be archived/); assert.match(archive[0].value, /history are kept/);
   assert.match(bulkImpact({ minimum: { mode: "clear" } }, rows, sites).find(line => line.label === "Minimum")!.value, /Clear the company default/);
 });
@@ -86,7 +88,7 @@ test("post-canonicalisation counts and copy: 47 active, 42 archived, no stale pe
 test("UI contract: selection column, bulk bar, Leave unchanged defaults, modes, picker controls, impact preview and Add item default", () => {
   const ui = readFileSync(`${process.cwd()}/app/ui/HospitalityCatalogue.tsx`, "utf8");
   assert.match(ui, /Select all \$\{selectableShown\.length\} filtered items/); assert.match(ui, /aria-label="Bulk actions"/); assert.match(ui, /Clear selection/);
-  for (const text of ["Leave unchanged", "Add selected sites", "Remove selected sites", "Replace availability with selected sites", "Select all sites", "Clear all", "Hospitality site", "Review changes", "Apply to ", "Existing site overrides"]) assert.ok(ui.includes(text) || readFileSync(`${process.cwd()}/lib/hospitality-catalogue-view.ts`, "utf8").includes(text), text);
+  for (const text of ["Leave unchanged", "Add selected sites", "Remove selected sites", "Replace availability with selected sites", "Select all sites", "Clear all", "site", "Review changes", "Apply to ", "Existing site overrides"]) assert.ok(ui.includes(text) || readFileSync(`${process.cwd()}/lib/hospitality-catalogue-view.ts`, "utf8").includes(text), text);
   assert.match(ui, /useState<string\[\]>\(\(\) => selectableSites\(payload\.oplocs\)\.map/, "Add item defaults to every active Hospitality site from the live registry");
   assert.match(ui, /Archive \$\{rows\.length\} item/); assert.doesNotMatch(ui, /hard.?delete|\.delete\(/i);
   assert.match(ui, /canManage && chosen\.size > 0/, "bulk controls only for managers");

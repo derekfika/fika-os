@@ -20,7 +20,7 @@ export function ukBusinessDate(now: Date = new Date()) {
 }
 
 export type ReviewDecisionDoc = { groupId: string; memberIds: string[]; decision: "merge" | "keep_separate" | "defer"; decidedAt?: string; decidedBy?: string };
-export type CatalogueReadInput = CatalogueSnapshot & { prices: CanonicalRecord[]; merges?: CatalogueSnapshot["merges"]; decisions?: ReviewDecisionDoc[]; today?: string };
+export type CatalogueReadInput = CatalogueSnapshot & { prices: CanonicalRecord[]; merges?: CatalogueSnapshot["merges"]; decisions?: ReviewDecisionDoc[]; today?: string; /** Active OPLOCs: availability is the default at every one of these. */ oplocs?: Array<{ oplocId: string; active: boolean }> };
 
 const isLivePrice = (record: CanonicalRecord) => record.entityType === "Hospitality Menu Price" && record.lifecycleStatus !== "archived" && record.record.lifecycleState === "active";
 const appliesOn = (record: CanonicalRecord, date: string) => { const from = text(record.record.effectiveFrom), to = text(record.record.effectiveTo); return (!from || from <= date) && (!to || to >= date); };
@@ -104,19 +104,23 @@ export function buildCatalogueRows(input: CatalogueReadInput): { rows: Catalogue
       return {
         offeringId: offering.canonicalId, version: Number(offering.record.version || 1), oplocId: text(offering.record.oplocId),
         ...(offering.record.operationalAreaId ? { operationalAreaId: text(offering.record.operationalAreaId) } : {}),
-        mode, status: offering.record.lifecycleState === "archived" ? "archived" : "active",
+        mode, status: offering.record.lifecycleState === "archived" ? "archived" : "active", available: offering.record.available !== false,
+        noEffect: offering.record.lifecycleState !== "archived" && offering.record.available !== false && mode === "standard" && !offering.record.operationalAreaId && (offering.record.minimumGuests === undefined || offering.record.minimumGuests === item.record.defaultMinimumGuests) && (offering.record.noticeRequiredDays === undefined || offering.record.noticeRequiredDays === item.record.defaultNoticeRequiredDays) && !text(configuration.displayName) && !text(configuration.description) && (!Object.keys(configuration).length || JSON.stringify(configuration) === JSON.stringify(item.record.configuration)) && (minimumOverride === undefined || minimumOverride === defaultMinimumQuantity) && (!override || Boolean(defaultPrice && defaultPrice.amount === override.amount && defaultPrice.vatRate === override.vatRate)),
+        ...(offering.record.retiredReason ? { retiredReason: offering.record.retiredReason as "item-archived" | "redundant-default" } : {}),
         ...(text(configuration.displayName) ? { displayName: text(configuration.displayName) } : {}), ...(text(configuration.description) ? { description: text(configuration.description) } : {}),
         price, minimum,
       };
     }).sort((a, b) => a.oplocId.localeCompare(b.oplocId) || (a.operationalAreaId || "").localeCompare(b.operationalAreaId || ""));
     const active = offerings.filter(offering => offering.status === "active");
+    const activeSites = (input.oplocs || []).filter(oploc => oploc.active).map(oploc => oploc.oplocId);
+    const unavailableAt = [...new Set(active.filter(offering => !offering.available && !offering.operationalAreaId).map(offering => offering.oplocId))].sort();
     const status = item.lifecycleStatus === "archived" || item.record.lifecycleState === "archived" ? "archived" : "active";
     const route = routingStateOf(routing.get(item.canonicalId));
     const needsReview: CatalogueRow["needsReview"] = [];
     if (status === "active") {
       if (route.state === "routing_required") needsReview.push("routing_required");
       if (route.state === "routing_conflict") needsReview.push("routing_conflict");
-      if (active.some(offering => offering.mode === "standard" && offering.price.source === "none")) needsReview.push("price_missing");
+      if (!defaultPrice && activeSites.length > 0) needsReview.push("price_missing");
       if (undecided.has(item.canonicalId)) needsReview.push("duplicate_candidate");
     }
     const site = originSite(item);
@@ -125,8 +129,8 @@ export function buildCatalogueRows(input: CatalogueReadInput): { rows: Catalogue
     return {
       itemId: item.canonicalId, version: Number(item.record.version || 1), name: text(item.record.name), category: text(item.record.category), description: text(item.record.description), status,
       routing: route, ...(suggestion && suggestedChoice ? { routingSuggestion: { choice: suggestedChoice, reason: suggestion.reason } } : {}), ...(defaultPrice ? { defaultPrice } : {}), ...(defaultMinimumQuantity !== undefined ? { defaultMinimumQuantity } : {}),
-      offerings, availableAt: [...new Set(active.map(offering => offering.oplocId))].sort(),
-      overrideCount: active.reduce((sum, offering) => sum + Number(offering.price.source === "overrides") + Number(offering.minimum.source === "overrides") + Number(Boolean(offering.displayName)) + Number(Boolean(offering.description)), 0),
+      offerings, availableAt: status === "active" ? activeSites.filter(id => !unavailableAt.includes(id)).sort() : [], unavailableAt,
+      overrideCount: active.filter(offering => !offering.noEffect).reduce((sum, offering) => sum + Number(!offering.available) + Number(offering.price.source === "overrides") + Number(offering.minimum.source === "overrides") + Number(Boolean(offering.displayName)) + Number(Boolean(offering.description)), 0),
       needsReview, ...(site !== "unknown" ? { siteCopyOf: site } : {}), sourceIds: sourceIdentities(item),
       providerMappings: (Array.isArray(item.record.providerMappings) ? item.record.providerMappings : []) as CatalogueRow["providerMappings"],
       dietaryInformation: stringList(item.record.dietaryInformation), allergenInformation: stringList(item.record.allergenInformation),
@@ -137,7 +141,7 @@ export function buildCatalogueRows(input: CatalogueReadInput): { rows: Catalogue
 }
 
 export function buildCataloguePayload(input: CatalogueReadInput, oplocs: CataloguePayload["oplocs"], canManage: boolean, now: Date = new Date()): CataloguePayload {
-  const { rows, reviewGroups, plan } = buildCatalogueRows(input);
+  const { rows, reviewGroups, plan } = buildCatalogueRows({ oplocs: oplocs.map(oploc => ({ oplocId: oploc.oplocId, active: oploc.active })), ...input });
   const active = rows.filter(row => row.status === "active");
   return {
     generatedAt: now.toISOString(), canManage, rows, oplocs, reviewGroups,

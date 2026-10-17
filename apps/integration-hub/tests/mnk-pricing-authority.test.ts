@@ -62,10 +62,10 @@ test("catalogue relation reads are restricted to affected stable IDs and preserv
     calls.push({ field, ids });
     return records.filter(record => ids.includes(String(record.record[field.replace("record.", "")])));
   });
-  assert.equal(calls.length, 3);
-  assert.deepEqual(calls[0].ids, [item.canonicalId]);
-  assert.equal(calls[1].ids.length, 1);
-  assert.deepEqual(calls[2], { field: "record.hospitalityMenuItemId", ids: [item.canonicalId] }, "company-default Prices are read by the same stable Item id");
+  assert.equal(calls.length, 3, "one read by stable Item id (sparse exceptions + company-default Prices), one for exception Prices, one OPLOC document");
+  assert.deepEqual(calls[0], { field: "record.hospitalityMenuItemId", ids: [item.canonicalId] });
+  assert.equal(calls[1].field, "record.hospitalityMenuOfferingId"); assert.equal(calls[1].ids.length, 1);
+  assert.deepEqual(calls[2], { field: "canonicalId", ids: [request.oplocId] }, "the OPLOC is read by id for liveness");
   assert.equal(loaded.filter(record => record.entityType === "Hospitality Menu Price").length, 1);
   assert.equal(JSON.stringify(records), before);
 });
