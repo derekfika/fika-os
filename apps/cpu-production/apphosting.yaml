@@ -37,15 +37,6 @@ env:
   - variable: HOSPITALITY_BOOKING_BASE_URL
     value: https://hospitality-staging.fikacatering.com
     availability: [BUILD, RUNTIME]
-  # CPU matrix PDFs use the shared hosted Drive adapter. The adapter
-  # impersonates this governed staging Workspace identity; the folder root is
-  # optional because the adapter resolves the default CPU Production path.
-  - variable: GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION
-    value: derek@fikacatering.com
-    availability: [RUNTIME]
-  - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
-    secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
-    availability: [RUNTIME]
   - variable: FIKA_PDF_RENDERER_URL
     value: https://fika-pdf-renderer-staging-6tc4airnza-ez.a.run.app
     availability: [RUNTIME]

@@ -133,6 +133,18 @@ test("unconfigured sites and other Production origins retain the CPU default", (
   assert.equal(resolveMatrixDriveStorage({ kind: "cpu-default" }).folderId, undefined);
 });
 
+test("production cpu-default storage fails closed without explicit folder and never falls back", () => {
+  process.env.FIKA_RUNTIME_MODE = "production";
+  delete process.env.GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID;
+  assert.throws(() => resolveMatrixDriveStorage({ kind: "cpu-default" }), /explicitly configured CPU Drive folder; no fallback was attempted/);
+  process.env.GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID = "cpu-approved-folder";
+  assert.deepEqual(resolveMatrixDriveStorage({ kind: "cpu-default" }), {
+    owner: { type: "app-workspace", appId: "cpu-production" },
+    folderId: "cpu-approved-folder",
+    folderLabel: "CPU production",
+  });
+});
+
 test("Hospitality order without Hub storage context fails closed during rollout version mismatch", async () => {
   globalThis.fetch = async (input) => {
     assert.ok(String(input).startsWith("https://hub.test"));

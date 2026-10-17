@@ -15,17 +15,21 @@ test("missing Drive configuration deliberately disables persistence", () => {
   assert.deepEqual(matrixDriveConfiguration(order("menu_planning")), { enabled: false, reason: "not_configured" });
 });
 
-test("CPU Drive configuration enables the later finalisation path", () => {
+test("staging CPU Drive configuration enables the existing finalisation path", () => {
+  process.env.FIKA_RUNTIME_MODE = "staging";
   process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON = "configured-later";
   process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION = "derek@fikacatering.com";
   assert.deepEqual(matrixDriveConfiguration(order("menu_planning")), { enabled: true, ownerKey: "APP_CPU_PRODUCTION" });
 });
 
-test("CPU Drive configuration does not require an explicit folder override", () => {
+test("production CPU Drive stays disabled without an explicit folder even with DWD and owner", () => {
+  process.env.FIKA_RUNTIME_MODE = "production";
   process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON = "configured-later";
   process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION = "derek@fikacatering.com";
   delete process.env.GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID;
-  assert.equal(matrixDriveConfiguration(order("menu_planning")).enabled, true);
+  assert.deepEqual(matrixDriveConfiguration(order("menu_planning")), { enabled: false, reason: "not_configured" });
+  process.env.GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID = "approved-production-folder";
+  assert.deepEqual(matrixDriveConfiguration(order("menu_planning")), { enabled: true, ownerKey: "APP_CPU_PRODUCTION" });
 });
 
 test("Hospitality matrix configuration retains its governed OPLOC owner diagnostic", () => {
