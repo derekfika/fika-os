@@ -49,3 +49,8 @@ env:
   - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     availability: [RUNTIME]
+  # Approved OAC tablet menu template. Site output folders remain dashboard
+  # settings so quote, allergen, and menu artifacts cannot share one root.
+  - variable: GOOGLE_MENU_TEMPLATE_ID_ANGEL_COURT
+    value: 1bkaXTTCStSDqo_YZOCnTZbHzaAzzzIAWIL6ooS1EEGw
+    availability: [RUNTIME]

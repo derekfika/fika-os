@@ -67,3 +67,17 @@ env:
   - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     availability: [RUNTIME]
+  # Hub's only direct Drive publication path is Hospitality group quotes.
+  # These are approved production operating folders and are scoped by OPLOC.
+  - variable: GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_BE0BECBE_B6CF_4D7F_9C1E_F36E689FEAB2
+    value: rcoa@fikacatering.com
+    availability: [RUNTIME]
+  - variable: GOOGLE_DRIVE_ROOT_FOLDER_ID_OPLOC_BE0BECBE_B6CF_4D7F_9C1E_F36E689FEAB2
+    value: 1SMd9V_3wTwLAKpXJxj0VacDosRsJBFKR
+    availability: [RUNTIME]
+  - variable: GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_24A93500_D75D_4FE0_8BEB_672D36F9DA10
+    value: seven@fikacatering.com
+    availability: [RUNTIME]
+  - variable: GOOGLE_DRIVE_ROOT_FOLDER_ID_OPLOC_24A93500_D75D_4FE0_8BEB_672D36F9DA10
+    value: 18dLsE5Xatj5v6BnxOZFVYspJRWPRx5bO
+    availability: [RUNTIME]
