@@ -19,8 +19,14 @@ export type ReadPackageManifest = {
   scope?: string;
 };
 
+export type ImmutablePackageOperation = {
+  stage: "existence" | "create";
+  outcome: "started" | "exists" | "absent" | "completed" | "failed";
+  error?: unknown;
+};
+
 export type ReadPackageStore = {
-  putImmutable(name: string, bytes: Uint8Array, contentHash: string): Promise<void>;
+  putImmutable(name: string, bytes: Uint8Array, contentHash: string, observe?: (operation: ImmutablePackageOperation) => void): Promise<void>;
   get(name: string): Promise<Uint8Array | undefined>;
   has(name: string): Promise<boolean>;
   getManifest(key: string): Promise<ReadPackageManifest | undefined>;

@@ -2,10 +2,14 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getStorage } from "firebase-admin/storage";
-import type { ReadPackageManifest, ReadPackageStore } from "@fika/server-shared/read-package";
+import type { ImmutablePackageOperation, ReadPackageManifest, ReadPackageStore } from "@fika/server-shared/read-package";
 
 const localRoot = () => process.env.FIKA_SNAPSHOT_DIR || path.join(process.cwd(), "local-data", "read-packages");
 const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
+
+function observe(operation: ((event: ImmutablePackageOperation) => void) | undefined, event: ImmutablePackageOperation) {
+  try { operation?.(event); } catch { /* Diagnostics must not change storage semantics. */ }
+}
 
 export async function downloadCpuPackageBytes(file: { download(options?: { decompress?: boolean }): Promise<[Buffer]> }) {
   const [bytes] = await file.download({ decompress: false });
@@ -65,7 +69,19 @@ function cloudStore(): ReadPackageStore {
   const app = getApps()[0] || initializeApp({ projectId, storageBucket: bucketName });
   const bucket = getStorage(app).bucket(bucketName);
   return {
-    async putImmutable(name, bytes, contentHash) { const object = bucket.file(name); const [exists] = await object.exists(); if (exists) return; await object.save(Buffer.from(bytes), { resumable: false, metadata: { contentType: "application/json", contentEncoding: "gzip", metadata: { contentHash } } }); },
+    async putImmutable(name, bytes, contentHash, onOperation) {
+      const object = bucket.file(name);
+      observe(onOperation, { stage: "existence", outcome: "started" });
+      let exists: boolean;
+      try { [exists] = await object.exists(); }
+      catch (error) { observe(onOperation, { stage: "existence", outcome: "failed", error }); throw error; }
+      observe(onOperation, { stage: "existence", outcome: exists ? "exists" : "absent" });
+      if (exists) return;
+      observe(onOperation, { stage: "create", outcome: "started" });
+      try { await object.save(Buffer.from(bytes), { resumable: false, metadata: { contentType: "application/json", contentEncoding: "gzip", metadata: { contentHash } } }); }
+      catch (error) { observe(onOperation, { stage: "create", outcome: "failed", error }); throw error; }
+      observe(onOperation, { stage: "create", outcome: "completed" });
+    },
     // Read-package hashes cover the stored compressed bytes.  GCS otherwise
     // transparently decodes objects carrying contentEncoding=gzip, which
     // makes the integrity check fail after a successful upload and prevents

@@ -8,7 +8,7 @@ import { cpuProjectionPackageIsCurrent, publishCpuProjectionPackage, getCpuProje
 import { downloadCpuPackageBytes } from "../lib/cpu-package-store";
 import { cpuProjectionContentHash } from "../lib/cpu-projection-repository";
 import { cpuProjectionCacheEntryMatches } from "../app/lib/cpu-indexeddb";
-import { buildCpuDayProjection, recoverMissingCpuDayProjection, initialiseEmptyCpuWeekProjection, type CpuDayProjection, type CpuWeekProjection, type EmptyWeekInitialisationDependencies } from "../lib/cpu-projection";
+import { buildCpuDayProjection, recoverMissingCpuDayProjection, recoverMissingCpuWeekProjection, initialiseEmptyCpuWeekProjection, type CpuDayProjection, type CpuWeekProjection, type EmptyWeekInitialisationDependencies } from "../lib/cpu-projection";
 import { europeLondonDate } from "../lib/operational-date";
 
 const day = (date: string): CpuDayProjection => ({ serviceDate: date, revision: 4, lastChangeSequence: 12, orders: [], summary: { orders: 0, ready: 0, attention: 0, planned: 0, totalUnits: 0 }, rebuiltAt: "2026-08-31T10:00:00.000Z" });
@@ -197,6 +197,26 @@ test("unseen empty week normal-read initialisation publishes one valid zero-orde
   assert.equal(publications, 2);
 });
 
+test("empty-week recovery carries request correlation into its injected package publisher", async () => {
+  const weekCommencing = "2030-02-04";
+  const requestId = "empty-week-recovery-req-73";
+  let receivedRequestId: string | undefined;
+  let stored: CpuWeekProjection | undefined;
+  const dependencies: EmptyWeekInitialisationDependencies = {
+    loadOrders: async () => [],
+    readProjection: async () => ({ exists: Boolean(stored), data: () => stored }),
+    writeProjection: async (_week, projection) => { stored = projection; },
+    publishPackage: async (projection, context) => {
+      receivedRequestId = context?.requestId;
+      return encodeReadPackage("snapshots/cpu-production/projection-week", 1, { projection }, 0).manifest;
+    },
+  };
+  const request = { headers: new Headers({ "x-request-id": requestId }) } as never;
+  const result = await recoverMissingCpuWeekProjection(request, weekCommencing, dependencies);
+  assert.equal(result.projection.weekCommencing, weekCommencing);
+  assert.equal(receivedRequestId, requestId);
+});
+
 test("valid stored empty week reuses its projection identity without another projection write", async () => {
   const weekCommencing = "2030-01-14";
   const stored: CpuWeekProjection = {
@@ -263,7 +283,7 @@ test("normal CPU projection GET recovers missing day/week data but fails closed 
   assert.doesNotMatch(integrityBranch, /recoverMissingCpu/);
   const initializer = await readFile(new URL("../lib/cpu-projection.ts", import.meta.url), "utf8");
   assert.match(initializer, /sourceOrders\.length > 0\) return undefined/);
-  assert.match(initializer, /dependencies\.publishPackage\(week\)/);
+  assert.match(initializer, /dependencies\.publishPackage\(week,\s*cpuPackagePublicationContext\(request\)\)/);
   assert.match(initializer, /dependencies\.loadOrders\(request, weekCommencing\)/);
 });
 

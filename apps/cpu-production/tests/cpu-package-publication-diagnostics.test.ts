@@ -11,7 +11,7 @@ function packageFor(value = projection("2036-01-07"), version = 1) {
   const encoded = encodeReadPackage("snapshots/cpu-production/projection-week", version, { projection: value }, value.orders.length, { sourceVersion: `cpu-change-${value.lastChangeSequence}`, sourceHash, scope: `week:${value.serviceDate}` });
   return { sourceHash, encoded };
 }
-function harness(options: { failReadAt?: number; failCommitAt?: number[]; afterCommit?: (index: number, state: { head: unknown }) => void } = {}) {
+function harness(options: { failReadAt?: number; failReadAttemptAt?: Record<number, number>; transactionAttempts?: Record<number, number>; readSnapshot?: (transaction: number, attempt: number, actual: unknown) => unknown; failCommitAt?: number[]; afterCommit?: (index: number, state: { head: unknown }) => void } = {}) {
   let head: unknown;
   let transactions = 0;
   let sets = 0;
@@ -21,16 +21,21 @@ function harness(options: { failReadAt?: number; failCommitAt?: number[]; afterC
     log: event => events.push(event),
     async runTransaction<T>(callback: (transaction: CpuPackageHeadTransaction) => Promise<T>) {
       const index = ++transactions;
+      let result!: T;
       let staged: unknown;
-      const transaction: CpuPackageHeadTransaction = {
-        async get() {
-          if (options.failReadAt === index) throw Object.assign(new Error("head read failed"), { code: 7 });
-          const snapshot = head;
-          return { exists: snapshot !== undefined, data: () => snapshot };
-        },
-        set(_ref, value) { staged = value; sets += 1; },
-      };
-      const result = await callback(transaction);
+      const attempts = options.transactionAttempts?.[index] || 1;
+      for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        staged = undefined;
+        const transaction: CpuPackageHeadTransaction = {
+          async get() {
+            if (options.failReadAt === index || options.failReadAttemptAt?.[index] === attempt) throw Object.assign(new Error("head read failed"), { code: 7 });
+            const snapshot = options.readSnapshot?.(index, attempt, head) ?? head;
+            return { exists: snapshot !== undefined, data: () => snapshot };
+          },
+          set(_ref, value) { staged = value; sets += 1; },
+        };
+        result = await callback(transaction);
+      }
       if (options.failCommitAt?.includes(index)) throw Object.assign(new Error(`transaction ${index} commit failed`), { code: 7 });
       if (staged !== undefined) head = staged;
       options.afterCommit?.(index, api);
@@ -40,20 +45,33 @@ function harness(options: { failReadAt?: number; failCommitAt?: number[]; afterC
   const objects = new Map<string, Uint8Array>();
   let createCount = 0;
   let hasError: unknown;
+  let existenceCalls = 0;
   let createError: unknown;
   let readError: unknown;
   let corruptReadback = false;
   const store: ReadPackageStore = {
     async getManifest() { return undefined; },
     async putManifest() {},
-    async has(name) { if (hasError) throw hasError; return objects.has(name); },
-    async putImmutable(name, bytes) { createCount += 1; if (createError) throw createError; if (!objects.has(name)) objects.set(name, bytes); },
+    async has(name) { existenceCalls += 1; if (hasError) throw hasError; return objects.has(name); },
+    async putImmutable(name, bytes, _hash, onOperation) {
+      existenceCalls += 1;
+      onOperation?.({ stage: "existence", outcome: "started" });
+      if (hasError) { onOperation?.({ stage: "existence", outcome: "failed", error: hasError }); throw hasError; }
+      const exists = objects.has(name);
+      onOperation?.({ stage: "existence", outcome: exists ? "exists" : "absent" });
+      if (exists) return;
+      onOperation?.({ stage: "create", outcome: "started" });
+      createCount += 1;
+      if (createError) { onOperation?.({ stage: "create", outcome: "failed", error: createError }); throw createError; }
+      objects.set(name, bytes);
+      onOperation?.({ stage: "create", outcome: "completed" });
+    },
     async get(name) { if (readError) throw readError; const bytes = objects.get(name); return bytes && corruptReadback ? new Uint8Array([1, 2, 3]) : bytes; },
   };
   const api = {
     adapter, events, objects, store,
     get head() { return head; }, set head(value: unknown) { head = value; },
-    get transactions() { return transactions; }, get sets() { return sets; }, get createCount() { return createCount; },
+    get transactions() { return transactions; }, get sets() { return sets; }, get createCount() { return createCount; }, get existenceCalls() { return existenceCalls; },
     set hasError(value: unknown) { hasError = value; }, set createError(value: unknown) { createError = value; }, set readError(value: unknown) { readError = value; }, set corruptReadback(value: boolean) { corruptReadback = value; },
   };
   return api;
@@ -100,6 +118,50 @@ test("hosted publication reports only committed transactions and verifies raw pa
   assert.equal(stage(h.events, "current-head-promotion-commit", "committed").length, 1);
   assert.equal((h.head as { state: string }).state, "current");
   assert.deepEqual(h.objects.get(encoded.manifest.objectName), encoded.bytes);
+  assert.equal(h.existenceCalls, 1, "immutable storage performs exactly one existence check through putImmutable");
+  assert.equal(h.createCount, 1);
+});
+
+test("retry after a staged pending write attributes the final read failure without a false commit failure", async () => {
+  const { sourceHash, encoded } = packageFor(projection("2036-01-12"));
+  const h = harness({ transactionAttempts: { 1: 2 }, failReadAttemptAt: { 1: 2 } });
+  await assert.rejects(publishHostedCpuPackage(h.store, "test-pending-retry-read-failure", encoded, sourceHash, h.adapter), /head read failed/);
+  assert.equal(stage(h.events, "pending-head-write", "staged").length, 1);
+  assert.equal(stage(h.events, "package-head-read", "failed").at(-1)?.attempt, 2);
+  assert.equal(stage(h.events, "pending-head-commit", "failed").length, 0);
+  assert.equal(stage(h.events, "package-head-transaction", "failed").at(-1)?.attempt, 2);
+});
+
+test("retry ending in read-only idempotence does not report an abandoned staged pending write as committed", async () => {
+  const value = projection("2036-01-13");
+  const { sourceHash, encoded } = packageFor(value);
+  const currentHead = { state: "current", sourceSequence: value.lastChangeSequence, sourceHash, manifest: encoded.manifest };
+  const h = harness({ transactionAttempts: { 1: 2 }, readSnapshot: (transaction, attempt, actual) => transaction === 1 && attempt === 2 ? currentHead : actual });
+  h.objects.set(encoded.manifest.objectName, encoded.bytes);
+  assert.deepEqual(await publishHostedCpuPackage(h.store, "test-pending-retry-read-only", encoded, sourceHash, h.adapter), encoded.manifest);
+  assert.equal(stage(h.events, "pending-head-write", "staged").length, 1);
+  assert.equal(stage(h.events, "pending-head-commit", "committed").length, 0);
+  assert.equal(h.head, undefined, "only the final read-only transaction attempt is committed");
+});
+
+test("promotion retry followed by a read failure is attributed to the final read attempt", async () => {
+  const { sourceHash, encoded } = packageFor(projection("2036-01-15"));
+  const h = harness({ transactionAttempts: { 2: 2 }, failReadAttemptAt: { 2: 2 } });
+  await assert.rejects(publishHostedCpuPackage(h.store, "test-promotion-retry-read-failure", encoded, sourceHash, h.adapter), /head read failed/);
+  assert.equal(stage(h.events, "current-head-promotion-write", "staged").length, 1);
+  assert.equal(stage(h.events, "current-head-promotion-read", "failed").at(-1)?.attempt, 2);
+  assert.equal(stage(h.events, "current-head-promotion-commit", "failed").length, 0);
+});
+
+test("cleanup retry followed by a read failure preserves the original publication error", async () => {
+  const { sourceHash, encoded } = packageFor(projection("2036-01-16"));
+  const original = Object.assign(new Error("immutable create failed"), { code: "OBJECT_CREATE_FAILED" });
+  const h = harness({ transactionAttempts: { 2: 2 }, failReadAttemptAt: { 2: 2 } });
+  h.createError = original;
+  await assert.rejects(publishHostedCpuPackage(h.store, "test-cleanup-retry-read-failure", encoded, sourceHash, h.adapter), error => error === original);
+  assert.equal(stage(h.events, "failure-cleanup-write", "staged").length, 1);
+  assert.equal(stage(h.events, "failure-cleanup-read", "failed").at(-1)?.attempt, 2);
+  assert.equal(stage(h.events, "failure-cleanup-commit", "failed").length, 0);
 });
 
 test("package-head read and pending-head commit failures identify their actual stage", async () => {

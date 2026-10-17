@@ -1,4 +1,4 @@
-import { decodeReadPackage, encodeReadPackage, publishReadPackage, retrieveReadPackage, type ReadPackageManifest, type ReadPackageStore } from "@fika/server-shared/read-package";
+import { decodeReadPackage, encodeReadPackage, publishReadPackage, retrieveReadPackage, type ImmutablePackageOperation, type ReadPackageManifest, type ReadPackageStore } from "@fika/server-shared/read-package";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { CpuDayProjection, CpuWeekProjection } from "./cpu-projection";
 import { cpuPackageStore } from "./cpu-package-store";
@@ -49,6 +49,7 @@ export type CpuPackagePublicationDiagnostic = {
   sourceSequence: number;
   errorName?: string;
   errorCode?: string | number;
+  attempt?: number;
 };
 export type CpuPackagePublicationAdapters = {
   headRef: unknown;
@@ -70,7 +71,7 @@ function defaultPublicationLog(diagnostic: CpuPackagePublicationDiagnostic) {
   if (diagnostic.outcome === "failed") console.error(line);
   else console.info(line);
 }
-function publicationDiagnostic(manifest: ReadPackageManifest, key: string, stage: string, outcome: CpuPackagePublicationDiagnostic["outcome"], resourceClass: CpuPackagePublicationDiagnostic["resourceClass"], resource: string, context: CpuPackagePublicationContext, error?: unknown): CpuPackagePublicationDiagnostic {
+function publicationDiagnostic(manifest: ReadPackageManifest, key: string, stage: string, outcome: CpuPackagePublicationDiagnostic["outcome"], resourceClass: CpuPackagePublicationDiagnostic["resourceClass"], resource: string, context: CpuPackagePublicationContext, error?: unknown, attempt?: number): CpuPackagePublicationDiagnostic {
   const errorName = error && typeof error === "object" && "name" in error && typeof error.name === "string" ? error.name.slice(0, 80) : undefined;
   return {
     event: "cpu.package.publication", stage, outcome,
@@ -80,8 +81,38 @@ function publicationDiagnostic(manifest: ReadPackageManifest, key: string, stage
     database: "(default)",
     ...(process.env.FIKA_RUNTIME_SERVICE_ACCOUNT || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ? { runtimeIdentity: process.env.FIKA_RUNTIME_SERVICE_ACCOUNT || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL } : {}),
     resourceClass, resource, packageVersion: manifest.packageVersion, sourceSequence: sequenceOf(manifest),
+    ...(attempt !== undefined ? { attempt } : {}),
     ...(errorName ? { errorName } : {}), ...(safeErrorCode(error) !== undefined ? { errorCode: safeErrorCode(error) } : {}),
   };
+}
+
+type PublicationTransactionAttempt = { number: number; writeStaged: boolean; callbackReturned: boolean };
+async function runDiagnosedTransaction<T>(adapters: CpuPackagePublicationAdapters, manifest: ReadPackageManifest, key: string, context: CpuPackagePublicationContext, transactionStage: string, commitStage: string, headResource: string, callback: (transaction: CpuPackageHeadTransaction, attempt: PublicationTransactionAttempt) => Promise<T>) {
+  let attemptNumber = 0;
+  let finalAttempt: PublicationTransactionAttempt | undefined;
+  try {
+    const value = await adapters.runTransaction(async transaction => {
+      const attempt = { number: ++attemptNumber, writeStaged: false, callbackReturned: false };
+      finalAttempt = attempt;
+      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, transactionStage, "started", "firestore-document", headResource, context, undefined, attempt.number));
+      const result = await callback(transaction, attempt);
+      attempt.callbackReturned = true;
+      return result;
+    });
+    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, transactionStage, "completed", "firestore-document", headResource, context, undefined, finalAttempt?.number));
+    if (finalAttempt?.writeStaged) emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, commitStage, "committed", "firestore-document", headResource, context, undefined, finalAttempt.number));
+    return { value, finalAttempt };
+  } catch (error) {
+    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, transactionStage, "failed", "firestore-document", headResource, context, error, finalAttempt?.number));
+    if (finalAttempt?.callbackReturned && finalAttempt.writeStaged) emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, commitStage, "failed", "firestore-document", headResource, context, error, finalAttempt.number));
+    throw error;
+  }
+}
+
+function logImmutableOperation(adapters: CpuPackagePublicationAdapters, manifest: ReadPackageManifest, key: string, objectResource: string, context: CpuPackagePublicationContext, operation: ImmutablePackageOperation) {
+  const stage = operation.stage === "existence" ? "immutable-object-existence" : "immutable-object-create";
+  const outcome = operation.outcome === "exists" ? "read" : operation.outcome === "completed" ? "completed" : operation.outcome;
+  emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, stage, outcome, "gcs-immutable-object", objectResource, context, operation.error));
 }
 function emitPublicationDiagnostic(adapters: Pick<CpuPackagePublicationAdapters, "log"> | undefined, diagnostic: CpuPackagePublicationDiagnostic) {
   try { (adapters?.log || defaultPublicationLog)(diagnostic); } catch { /* Diagnostics must not change package publication semantics. */ }
@@ -99,15 +130,15 @@ export async function publishHostedCpuPackage(store: ReadPackageStore, key: stri
   const { manifest } = encoded;
   const headResource = adapters.headPath;
   const objectResource = manifest.objectName;
-  let pendingWriteStaged = false;
   let prepared: { action: "superseded"; manifest?: ReadPackageManifest } | { action: "idempotent"; manifest?: ReadPackageManifest } | { action: "publish" };
   emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "package-head-read", "started", "firestore-document", headResource, context));
   try {
-    prepared = await adapters.runTransaction(async transaction => {
+    const transaction = await runDiagnosedTransaction(adapters, manifest, key, context, "package-head-transaction", "pending-head-commit", headResource, async (transaction, attempt) => {
+      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "package-head-read", "started", "firestore-document", headResource, context, undefined, attempt.number));
       let snapshot: CpuPackageHeadSnapshot;
       try { snapshot = await transaction.get(adapters.headRef); }
-      catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "package-head-read", "failed", "firestore-document", headResource, context, error)); throw error; }
-      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "package-head-read", snapshot.exists ? "read" : "absent", "firestore-document", headResource, context));
+      catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "package-head-read", "failed", "firestore-document", headResource, context, error, attempt.number)); throw error; }
+      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "package-head-read", snapshot.exists ? "read" : "absent", "firestore-document", headResource, context, undefined, attempt.number));
       const head = snapshot.exists ? snapshot.data() as CpuPackageHead : undefined;
       const currentSequence = Math.max(Number(head?.sourceSequence ?? -1), Number(head?.pending?.sourceSequence ?? -1));
       const incomingSequence = sequenceOf(manifest);
@@ -120,14 +151,13 @@ export async function publishHostedCpuPackage(store: ReadPackageStore, key: stri
         return { action: "idempotent" as const, manifest: head.manifest };
       }
       if (head?.pending && incomingSequence === head.pending.sourceSequence && (head.pending.sourceHash !== sourceHash || head.pending.manifest.contentHash !== manifest.contentHash)) throw packageConflict(incomingSequence);
-      pendingWriteStaged = true;
       transaction.set(adapters.headRef, { state: "pending", sourceSequence: head?.sourceSequence ?? -1, sourceHash: head?.sourceHash || "", ...(head?.manifest ? { manifest: head.manifest } : {}), pending: { sourceSequence: incomingSequence, sourceHash, manifest }, updatedAt: new Date().toISOString() });
-      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "pending-head-write", "staged", "firestore-document", headResource, context));
+      attempt.writeStaged = true;
+      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "pending-head-write", "staged", "firestore-document", headResource, context, undefined, attempt.number));
       return { action: "publish" as const };
     });
-    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, pendingWriteStaged ? "pending-head-commit" : "package-head-transaction", pendingWriteStaged ? "committed" : "read", "firestore-document", headResource, context));
+    prepared = transaction.value;
   } catch (error) {
-    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, pendingWriteStaged ? "pending-head-commit" : "package-head-read", "failed", "firestore-document", headResource, context, error));
     throw error;
   }
   if (prepared.action === "superseded") {
@@ -150,17 +180,8 @@ export async function publishHostedCpuPackage(store: ReadPackageStore, key: stri
     return currentManifest;
   }
   try {
-    let objectExists: boolean;
-    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "immutable-object-existence", "started", "gcs-immutable-object", objectResource, context));
-    try { objectExists = await store.has(objectResource); }
-    catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "immutable-object-existence", "failed", "gcs-immutable-object", objectResource, context, error)); throw error; }
-    emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "immutable-object-existence", objectExists ? "read" : "absent", "gcs-immutable-object", objectResource, context));
-    if (!objectExists) {
-      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "immutable-object-create", "started", "gcs-immutable-object", objectResource, context));
-      try { await store.putImmutable(objectResource, encoded.bytes, manifest.contentHash); }
-      catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "immutable-object-create", "failed", "gcs-immutable-object", objectResource, context, error)); throw error; }
-      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "immutable-object-create", "completed", "gcs-immutable-object", objectResource, context));
-    }
+    try { await store.putImmutable(objectResource, encoded.bytes, manifest.contentHash, operation => logImmutableOperation(adapters, manifest, key, objectResource, context, operation)); }
+    catch (error) { throw error; }
     let persisted: Uint8Array | undefined;
     try { persisted = await store.get(objectResource); }
     catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "integrity-readback", "failed", "gcs-immutable-object", objectResource, context, error)); throw error; }
@@ -169,15 +190,15 @@ export async function publishHostedCpuPackage(store: ReadPackageStore, key: stri
     catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "integrity-readback", "failed", "gcs-immutable-object", objectResource, context, error)); throw error; }
     emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "integrity-readback", "verified", "gcs-immutable-object", objectResource, context));
 
-    let promotionWriteStaged = false;
     emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "current-head-promotion-read", "started", "firestore-document", headResource, context));
     let promoted: ReadPackageManifest;
     try {
-      promoted = await adapters.runTransaction(async transaction => {
+      const promotion = await runDiagnosedTransaction(adapters, manifest, key, context, "current-head-promotion-transaction", "current-head-promotion-commit", headResource, async (transaction, attempt) => {
+        emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "current-head-promotion-read", "started", "firestore-document", headResource, context, undefined, attempt.number));
         let snapshot: CpuPackageHeadSnapshot;
         try { snapshot = await transaction.get(adapters.headRef); }
-        catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "current-head-promotion-read", "failed", "firestore-document", headResource, context, error)); throw error; }
-        emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "current-head-promotion-read", snapshot.exists ? "read" : "absent", "firestore-document", headResource, context));
+        catch (error) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "current-head-promotion-read", "failed", "firestore-document", headResource, context, error, attempt.number)); throw error; }
+        emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "current-head-promotion-read", snapshot.exists ? "read" : "absent", "firestore-document", headResource, context, undefined, attempt.number));
         const head = snapshot.exists ? snapshot.data() as CpuPackageHead : undefined;
         const incomingSequence = sequenceOf(manifest);
         if (head?.state === "current" && head.sourceSequence === incomingSequence) {
@@ -188,38 +209,34 @@ export async function publishHostedCpuPackage(store: ReadPackageStore, key: stri
           if (head?.state === "current" && head.manifest) return head.manifest;
           throw Object.assign(new Error("CPU package materialisation was superseded before promotion."), { code: "CPU_PACKAGE_SUPERSEDED", status: 409 });
         }
-        promotionWriteStaged = true;
         transaction.set(adapters.headRef, { state: "current", sourceSequence: incomingSequence, sourceHash, manifest, updatedAt: new Date().toISOString() });
-        emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "current-head-promotion-write", "staged", "firestore-document", headResource, context));
+        attempt.writeStaged = true;
+        emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "current-head-promotion-write", "staged", "firestore-document", headResource, context, undefined, attempt.number));
         return manifest;
       });
-      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, promotionWriteStaged ? "current-head-promotion-commit" : "current-head-promotion-transaction", promotionWriteStaged ? "committed" : "read", "firestore-document", headResource, context));
+      promoted = promotion.value;
     } catch (error) {
-      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, promotionWriteStaged ? "current-head-promotion-commit" : "current-head-promotion-read", "failed", "firestore-document", headResource, context, error));
       throw error;
     }
     return promoted;
   } catch (error) {
     emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-read", "started", "firestore-document", headResource, context));
-    let cleanupWriteStaged = false;
-    let cleanupFailureStage = "failure-cleanup-read";
     try {
-      await adapters.runTransaction(async transaction => {
+      await runDiagnosedTransaction(adapters, manifest, key, context, "failure-cleanup-transaction", "failure-cleanup-commit", headResource, async (transaction, attempt) => {
+        emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-read", "started", "firestore-document", headResource, context, undefined, attempt.number));
         let snapshot: CpuPackageHeadSnapshot;
         try { snapshot = await transaction.get(adapters.headRef); }
-        catch (cleanupReadError) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-read", "failed", "firestore-document", headResource, context, cleanupReadError)); throw cleanupReadError; }
-        emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-read", snapshot.exists ? "read" : "absent", "firestore-document", headResource, context));
+        catch (cleanupReadError) { emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-read", "failed", "firestore-document", headResource, context, cleanupReadError, attempt.number)); throw cleanupReadError; }
+        emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-read", snapshot.exists ? "read" : "absent", "firestore-document", headResource, context, undefined, attempt.number));
         const head = snapshot.exists ? snapshot.data() as CpuPackageHead : undefined;
         if (head?.pending?.sourceSequence === sequenceOf(manifest) && head.pending.sourceHash === sourceHash && head.pending.manifest.contentHash === manifest.contentHash) {
-          cleanupWriteStaged = true;
-          cleanupFailureStage = "failure-cleanup-commit";
           transaction.set(adapters.headRef, { ...head, state: "failed", failure: { message: error instanceof Error ? error.message : "CPU package materialisation failed.", at: new Date().toISOString() }, updatedAt: new Date().toISOString() });
-          emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-write", "staged", "firestore-document", headResource, context));
+          attempt.writeStaged = true;
+          emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-write", "staged", "firestore-document", headResource, context, undefined, attempt.number));
         }
       });
-      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, "failure-cleanup-commit", cleanupWriteStaged ? "committed" : "read", "firestore-document", headResource, context));
     } catch (cleanupError) {
-      emitPublicationDiagnostic(adapters, publicationDiagnostic(manifest, key, cleanupFailureStage, "failed", "firestore-document", headResource, context, cleanupError));
+      // The original publication error remains authoritative; cleanup diagnostics are emitted by the transaction helper.
     }
     throw error;
   }
