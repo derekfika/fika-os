@@ -1,5 +1,28 @@
 # Production application cutover gates — 2026-10-17
 
+## Latest status — Menu Planning cutover complete (2026-10-17)
+
+This section supersedes earlier Menu Planning hold and writer-freeze notes below. The deployed Menu backend remains `fika-os-prod-menu`, build/rollout `build-2026-10-17-001`, revision `fika-os-prod-menu-build-2026-10-17-001`, source SHA `35adc301a6682ed47f1a7791e5c6375d86e4f4b9`.
+
+- Before this cutover, `fika-prod-menu@fika-os.iam.gserviceaccount.com` had no Firestore data role. Project IAM was changed first to `roles/datastore.viewer` for the authenticated read-only smoke. This role's effective permissions include Firestore get/list but no create/update/delete permissions.
+- Derek's existing production session passed Hub AUTHMOD Menu admission. The Menu shell loaded; `GET /api/catalogue` returned HTTP 200 with the current production package (version 7, 215 entries, compressed package hash `b79546b1…afe8f`, source hash `5f3ae960…577215`; the source manifest reports 399 canonical records). `GET /api/rolling-menu` returned the empty, in-memory default draft for WC 12 Oct 2026; it was not saved. `GET /api/oplocs` returned the nine OPLOCs in Derek's current scope. The Week Planner, dish picker, Portion Planner, and Add destination selector rendered. No Save or Publish action was used.
+- Menu runtime data traces during the viewer-only smoke recorded 19 trace totals with zero estimated Firestore writes or deletes. The empty default week comes from `emptyWeek()` and is only a response fallback when no stored week exists; it is not evidence of a Firestore document. No production menu, catalogue, or publication data was mutated.
+- After that read-only smoke passed, the Menu runtime was promoted to `roles/datastore.user`; the temporary `roles/datastore.viewer` binding was removed. Current Firestore data-role bindings for application runtimes are Hub and Menu only. CPU, Logistics and Delivered-In remain without Firestore data roles; Hospitality has no direct Firestore role.
+- The three recovery Scheduler jobs remain PAUSED; the email-delivery flag remains explicitly `false`; no mailer secret is present. AUTHMOD policy, staging, application deployment, and publication state were not changed. The previously recorded internal `returnTo=https://0.0.0.0:8080/` remains a post-cutover navigation defect and was not changed here.
+
+### Read-only IAM state for the remaining application cutovers
+
+Removing `roles/datastore.user` also removes server-side Firestore reads. Do not attempt Firestore-dependent authenticated read smoke with no Firestore data role. For each app below, add only the app runtime's project-scoped `roles/datastore.viewer` immediately before its read-only data smoke. Promote that same runtime to `roles/datastore.user` only after smoke passes and only when its write-owning workflow is ready; remove the viewer binding after promotion. Do not grant these roles ahead of that app's cutover.
+
+| App | Runtime identity | Read-only startup/data path evidence | Required pre-smoke IAM | After successful read-only smoke |
+|---|---|---|---|---|
+| CPU Production | `fika-prod-cpu@fika-os.iam.gserviceaccount.com` | CPU reads canonical production plans and bounded Menu Planning publication/snapshot packets through Firestore repositories (`apps/cpu-production/lib/production-plan-repository.ts`, `menu-planning-week-packet.ts`). | Temporarily grant `roles/datastore.viewer`. | `roles/datastore.user` is required for CPU-owned production/release/outbox mutations; promote only after the read-only smoke passes. |
+| Logistics | `fika-prod-logistics@fika-os.iam.gserviceaccount.com` | Logistics runtime reads runs, stops, movements, loads, assignments, change state and day projections through its Firestore store/repositories (`apps/logistics/lib/store.ts`, `logistics-materialisation.ts`). | Temporarily grant `roles/datastore.viewer`. | `roles/datastore.user` is required for logistics-owned assignment/movement state; promote only after the read-only smoke passes. |
+| Delivered-In | `fika-prod-deliveredin@fika-os.iam.gserviceaccount.com` | Delivered-In reads projection heads, site-menu state, CPU release receipts and Menu Planning publication packets (`apps/delivered-in/lib/delivered-in-projection-store.ts`, `site-menu-store.ts`, `cpu-release-receipts.ts`, `menu-planning-week-packet.ts`). | Temporarily grant `roles/datastore.viewer`. | `roles/datastore.user` is needed for receipt/acknowledgement and projection-owned state; promote only after the read-only smoke passes. |
+| Hospitality Booking | `fika-prod-hosp@fika-os.iam.gserviceaccount.com` | Current production architecture uses Hub APIs for governed state and has no direct Firestore data path. | No direct Firestore role. | Keep no direct Firestore role unless a future code-path review proves a direct need. |
+
+The Menu read-only smoke exposed a prior process gap, not a Menu defect: a frozen runtime with zero Firestore permissions cannot exercise Firestore-backed startup reads. The `viewer → smoke → user` sequence above is now the required procedure for CPU, Logistics, and Delivered-In. Keep email OFF and recovery jobs PAUSED throughout.
+
 ## Follow-up status — 2026-10-17
 
 This document's earlier Firebase Auth and DWD status below is historical and has been superseded by the later read-only verification in `production-drive-launch-preflight-2026-10-17.md`: Google sign-in/provider and production domains were verified; production Drive DWD was used successfully for the listed read-only Drive preflight. OAuth web-client secret rotation is a post-cutover security task at Derek's direction.
