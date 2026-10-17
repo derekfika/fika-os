@@ -6,7 +6,7 @@ const root = process.cwd();
 const source = (file: string) => readFileSync(`${root}/app/ui/${file}`, "utf8");
 
 test("admin mutations open in-app confirmations instead of mutating on the first click", () => {
-  const panels = ["EquipmentTypesPanel.tsx", "ServiceCataloguePanel.tsx", "OperationalConfigurationPanel.tsx", "OperationalAreasPanel.tsx", "Connections.tsx", "Hub.tsx"];
+  const panels = ["EquipmentTypesPanel.tsx", "ServiceCataloguePanel.tsx", "OperationalConfigurationPanel.tsx", "OperationalAreasPanel.tsx", "HospitalityCatalogue.tsx", "Hub.tsx"];
   for (const panel of panels) {
     const text = source(panel);
     assert.match(text, /ConfirmationModal/);

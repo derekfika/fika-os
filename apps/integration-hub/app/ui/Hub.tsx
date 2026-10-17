@@ -38,6 +38,7 @@ import ActivityAudit from "./ActivityAudit";
 import GovernedDecisionModal from "./GovernedDecisionModal";
 import ConfirmationModal from "./ConfirmationModal";
 import Connections from "./Connections";
+import HospitalityCatalogue from "./HospitalityCatalogue";
 import HospitalityBookings from "./HospitalityBookings";
 import { getFikaFirebaseAuth, getFikaGoogleProvider, hasFikaFirebaseClientConfig } from "@/lib/firebase-client";
 
@@ -81,6 +82,7 @@ const views = [
   "Staging & Review",
   "Data Registry",
   "Hospitality Bookings",
+  "Hospitality Catalogue",
   "Connections",
   "Schema Catalogue",
   "Quality & Reconciliation",
@@ -359,6 +361,7 @@ export default function Hub() {
           />
         )}
         {view === "Hospitality Bookings" && <HospitalityBookings />}
+        {view === "Hospitality Catalogue" && <HospitalityCatalogue refreshSession={refreshLocalSession} />}
         {view === "Connections" && (
           <Connections
             role={payload.actor.role}
@@ -2039,6 +2042,7 @@ function navIcon(view: View) {
     "Staging & Review": <ShieldCheck />,
     "Data Registry": <Database />,
     "Hospitality Bookings": <WalletCards />,
+    "Hospitality Catalogue": <BookOpen />,
     Connections: <Link2 />,
     "Schema Catalogue": <BookOpen />,
     "Quality & Reconciliation": <ScanSearch />,

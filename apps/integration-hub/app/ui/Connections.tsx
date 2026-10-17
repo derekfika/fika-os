@@ -1,5 +1,4 @@
 "use client";
-import ConfirmationModal from "./ConfirmationModal";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -27,8 +26,6 @@ import OperationalConfigurationPanel from "./OperationalConfigurationPanel";
 import EventStaffingPanel from "./EventStaffingPanel";
 import EquipmentTypesPanel from "./EquipmentTypesPanel";
 import ServicesWorkspace from "./ServicesWorkspace";
-import "./MenuRoutingPanel.css";
-import { CPU_PRODUCTION_WORKSTREAM_LABELS, type CpuProductionWorkstream } from "../../../shared/production-workstreams";
 import { readCachedManifests, readCachedOverview, revalidateCachedManifests, writeCachedOverview } from "./integration-cache-client";
 import type { CacheDataset } from "@/lib/integration-cache-shared";
 
@@ -124,65 +121,8 @@ type Overview = {
   staffingRoles: StaffingRole[];
   siteStaffingRequirements: Requirement[];
   siteRoleAssignments: SiteAssignment[];
-  menuItems: MenuProductionItem[];
   siteRoleEstablishment: { developmentAvailable: true; message: string };
 };
-type MenuProductionItem = {
-  canonicalId: string;
-  name: string;
-  category: string;
-  description?: string;
-  dietaryInformation?: string[];
-  allergenInformation?: string[];
-  providerMappings?: Array<{ provider: string; sourceItemId: string; sourceVersion?: string }>;
-  version?: number;
-  lifecycleState: string;
-  publicationStatus: string;
-  scopes: Array<{ oplocId: string; label: string; operationalAreaId?: string }>;
-  workstreams: CpuProductionWorkstream[];
-  routingDecided: boolean;
-  routingSuggestion: {
-    workstreams: CpuProductionWorkstream[];
-    confidence: "medium" | "none";
-    reason: string;
-  };
-  sourceIds?: string[];
-};
-
-function groupMenuItems(items: MenuProductionItem[]) {
-  const grouped = new Map<string, MenuProductionItem>();
-  // Prefer an active record as the representative when the same display name
-  // has both current and archived site-scoped records.
-  for (const item of [...items].sort((a, b) =>
-    Number(b.lifecycleState === "active") - Number(a.lifecycleState === "active"),
-  )) {
-    // Routing is intentionally aligned by human-facing menu name across site
-    // records. Canonical records and their site-scoped offerings remain
-    // separate; this only keeps production-view visibility consistent.
-    const key = item.name.trim().toLocaleLowerCase("en-GB");
-    const current = grouped.get(key);
-    if (!current) grouped.set(key, { ...item, sourceIds: [item.canonicalId] });
-    else
-      grouped.set(key, {
-        ...current,
-        lifecycleState:
-          current.lifecycleState === "active" || item.lifecycleState === "active"
-            ? "active"
-            : item.lifecycleState,
-        sourceIds: [...(current.sourceIds || []), item.canonicalId],
-        scopes: [...current.scopes, ...item.scopes].filter(
-          (scope, index, all) =>
-            all.findIndex(
-              (candidate) =>
-                candidate.oplocId === scope.oplocId &&
-                candidate.operationalAreaId === scope.operationalAreaId,
-            ) === index,
-        ),
-        workstreams: current.workstreams,
-      });
-  }
-  return [...grouped.values()];
-}
 type Editor =
   | { kind: "role"; current?: StaffingRole }
   | { kind: "requirement"; current?: Requirement; oplocId: string }
@@ -211,8 +151,7 @@ export type ConnectionsView =
   | "equipment-types"
   | "teams"
   | "provider-mappings"
-  | "staffing"
-  | "hospitality-menu-items";
+  | "staffing";
 
 // This is intentionally a small typed registry, not a generic relationship
 // engine. A future governed connection becomes visible here only after its
@@ -381,15 +320,6 @@ export const managementTypes: ReadonlyArray<{
     icon: ClipboardList,
     count: (overview) =>
       overview.siteRoleAssignments.filter((item) => item.activeNow).length,
-  },
-  {
-    view: "hospitality-menu-items",
-    title: "Hospitality Menu Items",
-    description:
-      "Choose which production dashboard should receive each hospitality menu item.",
-    action: "Manage menu routing",
-    icon: ClipboardList,
-    count: (overview) => overview.menuItems.length,
   },
 ];
 
@@ -635,7 +565,6 @@ export default function Connections({
           "staffing",
           "teams",
           "provider-mappings",
-          "hospitality-menu-items",
         ].includes(view) && (
           <FocusedConnectionScreen
             view={
@@ -649,7 +578,6 @@ export default function Connections({
             disabled={disabled}
             edit={setEditor}
             refreshSession={refreshSession}
-            reloadOverview={load}
             navigate={navigate}
           />
         )}
@@ -798,7 +726,6 @@ function FocusedConnectionScreen({
   disabled,
   edit,
   refreshSession,
-  reloadOverview,
   navigate,
 }: {
   view: Exclude<ConnectionsView, "home" | "oplocs" | "legends">;
@@ -810,7 +737,6 @@ function FocusedConnectionScreen({
   disabled: boolean;
   edit: (editor: Editor) => void;
   refreshSession: () => Promise<boolean>;
-  reloadOverview: () => Promise<void>;
   navigate: (view: ConnectionsView) => void;
 }) {
   if (view === "equipment-types")
@@ -818,15 +744,6 @@ function FocusedConnectionScreen({
       <EquipmentTypesPanel
         canManage={!disabled}
         refreshSession={refreshSession}
-      />
-    );
-  if (view === "hospitality-menu-items")
-    return (
-      <HospitalityMenuProductionRoutingPanel
-        items={overview.menuItems}
-        canManage={!disabled}
-        refreshSession={refreshSession}
-        reloadOverview={reloadOverview}
       />
     );
   if (view === "services")
@@ -906,321 +823,6 @@ function FocusedConnectionScreen({
           manageEquipmentTypes={() => navigate("equipment-types")}
         />
       )}
-    </section>
-  );
-}
-
-function HospitalityMenuProductionRoutingPanel({
-  items,
-  canManage,
-  refreshSession,
-  reloadOverview,
-}: {
-  items: MenuProductionItem[];
-  canManage: boolean;
-  refreshSession: () => Promise<boolean>;
-  reloadOverview: () => Promise<void>;
-}) {
-  const [query, setQuery] = useState("");
-  const [draft, setDraft] = useState<
-    Record<string, CpuProductionWorkstream[]>
-  >(() =>
-    Object.fromEntries(items.map((item) => [item.canonicalId, item.workstreams])),
-  );
-  const [saving, setSaving] = useState("");
-  const [message, setMessage] = useState("");
-  const [includeArchived, setIncludeArchived] = useState(false);
-  const [editor, setEditor] = useState<MenuProductionItem | "new" | null>(null);
-  const [confirmation, setConfirmation] = useState<MenuProductionItem | null>(null);
-  const [bulkReviewed, setBulkReviewed] = useState<Record<string, boolean>>({});
-  const [bulkDraft, setBulkDraft] = useState<Record<string, { workstreams: CpuProductionWorkstream[]; inHouse: boolean }>>({});
-  const [bulkProgress, setBulkProgress] = useState<{ completed: number; total: number; current?: string } | null>(null);
-  const [form, setForm] = useState({ name: "", category: "", description: "", lifecycleState: "active" as "active" | "archived" });
-  useEffect(() => {
-    setDraft(
-      Object.fromEntries(items.map((item) => [item.canonicalId, item.workstreams])),
-    );
-    setBulkDraft((current) => Object.fromEntries(items.filter((item) => !item.routingDecided && item.lifecycleState !== "archived").map((item) => [item.canonicalId, current[item.canonicalId] || { workstreams: item.routingSuggestion.workstreams, inHouse: false }])));
-    setBulkReviewed((current) => Object.fromEntries(items.filter((item) => !item.routingDecided && item.lifecycleState !== "archived").map((item) => [item.canonicalId, current[item.canonicalId] || false])));
-  }, [items]);
-  const visible = groupMenuItems(items.filter((item) => includeArchived || item.lifecycleState !== "archived")).filter((item) =>
-    `${item.name} ${item.category} ${item.canonicalId} ${(item.sourceIds || []).join(" ")}`
-      .toLocaleLowerCase("en-GB")
-      .includes(query.trim().toLocaleLowerCase("en-GB")),
-  );
-  function openEditor(item: MenuProductionItem | "new") {
-    setEditor(item);
-    setForm(item === "new" ? { name: "", category: "", description: "", lifecycleState: "active" } : { name: item.name, category: item.category, description: item.description || "", lifecycleState: item.lifecycleState === "archived" ? "archived" : "active" });
-    setMessage("");
-  }
-  async function postCatalogue(payload: Record<string, unknown>) {
-    const send = () =>
-      fetch("/api/hospitality-menu/catalogue", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-    let response = await send();
-    if (response.status === 401 && (await refreshSession())) response = await send();
-    const body = await response.json();
-    if (!response.ok)
-      throw new Error(body.error?.message || "The menu item could not be saved.");
-    return body;
-  }
-  async function saveCatalogue() {
-    if (!editor || !form.name.trim() || !form.category.trim()) return;
-    setSaving("catalogue"); setMessage("");
-    try {
-      const source = editor === "new" ? undefined : editor;
-      await postCatalogue({
-        ...(source ? { canonicalId: source.canonicalId, expectedVersion: source.version || 1 } : {}),
-        name: form.name.trim(), category: form.category.trim(), description: form.description.trim() || undefined,
-        lifecycleState: form.lifecycleState, dietaryInformation: source?.dietaryInformation || [], allergenInformation: source?.allergenInformation || [], providerMappings: source?.providerMappings || [],
-      });
-      setEditor(null); await refreshSession(); await reloadOverview(); setMessage("Menu item saved.");
-    } catch (error) { setMessage((error as Error).message); } finally { setSaving(""); }
-  }
-  async function setLifecycle(item: MenuProductionItem) {
-    const action = item.lifecycleState === "archived" ? "restore" : "archive";
-    setSaving(item.canonicalId); setMessage("");
-    try {
-      await postCatalogue({ canonicalId: item.canonicalId, expectedVersion: item.version || 1, name: item.name, category: item.category, description: item.description || undefined, lifecycleState: item.lifecycleState === "archived" ? "active" : "archived", dietaryInformation: item.dietaryInformation || [], allergenInformation: item.allergenInformation || [], providerMappings: item.providerMappings || [] });
-      await refreshSession(); await reloadOverview(); setConfirmation(null); setMessage(`${item.name} ${item.lifecycleState === "archived" ? "restored" : "archived"}.`);
-    } catch (error) { setMessage((error as Error).message); } finally { setSaving(""); }
-  }
-  const toggle = (id: string, workstream: CpuProductionWorkstream) =>
-    setDraft((current) => {
-      const selected = current[id] || [];
-      const next = selected.includes(workstream)
-        ? selected.filter((value) => value !== workstream)
-        : [...selected, workstream];
-      return { ...current, [id]: next };
-    });
-  async function save(item: MenuProductionItem) {
-    setSaving(item.canonicalId);
-    setMessage("");
-    try {
-      for (const menuItemId of item.sourceIds || [item.canonicalId]) {
-        const send = () =>
-          fetch("/api/connections", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              action: "save-hospitality-menu-production-routing",
-              menuItemId,
-              workstreams: draft[menuItemId] || draft[item.canonicalId] || [],
-            }),
-          });
-        let response = await send();
-        if (response.status === 401 && (await refreshSession()))
-          response = await send();
-        const body = await response.json();
-        if (!response.ok)
-          throw new Error(
-            body.error?.message ||
-              "The production view routing could not be saved.",
-          );
-      }
-      setMessage(
-        `${item.name} routing saved for ${(item.sourceIds || [item.canonicalId]).length} canonical record${(item.sourceIds || [item.canonicalId]).length === 1 ? "" : "s"}.`,
-      );
-    } catch (error) {
-      setMessage((error as Error).message);
-    } finally {
-      setSaving("");
-    }
-  }
-  const bulkItems = items.filter((item) => !item.routingDecided && item.lifecycleState !== "archived").filter((item) => `${item.name} ${item.category} ${item.canonicalId}`.toLocaleLowerCase("en-GB").includes(query.trim().toLocaleLowerCase("en-GB")));
-  const approvedBulkItems = bulkItems.filter((item) => bulkReviewed[item.canonicalId]);
-  function toggleBulkWorkstream(id: string, workstream: CpuProductionWorkstream) {
-    setBulkDraft((current) => {
-      const draft = current[id] || { workstreams: [], inHouse: false };
-      const workstreams = draft.workstreams.includes(workstream) ? draft.workstreams.filter((value) => value !== workstream) : [...draft.workstreams, workstream];
-      return { ...current, [id]: { workstreams, inHouse: false } };
-    });
-  }
-  async function saveReviewedBulk() {
-    const invalid = approvedBulkItems.find((item) => {
-      const decision = bulkDraft[item.canonicalId];
-      return !decision || (!decision.inHouse && decision.workstreams.length === 0);
-    });
-    if (invalid) { setMessage(`Choose a CPU workstream or “No CPU / in house” for ${invalid.name} before saving.`); return; }
-    if (!approvedBulkItems.length) return;
-    setMessage(""); setBulkProgress({ completed: 0, total: approvedBulkItems.length });
-    let completed = 0;
-    for (const item of approvedBulkItems) {
-      setBulkProgress({ completed, total: approvedBulkItems.length, current: item.name });
-      try {
-        const decision = bulkDraft[item.canonicalId];
-        const send = () => fetch("/api/connections", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save-hospitality-menu-production-routing", menuItemId: item.canonicalId, workstreams: decision.inHouse ? [] : decision.workstreams, onlyIfUnrouted: true }) });
-        let response = await send();
-        if (response.status === 401 && (await refreshSession())) response = await send();
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.error?.message || "The routing decision could not be saved.");
-        completed += 1;
-        setBulkProgress({ completed, total: approvedBulkItems.length, current: item.name });
-      } catch (error) {
-        setMessage(`${completed} of ${approvedBulkItems.length} reviewed decisions saved. ${item.name}: ${(error as Error).message} Reload the list to reconcile saved items.`);
-        setBulkProgress(null);
-        await reloadOverview();
-        return;
-      }
-    }
-    await refreshSession(); await reloadOverview();
-    setMessage(`${completed} reviewed routing decision${completed === 1 ? "" : "s"} saved through the governed routing command.`);
-    setBulkProgress(null); setBulkReviewed({});
-  }
-  return (
-    <section className="connection-workspace menu-routing-workspace">
-      <div className="connection-workspace__intro">
-        <span>Production view routing</span>
-        <p>
-          One row is shown per menu name to make setup quick. Site offerings
-          remain separate, and saving a row applies the chosen visibility to
-          every matching canonical record.
-        </p>
-      </div>
-      <label className="connection-search">
-        Search menu items
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Name, category or canonical ID"
-        />
-      </label>
-      <div className="menu-routing-toolbar">
-        <button className="primary" type="button" disabled={!canManage} onClick={() => openEditor("new")}>Add menu item</button>
-        <label><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> Include archived</label>
-      </div>
-      {message && (
-        <p className="form-help" role="status">
-          {message}
-        </p>
-      )}
-      {bulkItems.length > 0 && (
-        <section className="menu-routing-bulk" aria-labelledby="bulk-routing-title">
-          <div className="menu-routing-bulk__header">
-            <div><h2 id="bulk-routing-title">Review unclassified items</h2><p>{bulkItems.length} active canonical item{bulkItems.length === 1 ? "" : "s"} without a routing record. Suggestions use exact provider source IDs only; item names are not used to infer routing.</p></div>
-            <button className="primary" type="button" disabled={!canManage || !approvedBulkItems.length || Boolean(bulkProgress)} onClick={() => void saveReviewedBulk()}>{bulkProgress ? "Saving reviewed decisions…" : `Save ${approvedBulkItems.length} reviewed`}</button>
-          </div>
-          {bulkProgress && <div className="menu-routing-progress" role="status" aria-live="polite"><progress aria-label="Routing save progress" value={bulkProgress.completed} max={bulkProgress.total} /> <span>Saving {bulkProgress.completed} of {bulkProgress.total}{bulkProgress.current ? ` · ${bulkProgress.current}` : ""}. Keep this page open.</span></div>}
-          <div className="menu-routing-bulk__list">
-            {bulkItems.map((item) => {
-              const decision = bulkDraft[item.canonicalId] || { workstreams: [], inHouse: false };
-              return <article className="menu-routing-bulk__row" key={item.canonicalId}>
-                <div className="menu-routing-bulk__item"><label><input type="checkbox" checked={Boolean(bulkReviewed[item.canonicalId])} disabled={!canManage || Boolean(bulkProgress)} onChange={(event) => setBulkReviewed((current) => ({ ...current, [item.canonicalId]: event.target.checked }))} /> Review and approve</label><h3>{item.name}</h3><p>{item.category} · {item.canonicalId}</p><p><strong>Suggestion · {item.routingSuggestion.confidence === "medium" ? "Medium confidence" : "No evidence"}</strong> — {item.routingSuggestion.reason}</p></div>
-                <fieldset disabled={!canManage || Boolean(bulkProgress)}><legend>Operator decision</legend>
-                  {(["sandwiches", "hospitality", "delivered_in"] as CpuProductionWorkstream[]).map((workstream) => <label key={workstream}><input type="checkbox" checked={decision.workstreams.includes(workstream)} onChange={() => toggleBulkWorkstream(item.canonicalId, workstream)} /> {CPU_PRODUCTION_WORKSTREAM_LABELS[workstream]}</label>)}
-                  <label><input type="checkbox" checked={decision.inHouse} onChange={(event) => setBulkDraft((current) => ({ ...current, [item.canonicalId]: { workstreams: [], inHouse: event.target.checked } }))} /> No CPU / in house</label>
-                </fieldset>
-              </article>;
-            })}
-          </div>
-        </section>
-      )}
-      {visible.length ? (
-        <div className="menu-routing-list">
-          {visible.map((item) => {
-            const selected = draft[item.canonicalId] || [];
-            return (
-              <article className="menu-routing-row" key={item.canonicalId}>
-                <div>
-                  <h3>{item.name}</h3>
-                  <p>
-                    {item.category} · {item.lifecycleState} ·{" "}
-                    {item.publicationStatus}
-                  </p>
-                  <div className="menu-routing-scopes">
-                    <strong>Site availability</strong>
-                    {item.scopes.length ? (
-                      item.scopes.map((scope) => (
-                        <span
-                          key={`${scope.oplocId}:${scope.operationalAreaId || "wide"}`}
-                        >
-                          {scope.label}
-                          {scope.operationalAreaId
-                            ? " · area-scoped"
-                            : " · OPLOC-wide"}
-                        </span>
-                      ))
-                    ) : (
-                      <span>
-                        Canonical item only — no linked site offering yet
-                      </span>
-                    )}
-                  </div>
-                  <details>
-                    <summary>Technical details</summary>
-                    <p>Canonical Menu Item ID(s)</p>
-                    <code>
-                      {(item.sourceIds || [item.canonicalId]).join(" · ")}
-                    </code>
-                  </details>
-                </div>
-                  <div className="menu-routing-actions">
-                    <button type="button" className="secondary" disabled={!canManage} onClick={() => openEditor(item)}>Edit</button>
-                    <button type="button" className="danger" disabled={!canManage || saving === item.canonicalId} onClick={() => setConfirmation(item)}>{item.lifecycleState === "archived" ? "Restore" : "Archive"}</button>
-                  </div>
-                  <fieldset
-                  disabled={!canManage || item.lifecycleState === "archived"}
-                >
-                  <legend>Production visibility</legend>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={selected.includes("sandwiches")}
-                      onChange={() => toggle(item.canonicalId, "sandwiches")}
-                    />{" "}
-                    {CPU_PRODUCTION_WORKSTREAM_LABELS.sandwiches}
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={selected.includes("hospitality")}
-                      onChange={() => toggle(item.canonicalId, "hospitality")}
-                    />{" "}
-                    {CPU_PRODUCTION_WORKSTREAM_LABELS.hospitality}
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={selected.includes("delivered_in")}
-                      onChange={() => toggle(item.canonicalId, "delivered_in")}
-                    />{" "}
-                    {CPU_PRODUCTION_WORKSTREAM_LABELS.delivered_in}
-                  </label>
-                  <button
-                    className="primary"
-                    type="button"
-                    disabled={saving === item.canonicalId}
-                    onClick={() => void save(item)}
-                  >
-                    {saving === item.canonicalId ? "Saving…" : "Save routing"}
-                  </button>
-                </fieldset>
-              </article>
-            );
-          })}
-        </div>
-      ) : (
-        <p className="empty">No Hospitality Menu Items match this search.</p>
-      )}
-      <p className="form-help">
-        Site-manager-only items are excluded from both production-chef views.
-        Matching names are grouped for setup only; their canonical records and
-        site offerings are not merged.
-      </p>
-      {confirmation && <ConfirmationModal title={`${confirmation.lifecycleState === "archived" ? "Restore" : "Archive"} ${confirmation.name}?`} description={confirmation.lifecycleState === "archived" ? "It will become available for new portal selections again." : "It will disappear from new portal selections, while history and source evidence are retained."} confirmLabel={confirmation.lifecycleState === "archived" ? "Restore menu item" : "Archive menu item"} destructive={confirmation.lifecycleState !== "archived"} busy={saving === confirmation.canonicalId} onCancel={() => setConfirmation(null)} onConfirm={() => setLifecycle(confirmation)} />}
-      {editor && <div className="menu-item-editor" role="dialog" aria-modal="true">
-        <div className="menu-item-editor__panel">
-          <h2>{editor === "new" ? "Add menu item" : "Edit menu item"}</h2>
-          <label>Name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
-          <label>Category<input value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} /></label>
-          <label>Description<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
-          <p className="form-help">Imported provider evidence and canonical IDs are preserved. Archive removes an item from new portal choices without deleting history.</p>
-          <div><button type="button" className="secondary" onClick={() => setEditor(null)}>Cancel</button> <button type="button" className="primary" disabled={saving === "catalogue"} onClick={() => void saveCatalogue()}>Save item</button></div>
-        </div>
-      </div>}
     </section>
   );
 }

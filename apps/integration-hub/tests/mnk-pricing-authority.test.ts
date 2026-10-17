@@ -62,11 +62,28 @@ test("catalogue relation reads are restricted to affected stable IDs and preserv
     calls.push({ field, ids });
     return records.filter(record => ids.includes(String(record.record[field.replace("record.", "")])));
   });
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   assert.deepEqual(calls[0].ids, [item.canonicalId]);
   assert.equal(calls[1].ids.length, 1);
+  assert.deepEqual(calls[2], { field: "record.hospitalityMenuItemId", ids: [item.canonicalId] }, "company-default Prices are read by the same stable Item id");
   assert.equal(loaded.filter(record => record.entityType === "Hospitality Menu Price").length, 1);
   assert.equal(JSON.stringify(records), before);
+});
+
+test("a booking prices from the company default when the site Offering carries no override, and from the override when it does", async () => {
+  const item = fixture.items.find(item => item.name === "Bloom Filter Coffee")!;
+  const offering = records.find(record => record.entityType === "Hospitality Menu Offering" && record.record.hospitalityMenuItemId === item.canonicalId)!;
+  const override = records.find(record => record.entityType === "Hospitality Menu Price" && record.record.hospitalityMenuOfferingId === offering.canonicalId)!;
+  const defaultPrice = { ...override, canonicalId: "hospitality-menu-price:company-default", record: { ...override.record, canonicalId: "hospitality-menu-price:company-default", hospitalityMenuOfferingId: undefined, hospitalityMenuItemId: item.canonicalId, amount: 7.25 } } as CanonicalRecord;
+  const relevant = (withOverride: boolean) => [...records.filter(record => record.canonicalId !== override.canonicalId || withOverride), defaultPrice];
+  const read = (set: CanonicalRecord[]) => async (field: string, ids: string[]) => set.filter(record => ids.includes(String(record.record[field.replace("record.", "")])));
+  const unitPrice = async (withOverride: boolean) => {
+    const set = relevant(withOverride);
+    const loaded = await loadMnkBookingCatalogue(set.filter(record => record.entityType === "Hospitality Menu Item"), payloadFor(item.canonicalId), request.oplocId, read(set));
+    return trustedPublicOrder(payloadFor(item.canonicalId), mnkBookingPricingRecords(loaded, request), "mnk").items[0].unitPrice;
+  };
+  assert.equal(await unitPrice(false), 7.25, "inherits the company default");
+  assert.equal(await unitPrice(true), (override.record as { amount: number }).amount, "a site override wins");
 });
 
 test("portal and ingestion catalogue date follows UK midnight across BST/GMT", () => {

@@ -78,23 +78,69 @@ export type MergeOperation =
   | { op: "copy-routing"; fromItemId: string; toItemId: string; workstreams: string[] }
   | { op: "supersede-routing"; itemId: string; supersededBy: string }
   | { op: "archive-item"; itemId: string; mergedInto: string }
-  | { op: "record-merge"; sourceItemId: string; survivorItemId: string };
+  | { op: "record-merge"; sourceItemId: string; survivorItemId: string }
+  /** Company default materialised from deterministic, equal site values (Item-scoped Price + Item.defaultMinimumQuantity). */
+  | { op: "set-company-default"; itemId: string; price?: { priceId: string; amount: number; vatRate: number; effectiveFrom: string }; minimumQuantity?: number }
+  /** A site Price equal to the new company default is redundant as an override: archived, never deleted. */
+  | { op: "archive-redundant-price"; priceId: string; offeringId: string }
+  /** A site minimum equal to the new company default is redundant as an override. */
+  | { op: "clear-offering-minimum"; offeringId: string };
 export type MergeGroup = {
   id: string; memberIds: string[]; survivorId: string; sourceIds: string[]; name: string; category: string;
   evidence: { sharedSourceIds: string[] }; notes: string[];
   offeringsRepointed: number; routing: { state: "none" | "inherit" | "agree"; workstreams: string[]; from?: string };
+  /** `materialised` = deterministic default created; `none` = nothing to derive (never fabricated); `operator_required` = conflicting values, no authority, merge proceeds WITHOUT a default and site values stay as they are. */
+  defaults: { state: "materialised" | "none" | "operator_required"; amount?: number; vatRate?: number; minimumQuantity?: number; redundantOverrides: number; offeringsInheriting: number; reasons: string[] };
   operations: MergeOperation[];
   expectedState: CatalogueSnapshot;
 };
 export type CanonicalisationPlan = {
   groups: MergeGroup[]; review: ReviewGroup[]; unmatched: string[];
-  summary: { activeItems: number; mergeGroups: number; itemsToArchive: number; offeringsRepointed: number; routingRecordsInherited: number; routingRecordsSuperseded: number; reviewGroups: number; unmatchedItems: number; itemsAfter: number };
+  summary: { activeItems: number; mergeGroups: number; itemsToArchive: number; offeringsRepointed: number; routingRecordsInherited: number; routingRecordsSuperseded: number; defaultsMaterialised: number; redundantOverridesRemoved: number; offeringsInheritingDefault: number; defaultsOperatorRequired: number; reviewGroups: number; unmatchedItems: number; itemsAfter: number };
   planHash: string;
 };
 
 class DisjointSet { private parent = new Map<string, string>(); find(x: string): string { if (!this.parent.has(x)) this.parent.set(x, x); const p = this.parent.get(x)!; if (p === x) return x; const root = this.find(p); this.parent.set(x, root); return root; } union(a: string, b: string) { this.parent.set(this.find(a), this.find(b)); } components(ids: string[]) { const out = new Map<string, string[]>(); for (const id of ids) { const root = this.find(id); out.set(root, [...(out.get(root) || []), id]); } return [...out.values()]; } }
 
 const offeringKey = (offering: CanonicalRecord) => `${text(offering.record.oplocId)}|${text(offering.record.operationalAreaId)}|${text(offering.record.offeringMode)}`;
+
+const liveOpenPrice = (price: CanonicalRecord) => price.entityType === "Hospitality Menu Price" && price.record.lifecycleState === "active" && price.lifecycleStatus !== "archived" && !text(price.record.effectiveTo);
+/** Deterministic id so a retried apply can never create a second default. */
+export const companyDefaultPriceId = (itemId: string) => `hospitality-menu-price:company-default-${hash(itemId).slice(0, 32)}`;
+
+/**
+ * Deterministic company-default rule for one decisive merge group (no business choice is ever made):
+ *  - PRICE: every priced standard Offering carries the same live amount+VAT -> that is the default, and each such site Price (now redundant) is archived;
+ *    Offerings with no price inherit it. Differing amounts/VAT -> operator_required (no default; site prices untouched). No priced Offering -> none.
+ *    If any member already holds an Item-scoped default, nothing is materialised (an existing default is the authority; site values remain sparse overrides).
+ *  - MINIMUM: every standard Offering has the same defined minimum -> default; equal site minimums cleared. Mixed/absent -> not fabricated.
+ */
+export function deriveCompanyDefaults(snapshot: CatalogueSnapshot, members: CanonicalRecord[], survivor: CanonicalRecord, offerings: CanonicalRecord[]) {
+  const operations: MergeOperation[] = []; const reasons: string[] = [];
+  const summary: MergeGroup["defaults"] = { state: "none", redundantOverrides: 0, offeringsInheriting: 0, reasons };
+  const standard = offerings.filter(offering => offering.record.offeringMode !== "quote_only");
+  const prices = snapshot.prices || [];
+  if (!standard.length) return { operations, summary };
+  if (members.some(member => prices.some(price => text(price.record.hospitalityMenuItemId) === member.canonicalId && liveOpenPrice(price)))) { reasons.push("a company default already exists; site values stay as overrides"); return { operations, summary }; }
+  const own = new Map(standard.map(offering => [offering.canonicalId, prices.filter(price => text(price.record.hospitalityMenuOfferingId) === offering.canonicalId && liveOpenPrice(price))]));
+  const multiple = [...own.values()].some(list => list.length > 1);
+  const priced = [...own.values()].filter(list => list.length === 1).map(list => list[0]);
+  const keys = new Set(priced.map(price => `${price.record.amount}|${price.record.vatRate}`));
+  let amount: number | undefined, vatRate: number | undefined, effectiveFrom = "";
+  if (multiple) { summary.state = "operator_required"; reasons.push("an Offering has several live prices"); }
+  else if (keys.size > 1) { summary.state = "operator_required"; reasons.push("site prices differ and no governed rule chooses between them; site prices are left unchanged"); }
+  else if (keys.size === 1) { amount = Number(priced[0].record.amount); vatRate = Number(priced[0].record.vatRate); effectiveFrom = priced.map(price => text(price.record.effectiveFrom)).sort()[0]; }
+  const minimumKeys = new Set(standard.map(offering => offering.record.minimumQuantity === undefined ? "none" : String(offering.record.minimumQuantity)));
+  const minimumQuantity = minimumKeys.size === 1 && !minimumKeys.has("none") ? Number([...minimumKeys][0]) : undefined;
+  if (minimumKeys.size > 1) reasons.push("site minimums differ or are partly absent; no default minimum is invented");
+  if (amount === undefined && minimumQuantity === undefined) return { operations, summary };
+  operations.push({ op: "set-company-default", itemId: survivor.canonicalId, ...(amount !== undefined ? { price: { priceId: companyDefaultPriceId(survivor.canonicalId), amount, vatRate: vatRate!, effectiveFrom } } : {}), ...(minimumQuantity !== undefined ? { minimumQuantity } : {}) });
+  if (amount !== undefined) for (const offering of standard) { const list = own.get(offering.canonicalId)!; if (list.length === 1) { operations.push({ op: "archive-redundant-price", priceId: list[0].canonicalId, offeringId: offering.canonicalId }); summary.redundantOverrides++; } else summary.offeringsInheriting++; }
+  if (minimumQuantity !== undefined) for (const offering of standard) { operations.push({ op: "clear-offering-minimum", offeringId: offering.canonicalId }); summary.redundantOverrides++; }
+  if (summary.state !== "operator_required") summary.state = "materialised";
+  Object.assign(summary, { ...(amount !== undefined ? { amount, vatRate } : {}), ...(minimumQuantity !== undefined ? { minimumQuantity } : {}) });
+  return { operations, summary };
+}
 
 export function buildCanonicalisationPlan(snapshot: CatalogueSnapshot): CanonicalisationPlan {
   const items = snapshot.items.filter(isActiveItem).sort((a, b) => a.canonicalId.localeCompare(b.canonicalId));
@@ -160,6 +206,8 @@ export function buildCanonicalisationPlan(snapshot: CatalogueSnapshot): Canonica
       for (const decision of decisions) if (decision.id !== survivor.canonicalId) operations.push({ op: "supersede-routing", itemId: decision.id, supersededBy: survivor.canonicalId });
     }
     if (blockers.length) { sendToReview(memberIds, `merge blocked: ${blockers.join("; ")}`); continue; }
+    const derived = deriveCompanyDefaults(snapshot, members, survivor, members.flatMap(member => offeringsOf(member.canonicalId)));
+    operations.push(...derived.operations);
 
     const mappings = new Map<string, Record<string, unknown>>();
     for (const member of [survivor, ...sources]) for (const mapping of Array.isArray(member.record.providerMappings) ? member.record.providerMappings as Record<string, unknown>[] : []) mappings.set(`${text(mapping.provider)}|${text(mapping.sourceItemId)}`, mapping);
@@ -167,7 +215,7 @@ export function buildCanonicalisationPlan(snapshot: CatalogueSnapshot): Canonica
     for (const source of sources) { operations.push({ op: "archive-item", itemId: source.canonicalId, mergedInto: survivor.canonicalId }, { op: "record-merge", sourceItemId: source.canonicalId, survivorItemId: survivor.canonicalId }); merged.add(source.canonicalId); }
     merged.add(survivor.canonicalId);
     const shared = sourceIdentities(survivor).filter(id => sources.every(source => sourceIdentities(source).includes(id)));
-    groups.push({ id: hash(memberIds.slice().sort()).slice(0, 16), memberIds: memberIds.slice().sort(), survivorId: survivor.canonicalId, sourceIds: sources.map(source => source.canonicalId).sort(), name: text(survivor.record.name), category: text(survivor.record.category), evidence: { sharedSourceIds: shared }, notes: [...notes], offeringsRepointed: repointed, routing: routingState, operations: structuredClone(operations), expectedState: groupSnapshot(snapshot, memberIds) });
+    groups.push({ id: hash(memberIds.slice().sort()).slice(0, 16), memberIds: memberIds.slice().sort(), survivorId: survivor.canonicalId, sourceIds: sources.map(source => source.canonicalId).sort(), name: text(survivor.record.name), category: text(survivor.record.category), evidence: { sharedSourceIds: shared }, notes: [...notes], offeringsRepointed: repointed, routing: routingState, defaults: derived.summary, operations: structuredClone(operations), expectedState: groupSnapshot(snapshot, memberIds) });
   }
 
   // An item that already has an identity-matched twin is a known, distinct product: never suggest it as a duplicate of something else.
@@ -181,6 +229,7 @@ export function buildCanonicalisationPlan(snapshot: CatalogueSnapshot): Canonica
     activeItems: items.length, mergeGroups: groups.length, itemsToArchive: groups.reduce((sum, group) => sum + group.sourceIds.length, 0),
     offeringsRepointed: groups.reduce((sum, group) => sum + group.offeringsRepointed, 0),
     routingRecordsInherited: operations.filter(operation => operation.op === "copy-routing").length, routingRecordsSuperseded: operations.filter(operation => operation.op === "supersede-routing").length,
+    defaultsMaterialised: groups.filter(group => group.defaults.state === "materialised").length, redundantOverridesRemoved: groups.reduce((sum, group) => sum + group.defaults.redundantOverrides, 0), offeringsInheritingDefault: groups.reduce((sum, group) => sum + group.defaults.offeringsInheriting, 0), defaultsOperatorRequired: groups.filter(group => group.defaults.state === "operator_required").length,
     reviewGroups: review.length, unmatchedItems: unmatched.length, itemsAfter: items.length - groups.reduce((sum, group) => sum + group.sourceIds.length, 0),
   };
   return { groups, review, unmatched, summary, planHash: hash({ groups: groups.map(group => ({ id: group.id, operations: group.operations, expectedState: group.expectedState })) }) };
@@ -191,9 +240,11 @@ export function buildCanonicalisationPlan(snapshot: CatalogueSnapshot): Canonica
  */
 export function groupSnapshot(snapshot: CatalogueSnapshot, memberIds: string[]): CatalogueSnapshot {
   const ids = new Set(memberIds);
+  const offeringIds = new Set(snapshot.offerings.filter(offering => ids.has(String(offering.record.hospitalityMenuItemId))).map(offering => offering.canonicalId));
   return structuredClone({
     items: snapshot.items.filter(item => ids.has(item.canonicalId)).sort((a, b) => a.canonicalId.localeCompare(b.canonicalId)),
     offerings: snapshot.offerings.filter(item => ids.has(String(item.record.hospitalityMenuItemId))).sort((a, b) => a.canonicalId.localeCompare(b.canonicalId)),
+    prices: (snapshot.prices || []).filter(price => ids.has(text(price.record.hospitalityMenuItemId)) || offeringIds.has(text(price.record.hospitalityMenuOfferingId))).sort((a, b) => a.canonicalId.localeCompare(b.canonicalId)),
     routing: snapshot.routing.filter(row => ids.has(row.menuItemId)).sort((a, b) => a.menuItemId.localeCompare(b.menuItemId)),
     merges: (snapshot.merges || []).filter(row => ids.has(row.sourceMenuItemId)).sort((a, b) => a.sourceMenuItemId.localeCompare(b.sourceMenuItemId)),
   });
@@ -213,6 +264,13 @@ export function applyOperations(snapshot: CatalogueSnapshot, operations: MergeOp
     else if (operation.op === "supersede-routing") { const row = next.routing.find(candidate => candidate.menuItemId === operation.itemId); if (row) row.supersededBy = operation.supersededBy; }
     else if (operation.op === "archive-item") { const item = next.items.find(candidate => candidate.canonicalId === operation.itemId)!; item.record = { ...item.record, lifecycleState: "archived", version: Number(item.record.version || 0) + 1, updatedAt: now }; }
     else if (operation.op === "record-merge") next.merges!.push({ sourceMenuItemId: operation.sourceItemId, survivorMenuItemId: operation.survivorItemId });
+    else if (operation.op === "set-company-default") {
+      const item = next.items.find(candidate => candidate.canonicalId === operation.itemId)!;
+      item.record = { ...item.record, ...(operation.minimumQuantity !== undefined ? { defaultMinimumQuantity: operation.minimumQuantity } : {}), version: Number(item.record.version || 0) + 1, updatedAt: now };
+      if (operation.price) next.prices = [...(next.prices || []), { canonicalId: operation.price.priceId, entityType: "Hospitality Menu Price", lifecycleStatus: "published", publicationStatus: "published", dataHash: "x", record: { version: 1, canonicalId: operation.price.priceId, hospitalityMenuItemId: operation.itemId, amount: operation.price.amount, currency: "GBP", vatRate: operation.price.vatRate, effectiveFrom: operation.price.effectiveFrom, lifecycleState: "active" } } as unknown as CanonicalRecord];
+    }
+    else if (operation.op === "archive-redundant-price") { const price = (next.prices || []).find(candidate => candidate.canonicalId === operation.priceId)!; price.record = { ...price.record, lifecycleState: "archived", version: Number(price.record.version || 0) + 1, updatedAt: now }; }
+    else if (operation.op === "clear-offering-minimum") { const offering = next.offerings.find(candidate => candidate.canonicalId === operation.offeringId)!; const rest = { ...offering.record }; delete rest.minimumQuantity; offering.record = { ...rest, version: Number(offering.record.version || 0) + 1, updatedAt: now }; }
   }
   return next;
 }
@@ -221,7 +279,19 @@ export function applyOperations(snapshot: CatalogueSnapshot, operations: MergeOp
 export function verifyMergeInvariants(before: CatalogueSnapshot, after: CatalogueSnapshot): string[] {
   const problems: string[] = [];
   if (after.offerings.length !== before.offerings.length) problems.push("offering count changed");
-  if ((after.prices?.length ?? 0) !== (before.prices?.length ?? 0)) problems.push("price count changed");
+  for (const prior of before.prices || []) if (!(after.prices || []).some(candidate => candidate.canonicalId === prior.canonicalId)) problems.push(`price ${prior.canonicalId} was discarded`);
+  const effectivePrice = (snap: CatalogueSnapshot, offering: CanonicalRecord) => {
+    const open = (list: CanonicalRecord[]) => list.filter(liveOpenPrice);
+    const own = open((snap.prices || []).filter(price => text(price.record.hospitalityMenuOfferingId) === offering.canonicalId));
+    const inherited = open((snap.prices || []).filter(price => text(price.record.hospitalityMenuItemId) === text(offering.record.hospitalityMenuItemId)));
+    const chosen = own.length ? own : inherited; return chosen.length === 1 ? `${chosen[0].record.amount}|${chosen[0].record.vatRate}` : chosen.length ? "ambiguous" : "none";
+  };
+  const effectiveMinimum = (snap: CatalogueSnapshot, offering: CanonicalRecord) => offering.record.minimumQuantity ?? snap.items.find(item => item.canonicalId === text(offering.record.hospitalityMenuItemId))?.record.defaultMinimumQuantity;
+  for (const prior of before.offerings.filter(candidate => candidate.record.lifecycleState !== "archived" && candidate.record.offeringMode !== "quote_only")) {
+    const later = after.offerings.find(candidate => candidate.canonicalId === prior.canonicalId); if (!later) continue;
+    const was = effectivePrice(before, prior); if (was !== "none" && effectivePrice(after, later) !== was) problems.push(`effective price of offering ${prior.canonicalId} changed`);
+    const wasMinimum = effectiveMinimum(before, prior); if (wasMinimum !== undefined && effectiveMinimum(after, later) !== wasMinimum) problems.push(`effective minimum of offering ${prior.canonicalId} changed`);
+  }
   const activeItems = new Map(after.items.filter(isActiveItem).map(item => [item.canonicalId, item]));
   const keys = new Set<string>();
   for (const offering of after.offerings.filter(candidate => candidate.record.lifecycleState !== "archived")) {

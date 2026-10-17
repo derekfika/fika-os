@@ -45,10 +45,11 @@ test("MNK and RCoA end up referencing the same canonical item, and the routing s
 
 test("site-specific price, availability and lead time stay independent after canonicalisation", () => {
   const before = twoSites(["bagel_box"]);
-  before.offerings.find(o => o.canonicalId.includes(":rcoa:"))!.record.lifecycleState = "archived"; // not currently available at RCoA
-  const after = applyOperations(before, buildCanonicalisationPlan(before).groups[0]?.operations ?? []);
+  const plan = buildCanonicalisationPlan(before);
+  assert.equal(plan.groups[0].defaults.state, "operator_required", "differing site prices: no default is guessed");
+  const after = applyOperations(before, plan.groups[0]?.operations ?? []);
   const mnk = after.offerings.find(o => o.record.oplocId === OPLOC.mnk)!; const rcoa = after.offerings.find(o => o.record.oplocId === OPLOC.rcoa)!;
-  assert.equal(rcoa.record.lifecycleState, "archived"); assert.equal(mnk.record.lifecycleState, "active");
+  assert.equal(rcoa.record.lifecycleState, "active"); assert.equal(mnk.record.lifecycleState, "active");
   assert.equal(mnk.record.noticeRequiredDays, 3); assert.equal(rcoa.record.noticeRequiredDays, 1);
   assert.deepEqual(after.prices!.map(p => [p.canonicalId, p.record.amount]), before.prices!.map(p => [p.canonicalId, p.record.amount]));
   assert.notEqual(after.prices!.find(p => p.canonicalId.includes(":mnk:"))!.record.amount, after.prices!.find(p => p.canonicalId.includes(":rcoa:"))!.record.amount);

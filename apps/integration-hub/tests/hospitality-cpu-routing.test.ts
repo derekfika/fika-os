@@ -76,8 +76,10 @@ test("9. only RCoA bookings are filtered; non-RCoA keeps its behaviour; one rout
   assert.match(domain, /adaptCpuProductionWorkstreams\(assignments\)\.workstreams\[0\] \|\| "unassigned"/, "non-RCoA fallback unchanged");
   const service = readFileSync(new URL("../lib/connections-service.ts", import.meta.url), "utf8");
   assert.equal((service.match(/db\.collection\("integrationHubHospitalityMenuProductionRouting"\)/g) || []).length, 1, "a single routing store");
-  const ui = readFileSync(new URL("../app/ui/Connections.tsx", import.meta.url), "utf8");
-  assert.match(ui, /CPU_PRODUCTION_WORKSTREAM_LABELS/);
+  const ui = readFileSync(new URL("../app/ui/HospitalityCatalogue.tsx", import.meta.url), "utf8");
+  assert.match(ui, /ROUTING_STATE_LABELS/, "the Hospitality Catalogue shows the governed routing states");
+  const choices = readFileSync(new URL("../lib/hospitality-catalogue-types.ts", import.meta.url), "utf8");
+  for (const label of ["No CPU / In house", "CPU · Hospitality", "CPU · Sandwiches", "CPU · Delivered-In", "Routing required", "Routing conflict"]) assert.ok(choices.includes(label), label);
   const dashboard = readFileSync(new URL("../../hospitality-booking/app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8");
   assert.match(dashboard, /booking\.cpuRouting/);
   const labels = readFileSync(new URL("../lib/hospitality-cpu-routing.ts", import.meta.url), "utf8");

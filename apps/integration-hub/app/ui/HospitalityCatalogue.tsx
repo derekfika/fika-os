@@ -1,0 +1,453 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AlertTriangle, CheckCircle2, Plus, Search, X } from "lucide-react";
+import ConfirmationModal from "./ConfirmationModal";
+import "./HospitalityCatalogue.css";
+import {
+  ROUTING_CHOICES, ROUTING_CHOICE_LABELS, ROUTING_STATE_LABELS,
+  type CatalogueOfferingView, type CataloguePayload, type CatalogueRow, type ReviewGroupView, type RoutingChoice,
+} from "../../lib/hospitality-catalogue-types";
+import { EMPTY_FILTERS, categoriesOf, formatMoney, oplocLabel, rowMatches, sortRows, summariseCounts, withDuplicateFlag, type CatalogueFilters, type Sort, type SortKey } from "../../lib/hospitality-catalogue-view";
+
+type Command = Record<string, unknown> & { action: string };
+type ApiBody = { error?: { message?: string }; message?: string; rows?: CatalogueRow[]; payload?: CataloguePayload } & Partial<CataloguePayload>;
+type Send = (command: Command) => Promise<{ message: string }>;
+
+const sentence = (value: string) => value.charAt(0).toLocaleUpperCase("en-GB") + value.slice(1);
+const newRequestId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+
+export function RoutingBadge({ state }: { state: CatalogueRow["routing"]["state"] }) {
+  const tone = state === "routing_required" ? "warning" : state === "routing_conflict" ? "danger" : "neutral";
+  return <span className={`hc-badge hc-badge--${tone}`}>{state === "routing_required" && <AlertTriangle size={13} aria-hidden="true" />}{state === "routing_required" ? "ROUTING REQUIRED" : ROUTING_STATE_LABELS[state]}</span>;
+}
+
+/** INHERITS / OVERRIDES are always spelled out; colour is never the only signal. */
+export function SourceTag({ source }: { source: "inherits" | "overrides" | "site_only" | "none" | "quote_only" }) {
+  const label = source === "inherits" ? "INHERITS" : source === "overrides" ? "OVERRIDES" : source === "site_only" ? "SITE VALUE" : source === "quote_only" ? "QUOTE ONLY" : "NOT SET";
+  return <span className={`hc-tag hc-tag--${source}`}>{label}</span>;
+}
+
+function availability(row: CatalogueRow, oplocs: CataloguePayload["oplocs"]) {
+  const labels = row.availableAt.map(id => oplocLabel(oplocs, id));
+  if (!labels.length) return "Not available anywhere";
+  return labels.length <= 2 ? labels.join(", ") : `${labels.length} sites`;
+}
+const minimumLabel = (row: CatalogueRow) => (row.defaultMinimumQuantity !== undefined ? String(row.defaultMinimumQuantity) : "—");
+const priceLabel = (row: CatalogueRow) => (row.defaultPrice ? formatMoney(row.defaultPrice.amount) : row.offerings.some(offering => offering.mode === "standard" && offering.status === "active") ? "Not set" : "—");
+
+export default function HospitalityCatalogue({ refreshSession }: { refreshSession: () => Promise<boolean> }) {
+  const [payload, setPayload] = useState<CataloguePayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [filters, setFilters] = useState<CatalogueFilters>(EMPTY_FILTERS);
+  const [sort, setSort] = useState<Sort>({ key: "name", direction: "asc" });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [reviewing, setReviewing] = useState<ReviewGroupView | null>(null);
+  const [notice, setNotice] = useState("");
+  const [showDuplicates, setShowDuplicates] = useState(false);
+
+  const request = useCallback(async (init?: RequestInit) => {
+    const send = () => fetch("/api/hospitality-catalogue", { cache: "no-store", ...init });
+    let response = await send();
+    if (response.status === 401 && (await refreshSession())) response = await send();
+    const text = await response.text();
+    let body: ApiBody; try { body = JSON.parse(text) as ApiBody; } catch { throw new Error("The catalogue service returned an unreadable response. Reload and try again."); }
+    if (!response.ok) throw new Error(body?.error?.message || "The catalogue request failed.");
+    return body;
+  }, [refreshSession]);
+
+  useEffect(() => {
+    let live = true;
+    request().then(body => { if (live) setPayload(body as CataloguePayload); }).catch(caught => { if (live) setError((caught as Error).message); }).finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [request]);
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try { setPayload(await request() as CataloguePayload); } catch (caught) { setError((caught as Error).message); } finally { setLoading(false); }
+  }, [request]);
+
+  const send: Send = useCallback(async command => {
+    const body = await request({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command) });
+    setPayload(current => {
+      if (body.payload) return body.payload as CataloguePayload;
+      if (!current) return current;
+      const fresh = new Map<string, CatalogueRow>((body.rows as CatalogueRow[]).map(row => [row.itemId, withDuplicateFlag(row, current.reviewGroups)]));
+      const existing = new Set(current.rows.map(row => row.itemId));
+      const rows = [...current.rows.map(row => fresh.get(row.itemId) || row), ...[...fresh.values()].filter(row => !existing.has(row.itemId))];
+      return { ...current, rows, counts: summariseCounts(rows) };
+    });
+    setNotice(body.message ?? "");
+    return { message: body.message ?? "" };
+  }, [request]);
+
+  const rows = useMemo(() => payload?.rows ?? [], [payload]);
+  const visible = useMemo(() => sortRows(rows.filter(row => rowMatches(row, filters)), sort), [rows, filters, sort]);
+  const selected = rows.find(row => row.itemId === selectedId) || null;
+  const canManage = Boolean(payload?.canManage);
+  const setSortKey = (key: SortKey) => setSort(current => ({ key, direction: current.key === key && current.direction === "asc" ? "desc" : "asc" }));
+  const update = (patch: Partial<CatalogueFilters>) => setFilters(current => ({ ...current, ...patch }));
+  const openGroups = (payload?.reviewGroups ?? []).filter(group => group.decision !== "keep_separate" && group.decision !== "merge");
+
+  if (loading && !payload) return <section className="hc" aria-busy="true"><header className="hc-header"><h1>Hospitality Catalogue</h1></header><p role="status" className="hc-state">Loading the catalogue…</p></section>;
+  if (error && !payload) return <section className="hc"><header className="hc-header"><h1>Hospitality Catalogue</h1></header><div role="alert" className="hc-alert"><strong>The catalogue could not be loaded.</strong><span>{error}</span><button type="button" className="hc-btn" onClick={() => void load()}>Try again</button></div></section>;
+  if (!payload) return null;
+
+  const sortHeader = (key: SortKey, label: string) => <th scope="col" aria-sort={sort.key === key ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}><button type="button" className="hc-sort" onClick={() => setSortKey(key)}>{label}{sort.key === key ? (sort.direction === "asc" ? " ▲" : " ▼") : ""}</button></th>;
+
+  return <section className="hc" aria-labelledby="hc-title">
+    <header className="hc-header">
+      <div><h1 id="hc-title">Hospitality Catalogue</h1><p>One company-wide list of hospitality products. Each product has one production route, company default price and minimum, and sites can override price or minimum where needed.</p></div>
+      {canManage && <button type="button" className="hc-btn hc-btn--primary" onClick={() => setAdding(true)}><Plus size={16} aria-hidden="true" /> Add item</button>}
+    </header>
+
+    <div className="hc-summary" role="group" aria-label="Catalogue summary">
+      <span><strong>{payload.counts.active}</strong> active</span>
+      <button type="button" className={`hc-chip ${filters.needsReview ? "is-on" : ""}`} aria-pressed={filters.needsReview} onClick={() => update({ needsReview: !filters.needsReview })}>Needs review <strong>{payload.counts.needsReview}</strong></button>
+      <button type="button" className={`hc-chip ${filters.route === "routing_required" ? "is-on" : ""}`} aria-pressed={filters.route === "routing_required"} onClick={() => update({ route: filters.route === "routing_required" ? "all" : "routing_required" })}>Routing required <strong>{payload.counts.routingRequired}</strong></button>
+      {payload.counts.archived > 0 && <span><strong>{payload.counts.archived}</strong> archived</span>}
+      {!canManage && <span className="hc-viewonly">View only</span>}
+    </div>
+
+    {payload.canonicalisation.siteCopies > 0 && <p className="hc-note" role="note">{payload.canonicalisation.siteCopies} items are still separate per-site copies of the same products. They will be combined by the approved catalogue migration. You can keep working in the meantime.</p>}
+    {notice && <p className="hc-success" role="status"><CheckCircle2 size={16} aria-hidden="true" /> {notice}</p>}
+    {error && <div role="alert" className="hc-alert"><span>{error}</span></div>}
+
+    {openGroups.length > 0 && <section className="hc-duplicates" aria-labelledby="hc-dupe-title">
+      <button type="button" className="hc-disclosure" aria-expanded={showDuplicates} onClick={() => setShowDuplicates(value => !value)}><span id="hc-dupe-title">Possible duplicates to review ({openGroups.length})</span></button>
+      {showDuplicates && <ul className="hc-dupe-list">{openGroups.map(group => {
+        const names = group.memberIds.map(id => rows.find(row => row.itemId === id)?.name || "Unknown item");
+        return <li key={group.id}><span><strong>{names.join(" / ")}</strong><small>{sentence(group.reasons[0])}{group.decision === "defer" ? " · Deferred" : ""}</small></span><button type="button" className="hc-btn" onClick={() => setReviewing(group)}>{canManage ? "Review" : "View"}</button></li>;
+      })}</ul>}
+    </section>}
+
+    <form className="hc-toolbar" role="search" onSubmit={event => event.preventDefault()}>
+      <label className="hc-search"><span>Search</span><div><Search size={16} aria-hidden="true" /><input type="search" value={filters.query} onChange={event => update({ query: event.target.value })} placeholder="Name, category or supplier reference" /></div></label>
+      <label><span>Category</span><select value={filters.category} onChange={event => update({ category: event.target.value })}><option value="">All categories</option>{categoriesOf(rows).map(category => <option key={category} value={category}>{category}</option>)}</select></label>
+      <label><span>Production</span><select value={filters.route} onChange={event => update({ route: event.target.value as CatalogueFilters["route"] })}><option value="all">All routes</option>{ROUTING_CHOICES.map(choice => <option key={choice} value={choice}>{ROUTING_CHOICE_LABELS[choice]}</option>)}<option value="routing_required">Routing required</option><option value="routing_conflict">Routing conflict</option></select></label>
+      <label><span>Site</span><select value={filters.oplocId} onChange={event => update({ oplocId: event.target.value })}><option value="">All sites</option>{payload.oplocs.filter(oploc => oploc.active).map(oploc => <option key={oploc.oplocId} value={oploc.oplocId}>{oploc.label}</option>)}</select></label>
+      <label><span>Status</span><select value={filters.status} onChange={event => update({ status: event.target.value as CatalogueFilters["status"] })}><option value="active">Active</option><option value="archived">Archived</option><option value="all">All</option></select></label>
+      <label><span>Sort by</span><select value={`${sort.key}:${sort.direction}`} onChange={event => { const [key, direction] = event.target.value.split(":"); setSort({ key: key as SortKey, direction: direction as Sort["direction"] }); }}><option value="name:asc">Name A–Z</option><option value="name:desc">Name Z–A</option><option value="category:asc">Category</option><option value="production:asc">Production</option><option value="price:asc">Price low–high</option><option value="price:desc">Price high–low</option></select></label>
+      <fieldset className="hc-checks"><legend className="hc-sr">More filters</legend>
+        <label><input type="checkbox" checked={filters.hasOverrides} onChange={event => update({ hasOverrides: event.target.checked })} /> Has site overrides</label>
+        <label><input type="checkbox" checked={filters.needsReview} onChange={event => update({ needsReview: event.target.checked })} /> Needs review</label>
+        <label><input type="checkbox" checked={filters.priceNotSet} onChange={event => update({ priceNotSet: event.target.checked })} /> Company default price not set</label>
+      </fieldset>
+      <button type="button" className="hc-btn hc-btn--text" onClick={() => setFilters(EMPTY_FILTERS)}>Clear filters</button>
+    </form>
+
+    <p className="hc-count" role="status" aria-live="polite">{visible.length} of {rows.length} items shown</p>
+
+    {visible.length === 0 ? <div className="hc-empty"><strong>{rows.length === 0 ? "The catalogue is empty." : "No items match these filters."}</strong><span>{rows.length === 0 ? (canManage ? "Use Add item to create the first product." : "Items will appear here once they are added.") : "Clear a filter or change the search to see more items."}</span></div> : <>
+      <div className="hc-table-wrap"><table className="hc-table">
+        <caption className="hc-sr">Hospitality catalogue items</caption>
+        <thead><tr>{sortHeader("name", "Item")}{sortHeader("category", "Category")}{sortHeader("production", "Production")}{sortHeader("price", "Default price")}<th scope="col">Minimum</th><th scope="col">Available at</th><th scope="col">Overrides</th><th scope="col">Status</th></tr></thead>
+        <tbody>{visible.map(row => <tr key={row.itemId} className={row.itemId === selectedId ? "is-selected" : ""}>
+          <th scope="row"><button type="button" className="hc-rowlink" onClick={() => setSelectedId(row.itemId)} aria-haspopup="dialog">{row.name}</button>{row.needsReview.length > 0 && <small className="hc-flag">Needs review</small>}</th>
+          <td>{row.category}</td><td><RoutingBadge state={row.routing.state} /></td><td className="hc-num">{priceLabel(row)}</td><td className="hc-num">{minimumLabel(row)}</td>
+          <td>{availability(row, payload.oplocs)}</td><td className="hc-num">{row.overrideCount || "—"}</td><td><span className={`hc-badge hc-badge--${row.status === "active" ? "ok" : "neutral"}`}>{row.status === "active" ? "Active" : "Archived"}</span></td>
+        </tr>)}</tbody>
+      </table></div>
+      <ul className="hc-cards" aria-label="Hospitality catalogue items">{visible.map(row => <li key={row.itemId}><button type="button" className="hc-card" onClick={() => setSelectedId(row.itemId)} aria-haspopup="dialog">
+        <strong>{row.name}</strong><span>{row.category}</span><RoutingBadge state={row.routing.state} />
+        <dl><div><dt>Default price</dt><dd>{priceLabel(row)}</dd></div><div><dt>Minimum</dt><dd>{minimumLabel(row)}</dd></div><div><dt>Available at</dt><dd>{availability(row, payload.oplocs)}</dd></div><div><dt>Overrides</dt><dd>{row.overrideCount || "None"}</dd></div></dl>
+        {row.status === "archived" && <span className="hc-badge hc-badge--neutral">Archived</span>}
+      </button></li>)}</ul>
+    </>}
+
+    {selected && <ItemPanel key={selected.itemId} row={selected} payload={payload} canManage={canManage} send={send} onClose={() => setSelectedId(null)} />}
+    {adding && <AddItemModal payload={payload} send={send} onClose={() => setAdding(false)} />}
+    {reviewing && <ReviewGroupModal group={reviewing} payload={payload} canManage={canManage} send={send} onClose={() => setReviewing(null)} />}
+  </section>;
+}
+
+/* ------------------------------------------------------------------------------------------------------------ */
+function useDialog(onClose: () => void, busy: boolean) {
+  const ref = useRef<HTMLElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const busyRef = useRef(busy);
+  const closeRef = useRef(onClose);
+  useEffect(() => { busyRef.current = busy; closeRef.current = onClose; });
+  useEffect(() => {
+    opener.current = document.activeElement as HTMLElement | null;
+    ref.current?.querySelector<HTMLElement>("input, select, textarea, button")?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busyRef.current && !document.querySelector(".confirmation-modal")) closeRef.current();
+      if (event.key === "Tab" && ref.current) {
+        const focusable = [...ref.current.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex='-1'])")].filter(element => element.offsetParent !== null);
+        if (!focusable.length) return;
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); opener.current?.focus(); };
+  }, []);
+  return ref;
+}
+
+/** State that re-initialises when `key` changes (e.g. after a saved version arrives) without an effect. */
+function useSyncedState<T>(initial: T, key: string) {
+  const [store, setStore] = useState({ key, value: initial });
+  let current = store;
+  if (store.key !== key) { current = { key, value: initial }; setStore(current); }
+  const set = (value: T | ((previous: T) => T)) => setStore(previous => ({ key, value: typeof value === "function" ? (value as (previous: T) => T)(previous.key === key ? previous.value : initial) : value }));
+  return [current.value, set] as const;
+}
+
+function useAction(send: Send) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const run = async (command: Command, after?: () => void) => {
+    if (busy) return false;
+    setBusy(true); setError("");
+    try { await send(command); after?.(); return true; } catch (caught) { setError((caught as Error).message); return false; } finally { setBusy(false); }
+  };
+  return { busy, error, setError, run };
+}
+
+const numberOrUndefined = (value: string) => { const trimmed = value.trim(); if (!trimmed) return undefined; const parsed = Number(trimmed); return Number.isFinite(parsed) ? parsed : NaN; };
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return <label className="hc-field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
+}
+
+function RoutingEditor({ row, canManage, send }: { row: CatalogueRow; canManage: boolean; send: Send }) {
+  const current = (ROUTING_CHOICES as readonly string[]).includes(row.routing.state) ? row.routing.state as RoutingChoice : undefined;
+  const [choice, setChoice] = useSyncedState<RoutingChoice | undefined>(current, `${current}:${row.routing.version}`);
+  const { busy, error, run } = useAction(send);
+  const unresolved = row.routing.state === "routing_required", conflict = row.routing.state === "routing_conflict";
+  return <section className="hc-section" aria-labelledby={`hc-prod-${row.itemId}`}>
+    <h3 id={`hc-prod-${row.itemId}`}>Production</h3>
+    {unresolved && <p className="hc-warning" role="status"><AlertTriangle size={15} aria-hidden="true" /> <strong>ROUTING REQUIRED.</strong> Bookings containing this item cannot be handed to CPU until you choose a route.</p>}
+    {conflict && <p className="hc-warning hc-warning--danger" role="status"><AlertTriangle size={15} aria-hidden="true" /> <strong>Routing conflict.</strong> It is set to both Sandwiches and Hospitality. Choose exactly one route.</p>}
+    {unresolved && row.routingSuggestion && <p className="hc-hint">Suggestion from an exact supplier reference: <strong>{ROUTING_CHOICE_LABELS[row.routingSuggestion.choice]}</strong>. {row.routingSuggestion.reason} It has not been applied.</p>}
+    <fieldset disabled={!canManage || busy} className="hc-radios"><legend className="hc-sr">Production route</legend>
+      {ROUTING_CHOICES.map(option => <label key={option}><input type="radio" name={`route-${row.itemId}`} checked={choice === option} onChange={() => setChoice(option)} /> {ROUTING_CHOICE_LABELS[option]}</label>)}
+    </fieldset>
+    <p className="hc-hint">This route applies at every site.</p>
+    {error && <p role="alert" className="hc-error">{error}</p>}
+    {canManage && <button type="button" className="hc-btn hc-btn--primary" disabled={busy || !choice || choice === current} onClick={() => choice && void run({ action: "set-routing", itemId: row.itemId, routing: choice, expectedRoutingVersion: row.routing.version })}>{busy ? "Saving…" : unresolved ? "Confirm route" : "Save route"}</button>}
+  </section>;
+}
+
+function OfferingEditor({ row, offering, label, canManage, send, itemInactive }: { row: CatalogueRow; offering: CatalogueOfferingView; label: string; canManage: boolean; send: Send; itemInactive: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [fields, setFields] = useSyncedState({ price: offering.price.override ? String(offering.price.override.amount) : "", minimum: offering.minimum.override !== undefined ? String(offering.minimum.override) : "", displayName: offering.displayName || "", description: offering.description || "" }, `${offering.offeringId}:${offering.version}:${offering.price.override?.priceId}`);
+  const { price, minimum, displayName, description } = fields;
+  const setPrice = (value: string) => setFields(previous => ({ ...previous, price: value })), setMinimum = (value: string) => setFields(previous => ({ ...previous, minimum: value })), setDisplayName = (value: string) => setFields(previous => ({ ...previous, displayName: value })), setDescription = (value: string) => setFields(previous => ({ ...previous, description: value }));
+  const { busy, error, setError, run } = useAction(send);
+  const disabled = !canManage || busy || itemInactive;
+  const base = { offeringId: offering.offeringId, expectedVersion: offering.version };
+  const active = offering.status === "active";
+  async function savePrice() {
+    const amount = numberOrUndefined(price); if (amount === undefined || Number.isNaN(amount)) { setError("Enter a site price, for example 4.50."); return; }
+    await run({ action: "set-offering-override", ...base, price: { amount } });
+  }
+  async function saveMinimum() {
+    const value = numberOrUndefined(minimum); if (value === undefined || Number.isNaN(value)) { setError("Enter a whole-number site minimum."); return; }
+    await run({ action: "set-offering-override", ...base, minimumQuantity: value });
+  }
+  return <li className={`hc-offering ${active ? "" : "is-off"}`}>
+    <div className="hc-offering__head">
+      <strong>{label}{offering.operationalAreaId ? " · specific area" : ""}</strong>
+      <label className="hc-switch"><input type="checkbox" checked={active} disabled={disabled} onChange={event => void run({ action: "set-offering-status", ...base, status: event.target.checked ? "active" : "archived" })} /> {active ? "Available" : "Not available"}</label>
+    </div>
+    {active && <dl className="hc-offering__values">
+      <div><dt>Price</dt><dd>{offering.mode === "quote_only" ? <SourceTag source="quote_only" /> : <><SourceTag source={offering.price.source} /> {offering.price.effective ? formatMoney(offering.price.effective.amount) : ""}{offering.price.redundant ? <small> (same as company default)</small> : null}</>}</dd></div>
+      <div><dt>Minimum</dt><dd><SourceTag source={offering.minimum.source} /> {offering.minimum.effective ?? ""}</dd></div>
+      {(offering.displayName || offering.description) && <div><dt>Local wording</dt><dd><SourceTag source="overrides" /> {offering.displayName || "Custom description"}</dd></div>}
+    </dl>}
+    {active && canManage && !itemInactive && <>
+      <button type="button" className="hc-btn hc-btn--text" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? "Hide site settings" : "Site settings"}</button>
+      {open && <div className="hc-override">
+        {offering.mode === "standard" && <div className="hc-override__row"><Field label="Site price (£, ex VAT)" hint={offering.price.source === "overrides" ? "This site overrides the company default." : "Leave empty to inherit the company default."}><input inputMode="decimal" value={price} onChange={event => setPrice(event.target.value)} disabled={disabled} /></Field>
+          <div className="hc-override__actions"><button type="button" className="hc-btn" disabled={disabled || !price.trim()} onClick={() => void savePrice()}>Save price override</button>{offering.price.source === "overrides" && <button type="button" className="hc-btn hc-btn--text" disabled={disabled} onClick={() => void run({ action: "set-offering-override", ...base, price: null })}>Reset to company default</button>}</div></div>}
+        <div className="hc-override__row"><Field label="Site minimum quantity" hint={offering.minimum.source === "overrides" ? "This site overrides the company default." : "Leave empty to inherit the company default."}><input inputMode="numeric" value={minimum} onChange={event => setMinimum(event.target.value)} disabled={disabled} /></Field>
+          <div className="hc-override__actions"><button type="button" className="hc-btn" disabled={disabled || !minimum.trim()} onClick={() => void saveMinimum()}>Save minimum override</button>{offering.minimum.source === "overrides" && <button type="button" className="hc-btn hc-btn--text" disabled={disabled} onClick={() => void run({ action: "set-offering-override", ...base, minimumQuantity: null })}>Reset to company default</button>}</div></div>
+        <div className="hc-override__row"><Field label="Name shown at this site" hint="Optional. Leave empty to use the company item name."><input value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={disabled} maxLength={240} /></Field>
+          <Field label="Description shown at this site" hint="Optional."><textarea value={description} onChange={event => setDescription(event.target.value)} disabled={disabled} maxLength={1000} rows={2} /></Field>
+          <div className="hc-override__actions"><button type="button" className="hc-btn" disabled={disabled} onClick={() => void run({ action: "set-offering-override", ...base, displayName: displayName.trim() || null, description: description.trim() || null })}>Save site wording</button></div></div>
+        {error && <p role="alert" className="hc-error">{error}</p>}
+      </div>}
+    </>}
+    {!open && error && <p role="alert" className="hc-error">{error}</p>}
+    <span className="hc-sr">{row.name} at {label}</span>
+  </li>;
+}
+
+function AdoptDefault({ row, send, oplocs }: { row: CatalogueRow; send: Send; oplocs: CataloguePayload["oplocs"] }) {
+  const migration = row.priceMigration;
+  const uniform = migration.status === "uniform";
+  const [price, setPrice] = useState(uniform ? String(migration.amount) : "");
+  const [minimum, setMinimum] = useState(uniform && migration.minimumQuantity !== undefined ? String(migration.minimumQuantity) : "");
+  const [confirmed, setConfirmed] = useState(false);
+  const { busy, error, setError, run } = useAction(send);
+  if (migration.status === "not_needed" || row.defaultPrice) return null;
+  const submit = async () => {
+    const amount = numberOrUndefined(price); const min = numberOrUndefined(minimum);
+    if (amount === undefined || Number.isNaN(amount)) { setError("Enter the company default price."); return; }
+    if (Number.isNaN(min)) { setError("Enter a whole-number minimum, or leave it empty."); return; }
+    await run({ action: "adopt-company-default", itemId: row.itemId, expectedVersion: row.version, price: { amount, ...(uniform ? { vatRate: migration.vatRate } : {}) }, minimumQuantity: min ?? null, confirmed });
+  };
+  return <section className="hc-section hc-adopt" aria-label="Set company default from site values">
+    <h3>Set the company default</h3>
+    {uniform ? <p className="hc-hint">Every site currently charges {formatMoney(migration.amount)}. Making that the company default means those sites inherit it.</p>
+      : <><p className="hc-hint">{migration.reason}</p><table className="hc-mini"><thead><tr><th scope="col">Site</th><th scope="col">Price</th><th scope="col">Minimum</th></tr></thead><tbody>{migration.values.map(value => <tr key={value.offeringId}><th scope="row">{oplocLabel(oplocs, value.oplocId)}</th><td>{formatMoney(value.amount)}</td><td>{value.minimumQuantity ?? "—"}</td></tr>)}</tbody></table></>}
+    <div className="hc-grid2"><Field label="Company default price (£, ex VAT)"><input inputMode="decimal" value={price} onChange={event => setPrice(event.target.value)} /></Field><Field label="Company default minimum (optional)"><input inputMode="numeric" value={minimum} onChange={event => setMinimum(event.target.value)} /></Field></div>
+    <label className="hc-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /> I confirm this is the company default. Sites with an equal value will inherit it; different site values stay as overrides.</label>
+    {error && <p role="alert" className="hc-error">{error}</p>}
+    <button type="button" className="hc-btn hc-btn--primary" disabled={busy || !confirmed || !price.trim()} onClick={() => void submit()}>{busy ? "Saving…" : "Set company default"}</button>
+  </section>;
+}
+
+function ItemPanel({ row, payload, canManage, send, onClose }: { row: CatalogueRow; payload: CataloguePayload; canManage: boolean; send: Send; onClose: () => void }) {
+  const [form, setForm] = useSyncedState({ name: row.name, category: row.category, description: row.description, price: row.defaultPrice ? String(row.defaultPrice.amount) : "", minimum: row.defaultMinimumQuantity !== undefined ? String(row.defaultMinimumQuantity) : "" }, `${row.itemId}:${row.version}:${row.defaultPrice?.priceId}`);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [site, setSite] = useState("");
+  const save = useAction(send), archive = useAction(send), add = useAction(send);
+  const dialog = useDialog(onClose, save.busy || archive.busy || add.busy);
+  const inactive = row.status === "archived";
+  const offeredSites = new Set(row.offerings.filter(offering => offering.status === "active").map(offering => offering.oplocId));
+  const addable = payload.oplocs.filter(oploc => oploc.active && !offeredSites.has(oploc.oplocId));
+  const dirty = form.name !== row.name || form.category !== row.category || form.description !== row.description || form.price !== (row.defaultPrice ? String(row.defaultPrice.amount) : "") || form.minimum !== (row.defaultMinimumQuantity !== undefined ? String(row.defaultMinimumQuantity) : "");
+  async function submit() {
+    const amount = numberOrUndefined(form.price), minimum = numberOrUndefined(form.minimum);
+    if (!form.name.trim() || !form.category.trim()) { save.setError("Name and category are required."); return; }
+    if (Number.isNaN(amount)) { save.setError("Enter the default price as a number, for example 4.50."); return; }
+    if (Number.isNaN(minimum)) { save.setError("Enter the default minimum as a whole number."); return; }
+    await save.run({ action: "update-item", itemId: row.itemId, expectedVersion: row.version, name: form.name, category: form.category, description: form.description || undefined, defaultMinimumQuantity: minimum ?? null, ...(amount !== undefined ? { defaultPrice: { amount } } : {}) });
+  }
+  return <div className="hc-drawer-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <aside className="hc-drawer" role="dialog" aria-modal="true" aria-labelledby="hc-panel-title" ref={dialog}>
+      <header><div><h2 id="hc-panel-title">{row.name}</h2><RoutingBadge state={row.routing.state} /> {inactive && <span className="hc-badge hc-badge--neutral">Archived</span>}</div><button type="button" className="hc-icon" onClick={onClose} aria-label="Close item panel"><X size={18} aria-hidden="true" /></button></header>
+      <div className="hc-drawer__body">
+        {row.needsReview.includes("duplicate_candidate") && <p className="hc-warning" role="status"><AlertTriangle size={15} aria-hidden="true" /> This may be a duplicate of another item. Check “Possible duplicates to review”.</p>}
+        <section className="hc-section" aria-labelledby="hc-company-title"><h3 id="hc-company-title">Company item</h3>
+          <form onSubmit={event => { event.preventDefault(); void submit(); }}>
+            <Field label="Name"><input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} disabled={!canManage || inactive} maxLength={240} required /></Field>
+            <Field label="Category"><input list="hc-categories" value={form.category} onChange={event => setForm({ ...form, category: event.target.value })} disabled={!canManage || inactive} maxLength={160} required /></Field>
+            <datalist id="hc-categories">{categoriesOf(payload.rows).map(category => <option key={category} value={category} />)}</datalist>
+            <Field label="Description"><textarea rows={2} value={form.description} onChange={event => setForm({ ...form, description: event.target.value })} disabled={!canManage || inactive} maxLength={4000} /></Field>
+            <div className="hc-grid2">
+              <Field label="Default price (£, ex VAT)" hint={row.defaultPrice ? "Sites without an override use this." : "Not set yet."}><input inputMode="decimal" value={form.price} onChange={event => setForm({ ...form, price: event.target.value })} disabled={!canManage || inactive} /></Field>
+              <Field label="Default minimum quantity" hint="Optional."><input inputMode="numeric" value={form.minimum} onChange={event => setForm({ ...form, minimum: event.target.value })} disabled={!canManage || inactive} /></Field>
+            </div>
+            {save.error && <p role="alert" className="hc-error">{save.error}</p>}
+            {canManage && !inactive && <button type="submit" className="hc-btn hc-btn--primary" disabled={save.busy || !dirty}>{save.busy ? "Saving…" : "Save changes"}</button>}
+          </form>
+        </section>
+
+        {!inactive && <RoutingEditor row={row} canManage={canManage} send={send} />}
+        {!inactive && canManage && <AdoptDefault row={row} send={send} oplocs={payload.oplocs} />}
+
+        <section className="hc-section" aria-labelledby="hc-sites-title"><h3 id="hc-sites-title">Available at</h3>
+          {row.offerings.length === 0 ? <p className="hc-hint">Not offered at any site yet.</p> : <ul className="hc-offerings">{row.offerings.map(offering => <OfferingEditor key={offering.offeringId} row={row} offering={offering} label={oplocLabel(payload.oplocs, offering.oplocId)} canManage={canManage} send={send} itemInactive={inactive} />)}</ul>}
+          {canManage && !inactive && addable.length > 0 && <div className="hc-add-site"><Field label="Make available at another site"><select value={site} onChange={event => setSite(event.target.value)}><option value="">Choose a site…</option>{addable.map(oploc => <option key={oploc.oplocId} value={oploc.oplocId}>{oploc.label}</option>)}</select></Field><button type="button" className="hc-btn" disabled={!site || add.busy} onClick={() => void add.run({ action: "add-offering", itemId: row.itemId, expectedVersion: row.version, oplocId: site }, () => setSite(""))}>{add.busy ? "Adding…" : "Add site"}</button></div>}
+          {add.error && <p role="alert" className="hc-error">{add.error}</p>}
+        </section>
+
+        <details className="hc-section hc-advanced"><summary>Source and governance details</summary>
+          <dl>
+            <div><dt>Supplier / platform references</dt><dd>{row.providerMappings.length ? row.providerMappings.map(mapping => `${mapping.provider}: ${mapping.sourceItemId}`).join("; ") : "None recorded"}</dd></div>
+            <div><dt>Allergens (read-only)</dt><dd>{row.allergenInformation.length ? row.allergenInformation.join(", ") : "None recorded"}</dd></div>
+            <div><dt>Dietary (read-only)</dt><dd>{row.dietaryInformation.length ? row.dietaryInformation.join(", ") : "None recorded"}</dd></div>
+            {row.siteCopyOf && <div><dt>Origin</dt><dd>Per-site copy created for {row.siteCopyOf.toUpperCase()}; awaiting catalogue migration.</dd></div>}
+            <div><dt>Catalogue ID</dt><dd><code>{row.itemId}</code></dd></div>
+            <div><dt>Record version</dt><dd>{row.version}</dd></div>
+          </dl>
+          <p className="hc-hint">Allergen and dietary data is safety-critical and is not editable here.</p>
+        </details>
+
+        {canManage && <section className="hc-section hc-danger-zone"><h3>{inactive ? "Restore" : "Archive"}</h3>
+          <p className="hc-hint">{inactive ? "Restoring puts the item back on booking menus where it is still available." : "Archiving removes the item from booking menus. Existing bookings, quotes, orders and the audit trail are kept, and you can restore it later."}</p>
+          {archive.error && <p role="alert" className="hc-error">{archive.error}</p>}
+          <button type="button" className={`hc-btn ${inactive ? "" : "hc-btn--danger"}`} disabled={archive.busy} onClick={() => inactive ? void archive.run({ action: "set-item-status", itemId: row.itemId, expectedVersion: row.version, status: "active" }) : setConfirmArchive(true)}>{inactive ? "Restore item" : "Archive item"}</button>
+        </section>}
+      </div>
+    </aside>
+    {confirmArchive && <ConfirmationModal title={`Archive ${row.name}?`} description="It will disappear from booking menus at every site. Existing bookings, quotes, orders and history are not changed, and the item can be restored later." confirmLabel="Archive item" destructive busy={archive.busy} onCancel={() => setConfirmArchive(false)} onConfirm={async () => { await archive.run({ action: "set-item-status", itemId: row.itemId, expectedVersion: row.version, status: "archived" }, () => setConfirmArchive(false)); }} />}
+  </div>;
+}
+
+function AddItemModal({ payload, send, onClose }: { payload: CataloguePayload; send: Send; onClose: () => void }) {
+  const [requestId] = useState(newRequestId);
+  const [form, setForm] = useState({ name: "", category: "", description: "", price: "", minimum: "" });
+  const [route, setRoute] = useState<RoutingChoice | "">("");
+  const [sites, setSites] = useState<string[]>([]);
+  const { busy, error, setError, run } = useAction(send);
+  const dialog = useDialog(onClose, busy);
+  const ready = form.name.trim() && form.category.trim() && form.price.trim() && route && sites.length > 0;
+  async function submit() {
+    const amount = numberOrUndefined(form.price), minimum = numberOrUndefined(form.minimum);
+    if (amount === undefined || Number.isNaN(amount)) { setError("Enter the default price as a number, for example 4.50."); return; }
+    if (Number.isNaN(minimum)) { setError("Enter the minimum as a whole number, or leave it empty."); return; }
+    if (!route) { setError("Choose a production route."); return; }
+    await run({ action: "create-item", requestId, name: form.name, category: form.category, description: form.description || undefined, routing: route, defaultPrice: { amount }, ...(minimum !== undefined ? { defaultMinimumQuantity: minimum } : {}), oplocIds: sites }, () => onClose());
+  }
+  return <div className="hc-modal-backdrop" role="presentation">
+    <form className="hc-modal" role="dialog" aria-modal="true" aria-labelledby="hc-add-title" ref={dialog as never} onSubmit={event => { event.preventDefault(); void submit(); }}>
+      <header><h2 id="hc-add-title">Add item</h2><button type="button" className="hc-icon" onClick={onClose} disabled={busy} aria-label="Close add item"><X size={18} aria-hidden="true" /></button></header>
+      <div className="hc-modal__body">
+        <Field label="Name"><input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} maxLength={240} required /></Field>
+        <Field label="Category"><input list="hc-add-categories" value={form.category} onChange={event => setForm({ ...form, category: event.target.value })} maxLength={160} required /></Field>
+        <datalist id="hc-add-categories">{categoriesOf(payload.rows).map(category => <option key={category} value={category} />)}</datalist>
+        <Field label="Description (optional)"><textarea rows={2} value={form.description} onChange={event => setForm({ ...form, description: event.target.value })} maxLength={4000} /></Field>
+        <Field label="Default price (£, ex VAT)" hint="Every site uses this unless it has an override."><input inputMode="decimal" value={form.price} onChange={event => setForm({ ...form, price: event.target.value })} required /></Field>
+        <Field label="Default minimum quantity (optional)"><input inputMode="numeric" value={form.minimum} onChange={event => setForm({ ...form, minimum: event.target.value })} /></Field>
+        <fieldset className="hc-radios"><legend>Production route (required)</legend>
+          {ROUTING_CHOICES.map(option => <label key={option}><input type="radio" name="add-route" checked={route === option} onChange={() => setRoute(option)} /> {ROUTING_CHOICE_LABELS[option]}</label>)}
+        </fieldset>
+        <fieldset className="hc-radios"><legend>Available at (choose at least one site)</legend>
+          {payload.oplocs.filter(oploc => oploc.active).map(oploc => <label key={oploc.oplocId}><input type="checkbox" checked={sites.includes(oploc.oplocId)} onChange={event => setSites(current => event.target.checked ? [...current, oploc.oplocId] : current.filter(id => id !== oploc.oplocId))} /> {oploc.label}</label>)}
+        </fieldset>
+        {error && <p role="alert" className="hc-error">{error}</p>}
+      </div>
+      <footer><button type="button" className="hc-btn" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" className="hc-btn hc-btn--primary" disabled={busy || !ready}>{busy ? "Creating…" : "Create item"}</button></footer>
+    </form>
+  </div>;
+}
+
+function ReviewGroupModal({ group, payload, canManage, send, onClose }: { group: ReviewGroupView; payload: CataloguePayload; canManage: boolean; send: Send; onClose: () => void }) {
+  const members = group.memberIds.map(id => payload.rows.find(row => row.itemId === id)).filter((row): row is CatalogueRow => Boolean(row));
+  const [survivor, setSurvivor] = useState(members[0]?.itemId || "");
+  const [confirming, setConfirming] = useState(false);
+  const { busy, error, run } = useAction(send);
+  const dialog = useDialog(onClose, busy);
+  const same = (pick: (row: CatalogueRow) => string) => new Set(members.map(pick)).size <= 1;
+  const sitePrices = (row: CatalogueRow) => row.offerings.filter(offering => offering.status === "active").map(offering => `${oplocLabel(payload.oplocs, offering.oplocId)}: ${offering.price.effective ? formatMoney(offering.price.effective.amount) : "no price"}${offering.minimum.effective !== undefined ? `, min ${offering.minimum.effective}` : ""}`).join("; ") || "None";
+  const lines: Array<[string, (row: CatalogueRow) => string]> = [
+    ["Name", row => row.name], ["Category", row => row.category],
+    ["Supplier references", row => row.providerMappings.map(mapping => `${mapping.provider}: ${mapping.sourceItemId}`).join("; ") || row.sourceIds.join("; ") || "None"],
+    ["Allergens", row => row.allergenInformation.join(", ") || "None recorded"], ["Dietary", row => row.dietaryInformation.join(", ") || "None recorded"],
+    ["Available at", row => row.availableAt.map(id => oplocLabel(payload.oplocs, id)).join(", ") || "None"], ["Prices and minimums by site", sitePrices],
+    ["Production", row => ROUTING_STATE_LABELS[row.routing.state]],
+  ];
+  const safetyDiffers = !same(row => row.allergenInformation.join("|")) || !same(row => row.dietaryInformation.join("|"));
+  const versions = Object.fromEntries(members.map(member => [member.itemId, member.version]));
+  return <div className="hc-modal-backdrop" role="presentation">
+    <section className="hc-modal hc-modal--wide" role="dialog" aria-modal="true" aria-labelledby="hc-review-title" ref={dialog}>
+      <header><h2 id="hc-review-title">Are these the same product?</h2><button type="button" className="hc-icon" onClick={onClose} disabled={busy} aria-label="Close review"><X size={18} aria-hidden="true" /></button></header>
+      <div className="hc-modal__body">
+        <p className="hc-hint">{sentence(group.reasons.join(" · "))}. Nothing is merged unless you choose to.</p>
+        {safetyDiffers && <p className="hc-warning hc-warning--danger" role="alert"><AlertTriangle size={15} aria-hidden="true" /> Allergen or dietary data differs. These items cannot be merged until that data matches. Keep them separate or fix the data first.</p>}
+        <div className="hc-compare-wrap"><table className="hc-compare">
+          <thead><tr><th scope="col"><span className="hc-sr">Field</span></th>{members.map(member => <th scope="col" key={member.itemId}>{canManage && <label><input type="radio" name="survivor" checked={survivor === member.itemId} onChange={() => setSurvivor(member.itemId)} /> Keep this one</label>}<span>{member.name}</span></th>)}</tr></thead>
+          <tbody>{lines.map(([label, pick]) => <tr key={label} className={same(pick) ? "" : "is-diff"}><th scope="row">{label}{!same(pick) && <small> · differs</small>}</th>{members.map(member => <td key={member.itemId}>{pick(member)}</td>)}</tr>)}</tbody>
+        </table></div>
+        {error && <p role="alert" className="hc-error">{error}</p>}
+      </div>
+      <footer>
+        <button type="button" className="hc-btn hc-btn--text" onClick={onClose} disabled={busy}>Close</button>
+        {canManage && <>
+          <button type="button" className="hc-btn" disabled={busy} onClick={() => void run({ action: "record-review-decision", memberIds: group.memberIds, decision: "defer" }, onClose)}>Defer</button>
+          <button type="button" className="hc-btn" disabled={busy} onClick={() => void run({ action: "record-review-decision", memberIds: group.memberIds, decision: "keep_separate" }, onClose)}>Keep separate</button>
+          <button type="button" className="hc-btn hc-btn--primary" disabled={busy || safetyDiffers || members.length < 2} onClick={() => setConfirming(true)}>Same product — merge</button>
+        </>}
+      </footer>
+    </section>
+    {confirming && <ConfirmationModal title="Merge these items?" description={`They become one catalogue item. Every site offering, price override and production route is kept, and the other ${members.length - 1} record${members.length === 2 ? " is" : "s are"} archived. This is recorded in the audit trail.`} confirmLabel="Merge items" busy={busy} onCancel={() => setConfirming(false)} onConfirm={async () => { const ok = await run({ action: "merge-items", survivorItemId: survivor, sourceItemIds: members.filter(member => member.itemId !== survivor).map(member => member.itemId), expectedVersions: versions, groupId: group.id }, onClose); if (!ok) setConfirming(false); }} />}
+  </div>;
+}

@@ -1,6 +1,6 @@
 import type { Actor, HubRole } from "./auth";
 
-export const CanonicalPermissions = ["canonical.view", "canonical.create", "canonical.edit", "oploc.approve-identity", "oploc.approve-location-type", "oploc.link-address", "oploc.replace-address", "address.view", "address.create", "address.edit", "address.approve", "address.lifecycle", "address.lock", "address.prepare-publication", "address.publish", "legend.approve", "employment.manage", "operational-assignment.approve", "operational-capability.approve-catalogue", "operational-capability.approve-enablement", "canonical.lifecycle", "canonical.prepare-publication", "canonical.publish", "canonical.lock"] as const;
+export const CanonicalPermissions = ["canonical.view", "canonical.create", "canonical.edit", "oploc.approve-identity", "oploc.approve-location-type", "oploc.link-address", "oploc.replace-address", "address.view", "address.create", "address.edit", "address.approve", "address.lifecycle", "address.lock", "address.prepare-publication", "address.publish", "legend.approve", "employment.manage", "operational-assignment.approve", "operational-capability.approve-catalogue", "operational-capability.approve-enablement", "canonical.lifecycle", "canonical.prepare-publication", "canonical.publish", "canonical.lock", "hospitality.catalogue.manage"] as const;
 export type CanonicalPermission = typeof CanonicalPermissions[number];
 
 const grants: Record<HubRole, readonly CanonicalPermission[]> = {

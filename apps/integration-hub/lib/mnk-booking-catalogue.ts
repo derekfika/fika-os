@@ -16,7 +16,7 @@ export async function loadMnkBookingCatalogue(items: CanonicalRecord[], payload:
     return records;
   };
   const offerings = (await boundedRead("record.hospitalityMenuItemId", itemIds)).filter(record => record.entityType === "Hospitality Menu Offering" && record.record.oplocId === oplocId);
-  const prices = (await boundedRead("record.hospitalityMenuOfferingId", offerings.map(record => record.canonicalId))).filter(record => record.entityType === "Hospitality Menu Price");
+  const prices = [...await boundedRead("record.hospitalityMenuOfferingId", offerings.map(record => record.canonicalId)), ...await boundedRead("record.hospitalityMenuItemId", itemIds)].filter(record => record.entityType === "Hospitality Menu Price");
   return [...items, ...offerings, ...prices];
 }
 

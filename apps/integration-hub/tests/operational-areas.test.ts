@@ -56,6 +56,6 @@ test("an Operational Area retains its immutable identity and provider mapping se
 
 test("Operational Areas do not alter AUTHMOD permissions", () => {
   assert.deepEqual(permissionsForRole("integration-admin"), [
-    "canonical.view", "canonical.create", "canonical.edit", "oploc.approve-identity", "oploc.approve-location-type", "oploc.link-address", "oploc.replace-address", "address.view", "address.create", "address.edit", "address.approve", "address.lifecycle", "address.lock", "address.prepare-publication", "address.publish", "legend.approve", "employment.manage", "operational-assignment.approve", "operational-capability.approve-catalogue", "operational-capability.approve-enablement", "canonical.lifecycle", "canonical.prepare-publication", "canonical.publish", "canonical.lock",
+    "canonical.view", "canonical.create", "canonical.edit", "oploc.approve-identity", "oploc.approve-location-type", "oploc.link-address", "oploc.replace-address", "address.view", "address.create", "address.edit", "address.approve", "address.lifecycle", "address.lock", "address.prepare-publication", "address.publish", "legend.approve", "employment.manage", "operational-assignment.approve", "operational-capability.approve-catalogue", "operational-capability.approve-enablement", "canonical.lifecycle", "canonical.prepare-publication", "canonical.publish", "canonical.lock", "hospitality.catalogue.manage",
   ]);
 });

@@ -30,10 +30,10 @@ function store(before: CatalogueSnapshot) {
   for (const merge of before.merges || []) data.set(path(MERGES, merge.sourceMenuItemId), structuredClone(merge));
   const reads: string[] = [];
   let commits = 0;
-  const collection = (id: string, filters: Array<[string, unknown]> = []): any => ({
+  const collection = (id: string, filters: Array<[string, unknown, string?]> = []): any => ({
     id, filters,
     doc: (docId: string) => ({ path: `${id}/${docId}`, id: docId, parent: { id } }),
-    where: (field: string, operator: string, value: unknown) => { assert.equal(operator, "=="); return collection(id, [...filters, [field, value]]); },
+    where: (field: string, operator: string, value: unknown) => { assert.ok(operator === "==" || operator === "in"); return collection(id, [...filters, [field, value, operator]]); },
   });
   const doc = (ref: any) => ({ ref, id: ref.id, exists: data.has(ref.path), data: () => structuredClone(data.get(ref.path)) });
   const db = {
@@ -45,9 +45,9 @@ function store(before: CatalogueSnapshot) {
           assert.equal(writes.size, 0, "all transaction reads precede writes");
           if (ref.path) { reads.push(ref.path); return doc(ref); }
           assert.equal(ref.id, CANONICAL);
-          assert.equal(ref.filters.length, 2, "offering reads must be scoped by type and item ID");
-          reads.push(`query:${ref.filters[1][1]}`);
-          return { docs: [...data.entries()].filter(([key, value]) => key.startsWith(`${ref.id}/`) && ref.filters.every(([field, expected]: [string, unknown]) => field.split(".").reduce((value: any, part: string) => value?.[part], value) === expected)).map(([key]) => doc(collection(ref.id).doc(key.split("/")[1]))) };
+          assert.ok(ref.filters.length >= 1, "relation reads must be scoped by a stable ID field");
+          reads.push(`query:${String(ref.filters[ref.filters.length - 1][1])}`);
+          return { docs: [...data.entries()].filter(([key, value]) => key.startsWith(`${ref.id}/`) && ref.filters.every(([field, expected, operator]: [string, unknown, string?]) => { const actual = field.split(".").reduce((value: any, part: string) => value?.[part], value); return operator === "in" ? (expected as unknown[]).includes(actual) : actual === expected; })).map(([key]) => doc(collection(ref.id).doc(key.split("/")[1]))) };
         },
         set: (ref: any, value: Data) => writes.set(ref.path, structuredClone(value)),
         create: (ref: any, value: Data) => { assert.ok(!data.has(ref.path)); writes.set(ref.path, structuredClone(value)); },

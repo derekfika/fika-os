@@ -19,7 +19,7 @@ import {
 import { sha256 } from "./profiler";
 import type { CanonicalRecord } from "./types";
 import { adaptCpuProductionWorkstreams, type CpuProductionWorkstream } from "../../shared/production-workstreams";
-import { LEGACY_HOSPITALITY_MENU_ROUTING, suggestHospitalityMenuRouting } from "./hospitality-routing-suggestions";
+import { LEGACY_HOSPITALITY_MENU_ROUTING } from "./hospitality-routing-suggestions";
 
 const canonical = () => db.collection("integrationHubCanonical");
 const revisions = () => db.collection("integrationHubCanonicalRevisions");
@@ -123,39 +123,14 @@ export type ConnectionCommand =
     };
 
 export async function connectionsOverview() {
-  const [snapshot, mappingsSnapshot, auditSnapshot, routingSnapshot] = await Promise.all([
+  const [snapshot, mappingsSnapshot, auditSnapshot] = await Promise.all([
     canonical().get(),
     db.collection("integrationHubSourceMappings").get(),
     db.collection("integrationHubGovernanceAudit").get(),
-    menuProductionRouting().get(),
   ]);
   const records = snapshot.docs.map(
     (document) => document.data() as CanonicalRecord,
   );
-  const menuItems = records
-    .filter(record => record.entityType === "Hospitality Menu Item")
-    .map(record => ({
-      canonicalId: record.canonicalId,
-      name: String(record.record.name || record.canonicalId),
-      category: String(record.record.category || "Uncategorised"),
-      description: String(record.record.description || ""),
-      dietaryInformation: Array.isArray(record.record.dietaryInformation) ? record.record.dietaryInformation.map(String) : [],
-      allergenInformation: Array.isArray(record.record.allergenInformation) ? record.record.allergenInformation.map(String) : [],
-      providerMappings: Array.isArray(record.record.providerMappings) ? record.record.providerMappings : [],
-      version: Number(record.record.version || 1),
-      lifecycleState: String(record.record.lifecycleState || "active"),
-      publicationStatus: record.publicationStatus,
-      routingDecided: routingSnapshot.docs.some(doc => doc.id === stableDocumentId(record.canonicalId) && !doc.data()?.supersededBy),
-      routingSuggestion: suggestHospitalityMenuRouting(record.record.providerMappings),
-      scopes: records.filter(candidate => candidate.entityType === "Hospitality Menu Offering" && candidate.record.hospitalityMenuItemId === record.canonicalId).map(offering => ({ oplocId: String(offering.record.oplocId), label: String(records.find(candidate => candidate.canonicalId === offering.record.oplocId)?.record.approvedName || offering.record.oplocId), operationalAreaId: offering.record.operationalAreaId ? String(offering.record.operationalAreaId) : undefined })).filter((scope, index, all) => all.findIndex(candidate => candidate.oplocId === scope.oplocId && candidate.operationalAreaId === scope.operationalAreaId) === index),
-      workstreams: (() => {
-        const routing = routingSnapshot.docs.find(doc => doc.id === stableDocumentId(record.canonicalId))?.data();
-        const adapted = adaptCpuProductionWorkstreams((routing?.workstreams || routing?.views || []) as unknown[]);
-        if (adapted.unknown.length) throw new Error(`Unknown CPU production workstream value in ${record.canonicalId}: ${adapted.unknown.join(", ")}.`);
-        return adapted.workstreams;
-      })(),
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name, "en-GB"));
   const employments = records.filter(
     (record) =>
       record.entityType === "Employment" &&
@@ -414,7 +389,6 @@ export async function connectionsOverview() {
     staffingRoles,
     siteStaffingRequirements,
     siteRoleAssignments,
-    menuItems,
     siteRoleEstablishment: {
       governed: false,
       developmentAvailable: true,
