@@ -2,7 +2,7 @@
 
 ## Decision
 
-**HOLD — production is not ready for SOL review or customer-facing App Hosting rollout.** The production-only configuration and supporting infrastructure are prepared, but Firebase Authentication/Google sign-in, Workspace domain-wide delegation, and the production custom domains still require external administrator setup. No App Hosting application rollout was started.
+**HOLD — production is not ready for rollout.** Production Authentication/Google sign-in and Workspace DWD still need administrator setup. All six live App Hosting custom-domain mappings are active, but this task had to align the prepared production YAML hostnames to those live mappings. The production Auth configuration read returned HTTP 403 for the current operator, so its provider/domain state could not be confirmed automatically. No App Hosting application rollout was started.
 
 ## Scope and provenance
 
@@ -28,21 +28,43 @@
 Complete these before submitting the production app set for SOL review:
 
 1. **Firebase Authentication and Google sign-in**
-   - In Firebase Console for `fika-os`, initialize Authentication and enable Google as a sign-in provider.
-   - Attach/configure the Google OAuth web client. Confirm Firebase's required callback URI in the console; the standard handler is `https://fika-os.firebaseapp.com/__/auth/handler`.
-   - Add all six production `hosted.app` backend hostnames to Firebase Authentication's authorized domains. Add the six custom hostnames below after domain mapping and DNS are active.
-   - Keep AUTHMOD fail-closed. Enroll/bind production users through the existing production Hub admin workflow; do not import staging UID bindings.
+   - In Firebase project `fika-os`, initialize Authentication and enable the Google provider. Configure the OAuth web client and verify the authorized callback `https://fika-os.firebaseapp.com/__/auth/handler` in Firebase Console.
+   - Authorize `fika-os.firebaseapp.com`, the six production App Hosting backend domains, and the six active custom hosts listed below. Keep AUTHMOD fail-closed; enroll/bind production users through the production Hub workflow.
+   - App Hosting backend domains: `fika-os-prod-hub--fika-os.europe-west4.hosted.app`, `fika-os-prod-hospitality--fika-os.europe-west4.hosted.app`, `fika-os-prod-cpu--fika-os.europe-west4.hosted.app`, `fika-os-prod-menu--fika-os.europe-west4.hosted.app`, `fika-os-prod-logistics--fika-os.europe-west4.hosted.app`, `fika-os-prod-deliveredin--fika-os.europe-west4.hosted.app`.
+   - The production Auth config API returned HTTP 403 to the current operator. After admin setup, grant/read the required Firebase Auth configuration permission or verify the provider and domain list in Console. Do not import staging UID bindings.
+   - Public Firebase client configuration in each `apphosting.production.yaml`:
+
+     | App | `NEXT_PUBLIC_FIREBASE_APP_ID` |
+     | --- | --- |
+     | Integration Hub | `1:397503564317:web:573a8320c8e04e3d3e54f4` |
+     | Hospitality Booking | `1:397503564317:web:3c87d1a4000cd9613e54f4` |
+     | CPU Production | `1:397503564317:web:b6174aedc02ae65d3e54f4` |
+     | Menu Planning | `1:397503564317:web:3c0dddf561da96583e54f4` |
+     | Logistics | `1:397503564317:web:31703e57e01816e83e54f4` |
+     | Delivered-In | `1:397503564317:web:439a39c2f1d66aa33e54f4` |
+
+     All six use `NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyCFryGfpWmJ52Zqikk3v1AozINumPeE-TE`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=fika-os.firebaseapp.com`, and `NEXT_PUBLIC_FIREBASE_PROJECT_ID=fika-os`. These are public browser Firebase config values, not service-account credentials.
 
 2. **Workspace Drive domain-wide delegation**
    - For service account `fika-prod-workspace-dwd@fika-os.iam.gserviceaccount.com`, enable Google Workspace domain-wide delegation in Google Cloud IAM. Its OAuth client ID is `104667768587124731620`.
-   - In Google Admin Console, authorize only `https://www.googleapis.com/auth/drive` for that client.
-   - Create/provide a production service-account JSON credential through the approved secure process and create Secret Manager secret `GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON` in project `fika-os`. Do not reuse a staging key.
+   - In Google Admin Console → Security → Access and data control → API controls → Domain-wide delegation, add the client ID and authorize `https://www.googleapis.com/auth/drive` for production Drive operations.
+   - The current Drive adapter requires service-account JSON (including its private key) in Secret Manager secret `GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON`. Create/provide it through the approved secure process; do not reuse a staging key. Never paste credential material into this repository or task output.
    - Grant the secret only to the production Hub, Hospitality, CPU and Delivered-In runtime identities using the App Hosting secret access grant workflow. Do not grant it to Logistics or Menu Planning.
+   - A separate code path uses `https://www.googleapis.com/auth/gmail.send` and secret `GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON_MAILER`; production YAML does not wire that secret and email delivery remains `false`. Do not authorize or configure the mailer scope/secret in this cutover.
 
 3. **Production custom domains and DNS**
-   - Decide/confirm the hostnames, map them to the matching App Hosting backends, and create the DNS records Firebase provides:
-     `hub.fikacatering.com`, `hospitality.fikacatering.com`, `cpu.fikacatering.com`, `menu-planning.fikacatering.com`, `logistics.fikacatering.com`, `delivered-in.fikacatering.com`.
-   - DNS currently has no records for these names. Until mapping and DNS are live, browser navigation, OAuth domain authorization, and the shared `.fikacatering.com` session cookie cannot be verified.
+   - Live App Hosting mappings are already active with ownership, host and certificate states all `ACTIVE`; App Hosting currently requests zero DNS updates. DNS resolves all six to `A 35.219.200.98`:
+
+     | Active domain | Backend |
+     | --- | --- |
+     | `os.fikacatering.com` | `fika-os-prod-hub` |
+     | `hospitality.fikacatering.com` | `fika-os-prod-hospitality` |
+     | `cpu.fikacatering.com` | `fika-os-prod-cpu` |
+     | `menuplanner.fikacatering.com` | `fika-os-prod-menu` |
+     | `logistics.fikacatering.com` | `fika-os-prod-logistics` |
+     | `delivered-in.fikacatering.com` | `fika-os-prod-deliveredin` |
+
+   - Production YAML now uses these exact hosts in cross-app origins and base URLs. The former `hub.fikacatering.com` and `menu-planning.fikacatering.com` names have no DNS response and are not mapped. If either is desired instead, decide that before rollout and use App Hosting's domain wizard; follow only the TXT/A/CAA records it returns. Do not guess records.
 
 ## Validation record
 
