@@ -141,7 +141,7 @@ export function buildCataloguePayload(input: CatalogueReadInput, oplocs: Catalog
   const active = rows.filter(row => row.status === "active");
   return {
     generatedAt: now.toISOString(), canManage, rows, oplocs, reviewGroups,
-    canonicalisation: { siteCopies: active.filter(row => row.siteCopyOf).length, mergeGroupsReady: plan.groups.length, reviewGroups: reviewGroups.filter(group => group.decision !== "keep_separate").length },
+    canonicalisation: { itemsAwaitingConsolidation: plan.groups.reduce((sum, group) => sum + group.memberIds.length, 0), mergeGroupsReady: plan.groups.length, reviewGroups: reviewGroups.filter(group => group.decision !== "keep_separate").length },
     counts: { active: active.length, archived: rows.length - active.length, needsReview: active.filter(row => row.needsReview.length).length, routingRequired: active.filter(row => row.routing.state === "routing_required").length },
   };
 }

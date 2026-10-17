@@ -8,11 +8,12 @@ import {
   ROUTING_CHOICES, ROUTING_CHOICE_LABELS, ROUTING_STATE_LABELS,
   type CatalogueOfferingView, type CataloguePayload, type CatalogueRow, type ReviewGroupView, type RoutingChoice,
 } from "../../lib/hospitality-catalogue-types";
-import { EMPTY_FILTERS, categoriesOf, formatMoney, oplocLabel, rowMatches, sortRows, summariseCounts, withDuplicateFlag, type CatalogueFilters, type Sort, type SortKey } from "../../lib/hospitality-catalogue-view";
+import { EMPTY_FILTERS, bulkImpact, categoriesOf, formatMoney, oplocLabel, pruneSelection, rowMatches, selectAllShown, selectableRows, selectableSites, sitesSummary, sortRows, summariseCounts, toggleSelection, withDuplicateFlag, type BulkDraft, type CatalogueFilters, type Sort, type SortKey } from "../../lib/hospitality-catalogue-view";
 
 type Command = Record<string, unknown> & { action: string };
-type ApiBody = { error?: { message?: string }; message?: string; rows?: CatalogueRow[]; payload?: CataloguePayload } & Partial<CataloguePayload>;
-type Send = (command: Command) => Promise<{ message: string }>;
+type ApiBody = { error?: { message?: string }; message?: string; rows?: CatalogueRow[]; payload?: CataloguePayload; bulk?: BulkResultView } & Partial<CataloguePayload>;
+type BulkResultView = { operationId: string; results: Array<{ itemId: string; status: "applied" | "unchanged" | "already_applied" | "failed"; message: string }>; succeeded: number; failed: number; message: string };
+type Send = (command: Command) => Promise<{ message: string; bulk?: BulkResultView }>;
 
 const sentence = (value: string) => value.charAt(0).toLocaleUpperCase("en-GB") + value.slice(1);
 const newRequestId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -28,11 +29,7 @@ export function SourceTag({ source }: { source: "inherits" | "overrides" | "site
   return <span className={`hc-tag hc-tag--${source}`}>{label}</span>;
 }
 
-function availability(row: CatalogueRow, oplocs: CataloguePayload["oplocs"]) {
-  const labels = row.availableAt.map(id => oplocLabel(oplocs, id));
-  if (!labels.length) return "Not available anywhere";
-  return labels.length <= 2 ? labels.join(", ") : `${labels.length} sites`;
-}
+const availability = sitesSummary;
 const minimumLabel = (row: CatalogueRow) => (row.defaultMinimumQuantity !== undefined ? String(row.defaultMinimumQuantity) : "—");
 const priceLabel = (row: CatalogueRow) => (row.defaultPrice ? formatMoney(row.defaultPrice.amount) : row.offerings.some(offering => offering.mode === "standard" && offering.status === "active") ? "Not set" : "—");
 
@@ -47,6 +44,9 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
   const [reviewing, setReviewing] = useState<ReviewGroupView | null>(null);
   const [notice, setNotice] = useState("");
   const [showDuplicates, setShowDuplicates] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [bulk, setBulk] = useState<null | "edit" | "archive">(null);
+  const [bulkReport, setBulkReport] = useState<BulkResultView | null>(null);
 
   const request = useCallback(async (init?: RequestInit) => {
     const send = () => fetch("/api/hospitality-catalogue", { cache: "no-store", ...init });
@@ -79,12 +79,19 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
       return { ...current, rows, counts: summariseCounts(rows) };
     });
     setNotice(body.message ?? "");
-    return { message: body.message ?? "" };
+    return { message: body.message ?? "", ...(body.bulk ? { bulk: body.bulk } : {}) };
   }, [request]);
 
   const rows = useMemo(() => payload?.rows ?? [], [payload]);
   const visible = useMemo(() => sortRows(rows.filter(row => rowMatches(row, filters)), sort), [rows, filters, sort]);
   const selected = rows.find(row => row.itemId === selectedId) || null;
+  const chosen = useMemo(() => pruneSelection(selectedIds, visible), [selectedIds, visible]);
+  const chosenRows = visible.filter(row => chosen.has(row.itemId));
+  const selectableShown = selectableRows(visible);
+  const statusBase = rows.filter(row => filters.status === "all" || row.status === filters.status).length;
+  const countText = visible.length === statusBase
+    ? (filters.status === "active" ? `${visible.length} active items` : filters.status === "archived" ? `${visible.length} archived items` : `${visible.length} items (including ${payload?.counts.archived ?? 0} archived)`)
+    : `${visible.length} of ${statusBase} ${filters.status === "all" ? "" : `${filters.status} `}items shown`;
   const canManage = Boolean(payload?.canManage);
   const setSortKey = (key: SortKey) => setSort(current => ({ key, direction: current.key === key && current.direction === "asc" ? "desc" : "asc" }));
   const update = (patch: Partial<CatalogueFilters>) => setFilters(current => ({ ...current, ...patch }));
@@ -106,11 +113,12 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
       <span><strong>{payload.counts.active}</strong> active</span>
       <button type="button" className={`hc-chip ${filters.needsReview ? "is-on" : ""}`} aria-pressed={filters.needsReview} onClick={() => update({ needsReview: !filters.needsReview })}>Needs review <strong>{payload.counts.needsReview}</strong></button>
       <button type="button" className={`hc-chip ${filters.route === "routing_required" ? "is-on" : ""}`} aria-pressed={filters.route === "routing_required"} onClick={() => update({ route: filters.route === "routing_required" ? "all" : "routing_required" })}>Routing required <strong>{payload.counts.routingRequired}</strong></button>
-      {payload.counts.archived > 0 && <span><strong>{payload.counts.archived}</strong> archived</span>}
+      {payload.counts.archived > 0 && <button type="button" className={`hc-chip ${filters.status === "archived" ? "is-on" : ""}`} aria-pressed={filters.status === "archived"} onClick={() => update({ status: filters.status === "archived" ? "active" : "archived" })}>Archived <strong>{payload.counts.archived}</strong></button>}
       {!canManage && <span className="hc-viewonly">View only</span>}
     </div>
 
-    {payload.canonicalisation.siteCopies > 0 && <p className="hc-note" role="note">{payload.canonicalisation.siteCopies} items are still separate per-site copies of the same products. They will be combined by the approved catalogue migration. You can keep working in the meantime.</p>}
+    {payload.canonicalisation.itemsAwaitingConsolidation > 0 ? <p className="hc-note" role="note">{payload.canonicalisation.itemsAwaitingConsolidation} items are duplicates of the same products and are waiting to be consolidated by the approved catalogue migration. You can keep working in the meantime.</p>
+      : payload.counts.archived > 0 && filters.status === "active" && <p className="hc-hint">{payload.counts.archived} historical item records were archived during catalogue consolidation. Use Archived above to view them.</p>}
     {notice && <p className="hc-success" role="status"><CheckCircle2 size={16} aria-hidden="true" /> {notice}</p>}
     {error && <div role="alert" className="hc-alert"><span>{error}</span></div>}
 
@@ -137,19 +145,33 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
       <button type="button" className="hc-btn hc-btn--text" onClick={() => setFilters(EMPTY_FILTERS)}>Clear filters</button>
     </form>
 
-    <p className="hc-count" role="status" aria-live="polite">{visible.length} of {rows.length} items shown</p>
+    <p className="hc-count" role="status" aria-live="polite">{countText}</p>
+
+    {canManage && chosen.size > 0 && <div className="hc-bulkbar" role="region" aria-label="Bulk actions">
+      <strong>{chosen.size} item{chosen.size === 1 ? "" : "s"} selected</strong>
+      <span className="hc-bulkbar__scope">{chosen.size === selectableShown.length ? `All ${selectableShown.length} filtered items` : `of ${selectableShown.length} filtered`}</span>
+      <div className="hc-bulkbar__actions">
+        <button type="button" className="hc-btn" onClick={() => setBulk("edit")}>Production</button>
+        <button type="button" className="hc-btn" onClick={() => setBulk("edit")}>Price</button>
+        <button type="button" className="hc-btn" onClick={() => setBulk("edit")}>Minimum</button>
+        <button type="button" className="hc-btn" onClick={() => setBulk("edit")}>Sites</button>
+        <button type="button" className="hc-btn hc-btn--danger" onClick={() => setBulk("archive")}>Archive</button>
+        <button type="button" className="hc-btn hc-btn--text" onClick={() => setSelectedIds(new Set())}>Clear selection</button>
+      </div>
+    </div>}
 
     {visible.length === 0 ? <div className="hc-empty"><strong>{rows.length === 0 ? "The catalogue is empty." : "No items match these filters."}</strong><span>{rows.length === 0 ? (canManage ? "Use Add item to create the first product." : "Items will appear here once they are added.") : "Clear a filter or change the search to see more items."}</span></div> : <>
       <div className="hc-table-wrap"><table className="hc-table">
         <caption className="hc-sr">Hospitality catalogue items</caption>
-        <thead><tr>{sortHeader("name", "Item")}{sortHeader("category", "Category")}{sortHeader("production", "Production")}{sortHeader("price", "Default price")}<th scope="col">Minimum</th><th scope="col">Available at</th><th scope="col">Overrides</th><th scope="col">Status</th></tr></thead>
+        <thead><tr><th scope="col" className="hc-check-col">{canManage && <input type="checkbox" aria-label={`Select all ${selectableShown.length} filtered items`} checked={selectableShown.length > 0 && chosen.size === selectableShown.length} disabled={!selectableShown.length} onChange={event => setSelectedIds(event.target.checked ? selectAllShown(visible) : new Set())} />}</th>{sortHeader("name", "Item")}{sortHeader("category", "Category")}{sortHeader("production", "Production")}{sortHeader("price", "Default price")}<th scope="col">Minimum</th><th scope="col">Available at</th><th scope="col">Overrides</th><th scope="col">Status</th></tr></thead>
         <tbody>{visible.map(row => <tr key={row.itemId} className={row.itemId === selectedId ? "is-selected" : ""}>
+          <td className="hc-check-col">{canManage && row.status === "active" && <input type="checkbox" aria-label={`Select ${row.name}`} checked={chosen.has(row.itemId)} onChange={() => setSelectedIds(toggleSelection(chosen, row.itemId))} />}</td>
           <th scope="row"><button type="button" className="hc-rowlink" onClick={() => setSelectedId(row.itemId)} aria-haspopup="dialog">{row.name}</button>{row.needsReview.length > 0 && <small className="hc-flag">Needs review</small>}</th>
           <td>{row.category}</td><td><RoutingBadge state={row.routing.state} /></td><td className="hc-num">{priceLabel(row)}</td><td className="hc-num">{minimumLabel(row)}</td>
           <td>{availability(row, payload.oplocs)}</td><td className="hc-num">{row.overrideCount || "—"}</td><td><span className={`hc-badge hc-badge--${row.status === "active" ? "ok" : "neutral"}`}>{row.status === "active" ? "Active" : "Archived"}</span></td>
         </tr>)}</tbody>
       </table></div>
-      <ul className="hc-cards" aria-label="Hospitality catalogue items">{visible.map(row => <li key={row.itemId}><button type="button" className="hc-card" onClick={() => setSelectedId(row.itemId)} aria-haspopup="dialog">
+      <ul className="hc-cards" aria-label="Hospitality catalogue items">{visible.map(row => <li key={row.itemId}>{canManage && row.status === "active" && <label className="hc-card-check"><input type="checkbox" checked={chosen.has(row.itemId)} onChange={() => setSelectedIds(toggleSelection(chosen, row.itemId))} /> Select {row.name}</label>}<button type="button" className="hc-card" onClick={() => setSelectedId(row.itemId)} aria-haspopup="dialog">
         <strong>{row.name}</strong><span>{row.category}</span><RoutingBadge state={row.routing.state} />
         <dl><div><dt>Default price</dt><dd>{priceLabel(row)}</dd></div><div><dt>Minimum</dt><dd>{minimumLabel(row)}</dd></div><div><dt>Available at</dt><dd>{availability(row, payload.oplocs)}</dd></div><div><dt>Overrides</dt><dd>{row.overrideCount || "None"}</dd></div></dl>
         {row.status === "archived" && <span className="hc-badge hc-badge--neutral">Archived</span>}
@@ -158,6 +180,8 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
 
     {selected && <ItemPanel key={selected.itemId} row={selected} payload={payload} canManage={canManage} send={send} onClose={() => setSelectedId(null)} />}
     {adding && <AddItemModal payload={payload} send={send} onClose={() => setAdding(false)} />}
+    {bulk && <BulkModal mode={bulk} rows={chosenRows} payload={payload} send={send} onClose={() => setBulk(null)} onFinished={report => { setBulkReport(report); setSelectedIds(new Set(report.results.filter(result => result.status === "failed").map(result => result.itemId))); }} />}
+    {bulkReport && bulkReport.failed > 0 && !bulk && <div className="hc-alert" role="alert"><strong>{bulkReport.message}</strong><ul>{bulkReport.results.filter(result => result.status === "failed").map(result => <li key={result.itemId}>{rows.find(row => row.itemId === result.itemId)?.name || "Unknown item"}: {result.message}</li>)}</ul><button type="button" className="hc-btn" onClick={() => setBulkReport(null)}>Dismiss</button></div>}
     {reviewing && <ReviewGroupModal group={reviewing} payload={payload} canManage={canManage} send={send} onClose={() => setReviewing(null)} />}
   </section>;
 }
@@ -306,12 +330,12 @@ function AdoptDefault({ row, send, oplocs }: { row: CatalogueRow; send: Send; op
 function ItemPanel({ row, payload, canManage, send, onClose }: { row: CatalogueRow; payload: CataloguePayload; canManage: boolean; send: Send; onClose: () => void }) {
   const [form, setForm] = useSyncedState({ name: row.name, category: row.category, description: row.description, price: row.defaultPrice ? String(row.defaultPrice.amount) : "", minimum: row.defaultMinimumQuantity !== undefined ? String(row.defaultMinimumQuantity) : "" }, `${row.itemId}:${row.version}:${row.defaultPrice?.priceId}`);
   const [confirmArchive, setConfirmArchive] = useState(false);
-  const [site, setSite] = useState("");
+  const currentSites = row.availableAt.filter(id => selectableSites(payload.oplocs).some(oploc => oploc.oplocId === id));
+  const [siteSet, setSiteSet] = useSyncedState<string[]>(currentSites, `${row.itemId}:${row.version}`);
+  const sameSites = siteSet.length === currentSites.length && siteSet.every(id => currentSites.includes(id));
   const save = useAction(send), archive = useAction(send), add = useAction(send);
   const dialog = useDialog(onClose, save.busy || archive.busy || add.busy);
   const inactive = row.status === "archived";
-  const offeredSites = new Set(row.offerings.filter(offering => offering.status === "active").map(offering => offering.oplocId));
-  const addable = payload.oplocs.filter(oploc => oploc.active && !offeredSites.has(oploc.oplocId));
   const dirty = form.name !== row.name || form.category !== row.category || form.description !== row.description || form.price !== (row.defaultPrice ? String(row.defaultPrice.amount) : "") || form.minimum !== (row.defaultMinimumQuantity !== undefined ? String(row.defaultMinimumQuantity) : "");
   async function submit() {
     const amount = numberOrUndefined(form.price), minimum = numberOrUndefined(form.minimum);
@@ -345,7 +369,10 @@ function ItemPanel({ row, payload, canManage, send, onClose }: { row: CatalogueR
 
         <section className="hc-section" aria-labelledby="hc-sites-title"><h3 id="hc-sites-title">Available at</h3>
           {row.offerings.length === 0 ? <p className="hc-hint">Not offered at any site yet.</p> : <ul className="hc-offerings">{row.offerings.map(offering => <OfferingEditor key={offering.offeringId} row={row} offering={offering} label={oplocLabel(payload.oplocs, offering.oplocId)} canManage={canManage} send={send} itemInactive={inactive} />)}</ul>}
-          {canManage && !inactive && addable.length > 0 && <div className="hc-add-site"><Field label="Make available at another site"><select value={site} onChange={event => setSite(event.target.value)}><option value="">Choose a site…</option>{addable.map(oploc => <option key={oploc.oplocId} value={oploc.oplocId}>{oploc.label}</option>)}</select></Field><button type="button" className="hc-btn" disabled={!site || add.busy} onClick={() => void add.run({ action: "add-offering", itemId: row.itemId, expectedVersion: row.version, oplocId: site }, () => setSite(""))}>{add.busy ? "Adding…" : "Add site"}</button></div>}
+          {canManage && !inactive && selectableSites(payload.oplocs).length > 0 && <div className="hc-add-site">
+            <SitePicker legend="Site availability" sites={selectableSites(payload.oplocs)} value={siteSet} onChange={setSiteSet} disabled={add.busy} />
+            <p className="hc-hint">{siteSet.length === 0 ? "Choose at least one site, or switch individual sites off above." : `Saving makes ${row.name} available at exactly these ${siteSet.length} site${siteSet.length === 1 ? "" : "s"}. Sites removed are disabled; their overrides and history are kept. New sites inherit the company price and minimum.`}</p>
+            <button type="button" className="hc-btn" disabled={add.busy || siteSet.length === 0 || sameSites} onClick={() => void add.run({ action: "bulk-update", operationId: newRequestId(), itemIds: [row.itemId], expectedVersions: { [row.itemId]: row.version }, sites: { mode: "replace", oplocIds: siteSet } })}>{add.busy ? "Saving…" : "Save availability"}</button></div>}
           {add.error && <p role="alert" className="hc-error">{add.error}</p>}
         </section>
 
@@ -354,7 +381,7 @@ function ItemPanel({ row, payload, canManage, send, onClose }: { row: CatalogueR
             <div><dt>Supplier / platform references</dt><dd>{row.providerMappings.length ? row.providerMappings.map(mapping => `${mapping.provider}: ${mapping.sourceItemId}`).join("; ") : "None recorded"}</dd></div>
             <div><dt>Allergens (read-only)</dt><dd>{row.allergenInformation.length ? row.allergenInformation.join(", ") : "None recorded"}</dd></div>
             <div><dt>Dietary (read-only)</dt><dd>{row.dietaryInformation.length ? row.dietaryInformation.join(", ") : "None recorded"}</dd></div>
-            {row.siteCopyOf && <div><dt>Origin</dt><dd>Per-site copy created for {row.siteCopyOf.toUpperCase()}; awaiting catalogue migration.</dd></div>}
+            {row.siteCopyOf && <div><dt>Originally created for</dt><dd>{row.siteCopyOf.toUpperCase()}</dd></div>}
             <div><dt>Catalogue ID</dt><dd><code>{row.itemId}</code></dd></div>
             <div><dt>Record version</dt><dd>{row.version}</dd></div>
           </dl>
@@ -376,7 +403,7 @@ function AddItemModal({ payload, send, onClose }: { payload: CataloguePayload; s
   const [requestId] = useState(newRequestId);
   const [form, setForm] = useState({ name: "", category: "", description: "", price: "", minimum: "" });
   const [route, setRoute] = useState<RoutingChoice | "">("");
-  const [sites, setSites] = useState<string[]>([]);
+  const [sites, setSites] = useState<string[]>(() => selectableSites(payload.oplocs).map(oploc => oploc.oplocId)); // default: every active Hospitality site, current registry
   const { busy, error, setError, run } = useAction(send);
   const dialog = useDialog(onClose, busy);
   const ready = form.name.trim() && form.category.trim() && form.price.trim() && route && sites.length > 0;
@@ -400,9 +427,7 @@ function AddItemModal({ payload, send, onClose }: { payload: CataloguePayload; s
         <fieldset className="hc-radios"><legend>Production route (required)</legend>
           {ROUTING_CHOICES.map(option => <label key={option}><input type="radio" name="add-route" checked={route === option} onChange={() => setRoute(option)} /> {ROUTING_CHOICE_LABELS[option]}</label>)}
         </fieldset>
-        <fieldset className="hc-radios"><legend>Available at (choose at least one site)</legend>
-          {payload.oplocs.filter(oploc => oploc.active).map(oploc => <label key={oploc.oplocId}><input type="checkbox" checked={sites.includes(oploc.oplocId)} onChange={event => setSites(current => event.target.checked ? [...current, oploc.oplocId] : current.filter(id => id !== oploc.oplocId))} /> {oploc.label}</label>)}
-        </fieldset>
+        <SitePicker legend="Available at (choose at least one site)" sites={selectableSites(payload.oplocs)} value={sites} onChange={setSites} disabled={busy} />
         {error && <p role="alert" className="hc-error">{error}</p>}
       </div>
       <footer><button type="button" className="hc-btn" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" className="hc-btn hc-btn--primary" disabled={busy || !ready}>{busy ? "Creating…" : "Create item"}</button></footer>
@@ -449,5 +474,99 @@ function ReviewGroupModal({ group, payload, canManage, send, onClose }: { group:
       </footer>
     </section>
     {confirming && <ConfirmationModal title="Merge these items?" description={`They become one catalogue item. Every site offering, price override and production route is kept, and the other ${members.length - 1} record${members.length === 2 ? " is" : "s are"} archived. This is recorded in the audit trail.`} confirmLabel="Merge items" busy={busy} onCancel={() => setConfirming(false)} onConfirm={async () => { const ok = await run({ action: "merge-items", survivorItemId: survivor, sourceItemIds: members.filter(member => member.itemId !== survivor).map(member => member.itemId), expectedVersions: versions, groupId: group.id }, onClose); if (!ok) setConfirming(false); }} />}
+  </div>;
+}
+
+function SitePicker({ legend, sites, value, onChange, disabled }: { legend: string; sites: CataloguePayload["oplocs"]; value: string[]; onChange: (next: string[]) => void; disabled?: boolean }) {
+  const [query, setQuery] = useState("");
+  const shown = sites.filter(site => site.label.toLocaleLowerCase("en-GB").includes(query.trim().toLocaleLowerCase("en-GB")));
+  return <fieldset className="hc-radios hc-sites"><legend>{legend}</legend>
+    <div className="hc-sites__bar">
+      <span role="status" aria-live="polite">{value.length} of {sites.length} Hospitality site{sites.length === 1 ? "" : "s"} selected</span>
+      <button type="button" className="hc-btn hc-btn--text" disabled={disabled || value.length === sites.length} onClick={() => onChange(sites.map(site => site.oplocId))}>Select all sites</button>
+      <button type="button" className="hc-btn hc-btn--text" disabled={disabled || value.length === 0} onClick={() => onChange([])}>Clear all</button>
+    </div>
+    {sites.length > 8 && <input type="search" className="hc-sites__search" aria-label="Search sites" placeholder="Search sites" value={query} onChange={event => setQuery(event.target.value)} />}
+    <div className="hc-sites__list">{shown.map(site => <label key={site.oplocId}><input type="checkbox" disabled={disabled} checked={value.includes(site.oplocId)} onChange={event => onChange(event.target.checked ? [...value, site.oplocId] : value.filter(id => id !== site.oplocId))} /> {site.label}</label>)}</div>
+  </fieldset>;
+}
+
+function BulkModal({ mode, rows: selectedRows, payload, send, onClose, onFinished }: { mode: "edit" | "archive"; rows: CatalogueRow[]; payload: CataloguePayload; send: Send; onClose: () => void; onFinished: (report: BulkResultView) => void }) {
+  const [operationId] = useState(newRequestId);
+  const [rows] = useState(selectedRows); // snapshot: the parent clears its selection after a successful run
+  const [production, setProduction] = useState<RoutingChoice | "">("");
+  const [priceMode, setPriceMode] = useState<"keep" | "set">("keep"); const [priceValue, setPriceValue] = useState("");
+  const [minimumMode, setMinimumMode] = useState<"keep" | "set" | "clear">("keep"); const [minimumValue, setMinimumValue] = useState("");
+  const [siteMode, setSiteMode] = useState<"keep" | "add" | "remove" | "replace">("keep"); const [siteIds, setSiteIds] = useState<string[]>([]);
+  const [step, setStep] = useState<"edit" | "review">(mode === "archive" ? "review" : "edit");
+  const [report, setReport] = useState<BulkResultView | null>(null);
+  const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  const dialog = useDialog(onClose, busy);
+  const sites = selectableSites(payload.oplocs);
+  const currentRoutes = new Set(rows.map(row => ROUTING_STATE_LABELS[row.routing.state]));
+  function buildDraft(): BulkDraft | null {
+    if (mode === "archive") return { archive: true };
+    const draft: BulkDraft = {};
+    if (production) draft.production = production;
+    if (priceMode === "set") { const amount = numberOrUndefined(priceValue); if (amount === undefined || Number.isNaN(amount) || amount < 0) { setError("Enter the default price as a number, for example 4.50."); return null; } draft.price = { amount }; }
+    if (minimumMode === "set") { const value = numberOrUndefined(minimumValue); if (value === undefined || !Number.isInteger(value) || value < 1) { setError("Enter the minimum as a whole number of 1 or more."); return null; } draft.minimum = { mode: "set", value }; }
+    if (minimumMode === "clear") draft.minimum = { mode: "clear" };
+    if (siteMode !== "keep") { if (!siteIds.length) { setError("Choose at least one site, or set Sites to Leave unchanged."); return null; } draft.sites = { mode: siteMode, oplocIds: siteIds }; }
+    if (!Object.keys(draft).length) { setError("Nothing to change yet. Every field is left unchanged until you choose a value."); return null; }
+    return draft;
+  }
+  const [draft, setDraft] = useState<BulkDraft | null>(mode === "archive" ? { archive: true } : null);
+  function review() { setError(""); const next = buildDraft(); if (next) { setDraft(next); setStep("review"); } }
+  async function applyAndReport() {
+    if (!draft || busy) return;
+    const result = await sendBulk();
+    if (result) { setReport(result); onFinished(result); }
+  }
+  async function sendBulk() {
+    if (!draft) return null;
+    setBusy(true); setError("");
+    try {
+      const outcome = await send({ action: "bulk-update", operationId, itemIds: rows.map(row => row.itemId), expectedVersions: Object.fromEntries(rows.map(row => [row.itemId, row.version])), expectedRoutingVersions: Object.fromEntries(rows.map(row => [row.itemId, row.routing.version])), ...draft });
+      return outcome.bulk ?? null;
+    } catch (caught) { setError((caught as Error).message); return null; } finally { setBusy(false); }
+  }
+  const lines = draft ? bulkImpact(draft, rows, payload.oplocs) : [];
+  const archive = Boolean(draft?.archive);
+  return <div className="hc-modal-backdrop" role="presentation">
+    <section className="hc-modal hc-modal--wide" role="dialog" aria-modal="true" aria-labelledby="hc-bulk-title" ref={dialog}>
+      <header><h2 id="hc-bulk-title">{report ? "Bulk update result" : step === "review" ? `Apply changes to ${rows.length} item${rows.length === 1 ? "" : "s"}?` : `Edit ${rows.length} selected item${rows.length === 1 ? "" : "s"}`}</h2><button type="button" className="hc-icon" onClick={onClose} disabled={busy} aria-label="Close bulk editor"><X size={18} aria-hidden="true" /></button></header>
+      <div className="hc-modal__body">
+        {report ? <>
+          <p className={report.failed ? "hc-warning hc-warning--danger" : "hc-success"} role="status">{report.message}</p>
+          <ul className="hc-results">{report.results.map(result => <li key={result.itemId} className={result.status === "failed" ? "is-failed" : ""}><strong>{rows.find(row => row.itemId === result.itemId)?.name || "Item"}</strong> <span>{result.status === "failed" ? "Not changed" : result.status === "unchanged" ? "Already matched" : "Updated"}</span>{result.status === "failed" && <small>{result.message}</small>}</li>)}</ul>
+        </> : step === "edit" ? <>
+          <p className="hc-hint">Every field starts as Leave unchanged. Site price and minimum overrides are always preserved.</p>
+          <Field label="Production"><select value={production} onChange={event => setProduction(event.target.value as RoutingChoice | "")}><option value="">Leave unchanged</option>{ROUTING_CHOICES.map(choice => <option key={choice} value={choice}>{ROUTING_CHOICE_LABELS[choice]}</option>)}</select></Field>
+          {production && currentRoutes.size > 1 && <p className="hc-warning" role="status"><AlertTriangle size={15} aria-hidden="true" /> The selected items currently have different routes: {[...currentRoutes].join(", ")}. They will all be set to {ROUTING_CHOICE_LABELS[production]}.</p>}
+          <div className="hc-grid2">
+            <Field label="Company default price"><select value={priceMode} onChange={event => setPriceMode(event.target.value as "keep" | "set")}><option value="keep">Leave unchanged</option><option value="set">Set price</option></select></Field>
+            {priceMode === "set" && <Field label="Price (£, ex VAT)"><input inputMode="decimal" value={priceValue} onChange={event => setPriceValue(event.target.value)} /></Field>}
+          </div>
+          <div className="hc-grid2">
+            <Field label="Company default minimum"><select value={minimumMode} onChange={event => setMinimumMode(event.target.value as "keep" | "set" | "clear")}><option value="keep">Leave unchanged</option><option value="set">Set minimum</option><option value="clear">Clear default minimum</option></select></Field>
+            {minimumMode === "set" && <Field label="Minimum quantity"><input inputMode="numeric" value={minimumValue} onChange={event => setMinimumValue(event.target.value)} /></Field>}
+          </div>
+          <Field label="Site availability"><select value={siteMode} onChange={event => setSiteMode(event.target.value as typeof siteMode)}><option value="keep">Leave unchanged</option><option value="add">Add selected sites</option><option value="remove">Remove selected sites</option><option value="replace">Replace availability with selected sites</option></select></Field>
+          {siteMode !== "keep" && <SitePicker legend={siteMode === "add" ? "Sites to add" : siteMode === "remove" ? "Sites to remove" : "Available at exactly these sites"} sites={sites} value={siteIds} onChange={setSiteIds} />}
+        </> : <>
+          <dl className="hc-impact">{lines.map(line => <div key={line.label} className={line.tone ? `is-${line.tone}` : ""}><dt>{line.label}</dt><dd>{line.value}</dd></div>)}</dl>
+          <p className="hc-hint">Each item is changed in its own safe step. If any item cannot be changed (for example it was edited elsewhere), you will see exactly which ones; nothing fails silently.</p>
+        </>}
+        {error && <p role="alert" className="hc-error">{error}</p>}
+      </div>
+      <footer>
+        {report ? <button type="button" className="hc-btn hc-btn--primary" onClick={onClose}>Close</button> : <>
+          <button type="button" className="hc-btn" onClick={onClose} disabled={busy}>Cancel</button>
+          {step === "review" && mode === "edit" && <button type="button" className="hc-btn" onClick={() => { setStep("edit"); setError(""); }} disabled={busy}>Back</button>}
+          {step === "edit" ? <button type="button" className="hc-btn hc-btn--primary" onClick={review}>Review changes</button>
+            : <button type="button" className={`hc-btn ${archive ? "hc-btn--danger-solid" : "hc-btn--primary"}`} disabled={busy} onClick={() => void applyAndReport()}>{busy ? "Applying…" : archive ? `Archive ${rows.length} item${rows.length === 1 ? "" : "s"}` : `Apply to ${rows.length} item${rows.length === 1 ? "" : "s"}`}</button>}
+        </>}
+      </footer>
+    </section>
   </div>;
 }

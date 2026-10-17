@@ -47,9 +47,9 @@ test("decisive apply lands merge + company default + redundant-override archive 
   assert.equal((await get(group.sourceIds[0]))?.record.lifecycleState, "archived");
   const [row] = await loadCatalogueRows([group.survivorId]);
   assert.equal(row.offerings.length, 2); assert.ok(row.offerings.every(offer => offer.price.source === "inherits" && offer.price.effective?.amount === 2.5 && offer.minimum.source === "inherits")); assert.equal(row.routing.state, "cpu_hospitality"); assert.equal(row.overrideCount, 0);
-  const before = (await canonical().get()).size; const versions = survivor.record.version;
+  const scoped = async () => (await canonical().where("record.hospitalityMenuItemId", "==", group.survivorId).get()).size; const before = await scoped(); const versions = survivor.record.version;
   assert.equal(await applyCanonicalisationGroup(db as never, group), "already-applied");
-  assert.equal((await canonical().get()).size, before, "retry creates no second default"); assert.equal((await get(group.survivorId))?.record.version, versions);
+  assert.equal(await scoped(), before, "retry creates no second default or offering"); assert.equal((await get(group.survivorId))?.record.version, versions);
   const receipts = (await db.collection("integrationHubGovernanceAudit").where("entityReference", "==", group.id).get()).size; assert.equal(receipts, 1);
 });
 

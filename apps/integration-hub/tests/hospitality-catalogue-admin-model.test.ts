@@ -57,7 +57,7 @@ test("unresolved routing and missing prices are counted as needing review; archi
   const a = item("hospitality-menu-item:a", "Unrouted Cake");
   const b = item("hospitality-menu-item:b", "Routed Cake");
   const gone = item("hospitality-menu-item:gone", "Old Cake", { lifecycleState: "archived" });
-  const payload = buildCataloguePayload({ items: [a, b, gone], offerings: [offering("o:a", a.canonicalId, "oploc:a"), offering("o:b", b.canonicalId, "oploc:a")], prices: [price("p:b", { offeringId: "o:b" }, 2)], routing: [{ menuItemId: b.canonicalId, workstreams: ["hospitality"], version: 1 }], today: TODAY }, [{ oplocId: "oploc:a", label: "Site A", active: true }], true);
+  const payload = buildCataloguePayload({ items: [a, b, gone], offerings: [offering("o:a", a.canonicalId, "oploc:a"), offering("o:b", b.canonicalId, "oploc:a")], prices: [price("p:b", { offeringId: "o:b" }, 2)], routing: [{ menuItemId: b.canonicalId, workstreams: ["hospitality"], version: 1 }], today: TODAY }, [{ oplocId: "oploc:a", label: "Site A", active: true, hospitality: true }], true);
   const rowA = payload.rows.find(row => row.name === "Unrouted Cake")!;
   assert.deepEqual(rowA.needsReview, ["routing_required", "price_missing"]);
   assert.equal(payload.rows.find(row => row.name === "Routed Cake")!.needsReview.length, 0);

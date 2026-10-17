@@ -79,13 +79,15 @@ export type PriceMigrationView =
   | { status: "operator_required"; reason: string; values: Array<{ oplocId: string; offeringId: string; amount?: number; vatRate?: number; minimumQuantity?: number }>; minimumQuantity?: number };
 
 export type ReviewGroupView = { id: string; memberIds: string[]; reasons: string[]; decision?: "merge" | "keep_separate" | "defer"; decidedAt?: string; decidedBy?: string };
-export type CatalogueOplocView = { oplocId: string; label: string; active: boolean };
+/** `hospitality` = selectable by "Select all sites" (an active location the catalogue may offer items at). */
+export type CatalogueOplocView = { oplocId: string; label: string; active: boolean; hospitality: boolean };
 export type CataloguePayload = {
   generatedAt: string;
   canManage: boolean;
   rows: CatalogueRow[];
   oplocs: CatalogueOplocView[];
   reviewGroups: ReviewGroupView[];
-  canonicalisation: { siteCopies: number; mergeGroupsReady: number; reviewGroups: number };
+  /** `itemsAwaitingConsolidation` = active Items that still have a decisive duplicate pending; 0 once canonicalisation is complete. */
+  canonicalisation: { itemsAwaitingConsolidation: number; mergeGroupsReady: number; reviewGroups: number };
   counts: { active: number; archived: number; needsReview: number; routingRequired: number };
 };

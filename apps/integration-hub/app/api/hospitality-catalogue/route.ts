@@ -3,7 +3,7 @@ import { z } from "zod";
 import { errorResponse } from "@/lib/api";
 import { requireActor } from "@/lib/auth";
 import { assertPermission } from "@/lib/authmod";
-import { runCatalogueCommand, type CatalogueCommand } from "@/lib/hospitality-catalogue-admin";
+import { runBulkCatalogueUpdate, runCatalogueCommand, type BulkSpec, type CatalogueCommand } from "@/lib/hospitality-catalogue-admin";
 import { loadCataloguePayload, loadCatalogueRows } from "@/lib/hospitality-catalogue-loader";
 import { ROUTING_CHOICES } from "@/lib/hospitality-catalogue-types";
 
@@ -25,6 +25,14 @@ const Command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("record-review-decision"), memberIds: z.array(Id).min(2).max(12), decision: z.enum(["keep_separate", "defer"]) }).strict(),
 ]);
 
+const BulkCommand = z.object({
+  action: z.literal("bulk-update"), operationId: z.string().min(8).max(80), itemIds: z.array(Id).min(1).max(50),
+  expectedVersions: z.record(z.string(), Version), expectedRoutingVersions: z.record(z.string(), z.number().int().nonnegative()).optional(),
+  production: Routing.optional(), price: Price.optional(),
+  minimum: z.discriminatedUnion("mode", [z.object({ mode: z.literal("set"), value: z.number().int().positive() }).strict(), z.object({ mode: z.literal("clear") }).strict()]).optional(),
+  sites: z.object({ mode: z.enum(["add", "remove", "replace"]), oplocIds: z.array(Id).min(1).max(100) }).strict().optional(), archive: z.boolean().optional(),
+}).strict();
+
 const noStore = { headers: { "Cache-Control": "no-store, max-age=0" } };
 
 export async function GET(request: NextRequest) {
@@ -39,7 +47,13 @@ export async function POST(request: NextRequest) {
   try {
     const actor = await requireActor(request);
     assertPermission(actor, "hospitality.catalogue.manage");
-    const result = await runCatalogueCommand(actor, Command.parse(await request.json()) as CatalogueCommand);
+    const body = await request.json();
+    if (body?.action === "bulk-update") {
+      const outcome = await runBulkCatalogueUpdate(actor, BulkCommand.parse(body) as unknown as BulkSpec);
+      const touched = outcome.results.filter(result => result.status === "applied" || result.status === "already_applied").map(result => result.itemId);
+      return NextResponse.json({ message: outcome.message, bulk: outcome, rows: touched.length ? await loadCatalogueRows(touched) : [] }, noStore);
+    }
+    const result = await runCatalogueCommand(actor, Command.parse(body) as CatalogueCommand);
     // Merges and review decisions change group structure: return a full reload. Everything else refreshes only the touched items.
     if (result.reload) return NextResponse.json({ message: result.message, payload: await loadCataloguePayload(actor) }, noStore);
     return NextResponse.json({ message: result.message, rows: await loadCatalogueRows(result.itemIds) }, noStore);

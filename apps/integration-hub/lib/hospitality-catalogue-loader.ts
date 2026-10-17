@@ -23,9 +23,12 @@ import type { CataloguePayload, CatalogueRow } from "./hospitality-catalogue-typ
 const canonical = () => db.collection("integrationHubCanonical");
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 
+/** Single seam for "which locations does Select all sites include". No governed Hospitality-capability marker exists yet, so this is every active, non-archived location. */
+export const isHospitalitySite = (record: CanonicalRecord) => record.entityType === "OPLOC" && record.lifecycleStatus !== "archived" && record.record.lifecycleState === "active";
+
 function oplocViews(records: CanonicalRecord[]): CataloguePayload["oplocs"] {
   return records.filter(record => record.entityType === "OPLOC" && record.lifecycleStatus !== "archived")
-    .map(record => ({ oplocId: record.canonicalId, label: text(record.record.approvedName) || "Unnamed location", active: record.record.lifecycleState === "active" }))
+    .map(record => ({ oplocId: record.canonicalId, label: text(record.record.approvedName) || "Unnamed location", active: record.record.lifecycleState === "active", hospitality: isHospitalitySite(record) }))
     .sort((a, b) => a.label.localeCompare(b.label, "en-GB"));
 }
 

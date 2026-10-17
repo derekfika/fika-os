@@ -431,3 +431,114 @@ export async function runCatalogueCommand(actor: Actor, command: CatalogueComman
     }
   });
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// BULK UPDATE. One independent transaction per Item (Firestore transaction limits make one giant atomic write impractical), bounded to
+// MAX_BULK_ITEMS, processed in a deterministic order, replay-safe through a per-Item receipt, and reported per Item: there is no silent
+// partial success. Every field is opt-in ("leave unchanged" = absent). Company defaults never touch site overrides.
+// ---------------------------------------------------------------------------------------------------------------------
+export const MAX_BULK_ITEMS = 50;
+export type BulkSpec = {
+  operationId: string; itemIds: string[]; expectedVersions: Record<string, number>; expectedRoutingVersions?: Record<string, number>;
+  production?: RoutingChoice; price?: PriceInput; minimum?: { mode: "set"; value: number } | { mode: "clear" };
+  sites?: { mode: "add" | "remove" | "replace"; oplocIds: string[] }; archive?: boolean;
+};
+export type BulkItemResult = { itemId: string; status: "applied" | "unchanged" | "already_applied" | "failed"; message: string };
+export type BulkResult = { operationId: string; results: BulkItemResult[]; succeeded: number; failed: number; message: string };
+
+export function validateBulkSpec(spec: BulkSpec) {
+  const ids = [...new Set(spec.itemIds)];
+  if (!spec.operationId || spec.operationId.length < 8) throw problem("A bulk operation needs an operation id.");
+  if (!ids.length) throw problem("Select at least one item.");
+  if (ids.length > MAX_BULK_ITEMS) throw problem(`Bulk changes are limited to ${MAX_BULK_ITEMS} items at a time. Narrow the selection.`);
+  const changes = [spec.production, spec.price, spec.minimum, spec.sites, spec.archive].filter(value => value !== undefined && value !== false);
+  if (!changes.length) throw problem("Choose at least one change; every field is left unchanged by default.");
+  if (spec.archive && changes.length > 1) throw problem("Archive is a separate action: it cannot be combined with other changes.");
+  if (spec.production && !ROUTING_CHOICES.includes(spec.production)) throw problem("Choose one of the four production routes.");
+  if (spec.price) money(spec.price.amount, "Default price");
+  if (spec.minimum?.mode === "set") quantity(spec.minimum.value, "Default minimum");
+  if (spec.sites && ![...new Set(spec.sites.oplocIds)].length) throw problem("Choose at least one site. To remove an item from every site, use Remove sites with all sites selected.");
+  return ids.sort();
+}
+
+async function bulkOne(ctx: Ctx, itemId: string, spec: BulkSpec): Promise<BulkItemResult> {
+  const receiptRef = audit().doc(`bulk-${spec.operationId}-${crypto.createHash("sha256").update(itemId).digest("hex").slice(0, 24)}`);
+  const itemRef = canonical().doc(stableDocumentId(itemId)); const routeRef = routingCollection().doc(stableDocumentId(itemId));
+  const siteIds = spec.sites ? [...new Set(spec.sites.oplocIds)] : [];
+  const [receipt, itemSnapshot, routeSnapshot, children, ...oplocSnapshots] = await Promise.all([
+    readDoc(ctx, receiptRef), readDoc(ctx, itemRef), spec.production ? readDoc(ctx, routeRef) : Promise.resolve(undefined),
+    spec.price || spec.sites ? itemChildren(ctx, itemId) : Promise.resolve({ offerings: [] as CanonicalRecord[], itemPrices: [] as CanonicalRecord[] }),
+    ...(spec.sites && spec.sites.mode !== "remove" ? siteIds.map(id => readDoc(ctx, canonical().doc(stableDocumentId(id)))) : []),
+  ]);
+  if (receipt.exists) return { itemId, status: "already_applied", message: "Already applied by an earlier attempt of this operation." };
+  const item = requireItem(itemSnapshot); const name = text(item.record.name);
+  expectVersion(item, spec.expectedVersions[itemId], `“${name}”`);
+  const archived = item.record.lifecycleState === "archived";
+  const before: Record<string, unknown> = {}, after: Record<string, unknown> = {}; const touchedSites: string[] = []; let changed = false;
+  if (spec.archive) {
+    if (archived) return { itemId, status: "failed", message: `“${name}” is already archived.` };
+    stage(ctx, "Hospitality Menu Item", { ...bump(ctx, item.record), lifecycleState: "archived" }, item, "Archived by bulk operation.");
+    before.lifecycleState = "active"; after.lifecycleState = "archived"; changed = true;
+  } else {
+    if (archived) return { itemId, status: "failed", message: `“${name}” is archived. Restore it before editing.` };
+    let record: Record<string, unknown> = item.record; const today = ukBusinessDate();
+    if (spec.production) {
+      const current = routeSnapshot!.exists ? routeSnapshot!.data() as { workstreams?: string[]; version?: number; supersededBy?: string } : undefined;
+      const currentVersion = current ? Number(current.version || 1) : 0;
+      if (currentVersion !== Number(spec.expectedRoutingVersions?.[itemId] ?? -1)) throw stale(`“${name}” production routing`);
+      const state = routingStateOf(current ? { menuItemId: itemId, workstreams: current.workstreams || [], version: current.version, supersededBy: current.supersededBy } : undefined).state;
+      if (state !== spec.production) {
+        ctx.tx.set(routeRef, { menuItemId: itemId, workstreams: ROUTING_CHOICE_WORKSTREAMS[spec.production], version: currentVersion + 1, createdAt: (routeSnapshot!.data() as { createdAt?: string } | undefined)?.createdAt || ctx.now, updatedAt: ctx.now, updatedBy: ctx.actor.uid, supersededBy: FieldValue.delete(), supersededAt: FieldValue.delete() }, { merge: true });
+        before.production = state; after.production = spec.production; changed = true;
+      }
+    }
+    if (spec.price) {
+      const previous = currentPrice(children.itemPrices, today);
+      const input = { amount: money(spec.price.amount, "Default price"), vatRate: vat(spec.price.vatRate ?? previous?.record.vatRate as number | undefined) };
+      if (!previous || previous.record.amount !== input.amount || previous.record.vatRate !== input.vatRate) {
+        replaceScopedPrice(ctx, { itemId }, children.itemPrices, input, today, "Company default price changed by bulk operation.");
+        before.defaultPrice = previous ? { amount: previous.record.amount, vatRate: previous.record.vatRate } : null; after.defaultPrice = input; changed = true;
+      }
+    }
+    if (spec.minimum) {
+      const next = spec.minimum.mode === "set" ? quantity(spec.minimum.value, "Default minimum") : undefined;
+      if (item.record.defaultMinimumQuantity !== next) { before.defaultMinimumQuantity = item.record.defaultMinimumQuantity ?? null; after.defaultMinimumQuantity = next ?? null; record = next === undefined ? without(record, "defaultMinimumQuantity") : { ...record, defaultMinimumQuantity: next }; changed = true; }
+    }
+    if (spec.sites) {
+      if (spec.sites.mode !== "remove") oplocSnapshots.forEach((snapshot, index) => { const oploc = asRecord(snapshot); if (!oploc || oploc.entityType !== "OPLOC" || oploc.record.lifecycleState !== "active") throw problem(`Site ${index + 1} is not an active governed location.`); });
+      const wanted = new Set(siteIds);
+      const enable = spec.sites.mode === "remove" ? new Set<string>() : wanted;
+      const disable = spec.sites.mode === "add" ? new Set<string>() : spec.sites.mode === "remove" ? wanted : new Set(children.offerings.filter(o => o.record.lifecycleState !== "archived" && !wanted.has(text(o.record.oplocId))).map(o => text(o.record.oplocId)));
+      for (const oplocId of enable) {
+        const existing = children.offerings.find(o => o.record.oplocId === oplocId && !o.record.operationalAreaId && o.record.offeringMode === "standard");
+        if (children.offerings.some(o => o.record.oplocId === oplocId && o.record.lifecycleState !== "archived")) continue;
+        if (existing) stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, existing.record), lifecycleState: "active" }, existing, "Offering re-enabled by bulk operation.");
+        else stage(ctx, "Hospitality Menu Offering", { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Offering", canonicalId: generateCanonicalId("Hospitality Menu Offering"), hospitalityMenuItemId: itemId, oplocId, offeringMode: "standard" as const, lifecycleState: "active" as const }, undefined, "Offering created by bulk operation (inherits company defaults).");
+        touchedSites.push(`+${oplocId}`); changed = true;
+      }
+      for (const oplocId of disable) for (const offering of children.offerings.filter(o => o.record.oplocId === oplocId && o.record.lifecycleState !== "archived")) {
+        stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, offering.record), lifecycleState: "archived" }, offering, "Offering disabled by bulk operation (overrides and history retained).");
+        touchedSites.push(`-${oplocId}`); changed = true;
+      }
+      if (touchedSites.length) { before.sites = "see removed"; after.sites = touchedSites; }
+    }
+    if (changed) stage(ctx, "Hospitality Menu Item", bump(ctx, record), item, "Hospitality Catalogue bulk update (item version touched).");
+  }
+  if (!changed) return { itemId, status: "unchanged", message: "Already matches; nothing to change." };
+  ctx.tx.create(receiptRef, { action: "Hospitality Catalogue bulk update", entityReference: itemId, actorId: ctx.actor.uid, actorName: ctx.actor.name, timestamp: ctx.now, reason: `Bulk operation ${spec.operationId}: “${name}”.`, details: JSON.parse(JSON.stringify({ bulkOperationId: spec.operationId, itemId, before, after, oplocIds: [...new Set(touchedSites.map(entry => entry.slice(1)))] })) });
+  return { itemId, status: "applied", message: "Applied." };
+}
+
+export async function runBulkCatalogueUpdate(actor: Actor, spec: BulkSpec): Promise<BulkResult> {
+  assertPermission(actor, "hospitality.catalogue.manage");
+  const ids = validateBulkSpec(spec);
+  const results: BulkItemResult[] = [];
+  for (const itemId of ids) {
+    try { results.push(await db.runTransaction(tx => bulkOne({ tx, actor, now: new Date().toISOString() }, itemId, spec))); }
+    catch (error) { results.push({ itemId, status: "failed", message: (error as Error).message }); }
+  }
+  const succeeded = results.filter(result => result.status !== "failed").length, failed = results.length - succeeded;
+  const kinds = [spec.production && "production", spec.price && "default price", spec.minimum && "default minimum", spec.sites && `sites:${spec.sites.mode}`, spec.archive && "archive"].filter(Boolean);
+  await audit().doc(`bulk-${spec.operationId}`).set({ action: "Hospitality Catalogue bulk operation", entityReference: spec.operationId, actorId: actor.uid, actorName: actor.name, timestamp: new Date().toISOString(), reason: `${kinds.join(", ")} on ${ids.length} item${ids.length === 1 ? "" : "s"}: ${succeeded} succeeded, ${failed} failed.`, details: JSON.parse(JSON.stringify({ bulkOperationId: spec.operationId, operations: kinds, itemIds: ids, oplocIds: spec.sites?.oplocIds ?? [], succeeded, failed, results })) }, { merge: true });
+  return { operationId: spec.operationId, results, succeeded, failed, message: failed ? `${succeeded} of ${results.length} items updated; ${failed} could not be changed.` : `${succeeded} item${succeeded === 1 ? "" : "s"} updated.` };
+}
