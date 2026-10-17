@@ -46,7 +46,7 @@ export function buildCataloguePackage(source: PackageSource, today: string): Cat
   const items: PackageItem[] = source.items.filter(live).map(item => ({
     id: item.canonicalId, name: text(item.record.name), category: text(item.record.category), ...(text(item.record.description) ? { description: text(item.record.description) } : {}),
     defaultPrices: (itemPrices.get(item.canonicalId) || []).sort(byPeriod), ...(number(item.record.defaultMinimumQuantity) !== undefined ? { defaultMinimumQuantity: number(item.record.defaultMinimumQuantity) } : {}),
-    ...(number(item.record.defaultNoticeRequiredDays) !== undefined ? { defaultNoticeRequiredDays: number(item.record.defaultNoticeRequiredDays) } : {}), ...(number(item.record.defaultMinimumGuests) !== undefined ? { defaultMinimumGuests: number(item.record.defaultMinimumGuests) } : {}),
+    ...(item.record.defaultOfferingMode === "quote_only" ? { defaultMode: "quote_only" as const } : {}), ...(number(item.record.defaultNoticeRequiredDays) !== undefined ? { defaultNoticeRequiredDays: number(item.record.defaultNoticeRequiredDays) } : {}), ...(number(item.record.defaultMinimumGuests) !== undefined ? { defaultMinimumGuests: number(item.record.defaultMinimumGuests) } : {}),
     ...(item.record.configuration && Object.keys(item.record.configuration as object).length ? { configuration: item.record.configuration as Record<string, unknown> } : {}),
     dietaryInformation: strings(item.record.dietaryInformation), allergenInformation: strings(item.record.allergenInformation), routing: routingStateOf(routing.get(item.canonicalId)).state,
   })).sort((a, b) => a.id.localeCompare(b.id));

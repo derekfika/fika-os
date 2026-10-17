@@ -14,7 +14,7 @@ const args = process.argv.slice(2); const flag = (name: string) => args.includes
 if (process.env.FIREBASE_PROJECT_ID === "fika-os" || process.env.GCLOUD_PROJECT === "fika-os") throw new Error("Refusing to run against the production project.");
 const { db } = await import("../lib/firebase-admin");
 const { planOfferingMigration, planConfigurationPromotion, BULK_ALL_SITES_ACTOR } = await import("../lib/hospitality-offering-migration");
-const { retireOfferingRecords } = await import("../lib/hospitality-catalogue-admin");
+const { retireOfferingRecords, promoteProductSettings } = await import("../lib/hospitality-catalogue-admin");
 const { isActiveOplocRecord } = await import("../lib/hospitality-catalogue-oploc");
 type R = import("../lib/types").CanonicalRecord;
 const BULK_OPERATION_ID = "op-hospitality-all-sites-20261017";
@@ -32,7 +32,7 @@ async function load() {
 const loaded = await load();
 const plan = planOfferingMigration(loaded, BULK_OPERATION_ID);
 const promotion = planConfigurationPromotion(loaded);
-console.log("configuration promotion (REPORT ONLY):", JSON.stringify({ items: promotion.length, deterministic: promotion.filter(entry => entry.status === "deterministic").length, conflicts: promotion.filter(entry => entry.status === "conflict").length }));
+console.log("product-settings promotion plan:", JSON.stringify({ items: promotion.length, deterministic: promotion.filter(entry => entry.status === "deterministic").length, conflicts: promotion.filter(entry => entry.status === "conflict").length }));
 const names = new Map<string, string>();
 const report = { generatedAt: new Date().toISOString(), summary: plan.summary, bulkCreatedRedundantToRetire: plan.bulkCreatedRedundant.map(v => v.offeringId), bulkCreatedKept: plan.bulkCreatedNotRedundant, legacyRedundantCount: plan.legacyRedundant.length, genuineExceptions: plan.exceptions.map(v => ({ offeringId: v.offeringId, itemId: v.itemId, oplocId: v.oplocId, reasons: v.reasons })), archivedItemOfferings: plan.archivedItemOfferings };
 console.log(JSON.stringify({ summary: plan.summary, exceptionReasons: plan.exceptions.reduce((acc: Record<string, number>, v) => { for (const r of v.reasons) acc[r] = (acc[r] || 0) + 1; return acc; }, {}) }, null, 1));
@@ -48,4 +48,12 @@ if (flag("--apply-archive-repair")) {
   const results = await retireOfferingRecords({ uid: "migration:hospitality-sparse-cleanup", name: "Hospitality sparse-model cleanup (approved by Derek)", role: "integration-admin", synthetic: true }, { operationId: "op-retire-archived-item-offerings-20261017", reason: "item-archived", targets: plan.archivedItemOfferings.map(v => ({ offeringId: v.offeringId, expectedVersion: v.version })) });
   console.log("archive repair:", JSON.stringify(results.reduce((acc: Record<string, number>, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {})));
   for (const r of results.filter(x => x.status === "failed")) console.log("FAILED", r.offeringId, r.message);
+}
+
+if (flag("--apply-promotion")) {
+  const deterministic = promotion.filter(entry => entry.status === "deterministic");
+  if (promotion.some(entry => entry.status === "conflict")) throw new Error("Promotion has conflicts; refusing to apply any of it.");
+  const results = await promoteProductSettings({ uid: "migration:hospitality-product-promotion", name: "Hospitality product-settings promotion (approved by Derek)", role: "integration-admin", synthetic: true }, { operationId: "op-promote-product-settings-20261017", targets: deterministic.map(entry => ({ itemId: entry.itemId, expectedVersion: entry.itemVersion, configuration: entry.configuration, noticeRequiredDays: entry.noticeRequiredDays, minimumGuests: entry.minimumGuests, minimumQuantity: entry.minimumQuantity, mode: entry.mode, sourceOfferingIds: entry.sourceOfferingIds })) });
+  console.log("promotion:", JSON.stringify(results.reduce((acc: Record<string, number>, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {})), "retired", results.reduce((n, r) => n + r.retired, 0), "kept", results.reduce((n, r) => n + r.kept, 0));
+  for (const r of results.filter(x => x.status === "failed")) console.log("FAILED", r.itemId, r.message);
 }

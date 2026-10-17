@@ -34,6 +34,7 @@ export function planOfferingMigration(input: MigrationInput, bulkOperationId?: s
   const today = input.today;
   const { rows } = buildCatalogueRows({ items: input.items, offerings: input.offerings, prices: input.prices, routing: input.routing, merges: input.merges, oplocs: input.oplocs, ...(today ? { today } : {}) });
   const rowById = new Map(rows.map(row => [row.itemId, row]));
+  const itemById = new Map(input.items.map(item => [item.canonicalId, item]));
   const recordById = new Map(input.offerings.map(offering => [offering.canonicalId, offering]));
   const createdByBulk = new Set(input.revisions.filter(revision => revision.version === 1 && revision.actorId === BULK_ALL_SITES_ACTOR && revision.reason === BULK_CREATED_REASON).map(revision => revision.canonicalId));
   const receiptSites = new Map<string, Set<string>>();
@@ -47,11 +48,12 @@ export function planOfferingMigration(input: MigrationInput, bulkOperationId?: s
       if (view.price.source === "overrides" && !view.price.redundant) reasons.push("site price override"); else if (view.price.source === "site_only") reasons.push("price with no company default");
       if ((view.minimum.source === "overrides" && !view.minimum.redundant) || view.minimum.source === "site_only") reasons.push("site minimum override");
       if (view.displayName || view.description) reasons.push("site wording");
-      if (view.mode === "quote_only") reasons.push("quote-only at this site");
+      if (view.mode !== (itemById.get(row.itemId)?.record.defaultOfferingMode === "quote_only" ? "quote_only" : "standard")) reasons.push("quote-only at this site");
       if (view.operationalAreaId) reasons.push("operational-area scope");
-      if (record.minimumGuests !== undefined || record.noticeRequiredDays !== undefined) reasons.push("notice/guests constraint");
+      const owner = itemById.get(row.itemId)!.record;
+      if ((record.minimumGuests !== undefined && record.minimumGuests !== owner.defaultMinimumGuests) || (record.noticeRequiredDays !== undefined && record.noticeRequiredDays !== owner.defaultNoticeRequiredDays)) reasons.push("notice/guests constraint");
       const configuration = (record.configuration || {}) as Record<string, unknown>;
-      if (Object.keys(configuration).some(key => key !== "displayName" && key !== "description")) reasons.push("booking configuration");
+      if (Object.keys(productConfiguration(record)).length && JSON.stringify(productConfiguration(record)) !== JSON.stringify(owner.configuration)) reasons.push("booking configuration");
       const evidence = createdByBulk.has(view.offeringId) && Boolean(receiptSites.get(row.itemId)?.has(view.oplocId));
       verdicts.push({ offeringId: view.offeringId, itemId: row.itemId, oplocId: view.oplocId, version: view.version, verdict: view.noEffect && reasons.length === 0 ? "redundant" : "exception", reasons, bulkCreated: evidence });
     }
@@ -68,23 +70,28 @@ export function planOfferingMigration(input: MigrationInput, bulkOperationId?: s
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// PROMOTION of item-intrinsic booking settings (configuration/choices, notice days, minimum guests) from legacy site Offerings to the Item.
-// REPORT ONLY. Legacy MNK Offerings carry these settings, which describe the PRODUCT, not the site; until promoted, every other site would
-// inherit price but not choices/notice. Deterministic when every Offering of an Item that states a value states the SAME value.
+// PROMOTION of product-level booking settings (configuration/choices, notice days, minimum guests, quote-only mode) from legacy site
+// Offerings to the canonical Item. Business decision: MNK has no special Hospitality product behaviour, so its product settings ARE the
+// company defaults. Deterministic when every Offering of an Item that states a value states the SAME value; conflicts are never guessed.
+// Prices, minimums and site wording are NOT product settings and are never promoted here.
 // ---------------------------------------------------------------------------------------------------------------------
-export type PromotionEntry = { itemId: string; status: "deterministic" | "conflict"; configuration?: Record<string, unknown>; noticeRequiredDays?: number; minimumGuests?: number; sourceOfferingIds: string[]; conflicts: string[] };
+export type PromotionEntry = { itemId: string; itemVersion: number; status: "deterministic" | "conflict"; configuration?: Record<string, unknown>; noticeRequiredDays?: number; minimumGuests?: number; minimumQuantity?: number; mode?: "quote_only"; sourceOfferingIds: string[]; conflicts: string[] };
+export const productConfiguration = (record: Record<string, unknown>) => { const rest = { ...((record.configuration || {}) as Record<string, unknown>) }; delete rest.displayName; delete rest.description; return rest; };
 export function planConfigurationPromotion(input: Pick<MigrationInput, "items" | "offerings">): PromotionEntry[] {
   const out: PromotionEntry[] = [];
   for (const item of input.items.filter(candidate => candidate.record.lifecycleState !== "archived")) {
-    const sources = input.offerings.filter(offering => offering.record.hospitalityMenuItemId === item.canonicalId && offering.record.lifecycleState !== "archived" && offering.record.offeringMode !== "quote_only");
-    const productConfig = (offering: CanonicalRecord) => { const rest = { ...((offering.record.configuration || {}) as Record<string, unknown>) }; delete rest.displayName; delete rest.description; return rest; };
-    const withSettings = sources.filter(offering => Object.keys(productConfig(offering)).length || offering.record.noticeRequiredDays !== undefined || offering.record.minimumGuests !== undefined);
+    const sources = input.offerings.filter(offering => offering.record.hospitalityMenuItemId === item.canonicalId && offering.record.lifecycleState !== "archived" && offering.record.available !== false && !offering.record.operationalAreaId);
+    // A minimum quantity is promoted only where the Item has NO company default minimum (it is then the only stated value); a differing minimum stays a site exception.
+    const promotesMinimum = item.record.defaultMinimumQuantity === undefined;
+    const withSettings = sources.filter(offering => Object.keys(productConfiguration(offering.record)).length || offering.record.noticeRequiredDays !== undefined || offering.record.minimumGuests !== undefined || offering.record.offeringMode === "quote_only" || (promotesMinimum && offering.record.minimumQuantity !== undefined));
     if (!withSettings.length) continue;
     const conflicts: string[] = []; const distinct = (values: unknown[]) => new Set(values.map(value => JSON.stringify(value)));
-    const configs = withSettings.map(productConfig).filter(value => Object.keys(value).length); if (distinct(configs).size > 1) conflicts.push("configuration differs between sites");
+    const configs = withSettings.map(offering => productConfiguration(offering.record)).filter(value => Object.keys(value).length); if (distinct(configs).size > 1) conflicts.push("configuration differs between sites");
     const notices = withSettings.map(offering => offering.record.noticeRequiredDays).filter(value => value !== undefined); if (distinct(notices).size > 1) conflicts.push("notice days differ between sites");
     const guests = withSettings.map(offering => offering.record.minimumGuests).filter(value => value !== undefined); if (distinct(guests).size > 1) conflicts.push("minimum guests differ between sites");
-    out.push({ itemId: item.canonicalId, status: conflicts.length ? "conflict" : "deterministic", ...(configs[0] ? { configuration: configs[0] } : {}), ...(notices[0] !== undefined ? { noticeRequiredDays: notices[0] as number } : {}), ...(guests[0] !== undefined ? { minimumGuests: guests[0] as number } : {}), sourceOfferingIds: withSettings.map(offering => offering.canonicalId), conflicts });
+    const minimums = promotesMinimum ? withSettings.map(offering => offering.record.minimumQuantity).filter(value => value !== undefined) : []; if (distinct(minimums).size > 1) conflicts.push("minimum quantity differs between sites");
+    const quote = sources.filter(offering => offering.record.offeringMode === "quote_only").length; if (quote && quote !== sources.length) conflicts.push("booking mode differs between sites");
+    out.push({ itemId: item.canonicalId, itemVersion: Number(item.record.version || 1), status: conflicts.length ? "conflict" : "deterministic", ...(configs[0] ? { configuration: configs[0] } : {}), ...(notices[0] !== undefined ? { noticeRequiredDays: notices[0] as number } : {}), ...(guests[0] !== undefined ? { minimumGuests: guests[0] as number } : {}), ...(minimums[0] !== undefined ? { minimumQuantity: minimums[0] as number } : {}), ...(quote && quote === sources.length ? { mode: "quote_only" as const } : {}), sourceOfferingIds: withSettings.map(offering => offering.canonicalId), conflicts });
   }
   return out;
 }

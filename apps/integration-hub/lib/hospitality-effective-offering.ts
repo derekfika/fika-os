@@ -14,7 +14,7 @@ export const CATALOGUE_PACKAGE_CONTRACT = "fika.hospitality-catalogue-package.v1
 export type PricePeriod = { amount: number; vatRate: number; from: string; to?: string };
 export type PackageItem = {
   id: string; name: string; category: string; description?: string;
-  defaultPrices: PricePeriod[]; defaultMinimumQuantity?: number; defaultNoticeRequiredDays?: number; defaultMinimumGuests?: number; configuration?: Record<string, unknown>;
+  defaultPrices: PricePeriod[]; defaultMinimumQuantity?: number; defaultNoticeRequiredDays?: number; defaultMinimumGuests?: number; defaultMode?: "standard" | "quote_only"; configuration?: Record<string, unknown>;
   dietaryInformation: string[]; allergenInformation: string[]; routing: string;
 };
 /** A sparse site exception. `available:false` removes the Item from that site; the other fields override company defaults. */
@@ -74,13 +74,14 @@ export function resolveHospitalityOffering(pkg: CataloguePackage, itemId: string
   if (tier.length > 1) return { available: false, reason: "ambiguous_exception" };
   const exception = tier[0];
   if (exception && exception.available === false) return { available: false, reason: "site_unavailable" };
-  const mode = exception?.mode ?? "standard";
+  const mode = exception?.mode ?? item.defaultMode ?? "standard";
   const constraints: EffectiveOffering["constraints"] = {
     ...((exception?.minimumQuantity ?? item.defaultMinimumQuantity) !== undefined ? { minimumQuantity: exception?.minimumQuantity ?? item.defaultMinimumQuantity } : {}),
     ...((exception?.minimumGuests ?? item.defaultMinimumGuests) !== undefined ? { minimumGuests: exception?.minimumGuests ?? item.defaultMinimumGuests } : {}),
     ...((exception?.noticeRequiredDays ?? item.defaultNoticeRequiredDays) !== undefined ? { noticeRequiredDays: exception?.noticeRequiredDays ?? item.defaultNoticeRequiredDays } : {}),
   };
-  const configuration = exception?.configuration ?? item.configuration;
+  // Item configuration is the company default; a site exception layers its own keys on top (wording keys never hide the product choices).
+  const configuration = exception?.configuration || item.configuration ? { ...(item.configuration || {}), ...(exception?.configuration || {}) } : undefined;
   const description = exception?.description ?? item.description;
   const base: Omit<EffectiveOffering, "price" | "quoteRequired"> = {
     offeringId: exception?.id ?? inheritedOfferingId(itemId, oplocId), itemId, name: exception?.displayName ?? item.name, ...(description ? { description } : {}), category: item.category,
@@ -104,8 +105,8 @@ export function resolveSiteCatalogue(pkg: CataloguePackage, oplocId: string, opt
 }
 
 /** An exception that states nothing beyond the defaults must not exist (it is retired, never stored as "available here"). */
-export function isRedundantException(exception: Pick<PackageException, "mode" | "available" | "operationalAreaId" | "minimumQuantity" | "minimumGuests" | "noticeRequiredDays" | "displayName" | "description" | "configuration"> & { prices: PricePeriod[] }, item: Pick<PackageItem, "defaultPrices" | "defaultMinimumQuantity"> & Partial<Pick<PackageItem, "defaultNoticeRequiredDays" | "defaultMinimumGuests">>, today: string) {
-  if (exception.available === false || exception.mode !== "standard" || exception.operationalAreaId) return false;
+export function isRedundantException(exception: Pick<PackageException, "mode" | "available" | "operationalAreaId" | "minimumQuantity" | "minimumGuests" | "noticeRequiredDays" | "displayName" | "description" | "configuration"> & { prices: PricePeriod[] }, item: Pick<PackageItem, "defaultPrices" | "defaultMinimumQuantity"> & Partial<Pick<PackageItem, "defaultNoticeRequiredDays" | "defaultMinimumGuests" | "defaultMode">>, today: string) {
+  if (exception.available === false || exception.mode !== (item.defaultMode ?? "standard") || exception.operationalAreaId) return false;
   if ((exception.minimumGuests !== undefined && exception.minimumGuests !== item.defaultMinimumGuests) || (exception.noticeRequiredDays !== undefined && exception.noticeRequiredDays !== item.defaultNoticeRequiredDays) || exception.displayName || exception.description) return false;
   if (exception.configuration && Object.keys(exception.configuration).length) return false;
   if (exception.minimumQuantity !== undefined && exception.minimumQuantity !== item.defaultMinimumQuantity) return false;

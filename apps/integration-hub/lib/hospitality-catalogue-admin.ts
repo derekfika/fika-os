@@ -161,7 +161,7 @@ function noEffect(record: Record<string, unknown>, ownPrices: CanonicalRecord[],
   const configuration = (record.configuration || {}) as Record<string, unknown>;
   const exception: PackageException = { id: text(record.canonicalId), itemId: text(record.hospitalityMenuItemId), oplocId: text(record.oplocId), ...(text(record.operationalAreaId) ? { operationalAreaId: text(record.operationalAreaId) } : {}), mode: record.offeringMode === "quote_only" ? "quote_only" : "standard", available: record.available !== false, prices: livePeriods(ownPrices.filter(price => price.record.hospitalityMenuOfferingId === record.canonicalId)), ...(typeof record.minimumQuantity === "number" ? { minimumQuantity: record.minimumQuantity } : {}), ...(typeof record.minimumGuests === "number" ? { minimumGuests: record.minimumGuests } : {}), ...(typeof record.noticeRequiredDays === "number" ? { noticeRequiredDays: record.noticeRequiredDays } : {}), ...(text(configuration.displayName) ? { displayName: text(configuration.displayName) } : {}), ...(text(configuration.description) ? { description: text(configuration.description) } : {}), ...(Object.keys(without(configuration, "displayName", "description")).length ? { configuration: without(configuration, "displayName", "description") } : {}) };
   const sameConfiguration = exception.configuration && JSON.stringify(exception.configuration) === JSON.stringify(item.record.configuration);
-  return isRedundantException(sameConfiguration ? { ...exception, configuration: undefined } : exception, { defaultPrices: livePeriods(itemPrices), defaultMinimumQuantity: typeof item.record.defaultMinimumQuantity === "number" ? item.record.defaultMinimumQuantity : undefined, defaultNoticeRequiredDays: typeof item.record.defaultNoticeRequiredDays === "number" ? item.record.defaultNoticeRequiredDays : undefined, defaultMinimumGuests: typeof item.record.defaultMinimumGuests === "number" ? item.record.defaultMinimumGuests : undefined }, today);
+  return isRedundantException(sameConfiguration ? { ...exception, configuration: undefined } : exception, { defaultPrices: livePeriods(itemPrices), defaultMinimumQuantity: typeof item.record.defaultMinimumQuantity === "number" ? item.record.defaultMinimumQuantity : undefined, defaultNoticeRequiredDays: typeof item.record.defaultNoticeRequiredDays === "number" ? item.record.defaultNoticeRequiredDays : undefined, defaultMinimumGuests: typeof item.record.defaultMinimumGuests === "number" ? item.record.defaultMinimumGuests : undefined, ...(item.record.defaultOfferingMode === "quote_only" ? { defaultMode: "quote_only" as const } : {}) }, today);
 }
 const retire = (ctx: Ctx, offering: CanonicalRecord, reason: "item-archived" | "redundant-default", note: string, record: Record<string, unknown> = offering.record) => stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, record), lifecycleState: "archived", retiredReason: reason }, offering, note);
 
@@ -611,6 +611,53 @@ export async function retireOfferingRecords(actor: Actor, spec: { operationId: s
         return { offeringId: target.offeringId, status: "retired" as const, message: "Retired." };
       }));
     } catch (error) { results.push({ offeringId: target.offeringId, status: "failed", message: (error as Error).message }); }
+  }
+  return results;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// GOVERNED PROMOTION of product-level booking settings from legacy site Offerings onto the canonical Item (one transaction per Item,
+// version-guarded, receipt-backed). Never overwrites a different existing Item default. Source records are stripped of what was promoted and
+// then retired if they state nothing else (their original content stays in the revision history); records that still carry a genuine
+// difference (site price, minimum, wording) are kept with their ids.
+// ---------------------------------------------------------------------------------------------------------------------
+export type PromotionTarget = { itemId: string; expectedVersion: number; configuration?: Record<string, unknown>; noticeRequiredDays?: number; minimumGuests?: number; minimumQuantity?: number; mode?: "quote_only"; sourceOfferingIds: string[] };
+export type PromotionResult = { itemId: string; status: "promoted" | "already_applied" | "failed"; message: string; retired: number; kept: number };
+export async function promoteProductSettings(actor: Actor, spec: { operationId: string; targets: PromotionTarget[] }): Promise<PromotionResult[]> {
+  assertPermission(actor, "hospitality.catalogue.manage");
+  if (!spec.operationId || spec.operationId.length < 8) throw problem("A promotion needs an operation id.");
+  const results: PromotionResult[] = [];
+  for (const target of [...spec.targets].sort((a, b) => a.itemId.localeCompare(b.itemId))) {
+    try {
+      results.push(await db.runTransaction(async tx => {
+        const ctx: Ctx = { tx, actor, now: new Date().toISOString() };
+        const receiptRef = audit().doc(`promote-${spec.operationId}-${crypto.createHash("sha256").update(target.itemId).digest("hex").slice(0, 24)}`);
+        const [receipt, itemSnapshot, children] = await Promise.all([readDoc(ctx, receiptRef), readDoc(ctx, canonical().doc(stableDocumentId(target.itemId))), itemChildren(ctx, target.itemId)]);
+        if (receipt.exists) return { itemId: target.itemId, status: "already_applied" as const, message: "Already applied by an earlier attempt of this operation.", retired: 0, kept: 0 };
+        const item = requireItem(itemSnapshot); expectVersion(item, target.expectedVersion, "This item");
+        if (isArchived(item)) throw problem("The item is archived.");
+        const ownPrices = await offeringPrices(ctx, children.offerings.map(offering => offering.canonicalId));
+        const existing = item.record;
+        const clash = (field: string, next: unknown) => existing[field] !== undefined && JSON.stringify(existing[field]) !== JSON.stringify(next);
+        if ((target.configuration && clash("configuration", target.configuration)) || (target.noticeRequiredDays !== undefined && clash("defaultNoticeRequiredDays", target.noticeRequiredDays)) || (target.minimumGuests !== undefined && clash("defaultMinimumGuests", target.minimumGuests)) || (target.minimumQuantity !== undefined && clash("defaultMinimumQuantity", target.minimumQuantity)) || (target.mode && clash("defaultOfferingMode", target.mode))) throw problem("The item already has a different company default for one of these settings; nothing was changed.", 409);
+        const promoted: Record<string, unknown> = { ...(target.configuration ? { configuration: target.configuration } : {}), ...(target.noticeRequiredDays !== undefined ? { defaultNoticeRequiredDays: target.noticeRequiredDays } : {}), ...(target.minimumGuests !== undefined ? { defaultMinimumGuests: target.minimumGuests } : {}), ...(target.minimumQuantity !== undefined ? { defaultMinimumQuantity: target.minimumQuantity } : {}), ...(target.mode ? { defaultOfferingMode: target.mode } : {}) };
+        const nextItem: CanonicalRecord = { ...item, record: { ...item.record, ...promoted } };
+        const sources = children.offerings.filter(offering => target.sourceOfferingIds.includes(offering.canonicalId) && offering.record.lifecycleState !== "archived");
+        let retired = 0, kept = 0; const today = ukBusinessDate();
+        for (const offering of sources) {
+          let record: Record<string, unknown> = { ...offering.record };
+          if (target.noticeRequiredDays !== undefined) record = without(record, "noticeRequiredDays");
+          if (target.minimumGuests !== undefined) record = without(record, "minimumGuests");
+          if (target.minimumQuantity !== undefined) record = without(record, "minimumQuantity");
+          if (target.configuration) { const configuration = { ...((record.configuration || {}) as Record<string, unknown>) }; for (const key of Object.keys(target.configuration)) delete configuration[key]; record = Object.keys(configuration).length ? { ...record, configuration } : without(record, "configuration"); }
+          if (noEffect(record, ownPrices, nextItem, children.itemPrices, today)) { retire(ctx, offering, "redundant-default", "Product settings promoted to the Item; this site record now states nothing else."); retired++; }
+          else { stage(ctx, "Hospitality Menu Offering", bump(ctx, record), offering, "Product settings promoted to the Item; remaining site differences kept."); kept++; }
+        }
+        stage(ctx, "Hospitality Menu Item", { ...bump(ctx, item.record), ...promoted }, item, "Product-level booking settings promoted from site records.");
+        tx.create(receiptRef, { action: "Hospitality Catalogue product settings promoted", entityReference: target.itemId, actorId: actor.uid, actorName: actor.name, timestamp: ctx.now, reason: `Promoted product-level booking settings of “${text(item.record.name)}” to the company item.`, details: JSON.parse(JSON.stringify({ promotionOperationId: spec.operationId, itemId: target.itemId, before: Object.fromEntries(Object.keys(promoted).map(key => [key, existing[key] ?? null])), after: promoted, sourceOfferingIds: target.sourceOfferingIds, retired, kept })) });
+        return { itemId: target.itemId, status: "promoted" as const, message: "Promoted.", retired, kept };
+      }));
+    } catch (error) { results.push({ itemId: target.itemId, status: "failed", message: (error as Error).message, retired: 0, kept: 0 }); }
   }
   return results;
 }

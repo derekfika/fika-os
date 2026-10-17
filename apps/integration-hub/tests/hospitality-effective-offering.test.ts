@@ -96,3 +96,11 @@ test("item-level booking defaults (notice, guests, configuration) reach every si
   assert.equal(isRedundantException({ mode: "standard", available: true, prices: [], noticeRequiredDays: 3, minimumGuests: 8 }, defaults, DATE), true, "restating the defaults is redundant");
   assert.equal(isRedundantException({ mode: "standard", available: true, prices: [], noticeRequiredDays: 4 }, defaults, DATE), false);
 });
+
+test("a site exception's configuration layers over the Item configuration: wording never hides the product choices", () => {
+  const p = pkg({ items: [item("i:1", { configuration: { servingInfo: "Serves 10", choices: [{ id: "c" }] } })], exceptions: [exception("i:1", "oploc:1", { configuration: { displayName: "House" }, displayName: "House" })] });
+  const r = resolve(p, "i:1", "oploc:1"); assert.ok(r.available);
+  if (r.available) assert.deepEqual(r.offering.configuration, { servingInfo: "Serves 10", choices: [{ id: "c" }], displayName: "House" });
+  const override = pkg({ items: [item("i:1", { configuration: { servingInfo: "Serves 10" } })], exceptions: [exception("i:1", "oploc:1", { configuration: { servingInfo: "Serves 20" } })] });
+  const o = resolve(override, "i:1", "oploc:1"); if (o.available) assert.deepEqual(o.offering.configuration, { servingInfo: "Serves 20" }, "a site key wins over the company default");
+});

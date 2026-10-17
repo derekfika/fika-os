@@ -113,3 +113,37 @@ test("a catalogue mutation invalidates and republishes the package deterministic
   const serverView = hospitalityPortalReadFromRecords([...(await children(itemId)), (await get(itemId))!, (await get(oplocId))!], { oplocId, serviceDate: ukBusinessDate() }).offerings;
   assert.equal(serverView.length, 0, "the server read path and the package resolver agree");
 });
+
+test("promotion moves product-level settings onto the Item, retires records that then state nothing, keeps genuine site differences and ids, never overwrites a different default, and is replay-safe", { skip: !enabled }, async () => {
+  const { promoteProductSettings } = await import("../lib/hospitality-catalogue-admin");
+  const { planConfigurationPromotion } = await import("../lib/hospitality-offering-migration");
+  const key = unique(); const itemId = await item(key, "promo"); const quoteItem = await item(key, "quote"); const clashItem = await item(key, "clash", { configuration: { servingInfo: "Different" } });
+  const config = { servingInfo: "Serves 10", choices: [] as unknown[] };
+  const plain = await offering(key, "plain", itemId, `oploc:sp-m-${key}`, { noticeRequiredDays: 3, minimumGuests: 8, configuration: config });
+  const wording = await offering(key, "wording", itemId, `oploc:sp-n-${key}`, { noticeRequiredDays: 3, configuration: { ...config, displayName: "House name" } });
+  const quote = await offering(key, "quote", quoteItem, `oploc:sp-m-${key}`, { offeringMode: "quote_only", noticeRequiredDays: 7 });
+  const clash = await offering(key, "clash", clashItem, `oploc:sp-m-${key}`, { configuration: config });
+  const read = async (ids: string[]) => ({ items: (await Promise.all(ids.map(get))) as CanonicalRecord[], offerings: (await Promise.all([plain, wording, quote, clash].map(get))) as CanonicalRecord[] });
+  const plan = planConfigurationPromotion(await read([itemId, quoteItem, clashItem]));
+  const entry = (id: string) => plan.find(candidate => candidate.itemId === id)!;
+  assert.equal(entry(itemId).status, "deterministic"); assert.equal(entry(itemId).noticeRequiredDays, 3); assert.equal(entry(itemId).minimumGuests, 8); assert.deepEqual(entry(itemId).configuration, config);
+  assert.equal(entry(quoteItem).mode, "quote_only");
+  const targets = plan.map(candidate => ({ itemId: candidate.itemId, expectedVersion: candidate.itemVersion, configuration: candidate.configuration, noticeRequiredDays: candidate.noticeRequiredDays, minimumGuests: candidate.minimumGuests, minimumQuantity: candidate.minimumQuantity, mode: candidate.mode, sourceOfferingIds: candidate.sourceOfferingIds }));
+  const results = await promoteProductSettings(admin, { operationId: `op-promote-${key}`, targets });
+  const status = (id: string) => results.find(result => result.itemId === id)!;
+  assert.equal(status(itemId).status, "promoted"); assert.equal(status(itemId).retired, 1); assert.equal(status(itemId).kept, 1, "the record with site wording stays");
+  assert.equal(status(quoteItem).status, "promoted"); assert.equal(status(quoteItem).retired, 1);
+  assert.equal(status(clashItem).status, "failed", "a different existing default is never overwritten"); assert.match(status(clashItem).message, /different company default/);
+  const promoted = (await get(itemId))!.record; assert.equal(promoted.defaultNoticeRequiredDays, 3); assert.equal(promoted.defaultMinimumGuests, 8); assert.deepEqual(promoted.configuration, config);
+  assert.equal((await get(quoteItem))!.record.defaultOfferingMode, "quote_only");
+  const retiredPlain = (await get(plain))!; assert.equal(retiredPlain.record.lifecycleState, "archived"); assert.equal(retiredPlain.record.retiredReason, "redundant-default"); assert.equal(retiredPlain.canonicalId, plain, "historical id preserved");
+  const keptWording = (await get(wording))!; assert.equal(keptWording.record.lifecycleState, "active"); assert.equal(keptWording.record.noticeRequiredDays, undefined); assert.deepEqual(keptWording.record.configuration, { displayName: "House name" }, "only site wording remains");
+  assert.equal((await get(clash))!.record.lifecycleState, "active", "the failed item's records are untouched");
+  const replay = await promoteProductSettings(admin, { operationId: `op-promote-${key}`, targets }); assert.equal(replay.find(result => result.itemId === itemId)!.status, "already_applied");
+  await assert.rejects(promoteProductSettings(viewer, { operationId: `op-view-${key}`, targets }), (error: Error & { status?: number }) => error.status === 403);
+  // effective behaviour at ANY site is now the canonical product behaviour
+  const all = [(await get(itemId))!, ...(await children(itemId)), (await get(`oploc:sp-m-${key}`))].filter(Boolean) as CanonicalRecord[];
+  const { hospitalityPortalReadFromRecords } = await import("../lib/hospitality-catalogue-service");
+  const atOther = hospitalityPortalReadFromRecords(all, { oplocId: "oploc:anywhere", serviceDate: ukBusinessDate() }).offerings as Array<Record<string, any>>;
+  assert.equal(atOther[0].constraints.noticeRequiredDays, 3); assert.equal(atOther[0].constraints.minimumGuests, 8); assert.deepEqual(atOther[0].configuration, config);
+});
