@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { applyPlan, assertApproval, buildPlan, firestoreValue, menuCatalogueSourceIdentity, sha256, validateJournal, validateResumableDestination, verifyFinalDestination, verifySavedPlan } from "./engine.mjs";
+import { JOURNAL_SCHEMA, applyPlan, assertApproval, buildPlan, createBootstrapJournal, firestoreValue, menuCatalogueSourceIdentity, sha256, validateJournal, validateResumableDestination, verifyFinalDestination, verifySavedPlan } from "./engine.mjs";
 
 const sv = stringValue => ({ stringValue });
 const record = (path, fields, updateTime = "2026-10-17T00:00:00Z") => ({ path, fields, updateTime });
@@ -114,10 +114,12 @@ test("source inventory hash includes missing-parent placeholders without countin
 
 test("CLI recursively traverses showMissing placeholders and verifies the final destination exact set", () => {
   const cli = readFileSync(new URL("./cli.mjs", import.meta.url), "utf8");
+  const applyRunner = readFileSync(new URL("./governed-apply.mjs", import.meta.url), "utf8");
   assert.match(cli, /showMissing:\s*"true"/);
   assert.match(cli, /const missing = document\.fields === undefined/);
   assert.match(cli, /listCollectionIds\(project, documentPath\)/);
-  assert.match(cli, /verifyFinalDestination\(approvedPlan, destinationAfter\)/);
+  assert.match(cli, /runGovernedApply\(\{/);
+  assert.match(applyRunner, /verifyFinalDestination\(plan, destinationAfter\)/);
 });
 
 test("final destination verification rejects missing, extra, changed and placeholder paths", () => {
@@ -140,7 +142,9 @@ test("non-empty destination is an apply-blocking invariant even without path col
 test("journal validation binds project pair, plan and each verified action", () => {
   const plan = buildPlan(source([record("integrationHubCanonical/item:1", {})]), destination([]));
   const action = plan.actions[0];
-  const journal = { schema: "fika-firestore-bootstrap-journal.v1", sourceProject: plan.sourceProject, destinationProject: plan.destinationProject, planHash: plan.planHash, entries: { [action.path]: { path: action.path, sourceHash: action.sourceHash, targetHash: action.targetHash, transforms: [], status: "created-and-verified" } } };
+  const journal = createBootstrapJournal(plan);
+  journal.entries[action.path] = { path: action.path, sourceHash: action.sourceHash, targetHash: action.targetHash, transforms: [], status: "created-and-verified" };
+  assert.equal(journal.schema, JOURNAL_SCHEMA);
   assert.doesNotThrow(() => validateJournal(journal, plan));
   assert.throws(() => validateJournal({ ...journal, destinationProject: "attacker-project" }, plan), /identity/);
   assert.throws(() => validateJournal({ ...journal, entries: { ...journal.entries, "fikaBookings/hidden": { path: "fikaBookings/hidden", status: "created-and-verified" } } }, plan), /unauthorized/);

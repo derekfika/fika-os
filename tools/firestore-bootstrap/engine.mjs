@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 export const PLAN_SCHEMA = "fika-firestore-bootstrap-plan.v1";
+export const JOURNAL_SCHEMA = "fika-firestore-bootstrap-journal.v2";
 export const SOURCE_PROJECT = "fika-os-dev";
 export const DESTINATION_PROJECT = "fika-os";
 
@@ -222,8 +223,28 @@ export function verifySavedPlan(saved, freshPlan, args, env) {
   return freshPlan;
 }
 
+export function verifyApprovedPlan(saved, args, env) {
+  if (!saved || typeof saved !== "object" || !saved.planHash) throw new Error("Saved plan is missing its approved planHash.");
+  const { planHash, ...body } = saved;
+  if (sha256(body) !== planHash) throw new Error("Saved plan body does not match its embedded planHash.");
+  if (saved.schema !== PLAN_SCHEMA) throw new Error(`Saved plan schema must be ${PLAN_SCHEMA}.`);
+  assertApproval(saved, args, env);
+  return saved;
+}
+
+export function createBootstrapJournal(plan) {
+  return {
+    schema: JOURNAL_SCHEMA,
+    sourceProject: plan.sourceProject,
+    destinationProject: plan.destinationProject,
+    sourceHash: plan.sourceHash,
+    planHash: plan.planHash,
+    entries: {},
+  };
+}
+
 export function validateJournal(journal, plan) {
-  if (!journal || journal.schema !== "fika-firestore-bootstrap-journal.v1" || journal.planHash !== plan.planHash || journal.sourceProject !== plan.sourceProject || journal.destinationProject !== plan.destinationProject) throw new Error("Journal identity does not match this plan and project pair.");
+  if (!journal || journal.schema !== JOURNAL_SCHEMA || journal.planHash !== plan.planHash || journal.sourceHash !== plan.sourceHash || journal.sourceProject !== plan.sourceProject || journal.destinationProject !== plan.destinationProject) throw new Error("Journal identity does not match this plan and project pair.");
   if (!journal.entries || typeof journal.entries !== "object" || Array.isArray(journal.entries)) throw new Error("Journal entries are malformed.");
   const allowed = new Map(plan.actions.filter(item => item.action.startsWith("create")).map(item => [item.path, item]));
   for (const [path, entry] of Object.entries(journal.entries)) {
@@ -267,6 +288,8 @@ export async function applyPlan(plan, adapters, journal = {}) {
 
 export function validateResumableDestination(plan, inventory) {
   if (inventory.project !== DESTINATION_PROJECT) throw new Error(`Expected destination project ${DESTINATION_PROJECT}.`);
+  const placeholders = [...(inventory.placeholders || [])].map(item => typeof item === "string" ? item : item.path);
+  if (placeholders.length) throw new Error(`Destination contains ${placeholders.length} missing-parent placeholder(s) and cannot be resumed safely.`);
   const expected = new Map(plan.destinationBaseline.map(item => [item.path, item.hash]));
   const allowedNew = new Map(plan.actions.filter(item => item.action.startsWith("create")).map(item => [item.path, item.targetHash]));
   for (const record of inventory.records || []) {

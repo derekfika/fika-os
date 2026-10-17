@@ -5,16 +5,11 @@ import path from "node:path";
 import {
   DESTINATION_PROJECT,
   SOURCE_PROJECT,
-  applyPlan,
-  assertApproval,
   buildPlan,
   planPolicy,
-  sourceStateHash,
-  validateResumableDestination,
-  validateJournal,
-  verifyFinalDestination,
-  verifySavedPlan,
+  verifyApprovedPlan,
 } from "./engine.mjs";
+import { runGovernedApply } from "./governed-apply.mjs";
 
 const args = process.argv.slice(2);
 const apply = args.includes("--apply");
@@ -152,34 +147,39 @@ let destination;
 let saved;
 if (apply) {
   saved = JSON.parse(await readFile(arg("--plan") || output, "utf8"));
+  const approvedPlan = verifyApprovedPlan(saved, { apply, planHash: arg("--plan-hash") }, process.env);
   destination = await inventory(DESTINATION_PROJECT);
-} else destination = await inventory(DESTINATION_PROJECT);
-const plan = buildPlan(source, destination);
-if (apply) {
-  const approvedPlan = verifySavedPlan(saved, plan, { apply, planHash: arg("--plan-hash") }, process.env);
-  if (sourceStateHash(source) !== approvedPlan.sourceHash) throw new Error("Fresh source state does not match the reviewed plan. Re-inventory and review before proceeding.");
-  const resume = validateResumableDestination(approvedPlan, destination);
   const journalRoot = path.join(process.env.LOCALAPPDATA || tmpdir(), "FIKA", "firestore-bootstrap", "journals");
   const journalPath = path.join(journalRoot, `${approvedPlan.planHash}.json`);
-  let journal = { schema: "fika-firestore-bootstrap-journal.v1", sourceProject: approvedPlan.sourceProject, destinationProject: approvedPlan.destinationProject, planHash: approvedPlan.planHash, entries: {} };
+  let journal;
+  let journalPresent = false;
   try {
     const journalStat = await lstat(journalPath);
     if (journalStat.isSymbolicLink() || !journalStat.isFile()) throw new Error("Refusing a journal path that is not a regular local file.");
     journal = JSON.parse(await readFile(journalPath, "utf8"));
+    journalPresent = true;
   } catch (error) { if (error.code !== "ENOENT") throw error; }
-  const entries = validateJournal(journal, approvedPlan);
-  await applyPlan(approvedPlan, {
+  const result = await runGovernedApply({
+    savedPlan: approvedPlan,
+    args: { apply, planHash: arg("--plan-hash") },
+    env: process.env,
+    sourceInventory: source,
+    destinationInventory: destination,
+    journal,
+    journalPresent,
+    adapters: {
     readSource: documentPath => readDocument(SOURCE_PROJECT, documentPath),
     readDestination: documentPath => readDocument(DESTINATION_PROJECT, documentPath),
     createDestination,
-    async saveJournal(value) { journal.entries = value; await saveJournalAtomic(journalPath, journal); },
-  }, entries);
-  const sourceAfter = await inventory(SOURCE_PROJECT);
-  if (sourceStateHash(sourceAfter) !== approvedPlan.sourceHash) throw new Error("Source changed during apply. The completed journal is preserved; stop and review before any retry.");
-  const destinationAfter = await inventory(DESTINATION_PROJECT);
-  const finalDestinationVerification = verifyFinalDestination(approvedPlan, destinationAfter);
-  console.log(JSON.stringify({ mode: "apply", planHash: approvedPlan.planHash, verifiedResume: resume, finalDestinationVerification, journalPath }, null, 2));
+    },
+    async refreshSourceInventory() { return inventory(SOURCE_PROJECT); },
+    async refreshDestinationInventory() { return inventory(DESTINATION_PROJECT); },
+    async persistJournal(value) { await saveJournalAtomic(journalPath, value); },
+  });
+  console.log(JSON.stringify({ mode: "apply", planHash: result.planHash, verifiedResume: result.verifiedResume, finalDestinationVerification: result.finalDestinationVerification, journalPath }, null, 2));
 } else {
+  destination = await inventory(DESTINATION_PROJECT);
+  const plan = buildPlan(source, destination);
   const report = { ...plan, inventoryGeneratedAt: source.generatedAt, sourceCollectionCount: source.collectionCount, destinationCollectionCount: destination.collectionCount, policy: planPolicy };
   await writeFile(output, JSON.stringify(plan, null, 2), { mode: 0o600 });
   console.log(JSON.stringify({ mode: "dry-run", inventoryGeneratedAt: source.generatedAt, sourceProject: SOURCE_PROJECT, destinationProject: DESTINATION_PROJECT, sourceDocumentCount: plan.sourceDocumentCount, destinationDocumentCount: plan.destinationDocumentCount, sourceCollectionCount: source.collectionCount, destinationCollectionCount: destination.collectionCount, sourcePlaceholderCount: source.placeholderCount, destinationPlaceholderCount: destination.placeholderCount, retainedCount: plan.retainedCount, excludedCount: plan.excludedCount, retainedByRoot: plan.retainedByRoot, excludedByReason: plan.excludedByReason, transformedByRule: plan.transformedByRule, invariantProblems: plan.invariantProblems, planHash: plan.planHash, sourceHash: plan.sourceHash, planPath: output, policy: report.policy }, null, 2));
