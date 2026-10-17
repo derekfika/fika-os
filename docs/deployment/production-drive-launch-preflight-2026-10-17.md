@@ -101,3 +101,80 @@ Current safety readback: Hub runtime retains `roles/datastore.user`; Menu, CPU, 
 | Hospitality Booking | RCoA and One Angel Court require distinct dashboard folder settings; Angel Court tablet requires the approved Slides template | BLOCKED for the requested routing until the two settings documents are created; RCoA menu template and MNK remain deferred |
 | Logistics | No Drive requirement in the production config | READY from the Drive gate |
 | Delivered-In | Site menu document generation requires configured owner, output folder, and template; none is approved in production | Base app READY; document generation deferred/fail-closed |
+
+## Governed Hospitality Drive settings write — 2026-10-17
+
+The two approved production dashboard settings records were created after confirming both target documents and the deterministic audit receipt were absent. The write used Derek's active `derek@fikacatering.com` gcloud identity, matched to the already bound production AUTHMOD identity `authid:32fa3852-01d6-475f-bc7c-3204b3cdbdf7` and its production Firebase UID. No staging identity data or settings were read into the write plan. The production-only command is dry-run by default and refuses any non-Derek account, existing target, invalid identity binding, changed `fullAccess`, or unapproved folder/template combination.
+
+The schema is the existing `DashboardQuoteSettings` contract in `apps/integration-hub/lib/quote-engine.ts`, stored in `fikaDashboardQuoteSettings`. Equivalent staging records were read only to compare field names and metadata/version shape; their Drive IDs, timestamps, and actors were not used or recorded. The reader derives `rcoa-hospitality` from site `rcoa`, and maps `angel-court` to `angel-court-hospitality`; each is read by the SHA-256 of its dashboard ID. The service defaults were preserved, `version` advanced from 1 to 2, and the authenticated actor's Firebase UID plus one consistent operation timestamp were set. Each folder category remains a distinct per-dashboard field; no generic Drive root was added.
+
+RCoA, path `fikaDashboardQuoteSettings/f43545c4a4a76ad4b151a36c0e0a2f865542cb913830c389c31426b59312bbca`, exact created body:
+
+```json
+{
+  "dashboardId": "rcoa-hospitality",
+  "version": 2,
+  "managementFee": { "mode": "fixed", "value": 0, "label": "Management fee" },
+  "deliveryCharge": { "enabled": true, "amount": 35, "label": "CPU delivery charge" },
+  "labourRates": [
+    { "id": "chef", "label": "Chef" },
+    { "id": "foh-assistant", "label": "FOH Assistant" },
+    { "id": "kp", "label": "KP" }
+  ],
+  "vatRate": 0.2,
+  "updatedBy": "BsBKmmAxZPckT7aP7tKtUVgDNg92",
+  "googleQuoteFolderId": "1SMd9V_3wTwLAKpXJxj0VacDosRsJBFKR",
+  "googleMatrixFolderId": "1-RuVcoHccoKDuk3kBym-5n3RuF9ncn3X",
+  "googleMenuFolderId": "1dEY_-fr_MD1iZmIZ0hfzaDcBhpFPz1Ij",
+  "updatedAt": "2026-10-17T18:56:37.804Z"
+}
+```
+
+One Angel Court, path `fikaDashboardQuoteSettings/c41775be78cd0b323322ed9a111db9d8565b4fa6b08f34e69937410b7bc5ba12`, exact created body:
+
+```json
+{
+  "dashboardId": "angel-court-hospitality",
+  "version": 2,
+  "managementFee": { "mode": "percentage", "value": 8, "label": "Angel Court management fee" },
+  "deliveryCharge": { "enabled": true, "amount": 35, "label": "CPU delivery charge" },
+  "buildingCharges": {
+    "enabled": true,
+    "housekeeping": { "hourly": 23.68, "label": "Housekeeping" },
+    "security": { "hourly": 29.95, "minimumHours": 8, "label": "Security" },
+    "aircon": { "hourly": 200, "afterHour": 19, "label": "Aircon after 7pm" },
+    "venueHire": { "enabled": false, "amount": 1000, "label": "Venue hire" }
+  },
+  "labourRates": [
+    { "id": "chef", "label": "Chef" },
+    { "id": "foh-assistant", "label": "FOH Assistant" },
+    { "id": "kp", "label": "KP" }
+  ],
+  "vatRate": 0.2,
+  "updatedBy": "BsBKmmAxZPckT7aP7tKtUVgDNg92",
+  "googleQuoteFolderId": "18dLsE5Xatj5v6BnxOZFVYspJRWPRx5bO",
+  "googleMatrixFolderId": "1H3U3JxbECLYfgUSVJxkeQfI3CQ5ooD6X",
+  "googleMenuFolderId": "1opIa9eW5OPAkD4zQcwiMvTmmc36U0jRc",
+  "googleMenuTemplateId": "1bkaXTTCStSDqo_YZOCnTZbHzaAzzzIAWIL6ooS1EEGw",
+  "updatedAt": "2026-10-17T18:56:37.804Z"
+}
+```
+
+One receipt was written in the same atomic Firestore commit at `integrationHubGovernanceAudit/hospitality-drive-settings-747ef0aa3721a6cabf0e853ea8e24dc52058476f6db61862a1e28d5bbd7b91e8`, action `Hospitality dashboard Drive settings created`, actor Derek Buckley. Total: two settings documents plus one governance receipt, three Firestore document writes in one create-only commit. The script then read all three records back and verified exact body equality. Both settings were subsequently confirmed to be read at their existing deterministic paths; the deployed reader has no staging fallback and falls back only to its in-code defaults if a dashboard document is absent.
+
+Post-write read-only Drive checks used the production DWD credential with only `https://www.googleapis.com/auth/drive`: all six configured folders remain owned by their delegated owner, untrashed folders with `canAddChildren=true`; the One Angel Court tablet asset remains an untrashed Google Slides presentation owned by the delegated owner with `canCopy=true`. No Drive write was made. RCoA menu generation remains deferred (no approved template mapping); Angel Court flat/tent templates remain absent/deferred.
+
+### Updated Drive-specific cutover classification
+
+| App | Drive gate status | Boundary |
+|---|---|---|
+| Integration Hub | READY for this Drive gate | Approved RCoA and Angel Court group-quote roots are already configured; Hub writer remains active. |
+| Hospitality Booking | READY for configured RCoA/Angel Court routing | Quote, allergen, and menu folders resolve per dashboard. RCoA menu generation and Angel Court flat/tent templates remain deferred/fail-closed. |
+| Menu Planning | READY for base/package path | No Drive-specific requirement; assess other cutover gates separately. |
+| CPU Production | READY for base app; allergen-matrix Drive materialization DEFERRED | No approved production CPU owner/output root was supplied; signed matrix routing remains fail-closed. |
+| Delivered-In | READY for base app; site-menu document generation DEFERRED | No approved production owner/output/template was supplied; only that document feature remains deferred. |
+| Logistics | READY for this Drive gate | No Drive requirement in production config; assess other cutover gates separately. |
+
+Safety readback after the commit: Hub retains its existing Firestore writer; Menu, CPU, Hospitality, Logistics, and Delivered-In remain without `roles/datastore.user`. All three recovery jobs remain PAUSED; production email flags remain false; no mailer secret was found. This operation touched only the two approved settings documents and one governance receipt: AUTHMOD policy, staging, Drive content, application deployments, and other app writers were unchanged.
+
+The live AUTHMOD readback confirmed Derek's active organisation-scoped `integration-hub`/`authmod` `Administer` grant, the same effective authority used by the governed settings route's `canonical.edit` check. The committed CLI now also requires that grant before any future apply. Validation performed: one-off CLI dry-run and production create-only apply/read-back; staging field-shape comparison only; Drive DWD read-only metadata preflight; project writer/Scheduler/email readback; `node --check` for the CLI; 17 focused quote-engine tests; `git diff --check`. No app was deployed and nothing was pushed.
