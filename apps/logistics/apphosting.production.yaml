@@ -1,0 +1,45 @@
+# Firebase App Hosting production environment for Logistics.
+# Production backend root: apps/logistics.
+env:
+  - variable: FIKA_RUNTIME_MODE
+    value: production
+    availability: [BUILD, RUNTIME]
+  - variable: FIREBASE_PROJECT_ID
+    value: fika-os
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyCFryGfpWmJ52Zqikk3v1AozINumPeE-TE
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: fika-os.firebaseapp.com
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: fika-os
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: 1:397503564317:web:31703e57e01816e83e54f4
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_ALLOWED_EMAIL_DOMAINS
+    value: fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_ALLOWED_APP_ORIGINS
+    value: https://hub.fikacatering.com,https://hospitality.fikacatering.com,https://cpu.fikacatering.com,https://menu-planning.fikacatering.com,https://logistics.fikacatering.com,https://delivered-in.fikacatering.com,https://fika-os-prod-hub--fika-os.europe-west4.hosted.app,https://fika-os-prod-hospitality--fika-os.europe-west4.hosted.app,https://fika-os-prod-cpu--fika-os.europe-west4.hosted.app,https://fika-os-prod-menu--fika-os.europe-west4.hosted.app,https://fika-os-prod-logistics--fika-os.europe-west4.hosted.app,https://fika-os-prod-deliveredin--fika-os.europe-west4.hosted.app
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_SESSION_COOKIE_DOMAIN
+    value: .fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_HUB_BASE_URL
+    value: https://fika-os-prod-hub--fika-os.europe-west4.hosted.app
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIKA_HUB_URL
+    value: https://hub.fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_CPU_BASE_URL
+    value: https://fika-os-prod-cpu--fika-os.europe-west4.hosted.app
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIKA_CPU_URL
+    value: https://cpu.fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_INTERNAL_API_TOKEN
+    secret: FIKA_INTERNAL_API_TOKEN
+    availability: [RUNTIME]

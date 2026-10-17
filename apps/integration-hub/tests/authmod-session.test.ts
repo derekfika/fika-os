@@ -12,7 +12,7 @@ import { translateAuthmodFirestoreError } from "../lib/authmod-core/firestore-re
 
 const actor: AuthPrincipal = { type: "interactive", id: "admin", displayName: "Test admin", email: "admin@fikacatering.com", identityKind: "person" };
 const decoded = (overrides: Record<string, unknown> = {}) => ({ uid: "firebase:uid", email: "user@fikacatering.com", email_verified: true, auth_time: Math.floor(Date.now() / 1000), ...overrides }) as never;
-const request = (cookie?: string) => ({ cookies: { get: (name: string) => name === "fika_os_session" && cookie ? { value: cookie } : undefined } });
+const request = (cookie?: string) => ({ cookies: { get: (name: string) => name === sessionCookieConfig().name && cookie ? { value: cookie } : undefined } });
 
 test("session cookie exchange uses Firebase session-cookie API and bounded lifetime", async () => {
   let received = 0;
@@ -54,6 +54,37 @@ test("staging session cookie is shared across FIKA custom subdomains", () => {
     delete process.env.FIREBASE_AUTH_EMULATOR_HOST;
     process.env.FIKA_SESSION_COOKIE_DOMAIN = ".fikacatering.com";
     assert.deepEqual(cookieOptions(), { httpOnly: true, path: "/", sameSite: "lax", secure: true, maxAge: sessionCookieConfig().maxAge, domain: ".fikacatering.com" });
+  } finally {
+    for (const [key, value] of Object.entries({ FIKA_RUNTIME_MODE: prior.mode, FIREBASE_PROJECT_ID: prior.project, FIKA_SESSION_COOKIE_DOMAIN: prior.domain, FIRESTORE_EMULATOR_HOST: prior.firestore, FIREBASE_AUTH_EMULATOR_HOST: prior.auth })) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+});
+
+test("production and staging sessions use isolated cookie names while preserving hosted cookie attributes", () => {
+  const prior = { mode: process.env.FIKA_RUNTIME_MODE, project: process.env.FIREBASE_PROJECT_ID, domain: process.env.FIKA_SESSION_COOKIE_DOMAIN, firestore: process.env.FIRESTORE_EMULATOR_HOST, auth: process.env.FIREBASE_AUTH_EMULATOR_HOST };
+  try {
+    delete process.env.FIRESTORE_EMULATOR_HOST;
+    delete process.env.FIREBASE_AUTH_EMULATOR_HOST;
+    process.env.FIKA_SESSION_COOKIE_DOMAIN = ".fikacatering.com";
+    process.env.FIKA_RUNTIME_MODE = "staging";
+    process.env.FIREBASE_PROJECT_ID = "fika-os-dev";
+    const staging = sessionCookieConfig();
+    assert.equal(staging.name, "fika_os_session_staging");
+    assert.deepEqual(cookieOptions(), { httpOnly: true, path: "/", sameSite: "lax", secure: true, maxAge: staging.maxAge, domain: ".fikacatering.com" });
+    process.env.FIKA_RUNTIME_MODE = "production";
+    process.env.FIREBASE_PROJECT_ID = "fika-os";
+    const production = sessionCookieConfig();
+    assert.equal(production.name, "fika_os_session");
+    assert.notEqual(production.name, staging.name);
+    assert.deepEqual(cookieOptions(), { httpOnly: true, path: "/", sameSite: "lax", secure: true, maxAge: production.maxAge, domain: ".fikacatering.com" });
+    process.env.FIKA_RUNTIME_MODE = "local";
+    process.env.FIREBASE_PROJECT_ID = "fika-os-local";
+    delete process.env.FIKA_SESSION_COOKIE_DOMAIN;
+    const local = sessionCookieConfig();
+    assert.equal(local.name, "fika_os_session");
+    assert.equal(cookieOptions().secure, false);
+    assert.equal("domain" in cookieOptions(), false);
   } finally {
     for (const [key, value] of Object.entries({ FIKA_RUNTIME_MODE: prior.mode, FIREBASE_PROJECT_ID: prior.project, FIKA_SESSION_COOKIE_DOMAIN: prior.domain, FIRESTORE_EMULATOR_HOST: prior.firestore, FIREBASE_AUTH_EMULATOR_HOST: prior.auth })) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
