@@ -1,6 +1,15 @@
 # Production cutover preparation — 2026-10-17
 
-## Decision
+## Controlled application cutover attempt — Menu Planning held
+
+- Starting `origin/main`: `f98cd5d999853866c4904f7631d21eb997a256a3`. The approved cutover branch was pushed at release SHA `35adc301a6682ed47f1a7791e5c6375d86e4f4b9`; `origin/main` was unchanged.
+- Only `fika-os-prod-menu` was deployed. Build `build-2026-10-17-001` reached `READY`; rollout `build-2026-10-17-001` reached `SUCCEEDED`; source commit is the exact approved SHA. Runtime revision: `fika-os-prod-menu-build-2026-10-17-001` (100% traffic).
+- Hosted URL and `menuplanner.fikacatering.com` returned HTTP 200. `/api/build-info` returned app `menu-planning` and the approved SHA. Unauthenticated catalogue API access returned `FIKA_SESSION_MISSING` (401), as expected. The available in-app browser had no signed-in Hub tab, so authenticated catalogue/package access could not be verified.
+- Blocking smoke failure: the deployed HTML referenced Next static CSS/JS assets, and the five sampled asset URLs returned HTTP 404. The app is therefore not ready for use. The rollout stopped here; CPU, Hospitality, Logistics and Delivered-In were not deployed.
+- Menu runtime `fika-prod-menu@fika-os.iam.gserviceaccount.com` remains without `roles/datastore.user` (only `roles/firebaseapphosting.computeRunner` was present). No writer was restored. No production business writes were performed by this task. Hub remained HTTP 200; recovery jobs remained PAUSED; email remained explicitly `false`, with no mailer secret.
+- No code/config changes were made. Follow-up requires diagnosing/fixing the static asset serving failure, redeploying the exact approved release after any necessary approval of a changed SHA, then rerunning authenticated read-only smoke before considering writer restoration or the next app.
+
+## Initial preparation decision
 
 **HOLD — production is not ready for rollout.** Production Authentication/Google sign-in and Workspace DWD still need administrator setup. All six live App Hosting custom-domain mappings are active, but this task had to align the prepared production YAML hostnames to those live mappings. The production Auth configuration read returned HTTP 403 for the current operator, so its provider/domain state could not be confirmed automatically. No App Hosting application rollout was started.
 
