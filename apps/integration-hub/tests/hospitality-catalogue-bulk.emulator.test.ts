@@ -27,7 +27,7 @@ const rejects = (promise: Promise<unknown>, pattern: RegExp) => assert.rejects(p
 
 async function world() {
   const key = unique();
-  const oplocs = [await seed("OPLOC", `oploc:bulk-${key}-a`, { approvedName: `Alpha ${key}`, lifecycleState: "active" }), await seed("OPLOC", `oploc:bulk-${key}-b`, { approvedName: `Bravo ${key}`, lifecycleState: "active" }), await seed("OPLOC", `oploc:bulk-${key}-c`, { approvedName: `Charlie ${key}`, lifecycleState: "active" })];
+  const oplocs = [await seed("OPLOC", `oploc:bulk-${key}-a`, { approvedName: `Alpha ${key}`, lifecycleState: "active", hospitalityEnabled: true }), await seed("OPLOC", `oploc:bulk-${key}-b`, { approvedName: `Bravo ${key}`, lifecycleState: "active", hospitalityEnabled: true }), await seed("OPLOC", `oploc:bulk-${key}-c`, { approvedName: `Charlie ${key}`, lifecycleState: "active", hospitalityEnabled: true })];
   const retired = await seed("OPLOC", `oploc:bulk-${key}-old`, { approvedName: `Retired ${key}`, lifecycleState: "merged", mergedIntoOplocId: oplocs[0] });
   const items: string[] = [];
   for (const [index, route] of [["x", ["hospitality"]], ["y", ["sandwiches"]], ["z", []]] as const) {
@@ -80,13 +80,17 @@ test("bulk sites: add, remove and replace change availability only; overrides, h
   assert.equal(rx.offerings.find(offering => offering.oplocId === a)!.price.effective?.amount, 3.9, "re-enabled Offering kept its override");
   assert.equal(rx.offerings.filter(offering => offering.oplocId === a).length, 1, "no duplicate Offering");
   const retiredAttempt = await runBulkCatalogueUpdate(admin, await w.fresh([x], { sites: { mode: "add", oplocIds: [w.retired] } }));
-  assert.equal(retiredAttempt.results[0].status, "failed"); assert.match(retiredAttempt.results[0].message, /not an active governed location/); assert.equal(retiredAttempt.failed, 1);
+  assert.equal(retiredAttempt.results[0].status, "failed"); assert.match(retiredAttempt.results[0].message, /not an active Hospitality-enabled location/); assert.equal(retiredAttempt.failed, 1);
   await rejects(runBulkCatalogueUpdate(admin, w.spec({ sites: { mode: "replace", oplocIds: [] } }, [x])), /at least one site/);
 });
 
 test("Select all sites is driven by the live registry: retired locations are flagged out", { skip: !enabled }, async () => {
   const w = await world(); const payload = await loadCataloguePayload(admin);
   for (const id of w.oplocs) { const site = payload.oplocs.find(entry => entry.oplocId === id)!; assert.equal(site.active, true); assert.equal(site.hospitality, true); }
+  const unmarked = await seed("OPLOC", `oploc:bulk-${w.key}-plain`, { approvedName: `Unmarked ${w.key}`, lifecycleState: "active" });
+  const plain = (await loadCataloguePayload(admin)).oplocs.find(entry => entry.oplocId === unmarked)!; assert.equal(plain.active, true); assert.equal(plain.hospitality, false, "an active location without the marker is not a Hospitality site");
+  const refused = await runBulkCatalogueUpdate(admin, await w.fresh([w.items[0]], { sites: { mode: "add", oplocIds: [unmarked] } }));
+  assert.equal(refused.results[0].status, "failed"); assert.match(refused.results[0].message, /Hospitality-enabled/, "the server enforces the rule, not just the picker");
   const retired = payload.oplocs.find(entry => entry.oplocId === w.retired)!; assert.equal(retired.active, false); assert.equal(retired.hospitality, false);
 });
 

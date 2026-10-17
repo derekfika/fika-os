@@ -180,7 +180,7 @@ export const SchemaCatalogue: CatalogueSchema[] = [
     { name: "lifecycleState", label: "Lifecycle", valueType: "string", required: true, editable: true, values: ["active", "archived"], description: "Archive preserves allocation history." },
   ]),
   schema("OPLOC", "Operational Location", "Stable Operational Location identity.", [
-    { name: "approvedName", label: "Approved name", valueType: "string", required: true, editable: true, description: "Approved human-readable Operational Location name." },
+    { name: "approvedName", label: "Approved name", valueType: "string", required: true, editable: true, description: "Approved human-readable Operational Location name." }, { name: "hospitalityEnabled", label: "Hospitality site", valueType: "boolean", required: false, editable: true, description: "Governed capability marker: the location offers Hospitality catering and is selectable in the Hospitality catalogue. Absent means not enabled." },
     { name: "primaryLocationType", label: "Primary Location Type", valueType: "string", required: true, editable: false, values: ["Site", "Venue"], description: "Current governed classification. Operational functions are not Location Types." },
     { name: "locationTypeHistory", label: "Location Type history", valueType: "owned-fields", required: true, editable: false, description: "Effective-dated approved classification history; exactly one assignment remains current." },
     { name: "lifecycleState", label: "Lifecycle state", valueType: "string", required: true, editable: true, values: ["active", "decommissioned", "merged"], description: "Governed Operational Location lifecycle state." },

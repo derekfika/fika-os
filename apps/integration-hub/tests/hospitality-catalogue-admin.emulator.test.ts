@@ -33,7 +33,7 @@ const livePrices = async (filter: { itemId?: string; offeringId?: string }) => {
   return (await canonical().where(field, "==", filter.itemId || filter.offeringId).get()).docs.map(doc => doc.data() as CanonicalRecord).filter(record => record.entityType === "Hospitality Menu Price");
 };
 const auditFor = async (entityReference: string) => (await audit().where("entityReference", "==", entityReference).get()).docs.map(doc => doc.data());
-const newOploc = (key: string, suffix: string) => seed("OPLOC", `oploc:cat-${key}-${suffix}`, { approvedName: `Site ${suffix} ${key}`, lifecycleState: "active" });
+const newOploc = (key: string, suffix: string) => seed("OPLOC", `oploc:cat-${key}-${suffix}`, { approvedName: `Site ${suffix} ${key}`, lifecycleState: "active", hospitalityEnabled: true });
 const unique = () => randomUUID().replace(/-/g, "").slice(0, 12);
 const createInput = (key: string, oplocIds: string[], extra: Record<string, unknown> = {}) => ({ action: "create-item" as const, requestId: `req-${key}-${unique()}`, name: `Test Item ${key}`, category: "Drinks", routing: "cpu_hospitality" as const, defaultPrice: { amount: 3 }, oplocIds, ...extra });
 
@@ -55,7 +55,7 @@ test("create-item writes Item + default Price + Offerings + routing + audit atom
 
   await rejects(run({ ...createInput(key, [a]), name: input.name.toUpperCase() }), /already exists/);
   await rejects(run(createInput(`${key}x`, [])), /at least one site/);
-  await rejects(run({ ...createInput(`${key}y`, [a, "oploc:does-not-exist-anywhere"]) }), /not an active governed location/);
+  await rejects(run({ ...createInput(`${key}y`, [a, "oploc:does-not-exist-anywhere"]) }), /not an active Hospitality-enabled location/);
   assert.equal((await canonical().where("record.name", "==", `Test Item ${key}y`).get()).size, 0, "a failed create writes nothing");
   await rejects(run({ ...createInput(`${key}z`, [a]), routing: undefined as never }), /production route/);
   await rejects(run({ ...createInput(`${key}w`, [a]), defaultPrice: { amount: 1.234 } }), /two decimal places/);

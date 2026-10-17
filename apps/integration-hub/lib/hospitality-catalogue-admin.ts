@@ -48,6 +48,8 @@ const vat = (value: unknown) => {
 };
 const quantity = (value: unknown, label: string) => { if (typeof value !== "number" || !Number.isInteger(value) || value < 1) throw problem(`${label} must be a whole number of 1 or more.`); return value; };
 /** Copy of a record without the named fields (sparse overrides are removed, never stored as null). */
+/** Server-side twin of the picker rule (see isHospitalitySite): an Offering may only be created at an active location carrying the governed hospitalityEnabled marker. */
+const isHospitalityOploc = (oploc: CanonicalRecord) => oploc.record.lifecycleState === "active" && oploc.lifecycleStatus !== "archived" && oploc.record.hospitalityEnabled === true;
 const without = (record: Record<string, unknown>, ...keys: string[]) => { const copy = { ...record }; for (const key of keys) delete copy[key]; return copy; };
 const dayBefore = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
@@ -161,7 +163,7 @@ async function createItem(ctx: Ctx, command: Extract<CatalogueCommand, { action:
     const clash = items.find(item => !isArchived(item) && sourceIdentities(item).includes(mapping.sourceItemId));
     if (clash) throw problem(`Provider reference “${mapping.sourceItemId}” is already mapped to “${text(clash.record.name)}”.`, 409);
   }
-  oplocSnapshots.forEach((snapshot, index) => { const oploc = asRecord(snapshot); if (!oploc || oploc.entityType !== "OPLOC" || oploc.record.lifecycleState !== "active") throw problem(`Site ${index + 1} is not an active governed location.`); });
+  oplocSnapshots.forEach((snapshot, index) => { const oploc = asRecord(snapshot); if (!oploc || oploc.entityType !== "OPLOC" || !isHospitalityOploc(oploc)) throw problem(`Site ${index + 1} is not an active Hospitality-enabled location.`); });
   const record = { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Item" as const, canonicalId: itemId, name, category, ...(command.description?.trim() ? { description: command.description.trim() } : {}), lifecycleState: "active" as const, ...(minimum !== undefined ? { defaultMinimumQuantity: minimum } : {}), dietaryInformation: [] as string[], allergenInformation: [] as string[], providerMappings: command.providerMappings || [] };
   stage(ctx, "Hospitality Menu Item", record, undefined, "Hospitality Catalogue item created.");
   if (price) stage(ctx, "Hospitality Menu Price", { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Price", canonicalId: generateCanonicalId("Hospitality Menu Price"), hospitalityMenuItemId: itemId, amount: price.amount, currency: "GBP" as const, vatRate: price.vatRate, effectiveFrom: ukBusinessDate(), lifecycleState: "active" as const }, undefined, "Company default price set at creation.");
@@ -243,7 +245,7 @@ async function addOffering(ctx: Ctx, command: Extract<CatalogueCommand, { action
   const item = requireItem(itemSnapshot); expectVersion(item, command.expectedVersion, "This item");
   if (isArchived(item)) throw problem("Restore the item before making it available at a site.");
   const oploc = asRecord(oplocSnapshot);
-  if (!oploc || oploc.entityType !== "OPLOC" || oploc.record.lifecycleState !== "active") throw problem("Choose an active governed location.");
+  if (!oploc || oploc.entityType !== "OPLOC" || !isHospitalityOploc(oploc)) throw problem("Choose an active Hospitality-enabled location.");
   const mode = command.mode || "standard"; const key = `${command.oplocId}|${command.operationalAreaId || ""}|${mode}`;
   const { offerings } = await itemChildren(ctx, item.canonicalId);
   const existing = offerings.find(offering => `${offering.record.oplocId}|${offering.record.operationalAreaId || ""}|${offering.record.offeringMode}` === key);
@@ -505,7 +507,7 @@ async function bulkOne(ctx: Ctx, itemId: string, spec: BulkSpec): Promise<BulkIt
       if (item.record.defaultMinimumQuantity !== next) { before.defaultMinimumQuantity = item.record.defaultMinimumQuantity ?? null; after.defaultMinimumQuantity = next ?? null; record = next === undefined ? without(record, "defaultMinimumQuantity") : { ...record, defaultMinimumQuantity: next }; changed = true; }
     }
     if (spec.sites) {
-      if (spec.sites.mode !== "remove") oplocSnapshots.forEach((snapshot, index) => { const oploc = asRecord(snapshot); if (!oploc || oploc.entityType !== "OPLOC" || oploc.record.lifecycleState !== "active") throw problem(`Site ${index + 1} is not an active governed location.`); });
+      if (spec.sites.mode !== "remove") oplocSnapshots.forEach((snapshot, index) => { const oploc = asRecord(snapshot); if (!oploc || oploc.entityType !== "OPLOC" || !isHospitalityOploc(oploc)) throw problem(`Site ${index + 1} is not an active Hospitality-enabled location.`); });
       const wanted = new Set(siteIds);
       const enable = spec.sites.mode === "remove" ? new Set<string>() : wanted;
       const disable = spec.sites.mode === "add" ? new Set<string>() : spec.sites.mode === "remove" ? wanted : new Set(children.offerings.filter(o => o.record.lifecycleState !== "archived" && !wanted.has(text(o.record.oplocId))).map(o => text(o.record.oplocId)));

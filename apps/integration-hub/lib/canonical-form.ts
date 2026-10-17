@@ -10,6 +10,7 @@ export const CanonicalFormFields: Record<EditableEntityType, readonly CanonicalF
     { name: "locationTypeEffectiveFrom", label: "Location Type effective from", control: "date", required: true },
     { name: "addressReference", label: "Address", control: "address-relationship", relationshipType: "Address", help: "Select a reusable published Address or add a valid structured Address. OPLOC stores only its stable Address ID." },
     { name: "aliases", label: "Other known names", control: "repeatable-text", help: "Other names this place is known by. Enter one per line." },
+    { name: "hospitalityEnabled", label: "Hospitality site", control: "select", values: ["true", "false"], help: "true = this location offers Hospitality catering and appears in the Hospitality catalogue site picker. Leave unset for locations that do not." },
     { name: "lifecycleState", label: "Lifecycle", control: "select", required: true, values: ["active", "decommissioned", "merged"] },
     { name: "mergedIntoOplocId", label: "Location that remains", control: "relationship", relationshipType: "OPLOC", help: "Choose the existing location that will remain after this merge." },
   ],
