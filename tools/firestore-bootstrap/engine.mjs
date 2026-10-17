@@ -14,7 +14,6 @@ const RETAINED_ROOTS = new Set([
   "integrationHubHospitalityMenuProductionRouting",
   "integrationHubSourceMappings",
   "fikaMenuPlanningCatalogue",
-  "fikaMenuPlanningCatalogueManifests",
 ]);
 
 const RETAIN_REASONS = {
@@ -27,7 +26,6 @@ const RETAIN_REASONS = {
   integrationHubHospitalityMenuProductionRouting: "Hub-owned production routing decisions",
   integrationHubSourceMappings: "source-to-canonical mappings",
   fikaMenuPlanningCatalogue: "canonical Menu Planning catalogue, including archived history records",
-  fikaMenuPlanningCatalogueManifests: "catalogue package head; object freshness must be revalidated before use",
 };
 
 const TRANSFORMS = [
@@ -45,6 +43,7 @@ const EXCLUSION_RULES = [
   { id: "derived-cross-domain-operations", roots: ["fikaDomainEventInboxV1", "fikaDomainEventsV1", "fikaFulfilmentRequirementsV1", "fikaProductionOrdersV1", "fikaProductionRequirements"], reason: "cross-domain operational events and derived Production/Fulfilment closure" },
   { id: "staging-audit-and-catalogue-migration-state", roots: ["integrationHubGovernanceAudit"], reason: "staging-side canonical governance audit evidence; preserve source-side and do not relabel as production" },
   { id: "environment-specific-bootstrap-state", roots: ["fikaDashboardQuoteSettings", "fikaMenuPlanningCatalogueCleanup", "integrationHubCacheManifests"], reason: "staging-specific folder settings, migration receipts and rebuildable cache metadata" },
+  { id: "stale-menu-catalogue-package-head", roots: ["fikaMenuPlanningCatalogueManifests"], reason: "staging package sourceHash does not match the freshly recomputed 404-record catalogue; rebuild before publishing the production head" },
 ];
 
 export function firestoreValue(value) {
@@ -83,7 +82,9 @@ export function sourceRecordHash(record) {
 }
 
 export function sourceStateHash(inventory) {
-  return sha256((inventory.records || []).map(record => [fullPath(record), sourceRecordHash(record)]).sort(([a], [b]) => a.localeCompare(b)));
+  const records = (inventory.records || []).map(record => [fullPath(record), sourceRecordHash(record)]).sort(([a], [b]) => a.localeCompare(b));
+  const placeholders = [...(inventory.placeholders || [])].map(item => typeof item === "string" ? item : item.path).sort();
+  return sha256({ records, placeholders });
 }
 
 export function transformRecord(record) {
@@ -122,6 +123,10 @@ export function buildPlan(sourceInventory, destinationInventory) {
   const retainedByRoot = {};
   const transformedByRule = {};
   const invariantProblems = [];
+  const sourcePlaceholders = [...(sourceInventory.placeholders || [])].map(item => typeof item === "string" ? item : item.path).sort();
+  const destinationPlaceholders = [...(destinationInventory.placeholders || [])].map(item => typeof item === "string" ? item : item.path).sort();
+  if (sourcePlaceholders.length) invariantProblems.push(`source inventory contains ${sourcePlaceholders.length} missing-parent placeholder(s) with descendants`);
+  if (destinationPlaceholders.length) invariantProblems.push(`destination inventory contains ${destinationPlaceholders.length} missing-parent placeholder(s) with descendants`);
   for (const record of records) {
     const path = fullPath(record);
     if (!path || seen.has(path)) {
@@ -147,6 +152,7 @@ export function buildPlan(sourceInventory, destinationInventory) {
   if (actions.length !== records.length) invariantProblems.push("action count differs from source document count");
   if (actions.filter(item => item.action.startsWith("create")).length + actions.filter(item => item.action === "exclude").length !== records.length) invariantProblems.push("retained and excluded action counts do not reconcile");
   const destinationRecords = [...(destinationInventory.records || [])].sort((a, b) => fullPath(a).localeCompare(fullPath(b)));
+  if (destinationRecords.length || destinationPlaceholders.length) invariantProblems.push("initial production bootstrap requires an empty destination inventory");
   const destinationConflicts = destinationRecords.map(fullPath).filter(path => seen.has(path));
   if (destinationConflicts.length) invariantProblems.push(`destination already contains ${destinationConflicts.length} planned document path(s)`);
 
@@ -160,6 +166,8 @@ export function buildPlan(sourceInventory, destinationInventory) {
     destinationProject: DESTINATION_PROJECT,
     sourceHash,
     destinationHash,
+    sourcePlaceholders,
+    destinationPlaceholders,
     sourceDocumentCount: records.length,
     destinationDocumentCount: destinationRecords.length,
     destinationBaseline: destinationRecords.map(record => ({ path: fullPath(record), hash: sourceRecordHash(record) })),
@@ -174,6 +182,27 @@ export function buildPlan(sourceInventory, destinationInventory) {
     invariantProblems,
   };
   return { ...planCore, planHash: sha256(planCore) };
+}
+
+export function verifySavedPlan(saved, freshPlan, args, env) {
+  if (!saved || typeof saved !== "object" || !saved.planHash) throw new Error("Saved plan is missing its approved planHash.");
+  const { planHash, ...body } = saved;
+  const recomputed = sha256(body);
+  if (recomputed !== planHash) throw new Error("Saved plan body does not match its embedded planHash.");
+  if (recomputed !== freshPlan.planHash) throw new Error("Saved plan body differs from the freshly generated plan.");
+  assertApproval(freshPlan, args, env);
+  return freshPlan;
+}
+
+export function validateJournal(journal, plan) {
+  if (!journal || journal.schema !== "fika-firestore-bootstrap-journal.v1" || journal.planHash !== plan.planHash || journal.sourceProject !== plan.sourceProject || journal.destinationProject !== plan.destinationProject) throw new Error("Journal identity does not match this plan and project pair.");
+  if (!journal.entries || typeof journal.entries !== "object" || Array.isArray(journal.entries)) throw new Error("Journal entries are malformed.");
+  const allowed = new Map(plan.actions.filter(item => item.action.startsWith("create")).map(item => [item.path, item]));
+  for (const [path, entry] of Object.entries(journal.entries)) {
+    const action = allowed.get(path);
+    if (!action || !entry || entry.path !== path || entry.sourceHash !== action.sourceHash || entry.targetHash !== action.targetHash || !Array.isArray(entry.transforms) || sha256(entry.transforms) !== sha256(action.transforms) || !["verified-existing-identical", "created-and-verified"].includes(entry.status)) throw new Error(`Journal entry is invalid or unauthorized at ${path}.`);
+  }
+  return journal.entries;
 }
 
 export function assertApproval(plan, args, env) {
@@ -195,14 +224,14 @@ export async function applyPlan(plan, adapters, journal = {}) {
     const existing = await adapters.readDestination(action.path);
     if (existing) {
       if (sha256({ path: action.path, fields: existing.fields || {} }) !== action.targetHash) throw new Error(`Create-only conflict at ${action.path}; destination differs.`);
-      journal[action.path] = "verified-existing-identical";
+      journal[action.path] = { path: action.path, sourceHash: action.sourceHash, targetHash: action.targetHash, transforms: action.transforms, status: "verified-existing-identical" };
       await adapters.saveJournal?.(journal);
       continue;
     }
     await adapters.createDestination(action.path, transformed.fields);
     const verified = await adapters.readDestination(action.path);
     if (!verified || sha256({ path: action.path, fields: verified.fields || {} }) !== action.targetHash) throw new Error(`Post-write verification failed at ${action.path}.`);
-    journal[action.path] = "created-and-verified";
+    journal[action.path] = { path: action.path, sourceHash: action.sourceHash, targetHash: action.targetHash, transforms: action.transforms, status: "created-and-verified" };
     await adapters.saveJournal?.(journal);
   }
   return journal;

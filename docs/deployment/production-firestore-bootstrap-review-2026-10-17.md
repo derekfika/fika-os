@@ -1,19 +1,19 @@
-# Production Firestore bootstrap review — 2026-10-17
+# Production Firestore bootstrap and package review — 2026-10-17
 
-## Fresh snapshot
+## Read-only source snapshot
 
-- Source project: `fika-os-dev`; destination: `fika-os`.
-- Recursive inventory captured `2026-10-17T13:29:04.029Z` UTC by read-only Firestore REST `listCollectionIds` and paginated `listDocuments` calls.
-- Source: **12,543 documents / 203 collection paths**. Destination: **0 documents / 0 collection paths**.
-- Candidate: **2,259 retained / 10,284 excluded**. `invariantProblems: []` for the plan's exact-path uniqueness, action-count reconciliation and empty-target checks.
-- `planHash`: `8d2828dd8caa44a68f1407f3cacb56f196f8fa41ee80595882cb1d906f8bf4ed`.
-- `sourceHash`: `540c82957588c256d7625905961656402bc0704294c5f99f87f02f221b331256`.
-- Full exact document-path action list and source/target hashes are in the local dry-run plan at `%TEMP%\fika-firestore-bootstrap-plan.json`. It contains no document field bodies and is not committed. Rebuild it with `node tools/firestore-bootstrap/cli.mjs`; a source or destination change produces a different hash.
-- No database was written. Copier apply was not run.
+- Source: `fika-os-dev`; destination: `fika-os`.
+- Inventory captured `2026-10-17T13:54:11.728Z` UTC using paginated Firestore REST `listCollectionIds` and `documents.list?showMissing=true`.
+- Source: **12,543 actual documents / 203 collection paths / 0 missing-parent placeholders**. Destination: **0 actual documents / 0 collection paths / 0 missing-parent placeholders**.
+- `showMissing=true` was used at every collection level. Missing-parent documents were traversed without counting them as actual documents; none were found in this snapshot.
+- The full path/hash plan is local at `%TEMP%\fika-firestore-bootstrap-fresh-plan.json`; the inventory timestamp is reported separately and is not part of `planHash`.
+- Fresh `sourceHash`: `22f6ade05d54237e24927ad168a4724c140bd848f434cfa0ec24025960424f4b`.
+- Fresh `planHash`: `9a5b9a80055e432e08d7331fe95291931f3a728cba6c0ee3574c1191f740384e`.
+- Candidate: **2,258 retained / 10,285 excluded**. `invariantProblems: []`; exact document paths reconcile and the destination is empty.
 
-## Retention and exclusion plan
+## Firestore retention plan
 
-| Retained collection | Documents |
+| Retained root | Documents |
 | --- | ---: |
 | `integrationHubCanonical` | 1,077 |
 | `integrationHubCanonicalRevisions` | 610 |
@@ -22,58 +22,75 @@
 | `integrationHubHospitalityCatalogueReviewDecisions` | 6 |
 | `integrationHubSourceMappings` | 41 |
 | `fikaMenuPlanningCatalogue` | 404 |
-| `fikaMenuPlanningCatalogueManifests` | 1 |
 | `authmodApplications` | 7 |
 | `authmodIdentities` | 19 |
-| **Total retained** | **2,259** |
+| **Total retained** | **2,258** |
 
-The Hub canonical snapshot includes 90 Hospitality Menu Items, 140 published Hospitality Menu Offerings, 82 Hospitality Menu Prices and 24 OPLOCs. The 610 immutable canonical revisions include 243 Offering revisions. The latest Menu Planning catalogue source hash matches its current Firestore catalogue head. All canonical entities/revisions are retained in this candidate so stable references and actor lineage remain resolvable.
+The canonical Hospitality heads are 90 Items (46 active, 44 archived), 140 Offerings (6 active sparse exceptions, 134 archived) and 82 Prices (43 active, 39 archived). All 140 Offering heads and their immutable revisions are retained unchanged. No Offering is collapsed or reactivated; no Item × OPLOC fan-out is created. The runtime package is rebuilt from 46 active Items, 6 active sparse exceptions and 19 active OPLOCs.
+
+All 404 Menu Planning catalogue source records are retained. The single `fikaMenuPlanningCatalogueManifests/catalogue` cache head is excluded because its claimed source hash does not match the fresh source. The copier's exclusion reason is `stale-menu-catalogue-package-head`; the package must be rebuilt before publishing a production head.
 
 | Exclusion group | Documents | Treatment |
 | --- | ---: | --- |
-| AUTHMOD staging grants, assignments, access audit/heads and import state | 339 | Do not copy staging authorization. Recreate production access through Hub administration. |
-| Hospitality booking history | 287 | Exclude bookings, booking groups/quotes, notifications and booking audit. |
-| Menu Planning weeks, publications, events, outbox and Drive archive pointers | 2,442 | Exclude operational history; this includes six `fikaMenuPlanningArchiveMetadata` Drive pointers. |
-| Delivered-In projections, site menus, releases, receipts and Grab & Go operational state | 270 | Exclude downstream operational history. |
-| CPU state, projections, releases, packages, feeds, receipts and outboxes | 3,436 | Exclude all UAT CPU operational and derived state. |
-| Logistics state, movements, projections, feeds and outboxes | 1,362 | Exclude all UAT Logistics operational and derived state. |
-| Production Orders, Production Requirements, Fulfilment Requirements and domain events/inbox | 1,159 | Exclude derived cross-domain operational closure. |
-| Staging governance audit | 985 | Keep source-side. Do not recast staging audit entries as production history. Canonical revisions remain retained. |
-| Environment-specific settings, cleanup receipt and rebuildable cache manifest | 4 | Exclude staging Drive folder settings and transient metadata. |
-| **Total excluded** | **10,284** | |
+| AUTHMOD staging access/import state | 339 | Provision production grants and assignments through production AUTHMOD administration. |
+| Hospitality booking history | 287 | Exclude staging bookings, groups, quotes, notifications and audit. |
+| Menu operational history | 2,442 | Exclude weeks, publications, snapshots, events, outbox and archive pointers. |
+| Delivered-In operational state | 270 | Exclude projections, site menus, releases, receipts and Grab & Go handoffs/orders. |
+| CPU operational/derived state | 3,436 | Exclude plans, feeds, projections, receipts, package heads, releases and outboxes. |
+| Logistics operational/derived state | 1,362 | Exclude movements, assignments, projections, feeds, cursors and outboxes. |
+| Production/Fulfilment/domain-event closure | 1,159 | Start production operational closure empty. |
+| Staging governance audit | 985 | Keep in staging; do not relabel it as production history. |
+| Staging-specific settings/migration/cache state | 4 | Recreate or rebuild for production. |
+| Stale Menu Planning catalogue package head | 1 | Rebuild from retained authoritative catalogue records. |
+| **Total excluded** | **10,285** | |
 
-## Safety, identity and lineage findings
+The two AUTHMOD transforms remain unchanged: remove staging Firebase UID bindings from 8 identities and set `fullAccess=false` on 7 identities. Neither grants nor staging assignments are copied.
 
-- `fikaCpuAllergenCompositionAuthoritiesV1`: 2 active UAT authorities, each carrying two role signatures. Both are excluded. Proposal: production starts with no inherited authority; CPU must perform a fresh matrix review and dual signature against production source hashes.
-- `fikaCpuMasterAllergenReviewsV1`: 10 UAT review documents (signed and pending) are excluded. No signature, packet, current pointer or release receipt is trusted in production.
-- AUTHMOD: 8 identity records have Firebase staging UID bindings to remove. IDs: `authid:0015ad37-ea53-48c2-9ba9-98a6b916c12f`, `authid:10ad9dda-bb54-4916-b607-23ed45e7c352`, `authid:1b54c6c7-fef7-4254-8eb5-35372a6f976a`, `authid:322c9897-c262-4c7e-ab41-86ceda4a4004`, `authid:32fa3852-01d6-475f-bc7c-3204b3cdbdf7`, `authid:7a8d1165-7c05-4e60-83e9-9df0f2d4e7b8`, `authid:7f394423-c9cd-431e-8e21-b714b0d64dff`, `authid:bb33ee7c-91df-4042-8906-e1925fd58545`.
-- Seven identities have `fullAccess=true`; clear that flag to `false` in the copy. The copier preserves stable identity IDs, names, normalized email, provenance, legend linkage and historical actor references; it removes only `externalProvider`/`externalUid` bindings and resets `fullAccess`. No AUTHMOD grants or assignments are copied. The two transforms affect 8 and 7 records respectively (9 distinct identities).
-- A recursive scan found five documents with `projectId=fika-os-dev`: four under CPU propagation-outbox `delivery` payloads and one Menu Planning cleanup receipt. All five documents are excluded. No retained document has that value. Preserve source project IDs in historical evidence; never relabel those five records as production.
-- `rolling-week:2026-08-24` is **not orphaned in the source**: its week parent, seven day documents and 22 entry documents exist (30 docs total). There are 44 matching documents in the inventory: 30 Menu Planning hierarchy docs, 6 CPU changes, 6 CPU receipts and 2 CPU day projections. None occur in retained paths; the operational references are excluded with their closure.
-- No other retained-to-excluded operational reference was identified for this week. SOL should still verify cross-domain referential closure before approving apply.
+## Copier approval, discovery and journal safeguards
 
-## Projection and feed reset
+- The plan hash covers the complete deterministic executable body, including actions, target paths/hashes, source hashes, transforms, exclusions, project pair, destination baseline and missing-parent placeholders. `generatedAt` is not in that body.
+- Apply verifies the saved body against its embedded hash, the freshly generated in-memory plan, `--plan-hash`, and `FIKA_FIRESTORE_BOOTSTRAP_APPROVED_PLAN_HASH`. It executes only the freshly generated in-memory plan.
+- Recursive inventory uses Firestore REST `showMissing=true`; placeholders are traversed and included in the source-state hash but never counted as actual documents. Any placeholder with descendants is an apply-blocking invariant.
+- Journals are stored locally under a plan-hash-derived path. Journal schema, source/destination project identity, plan hash, each authorized path, source/target hashes, transform IDs and verification status are checked before resuming. Journal replacement uses a same-directory temporary file and rename.
+- Tests include SOL's altered excluded-booking action attack and mutations to actions/target paths, transforms, exclusions, source hash, project identity, actual fresh source state and journal entries. All abort before a write adapter can run.
 
-- CPU has 63 day/week projections. Mixed-source document IDs are `2026-09-16`, `2026-09-23`, `2026-10-13`, `2026-10-19`, `week:2026-09-14`, `week:2026-09-21`, `week:2026-10-12`, and `week:2026-10-19`. These combine Menu Planning, Hospitality Booking and/or Grab & Go lineages. Exclude all 63 projection docs and rebuild only from future production sources.
-- CPU's global change cursor is 991; its change collection has 991 records and receipt collection has 689. Exclude changes, receipts and cursor. Start production with an empty feed/initial cursor, then create fresh events from production-owned mutations; do not preserve sequence 991 across excluded gaps.
-- Logistics has 37 day projections. Mixed-source documents are `2026-09-16`, `2026-09-23`, `2026-10-12`, and `2026-10-19` (CPU Production plus Grab & Go). Exclude all 37 day projections and rebuild only after production requirements exist.
-- Logistics has 892 change records and 38 cursor documents (37 day cursors plus `global`, whose sequence is 892). Exclude the full feed and every cursor; initialize the production global/day partitions from zero/new events. Do not copy source cursors or replay staging sequence gaps.
+## Complete read-package / GCS inventory
 
-## Retained immutable package objects
+Read-only inventory of `gs://fika-os-dev-staging-read-packages-europe-west4/**` captured `2026-10-17T13:54:31.583Z` UTC: **3,185 objects / 9,710,303 bytes**, including **112 manifest objects** and **3,073 package/artifact objects**. GCS returned MD5 and CRC32C metadata for all 3,185 objects. No bucket writes or deletes were made.
 
-Exactly two current package-head objects are retained for later byte-preserving copy into the production package bucket:
+| Object family | Manifest objects | Package/artifact objects | Classification |
+| --- | ---: | ---: | --- |
+| Hospitality private catalogue (`integration-hub/hospitality-catalogue`) | 1 | 1 | Current; retain exact immutable object and manifest contract for Hub runtime. |
+| Hospitality public catalogue (`hospitality-booking/catalogue`) | 1 | 1 | Current; retain exact immutable public projection and manifest contract for Hospitality runtime. Both are projections of the same global catalogue, not site fan-out. |
+| Menu Planning catalogue (`snapshots/menu-planning/catalogue`) | 1 | 52 | Current manifest points at a stale v7 object; exclude all staging objects and rebuild from the retained 404 source records. The other 51 are superseded historical package versions. |
+| Daily signed OPLOC bundles | 33 | 52 | Immutable staging safety/operational evidence; retain in staging for audit, exclude from production bootstrap. |
+| CPU Production snapshots and packages | 51 | 2,328 | Staging operational/derived packages; exclude. The global Grab & Go catalogue object also remains excluded until CPU provides its explicitly approved production source file. |
+| Delivered-In day and projection-index packages | 18 | 606 | Staging operational projections; exclude. Rebuild only from future production-owned downstream state. |
+| Integration Hub reference/cache packages | 4 | 12 | Rebuildable cache packages; exclude staging manifests and objects, then rebuild from production canonical/reference state. |
+| Integration Hub AUTHMOD access packages | 3 | 21 | Staging authorization packages; exclude and provision in production. |
+| **Total** | **112** | **3,073** | |
 
-1. `integration-hub/hospitality-catalogue/v1-132bddec68e6c4d7250a6fb5443f81bb74e2ffc886cdc74be040931a6cc94bcd.json.gz` — 6,331 compressed bytes; SHA-256 `132bddec68e6c4d7250a6fb5443f81bb74e2ffc886cdc74be040931a6cc94bcd`.
-2. `snapshots/menu-planning/catalogue/v7-b79546b1f5984f36f70e6b972948b10dd12443ae945c9d2e8764032f893afe8f.json.gz` — 26,495 compressed bytes; SHA-256 `b79546b1f5984f36f70e6b972948b10dd12443ae945c9d2e8764032f893afe8f`.
+### Current Hospitality package verification
 
-Both objects were fetched with decompression disabled; the compressed-byte hashes matched their immutable names/manifests and each gzip payload parsed. Do not copy prior CPU or Delivered-In package objects: their Firestore heads are excluded with operational state. Object transfer and production manifest publication are not part of the Firestore copier and need a separate reviewed step.
+Both current Hospitality objects were downloaded with transparent gzip decompression disabled. Compressed byte count and SHA-256 matched the manifest and content-addressed object name. Their gzip payloads parsed, and the package content was rebuilt from the fresh retained canonical heads/routing records and compared recursively:
 
-## Copier status and remaining SOL decisions
+- Private Hub package: `integration-hub/hospitality-catalogue/v1-132bddec68e6c4d7250a6fb5443f81bb74e2ffc886cdc74be040931a6cc94bcd.json.gz`, **6,331 bytes**, SHA-256 `132bddec68e6c4d7250a6fb5443f81bb74e2ffc886cdc74be040931a6cc94bcd`; exact payload match, 46 Items / 6 exceptions / 19 OPLOCs.
+- Public Hospitality package: `hospitality-booking/catalogue/fd632150394cd2c7624b6ff645402554146efa2608594412efe83202014da784.json.gz`, **6,273 bytes**, SHA-256 `fd632150394cd2c7624b6ff645402554146efa2608594412efe83202014da784`; exact public projection match, 46 Items / 6 exceptions / 19 OPLOCs.
 
-`tools/firestore-bootstrap/cli.mjs` is a dry-run-by-default recursive Firestore planner/copier. It uses exact paths, a per-document source hash, a deterministic `planHash`, a strict retention/exclusion table, the two explicit AUTHMOD transforms, destination-empty enforcement, create-only writes, per-document read-back verification, conflict-safe retry and a resumable local journal. Apply requires `--apply`, the matching `--plan-hash`, `FIKA_FIRESTORE_BOOTSTRAP_APPROVED_PLAN_HASH` with the same hash, a fresh matching source snapshot, and `invariantProblems: []`. It was not run in apply mode.
+For a separately reviewed object-transfer step, copy only those two immutable compressed objects to the production package bucket `fika-os-prod-read-packages-europe-west4`, preserving bytes. Verify SHA-256 before publishing the matching Hub and public package manifests. Do not copy the staging `manifests/` tree wholesale.
 
-- Tests: `node --test tools/firestore-bootstrap/engine.test.mjs` — 5/5 passed. CLI/engine syntax checks passed.
-- SOL should decide whether the **140 published Hospitality Menu Offering** records are the intended sparse OPLOC exceptions. This differs from the recent staging release note of six active exceptions; the plan preserves all 140 and all 243 immutable Offering revisions rather than silently discarding source data.
-- SOL should confirm the broad Hub canonical snapshot (which also includes non-Hospitality canonical entities) and the 19 retained identity profiles are appropriate. Staging identity bindings and full-access flags are sanitized, and all staging grants/assignments are excluded.
-- SOL should confirm source-side governance audit retention is sufficient for this bootstrap: all 985 staging Hub governance audit docs stay in staging; copied canonical revisions retain their original actor IDs and revisions.
-- Verify package manifests and production bucket destinations again immediately before any separately approved object transfer. No production Firestore write, App Hosting rollout, push or email enablement occurred.
+### Stale Menu Planning package verification
+
+The staging manifest `manifests/menu-planning/catalogue.json` points at `snapshots/menu-planning/catalogue/v7-b79546b1f5984f36f70e6b972948b10dd12443ae945c9d2e8764032f893afe8f.json.gz` (26,495 compressed bytes, 215 entries). Its declared source hash is `5f3ae96035f327284ac1ea557071cccb9b04effae6149890f5d5e8378a577215`. A fresh source read and the production code's `catalogueSourceHash` over all 404 authoritative records produced `c3eed6baa3961906823ea61b2a67ec948e925a92cae303e35cc92effecb720f5`. Therefore the manifest's `packageState: current` flag is stale/incorrect. Do not transfer its manifest or any of the 52 old Menu Planning package objects. Rebuild and verify a new package from the retained source records before publishing a production manifest.
+
+The single CPU Grab & Go catalogue package is a CPU-owned global reference package, not part of the Hospitality catalogue. Its publisher requires an approved source file; no approved source was supplied in this task. Keep that staging object and manifest excluded, and prepare the production package from the approved source in a separate step.
+
+## Validation and deployment state
+
+- `node --test tools/firestore-bootstrap/engine.test.mjs` — **10/10 passed**.
+- `node --check tools/firestore-bootstrap/engine.mjs` and `node --check tools/firestore-bootstrap/cli.mjs` — passed.
+- Fresh source/destination recursive inventory — completed; 0 source placeholders, 0 destination documents, `invariantProblems: []`.
+- GCS recursive object/manifest inventory — completed read-only; selected current and stale compressed packages were verified by exact compressed-byte hash and parse.
+- Production Firestore apply, GCS production transfer/write, App Hosting deployment, email enablement and push — **not performed**.
+
+The Firestore plan is ready for review at the stated plan hash. Overall production bootstrap remains **HOLD** until the separately owned CPU Grab & Go production source is approved and the stale Menu Planning package is rebuilt and verified. This report does not authorize apply or object transfer.
