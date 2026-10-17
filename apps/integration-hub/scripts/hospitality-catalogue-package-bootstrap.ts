@@ -1,4 +1,6 @@
 /** Explicit release action to build both private and public read packages from fika-os-dev. */
+export {};
+
 const expectedArgument = "--project=fika-os-dev";
 if (!process.argv.slice(2).includes(expectedArgument) || process.argv.slice(2).some(value => value.startsWith("--project=") && value !== expectedArgument)) {
   throw new Error(`Refusing package bootstrap. The only supported target is ${expectedArgument}.`);
