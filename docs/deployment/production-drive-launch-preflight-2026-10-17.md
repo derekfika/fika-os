@@ -5,7 +5,11 @@
 - Production Firebase project config: `projects/397503564317/config` (`fika-os`).
 - `google.com` provider is enabled and has a production-project OAuth client ID. The provider response was field-masked to exclude `clientSecret`; no OAuth secret was read or recorded in this verification.
 - The production handler returned HTTP 200. All required hosted and custom production domains are authorized.
-- This verifies provider configuration and callback reachability, not an interactive Google login. The old OAuth secret's invalidation cannot be established from the safe provider fields: Google does not expose the client-secret generation/revocation state in this API response. Derek must confirm the credential was rotated and the Firebase provider was saved with the replacement. Do not read or print the secret to verify this.
+- This verifies provider configuration and callback reachability, not an interactive Google login. The old OAuth secret's invalidation cannot be established from the safe provider fields: Google does not expose the client-secret generation/revocation state in this API response. Derek has directed that rotation be completed after cutover; track it below and do not read or print either secret to verify it.
+
+### Post-cutover security task
+
+- [ ] Rotate the production OAuth web-client secret, update the Firebase Google provider with the replacement, and verify provider/callback operation using secret-safe readback. This is explicitly deferred until after application cutover by Derek. Never read the old or replacement secret into logs or repository files.
 
 ## Read-only Drive results
 

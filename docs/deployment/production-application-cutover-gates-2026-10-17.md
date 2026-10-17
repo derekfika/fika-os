@@ -1,5 +1,15 @@
 # Production application cutover gates — 2026-10-17
 
+## Follow-up status — 2026-10-17
+
+This document's earlier Firebase Auth and DWD status below is historical and has been superseded by the later read-only verification in `production-drive-launch-preflight-2026-10-17.md`: Google sign-in/provider and production domains were verified; production Drive DWD was used successfully for the listed read-only Drive preflight. OAuth web-client secret rotation is a post-cutover security task at Derek's direction.
+
+**Cutover remains HOLD.** The live first-administrator path is still unresolved: the existing Derek AUTHMOD identity has no production UID binding or Administer grant, and the repository has no governed production one-time administrator bootstrap. The existing sign-in identity-binding flow does not grant administrator authority. Do not bypass this with a direct Firestore edit or `fullAccess`.
+
+The verified Drive configuration is also incomplete for a full operational rollout. Hospitality's per-dashboard quote/menu/matrix settings are absent from production and cannot be safely replaced by one shared folder root. MNK lacks its approved owner/folder/template values; CPU and Delivered-In lack approved owner/output roots (and Delivered-In's template). RCoA menu generation remains deferred because no approved template mapping exists. See the later Drive preflight record for exact IDs, pass/deferred states and config already prepared locally.
+
+No rollout, Git push, application-writer restoration, production Firestore mutation, email enablement or recovery-job activation was performed while these gates remain open. Keep application writers frozen, email off and recovery jobs paused.
+
 ## Current verdict
 
 **HOLD — Google sign-in, initial AUTHMOD administrator enrollment, and production Workspace Drive access are not ready.** No application was deployed, no Git push occurred, no application Firestore writer was restored, and no production Firestore business data was changed in this task.
