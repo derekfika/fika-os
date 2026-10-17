@@ -49,7 +49,7 @@ function cloudStore(): ReadPackageStore {
 
 export function oplocPackageStore() { return hosted() ? cloudStore() : localStore(); }
 
-export async function rebuildOplocReadPackage(): Promise<ReadPackageManifest> {
+export async function rebuildOplocReadPackage(storeOverride?: ReadPackageStore): Promise<ReadPackageManifest> {
   const cacheManifest = await readCacheManifest("oplocs");
   const records = await db.collection("integrationHubCanonical").where("entityType", "==", "OPLOC").get();
   const all = records.docs.map(document => document.data() as { canonicalId?: string; entityType?: string; lifecycleStatus?: string; publicationStatus?: string; record?: Record<string, unknown> });
@@ -63,7 +63,7 @@ export async function rebuildOplocReadPackage(): Promise<ReadPackageManifest> {
   }
   recordDataAccess({ app: "integration-hub", operation: "oploc.package.rebuild", source: "FIRESTORE", documents: records.size + addresses.size });
   const oplocs = active.map(value => { const record = value.record || {}; const address = record.addressReference ? formatAddress(addresses.get(String(record.addressReference)) || {}) : ""; const legacyIds = legacyOplocIds(redirects, value.canonicalId!); return { canonicalId: value.canonicalId!, label: String(record.approvedName || value.canonicalId!).trim(), ...(value.lifecycleStatus ? { lifecycleStatus: value.lifecycleStatus } : {}), ...(value.publicationStatus ? { publicationStatus: value.publicationStatus } : {}), ...(record.locationType ? { locationType: String(record.locationType) } : {}), ...(address ? { address } : {}), ...(legacyIds.length ? { legacyIds } : {}) }; }).sort((a, b) => a.canonicalId.localeCompare(b.canonicalId));
-  const store = oplocPackageStore();
+  const store = storeOverride || oplocPackageStore();
   const previous = await store.getManifest(OPLOC_MANIFEST_KEY);
   const encoded = encodeReadPackage(OPLOC_DATASET, (previous?.packageVersion || 0) + 1, { oplocs, redirects }, oplocs.length + Object.keys(redirects).length, { contractVersion: "integration-hub.oplocs.v2", sourceVersion: `canonical-oplocs:${cacheManifest.version}` });
   return publishReadPackage<OplocReadPackage>(store, OPLOC_MANIFEST_KEY, encoded);

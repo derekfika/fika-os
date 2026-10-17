@@ -10,12 +10,12 @@ export const SERVICE_ARRANGEMENTS_MANIFEST_KEY = SERVICE_ARRANGEMENTS_DATASET;
 export type ServiceArrangementsReadPackage = Omit<ServiceArrangementsOverview, "today">;
 const recoveryInFlight = new Map<string, Promise<ReadPackageManifest>>();
 
-export async function rebuildServiceArrangementsReadPackage(): Promise<ReadPackageManifest> {
+export async function rebuildServiceArrangementsReadPackage(storeOverride?: import("@fika/server-shared/read-package").ReadPackageStore): Promise<ReadPackageManifest> {
   const snapshot = await db.collection("integrationHubCanonical").get();
   recordDataAccess({ app: "integration-hub", operation: "service-arrangements.package.rebuild.source", source: "FIRESTORE", documents: snapshot.size });
   const overview = serviceArrangementsFromRecords(snapshot.docs.map(document => document.data() as CanonicalRecord));
   const value: ServiceArrangementsReadPackage = { serviceDefinitions: overview.serviceDefinitions, oplocs: overview.oplocs, areas: overview.areas, arrangements: overview.arrangements, oplocRedirects: overview.oplocRedirects };
-  const store = oplocPackageStore();
+  const store = storeOverride || oplocPackageStore();
   const previous = await store.getManifest(SERVICE_ARRANGEMENTS_MANIFEST_KEY);
   const encoded = encodeReadPackage(SERVICE_ARRANGEMENTS_DATASET, (previous?.packageVersion || 0) + 1, value, value.arrangements.length, { contractVersion: "integration-hub.service-arrangements.v1", sourceVersion: `canonical:${snapshot.size}` });
   return publishReadPackage<ServiceArrangementsReadPackage>(store, SERVICE_ARRANGEMENTS_MANIFEST_KEY, encoded);

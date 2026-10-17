@@ -11,7 +11,7 @@ export const AUTHMOD_REFERENCE_DATASET = "integration-hub/authmod-references";
 export const AUTHMOD_REFERENCE_MANIFEST_KEY = AUTHMOD_REFERENCE_DATASET;
 export type AuthmodReferenceReadPackage = { applications: ApplicationRegistryEntry[]; legends: LegendReference[]; oplocs: { id: string; label: string; active: true }[] };
 
-export async function rebuildAuthmodReferenceReadPackage(): Promise<ReadPackageManifest> {
+export async function rebuildAuthmodReferenceReadPackage(storeOverride?: import("@fika/server-shared/read-package").ReadPackageStore): Promise<ReadPackageManifest> {
   const [legendSnapshot, employmentSnapshot, oplocSnapshot, applicationSnapshot] = await Promise.all([
     db.collection("integrationHubCanonical").where("entityType", "==", "Legend").get(),
     db.collection("integrationHubCanonical").where("entityType", "==", "Employment").get(),
@@ -27,7 +27,7 @@ export async function rebuildAuthmodReferenceReadPackage(): Promise<ReadPackageM
   };
   const sourceVersion = [await readCacheManifest("legends"), await readCacheManifest("oplocs"), await readCacheManifest("applications")].map(value => value.version).join(":");
   recordDataAccess({ app: "integration-hub", operation: "authmod.references.package.rebuild", source: "FIRESTORE", documents: legendSnapshot.size + employmentSnapshot.size + oplocSnapshot.size + applicationSnapshot.size });
-  const store = oplocPackageStore();
+  const store = storeOverride || oplocPackageStore();
   const previous = await store.getManifest(AUTHMOD_REFERENCE_MANIFEST_KEY);
   let version = (previous?.packageVersion || 0) + 1;
   let encoded: ReturnType<typeof encodeReadPackage<AuthmodReferenceReadPackage>> | undefined;

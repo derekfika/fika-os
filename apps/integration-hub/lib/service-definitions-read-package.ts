@@ -10,7 +10,7 @@ export const SERVICE_DEFINITIONS_MANIFEST_KEY = SERVICE_DEFINITIONS_DATASET;
 export type ServiceDefinitionsReadPackage = { serviceDefinitions: ServiceDefinitionCatalogueItem[] };
 const recoveryInFlight = new Map<string, Promise<ReadPackageManifest>>();
 
-export async function rebuildServiceDefinitionsReadPackage(): Promise<ReadPackageManifest> {
+export async function rebuildServiceDefinitionsReadPackage(storeOverride?: import("@fika/server-shared/read-package").ReadPackageStore): Promise<ReadPackageManifest> {
   const [recordsSnapshot, revisionsSnapshot] = await Promise.all([
     db.collection("integrationHubCanonical").get(),
     db.collection("integrationHubCanonicalRevisions").get(),
@@ -20,7 +20,7 @@ export async function rebuildServiceDefinitionsReadPackage(): Promise<ReadPackag
   const revisions = revisionsSnapshot.docs.map(document => document.data());
   const serviceDefinitions = serviceDefinitionsFromRecords(records, revisions);
   const value: ServiceDefinitionsReadPackage = { serviceDefinitions };
-  const store = oplocPackageStore();
+  const store = storeOverride || oplocPackageStore();
   const previous = await store.getManifest(SERVICE_DEFINITIONS_MANIFEST_KEY);
   const encoded = encodeReadPackage(SERVICE_DEFINITIONS_DATASET, (previous?.packageVersion || 0) + 1, value, serviceDefinitions.length, { contractVersion: "integration-hub.service-definitions.v1", sourceVersion: `canonical:${recordsSnapshot.size}:revisions:${revisionsSnapshot.size}` });
   return publishReadPackage<ServiceDefinitionsReadPackage>(store, SERVICE_DEFINITIONS_MANIFEST_KEY, encoded);
