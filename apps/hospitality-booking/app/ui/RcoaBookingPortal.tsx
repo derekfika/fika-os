@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { quantityFromInput, quantityMinimumMessage, stepQuantityDown, stepQuantityUp } from "@/lib/quantity-entry";
 import { portalBookingId, type PortalMenuItem } from "@/lib/mnk-contract";
 import { hospitalitySiteThemeStyle, portalSite } from "@/lib/portal-sites";
+import StartAgainButton from "./StartAgainButton";
 import {
   addAllDayService,
   applyAllDayDefaults,
@@ -523,9 +524,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
           <span>Booking</span><span>Breakfast</span><span>Lunch</span><span>Afternoon</span>
           <span>Finger food</span><span>Bowl food &amp; canapes</span><span>Events</span>
         </nav>
-        <button ref={resetTriggerRef} className={styles.resetButton} type="button" aria-label="Start again" onClick={() => setResetOpen(true)}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
-        </button>
+        <StartAgainButton buttonRef={resetTriggerRef} className={styles.resetButton} onClick={() => setResetOpen(true)} />
       </header>
 
       <section className={styles.hero}>

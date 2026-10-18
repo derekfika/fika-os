@@ -10,6 +10,7 @@ import { hospitalitySiteThemeStyle, portalSite, type PortalSiteConfig, type Port
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "@/lib/gallagher-rules";
 import { quantityFromInput, quantityMinimumMessage, stepQuantityDown, stepQuantityUp } from "@/lib/quantity-entry";
 import { loadHospitalityPortalMenu } from "@/lib/hospitality-portal-catalogue";
+import StartAgainButton from "./StartAgainButton";
 
 type ChoiceValue = string | string[];
 type Line = {
@@ -791,10 +792,7 @@ function Top({
       <div className="mnk-top-actions">
         <small>Site: {siteLabel}</small>
         {dashboardMode && <a className="start-again" href={site.portalPath} target="_blank" rel="noopener noreferrer">View Portal</a>}
-        <a className="start-again" href="/workspace">Change workspace</a>
-        <button className="start-again" type="button" onClick={onStartAgain}>
-          Start again
-        </button>
+        <StartAgainButton className="start-again start-again--icon" onClick={onStartAgain} />
       </div>
     </header>
   );

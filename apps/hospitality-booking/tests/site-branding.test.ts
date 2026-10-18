@@ -15,6 +15,8 @@ const rcoaBookingRoute = readFileSync(new URL("../app/api/bookings/rcoa/route.ts
 const rcoaPage = readFileSync(new URL("../app/rcoa/page.tsx", import.meta.url), "utf8");
 const rcoaPortal = readFileSync(new URL("../app/ui/RcoaBookingPortal.tsx", import.meta.url), "utf8");
 const rcoaPortalStyles = readFileSync(new URL("../app/ui/RcoaBookingPortal.module.css", import.meta.url), "utf8");
+const startAgainButton = readFileSync(new URL("../app/ui/StartAgainButton.tsx", import.meta.url), "utf8");
+const sharedPortalStyles = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const accessRoute = readFileSync(new URL("../app/api/access/route.ts", import.meta.url), "utf8");
 const hubBridgeBookingRoute = readFileSync(new URL("../../integration-hub/app/api/bookings/mnk/route.ts", import.meta.url), "utf8");
 const stagingConfig = readFileSync(new URL("../apphosting.staging.yaml", import.meta.url), "utf8");
@@ -123,11 +125,43 @@ test("Booking and Operations expose the canonical current site identity", () => 
   assert.doesNotMatch(dashboard, /MNK operational workspace|portalSiteLabel \|\| "MNK"/);
 });
 
-test("surface entry is site-locked and offers Change workspace instead of an OPLOC selector", () => {
+test("booking portals are site-locked while workspace navigation remains on Operations", () => {
   assert.doesNotMatch(booking, /availableSites|onSiteChange|Hospitality site/);
   assert.doesNotMatch(dashboard, /availableSites|onSiteChange|Hospitality site/);
-  assert.match(booking, /href="\/workspace"/);
+  assert.doesNotMatch(booking.match(/function Top\([\s\S]*?\n}\nfunction ResetModal/)?.[0] || "", /Change workspace|href="\/workspace"/);
   assert.match(dashboard, /href="\/workspace">Change workspace/);
+});
+
+test("every active booking platform uses the shared accessible refresh action", () => {
+  const portalPages = [
+    ["Angel Court", "../app/angel-court/page.tsx", /siteKey="angel-court"/],
+    ["MNK", "../app/mnk/page.tsx", /siteKey="mnk"/],
+    ["RCoA", "../app/rcoa/page.tsx", /RcoaBookingPortal/],
+    ["CFC", "../app/cfc/page.tsx", /siteKey="cfc"/],
+    ["Munich Re", "../app/munich-re/page.tsx", /siteKey="munich-re"/],
+  ] as const;
+  for (const [portal, path, expectedComponent] of portalPages) {
+    const page = readFileSync(new URL(path, import.meta.url), "utf8");
+    assert.match(page, expectedComponent, `${portal} must keep its supported portal entry point`);
+  }
+  assert.match(booking, /<StartAgainButton className="start-again start-again--icon" onClick=\{onStartAgain\} \/>/);
+  assert.match(rcoaPortal, /<StartAgainButton buttonRef=\{resetTriggerRef\} className=\{styles\.resetButton\} onClick=\{\(\) => setResetOpen\(true\)\} \/>/);
+  assert.match(startAgainButton, /aria-label="Start again"/);
+  assert.match(startAgainButton, /<RefreshCw aria-hidden="true"/);
+  assert.match(sharedPortalStyles, /\.mnk-top-actions \.start-again--icon\{[^}]*width:44px;[^}]*height:44px/s);
+  assert.match(rcoaPortalStyles, /\.resetButton\s*\{[^}]*width: 44px;[^}]*height: 44px;/s);
+});
+
+test("the start-again icon opens the existing confirmation and preserves draft and success handling", () => {
+  assert.match(booking, /const \[resetOpen, setResetOpen\] = useState\(false\)/);
+  assert.match(booking, /<StartAgainButton className="start-again start-again--icon" onClick=\{onStartAgain\} \/>/);
+  assert.match(booking, /\{resetOpen && <ResetModal onCancel=\{\(\) => setResetOpen\(false\)\} onConfirm=\{resetBooking\} \/>\}/);
+  assert.match(booking, /window\.localStorage\.removeItem\(draftKey\(site\.key\)\)/);
+  assert.match(booking, /Make another request/);
+  assert.match(rcoaPortal, /const \[resetOpen, setResetOpen\] = useState\(false\)/);
+  assert.match(rcoaPortal, /onClick=\{\(\) => setResetOpen\(true\)\}/);
+  assert.match(rcoaPortal, /\{resetOpen && <div className=\{styles\.modalBackdrop\}/);
+  assert.match(rcoaPortal, /Clear this booking\?/);
 });
 
 test("effective minimum guest constraints are enforced alongside minimum quantities", () => {
