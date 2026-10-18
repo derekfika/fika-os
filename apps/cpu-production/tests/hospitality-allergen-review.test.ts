@@ -164,3 +164,8 @@ test("once signed, the retry actions also complete a pending Hub Planned sync (i
   const component = read("../app/ui/HospitalityAllergenDetail.tsx");
   assert.match(component, /if \(body\.hubLifecycle\) setHubPending\(body\.hubLifecycle\.status === "pending"[\s\S]{0,300}const materialized = body\.matrixStatus === "ready"/);
 });
+
+test("a signed review with a pending Hub sync offers an explicit Retry booking status update action", () => {
+  const component = read("../app/ui/HospitalityAllergenDetail.tsx");
+  assert.match(component, /signatures\.length >= 2 && <button[^>]*onClick=\{\(\) => void retryFinalArtifact\(\)\}>Retry booking status update<\/button>/);
+});

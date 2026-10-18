@@ -1044,7 +1044,8 @@ export default function HospitalityAllergenDetail({
           {hubPending && (
             <section className="matrix-review-problems" role="alert" aria-labelledby="matrix-hub-pending-title">
               <h3 id="matrix-hub-pending-title">Booking status update not confirmed</h3>
-              <p>The allergen review is saved in CPU, but the booking status in the Hub has not reached Planned. {hubPending} Press Save allergen review to retry, or Retry final signed PDF once the review is signed.</p>
+              <p>The allergen review is saved in CPU, but the booking status in the Hub has not reached Planned. {hubPending} Press Save allergen review to retry; once both chefs have signed, use Retry booking status update.</p>
+              {signatures.length >= 2 && <button type="button" className="button button-soft" disabled={busy} onClick={() => void retryFinalArtifact()}>Retry booking status update</button>}
             </section>
           )}
           {reviewConflict && (
