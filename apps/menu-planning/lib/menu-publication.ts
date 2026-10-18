@@ -1,3 +1,4 @@
+import { hospitalityArchiveBase } from "./hospitality-archive-url";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -1340,9 +1341,13 @@ export async function archivePublishedDayMatrix(
       /[^A-Za-z0-9._-]+/g,
       "_",
     );
-  const base = (
-    process.env.HOSPITALITY_BOOKING_BASE_URL || "http://localhost:3300"
-  ).replace(/\/$/, "");
+  let base: string | undefined;
+  let archiveEndpointRejected = false;
+  try {
+    base = hospitalityArchiveBase();
+  } catch {
+    archiveEndpointRejected = true;
+  }
   const archivedAt = now();
   let archive: DriveArchive = {
     status: "failed",
@@ -1365,7 +1370,11 @@ export async function archivePublishedDayMatrix(
   } catch {
     /* The archive remains failed until a PDF can be generated. */
   }
-  if (pdfBase64)
+  if (pdfBase64 && !base) {
+    const status = archiveEndpointRejected ? "failed" : "not_configured";
+    archive = { ...archive, status, pdfStatus: status };
+  }
+  if (pdfBase64 && base)
     try {
       const response = await fetch(`${base}/api/allergen-matrix/drive`, {
         method: "POST",

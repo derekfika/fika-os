@@ -40,6 +40,9 @@ env:
   - variable: FIKA_HUB_BASE_URL
     value: https://fika-os-prod-hub--fika-os.europe-west4.hosted.app
     availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIKA_HUB_URL
+    value: https://os.fikacatering.com
+    availability: [BUILD, RUNTIME]
   - variable: CPU_PRODUCTION_BASE_URL
     value: https://fika-os-prod-cpu--fika-os.europe-west4.hosted.app
     availability: [BUILD, RUNTIME]
