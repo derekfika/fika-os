@@ -700,6 +700,7 @@ export default function HospitalityAllergenDetail({
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message || "The final signed matrix could not be generated.");
       if (body.revision !== undefined) setPlanRevision(body.revision);
+      if (body.hubLifecycle) setHubPending(body.hubLifecycle.status === "pending" ? String(body.hubLifecycle.error || "The booking status update has not been confirmed.") : null);
       const materialized = body.matrixStatus === "ready" && Boolean(body.matrixArtifact || body.plan?.matrixArtifact);
       setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact); setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : materialized ? "ready" : "artifact_pending"); setSignatures(body.signatures || signatures); if ("currentAllergenRelease" in (body.plan || {})) setCurrentAllergenRelease(body.plan.currentAllergenRelease); setMessage(materialized ? "Signed PDF generated. The matrix is ready to open from the manager dashboard." : "Materialization is queued. The signed matrix will become available after the durable retry succeeds.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "The final signed matrix could not be generated."); }
@@ -1043,7 +1044,7 @@ export default function HospitalityAllergenDetail({
           {hubPending && (
             <section className="matrix-review-problems" role="alert" aria-labelledby="matrix-hub-pending-title">
               <h3 id="matrix-hub-pending-title">Booking status update not confirmed</h3>
-              <p>The allergen review is saved in CPU, but the booking status in the Hub has not reached Planned. {hubPending} Press Save allergen review to retry.</p>
+              <p>The allergen review is saved in CPU, but the booking status in the Hub has not reached Planned. {hubPending} Press Save allergen review to retry, or Retry final signed PDF once the review is signed.</p>
             </section>
           )}
           {reviewConflict && (

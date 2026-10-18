@@ -156,3 +156,11 @@ test("the Hospitality production panel links to this order's own signed allergen
   assert.match(panel, /could not be saved to Drive/);
   assert.match(panel, /Not signed yet/);
 });
+
+test("once signed, the retry actions also complete a pending Hub Planned sync (idempotent, verified by completeLifecycleSync)", () => {
+  const route = read("../app/api/production-plan/route.ts");
+  assert.match(route, /retried\.plan\.lifecycleSync\?\.status === "pending" \? await completeLifecycleSync\(request, retried\.plan\)/);
+  assert.match(route, /command\.action === "save-matrix" && plan\.lifecycleSync\?\.status === "pending"\) \? await completeLifecycleSync\(request, plan\)/);
+  const component = read("../app/ui/HospitalityAllergenDetail.tsx");
+  assert.match(component, /if \(body\.hubLifecycle\) setHubPending\(body\.hubLifecycle\.status === "pending"[\s\S]{0,300}const materialized = body\.matrixStatus === "ready"/);
+});

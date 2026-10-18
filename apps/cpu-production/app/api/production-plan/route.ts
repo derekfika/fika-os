@@ -598,7 +598,10 @@ async function handlePost(request: NextRequest) {
     if (!currentOrder) throw Object.assign(new Error("The canonical Production Order could not be loaded."), { status: 503 });
     if (command.action === "retry-materialization") {
       if (!storedPlan) throw Object.assign(new Error("The persisted CPU production plan could not be loaded for materialization retry."), { status: 409, code: "CPU_PLAN_NOT_FOUND" });
-      return NextResponse.json(await retryCommittedCpuMaterialization({ plan: normalisePlanAllergens(storedPlan), order: currentOrder, expectedLineage: command.expectedLineage, timestamp: now() }));
+      const retried = await retryCommittedCpuMaterialization({ plan: normalisePlanAllergens(storedPlan), order: currentOrder, expectedLineage: command.expectedLineage, timestamp: now() });
+      // Once signed the review is locked, so this retry is the operator's way to complete a Hub Planned sync that is still pending.
+      const retriedHub = retried.plan.lifecycleSync?.status === "pending" ? await completeLifecycleSync(request, retried.plan) : undefined;
+      return NextResponse.json({ ...retried, ...(retriedHub ? { revision: planRevisionToken(retried.plan), hubLifecycle: retriedHub, synchronised: retriedHub.status === "synced" } : {}) });
     }
     const plan = await getPlan(request, command.orderId, storedPlan);
     // Review saves are written against the exact revision the browser loaded; every other command against the revision this request read.
@@ -756,7 +759,7 @@ async function handlePost(request: NextRequest) {
     }
     if (event && !event.duplicate) plan.updatedAt = event.revision;
     // CPU is now durably committed. Only now is the Hub lifecycle touched; a failure is reported as pending, never as synchronised.
-    const hubLifecycle = command.action === "mark-planned" ? await completeLifecycleSync(request, plan) : undefined;
+    const hubLifecycle = command.action === "mark-planned" || (command.action === "save-matrix" && plan.lifecycleSync?.status === "pending") ? await completeLifecycleSync(request, plan) : undefined;
     // A duplicate command has already staged its durable work. Replaying the
     // HTTP request must not synchronously repeat delivery or consumer effects.
     let materializationResult: { eventId: string; status: string; error?: string; attempts?: number } | undefined;
