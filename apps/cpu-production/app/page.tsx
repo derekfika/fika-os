@@ -204,7 +204,7 @@ export default function CpuProduction() {
             <h1>Production, <em>in hand.</em></h1>
             <p>See what needs preparing, when it is required and where intervention is needed.</p>
           </div>
-          <div className="cpu-header-tools"><button type="button" onClick={() => { window.location.href = "http://localhost:4000"; }}>＋ Ad-hoc production</button><button type="button">▣ &nbsp; {todayKey ? new Date(`${todayKey}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "Loading date…"} &nbsp;⌄</button></div>
+          <div className="cpu-header-tools"><button type="button">▣ &nbsp; {todayKey ? new Date(`${todayKey}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "Loading date…"} &nbsp;⌄</button></div>
           <small>Operational application&nbsp; · &nbsp;governed Production domain</small>
         </header>
         <div className="cpu-main">
