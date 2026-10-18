@@ -31,7 +31,7 @@ Status: source inventory from checkpoint d878071; target classifications are pro
 | Route | Methods | Function | Current | Target |
 |---|---|---|---|---|
 | /api/production, /api/production-plan | GET/POST | queue, plan, accept/reject/save/plan | Hub-role helper with dev fallback | Human View/Manage scoped to production/site |
-| /api/production-plan allergen actions | POST | signatures and matrix artifact | request role is accepted; actor name is derived separately | Explicit production.allergen-sign / production.allergen-final-approve; ignore client role; distinct actors |
+| /api/production-plan allergen actions | POST | signatures and matrix artifact | role is request-selected; printed name and drawn signature required; actor derived separately | CPU access and OPLOC scope only (allergen authorities retired 2026-10-18). Open design point: the earlier target of ignoring the client role and enforcing distinct actors was never implemented and is not required by this change. |
 | /api/delivered-in/review, /api/menu-publications*, /api/menu-plans* | GET/POST | projections, publication reads/events, plan handoff | mixed/no visible shared guard in route sources | Service for CPU projection; human View/Manage; service events scoped |
 | /api/calendar/scan, /api/oplocs, /api/grab-and-go, /api/sandwiches | GET/POST | scan/reference/operational item endpoints | mixed/forwarding | Classify exact consumer; human or service; no public broad write |
 
@@ -89,7 +89,7 @@ Status: source inventory from checkpoint d878071; target classifications are pro
 1. Hub synthetic role/email mapping is a business authorization boundary; it must migrate to immutable AuthIdentity/grants.
 2. Hub local session cookie is deliberately one year and secure false; it is not a production session design.
 3. Logistics accepts client actor attribution and a named default.
-4. CPU allergen signing accepts a request-selected role and needs explicit signatory grants plus distinct-actor enforcement.
+4. CPU allergen signing accepts a request-selected role; explicit signatory grants are retired (2026-10-18). Distinct-actor enforcement remains an open, unimplemented design point.
 5. Menu Planning publication currently requires technical integration-admin, collapsing Administer and Publish.
 6. Menu Planning sandwiches/menu/source routes include untrusted actor fields or lack visible guards.
 7. Delivered-In site checks are valuable but currently depend on synthetic access resolution.

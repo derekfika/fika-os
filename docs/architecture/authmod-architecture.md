@@ -54,7 +54,7 @@ The registry is FIKA-owned and keyed by stable IDs: integration-hub, cpu-product
 Keep v1 small and evidence-based:
 
 - Menu Planning: menu.publish (Publish, separate from Hub Administer).
-- CPU Production: production.allergen-sign (Approve/sign production role) and production.allergen-final-approve (Approve/final role), explicit authorities scoped to the relevant production/site context. They may be held by person or operational identities; the authenticated account is not the food-safety signatory.
+- CPU Production: ~~production.allergen-sign / production.allergen-final-approve~~ — RETIRED (2026-10-18): CPU allergen sign-off no longer uses AUTHMOD special authority. It requires normal authenticated CPU access (app admission and OPLOC scope) and, for each signature role, a printed name and a drawn signature captured with timestamp, actor and the frozen matrix lineage. Existing grants remain readable and revocable; new grants and delegations are refused (AUTHMOD_AUTHORITY_RETIRED).
 - Logistics: logistics.repair, logistics.reconcile, logistics.reset or a reviewed equivalent only if route analysis confirms they are privileged maintenance actions.
 - Integration Hub: authmod.admin (Administer), separate from business approval/publication.
 

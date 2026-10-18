@@ -46,10 +46,10 @@ test("temporary sites require a fixed end through the service boundary", async (
 test("delegation is bounded, linked to a live source, and becomes ineffective with the source", async () => {
   const repository = makeRepo(); const source = await identity(repository, "source@example.test"); const delegate = await identity(repository, "delegate@example.test");
   await grantStandardApplicationAccess(repository, { identityId: delegate.id, appId: "cpu-production", actor: admin, reason: "Normal access." }); await assignSite(repository, { identityId: delegate.id, oplocId: "oploc:mnk", actor: admin, reason: "Normal site." });
-  const sourceGrant = await grantAuthority(repository, { subjectId: source.id, subjectType: "interactive", actor: admin, appId: "cpu-production", resource: "production.allergen-final-approve", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Source authority." });
+  const sourceGrant = await grantAuthority(repository, { subjectId: source.id, subjectType: "interactive", actor: admin, appId: "cpu-production", resource: "production.example-authority", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Source authority." });
   const result = await createDelegation(repository, { delegatorId: source.id, delegateId: delegate.id, sourceGrantId: sourceGrant.id, action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, effectiveFrom: "2026-09-01T00:00:00.000Z", effectiveTo: "2026-09-10T00:00:00.000Z", actor: admin, reason: "Holiday cover." });
-  assert.equal(result.grant.delegationSourceGrantId, sourceGrant.id); assert.equal((await evaluateAuthority(repository, { principal: { type: "interactive", id: delegate.id, displayName: delegate.displayName }, appId: "cpu-production", resource: "production.allergen-final-approve", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
-  await revokeAuthority(repository, { grantId: sourceGrant.id, actor: admin, reason: "Source revoked." }); assert.equal((await evaluateAuthority(repository, { principal: { type: "interactive", id: delegate.id, displayName: delegate.displayName }, appId: "cpu-production", resource: "production.allergen-final-approve", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
+  assert.equal(result.grant.delegationSourceGrantId, sourceGrant.id); assert.equal((await evaluateAuthority(repository, { principal: { type: "interactive", id: delegate.id, displayName: delegate.displayName }, appId: "cpu-production", resource: "production.example-authority", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
+  await revokeAuthority(repository, { grantId: sourceGrant.id, actor: admin, reason: "Source revoked." }); assert.equal((await evaluateAuthority(repository, { principal: { type: "interactive", id: delegate.id, displayName: delegate.displayName }, appId: "cpu-production", resource: "production.example-authority", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
   await assert.rejects(() => createDelegation(repository, { delegatorId: source.id, delegateId: delegate.id, sourceGrantId: result.grant.id, action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, effectiveFrom: "2026-09-01T00:00:00.000Z", effectiveTo: "2026-09-10T00:00:00.000Z", actor: admin, reason: "Recursive." }), /not currently effective/);
 });
 
@@ -295,11 +295,10 @@ test("operational identities receive normal scoped access but not person-require
     await assert.rejects(() => grantAuthority(repository, { subjectId: operational.id, subjectType: "interactive", actor: admin, appId, resource, action, scope: resource === "menu.publish" ? { kind: "organisation", ids: [] } : { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Invalid operational authority." }), /person identity/);
   }
   await grantStandardApplicationAccess(repository, { identityId: operational.id, appId: "cpu-production", actor: admin });
-  assert.equal((await evaluateAuthority(repository, { principal, appId: "cpu-production", resource: "production.allergen-sign", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
-  const sign = await grantAuthority(repository, { subjectId: operational.id, subjectType: "interactive", actor: admin, appId: "cpu-production", resource: "production.allergen-sign", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Explicit operational allergen signing authority." });
-  const final = await grantAuthority(repository, { subjectId: operational.id, subjectType: "interactive", actor: admin, appId: "cpu-production", resource: "production.allergen-final-approve", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Explicit operational final allergen authority." });
-  assert.equal((await evaluateAuthority(repository, { principal, appId: "cpu-production", resource: sign.resource, action: sign.action, scope: sign.scope })).allowed, true);
-  assert.equal((await evaluateAuthority(repository, { principal, appId: "cpu-production", resource: final.resource, action: final.action, scope: final.scope })).allowed, true);
+  // Allergen sign-off authorities are retired: CPU signing needs normal CPU access, a printed name and a drawn signature.
+  for (const resource of ["production.allergen-sign", "production.allergen-final-approve"]) {
+    await assert.rejects(() => grantAuthority(repository, { subjectId: operational.id, subjectType: "interactive", actor: admin, appId: "cpu-production", resource, action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Retired authority must not be granted." }), (error: Error & { code?: string }) => error.code === "AUTHMOD_AUTHORITY_RETIRED");
+  }
 });
 
 test("person-required policy denies erroneous operational grants and allows person grants", async () => {
@@ -311,10 +310,7 @@ test("person-required policy denies erroneous operational grants and allows pers
   assert.equal((await evaluateAuthority(repository, { principal: personPrincipal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "organisation", ids: [] } })).allowed, true);
   assert.equal((await evaluateAuthority(repository, { principal: personPrincipal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, true);
   await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "cpu-production", actor: admin });
-  const signGrant = await grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor: admin, appId: "cpu-production", resource: "production.allergen-sign", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Person allergen signer." });
-  const finalGrant = await grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor: admin, appId: "cpu-production", resource: "production.allergen-final-approve", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Person final approver." });
-  assert.equal((await evaluateAuthority(repository, { principal: personPrincipal, appId: "cpu-production", resource: signGrant.resource, action: signGrant.action, scope: signGrant.scope })).allowed, true);
-  assert.equal((await evaluateAuthority(repository, { principal: personPrincipal, appId: "cpu-production", resource: finalGrant.resource, action: finalGrant.action, scope: finalGrant.scope })).allowed, true);
+  await assert.rejects(() => grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor: admin, appId: "cpu-production", resource: "production.allergen-sign", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Retired authority must not be granted." }), /retired/);
   await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "integration-hub", actor: admin }); const adminGrant = await grantAuthmodAdmin(repository, { identityId: person.id, actor: admin, reason: "Person admin." });
   assert.equal((await evaluateAuthority(repository, { principal: personPrincipal, appId: "integration-hub", resource: adminGrant.resource, action: adminGrant.action, scope: adminGrant.scope })).allowed, true);
   await repository.saveAuthorityGrant({ ...personGrant, id: "bad-operational-menu-grant", subjectId: operational.id, version: 1 }, undefined);
@@ -327,7 +323,7 @@ test("operational actor audit remains operational and does not claim the custodi
   const repository = makeRepo(); const operational = await operationalIdentity(repository, "audit-mnk@example.test", { representedOplocId: "oploc:mnk" });
   const actor: AuthPrincipal = { type: "interactive", id: operational.id, displayName: operational.displayName, identityKind: "operational", representedOplocId: "oploc:mnk", primaryCustodianLegendId: "legend:tia" };
   await grantStandardApplicationAccess(repository, { identityId: operational.id, appId: "logistics", actor });
-  await grantAuthority(repository, { subjectId: operational.id, subjectType: "interactive", actor, appId: "cpu-production", resource: "production.allergen-sign", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Operational shared-device signing capability." });
+  await grantAuthority(repository, { subjectId: operational.id, subjectType: "interactive", actor, appId: "cpu-production", resource: "production.example-authority", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Operational shared-device signing capability." });
   const audit = repository.audits.at(-1); assert.equal(audit?.actorPrincipalId, operational.id); assert.equal(audit?.actorPrincipalType, "interactive"); assert.equal(audit?.actorSnapshot.identityKind, "operational"); assert.equal(audit?.actorSnapshot.primaryCustodianLegendId, "legend:tia"); assert.equal("signatoryName" in (audit?.actorSnapshot || {}), false);
 });
 

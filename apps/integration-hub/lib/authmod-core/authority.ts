@@ -8,10 +8,19 @@ export const PERSON_REQUIRED_AUTHORITIES = ["authmod", "authmod.admin", "menu.pu
 export function isPersonRequiredAuthority(resource: string) { return (PERSON_REQUIRED_AUTHORITIES as readonly string[]).includes(resource); }
 export const ORGANISATION_AUTHORITIES = ["authmod", "menu.publish"] as const;
 export function isOrganisationAuthority(resource: string) { return (ORGANISATION_AUTHORITIES as readonly string[]).includes(resource); }
-export const OPLOC_SCOPED_AUTHORITIES = ["production.allergen-sign", "production.allergen-final-approve"] as const;
-export function isOplocScopedAuthority(resource: string) { return (OPLOC_SCOPED_AUTHORITIES as readonly string[]).includes(resource); }
+/**
+ * Retired authorities. CPU allergen sign-off is no longer gated by AUTHMOD special authority: it needs normal
+ * authenticated CPU access (app admission and OPLOC scope) plus a printed name and drawn signature for each
+ * signature role. Existing grants stay readable and revocable for audit; new grants and delegations are refused.
+ */
+export const RETIRED_AUTHORITIES = ["production.allergen-sign", "production.allergen-final-approve"] as const;
+export function isRetiredAuthority(resource: string) { return (RETIRED_AUTHORITIES as readonly string[]).includes(resource); }
+function assertAuthorityNotRetired(resource: string) {
+  if (isRetiredAuthority(resource)) throw Object.assign(new Error("This authority has been retired. CPU allergen sign-off no longer uses AUTHMOD special authority."), { status: 422, code: "AUTHMOD_AUTHORITY_RETIRED" });
+}
 
 export async function grantAuthority(repository: AuthModRepository, input: { subjectId: string; subjectType: "interactive" | "service"; actor: AuthPrincipal; appId: string; resource: string; action: AuthorityGrant["action"]; scope: AuthorityGrant["scope"]; provenance?: AuthorityGrant["provenance"]; effectivePeriod?: EffectivePeriod; reason: string }) {
+  assertAuthorityNotRetired(input.resource);
   if (input.resource === "logistics.driver" && (input.appId !== "logistics" || input.action !== "Contribute" || input.scope.kind !== "resource" || !input.scope.ids.length || !input.scope.ids.every(isLogisticsVehicleId))) throw Object.assign(new Error("Driver authority requires explicit governed vehicle IDs and Contribute."), { status: 422 });
   if (!input.reason?.trim() || input.reason.trim().toLowerCase() === "authmod administrator change") throw Object.assign(new Error("A specific reason is required for authority changes."), { status: 422, code: "AUTHMOD_REASON_REQUIRED" });
   const effectivePeriod = input.effectivePeriod?.effectiveTo && !input.effectivePeriod.effectiveFrom ? { ...input.effectivePeriod, effectiveFrom: "1970-01-01T00:00:00.000Z" } : input.effectivePeriod; assertValidEffectivePeriod(effectivePeriod, false);
@@ -21,7 +30,6 @@ export async function grantAuthority(repository: AuthModRepository, input: { sub
     if (!target || target.identityKind !== "person") throw Object.assign(new Error("This authority requires a person identity."), { status: 422, code: "AUTHMOD_PERSON_REQUIRED" });
   }
   if (isOrganisationAuthority(input.resource) && input.scope.kind !== "organisation") throw Object.assign(new Error("This authority is organisation-wide and cannot be OPLOC-scoped."), { status: 422, code: "AUTHMOD_ORGANISATION_SCOPE_REQUIRED" });
-  if (isOplocScopedAuthority(input.resource) && (input.scope.kind !== "oploc" || !input.scope.ids.length)) throw Object.assign(new Error("This authority requires an explicit OPLOC scope."), { status: 422, code: "AUTHMOD_OPLOC_SCOPE_REQUIRED" });
   const id = idempotentId("authority", input.subjectType, input.subjectId, input.appId, input.resource, input.action, input.scope.kind, ...input.scope.ids);
   const existing = (await repository.listAuthorityGrants(input.subjectId, input.subjectType)).find(value => value.id === id); const timestamp = now();
   const grant: AuthorityGrant = { id, subjectType: input.subjectType, subjectId: input.subjectId, appId: input.appId, resource: input.resource, action: input.action, scope: input.scope, status: "active", provenance: input.provenance || "explicit-special-authority", effectiveFrom: effectivePeriod?.effectiveFrom, effectiveTo: effectivePeriod?.effectiveTo, reason: input.reason, grantedBy: input.actor.id, version: (existing?.version || 0) + 1, createdAt: existing?.createdAt || timestamp, updatedAt: timestamp };
@@ -36,7 +44,7 @@ export async function createDelegation(repository: AuthModRepository, input: { d
   const source = await repository.getAuthorityGrant(input.sourceGrantId); if (!source || source.id !== input.sourceGrantId || source.subjectId !== input.delegatorId || source.subjectType !== "interactive" || !isEffective(source)) throw Object.assign(new Error("Delegation source authority is not currently effective."), { status: 422, code: "AUTHMOD_DELEGATION_SOURCE_INVALID" });
   if (source.delegationSourceGrantId) throw Object.assign(new Error("Recursive delegation is not supported."), { status: 422, code: "AUTHMOD_DELEGATION_RECURSIVE" });
   if (isOrganisationAuthority(source.resource) && input.scope.kind !== "organisation") throw Object.assign(new Error("This authority is organisation-wide and cannot be OPLOC-scoped."), { status: 422, code: "AUTHMOD_ORGANISATION_SCOPE_REQUIRED" });
-  if (isOplocScopedAuthority(source.resource) && (input.scope.kind !== "oploc" || !input.scope.ids.length)) throw Object.assign(new Error("This authority requires an explicit OPLOC scope."), { status: 422, code: "AUTHMOD_OPLOC_SCOPE_REQUIRED" });
+  assertAuthorityNotRetired(source.resource);
   if (ACTION_RANK[input.action] > ACTION_RANK[source.action] || !scopeWithin(source.scope, input.scope)) throw Object.assign(new Error("Delegated authority cannot exceed the source authority."), { status: 422, code: "AUTHMOD_DELEGATION_EXCEEDS_SOURCE" });
   if (source.effectiveTo && Date.parse(input.effectiveTo) > Date.parse(source.effectiveTo)) throw Object.assign(new Error("Delegation cannot outlive its source authority."), { status: 422, code: "AUTHMOD_DELEGATION_OUTLIVES_SOURCE" });
   if (isPersonRequiredAuthority(source.resource)) { const target = await repository.getIdentity(input.delegateId); if (!target || target.identityKind !== "person") throw Object.assign(new Error("Delegated authority requires a person identity."), { status: 422, code: "AUTHMOD_PERSON_REQUIRED" }); }

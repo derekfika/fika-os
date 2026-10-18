@@ -17,8 +17,8 @@ Use one primary sheet named Access and preserve the original file name, SHA-256 
 | Full Access | boolean | no | Normal launch-critical apps and normal OPLOC scope only |
 | AUTHMOD Admin | boolean | no | Explicit authmod.admin grant; independent from Full Access |
 | Menu Publish | boolean | no | Explicit menu.publish grant |
-| Production Allergen Sign | boolean | no | Explicit production sign authority |
-| Final Allergen Sign | boolean | no | Explicit final approval authority |
+| Production Allergen Sign | boolean | no | Retired 2026-10-18: ignored on import |
+| Final Allergen Sign | boolean | no | Retired 2026-10-18: ignored on import |
 | Logistics Repair | boolean | no | Proposed only if approved in the final route/action catalogue |
 | Logistics Reconcile | boolean | no | Proposed only if approved in the final route/action catalogue |
 | Logistics Reset | boolean | no | Proposed only if approved in the final route/action catalogue |

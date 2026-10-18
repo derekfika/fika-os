@@ -41,7 +41,7 @@ function changes(row: Record<string, string>, identityId: string | undefined, ro
     if (!value) continue;
     if (column.startsWith("site:oploc:") && tryBoolean(value, column, rowNumber, errors)) result.push({ kind: "site", target: column.slice("site:oploc:".length), operation: "activate" });
     if (column.startsWith("app:") && tryBoolean(value, column, rowNumber, errors)) result.push({ kind: "app", target: column.slice("app:".length), operation: "activate" });
-    if (["AUTHMOD Admin", "Menu Publish", "Production Allergen Sign", "Final Allergen Sign"].includes(column) && tryBoolean(value, column, rowNumber, errors)) result.push({ kind: "authority", target: column, operation: "activate" });
+    if (["AUTHMOD Admin", "Menu Publish"].includes(column) && tryBoolean(value, column, rowNumber, errors)) result.push({ kind: "authority", target: column, operation: "activate" });
   }
   return result;
 }
@@ -140,7 +140,7 @@ export async function commitAccessImport(repository: AuthModRepository, input: {
     for (const siteId of siteIds) await assignSite(repository, { identityId: identity.id, oplocId: siteId, actor: input.actor, source: "import", reason: "Reviewed AUTHMOD spreadsheet site assignment." });
     if (resolution.input["Full Access"] !== undefined && resolution.input["Full Access"] !== "") await setFullAccess(repository, { identityId: identity.id, fullAccess: parseBoolean(resolution.input["Full Access"], "Full Access", resolution.rowNumber), actor: input.actor, reason: "Reviewed AUTHMOD spreadsheet Full Access change." });
     for (const app of applications.filter(value => parseBoolean(resolution.input["app:" + value.appId], "app:" + value.appId, resolution.rowNumber))) await grantStandardApplicationAccess(repository, { identityId: identity.id, appId: app.appId, actor: input.actor, idempotencyKey: input.idempotencyKey });
-    const special: Array<[string, string, "Approve" | "Publish" | "Administer", string]> = [["Menu Publish", "menu.publish", "Publish", "menu-planning"], ["Production Allergen Sign", "production.allergen-sign", "Approve", "cpu-production"], ["Final Allergen Sign", "production.allergen-final-approve", "Approve", "cpu-production"], ["AUTHMOD Admin", "authmod", "Administer", "integration-hub"]];
+    const special: Array<[string, string, "Approve" | "Publish" | "Administer", string]> = [["Menu Publish", "menu.publish", "Publish", "menu-planning"], ["AUTHMOD Admin", "authmod", "Administer", "integration-hub"]];
     for (const [column, resource, action, appId] of special) if (parseBoolean(resolution.input[column], column, resolution.rowNumber)) await grantAuthority(repository, { subjectId: identity.id, subjectType: "interactive", actor: input.actor, appId, resource, action, scope: resource === "authmod" || resource === "menu.publish" ? { kind: "organisation", ids: [] } : { kind: "oploc", ids: siteIds }, provenance: "import", reason: "Reviewed AUTHMOD spreadsheet special authority." });
     const appIds = applications.filter(value => parseBoolean(resolution.input["app:" + value.appId], "app:" + value.appId, resolution.rowNumber)).map(value => value.appId);
     const authorityIds: string[] = [];
