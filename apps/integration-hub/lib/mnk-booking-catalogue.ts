@@ -1,6 +1,7 @@
 import { hospitalityPortalReadFromRecords, type HospitalityPortalReadRequest } from "./hospitality-catalogue-service";
 import type { CanonicalRecord } from "./types";
 import type { MnkBookingPayload } from "./hospitality-booking-service";
+import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
 
 /** Read only what the effective-offering resolver needs for the submitted stable Item IDs: their sparse site exceptions, company-default and exception Prices, and the one OPLOC (liveness). */
 async function loadPortalBookingCatalogue(items: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, provider: string, read: (field: string, ids: string[]) => Promise<CanonicalRecord[]>) {
@@ -32,9 +33,37 @@ export function loadAngelCourtBookingCatalogue(items: CanonicalRecord[], payload
   return loadPortalBookingCatalogue(items, payload, oplocId, "angel-court-hospitality-brochure", read);
 }
 
-/** Resolve only Angel Court's governed constraints; preserve its established brochure pricing snapshot. */
-export function angelCourtBookingConstraintRecords(records: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string): CanonicalRecord[] {
-  const provider = "angel-court-hospitality-brochure";
+const ANGEL_COURT_PROVIDER = "angel-court-hospitality-brochure";
+
+/**
+ * Governed catalogue items for Angel Court. The portal offers canonical Items resolved through their effective
+ * Offering at the Angel Court OPLOC, so a submitted canonical Item ID that has exactly one standard effective
+ * Offering there is priced from that Offering (never from client input) and accepted without a legacy brochure
+ * mapping. An Item with no effective Offering at this OPLOC, an ambiguous one, or an archived Item is left
+ * untouched and is therefore still refused by the price validator. Legacy brochure item IDs are unaffected.
+ */
+function angelCourtGovernedItemRecords(records: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, now: string): CanonicalRecord[] {
+  const submittedIds = new Set(payload.order.items.map(item => item.itemId));
+  const candidates = records.filter(record => record.entityType === "Hospitality Menu Item" && submittedIds.has(record.canonicalId)
+    && record.lifecycleStatus !== "archived" && record.publicationStatus !== "withdrawn" && record.record.lifecycleState === "active");
+  if (!candidates.length) return records;
+  const priced = new Map(mnkBookingPricingRecords(records, { oplocId, serviceDate: hospitalityMenuDate(new Date(now)) })
+    .filter(record => submittedIds.has(record.canonicalId) && typeof record.record.unitPrice === "number")
+    .map(record => [record.canonicalId, record] as const));
+  if (!priced.size) return records;
+  return records.map(record => {
+    const governed = priced.get(record.canonicalId);
+    if (!governed || record.entityType !== "Hospitality Menu Item") return record;
+    const mappings = Array.isArray(governed.record.providerMappings) ? governed.record.providerMappings as unknown[] : [];
+    const alreadyMapped = mappings.some(raw => (raw as Record<string, unknown>)?.provider === ANGEL_COURT_PROVIDER);
+    return alreadyMapped ? governed : { ...governed, record: { ...governed.record, providerMappings: [...mappings, { provider: ANGEL_COURT_PROVIDER, sourceItemId: record.canonicalId, mappingStatus: "confirmed", source: "governed-effective-offering" }] } };
+  });
+}
+
+/** Resolve Angel Court's governed Items (price and constraints from the effective Offering); legacy brochure items keep their established snapshot. */
+export function angelCourtBookingConstraintRecords(inputRecords: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, now: string = new Date().toISOString()): CanonicalRecord[] {
+  const provider = ANGEL_COURT_PROVIDER;
+  const records = angelCourtGovernedItemRecords(inputRecords, payload, oplocId, now);
   const submittedIds = new Set(payload.order.items.map(item => item.itemId));
   const mappedItems = records.filter(record => record.entityType === "Hospitality Menu Item" && Array.isArray(record.record.providerMappings) && record.record.providerMappings.some(raw => {
     const mapping = raw as Record<string, unknown>;

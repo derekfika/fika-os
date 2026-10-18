@@ -627,7 +627,7 @@ export function ingestMnkBookingFromExisting(
     return { booking: existing, created: false, validationWarnings: [] };
   const portalSiteId = portalSiteKeyForPayload(payload);
   const resolvedRecords = portalSiteId === "angel-court" && destinationOplocId
-    ? angelCourtBookingConstraintRecords(menuRecords, payload, destinationOplocId)
+    ? angelCourtBookingConstraintRecords(menuRecords, payload, destinationOplocId, now)
     : menuRecords;
   const result = buildMnkCanonicalBooking(payload, resolvedRecords, now);
   if (destinationOplocId) result.booking.service.oplocId = destinationOplocId;
