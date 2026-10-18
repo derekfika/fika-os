@@ -51,7 +51,7 @@ test("CPU server rejects marking an actually incomplete matrix Planned", async (
     const { POST } = await import("../app/api/production-plan/route");
     const incomplete = row("state");
     incomplete.subItems[0].allergens = { milk: "clear" };
-    const response = await POST(new NextRequest("http://localhost/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "mark-planned", orderId: order.canonicalId, planningNotes: "", menuItems: [incomplete] }) }));
+    const response = await POST(new NextRequest("http://localhost/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "mark-planned", orderId: order.canonicalId, planningNotes: "", expectedRevision: null, menuItems: [incomplete] }) }));
     assert.equal(response.status, 422);
     const body = await response.json();
     assert.match(body.error.message, /Record every allergen state/);
@@ -61,12 +61,12 @@ test("CPU server rejects marking an actually incomplete matrix Planned", async (
   }
 });
 
-test("Hospitality detail enables completion only for an unlocked row and auto-plans the final complete row", async () => {
+test("Hospitality detail enables completion only for an unlocked row and plans only on an explicit validated save", async () => {
   const detail = await readFile(new URL("../app/ui/HospitalityAllergenDetail.tsx", import.meta.url), "utf8");
   assert.match(detail, /disabled=\{busy \|\| reviewLockedByAuthority \|\| sub\.evidenceStatus === "completed"\}/);
   assert.doesNotMatch(detail, /if \(planStatus === "planned"\) return/);
-  assert.match(detail, /const allComplete = [\s\S]*isCompleteOperationalAllergenMap\(candidate\.allergens\)/);
-  assert.match(detail, /if \(allComplete\) void planCommand\("mark-planned", \{\}, nextItems\)/);
+  assert.match(detail, /const problems = allergenReviewProblems\(menuItems\)/);
+  assert.doesNotMatch(detail, /if \(allComplete\) void planCommand/);
 });
 
 test("signed matrix amendments retain the explicit reopen requirement", async () => {

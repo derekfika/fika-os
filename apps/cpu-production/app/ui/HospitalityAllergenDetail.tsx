@@ -11,12 +11,14 @@ import type {
   ProductionPlan,
   MatrixSignatureScope,
 } from "../lib/production-plan";
-import { effectiveProductionPlanStatus, hasAllergenAuthority } from "../lib/production-plan-state";
+import { allergenReviewProblems, describeAllergenReviewProblem, effectiveProductionPlanStatus, hasAllergenAuthority } from "../lib/production-plan-state";
+import { allergenReviewCompletionMessage, completeAllergenReviewMap } from "../lib/allergen-review-state";
+import { isSigningAvailable, reviewFingerprint, savedFingerprintAfterSave } from "../lib/allergen-review-session";
 import "./hospitality-allergen-detail.css";
 import { mayContainNotes } from "./allergen-matrix";
 import { isCompleteOperationalAllergenMap, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
 import { matrixColumns } from "./allergen-matrix";
-import { cellLabel, cellState, emptyAllergens, hydrateSavedAllergens } from "./allergen-cell-state";
+import { applyHospitalityCellClick, cellLabel, cellState, derivedNoKeyState, emptyAllergens, hydrateSavedAllergens } from "./allergen-cell-state";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 import { canonicalAllergenMatrixForHash } from "../../../shared/allergen-matrix-hash";
 const allergenColumns = matrixColumns;
@@ -286,6 +288,15 @@ export default function HospitalityAllergenDetail({
   const [currentAllergenRelease, setCurrentAllergenRelease] = useState<ProductionPlan["currentAllergenRelease"]>();
   const [signingLineage, setSigningLineage] = useState<ReviewedLineage>();
   const [signingError, setSigningError] = useState("");
+  const [reviewProblems, setReviewProblems] = useState<string[]>([]);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [savedFingerprint, setSavedFingerprint] = useState<string>();
+  // The persisted revision the browser loaded (string), or null when no plan was stored yet. undefined until the first read completes.
+  const [planRevision, setPlanRevision] = useState<string | null | undefined>(undefined);
+  const [reviewConflict, setReviewConflict] = useState(false);
+  // Set while the Hub has not confirmed the Planned status. Comes from the stored plan, so it is shown after a reload without another Save.
+  const [hubPending, setHubPending] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [matrixStorageStatus, setMatrixStorageStatus] = useState<"not_configured" | "ready" | "artifact_pending">();
   const [planStatus, setPlanStatus] =
     useState<ProductionPlan["status"]>("draft");
@@ -302,6 +313,8 @@ export default function HospitalityAllergenDetail({
   >([]);
   const effectiveStatus = effectiveProductionPlanStatus({ status: planStatus, menuItems });
   const reviewLockedByAuthority = hasAllergenAuthority({ signatures, matrixArtifact, currentAllergenRelease });
+  // Signatures are offered only for a complete matrix that the server has persisted as reviewed, unchanged since.
+  const signingAvailable = isSigningAvailable({ reviewConflict, effectiveStatus, savedFingerprint, currentFingerprint: reviewFingerprint(menuItems, planningNotes) });
 
   useEffect(() => {
     void fetch(
@@ -310,6 +323,10 @@ export default function HospitalityAllergenDetail({
     )
       .then((response) => response.json())
       .then((body) => {
+        setPlanRevision(body.revision === undefined ? undefined : body.revision);
+        setHubPending(body.hubLifecycle?.status === "pending" ? String(body.hubLifecycle.error || "The booking status update has not been confirmed.") : null);
+        setReviewConflict(false);
+        setSavedFingerprint(undefined);
         if (body.plan?.menuItems) {
           const hydratedItems = mergeOriginalItems(order, body.plan.menuItems);
           setMenuItems(hydratedItems);
@@ -320,6 +337,7 @@ export default function HospitalityAllergenDetail({
           setSigningLineage(body.signingLineage || undefined);
           setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan.matrixArtifact ? "ready" : body.plan.signatures?.length === 2 ? "artifact_pending" : undefined);
           setPlanStatus(effectiveProductionPlanStatus({ ...body.plan, menuItems: hydratedItems }));
+          if (effectiveProductionPlanStatus({ ...body.plan, menuItems: hydratedItems }) === "planned") setSavedFingerprint(reviewFingerprint(hydratedItems, body.plan.planningNotes || ""));
         }
       })
       .catch(() =>
@@ -337,7 +355,7 @@ export default function HospitalityAllergenDetail({
           "Saved production items are unavailable; you can still create a new one.",
         ),
       );
-  }, [order.canonicalId]);
+  }, [order.canonicalId, reloadNonce]);
 
   const subItems = useMemo(
     () => menuItems.flatMap((item) => item.subItems),
@@ -436,8 +454,11 @@ export default function HospitalityAllergenDetail({
     setMenuItems((items) => items.filter((item) => item.id !== id));
   };
   const toggleCell = (menuId: string, sub: PlannedSubItem, key: string) => {
+    // "No key allergens" is derived from the named allergens and can never be edited, so it cannot overwrite named evidence.
+    if (key === "no_key_allergens") return;
     markMatrixEdited();
-    const allergens = toggleOperationalAllergen(sub.allergens, key as CanonicalAllergenKey);
+    const allergens = applyHospitalityCellClick(sub.allergens, key);
+    setRowErrors((current) => { if (!(sub.id in current)) return current; const next = { ...current }; delete next[sub.id]; return next; });
     updateSubItem(menuId, sub.id, {
       allergens,
       evidenceStatus: "not_completed",
@@ -445,15 +466,16 @@ export default function HospitalityAllergenDetail({
   };
   const completeSubItem = (menuId: string, sub: PlannedSubItem) => {
     if (reviewLockedByAuthority || sub.evidenceStatus === "completed") return;
+    const completion = completeAllergenReviewMap(sub.allergens);
+    if (!completion.complete) {
+      const message = allergenReviewCompletionMessage(completion.unresolvedKeys);
+      setRowErrors((current) => ({ ...current, [sub.id]: message }));
+      setMessage(message);
+      return;
+    }
     markMatrixEdited();
-    const nextItems = menuItems.map((item) =>
-      item.id === menuId
-        ? { ...item, subItems: item.subItems.map((candidate) => candidate.id === sub.id ? { ...candidate, evidenceStatus: "completed" as const } : candidate) }
-        : item,
-    );
-    setMenuItems(nextItems);
-    const allComplete = nextItems.length > 0 && nextItems.every((item) => item.name.trim() && item.subItems.length > 0 && item.subItems.every((candidate) => candidate.name.trim() && candidate.evidenceStatus === "completed" && isCompleteOperationalAllergenMap(candidate.allergens)));
-    if (allComplete) void planCommand("mark-planned", {}, nextItems);
+    setRowErrors((current) => { const next = { ...current }; delete next[sub.id]; return next; });
+    updateSubItem(menuId, sub.id, { allergens: completion.states, evidenceStatus: "completed" });
   };
   const applySandwich = (menuId: string, sub: PlannedSubItem, id: string) => {
     const productionItem = savedProductionItems.find((item) => item.id === id);
@@ -511,27 +533,39 @@ export default function HospitalityAllergenDetail({
     action: "save-plan" | "mark-planned",
     extra: Record<string, unknown> = {},
     menuItemsOverride?: PlannedMenuItem[],
-  ) => {
+  ): Promise<boolean> => {
+    if (planRevision === undefined) {
+      setMessage("The saved review is still loading. Try again in a moment.");
+      return false;
+    }
     setBusy(true);
     setMessage("");
-    const response = await fetch("/api/production-plan", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        orderId: order.canonicalId,
-        actor: "production-chef",
-        action,
-        menuItems: menuItemsOverride || menuItems,
-        planningNotes,
-        ...extra,
-      }),
-    });
-    const body = await response.json();
-    if (!response.ok)
-      setMessage(
-        body.error?.message || "The production plan could not be saved.",
-      );
-    else {
+    try {
+      const response = await fetch("/api/production-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          orderId: order.canonicalId,
+          actor: "production-chef",
+          action,
+          expectedRevision: planRevision,
+          menuItems: menuItemsOverride || menuItems,
+          planningNotes,
+          ...extra,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        if (response.status === 409 && body.error?.code === "CPU_ALLERGEN_REVIEW_CONFLICT") {
+          // Newer evidence exists. Keep the local edits on screen, withdraw signing and ask for an explicit reload.
+          setReviewConflict(true);
+          setSavedFingerprint(undefined);
+        }
+        setMessage(body.error?.message || "The production plan could not be saved.");
+        return false;
+      }
+      setPlanRevision(body.revision === undefined ? (body.plan?.updatedAt ?? null) : body.revision);
+      if (body.hubLifecycle) setHubPending(body.hubLifecycle.status === "pending" ? String(body.hubLifecycle.error || "The booking status update has not been confirmed.") : null);
       setPlanStatus(
         body.plan?.status ||
           (action === "mark-planned" ? "planned" : "planning"),
@@ -541,15 +575,46 @@ export default function HospitalityAllergenDetail({
       if (body.plan && "currentAllergenRelease" in body.plan) setCurrentAllergenRelease(body.plan.currentAllergenRelease);
       setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan?.matrixArtifact ? "ready" : body.plan?.signatures?.length === 2 ? "artifact_pending" : undefined);
       setMessage(
-        action === "mark-planned"
-          ? "Plan marked Planned. The menu planning team can now generate the menu."
-          : "Partial plan saved. The booking status is now Planning.",
+        action === "mark-planned" && body.hubLifecycle?.status === "pending"
+          ? "Allergen review saved in CPU, but the booking status update is still pending and has not been confirmed. Press Save allergen review again to retry it."
+        : action === "mark-planned"
+          ? "Allergen review saved. Signatures are now available."
+          : "Draft saved. Signatures stay unavailable until every allergen is recorded and the review is saved.",
       );
       // Keep the detail panel open after planning so the signature controls
       // become available in the same view.
       await onSaved(false);
+      return true;
+    } catch {
+      setMessage("The production plan could not be saved. Check the connection and try again.");
+      return false;
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
+  };
+
+  /**
+   * The only way to reach signing: validate the whole matrix, show every missing requirement, persist, and only
+   * then enable signatures. An incomplete matrix is kept as a draft so no entered allergen work is lost.
+   */
+  const saveAllergenReview = async () => {
+    if (busy || reviewLockedByAuthority || reviewConflict) return;
+    const problems = allergenReviewProblems(menuItems);
+    setReviewProblems(problems.map(describeAllergenReviewProblem));
+    const nextRowErrors: Record<string, string> = {};
+    for (const problem of problems) if (problem.rowId && problem.kind === "allergens-not-recorded") nextRowErrors[problem.rowId] = `Record ${problem.allergens.join(", ")}.`;
+    setRowErrors(nextRowErrors);
+    if (problems.length) {
+      setSavedFingerprint(undefined);
+      const saved = await planCommand("save-plan");
+      if (saved) setMessage(`Draft saved. ${problems.length} requirement${problems.length === 1 ? "" : "s"} remain before signing is available.`);
+      return;
+    }
+    // The fingerprint is taken from the content that was sent, not from whatever is on screen when the response arrives:
+    // edits made while the save is in flight therefore never inherit the unlock.
+    const sentFingerprint = reviewFingerprint(menuItems, planningNotes);
+    const saved = await planCommand("mark-planned");
+    setSavedFingerprint(savedFingerprintAfterSave(sentFingerprint, saved));
   };
 
   const signMatrix = async (
@@ -586,6 +651,7 @@ export default function HospitalityAllergenDetail({
       const persistedSignatures = body.plan?.signatures;
       if (!Array.isArray(persistedSignatures) || !persistedSignatures.some((signature: InternalMatrixSignature) => signature.role === role)) throw new Error("The server did not confirm that this signature was persisted. Retry from the current review.");
       const nextSignatures = persistedSignatures as InternalMatrixSignature[];
+      if (body.revision !== undefined) setPlanRevision(body.revision);
       setSignatures(nextSignatures);
       setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact || undefined);
       if ("currentAllergenRelease" in (body.plan || {})) setCurrentAllergenRelease(body.plan.currentAllergenRelease);
@@ -614,6 +680,7 @@ export default function HospitalityAllergenDetail({
     if (!response.ok)
       setMessage(body.error?.message || "The order could not be accepted.");
     else {
+      if (body.revision !== undefined) setPlanRevision(body.revision);
       setMessage("Order accepted. Start filling in the production plan.");
       await onSaved();
     }
@@ -636,6 +703,7 @@ export default function HospitalityAllergenDetail({
       const response = await fetch(productionPlanEndpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save-matrix", orderId: order.canonicalId, expectedLineage }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message || "The final signed matrix could not be generated.");
+      if (body.revision !== undefined) setPlanRevision(body.revision);
       const materialized = body.matrixStatus === "ready" && Boolean(body.matrixArtifact || body.plan?.matrixArtifact);
       setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact); setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : materialized ? "ready" : "artifact_pending"); setSignatures(body.signatures || signatures); if ("currentAllergenRelease" in (body.plan || {})) setCurrentAllergenRelease(body.plan.currentAllergenRelease); setMessage(materialized ? "Signed PDF generated. The matrix is ready to open from the manager dashboard." : "Materialization is queued. The signed matrix will become available after the durable retry succeeds.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "The final signed matrix could not be generated."); }
@@ -891,6 +959,21 @@ export default function HospitalityAllergenDetail({
                               </div>
                             </th>
                             {allergenColumns.map(([key, label]) => {
+                              if (key === "no_key_allergens") {
+                                const derivedState = derivedNoKeyState(sub.allergens);
+                                return (
+                                  <td key={key}>
+                                    <span
+                                      role="img"
+                                      aria-label={`${label} for ${sub.name || "sub-item"}: ${derivedState} (derived from the named allergens, read only)`}
+                                      title="Derived from the named allergens"
+                                      className={`allergen-cell allergen-cell--${derivedState} allergen-cell--derived`}
+                                    >
+                                      {cellLabel(derivedState)}
+                                    </span>
+                                  </td>
+                                );
+                              }
                               const state = cellState(sub.allergens, key);
                               return (
                                 <td key={key}>
@@ -937,6 +1020,7 @@ export default function HospitalityAllergenDetail({
                                     ? "Reopen review to amend"
                                     : "Mark checked"}
                               </button>
+                              {rowErrors[sub.id] && <p className="matrix-row-error" role="alert">{rowErrors[sub.id]}</p>}
                             </td>
                           </tr>
                         ))}
@@ -960,6 +1044,25 @@ export default function HospitalityAllergenDetail({
             onChange={(event) => setPlanningNotes(event.target.value)}
             placeholder="Planning notes for production and menu planning"
           />
+          {hubPending && (
+            <section className="matrix-review-problems" role="alert" aria-labelledby="matrix-hub-pending-title">
+              <h3 id="matrix-hub-pending-title">Booking status update not confirmed</h3>
+              <p>The allergen review is saved in CPU, but the booking status in the Hub has not reached Planned. {hubPending} Press Save allergen review to retry.</p>
+            </section>
+          )}
+          {reviewConflict && (
+            <section className="matrix-review-problems" role="alert" aria-labelledby="matrix-review-conflict-title">
+              <h3 id="matrix-review-conflict-title">This review changed elsewhere</h3>
+              <p>Someone saved newer allergen evidence after you opened it. Your edits are still on screen but were not saved. Copy anything you need, then reload the latest review and re-apply your changes. Signatures stay unavailable until you have saved against the latest review.</p>
+              <button type="button" className="button button-soft" disabled={busy} onClick={() => setReloadNonce((value) => value + 1)}>Reload latest review</button>
+            </section>
+          )}
+          {reviewProblems.length > 0 && (
+            <section className="matrix-review-problems" role="alert" aria-labelledby="matrix-review-problems-title">
+              <h3 id="matrix-review-problems-title">Complete these before signing ({reviewProblems.length})</h3>
+              <ul>{reviewProblems.map((problem) => <li key={problem}>{problem}</li>)}</ul>
+            </section>
+          )}
           <section
             className="matrix-signing"
             aria-labelledby="matrix-signing-title"
@@ -971,6 +1074,7 @@ export default function HospitalityAllergenDetail({
                 These internal attestations are recorded with the plan audit
                 history. They are not an external e-signature service.
               </p>
+              {!signingAvailable && !signatures.length && <p role="status">Save the allergen review to enable signatures. Signatures are available only once every allergen is recorded and the saved review is unchanged.</p>}
               {matrixStorageStatus === "not_configured" && <p role="status">Matrix storage not configured</p>}
               {matrixStorageStatus === "artifact_pending" && <p role="status">Both signatures are recorded; the final PDF is pending.</p>}
             </div>
@@ -997,7 +1101,7 @@ export default function HospitalityAllergenDetail({
                       <button
                         type="button"
                         className="button button-purple"
-                        disabled={busy || effectiveStatus !== "planned"}
+                        disabled={busy || !signingAvailable}
                         onClick={() => { setSigningError(""); setSigningRole(role); }}
                       >
                         Sign matrix
@@ -1039,8 +1143,8 @@ export default function HospitalityAllergenDetail({
             </button>
           ) : (
             <span className="accepted-note">
-              Accepted means the production chef can produce this order. Planned means every
-              sub-item has been checked.
+              Accepted means the production chef can produce this order. Save the allergen review once every
+              allergen is recorded to enable signatures.
             </span>
           )}
         </div>
@@ -1049,19 +1153,11 @@ export default function HospitalityAllergenDetail({
             Close
           </button>
           <button
-            className="button button-soft"
-            disabled={busy}
-            onClick={() => void planCommand("save-plan")}
-          >
-            Save partial plan
-          </button>
-          <button
             className="button button-mint"
-            disabled
-            aria-disabled="true"
-            aria-label="Mark as Planned"
+            disabled={busy || reviewLockedByAuthority || reviewConflict}
+            onClick={() => void saveAllergenReview()}
           >
-            {effectiveStatus === "planned" ? "Planned automatically" : "Complete every check to plan"}
+            Save allergen review
           </button>
         </div>
       </footer>

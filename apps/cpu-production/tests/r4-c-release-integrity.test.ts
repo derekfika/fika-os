@@ -57,17 +57,17 @@ test("signing source has no external artifact call before the authoritative save
   const signBlock = sourceText.slice(signStart, saveStart);
   assert.ok(signStart >= 0 && saveStart > signStart);
   assert.doesNotMatch(signBlock, /createMatrixArtifact\(|createCpuReleaseArtifacts\(|publishDailySignedOplocBundle\(|allergen-matrix\/drive/);
-  assert.match(sourceText, /saveAndAppendCpuChange\(plan, expectedUpdatedAt/);
+  assert.match(sourceText, /saveAndAppendCpuChange\(plan, expectedRevision/);
   assert.match(sourceText, /deliverCpuPropagation\(materializationDelivery\.eventId\)/);
 });
 
 test("the worker commits pending materialization before external publication and keeps final certification explicit", async () => {
   const sourceText = await readFile(new URL("../lib/cpu-release-materialization.ts", import.meta.url), "utf8");
-  const started = sourceText.indexOf("const startedResult = await repository.saveAndAppendCpuChange(preparedCandidate, stored.updatedAt");
+  const started = sourceText.indexOf("const startedResult = await repository.saveAndAppendCpuChange(preparedCandidate, planRevisionToken(stored)");
   const artifactBuild = sourceText.indexOf("createCpuReleaseArtifacts(startedPlan");
-  const preparedPhase = sourceText.indexOf("const preparedResult = await repository.saveAndAppendCpuChange(artifactCandidate, startedPlan.updatedAt");
+  const preparedPhase = sourceText.indexOf("const preparedResult = await repository.saveAndAppendCpuChange(artifactCandidate, planRevisionToken(startedPlan)");
   const publish = sourceText.indexOf("await prepared.publish()");
-  const final = sourceText.indexOf("const finalResult = await repository.saveAndAppendCpuChange(ready, preparedPlan.updatedAt");
+  const final = sourceText.indexOf("const finalResult = await repository.saveAndAppendCpuChange(ready, planRevisionToken(preparedPlan)");
   assert.ok(started >= 0 && artifactBuild > started && preparedPhase > artifactBuild && publish > preparedPhase && final > publish);
   assert.match(sourceText, /resumeCpuMaterializationPhase\(startedResult, preparedCandidate, "started"\)/);
   assert.match(sourceText, /resumeCpuMaterializationPhase\(preparedResult, artifactCandidate, "prepared"\)/);

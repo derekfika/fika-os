@@ -453,7 +453,7 @@ test("allergen checker uses the master-style purple header and four-state cells"
   assert.match(liana, /reviewLockedByAuthority/);
   assert.match(liana, /disabled=\{busy \|\| reviewLockedByAuthority \|\| sub\.evidenceStatus === "completed"\}/);
   assert.doesNotMatch(liana, /if \(planStatus === "planned"\) return/);
-  assert.match(liana, /isCompleteOperationalAllergenMap\(candidate\.allergens\)/);
+  assert.match(liana, /const problems = allergenReviewProblems\(menuItems\)/);
   assert.match(planCommandSchema, /mayContainNotes/);
   assert.match(planRoute, /allergen-matrix-signed/);
   assert.match(planRoute, /save-matrix/);
@@ -591,8 +591,8 @@ test("canonical MNK menu identities remain routable after a hand-off", () => {
 });
 
 test("Liana workflow keeps production planning separate from later completion tracking", () => {
-  assert.match(liana, /Save partial plan/);
-  assert.match(liana, /Mark as Planned/);
+  assert.match(liana, /Save allergen review/);
+  assert.doesNotMatch(liana, /Save partial plan/);
   assert.doesNotMatch(liana, /Actual made/);
   assert.doesNotMatch(liana, /Shortfall/);
   assert.doesNotMatch(liana, /Substitution/);

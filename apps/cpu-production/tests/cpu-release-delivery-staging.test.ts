@@ -103,7 +103,7 @@ test("the memory ProductionPlan repository preserves standalone delivery semanti
   resetCpuOutboxForTests();
   const plan = { id: "production-plan:memory-delivery", orderId: "production-order:memory-delivery", status: "planned" as const, menuItems: [], planningNotes: "", updatedAt: "2026-09-14T10:00:00.000Z", updatedBy: "test", audit: [] } satisfies ProductionPlan;
   try {
-    await createProductionPlanRepository().saveAndAppendCpuChange(plan, undefined, { entityType: "productionPlan", entityId: plan.id, changeType: "release-current", actorId: "test", changedAt: plan.updatedAt, deliveries: [delivery("cpu-release:memory")] });
+    await createProductionPlanRepository().saveAndAppendCpuChange(plan, null, { entityType: "productionPlan", entityId: plan.id, changeType: "release-current", actorId: "test", changedAt: plan.updatedAt, deliveries: [delivery("cpu-release:memory")] });
     assert.deepEqual(listCpuOutboxForTests().map(event => event.eventId), ["cpu-release:memory"]);
   } finally {
     if (previousStore === undefined) delete process.env.FIKA_CPU_PLAN_STORE;

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { matrixSignatureScope, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../app/lib/production-plan";
+import { planRevisionToken } from "../app/lib/production-plan-state";
 import { allergenMatrixContentHash, buildCpuAllergenRelease } from "../lib/cpu-allergen-release";
 import { compactProductionPlanForPersistence, createProductionPlanRepository, decodeProductionPlan } from "../lib/production-plan-repository";
 
@@ -135,12 +136,12 @@ test("save and saveAndAppendCpuChange persist compact plans without mutating the
   process.env.FIKA_CPU_PLAN_STORE = "memory";
   try {
     const repository = createProductionPlanRepository();
-    await repository.save(plan);
+    await repository.save(plan, null);
     const saved = await repository.get(plan.orderId);
     assert.equal("html" in saved!.matrixArtifact!, false);
     assert.deepEqual(plan, before);
 
-    await repository.saveAndAppendCpuChange(plan, plan.updatedAt, { entityType: "productionPlan", entityId: plan.id, changeType: "persistence-compaction-test", actorId: "test", changedAt: plan.updatedAt });
+    await repository.saveAndAppendCpuChange(plan, planRevisionToken(plan), { entityType: "productionPlan", entityId: plan.id, changeType: "persistence-compaction-test", actorId: "test", changedAt: plan.updatedAt });
     const appended = await repository.get(plan.orderId);
     assert.equal("html" in appended!.currentAllergenRelease!.masterArtifact, false);
     assert.deepEqual(plan, before);

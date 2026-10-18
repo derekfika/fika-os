@@ -8,6 +8,7 @@ import { rebuildCpuReviewPackage } from "./cpu-review-package";
 import { createCpuMasterArtifact } from "./cpu-release-materialization";
 import { createProductionPlanRepository } from "./production-plan-repository";
 import type { MatrixArtifact, PlannedMenuItem } from "../app/lib/production-plan";
+import { planRevisionToken } from "../app/lib/production-plan-state";
 import { cpuMasterReviewId, cpuMasterReviewSemanticHash, saveCpuMasterReview, type CpuMasterReviewMember } from "./cpu-master-review";
 
 export type CpuPostCommitJob = { action: "master-sign"; commandId: string; serviceDate: string; orderIds: string[] };
@@ -68,7 +69,8 @@ export async function processCpuPostCommitJob(request: NextRequest, job: CpuPost
       if (candidate.currentAllergenRelease) candidate.currentAllergenRelease.masterArtifact = sharedMaster!;
       candidate.updatedAt = new Date().toISOString();
       candidate.audit.push({ action: "allergen-master-artifact-shared", at: candidate.updatedAt, by: candidate.updatedBy, reason: `One service-date master PDF is reused for OPLOC release ${candidate.currentAllergenRelease?.releaseId || "pending"}.` });
-      const result = await repository.saveAndAppendCpuChange(candidate, plan.updatedAt, { serviceDate: job.serviceDate, entityType: "productionPlan", entityId: candidate.id, revision: candidate.audit.length, changeType: "allergen-master-artifact-shared", actorId: candidate.updatedBy, changedAt: candidate.updatedAt, idempotencyKey: `cpu-master-artifact:${masterReviewId}:${order.canonicalId}` });
+      const result = await repository.saveAndAppendCpuChange(candidate, planRevisionToken(plan), { serviceDate: job.serviceDate, entityType: "productionPlan", entityId: candidate.id, revision: candidate.audit.length, changeType: "allergen-master-artifact-shared", actorId: candidate.updatedBy, changedAt: candidate.updatedAt, idempotencyKey: `cpu-master-artifact:${masterReviewId}:${order.canonicalId}` });
+      candidate.updatedAt = result.revision;
       planByOrderId.set(order.canonicalId, result.plan || candidate);
     });
   }

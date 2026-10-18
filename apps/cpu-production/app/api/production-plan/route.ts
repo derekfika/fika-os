@@ -3,8 +3,8 @@ import { errorResponse } from "../../../lib/api";
 import { z } from "zod";
 import { existsSync, promises as fs } from "node:fs";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
-import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, effectiveProductionPlanStatus, hasAllergenAuthority, isProductionPlanMatrixComplete, matrixSignatureScope, mergeMissingProductionOrderLines, sameMatrixSignatureScope, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, signedAllergenReviewMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
-import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
+import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, effectiveProductionPlanStatus, hasAllergenAuthority, planRevisionToken, nextPlanRevisionStamp, reviewRevisionConflict, isProductionPlanMatrixComplete, matrixSignatureScope, mergeMissingProductionOrderLines, sameMatrixSignatureScope, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, signedAllergenReviewMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
+import { deriveNoKeyAllergens, normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
 import { canonicalProductionFailureKind, productionOrderDetail, productionQueue, transitionProductionOrder, type CanonicalProductionFailure } from "../../../lib/production-http-client";
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
 import { rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
@@ -68,12 +68,62 @@ async function syncCanonicalLifecycle(
   return order;
 }
 
+/**
+ * Runs AFTER the CPU plan (carrying lifecycleSync.status "pending") has been atomically persisted. The Hub transition walks from the
+ * current Hub status, so repeating it is harmless (exactly-once effect). A failure leaves the durable "pending" marker in place and is
+ * returned to the caller so it is shown as pending and can be retried; the marker is only cleared once the Hub has accepted the change.
+ */
+async function completeLifecycleSync(request: NextRequest, plan: ProductionPlan): Promise<{ status: "synced" | "pending"; error?: string; code?: string }> {
+  const pending = plan.lifecycleSync;
+  if (!pending || pending.status !== "pending") return { status: "synced" };
+  const unresolved = async (error: string, code: string) => {
+    // Keep the marker pending and record WHY (one small guarded write, only when the reason changed) so the operator still sees it after a reload.
+    if (pending.lastError !== error) {
+      try {
+        const marked = { ...plan, lifecycleSync: { ...pending, lastError: error, lastCheckedAt: now() } };
+        const saved = await planRepository.save(marked, planRevisionToken(plan));
+        plan.lifecycleSync = marked.lifecycleSync;
+        plan.updatedAt = saved.revision;
+      } catch { /* the response still carries the reason; the marker itself remains pending */ }
+    }
+    return { status: "pending" as const, error, code };
+  };
+  try {
+    updateLocalFixture(plan.orderId, order => order.status === pending.target ? order : { ...order, status: pending.target, version: order.version + 1 });
+    // Local fixtures have no Hub order; every governed order must be verified on the Hub itself.
+    if (!plan.orderId.startsWith("production-order:v1:fixture:")) {
+      const hubOrder = await productionOrderDetail(request, plan.orderId);
+      if (!hubOrder || hubOrder.canonicalId !== plan.orderId) return unresolved("The Hub has no Production Order with this identity, so the Planned status could not be applied. Check the booking in the Hub.", "HUB_ORDER_MISSING");
+      // A cancelled order is never reactivated automatically.
+      if (hubOrder.status === "cancelled") return unresolved("The Hub Production Order is Cancelled, so it was not moved to Planned. Resolve the cancellation in the Hub first.", "HUB_ORDER_CANCELLED");
+      if (hubOrder.status !== pending.target) await syncCanonicalLifecycle(request, plan.orderId, pending.target, "Production plan marked Planned by the production chef.");
+      const verified = await productionOrderDetail(request, plan.orderId);
+      if (!verified || verified.canonicalId !== plan.orderId) return unresolved("The Hub Production Order could not be confirmed after the update.", "HUB_ORDER_MISSING");
+      if (verified.status !== pending.target) return unresolved(`The Hub Production Order is "${verified.status}" and did not reach Planned. It needs attention in the Hub before this can complete.`, "HUB_NOT_PLANNED");
+    }
+  } catch (error) {
+    if (canonicalProductionFailureKind(error as CanonicalProductionFailure) === "not_found") return unresolved("The Hub has no Production Order with this identity, so the Planned status could not be applied. Check the booking in the Hub.", "HUB_ORDER_MISSING");
+    return unresolved(error instanceof Error ? error.message : "The Hub lifecycle update failed.", "HUB_TRANSIENT");
+  }
+  try {
+    const synced = { ...plan, lifecycleSync: { ...pending, status: "synced" as const, syncedAt: now(), lastError: undefined } };
+    const saved = await planRepository.save(synced, planRevisionToken(plan));
+    plan.lifecycleSync = synced.lifecycleSync;
+    plan.updatedAt = saved.revision;
+  } catch {
+    // The Hub is already correct. The marker stays pending and the next mark-planned retry clears it without any further Hub effect.
+  }
+  return { status: "synced" };
+}
+
+/** The persisted plan revision the browser loaded; null when it loaded no stored plan (initial creation). */
+const ExpectedRevision = z.string().min(1).max(200).nullable();
 const Command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("accept"), orderId: z.string(), commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("reject"), orderId: z.string(), reason: z.string().trim().min(3), commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("clarify"), orderId: z.string(), note: z.string().trim().min(3), commandId: z.string().trim().min(8).optional() }),
-  z.object({ action: z.literal("save-plan"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
-  z.object({ action: z.literal("mark-planned"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
+  z.object({ action: z.literal("save-plan"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), expectedRevision: ExpectedRevision, commandId: z.string().trim().min(8).optional() }),
+  z.object({ action: z.literal("mark-planned"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), expectedRevision: ExpectedRevision, commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("sign-matrix"), orderId: z.string(), role: z.enum(["production_chef", "head_chef_site_manager"]), printedName: z.string().trim().min(2).max(120), attestation: z.string().trim().min(10).max(500), signatureDataUrl: z.string().regex(/^data:image\/png;base64,/).max(500000), expectedLineage: ExpectedLineage, commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("save-matrix"), orderId: z.string(), expectedLineage: ExpectedLineage.optional(), commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("retry-materialization"), orderId: z.string(), expectedLineage: ExpectedLineage }),
@@ -88,13 +138,24 @@ const MatrixBatchCommand = z.object({ action: z.literal("batch-plan"), operation
 const plans = new Map<string, ProductionPlan>();
 const planRepository = createProductionPlanRepository();
 const isLocalRuntime = () => (process.env.FIKA_RUNTIME_MODE || "local") === "local";
+/**
+ * "No key allergens" is never accepted from a client. It is derived here, on the server, solely from the 14 named allergen states:
+ * any contains/may_contain => clear; all 14 clear => confirmed; anything else (including unrecorded) => unrecorded.
+ * Named evidence is preserved exactly as recorded.
+ */
+function strictServerAllergens(raw: Record<string, unknown> | undefined) {
+  const named = normaliseOperationalAllergens(raw);
+  delete named.no_key_allergens;
+  return deriveNoKeyAllergens(named);
+}
 function normalisePlanAllergens(plan: ProductionPlan): ProductionPlan {
-  return { ...plan, menuItems: plan.menuItems.map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, allergens: normaliseOperationalAllergens(sub.allergens) })) })) };
+  return { ...plan, menuItems: plan.menuItems.map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, allergens: strictServerAllergens(sub.allergens) })) })) };
 }
 function assertAllergenMatrixComplete(menuItems: PlannedMenuItem[], context: string) {
   if (!isProductionPlanMatrixComplete(menuItems)) throw Object.assign(new Error(`Record every allergen state, including No key allergens, before ${context}.`), { status: 422, code: "CPU_ALLERGEN_REVIEW_INCOMPLETE" });
 }
-async function persistPlan(plan: ProductionPlan, expectedUpdatedAt?: string) { await planRepository.save(plan, expectedUpdatedAt); }
+/** Persists and adopts the revision the repository actually stamped inside the write transaction. */
+async function persistPlan(plan: ProductionPlan, expectedRevision: string | null) { const saved = await planRepository.save(plan, expectedRevision); plan.updatedAt = saved.revision; }
 function now() { return new Date().toISOString(); }
 function sameLineage(left: ReturnType<typeof matrixSignatureScope>, right: ReturnType<typeof matrixSignatureScope>) {
   return sameMatrixSignatureScope(left, right);
@@ -205,7 +266,7 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
     throw Object.assign(new Error("The master matrix membership or expected lineage is no longer current. Reload the complete service-date matrix before signing."), { status: 409, code: "CPU_MASTER_SIGN_MEMBERSHIP_CONFLICT" });
   }
   const timestamp = now();
-  const prepared = [] as Array<{ order: ProductionOrder; storedPlan?: ProductionPlan; plan: ProductionPlan; expectedUpdatedAt?: string; alreadyApplied: boolean; scope: ReturnType<typeof matrixSignatureScope> }>;
+  const prepared = [] as Array<{ order: ProductionOrder; storedPlan?: ProductionPlan; plan: ProductionPlan; expectedRevision: string | null; alreadyApplied: boolean; scope: ReturnType<typeof matrixSignatureScope> }>;
   for (const order of sourceOrders.sort((left, right) => left.canonicalId.localeCompare(right.canonicalId))) {
     const storedPlan = await planRepository.get(order.canonicalId);
     if (!storedPlan && !isLocalRuntime()) plans.delete(order.canonicalId);
@@ -246,7 +307,7 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
       candidate.updatedAt = timestamp;
       candidate.updatedBy = auditActor;
     }
-    prepared.push({ order, storedPlan, plan: candidate, expectedUpdatedAt: storedPlan?.updatedAt, alreadyApplied, scope: currentScope });
+    prepared.push({ order, storedPlan, plan: candidate, expectedRevision: planRevisionToken(storedPlan), alreadyApplied, scope: currentScope });
   }
 
   const masterReviewId = cpuMasterReviewId({
@@ -274,7 +335,7 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
       const release = item.plan.currentAllergenRelease;
       const materializationDelivery = release && ["pending", "current"].includes(release.status) && release.materializationStatus !== "ready" ? releaseMaterializationDelivery(item.plan, release, item.order, timestamp) : undefined;
       const postCommitDelivery = { eventId: `cpu-post-commit:${command.commandId}`, sourceAggregateId: `cpu-master-sign:${command.commandId}`, sourceVersion: item.plan.audit.length, occurredAt: timestamp, consumer: "cpu-production" as const, route: "/api/internal/cpu-post-commit", body: { action: "master-sign", commandId: command.commandId, serviceDate: command.serviceDate, orderIds } };
-      const event = await planRepository.saveAndAppendCpuChange(item.plan, item.expectedUpdatedAt, {
+      const event = await planRepository.saveAndAppendCpuChange(item.plan, item.expectedRevision, {
         serviceDate: command.serviceDate,
         entityType: "productionPlan",
         entityId: item.plan.id,
@@ -286,6 +347,7 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
         propagation: { eventId: `cpu-master-sign:${command.commandId}:${item.order.canonicalId}`, sourceEntityId: item.plan.id, serviceDate: command.serviceDate, sourceVersion: item.plan.audit.length, changedAt: timestamp, changeType: "amended", order: item.order, logistics: false },
         deliveries: [postCommitDelivery, ...(materializationDelivery ? [materializationDelivery] : [])],
       });
+      if (!event.duplicate) item.plan.updatedAt = event.revision;
       const committedPlan = event.plan || item.plan;
       if (event.duplicate) {
         const currentScope = matrixSignatureScope(item.order, menuContentHash(committedPlan.menuItems));
@@ -337,7 +399,7 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
     plan.updatedBy = auditActor;
     const changedOrder = await loadOrder(request, operation.orderId);
     if (!changedOrder?.serviceDate) {
-      await persistPlan(plan, storedPlan?.updatedAt);
+      await persistPlan(plan, planRevisionToken(storedPlan));
       return { orderId: operation.orderId, plan, serviceDate: undefined, sequence: undefined, changed: true };
     }
     const releaseDeliveries = (releaseBeforeReopen?.packetArtifacts || [])[0]?.contentHash && changedOrder.destinationOplocId
@@ -346,7 +408,7 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
           return [{ eventId: `${releaseEvent.eventId}:delivered-in:${changedOrder.destinationOplocId}`, sourceAggregateId: releaseEvent.releaseId, sourceVersion: releaseEvent.sourceVersion, occurredAt: revokedRelease!.signedAt, consumer: "delivered-in" as const, route: "/api/internal/cpu-release-event", body: releaseEvent as unknown as Record<string, unknown> }];
         })()
       : [];
-    const event = await planRepository.saveAndAppendCpuChange(plan, storedPlan?.updatedAt, {
+    const event = await planRepository.saveAndAppendCpuChange(plan, planRevisionToken(storedPlan), {
       serviceDate: changedOrder.serviceDate,
       entityType: "productionPlan",
       entityId: plan.id,
@@ -359,6 +421,7 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
       deliveries: releaseDeliveries,
     });
     if (event.duplicate && event.plan) Object.assign(plan, event.plan);
+    else if (!event.duplicate) plan.updatedAt = event.revision;
     if (!event.duplicate && releaseDeliveries[0]) await deliverCpuPropagation(releaseDeliveries[0].eventId);
     return { orderId: operation.orderId, plan, serviceDate: changedOrder.serviceDate, sequence: event.sequence, changed: true };
   }
@@ -393,21 +456,24 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
       releaseDeliveries = revokedReleaseDeliveries(plan.allergenReleaseHistory?.at(-1) || releaseBeforeSave, order);
     }
     plan.status = "planned";
-    plan.audit.push({ action: "plan-marked-planned", at: now(), by: auditActor });
-    updateLocalFixture(operation.orderId, current => ({ ...current, status: "planned", version: current.version + 1 }));
-    await syncCanonicalLifecycle(request, operation.orderId, "planned", "Production plan marked Planned by the production chef.");
+    const plannedAt = now();
+    plan.audit.push({ action: "plan-marked-planned", at: plannedAt, by: auditActor });
+    // The Hub lifecycle is updated only after CPU has atomically persisted this plan (see completeLifecycleSync below).
+    plan.lifecycleSync = { target: "planned", status: "pending", requestedAt: plannedAt };
   }
   const timestamp = now();
   plan.updatedAt = timestamp; plan.updatedBy = auditActor;
   const changedOrder = await loadOrder(request, operation.orderId);
   if (!changedOrder?.serviceDate) {
-    await persistPlan(plan, storedPlan?.updatedAt);
-    return { orderId: operation.orderId, plan, serviceDate: undefined, sequence: undefined };
+    await persistPlan(plan, planRevisionToken(storedPlan));
+    return { orderId: operation.orderId, plan, serviceDate: undefined, sequence: undefined, hubLifecycle: operation.action === "mark-planned" ? await completeLifecycleSync(request, plan) : undefined };
   }
-  const event = await planRepository.saveAndAppendCpuChange(plan, storedPlan?.updatedAt, { serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: operation.action, actorId: actor.uid, changedAt: timestamp, ...(operation.commandId ? { idempotencyKey: operation.commandId } : {}), propagation: { sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: plan.audit.length, changedAt: timestamp, changeType: eventTypeForConsumers(operation.action), order: changedOrder, logistics: false }, deliveries: releaseDeliveries });
+  const event = await planRepository.saveAndAppendCpuChange(plan, planRevisionToken(storedPlan), { serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: operation.action, actorId: actor.uid, changedAt: timestamp, ...(operation.commandId ? { idempotencyKey: operation.commandId } : {}), propagation: { sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: plan.audit.length, changedAt: timestamp, changeType: eventTypeForConsumers(operation.action), order: changedOrder, logistics: false }, deliveries: releaseDeliveries });
   if (event.duplicate && event.plan) Object.assign(plan, event.plan);
+  else if (!event.duplicate) plan.updatedAt = event.revision;
+  const hubLifecycle = operation.action === "mark-planned" ? await completeLifecycleSync(request, plan) : undefined;
   if (!event.duplicate) for (const delivery of releaseDeliveries) await deliverCpuPropagation(delivery.eventId);
-  return { orderId: operation.orderId, plan, serviceDate: changedOrder.serviceDate, sequence: event.sequence };
+  return { orderId: operation.orderId, plan, serviceDate: changedOrder.serviceDate, sequence: event.sequence, hubLifecycle };
 }
 async function mergeOriginalItems(request: NextRequest, plan: ProductionPlan, orderId: string, knownOrder?: ProductionOrder): Promise<ProductionPlan> {
   const order = knownOrder || await loadOrder(request, orderId);
@@ -449,7 +515,9 @@ async function handleGet(request: NextRequest) {
         if (!artifact?.pdfPath || !existsSync(artifact.pdfPath)) return NextResponse.json({ error: { message: "A local PDF has not been generated for this matrix." } }, { status: 404 });
         return new NextResponse(await fs.readFile(artifact.pdfPath), { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${artifact.fileName}"` } });
       }
-      const selectedPlan = visible ? await mergeOriginalItems(request, await getPlan(request, orderId), orderId, selectedOrder) : undefined;
+      // Read the persisted plan fresh so the revision handed to the browser is the real stored one (never a stale per-instance cache).
+      const storedForRevision = visible ? await planRepository.get(orderId) : undefined;
+      const selectedPlan = visible ? await mergeOriginalItems(request, await getPlan(request, orderId, storedForRevision), orderId, selectedOrder) : undefined;
       if (request.nextUrl.searchParams.get("download") === "html") {
         if (!selectedPlan || !selectedOrder || !signedAllergenReviewMatchesOrder(selectedPlan, selectedOrder, selectedPlan.menuItems)) {
           return NextResponse.json({ error: { message: "The fully signed allergen matrix is not available for this production order." } }, { status: 404 });
@@ -461,7 +529,7 @@ async function handleGet(request: NextRequest) {
       const selectedMatrixStatus = selectedPlan?.matrixArtifact && selectedOrder && currentAllergenReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems) ? "ready" : selectedPlan?.currentAllergenRelease?.materializationStatus === "failed" ? "failed" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !matrixDriveConfiguration(selectedOrder).enabled ? "not_configured" : "generating" : undefined;
       const signingLineage = selectedOrder && selectedPlan ? matrixSignatureScope(selectedOrder, menuContentHash(selectedPlan.menuItems)) : undefined;
       const signedMatrixAvailable = Boolean(selectedPlan && selectedOrder && signedAllergenReviewMatchesOrder(selectedPlan, selectedOrder, selectedPlan.menuItems));
-      return NextResponse.json({ plan: selectedPlan, signingLineage: signingLineage || null, matrixStatus: selectedMatrixStatus, ...(selectedPlan?.currentAllergenRelease?.materializationError ? { matrixError: selectedPlan.currentAllergenRelease.materializationError } : {}), signedMatrixAvailable, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
+      return NextResponse.json({ plan: selectedPlan, revision: planRevisionToken(storedForRevision), ...(selectedPlan?.lifecycleSync?.status === "pending" ? { hubLifecycle: { status: "pending", error: selectedPlan.lifecycleSync.lastError ?? "The booking status update has not been confirmed." }, synchronised: false } : {}), signingLineage: signingLineage || null, matrixStatus: selectedMatrixStatus, ...(selectedPlan?.currentAllergenRelease?.materializationError ? { matrixError: selectedPlan.currentAllergenRelease.materializationError } : {}), signedMatrixAvailable, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
     }
   } catch (error) {
     return errorResponse(error);
@@ -479,13 +547,13 @@ async function handlePost(request: NextRequest) {
     }
     if (raw?.action === "batch-plan") {
       const batch = MatrixBatchCommand.parse(raw);
-      const results: Array<{ orderId: string; ok: boolean; planStatus?: ProductionPlan["status"]; error?: string }> = [];
+      const results: Array<{ orderId: string; ok: boolean; planStatus?: ProductionPlan["status"]; error?: string; hubLifecycle?: { status: "synced" | "pending"; error?: string } }> = [];
       const latestSequenceByDate = new Map<string, number>();
       for (const operation of batch.operations) {
         try {
           const result = await applyMatrixOperation(request, actor, operation);
           if (result.serviceDate && result.sequence) latestSequenceByDate.set(result.serviceDate, Math.max(latestSequenceByDate.get(result.serviceDate) || 0, result.sequence));
-          results.push({ orderId: operation.orderId, ok: true, planStatus: result.plan.status });
+          results.push({ orderId: operation.orderId, ok: true, planStatus: result.plan.status, ...("hubLifecycle" in result && result.hubLifecycle ? { hubLifecycle: result.hubLifecycle } : {}) });
         } catch (error) {
           results.push({ orderId: operation.orderId, ok: false, error: error instanceof Error ? error.message : "The matrix operation failed." });
         }
@@ -517,6 +585,15 @@ async function handlePost(request: NextRequest) {
     if (!(await isVisibleForCpu(request, command.orderId))) throw Object.assign(new Error("CPU delivery is not selected for this booking, so no CPU production work is required."), { status: 422 });
     const storedPlan = await planRepository.get(command.orderId);
     if (!storedPlan && !isLocalRuntime()) plans.delete(command.orderId);
+    if (command.action === "save-plan" || command.action === "mark-planned") {
+      // A review save is only valid against the exact revision the browser loaded. Anything else would let stale data
+      // overwrite newer evidence (or its signatures), so it is rejected and nothing is written.
+      const revisionConflict = reviewRevisionConflict(command.expectedRevision, storedPlan);
+      if (revisionConflict) {
+        if (storedPlan) await getPlan(request, command.orderId, storedPlan);
+        throw revisionConflict;
+      }
+    }
     const currentOrder = await loadOrder(request, command.orderId);
     if (!currentOrder) throw Object.assign(new Error("The canonical Production Order could not be loaded."), { status: 503 });
     if (command.action === "retry-materialization") {
@@ -524,8 +601,10 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json(await retryCommittedCpuMaterialization({ plan: normalisePlanAllergens(storedPlan), order: currentOrder, expectedLineage: command.expectedLineage, timestamp: now() }));
     }
     const plan = await getPlan(request, command.orderId, storedPlan);
-    const expectedUpdatedAt = storedPlan?.updatedAt;
-    const timestamp = now();
+    // Review saves are written against the exact revision the browser loaded; every other command against the revision this request read.
+    // Either way the repository repeats the comparison inside the write transaction.
+    const expectedRevision = command.action === "save-plan" || command.action === "mark-planned" ? command.expectedRevision : planRevisionToken(storedPlan);
+    const timestamp = nextPlanRevisionStamp(now(), storedPlan?.updatedAt);
     let notification: { status: string; reason?: string } | undefined;
     let revokedReleaseForEvent: ProductionPlan["currentAllergenRelease"];
     if (command.action === "accept") {
@@ -556,7 +635,7 @@ async function handlePost(request: NextRequest) {
       const noOpSave = Boolean(storedPlan && !contentChanged && plan.planningNotes === command.planningNotes && authorityMatches && plan.status === effectiveNextStatus);
       if (noOpSave) {
         const matrixStatus = plan.matrixArtifact && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, currentOrder, plan.menuItems) ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? !matrixDriveConfiguration(currentOrder).enabled ? "not_configured" : "generating" : undefined;
-        return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus });
+        return NextResponse.json({ plan, revision: planRevisionToken(storedPlan), matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus });
       }
       plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
@@ -578,6 +657,11 @@ async function handlePost(request: NextRequest) {
       const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
       const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, currentOrder, nextMenuItems);
       const authorityMatches = allergenAuthorityMatchesOrder(plan, currentOrder, nextMenuItems);
+      if (!contentChanged && plan.status === "planned" && plan.planningNotes === command.planningNotes && storedPlan?.lifecycleSync?.status === "pending") {
+        // CPU already holds this exact planned review; only the Hub transition is outstanding. Retry it without touching CPU evidence.
+        const retried = await completeLifecycleSync(request, plan);
+        return NextResponse.json({ plan, revision: planRevisionToken(plan), hubLifecycle: retried, synchronised: retried.status === "synced", matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null });
+      }
        plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
       const subItems = plan.menuItems.flatMap(item => item.subItems);
@@ -591,8 +675,9 @@ async function handlePost(request: NextRequest) {
         invalidateSignedAllergenAuthorityForNewSourceLineage(plan, auditActor, timestamp, "The allergen matrix or source lineage changed after signed release.");
         revokedReleaseForEvent = plan.allergenReleaseHistory?.at(-1) || releaseBeforeSave;
       }
-      plan.status = "planned"; plan.audit.push({ action: "plan-marked-planned", at: timestamp, by: auditActor }); updateLocalFixture(command.orderId, order => ({ ...order, status: "planned", version: order.version + 1 }));
-      await syncCanonicalLifecycle(request, command.orderId, "planned", "Production plan marked Planned by the production chef.");
+      plan.status = "planned"; plan.audit.push({ action: "plan-marked-planned", at: timestamp, by: auditActor });
+      // The Hub lifecycle is updated only after CPU has atomically persisted this plan (see completeLifecycleSync below).
+      plan.lifecycleSync = { target: "planned", status: "pending", requestedAt: timestamp };
     }
     if (command.action === "sign-matrix") {
       if (plan.status !== "planned" && plan.status !== "planning") throw Object.assign(new Error("The allergen matrix is not available for signing."), { status: 422 });
@@ -658,7 +743,7 @@ async function handlePost(request: NextRequest) {
     }) : [];
     const releaseNeedsMaterialization = Boolean(plan.currentAllergenRelease && ["pending", "current"].includes(plan.currentAllergenRelease.status) && plan.currentAllergenRelease.materializationStatus !== "ready");
     const materializationDelivery = releaseNeedsMaterialization && changedOrder ? releaseMaterializationDelivery(plan, plan.currentAllergenRelease!, changedOrder, timestamp) : undefined;
-    const event = changedOrder?.serviceDate ? await planRepository.saveAndAppendCpuChange(plan, expectedUpdatedAt, { serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp, ...(command.commandId ? { idempotencyKey: command.commandId } : {}), propagation: { sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: plan.audit.length, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false }, deliveries: [...releaseDeliveries, ...(materializationDelivery ? [materializationDelivery] : [])] }) : (await persistPlan(plan, expectedUpdatedAt), undefined);
+    const event = changedOrder?.serviceDate ? await planRepository.saveAndAppendCpuChange(plan, expectedRevision, { serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp, ...(command.commandId ? { idempotencyKey: command.commandId } : {}), propagation: { sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: plan.audit.length, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false }, deliveries: [...releaseDeliveries, ...(materializationDelivery ? [materializationDelivery] : [])] }) : (await persistPlan(plan, expectedRevision), undefined);
     if (event?.duplicate) {
       if (!event.plan) throw Object.assign(new Error("This signing attempt has an incomplete idempotency receipt. Start a new signing attempt after reviewing the current matrix."), { status: 409, code: "CPU_SIGN_IDEMPOTENCY_CONFLICT" });
       Object.assign(plan, event.plan);
@@ -669,6 +754,9 @@ async function handlePost(request: NextRequest) {
         }
       }
     }
+    if (event && !event.duplicate) plan.updatedAt = event.revision;
+    // CPU is now durably committed. Only now is the Hub lifecycle touched; a failure is reported as pending, never as synchronised.
+    const hubLifecycle = command.action === "mark-planned" ? await completeLifecycleSync(request, plan) : undefined;
     // A duplicate command has already staged its durable work. Replaying the
     // HTTP request must not synchronously repeat delivery or consumer effects.
     let materializationResult: { eventId: string; status: string; error?: string; attempts?: number } | undefined;
@@ -689,7 +777,7 @@ async function handlePost(request: NextRequest) {
     const materializationFailed = materializationResult?.status === "failed";
     const matrixStatus = plan.matrixArtifact && changedOrder && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, changedOrder, plan.menuItems) ? "ready" : plan.currentAllergenRelease?.materializationStatus === "failed" || materializationFailed ? "failed" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
     const signingLineage = changedOrder ? matrixSignatureScope(changedOrder, menuContentHash(plan.menuItems)) : undefined;
-    return NextResponse.json({ plan, signingLineage: signingLineage || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, ...(plan.currentAllergenRelease?.materializationError || materializationResult?.error ? { matrixError: plan.currentAllergenRelease?.materializationError || materializationResult?.error } : {}), materializationDelivery: materializationResult || null, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
+    return NextResponse.json({ plan, revision: planRevisionToken(plan), ...(hubLifecycle ? { hubLifecycle, synchronised: hubLifecycle.status === "synced" } : {}), signingLineage: signingLineage || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, ...(plan.currentAllergenRelease?.materializationError || materializationResult?.error ? { matrixError: plan.currentAllergenRelease?.materializationError || materializationResult?.error } : {}), materializationDelivery: materializationResult || null, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return errorResponse(error); }
 }
 

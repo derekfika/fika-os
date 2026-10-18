@@ -12,15 +12,15 @@ test("second-signature finalisation commits first and materializes through the d
   assert.match(source, /if \(!plan\.currentAllergenRelease\)/);
   assert.match(source, /z\.literal\("save-matrix"\)/);
   assert.match(source, /expectedLineage: ExpectedLineage/);
-  assert.match(source, /saveAndAppendCpuChange\(plan, expectedUpdatedAt/);
+  assert.match(source, /saveAndAppendCpuChange\(plan, expectedRevision/);
   assert.match(retryMaterializer, /cpu-release-materialize/);
   assert.doesNotMatch(source, /createMatrixArtifact\(|publishDailySignedOplocBundle\(|allergen-matrix\/drive/);
   assert.match(page, /setFinalizationComplete\(statuses\.length === orderIds\.length && statuses\.every\(status => status\.matrixStatus === "ready"\)\)/);
   assert.doesNotMatch(page, /if \(fullySigned\) void fetch[\s\S]*save-matrix/);
-  assert.match(materializer, /const startedResult = await repository\.saveAndAppendCpuChange\(preparedCandidate, stored\.updatedAt/);
+  assert.match(materializer, /const startedResult = await repository\.saveAndAppendCpuChange\(preparedCandidate, planRevisionToken\(stored\)/);
   assert.match(materializer, /createCpuReleaseArtifacts\(startedPlan/);
   assert.match(materializer, /await prepared\.publish\(\)/);
-  assert.match(materializer, /const finalResult = await repository\.saveAndAppendCpuChange\(ready, preparedPlan\.updatedAt/);
+  assert.match(materializer, /const finalResult = await repository\.saveAndAppendCpuChange\(ready, planRevisionToken\(preparedPlan\)/);
   assert.match(materializer, /releaseToken/);
   assert.match(materializer, /cpuReleaseMaterializationReceiptId/);
   assert.match(materializer, /throw rendererFailure\(error\)/);
