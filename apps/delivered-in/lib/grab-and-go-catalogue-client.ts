@@ -1,8 +1,9 @@
 import type { ReadPackageManifest } from "@fika/server-shared/read-package";
 import { parseGrabAndGoCatalogue, type GrabAndGoCatalogue } from "@fika/server-shared/grab-and-go-catalogue";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
+import { credentialedUpstreamBase } from "./upstream-config";
 
-const cpuBase = () => (process.env.CPU_PRODUCTION_BASE_URL || "http://localhost:3400").replace(/\/$/, "");
+const cpuBase = () => credentialedUpstreamBase("cpu", process.env.CPU_PRODUCTION_BASE_URL, "http://localhost:3400");
 const headers = (): Record<string, string> => ({ accept: "application/json", ...(process.env.FIKA_INTERNAL_API_TOKEN ? { "x-fika-internal-token": process.env.FIKA_INTERNAL_API_TOKEN } : {}) });
 
 async function request(path: string) {

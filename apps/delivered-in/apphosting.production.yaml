@@ -4,6 +4,9 @@ env:
   - variable: FIKA_RUNTIME_MODE
     value: production
     availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIKA_RUNTIME_MODE
+    value: production
+    availability: [BUILD, RUNTIME]
   - variable: FIREBASE_PROJECT_ID
     value: fika-os
     availability: [BUILD, RUNTIME]
@@ -28,10 +31,10 @@ env:
   - variable: FIKA_SESSION_COOKIE_DOMAIN
     value: .fikacatering.com
     availability: [BUILD, RUNTIME]
-  - variable: FIKA_HUB_BASE_URL
+  - variable: INTEGRATION_HUB_BASE_URL
     value: https://fika-os-prod-hub--fika-os.europe-west4.hosted.app
     availability: [RUNTIME]
-  - variable: NEXT_PUBLIC_FIKA_HUB_URL
+  - variable: NEXT_PUBLIC_INTEGRATION_HUB_BASE_URL
     value: https://os.fikacatering.com
     availability: [BUILD, RUNTIME]
   - variable: MENU_PLANNING_BASE_URL

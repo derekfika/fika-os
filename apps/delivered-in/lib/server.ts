@@ -9,12 +9,13 @@ import type { DeliveredInDayProjection } from "./delivered-in-day-projection";
 import type { DeliveredInProjectionIndexEntry } from "./delivered-in-projection-store";
 import { packetPublicationsForRange, readMenuPlanningWeekPackets, type MenuPlanningWeekPacket } from "./menu-planning-week-packet";
 import { cpuDailyPacketReview, readCpuDailySignedPacket } from "./cpu-daily-signed-packet";
+import { credentialedUpstreamBase } from "./upstream-config";
 
 export const DELIVERED_IN_PROJECTION_HORIZON_DAYS = 42;
 export const DELIVERED_IN_MAX_DAY_PACKAGES = 50;
 
-const hubBase = () => (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
-const menuBase = () => (process.env.MENU_PLANNING_BASE_URL || "http://localhost:3500").replace(/\/$/, "");
+const hubBase = () => credentialedUpstreamBase("hub", process.env.INTEGRATION_HUB_BASE_URL, "http://localhost:3200");
+const menuBase = () => credentialedUpstreamBase("menu", process.env.MENU_PLANNING_BASE_URL, "http://localhost:3500");
 const failure = (message: string, status = 502, code?: string, requestId?: string) => Object.assign(new Error(message), { status, ...(code ? { code } : {}), ...(requestId ? { requestId } : {}) });
 export type RequestedWeekRecoveryCode = "CPU_REVIEW_UNAVAILABLE" | "CPU_REVIEW_UNSIGNED" | "CPU_REVIEW_LINEAGE_MISMATCH" | "CPU_PACKET_MISSING_DISH" | "CPU_DAILY_PACKET_INVALID" | "MENU_PLANNING_WEEK_PACKET_INVALID" | "MENU_SOURCE_UNAVAILABLE" | "FIKA_SESSION_MISSING" | "FIKA_SESSION_INVALID" | "UNKNOWN_INTERNAL";
 type DiagnosticError = { name: string; message: string; code?: string; status?: number; cause?: unknown };

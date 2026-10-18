@@ -8,6 +8,9 @@ env:
   - variable: FIKA_RUNTIME_MODE
     value: staging
     availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIKA_RUNTIME_MODE
+    value: staging
+    availability: [BUILD, RUNTIME]
   - variable: FIREBASE_PROJECT_ID
     value: fika-os-dev
     availability: [BUILD, RUNTIME]

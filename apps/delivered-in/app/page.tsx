@@ -15,6 +15,7 @@ import {
 import { deliveredInHref, readDeliveredInLocation } from "../lib/navigation";
 import AllergenSafetyNotice from "./allergen-safety-notice";
 import { cpuReviewStatusLabel } from "./lib/cpu-review-status";
+import { publicHubBase } from "../lib/upstream-config";
 type ProjectionHeadEntry = {
   serviceDate: string;
   projectionVersion: number;
@@ -82,7 +83,7 @@ async function redirectForSessionFailure(response: Response, current: () => bool
   const code = body?.error?.code;
   if (!current()) return true;
   if (code !== "FIKA_SESSION_MISSING" && code !== "FIKA_SESSION_INVALID") return false;
-  const hub = (process.env.NEXT_PUBLIC_INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
+  const hub = publicHubBase(process.env.NEXT_PUBLIC_INTEGRATION_HUB_BASE_URL);
   const returnTo = typeof window === "undefined" ? "/" : window.location.href;
   window.location.assign(`${hub}/?returnTo=${encodeURIComponent(returnTo)}&appId=delivered-in&launchError=${encodeURIComponent(code)}`);
   return true;
