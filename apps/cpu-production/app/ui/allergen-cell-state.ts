@@ -28,11 +28,11 @@ export function cellLabel(state: OperationalAllergenState): string {
 }
 
 /**
- * What clicking an allergen cell does in the Hospitality review. "No key allergens" is derived and never changes; an unrecorded
- * named cell becomes an explicit clear on its first click (never assumed clear); otherwise the shared cycle applies.
+ * What clicking an allergen cell does in the Hospitality review. "No key allergens" is derived and never changes. A white cell
+ * (clear or not yet confirmed) behaves as white: the first click declares Contains, then May Contain, then back to white. Nothing is
+ * recorded as confirmed Clear by a click; that happens when the chef confirms the whole row with Mark checked.
  */
 export function applyHospitalityCellClick(allergens: Record<string, OperationalAllergenState>, key: string): Record<string, OperationalAllergenState> {
   if (key === "no_key_allergens") return allergens;
-  if (cellState(allergens, key) === "unrecorded") return { ...allergens, [key]: "clear" };
   return toggleOperationalAllergen(allergens, key as CanonicalAllergenKey);
 }

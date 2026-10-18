@@ -63,7 +63,7 @@ test("CPU server rejects marking an actually incomplete matrix Planned", async (
 
 test("Hospitality detail enables completion only for an unlocked row and plans only on an explicit validated save", async () => {
   const detail = await readFile(new URL("../app/ui/HospitalityAllergenDetail.tsx", import.meta.url), "utf8");
-  assert.match(detail, /disabled=\{busy \|\| reviewLockedByAuthority \|\| sub\.evidenceStatus === "completed"\}/);
+  assert.match(detail, /disabled=\{busy \|\| reviewLockedByAuthority \|\| \(sub\.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys\(sub\.allergens\)\.length\)\}/);
   assert.doesNotMatch(detail, /if \(planStatus === "planned"\) return/);
   assert.match(detail, /const problems = allergenReviewProblems\(menuItems\)/);
   assert.doesNotMatch(detail, /if \(allComplete\) void planCommand/);

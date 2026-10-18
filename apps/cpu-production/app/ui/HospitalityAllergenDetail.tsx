@@ -12,7 +12,7 @@ import type {
   MatrixSignatureScope,
 } from "../lib/production-plan";
 import { allergenReviewProblems, describeAllergenReviewProblem, effectiveProductionPlanStatus, hasAllergenAuthority } from "../lib/production-plan-state";
-import { allergenReviewCompletionMessage, completeAllergenReviewMap } from "../lib/allergen-review-state";
+import { confirmAllergenReviewMap, unresolvedNamedAllergenKeys } from "../lib/allergen-review-state";
 import { isSigningAvailable, reviewFingerprint, savedFingerprintAfterSave } from "../lib/allergen-review-session";
 import "./hospitality-allergen-detail.css";
 import { mayContainNotes } from "./allergen-matrix";
@@ -465,14 +465,10 @@ export default function HospitalityAllergenDetail({
     });
   };
   const completeSubItem = (menuId: string, sub: PlannedSubItem) => {
-    if (reviewLockedByAuthority || sub.evidenceStatus === "completed") return;
-    const completion = completeAllergenReviewMap(sub.allergens);
-    if (!completion.complete) {
-      const message = allergenReviewCompletionMessage(completion.unresolvedKeys);
-      setRowErrors((current) => ({ ...current, [sub.id]: message }));
-      setMessage(message);
-      return;
-    }
+    if (reviewLockedByAuthority || (sub.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys(sub.allergens).length)) return;
+    // Mark checked is the chef's explicit confirmation of the whole displayed row: white cells become confirmed Clear,
+    // while Contains and May Contain declarations are kept exactly as recorded.
+    const completion = confirmAllergenReviewMap(sub.allergens);
     markMatrixEdited();
     setRowErrors((current) => { const next = { ...current }; delete next[sub.id]; return next; });
     updateSubItem(menuId, sub.id, { allergens: completion.states, evidenceStatus: "completed" });
@@ -1006,15 +1002,15 @@ export default function HospitalityAllergenDetail({
                             <td>
                               <button
                                 type="button"
-                                className={`check-button ${sub.evidenceStatus === "completed" ? "check-button--done" : ""}`}
-                                disabled={busy || reviewLockedByAuthority || sub.evidenceStatus === "completed"}
-                                aria-label={sub.evidenceStatus === "completed" ? `${sub.name || "Sub-item"}: checked` : reviewLockedByAuthority ? `${sub.name || "Sub-item"}: reopen review to amend` : `${sub.name || "Sub-item"}: mark checked`}
-                                title={reviewLockedByAuthority ? "Reopen the allergen review before amending signed authority" : sub.evidenceStatus === "completed" ? "This row is already checked" : undefined}
+                                className={`check-button ${sub.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys(sub.allergens).length ? "check-button--done" : ""}`}
+                                disabled={busy || reviewLockedByAuthority || (sub.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys(sub.allergens).length)}
+                                aria-label={sub.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys(sub.allergens).length ? `${sub.name || "Sub-item"}: checked` : reviewLockedByAuthority ? `${sub.name || "Sub-item"}: reopen review to amend` : `${sub.name || "Sub-item"}: mark checked`}
+                                title={reviewLockedByAuthority ? "Reopen the allergen review before amending signed authority" : sub.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys(sub.allergens).length ? "This row is already checked" : undefined}
                                 onClick={() =>
                                   completeSubItem(menuItem.id, sub)
                                 }
                               >
-                                {sub.evidenceStatus === "completed"
+                                {sub.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys(sub.allergens).length
                                   ? "Checked"
                                   : reviewLockedByAuthority
                                     ? "Reopen review to amend"

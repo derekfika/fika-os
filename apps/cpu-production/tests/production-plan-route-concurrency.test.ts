@@ -406,3 +406,33 @@ test("lifecycle sync: a successful transition is verified against the Hub before
   assert.equal(hub.status, "planned");
   assert.equal((await storedPlanOf(route.db, orderId))!.lifecycleSync.status, "synced");
 });
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Matrix semantics: Mark checked confirms the displayed row (white = Clear). The server still never infers Clear from missing data.
+// ---------------------------------------------------------------------------------------------------------------------------
+test("Mini Pastries: a row confirmed with Gluten/Eggs/Milk persists those as Contains and the other 11 as Clear, via the real route", { timeout: 120_000 }, async () => {
+  const orderId = "production-order:matrix-mini-pastries";
+  installHub(orderId, "2026-12-08");
+  const route = await importRouteWithTransactionGate();
+  route.open();
+  const { confirmAllergenReviewMap } = await import("../app/lib/allergen-review-state");
+  const displayed = { gluten: "contains", eggs: "contains", milk: "contains" } as Record<string, any>; // what the chef sees: 3 black squares, 11 white
+  const rowFor = (allergens: Record<string, unknown>, evidenceStatus: string) => [{ id: "menu:1", sourceLineId: `line:${orderId}`, name: "Mini Pastries", note: "", subItems: [{ id: "sub:1", name: "Mini Pastries", quantity: 4, allergens, note: "", evidenceStatus }] }];
+
+  // The white cells are NOT inferred as Clear by the server: an unconfirmed row cannot be planned.
+  const unconfirmed = await post(route.POST, { action: "mark-planned", orderId, planningNotes: "", expectedRevision: null, menuItems: rowFor(displayed, "completed") });
+  assert.equal(unconfirmed.status, 422, "unrecorded white cells are never silently treated as Clear by the server");
+
+  // Mark checked (client-side row confirmation), then Save allergen review.
+  const confirmed = confirmAllergenReviewMap(displayed).states;
+  const saved = await post(route.POST, { action: "mark-planned", orderId, planningNotes: "", expectedRevision: null, menuItems: rowFor(confirmed, "completed") });
+  const body = await saved.json();
+  assert.equal(saved.status, 200, JSON.stringify(body).slice(0, 300));
+  const stored = (await storedPlanOf(route.db, orderId))!;
+  const states = stored.menuItems[0].subItems[0].allergens as Record<string, string>;
+  for (const key of ["gluten", "eggs", "milk"]) assert.equal(states[key], "contains", key);
+  for (const key of NAMED.filter((candidate) => !["gluten", "eggs", "milk"].includes(candidate))) assert.equal(states[key], "clear", key);
+  assert.equal(states.no_key_allergens, "clear", "derived, never client-supplied");
+  assert.equal(stored.status, "planned");
+  assert.equal(stored.menuItems[0].subItems[0].evidenceStatus, "completed");
+});

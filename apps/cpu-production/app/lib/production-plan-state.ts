@@ -49,9 +49,11 @@ export function allergenReviewProblems(menuItems: PlannedMenuItem[]): AllergenRe
       const rowName = row.name.trim() || "Unnamed row";
       const base = { itemId: item.id, itemName, rowId: row.id, rowName };
       if (!row.name.trim()) problems.push({ ...base, kind: "row-unnamed", allergens: [] });
+      // An unreviewed row has one requirement: the chef confirms it with Mark checked (white cells then become confirmed Clear).
+      // Only a row already marked checked yet still holding unconfirmed allergens (legacy data) needs a fresh, explicit review.
+      if (row.evidenceStatus !== "completed") { problems.push({ ...base, kind: "row-unchecked", allergens: [] }); continue; }
       const unresolved = unresolvedNamedAllergenKeys(row.allergens).map(label);
       if (unresolved.length) problems.push({ ...base, kind: "allergens-not-recorded", allergens: unresolved });
-      if (row.evidenceStatus !== "completed") problems.push({ ...base, kind: "row-unchecked", allergens: [] });
     }
   }
   return problems;
@@ -63,8 +65,8 @@ export function describeAllergenReviewProblem(problem: AllergenReviewProblem) {
     case "no-rows": return `${where}: add at least one row to review.`;
     case "item-unnamed": return `${where}: give the menu item a name.`;
     case "row-unnamed": return `${where}: name this row.`;
-    case "row-unchecked": return `${where}: mark the row checked once every allergen is recorded.`;
-    case "allergens-not-recorded": return `${where}: record ${problem.allergens.length} allergen${problem.allergens.length === 1 ? "" : "s"} (${problem.allergens.join(", ")}).`;
+    case "row-unchecked": return `${where}: review the row, then press Mark checked (empty allergens are recorded as Clear).`;
+    case "allergens-not-recorded": return `${where}: ${problem.allergens.length} allergen${problem.allergens.length === 1 ? " was" : "s were"} never confirmed (${problem.allergens.join(", ")}). Press Mark checked again to confirm the row; empty allergens are recorded as Clear.`;
   }
 }
 
