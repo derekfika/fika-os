@@ -729,7 +729,14 @@ async function handlePost(request: NextRequest) {
       const currentSignatureScope = matrixSignatureScope(currentOrder, menuContentHash(plan.menuItems));
       if (command.expectedLineage && !sameLineage(currentSignatureScope, command.expectedLineage)) throw Object.assign(new Error("The reviewed source lineage has changed. Reload and review the current matrix before retrying materialization."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
       if (!plan.currentAllergenRelease) plan.currentAllergenRelease = pendingReleaseFor(plan, currentOrder, timestamp);
-      if (plan.currentAllergenRelease.status === "current" && plan.currentAllergenRelease.materializationStatus === "ready") throw Object.assign(new Error("This CPU allergen release is already current."), { status: 409 });
+      if (plan.currentAllergenRelease.status === "current" && plan.currentAllergenRelease.materializationStatus === "ready") {
+        // Nothing to materialise. If only the Hub Planned sync is outstanding, complete (and verify) that instead of refusing.
+        if (plan.lifecycleSync?.status === "pending") {
+          const onlyHub = await completeLifecycleSync(request, plan);
+          return NextResponse.json({ plan, revision: planRevisionToken(plan), hubLifecycle: onlyHub, synchronised: onlyHub.status === "synced", matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus: "ready" });
+        }
+        throw Object.assign(new Error("This CPU allergen release is already current."), { status: 409 });
+      }
       plan.signedMenuContentHash = menuContentHash(plan.menuItems);
       plan.signedSignatures = plan.signatures;
       plan.audit.push({ action: "allergen-matrix-materialization-requested", at: timestamp, by: auditActor, reason: "Release materialization requested after authoritative signature state." });

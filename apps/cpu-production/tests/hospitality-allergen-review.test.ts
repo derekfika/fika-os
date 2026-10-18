@@ -169,3 +169,8 @@ test("a signed review with a pending Hub sync offers an explicit Retry booking s
   const component = read("../app/ui/HospitalityAllergenDetail.tsx");
   assert.match(component, /signatures\.length >= 2 && <button[^>]*onClick=\{\(\) => void retryFinalArtifact\(\)\}>Retry booking status update<\/button>/);
 });
+
+test("save-matrix on an already-current release completes a pending Hub sync instead of refusing with 409", () => {
+  const route = read("../app/api/production-plan/route.ts");
+  assert.match(route, /if \(plan\.lifecycleSync\?\.status === "pending"\) \{\s*const onlyHub = await completeLifecycleSync\(request, plan\);[\s\S]{0,700}This CPU allergen release is already current\./);
+});
