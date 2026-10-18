@@ -20,7 +20,7 @@ async function call<T>(request: NextRequest, path: string, init: RequestInit, va
   const requestId = request.headers.get("x-request-id") || randomUUID();
   let hubOrigin = "unknown";
   try { hubOrigin = new URL(base()).origin; } catch { /* getHubBaseUrl supplies the user-facing configuration error */ }
-  try { response = await fetch(`${base()}${path}`, { ...init, cache: "no-store", signal: AbortSignal.timeout(8_000), headers: { ...forwardedHeaders(request, init.headers), "x-request-id": requestId } }); }
+  try { response = await fetch(`${base()}${path}`, { ...init, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(8_000), headers: { ...forwardedHeaders(request, init.headers), "x-request-id": requestId } }); }
   catch (cause) {
     const timeout = cause instanceof DOMException && cause.name === "TimeoutError";
     throw Object.assign(new Error(timeout ? "Integration Hub request timed out." : "Integration Hub is unavailable."), { status: 503, code: timeout ? "CPU_HUB_TIMEOUT" : "CPU_HUB_NETWORK_FAILURE", failureKind: "hub_unavailable" as const, upstreamPath: path, hubOrigin, requestId, cause });

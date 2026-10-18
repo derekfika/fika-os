@@ -66,7 +66,7 @@ export async function requireLogisticsAccess(request: LogisticsRequest, dependen
 async function requireHubLogisticsSession(request: LogisticsRequest): Promise<FikaSessionPrincipal> {
   const hub = requiredUpstreamUrl("FIKA_HUB_BASE_URL");
   const query = new URLSearchParams({ mode: "admission", ...(request.nextUrl?.searchParams.get("vehicle") ? { vehicle: request.nextUrl.searchParams.get("vehicle")! } : {}) });
-  const response = await fetch(`${hub}/api/logistics/access?${query}`, { headers: { cookie: request.headers?.get("cookie") || "", ...(request.headers?.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, cache: "no-store" });
+  const response = await fetch(`${hub}/api/logistics/access?${query}`, { headers: { cookie: request.headers?.get("cookie") || "", ...(request.headers?.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, cache: "no-store", redirect: "error" });
   const body = await response.json().catch(() => null) as { principal?: Omit<FikaSessionPrincipal, "firebaseUid">; error?: { message?: unknown; code?: unknown } } | null;
   if (!response.ok || !body?.principal) {
     const error = body?.error;

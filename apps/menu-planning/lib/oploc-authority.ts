@@ -16,7 +16,7 @@ function resolveOplocRedirect(id: string, redirects: Record<string, string>) {
 }
 
 export async function readGovernedOplocs(request: NextRequest): Promise<GovernedOploc[]> {
-  const response = await fetch(`${menuPlanningHubBaseUrl()}/api/oplocs`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
+  const response = await fetch(`${menuPlanningHubBaseUrl()}/api/oplocs`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store", redirect: "error" });
   const body = await response.json() as { oplocs?: GovernedOploc[]; error?: { message?: string } };
   if (!response.ok || !Array.isArray(body.oplocs)) throw Object.assign(new Error(body.error?.message || "Integration Hub OPLOC authority is unavailable; publication was not performed."), { status: response.status >= 500 ? 503 : response.status || 503 });
   return body.oplocs;
@@ -27,7 +27,7 @@ export async function readDeliveredInOplocs(request: NextRequest): Promise<Gover
   // The authorized service-arrangements package already contains the
   // authorized OPLOC reference list. Reusing that response avoids a second
   // AUTHMOD evaluation and a second package read for every preview/check.
-  const arrangementResponse = await fetch(`${menuPlanningHubBaseUrl()}/api/service-arrangements`, { headers, cache: "no-store" });
+  const arrangementResponse = await fetch(`${menuPlanningHubBaseUrl()}/api/service-arrangements`, { headers, cache: "no-store", redirect: "error" });
   const arrangementBody = await arrangementResponse.json() as { arrangements?: Array<{ oplocId: string; oplocLabel?: string; serviceLabel?: string; lifecycleState?: string; effectiveFrom?: string; effectiveTo?: string }>; error?: { message?: string } };
   const arrangementData = arrangementBody as typeof arrangementBody & { oplocs?: GovernedOploc[]; oplocRedirects?: Record<string, string> };
   if (!arrangementResponse.ok || !Array.isArray(arrangementBody.arrangements) || !Array.isArray(arrangementData.oplocs)) {

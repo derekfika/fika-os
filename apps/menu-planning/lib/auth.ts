@@ -16,7 +16,7 @@ const failure = (message: string, status: number) => Object.assign(new Error(mes
 
 export async function resolveMenuActor(request: NextRequest): Promise<MenuActor> {
   try {
-    const response = await fetch(`${menuPlanningHubBaseUrl()}/api/menu-planning/access`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
+    const response = await fetch(`${menuPlanningHubBaseUrl()}/api/menu-planning/access`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store", redirect: "error" });
     const body = await response.json() as { principal?: { identityId: string; email?: string }; canManage?: boolean; canPublish?: boolean; scope?: { all?: boolean; ids?: string[] }; oplocs?: Array<{ id?: string }>; error?: { message?: string } };
     if (!response.ok || !body.principal) throw failure(body.error?.message || "An authenticated Menu Planning session is required.", response.status || 401);
     const ids = body.scope?.ids || (body.oplocs || []).map(oploc => oploc.id).filter((id): id is string => Boolean(id));

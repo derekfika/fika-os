@@ -1,18 +1,19 @@
 import type { DurableDomainEvent, ExternalProductionMaterialisation } from "./fika-contracts";
 import { menuPlanningHubBaseUrl } from "./hub-url";
+import { approvedCredentialedUpstream } from "@fika/server-shared/credentialed-upstream";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 function deliveredInBaseUrl() {
   const configured = process.env.FIKA_APP_DELIVERED_IN_URL || process.env.DELIVERED_IN_BASE_URL;
   if (["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "") && !configured) throw Object.assign(new Error("Delivered-In invalidation endpoint is not configured for hosted Menu Planning."), { status: 503, code: "DELIVERED_IN_ENDPOINT_NOT_CONFIGURED" });
-  return (configured || "http://localhost:3800").replace(/\/$/, "");
+  return configured ? approvedCredentialedUpstream("delivered-in", configured) : "http://localhost:3800";
 }
 
 export async function forwardProductionMaterialisation(input: ExternalProductionMaterialisation) {
   const base = menuPlanningHubBaseUrl();
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (process.env.FIKA_INTERNAL_API_TOKEN) headers["x-fika-internal-token"] = process.env.FIKA_INTERNAL_API_TOKEN;
-  const response = await fetch(`${base}/api/production/materialise`, { method: "POST", headers, body: JSON.stringify(input), signal: AbortSignal.timeout(8000) });
+  const response = await fetch(`${base}/api/production/materialise`, { method: "POST", headers, body: JSON.stringify(input), redirect: "error", signal: AbortSignal.timeout(8000) });
   if (!response.ok) throw new Error(`Integration Hub CPU production handoff failed (${response.status}).`);
   const result = await response.json() as { cpuHandoff?: "delivered" | "pending" };
   if (result.cpuHandoff === "pending") throw new Error("Integration Hub materialised the Production Order, but CPU projection handoff is pending.");
@@ -36,7 +37,7 @@ export async function forwardDeliveredInInvalidation(event: DurableDomainEvent) 
   const token = process.env.DELIVERED_IN_INTERNAL_API_TOKEN || process.env.FIKA_INTERNAL_API_TOKEN;
   if (token) headers["x-fika-internal-token"] = token;
   try {
-    const response = await fetch(`${deliveredInBaseUrl()}/api/delivered-in/invalidate`, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(8000) });
+    const response = await fetch(`${deliveredInBaseUrl()}/api/delivered-in/invalidate`, { method: "POST", headers, body: JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(8000) });
     recordDataAccess({ app: "menu-planning", operation: response.ok ? "delivered-in.invalidation.success" : "delivered-in.invalidation.failure", source: "NETWORK_UPSTREAM", documents: 1, cacheHit: false });
     if (!response.ok) throw new Error(`Delivered-In invalidation failed (${response.status}).`);
   } catch (error) {

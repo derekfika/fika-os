@@ -1,6 +1,8 @@
 /** Configuration is injected by Next/App Hosting; Next loads local .env.local
  * automatically during development, so no repository filesystem probing is
  * needed here. */
+import { approvedCredentialedUpstream } from "@fika/server-shared/credentialed-upstream";
+
 function bridgeSetting(key: "FIKA_HUB_BASE_URL" | "MNK_CANON_BRIDGE_TOKEN") { return process.env[key]?.trim() || undefined; }
 
 export function isLocalBridgeEnvironment() {
@@ -14,7 +16,7 @@ export async function hubFetch(pathname: string, init: RequestInit = {}) {
   if (!base || !token) throw Error("The MNK Canon bridge is not configured. Set the local Hub address and bridge token.");
   const headers = new Headers(init.headers);
   headers.set("x-fika-mnk-bridge-token", token);
-  return fetch(`${base.replace(/\/$/, "")}${pathname}`, { ...init, headers, cache: "no-store" });
+  return fetch(`${approvedCredentialedUpstream("hub", base)}${pathname}`, { ...init, headers, cache: "no-store", redirect: "error" });
 }
 
 export async function hubUserFetch(pathname: string, cookie: string | null, init: RequestInit = {}) {
@@ -22,5 +24,5 @@ export async function hubUserFetch(pathname: string, cookie: string | null, init
   if (!base) throw Error("The Hub address has not been configured for this environment.");
   const headers = new Headers(init.headers);
   if (cookie) headers.set("cookie", cookie);
-  return fetch(`${base.replace(/\/$/, "")}${pathname}`, { ...init, headers, cache: "no-store" });
+  return fetch(`${approvedCredentialedUpstream("hub", base)}${pathname}`, { ...init, headers, cache: "no-store", redirect: "error" });
 }

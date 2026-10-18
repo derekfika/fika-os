@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
+import { approvedCredentialedUpstream } from "@fika/server-shared/credentialed-upstream";
 
 const menuPlanningUrl = () => {
   const configured = process.env.MENU_PLANNING_BASE_URL || process.env.MENU_PLANNING_URL;
-  if (configured) return configured.replace(/\/$/, "");
+  if (configured) return approvedCredentialedUpstream("menu", configured);
   if ((process.env.FIKA_RUNTIME_MODE || "local") === "local") return "http://localhost:3500";
   throw Object.assign(new Error("Menu Planning is not configured for this hosted runtime."), { status: 503, code: "MENU_PLANNING_URL_NOT_CONFIGURED" });
 };
@@ -13,6 +14,7 @@ export async function menuPlanningJson<T>(request: NextRequest, path: string, va
     response = await fetch(`${menuPlanningUrl()}${path}`, {
       ...init,
       cache: "no-store",
+      redirect: "error",
       signal: AbortSignal.timeout(8_000),
       headers: { accept: "application/json", ...(init.headers || {}), ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}) },
     });

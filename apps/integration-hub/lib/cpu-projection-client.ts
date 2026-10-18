@@ -1,3 +1,4 @@
+import { approvedCredentialedUpstream } from "@fika/server-shared/credentialed-upstream";
 import type { ProductionOrder } from "./production-domain";
 
 type CpuProjectionOrder = Pick<ProductionOrder, "canonicalId" | "version" | "serviceDate" | "updatedAt" | "createdAt">;
@@ -18,7 +19,7 @@ function cpuBase() {
   try { parsed = new URL(configured); } catch { throw new Error("CPU_PRODUCTION_BASE_URL must be a valid URL."); }
   if (hosted && parsed.protocol !== "https:") throw new Error("CPU_PRODUCTION_BASE_URL must use HTTPS outside local development.");
   if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("CPU_PRODUCTION_BASE_URL must use HTTP or HTTPS.");
-  return configured.replace(/\/$/, "");
+  return approvedCredentialedUpstream("cpu", configured);
 }
 
 export async function notifyCpuProjection(order: CpuProjectionOrder, changeType: "created" | "amended" | "withdrawn", idempotencyKey: string) {
@@ -29,7 +30,7 @@ export async function notifyCpuProjection(order: CpuProjectionOrder, changeType:
   let lastError: unknown;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      const response = await fetch(`${cpuBase()}/api/production`, { method: "POST", headers, signal: AbortSignal.timeout(8000), body });
+      const response = await fetch(`${cpuBase()}/api/production`, { method: "POST", headers, redirect: "error", signal: AbortSignal.timeout(8000), body });
       if (!response.ok) throw new Error(`CPU projection handoff failed (${response.status}).`);
       return { ...(await response.json() as Record<string, unknown>), attempts: attempt };
     } catch (error) { lastError = error; }
