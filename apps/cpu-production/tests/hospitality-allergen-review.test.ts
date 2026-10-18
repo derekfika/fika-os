@@ -146,3 +146,13 @@ test("an outstanding Hub synchronisation is shown from the stored plan on load, 
   assert.match(component, /Booking status update not confirmed/);
   assert.match(component, /role="alert" aria-labelledby="matrix-hub-pending-title"/);
 });
+
+test("the Hospitality production panel links to this order's own signed allergen checker, found by stable order ID", () => {
+  const panel = read("../app/ui/HospitalityProductionDetail.tsx");
+  assert.match(panel, /\/api\/production-plan\?orderId=\$\{encodeURIComponent\(orderId\)\}/);
+  assert.match(panel, /body\.matrixStatus === "ready" && url/);
+  assert.match(panel, /Open signed allergen checker \(PDF\)/);
+  assert.match(panel, /rel="noopener noreferrer"/);
+  assert.match(panel, /could not be saved to Drive/);
+  assert.match(panel, /Not signed yet/);
+});

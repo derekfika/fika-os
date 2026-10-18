@@ -32,8 +32,20 @@ test("production CPU Drive stays disabled without an explicit folder even with D
   assert.deepEqual(matrixDriveConfiguration(order("menu_planning")), { enabled: true, ownerKey: "APP_CPU_PRODUCTION" });
 });
 
-test("Hospitality matrix configuration retains its governed OPLOC owner diagnostic", () => {
-  process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON = "configured-later";
-  process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION = "derek@fikacatering.com";
+test("Hospitality orders are gated only on the Hospitality service, not on CPU app-workspace Drive settings", () => {
+  process.env.FIKA_RUNTIME_MODE = "production";
+  delete process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON;
+  delete process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION;
+  delete process.env.GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID;
+  process.env.HOSPITALITY_BOOKING_BASE_URL = "https://hospitality.example";
   assert.deepEqual(matrixDriveConfiguration(order("hospitality_booking", "oploc:angel")), { enabled: true, ownerKey: "OPLOC_APP_CPU_PRODUCTION" });
+  delete process.env.HOSPITALITY_BOOKING_BASE_URL;
+  assert.deepEqual(matrixDriveConfiguration(order("hospitality_booking", "oploc:angel")), { enabled: false, reason: "not_configured" });
+});
+
+test("non-Hospitality (CPU default workspace) orders are still gated on the CPU owner, DWD and production folder", () => {
+  process.env.FIKA_RUNTIME_MODE = "production";
+  delete process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON;
+  process.env.HOSPITALITY_BOOKING_BASE_URL = "https://hospitality.example";
+  assert.deepEqual(matrixDriveConfiguration(order("menu_planning")), { enabled: false, reason: "not_configured" });
 });

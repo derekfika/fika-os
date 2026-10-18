@@ -3,6 +3,7 @@ import { z } from "zod";
 import { errorResponse } from "@/lib/api";
 import { requireActor } from "@/lib/auth";
 import { assertPermission } from "@/lib/authmod";
+import { Transition } from "@/lib/production-transition-schema";
 import { acknowledgeProductionCancellation, createProductionFromApprovedBooking, productionQueue, productionQueueForWeek, productionOrderDetail, transitionProductionOrder, type ProductionStatus } from "@/lib/production-domain";
 import { notifyCpuProjection } from "@/lib/cpu-projection-client";
 import { deliverLogisticsProjectionForProductionOrder } from "@/lib/logistics-projection-outbox";
@@ -18,7 +19,7 @@ function londonBusinessDate(now = new Date()) {
 }
 
 const Create = z.object({ action: z.literal("create"), bookingId: z.string().min(8), idempotencyKey: z.string().trim().min(8).max(200), conversions: z.record(z.string(), z.object({ quantity: z.number().positive(), unit: z.string().trim().min(1).max(80) })).optional() }).strict();
-const Transition = z.object({ action: z.literal("transition"), canonicalId: z.string().min(8), expectedVersion: z.number().int().positive(), status: z.enum(["draft", "needs_review", "accepted", "scheduled", "in_production", "partially_complete", "complete", "cancelled", "blocked", "failed", "reconciliation_required"]), reason: z.string().trim().min(3).max(1000) }).strict();
+
 const AcknowledgeCancellation = z.object({ action: z.literal("acknowledge-cancellation"), canonicalId: z.string().min(8), expectedVersion: z.number().int().positive() }).strict();
 export async function GET(request: NextRequest) {
   try {

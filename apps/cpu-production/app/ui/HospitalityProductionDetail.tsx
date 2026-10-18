@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
 import "./hospitality-production-detail.css";
 import BookingContext from "./BookingContext";
@@ -19,6 +20,32 @@ function quantity(order: ProductionOrder) {
   return order.lines.reduce((total, line) => total + line.customerQuantity, 0);
 }
 
+type SignedPdf = { state: "loading" | "ready" | "pending" | "failed" | "unsigned" | "unavailable"; url?: string; message: string };
+
+/** One known-ID read of this order's plan when the panel opens; the PDF is this order's own OPLOC checker, found by its stable order ID. */
+function useSignedAllergenPdf(orderId: string): SignedPdf {
+  const [value, setValue] = useState<SignedPdf>({ state: "loading", message: "Checking for the signed allergen checker…" });
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/production-plan?orderId=${encodeURIComponent(orderId)}`, { cache: "no-store" })
+      .then(async (response) => ({ ok: response.ok, body: await response.json() }))
+      .then(({ ok, body }) => {
+        if (cancelled) return;
+        if (!ok || !body?.plan) return setValue({ state: "unavailable", message: "The signed allergen checker status could not be loaded." });
+        const url = body.plan.matrixArtifact?.driveUrl as string | undefined;
+        if (body.matrixStatus === "ready" && url) return setValue({ state: "ready", url, message: "" });
+        if (body.matrixStatus === "failed") return setValue({ state: "failed", message: "Both signatures are recorded, but the PDF could not be saved to Drive. Open the allergen editor to retry." });
+        const signed = Array.isArray(body.plan.signatures) && body.plan.signatures.length >= 2;
+        setValue(signed
+          ? { state: "pending", message: "Both signatures are recorded. The PDF is being prepared in Drive." }
+          : { state: "unsigned", message: "Not signed yet. The PDF appears here once both chefs have signed." });
+      })
+      .catch(() => { if (!cancelled) setValue({ state: "unavailable", message: "The signed allergen checker status could not be loaded." }); });
+    return () => { cancelled = true; };
+  }, [orderId]);
+  return value;
+}
+
 export default function HospitalityProductionDetail({
   order,
   close,
@@ -28,6 +55,7 @@ export default function HospitalityProductionDetail({
   close: () => void;
   openAllergens: () => void;
 }) {
+  const signedPdf = useSignedAllergenPdf(order.canonicalId);
   return (
     <aside className="hospitality-production-detail" role="dialog" aria-modal="true" aria-label="Hospitality production detail">
       <header>
@@ -62,6 +90,12 @@ export default function HospitalityProductionDetail({
           <div><dt>Production lines</dt><dd>{order.lines.length}</dd></div>
           <div><dt>Destination</dt><dd>{order.destinationLabel || order.destinationOplocId || "Not assigned"}</dd></div>
         </dl>
+      </section>
+      <section aria-labelledby="hospitality-signed-checker-title">
+        <h3 id="hospitality-signed-checker-title">Signed allergen checker</h3>
+        {signedPdf.state === "ready" && signedPdf.url
+          ? <p><a href={signedPdf.url} target="_blank" rel="noopener noreferrer">Open signed allergen checker (PDF)</a></p>
+          : <p className="hospitality-production-detail__muted">{signedPdf.message}</p>}
       </section>
       <BookingContext order={order} />
       <footer>
