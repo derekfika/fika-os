@@ -37,6 +37,9 @@ env:
   - variable: FIKA_LOGISTICS_BASE_URL
     value: https://fika-os-prod-logistics--fika-os.europe-west4.hosted.app
     availability: [RUNTIME]
+  - variable: FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED
+    value: "false"
+    availability: [RUNTIME]
   - variable: FIKA_APP_HOSPITALITY_URL
     value: https://hospitality.fikacatering.com/manage
     availability: [BUILD, RUNTIME]
