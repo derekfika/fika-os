@@ -225,6 +225,7 @@ function installHub(state: HubState) {
 const freshHub = (): HubState => ({ bookings: new Map(), calls: [], notifications: [], failOn: new Set() });
 async function postGroup(body: unknown) {
   process.env.FIKA_RCOA_OPLOC_ID = "oploc:rcoa-test";
+  process.env.FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED = "true";
   process.env.FIKA_HUB_BASE_URL = "http://hub.test";
   process.env.MNK_CANON_BRIDGE_TOKEN = "test-token";
   const { POST } = await import("../app/api/bookings/rcoa/group/route");

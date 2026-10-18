@@ -10,8 +10,10 @@ import type { PortalMenuItem } from "../lib/mnk-contract";
 process.env.FIKA_HUB_BASE_URL = "http://hub.test";
 process.env.MNK_CANON_BRIDGE_TOKEN = "bridge-token-for-tests";
 process.env.FIKA_RCOA_OPLOC_ID = "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2";
+process.env.FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED = "true";
 const { POST: genericPost } = await import("../app/api/bookings/route");
 const { POST: rcoaPost } = await import("../app/api/bookings/rcoa/route");
+const { POST: rcoaGroupPost } = await import("../app/api/bookings/rcoa/group/route");
 
 const menu: PortalMenuItem[] = localRcoaMenuCatalogue.items.filter(item => item.lifecycleState === "active").map(item => ({
   canonicalId: item.canonicalId, id: item.source.sourceItemId, name: item.name, description: item.description, category: item.category, unitPrice: item.pricing.unitPrice, vatRate: item.pricing.vatRate,
@@ -30,6 +32,7 @@ function realRcoaSubmission() {
   return buildRcoaClientRequest(draft, menu, { bookingId: "RCOA-20261012133429-AB12", submittedAt: "2026-10-12T13:34:29.000Z" });
 }
 const post = (url: string, body: unknown) => new NextRequest(`https://hospitality.test${url}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+const malformedPost = (url: string) => new NextRequest(`https://hospitality.test${url}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{" });
 
 async function withHub<T>(respond: (url: string, init: RequestInit) => Response, run: (calls: Array<{ url: string; headers: Headers; body: Record<string, unknown> }>) => Promise<T>) {
   const original = globalThis.fetch; const calls: Array<{ url: string; headers: Headers; body: Record<string, unknown> }> = [];
@@ -48,6 +51,41 @@ test("a real RCoA submission goes to the Hub with the expected-OPLOC header, the
     assert.equal(calls[0].body.siteId, "rcoa");
     assert.equal(calls[0].body.bookingId, "RCOA-20261012133429-AB12", "the stable request/booking ID is preserved so a retry is idempotent");
   });
+});
+
+test("RCoA single booking fails closed before parsing or Hub forwarding when submissions are disabled or unset", async () => {
+  const previous = process.env.FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED;
+  try {
+    for (const value of [undefined, "false"]) {
+      if (value === undefined) delete process.env.FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED;
+      else process.env.FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED = value;
+      await withHub(() => Response.json({}), async (calls) => {
+        const response = await rcoaPost(malformedPost("/api/bookings/rcoa"));
+        assert.equal(response.status, 503);
+        assert.match((await response.json()).error.message, /catalogue is available to browse.*submissions are not yet open/i);
+        assert.equal(calls.length, 0);
+      });
+    }
+  } finally {
+    if (previous === undefined) delete process.env.FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED;
+    else process.env.FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED = previous;
+  }
+});
+
+test("RCoA all-day/group booking fails closed before parsing or Hub forwarding when submissions are disabled", async () => {
+  const previous = process.env.FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED;
+  process.env.FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED = "false";
+  try {
+    await withHub(() => Response.json({}), async (calls) => {
+      const response = await rcoaGroupPost(malformedPost("/api/bookings/rcoa/group"));
+      assert.equal(response.status, 503);
+      assert.match((await response.json()).error.message, /catalogue is available to browse.*submissions are not yet open/i);
+      assert.equal(calls.length, 0);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED;
+    else process.env.FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED = previous;
+  }
 });
 
 test("the same RCoA payload on the generic route is refused clearly and never forwarded to the Hub", async () => {
@@ -86,7 +124,8 @@ test("a Hub rejection stays generic to the browser but is logged with the status
 test("the authenticated workspace renders the governed RCoA portal for the RCoA site, never the generic form", () => {
   const workspace = readFileSync(new URL("../app/ui/HospitalityWorkspace.tsx", import.meta.url), "utf8");
   const page = readFileSync(new URL("../app/workspace/page.tsx", import.meta.url), "utf8");
-  assert.match(workspace, /active\.portalSiteKey === "rcoa"\) return <RcoaBookingPortal configured=\{rcoaConfigured\} \/>/);
+  assert.match(workspace, /active\.portalSiteKey === "rcoa"\) return <RcoaBookingPortal configured=\{rcoaConfigured\} bookingSubmissionsEnabled=\{rcoaBookingSubmissionsEnabled\} \/>/);
   assert.ok(workspace.indexOf('portalSiteKey === "rcoa"') < workspace.indexOf("return <BookingPortal siteKey"), "the RCoA branch comes before the generic portal");
   assert.match(page, /rcoaConfigured=\{Boolean\(process\.env\.FIKA_RCOA_OPLOC_ID\?\.trim\(\)\)\}/);
+  assert.match(page, /rcoaBookingSubmissionsEnabled=\{process\.env\.FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED === "true"\}/);
 });
