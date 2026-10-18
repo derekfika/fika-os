@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { recordDataAccess, setDataTraceOutcome, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { hubFetch } from "@/lib/hub";
 import { buildTrustedRcoaHubPayload } from "@/lib/rcoa-booking-request";
+import { areRcoaBookingSubmissionsEnabled, RCOA_BOOKING_SUBMISSIONS_DISABLED_MESSAGE } from "@/lib/rcoa-booking-availability";
 
 export async function POST(request: NextRequest) {
   return withDataTrace({ app: "hospitality-booking", action: "booking.create.rcoa", path: "/api/bookings/rcoa", outcome: "SUCCESS" }, async () => {
+    if (!areRcoaBookingSubmissionsEnabled()) {
+      return NextResponse.json({ error: { message: RCOA_BOOKING_SUBMISSIONS_DISABLED_MESSAGE } }, { status: 503 });
+    }
     const expectedOplocId = process.env.FIKA_RCOA_OPLOC_ID?.trim();
     if (!expectedOplocId) {
       return NextResponse.json({ error: { message: "RCoA booking is unavailable until its governed OPLOC mapping is configured." } }, { status: 503 });

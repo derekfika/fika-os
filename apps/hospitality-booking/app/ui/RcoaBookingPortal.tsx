@@ -111,7 +111,7 @@ function safeAllDay(value: unknown): AllDayDraft | undefined {
   };
 }
 
-export default function RcoaBookingPortal({ configured }: { configured: boolean }) {
+export default function RcoaBookingPortal({ configured, bookingSubmissionsEnabled = false }: { configured: boolean; bookingSubmissionsEnabled?: boolean }) {
   const site = portalSite("rcoa");
   const theme = hospitalitySiteThemeStyle(site) as CSSProperties;
   // Two flows share this screen: the ordinary single-offering booking (unchanged) and All Day Hospitality.
@@ -274,6 +274,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   const warnings = rcoaNoticeWarnings(draft, menu);
   const currentEvent = rcoaEventTypes.find((event) => event.id === draft.occasion);
   const rcoaConfigured = configured;
+  const rcoaBookingEnabled = rcoaConfigured && bookingSubmissionsEnabled;
 
   const updateContact = (key: keyof RcoaBookingDraft["contact"], value: string) => setDraft((current) => ({ ...current, contact: { ...current.contact, [key]: value } }));
   const updateEvent = (key: keyof RcoaBookingDraft["event"], value: string | number) => setDraft((current) => ({ ...current, event: { ...current.event, [key]: value } }));
@@ -391,6 +392,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   };
 
   const submitAllDay = async () => {
+    if (!rcoaBookingEnabled) { setMessage(rcoaConfigured ? "RCoA booking submissions are not yet open." : "RCoA booking is not available until the governed site mapping is configured."); return; }
     // Every service row is validated BEFORE anything is created.
     const failure = validateAllDay(allDay, menu);
     if (failure) {
@@ -445,6 +447,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (sendingRef.current) return;
+    if (!rcoaBookingEnabled) { setMessage(rcoaConfigured ? "RCoA booking submissions are not yet open." : "RCoA booking is not available until the governed site mapping is configured."); return; }
     if (flow === "all-day") { await submitAllDay(); return; }
     const validation = validateRcoaStep(5, draft, menu);
     if (Object.keys(validation).length) {
@@ -537,6 +540,12 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
           <div className={styles.heroGuide} aria-label="Booking overview"><span>Choose</span><i aria-hidden="true" /><span>Plan</span><i aria-hidden="true" /><span>Submit</span></div>
         </div>
       </section>
+
+      {rcoaConfigured && !bookingSubmissionsEnabled && (
+        <p className={styles.configurationNotice} role="status">
+          The catalogue is available to browse. Booking submissions are not yet open.
+        </p>
+      )}
 
       {catalogueWarning && <p className="catalogue-warning" role="status">{catalogueWarning}</p>}
 
@@ -866,7 +875,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
               <button type="button" className={styles.secondaryButton} disabled={step === 0 || sending} onClick={() => goToStep(step - 1)}>Back</button>
               {step < labels.length - 1
                 ? <button type="button" className={styles.primaryButton} onClick={() => goToStep(step + 1)}>Continue</button>
-                : <button type="submit" className={styles.primaryButton} disabled={sending || !bookingId || !rcoaConfigured} aria-busy={sending ? true : undefined}>{sending ? <><span className="fika-spinner" aria-hidden="true" />Sending request…</> : "Send booking request"}</button>}
+                : <button type="submit" className={styles.primaryButton} disabled={sending || !bookingId || !rcoaBookingEnabled} aria-busy={sending ? true : undefined}>{sending ? <><span className="fika-spinner" aria-hidden="true" />Sending request…</> : "Send booking request"}</button>}
             </footer>
             )}
           </form>
