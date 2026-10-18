@@ -19,20 +19,24 @@ test("G&G production handoff accepts the successful Hub/CPU response", async () 
   const originalFetch = globalThis.fetch;
   const originalBase = process.env.INTEGRATION_HUB_BASE_URL;
   const originalToken = process.env.FIKA_INTERNAL_API_TOKEN;
+  const originalMode = process.env.FIKA_RUNTIME_MODE;
   let request: { url: string; init?: RequestInit } | undefined;
-  process.env.INTEGRATION_HUB_BASE_URL = "https://hub.example";
-  process.env.FIKA_INTERNAL_API_TOKEN = "staging-token";
+  process.env.FIKA_RUNTIME_MODE = "production";
+  process.env.INTEGRATION_HUB_BASE_URL = "https://fika-os-prod-hub--fika-os.europe-west4.hosted.app";
+  process.env.FIKA_INTERNAL_API_TOKEN = "fixture-internal-token";
   globalThis.fetch = (async (url, init) => {
     request = { url: String(url), init };
     return new Response(JSON.stringify({ cpuHandoff: "delivered" }), { status: 200, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
   try {
     await forwardProductionMaterialisation(input);
-    assert.equal(request?.url, "https://hub.example/api/production/materialise");
+    assert.equal(request?.url, "https://fika-os-prod-hub--fika-os.europe-west4.hosted.app/api/production/materialise");
     assert.equal(request?.init?.method, "POST");
-    assert.equal((request?.init?.headers as Record<string, string>)["x-fika-internal-token"], "staging-token");
+    assert.equal(request?.init?.redirect, "error");
+    assert.equal((request?.init?.headers as Record<string, string>)["x-fika-internal-token"], "fixture-internal-token");
   } finally {
     globalThis.fetch = originalFetch;
+    if (originalMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = originalMode;
     if (originalBase === undefined) delete process.env.INTEGRATION_HUB_BASE_URL; else process.env.INTEGRATION_HUB_BASE_URL = originalBase;
     if (originalToken === undefined) delete process.env.FIKA_INTERNAL_API_TOKEN; else process.env.FIKA_INTERNAL_API_TOKEN = originalToken;
   }

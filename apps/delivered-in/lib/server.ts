@@ -55,7 +55,7 @@ const mondayOf = (date: string) => { const value = new Date(`${date}T00:00:00Z`)
 async function readJson<T>(response: Response, label: string): Promise<T> { const text = await response.text(); if (!response.headers.get("content-type")?.includes("application/json")) throw failure(`${label} returned a non-JSON response (${response.status}); the source service may be unavailable.`); try { return JSON.parse(text) as T; } catch (cause) { throw Object.assign(failure(`${label} returned invalid JSON; no empty projection was used.`), { cause }); } }
 
 export async function readAuthoritativeMenuPublications(request: NextRequest, fromWeek: string, toWeek: string) {
-  const response = await fetch(`${menuBase()}/api/rolling-menu/publications?fromWeek=${encodeURIComponent(fromWeek)}&toWeek=${encodeURIComponent(toWeek)}`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
+  const response = await fetch(`${menuBase()}/api/rolling-menu/publications?fromWeek=${encodeURIComponent(fromWeek)}&toWeek=${encodeURIComponent(toWeek)}`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store", redirect: "error" });
   recordDataAccess({ app: "delivered-in", operation: "menu.publications.authoritative-by-week", source: "NETWORK_UPSTREAM", dataset: "menu-planning/publications", documents: 0, cacheResult: "BYPASS" });
   const body = await readJson<{ publications?: SourcePublication[]; error?: { message?: string; code?: string } }>(response, "Menu Planning publication service");
   if (!response.ok) throw failure(body.error?.message || "Published Delivered-In menus could not be loaded.", response.status || 502, body.error?.code || "MENU_SOURCE_UNAVAILABLE");
@@ -79,7 +79,7 @@ export async function cpuReviewForDay(_request: NextRequest, date: string, oploc
 }
 
 async function resolveGovernedOplocIds(request: NextRequest) {
-  const response = await fetch(`${hubBase()}/api/oplocs`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
+  const response = await fetch(`${hubBase()}/api/oplocs`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store", redirect: "error" });
   recordDataAccess({ app: "delivered-in", operation: "hub.oplocs", source: "NETWORK_UPSTREAM", dataset: "integration-hub/oplocs", documents: 0, cacheResult: "BYPASS" });
   const body = await readJson<{ oplocs?: Array<{ canonicalId?: string }>; error?: { code?: string; message?: string; requestId?: string }; requestId?: string }>(response, "Integration Hub OPLOC authority");
   if (!response.ok || !body.oplocs) throw failure(body.error?.message || "Integration Hub OPLOC authority could not be loaded.", response.status || 502, body.error?.code, body.error?.requestId || body.requestId);
@@ -90,7 +90,7 @@ export async function resolveAccess(request: NextRequest, service: DeliveredInSe
   // Keep the default route URL compatible with older local Hub processes;
   // only Grab & Go needs the explicit service selector.
   const accessUrl = service === "grab-and-go" ? `${hubBase()}/api/delivered-in/access?service=grab-and-go` : `${hubBase()}/api/delivered-in/access`;
-  const response = await fetch(accessUrl, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
+  const response = await fetch(accessUrl, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store", redirect: "error" });
   recordDataAccess({ app: "delivered-in", operation: "hub.authmod.access", source: "NETWORK_UPSTREAM", dataset: "integration-hub/delivered-in-access", documents: 0, cacheResult: "BYPASS" });
   const body = await readJson<{ access?: SiteAccess; sites?: Site[]; error?: { code?: string; message?: string; requestId?: string }; requestId?: string }>(response, "Integration Hub access service");
   if (!response.ok || !body.access || !body.sites) throw failure(body.error?.message || "Delivered-In access could not be resolved.", response.status || 502, body.error?.code, body.error?.requestId || body.requestId);

@@ -8,7 +8,7 @@ const headers = (): Record<string, string> => ({ accept: "application/json", ...
 
 async function request(path: string) {
   let response: Response;
-  try { response = await fetch(`${cpuBase()}${path}`, { cache: "no-store", signal: AbortSignal.timeout(8_000), headers: headers() }); }
+  try { response = await fetch(`${cpuBase()}${path}`, { cache: "no-store", signal: AbortSignal.timeout(8_000), headers: headers(), redirect: "error" }); }
   catch (cause) { throw Object.assign(new Error("CPU Grab & Go catalogue service is unavailable."), { status: 503, cause }); }
   recordDataAccess({ app: "delivered-in", operation: `cpu.grab-and-go.catalogue${path.includes("manifest") ? ".manifest" : ".package"}`, source: "NETWORK_UPSTREAM", dataset: "cpu-production/grab-and-go-catalogue", documents: 0, cacheResult: "BYPASS" });
   const body = await response.json().catch(() => undefined) as { manifest?: ReadPackageManifest; catalogue?: unknown; error?: { message?: string } } | undefined;
