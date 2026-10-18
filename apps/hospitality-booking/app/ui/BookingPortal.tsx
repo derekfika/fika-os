@@ -132,6 +132,9 @@ function minimumQuantityFor(item: PortalMenuItem, gallagher = false) {
     /rice paper rolls?/i.test(item.name) ? 3 : 1,
   ), gallagher);
 }
+function minimumGuestsFor(items: PortalMenuItem[]) {
+  return Math.max(1, ...items.map((item) => item.minimumGuests || 1));
+}
 
 export default function BookingPortal({
   siteKey,
@@ -408,6 +411,10 @@ export default function BookingPortal({
         const minimum = minimumQuantityFor(belowMinimum.item, gallagher);
         return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
       }
+      const minimumGuests = minimumGuestsFor(selected.map((value) => value.item));
+      if (details.guestCount < minimumGuests) {
+        return showValidation({ guestCount: { field: "guestCount", message: `Selected items require at least ${minimumGuests} guests.`, step: 1 } }, "Please review the guest count for your selected items.", 1);
+      }
     }
     if (step === 3 && !Object.values(acks).every(Boolean)) {
       const errors = Object.entries(acks).reduce<BookingFieldErrors>((result, [key, value]) => { if (!value) result[`acknowledgements.${key}`] = { field: `acknowledgements.${key}`, message: "Please confirm this acknowledgement.", step: 3 }; return result; }, {});
@@ -429,6 +436,11 @@ export default function BookingPortal({
       const minimum = minimumQuantityFor(belowMinimum.item, gallagher);
       changeStep(2);
       return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
+    }
+    const minimumGuests = minimumGuestsFor(selected.map((value) => value.item));
+    if (details.guestCount < minimumGuests) {
+      changeStep(1);
+      return showValidation({ guestCount: { field: "guestCount", message: `Selected items require at least ${minimumGuests} guests.`, step: 1 } }, "Please review the guest count for your selected items.", 1);
     }
     const dietaryTotal = [
       dietaries.vegetarian,

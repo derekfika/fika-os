@@ -4,6 +4,7 @@ import test from "node:test";
 import { assertExpectedRcoaOploc, buildMnkCanonicalBooking, canonicalBookingId, ingestMnkBookingFromExisting, menuForMnkPortal, resolveHospitalityDestinationOploc } from "../lib/hospitality-booking-service";
 import type { CanonicalRecord } from "../lib/types";
 import { isGallagherBooking } from "../lib/gallagher-rules";
+import { loadAngelCourtBookingCatalogue } from "../lib/mnk-booking-catalogue";
 
 const bookingServiceSource = readFileSync(new URL("../lib/hospitality-booking-service.ts", import.meta.url), "utf8");
 
@@ -147,8 +148,11 @@ test("canonical booking ingestion enforces a three-box minimum for governed summ
 });
 test("Gallagher detection accepts a normalised company name or a Redington email domain", () => {
   assert.equal(isGallagherBooking({ companyName: " Gallagher ", email: "other@example.com" }), true);
+  assert.equal(isGallagherBooking({ companyName: "G A L L A G H E R", email: "other@example.com" }), true);
   assert.equal(isGallagherBooking({ companyName: "Another client", email: "frontofhouse@redington.co.uk" }), true);
   assert.equal(isGallagherBooking({ companyName: "Gallagher-ish", email: "other@example.com" }), false);
+  assert.equal(isGallagherBooking({ companyName: "Another client", email: "@redington.co.uk" }), false);
+  assert.equal(isGallagherBooking({ companyName: "Another client", email: " FRONT@REDINGTON.CO.UK " }), true);
 });
 test("Gallagher bookings require five guests and an invoice reference", () => {
   const gallagher = { ...payload, bookingId: "GALLAGHER-FOUR", client: { ...payload.client, companyName: "Gallagher", invoiceReference: "PO-123" }, event: { ...payload.event, guestCount: 4 } };
@@ -161,4 +165,63 @@ test("Gallagher product minimums are capped at five without changing smaller min
   minimumMenu.record.minimumQuantity = 8;
   const gallagher = { ...payload, bookingId: "GALLAGHER-MINIMUM", client: { ...payload.client, companyName: "Gallagher", invoiceReference: "INV-5" }, event: { ...payload.event, guestCount: 5 }, order: { ...payload.order, items: [{ ...payload.order.items[0], quantity: 5, lineTotal: 60 }] } };
   assert.equal(buildMnkCanonicalBooking(gallagher, [minimumMenu]).booking.order.items[0].quantity, 5);
+});
+
+const angelCatalogue = (itemMinimum = 4, offeringMinimum?: number, itemId = "hospitality-menu-item:angel-1", offeringMinimumGuests?: number): CanonicalRecord[] => [
+  { canonicalId: itemId, entityType: "Hospitality Menu Item", lifecycleStatus: "published", publicationStatus: "published", dataHash: "item", record: { lifecycleState: "active", name: "Angel Court lunch box", category: "Food", unitPrice: 12, defaultMinimumQuantity: itemMinimum, defaultMinimumGuests: 2, defaultNoticeRequiredDays: 14, minimumQuantity: 1, minimumGuests: 1, noticeRequiredDays: 0, providerMappings: [{ provider: "angel-court-hospitality-brochure", sourceItemId: "angel-lunch" }], dietaryInformation: [], allergenInformation: [] } },
+  { canonicalId: "hospitality-offering:angel-1", entityType: "Hospitality Menu Offering", lifecycleStatus: "published", publicationStatus: "published", dataHash: "offering", record: { lifecycleState: "active", hospitalityMenuItemId: itemId, oplocId: "oploc:angel-court", offeringMode: "standard", ...(offeringMinimum !== undefined ? { minimumQuantity: offeringMinimum } : {}), ...(offeringMinimumGuests !== undefined ? { minimumGuests: offeringMinimumGuests } : {}) } },
+  { canonicalId: "hospitality-price:angel-1", entityType: "Hospitality Menu Price", lifecycleStatus: "published", publicationStatus: "published", dataHash: "price", record: { lifecycleState: "active", hospitalityMenuItemId: itemId, amount: 12, vatRate: 0.2, effectiveFrom: "2025-01-01" } },
+  { canonicalId: "oploc:angel-court", entityType: "OPLOC", lifecycleStatus: "published", publicationStatus: "published", dataHash: "oploc", record: { lifecycleState: "active", approvedName: "Angel Court" } },
+];
+const angelPayload = (quantity: number, overrides: Record<string, unknown> = {}) => ({
+  ...payload,
+  ...overrides,
+  bookingId: `ANGEL-INGEST-${quantity}-${String(overrides.bookingId || "case")}`,
+  site: "Angel Court",
+  siteId: "angel-court",
+  client: { ...payload.client, companyName: "Ordinary customer", ...(overrides.client as object || {}) },
+  event: { ...payload.event, eventDate: "2026-11-03", guestCount: 10, ...(overrides.event as object || {}) },
+  order: { ...payload.order, items: [{ itemId: "angel-lunch", itemName: "Angel Court lunch box", quantity, unitPrice: 0.01, lineTotal: 0.01, minimumQuantity: 1 }], netTotal: 0.01 },
+}) as unknown as typeof payload;
+const ingestAngel = async (quantity: number, records = angelCatalogue(), overrides: Record<string, unknown> = {}) => {
+  const submission = angelPayload(quantity, overrides);
+  const loaded = await loadAngelCourtBookingCatalogue(records.filter(record => record.entityType === "Hospitality Menu Item"), submission, "oploc:angel-court", async (field, ids) => records.filter(record => ids.includes(String(field === "canonicalId" ? record.canonicalId : record.record[field.replace("record.", "")]))));
+  return ingestMnkBookingFromExisting(undefined, submission, loaded, "2026-10-18T12:00:00.000Z", "oploc:angel-court");
+};
+
+test("Angel Court public Hub ingestion rejects below the Item default, ignores stale/client minimums, and accepts the Item default", async () => {
+  await assert.rejects(() => ingestAngel(1), /requires at least 4 boxes/);
+  const accepted = await ingestAngel(4);
+  assert.equal(accepted.booking.order.items[0].quantity, 4);
+  assert.equal(accepted.booking.order.items[0].unitPrice, 12, "Angel Court keeps its existing server-owned brochure price calculation");
+  assert.equal(accepted.booking.order.items[0].lineTotal, 48);
+});
+
+test("Angel Court public Hub ingestion uses Offering minimum overrides over Item defaults", async () => {
+  await assert.rejects(() => ingestAngel(4, angelCatalogue(4, 6)), /requires at least 6 boxes/);
+  assert.equal((await ingestAngel(6, angelCatalogue(4, 6))).booking.order.items[0].quantity, 6);
+});
+
+test("Angel Court applies the effective Offering minimum guest constraint", async () => {
+  const records = angelCatalogue(4, undefined, undefined, 6);
+  await assert.rejects(() => ingestAngel(4, records, { event: { guestCount: 5 } }), /requires at least 6 guests/);
+  assert.equal((await ingestAngel(4, records, { event: { guestCount: 6 } })).booking.order.items[0].quantity, 4);
+});
+
+test("Angel Court resolves governed minimum before applying the Gallagher cap; ordinary customers keep the full minimum", async () => {
+  const records = angelCatalogue(4, 8);
+  const gallagher = { client: { companyName: "Gallagher", invoiceReference: "PO-123" } };
+  assert.equal((await ingestAngel(5, records, gallagher)).booking.order.items[0].quantity, 5);
+  await assert.rejects(() => ingestAngel(5, records), /requires at least 8 boxes/);
+  await assert.rejects(() => ingestAngel(5, records, { event: { guestCount: 4 }, ...gallagher }), /at least 5 guests/);
+  await assert.rejects(() => ingestAngel(5, records, { client: { companyName: "Gallagher" } }), /Invoice \/ PO reference/);
+});
+
+test("Angel Court notice remains guidance and other supported-site validation paths stay distinct", async () => {
+  assert.equal((await ingestAngel(4, angelCatalogue(), { event: { eventDate: "2026-10-19" } })).booking.order.items[0].quantity, 4);
+  const cfcMenu = menu();
+  cfcMenu.record.minimumQuantity = 3;
+  cfcMenu.record.providerMappings = [{ provider: "cfc-hospitality-brochure", sourceItemId: "cfc-box" }];
+  const otherSite = { ...payload, bookingId: "CFC-UNCHANGED", site: "CFC", siteId: "cfc", order: { ...payload.order, items: [{ ...payload.order.items[0], itemId: "cfc-box", quantity: 1 }] } };
+  assert.throws(() => ingestMnkBookingFromExisting(undefined, otherSite, [cfcMenu]), /requires at least 3 boxes/);
 });

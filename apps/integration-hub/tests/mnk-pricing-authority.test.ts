@@ -86,6 +86,61 @@ test("a booking prices from the company default when the site Offering carries n
   assert.equal(await unitPrice(true), (override.record as { amount: number }).amount, "a site override wins");
 });
 
+test("booking validation uses effective Item defaults and Offering overrides, never stale legacy constraints", () => {
+  const sourceItem = records.find(record => record.entityType === "Hospitality Menu Item" && record.record.name === "Bloom Filter Coffee")!;
+  const sourceOffering = records.find(record => record.entityType === "Hospitality Menu Offering" && record.record.hospitalityMenuItemId === sourceItem.canonicalId && record.record.oplocId === request.oplocId)!;
+  const scoped = records.filter(record => record.canonicalId === sourceItem.canonicalId || record.canonicalId === sourceOffering.canonicalId || (record.entityType === "Hospitality Menu Price" && (record.record.hospitalityMenuItemId === sourceItem.canonicalId || record.record.hospitalityMenuOfferingId === sourceOffering.canonicalId)) || (record.entityType === "OPLOC" && record.canonicalId === request.oplocId)).map(record => ({ ...record, record: { ...record.record } }));
+  const item = scoped.find(record => record.canonicalId === sourceItem.canonicalId)!;
+  const offering = scoped.find(record => record.canonicalId === sourceOffering.canonicalId)!;
+  Object.assign(item.record, { defaultMinimumQuantity: 4, defaultMinimumGuests: 8, defaultNoticeRequiredDays: 4, minimumQuantity: 30, minimumGuests: 40, noticeRequiredDays: 99 });
+  Object.assign(offering.record, { minimumQuantity: 2, minimumGuests: 6, noticeRequiredDays: 2 });
+  const pricing = mnkBookingPricingRecords(scoped, request);
+  const effective = pricing.find(record => record.canonicalId === item.canonicalId)!.record;
+  assert.equal(effective.minimumQuantity, 2);
+  assert.equal(effective.minimumGuests, 6);
+  assert.equal(effective.noticeRequiredDays, 2);
+
+  const bookingPayload = (guestCount: number, quantity = 3) => ({
+    bookingId: `EFFECTIVE-${guestCount}-${quantity}`, submittedAt: "2026-10-09T12:00:00Z", siteId: "mnk", site: "MNK",
+    client: { name: "UAT", email: "uat@example.test", companyName: "UAT" },
+    event: { eventDate: "2026-11-03", startTime: "10:00", guestCount },
+    order: { items: [{ itemId: item.canonicalId, quantity, unitPrice: 0.01, lineTotal: 0.01 }], netTotal: 0.01 },
+  }) as MnkBookingPayload;
+  assert.throws(() => buildMnkCanonicalBooking(bookingPayload(5), pricing), /requires at least 6 guests/);
+  assert.throws(() => buildMnkCanonicalBooking(bookingPayload(6, 1), pricing), /requires at least 2 boxes/);
+  assert.equal(buildMnkCanonicalBooking(bookingPayload(6), pricing).booking.order.items[0].quantity, 3);
+
+  // With no current Offering constraint, only the company default survives;
+  // retired Item.minimumQuantity fields cannot override or resurrect it.
+  delete offering.record.minimumQuantity;
+  delete offering.record.minimumGuests;
+  delete offering.record.noticeRequiredDays;
+  const inherited = mnkBookingPricingRecords(scoped, request).find(record => record.canonicalId === item.canonicalId)!.record;
+  assert.equal(inherited.minimumQuantity, 4);
+  assert.equal(inherited.minimumGuests, 8);
+  assert.equal(inherited.noticeRequiredDays, 4);
+  assert.throws(() => buildMnkCanonicalBooking(bookingPayload(8, 3), mnkBookingPricingRecords(scoped, request)), /requires at least 4 boxes/);
+});
+
+test("effective Gallagher product minimum is capped at five, while smaller governed minimums remain in force", () => {
+  const sourceItem = records.find(record => record.entityType === "Hospitality Menu Item" && record.record.name === "Bloom Filter Coffee")!;
+  const sourceOffering = records.find(record => record.entityType === "Hospitality Menu Offering" && record.record.hospitalityMenuItemId === sourceItem.canonicalId && record.record.oplocId === request.oplocId)!;
+  const scoped = records.filter(record => record.canonicalId === sourceItem.canonicalId || record.canonicalId === sourceOffering.canonicalId || (record.entityType === "Hospitality Menu Price" && (record.record.hospitalityMenuItemId === sourceItem.canonicalId || record.record.hospitalityMenuOfferingId === sourceOffering.canonicalId)) || (record.entityType === "OPLOC" && record.canonicalId === request.oplocId)).map(record => ({ ...record, record: { ...record.record } }));
+  const item = scoped.find(record => record.canonicalId === sourceItem.canonicalId)!;
+  const offering = scoped.find(record => record.canonicalId === sourceOffering.canonicalId)!;
+  const payload = (quantity: number) => ({ bookingId: `GALLAGHER-EFFECTIVE-${quantity}`, submittedAt: "2026-10-09T12:00:00Z", siteId: "mnk", site: "MNK", client: { name: "UAT", email: "host@example.test", companyName: " Gallagher ", invoiceReference: "PO-123" }, event: { eventDate: "2026-11-03", startTime: "10:00", guestCount: 5 }, order: { items: [{ itemId: item.canonicalId, quantity, unitPrice: 0.01, lineTotal: 0.01 }], netTotal: 0.01 } }) as MnkBookingPayload;
+  item.record.defaultMinimumQuantity = 8;
+  delete offering.record.minimumQuantity;
+  let pricing = mnkBookingPricingRecords(scoped, request);
+  assert.equal(pricing.find(record => record.canonicalId === item.canonicalId)?.record.minimumQuantity, 8);
+  assert.throws(() => buildMnkCanonicalBooking(payload(4), pricing), /requires at least 5 boxes/);
+  assert.equal(buildMnkCanonicalBooking(payload(5), pricing).booking.order.items[0].quantity, 5);
+  offering.record.minimumQuantity = 3;
+  pricing = mnkBookingPricingRecords(scoped, request);
+  assert.throws(() => buildMnkCanonicalBooking(payload(2), pricing), /requires at least 3 boxes/);
+  assert.equal(buildMnkCanonicalBooking(payload(3), pricing).booking.order.items[0].quantity, 3);
+});
+
 test("portal and ingestion catalogue date follows UK midnight across BST/GMT", () => {
   assert.equal(hospitalityMenuDate(new Date("2026-07-01T23:30:00Z")), "2026-07-02");
   assert.equal(hospitalityMenuDate(new Date("2026-12-01T23:30:00Z")), "2026-12-01");

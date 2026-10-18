@@ -6,7 +6,7 @@ import { explicitMenuProductionRouting } from "./connections-service";
 import { LEGACY_HOSPITALITY_MENU_ROUTING } from "./hospitality-routing-suggestions";
 import { BOOKING_LABELS, hospitalityPlatformOf, isGovernedRoutingPlatform, LINE_LABELS, planHospitalityCpuRouting, routingKeys } from "./hospitality-cpu-routing";
 import { trustedPublicOrder } from "./hospitality-price-trust";
-import { loadMnkBookingCatalogue, mnkBookingPricingRecords } from "./mnk-booking-catalogue";
+import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, mnkBookingPricingRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
@@ -517,10 +517,11 @@ export function buildMnkCanonicalBooking(
         companyName: payload.client.clientCompany || payload.client.companyName,
         email: payload.client.email || payload.client.requester?.email,
       });
+      const governedConstraintsResolved = menuItem?.record.governedConstraintsResolved === true;
       const minimumQuantity = capGallagherMinimum(Math.max(
         Number(menuItem?.record.minimumQuantity || 1),
-        Number(String(item.servingInfo || "").match(/minimum\s+(\d+)/i)?.[1] || 1),
-        /rice paper rolls?/i.test(String(item.itemName || menuItem?.record.name)) ? 3 : 1,
+        governedConstraintsResolved ? 1 : Number(String(item.servingInfo || "").match(/minimum\s+(\d+)/i)?.[1] || 1),
+        governedConstraintsResolved ? 1 : (/rice paper rolls?/i.test(String(item.itemName || menuItem?.record.name)) ? 3 : 1),
       ), gallagher);
       if (
         Number.isFinite(minimumQuantity) &&
@@ -529,6 +530,11 @@ export function buildMnkCanonicalBooking(
       )
         throw conflict(
           `${item.itemName || item.itemId} requires at least ${minimumQuantity} boxes.`,
+        );
+      const minimumGuests = numberOrUndefined(menuItem?.record.minimumGuests);
+      if (minimumGuests !== undefined && payload.event.guestCount < minimumGuests)
+        throw conflict(
+          `${item.itemName || item.itemId} requires at least ${minimumGuests} guests.`,
         );
     }
     return {
@@ -619,7 +625,11 @@ export function ingestMnkBookingFromExisting(
 ): IngestionResult {
   if (existing)
     return { booking: existing, created: false, validationWarnings: [] };
-  const result = buildMnkCanonicalBooking(payload, menuRecords, now);
+  const portalSiteId = portalSiteKeyForPayload(payload);
+  const resolvedRecords = portalSiteId === "angel-court" && destinationOplocId
+    ? angelCourtBookingConstraintRecords(menuRecords, payload, destinationOplocId)
+    : menuRecords;
+  const result = buildMnkCanonicalBooking(payload, resolvedRecords, now);
   if (destinationOplocId) result.booking.service.oplocId = destinationOplocId;
   return result;
 }
@@ -668,6 +678,14 @@ export async function ingestMnkBooking(
         return snapshot.docs.map(document => document.data() as CanonicalRecord);
       });
       pricingRecords = mnkBookingPricingRecords(catalogue, { oplocId: destinationOplocId, serviceDate: hospitalityMenuDate(new Date(now)) });
+    } else if (portalSiteId === "angel-court") {
+      const catalogue = await loadAngelCourtBookingCatalogue(canonicalRecords, payload, destinationOplocId, async (field, ids) => {
+        const snapshot = await transaction.get(canonical().where(field, "in", ids).limit(501));
+        if (snapshot.size > 500) throw conflict("Angel Court catalogue relations exceed the bounded ingestion limit.");
+        recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.catalogue-relations", source: "FIRESTORE", dataset: "hospitality-ingest", documents: snapshot.size, estimatedBillableReads: snapshot.size, firestoreReadKind: "transaction" });
+        return snapshot.docs.map(document => document.data() as CanonicalRecord);
+      });
+      pricingRecords = catalogue;
     }
     const result = ingestMnkBookingFromExisting(
       existingSnapshot.exists

@@ -130,6 +130,12 @@ test("surface entry is site-locked and offers Change workspace instead of an OPL
   assert.match(dashboard, /href="\/workspace">Change workspace/);
 });
 
+test("effective minimum guest constraints are enforced alongside minimum quantities", () => {
+  assert.match(booking, /function minimumGuestsFor\(items: PortalMenuItem\[\]\)/);
+  assert.match(booking, /Selected items require at least \$\{minimumGuests\} guests\./);
+  assert.match(booking, /minimumGuestsFor\(selected\.map\(\(value\) => value\.item\)\)/);
+});
+
 test("unknown site keys and unrelated OPLOCs do not fall back to MNK", () => {
   assert.equal(portalSite("not-configured"), undefined);
   assert.equal(
