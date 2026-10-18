@@ -3,7 +3,6 @@ import { ZodError } from "zod";
 import { recordDataAccess, setDataTraceOutcome, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { hubFetch } from "@/lib/hub";
 import { buildRcoaGroupHubPayloads } from "@/lib/rcoa-booking-group";
-import { areRcoaBookingSubmissionsEnabled, RCOA_BOOKING_SUBMISSIONS_DISABLED_MESSAGE } from "@/lib/rcoa-booking-availability";
 
 /**
  * One public All Day Hospitality request. Every service row is validated BEFORE anything is created; then one ordinary
@@ -13,9 +12,6 @@ import { areRcoaBookingSubmissionsEnabled, RCOA_BOOKING_SUBMISSIONS_DISABLED_MES
  */
 export async function POST(request: NextRequest) {
   return withDataTrace({ app: "hospitality-booking", action: "booking.create.rcoa.group", path: "/api/bookings/rcoa/group", outcome: "SUCCESS" }, async () => {
-    if (!areRcoaBookingSubmissionsEnabled()) {
-      return NextResponse.json({ error: { message: RCOA_BOOKING_SUBMISSIONS_DISABLED_MESSAGE } }, { status: 503 });
-    }
     const expectedOplocId = process.env.FIKA_RCOA_OPLOC_ID?.trim();
     if (!expectedOplocId) return NextResponse.json({ error: { message: "RCoA booking is unavailable until its governed OPLOC mapping is configured." } }, { status: 503 });
 

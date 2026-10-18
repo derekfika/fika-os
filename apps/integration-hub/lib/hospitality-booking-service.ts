@@ -8,7 +8,6 @@ import { BOOKING_LABELS, hospitalityPlatformOf, isGovernedRoutingPlatform, LINE_
 import { trustedPublicOrder } from "./hospitality-price-trust";
 import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, mnkBookingPricingRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
-import { areRcoaBookingSubmissionsEnabled, RCOA_BOOKING_SUBMISSIONS_DISABLED_MESSAGE } from "@fika/server-shared/rcoa-booking-availability";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
 import type { CanonicalRecord } from "./types";
@@ -635,22 +634,11 @@ export function ingestMnkBookingFromExisting(
   return result;
 }
 
-/**
- * Authoritative ingestion boundary for the RCoA closed-booking state. Hospitality enforces the same
- * flag at its public routes; this check also stops any other bridge-token holder from creating RCoA
- * bookings while submissions are closed. Other sites are unaffected.
- */
-export function assertBookingSubmissionOpen(portalSiteId: string | undefined, env: Record<string, string | undefined> = process.env) {
-  if (portalSiteId === "rcoa" && !areRcoaBookingSubmissionsEnabled(env.FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED))
-    throw Object.assign(new Error(RCOA_BOOKING_SUBMISSIONS_DISABLED_MESSAGE), { status: 503, code: "RCOA_BOOKING_SUBMISSIONS_CLOSED" });
-}
-
 export async function ingestMnkBooking(
   payload: MnkBookingPayload,
   expectedRcoaOplocId?: string,
 ): Promise<IngestionResult> {
   const portalSiteId = portalSiteKeyForPayload(payload);
-  assertBookingSubmissionOpen(portalSiteId);
   const isRcoa = portalSiteId === "rcoa";
   if (isRcoa && !String(expectedRcoaOplocId || "").trim())
     assertExpectedRcoaOploc(undefined, undefined);

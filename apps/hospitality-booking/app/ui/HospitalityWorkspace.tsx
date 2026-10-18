@@ -36,7 +36,7 @@ function Notice({ title, copy, action = "Return to FIKA OS" }: { title: string; 
   );
 }
 
-export default function HospitalityWorkspace({ rcoaConfigured = false, rcoaBookingSubmissionsEnabled = false }: { rcoaConfigured?: boolean; rcoaBookingSubmissionsEnabled?: boolean } = {}) {
+export default function HospitalityWorkspace({ rcoaConfigured = false }: { rcoaConfigured?: boolean } = {}) {
   const [sites, setSites] = useState<Site[]>([]);
   const [surfaces, setSurfaces] = useState(defaultSurfaces);
   const [selectedOplocId, setSelectedOplocId] = useState("");
@@ -118,7 +118,7 @@ export default function HospitalityWorkspace({ rcoaConfigured = false, rcoaBooki
   if (!sites.length) return <Notice title="Hospitality access unavailable" copy="Your account does not currently have access to a Hospitality location." />;
   if (surface === "booking" && active && canBook) {
     // RCoA submits through its governed portal (trusted payload + expected-OPLOC header), never the generic booking form.
-    if (active.portalSiteKey === "rcoa") return <RcoaBookingPortal configured={rcoaConfigured} bookingSubmissionsEnabled={rcoaBookingSubmissionsEnabled} />;
+    if (active.portalSiteKey === "rcoa") return <RcoaBookingPortal configured={rcoaConfigured} />;
     return <BookingPortal siteKey={active.portalSiteKey} oplocId={active.id} siteLabel={active.label} />;
   }
   if (surface === "operations" && active && canOperate) {

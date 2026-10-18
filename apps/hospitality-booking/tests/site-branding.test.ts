@@ -71,30 +71,23 @@ test("Hospitality staging configures the approved RCoA OPLOC for server-side use
   assert.doesNotMatch(variable, /BUILD/);
 });
 
-test("Hospitality production binds the approved RCoA OPLOC while leaving public booking submissions disabled", () => {
+test("Hospitality production binds the approved RCoA OPLOC and carries no RCoA booking rollout flag", () => {
   assert.match(productionConfig, /variable: FIKA_RCOA_OPLOC_ID\r?\n\s+value: oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2\r?\n\s+availability: \[RUNTIME\]/);
-  assert.match(productionConfig, /variable: FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED\r?\n\s+value: "false"\r?\n\s+availability: \[RUNTIME\]/);
+  assert.doesNotMatch(productionConfig, /FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED/);
   assert.doesNotMatch(stagingConfig, /FIKA_RCOA_BOOKING_SUBMISSIONS_ENABLED/);
 });
 
 test("RCoA public page sends only configuration state and keeps the expected OPLOC server-side", () => {
   assert.match(rcoaPage, /configured=\{Boolean\(process\.env\.FIKA_RCOA_OPLOC_ID\?\.trim\(\)\)\}/);
   assert.doesNotMatch(rcoaPage, /\boplocId\b/);
-  assert.match(rcoaPortal, /RcoaBookingPortal\(\{ configured, bookingSubmissionsEnabled = false \}/);
-  assert.match(rcoaPortal, /The catalogue is available to browse\. Booking submissions are not yet open\./);
-  assert.match(rcoaPortal, /disabled=\{sending \|\| !bookingId \|\| !rcoaBookingEnabled\}/);
+  assert.match(rcoaPortal, /RcoaBookingPortal\(\{ configured \}: \{ configured: boolean \}\)/);
+  assert.match(rcoaPortal, /disabled=\{sending \|\| !bookingId \|\| !rcoaConfigured\}/);
   assert.match(rcoaPortal, /const rcoaConfigured = configured/);
   assert.doesNotMatch(rcoaPortal, /\boplocId\b/);
   assert.match(rcoaBookingRoute, /const expectedOplocId = process\.env\.FIKA_RCOA_OPLOC_ID\?\.trim\(\)/);
   assert.match(rcoaBookingRoute, /["']x-fika-expected-rcoa-oploc-id["']:\s*expectedOplocId/);
-  assert.match(rcoaBookingRoute, /areRcoaBookingSubmissionsEnabled\(\)/);
-  assert.match(rcoaBookingRoute, /areRcoaBookingSubmissionsEnabled\(\)[\s\S]*?request\.json\(\)/);
   const groupRoute = readFileSync(new URL("../app/api/bookings/rcoa/group/route.ts", import.meta.url), "utf8");
-  assert.match(groupRoute, /areRcoaBookingSubmissionsEnabled\(\)/);
-  assert.match(groupRoute, /areRcoaBookingSubmissionsEnabled\(\)[\s\S]*?request\.json\(\)/);
-  assert.match(rcoaPortal, /bookingSubmissionsEnabled = false/);
-  assert.match(rcoaPortal, /The catalogue is available to browse\. Booking submissions are not yet open\./);
-  assert.match(rcoaPortal, /disabled=\{sending \|\| !bookingId \|\| !rcoaBookingEnabled\}/);
+  assert.doesNotMatch(rcoaBookingRoute + groupRoute + rcoaPortal, /SUBMISSIONS_ENABLED|SubmissionsEnabled|bookingSubmissionsEnabled|not yet open/);
 });
 
 test("RCoA uses shared Hospitality theme/config and requires an exact configured OPLOC for manager access", () => {

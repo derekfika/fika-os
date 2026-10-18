@@ -31,6 +31,5 @@
     ,"./hospitality-effective-offering": "./src/hospitality-effective-offering.ts"
     ,"./hospitality-catalogue-client": "./src/hospitality-catalogue-client.ts"
     ,"./credentialed-upstream": "./src/credentialed-upstream.ts"
-    ,"./rcoa-booking-availability": "./src/rcoa-booking-availability.ts"
   }
 }
