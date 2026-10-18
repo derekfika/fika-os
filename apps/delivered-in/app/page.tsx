@@ -811,7 +811,6 @@ export default function Page() {
               <button type="button" className="ops-button ops-button-secondary" aria-label="Previous operational week" onClick={() => selectWeek(addDays(selectedWeekCommencing, -7))}>←</button>
               <span aria-live="polite">
                 <strong>{formatDate(selectedWeekCommencing, { day: "numeric", month: "short", year: "numeric" })} – {formatDate(addDays(selectedWeekCommencing, 6), { day: "numeric", month: "short", year: "numeric" })}</strong>
-                {!week?.publicationId && <small className="ops-muted">No published data</small>}
               </span>
               <button type="button" className="ops-button ops-button-secondary" aria-label="Next operational week" onClick={() => selectWeek(addDays(selectedWeekCommencing, 7))}>→</button>
             </div>
