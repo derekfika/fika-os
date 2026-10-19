@@ -34,6 +34,7 @@ export function loadAngelCourtBookingCatalogue(items: CanonicalRecord[], payload
 }
 
 const ANGEL_COURT_PROVIDER = "angel-court-hospitality-brochure";
+const RCOA_PROVIDER = "rcoa-hospitality-brochure";
 
 /**
  * Governed catalogue items for Angel Court. The portal offers canonical Items resolved through their effective
@@ -42,7 +43,7 @@ const ANGEL_COURT_PROVIDER = "angel-court-hospitality-brochure";
  * mapping. An Item with no effective Offering at this OPLOC, an ambiguous one, or an archived Item is left
  * untouched and is therefore still refused by the price validator. Legacy brochure item IDs are unaffected.
  */
-function angelCourtGovernedItemRecords(records: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, now: string): CanonicalRecord[] {
+function governedItemRecords(provider: string, records: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, now: string): CanonicalRecord[] {
   const submittedIds = new Set(payload.order.items.map(item => item.itemId));
   const candidates = records.filter(record => record.entityType === "Hospitality Menu Item" && submittedIds.has(record.canonicalId)
     && record.lifecycleStatus !== "archived" && record.publicationStatus !== "withdrawn" && record.record.lifecycleState === "active");
@@ -55,15 +56,28 @@ function angelCourtGovernedItemRecords(records: CanonicalRecord[], payload: MnkB
     const governed = priced.get(record.canonicalId);
     if (!governed || record.entityType !== "Hospitality Menu Item") return record;
     const mappings = Array.isArray(governed.record.providerMappings) ? governed.record.providerMappings as unknown[] : [];
-    const alreadyMapped = mappings.some(raw => (raw as Record<string, unknown>)?.provider === ANGEL_COURT_PROVIDER);
-    return alreadyMapped ? governed : { ...governed, record: { ...governed.record, providerMappings: [...mappings, { provider: ANGEL_COURT_PROVIDER, sourceItemId: record.canonicalId, mappingStatus: "confirmed", source: "governed-effective-offering" }] } };
+    const alreadyMapped = mappings.some(raw => (raw as Record<string, unknown>)?.provider === provider);
+    return alreadyMapped ? governed : { ...governed, record: { ...governed.record, providerMappings: [...mappings, { provider, sourceItemId: record.canonicalId, mappingStatus: "confirmed", source: "governed-effective-offering" }] } };
   });
 }
 
 /** Resolve Angel Court's governed Items (price and constraints from the effective Offering); legacy brochure items keep their established snapshot. */
 export function angelCourtBookingConstraintRecords(inputRecords: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, now: string = new Date().toISOString()): CanonicalRecord[] {
-  const provider = ANGEL_COURT_PROVIDER;
-  const records = angelCourtGovernedItemRecords(inputRecords, payload, oplocId, now);
+  return governedBookingConstraintRecords(ANGEL_COURT_PROVIDER, "Angel Court", inputRecords, payload, oplocId, now);
+}
+
+/** RCoA offers the same governed Items; a submitted canonical Item ID is priced from its effective Offering at the RCoA OPLOC. Legacy RCoA source IDs are unaffected. */
+export function rcoaBookingConstraintRecords(inputRecords: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, now: string = new Date().toISOString()): CanonicalRecord[] {
+  return governedBookingConstraintRecords(RCOA_PROVIDER, "RCoA", inputRecords, payload, oplocId, now);
+}
+
+/** Bounded stable-ID relations for the RCoA governed Items (Offerings, Prices and the one OPLOC). */
+export function loadRcoaBookingCatalogue(items: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, read: (field: string, ids: string[]) => Promise<CanonicalRecord[]>) {
+  return loadPortalBookingCatalogue(items, payload, oplocId, RCOA_PROVIDER, read);
+}
+
+export function governedBookingConstraintRecords(provider: string, siteLabel: string, inputRecords: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, now: string): CanonicalRecord[] {
+  const records = governedItemRecords(provider, inputRecords, payload, oplocId, now);
   const submittedIds = new Set(payload.order.items.map(item => item.itemId));
   const mappedItems = records.filter(record => record.entityType === "Hospitality Menu Item" && Array.isArray(record.record.providerMappings) && record.record.providerMappings.some(raw => {
     const mapping = raw as Record<string, unknown>;
@@ -79,7 +93,7 @@ export function angelCourtBookingConstraintRecords(inputRecords: CanonicalRecord
   return records.map(item => {
     if (item.entityType !== "Hospitality Menu Item" || !mappedItems.some(mapped => mapped.canonicalId === item.canonicalId)) return item;
     const matches = resolved.filter(offering => offering.itemId === item.canonicalId);
-    if (matches.length !== 1) throw Object.assign(new Error("Angel Court item has no unique effective governed Offering at its canonical destination."), { status: 422 });
+    if (matches.length !== 1) throw Object.assign(new Error(`${siteLabel} item has no unique effective governed Offering at its canonical destination.`), { status: 422 });
     const constraints = matches[0].constraints || {};
     // Remove stale Item-scoped compatibility fields before applying effective
     // Item defaults plus the Angel Court Offering override.

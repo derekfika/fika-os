@@ -1,3 +1,4 @@
+import { governedCatalogueResponse, legacyToGovernedId, withGovernedIds } from "./support/governed-rcoa-catalogue";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -37,6 +38,7 @@ function threeServiceDay(): AllDayDraft {
   day = updateAllDayService(day, "s3", { category: "meeting_hospitality", startTime: "17:00", guestCount: 60, location: "Reception", lines: [{ itemId: "canned_drinks", quantity: 60, choices: {} }] });
   return day;
 }
+// The route validates against the governed catalogue (stable Item IDs); the client logic under test builds from the legacy snapshot menu and is remapped at the route boundary.
 const submissionFor = (day: AllDayDraft) => buildAllDayClientRequests(day, menu, { groupId: GROUP_ID, submittedAt: AT });
 
 test("1+2. the existing offerings are unchanged and All Day Hospitality is a first-class offering on the first page", () => {
@@ -209,6 +211,7 @@ function installHub(state: HubState) {
   const real = globalThis.fetch;
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
     const url = String(typeof input === "string" ? input : (input as { url?: string }).url);
+    const catalogue = governedCatalogueResponse(url); if (catalogue) return catalogue;
     if (!url.endsWith("/api/bookings/mnk")) throw new Error(`unexpected Hub call ${url}`);
     const payload = JSON.parse(String(init?.body)) as { bookingId: string };
     state.calls.push(payload.bookingId);
@@ -228,7 +231,7 @@ async function postGroup(body: unknown) {
     process.env.FIKA_HUB_BASE_URL = "http://hub.test";
   process.env.MNK_CANON_BRIDGE_TOKEN = "test-token";
   const { POST } = await import("../app/api/bookings/rcoa/group/route");
-  const response = await POST(new NextRequest("http://hospitality.test/api/bookings/rcoa/group", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
+  const response = await POST(new NextRequest("http://hospitality.test/api/bookings/rcoa/group", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(withGovernedIds(body as never)) }));
   return { status: response.status, body: await response.json() as { group?: { completed: number; bookings: Array<{ created: boolean; startTime: string }> }; created?: number; error?: { message: string } } };
 }
 
@@ -241,7 +244,7 @@ test("14+19. three service rows create exactly three canonical bookings, each wi
     assert.deepEqual(result.body.group?.bookings.map((b) => b.startTime), ["09:00", "13:00", "17:00"]);
     const stored = [...hub.bookings.values()].map((entry) => entry.payload as { event: { startTime: string; guestCount: number; roomOrArea: string }; order: { items: Array<{ itemId: string }> }; bookingGroup: { sequence: number } });
     assert.equal(stored.length, 3);
-    assert.deepEqual(stored.map((p) => [p.event.startTime, p.event.guestCount, p.event.roomOrArea, p.order.items.map((i) => i.itemId).join("+"), p.bookingGroup.sequence]), [["09:00", 40, "Lecture Hall", "specialty_tea_coffee", 1], ["13:00", 35, "Dining Room", "deli_sandwich_lunch", 2], ["17:00", 60, "Reception", "canned_drinks", 3]]);
+    assert.deepEqual(stored.map((p) => [p.event.startTime, p.event.guestCount, p.event.roomOrArea, p.order.items.map((i) => i.itemId).join("+"), p.bookingGroup.sequence]), [["09:00", 40, "Lecture Hall", legacyToGovernedId.get("specialty_tea_coffee"), 1], ["13:00", 35, "Dining Room", legacyToGovernedId.get("deli_sandwich_lunch"), 2], ["17:00", 60, "Reception", legacyToGovernedId.get("canned_drinks"), 3]]);
   } finally { restore(); }
 });
 

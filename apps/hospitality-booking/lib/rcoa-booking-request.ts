@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { localRcoaMenuCatalogue } from "./local-rcoa-menu";
+import type { PortalMenuItem } from "./mnk-contract";
 import { isValidRcoaLondonWallTime, RCOA_MAX_SERVICES, rcoaAllowsEmptyOrder, rcoaChildReference, rcoaEventTypes, rcoaVatNote } from "./rcoa-portal";
 
 const eventTypeIds = rcoaEventTypes.map((event) => event.id) as [string, ...string[]];
@@ -68,8 +69,33 @@ export const RcoaBookingRequestSchema = z.object({
 
 export type RcoaBookingRequest = z.infer<typeof RcoaBookingRequestSchema>;
 
+/** What booking validation needs from a menu item, whether it came from the governed catalogue or the legacy local snapshot. */
+export type TrustedMenuItem = {
+  id: string; name: string; category: string; description?: string; servingInfo?: string; unitPrice: number;
+  minimumQuantity: number; minimumGuests?: number;
+  optionGroups: Array<{ id: string; label: string; selectionType: string; required?: boolean; options: Array<{ label: string }> }>;
+};
+
+/** The legacy local snapshot, active items only. Used only when no governed menu is supplied (tests / local runtime). */
+export function localTrustedMenu(): TrustedMenuItem[] {
+  return localRcoaMenuCatalogue.items.filter((item) => item.lifecycleState === "active").map((item) => ({
+    id: item.source.sourceItemId, name: item.name, category: item.category, description: item.description, servingInfo: item.pricing.servingInfo,
+    unitPrice: item.pricing.unitPrice, minimumQuantity: item.orderingConstraints.minimumQuantity, minimumGuests: item.orderingConstraints.minimumGuests || undefined,
+    optionGroups: item.optionGroups as TrustedMenuItem["optionGroups"],
+  }));
+}
+
+/** The governed portal menu (what the customer was shown) as trusted items. */
+export function governedTrustedMenu(menu: readonly PortalMenuItem[]): TrustedMenuItem[] {
+  return menu.map((item) => ({
+    id: item.id, name: item.name, category: item.category, description: item.description, servingInfo: item.servingInfo, unitPrice: item.unitPrice,
+    minimumQuantity: item.minimumQuantity ?? 1, minimumGuests: item.minimumGuests,
+    optionGroups: (item.optionGroups || []) as TrustedMenuItem["optionGroups"],
+  }));
+}
+
 function selectedChoices(
-  item: (typeof localRcoaMenuCatalogue.items)[number],
+  item: TrustedMenuItem,
   requested: RcoaBookingRequest["order"]["items"][number]["choices"],
 ) {
   const supplied = requested || [];
@@ -94,7 +120,7 @@ function selectedChoices(
   });
 }
 
-export function buildTrustedRcoaHubPayload(value: unknown) {
+export function buildTrustedRcoaHubPayload(value: unknown, governedMenu?: readonly PortalMenuItem[]) {
   const request = RcoaBookingRequestSchema.parse(value);
   if (request.bookingGroup) {
     if (request.bookingGroup.sequence > request.bookingGroup.size) throw new Error("The service position is outside its request.");
@@ -119,26 +145,26 @@ export function buildTrustedRcoaHubPayload(value: unknown) {
   if (new Set(request.order.items.map((item) => item.itemId)).size !== request.order.items.length) {
     throw new Error("Each menu item can appear only once in the request.");
   }
-  const menuById = new Map(localRcoaMenuCatalogue.items.map((item) => [item.source.sourceItemId, item]));
+  const menuById = new Map((governedMenu ? governedTrustedMenu(governedMenu) : localTrustedMenu()).map((item) => [item.id, item]));
   const items = request.order.items.map((requested) => {
     const item = menuById.get(requested.itemId);
-    if (!item || item.lifecycleState !== "active") throw new Error("A menu item is no longer available. Refresh the menu and try again.");
+    if (!item) throw new Error("A menu item is no longer available. Refresh the menu and try again.");
     if (!eventType.categories.some((category) => category === item.category)) throw new Error(`${item.name} is not available for this occasion.`);
-    if (requested.quantity < item.orderingConstraints.minimumQuantity) {
-      throw new Error(`${item.name} requires a minimum quantity of ${item.orderingConstraints.minimumQuantity}.`);
+    if (requested.quantity < item.minimumQuantity) {
+      throw new Error(`${item.name} requires a minimum quantity of ${item.minimumQuantity}.`);
     }
-    if (item.orderingConstraints.minimumGuests && request.event.guestCount < item.orderingConstraints.minimumGuests) {
-      throw new Error(`${item.name} requires at least ${item.orderingConstraints.minimumGuests} guests.`);
+    if (item.minimumGuests && request.event.guestCount < item.minimumGuests) {
+      throw new Error(`${item.name} requires at least ${item.minimumGuests} guests.`);
     }
     return {
-      itemId: item.source.sourceItemId,
+      itemId: item.id,
       itemName: item.name,
       category: item.category,
       description: item.description,
-      servingInfo: item.pricing.servingInfo,
-      unitPrice: item.pricing.unitPrice,
+      servingInfo: item.servingInfo,
+      unitPrice: item.unitPrice,
       quantity: requested.quantity,
-      lineTotal: Math.round((item.pricing.unitPrice * requested.quantity + Number.EPSILON) * 100) / 100,
+      lineTotal: Math.round((item.unitPrice * requested.quantity + Number.EPSILON) * 100) / 100,
       choices: selectedChoices(item, requested.choices),
     };
   });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { recordDataAccess, setDataTraceOutcome, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { hubFetch } from "@/lib/hub";
 import { buildTrustedRcoaHubPayload } from "@/lib/rcoa-booking-request";
+import { loadGovernedRcoaMenu } from "@/lib/governed-rcoa-menu";
 
 export async function POST(request: NextRequest) {
   return withDataTrace({ app: "hospitality-booking", action: "booking.create.rcoa", path: "/api/bookings/rcoa", outcome: "SUCCESS" }, async () => {
@@ -10,8 +11,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: { message: "RCoA booking is unavailable until its governed OPLOC mapping is configured." } }, { status: 503 });
     }
     let payload: ReturnType<typeof buildTrustedRcoaHubPayload>;
+    let governedMenu: Awaited<ReturnType<typeof loadGovernedRcoaMenu>>;
     try {
-      payload = buildTrustedRcoaHubPayload(await request.json());
+      // Validate against the same governed catalogue the portal displays; unverifiable => fail closed.
+      governedMenu = await loadGovernedRcoaMenu(expectedOplocId);
+    } catch (error) {
+      return NextResponse.json({ error: { message: (error as Error).message || "The menu could not be verified." } }, { status: (error as { status?: number }).status || 503 });
+    }
+    try {
+      payload = buildTrustedRcoaHubPayload(await request.json(), governedMenu);
     } catch (error) {
       const message = (error as Error).message || "The RCoA request is invalid.";
       return NextResponse.json({ error: { message } }, { status: 400 });

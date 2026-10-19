@@ -6,7 +6,7 @@ import { explicitMenuProductionRouting } from "./connections-service";
 import { LEGACY_HOSPITALITY_MENU_ROUTING } from "./hospitality-routing-suggestions";
 import { BOOKING_LABELS, hospitalityPlatformOf, isGovernedRoutingPlatform, LINE_LABELS, planHospitalityCpuRouting, routingKeys } from "./hospitality-cpu-routing";
 import { trustedPublicOrder } from "./hospitality-price-trust";
-import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, mnkBookingPricingRecords } from "./mnk-booking-catalogue";
+import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, loadRcoaBookingCatalogue, mnkBookingPricingRecords, rcoaBookingConstraintRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
@@ -628,7 +628,9 @@ export function ingestMnkBookingFromExisting(
   const portalSiteId = portalSiteKeyForPayload(payload);
   const resolvedRecords = portalSiteId === "angel-court" && destinationOplocId
     ? angelCourtBookingConstraintRecords(menuRecords, payload, destinationOplocId, now)
-    : menuRecords;
+    : portalSiteId === "rcoa" && destinationOplocId
+      ? rcoaBookingConstraintRecords(menuRecords, payload, destinationOplocId, now)
+      : menuRecords;
   const result = buildMnkCanonicalBooking(payload, resolvedRecords, now);
   if (destinationOplocId) result.booking.service.oplocId = destinationOplocId;
   return result;
@@ -686,6 +688,14 @@ export async function ingestMnkBooking(
         return snapshot.docs.map(document => document.data() as CanonicalRecord);
       });
       pricingRecords = catalogue;
+    } else if (isRcoa && payload.order.items.some(item => String(item.itemId).startsWith("hospitality-menu-item:"))) {
+      // The RCoA portal offers governed Items; relations are read only when governed IDs are submitted (legacy source IDs keep the established path).
+      pricingRecords = await loadRcoaBookingCatalogue(canonicalRecords, payload, destinationOplocId, async (field, ids) => {
+        const snapshot = await transaction.get(canonical().where(field, "in", ids).limit(501));
+        if (snapshot.size > 500) throw conflict("RCoA catalogue relations exceed the bounded ingestion limit.");
+        recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.catalogue-relations", source: "FIRESTORE", dataset: "hospitality-ingest", documents: snapshot.size, estimatedBillableReads: snapshot.size, firestoreReadKind: "transaction" });
+        return snapshot.docs.map(document => document.data() as CanonicalRecord);
+      });
     }
     const result = ingestMnkBookingFromExisting(
       existingSnapshot.exists

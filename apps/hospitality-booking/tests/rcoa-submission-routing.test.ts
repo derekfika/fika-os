@@ -1,3 +1,4 @@
+import { governedCatalogueResponse, governedMenu } from "./support/governed-rcoa-catalogue";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -14,10 +15,7 @@ const { POST: genericPost } = await import("../app/api/bookings/route");
 const { POST: rcoaPost } = await import("../app/api/bookings/rcoa/route");
 const { POST: rcoaGroupPost } = await import("../app/api/bookings/rcoa/group/route");
 
-const menu: PortalMenuItem[] = localRcoaMenuCatalogue.items.filter(item => item.lifecycleState === "active").map(item => ({
-  canonicalId: item.canonicalId, id: item.source.sourceItemId, name: item.name, description: item.description, category: item.category, unitPrice: item.pricing.unitPrice, vatRate: item.pricing.vatRate,
-  dietaryInformation: item.dietaryInformation, allergenInformation: item.allergenInformation, minimumQuantity: item.orderingConstraints.minimumQuantity, optionGroups: item.optionGroups,
-} as PortalMenuItem));
+const menu: PortalMenuItem[] = governedMenu; // the governed catalogue the portal displays (stable Item IDs)
 
 /** A real RCoA browser submission: the exact client request the portal builds. */
 function realRcoaSubmission() {
@@ -35,7 +33,7 @@ const malformedPost = (url: string) => new NextRequest(`https://hospitality.test
 
 async function withHub<T>(respond: (url: string, init: RequestInit) => Response, run: (calls: Array<{ url: string; headers: Headers; body: Record<string, unknown> }>) => Promise<T>) {
   const original = globalThis.fetch; const calls: Array<{ url: string; headers: Headers; body: Record<string, unknown> }> = [];
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => { calls.push({ url: String(input), headers: new Headers(init?.headers), body: JSON.parse(String(init?.body || "{}")) }); return respond(String(input), init || {}); }) as typeof fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => { const catalogue = governedCatalogueResponse(String(input)); if (catalogue) return catalogue; calls.push({ url: String(input), headers: new Headers(init?.headers), body: JSON.parse(String(init?.body || "{}")) }); return respond(String(input), init || {}); }) as typeof fetch;
   try { return await run(calls); } finally { globalThis.fetch = original; }
 }
 

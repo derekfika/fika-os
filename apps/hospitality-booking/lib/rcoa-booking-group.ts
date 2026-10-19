@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { buildTrustedRcoaHubPayload, RcoaBookingRequestSchema } from "./rcoa-booking-request";
 import { RCOA_MAX_SERVICES, rcoaChildReference } from "./rcoa-portal";
+import type { PortalMenuItem } from "./mnk-contract";
 
 const RCOA_REFERENCE = /^RCOA-[A-Z0-9-]{8,80}$/i;
 
@@ -19,7 +20,7 @@ export const rcoaGroupNote = (groupId: string, sequence: number, size: number) =
  * Validates the WHOLE request before anything is created and returns the trusted Hub payloads in sequence order.
  * Throws (and so creates nothing) if any service is invalid or the request is inconsistent. Pure: no I/O.
  */
-export function buildRcoaGroupHubPayloads(value: unknown): { groupId: string; payloads: RcoaTrustedHubPayload[] } {
+export function buildRcoaGroupHubPayloads(value: unknown, governedMenu?: readonly PortalMenuItem[]): { groupId: string; payloads: RcoaTrustedHubPayload[] } {
   const submission = RcoaGroupSubmissionSchema.parse(value);
   const { id: groupId, size } = submission.bookingGroup;
   if (submission.requests.length !== size) throw new Error("The number of services does not match the request.");
@@ -34,7 +35,7 @@ export function buildRcoaGroupHubPayloads(value: unknown): { groupId: string; pa
     for (const key of ["name", "email", "phone", "companyName", "invoiceReference"] as const) {
       if ((request.client[key] || "").trim().toLowerCase() !== (first.client[key] || "").trim().toLowerCase()) throw new Error("Customer details must be the same for every service in the request.");
     }
-    try { return buildTrustedRcoaHubPayload(request); }
+    try { return buildTrustedRcoaHubPayload(request, governedMenu); }
     catch (error) { throw new Error(`Service ${sequence}: ${(error as Error).message}`); }
   });
   return {

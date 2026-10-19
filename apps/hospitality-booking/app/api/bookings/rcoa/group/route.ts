@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { recordDataAccess, setDataTraceOutcome, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { hubFetch } from "@/lib/hub";
 import { buildRcoaGroupHubPayloads } from "@/lib/rcoa-booking-group";
+import { loadGovernedRcoaMenu } from "@/lib/governed-rcoa-menu";
 
 /**
  * One public All Day Hospitality request. Every service row is validated BEFORE anything is created; then one ordinary
@@ -16,8 +17,14 @@ export async function POST(request: NextRequest) {
     if (!expectedOplocId) return NextResponse.json({ error: { message: "RCoA booking is unavailable until its governed OPLOC mapping is configured." } }, { status: 503 });
 
     let built: ReturnType<typeof buildRcoaGroupHubPayloads>;
+    let governedMenu: Awaited<ReturnType<typeof loadGovernedRcoaMenu>>;
     try {
-      built = buildRcoaGroupHubPayloads(await request.json());
+      governedMenu = await loadGovernedRcoaMenu(expectedOplocId);
+    } catch (error) {
+      return NextResponse.json({ error: { message: (error as Error).message || "The menu could not be verified." } }, { status: (error as { status?: number }).status || 503 });
+    }
+    try {
+      built = buildRcoaGroupHubPayloads(await request.json(), governedMenu);
     } catch (error) {
       const message = error instanceof ZodError ? "Some booking information was incomplete. Check each service and try again." : (error as Error).message || "The RCoA request is invalid.";
       return NextResponse.json({ error: { message } }, { status: 400 });
