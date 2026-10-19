@@ -5,7 +5,7 @@ export const RCOA_EMAIL_TEST_OPLOC = "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2
 export const RCOA_EMAIL_TEST_RECIPIENT = "derek@fikacatering.com";
 export const RCOA_EMAIL_TEST_KINDS = ["submitted", "confirmed", "amended", "cancelled"] as const satisfies readonly BookingNotificationKind[];
 export const RCOA_EMAIL_TEST_NOTIFICATION_IDS = Object.freeze(Object.fromEntries(
-  RCOA_EMAIL_TEST_KINDS.map(kind => [kind, `rcoa-email-test:20261019:${kind}:v2`]),
+  RCOA_EMAIL_TEST_KINDS.map(kind => [kind, `rcoa-email-test:20261019:${kind}:v3`]),
 ) as Record<BookingNotificationKind, string>);
 export const RCOA_EMAIL_TEST_CREATED_AT = "2026-10-19T00:00:00.000Z";
 

@@ -70,13 +70,14 @@ export function gmailRawMessage(message: BookingNotificationRecord, sender: Book
   const templated = message.html.includes(EMAIL_FOOTER_MARKER);
   const contact = templated ? "" : `\n\nFor questions, reply to ${sender.replyTo}.`;
   const body = (value: string) => Buffer.from(value).toString("base64").match(/.{1,76}/g)?.join("\r\n") || "";
+  const wrap = (base64: string) => (base64.match(/.{1,76}/g) || []).join("\r\n");
   const images = emailInlineImages(message.html);
   const htmlPart = ["Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: base64", "", body(message.html + (templated ? "" : `<p>For questions, reply to ${sender.replyTo}.</p>`))];
   // Brand logos travel as inline (cid) parts of the HTML alternative so Gmail and Outlook render them without remote images.
-  const relatedBoundary = `${boundary}_rel`;
+  const relatedBoundary = `fikarel_${identity}`;
   const htmlAlternative = images.length
     ? [`Content-Type: multipart/related; boundary="${relatedBoundary}"`, "", `--${relatedBoundary}`, ...htmlPart,
-        ...images.flatMap(image => [`--${relatedBoundary}`, "Content-Type: image/png", "Content-Transfer-Encoding: base64", `Content-ID: <${image.contentId}>`, `Content-Disposition: inline; filename="${image.contentId}.png"`, "", body(image.base64)]), `--${relatedBoundary}--`]
+        ...images.flatMap(image => [`--${relatedBoundary}`, "Content-Type: image/png", "Content-Transfer-Encoding: base64", `Content-ID: <${image.contentId}>`, `Content-Disposition: inline; filename="${image.contentId}.png"`, "", wrap(image.base64)]), `--${relatedBoundary}--`]
     : htmlPart;
   return [
     `From: ${encode(sender.displayName)} <${sender.from}>`, `Reply-To: ${sender.replyTo}`, `To: ${message.to.join(", ")}`,

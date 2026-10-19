@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { bookingNotificationId, bookingNotificationRecord, buildBookingCancelledEmail, buildBookingConfirmedEmail, buildBookingEmail, buildBookingSubmittedEmail } from "../lib/booking-notifications";
 import { gmailRawMessage } from "../lib/booking-email-delivery";
+import { createRcoaEmailTestFixture } from "../lib/booking-email-test-fixture";
 import { emailInlineImages } from "../lib/booking-email-template";
 import type { CanonicalBooking } from "../lib/hospitality-booking-service";
 
@@ -107,4 +108,54 @@ test("raw MIME embeds the brand logos as inline cid parts, keeps one footer and 
   const html = Buffer.from(raw.split("Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n")[1].split("\r\n--")[0].replace(/\r\n/g, ""), "base64").toString();
   assert.equal((html.match(/reply to/gi) || []).length, 1);
   assert.match(html, /^<!doctype html>/);
+});
+
+type MimePart = { headers: Record<string, string>; body: string; parts: MimePart[] };
+/** Strict minimal MIME parser: a boundary line must be exactly the delimiter, so prefix-sharing boundaries are mis-parsed as in real clients. */
+function parseMime(text: string): MimePart {
+  const [head, ...rest] = text.split("\r\n\r\n");
+  const body = rest.join("\r\n\r\n");
+  const headers: Record<string, string> = {};
+  for (const line of head.split("\r\n")) { const at = line.indexOf(":"); if (at > 0) headers[line.slice(0, at).toLowerCase()] = line.slice(at + 1).trim(); }
+  const boundary = /boundary="([^"]+)"/.exec(headers["content-type"] || "")?.[1];
+  if (!boundary) return { headers, body, parts: [] };
+  const chunks: string[] = []; let current: string[] | undefined; let closed = false;
+  for (const line of body.split("\r\n")) {
+    if (line === `--${boundary}`) { if (current) chunks.push(current.join("\r\n")); current = []; }
+    else if (line === `--${boundary}--`) { if (current) chunks.push(current.join("\r\n")); current = undefined; closed = true; }
+    else if (current) current.push(line);
+  }
+  assert.ok(closed, `multipart ${boundary} is not terminated`);
+  return { headers, body: "", parts: chunks.map(parseMime) };
+}
+
+test("raw MIME is a valid multipart/alternative > multipart/related with every cid image resolvable as a real PNG", () => {
+  const fixture = createRcoaEmailTestFixture("confirmed");
+  const sender = { from: "rcoa@example.test", replyTo: "rcoa@example.test", displayName: "RCoA Hospitality", enabled: ["confirmed"], authenticatedAccount: "rcoa@example.test", verifiedSendAs: true } as never;
+  const raw = gmailRawMessage(fixture, sender);
+  const [headerBlock, ...bodyBlocks] = raw.split("\r\n\r\n");
+  const root = parseMime(`${headerBlock}\r\n\r\n${bodyBlocks.join("\r\n\r\n")}`);
+  assert.match(root.headers["content-type"], /^multipart\/alternative/);
+  assert.equal(root.parts.length, 2);
+  assert.match(root.parts[0].headers["content-type"], /^text\/plain/);
+  const related = root.parts[1];
+  assert.match(related.headers["content-type"], /^multipart\/related/);
+  // Child boundary must never share a prefix with its parent's.
+  const boundaryOf = (part: MimePart) => /boundary="([^"]+)"/.exec(part.headers["content-type"])![1];
+  assert.ok(!boundaryOf(related).startsWith(boundaryOf(root)) && !boundaryOf(root).startsWith(boundaryOf(related)));
+  const [htmlPart, ...images] = related.parts;
+  assert.match(htmlPart.headers["content-type"], /^text\/html/);
+  const html = Buffer.from(htmlPart.body.replace(/\r\n/g, ""), "base64").toString();
+  const referenced = [...html.matchAll(/src="cid:([^"]+)"/g)].map(match => match[1]).sort();
+  assert.deepEqual(referenced, ["fika-logo", "site-logo-rcoa"]);
+  assert.deepEqual(images.map(image => image.headers["content-id"]).sort(), referenced.map(id => `<${id}>`));
+  for (const image of images) {
+    assert.equal(image.headers["content-type"], "image/png");
+    assert.equal(image.headers["content-transfer-encoding"], "base64");
+    assert.match(image.headers["content-disposition"], /^inline/);
+    const bytes = Buffer.from(image.body.replace(/\r\n/g, ""), "base64");
+    assert.equal(bytes.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+    assert.ok(bytes.length > 500);
+    assert.ok(image.body.split("\r\n").every(line => line.length <= 76));
+  }
 });
