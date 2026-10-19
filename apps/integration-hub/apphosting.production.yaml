@@ -26,11 +26,17 @@ env:
     value: .fikacatering.com
     availability: [BUILD, RUNTIME]
   - variable: FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED
-    value: "false"
+    value: "true"
     availability: [RUNTIME]
   # Fixed synthetic RCoA test path is explicitly disabled in the production baseline.
   - variable: FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED
-    value: "false"
+    value: "true"
+    availability: [RUNTIME]
+  - variable: FIKA_HOSPITALITY_EMAIL_TEST_NOTIFICATION_IDS
+    value: "rcoa-email-test:20261019:submitted:v3,rcoa-email-test:20261019:confirmed:v3,rcoa-email-test:20261019:amended:v3,rcoa-email-test:20261019:cancelled:v3"
+    availability: [RUNTIME]
+  - variable: FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT
+    value: derek@fikacatering.com
     availability: [RUNTIME]
   # Temporary, internally authenticated DWD check; turn off in the follow-up release after verification.
   - variable: FIKA_HOSPITALITY_EMAIL_DWD_VERIFY_ENABLED
