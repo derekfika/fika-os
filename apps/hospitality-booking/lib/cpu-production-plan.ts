@@ -45,6 +45,25 @@ export function productionOrderMatchesCurrentQuote(booking: CanonicalBooking, pr
   return booking.lifecycleStatus === "Completed" && Boolean(booking.quoteState?.revisions.some((revision) => revision.id === productionOrder.sourceReferences.quoteRevisionId));
 }
 
+/** Production Order states that no longer represent live CPU work. */
+const INACTIVE_ORDER_STATES = ["cancelled", "amended", "rejected"];
+
+/**
+ * Display label only; the canonical lifecycleStatus is never changed. A "Completed" service whose CPU Production Order is
+ * persisted, current for the quote and still live reads "Sent to CPU": Completed only records that the hand-off was accepted
+ * and the quote saved, not that CPU has reviewed, produced or signed anything. Cancelled, order-less, in-house and
+ * stale/superseded services keep their lifecycle wording.
+ */
+export function groupServiceStatusLabel(service: { lifecycleStatus: string; production?: { status: string; quoteCurrent: boolean } }) {
+  const order = service.production;
+  return service.lifecycleStatus === "Completed" && order && order.quoteCurrent && !INACTIVE_ORDER_STATES.includes(order.status) ? "Sent to CPU" : service.lifecycleStatus;
+}
+
+/** Same rule for a standalone booking, using the existing current-quote match against its persisted order. */
+export function standaloneStatusLabel(booking: CanonicalBooking, productionOrder?: ProductionOrder) {
+  return booking.lifecycleStatus === "Completed" && productionOrder && ["Requested", "Planned"].includes(productionOrder.state) && productionOrderMatchesCurrentQuote(booking, productionOrder) ? "Sent to CPU" : undefined;
+}
+
 export function quoteReadyForCpu(booking: CanonicalBooking) {
   const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
   return ["Quoted", "Approved"].includes(booking.lifecycleStatus) && Boolean(current && !isBookingQuoteStale(booking) && current.pdfStatus === "saved" && current.driveFileId);

@@ -15,7 +15,7 @@ import styles from "./HospitalityDashboard.module.css";
 import { HospitalityGroupDetail } from "./HospitalityGroupDetail";
 import { BookingProductionPanel } from "./BookingProductionPanel";
 import panelStyles from "./BookingProductionPanel.module.css";
-import { isBookingQuoteStale, planServiceProduction, productionOrderMatchesCurrentQuote, quoteReadyForCpu, serviceCpuRequirement, sendPendingServices, type ServiceProductionRow, type ServiceResult } from "../../lib/cpu-production-plan";
+import { isBookingQuoteStale, planServiceProduction, standaloneStatusLabel, productionOrderMatchesCurrentQuote, quoteReadyForCpu, serviceCpuRequirement, sendPendingServices, type ServiceProductionRow, type ServiceResult } from "../../lib/cpu-production-plan";
 import { RequestedItemsList } from "./RequestedItemsList";
 import { AdditionalChargesModal } from "./AdditionalChargesModal";
 import { CancellationStatusPanel } from "./CancellationStatusPanel";
@@ -1237,7 +1237,7 @@ export default function HospitalityDashboard({
                         {booking.order.grossTotal.toFixed(2)}
                       </span>
                     </span>
-                    <StatusPill status={booking.lifecycleStatus} />
+                    <StatusPill status={booking.lifecycleStatus} label={standaloneStatusLabel(booking, productionOrders[booking.canonicalId])} />
                   </button>
                 ))}
               {!loading && !visible.length && !visibleGroups.length && (
@@ -1745,7 +1745,7 @@ function BookingDetail({
           )}
         </div>
         <div className="booking-detail__header-actions">
-          <StatusPill status={booking.lifecycleStatus} />
+          <StatusPill status={booking.lifecycleStatus} label={standaloneStatusLabel(booking, productionOrder)} />
         </div>
       </header>
       <div className="booking-detail__facts">
@@ -1836,7 +1836,7 @@ function BookingDetail({
           <div className="manager-status-list">
             <div>
               <span>Booking</span>
-              <strong>{workflowLabel(booking.lifecycleStatus)}</strong>
+              <strong>{standaloneStatusLabel(booking, productionOrder) ?? workflowLabel(booking.lifecycleStatus)}</strong>
             </div>
           </div>
           {cancellationPanel}
@@ -2593,10 +2593,10 @@ function Fact({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-function StatusPill({ status }: { status: Status }) {
+function StatusPill({ status, label }: { status: Status; label?: string }) {
   return (
     <span className={`booking-status booking-status--${status.toLowerCase()}`}>
-      {workflowLabel(status)}
+      {label ?? workflowLabel(status)}
     </span>
   );
 }

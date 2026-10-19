@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import type { BookingAdditionalChargeInput, CanonicalBooking } from "@/lib/canonical-types";
 import type { HospitalityBookingGroup, HospitalityGroupService } from "../../../shared/hospitality-group-quotes";
 import { groupRequestedItems } from "../../lib/booking-presentation";
+import { groupServiceStatusLabel } from "../../lib/cpu-production-plan";
 import { RequestedItemsList } from "./RequestedItemsList";
 import { CancellationStatusPanel } from "./CancellationStatusPanel";
 import { cancellationView, groupCancellationView, propagationOutcome, type PropagationOutcome } from "../../lib/cancellation-status";
@@ -156,7 +157,7 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
           <th scope="row"><a href={`#${serviceAnchor(group, service)}`}>{serviceLabel(service)}</a></th>
           <td data-label="Location">{service.location}</td>
           <td data-label="Guests" className={styles.num}>{service.guests}</td>
-          <td data-label="Status"><span className={`${styles.chip} ${chipTone(service.lifecycleStatus)}`}>{service.lifecycleStatus}</span></td>
+          <td data-label="Status"><span className={`${styles.chip} ${chipTone(service.lifecycleStatus)}`}>{groupServiceStatusLabel(service)}</span></td>
           <td data-label="Net" className={styles.num}>{money(service.totals.net)}</td>
         </tr>)}</tbody>
       </table></div>

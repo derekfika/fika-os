@@ -3,7 +3,7 @@ import { requiresCpuSummary, servicesToSend, type ServiceProductionRow, type Ser
 import styles from "./BookingProductionPanel.module.css";
 
 const STATE_TEXT: Record<ServiceProductionRow["state"], string> = {
-  sent: "Sent",
+  sent: "Sent to CPU",
   pending: "Ready to send",
   awaiting_quote: "Awaiting saved quote",
   unresolved: "Routing review required",
