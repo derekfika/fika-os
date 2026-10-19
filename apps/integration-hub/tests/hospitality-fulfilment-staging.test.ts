@@ -57,5 +57,5 @@ test("both authoritative booking retirement paths prepare fulfilment before thei
   const source = readFileSync(new URL("../lib/hospitality-booking-service.ts", import.meta.url), "utf8");
   assert.equal((source.match(/await prepareHospitalityProductionChanges\(transaction, projectionChanges/g) || []).length, 2);
   assert.match(source, /stageChanges\(\);\s*for \(const prior of retiringOrders\)/);
-  assert.match(source, /stageChanges\(\);\s*for \(const prior of activeOrders\)/);
+  assert.match(source, /stageChanges\(\);\s*for \(const change of projectionChanges\) stageHospitalityCancellation\(transaction, canonicalId, change\.order, now\);\s*for \(const prior of activeOrders\)/);
 });

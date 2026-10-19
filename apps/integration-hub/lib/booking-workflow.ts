@@ -4,7 +4,7 @@ export type BookingStatus = "New" | "Reviewed" | "Quoted" | "Sent to CPU" | "App
 export type ReviewChecks = { commercialIntent: boolean; serviceTiming: boolean; deliveryContext: boolean; dietaryRequirements: boolean };
 export type QuotePdfStatus = "pending" | "saved" | "failed";
 export type QuoteRevision = { id: string; revision: number; createdAt: string; createdBy: string; commercialVersion: number; snapshot: unknown; documentReference: string; groupQuoteId?: string; stale: boolean; pdfStatus?: QuotePdfStatus; driveFileId?: string; driveUrl?: string; pdfError?: string };
-export type DashboardWorkflow = { review?: { checks: ReviewChecks; reviewedAt: string; reviewedBy: string; notes?: string }; completion?: { completedAt: string; completedBy: string; notes?: string }; cancellation?: { reason: string; calendarOutcome: "not_requested" | "not_configured"; productionOutcome: "not_requested" | "cancel_requested" | "cancelled" | "no_active_production_order"; notificationOutcome: "not_requested" | "not_configured" } };
+export type DashboardWorkflow = { review?: { checks: ReviewChecks; reviewedAt: string; reviewedBy: string; notes?: string }; completion?: { completedAt: string; completedBy: string; notes?: string }; cancellation?: { reason: string; calendarOutcome: "not_requested" | "not_configured"; productionOutcome: "not_requested" | "cancel_requested" | "cancelled" | "no_active_production_order" | "review_required"; downstreamPropagation?: "pending" | "delivered" | "review_required"; notificationOutcome: "not_requested" | "not_configured" | "queued" } };
 export type WorkflowCommand =
   | { action: "review"; checks: Partial<ReviewChecks>; notes?: string }
   | { action: "quote"; regenerate?: boolean }
@@ -14,6 +14,13 @@ export type WorkflowCommand =
   | { action: "approve"; quoteRevisionId: string }
   | { action: "complete"; notes?: string }
   | { action: "cancel"; reason: string; removeCalendar?: boolean; cancelProduction?: boolean; notify?: boolean };
+
+const HOSPITALITY_CANCELLATION_SAFE_PRODUCTION_STATES = new Set(["received", "draft", "needs_review", "needs_clarification"]);
+
+export function hospitalityCancellationRequiresCpuReview(productionStatuses: string[]) {
+  const unsafe = productionStatuses.filter(status => !["cancelled", "amended"].includes(status) && !HOSPITALITY_CANCELLATION_SAFE_PRODUCTION_STATES.has(status));
+  return unsafe.length > 0;
+}
 
 export function isQuoteStale(booking: { commercialVersion?: number; quoteState?: { currentRevisionId?: string; revisions: QuoteRevision[] } }) {
   const current = booking.quoteState?.revisions.find(revision => revision.id === booking.quoteState?.currentRevisionId);
@@ -86,7 +93,6 @@ export function assertWorkflowCommand(booking: { lifecycleStatus: BookingStatus;
     const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
     if (!current || current.stale || current.pdfStatus !== "saved" || !current.driveFileId) throw workflowError("Complete the current quote PDF save before marking this Booking complete.");
   }
-  if (command.action === "cancel" && ["Completed", "Cancelled"].includes(booking.lifecycleStatus)) throw workflowError("A completed or cancelled Booking cannot be cancelled again.");
 }
 
 function workflowError(message: string) { return Object.assign(new Error(message), { status: 422 }); }

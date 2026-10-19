@@ -8,6 +8,7 @@ export type HospitalityGroupService = {
   charges: Array<{ label: string; net: number; detail?: string }>;
   totals: GroupMoneyTotals;
   production?: { orderId: string; version: number; sourceRevision: number; status: string; quoteRevisionId: string; quoteCurrent: boolean };
+  cancellation?: { downstreamPropagation: "pending" | "delivered" | "review_required"; productionOutcome: string };
   routing?: { status: string; statusLabel: string; lines: Array<{ index: number; state: string; label: string }> };
 };
 export type HospitalityGroupQuoteState = {

@@ -17,6 +17,7 @@ import { sha256 } from "./profiler";
 import { parseCanonical } from "./schemas";
 import {
   applyBookingAdditionalCharges,
+  hospitalityCancellationRequiresCpuReview,
   assertBookingExpectedVersion,
   assertWorkflowCommand,
   applyQuotePdfPersistence,
@@ -36,6 +37,8 @@ import {
 } from "./hospitality-additional-charges";
 import {
   bookingNotificationRecord,
+  cancellationNotificationKind,
+  type CancellationEvent,
   type BookingNotificationKind,
 } from "./booking-notifications";
 import {
@@ -51,6 +54,7 @@ import type { Transaction } from "firebase-admin/firestore";
 import { createDomainEvent } from "../../shared/domain-events";
 import { stageDomainEvent } from "./domain-event-outbox";
 import { prepareFulfilmentEvent } from "./fulfilment-projection";
+import { cancellationDeliveryStatus, deliverHospitalityCancellation, ensureHospitalityCancellationEvent, hospitalityCancellationEventId, stageHospitalityCancellation } from "./hospitality-cancellation-outbox";
 
 export const MNK_BOOKING_INGESTION_CONTRACT_VERSION =
   "fika.booking-ingestion.mnk.v1";
@@ -869,18 +873,61 @@ export async function prepareHospitalityProductionChanges(transaction: Transacti
   };
 }
 
+/** Reconcile every Hub Production Order for an already-cancelled booking. */
+async function reconcileCancelledBookingOrders(bookingId: string) {
+  return db.runTransaction(async transaction => {
+    const bookingRef = bookings().doc(bookingId);
+    const bookingSnapshot = await transaction.get(bookingRef);
+    if (!bookingSnapshot.exists || (bookingSnapshot.data() as CanonicalBooking).lifecycleStatus !== "Cancelled") throw new Error("Authoritative cancelled Booking state is unavailable.");
+    const [orderSnapshot, requirementSnapshot] = await Promise.all([
+      transaction.get(productionOrderV1s().where("sourceBookingId", "==", bookingId)),
+      transaction.get(db.collection("fikaProductionRequirements").where("sourceBookingId", "==", bookingId)),
+    ]);
+    const orders = orderSnapshot.docs.map(document => ({ ref: document.ref, order: document.data() as ProductionOrderV1 }));
+    const active = orders.filter(({ order }) => !["cancelled", "amended"].includes(order.status));
+    const safeToWithdraw = active.filter(({ order }) => !hospitalityCancellationRequiresCpuReview([order.status]));
+    const requiresCpuReview = active.some(({ order }) => hospitalityCancellationRequiresCpuReview([order.status]));
+    const now = new Date().toISOString();
+    const reason = (bookingSnapshot.data() as CanonicalBooking).dashboardWorkflow?.cancellation?.reason || "Legacy Hospitality cancellation reconciliation";
+    const changes: ProductionProjectionChange[] = safeToWithdraw.map(({ order }) => ({
+      order: { ...order, status: "cancelled", workflowStatus: "cancelled", version: Number(order.version || 1) + 1, updatedAt: now },
+      changeType: "withdrawn",
+      idempotencyKey: `hospitality-withdrawal:${order.canonicalId}:v${Number(order.version || 1) + 1}`,
+    }));
+    const stageChanges = await prepareHospitalityProductionChanges(transaction, changes, "integration-hub", bookingId, now, reason);
+    stageChanges();
+    for (const change of changes) stageHospitalityCancellation(transaction, bookingId, change.order, now);
+    for (const { ref, order } of safeToWithdraw) transaction.set(ref, {
+      status: "cancelled", workflowStatus: "cancelled", updatedAt: now,
+      cancellationNotice: `Booking cancelled: ${reason}`, version: Number(order.version || 1) + 1,
+      cancelledAt: now, cancelledBy: "integration-hub",
+      audit: [...(order.audit || []), { action: "production-order-cancelled-by-legacy-booking-reconciliation", at: now, by: "integration-hub", previousState: order.status, newState: "cancelled", reason }],
+    }, { merge: true });
+    for (const requirementDoc of requiresCpuReview ? [] : requirementSnapshot.docs) {
+      const requirement = requirementDoc.data() as { status?: string; audit?: unknown[] };
+      if (requirement.status === "cancelled") continue;
+      transaction.set(requirementDoc.ref, { status: "cancelled", updatedAt: now, updatedBy: "integration-hub", audit: [...(requirement.audit || []), { action: "production-requirement-cancelled-by-legacy-booking-reconciliation", at: now, by: "integration-hub", previousState: requirement.status, newState: "cancelled", reason }] }, { merge: true });
+    }
+    const reconciledOrders = orders.map(({ order }) => safeToWithdraw.some(item => item.order.canonicalId === order.canonicalId) ? changes.find(change => change.order.canonicalId === order.canonicalId)!.order : order);
+    return { orders: reconciledOrders, requiresCpuReview };
+  });
+}
+
 function addCalendarDays(date: string, days: number) {
   const value = new Date(`${date}T00:00:00Z`);
   value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString().slice(0, 10);
 }
 
-async function propagateProductionChanges(changes: ProductionProjectionChange[]) {
+async function propagateProductionChanges(changes: ProductionProjectionChange[], cancellationEventIds: Map<string, string> = new Map()) {
   const results = [];
   for (const change of changes) {
     try {
-      const [cpuProjection, logisticsProjection] = await Promise.all([notifyCpuProjection(change.order, change.changeType, change.idempotencyKey), change.changeType === "created" ? Promise.resolve(undefined) : deliverLogisticsProjectionForProductionOrder(change.order)]);
-      results.push({ canonicalId: change.order.canonicalId, ...cpuProjection, ...(logisticsProjection ? { logisticsProjection } : {}), status: logisticsProjection && logisticsProjection.outboxStatus !== "delivered" ? "pending" as const : "delivered" as const });
+      const cancellationEventId = cancellationEventIds.get(change.order.canonicalId);
+      const [cpuProjection, logisticsProjection] = await Promise.all([cancellationEventId ? deliverHospitalityCancellation(cancellationEventId) : notifyCpuProjection(change.order, change.changeType, change.idempotencyKey), change.changeType === "created" ? Promise.resolve(undefined) : deliverLogisticsProjectionForProductionOrder(change.order)]);
+      const cpuStatus = cancellationEventId && cpuProjection && "delivery" in cpuProjection ? cpuProjection.delivery.status : "delivered";
+      const logisticsRequired = Boolean(cancellationEventId && change.order.requiresDelivery !== false && change.order.serviceDate && change.order.destinationOplocId);
+      results.push({ canonicalId: change.order.canonicalId, ...(cancellationEventId ? { cpuOutbox: cpuProjection } : cpuProjection), ...(logisticsProjection ? { logisticsProjection } : {}), status: cpuStatus !== "delivered" || logisticsRequired && logisticsProjection?.outboxStatus !== "delivered" || logisticsProjection && logisticsProjection.outboxStatus !== "delivered" ? "pending" as const : "delivered" as const });
     } catch (error) {
       results.push({ canonicalId: change.order.canonicalId, status: "pending" as const, reason: error instanceof Error ? error.message : "CPU projection handoff failed." });
     }
@@ -1158,12 +1205,17 @@ export async function executeBookingWorkflow(
   canonicalId: string,
   expectedVersion: number,
   command: WorkflowCommand,
+  cancellationEvent: CancellationEvent = "internal-reconciliation",
 ) {
   const result = await db.runTransaction(async (transaction) => {
     const ref = bookings().doc(canonicalId);
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) throw conflict("Booking was not found.");
     const current = snapshot.data() as CanonicalBooking;
+    // Retrying a cancellation after the Hub committed it is a safe no-op.
+    if (command.action === "cancel" && current.lifecycleStatus === "Cancelled") {
+      return { booking: current, notificationKind: undefined, projectionChanges: [], idempotent: true as const };
+    }
     assertBookingExpectedVersion(current.version, expectedVersion, command.action);
     if (current.bookingGroup?.id && ["amend", "cancel"].includes(command.action)) throw conflict("Amend this booking from its grouped booking action.");
     if (current.bookingGroup?.id && command.action === "quote") throw conflict("Generate the consolidated quote from the booking group.");
@@ -1294,85 +1346,36 @@ export async function executeBookingWorkflow(
     }
     if (command.action === "cancel") {
       next.lifecycleStatus = "Cancelled";
-      // Keep the Production Order cancelled so downstream Logistics excludes
-      // it. CPU retains a separate warning projection until a chef dismisses it.
-      const priorOrders = command.cancelProduction
-        ? await transaction.get(
-            productionOrderV1s().where("sourceBookingId", "==", canonicalId),
-          )
-        : undefined;
-      const priorRequirements = command.cancelProduction
-        ? await transaction.get(
-            db
-              .collection("fikaProductionRequirements")
-              .where("sourceBookingId", "==", canonicalId),
-          )
-        : undefined;
-      const activeOrders = (priorOrders?.docs || []).filter((prior) => {
+      // CPU owns progress after handoff. Always cancel the Booking; when any
+      // order has advanced, preserve all downstream work and flag CPU review.
+      const priorOrders = await transaction.get(productionOrderV1s().where("sourceBookingId", "==", canonicalId));
+      const priorRequirements = await transaction.get(db.collection("fikaProductionRequirements").where("sourceBookingId", "==", canonicalId));
+      const activeOrders = priorOrders.docs.filter((prior) => {
         const order = prior.data() as ProductionOrderV1;
         return !["cancelled", "amended"].includes(order.status);
       });
-      for (const prior of activeOrders) {
-        const order = prior.data() as ProductionOrderV1;
-        projectionChanges.push({ order: { ...order, status: "cancelled", workflowStatus: "cancelled", version: Number(order.version || 1) + 1, updatedAt: now }, changeType: "withdrawn", idempotencyKey: `hospitality-projection:${canonicalId}:cancelled:v${next.version}` });
+      const requiresCpuReview = hospitalityCancellationRequiresCpuReview(activeOrders.map(prior => (prior.data() as ProductionOrderV1).status));
+      if (!requiresCpuReview) {
+        for (const prior of activeOrders) {
+          const order = prior.data() as ProductionOrderV1;
+          projectionChanges.push({ order: { ...order, status: "cancelled", workflowStatus: "cancelled", version: Number(order.version || 1) + 1, updatedAt: now }, changeType: "withdrawn", idempotencyKey: `hospitality-projection:${canonicalId}:cancelled:v${next.version}` });
+        }
+        const stageChanges = await prepareHospitalityProductionChanges(transaction, projectionChanges, actor.uid, canonicalId, now, command.reason);
+        stageChanges();
+        for (const change of projectionChanges) stageHospitalityCancellation(transaction, canonicalId, change.order, now);
+        for (const prior of activeOrders) {
+          const order = prior.data() as ProductionOrderV1;
+          transaction.set(prior.ref, { status: "cancelled", workflowStatus: "cancelled", updatedAt: now, cancellationNotice: `Booking cancelled: ${command.reason}`, version: Number(order.version || 1) + 1, cancelledAt: now, cancelledBy: actor.uid, audit: [...(order.audit || []), { action: "production-order-cancelled-by-booking", at: now, by: actor.uid, previousState: order.status, newState: "cancelled", reason: command.reason }] }, { merge: true });
+        }
+        for (const prior of priorRequirements.docs) {
+          const requirement = prior.data() as { status?: string; audit?: unknown[] };
+          if (requirement.status === "cancelled") continue;
+          transaction.set(prior.ref, { status: "cancelled", updatedAt: now, updatedBy: actor.uid, audit: [...(requirement.audit || []), { action: "production-requirement-cancelled-by-booking", at: now, by: actor.uid, previousState: requirement.status, newState: "cancelled", reason: command.reason }] }, { merge: true });
+        }
       }
-      const stageChanges = await prepareHospitalityProductionChanges(transaction, projectionChanges, actor.uid, canonicalId, now, command.reason);
-      stageChanges();
-      for (const prior of activeOrders) {
-        const order = prior.data() as ProductionOrderV1;
-        transaction.set(
-          prior.ref,
-          {
-            status: "cancelled",
-            workflowStatus: "cancelled",
-            updatedAt: now,
-            cancellationNotice: `Booking cancelled: ${command.reason}`,
-            version: Number(order.version || 1) + 1,
-            cancelledAt: now,
-            cancelledBy: actor.uid,
-            audit: [
-              ...(order.audit || []),
-              {
-                action: "production-order-cancelled-by-booking",
-                at: now,
-                by: actor.uid,
-                previousState: order.status,
-                newState: "cancelled",
-                reason: command.reason,
-              },
-            ],
-          },
-          { merge: true },
-        );
-      }
-      for (const prior of priorRequirements?.docs || []) {
-        const requirement = prior.data() as {
-          status?: string;
-          audit?: unknown[];
-        };
-        if (requirement.status === "cancelled") continue;
-        transaction.set(
-          prior.ref,
-          {
-            status: "cancelled",
-            updatedAt: now,
-            updatedBy: actor.uid,
-            audit: [
-              ...(requirement.audit || []),
-              {
-                action: "production-requirement-cancelled-by-booking",
-                at: now,
-                by: actor.uid,
-                previousState: requirement.status,
-                newState: "cancelled",
-                reason: command.reason,
-              },
-            ],
-          },
-          { merge: true },
-        );
-      }
-      notificationKind = command.notify === false ? undefined : "cancelled";
+      // A real customer cancellation queues once with the Booking transaction;
+      // notify is a legacy UI option and cannot opt in/out of this server policy.
+      notificationKind = cancellationNotificationKind(next, cancellationEvent);
       next.dashboardWorkflow = {
         ...next.dashboardWorkflow,
         cancellation: {
@@ -1380,12 +1383,9 @@ export async function executeBookingWorkflow(
           calendarOutcome: command.removeCalendar
             ? "not_configured"
             : "not_requested",
-          productionOutcome: command.cancelProduction
-            ? activeOrders.length
-              ? "cancelled"
-              : "no_active_production_order"
-            : "not_requested",
-          notificationOutcome: "not_configured",
+          productionOutcome: requiresCpuReview ? "review_required" : activeOrders.length ? "cancel_requested" : "no_active_production_order",
+          downstreamPropagation: requiresCpuReview ? "review_required" : activeOrders.length ? "pending" : "delivered",
+          notificationOutcome: notificationKind ? "queued" : "not_requested",
         },
       };
     }
@@ -1419,6 +1419,7 @@ export async function executeBookingWorkflow(
         at: now,
         actorId: actor.uid,
         command,
+        ...(command.action === "cancel" ? { cancellationEvent } : {}),
       },
     );
     if (notificationKind) {
@@ -1435,11 +1436,80 @@ export async function executeBookingWorkflow(
         notification,
       );
     }
-    return { booking: next, notificationKind, projectionChanges };
+    return { booking: next, notificationKind, projectionChanges, idempotent: false as const };
   });
+  if (result.idempotent) {
+    try {
+    const reconciliation = await reconcileCancelledBookingOrders(canonicalId);
+    const allOrders = reconciliation.orders;
+    const cancelledOrders = allOrders.filter(order => order.status === "cancelled");
+    const requirements = await Promise.all(cancelledOrders.map(order => db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", order.canonicalId).limit(20).get()));
+    const unresolvedFulfilment = cancelledOrders.some((order, index) => order.requiresDelivery !== false && order.destinationOplocId && (!requirements[index].size || requirements[index].docs.some(document => document.data().status !== "withdrawn" && document.data().status !== "cancelled")));
+    if (!cancelledOrders.length && result.booking.dashboardWorkflow?.cancellation?.productionOutcome !== "no_active_production_order" && !reconciliation.requiresCpuReview) {
+      const unresolvedStatus = result.booking.dashboardWorkflow?.cancellation?.productionOutcome === "review_required" ? "review_required" as const : "pending" as const;
+      const booking = await recordCancellationPropagation(result.booking, unresolvedStatus);
+      return { booking, idempotent: true, projectionPropagation: { status: unresolvedStatus, results: [{ reason: unresolvedStatus === "review_required" ? "CPU review remains unresolved; no authoritative safe-to-withdraw order is available." : "Legacy cancellation downstream state is unresolved; no authoritative safe-to-withdraw production order was found." }] } };
+    }
+    if (!cancelledOrders.length && reconciliation.requiresCpuReview) {
+      const booking = await recordCancellationPropagation(result.booking, "review_required");
+      return { booking, idempotent: true, projectionPropagation: { status: "review_required" as const, results: [{ reason: "Advanced Production Order remains active and requires CPU review." }] } };
+    }
+    const events = await Promise.all(cancelledOrders.map(order => ensureHospitalityCancellationEvent(canonicalId, order)));
+    const eventIds = new Map(cancelledOrders.map(order => [order.canonicalId, hospitalityCancellationEventId(order.canonicalId, order.version)]));
+    const changes = cancelledOrders.map(order => ({ order, changeType: "withdrawn" as const, idempotencyKey: `hospitality-withdrawal:${order.canonicalId}:v${order.version}` }));
+    const delivery = await propagateProductionChanges(changes, eventIds);
+    const eventStatus = await cancellationDeliveryStatus(events.map(event => event.eventId));
+    const status = reconciliation.requiresCpuReview ? "review_required" as const : delivery.status === "delivered" && eventStatus === "delivered" && !unresolvedFulfilment ? "delivered" as const : "pending" as const;
+    const booking = await recordCancellationPropagation(result.booking, status);
+    return { booking, idempotent: true, projectionPropagation: { ...delivery, status, ...(reconciliation.requiresCpuReview ? { results: [...delivery.results, { reason: "Advanced Production Order remains active and requires CPU review." }] } : {}), ...(unresolvedFulfilment ? { results: [...delivery.results, { reason: "Legacy Logistics withdrawal is unresolved; fulfilment evidence is missing or still active." }] } : {}) } };
+    } catch {
+      return { booking: result.booking, idempotent: true, projectionPropagation: { status: "pending" as const, results: [{ reason: "Legacy cancellation reconciliation failed; downstream state remains unresolved." }] } };
+    }
+  }
   const notification = result.notificationKind ? { status: "queued" as const } : undefined;
-  const projectionPropagation = await propagateProductionChanges(result.projectionChanges);
-  return { booking: result.booking, ...(notification ? { notification } : {}), projectionPropagation };
+  const isCancellationReview = result.booking.dashboardWorkflow?.cancellation?.downstreamPropagation === "review_required";
+  const projectionPropagation = isCancellationReview
+    ? { status: "review_required" as const, results: [] }
+    : await propagateProductionChanges(result.projectionChanges, command.action === "cancel"
+      ? new Map(result.projectionChanges.map(change => [change.order.canonicalId, hospitalityCancellationEventId(change.order.canonicalId, change.order.version)]))
+      : undefined);
+  const booking = result.booking.lifecycleStatus === "Cancelled" && (projectionPropagation.status === "pending" || projectionPropagation.status === "delivered")
+    ? await recordCancellationPropagation(result.booking, projectionPropagation.status)
+    : result.booking;
+  return { booking, ...(notification ? { notification } : {}), projectionPropagation };
+}
+
+async function recordCancellationPropagation(booking: CanonicalBooking, status: "pending" | "delivered" | "review_required") {
+  return db.runTransaction(async transaction => {
+    const ref = bookings().doc(booking.canonicalId);
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) return booking;
+    const current = snapshot.data() as CanonicalBooking;
+    if (current.version !== booking.version || current.lifecycleStatus !== "Cancelled") return current;
+    const cancellation = current.dashboardWorkflow?.cancellation;
+    if (!cancellation) return current;
+    const next: CanonicalBooking = {
+      ...current,
+      dashboardWorkflow: {
+        ...current.dashboardWorkflow,
+        cancellation: {
+          ...cancellation,
+          downstreamPropagation: status,
+          ...(status === "delivered" && cancellation.productionOutcome === "cancel_requested" ? { productionOutcome: "cancelled" } : {}),
+        },
+      },
+      audit: [...current.audit, { action: `booking-cancellation-downstream-${status}`, at: new Date().toISOString(), by: "integration-hub", reason: `CPU and Logistics cancellation propagation ${status}.` }],
+    };
+    transaction.set(ref, next);
+    transaction.set(bookingAudit().doc(`${booking.canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:cancel-propagation:v${booking.version}:${status}`), {
+      canonicalId: booking.canonicalId,
+      action: `booking-cancellation-downstream-${status}`,
+      at: new Date().toISOString(),
+      actorId: "integration-hub",
+      sourceVersion: booking.version,
+    });
+    return next;
+  });
 }
 
 export async function dispatchBookingNotification(
@@ -1739,4 +1809,119 @@ export async function amendHospitalityBookingGroup(actor: Actor, input: GroupAme
   });
   const projectionPropagation = await propagateProductionChanges(result.projectionChanges);
   return { bookings: result.children, projectionPropagation };
+}
+
+export async function cancelHospitalityBookingGroup(actor: Actor, input: { bookingGroupId: string; expectedSourceHash: string; reason: string }, authorize: (children: CanonicalBooking[]) => Promise<void>, cancellationEvent: CancellationEvent = "internal-reconciliation") {
+  const result = await db.runTransaction(async transaction => {
+    const snapshot = await transaction.get(bookings().where("bookingGroup.id", "==", input.bookingGroupId).limit(MAX_GROUP_SERVICES + 1));
+    const children = validateBookingGroup(input.bookingGroupId, snapshot.docs.map(document => document.data() as CanonicalBooking));
+    await authorize(children);
+    if (children.every(child => child.lifecycleStatus === "Cancelled")) return { children, plans: [], idempotent: true as const, requiresCpuReview: children.some(child => child.dashboardWorkflow?.cancellation?.downstreamPropagation === "review_required") };
+    if (groupCommercialState(input.bookingGroupId, children).sourceHash !== input.expectedSourceHash) throw Object.assign(new Error("Booking changed elsewhere. Refresh before cancelling."), { status: 409 });
+
+    const plans = await Promise.all(children.filter(child => child.lifecycleStatus !== "Cancelled").map(async child => {
+      const [orders, requirements] = await Promise.all([
+        transaction.get(productionOrderV1s().where("sourceBookingId", "==", child.canonicalId)),
+        transaction.get(db.collection("fikaProductionRequirements").where("sourceBookingId", "==", child.canonicalId)),
+      ]);
+      return { child, orders: orders.docs.map(document => ({ ref: document.ref, order: document.data() as ProductionOrderV1 })).filter(({ order }) => !["cancelled", "amended"].includes(order.status)), requirements: requirements.docs };
+    }));
+    const requiresCpuReview = hospitalityCancellationRequiresCpuReview(plans.flatMap(plan => plan.orders.map(({ order }) => order.status)));
+    const now = new Date().toISOString();
+    const changes: ProductionProjectionChange[] = requiresCpuReview ? [] : plans.flatMap(plan => plan.orders.map(({ order }) => ({ order: { ...order, status: "cancelled" as const, workflowStatus: "cancelled" as const, version: Number(order.version || 1) + 1, updatedAt: now }, changeType: "withdrawn" as const, idempotencyKey: `hospitality-projection:${plan.child.canonicalId}:cancelled:v${plan.child.version + 1}` })));
+    if (!requiresCpuReview) {
+      const stageChanges = await prepareHospitalityProductionChanges(transaction, changes, actor.uid, input.bookingGroupId, now, input.reason);
+      stageChanges();
+      for (const change of changes) stageHospitalityCancellation(transaction, change.order.sourceBookingId, change.order, now);
+    }
+    const nextById = new Map<string, CanonicalBooking>();
+    for (const child of children) {
+      const plan = plans.find(item => item.child.canonicalId === child.canonicalId);
+      if (!plan) { nextById.set(child.canonicalId, child); continue; }
+      const next: CanonicalBooking = {
+        ...child,
+        lifecycleStatus: "Cancelled",
+        version: child.version + 1,
+        updatedAt: now,
+        updatedBy: actor.uid,
+        statusHistory: [...child.statusHistory, { status: "Cancelled", changedAt: now, changedBy: actor.uid, reason: input.reason }],
+        audit: [...child.audit, { action: "workflow-cancel", at: now, by: actor.uid, reason: input.reason }],
+        dashboardWorkflow: { ...child.dashboardWorkflow, cancellation: {
+          reason: input.reason,
+          calendarOutcome: "not_requested",
+          productionOutcome: requiresCpuReview ? "review_required" : plan.orders.length ? "cancel_requested" : "no_active_production_order",
+          downstreamPropagation: requiresCpuReview ? "review_required" : plan.orders.length ? "pending" : "delivered",
+          notificationOutcome: cancellationNotificationKind(child, cancellationEvent) ? "queued" : "not_requested",
+        } },
+      };
+      nextById.set(child.canonicalId, next);
+    }
+    for (const plan of plans) {
+      const next = nextById.get(plan.child.canonicalId)!;
+      transaction.set(bookings().doc(next.canonicalId), next);
+      transaction.create(bookingAudit().doc(`${next.canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${next.version}`), { canonicalId: next.canonicalId, bookingGroupId: input.bookingGroupId, action: "workflow-cancel", actorId: actor.uid, at: now, reason: input.reason, version: next.version, cancellationEvent });
+      const notificationKind = cancellationNotificationKind(next, cancellationEvent);
+      if (notificationKind) {
+        const notification = bookingNotificationRecord(next, notificationKind, next.version, now);
+        transaction.create(db.collection("fikaBookingNotifications").doc(notification.notificationId), notification);
+      }
+      if (requiresCpuReview) continue;
+      for (const { ref, order } of plan.orders) transaction.set(ref, { status: "cancelled", workflowStatus: "cancelled", updatedAt: now, cancellationNotice: `Booking cancelled: ${input.reason}`, version: Number(order.version || 1) + 1, cancelledAt: now, cancelledBy: actor.uid, audit: [...(order.audit || []), { action: "production-order-cancelled-by-booking", at: now, by: actor.uid, previousState: order.status, newState: "cancelled", reason: input.reason }] }, { merge: true });
+      for (const requirementRef of plan.requirements) {
+        const requirement = requirementRef.data() as { status?: string; audit?: unknown[] };
+        if (requirement.status === "cancelled") continue;
+        transaction.set(requirementRef.ref, { status: "cancelled", updatedAt: now, updatedBy: actor.uid, audit: [...(requirement.audit || []), { action: "production-requirement-cancelled-by-booking", at: now, by: actor.uid, previousState: requirement.status, newState: "cancelled", reason: input.reason }] }, { merge: true });
+      }
+    }
+    transaction.create(bookingAudit().doc(`group-cancel:${groupHash([input.bookingGroupId, input.expectedSourceHash])}`), { bookingGroupId: input.bookingGroupId, action: "group-cancelled", actorId: actor.uid, at: now, reason: input.reason, childBookingIds: children.map(child => child.canonicalId), requiresCpuReview, cancellationEvent });
+    return { children: [...nextById.values()], plans, changes, idempotent: false as const, requiresCpuReview };
+  });
+  if (result.idempotent) {
+    const retryable = result.children;
+    const outcomes = new Map(result.children.map(child => [child.canonicalId, child.dashboardWorkflow?.cancellation?.downstreamPropagation]));
+    const allResults: Array<{ status: "pending" | "delivered" | "review_required"; results: unknown[] }> = [];
+    for (const child of retryable) {
+      try {
+        const reconciliation = await reconcileCancelledBookingOrders(child.canonicalId);
+        const requirements = await db.collection("fikaProductionRequirements").where("sourceBookingId", "==", child.canonicalId).limit(100).get();
+        const orders = reconciliation.orders;
+        const cancelledOrders = orders.filter(order => order.status === "cancelled");
+        const fulfilment = await Promise.all(cancelledOrders.map(order => db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", order.canonicalId).limit(20).get()));
+        const unresolvedFulfilment = cancelledOrders.some((order, index) => order.requiresDelivery !== false && order.destinationOplocId && (!fulfilment[index].size || fulfilment[index].docs.some(document => document.data().status !== "withdrawn" && document.data().status !== "cancelled")));
+        if (!cancelledOrders.length && child.dashboardWorkflow?.cancellation?.productionOutcome !== "no_active_production_order" && !reconciliation.requiresCpuReview) {
+          const unresolvedStatus = child.dashboardWorkflow?.cancellation?.productionOutcome === "review_required" ? "review_required" as const : "pending" as const;
+          outcomes.set(child.canonicalId, unresolvedStatus);
+          allResults.push({ status: unresolvedStatus, results: [{ bookingId: child.canonicalId, reason: unresolvedStatus === "review_required" ? "CPU review remains unresolved; no authoritative safe-to-withdraw order is available." : "Legacy cancellation downstream state is unresolved; no authoritative safe-to-withdraw production order was found." }] });
+          continue;
+        }
+        if (!cancelledOrders.length && reconciliation.requiresCpuReview) {
+          outcomes.set(child.canonicalId, "review_required");
+          allResults.push({ status: "review_required", results: [{ bookingId: child.canonicalId, reason: "Advanced Production Order remains active and requires CPU review." }] });
+          continue;
+        }
+        const events = await Promise.all(cancelledOrders.map(order => ensureHospitalityCancellationEvent(child.canonicalId, order)));
+        const changes: ProductionProjectionChange[] = cancelledOrders.map(order => ({ order, changeType: "withdrawn", idempotencyKey: `hospitality-withdrawal:${order.canonicalId}:v${order.version}` }));
+        const eventIds = new Map(cancelledOrders.map(order => [order.canonicalId, hospitalityCancellationEventId(order.canonicalId, order.version)]));
+        const delivery = await propagateProductionChanges(changes, eventIds);
+        const outboxStatus = await cancellationDeliveryStatus(events.map(event => event.eventId));
+        const status = reconciliation.requiresCpuReview ? "review_required" as const : delivery.status === "delivered" && outboxStatus === "delivered" && !unresolvedFulfilment && requirements.docs.every(document => document.data().status === "cancelled") ? "delivered" as const : "pending" as const;
+        outcomes.set(child.canonicalId, status);
+        allResults.push(reconciliation.requiresCpuReview || unresolvedFulfilment || requirements.docs.some(document => document.data().status !== "cancelled") ? { ...delivery, results: [...delivery.results, ...(reconciliation.requiresCpuReview ? [{ bookingId: child.canonicalId, reason: "Advanced Production Order remains active and requires CPU review." }] : []), ...(unresolvedFulfilment || requirements.docs.some(document => document.data().status !== "cancelled") ? [{ bookingId: child.canonicalId, reason: "Legacy Logistics or production requirement withdrawal is unresolved; authoritative records remain active or incomplete." }] : [])] } : delivery);
+      } catch {
+        outcomes.set(child.canonicalId, "pending");
+        allResults.push({ status: "pending", results: [{ bookingId: child.canonicalId, reason: "Legacy cancellation reconciliation failed; downstream state remains unresolved." }] });
+      }
+    }
+    const updated = await Promise.all(result.children.map(async child => {
+      const status = outcomes.get(child.canonicalId);
+      return child.lifecycleStatus === "Cancelled" && status && status !== child.dashboardWorkflow?.cancellation?.downstreamPropagation ? recordCancellationPropagation(child, status) : child;
+    }));
+    const status = updated.some(child => child.dashboardWorkflow?.cancellation?.downstreamPropagation === "review_required") ? "review_required" as const
+      : updated.some(child => child.dashboardWorkflow?.cancellation?.downstreamPropagation !== "delivered") ? "pending" as const : "delivered" as const;
+    return { bookings: updated, idempotent: true, projectionPropagation: { status, results: allResults.flatMap(item => item.results) } };
+  }
+  if (result.requiresCpuReview) return { bookings: result.children, projectionPropagation: { status: "review_required" as const, results: [] } };
+  const projectionPropagation = await propagateProductionChanges(result.changes, new Map(result.changes.map(change => [change.order.canonicalId, hospitalityCancellationEventId(change.order.canonicalId, change.order.version)])));
+  const updated = await Promise.all(result.children.map(child => child.lifecycleStatus === "Cancelled" ? recordCancellationPropagation(child, projectionPropagation.status) : child));
+  return { bookings: updated, projectionPropagation };
 }

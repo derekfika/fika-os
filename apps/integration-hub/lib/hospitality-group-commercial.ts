@@ -96,6 +96,7 @@ export function projectBookingGroup(id: string, children: CanonicalBooking[], qu
     charges: snapshots[i].charges.map(c => ({ label: c.label, net: c.net.amount, ...(c.detail ? { detail: c.detail } : {}) })),
     totals: Object.fromEntries(Object.entries(snapshots[i].totals).filter(([key]) => key !== "vatRate").map(([key, value]) => [key, (value as { amount: number }).amount])) as GroupMoneyTotals,
     ...(production[b.canonicalId] ? { production: production[b.canonicalId] } : {}),
+    ...(b.dashboardWorkflow?.cancellation ? { cancellation: { downstreamPropagation: b.dashboardWorkflow.cancellation.downstreamPropagation || "pending", productionOutcome: b.dashboardWorkflow.cancellation.productionOutcome } } : {}),
     ...(routing[b.canonicalId] ? { routing: routing[b.canonicalId] } : {}),
   }));
   const group: HospitalityBookingGroup = { kind: "booking-group", id, reference: id, version, sourceHash, client: ordered[0].client, eventDate: ordered[0].service.eventDate, eventName: ordered[0].notes?.match(/^Event: (.+)$/m)?.[1], firstTime: services[0].time, lastTime: services.flatMap(s => [s.time, s.endTime || s.time]).sort().at(-1)!, status: "New", services, totals,

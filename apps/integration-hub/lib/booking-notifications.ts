@@ -2,6 +2,14 @@ import type { CanonicalBooking } from "./hospitality-booking-service";
 import { renderBookingEmail } from "./booking-email-template";
 
 export type BookingNotificationKind = "submitted" | "confirmed" | "amended" | "cancelled";
+/** Supplied by the authenticated server entry point, never by the request body. */
+export type CancellationEvent = "customer-cancellation" | "internal-reconciliation";
+
+export function cancellationNotificationKind(booking: CanonicalBooking, event: CancellationEvent): "cancelled" | undefined {
+  // Queue only the launched customer-facing event. The existing delivery worker
+  // independently enforces the governed OPLOC allowlist and historical exclusions.
+  return event === "customer-cancellation" && booking.service.portalSiteId === "rcoa" ? "cancelled" : undefined;
+}
 export type BookingEmail = {
   kind: BookingNotificationKind;
   siteId?: string;

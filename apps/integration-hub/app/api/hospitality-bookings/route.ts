@@ -59,11 +59,12 @@ export async function POST(request: NextRequest) { return withDataTrace({ app: "
     return NextResponse.json({ quoteSettings: await saveDashboardQuoteSettings(actor, Settings.parse(raw)) });
   }
   const change = Change.parse(raw);
+  if (change.action === "cancel") assertPermission(actor, "canonical.edit");
   const session = await requireFikaSession(request);
   const repository = new FirestoreAuthModRepository();
   const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
   const booking = await getBookingByCanonicalId(change.canonicalId);
   await assertHospitalityBookingMutationAccess(repository, principal, booking, actor.role === "integration-admin" || actor.role === "reviewer");
   if (change.action === "production-handoff") return NextResponse.json(await createProductionOrder(actor, change.canonicalId, change.expectedVersion));
-  return NextResponse.json(await executeBookingWorkflow(actor, change.canonicalId, change.expectedVersion, change));
+  return NextResponse.json(await executeBookingWorkflow(actor, change.canonicalId, change.expectedVersion, change, "customer-cancellation"));
 } catch (error) { return errorResponse(error); } }); }

@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
+import { createServer } from "node:http";
+import { FieldValue } from "firebase-admin/firestore";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
-import { amendHospitalityBookingGroup, bookingWorkspace, executeBookingWorkflow, type CanonicalBooking } from "../lib/hospitality-booking-service";
-import { groupCommercialState } from "../lib/hospitality-group-commercial";
+import { amendHospitalityBookingGroup, bookingWorkspace, cancelHospitalityBookingGroup, executeBookingWorkflow, type CanonicalBooking } from "../lib/hospitality-booking-service";
+import { groupCommercialState, projectBookingGroup } from "../lib/hospitality-group-commercial";
 import { generateHospitalityGroupQuote } from "../lib/hospitality-group-quote-workflow";
 import { firestoreGroupQuoteStore } from "../lib/hospitality-group-quote-store";
 import { createProductionFromApprovedBooking } from "../lib/production-domain";
+import { hospitalityCancellationEventId } from "../lib/hospitality-cancellation-outbox";
+import { bookingNotificationId } from "../lib/booking-notifications";
 import { groupAmendmentCommand, validLondonServiceTime, type GroupAmendmentCommand } from "../lib/hospitality-group-amendment";
 import { planServiceProduction } from "../../hospitality-booking/lib/cpu-production-plan";
 import type { CanonicalBooking as ClientBooking, ProductionOrder as ClientOrder } from "../../hospitality-booking/lib/canonical-types";
@@ -15,9 +19,27 @@ import type { CanonicalBooking as ClientBooking, ProductionOrder as ClientOrder 
 const enabled = process.env.FIKA_UAT_INTEGRATION_EMULATOR_TEST === "true";
 const actor = { uid: "test:group-amendment", name: "Isolated emulator fixture", role: "integration-admin" as const, synthetic: true };
 const bookings = () => db.collection("fikaBookings");
+async function cpuFixture(failEntityId?: string) {
+  const requests: Array<{ entityId: string; idempotencyKey: string }> = [];
+  let failures = 0;
+  const server = createServer(async (request, response) => {
+    const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    const body = JSON.parse(Buffer.concat(chunks).toString()); requests.push(body);
+    if (body.entityId === failEntityId && failures < 2) { failures += 1; response.statusCode = 503; response.end("unavailable"); return; }
+    response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ applied: true }));
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address(); assert.ok(address && typeof address !== "string");
+  process.env.CPU_PRODUCTION_BASE_URL = `http://127.0.0.1:${address.port}`;
+  const logistics = createServer(async (request, response) => { for await (const _chunk of request) {} response.end(JSON.stringify({ applied: true })); });
+  await new Promise<void>(resolve => logistics.listen(0, "127.0.0.1", resolve));
+  const logisticsAddress = logistics.address(); assert.ok(logisticsAddress && typeof logisticsAddress !== "string");
+  process.env.FIKA_LOGISTICS_BASE_URL = `http://127.0.0.1:${logisticsAddress.port}`;
+  return { requests, close: async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await new Promise<void>((resolve, reject) => logistics.close(error => error ? reject(error) : resolve())); } };
+}
 async function fixture() {
   assert.equal(process.env.FIREBASE_PROJECT_ID, "demo-fika-os");
-  assert.equal(process.env.FIRESTORE_EMULATOR_HOST, "127.0.0.1:8905");
+  assert.match(process.env.FIRESTORE_EMULATOR_HOST || "", /^(127\.0\.0\.1|localhost):\d+$/);
   const key = randomUUID(), id = `group:${key}`, item = `hospitality-menu-item:canonical:${key}`, other = `${item}:other`, inHouse = `${item}:in-house`;
   for (const [menuItemId, workstreams] of [[item, ["hospitality"]], [other, ["sandwiches"]], [inHouse, []]] as Array<[string, string[]]>) await db.collection("integrationHubHospitalityMenuProductionRouting").doc(stableDocumentId(menuItemId)).set({ menuItemId, workstreams });
   const now = new Date().toISOString();
@@ -53,6 +75,214 @@ test("an unchanged group save preserves every version and quote without new audi
   const result = await amendHospitalityBookingGroup(actor, command, async () => {});
   assert.deepEqual(await f.read(), before);
   assert.equal(result.projectionPropagation.results.length, 0);
+});
+test("group cancellation preserves services and audit, is idempotent, and flags late CPU work for review", { skip: !enabled }, async () => {
+  const f = await fixture(); await f.quote(0);
+  const activeOrders = await Promise.all(f.children.slice(0, 2).map(child => createProductionFromApprovedBooking(actor, child.canonicalId, `test:${f.id}:${child.canonicalId}`)));
+  const before = await f.read();
+  const command = { bookingGroupId: f.id, expectedSourceHash: groupCommercialState(f.id, before).sourceHash, reason: "Fixture cancellation" };
+  const cpu = await cpuFixture(activeOrders[1].order!.canonicalId);
+  const cancelled = await cancelHospitalityBookingGroup(actor, command, async () => {}, "customer-cancellation");
+  assert.ok(cancelled.bookings.every(booking => booking.lifecycleStatus === "Cancelled"));
+  const notices = await Promise.all(cancelled.bookings.map(async booking => {
+    assert.equal(booking.dashboardWorkflow?.cancellation?.notificationOutcome, "queued");
+    const ref = db.collection("fikaBookingNotifications").doc(bookingNotificationId(booking, "cancelled", booking.version));
+    assert.equal((await ref.get()).exists, true, "customer mail commits even while a CPU withdrawal fails");
+    return { ref, bytes: JSON.stringify((await ref.get()).data()) };
+  }));
+  assert.ok(cancelled.bookings.every(booking => booking.audit.some(event => event.action === "workflow-cancel")));
+  assert.equal(cancelled.projectionPropagation.status, "pending", "one failed CPU child leaves the grouped withdrawal pending");
+  assert.ok(projectBookingGroup(f.id, cancelled.bookings).services.every(service => service.cancellation?.downstreamPropagation === "pending"));
+  for (const created of activeOrders) {
+    const orderId = stableDocumentId(created.order!.canonicalId);
+    assert.equal((await db.collection("fikaProductionOrdersV1").doc(orderId).get()).data()!.status, "cancelled");
+    const requirements = await db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", created.order!.canonicalId).get();
+    assert.ok(requirements.size > 0);
+    assert.ok(requirements.docs.every(requirement => requirement.data().status === "withdrawn"));
+    assert.ok((await db.collection("fikaLogisticsProjectionOutboxV1").where("payload.sourceEntityId", "==", created.order!.canonicalId).get()).docs.some(event => event.data().payload?.changeType === "withdrawn"));
+  }
+  try {
+    for (const booking of cancelled.bookings) await bookings().doc(booking.canonicalId).update({ "dashboardWorkflow.cancellation.downstreamPropagation": FieldValue.delete() });
+    await db.collection("fikaHospitalityCancellationOutboxV1").doc(hospitalityCancellationEventId(activeOrders[1].order!.canonicalId, activeOrders[1].order!.version + 1)).delete();
+    const deliveredKey = `hospitality-withdrawal:${activeOrders[0].order!.canonicalId}:v${activeOrders[0].order!.version + 1}`;
+    await db.collection("fikaHospitalityCancellationOutboxV1").doc(hospitalityCancellationEventId(activeOrders[0].order!.canonicalId, activeOrders[0].order!.version + 1)).delete();
+    await db.collection("fikaCpuProductionChangeReceiptsV1").doc(deliveredKey).set({ idempotencyKey: deliveredKey, event: { entityId: activeOrders[0].order!.canonicalId, changeType: "withdrawn", idempotencyKey: deliveredKey } });
+    const recovered = await cancelHospitalityBookingGroup(actor, command, async () => {});
+    assert.equal(recovered.projectionPropagation.status, "delivered", "retry should repair the missing legacy obligation and finish the failed child without replaying the delivered child");
+    const finalRetry = await cancelHospitalityBookingGroup(actor, command, async () => {});
+    assert.equal(finalRetry.projectionPropagation.status, "delivered");
+    const repeated = await cancelHospitalityBookingGroup(actor, command, async () => {});
+    assert.equal(repeated.projectionPropagation.status, "delivered");
+    assert.equal(new Set(cpu.requests.map(item => item.idempotencyKey)).size, activeOrders.length);
+    assert.ok(cpu.requests.filter(item => item.entityId === activeOrders[0].order!.canonicalId).length === 1, "already delivered child must not be sent again");
+    assert.ok(cpu.requests.filter(item => item.entityId === activeOrders[1].order!.canonicalId).length === 3, "failed child retries reuse one stable idempotency key");
+    for (const notice of notices) assert.equal(JSON.stringify((await notice.ref.get()).data()), notice.bytes, "withdrawal recovery preserves the original customer notice");
+  } finally { await cpu.close(); }
+  const replay = await cancelHospitalityBookingGroup(actor, command, async () => {});
+  assert.equal(replay.idempotent, true);
+
+  const late = await fixture(); await late.quote(0);
+  const order = await createProductionFromApprovedBooking(actor, late.children[0].canonicalId, `test:${late.id}:late`);
+  await db.collection("fikaProductionOrdersV1").doc(stableDocumentId(order.order!.canonicalId)).update({ status: "in_progress" });
+  const lateRows = await late.read();
+  const lateResult = await cancelHospitalityBookingGroup(actor, { bookingGroupId: late.id, expectedSourceHash: groupCommercialState(late.id, lateRows).sourceHash, reason: "Late fixture cancellation" }, async () => {});
+  assert.equal(lateResult.projectionPropagation.status, "review_required");
+  assert.ok(lateResult.bookings.every(booking => booking.lifecycleStatus === "Cancelled"));
+  assert.equal((await db.collection("fikaProductionOrdersV1").doc(stableDocumentId(order.order!.canonicalId)).get()).data()!.status, "in_progress");
+  const repeatedLate = await cancelHospitalityBookingGroup(actor, { bookingGroupId: late.id, expectedSourceHash: "unused-after-cancellation", reason: "Repeat late cancellation" }, async () => {});
+  assert.equal(repeatedLate.projectionPropagation.status, "review_required");
+});
+test("standalone cancellation retries a durable CPU withdrawal after the Hub commit", { skip: !enabled }, async () => {
+  const f = await fixture(); await f.quote(0);
+  const booking = f.children[0]; delete booking.bookingGroup;
+  await bookings().doc(booking.canonicalId).set(booking);
+  const standaloneQuote = await executeBookingWorkflow(actor, booking.canonicalId, booking.version, { action: "quote", regenerate: true });
+  const quoteRevisionId = standaloneQuote.booking.quoteState!.currentRevisionId!;
+  const pdfSaved = await executeBookingWorkflow(actor, booking.canonicalId, standaloneQuote.booking.version, { action: "quote-pdf-status", revisionId: quoteRevisionId, status: "saved", driveFileId: "fixture-pdf", driveUrl: "https://example.test/fixture.pdf" });
+  const production = await createProductionFromApprovedBooking(actor, booking.canonicalId, `standalone:${f.id}`);
+  const before = (await bookings().doc(booking.canonicalId).get()).data() as CanonicalBooking;
+  const command = { action: "cancel" as const, reason: "Standalone retry fixture", removeCalendar: false, cancelProduction: true, notify: false };
+  const cpu = await cpuFixture(production.order!.canonicalId);
+  try {
+    const cancelled = await executeBookingWorkflow(actor, booking.canonicalId, before.version, command, "customer-cancellation");
+    const notice = db.collection("fikaBookingNotifications").doc(bookingNotificationId(cancelled.booking, "cancelled", cancelled.booking.version));
+    assert.equal((await notice.get()).exists, true);
+    const noticeBytes = JSON.stringify((await notice.get()).data());
+    assert.equal(cancelled.booking.lifecycleStatus, "Cancelled");
+    assert.equal(cancelled.projectionPropagation.status, "pending", "CPU failure leaves the committed cancellation pending");
+    await bookings().doc(booking.canonicalId).update({ "dashboardWorkflow.cancellation.downstreamPropagation": FieldValue.delete() });
+    await db.collection("fikaHospitalityCancellationOutboxV1").doc(hospitalityCancellationEventId(production.order!.canonicalId, production.order!.version + 1)).delete();
+    const retry = await executeBookingWorkflow(actor, booking.canonicalId, before.version, command);
+    assert.equal(retry.idempotent, true);
+    assert.equal(retry.projectionPropagation.status, "delivered");
+    const duplicate = await executeBookingWorkflow(actor, booking.canonicalId, before.version, command);
+    assert.equal(duplicate.projectionPropagation.status, "delivered");
+    assert.equal(cpu.requests.length, 3, "two failed transport attempts plus one successful retry");
+    assert.equal(new Set(cpu.requests.map(item => item.idempotencyKey)).size, 1);
+    assert.equal(JSON.stringify((await notice.get()).data()), noticeBytes, "CPU recovery must not recreate or alter customer mail");
+    assert.equal(cpu.requests[0].entityId, production.order!.canonicalId);
+    const persisted = (await bookings().doc(booking.canonicalId).get()).data() as CanonicalBooking;
+    assert.equal(persisted.version, before.version + 1, "retries must not cancel the booking again");
+    assert.ok(persisted.audit.some(event => event.action === "workflow-cancel"));
+  } finally { await cpu.close(); }
+});
+test("standalone amendment preserves the existing CPU retirement handoff rather than using cancellation recovery", { skip: !enabled }, async () => {
+  const f = await fixture(); await f.quote(0);
+  const booking = f.children[0]; delete booking.bookingGroup;
+  await bookings().doc(booking.canonicalId).set(booking);
+  const quoted = await executeBookingWorkflow(actor, booking.canonicalId, booking.version, { action: "quote", regenerate: true });
+  const revisionId = quoted.booking.quoteState!.currentRevisionId!;
+  await executeBookingWorkflow(actor, booking.canonicalId, quoted.booking.version, { action: "quote-pdf-status", revisionId, status: "saved", driveFileId: "amend-fixture-pdf", driveUrl: "https://example.test/amend.pdf" });
+  const production = await createProductionFromApprovedBooking(actor, booking.canonicalId, `amend-notification:${f.id}`);
+  const before = (await bookings().doc(booking.canonicalId).get()).data() as CanonicalBooking;
+  const cpu = await cpuFixture();
+  try {
+    const patch = { client: before.client, service: { eventDate: before.service.eventDate, startTime: before.service.startTime, guestCount: before.service.guestCount, roomOrArea: before.service.roomOrArea }, order: { eventType: before.order.eventType, items: before.order.items.map(({ lineTotal: _lineTotal, ...item }) => item) }, notes: "Customer amendment after CPU handoff", dietaries: before.dietaries, deliveryChargeRequired: true };
+    const result = await executeBookingWorkflow(actor, booking.canonicalId, before.version, { action: "amend", reason: "Customer updated the booking", patch });
+    assert.equal(result.projectionPropagation.status, "delivered");
+    assert.equal(cpu.requests.length, 1, "the retired CPU order must receive the existing amendment withdrawal event");
+    assert.equal(cpu.requests[0].entityId, production.order!.canonicalId);
+    assert.match(cpu.requests[0].idempotencyKey, /amended/);
+    assert.equal((await db.collection("fikaHospitalityCancellationOutboxV1").where("sourceAggregateId", "==", booking.canonicalId).get()).size, 0);
+    const notice = db.collection("fikaBookingNotifications").doc(bookingNotificationId(result.booking, "amended", result.booking.version));
+    assert.equal((await notice.get()).exists, true, "existing amended customer notice remains queued");
+  } finally { await cpu.close(); }
+});
+
+test("group retry preserves mixed delivered, pending and CPU-review child outcomes", { skip: !enabled }, async () => {
+  const f = await fixture();
+  const rows = await f.read();
+  const states = ["delivered", "pending", "review_required"] as const;
+  await Promise.all(rows.map((booking, index) => bookings().doc(booking.canonicalId).set({
+    ...booking,
+    lifecycleStatus: "Cancelled",
+    dashboardWorkflow: { cancellation: { reason: "Legacy cancellation", productionOutcome: index === 0 ? "no_active_production_order" : index === 2 ? "review_required" : "cancel_requested", downstreamPropagation: states[index] } },
+  })));
+  await bookings().doc(rows[1].canonicalId).update({ "dashboardWorkflow.cancellation.downstreamPropagation": FieldValue.delete() });
+  const result = await cancelHospitalityBookingGroup(actor, { bookingGroupId: f.id, expectedSourceHash: "legacy", reason: "Retry legacy group" }, async () => {});
+  assert.equal(result.projectionPropagation.status, "review_required");
+  assert.equal(result.bookings.find(booking => booking.canonicalId === rows[0].canonicalId)?.dashboardWorkflow?.cancellation?.downstreamPropagation, "delivered");
+  assert.equal(result.bookings.find(booking => booking.canonicalId === rows[1].canonicalId)?.dashboardWorkflow?.cancellation?.downstreamPropagation, "pending");
+  assert.equal(result.bookings.find(booking => booking.canonicalId === rows[2].canonicalId)?.dashboardWorkflow?.cancellation?.downstreamPropagation, "review_required");
+});
+test("legacy cancelled booking with unavailable CPU and Logistics stays pending", { skip: !enabled }, async () => {
+  const f = await fixture(); await f.quote(0);
+  const created = await createProductionFromApprovedBooking(actor, f.children[0].canonicalId, `legacy-unavailable:${f.id}`);
+  const order = created.order!;
+  await db.collection("fikaProductionOrdersV1").doc(stableDocumentId(order.canonicalId)).update({ status: "cancelled", workflowStatus: "cancelled", version: order.version + 1, cancellationNotice: "Prior cancellation", updatedAt: new Date().toISOString() });
+  const child = f.children[0];
+  await Promise.all(f.children.map((booking, index) => bookings().doc(booking.canonicalId).update({ lifecycleStatus: "Cancelled", dashboardWorkflow: { cancellation: { reason: "Legacy cancellation", productionOutcome: index === 0 ? "cancel_requested" : "no_active_production_order" } } })));
+  process.env.CPU_PRODUCTION_BASE_URL = "http://127.0.0.1:1";
+  process.env.FIKA_LOGISTICS_BASE_URL = "http://127.0.0.1:1";
+  const result = await cancelHospitalityBookingGroup(actor, { bookingGroupId: f.id, expectedSourceHash: "legacy", reason: "Retry unavailable legacy group" }, async () => {});
+  assert.equal(result.projectionPropagation.status, "pending");
+  assert.ok(result.bookings.some(booking => booking.canonicalId === child.canonicalId && booking.dashboardWorkflow?.cancellation?.downstreamPropagation === "pending"));
+  const eventId = hospitalityCancellationEventId(order.canonicalId, order.version + 1);
+  assert.equal((await db.collection("fikaHospitalityCancellationOutboxV1").doc(eventId).get()).exists, true, "missing durable obligation is repaired before reporting pending");
+});
+test("legacy reconciliation withdraws newer Draft orders despite older delivered order receipts", { skip: !enabled }, async () => {
+  async function seedMixed(grouped: boolean, activeStatus: "draft" | "in_progress") {
+    const f = await fixture(); await f.quote(0);
+    const child = f.children[0];
+    if (!grouped) { delete child.bookingGroup; await bookings().doc(child.canonicalId).set(child); await executeBookingWorkflow(actor, child.canonicalId, child.version, { action: "quote", regenerate: true });
+      const refreshed = (await bookings().doc(child.canonicalId).get()).data() as CanonicalBooking;
+      const revisionId = refreshed.quoteState!.currentRevisionId!;
+      await executeBookingWorkflow(actor, child.canonicalId, refreshed.version, { action: "quote-pdf-status", revisionId, status: "saved", driveFileId: "legacy-fixture-pdf", driveUrl: "https://example.test/legacy.pdf" });
+    }
+    const created = await createProductionFromApprovedBooking(actor, child.canonicalId, `mixed-orders:${f.id}`);
+    const current = created.order!;
+    const currentRef = db.collection("fikaProductionOrdersV1").doc(stableDocumentId(current.canonicalId));
+    await currentRef.update({ status: activeStatus, workflowStatus: activeStatus, requiresDelivery: activeStatus === "draft" ? current.requiresDelivery : false });
+    const historical = { ...current, canonicalId: `${current.canonicalId}:historical`, version: 7, status: "cancelled", workflowStatus: "cancelled", requiresDelivery: false, cancellationNotice: "Historical withdrawn order" };
+    await db.collection("fikaProductionOrdersV1").doc(stableDocumentId(historical.canonicalId)).set(historical);
+    const historicalKey = `hospitality-withdrawal:${historical.canonicalId}:v${historical.version}`;
+    await db.collection("fikaCpuProductionChangeReceiptsV1").doc(historicalKey).set({ idempotencyKey: historicalKey, event: { entityId: historical.canonicalId, changeType: "withdrawn", idempotencyKey: historicalKey } });
+    const rows = grouped ? f.children : [child];
+    await Promise.all(rows.map((booking, index) => bookings().doc(booking.canonicalId).update({ lifecycleStatus: "Cancelled", dashboardWorkflow: { cancellation: { reason: "Historical mixed-order cancellation", productionOutcome: index === 0 ? "cancel_requested" : "no_active_production_order" } }, audit: [...booking.audit, { action: "workflow-cancel", at: new Date().toISOString(), by: actor.uid, reason: "Historical fixture" }] })));
+    return { f, child, current, historical, rows };
+  }
+
+  const standalone = await seedMixed(false, "draft");
+  const cpu = await cpuFixture(standalone.current.canonicalId);
+  try {
+    const command = { action: "cancel" as const, reason: "Retry standalone historical cancellation", removeCalendar: false, cancelProduction: true, notify: false };
+    const first = await executeBookingWorkflow(actor, standalone.child.canonicalId, 1, command);
+    assert.equal(first.projectionPropagation.status, "pending", "active Draft withdrawal cannot complete while CPU is unavailable");
+    const activeAfter = (await db.collection("fikaProductionOrdersV1").doc(stableDocumentId(standalone.current.canonicalId)).get()).data()!;
+    assert.equal(activeAfter.status, "cancelled");
+    assert.equal((await db.collection("fikaHospitalityCancellationOutboxV1").doc(hospitalityCancellationEventId(standalone.current.canonicalId, Number(activeAfter.version))).get()).exists, true);
+    const retried = await executeBookingWorkflow(actor, standalone.child.canonicalId, 1, command);
+    assert.equal(retried.projectionPropagation.status, "delivered");
+    await executeBookingWorkflow(actor, standalone.child.canonicalId, 1, command);
+    assert.equal(cpu.requests.filter(event => event.entityId === standalone.historical.canonicalId).length, 0, "prior historical CPU receipt must suppress duplicate delivery");
+    assert.equal(cpu.requests.filter(event => event.entityId === standalone.current.canonicalId).length, 3, "active order retries reuse the durable obligation and stable idempotency key");
+  } finally { await cpu.close(); }
+
+  const grouped = await seedMixed(true, "draft");
+  const groupCpu = await cpuFixture();
+  try {
+    const rows = await grouped.f.read();
+    const command = { bookingGroupId: grouped.f.id, expectedSourceHash: groupCommercialState(grouped.f.id, rows).sourceHash, reason: "Retry grouped historical cancellation" };
+    const result = await cancelHospitalityBookingGroup(actor, command, async () => {});
+    assert.equal(result.projectionPropagation.status, "delivered");
+    const groupCurrent = (await db.collection("fikaProductionOrdersV1").doc(stableDocumentId(grouped.current.canonicalId)).get()).data()!;
+    assert.equal(groupCurrent.status, "cancelled");
+    assert.equal((await db.collection("fikaHospitalityCancellationOutboxV1").doc(hospitalityCancellationEventId(grouped.current.canonicalId, Number(groupCurrent.version))).get()).data()!.delivery.status, "delivered");
+    assert.equal(groupCpu.requests.filter(event => event.entityId === grouped.historical.canonicalId).length, 0);
+    const repeated = await cancelHospitalityBookingGroup(actor, command, async () => {});
+    assert.equal(repeated.projectionPropagation.status, "delivered");
+    assert.equal(groupCpu.requests.filter(event => event.entityId === grouped.current.canonicalId).length, 1);
+  } finally { await groupCpu.close(); }
+
+  const advanced = await seedMixed(true, "in_progress");
+  process.env.CPU_PRODUCTION_BASE_URL = "http://127.0.0.1:1";
+  const advancedRows = await advanced.f.read();
+  const advancedCommand = { bookingGroupId: advanced.f.id, expectedSourceHash: groupCommercialState(advanced.f.id, advancedRows).sourceHash, reason: "Advanced legacy cancellation" };
+  const review = await cancelHospitalityBookingGroup(actor, advancedCommand, async () => {});
+  assert.equal(review.projectionPropagation.status, "review_required");
+  assert.equal((await db.collection("fikaProductionOrdersV1").doc(stableDocumentId(advanced.current.canonicalId)).get()).data()!.status, "in_progress");
+  assert.equal((await db.collection("fikaHospitalityCancellationOutboxV1").doc(hospitalityCancellationEventId(advanced.current.canonicalId, advanced.current.version)).get()).exists, false, "advanced active order must not receive an automatic withdrawal obligation");
+  assert.equal((await cancelHospitalityBookingGroup(actor, advancedCommand, async () => {})).projectionPropagation.status, "review_required");
 });
 test("two concurrent group amendments cannot interleave or leave half of either request committed", { skip: !enabled }, async () => {
   const f = await fixture(), before = await f.read();

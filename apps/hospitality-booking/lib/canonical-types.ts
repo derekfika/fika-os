@@ -16,7 +16,7 @@ export type CanonicalBooking = {
   commercialVersion?: number;
   additionalCharges?: BookingAdditionalCharge[];
   quoteState?: { currentRevisionId?: string; revisions: Array<{ id: string; revision: number; createdAt: string; commercialVersion?: number; stale?: boolean; snapshot: Record<string, unknown>; driveUrl?: string; driveFileId?: string; pdfStatus?: string }> };
-  dashboardWorkflow?: Record<string, unknown>;
+  dashboardWorkflow?: { cancellation?: { reason: string; productionOutcome: "not_requested" | "cancel_requested" | "cancelled" | "no_active_production_order" | "review_required"; downstreamPropagation?: "pending" | "delivered" | "review_required"; notificationOutcome?: "not_requested" | "not_configured" | "queued" } } & Record<string, unknown>;
   deliveryChargeRequired?: boolean;
   /** Derived server-side from the governed Production visibility records (all Hospitality platforms); never persisted. */
   cpuRouting?: HospitalityRoutingProjection;
