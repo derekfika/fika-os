@@ -28,8 +28,11 @@ export type MatrixStorageStatus = "not_configured" | "ready" | "artifact_pending
 /** Pending / Ready / Failed for the signed PDF, from a plan response. Nothing before both signatures are persisted. */
 export function deriveMatrixStorageStatus(body: { matrixStatus?: string; plan?: { matrixArtifact?: unknown; signatures?: unknown[] } }): MatrixStorageStatus | undefined {
   if (body.matrixStatus === "not_configured") return "not_configured";
-  if (body.plan?.matrixArtifact) return "ready";
-  if (body.plan?.signatures?.length === 2) return body.matrixStatus === "failed" ? "artifact_failed" : "artifact_pending";
+  if (body.plan?.signatures?.length === 2) {
+    if (body.matrixStatus === "failed") return "artifact_failed";
+    if (body.matrixStatus === "ready" && body.plan.matrixArtifact) return "ready";
+    return "artifact_pending";
+  }
   return undefined;
 }
 

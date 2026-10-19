@@ -28,6 +28,13 @@ test("Hospitality does not let an older generating candidate mask the current ma
   assert.match(dashboard, /onRefreshMatrix/);
 });
 
+test("Hospitality never labels a stored PDF ready unless CPU confirms the current release is ready", () => {
+  assert.ok(api.indexOf('body.matrixStatus === "failed"') < api.indexOf("body.plan?.matrixArtifact"));
+  assert.ok(api.indexOf('body.matrixStatus === "generating"') < api.indexOf("body.plan?.matrixArtifact"));
+  assert.match(api, /body\.matrixStatus === "ready" && body\.plan\?\.matrixArtifact/);
+  assert.match(api, /CPU did not confirm that the stored PDF belongs to the current signed release/);
+});
+
 test("Hospitality forwards the authenticated CPU read context and current release metadata", () => {
   const helper = readFileSync(new URL("../lib/cpu-production.ts", import.meta.url), "utf8");
   assert.match(helper, /"cookie", "x-fika-internal-token", "x-request-id"/);

@@ -723,7 +723,8 @@ export default function HospitalityAllergenDetail({
       setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact || undefined);
       if ("currentAllergenRelease" in (body.plan || {})) setCurrentAllergenRelease(body.plan.currentAllergenRelease);
       setMatrixStorageStatus(deriveMatrixStorageStatus(body));
-      setMessage(body.matrixStatus === "not_configured" ? "Matrix storage not configured. The signed workflow is complete; Drive persistence can be enabled later." : body.plan?.matrixArtifact ? "Both signatures recorded. The signed matrix is ready to open." : `${role === "production_chef" ? "Production chef" : "Head chef / site manager"} signature recorded.`);
+      const matrixStatus = deriveMatrixStorageStatus(body);
+      setMessage(matrixStatus === "not_configured" ? "Matrix storage not configured. The signed workflow is complete; Drive persistence can be enabled later." : matrixStatus === "ready" ? "Both signatures recorded. The signed matrix is ready to open." : matrixStatus === "artifact_failed" ? "Both signatures are recorded, but PDF generation failed. Retry materialisation when available." : matrixStatus === "artifact_pending" ? "Both signatures are recorded. Signed PDF generation is pending." : `${role === "production_chef" ? "Production chef" : "Head chef / site manager"} signature recorded.`);
       setSigningRole(undefined);
       void onSaved(false).catch(() => undefined);
     } catch (error) {
@@ -755,7 +756,7 @@ export default function HospitalityAllergenDetail({
   };
 
   const openAllergenMatrix = () => {
-    if (!matrixArtifact?.driveUrl) {
+    if (matrixStorageStatus !== "ready" || !matrixArtifact?.driveUrl) {
       setMessage("The final signed matrix is not yet available in the configured Drive workspace.");
       return;
     }
@@ -898,7 +899,7 @@ export default function HospitalityAllergenDetail({
               <button
                 type="button"
                 className="button button-soft"
-                disabled={!matrixArtifact?.driveUrl}
+                disabled={matrixStorageStatus !== "ready" || !matrixArtifact?.driveUrl}
                 onClick={openAllergenMatrix}
               >
                 Open matrix
