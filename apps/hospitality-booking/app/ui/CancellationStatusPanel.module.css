@@ -10,9 +10,10 @@
 .steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: start; font-size: 14px; line-height: 20px; }
 .steps li > span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--fika-border-default); background: var(--fika-surface-card); font-weight: 700; font-size: 13px; }
 .steps small { display: block; color: var(--fika-text-secondary); font-size: 13px; line-height: 18px; }
-.stepDone > span { background: var(--fika-status-success); border-color: var(--fika-status-success); color: var(--fika-surface-card); }
-.stepWait > span { border-color: var(--fika-status-warning); }
-.stepBad > span { border-color: var(--fika-status-danger); }
+/* Marker = white disc, dark glyph, status-coloured ring: legible whatever the site theme maps the status colours to. */
+.steps .stepDone > span { border: 2px solid var(--fika-status-success); color: var(--fika-text-primary); }
+.steps .stepWait > span { border: 2px solid var(--fika-status-warning); color: var(--fika-text-primary); }
+.steps .stepBad > span { border: 2px solid var(--fika-status-danger); color: var(--fika-text-primary); }
 .reasons { margin: 0; padding-left: 20px; font-size: 13px; line-height: 18px; }
 .meta { margin: 0; font-size: 13px; line-height: 18px; color: var(--fika-text-secondary); }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }

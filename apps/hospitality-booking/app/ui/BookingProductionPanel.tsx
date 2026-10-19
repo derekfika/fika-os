@@ -14,10 +14,13 @@ const STATE_TEXT: Record<ServiceProductionRow["state"], string> = {
  * One booking-level Production panel with ONE primary Send to CPU action. Grouped bookings and single-service bookings share it: the
  * child-service hand-offs are orchestrated behind the button and reported as compact per-service results.
  */
-export function BookingProductionPanel({ rows, results, busy, onSend, renderDocuments }: {
+export function BookingProductionPanel({ rows, results, busy, sending, onSend, renderDocuments }: {
   rows: readonly ServiceProductionRow[];
   results: Readonly<Record<string, ServiceResult | undefined>>;
+  /** Disables sending while any booking operation runs. */
   busy: boolean;
+  /** True only while a CPU send is actually in flight; other operations must not claim to be sending to CPU. */
+  sending?: boolean;
   onSend(): void;
   /** Allergen matrix / menu controls for a CPU-producing service (grouped bookings). Never called for No CPU services. */
   renderDocuments?: (row: ServiceProductionRow) => ReactNode;
@@ -40,7 +43,7 @@ export function BookingProductionPanel({ rows, results, busy, onSend, renderDocu
     <p className={styles.eyebrow}>Production</p>
     <h3 id="booking-production-title">CPU production, allergens and menus</h3>
     <p className={styles.summary}>{locked ? (rows.length > 1 ? "0 of " + rows.length + " services require CPU production" : "No CPU production required") : requiresCpuSummary(rows)}</p>
-    <button type="button" className={styles.send} disabled={busy || !pending} aria-busy={busy ? true : undefined} onClick={onSend}>{busy ? "Sending to CPU…" : label}</button>
+    <button type="button" className={styles.send} disabled={busy || !pending} aria-busy={sending ? true : undefined} onClick={onSend}>{sending ? "Sending to CPU…" : label}</button>
     {help && <p className={styles.help}>{help}</p>}
     {inHouse > 0 && cpuRows.length + unresolvedRows.length > 0 && <p className={styles.help}>{inHouse} {inHouse === 1 ? "service is" : "services are"} produced in house and {inHouse === 1 ? "is" : "are"} not sent to CPU.</p>}
     {unresolvedRows.length > 0 && <p className={styles.alert} role="status">Routing needs review for {unresolvedRows.map(row => row.label).join(", ")}. {unresolvedRows.length === 1 ? "It" : "They"} will not be sent until every item is classified; unresolved routing is never treated as No CPU.</p>}

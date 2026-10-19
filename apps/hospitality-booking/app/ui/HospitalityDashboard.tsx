@@ -983,7 +983,7 @@ export default function HospitalityDashboard({
       <button type="button" disabled={menuBusy || !ready} aria-busy={menuBusy ? true : undefined} title={ready ? undefined : menuReadiness[child.canonicalId]?.reason} onClick={() => void generateMenu(child)}>{menuBusy ? "Generating menu…" : output ? "Regenerate menu" : "Generate menu"}</button>
     </div>;
   };
-  const productionPanel = <BookingProductionPanel rows={productionRows} results={serviceResults} busy={actionBusy} onSend={() => void sendProductionToCpu()} renderDocuments={selectedGroup ? renderGroupDocuments : undefined} />;
+  const productionPanel = <BookingProductionPanel rows={productionRows} results={serviceResults} busy={actionBusy} sending={actionBusy && actionStage === "Sending to CPU…"} onSend={() => void sendProductionToCpu()} renderDocuments={selectedGroup ? renderGroupDocuments : undefined} />;
 
   return (
     <div className={styles.scope}>

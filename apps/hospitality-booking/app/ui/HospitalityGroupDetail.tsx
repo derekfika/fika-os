@@ -12,6 +12,8 @@ import { cancellationView, groupCancellationView, propagationOutcome, type Propa
 import styles from "./HospitalityGroupDetail.module.css";
 
 const money = (n: number) => `£${n.toFixed(2)}`;
+/** UK long date for a YYYY-MM-DD business date (same formatter the header already used). */
+const ukLongDate = (value: string) => { const date = new Date(`${value}T12:00:00Z`); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(date); };
 /** Same gate as a standalone booking's "Manage charges" (COMMERCIAL_EDITABLE_STATUSES in the Hub). */
 const CHARGE_EDITABLE = ["New", "Reviewed", "Quoted", "Completed"];
 const chipTone = (status: string) => ["Sent to CPU", "Completed", "Approved"].includes(status) ? styles.chipSuccess : status === "Cancelled" ? styles.chipDanger : status === "Quoted" ? styles.chipInfo : styles.chipWarning;
@@ -27,6 +29,7 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
   const [chargeTarget, setChargeTarget] = useState<ChargeTarget>();
   const [chargeLoading, setChargeLoading] = useState<string>();
   const [chargeError, setChargeError] = useState("");
+  const [chargeStatus, setChargeStatus] = useState("");
   const lock = useRef(false);
   const cancelButton = useRef<HTMLButtonElement>(null);
   const cancelDialog = useRef<HTMLFormElement>(null);
@@ -38,7 +41,10 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
   const [cancelOutcome, setCancelOutcome] = useState<PropagationOutcome>();
   const cancellation = groupCancellationView(group.services.map(s => ({ lifecycleStatus: s.lifecycleStatus, cancellation: s.cancellation })));
   const anyCancelled = cancellation.cancelled > 0;
-  const closeCancel = () => { setCancelOpen(false); requestAnimationFrame(() => cancelButton.current?.focus()); };
+  const cancelWasOpen = useRef(false);
+  const closeCancel = () => setCancelOpen(false);
+  // The trigger is disabled while the dialog is open, so focus can only return after the re-render that re-enables it.
+  useEffect(() => { if (cancelWasOpen.current && !cancelOpen) cancelButton.current?.focus(); cancelWasOpen.current = cancelOpen; }, [cancelOpen]);
   useEffect(() => {
     if (!cancelOpen) return;
     const prior = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -78,7 +84,7 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
   /** Always load the service's current charges and version from the Hub so a stale list can never be saved over newer work. */
   const openCharges = async (service: HospitalityGroupService) => {
     if (lock.current || cancelOpen || chargeTarget) return;
-    lock.current = true; setChargeLoading(service.bookingId); setChargeError(""); onBusyChange(true);
+    lock.current = true; setChargeLoading(service.bookingId); setChargeError(""); setChargeStatus("Loading current charges…"); onBusyChange(true);
     try {
       const response = await fetch(`/api/booking-groups/amend?bookingGroupId=${encodeURIComponent(group.id)}`, { cache: "no-store" });
       const body = await response.json();
@@ -87,18 +93,18 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
       if (!booking || !body.sourceHash) throw new Error("This service could not be loaded. Refresh and try again.");
       setChargeTarget({ service, booking, sourceHash: body.sourceHash });
     } catch (cause) { setChargeError(cause instanceof Error ? cause.message : "The current booking could not be loaded."); }
-    finally { lock.current = false; setChargeLoading(undefined); onBusyChange(false); }
+    finally { lock.current = false; setChargeLoading(undefined); setChargeStatus(""); onBusyChange(false); }
   };
   const saveCharges = async (charges: BookingAdditionalChargeInput[]) => {
     if (!chargeTarget || lock.current) return;
-    lock.current = true; onBusyChange(true);
+    lock.current = true; setChargeStatus("Saving charges…"); onBusyChange(true);
     try {
       const response = await fetch("/api/booking-groups/charges", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookingGroupId: group.id, bookingId: chargeTarget.booking.canonicalId, expectedVersion: chargeTarget.booking.version, expectedSourceHash: chargeTarget.sourceHash, charges }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message || "Could not save the additional charges.");
       await onAmended();
       setChargeTarget(undefined);
-    } finally { lock.current = false; onBusyChange(false); }
+    } finally { lock.current = false; setChargeStatus(""); onBusyChange(false); }
   };
 
   return <section className={styles.group} data-group-editing={editing ? "true" : undefined} aria-label="All Day Hospitality booking">
@@ -107,7 +113,7 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
         <p className="eyebrow">All Day Hospitality</p>
         <h2>{group.client.companyName}</h2>
         {group.eventName && <h3 className={styles.eventName}>{group.eventName}</h3>}
-        <p className={styles.meta}>{new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${group.eventDate}T12:00:00Z`))} · {group.services.length} services · {group.firstTime}–{group.lastTime}</p>
+        <p className={styles.meta}>{ukLongDate(group.eventDate)} · {group.services.length} services · {group.firstTime}–{group.lastTime}</p>
         <p className={styles.meta}>{group.client.name} · {group.client.email}{group.client.phone ? ` · ${group.client.phone}` : ""}</p>
         {group.client.invoiceReference && <p className={styles.meta}>PO / reference: {group.client.invoiceReference}</p>}
         <p className={styles.meta}>Request reference: {group.reference}</p>
@@ -132,7 +138,7 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
     {cancelOpen && <div className="modal-backdrop" role="presentation"><form ref={cancelDialog} className="modal hospitality-action-modal" role="dialog" aria-modal="true" aria-labelledby="group-cancel-title" onSubmit={event => { event.preventDefault(); void runCancel(cancelReason.trim(), false); }}>
       <p className="eyebrow">Governed workflow command</p>
       <h2 id="group-cancel-title">Cancel {group.services.length} services?</h2>
-      <p>This cancels the whole All Day Hospitality booking for {group.client.companyName} on {group.eventDate}. Production work is withdrawn from CPU and Logistics where it is safe to do so; anything CPU has already advanced is flagged for manual review instead.</p>
+      <p>This cancels the whole All Day Hospitality booking for {group.client.companyName} on {ukLongDate(group.eventDate)}. Production work is withdrawn from CPU and Logistics where it is safe to do so; anything CPU has already advanced is flagged for manual review instead.</p>
       <p>Where the Hub has customer cancellation email enabled for this site, one email is queued automatically for each cancelled service.</p>
       <label>Cancellation reason<textarea autoFocus required minLength={3} maxLength={1000} value={cancelReason} disabled={cancelBusy} onChange={event => setCancelReason(event.target.value)} /></label>
       {cancelError && <p role="alert" className={styles.error}>{cancelError}</p>}
@@ -163,6 +169,7 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
     {!editing && <section className={styles.charges} aria-labelledby="group-charges-heading">
       <h3 id="group-charges-heading">Additional charges by service</h3>
       <p className={styles.help}>Charges are saved to one service at a time using the same rules as a single booking. Other services are not changed, and the group quote must be regenerated afterwards.</p>
+      <p role="status" aria-live="polite" className={styles.help}>{chargeStatus}</p>
       {chargeError && <p role="alert" className={styles.error}>{chargeError}</p>}
       {group.services.map(service => {
         const editable = CHARGE_EDITABLE.includes(service.lifecycleStatus);
