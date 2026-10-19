@@ -60,13 +60,15 @@ function itemLines(booking: CanonicalBooking) {
   return booking.order.items.filter(item => Number(item.quantity) > 0 || present(item.itemName)).map(item => {
     const unit = typeof item.unitPrice === "number" && Number.isFinite(item.unitPrice) ? item.unitPrice : undefined;
     const total = typeof item.lineTotal === "number" && Number.isFinite(item.lineTotal) ? item.lineTotal : unit !== undefined ? unit * Number(item.quantity) : undefined;
-    return { name: item.itemName || item.itemId, quantity: Number(item.quantity), unit: unit === undefined ? "" : money(unit), total: total === undefined ? "" : money(total), serving: item.servingInfo || "", comments: item.comments || "" };
+    return { name: item.itemName || item.itemId, quantity: Number(item.quantity), unit: unit === undefined ? "" : money(unit), total: total === undefined ? "" : money(total), totalValue: total, serving: item.servingInfo || "", comments: item.comments || "" };
   });
 }
 
-function totals(booking: CanonicalBooking, estimate: boolean) {
+function totals(booking: CanonicalBooking, estimate: boolean, itemsNet: number | undefined) {
   const { netTotal, vatTotal, grossTotal } = booking.order;
   const rows: Array<[string, string, boolean]> = [];
+  // Quote revisions can add charges that are not ordered items; show the difference so the totals reconcile with the lines above.
+  if (typeof netTotal === "number" && Number.isFinite(netTotal) && itemsNet !== undefined && netTotal - itemsNet > 0.005) rows.push(["Additional charges", money(netTotal - itemsNet), false]);
   if (typeof netTotal === "number" && Number.isFinite(netTotal)) rows.push([estimate ? "Estimated subtotal" : "Subtotal", money(netTotal), false]);
   if (typeof vatTotal === "number" && Number.isFinite(vatTotal) && typeof netTotal === "number") rows.push(["VAT", money(vatTotal), false]);
   if (typeof grossTotal === "number" && Number.isFinite(grossTotal)) rows.push([estimate ? "Estimated total" : "Total", money(grossTotal), true]);
@@ -93,7 +95,7 @@ export function renderBookingEmail(kind: BookingNotificationKind, booking: Canon
   const tone = TONE[copy.tone];
   const rows = summaryRows(booking);
   const items = copy.showItems ? itemLines(booking) : [];
-  const sums = copy.showItems && items.length ? totals(booking, kind === "submitted") : [];
+  const sums = copy.showItems && items.length ? totals(booking, kind === "submitted", items.every(item => item.total) ? items.reduce((sum, item) => sum + (item.totalValue ?? 0), 0) : undefined) : [];
   const showPrices = items.some(item => item.unit || item.total);
   const greeting = present(booking.client.name) ? `Hi ${esc(booking.client.name)},` : "Hello,";
 
