@@ -24,3 +24,8 @@
 .catalogue-warning{margin:12px 0;padding:12px 16px;border-left:4px solid var(--fika-status-warning);background:var(--fika-status-warning-surface);color:var(--fika-text-primary);line-height:1.45}
 .inline-validation-error{margin:-10px 0 0;color:#ae2645;font-size:.82rem;font-weight:900}.fields input[aria-invalid="true"],.submit textarea[aria-invalid="true"],.stepper input[aria-invalid="true"]{border-color:#ae2645}
 :root{--fika-surface-page:#f4f4f2;--fika-surface-card:#fff;--fika-surface-subtle:#f7f6fb;--fika-text-primary:#221874;--fika-text-secondary:#5f5a82;--fika-text-muted:#7d7898;--fika-border-default:#d9d7e3;--fika-action-primary:#4f35cf;--fika-action-primary-hover:#4329b2;--fika-action-secondary:#241176;--fika-focus-ring:#34e6e1;--fika-status-success:#227a54;--fika-status-success-surface:#75efb8;--fika-status-warning:#8a5a00;--fika-status-warning-surface:#fff4d6;--fika-status-danger:#ae2645;--fika-status-danger-surface:#ffe7e7;--fika-status-info:#176f8e;--fika-status-info-surface:#e5fbf8}
+/* Shared loading spinner (used by every action button in this app). Keyframes MUST stay top-level: CSS modules/nesting scoped them away before. */
+@keyframes fika-spin{to{transform:rotate(360deg)}}
+@keyframes fika-spin-pulse{0%,100%{opacity:.35}50%{opacity:1}}
+.fika-spinner{display:inline-block;width:1em;height:1em;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:fika-spin .7s linear infinite;vertical-align:-.12em;flex:none}
+@media (prefers-reduced-motion:reduce){.fika-spinner{animation:fika-spin-pulse 1.6s ease-in-out infinite;border-right-color:currentColor}}

@@ -2052,6 +2052,34 @@
 .textActionDanger {
   color: var(--fika-status-danger, #a32121);
 }
+.serviceItemList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.itemRemove {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--fika-border-default, #d8d2e6);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--fika-status-danger, #a32121);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.itemRemove:hover {
+  background: var(--fika-status-danger-surface, #ffe7e7);
+}
+.itemRemove:focus-visible {
+  outline: 3px solid var(--fika-focus-ring, #4f34c7);
+  outline-offset: 2px;
+}
 .textAction:focus-visible,
 .itemsButton:focus-visible,
 .addService:focus-visible {

@@ -1234,7 +1234,7 @@ export default function HospitalityDashboard({
               <div role="status" aria-live="polite" aria-atomic="true">
                 {actionBusy && (
                   <p className={styles.actionProgress}>
-                    <span className={styles.spinner} aria-hidden="true" />
+                    <span className="fika-spinner" aria-hidden="true" />
                     {actionStage}
                   </p>
                 )}
@@ -1349,7 +1349,7 @@ export default function HospitalityDashboard({
                   Cancel
                 </button>
                 <button className="primary" disabled={actionBusy}>
-                  {actionBusy && <span className={styles.spinner} aria-hidden="true" />}
+                  {actionBusy && <span className="fika-spinner" aria-hidden="true" />}
                   {actionBusy
                     ? actionStage
                     : pending === "Production"
@@ -1685,7 +1685,7 @@ function BookingDetail({
             >
               {quoteBusy && (action === "Quoted" || action === "QuotePdfRetry") ? (
                 <>
-                  <span className={styles.spinner} aria-hidden="true" />
+                  <span className="fika-spinner" aria-hidden="true" />
                   Generating quote…
                 </>
               ) : action === "Reviewed"
@@ -1828,7 +1828,7 @@ function BookingDetail({
               <strong>
                 {quoteBusy ? (
                   <>
-                    <span className={styles.spinner} aria-hidden="true" />
+                    <span className="fika-spinner" aria-hidden="true" />
                     Generating quote…
                   </>
                 ) : quoteNeedsRegeneration ? "Quote needs regeneration" : "Open quote"}
@@ -1865,7 +1865,7 @@ function BookingDetail({
             ) : matrixArtifact?.status === "checking" ? (
               <button type="button" className="manager-document-action" disabled aria-busy="true">
                 <strong>
-                  <span className={styles.spinner} aria-hidden="true" />
+                  <span className="fika-spinner" aria-hidden="true" />
                   Checking allergen matrix…
                 </strong>
                 <small>Looking up the latest CPU allergen status</small>
@@ -1873,7 +1873,7 @@ function BookingDetail({
             ) : matrixArtifact?.status === "generating" ? (
               <button type="button" className="manager-document-action" disabled aria-busy="true">
                 <strong>
-                  <span className={styles.spinner} aria-hidden="true" />
+                  <span className="fika-spinner" aria-hidden="true" />
                   Generating allergen matrix…
                 </strong>
                 <small>The signed PDF is being prepared</small>
@@ -1915,7 +1915,7 @@ function BookingDetail({
                   <strong>
                     {menuBusy ? (
                       <>
-                        <span className={styles.spinner} aria-hidden="true" />
+                        <span className="fika-spinner" aria-hidden="true" />
                         Generating menu…
                       </>
                     ) : "Regenerate menu"}
@@ -1940,7 +1940,7 @@ function BookingDetail({
                 <strong>
                   {menuBusy ? (
                     <>
-                      <span className={styles.spinner} aria-hidden="true" />
+                      <span className="fika-spinner" aria-hidden="true" />
                       Generating menu…
                     </>
                   ) : "Generate menu"}

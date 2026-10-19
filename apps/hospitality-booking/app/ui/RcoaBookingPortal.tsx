@@ -17,6 +17,7 @@ import {
   duplicateAllDayService,
   RCOA_ALL_DAY,
   removeAllDayService,
+  removeAllDayServiceItem,
   sortedAllDayServices,
   summarizeAllDay,
   updateAllDayService,
@@ -40,6 +41,7 @@ import {
   type RcoaBookingDraft,
   type RcoaChoiceValue,
   type RcoaLine,
+  integerFieldText,
 } from "@/lib/rcoa-portal";
 import { buildAllDayClientRequests, buildRcoaClientRequest } from "@/lib/rcoa-booking-request-client";
 import { loadHospitalityPortalMenu } from "@/lib/hospitality-portal-catalogue";
@@ -151,6 +153,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   const [sending, setSending] = useState(false);
   const [reference, setReference] = useState("");
   const sendingRef = useRef(false);
+  // A submission only counts when the person pressed the send button (see the button keys below).
+  const submitIntentRef = useRef(false);
   const wasResetOpen = useRef(false);
   const resetTriggerRef = useRef<HTMLButtonElement>(null);
   const resetCancelRef = useRef<HTMLButtonElement>(null);
@@ -277,6 +281,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
 
   const updateContact = (key: keyof RcoaBookingDraft["contact"], value: string) => setDraft((current) => ({ ...current, contact: { ...current.contact, [key]: value } }));
   const updateEvent = (key: keyof RcoaBookingDraft["event"], value: string | number) => setDraft((current) => ({ ...current, event: { ...current.event, [key]: value } }));
+  // Text shown while a dietary count is being edited (so "01" never appears and the field can be cleared); the stored value is numeric.
+  const [dietaryText, setDietaryText] = useState<Record<string, string>>({});
   const updateDietary = (key: keyof RcoaBookingDraft["dietaries"], value: string | number | boolean) => setDraft((current) => ({ ...current, dietaries: { ...current.dietaries, [key]: value, ...(key !== "hasDietaries" ? { hasDietaries: true } : {}) } }));
 
   const setQuantity = (item: PortalMenuItem, requested: number) => {
@@ -356,8 +362,10 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   };
   const addService = () => { setAllDay((current) => addAllDayService(current)); setMessage(""); };
   const duplicateService = (serviceId: string) => { setAllDay((current) => duplicateAllDayService(current, serviceId)); setMessage("Service duplicated with its type, guests, location and items. Choose the new time."); };
+  /** Removes one item from a service immediately; the basket, quantities and totals are derived from the same state, so they update with it. */
+  const removeServiceItem = (serviceId: string, itemId: string) => { setAllDay((current) => removeAllDayServiceItem(current, serviceId, itemId)); setErrors((current) => { const next = { ...current }; delete next[`items:${serviceId}`]; return next; }); };
   const removeService = (serviceId: string) => { setAllDay((current) => removeAllDayService(current, serviceId)); setRemoveConfirmId(null); setErrors({}); setMessage("Service removed."); };
-  const selectedItems = (lines: RcoaLine[]) => lines.flatMap((line) => { const item = menu.find((candidate) => candidate.id === line.itemId); return item && line.quantity > 0 ? [{ name: item.name, quantity: line.quantity }] : []; });
+  const selectedItems = (lines: RcoaLine[]) => lines.flatMap((line) => { const item = menu.find((candidate) => candidate.id === line.itemId); return item && line.quantity > 0 ? [{ id: item.id, name: item.name, quantity: line.quantity }] : []; });
   const longDate = (iso: string) => /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${iso}T12:00:00Z`)) : "";
   const allDaySummary = summarizeAllDay(allDay);
   const view = flow === "standard"
@@ -446,6 +454,9 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (sendingRef.current) return;
+    // Arriving on the review step swaps "Continue" for the send button in the same spot; that click must never count as a send attempt.
+    if (!submitIntentRef.current) return;
+    submitIntentRef.current = false;
     if (flow === "all-day") { await submitAllDay(); return; }
     const validation = validateRcoaStep(5, draft, menu);
     if (Object.keys(validation).length) {
@@ -662,7 +673,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                           <div className={styles.serviceItemList}>
                             <span className={styles.cellLabel}>Items</span>
                             {items.length
-                              ? <ul>{items.map((item) => <li key={item.name}>{item.name}<small> ×{item.quantity}</small></li>)}</ul>
+                              ? <ul>{items.map((item) => <li key={item.id}><span>{item.name}<small> ×{item.quantity}</small></span><button type="button" className={styles.itemRemove} aria-label={`Remove ${item.name} from service ${index + 1}`} title="Remove item" onClick={() => removeServiceItem(service.id, item.id)}><span aria-hidden="true">×</span></button></li>)}</ul>
                               : <p className={styles.noItems}>No items selected yet</p>}
                             <ErrorMessage field={`items:${service.id}`} errors={errors} />
                           </div>
@@ -784,7 +795,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
               <section aria-labelledby="rcoa-dietary-title">
                 <div className={styles.sectionHeading}><p className={styles.eyebrow}>Dietaries &amp; allergens</p><h2 id="rcoa-dietary-title">Help us look after everyone.</h2><p>Tell us what you know now. The team will confirm final requirements with you.</p></div>
                 <label className={styles.switchRow}><input type="checkbox" checked={draft.dietaries.hasDietaries} onChange={(event) => updateDietary("hasDietaries", event.target.checked)} /><span>There are dietary requirements for this booking</span></label>
-                <div className={styles.dietaryGrid}>{dietaryFields.map(([key, label]) => <label className={styles.field} key={key}><span>{label}</span><input type="number" min="0" step="1" data-rcoa-field={errors.dietaryCounts ? "dietaryCounts" : undefined} aria-invalid={Boolean(errors.dietaryCounts)} aria-describedby={errors.dietaryCounts ? fieldErrorId("dietaryCounts") : undefined} value={draft.dietaries[key]} onChange={(event) => updateDietary(key, Number(event.target.value || 0))} /></label>)}</div>
+                <div className={styles.dietaryGrid}>{dietaryFields.map(([key, label]) => <label className={styles.field} key={key}><span>{label}</span><input type="number" min="0" step="1" data-rcoa-field={errors.dietaryCounts ? "dietaryCounts" : undefined} aria-invalid={Boolean(errors.dietaryCounts)} aria-describedby={errors.dietaryCounts ? fieldErrorId("dietaryCounts") : undefined} inputMode="numeric" value={dietaryText[key] ?? String(draft.dietaries[key])} onChange={(event) => { const text = integerFieldText(event.target.value); setDietaryText((current) => ({ ...current, [key]: text })); updateDietary(key, Number(text || 0)); }} onBlur={() => setDietaryText((current) => { const next = { ...current }; delete next[key]; return next; })} /></label>)}</div>
                 {errors.dietaryCounts && <p className={styles.fieldError} id={fieldErrorId("dietaryCounts")} data-rcoa-field="dietaryCounts" tabIndex={-1}>{errors.dietaryCounts}</p>}
                 <label className={`${styles.field} ${styles.fieldWide}`}><span>Allergy details</span><textarea rows={3} value={draft.dietaries.allergyDetails} onChange={(event) => updateDietary("allergyDetails", event.target.value)} placeholder="Include the guest, allergen and severity where known" /></label>
                 <label className={`${styles.checkRow} ${styles.warningCheck}`}><input type="checkbox" data-rcoa-field="severeAllergyAcknowledged" aria-invalid={Boolean(errors.severeAllergyAcknowledged)} aria-describedby={errors.severeAllergyAcknowledged ? fieldErrorId("severeAllergyAcknowledged") : undefined} checked={draft.dietaries.severeAllergyAcknowledged} onChange={(event) => updateDietary("severeAllergyAcknowledged", event.target.checked)} /><span>I understand the hospitality team must be told about severe allergies and cross-contamination risks.</span></label>
@@ -850,7 +861,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                   {(Object.entries(rcoaAcknowledgementLabels) as Array<[keyof RcoaBookingDraft["acknowledgements"], string]>).map(([key, label]) => {
                     const fieldKey = `acknowledgement:${key}`;
                     const fieldError = errors[fieldKey];
-                    return <label className={styles.checkRow} key={key}><input type="checkbox" data-rcoa-field={fieldKey} aria-invalid={Boolean(fieldError)} aria-describedby={fieldError ? fieldErrorId(fieldKey) : undefined} checked={draft.acknowledgements[key]} onChange={(event) => setDraft((current) => ({ ...current, acknowledgements: { ...current.acknowledgements, [key]: event.target.checked } }))} /><span>{label}</span>{fieldError && <span className={styles.fieldError} id={fieldErrorId(fieldKey)}>{fieldError}</span>}</label>;
+                    return <label className={styles.checkRow} key={key}><input type="checkbox" data-rcoa-field={fieldKey} aria-invalid={Boolean(fieldError)} aria-describedby={fieldError ? fieldErrorId(fieldKey) : undefined} checked={draft.acknowledgements[key]} onChange={(event) => { const checked = event.target.checked; setDraft((current) => ({ ...current, acknowledgements: { ...current.acknowledgements, [key]: checked } })); if (checked) { setErrors((current) => { const next = { ...current }; delete next[fieldKey]; return next; }); if (Object.values({ ...draft.acknowledgements, [key]: true }).every(Boolean)) setMessage((current) => /acknowledgement/i.test(current) ? "" : current); } }} /><span>{label}</span>{fieldError && <span className={styles.fieldError} id={fieldErrorId(fieldKey)}>{fieldError}</span>}</label>;
                   })}
                 </div>
                 {!rcoaConfigured && <p className={styles.configurationNotice} role="status">Requests will be available after the RCoA governed OPLOC mapping is configured.</p>}
@@ -866,8 +877,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
             <footer className={styles.formActions}>
               <button type="button" className={styles.secondaryButton} disabled={step === 0 || sending} onClick={() => goToStep(step - 1)}>Back</button>
               {step < labels.length - 1
-                ? <button type="button" className={styles.primaryButton} onClick={() => goToStep(step + 1)}>Continue</button>
-                : <button type="submit" className={styles.primaryButton} disabled={sending || !bookingId || !rcoaConfigured} aria-busy={sending ? true : undefined}>{sending ? <><span className="fika-spinner" aria-hidden="true" />Sending request…</> : "Send booking request"}</button>}
+                ? <button key="continue" type="button" className={styles.primaryButton} onClick={() => goToStep(step + 1)}>Continue</button>
+                : <button key="send" type="submit" onClick={() => { submitIntentRef.current = true; }} className={styles.primaryButton} disabled={sending || !bookingId || !rcoaConfigured} aria-busy={sending ? true : undefined}>{sending ? <><span className="fika-spinner" aria-hidden="true" />Sending request…</> : "Send booking request"}</button>}
             </footer>
             )}
           </form>

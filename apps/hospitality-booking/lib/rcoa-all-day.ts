@@ -73,6 +73,11 @@ export function removeAllDayService(draft: AllDayDraft, serviceId: string): AllD
   return draft.services.length <= 1 ? draft : { ...draft, services: draft.services.filter((service) => service.id !== serviceId) };
 }
 
+/** Removes one selected item from one service row; everything else (other items, quantities, notes) is untouched. */
+export function removeAllDayServiceItem(draft: AllDayDraft, serviceId: string, itemId: string): AllDayDraft {
+  return { ...draft, services: draft.services.map((service) => service.id === serviceId ? { ...service, lines: service.lines.filter((line) => line.itemId !== itemId) } : service) };
+}
+
 export function updateAllDayService(draft: AllDayDraft, serviceId: string, patch: Partial<Omit<AllDayService, "id">>): AllDayDraft {
   return { ...draft, services: draft.services.map((service) => service.id === serviceId ? { ...service, ...patch } : service) };
 }

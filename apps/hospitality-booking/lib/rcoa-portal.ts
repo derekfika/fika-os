@@ -1,5 +1,13 @@
 import type { PortalMenuItem } from "./mnk-contract";
 
+/**
+ * Text shown in a whole-number input while the user edits it: digits only, no leading zeroes ("01" -> "1"), and an empty string is
+ * allowed so the field can be cleared temporarily. The numeric value to store is `Number(text || 0)`.
+ */
+export function integerFieldText(raw: string) {
+  return raw.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+}
+
 export const rcoaEventTypes = [
   { id: "breakfast", label: "Breakfast", categories: ["Drinks", "Breakfast", "Sweet treats"], noticeType: "standard" },
   { id: "lunch", label: "Lunch", categories: ["Lunch", "Lunch Boxes", "Salads & Sushi", "Grazing Boxes", "Sweet treats"], noticeType: "standard" },

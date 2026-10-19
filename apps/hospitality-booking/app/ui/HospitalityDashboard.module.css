@@ -679,19 +679,6 @@
     background: #ffe4e7;
     color: #a32643;
   }
-  .spinner {
-    display: inline-block;
-    width: 1em;
-    height: 1em;
-    margin-right: 8px;
-    border: 2px solid currentColor;
-    border-right-color: transparent;
-    border-radius: 50%;
-    animation: hospitality-spin 0.7s linear infinite;
-    animation-play-state: running;
-    will-change: transform;
-    vertical-align: -0.12em;
-  }
   .actionProgress {
     display: flex;
     align-items: center;
@@ -707,12 +694,6 @@
     margin: 0;
     padding: 0;
     border: 0;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .spinner { animation: none; }
-  }
-  @keyframes hospitality-spin {
-    to { transform: rotate(360deg); }
   }
   .amendmentProgressModal {
     width: min(620px, 100%);
@@ -2086,7 +2067,4 @@
   .scope :global(.hospitality-labour-rates__row) { grid-template-columns: 1fr; }
   .scope :global(.additional-charges-modal__footer) { align-items: flex-start; flex-direction: column; bottom: -18px; margin: 0 -18px -18px; padding: 12px 18px; }
   .scope :global(.additional-charges-modal__footer > div) { width: 100%; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .spinner { display: none !important; animation: none !important; }
 }
