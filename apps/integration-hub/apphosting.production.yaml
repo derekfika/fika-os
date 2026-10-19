@@ -28,6 +28,16 @@ env:
   - variable: FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED
     value: "false"
     availability: [RUNTIME]
+  # Fixed synthetic RCoA test path is explicitly disabled in the production baseline.
+  - variable: FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED
+    value: "false"
+    availability: [RUNTIME]
+  - variable: FIKA_HOSPITALITY_EMAIL_TEST_NOTIFICATION_IDS
+    value: ""
+    availability: [RUNTIME]
+  - variable: FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT
+    value: ""
+    availability: [RUNTIME]
   # Temporary, internally authenticated DWD check; turn off in the follow-up release after verification.
   - variable: FIKA_HOSPITALITY_EMAIL_DWD_VERIFY_ENABLED
     value: "false"

@@ -1,5 +1,5 @@
 import { db } from "./firebase-admin";
-import { eventIsDue, markEventDeadLetter, resetEventForReplay, type DurableDomainEvent } from "@fika/server-shared/durable-outbox";
+import { claimEvent, eventIsDue, markEventDeadLetter, resetEventForReplay, type DurableDomainEvent } from "@fika/server-shared/durable-outbox";
 import crypto from "node:crypto";
 import { notificationIsCurrent } from "./booking-email-delivery";
 import { claimBookingEmail, notificationEvent, notificationWithEvent, type EmailOutboxStore } from "./booking-email-outbox";
@@ -7,6 +7,7 @@ import type { BookingNotificationRecord } from "./booking-notifications";
 import type { CanonicalBooking } from "./hospitality-booking-service";
 import { assertStagingEmailCandidate } from "./booking-email-uat-safety";
 import { emailRolloutDisposition } from "./booking-email-rollout-guard";
+import { isRcoaEmailTestFixture } from "./booking-email-test-fixture";
 const notifications = () => db.collection("fikaBookingNotifications");
 const clean = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -50,8 +51,14 @@ export const bookingEmailStore: EmailOutboxStore = {
       if (emailRolloutDisposition(message) === "skip") return undefined;
       assertStagingEmailCandidate(message);
       if (!message.delivery || !eventIsDue(notificationEvent(message), new Date(at))) return undefined;
-      const source = await transaction.get(db.collection("fikaBookings").doc(message.bookingId));
-      const next = source.exists ? claimBookingEmail(message, source.data() as CanonicalBooking, claimId, at) : notificationWithEvent(message, markEventDeadLetter(notificationEvent(message), "Booking source missing; no email sent.", at));
+      let next: BookingNotificationRecord | undefined;
+      if (message.testFixture === true) {
+        if (!isRcoaEmailTestFixture(message)) return undefined;
+        next = notificationWithEvent(message, claimEvent(notificationEvent(message), claimId, at));
+      } else {
+        const source = await transaction.get(db.collection("fikaBookings").doc(message.bookingId));
+        next = source.exists ? claimBookingEmail(message, source.data() as CanonicalBooking, claimId, at) : notificationWithEvent(message, markEventDeadLetter(notificationEvent(message), "Booking source missing; no email sent.", at));
+      }
       if (!next) return undefined;
       transaction.set(ref, clean(next));
       if (next.delivery?.status === "dead-letter") return undefined;
@@ -68,10 +75,14 @@ export const bookingEmailStore: EmailOutboxStore = {
       if (emailRolloutDisposition(message) === "skip") return false;
       assertStagingEmailCandidate(message);
       if (message.delivery?.claimId !== claimId || message.sendingStartedAt || !message.delivery.leaseExpiresAt || message.delivery.leaseExpiresAt <= at) return false;
-      const source = await transaction.get(db.collection("fikaBookings").doc(message.bookingId));
-      if (!source.exists || !notificationIsCurrent(message, source.data() as CanonicalBooking)) {
-        transaction.set(ref, clean(notificationWithEvent(message, markEventDeadLetter(notificationEvent(message), "Booking superseded before send.", at))));
-        return false;
+      if (message.testFixture === true) {
+        if (!isRcoaEmailTestFixture(message)) return false;
+      } else {
+        const source = await transaction.get(db.collection("fikaBookings").doc(message.bookingId));
+        if (!source.exists || !notificationIsCurrent(message, source.data() as CanonicalBooking)) {
+          transaction.set(ref, clean(notificationWithEvent(message, markEventDeadLetter(notificationEvent(message), "Booking superseded before send.", at))));
+          return false;
+        }
       }
       transaction.update(ref, { sendingStartedAt: at, ...(evidence ? { senderEvidence: evidence } : {}) });
       transaction.update(ref.collection("attempts").doc(claimId), { sendBarrierAt: at, ...(evidence ? { senderEvidence: evidence } : {}) });

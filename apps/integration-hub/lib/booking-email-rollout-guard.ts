@@ -1,4 +1,5 @@
 import type { BookingNotificationRecord } from "./booking-notifications";
+import { isRcoaEmailTestFixture, RCOA_EMAIL_TEST_NOTIFICATION_IDS, RCOA_EMAIL_TEST_OPLOC, RCOA_EMAIL_TEST_RECIPIENT } from "./booking-email-test-fixture";
 
 type Env = Record<string, string | undefined>;
 const list = (value: string | undefined) => (value || "").split(",").map(value => value.trim()).filter(Boolean);
@@ -22,6 +23,14 @@ export function emailRolloutDisposition(message: BookingNotificationRecord, env:
   if (env.FIKA_RUNTIME_MODE === "production" && !allowed.length) return "skip";
   if (allowed.length && (!message.oplocId || !allowed.includes(message.oplocId))) return "skip";
   const testIds = list(env.FIKA_HOSPITALITY_EMAIL_TEST_NOTIFICATION_IDS);
+  const testMode = env.FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED === "true";
+  if (message.testFixture === true && !testMode) return "skip";
+  if (testIds.length && !testMode) return "skip";
+  if (testMode) {
+    const fixedTestIds = Object.values(RCOA_EMAIL_TEST_NOTIFICATION_IDS);
+    const recipient = env.FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT?.trim().toLowerCase();
+    if (env.FIKA_RUNTIME_MODE !== "production" || allowed.length !== 1 || allowed[0] !== RCOA_EMAIL_TEST_OPLOC || recipient !== RCOA_EMAIL_TEST_RECIPIENT || testIds.length !== fixedTestIds.length || fixedTestIds.some(id => !testIds.includes(id)) || !isRcoaEmailTestFixture(message)) return "skip";
+  }
   if (testIds.length) {
     if (!testIds.includes(message.notificationId)) return "skip";
     const recipient = env.FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT?.trim().toLowerCase();

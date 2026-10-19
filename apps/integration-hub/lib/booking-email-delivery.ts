@@ -5,6 +5,9 @@ import type { BookingNotificationKind, BookingNotificationRecord } from "./booki
 import type { CanonicalBooking } from "./hospitality-booking-service";
 
 export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+const RCOA_EMAIL_TEST_OPLOC = "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2";
+const RCOA_EMAIL_TEST_RECIPIENT = "derek@fikacatering.com";
+const RCOA_EMAIL_SENDER = "rcoa@fikacatering.com";
 export type BookingSender = { from: string; replyTo: string; displayName: string; enabled: BookingNotificationKind[]; authenticatedAccount: string; verifiedSendAs: boolean };
 const address = (value: string) => /^[^\s<>@,;\r\n]+@[^\s<>@,;\r\n]+\.[^\s<>@,;\r\n]+$/.test(value);
 
@@ -15,7 +18,14 @@ export function resolveBookingSender(oplocId: string | undefined, kind: BookingN
   try { senders = JSON.parse(env.FIKA_HOSPITALITY_EMAIL_SENDERS_JSON || "{}"); } catch { throw new Error("Booking sender configuration is invalid."); }
   const sender = senders[oplocId];
   if (!sender || !address(sender.from || "") || !address(sender.replyTo || "") || !address(sender.authenticatedAccount || "") || !sender.displayName || /[\r\n]/.test(sender.displayName)) throw new Error("Booking site sender is not configured.");
-  if (!sender.verifiedSendAs) throw new Error("Booking site From identity has not been verified by its Workspace owner.");
+  const scopedRcoaTest = env.FIKA_RUNTIME_MODE === "production"
+    && env.FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED === "true"
+    && env.FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT?.trim().toLowerCase() === RCOA_EMAIL_TEST_RECIPIENT
+    && oplocId === RCOA_EMAIL_TEST_OPLOC
+    && sender.from === RCOA_EMAIL_SENDER
+    && sender.replyTo === RCOA_EMAIL_SENDER
+    && sender.authenticatedAccount === RCOA_EMAIL_SENDER;
+  if (!sender.verifiedSendAs && !scopedRcoaTest) throw new Error("Booking site From identity has not been verified by its Workspace owner.");
   if (!sender.enabled?.includes(kind)) throw new Error("This site lifecycle notification is disabled.");
   return sender;
 }

@@ -12,7 +12,7 @@ export type BookingEmail = {
   text: string;
   html: string;
 };
-export type BookingNotificationRecord = BookingEmail & { notificationId: string; bookingId: string; status: "queued" | "sent" | "failed"; createdAt: string; attempts: number; sentAt?: string; failedAt?: string; failureReason?: string; bookingVersion?: number; commercialVersion?: number; oplocId?: string; delivery?: import("@fika/server-shared/durable-outbox").DurableEventDelivery; outboxStatus?: string; nextEligibleAt?: string; gmailMessageId?: string; sendingStartedAt?: string };
+export type BookingNotificationRecord = BookingEmail & { notificationId: string; bookingId: string; status: "queued" | "sent" | "failed"; createdAt: string; attempts: number; sentAt?: string; failedAt?: string; failureReason?: string; bookingVersion?: number; commercialVersion?: number; oplocId?: string; delivery?: import("@fika/server-shared/durable-outbox").DurableEventDelivery; outboxStatus?: string; nextEligibleAt?: string; gmailMessageId?: string; sendingStartedAt?: string; testFixture?: boolean };
 
 export function bookingNotificationId(booking: CanonicalBooking, kind: BookingNotificationKind, version: number) {
   return `booking:${booking.canonicalId}:${kind}:${version}`.replace(/[^A-Za-z0-9:_-]/g, "_");
@@ -117,7 +117,8 @@ export function buildBookingEmail(kind: BookingNotificationKind, booking: Canoni
   const base = kind === "submitted" ? buildBookingSubmittedEmail(booking) : kind === "confirmed" || kind === "amended" ? buildBookingConfirmedEmail(booking) : buildBookingCancelledEmail(booking);
   if (kind === "submitted") {
     base.to = booking.client.email ? [booking.client.email] : [];
-    base.cc = configuredRecipients(booking.service.portalSiteId);
+    // RCoA customer notices are customer-only; no internal operations CC.
+    base.cc = booking.service.portalSiteId === "rcoa" ? [] : configuredRecipients(booking.service.portalSiteId);
     base.subject = `${siteLabel(booking)} booking request received | ${booking.source.sourceBookingId}`;
     base.text = `Hi ${booking.client.name},\n\nThank you. Your booking request has been received. This request is subject to confirmation.\n\n${base.text.replace(/A new booking request has been added[^\n]+\n/, "").replace("Dashboard status: New", "").replace("Please review the request and prepare the quote.", "The hospitality team will contact you once it has been reviewed.")}`;
     base.html = `<p>Hi ${esc(booking.client.name)}, thank you. Your booking request has been received. This request is subject to confirmation.</p>${base.html.replace(/New (?:Fika at MNK|RCoA) Hospitality booking/g, "Booking request received").replace("A new client booking request is ready for review.", "Your hospitality request is ready for our team to review.").replace("Please review the request and prepare the quote.", "The hospitality team will contact you once it has been reviewed.")}`;

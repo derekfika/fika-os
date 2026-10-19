@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { bookingNotificationId, buildBookingCancelledEmail, buildBookingConfirmedEmail, buildBookingSubmittedEmail } from "../lib/booking-notifications";
+import { bookingNotificationId, bookingNotificationRecord, buildBookingCancelledEmail, buildBookingConfirmedEmail, buildBookingSubmittedEmail } from "../lib/booking-notifications";
 import type { CanonicalBooking } from "../lib/hospitality-booking-service";
 
 const booking = {
@@ -51,4 +51,18 @@ test("RCoA booking notifications use the client brand without changing the share
   assert.match(confirmed.html, /Royal College of Anaesthetists/);
   assert.match(cancelled.subject, /RCoA Hospitality.*Booking Cancelled/);
   assert.match(cancelled.html, /RCoA Hospitality/);
+});
+
+test("RCoA submission notification has only the customer recipient even when internal recipients are configured", () => {
+  const previous = process.env.FIKA_RCOA_NOTIFICATION_RECIPIENTS;
+  process.env.FIKA_RCOA_NOTIFICATION_RECIPIENTS = "ops@fikacatering.com";
+  try {
+    const rcoa = { ...booking, source: { ...booking.source, sourceBookingId: "RCOA-NO-CC-TEST" }, client: { ...booking.client, email: "customer@example.test" }, service: { ...booking.service, portalSiteId: "rcoa", portalSiteLabel: "RCoA Hospitality", oplocId: "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2" } } as CanonicalBooking;
+    const message = bookingNotificationRecord(rcoa, "submitted", rcoa.version, rcoa.updatedAt);
+    assert.deepEqual(message.to, ["customer@example.test"]);
+    assert.deepEqual(message.cc, []);
+  } finally {
+    if (previous === undefined) delete process.env.FIKA_RCOA_NOTIFICATION_RECIPIENTS;
+    else process.env.FIKA_RCOA_NOTIFICATION_RECIPIENTS = previous;
+  }
 });

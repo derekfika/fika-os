@@ -64,6 +64,19 @@ test("site OPLOC selects From/Reply-To independently of multi-site manager; miss
   assert.doesNotMatch(raw, /attachment/);
 });
 
+test("only the explicit RCoA test mode can use its authenticated mailbox as From before send-as approval is recorded", () => {
+  const rcoaSender = { ...sender, from: "rcoa@fikacatering.com", replyTo: "rcoa@fikacatering.com", authenticatedAccount: "rcoa@fikacatering.com", verifiedSendAs: false };
+  const config = {
+    FIKA_RUNTIME_MODE: "production",
+    FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED: "true",
+    FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT: "derek@fikacatering.com",
+    FIKA_HOSPITALITY_EMAIL_SENDERS_JSON: JSON.stringify({ "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2": rcoaSender }),
+  };
+  assert.equal(resolveBookingSender("oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2", "submitted", config).from, "rcoa@fikacatering.com");
+  assert.throws(() => resolveBookingSender("oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2", "submitted", { ...config, FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT: "customer@example.com" }));
+  assert.throws(() => resolveBookingSender("oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2", "submitted", { ...config, FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED: "false" }));
+});
+
 function harness() {
   let row = bookingNotificationRecord(booking, "confirmed", 4, "2026-10-01T00:00:00Z");
   const store: EmailOutboxStore = {
