@@ -159,3 +159,11 @@ test("raw MIME is a valid multipart/alternative > multipart/related with every c
     assert.ok(image.body.split("\r\n").every(line => line.length <= 76));
   }
 });
+
+test("quote charges beyond the ordered items are shown so totals reconcile", () => {
+  const quoted = { ...booking, order: { ...booking.order, netTotal: 125, vatTotal: 25, grossTotal: 150 } } as CanonicalBooking;
+  const email = buildBookingConfirmedEmail(quoted);
+  assert.match(email.text, /Additional charges: £35\.00/);
+  assert.match(email.text, /Subtotal: £125\.00/);
+  assert.doesNotMatch(buildBookingConfirmedEmail(booking).text, /Additional charges/);
+});
