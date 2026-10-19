@@ -18,6 +18,8 @@ import { BookingProductionPanel } from "./BookingProductionPanel";
 import panelStyles from "./BookingProductionPanel.module.css";
 import { isBookingQuoteStale, planServiceProduction, productionOrderMatchesCurrentQuote, quoteReadyForCpu, serviceCpuRequirement, sendPendingServices, type ServiceProductionRow, type ServiceResult } from "../../lib/cpu-production-plan";
 import { RequestedItemsList } from "./RequestedItemsList";
+import { CancellationStatusPanel } from "./CancellationStatusPanel";
+import { cancellationView, propagationOutcome, type PropagationOutcome } from "../../lib/cancellation-status";
 import type { HospitalityBookingGroup } from "../../../shared/hospitality-group-quotes";
 import { hospitalitySiteThemeStyle, portalSite, type PortalSiteKey } from "@/lib/portal-sites";
 import { hospitalityWorkspacePath } from "@/lib/hospitality-workspace";
@@ -466,6 +468,23 @@ export default function HospitalityDashboard({
     return statusBody.booking as CanonicalBooking;
   };
 
+  const [cancelRetry, setCancelRetry] = useState<{ id: string; busy: boolean; error?: string; outcome?: PropagationOutcome; emailQueued?: boolean }>();
+  const retryCancellation = async (booking: CanonicalBooking) => {
+    if (actionInFlight.current || cancelRetry?.busy) return;
+    actionInFlight.current = true;
+    setCancelRetry(current => ({ ...(current?.id === booking.canonicalId ? current : { emailQueued: false }), id: booking.canonicalId, busy: true }));
+    try {
+      // Replaying the authorised cancel is the Hub's retry contract; a Cancelled booking is never cancelled twice or re-emailed.
+      const response = await fetch("/api/dashboard-bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ canonicalId: booking.canonicalId, expectedVersion: booking.version, action: "cancel", reason: booking.dashboardWorkflow?.cancellation?.reason || "Retry cancellation downstream recovery", notify: false }) });
+      const body = await readDashboardJson(response);
+      if (!response.ok) throw new Error(body.error?.message || "The retry could not be completed.");
+      if (body.booking) { setSelected(body.booking); setBookings(current => current.map(item => item.canonicalId === body.booking.canonicalId ? body.booking : item)); }
+      setCancelRetry({ id: booking.canonicalId, busy: false, outcome: propagationOutcome(body.projectionPropagation) });
+    } catch (cause) {
+      setCancelRetry(current => ({ ...(current || { id: booking.canonicalId }), id: booking.canonicalId, busy: false, error: (cause as Error).message || "The retry could not be completed." }));
+    } finally { actionInFlight.current = false; }
+  };
+
   const performAction = async (actionOverride?: WorkflowAction | null, target?: CanonicalBooking) => {
     const subject = target ?? selected;
     // A group service is acted on in place: showing its result must not select the service.
@@ -511,7 +530,7 @@ export default function HospitalityDashboard({
                 ? { ...base, action: "production-handoff" }
                 : action === "Completed"
                   ? { ...base, action: "complete", notes: reason }
-                  : { ...base, action: "cancel", reason, ...cancelOptions, notify: site.key === "rcoa" /* customer cancellation email is live for RCoA only */ };
+                  : { ...base, action: "cancel", reason, ...cancelOptions };
     if (action === "Cancelled" && !reason.trim()) {
       setError("A cancellation reason is required.");
       return;
@@ -539,6 +558,7 @@ export default function HospitalityDashboard({
     }
     if (body.status === "no_cpu_production_required") setNotice(body.message || "No CPU production required: every item on this booking is produced in house.");
     showBooking(body.booking || subject);
+    if (action === "Cancelled") setCancelRetry({ id: subject.canonicalId, busy: false, outcome: propagationOutcome(body.projectionPropagation), emailQueued: body.notification?.status === "queued" });
     if (action === "Quoted" && body.booking) {
       setActionStage("Saving quote PDF…");
       let pdfSaved = false;
@@ -1268,6 +1288,7 @@ export default function HospitalityDashboard({
                   onGenerateMenu={generateMenu}
                   onOpenMenu={openMenu}
                   productionPanel={productionPanel}
+                  cancellationPanel={selected.lifecycleStatus === "Cancelled" ? <CancellationStatusPanel view={cancellationView({ lifecycleStatus: selected.lifecycleStatus, cancellation: selected.dashboardWorkflow?.cancellation })} reason={selected.dashboardWorkflow?.cancellation?.reason} emailQueued={cancelRetry?.id === selected.canonicalId ? cancelRetry.emailQueued : selected.dashboardWorkflow?.cancellation?.notificationOutcome === "queued"} retry={cancelRetry?.id === selected.canonicalId ? cancelRetry.outcome : undefined} busy={cancelRetry?.id === selected.canonicalId && cancelRetry.busy} error={cancelRetry?.id === selected.canonicalId ? cancelRetry.error : undefined} onRetry={() => void retryCancellation(selected)} /> : null}
                 />
                 </fieldset>
               ) : !selectedGroup ? (
@@ -1327,7 +1348,7 @@ export default function HospitalityDashboard({
                     Request production cancellation
                   </label>
                   <p className="workflow-help">
-                    The client cancellation email is sent automatically.
+                    A client cancellation email is queued automatically only where the Hub has customer cancellation email enabled for this site. If CPU has already advanced production, it is flagged for manual review instead of being withdrawn.
                   </p>
                 </fieldset>
               )}
@@ -1505,8 +1526,10 @@ function BookingPane({
   onGenerateMenu,
   onOpenMenu,
   productionPanel,
+  cancellationPanel,
 }: {
   productionPanel: ReactNode;
+  cancellationPanel?: ReactNode;
   booking: CanonicalBooking;
   siteKey: PortalSiteKey;
   siteLabel: string;
@@ -1575,6 +1598,7 @@ function BookingPane({
       onGenerateMenu={onGenerateMenu}
       onOpenMenu={onOpenMenu}
       productionPanel={productionPanel}
+      cancellationPanel={cancellationPanel}
     />
   );
 }
@@ -1607,8 +1631,10 @@ function BookingDetail({
   onGenerateMenu,
   onOpenMenu,
   productionPanel,
+  cancellationPanel,
 }: {
   productionPanel: ReactNode;
+  cancellationPanel?: ReactNode;
   booking: CanonicalBooking;
   siteLabel: string;
   productionOrder?: ProductionOrder;
@@ -1813,6 +1839,7 @@ function BookingDetail({
               <strong>{workflowLabel(booking.lifecycleStatus)}</strong>
             </div>
           </div>
+          {cancellationPanel}
           {booking.bookingGroup
             ? <p className="muted">CPU production, allergens and menus are managed once for the whole booking, not per service.</p>
             : productionPanel}

@@ -20,7 +20,7 @@ test("dashboard consumes the Hub projection, suppresses grouped children and off
 
 test("group detail is one booking with one chronological item list and no service selection", () => {
   const source = read("../app/ui/HospitalityGroupDetail.tsx");
-  for (const text of ["groupRequestedItems(group)", "RequestedItemsList", "What was requested", "service.charges.map", "group.totals.gross", "Amend booking", "GroupAmendmentEditor", "Group cancellation is not yet available", "Retry group quote", "group.quote.stale", "{!editing && production}"]) assert.ok(source.includes(text), text);
+  for (const text of ["groupRequestedItems(group)", "RequestedItemsList", "What was requested", "service.charges.map", "group.totals.gross", "Amend booking", "GroupAmendmentEditor", "/api/booking-groups/cancel", "CancellationStatusPanel", "Retry group quote", "group.quote.stale", "{!editing && production}"]) assert.ok(source.includes(text), text);
   for (const text of ["<details", "<summary", "All day schedule", "onService", "service operations"]) assert.ok(!source.includes(text), `removed: ${text}`);
   assert.doesNotMatch(source, /window\.(alert|confirm|prompt)/);
   const dashboard = read("../app/ui/HospitalityDashboard.tsx");

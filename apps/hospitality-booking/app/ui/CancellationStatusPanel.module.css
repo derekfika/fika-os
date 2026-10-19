@@ -1,0 +1,23 @@
+.panel { display: grid; gap: 12px; margin: 16px 0; padding: 16px; border: 1px solid var(--fika-border-default); border-left-width: 4px; border-radius: 12px; background: var(--fika-surface-card); color: var(--fika-text-primary); }
+.success { border-left-color: var(--fika-status-success); background: var(--fika-status-success-surface); }
+.warning { border-left-color: var(--fika-status-warning); background: var(--fika-status-warning-surface); }
+.danger { border-left-color: var(--fika-status-danger); background: var(--fika-status-danger-surface); }
+.neutral { border-left-color: var(--fika-border-default); }
+.title { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0; font-size: 16px; line-height: 22px; }
+.chip { padding: 2px 10px; border-radius: 999px; border: 1px solid var(--fika-border-default); background: var(--fika-surface-card); font-size: 12px; line-height: 16px; font-weight: 600; }
+.detail { margin: 0; font-size: 14px; line-height: 20px; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: start; font-size: 14px; line-height: 20px; }
+.steps li > span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--fika-border-default); background: var(--fika-surface-card); font-weight: 700; font-size: 13px; }
+.steps small { display: block; color: var(--fika-text-secondary); font-size: 13px; line-height: 18px; }
+.stepDone > span { background: var(--fika-status-success); border-color: var(--fika-status-success); color: var(--fika-surface-card); }
+.stepWait > span { border-color: var(--fika-status-warning); }
+.stepBad > span { border-color: var(--fika-status-danger); }
+.reasons { margin: 0; padding-left: 20px; font-size: 13px; line-height: 18px; }
+.meta { margin: 0; font-size: 13px; line-height: 18px; color: var(--fika-text-secondary); }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.actions button { min-height: 44px; padding: 12px 16px; border: 1px solid var(--fika-border-default); border-radius: 8px; background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; cursor: pointer; }
+.actions button:disabled { background: var(--fika-surface-subtle); color: var(--fika-text-secondary); cursor: default; }
+.actions button:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
+.error { margin: 0; padding: 12px 16px; font-size: 14px; border-left: 4px solid var(--fika-status-danger); border-radius: 8px; background: var(--fika-status-danger-surface); }
+@media (max-width: 600px) { .actions button { width: 100%; } }

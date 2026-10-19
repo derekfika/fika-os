@@ -53,3 +53,10 @@
   .footer { flex-direction: column-reverse; }
   .footer button { width: 100%; }
 }
+.group button.danger { color: var(--fika-status-danger); }
+.group button.danger:hover:not(:disabled) { background: var(--fika-status-danger-surface); }
+.group button.dangerSolid { background: var(--fika-status-danger); border-color: var(--fika-status-danger); color: var(--fika-surface-card); }
+.group button.dangerSolid:disabled { background: var(--fika-surface-subtle); color: var(--fika-text-secondary); border-color: var(--fika-border-default); }
+.cancelServices { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 4px; font-size: 14px; line-height: 20px; }
+.cancelServices li { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-top: 1px solid var(--fika-border-default); }
+@media (max-width: 600px) { .cancelServices li { flex-direction: column; gap: 2px; } }
