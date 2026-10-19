@@ -6,6 +6,7 @@ import { claimBookingEmail, notificationEvent, notificationWithEvent, type Email
 import type { BookingNotificationRecord } from "./booking-notifications";
 import type { CanonicalBooking } from "./hospitality-booking-service";
 import { assertStagingEmailCandidate } from "./booking-email-uat-safety";
+import { emailRolloutDisposition } from "./booking-email-rollout-guard";
 const notifications = () => db.collection("fikaBookingNotifications");
 const clean = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -29,10 +30,16 @@ export async function replayBookingEmail(id: string, reason: string, providerEvi
 
 export const bookingEmailStore: EmailOutboxStore = {
   async candidates(limit, at) {
-    const rows = await notifications().where("outboxStatus", "in", ["pending", "failed"]).where("nextEligibleAt", "<=", at).orderBy("nextEligibleAt").limit(limit).get();
+    // Skip other sites without mutating them; inspect a bounded window so RCoA mail is not starved by older site rows.
+    const rows = await notifications().where("outboxStatus", "in", ["pending", "failed"]).where("nextEligibleAt", "<=", at).orderBy("nextEligibleAt").limit(Math.max(limit, 100)).get();
     // Inspect the complete bounded batch before any claim or business mutation.
-    for (const row of rows.docs) assertStagingEmailCandidate(row.data() as BookingNotificationRecord);
-    return rows.docs.map(row => row.id);
+    const eligible = rows.docs.filter(row => {
+      const message = row.data() as BookingNotificationRecord;
+      if (emailRolloutDisposition(message) === "skip") return false;
+      assertStagingEmailCandidate(message);
+      return true;
+    });
+    return eligible.slice(0, limit).map(row => row.id);
   },
   async claim(id, claimId, at) {
     return db.runTransaction(async transaction => {
@@ -40,6 +47,7 @@ export const bookingEmailStore: EmailOutboxStore = {
       const row = await transaction.get(ref);
       if (!row.exists) return undefined;
       const message = row.data() as BookingNotificationRecord;
+      if (emailRolloutDisposition(message) === "skip") return undefined;
       assertStagingEmailCandidate(message);
       if (!message.delivery || !eventIsDue(notificationEvent(message), new Date(at))) return undefined;
       const source = await transaction.get(db.collection("fikaBookings").doc(message.bookingId));
@@ -57,6 +65,7 @@ export const bookingEmailStore: EmailOutboxStore = {
       const row = await transaction.get(ref);
       if (!row.exists) return false;
       const message = row.data() as BookingNotificationRecord;
+      if (emailRolloutDisposition(message) === "skip") return false;
       assertStagingEmailCandidate(message);
       if (message.delivery?.claimId !== claimId || message.sendingStartedAt || !message.delivery.leaseExpiresAt || message.delivery.leaseExpiresAt <= at) return false;
       const source = await transaction.get(db.collection("fikaBookings").doc(message.bookingId));
