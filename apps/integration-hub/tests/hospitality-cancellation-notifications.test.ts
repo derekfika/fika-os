@@ -12,6 +12,7 @@ import { bookingNotificationId, cancellationNotificationKind, type BookingNotifi
 import { bookingEmailStore } from "../lib/booking-email-firestore";
 import { runBookingEmailWorker } from "../lib/booking-email-outbox";
 import { stableDocumentId } from "../lib/canonical-editor";
+import { groupEventKey, groupNotificationId } from "../lib/booking-group-notifications";
 
 const enabled = process.env.FIKA_UAT_INTEGRATION_EMULATOR_TEST === "true";
 const oplocId = "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2";
@@ -88,22 +89,22 @@ test("actual standalone POST queues RCoA cancellation with omitted/false notify;
   });
 });
 
-test("actual grouped POST atomically queues one customer notice per service and repeated requests add none", { skip: !enabled }, async () => {
+test("actual grouped POST atomically queues ONE consolidated customer notice for the group and repeated requests add none", { skip: !enabled }, async () => {
   await asUser("admin", async () => {
     const f = await fixture(2), body = groupCommand(f);
     const response = await cancelGroup(request("/api/hospitality-booking-groups/cancel", body)); assert.equal(response.status, 200);
-    for (const saved of await f.read()) {
-      assert.equal(saved.lifecycleStatus, "Cancelled"); assert.equal(saved.dashboardWorkflow?.cancellation?.notificationOutcome, "queued");
-      const rows = await queuedFor(saved); assert.equal(rows.size, 1); assert.deepEqual(rows.docs[0].data().to, [saved.client.email]); assert.deepEqual(rows.docs[0].data().cc, []);
-    }
+    const groupMail = () => notifications().where("bookingGroupId", "==", f.groupId).get();
+    for (const saved of await f.read()) { assert.equal(saved.lifecycleStatus, "Cancelled"); assert.equal(saved.dashboardWorkflow?.cancellation?.notificationOutcome, "queued"); }
+    const rows = await groupMail(); assert.equal(rows.size, 1);
+    assert.deepEqual(rows.docs[0].data().to, [f.children[0].client.email]); assert.deepEqual(rows.docs[0].data().cc, []); assert.equal((rows.docs[0].data().groupBookingIds as string[]).length, 2);
     assert.equal((await cancelGroup(request("/api/hospitality-booking-groups/cancel", body))).status, 200);
-    for (const saved of await f.read()) assert.equal((await queuedFor(saved)).size, 1);
+    assert.equal((await groupMail()).size, 1);
   });
 });
 
 test("group notification failure rolls back all child cancellations and audit writes", { skip: !enabled }, async () => {
   await asUser("admin", async () => {
-    const f = await fixture(2), duplicateId = bookingNotificationId(f.children[1], "cancelled", 2);
+    const f = await fixture(2), duplicateId = groupNotificationId(f.groupId, "cancelled", groupEventKey([f.groupId, f.children.map(child => [child.canonicalId, child.version + 1])]));
     await notifications().doc(duplicateId).create({ test: "existing immutable notification" });
     const response = await cancelGroup(request("/api/hospitality-booking-groups/cancel", groupCommand(f))); assert.ok(response.status >= 400);
     assert.deepEqual(await f.read(), f.children);

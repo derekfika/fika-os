@@ -1,6 +1,7 @@
 import { groupCommercialState, groupHash, validateBookingGroup, MAX_GROUP_SERVICES } from "./hospitality-group-commercial";
 import { groupAmendmentCommand, groupChargesCommand, type GroupAmendmentCommand, type GroupChargesCommand } from "./hospitality-group-amendment";
 import crypto from "node:crypto";
+import { groupEventKey, groupNotificationRecord, groupSubmittedNotification } from "./booking-group-notifications";
 import { hospitalityGroupProjection } from "./hospitality-group-projection";
 import { explicitMenuProductionRouting } from "./connections-service";
 import { LEGACY_HOSPITALITY_MENU_ROUTING } from "./hospitality-routing-suggestions";
@@ -40,6 +41,7 @@ import {
   cancellationNotificationKind,
   type CancellationEvent,
   type BookingNotificationKind,
+  type BookingNotificationRecord,
 } from "./booking-notifications";
 import {
   createProductionFromApprovedBooking,
@@ -711,6 +713,15 @@ export async function ingestMnkBooking(
       destinationOplocId,
     );
     if (!result.created) return result;
+    // Grouped services are ingested one by one: the customer gets ONE request-received email, created in the same
+    // transaction that commits the last service. Single-service bookings keep their per-booking notification.
+    const groupLink = result.booking.bookingGroup;
+    let groupSubmitted: BookingNotificationRecord | undefined;
+    if (groupLink && groupLink.size > 1) {
+      const siblings = await transaction.get(bookings().where("bookingGroup.id", "==", groupLink.id).limit(MAX_GROUP_SERVICES + 1));
+      try { groupSubmitted = groupSubmittedNotification(result.booking, siblings.docs.map(document => document.data() as CanonicalBooking)); }
+      catch (error) { console.error("hospitality.group-email.submitted-skipped", { bookingGroupId: groupLink.id, message: error instanceof Error ? error.message : String(error) }); }
+    }
     transaction.create(
       bookings().doc(result.booking.canonicalId),
       result.booking,
@@ -727,24 +738,28 @@ export async function ingestMnkBooking(
         status: result.booking.lifecycleStatus,
       },
     );
-    transaction.create(
-      db
-        .collection("fikaBookingNotifications")
-        .doc(
-          bookingNotificationRecord(
-            result.booking,
-            "submitted",
-            result.booking.version,
-            result.booking.createdAt,
-          ).notificationId,
+    if (!groupLink || groupLink.size <= 1) {
+      transaction.create(
+        db
+          .collection("fikaBookingNotifications")
+          .doc(
+            bookingNotificationRecord(
+              result.booking,
+              "submitted",
+              result.booking.version,
+              result.booking.createdAt,
+            ).notificationId,
+          ),
+        bookingNotificationRecord(
+          result.booking,
+          "submitted",
+          result.booking.version,
+          result.booking.createdAt,
         ),
-      bookingNotificationRecord(
-        result.booking,
-        "submitted",
-        result.booking.version,
-        result.booking.createdAt,
-      ),
-    );
+      );
+    } else if (groupSubmitted) {
+      transaction.create(db.collection("fikaBookingNotifications").doc(groupSubmitted.notificationId), groupSubmitted);
+    }
     return result;
   });
   return result;
@@ -1804,6 +1819,11 @@ export async function amendHospitalityBookingGroup(actor: Actor, input: GroupAme
       stage(); transaction.set(bookings().doc(next.canonicalId), next);
       transaction.create(bookingAudit().doc(`${next.canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${next.version}`), { canonicalId: next.canonicalId, bookingGroupId: command.bookingGroupId, action: "workflow-amend", actorId: actor.uid, at: now, reason: command.reason, version: next.version });
     }
+    if (prepared.length) {
+      const changed = prepared.map(item => item.next);
+      const notification = groupNotificationRecord({ kind: "amended", children: nextChildren, affected: changed.map(child => child.canonicalId), previous: Object.fromEntries(changed.map(child => [child.canonicalId, children.find(existing => existing.canonicalId === child.canonicalId)!])), anchor: changed[0], eventKey: groupEventKey([command.bookingGroupId, changed.map(child => [child.canonicalId, child.version])]), createdAt: now });
+      transaction.create(db.collection("fikaBookingNotifications").doc(notification.notificationId), notification);
+    }
     if (prepared.length) transaction.create(bookingAudit().doc(`group-amend:${groupHash([command.bookingGroupId, command.expectedSourceHash, command.services.map(s => s.expectedVersion)])}`), { bookingGroupId: command.bookingGroupId, action: "group-amended", actorId: actor.uid, at: now, reason: command.reason, childBookingIds: nextChildren.map(b => b.canonicalId), changedBookingIds: prepared.map(p => p.next.canonicalId) });
     return { children: nextChildren, projectionChanges: prepared.flatMap(p => p.changes) };
   });
@@ -1860,11 +1880,6 @@ export async function cancelHospitalityBookingGroup(actor: Actor, input: { booki
       const next = nextById.get(plan.child.canonicalId)!;
       transaction.set(bookings().doc(next.canonicalId), next);
       transaction.create(bookingAudit().doc(`${next.canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${next.version}`), { canonicalId: next.canonicalId, bookingGroupId: input.bookingGroupId, action: "workflow-cancel", actorId: actor.uid, at: now, reason: input.reason, version: next.version, cancellationEvent });
-      const notificationKind = cancellationNotificationKind(next, cancellationEvent);
-      if (notificationKind) {
-        const notification = bookingNotificationRecord(next, notificationKind, next.version, now);
-        transaction.create(db.collection("fikaBookingNotifications").doc(notification.notificationId), notification);
-      }
       if (requiresCpuReview) continue;
       for (const { ref, order } of plan.orders) transaction.set(ref, { status: "cancelled", workflowStatus: "cancelled", updatedAt: now, cancellationNotice: `Booking cancelled: ${input.reason}`, version: Number(order.version || 1) + 1, cancelledAt: now, cancelledBy: actor.uid, audit: [...(order.audit || []), { action: "production-order-cancelled-by-booking", at: now, by: actor.uid, previousState: order.status, newState: "cancelled", reason: input.reason }] }, { merge: true });
       for (const requirementRef of plan.requirements) {
@@ -1874,6 +1889,12 @@ export async function cancelHospitalityBookingGroup(actor: Actor, input: { booki
       }
     }
     transaction.create(bookingAudit().doc(`group-cancel:${groupHash([input.bookingGroupId, input.expectedSourceHash])}`), { bookingGroupId: input.bookingGroupId, action: "group-cancelled", actorId: actor.uid, at: now, reason: input.reason, childBookingIds: children.map(child => child.canonicalId), requiresCpuReview, cancellationEvent });
+    // ONE customer notification per cancellation event, covering every service it cancelled and naming any that remain active.
+    const newlyCancelled = plans.map(plan => nextById.get(plan.child.canonicalId)!);
+    if (newlyCancelled.length && cancellationNotificationKind(newlyCancelled[0], cancellationEvent)) {
+      const notification = groupNotificationRecord({ kind: "cancelled", children: [...nextById.values()], affected: newlyCancelled.map(child => child.canonicalId), anchor: newlyCancelled[0], eventKey: groupEventKey([input.bookingGroupId, newlyCancelled.map(child => [child.canonicalId, child.version])]), createdAt: now });
+      transaction.create(db.collection("fikaBookingNotifications").doc(notification.notificationId), notification);
+    }
     return { children: [...nextById.values()], plans, changes, idempotent: false as const, requiresCpuReview };
   });
   if (result.idempotent) {

@@ -84,12 +84,16 @@ test("group cancellation preserves services and audit, is idempotent, and flags 
   const cpu = await cpuFixture(activeOrders[1].order!.canonicalId);
   const cancelled = await cancelHospitalityBookingGroup(actor, command, async () => {}, "customer-cancellation");
   assert.ok(cancelled.bookings.every(booking => booking.lifecycleStatus === "Cancelled"));
-  const notices = await Promise.all(cancelled.bookings.map(async booking => {
-    assert.equal(booking.dashboardWorkflow?.cancellation?.notificationOutcome, "queued");
-    const ref = db.collection("fikaBookingNotifications").doc(bookingNotificationId(booking, "cancelled", booking.version));
-    assert.equal((await ref.get()).exists, true, "customer mail commits even while a CPU withdrawal fails");
-    return { ref, bytes: JSON.stringify((await ref.get()).data()) };
-  }));
+  // One consolidated customer email per group cancellation event (not one per service).
+  assert.ok(cancelled.bookings.every(booking => booking.dashboardWorkflow?.cancellation?.notificationOutcome === "queued"));
+  // The two CPU hand-offs above legitimately queued ONE consolidated confirmation; cancellation must add exactly one more notice.
+  const groupMail = await db.collection("fikaBookingNotifications").where("bookingGroupId", "==", f.id).get();
+  const cancelNotices = groupMail.docs.filter(document => document.data().kind === "cancelled");
+  assert.ok(groupMail.docs.filter(document => document.data().kind === "confirmed").length <= 1, "at most one group confirmation");
+  assert.equal(cancelNotices.length, 1, "customer mail commits once for the whole group even while a CPU withdrawal fails");
+  assert.equal((cancelNotices[0].data().groupBookingIds as string[]).length, cancelled.bookings.length);
+  assert.equal(cancelNotices[0].data().delivery.status, "pending", "the durable outbox row is committed, not yet sent");
+  const notices = [{ ref: cancelNotices[0].ref, bytes: JSON.stringify(cancelNotices[0].data()) }];
   assert.ok(cancelled.bookings.every(booking => booking.audit.some(event => event.action === "workflow-cancel")));
   assert.equal(cancelled.projectionPropagation.status, "pending", "one failed CPU child leaves the grouped withdrawal pending");
   assert.ok(projectBookingGroup(f.id, cancelled.bookings).services.every(service => service.cancellation?.downstreamPropagation === "pending"));

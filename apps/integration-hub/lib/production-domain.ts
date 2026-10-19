@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { bookingNotificationRecord } from "./booking-notifications";
+import { queueGroupConfirmation } from "./booking-group-confirmation";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
 import type { CanonicalBooking } from "./hospitality-booking-service";
@@ -60,6 +61,19 @@ export function productionRequirementId(bookingId: string, quoteRevisionId: stri
 export function productionOrderV1Id(bookingId: string, bookingVersion?: number) { return `production-order:v1:${bookingId}${bookingVersion && bookingVersion > 1 ? `:r${bookingVersion}` : ""}`; }
 
 export async function createProductionFromApprovedBooking(actor: Actor, bookingId: string, idempotencyKey: string, conversions: Record<string, { quantity: number; unit: string }> = {}) {
+  const result = await createProductionFromApprovedBookingTransaction(actor, bookingId, idempotencyKey, conversions);
+  if (result.status === "created" || result.status === "already_exists") {
+    // Committed hand-off: a grouped booking may now be fully confirmed. Failure here never fails the hand-off; the next hand-off retries it.
+    try {
+      const snapshot = await bookings().doc(bookingId).get();
+      const groupId = (snapshot.data() as CanonicalBooking | undefined)?.bookingGroup?.id;
+      if (groupId) await queueGroupConfirmation(groupId);
+    } catch (error) { console.error("hospitality.group-confirmation.failed", { bookingId, message: error instanceof Error ? error.message : String(error) }); }
+  }
+  return result;
+}
+
+async function createProductionFromApprovedBookingTransaction(actor: Actor, bookingId: string, idempotencyKey: string, conversions: Record<string, { quantity: number; unit: string }> = {}) {
   if (!idempotencyKey.trim()) throw conflict("An idempotency key is required for production hand-off.");
   return db.runTransaction(async transaction => {
     const bookingSnapshot = await transaction.get(bookings().doc(bookingId));
@@ -103,8 +117,11 @@ export async function createProductionFromApprovedBooking(actor: Actor, bookingI
         ],
       };
       transaction.set(bookingSnapshot.ref, nextBooking);
-      const notification = bookingNotificationRecord(nextBooking, "confirmed", nextBooking.version, now);
-      transaction.create(db.collection("fikaBookingNotifications").doc(notification.notificationId), notification);
+      // Grouped services are confirmed to the customer once, for the whole group, by queueGroupConfirmation after commit.
+      if (!nextBooking.bookingGroup?.id) {
+        const notification = bookingNotificationRecord(nextBooking, "confirmed", nextBooking.version, now);
+        transaction.create(db.collection("fikaBookingNotifications").doc(notification.notificationId), notification);
+      }
     };
     const orderId = existingBase?.status === "amended"
       ? productionOrderV1Id(bookingId, booking.version)
