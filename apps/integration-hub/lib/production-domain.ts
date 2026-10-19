@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { bookingNotificationRecord } from "./booking-notifications";
-import { queueGroupConfirmation } from "./booking-group-confirmation";
+import { evaluateGroupConfirmation, loadGroupConfirmationContext, queueGroupConfirmation } from "./booking-group-confirmation";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
 import type { CanonicalBooking } from "./hospitality-booking-service";
@@ -73,7 +73,8 @@ export async function createProductionFromApprovedBooking(actor: Actor, bookingI
   return result;
 }
 
-async function createProductionFromApprovedBookingTransaction(actor: Actor, bookingId: string, idempotencyKey: string, conversions: Record<string, { quantity: number; unit: string }> = {}) {
+/** The hand-off transaction itself (no post-commit work). Exported so tests can prove the confirmation commits atomically with it. */
+export async function createProductionFromApprovedBookingTransaction(actor: Actor, bookingId: string, idempotencyKey: string, conversions: Record<string, { quantity: number; unit: string }> = {}) {
   if (!idempotencyKey.trim()) throw conflict("An idempotency key is required for production hand-off.");
   return db.runTransaction(async transaction => {
     const bookingSnapshot = await transaction.get(bookings().doc(bookingId));
@@ -100,6 +101,9 @@ async function createProductionFromApprovedBookingTransaction(actor: Actor, book
     const baseOrderSnapshot = await transaction.get(baseOrderRef);
     const existingBase = baseOrderSnapshot.exists ? baseOrderSnapshot.data() as ProductionOrder : undefined;
     const now = new Date().toISOString();
+    // Grouped services: read the group (and sibling routing) BEFORE any write so the consolidated confirmation can be
+    // created in this same transaction when this hand-off completes the group.
+    const groupContext = booking.bookingGroup?.id ? await loadGroupConfirmationContext(transaction, booking.bookingGroup.id, bookingId) : undefined;
     const markBookingSentToCpu = () => {
       const nextBooking: CanonicalBooking = {
         ...booking,
@@ -117,8 +121,11 @@ async function createProductionFromApprovedBookingTransaction(actor: Actor, book
         ],
       };
       transaction.set(bookingSnapshot.ref, nextBooking);
-      // Grouped services are confirmed to the customer once, for the whole group, by queueGroupConfirmation after commit.
-      if (!nextBooking.bookingGroup?.id) {
+      // Grouped services are confirmed to the customer ONCE, for the whole group, atomically with the hand-off that completes it.
+      if (groupContext) {
+        const decision = evaluateGroupConfirmation(groupContext, nextBooking);
+        if (decision.notification) transaction.create(db.collection("fikaBookingNotifications").doc(decision.notification.notificationId), decision.notification);
+      } else {
         const notification = bookingNotificationRecord(nextBooking, "confirmed", nextBooking.version, now);
         transaction.create(db.collection("fikaBookingNotifications").doc(notification.notificationId), notification);
       }

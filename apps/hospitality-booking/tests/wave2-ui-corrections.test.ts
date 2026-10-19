@@ -10,6 +10,15 @@ test("cancellation step markers use dark glyphs on a white disc with a status ri
   assert.doesNotMatch(css, /color: var\(--fika-surface-card\)/);
 });
 
+test("group cancel dialog describes ONE consolidated email, never one per service or a delivery promise", () => {
+  const group = read("../app/ui/HospitalityGroupDetail.tsx");
+  assert.match(group, /one consolidated cancellation email is queued for the whole group, covering the services cancelled here and naming any that remain active/);
+  assert.match(group, /A queued email is not a confirmation that it was delivered/);
+  assert.doesNotMatch(group, /for each cancelled service/);
+  const dashboard = read("../app/ui/HospitalityDashboard.tsx");
+  assert.match(dashboard, /A client cancellation email is queued automatically only where the Hub has customer cancellation email enabled for this site/);
+});
+
 test("Sending to CPU is shown only while a CPU send is in flight", () => {
   const panel = read("../app/ui/BookingProductionPanel.tsx");
   assert.match(panel, /sending \? "Sending to CPU…" : label/);

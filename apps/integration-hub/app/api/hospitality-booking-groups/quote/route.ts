@@ -11,6 +11,7 @@ import { groupQuoteDriveArtifact } from "@/lib/hospitality-group-quote-artifact"
 import { resolveDriveOwner } from "@fika/server-shared/drive-owner";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { errorResponse } from "@/lib/api";
+import { queueGroupConfirmation } from "@/lib/booking-group-confirmation";
 
 const Command = z.object({ bookingGroupId: z.string().trim().min(1).max(160), expectedVersion: z.number().int().nonnegative(), expectedSourceHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 export async function POST(request: NextRequest) {
@@ -36,6 +37,8 @@ export async function POST(request: NextRequest) {
           return { folderId, oplocId: booking.service.oplocId! };
         },
       });
+      // Reconciliation trigger: a completed group quote can be what makes the last in-house service eligible. Idempotent; never fails the quote.
+      if (quote.status === "complete") { try { await queueGroupConfirmation(command.bookingGroupId); } catch (error) { console.error("hospitality.group-confirmation.reconcile-failed", { bookingGroupId: command.bookingGroupId, message: error instanceof Error ? error.message : String(error) }); } }
       return NextResponse.json({ quote: { id: quote.id, revision: quote.revision, status: quote.status, ...(quote.status === "complete" ? { driveUrl: quote.artifact.driveUrl } : {}), ...(quote.error ? { error: quote.error } : {}) } }, { status: quote.status === "complete" ? 200 : 202 });
     } catch (error) { return errorResponse(error); }
   });

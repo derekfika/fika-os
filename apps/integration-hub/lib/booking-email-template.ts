@@ -56,11 +56,22 @@ function summaryRows(booking: CanonicalBooking) {
   return rows.filter(([, value]) => present(value));
 }
 
+/**
+ * The menu's serving text ("Per person", "Feeds 10") describes what the UNIT price covers, never the line total.
+ * It is shown with the unit price ("£9.00 per person"); the amount in the total column is labelled "Line total".
+ */
+export function priceBasis(serving: string | undefined, unit: number | undefined) {
+  const text = (serving || "").trim();
+  if (!text) return "";
+  if (unit === undefined) return text;
+  return /^per\s/i.test(text) ? `${money(unit)} ${text.charAt(0).toLowerCase()}${text.slice(1)}` : `${money(unit)} · ${text}`;
+}
+
 export function itemLines(booking: CanonicalBooking) {
   return booking.order.items.filter(item => Number(item.quantity) > 0 || present(item.itemName)).map(item => {
     const unit = typeof item.unitPrice === "number" && Number.isFinite(item.unitPrice) ? item.unitPrice : undefined;
     const total = typeof item.lineTotal === "number" && Number.isFinite(item.lineTotal) ? item.lineTotal : unit !== undefined ? unit * Number(item.quantity) : undefined;
-    return { name: item.itemName || item.itemId, quantity: Number(item.quantity), unit: unit === undefined ? "" : money(unit), total: total === undefined ? "" : money(total), totalValue: total, serving: item.servingInfo || "", comments: item.comments || "" };
+    return { name: item.itemName || item.itemId, quantity: Number(item.quantity), unit: unit === undefined ? "" : money(unit), total: total === undefined ? "" : money(total), totalValue: total, serving: priceBasis(item.servingInfo, unit), comments: item.comments || "" };
   });
 }
 
@@ -129,7 +140,7 @@ export function renderBookingEmail(kind: BookingNotificationKind, booking: Canon
   const th = (label: string, align = "left") => `<th align="${align}" style="padding:10px 6px;border-bottom:2px solid ${C.purple};font-family:${FONT};font-size:11px;font-weight:900;letter-spacing:1.2px;text-transform:uppercase;color:${C.purple};text-align:${align};">${label}</th>`;
   const td = (inner: string, align = "left", extra = "") => `<td align="${align}" valign="top" style="padding:11px 6px;border-bottom:1px solid ${C.line};font-family:${FONT};font-size:14px;color:${C.ink};text-align:${align};${extra}">${inner}</td>`;
   const itemsHtml = items.length ? `<h2 style="margin:28px 0 8px;font-family:${FONT};font-size:18px;line-height:1.2;color:${C.ink};">${kind === "submitted" ? "Your requested items" : "Your booked items"}</h2>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>${th("Qty", "center")}${th("Item")}${showPrices ? th("Unit", "right") + th("Total", "right") : ""}</tr>${items.map(item => `<tr>${td(esc(item.quantity), "center", "width:40px;font-weight:900;")}${td(`<span style="font-weight:900;">${esc(item.name)}</span>${item.serving ? `<br><span style="font-size:12px;color:${C.muted};">${esc(item.serving)}</span>` : ""}${item.comments ? `<br><span style="font-size:12px;color:${C.purple};">${esc(item.comments)}</span>` : ""}`)}${showPrices ? td(esc(item.unit), "right", "white-space:nowrap;color:" + C.muted + ";") + td(esc(item.total), "right", "white-space:nowrap;font-weight:900;") : ""}</tr>`).join("")}</table>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>${th("Qty", "center")}${th("Item")}${showPrices ? th("Unit", "right") + th("Line total", "right") : ""}</tr>${items.map(item => `<tr>${td(esc(item.quantity), "center", "width:40px;font-weight:900;")}${td(`<span style="font-weight:900;">${esc(item.name)}</span>${item.serving ? `<br><span style="font-size:12px;color:${C.muted};">${esc(item.serving)}</span>` : ""}${item.comments ? `<br><span style="font-size:12px;color:${C.purple};">${esc(item.comments)}</span>` : ""}`)}${showPrices ? td(esc(item.unit), "right", "white-space:nowrap;color:" + C.muted + ";") + td(esc(item.total), "right", "white-space:nowrap;font-weight:900;") : ""}</tr>`).join("")}</table>
 ${sums.length ? `<table role="presentation" width="260" align="right" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px;width:260px;">${sums.map(([label, value, strong]) => `<tr><td style="padding:${strong ? "9px" : "4px"} 0 4px;${strong ? `border-top:3px solid ${C.purple};` : ""}font-family:${FONT};font-size:${strong ? 16 : 14}px;color:${strong ? C.ink : C.muted};font-weight:${strong ? 900 : 400};">${esc(label)}</td><td align="right" style="padding:${strong ? "9px" : "4px"} 0 4px;${strong ? `border-top:3px solid ${C.purple};` : ""}font-family:${FONT};font-size:${strong ? 16 : 14}px;color:${C.ink};font-weight:900;white-space:nowrap;">${esc(value)}</td></tr>`).join("")}</table><div style="clear:both;"></div>` : ""}` : "";
 
   const html = emailShellHtml({ branding, copy, tone, greeting, summaryHtml, itemsHtml, reference: booking.source.sourceBookingId });

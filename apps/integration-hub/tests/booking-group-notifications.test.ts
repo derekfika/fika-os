@@ -6,7 +6,8 @@ import { stableDocumentId } from "../lib/canonical-editor";
 import { amendHospitalityBookingGroup, cancelHospitalityBookingGroup, type CanonicalBooking } from "../lib/hospitality-booking-service";
 import { groupCommercialState } from "../lib/hospitality-group-commercial";
 import { describeServiceChanges, groupEventKey, groupNotificationId, groupNotificationRecord, groupSubmittedNotification, renderGroupBookingEmail } from "../lib/booking-group-notifications";
-import { GROUP_CONFIRMATION_EFFECTIVE_FROM, queueGroupConfirmation } from "../lib/booking-group-confirmation";
+import { GROUP_CONFIRMATION_EFFECTIVE_FROM, confirmationEventKey, evaluateGroupConfirmation, queueGroupConfirmation, type GroupConfirmationContext } from "../lib/booking-group-confirmation";
+import { priceBasis } from "../lib/booking-email-template";
 import { notificationIsCurrent } from "../lib/booking-email-delivery";
 import { buildBookingEmail } from "../lib/booking-notifications";
 
@@ -155,4 +156,67 @@ test("confirmation waits until every CPU service is handed off, is queued once, 
   const o = await seed(old);
   assert.ok("2026-10-19T08:05:00.000Z" < GROUP_CONFIRMATION_EFFECTIVE_FROM);
   assert.equal(await queueGroupConfirmation(old.id), "historical"); assert.equal((await o.mails()).length, 0);
+});
+
+const handedOff = (child: CanonicalBooking, at: string) => clone(child, { lifecycleStatus: "Sent to CPU", version: 2, statusHistory: [{ status: "Sent to CPU", changedAt: at, changedBy: "t", reason: "r" }] });
+const context = (children: CanonicalBooking[], inHouse: string[] = [], existing: string[] = []): GroupConfirmationContext => ({ bookingGroupId: children[0].bookingGroup!.id, children, inHouse: new Set(inHouse), existing: new Set(existing) });
+const AT = "2026-10-20T10:00:00.000Z";
+
+test("confirmation decision: waits for every CPU service, counts explicit in-house services, ignores cancelled ones", () => {
+  const { children } = makeChildren();
+  const ctx = context(children, [children[2].canonicalId]);
+  assert.equal(evaluateGroupConfirmation(ctx).outcome, "waiting");
+  assert.equal(evaluateGroupConfirmation(ctx, handedOff(children[0], AT)).outcome, "waiting", "one of two CPU services handed off");
+  const both = context([handedOff(children[0], AT), children[1], children[2]], [children[2].canonicalId]);
+  const done = evaluateGroupConfirmation(both, handedOff(children[1], "2026-10-20T10:05:00.000Z"));
+  assert.equal(done.outcome, "queued"); assert.equal(done.notification!.bookingId, children[1].canonicalId); assert.equal(done.notification!.createdAt, "2026-10-20T10:05:00.000Z");
+  assert.equal(evaluateGroupConfirmation(context(children, [children[1].canonicalId, children[2].canonicalId]), handedOff(children[0], AT)).outcome, "queued", "mixed in-house and CPU");
+  const cancelled = context([children[0], clone(children[1], { lifecycleStatus: "Cancelled" }), children[2]], [children[2].canonicalId]);
+  assert.equal(evaluateGroupConfirmation(cancelled, handedOff(children[0], AT)).outcome, "queued", "a cancelled service never blocks or appears confirmed");
+  assert.equal(evaluateGroupConfirmation(context(children, children.map(c => c.canonicalId))).outcome, "not_applicable", "all in house: no CPU hand-off, so no confirmation");
+});
+
+test("confirmation decision: historical hand-offs are excluded and existing confirmations are never recreated", () => {
+  const { children } = makeChildren();
+  const old = "2026-10-19T08:00:00.000Z"; assert.ok(old < GROUP_CONFIRMATION_EFFECTIVE_FROM);
+  const ctx = context([handedOff(children[0], old), children[1], children[2]], [children[2].canonicalId]);
+  assert.equal(evaluateGroupConfirmation(ctx, handedOff(children[1], old)).outcome, "historical");
+  const fresh = context([handedOff(children[0], AT), children[1], children[2]], [children[2].canonicalId]);
+  const key = confirmationEventKey(children[0].bookingGroup!.id, children);
+  const queued = evaluateGroupConfirmation(fresh, handedOff(children[1], AT));
+  assert.equal(evaluateGroupConfirmation({ ...fresh, existing: new Set([queued.notification!.notificationId]) }, handedOff(children[1], AT)).outcome, "exists");
+  assert.ok(queued.notification!.notificationId.endsWith(key));
+});
+
+test("confirmation identity follows commercial state: stable across hand-offs, new only after a commercial amendment", () => {
+  const { children, id } = makeChildren();
+  const base = confirmationEventKey(id, children);
+  assert.equal(confirmationEventKey(id, children.map(c => handedOff(c, AT))), base, "hand-off state does not change the key");
+  assert.equal(confirmationEventKey(id, children.map(c => clone(c, { notes: "changed" }))), base, "a non-commercial amendment does not create a second confirmation");
+  assert.notEqual(confirmationEventKey(id, [children[0], clone(children[1], { commercialVersion: 2 }), children[2]]), base, "a commercial amendment is a new confirmation event");
+});
+
+test("price labels: serving text describes the UNIT price; the amount column is the line total", () => {
+  assert.equal(priceBasis("Per person", 9), "£9.00 per person");
+  assert.equal(priceBasis("Feeds 10", 75), "£75.00 · Feeds 10");
+  assert.equal(priceBasis("", 9), ""); assert.equal(priceBasis("Per person", undefined), "Per person");
+  const { children, id } = makeChildren();
+  const lunch = clone(children[0], { order: { ...children[0].order, items: [{ itemId: "i:lunch", itemName: "Deli Style Sandwich Lunch", unitPrice: 9, quantity: 20, lineTotal: 180, servingInfo: "Per person" }, { itemId: "i:box", itemName: "Cheese Box", unitPrice: 75, quantity: 2, lineTotal: 150, servingInfo: "Feeds 10" }], netTotal: 330, vatTotal: 0, grossTotal: 330 } });
+  const group = renderGroupBookingEmail({ kind: "confirmed", children: [lunch, children[1], children[2]] });
+  assert.match(group.html, /Line total/); assert.match(group.html, /£9\.00 per person/); assert.match(group.html, /£180\.00/); assert.match(group.html, /£75\.00 · Feeds 10/);
+  assert.doesNotMatch(group.html, />Per person</, "the bare serving text is never shown next to the line total");
+  assert.match(group.text, /20 x Deli Style Sandwich Lunch \(£180\.00\)/);
+  assert.equal((group.html.match(/Total</g) || []).length >= 1, true); assert.equal((group.html.match(/>Total</g) || []).length, 1, "one group total");
+  const single = buildBookingEmail("confirmed", lunch);
+  assert.match(single.html, /Line total/); assert.match(single.html, /£9\.00 per person/); assert.doesNotMatch(single.html, />Per person</);
+  assert.match(single.html, /£330\.00/, "single-service subtotal and total unchanged");
+  void id;
+});
+
+test("additional charges appear as labelled lines and reconcile into the group totals", () => {
+  const { children } = makeChildren();
+  const charged = clone(children[0], { additionalCharges: [{ id: "charge_12345678", kind: "manual", category: "equipment", label: "AV hire", quantity: 2, unitNet: 15, netTotal: 30, createdAt: "t", createdBy: "t" }] as never });
+  const email = renderGroupBookingEmail({ kind: "confirmed", children: [charged, children[1], children[2]] });
+  assert.match(email.html, /AV hire/); assert.match(email.html, /£30\.00/); assert.match(email.html, /Additional charges/);
+  assert.match(email.html, /Total<\/td><td[^>]*>£90\.00/);
 });

@@ -139,7 +139,7 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
       <p className="eyebrow">Governed workflow command</p>
       <h2 id="group-cancel-title">Cancel {group.services.length} services?</h2>
       <p>This cancels the whole All Day Hospitality booking for {group.client.companyName} on {ukLongDate(group.eventDate)}. Production work is withdrawn from CPU and Logistics where it is safe to do so; anything CPU has already advanced is flagged for manual review instead.</p>
-      <p>Where the Hub has customer cancellation email enabled for this site, one email is queued automatically for each cancelled service.</p>
+      <p>Where the Hub has customer cancellation email enabled for this site, one consolidated cancellation email is queued for the whole group, covering the services cancelled here and naming any that remain active. A queued email is not a confirmation that it was delivered.</p>
       <label>Cancellation reason<textarea autoFocus required minLength={3} maxLength={1000} value={cancelReason} disabled={cancelBusy} onChange={event => setCancelReason(event.target.value)} /></label>
       {cancelError && <p role="alert" className={styles.error}>{cancelError}</p>}
       <footer><button type="button" onClick={closeCancel} disabled={cancelBusy}>Keep booking</button><button type="submit" className={styles.dangerSolid} disabled={cancelBusy || cancelReason.trim().length < 3} aria-busy={cancelBusy}>{cancelBusy ? "Cancelling…" : `Cancel ${group.services.length} services`}</button></footer>

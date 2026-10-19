@@ -7,9 +7,10 @@ import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
 import { amendHospitalityBookingGroup, setHospitalityGroupServiceCharges, bookingWorkspace, cancelHospitalityBookingGroup, executeBookingWorkflow, type CanonicalBooking } from "../lib/hospitality-booking-service";
 import { groupCommercialState, projectBookingGroup } from "../lib/hospitality-group-commercial";
+import { queueGroupConfirmation } from "../lib/booking-group-confirmation";
 import { generateHospitalityGroupQuote } from "../lib/hospitality-group-quote-workflow";
 import { firestoreGroupQuoteStore } from "../lib/hospitality-group-quote-store";
-import { createProductionFromApprovedBooking } from "../lib/production-domain";
+import { createProductionFromApprovedBookingTransaction, createProductionFromApprovedBooking } from "../lib/production-domain";
 import { hospitalityCancellationEventId } from "../lib/hospitality-cancellation-outbox";
 import { bookingNotificationId } from "../lib/booking-notifications";
 import { groupAmendmentCommand, groupChargesCommand, validLondonServiceTime, type GroupAmendmentCommand } from "../lib/hospitality-group-amendment";
@@ -433,4 +434,42 @@ test("wave integration: a charge save invalidates stale cancellation and cancell
   assert.deepEqual(saved[1].additionalCharges, charged[1].additionalCharges, "cancellation preserves approved commercial history");
   await assert.rejects(setHospitalityGroupServiceCharges(actor, { bookingGroupId: f.id, bookingId: saved[1].canonicalId, expectedVersion: saved[1].version, expectedSourceHash: groupCommercialState(f.id, saved).sourceHash, charges: [] }, async () => {}), /cancelled|additional charges/i);
   assert.deepEqual(await f.read(), saved);
+});
+
+const confirmations = async (groupId: string) => (await db.collection("fikaBookingNotifications").where("bookingGroupId", "==", groupId).get()).docs.filter(document => document.data().kind === "confirmed");
+const handoff = (f: { id: string; children: CanonicalBooking[] }, index: number) => createProductionFromApprovedBookingTransaction(actor, f.children[index].canonicalId, `test:${f.id}:${index}`);
+
+test("group confirmation commits ATOMICALLY with the hand-off that completes the group (no post-commit step needed)", { skip: !enabled }, async () => {
+  const f = await fixture(); await f.quote(0);
+  await handoff(f, 0);
+  assert.equal((await confirmations(f.id)).length, 0, "a partly handed-off group is never confirmed");
+  await handoff(f, 1);
+  const rows = await confirmations(f.id);
+  assert.equal(rows.length, 1, "the final CPU hand-off created the confirmation in its own transaction");
+  assert.match(String(rows[0].data().html), /All 3 services/, "the in-house service is confirmed with the group");
+  assert.equal(rows[0].data().delivery.status, "pending");
+  await assert.rejects(handoff(f, 1), /Generate a current quote/, "a repeated hand-off of a sent service is refused before any write");
+  assert.equal((await confirmations(f.id)).length, 1, "a repeated hand-off adds nothing");
+  assert.equal(await queueGroupConfirmation(f.id), "exists");
+});
+
+test("concurrent final hand-offs create exactly one confirmation", { skip: !enabled }, async () => {
+  const f = await fixture(); await f.quote(0);
+  await Promise.all([handoff(f, 0), handoff(f, 1)]);
+  assert.equal((await confirmations(f.id)).length, 1);
+  assert.equal(await queueGroupConfirmation(f.id), "exists");
+});
+
+test("an interrupted or missing confirmation is repaired once by the idempotent reconciliation, never duplicated", { skip: !enabled }, async () => {
+  const f = await fixture(); await f.quote(0);
+  await handoff(f, 0); await handoff(f, 1);
+  const [row] = await confirmations(f.id);
+  await row.ref.delete(); // simulate a confirmation lost between hand-off and notification
+  assert.equal((await confirmations(f.id)).length, 0);
+  assert.equal(await queueGroupConfirmation(f.id), "queued");
+  assert.equal((await confirmations(f.id)).length, 1);
+  assert.equal(await queueGroupConfirmation(f.id), "exists");
+  const results = await Promise.all([queueGroupConfirmation(f.id), queueGroupConfirmation(f.id)]);
+  assert.ok(results.every(result => result === "exists"));
+  assert.equal((await confirmations(f.id)).length, 1);
 });
