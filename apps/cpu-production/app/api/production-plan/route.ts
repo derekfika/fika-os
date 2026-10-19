@@ -120,6 +120,14 @@ async function completeLifecycleSync(request: NextRequest, plan: ProductionPlan)
   return { status: "synced" };
 }
 
+/**
+ * Runs work after the HTTP response (Next `after`), independent of the browser. Outside a Next request scope (unit tests) there is no
+ * "after", so the work runs inline to keep tests deterministic; in a deployed request it is never awaited by the response.
+ */
+async function runAfterResponse(task: () => Promise<void>) {
+  try { after(task); } catch { await task(); }
+}
+
 /** The persisted plan revision the browser loaded; null when it loaded no stored plan (initial creation). */
 const ExpectedRevision = z.string().min(1).max(200).nullable();
 const Command = z.discriminatedUnion("action", [
@@ -659,7 +667,7 @@ async function handlePost(request: NextRequest) {
       const noOpSave = Boolean(storedPlan && !contentChanged && plan.planningNotes === command.planningNotes && authorityMatches && plan.status === effectiveNextStatus);
       if (noOpSave) {
         const matrixStatus = plan.matrixArtifact && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, currentOrder, plan.menuItems) ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? !matrixDriveConfiguration(currentOrder).enabled ? "not_configured" : "generating" : undefined;
-        return NextResponse.json({ plan, revision: planRevisionToken(storedPlan), matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus });
+        return NextResponse.json({ plan, revision: planRevisionToken(storedPlan), signingLineage: matrixSignatureScope(currentOrder, menuContentHash(plan.menuItems)) || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus });
       }
       plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
@@ -684,7 +692,8 @@ async function handlePost(request: NextRequest) {
       if (!contentChanged && plan.status === "planned" && plan.planningNotes === command.planningNotes && storedPlan?.lifecycleSync?.status === "pending") {
         // CPU already holds this exact planned review; only the Hub transition is outstanding. Retry it without touching CPU evidence.
         const retried = await completeLifecycleSync(request, plan);
-        return NextResponse.json({ plan, revision: planRevisionToken(plan), hubLifecycle: retried, synchronised: retried.status === "synced", matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null });
+        const retriedOrder = (await loadOrder(request, command.orderId, { fresh: true })) ?? currentOrder;
+        return NextResponse.json({ plan, revision: planRevisionToken(plan), hubLifecycle: retried, synchronised: retried.status === "synced", signingLineage: matrixSignatureScope(retriedOrder, menuContentHash(plan.menuItems)) || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null });
       }
        plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
@@ -792,12 +801,21 @@ async function handlePost(request: NextRequest) {
     const lineageOrder = hubLifecycle ? (await loadOrder(request, command.orderId, { fresh: true })) ?? changedOrder : changedOrder;
     // A duplicate command has already staged its durable work. Replaying the
     // HTTP request must not synchronously repeat delivery or consumer effects.
+    // The signed release and its materialisation obligation were committed atomically with the signature (durable outbox event). The PDF /
+    // Drive work runs AFTER the response, independent of the browser; the page shows Pending/Ready/Failed and polls. If this instance is
+    // recycled before it finishes, the outbox event stays pending and the (separately enabled) outbox recovery replays it idempotently.
     let materializationResult: { eventId: string; status: string; error?: string; attempts?: number } | undefined;
     if (materializationDelivery && event) {
-      if (command.action === "save-matrix") await replayCpuPropagation(materializationDelivery.eventId);
-      materializationResult = await deliverCpuPropagation(materializationDelivery.eventId);
-      const persistedAfterMaterialization = await planRepository.get(plan.orderId);
-      if (persistedAfterMaterialization) Object.assign(plan, normalisePlanAllergens(persistedAfterMaterialization));
+      const materializationEventId = materializationDelivery.eventId;
+      if (command.action === "save-matrix") await replayCpuPropagation(materializationEventId);
+      await runAfterResponse(async () => {
+        try {
+          const delivered = await deliverCpuPropagation(materializationEventId);
+          console.info("FIKA CPU release materialization (background)", { eventId: materializationEventId, status: delivered.status, attempts: delivered.attempts || 0 });
+        } catch (error) {
+          console.error("FIKA CPU release materialization (background) failed", { eventId: materializationEventId, error: error instanceof Error ? error.message : String(error) });
+        }
+      });
     }
     if (releaseForEvent && !event?.duplicate) for (const oplocId of releaseOplocIds) await notifyDeliveredInAllergenRelease({ eventType: releaseEventType, release: releaseForEvent, oplocId });
     recordDeliveredInReadBudget({ stage: "plan_post_mutation", canonicalOrderDocs: changedOrder ? 1 : 0, planDocs: 1, selectedIds: 1 });

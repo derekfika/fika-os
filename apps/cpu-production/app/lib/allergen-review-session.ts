@@ -17,3 +17,21 @@ export function isSigningAvailable(input: { reviewConflict: boolean; effectiveSt
 export function savedFingerprintAfterSave(sentFingerprint: string, saveSucceeded: boolean) {
   return saveSucceeded ? sentFingerprint : undefined;
 }
+
+/** True when the editor holds edits that have not been confirmed by the server (compared with the last confirmed content). */
+export function hasUnsavedEdits(cleanFingerprint: string | undefined, currentFingerprint: string) {
+  return cleanFingerprint !== undefined && cleanFingerprint !== currentFingerprint;
+}
+
+export type MatrixStorageStatus = "not_configured" | "ready" | "artifact_pending" | "artifact_failed";
+
+/** Pending / Ready / Failed for the signed PDF, from a plan response. Nothing before both signatures are persisted. */
+export function deriveMatrixStorageStatus(body: { matrixStatus?: string; plan?: { matrixArtifact?: unknown; signatures?: unknown[] } }): MatrixStorageStatus | undefined {
+  if (body.matrixStatus === "not_configured") return "not_configured";
+  if (body.plan?.matrixArtifact) return "ready";
+  if (body.plan?.signatures?.length === 2) return body.matrixStatus === "failed" ? "artifact_failed" : "artifact_pending";
+  return undefined;
+}
+
+/** The background PDF is re-checked about every 30 seconds while the page is open and the PDF is pending. */
+export const MATRIX_POLL_INTERVAL_MS = 30_000;

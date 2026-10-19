@@ -33,7 +33,7 @@ test("operator retry replays pending or failed OPLOC materialization without pla
   assert.match(source, /const releaseNeedsMaterialization = Boolean\(plan\.currentAllergenRelease && \["pending", "current"\]\.includes\(plan\.currentAllergenRelease\.status\) && plan\.currentAllergenRelease\.materializationStatus !== "ready"\)/);
   assert.match(source, /const materializationDelivery = releaseNeedsMaterialization && changedOrder/);
   assert.match(source, /action: z\.literal\("save-matrix"\)/);
-  assert.match(source, /if \(command\.action === "save-matrix"\) await replayCpuPropagation\(materializationDelivery\.eventId\)/);
+  assert.match(source, /if \(command\.action === "save-matrix"\) await replayCpuPropagation\(materializationEventId\)/);
   assert.match(source, /materializationDelivery: materializationResult \|\| null/);
   assert.doesNotMatch(source, /if \(command\.action === "sign-matrix"\) await replayCpuPropagation/);
   assert.match(source, /action: z\.literal\("retry-materialization"\)/);

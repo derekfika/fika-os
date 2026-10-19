@@ -58,7 +58,7 @@ test("signing source has no external artifact call before the authoritative save
   assert.ok(signStart >= 0 && saveStart > signStart);
   assert.doesNotMatch(signBlock, /createMatrixArtifact\(|createCpuReleaseArtifacts\(|publishDailySignedOplocBundle\(|allergen-matrix\/drive/);
   assert.match(sourceText, /saveAndAppendCpuChange\(plan, expectedRevision/);
-  assert.match(sourceText, /deliverCpuPropagation\(materializationDelivery\.eventId\)/);
+  assert.match(sourceText, /deliverCpuPropagation\(materializationEventId\)/);
 });
 
 test("the worker commits pending materialization before external publication and keeps final certification explicit", async () => {

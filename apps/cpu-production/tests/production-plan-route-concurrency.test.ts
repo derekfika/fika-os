@@ -506,3 +506,84 @@ test("a Save no longer re-reads the Hub order over and over (8 reads before memo
   // Order GETs for the whole mark-planned request: initial read, the lifecycle pre-check/verification reads, and one fresh post-sync read.
   assert.ok(hub.orderReads <= 5, `expected at most 5 Hub order reads for a Save, saw ${hub.orderReads}`);
 });
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Edit locally -> Save once -> Sign -> Sign -> the PDF is generated in the background. Also prints request-count/latency metrics.
+// ---------------------------------------------------------------------------------------------------------------------------
+function installMeteredHospitalityHub(orderId: string, serviceDate: string, options: { hubLatencyMs?: number; materialization?: "fail" | "ok" } = {}) {
+  const hub = { status: "accepted", version: 3, transitions: [] as string[], orderReads: 0, hubCalls: 0, materializationCalls: 0 };
+  const current = () => ({ ...orderFor(orderId, serviceDate), origin: "hospitality_booking", sourceBookingId: "booking:rcoa:bg-test", sourceQuoteRevisionId: "quote-revision:bg-test:v1", currentRevision: 1, requiresDelivery: true, status: hub.status, version: hub.version });
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/api/internal/cpu-release-materialize")) {
+      hub.materializationCalls += 1;
+      return options.materialization === "ok" ? new Response(JSON.stringify({ ok: true }), { status: 200 }) : new Response(JSON.stringify({ error: { message: "Drive unavailable" } }), { status: 503 });
+    }
+    hub.hubCalls += 1;
+    if (options.hubLatencyMs) await new Promise((resolve) => setTimeout(resolve, options.hubLatencyMs));
+    if (init?.method === "POST" && url.endsWith("/api/production")) {
+      const body = JSON.parse(String(init.body)) as { status: string };
+      hub.transitions.push(body.status); hub.status = body.status; hub.version += 1;
+      return new Response(JSON.stringify({ order: current() }), { status: 200 });
+    }
+    if (url.includes("/api/production?canonicalId=")) { hub.orderReads += 1; return new Response(JSON.stringify({ order: current() }), { status: 200 }); }
+    if (url.includes("/api/production?serviceDate=") || url.includes("/api/production?weekCommencing=")) return new Response(JSON.stringify({ orders: [current()] }), { status: 200 });
+    throw new Error(`Unexpected test fetch: ${url}`);
+  }) as typeof fetch;
+  return hub;
+}
+const timed = async <T,>(work: () => Promise<T>) => { const started = performance.now(); const value = await work(); return { value, ms: Math.round(performance.now() - started) }; };
+const signBody = (orderId: string, role: string, lineage: unknown) => ({ action: "sign-matrix", orderId, role, printedName: role === "production_chef" ? "Derek Buckley" : "Sam Busby", attestation: "I have checked the allergen matrix.", signatureDataUrl: PNG, expectedLineage: lineage });
+
+test("sole reviewer: Save once, sign, sign - no refresh, no 409, and a failing PDF job never blocks or undoes the signatures", { timeout: 180_000 }, async () => {
+  const orderId = "production-order:bg-save-sign-sign";
+  const hub = installMeteredHospitalityHub(orderId, "2026-12-12", { hubLatencyMs: 120, materialization: "fail" });
+  const route = await importRouteWithTransactionGate();
+  route.open();
+  // Edit locally (nothing is sent), then ONE explicit Save: the first request is the initial draft creation, the second is the Save allergen review.
+  const created = await timed(() => post(route.POST, { action: "save-plan", orderId, planningNotes: "", expectedRevision: null, menuItems: completeItems("bg", orderId) }));
+  const createdBody = await created.value.json();
+  const hubBefore = { calls: hub.hubCalls, reads: hub.orderReads };
+  const saved = await timed(() => post(route.POST, { action: "mark-planned", orderId, planningNotes: "", expectedRevision: createdBody.revision, menuItems: completeItems("bg", orderId) }));
+  const savedBody = await saved.value.json();
+  assert.equal(saved.value.status, 200, JSON.stringify(savedBody).slice(0, 300));
+  const saveHubCalls = hub.hubCalls - hubBefore.calls;
+
+  const first = await timed(() => post(route.POST, signBody(orderId, "production_chef", savedBody.signingLineage)));
+  const firstBody = await first.value.json();
+  assert.equal(first.value.status, 200, `first signature must succeed without a refresh: ${JSON.stringify(firstBody).slice(0, 300)}`);
+  const second = await timed(() => post(route.POST, signBody(orderId, "head_chef_site_manager", firstBody.signingLineage ?? savedBody.signingLineage)));
+  const secondBody = await second.value.json();
+  assert.equal(second.value.status, 200, `second signature must succeed: ${JSON.stringify(secondBody).slice(0, 300)}`);
+  assert.equal(secondBody.plan.signatures.length, 2, "both signatures persisted");
+  assert.notEqual(secondBody.matrixStatus, "ready", "the PDF is not claimed ready");
+  assert.ok(["generating", "failed", "not_configured"].includes(secondBody.matrixStatus), secondBody.matrixStatus);
+  // The materialisation obligation is durable (outbox) and was attempted exactly once by the background step; the failure did not undo the signatures.
+  assert.equal(hub.materializationCalls, 1);
+  const stored = (await storedPlanOf(route.db, orderId))!;
+  assert.equal(stored.signatures.length, 2);
+  assert.ok(stored.currentAllergenRelease, "a release bound to the signed matrix exists");
+  assert.notEqual(stored.currentAllergenRelease.materializationStatus, "ready");
+  const outbox = await route.db.collection("fikaCpuPropagationOutboxV1").get();
+  const materialisation = outbox.docs.map((doc) => doc.data()).filter((event) => String(event.payload?.route || "").includes("cpu-release-materialize"));
+  assert.equal(materialisation.length, 1, "one durable materialisation event, no duplicates");
+  assert.ok(["failed", "pending"].includes(materialisation[0].delivery.status), "retryable, not lost");
+  console.log(`METRIC save-allergen-review ms=${saved.ms} hubCalls=${saveHubCalls} | first-signature ms=${first.ms} | second-signature ms=${second.ms} (hub latency simulated at 120 ms/call; PDF/Drive step stubbed)`);
+});
+
+test("root cause reproduced: signing with the lineage loaded BEFORE Save (what the old editor kept) is refused, the lineage Save returns is accepted", { timeout: 120_000 }, async () => {
+  const orderId = "production-order:bg-root-cause";
+  installMeteredHospitalityHub(orderId, "2026-12-13", { materialization: "fail" });
+  const route = await importRouteWithTransactionGate();
+  route.open();
+  const created = await (await post(route.POST, { action: "save-plan", orderId, planningNotes: "", expectedRevision: null, menuItems: completeItems("rc", orderId) })).json();
+  // The editor's initial load (GET) hands it a lineage; the old editor kept it through Save.
+  const loaded = await (await route.GET(new NextRequest(`http://localhost/api/production-plan?orderId=${encodeURIComponent(orderId)}`))).json();
+  const saved = await (await post(route.POST, { action: "mark-planned", orderId, planningNotes: "", expectedRevision: created.revision, menuItems: completeItems("rc", orderId) })).json();
+  assert.notDeepEqual(saved.signingLineage, loaded.signingLineage, "Save (Hub sync) changed the lineage");
+  const stale = await post(route.POST, signBody(orderId, "production_chef", loaded.signingLineage));
+  assert.equal(stale.status, 409);
+  assert.equal((await stale.json()).error.code, "CPU_SIGN_LINEAGE_CONFLICT");
+  const fresh = await post(route.POST, signBody(orderId, "production_chef", saved.signingLineage));
+  assert.equal(fresh.status, 200);
+});

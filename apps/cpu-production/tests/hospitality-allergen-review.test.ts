@@ -117,7 +117,7 @@ test("the Hospitality sign-off needs an explicit, validated, persisted Save alle
   assert.match(component, /const problems = allergenReviewProblems\(menuItems\)/);
   assert.match(component, /const saved = await planCommand\("save-plan"\);\s*if \(saved\) setMessage\(`Draft saved\./);
   assert.match(component, /catch \{\s*setMessage\("The production plan could not be saved\. Check the connection and try again\."\);\s*return false;/);
-  assert.match(component, /const saved = await planCommand\("mark-planned"\);\s*\n?\s*setSavedFingerprint\(savedFingerprintAfterSave\(sentFingerprint, saved\)\)/);
+  assert.match(component, /const saved = await planCommand\("mark-planned"\);\s*\n?\s*setSavedFingerprint\(savedFingerprintAfterSave\(confirmedFingerprintRef\.current \?\? sentFingerprint, saved\)\)/);
   // Signatures follow persistence of the exact reviewed content.
   assert.match(component, /const signingAvailable = isSigningAvailable\(\{ reviewConflict, effectiveStatus, savedFingerprint, currentFingerprint: reviewFingerprint\(menuItems, planningNotes\) \}\)/);
   assert.match(component, /disabled=\{busy \|\| !signingAvailable\}/);
