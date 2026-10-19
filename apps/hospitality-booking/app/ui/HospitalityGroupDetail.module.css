@@ -1,7 +1,39 @@
 .group { color: var(--fika-text-primary); background: var(--fika-surface-card); padding: 24px; border: 1px solid var(--fika-border-default); border-radius: 12px; margin-bottom: 24px; }
-.group h2 { margin: 8px 0; }
+.group h2 { margin: 4px 0 8px; }
 .group p { line-height: 1.5; }
-.total { display: block; font-size: 24px; margin: 16px 0; }
+.header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: start; }
+.headline h2 { font-size: 22px; line-height: 28px; }
+.eventName { margin: 0 0 8px; font-size: 16px; line-height: 22px; }
+.meta { margin: 4px 0 0; font-size: 14px; line-height: 20px; color: var(--fika-text-secondary); }
+.summary { display: grid; gap: 4px; justify-items: end; text-align: right; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-bottom: 8px; }
+.chip { display: inline-block; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--fika-border-default); font-size: 12px; line-height: 16px; font-weight: 600; color: var(--fika-text-primary); background: var(--fika-surface-subtle); white-space: nowrap; }
+.chipSuccess { background: var(--fika-status-success-surface); border-color: var(--fika-status-success); }
+.chipWarning { background: var(--fika-status-warning-surface); border-color: var(--fika-status-warning); }
+.chipDanger { background: var(--fika-status-danger-surface); border-color: var(--fika-status-danger); }
+.chipInfo { background: var(--fika-status-info-surface); border-color: var(--fika-status-info); }
+.chipNeutral { background: var(--fika-surface-subtle); }
+.totalLabel { font-size: 12px; line-height: 16px; color: var(--fika-text-secondary); }
+.total { display: block; font-size: 24px; line-height: 32px; margin: 0; }
+.actions { margin-top: 16px; }
+.notice { margin: 12px 0 0; padding: 12px 16px; font-size: 14px; line-height: 20px; background: var(--fika-status-warning-surface); border-left: 4px solid var(--fika-status-warning); border-radius: 8px; }
+.servicesNav, .charges { border-top: 1px solid var(--fika-border-default); padding: 16px 0; margin-top: 16px; }
+.servicesNav h3, .charges h3, .requested h3 { margin: 0 0 8px; font-size: 16px; line-height: 22px; }
+.tableWrap { overflow-x: auto; }
+.serviceTable { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 18px; }
+.serviceTable th, .serviceTable td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--fika-border-default); vertical-align: middle; }
+.serviceTable thead th { font-size: 12px; line-height: 16px; color: var(--fika-text-secondary); font-weight: 600; }
+.serviceTable tbody th { font-weight: 600; }
+.group .serviceTable a { display: inline-block; min-height: 0; padding: 8px 0; border: 0; background: none; color: var(--fika-action-primary); text-decoration: underline; }
+.serviceTable .num { text-align: right; font-variant-numeric: tabular-nums; }
+.chargeService { padding: 12px 16px; margin-top: 12px; background: var(--fika-surface-subtle); border: 1px solid var(--fika-border-default); border-radius: 8px; }
+.chargeHead { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.chargeHead > div { display: grid; gap: 2px; }
+.chargeNet { font-size: 13px; line-height: 18px; color: var(--fika-text-secondary); }
+.chargeList { margin: 8px 0 0; padding: 0; list-style: none; }
+.chargeList li { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-top: 1px solid var(--fika-border-default); font-size: 14px; line-height: 20px; }
+.chargeList small { display: block; color: var(--fika-text-secondary); font-size: 13px; line-height: 18px; }
+.chargeList strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .editor { display: grid; gap: 24px; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--fika-border-default); }
 .editorTitle { margin: 0; font-size: 22px; line-height: 28px; }
@@ -45,9 +77,20 @@
 .service li small { display: block; margin-top: 4px; }
 .totals { margin: 24px 0 0 auto; max-width: 340px; }
 .totals > div { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; }
-.totals dd { margin: 0; font-weight: 700; }
+.totals dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.totals .grand { margin-top: 4px; padding-top: 12px; border-top: 2px solid var(--fika-border-default); font-size: 16px; }
 @media (max-width: 600px) {
   .group { padding: 16px; }
+  .header { grid-template-columns: minmax(0, 1fr); }
+  .summary, .chips { justify-items: start; justify-content: flex-start; text-align: left; }
+  .actions > * { flex: 1 1 100%; text-align: center; }
+  .serviceTable thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .serviceTable tr { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid var(--fika-border-default); }
+  .serviceTable th, .serviceTable td { border: 0; padding: 2px 0; }
+  .serviceTable tbody th { grid-column: 1 / -1; }
+  .serviceTable td::before { content: attr(data-label) ": "; color: var(--fika-text-secondary); }
+  .serviceTable .num { text-align: left; }
+  .chargeHead button { width: 100%; }
   .editor fieldset { padding: 16px 12px; }
   .itemEditor { grid-template-columns: minmax(0, 1fr); }
   .footer { flex-direction: column-reverse; }

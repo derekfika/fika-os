@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { APPROVED_LABOUR_ROLES, MAX_HOURS, OVERTIME_MULTIPLIER, calculateLabour, findApprovedRole, isApprovedLabourLine } from "../lib/labour-rates";
 
-const dashboard = readFileSync(new URL("../app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8");
+const dashboard = readFileSync(new URL("../app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8") + readFileSync(new URL("../app/ui/AdditionalChargesModal.tsx", import.meta.url), "utf8");
 const editorStart = dashboard.indexOf('editor?.kind === "labour" && (');
 const editorSource = dashboard.slice(editorStart, dashboard.indexOf('additional-charges-modal__error', editorStart));
 

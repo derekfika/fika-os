@@ -5,14 +5,14 @@ import { createServer } from "node:http";
 import { FieldValue } from "firebase-admin/firestore";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
-import { amendHospitalityBookingGroup, bookingWorkspace, cancelHospitalityBookingGroup, executeBookingWorkflow, type CanonicalBooking } from "../lib/hospitality-booking-service";
+import { amendHospitalityBookingGroup, setHospitalityGroupServiceCharges, bookingWorkspace, cancelHospitalityBookingGroup, executeBookingWorkflow, type CanonicalBooking } from "../lib/hospitality-booking-service";
 import { groupCommercialState, projectBookingGroup } from "../lib/hospitality-group-commercial";
 import { generateHospitalityGroupQuote } from "../lib/hospitality-group-quote-workflow";
 import { firestoreGroupQuoteStore } from "../lib/hospitality-group-quote-store";
 import { createProductionFromApprovedBooking } from "../lib/production-domain";
 import { hospitalityCancellationEventId } from "../lib/hospitality-cancellation-outbox";
 import { bookingNotificationId } from "../lib/booking-notifications";
-import { groupAmendmentCommand, validLondonServiceTime, type GroupAmendmentCommand } from "../lib/hospitality-group-amendment";
+import { groupAmendmentCommand, groupChargesCommand, validLondonServiceTime, type GroupAmendmentCommand } from "../lib/hospitality-group-amendment";
 import { planServiceProduction } from "../../hospitality-booking/lib/cpu-production-plan";
 import type { CanonicalBooking as ClientBooking, ProductionOrder as ClientOrder } from "../../hospitality-booking/lib/canonical-types";
 
@@ -374,4 +374,35 @@ test("after-CPU amendment retires only changed work, preserves immutable quote h
   try { await amendHospitalityBookingGroup(actor, dateChange, async () => {}); } finally { globalThis.fetch = savedFetch; }
   for (const id of [replacement.order!.canonicalId, original[1].canonicalId]) assert.equal((await db.collection("fikaProductionOrdersV1").doc(stableDocumentId(id)).get()).data()!.status, "amended");
   assert.ok((await f.read()).every(child => child.service.eventDate === later.toISOString().slice(0, 10) && child.lifecycleStatus === "Reviewed"));
+});
+
+test("group charges command accepts only stable-ID manual/labour lines and no client totals", () => {
+  const base = { bookingGroupId: "group:test", bookingId: "booking:test", expectedVersion: 1, expectedSourceHash: "a".repeat(64) };
+  const line = { id: "charge_12345678", kind: "manual", category: "equipment", label: "Hire", quantity: 2, unitNet: 10 };
+  assert.equal(groupChargesCommand.safeParse({ ...base, charges: [line] }).success, true);
+  assert.equal(groupChargesCommand.safeParse({ ...base, charges: [] }).success, true);
+  assert.equal(groupChargesCommand.safeParse({ ...base, charges: [{ ...line, netTotal: 1 }] }).success, false);
+  assert.equal(groupChargesCommand.safeParse({ ...base, charges: [{ ...line, id: "x" }] }).success, false);
+  assert.equal(groupChargesCommand.safeParse({ ...base, charges: [line], extra: true }).success, false);
+});
+test("group charges change only the targeted service, reprice the group, stale its quote, replay safely and reload", { skip: !enabled }, async () => {
+  const f = await fixture(); await f.quote(0); const before = await f.read();
+  const charges = [{ id: `charge_${randomUUID()}`, kind: "manual" as const, category: "equipment" as const, label: "AV hire", quantity: 2, unitNet: 15.5 }];
+  const command = { bookingGroupId: f.id, bookingId: before[1].canonicalId, expectedVersion: before[1].version, expectedSourceHash: groupCommercialState(f.id, before).sourceHash, charges };
+  const saved = await setHospitalityGroupServiceCharges(actor, command, async () => {});
+  assert.equal(saved.changed, true);
+  const after = await f.read();
+  assert.deepEqual(after[0], before[0]); assert.deepEqual(after[2], before[2]);
+  assert.equal(after[1].version, before[1].version + 1); assert.equal(after[1].commercialVersion, (before[1].commercialVersion || 1) + 1);
+  assert.equal(after[1].additionalCharges?.[0].netTotal, 31);
+  assert.ok(after[1].quoteState?.revisions.every(q => q.stale));
+  const state = groupCommercialState(f.id, after);
+  assert.equal(state.totals.chargesNet, 31); assert.notEqual(state.sourceHash, command.expectedSourceHash);
+  assert.equal((await db.collection("fikaBookingAudit").doc(`${after[1].canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${after[1].version}`).get()).data()?.action, "workflow-set-additional-charges");
+  // A stale retry is rejected; re-sending the saved lines against the new version/hash is a no-op.
+  await assert.rejects(setHospitalityGroupServiceCharges(actor, command, async () => {}), /changed elsewhere/);
+  const replay = await setHospitalityGroupServiceCharges(actor, { ...command, expectedVersion: after[1].version, expectedSourceHash: state.sourceHash }, async () => {});
+  assert.equal(replay.changed, false); assert.deepEqual(await f.read(), after);
+  const removed = await setHospitalityGroupServiceCharges(actor, { ...command, expectedVersion: after[1].version, expectedSourceHash: state.sourceHash, charges: [] }, async () => {});
+  assert.equal(removed.changed, true); assert.equal(groupCommercialState(f.id, await f.read()).totals.chargesNet, 0);
 });

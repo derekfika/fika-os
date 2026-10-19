@@ -8,7 +8,7 @@ import {
 } from "../lib/portal-sites";
 
 const booking = readFileSync(new URL("../app/ui/BookingPortal.tsx", import.meta.url), "utf8");
-const dashboard = readFileSync(new URL("../app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8");
+const dashboard = readFileSync(new URL("../app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8") + readFileSync(new URL("../app/ui/AdditionalChargesModal.tsx", import.meta.url), "utf8");
 const referenceDataRoute = readFileSync(new URL("../app/api/reference-data/route.ts", import.meta.url), "utf8");
 const menusRoute = readFileSync(new URL("../app/api/menus/route.ts", import.meta.url), "utf8");
 const rcoaBookingRoute = readFileSync(new URL("../app/api/bookings/rcoa/route.ts", import.meta.url), "utf8");

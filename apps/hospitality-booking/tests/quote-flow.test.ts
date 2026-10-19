@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-const dashboard = readFileSync(new URL("../app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8") + readFileSync(new URL("../lib/cpu-production-plan.ts", import.meta.url), "utf8"); // helpers moved to lib/cpu-production-plan.ts
+const dashboard = readFileSync(new URL("../app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8") + readFileSync(new URL("../app/ui/AdditionalChargesModal.tsx", import.meta.url), "utf8") + readFileSync(new URL("../lib/cpu-production-plan.ts", import.meta.url), "utf8"); // helpers moved to lib/cpu-production-plan.ts
 const menusRoute = readFileSync(new URL("../app/api/menus/route.ts", import.meta.url), "utf8");
 
 test("quote generation stays on the dashboard and bounds remote persistence waits", () => {

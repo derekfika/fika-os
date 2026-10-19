@@ -20,7 +20,7 @@ test("dashboard consumes the Hub projection, suppresses grouped children and off
 
 test("group detail is one booking with one chronological item list and no service selection", () => {
   const source = read("../app/ui/HospitalityGroupDetail.tsx");
-  for (const text of ["groupRequestedItems(group)", "RequestedItemsList", "What was requested", "service.charges.map", "group.totals.gross", "Amend booking", "GroupAmendmentEditor", "Group cancellation is not yet available", "Retry group quote", "group.quote.stale", "{!editing && production}"]) assert.ok(source.includes(text), text);
+  for (const text of ["groupRequestedItems(group)", "RequestedItemsList", "What was requested", "service.charges.map", "group.totals.gross", "Amend booking", "GroupAmendmentEditor", "Group cancellation is not yet available", "Retry group quote", "group.quote.stale", "{!editing && production}", "AdditionalChargesModal", "/api/booking-groups/charges", "expectedSourceHash: chargeTarget.sourceHash", "Manage charges for", "Services in this booking"]) assert.ok(source.includes(text), text);
   for (const text of ["<details", "<summary", "All day schedule", "onService", "service operations"]) assert.ok(!source.includes(text), `removed: ${text}`);
   assert.doesNotMatch(source, /window\.(alert|confirm|prompt)/);
   const dashboard = read("../app/ui/HospitalityDashboard.tsx");
@@ -39,4 +39,16 @@ test("RCoA All Day event section has desktop/tablet separation and restrained mo
 test("single quote PDF rendering uses the shared renderer without changing its public interface", () => {
   assert.equal(read("../lib/local-pdf.ts").trim(), 'export * from "@fika/server-shared/pdf-renderer";');
   const source = read("../app/api/quotes/drive/route.ts"); assert.match(source, /bookingBody.booking.bookingGroup\?\.id/); assert.match(source, /renderPdfToBuffer\(body.html/);
+});
+
+test("group Manage charges reuses the shared standalone charge editor and a Hub-only proxy", () => {
+  const dashboard = read("../app/ui/HospitalityDashboard.tsx");
+  assert.match(dashboard, /import \{ AdditionalChargesModal \} from "\.\/AdditionalChargesModal"/);
+  assert.ok(!dashboard.includes("function AdditionalChargesModal"));
+  const detail = read("../app/ui/HospitalityGroupDetail.tsx");
+  assert.match(detail, /CHARGE_EDITABLE = \["New", "Reviewed", "Quoted", "Completed"\]/);
+  assert.ok(!/netTotal|unitNet/.test(detail), "no client-side charge maths in group detail");
+  const route = read("../app/api/booking-groups/charges/route.ts");
+  assert.match(route, /\/api\/hospitality-booking-groups\/charges/);
+  assert.doesNotMatch(route, /firebase|firestore/i);
 });
