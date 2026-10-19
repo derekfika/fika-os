@@ -60,7 +60,8 @@ test("production release keeps delivery disabled and configures only the RCoA se
   const manifest = readFileSync(new URL("../apphosting.production.yaml", import.meta.url), "utf8");
   assert.match(manifest, /variable: FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED\r?\n\s+value: "false"/);
   assert.match(manifest, /variable: FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED\r?\n\s+value: "false"/);
-  assert.match(manifest, /variable: FIKA_HOSPITALITY_EMAIL_TEST_NOTIFICATION_IDS\r?\n\s+value: ""/);
+  assert.doesNotMatch(manifest, /variable: FIKA_HOSPITALITY_EMAIL_TEST_NOTIFICATION_IDS/);
+  assert.doesNotMatch(manifest, /variable: FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT/);
   assert.match(manifest, /variable: FIKA_HOSPITALITY_EMAIL_ALLOWED_OPLOCS\r?\n\s+value: oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2/);
   assert.match(manifest, /variable: FIKA_HOSPITALITY_EMAIL_MAILER_VERIFY_MAILBOX\r?\n\s+value: rcoa@fikacatering\.com/);
   const senderEntry = manifest.match(/variable: FIKA_HOSPITALITY_EMAIL_SENDERS_JSON\r?\n\s+value: '([^']+)'/);
