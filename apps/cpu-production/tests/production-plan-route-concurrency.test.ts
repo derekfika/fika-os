@@ -436,3 +436,73 @@ test("Mini Pastries: a row confirmed with Gluten/Eggs/Milk persists those as Con
   assert.equal(stored.status, "planned");
   assert.equal(stored.menuItems[0].subItems[0].evidenceStatus, "completed");
 });
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Sole-reviewer flow: Save, then sign WITHOUT refreshing. The Hub lifecycle sync bumps the order version (part of the signing
+// lineage), so the lineage handed back by Save must be the POST-sync one, and a Save must not re-read the Hub order over and over.
+// ---------------------------------------------------------------------------------------------------------------------------
+function installHospitalityHub(orderId: string, serviceDate: string) {
+  const hub = { status: "accepted", version: 3, transitions: [] as string[], orderReads: 0 };
+  const current = () => ({ ...orderFor(orderId, serviceDate), origin: "hospitality_booking", sourceBookingId: "booking:rcoa:lineage-test", sourceQuoteRevisionId: "quote-revision:lineage-test:v1", currentRevision: 1, requiresDelivery: true, status: hub.status, version: hub.version });
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    if (init?.method === "POST" && url.endsWith("/api/production")) {
+      const body = JSON.parse(String(init.body)) as { status: string };
+      hub.transitions.push(body.status); hub.status = body.status; hub.version += 1;
+      return new Response(JSON.stringify({ order: current() }), { status: 200 });
+    }
+    if (url.includes("/api/production?canonicalId=")) { hub.orderReads += 1; return new Response(JSON.stringify({ order: current() }), { status: 200 }); }
+    if (url.includes("/api/production?serviceDate=") || url.includes("/api/production?weekCommencing=")) return new Response(JSON.stringify({ orders: [current()] }), { status: 200 });
+    throw new Error(`Unexpected test fetch: ${url}`);
+  }) as typeof fetch;
+  return { hub, current };
+}
+const PNG = `data:image/png;base64,${"A".repeat(120)}`;
+
+test("Save then sign without refreshing: the lineage returned by Save already includes the Hub sync, so the first signature is accepted", { timeout: 120_000 }, async () => {
+  const orderId = "production-order:lineage-first-sign";
+  const { hub } = installHospitalityHub(orderId, "2026-12-09");
+  const route = await importRouteWithTransactionGate();
+  route.open();
+  const first = await post(route.POST, { action: "save-plan", orderId, planningNotes: "", expectedRevision: null, menuItems: completeItems("z", orderId) });
+  const revision = (await first.json()).revision as string;
+  const saved = await post(route.POST, { action: "mark-planned", orderId, planningNotes: "", expectedRevision: revision, menuItems: completeItems("z", orderId) });
+  const savedBody = await saved.json();
+  assert.equal(saved.status, 200, JSON.stringify(savedBody).slice(0, 300));
+  assert.deepEqual(hub.transitions, ["planning", "planned"], "the sync bumped the Hub order version");
+  assert.ok(savedBody.signingLineage, "Save returns a signing lineage");
+
+  // The browser signs straight away with the lineage Save returned: no reload.
+  const signed = await post(route.POST, { action: "sign-matrix", orderId, role: "production_chef", printedName: "Derek Buckley", attestation: "I have checked the allergen matrix.", signatureDataUrl: PNG, expectedLineage: savedBody.signingLineage });
+  const signedBody = await signed.json();
+  assert.equal(signed.status, 200, `first signature must not 409: ${JSON.stringify(signedBody).slice(0, 300)}`);
+  assert.equal(signedBody.signatures.length, 1);
+});
+
+test("a genuinely stale lineage is still refused at signing (concurrent source change protection is intact)", { timeout: 120_000 }, async () => {
+  const orderId = "production-order:lineage-stale-protected";
+  const { hub } = installHospitalityHub(orderId, "2026-12-10");
+  const route = await importRouteWithTransactionGate();
+  route.open();
+  const first = await post(route.POST, { action: "save-plan", orderId, planningNotes: "", expectedRevision: null, menuItems: completeItems("z", orderId) });
+  const revision = (await first.json()).revision as string;
+  const saved = await (await post(route.POST, { action: "mark-planned", orderId, planningNotes: "", expectedRevision: revision, menuItems: completeItems("z", orderId) })).json();
+  hub.version += 1; // someone amends the source order after the reviewer loaded the lineage
+  const signed = await post(route.POST, { action: "sign-matrix", orderId, role: "production_chef", printedName: "Derek Buckley", attestation: "I have checked the allergen matrix.", signatureDataUrl: PNG, expectedLineage: saved.signingLineage });
+  assert.equal(signed.status, 409);
+  assert.equal((await signed.json()).error.code, "CPU_SIGN_LINEAGE_CONFLICT");
+});
+
+test("a Save no longer re-reads the Hub order over and over (8 reads before memoisation, 5 now)", { timeout: 120_000 }, async () => {
+  const orderId = "production-order:latency-order-reads";
+  const { hub } = installHospitalityHub(orderId, "2026-12-11");
+  const route = await importRouteWithTransactionGate();
+  route.open();
+  const first = await post(route.POST, { action: "save-plan", orderId, planningNotes: "", expectedRevision: null, menuItems: completeItems("z", orderId) });
+  const revision = (await first.json()).revision as string;
+  hub.orderReads = 0;
+  const saved = await post(route.POST, { action: "mark-planned", orderId, planningNotes: "", expectedRevision: revision, menuItems: completeItems("z", orderId) });
+  assert.equal(saved.status, 200);
+  // Order GETs for the whole mark-planned request: initial read, the lifecycle pre-check/verification reads, and one fresh post-sync read.
+  assert.ok(hub.orderReads <= 5, `expected at most 5 Hub order reads for a Save, saw ${hub.orderReads}`);
+});

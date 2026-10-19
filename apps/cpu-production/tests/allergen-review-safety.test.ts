@@ -151,8 +151,8 @@ test("edits made while a save is in flight keep signing disabled until the lates
 test("the component takes the fingerprint from what was sent, adopts the revision only from a successful response, and stops on conflict", () => {
   const component = read("../app/ui/HospitalityAllergenDetail.tsx");
   assert.match(component, /const sentFingerprint = reviewFingerprint\(menuItems, planningNotes\);\s*\n\s*const saved = await planCommand\("mark-planned"\);\s*\n\s*setSavedFingerprint\(savedFingerprintAfterSave\(sentFingerprint, saved\)\);/);
-  assert.match(component, /expectedRevision: planRevision,/);
-  assert.match(component, /setPlanRevision\(body\.revision === undefined \? \(body\.plan\?\.updatedAt \?\? null\) : body\.revision\);[\s\S]{0,400}?setPlanStatus\(/);
+  assert.match(component, /expectedRevision: planRevisionRef\.current,/);
+  assert.match(component, /adoptRevision\(body\.revision === undefined \? \(body\.plan\?\.updatedAt \?\? null\) : body\.revision\);[\s\S]{0,400}?setPlanStatus\(/);
   assert.match(component, /response\.status === 409 && body\.error\?\.code === "CPU_ALLERGEN_REVIEW_CONFLICT"[\s\S]*?setReviewConflict\(true\);[\s\S]*?setSavedFingerprint\(undefined\);/);
   assert.match(component, /The production plan could not be saved\. Check the connection and try again\./, "a network failure returns false and clears busy");
   assert.match(component, /Reload latest review/);

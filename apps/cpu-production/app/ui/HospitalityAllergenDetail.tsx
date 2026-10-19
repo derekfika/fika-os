@@ -1,5 +1,6 @@
 "use client";
 
+import { createSerialQueue } from "../lib/serial-command-queue";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
 import { cpuServiceWindow } from "../../lib/production-presentation";
@@ -293,6 +294,14 @@ export default function HospitalityAllergenDetail({
   const [savedFingerprint, setSavedFingerprint] = useState<string>();
   // The persisted revision the browser loaded (string), or null when no plan was stored yet. undefined until the first read completes.
   const [planRevision, setPlanRevision] = useState<string | null | undefined>(undefined);
+  // The revision and the command queue live in refs so back-to-back commands see the revision the PREVIOUS response returned.
+  // Reading the state closure instead let two quick commands carry the same stale token and conflict with each other.
+  const planRevisionRef = useRef<string | null | undefined>(undefined);
+  const commandQueue = useRef(createSerialQueue());
+  const conflictRef = useRef(false);
+  const adoptRevision = (value: string | null | undefined) => { planRevisionRef.current = value; setPlanRevision(value); };
+  /** Plan commands run strictly one at a time, each with the latest revision; genuine concurrent edits by someone else still 409. */
+  const runSerialised = <T,>(work: () => Promise<T>): Promise<T> => commandQueue.current(work);
   const [reviewConflict, setReviewConflict] = useState(false);
   // Set while the Hub has not confirmed the Planned status. Comes from the stored plan, so it is shown after a reload without another Save.
   const [hubPending, setHubPending] = useState<string | null>(null);
@@ -323,8 +332,9 @@ export default function HospitalityAllergenDetail({
     )
       .then((response) => response.json())
       .then((body) => {
-        setPlanRevision(body.revision === undefined ? undefined : body.revision);
+        adoptRevision(body.revision === undefined ? undefined : body.revision);
         setHubPending(body.hubLifecycle?.status === "pending" ? String(body.hubLifecycle.error || "The booking status update has not been confirmed.") : null);
+        conflictRef.current = false;
         setReviewConflict(false);
         setSavedFingerprint(undefined);
         if (body.plan?.menuItems) {
@@ -525,12 +535,18 @@ export default function HospitalityAllergenDetail({
     setBusy(false);
   };
 
-  const planCommand = async (
+  const planCommand = (
+    action: "save-plan" | "mark-planned",
+    extra: Record<string, unknown> = {},
+    menuItemsOverride?: PlannedMenuItem[],
+  ): Promise<boolean> => runSerialised(() => planCommandNow(action, extra, menuItemsOverride));
+  const planCommandNow = async (
     action: "save-plan" | "mark-planned",
     extra: Record<string, unknown> = {},
     menuItemsOverride?: PlannedMenuItem[],
   ): Promise<boolean> => {
-    if (planRevision === undefined) {
+    if (conflictRef.current) return false;
+    if (planRevisionRef.current === undefined) {
       setMessage("The saved review is still loading. Try again in a moment.");
       return false;
     }
@@ -544,7 +560,7 @@ export default function HospitalityAllergenDetail({
           orderId: order.canonicalId,
           actor: "production-chef",
           action,
-          expectedRevision: planRevision,
+          expectedRevision: planRevisionRef.current,
           menuItems: menuItemsOverride || menuItems,
           planningNotes,
           ...extra,
@@ -554,13 +570,14 @@ export default function HospitalityAllergenDetail({
       if (!response.ok) {
         if (response.status === 409 && body.error?.code === "CPU_ALLERGEN_REVIEW_CONFLICT") {
           // Newer evidence exists. Keep the local edits on screen, withdraw signing and ask for an explicit reload.
+          conflictRef.current = true;
           setReviewConflict(true);
           setSavedFingerprint(undefined);
         }
         setMessage(body.error?.message || "The production plan could not be saved.");
         return false;
       }
-      setPlanRevision(body.revision === undefined ? (body.plan?.updatedAt ?? null) : body.revision);
+      adoptRevision(body.revision === undefined ? (body.plan?.updatedAt ?? null) : body.revision);
       if (body.hubLifecycle) setHubPending(body.hubLifecycle.status === "pending" ? String(body.hubLifecycle.error || "The booking status update has not been confirmed.") : null);
       setPlanStatus(
         body.plan?.status ||
@@ -647,7 +664,7 @@ export default function HospitalityAllergenDetail({
       const persistedSignatures = body.plan?.signatures;
       if (!Array.isArray(persistedSignatures) || !persistedSignatures.some((signature: InternalMatrixSignature) => signature.role === role)) throw new Error("The server did not confirm that this signature was persisted. Retry from the current review.");
       const nextSignatures = persistedSignatures as InternalMatrixSignature[];
-      if (body.revision !== undefined) setPlanRevision(body.revision);
+      if (body.revision !== undefined) adoptRevision(body.revision);
       setSignatures(nextSignatures);
       setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact || undefined);
       if ("currentAllergenRelease" in (body.plan || {})) setCurrentAllergenRelease(body.plan.currentAllergenRelease);
@@ -676,7 +693,7 @@ export default function HospitalityAllergenDetail({
     if (!response.ok)
       setMessage(body.error?.message || "The order could not be accepted.");
     else {
-      if (body.revision !== undefined) setPlanRevision(body.revision);
+      if (body.revision !== undefined) adoptRevision(body.revision);
       setMessage("Order accepted. Start filling in the production plan.");
       await onSaved();
     }
@@ -699,7 +716,7 @@ export default function HospitalityAllergenDetail({
       const response = await fetch(productionPlanEndpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save-matrix", orderId: order.canonicalId, expectedLineage }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message || "The final signed matrix could not be generated.");
-      if (body.revision !== undefined) setPlanRevision(body.revision);
+      if (body.revision !== undefined) adoptRevision(body.revision);
       if (body.hubLifecycle) setHubPending(body.hubLifecycle.status === "pending" ? String(body.hubLifecycle.error || "The booking status update has not been confirmed.") : null);
       const materialized = body.matrixStatus === "ready" && Boolean(body.matrixArtifact || body.plan?.matrixArtifact);
       setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact); setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : materialized ? "ready" : "artifact_pending"); setSignatures(body.signatures || signatures); if ("currentAllergenRelease" in (body.plan || {})) setCurrentAllergenRelease(body.plan.currentAllergenRelease); setMessage(materialized ? "Signed PDF generated. The matrix is ready to open from the manager dashboard." : "Materialization is queued. The signed matrix will become available after the durable retry succeeds.");
@@ -905,6 +922,7 @@ export default function HospitalityAllergenDetail({
                               <select
                                 className="saved-sandwich-select"
                                 aria-label={`Saved menu item for ${sub.name || "new sub-item"}`}
+                                disabled={busy || reviewLockedByAuthority}
                                 value={sub.productionItemId || ""}
                                 onChange={(event) =>
                                   applySandwich(

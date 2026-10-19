@@ -39,6 +39,10 @@ async function syncCanonicalLifecycle(
   reason: string,
 ) {
   if (orderId.startsWith("production-order:v1:fixture:")) return undefined;
+  // Any Hub transition changes the order version (and so the signing lineage); never serve a pre-transition read afterwards.
+  try { return await syncCanonicalLifecycleInner(request, orderId, target, reason); } finally { invalidateOrderCache(request, orderId); }
+}
+async function syncCanonicalLifecycleInner(request: NextRequest, orderId: string, target: "accepted" | "planned" | "rejected" | "needs_clarification", reason: string) {
   let order = await productionOrderDetail(request, orderId);
   if (!order) return undefined;
   const step = async (status: ProductionStatus) => {
@@ -202,7 +206,24 @@ function revokedReleaseDeliveries(release: ProductionPlan["currentAllergenReleas
   const releaseEvent = buildCpuAllergenReleaseEvent({ eventType: "revoked", release, oplocId: order.destinationOplocId });
   return [{ eventId: `${releaseEvent.eventId}:delivered-in:${order.destinationOplocId}`, sourceAggregateId: releaseEvent.releaseId, sourceVersion: releaseEvent.sourceVersion, occurredAt: release.signedAt, consumer: "delivered-in", route: "/api/internal/cpu-release-event", body: releaseEvent as unknown as Record<string, unknown> }];
 }
-async function loadOrder(request: NextRequest, orderId: string) {
+/**
+ * One Production Order read per request and order. A mutation previously re-read the same Hub order 7-14 times (each a sequential
+ * network round trip). Anything that changes the order (a lifecycle sync) invalidates the entry, and checks that deliberately look
+ * for a concurrent change pass `fresh: true`.
+ */
+const orderReads = new WeakMap<object, Map<string, Promise<Awaited<ReturnType<typeof loadOrderUncached>>>>>();
+function invalidateOrderCache(request: NextRequest, orderId: string) { orderReads.get(request)?.delete(orderId); }
+function loadOrder(request: NextRequest, orderId: string, options: { fresh?: boolean } = {}) {
+  let reads = orderReads.get(request);
+  if (!reads) { reads = new Map(); orderReads.set(request, reads); }
+  const cached = options.fresh ? undefined : reads.get(orderId);
+  if (cached) return cached;
+  const read = loadOrderUncached(request, orderId);
+  reads.set(orderId, read);
+  read.catch(() => { if (reads!.get(orderId) === read) reads!.delete(orderId); });
+  return read;
+}
+async function loadOrderUncached(request: NextRequest, orderId: string) {
   try {
     const order = await productionOrderDetail(request, orderId);
     return order || (isLocalRuntime() ? localFixtureOrders().find(item => item.canonicalId === orderId) : undefined);
@@ -694,7 +715,7 @@ async function handlePost(request: NextRequest) {
       const currentSignatureScope = matrixSignatureScope(currentOrder, currentMenuContentHash);
       if (!currentSignatureScope) throw Object.assign(new Error("The current source lineage is unavailable; the matrix cannot be signed."), { status: 503 });
       if (!sameLineage(currentSignatureScope, command.expectedLineage)) throw Object.assign(new Error("The reviewed source lineage has changed. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
-      const latestOrderForSign = await loadOrder(request, command.orderId);
+      const latestOrderForSign = await loadOrder(request, command.orderId, { fresh: true });
       const latestScopeForSign = latestOrderForSign && matrixSignatureScope(latestOrderForSign, currentMenuContentHash);
       if (!latestScopeForSign || !sameLineage(latestScopeForSign, command.expectedLineage)) throw Object.assign(new Error("The reviewed source lineage advanced while this signature was being prepared. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
       if (candidate.currentAllergenRelease?.status === "pending" && !command.commandId) throw Object.assign(new Error("A signed release is already awaiting materialization. Retry the release instead of signing again."), { status: 409 });
@@ -767,6 +788,8 @@ async function handlePost(request: NextRequest) {
     if (event && !event.duplicate) plan.updatedAt = event.revision;
     // CPU is now durably committed. Only now is the Hub lifecycle touched; a failure is reported as pending, never as synchronised.
     const hubLifecycle = command.action === "mark-planned" || (command.action === "save-matrix" && plan.lifecycleSync?.status === "pending") ? await completeLifecycleSync(request, plan) : undefined;
+    // The Hub transition bumped the order version, which is part of the signing lineage: hand the browser the POST-sync lineage so its first signature is not refused.
+    const lineageOrder = hubLifecycle ? (await loadOrder(request, command.orderId, { fresh: true })) ?? changedOrder : changedOrder;
     // A duplicate command has already staged its durable work. Replaying the
     // HTTP request must not synchronously repeat delivery or consumer effects.
     let materializationResult: { eventId: string; status: string; error?: string; attempts?: number } | undefined;
@@ -785,8 +808,8 @@ async function handlePost(request: NextRequest) {
       await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${plan.id}:v${event!.sequence}`, sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: event!.sequence, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false, ...(review ? { reviewManifest: review.manifest } : {}) });
     }
     const materializationFailed = materializationResult?.status === "failed";
-    const matrixStatus = plan.matrixArtifact && changedOrder && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, changedOrder, plan.menuItems) ? "ready" : plan.currentAllergenRelease?.materializationStatus === "failed" || materializationFailed ? "failed" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
-    const signingLineage = changedOrder ? matrixSignatureScope(changedOrder, menuContentHash(plan.menuItems)) : undefined;
+    const matrixStatus = plan.matrixArtifact && lineageOrder && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, lineageOrder, plan.menuItems) ? "ready" : plan.currentAllergenRelease?.materializationStatus === "failed" || materializationFailed ? "failed" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
+    const signingLineage = lineageOrder ? matrixSignatureScope(lineageOrder, menuContentHash(plan.menuItems)) : undefined;
     return NextResponse.json({ plan, revision: planRevisionToken(plan), ...(hubLifecycle ? { hubLifecycle, synchronised: hubLifecycle.status === "synced" } : {}), signingLineage: signingLineage || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, ...(plan.currentAllergenRelease?.materializationError || materializationResult?.error ? { matrixError: plan.currentAllergenRelease?.materializationError || materializationResult?.error } : {}), materializationDelivery: materializationResult || null, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return errorResponse(error); }
 }
