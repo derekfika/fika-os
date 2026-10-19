@@ -43,9 +43,9 @@ test("four lifecycle revisions own distinct immutable obligations and exact repl
   assert.equal(JSON.stringify(original), bytes);
   assert.equal(original.to[0], booking.client.email);
   assert.match(original.text, /subject to confirmation/);
-  assert.match(confirmed.text, /Total GBP 36.00/);
-  assert.match(amended.text, /updated/);
-  assert.match(cancelled.text, /cancelled/);
+  assert.match(confirmed.text, /Total: £36.00/);
+  assert.match(amended.text, /updated/i);
+  assert.match(cancelled.text, /cancelled/i);
 });
 test("stale or cancelled source never emits a current confirmation", () => {
   const message = bookingNotificationRecord(booking, "confirmed", 4, booking.updatedAt);

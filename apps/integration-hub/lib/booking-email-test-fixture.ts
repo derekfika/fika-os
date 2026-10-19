@@ -5,7 +5,7 @@ export const RCOA_EMAIL_TEST_OPLOC = "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2
 export const RCOA_EMAIL_TEST_RECIPIENT = "derek@fikacatering.com";
 export const RCOA_EMAIL_TEST_KINDS = ["submitted", "confirmed", "amended", "cancelled"] as const satisfies readonly BookingNotificationKind[];
 export const RCOA_EMAIL_TEST_NOTIFICATION_IDS = Object.freeze(Object.fromEntries(
-  RCOA_EMAIL_TEST_KINDS.map(kind => [kind, `rcoa-email-test:20261019:${kind}:v1`]),
+  RCOA_EMAIL_TEST_KINDS.map(kind => [kind, `rcoa-email-test:20261019:${kind}:v2`]),
 ) as Record<BookingNotificationKind, string>);
 export const RCOA_EMAIL_TEST_CREATED_AT = "2026-10-19T00:00:00.000Z";
 
@@ -25,7 +25,7 @@ export function createRcoaEmailTestFixture(kind: BookingNotificationKind): Booki
     source: { provider: "rcoa-booking-platform", sourceBookingId: "RCOA-EMAIL-TEST-2026-10-19", submissionTimestamp: RCOA_EMAIL_TEST_CREATED_AT, contractVersion: "delivery-test", originalPayload: {} },
     client: { name: "FIKA OS Test Recipient", companyName: "FIKA OS Email Delivery Test", email: RCOA_EMAIL_TEST_RECIPIENT, phone: "" },
     service: { portalSiteId: "rcoa", portalSiteLabel: "RCoA Hospitality", oplocId: RCOA_EMAIL_TEST_OPLOC, eventDate: "2026-11-19", startTime: "10:00", endTime: "11:00", guestCount: 12, floorLevel: "Test Suite", roomOrArea: "Delivery test" },
-    order: { eventType: "Email delivery test", items: [{ itemId: "test-item", itemName: "Synthetic test item", unitPrice: 10, quantity: 12, lineTotal: 120 }], netTotal: 120, vatNote: "Synthetic test only", currency: "GBP", vatTotal: 0, grossTotal: 120 },
+    order: { eventType: "Meeting lunch", items: [{ itemId: "test-sandwich", itemName: "Sandwich platter", servingInfo: "Assorted fillings, serves 12", unitPrice: 9.5, quantity: 12, lineTotal: 114 }, { itemId: "test-fruit", itemName: "Seasonal fruit bowl", unitPrice: 18, quantity: 2, lineTotal: 36, comments: "Synthetic test item" }], netTotal: 150, vatNote: "Synthetic test only", currency: "GBP", vatTotal: 30, grossTotal: 180 },
     dietaries: {}, acknowledgements: {}, attachments: [], statusHistory: [], audit: [], commercialVersion: 1,
   } as unknown as CanonicalBooking;
   const record = bookingNotificationRecord(booking, kind, 1, RCOA_EMAIL_TEST_CREATED_AT);
@@ -37,7 +37,7 @@ export function createRcoaEmailTestFixture(kind: BookingNotificationKind): Booki
     cc: [],
     subject: `[TEST ONLY] ${record.subject}`,
     text: `TEST ONLY — no real booking has been created.\n\n${record.text}`,
-    html: `<div style="padding:12px;background:#FFF2CC;border:2px solid #9A6700"><strong>TEST ONLY — no real booking has been created.</strong></div>${record.html}`,
+    html: record.html.replace(/(<body[^>]*>)/, `$1<div style="padding:10px 12px;background:#FFF2CC;border-bottom:2px solid #9A6700;font-family:Arial,sans-serif;font-size:13px;text-align:center"><strong>TEST ONLY — no real booking has been created.</strong></div>`),
     testFixture: true,
   };
 }
