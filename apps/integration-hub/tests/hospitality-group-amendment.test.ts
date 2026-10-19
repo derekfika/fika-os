@@ -398,6 +398,13 @@ test("group charges change only the targeted service, reprice the group, stale i
   assert.ok(after[1].quoteState?.revisions.every(q => q.stale));
   const state = groupCommercialState(f.id, after);
   assert.equal(state.totals.chargesNet, 31); assert.notEqual(state.sourceHash, command.expectedSourceHash);
+  const baselineTotals = groupCommercialState(f.id, before).totals;
+  const quote = before[1].quoteState!.revisions.find(revision => revision.id === before[1].quoteState!.currentRevisionId)!;
+  const vatRate = (quote.snapshot as { totals: { vatRate: number } }).totals.vatRate;
+  const cents = (value: number) => Math.round(value * 100);
+  assert.equal(cents(state.totals.net - baselineTotals.net), 3100);
+  assert.equal(cents(state.totals.vat - baselineTotals.vat), cents(31 * vatRate));
+  assert.equal(cents(state.totals.gross - baselineTotals.gross), 3100 + cents(31 * vatRate));
   assert.equal((await db.collection("fikaBookingAudit").doc(`${after[1].canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${after[1].version}`).get()).data()?.action, "workflow-set-additional-charges");
   // A stale retry is rejected; re-sending the saved lines against the new version/hash is a no-op.
   await assert.rejects(setHospitalityGroupServiceCharges(actor, command, async () => {}), /changed elsewhere/);
@@ -405,4 +412,21 @@ test("group charges change only the targeted service, reprice the group, stale i
   assert.equal(replay.changed, false); assert.deepEqual(await f.read(), after);
   const removed = await setHospitalityGroupServiceCharges(actor, { ...command, expectedVersion: after[1].version, expectedSourceHash: state.sourceHash, charges: [] }, async () => {});
   assert.equal(removed.changed, true); assert.equal(groupCommercialState(f.id, await f.read()).totals.chargesNet, 0);
+});
+
+test("wave integration: a charge save invalidates stale cancellation and cancelled services reject charge changes", { skip: !enabled }, async () => {
+  const f = await fixture(); await f.quote(0); const before = await f.read();
+  const beforeHash = groupCommercialState(f.id, before).sourceHash;
+  const charge = { id: `charge_${randomUUID()}`, kind: "manual" as const, category: "equipment" as const, label: "Group integration charge", quantity: 2, unitNet: 15.5 };
+  await setHospitalityGroupServiceCharges(actor, { bookingGroupId: f.id, bookingId: before[1].canonicalId, expectedVersion: before[1].version, expectedSourceHash: beforeHash, charges: [charge] }, async () => {});
+  const charged = await f.read();
+  await assert.rejects(cancelHospitalityBookingGroup(actor, { bookingGroupId: f.id, expectedSourceHash: beforeHash, reason: "Stale cancellation" }, async () => {}, "customer-cancellation"), /changed elsewhere/);
+  assert.deepEqual(await f.read(), charged);
+  for (const child of charged) assert.equal((await db.collection("fikaBookingNotifications").doc(bookingNotificationId(child, "cancelled", child.version + 1)).get()).exists, false);
+  const cancelled = await cancelHospitalityBookingGroup(actor, { bookingGroupId: f.id, expectedSourceHash: groupCommercialState(f.id, charged).sourceHash, reason: "Current customer cancellation" }, async () => {}, "customer-cancellation");
+  assert.ok(cancelled.bookings.every(child => child.lifecycleStatus === "Cancelled" && child.dashboardWorkflow?.cancellation?.notificationOutcome === "queued"));
+  const saved = await f.read();
+  assert.deepEqual(saved[1].additionalCharges, charged[1].additionalCharges, "cancellation preserves approved commercial history");
+  await assert.rejects(setHospitalityGroupServiceCharges(actor, { bookingGroupId: f.id, bookingId: saved[1].canonicalId, expectedVersion: saved[1].version, expectedSourceHash: groupCommercialState(f.id, saved).sourceHash, charges: [] }, async () => {}), /cancelled|additional charges/i);
+  assert.deepEqual(await f.read(), saved);
 });
