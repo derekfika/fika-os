@@ -3,8 +3,12 @@ import { workspaceGmailToken } from "./workspace-gmail-dwd";
 import { readGmailOAuthFiles, refreshGmailAccessToken } from "./gmail-client";
 import type { BookingNotificationKind, BookingNotificationRecord } from "./booking-notifications";
 import type { CanonicalBooking } from "./hospitality-booking-service";
+import { EMAIL_FOOTER_MARKER, emailInlineImages } from "./booking-email-template";
 
 export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+const RCOA_EMAIL_TEST_OPLOC = "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2";
+const RCOA_EMAIL_TEST_RECIPIENT = "derek@fikacatering.com";
+const RCOA_EMAIL_SENDER = "rcoa@fikacatering.com";
 export type BookingSender = { from: string; replyTo: string; displayName: string; enabled: BookingNotificationKind[]; authenticatedAccount: string; verifiedSendAs: boolean };
 const address = (value: string) => /^[^\s<>@,;\r\n]+@[^\s<>@,;\r\n]+\.[^\s<>@,;\r\n]+$/.test(value);
 
@@ -15,7 +19,14 @@ export function resolveBookingSender(oplocId: string | undefined, kind: BookingN
   try { senders = JSON.parse(env.FIKA_HOSPITALITY_EMAIL_SENDERS_JSON || "{}"); } catch { throw new Error("Booking sender configuration is invalid."); }
   const sender = senders[oplocId];
   if (!sender || !address(sender.from || "") || !address(sender.replyTo || "") || !address(sender.authenticatedAccount || "") || !sender.displayName || /[\r\n]/.test(sender.displayName)) throw new Error("Booking site sender is not configured.");
-  if (!sender.verifiedSendAs) throw new Error("Booking site From identity has not been verified by its Workspace owner.");
+  const scopedRcoaTest = env.FIKA_RUNTIME_MODE === "production"
+    && env.FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED === "true"
+    && env.FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT?.trim().toLowerCase() === RCOA_EMAIL_TEST_RECIPIENT
+    && oplocId === RCOA_EMAIL_TEST_OPLOC
+    && sender.from === RCOA_EMAIL_SENDER
+    && sender.replyTo === RCOA_EMAIL_SENDER
+    && sender.authenticatedAccount === RCOA_EMAIL_SENDER;
+  if (!sender.verifiedSendAs && !scopedRcoaTest) throw new Error("Booking site From identity has not been verified by its Workspace owner.");
   if (!sender.enabled?.includes(kind)) throw new Error("This site lifecycle notification is disabled.");
   return sender;
 }
@@ -56,14 +67,24 @@ export function gmailRawMessage(message: BookingNotificationRecord, sender: Book
   const encode = (value: string) => `=?UTF-8?B?${Buffer.from(value).toString("base64")}?=`;
   const identity = crypto.createHash("sha256").update(message.notificationId).digest("hex");
   const boundary = `fika_${identity}`;
-  const contact = `\n\nFor questions, reply to ${sender.replyTo}.`;
+  const templated = message.html.includes(EMAIL_FOOTER_MARKER);
+  const contact = templated ? "" : `\n\nFor questions, reply to ${sender.replyTo}.`;
   const body = (value: string) => Buffer.from(value).toString("base64").match(/.{1,76}/g)?.join("\r\n") || "";
+  const wrap = (base64: string) => (base64.match(/.{1,76}/g) || []).join("\r\n");
+  const images = emailInlineImages(message.html);
+  const htmlPart = ["Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: base64", "", body(message.html + (templated ? "" : `<p>For questions, reply to ${sender.replyTo}.</p>`))];
+  // Brand logos travel as inline (cid) parts of the HTML alternative so Gmail and Outlook render them without remote images.
+  const relatedBoundary = `fikarel_${identity}`;
+  const htmlAlternative = images.length
+    ? [`Content-Type: multipart/related; boundary="${relatedBoundary}"`, "", `--${relatedBoundary}`, ...htmlPart,
+        ...images.flatMap(image => [`--${relatedBoundary}`, "Content-Type: image/png", "Content-Transfer-Encoding: base64", `Content-ID: <${image.contentId}>`, `Content-Disposition: inline; filename="${image.contentId}.png"`, "", wrap(image.base64)]), `--${relatedBoundary}--`]
+    : htmlPart;
   return [
     `From: ${encode(sender.displayName)} <${sender.from}>`, `Reply-To: ${sender.replyTo}`, `To: ${message.to.join(", ")}`,
     ...(message.cc.length ? [`Cc: ${message.cc.join(", ")}`] : []), `Subject: ${encode(message.subject)}`, `Message-ID: <${identity}@notifications.fikacatering.com>`,
     `Date: ${new Date(message.createdAt).toUTCString()}`, "MIME-Version: 1.0", `Content-Type: multipart/alternative; boundary="${boundary}"`, "",
     `--${boundary}`, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", body(message.text + contact),
-    `--${boundary}`, "Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: base64", "", body(message.html + `<p>For questions, reply to ${sender.replyTo}.</p>`), `--${boundary}--`, "",
+    `--${boundary}`, ...htmlAlternative, `--${boundary}--`, "",
   ].join("\r\n");
 }
 

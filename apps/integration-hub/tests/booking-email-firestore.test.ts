@@ -11,6 +11,7 @@ import { stableDocumentId } from "../lib/canonical-editor";
 import type { Actor } from "../lib/auth";
 import type { CanonicalRecord } from "../lib/types";
 import { GmailSendFailure, type BookingSender } from "../lib/booking-email-delivery";
+import { createRcoaEmailTestFixture, RCOA_EMAIL_TEST_NOTIFICATION_IDS, RCOA_EMAIL_TEST_RECIPIENT } from "../lib/booking-email-test-fixture";
 
 test("canonical transitions atomically queue distinct lifecycle obligations; retries preserve earlier payloads", async () => {
   assert.equal(process.env.FIKA_RUNTIME_MODE || "local", "local");
@@ -90,4 +91,42 @@ test("Firestore worker CAS prevents duplicate sends, suppresses source races, an
   assert.equal((await amendedRef.get()).data()?.outboxStatus, "dead-letter");
   await runBookingEmailWorker(raceStore, 25, deps); assert.equal(sends, 2);
   assert.equal((await amendedRef.collection("recovery").get()).size, 1);
+});
+
+test("fixed synthetic RCoA test notification uses the durable worker once without creating a booking", async () => {
+  assert.equal(process.env.FIKA_RUNTIME_MODE || "local", "local");
+  const id = RCOA_EMAIL_TEST_NOTIFICATION_IDS.submitted;
+  const ref = db.collection("fikaBookingNotifications").doc(id);
+  const envKeys = ["FIKA_RUNTIME_MODE", "FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED", "FIKA_HOSPITALITY_EMAIL_TEST_NOTIFICATION_IDS", "FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT", "FIKA_HOSPITALITY_EMAIL_ALLOWED_OPLOCS"] as const;
+  const previous = Object.fromEntries(envKeys.map(key => [key, process.env[key]]));
+  const sender: BookingSender = { from: "rcoa@fikacatering.com", replyTo: "rcoa@fikacatering.com", displayName: "RCoA Hospitality", authenticatedAccount: "rcoa@fikacatering.com", verifiedSendAs: true, enabled: ["submitted"] };
+  let sends = 0;
+  try {
+    await ref.delete();
+    process.env.FIKA_RUNTIME_MODE = "production";
+    process.env.FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED = "true";
+    process.env.FIKA_HOSPITALITY_EMAIL_TEST_NOTIFICATION_IDS = Object.values(RCOA_EMAIL_TEST_NOTIFICATION_IDS).join(",");
+    process.env.FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT = RCOA_EMAIL_TEST_RECIPIENT;
+    process.env.FIKA_HOSPITALITY_EMAIL_ALLOWED_OPLOCS = "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2";
+    await ref.create(createRcoaEmailTestFixture("submitted"));
+    assert.equal((await db.collection("fikaBookings").doc("rcoa-email-delivery-test-booking").get()).exists, false);
+    const deps = { sender: () => sender, token: async () => "mock", send: async () => { sends++; return "synthetic-test-receipt"; } };
+    const [first, second] = await Promise.all([runBookingEmailWorker(bookingEmailStore, 25, deps), runBookingEmailWorker(bookingEmailStore, 25, deps)]);
+    await runBookingEmailWorker(bookingEmailStore, 25, deps);
+    const saved = (await ref.get()).data();
+    assert.equal(sends, 1);
+    assert.equal(first.attempted + second.attempted, 1);
+    assert.equal(saved?.outboxStatus, "delivered");
+    assert.equal(saved?.gmailMessageId, "synthetic-test-receipt");
+  } finally {
+    const attempts = await ref.collection("attempts").get();
+    const batch = db.batch();
+    attempts.docs.forEach(doc => batch.delete(doc.ref));
+    batch.delete(ref);
+    await batch.commit();
+    for (const key of envKeys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
 });
