@@ -511,7 +511,7 @@ export default function HospitalityDashboard({
                 ? { ...base, action: "production-handoff" }
                 : action === "Completed"
                   ? { ...base, action: "complete", notes: reason }
-                  : { ...base, action: "cancel", reason, ...cancelOptions };
+                  : { ...base, action: "cancel", reason, ...cancelOptions, notify: site.key === "rcoa" /* customer cancellation email is live for RCoA only */ };
     if (action === "Cancelled" && !reason.trim()) {
       setError("A cancellation reason is required.");
       return;
