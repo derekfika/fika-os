@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GroupAmendmentEditor } from "./GroupAmendmentEditor";
 import { AdditionalChargesModal } from "./AdditionalChargesModal";
 import type { ReactNode } from "react";
@@ -7,6 +7,8 @@ import type { BookingAdditionalChargeInput, CanonicalBooking } from "@/lib/canon
 import type { HospitalityBookingGroup, HospitalityGroupService } from "../../../shared/hospitality-group-quotes";
 import { groupRequestedItems } from "../../lib/booking-presentation";
 import { RequestedItemsList } from "./RequestedItemsList";
+import { CancellationStatusPanel } from "./CancellationStatusPanel";
+import { cancellationView, groupCancellationView, propagationOutcome, type PropagationOutcome } from "../../lib/cancellation-status";
 import styles from "./HospitalityGroupDetail.module.css";
 
 const money = (n: number) => `£${n.toFixed(2)}`;
@@ -26,6 +28,47 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
   const [chargeLoading, setChargeLoading] = useState<string>();
   const [chargeError, setChargeError] = useState("");
   const lock = useRef(false);
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  const cancelDialog = useRef<HTMLFormElement>(null);
+  const cancelLock = useRef(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+  const [cancelOutcome, setCancelOutcome] = useState<PropagationOutcome>();
+  const cancellation = groupCancellationView(group.services.map(s => ({ lifecycleStatus: s.lifecycleStatus, cancellation: s.cancellation })));
+  const anyCancelled = cancellation.cancelled > 0;
+  const closeCancel = () => { setCancelOpen(false); requestAnimationFrame(() => cancelButton.current?.focus()); };
+  useEffect(() => {
+    if (!cancelOpen) return;
+    const prior = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = cancelDialog.current;
+    dialog?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !cancelLock.current) { event.preventDefault(); setCancelOpen(false); }
+      if (event.key !== "Tab" || !dialog) return;
+      const controls = [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), textarea:not([disabled])')];
+      if (!controls.length) { event.preventDefault(); return; }
+      if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls.at(-1)?.focus(); }
+      else if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0]?.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); if (prior?.isConnected) prior.focus(); };
+  }, [cancelOpen]);
+  /** First cancellation and retry are the same Hub command: the Hub treats an already-cancelled group as an idempotent downstream recovery. */
+  const runCancel = async (reason: string, retry: boolean) => {
+    if (cancelLock.current || lock.current || chargeTarget) return;
+    lock.current = true; cancelLock.current = true; setCancelBusy(true); onBusyChange(true); setCancelError("");
+    try {
+      const response = await fetch("/api/booking-groups/cancel", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookingGroupId: group.id, expectedSourceHash: group.sourceHash, reason }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message || "The cancellation could not be completed.");
+      setCancelOutcome(propagationOutcome(body.projectionPropagation));
+      if (!retry) { setCancelOpen(false); setCancelReason(""); }
+      await onAmended();
+    } catch (cause) { setCancelError(cause instanceof Error ? cause.message : "The cancellation could not be confirmed. Refresh the booking before retrying."); }
+    finally { lock.current = false; cancelLock.current = false; setCancelBusy(false); onBusyChange(false); }
+  };
   const ready = group.quote?.status === "complete" && !group.quote.stale;
   const statesEligible = group.services.every(s => ["New", "Reviewed", "Quoted", "Completed", "Sent to CPU"].includes(s.lifecycleStatus));
   const eligible = !(group.quote?.status === "integrity_failed" && !group.quote.stale) && statesEligible;
@@ -34,7 +77,7 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
 
   /** Always load the service's current charges and version from the Hub so a stale list can never be saved over newer work. */
   const openCharges = async (service: HospitalityGroupService) => {
-    if (lock.current) return;
+    if (lock.current || cancelOpen || chargeTarget) return;
     lock.current = true; setChargeLoading(service.bookingId); setChargeError(""); onBusyChange(true);
     try {
       const response = await fetch(`/api/booking-groups/amend?bookingGroupId=${encodeURIComponent(group.id)}`, { cache: "no-store" });
@@ -76,11 +119,25 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
       </div>
     </header>
     <div className={styles.actions}>
-      <button ref={editButton} type="button" disabled={busy || group.services.some(s => s.lifecycleStatus === "Cancelled") || editing} onClick={() => setEditing(true)}>Amend booking</button>
-      {ready && group.quote?.driveUrl ? <a href={group.quote.driveUrl} target="_blank" rel="noopener noreferrer">Open group quote</a> : <button type="button" className="primary" disabled={busy || editing || !eligible} aria-busy={busy} onClick={onQuote}>{busy ? "Preparing group quote…" : group.quote?.status === "failed" || group.quote?.status === "artifact_pending" ? "Retry group quote" : group.quote ? "Generate updated group quote" : "Generate group quote"}</button>}
+      <button ref={editButton} type="button" disabled={busy || anyCancelled || editing || cancelOpen || Boolean(chargeTarget)} onClick={() => setEditing(true)}>Amend booking</button>
+      {!anyCancelled && <button ref={cancelButton} type="button" className={styles.danger} disabled={busy || editing || cancelOpen || Boolean(chargeTarget)} onClick={() => { setCancelError(""); setCancelOpen(true); }}>Cancel booking</button>}
+      {ready && group.quote?.driveUrl ? <a href={group.quote.driveUrl} target="_blank" rel="noopener noreferrer">Open group quote</a> : <button type="button" className="primary" disabled={busy || editing || cancelOpen || Boolean(chargeTarget) || !eligible} aria-busy={busy} onClick={onQuote}>{busy ? "Preparing group quote…" : group.quote?.status === "failed" || group.quote?.status === "artifact_pending" ? "Retry group quote" : group.quote ? "Generate updated group quote" : "Generate group quote"}</button>}
     </div>
     {editing && <GroupAmendmentEditor key={group.id} group={group} site={site} oplocId={oplocId} onBusyChange={onBusyChange} onCancel={closeEditor} onSaved={async () => { await onAmended(); closeEditor(); }} />}
-    <p className={styles.help}>Group cancellation is not yet available.</p>
+    {cancelError && !cancelOpen && !anyCancelled && <p role="alert" className={styles.error}>{cancelError} The booking may already be cancelled. Refresh before retrying.</p>}
+    {anyCancelled && <>
+      <CancellationStatusPanel view={cancellation} retry={cancelOutcome} busy={cancelBusy} error={cancelError} onRetry={() => void runCancel("Retry cancellation downstream recovery", true)} />
+      <ul className={styles.cancelServices} aria-label="Cancellation status by service">{group.services.map(s => <li key={s.bookingId}><span>{s.time} · {s.serviceType.replaceAll("_", " ")}</span><strong>{cancellationView({ lifecycleStatus: s.lifecycleStatus, cancellation: s.cancellation }).headline.replace(/^Cancelled — /, "")}</strong></li>)}</ul>
+    </>}
+    {cancelOpen && <div className="modal-backdrop" role="presentation"><form ref={cancelDialog} className="modal hospitality-action-modal" role="dialog" aria-modal="true" aria-labelledby="group-cancel-title" onSubmit={event => { event.preventDefault(); void runCancel(cancelReason.trim(), false); }}>
+      <p className="eyebrow">Governed workflow command</p>
+      <h2 id="group-cancel-title">Cancel {group.services.length} services?</h2>
+      <p>This cancels the whole All Day Hospitality booking for {group.client.companyName} on {group.eventDate}. Production work is withdrawn from CPU and Logistics where it is safe to do so; anything CPU has already advanced is flagged for manual review instead.</p>
+      <p>Where the Hub has customer cancellation email enabled for this site, one email is queued automatically for each cancelled service.</p>
+      <label>Cancellation reason<textarea autoFocus required minLength={3} maxLength={1000} value={cancelReason} disabled={cancelBusy} onChange={event => setCancelReason(event.target.value)} /></label>
+      {cancelError && <p role="alert" className={styles.error}>{cancelError}</p>}
+      <footer><button type="button" onClick={closeCancel} disabled={cancelBusy}>Keep booking</button><button type="submit" className={styles.dangerSolid} disabled={cancelBusy || cancelReason.trim().length < 3} aria-busy={cancelBusy}>{cancelBusy ? "Cancelling…" : `Cancel ${group.services.length} services`}</button></footer>
+    </form></div>}
     {!statesEligible && !ready && <p role="status" className={styles.notice}>Some services are not in a state that allows a new quote. Review their operational status.</p>}
     {group.quote?.status === "artifact_pending" && <p role="status" className={styles.notice}>Quote preparation is in progress. Refresh to check the result, or retry to resume after an interruption.</p>}
     {group.quote?.error && <p role="alert" className={styles.error}>{group.quote.error}</p>}
@@ -112,7 +169,7 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
         return <article key={service.bookingId} id={serviceAnchor(group, service)} className={styles.chargeService} aria-label={`Additional charges for ${serviceLabel(service)}`}>
           <div className={styles.chargeHead}>
             <div><strong>{serviceLabel(service)}</strong><span className={styles.chargeNet}>{service.charges.length ? `${money(service.totals.chargesNet)} net` : "No additional charges"}</span></div>
-            <button type="button" disabled={busy || !editable || Boolean(chargeLoading)} aria-busy={chargeLoading === service.bookingId} aria-label={`Manage charges for ${serviceLabel(service)}`} onClick={() => void openCharges(service)}>{chargeLoading === service.bookingId ? "Loading…" : "Manage charges"}</button>
+            <button type="button" disabled={busy || !editable || Boolean(chargeLoading) || cancelOpen || Boolean(chargeTarget)} aria-busy={chargeLoading === service.bookingId} aria-label={`Manage charges for ${serviceLabel(service)}`} onClick={() => void openCharges(service)}>{chargeLoading === service.bookingId ? "Loading…" : "Manage charges"}</button>
           </div>
           {service.charges.length > 0 && <ul className={styles.chargeList}>{service.charges.map((charge, i) => <li key={`${service.bookingId}:${i}`}><span>{charge.label}{charge.detail && <small>{charge.detail}</small>}</span><strong>{money(charge.net)}</strong></li>)}</ul>}
           {!editable && <p className={styles.help}>Charges can be changed on new, reviewed, quoted and completed services. Otherwise amend the booking.</p>}
