@@ -43,7 +43,10 @@ export async function GET(request: NextRequest) {
         if (cpuNotFound(response, body)) continue;
         return upstreamFailure(response, body);
       }
-      if (body.plan?.matrixArtifact) {
+      if (body.matrixStatus === "failed") return NextResponse.json({ artifact: null, status: "failed", error: body.matrixError || "CPU matrix materialisation failed. Retry materialisation from CPU Production." });
+      if (body.matrixStatus === "generating") return NextResponse.json({ artifact: null, status: "generating" });
+      if (body.matrixStatus === "not_configured") return NextResponse.json({ artifact: null, status: "not_configured" });
+      if (body.matrixStatus === "ready" && body.plan?.matrixArtifact) {
         const release = body.plan.currentAllergenRelease;
         return NextResponse.json({ artifact: {
           ...body.plan.matrixArtifact,
@@ -54,10 +57,8 @@ export async function GET(request: NextRequest) {
           ...(release?.sourceContentHash ? { sourceContentHash: release.sourceContentHash } : {}),
         }, status: "ready" });
       }
-      if (body.matrixStatus === "failed") return NextResponse.json({ artifact: null, status: "failed", error: body.matrixError || "CPU matrix materialisation failed. Retry materialisation from CPU Production." });
-      if (body.matrixStatus === "generating") return NextResponse.json({ artifact: null, status: "generating" });
-      if (body.matrixStatus === "not_configured") return NextResponse.json({ artifact: null, status: "not_configured" });
       if (body.matrixStatus === "ready") return NextResponse.json({ artifact: null, status: "error", error: "CPU reports a ready allergen matrix without a persisted artifact." }, { status: 502 });
+      if (body.plan?.matrixArtifact) return NextResponse.json({ artifact: null, status: "error", error: "CPU did not confirm that the stored PDF belongs to the current signed release." }, { status: 502 });
       if (body.signedMatrixAvailable || body.approvedMatrixAvailable) return NextResponse.json({ artifact: { fileName: "signed-allergen-matrix.html", driveStatus: "not_configured", viewUrl: viewUrlFor(candidate) }, status: "ready" });
       if (body.plan) return NextResponse.json({ artifact: null, status: "not_configured", error: "The current CPU Production Order has no signed allergen matrix." });
     }
