@@ -129,7 +129,7 @@ export type LogisticsJob = {
   deliveryStatus?: "pending" | "loaded" | "delivered";
   deliveredAt?: string;
   collectionStatus: "awaiting" | "collected";
-  contents: { description: string; quantity: number; unit: string }[];
+  contents: { description: string; quantity: number; unit: string; orderedQuantity?: number; orderedUnit?: string }[];
   notes?: string;
   createdAt: string;
   updatedAt: string;

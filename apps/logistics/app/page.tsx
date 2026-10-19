@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { lineDisplayText } from "../lib/ordered-quantity";
 import * as React from "react";
 import type { CSSProperties, ReactNode, DragEvent, MouseEvent, MutableRefObject } from "react";
 import { deriveTimelineQueueCards, MountedReactTimeline } from "./mounted-react-timeline";
@@ -2297,7 +2298,7 @@ function Inspector({
       {group.deliveryStatus && <InspectorMeta label="Delivery status" value={group.deliveryStatus === "pending" ? "Pending" : group.deliveryStatus === "loaded" ? "Loaded" : "Delivered"} />}
       <InspectorMeta label="Jobs / quantity" value={`${group.requirementCount} ${group.requirementCount === 1 ? "job" : "jobs"} · ${group.unitBreakdown.map((item) => `${item.quantity} ${item.unit}`).join(" · ") || "Quantity unavailable"}`} />
       {assignedDelivery && <InspectorMeta label="Assignment" value={`${assignedRun?.vehicle || "Vehicle not labelled"} · ${assignedRun?.status || "Run status unavailable"}`} />}
-      <h3>Load</h3><ul className="inspector-list">{group.combinedLines.map((line) => <li key={line.lineKey}>{line.quantity} {line.unit} · {line.displayName}</li>)}</ul>
+      <h3>Load</h3><ul className="inspector-list">{group.combinedLines.map((line) => <li key={line.lineKey}>{lineDisplayText(line)}</li>)}</ul>
       {group.productionContext && <p className="context-line">{[group.productionContext.clientName, group.productionContext.serviceType, group.productionContext.guestCount !== undefined ? `${group.productionContext.guestCount} guests` : undefined].filter(Boolean).join(" · ")}</p>}
       {group.productionContext?.operationalNotes && <p className="notes-block">Notes: {group.productionContext.operationalNotes}</p>}
       {group.notes && <p className="notes-block">Notes: {group.notes}</p>}
@@ -2787,7 +2788,7 @@ function WorkGroupCard({
           </ul>
           {group.combinedLines.map((line) => (
             <p key={line.lineKey}>
-              {line.quantity} {line.unit} · {line.displayName}
+              {lineDisplayText(line)}
             </p>
           ))}
         </div>
@@ -3082,9 +3083,7 @@ function StopPanel({
           {stop.lane === "collection" && run.status !== "completed" && <PostponeCollectionControl run={run} stop={rawStop} onAction={onAction} />}
           <p>
             {stop.combinedLines
-              .map(
-                (line) => `${line.quantity} ${line.unit} · ${line.displayName}`,
-              )
+              .map(lineDisplayText)
               .join(" · ")}
           </p>
           {rawStop.postponedFromServiceDate && <p className="postponed-note">Outstanding collection · postponed from {formatOperationalDate(rawStop.postponedFromServiceDate, { weekday: "short", day: "numeric", month: "short" })}</p>}

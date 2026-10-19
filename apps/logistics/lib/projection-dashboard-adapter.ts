@@ -1,4 +1,5 @@
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
+import { lineBreakdown } from "./ordered-quantity";
 import { fulfilmentWorkstream } from "../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, LogisticsDayProjection } from "./types";
 import { buildPlannerDay, type PlannerLine, type PlannerWorkGroup } from "./planner-read-model";
@@ -97,8 +98,8 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
     },
   });
 
-  const lines = (job: { id: string; sourceId: string; totalUnits: number; contents?: Array<{ description: string; quantity: number; unit: string }> }): PlannerLine[] => job.contents?.length
-    ? job.contents.map((content, index) => ({ lineKey: `projection:${job.id}:${index}`, displayName: content.description, unit: content.unit, quantity: content.quantity, requirementRefs: [job.id], sourceLineRefs: [] }))
+  const lines = (job: { id: string; sourceId: string; totalUnits: number; contents?: Array<{ description: string; quantity: number; unit: string; orderedQuantity?: number; orderedUnit?: string }> }): PlannerLine[] => job.contents?.length
+    ? job.contents.map((content, index) => ({ lineKey: `projection:${job.id}:${index}`, displayName: content.description, unit: content.unit, quantity: content.quantity, ...(content.orderedQuantity !== undefined && content.orderedUnit ? { orderedQuantity: content.orderedQuantity, orderedUnit: content.orderedUnit } : {}), requirementRefs: [job.id], sourceLineRefs: [] }))
     : [{ lineKey: `projection:${job.id}`, displayName: "Delivery items", unit: "unit", quantity: job.totalUnits, requirementRefs: [job.id], sourceLineRefs: [] }];
   const workGroups: PlannerWorkGroup[] = projection.planningQueue.map((job) => ({
     groupKey: `projection-job:${job.id}`,
@@ -111,7 +112,7 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
     requirementCount: 1,
     sourceLabels: [job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType })],
     combinedLines: lines(job),
-    unitBreakdown: [{ unit: "unit", quantity: job.totalUnits }],
+    unitBreakdown: lineBreakdown(lines(job)),
     readiness: job.productionReadiness === "attention" ? "ATTENTION" : job.productionReadiness === "pending" ? "PENDING" : "READY",
     attention: job.productionReadiness === "attention" ? ["Upstream amendment requires review"] : [],
     planningState: job.productionReadiness === "attention" ? "attention" : "unplanned",
@@ -122,8 +123,6 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
   }));
   for (const load of projection.deliveryLoads.filter(item => item.runId && !item.scheduledTime && item.jobCount > 0)) {
     const combinedLines = load.jobs.flatMap(lines);
-    const units = new Map<string, number>();
-    for (const item of combinedLines) units.set(item.unit, (units.get(item.unit) || 0) + item.quantity);
     workGroups.push({
       groupKey: `projection-delivery:${load.id}`,
       serviceDate: projection.serviceDate,
@@ -134,7 +133,7 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
       requirementCount: load.jobCount,
       sourceLabels: Array.from(new Set(load.jobs.map(job => job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType })))),
       combinedLines,
-      unitBreakdown: Array.from(units, ([unit, quantity]) => ({ unit, quantity })),
+      unitBreakdown: lineBreakdown(combinedLines),
       readiness: load.readiness === "attention" ? "ATTENTION" : "READY",
       attention: load.readiness === "attention" ? ["Upstream amendment requires review"] : [],
       planningState: "planned",
@@ -154,7 +153,7 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
       requirementCount: load.jobCount,
       sourceLabels: Array.from(new Set(load.jobs.map((job) => job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType })))),
       combinedLines: load.jobs.flatMap(lines),
-      unitBreakdown: [{ unit: "unit", quantity: load.totalUnits }],
+      unitBreakdown: lineBreakdown(load.jobs.flatMap(lines)),
       readiness: "READY",
       attention: ["Collection timing required"],
       planningState: "partially_planned",

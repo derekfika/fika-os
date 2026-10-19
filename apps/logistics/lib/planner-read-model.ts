@@ -1,4 +1,5 @@
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
+import { lineBreakdown } from "./ordered-quantity";
 import type {
   DeliveryRun,
   DeliveryStop,
@@ -36,6 +37,9 @@ export type PlannerLine = {
   displayName: string;
   unit: string;
   quantity: number;
+  /** Presentation-only catering quantity as ordered (e.g. 10 pax). `quantity`/`unit` remain the operational load. */
+  orderedQuantity?: number;
+  orderedUnit?: string;
   requirementRefs: string[];
   sourceLineRefs: Array<{ requirementId: string; lineId: string }>;
 };
@@ -297,11 +301,7 @@ function addMovementLines(
   });
 }
 function unitBreakdown(lines: PlannerLine[]) {
-  const totals = new Map<string, number>();
-  lines.forEach((line) =>
-    totals.set(line.unit, (totals.get(line.unit) || 0) + line.quantity),
-  );
-  return Array.from(totals, ([unit, quantity]) => ({ unit, quantity }));
+  return lineBreakdown(lines);
 }
 function assignedRequirements(
   requirementId: string,

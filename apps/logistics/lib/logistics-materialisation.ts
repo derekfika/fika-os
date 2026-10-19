@@ -60,7 +60,7 @@ export function logisticsJobForRequirement(
     ...(prior?.deliveredAt ? { deliveredAt: prior.deliveredAt } : {}),
     collectionStatus: prior?.collectionStatus || "awaiting" as const,
     ...(prior?.notes ? { notes: prior.notes } : {}),
-    contents: requirement.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })),
+    contents: requirement.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit, ...(line.orderedQuantity !== undefined && line.orderedUnit ? { orderedQuantity: line.orderedQuantity, orderedUnit: line.orderedUnit } : {}) })),
     createdAt: prior?.createdAt || now,
     updatedAt: now,
     version: (prior?.version || 0) + 1,
