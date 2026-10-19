@@ -26,9 +26,9 @@ env:
     value: .fikacatering.com
     availability: [BUILD, RUNTIME]
   - variable: FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED
-    value: "false"
+    value: "true"
     availability: [RUNTIME]
-  # Fixed synthetic RCoA test path is explicitly disabled in the production baseline.
+  # Synthetic RCoA test path stays disabled; live RCoA customer delivery is scoped by the allowlist below.
   - variable: FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED
     value: "false"
     availability: [RUNTIME]
@@ -41,7 +41,7 @@ env:
     value: oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2
     availability: [RUNTIME]
   - variable: FIKA_HOSPITALITY_EMAIL_SENDERS_JSON
-    value: '{"oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2":{"from":"rcoa@fikacatering.com","replyTo":"rcoa@fikacatering.com","authenticatedAccount":"rcoa@fikacatering.com","displayName":"RCoA Hospitality","verifiedSendAs":false,"enabled":["submitted","confirmed","amended","cancelled"]}}'
+    value: '{"oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2":{"from":"rcoa@fikacatering.com","replyTo":"rcoa@fikacatering.com","authenticatedAccount":"rcoa@fikacatering.com","displayName":"RCoA Hospitality","verifiedSendAs":true,"enabled":["submitted","confirmed","amended","cancelled"]}}'
     availability: [RUNTIME]
   - variable: FIKA_HOSPITALITY_EMAIL_MAILER_SERVICE_ACCOUNT
     value: fika-os-mailer@fika-os.iam.gserviceaccount.com
