@@ -30,7 +30,7 @@ env:
     availability: [RUNTIME]
   # Temporary, internally authenticated DWD check; turn off in the follow-up release after verification.
   - variable: FIKA_HOSPITALITY_EMAIL_DWD_VERIFY_ENABLED
-    value: "false"
+    value: "true"
     availability: [RUNTIME]
   # RCoA-only launch scope. Delivery stays disabled for the runtime DWD verification release.
   - variable: FIKA_HOSPITALITY_EMAIL_ALLOWED_OPLOCS

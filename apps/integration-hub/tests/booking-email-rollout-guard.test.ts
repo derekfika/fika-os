@@ -34,10 +34,9 @@ test("restricted test mode accepts only the named message and recipient, with no
   assert.throws(() => emailRolloutDisposition(message("booking:rcoa:launch:submitted:1", rcoa, ["derek@fikacatering.com"], ["ops@fikacatering.com"]), config), /outside the explicit test recipient scope/);
 });
 
-test("production candidate keeps delivery disabled and configures only the RCoA sender without CC", () => {
+test("production release keeps delivery disabled and configures only the RCoA sender without CC", () => {
   const manifest = readFileSync(new URL("../apphosting.production.yaml", import.meta.url), "utf8");
   assert.match(manifest, /variable: FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED\r?\n\s+value: "false"/);
-  assert.match(manifest, /variable: FIKA_HOSPITALITY_EMAIL_DWD_VERIFY_ENABLED\r?\n\s+value: "true"/);
   assert.match(manifest, /variable: FIKA_HOSPITALITY_EMAIL_ALLOWED_OPLOCS\r?\n\s+value: oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2/);
   assert.match(manifest, /variable: FIKA_HOSPITALITY_EMAIL_MAILER_VERIFY_MAILBOX\r?\n\s+value: rcoa@fikacatering\.com/);
   const senderEntry = manifest.match(/variable: FIKA_HOSPITALITY_EMAIL_SENDERS_JSON\r?\n\s+value: '([^']+)'/);

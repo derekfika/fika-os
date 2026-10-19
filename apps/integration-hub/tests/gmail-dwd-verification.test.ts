@@ -33,6 +33,73 @@ test("keyless diagnostic signs and exchanges only the RCoA gmail.send assertion 
   assert.equal(JSON.stringify(result).includes("secret-access-token"), false);
 });
 
+test("accepts a successful token response that omits unchanged scope", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (input, init) => {
+    calls++;
+    assert.equal(String(input), "https://oauth2.googleapis.com/token");
+    assert.equal(init?.method, "POST");
+    assert.equal(init?.headers && new Headers(init.headers).get("content-type"), "application/x-www-form-urlencoded");
+    const body = new URLSearchParams(String(init?.body));
+    assert.equal(body.get("grant_type"), "urn:ietf:params:oauth:grant-type:jwt-bearer");
+    assert.equal(body.get("assertion"), "private-assertion");
+    return new Response(JSON.stringify({ access_token: "secret-access-token", token_type: "Bearer", expires_in: 3600 }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const result = await verifyGmailDwd(env, { signJwt: async () => "private-assertion" });
+    assert.equal(calls, 1);
+    assert.equal(result.dwdImpersonationSucceeded, true);
+    assert.equal(result.tokenRequestSucceeded, true);
+    assert.equal(result.emailsSent, 0);
+    assert.equal(JSON.stringify(result).includes("secret-access-token"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejects a successful token response that reports a different scope", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ access_token: "secret-access-token", scope: "https://www.googleapis.com/auth/drive" }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+  try {
+    const result = await verifyGmailDwd(env, { signJwt: async () => "private-assertion" });
+    assert.equal(result.dwdImpersonationSucceeded, true);
+    assert.equal(result.tokenRequestSucceeded, false);
+    assert.equal(result.emailsSent, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("returns only an allowlisted OAuth error code and redacted description", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    error: "invalid_grant",
+    error_description: "Assertion eyJhbGciOiJub25l.e30.c2lnbmVk and access_token=secret-access-token are invalid",
+    access_token: "secret-access-token",
+  }), { status: 400, headers: { "content-type": "application/json" } });
+  try {
+    const result = await verifyGmailDwd(env, { signJwt: async () => "private-assertion" });
+    assert.equal(result.dwdImpersonationSucceeded, true);
+    assert.equal(result.tokenRequestSucceeded, false);
+    assert.equal(result.emailsSent, 0);
+    assert.deepEqual("oauthError" in result ? result.oauthError : undefined, {
+      code: "invalid_grant",
+      description: "Assertion [redacted assertion] and access_token=[redacted] are invalid",
+    });
+    assert.equal(JSON.stringify(result).includes("secret-access-token"), false);
+    assert.equal(JSON.stringify(result).includes("private-assertion"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("wrong or missing mailbox configuration cannot attempt delegated authentication", async () => {
   let calls = 0;
   for (const config of [{ ...env, FIKA_HOSPITALITY_EMAIL_MAILER_VERIFY_MAILBOX: "mnk@fikacatering.com" }, { ...env, FIKA_HOSPITALITY_EMAIL_MAILER_VERIFY_MAILBOX: undefined }]) {
