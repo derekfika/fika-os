@@ -1,5 +1,5 @@
 import { groupCommercialState, groupHash, validateBookingGroup, MAX_GROUP_SERVICES } from "./hospitality-group-commercial";
-import { groupAmendmentCommand, type GroupAmendmentCommand } from "./hospitality-group-amendment";
+import { groupAmendmentCommand, groupChargesCommand, type GroupAmendmentCommand, type GroupChargesCommand } from "./hospitality-group-amendment";
 import crypto from "node:crypto";
 import { hospitalityGroupProjection } from "./hospitality-group-projection";
 import { explicitMenuProductionRouting } from "./connections-service";
@@ -1739,4 +1739,35 @@ export async function amendHospitalityBookingGroup(actor: Actor, input: GroupAme
   });
   const projectionPropagation = await propagateProductionChanges(result.projectionChanges);
   return { bookings: result.children, projectionPropagation };
+}
+
+/**
+ * Group "Manage charges": the standalone set-additional-charges rules (server recalculation, locked labour rates, commercial-status gate,
+ * commercialVersion bump, quote staling) applied to exactly one child. Siblings are read for group validation only and never written,
+ * so the group source hash changes and the consolidated quote becomes stale without touching unrelated services.
+ */
+export async function setHospitalityGroupServiceCharges(actor: Actor, input: GroupChargesCommand, authorize: (children: CanonicalBooking[]) => Promise<void>) {
+  const command = groupChargesCommand.parse(input);
+  return db.runTransaction(async transaction => {
+    const snapshot = await transaction.get(bookings().where("bookingGroup.id", "==", command.bookingGroupId).limit(MAX_GROUP_SERVICES + 1));
+    const children = validateBookingGroup(command.bookingGroupId, snapshot.docs.map(d => d.data() as CanonicalBooking));
+    await authorize(children);
+    if (groupCommercialState(command.bookingGroupId, children).sourceHash !== command.expectedSourceHash) throw Object.assign(new Error("Booking changed elsewhere. Refresh before saving additional charges."), { status: 409 });
+    const current = children.find(child => child.canonicalId === command.bookingId);
+    if (!current) throw conflict("That service is not part of this booking group.");
+    assertBookingExpectedVersion(current.version, command.expectedVersion, "set-additional-charges");
+    assertWorkflowCommand(current, { action: "set-additional-charges", charges: command.charges });
+    const settings = await getQuoteSettingsInTransaction(transaction, dashboardIdForSite(current.service.portalSiteId));
+    const now = new Date().toISOString();
+    const normalized = normalizeBookingAdditionalCharges(command.charges, current.additionalCharges || [], settings.labourRates ?? defaultDashboardQuoteSettings(settings.dashboardId).labourRates ?? [], actor.uid, now);
+    // Replay-safe: re-submitting the saved charges changes nothing (no version, quote or audit churn).
+    if (JSON.stringify(normalized) === JSON.stringify(current.additionalCharges || [])) return { booking: current, bookings: children, changed: false as const };
+    const reason = "Group additional charges updated";
+    const next: CanonicalBooking = { ...structuredClone(current), ...applyBookingAdditionalCharges(current, normalized), updatedAt: now, updatedBy: actor.uid };
+    next.statusHistory = [...current.statusHistory, { status: next.lifecycleStatus, changedAt: now, changedBy: actor.uid, reason }];
+    next.audit = [...current.audit, { action: "workflow-set-additional-charges", at: now, by: actor.uid, reason }];
+    transaction.set(bookings().doc(next.canonicalId), next);
+    transaction.create(bookingAudit().doc(`${next.canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${next.version}`), { canonicalId: next.canonicalId, bookingGroupId: command.bookingGroupId, action: "workflow-set-additional-charges", at: now, actorId: actor.uid, command: { action: "set-additional-charges", charges: command.charges }, version: next.version, chargeIds: normalized.map(c => c.id) });
+    return { booking: next, bookings: children.map(child => child.canonicalId === next.canonicalId ? next : child), changed: true as const };
+  });
 }
