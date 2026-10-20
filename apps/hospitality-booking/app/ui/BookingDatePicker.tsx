@@ -1,6 +1,6 @@
 "use client";
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { addBusinessDate, bookingDateIssue, ukBookingClock, type CutoffContext, type CutoffItem } from "@fika/server-shared/hospitality-effective-offering";
 
 /** Local clock only: no network polling. Re-evaluate at minute boundaries (including noon) and on tab return. */
@@ -23,6 +23,12 @@ const OBVIOUS = new Set(["PAST_DELIVERY_DATE", "DELIVERY_WEEKEND"]);
 const shortUkDate = (date: string) => new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
 export const friendlyDates = (text: string) => text.replace(/\b\d{4}-\d{2}-\d{2}\b/g, date => shortUkDate(date));
 /** Concise tooltip wording per restriction; empty when the reason is obvious from the calendar itself (past dates). */
+/** What assistive technology hears for an unavailable date. Unlike the visual tooltip it also explains past dates. */
+export function spokenReasonFor(issue?: { message: string; code?: string; earliestDate?: string }) {
+  if (!issue) return "Available";
+  if (issue.code === "PAST_DELIVERY_DATE") return "Unavailable \u2014 this date has passed";
+  return tooltipFor(issue) || "Unavailable";
+}
 export function tooltipFor(issue?: { message: string; code?: string; earliestDate?: string }) {
   if (!issue || issue.code === "PAST_DELIVERY_DATE") return "";
   if (issue.code === "DELIVERY_WEEKEND") return "No weekend deliveries";
@@ -48,7 +54,9 @@ export function BookingDatePicker({ value, onChange, items, context = {}, now, f
   const [hover, setHover] = useState<string | null>(null);
   const [gridFocused, setGridFocused] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null);
-  const [tipPos, setTipPos] = useState<{ left: number; top: number; below: boolean } | null>(null);
+  const [tipPos, setTipPos] = useState<{ center: number; top: number; below: boolean } | null>(null);
+  const [tipWidth, setTipWidth] = useState(0);
+  const tip = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState({ up: false, end: false });
   const trigger = useRef<HTMLButtonElement>(null);
@@ -109,8 +117,12 @@ export function BookingDatePicker({ value, onChange, items, context = {}, now, f
   useEffect(() => {
     if (!tipText || !tipDate) { setTipPos(null); return; }
     const button = grid.current?.querySelector<HTMLElement>(`[data-date="${tipDate}"]`);
-    if (button) setTipPos({ left: Math.min(Math.max(button.offsetLeft + button.offsetWidth / 2, 120), (grid.current?.clientWidth || 280) - 120), top: button.offsetTop, below: button.offsetTop < 40 });
+    if (button) setTipPos({ center: button.offsetLeft + button.offsetWidth / 2, top: button.offsetTop, below: button.offsetTop < 40 });
   }, [tipText, tipDate, open]);
+  // Wrap long explanations inside the tooltip, then keep the measured box fully inside the calendar.
+  useLayoutEffect(() => { if (tip.current) setTipWidth(tip.current.offsetWidth); }, [tipText, tipPos?.center]);
+  const boxWidth = popover.current?.clientWidth || 288;
+  const tipLeft = tipPos ? Math.min(Math.max(tipPos.center, tipWidth / 2 + 6), boxWidth - tipWidth / 2 - 6) : 0;
 
   const calendar = <>
     <div className="fika-date-backdrop" aria-hidden="true" onClick={() => close(true)} />
@@ -121,10 +133,10 @@ export function BookingDatePicker({ value, onChange, items, context = {}, now, f
         {Array.from({ length: offset }, (_, i) => <span key={`empty-${i}`} aria-hidden="true" />)}
         {dates.map(date => {
           const issue = issueFor(date), focused = date === focusDate;
-          return <button key={date} ref={focused ? cell : undefined} type="button" tabIndex={focused ? 0 : -1} className="fika-date-day" data-state={date === value ? "selected" : issue ? "unavailable" : "available"} data-today={date === today ? "true" : undefined} data-date={date} aria-label={`${ukLongBookingDate(date)}. ${issue ? tooltipFor(issue) || "Unavailable" : "Available"}`} aria-disabled={!!issue} aria-current={date === value ? "date" : undefined} aria-pressed={date === value} onFocus={() => { setGridFocused(true); setHover(null); }} onBlur={() => setGridFocused(false)} onMouseEnter={() => setHover(date)} onMouseLeave={() => setHover(null)} onClick={() => { setHover(null); choose(date); }}>{Number(date.slice(-2))}</button>;
+          return <button key={date} ref={focused ? cell : undefined} type="button" tabIndex={focused ? 0 : -1} className="fika-date-day" data-state={date === value ? "selected" : issue ? "unavailable" : "available"} data-today={date === today ? "true" : undefined} data-date={date} aria-label={`${ukLongBookingDate(date)}. ${spokenReasonFor(issue)}`} aria-disabled={!!issue} aria-current={date === value ? "date" : undefined} aria-pressed={date === value} onFocus={() => { setGridFocused(true); setHover(null); }} onBlur={() => setGridFocused(false)} onMouseEnter={() => setHover(date)} onMouseLeave={() => setHover(null)} onClick={() => { setHover(null); choose(date); }}>{Number(date.slice(-2))}</button>;
         })}
       </div>
-      {tipText && tipPos && <div className="fika-date-tip" aria-hidden="true" data-below={tipPos.below || undefined} style={{ left: tipPos.left, top: tipPos.below ? tipPos.top + 38 : tipPos.top - 4 }}>{tipText}</div>}
+      {tipText && tipPos && <div ref={tip} className="fika-date-tip" aria-hidden="true" data-below={tipPos.below || undefined} style={{ left: tipLeft, top: tipPos.below ? tipPos.top + 38 : tipPos.top - 4 }}>{tipText}</div>}
       <span className="fika-sr-only" role="status" aria-live="polite">{tipText}</span>
       <div className="fika-date-footer"><button type="button" className="fika-date-close" onClick={() => close(true)}>Close</button></div>
     </div>

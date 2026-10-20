@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { BOOKING_NOTICE_SHORT } from "../lib/booking-notice";
 
 register("data:text/javascript," + encodeURIComponent("export async function load(url, context, next) { if (url.endsWith('.css')) return { format: 'module', source: 'export default new Proxy({}, { get: (_, key) => String(key) })', shortCircuit: true }; return next(url, context); }"));
-const { BookingDatePicker, ukLongBookingDate, tooltipFor, friendlyDates } = await import("../app/ui/BookingDatePicker");
+const { BookingDatePicker, ukLongBookingDate, tooltipFor, friendlyDates, spokenReasonFor } = await import("../app/ui/BookingDatePicker");
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const NOW = "2026-10-20T09:00:00.000Z";
 
@@ -99,3 +99,21 @@ test("calendar has no persistent footer explanation; the selected-date alert sta
   assert.match(html, /role="alert"/); assert.doesNotMatch(html, /\d{4}-\d{2}-\d{2}\./, "no ISO date in the visible conflict message");
   assert.match(html, /first available|Earliest available delivery: \w{3} \d/);
 });
+
+test("past dates: tooltip stays visually hidden but assistive technology gets a meaningful reason", () => {
+  assert.equal(tooltipFor({ code: "PAST_DELIVERY_DATE", message: "x" }), "");
+  assert.equal(spokenReasonFor({ code: "PAST_DELIVERY_DATE", message: "Choose a current or future delivery date." }), "Unavailable \u2014 this date has passed");
+  assert.equal(spokenReasonFor({ code: "DELIVERY_WEEKEND", message: "m" }), "No weekend deliveries");
+  assert.equal(spokenReasonFor(undefined), "Available");
+  const html = renderToStaticMarkup(createElement(BookingDatePicker, { value: "2026-10-23", onChange() {}, items: [], now: "2026-10-20T09:00:00.000Z" }));
+  assert.doesNotMatch(html, /fika-date-tip/, "no tooltip until an unavailable date is hovered or focused");
+});
+
+test("long tooltips wrap inside their background and are kept inside the calendar", () => {
+  const css = read("../app/booking-date-picker.css");
+  assert.match(css, /\.fika-date-tip \{[^}]*white-space: normal/); assert.match(css, /\.fika-date-tip \{[^}]*overflow-wrap: anywhere/); assert.match(css, /\.fika-date-tip \{[^}]*max-width: min\(240px/);
+  assert.doesNotMatch(css, /\.fika-date-tip \{[^}]*white-space: nowrap/);
+  const picker = read("../app/ui/BookingDatePicker.tsx");
+  assert.match(picker, /useLayoutEffect/); assert.match(picker, /tipWidth \/ 2/);
+});
+
