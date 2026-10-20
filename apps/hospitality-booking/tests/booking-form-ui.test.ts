@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { BOOKING_NOTICE_SHORT } from "../lib/booking-notice";
 
 register("data:text/javascript," + encodeURIComponent("export async function load(url, context, next) { if (url.endsWith('.css')) return { format: 'module', source: 'export default new Proxy({}, { get: (_, key) => String(key) })', shortCircuit: true }; return next(url, context); }"));
-const { BookingDatePicker, ukLongBookingDate } = await import("../app/ui/BookingDatePicker");
+const { BookingDatePicker, ukLongBookingDate, tooltipFor, friendlyDates } = await import("../app/ui/BookingDatePicker");
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const NOW = "2026-10-20T09:00:00.000Z";
 
@@ -81,3 +81,21 @@ test("RCoA clears a stale event-date error when a valid date is chosen", () => {
   assert.equal((source.match(/clearEventDateError\(\); \}\}/g) || []).length, 2, "both single and All Day pickers clear it");
 });
 
+test("tooltips: friendly UK dates, short weekend text, nothing for past dates, product reasons kept, no ISO dates", () => {
+  assert.equal(tooltipFor({ code: "BOOKING_NOTICE", message: "Too soon for this booking. Earliest available delivery: 2026-10-23.", earliestDate: "2026-10-23" }), "Too soon — first available Fri 23 Oct");
+  assert.equal(tooltipFor({ code: "DELIVERY_WEEKEND", message: "No deliveries on Saturdays or Sundays." }), "No weekend deliveries");
+  assert.equal(tooltipFor({ code: "PAST_DELIVERY_DATE", message: "Choose a current or future delivery date." }), "");
+  assert.equal(tooltipFor(undefined), "");
+  const product = tooltipFor({ code: "PRODUCT_NOTICE", message: "This selection requires 240 hours notice. Earliest: 2026-11-03." });
+  assert.match(product, /240 hours notice/); assert.doesNotMatch(product, /\d{4}-\d{2}-\d{2}/); assert.match(product, /Tue 3 Nov/);
+  assert.equal(friendlyDates("No change here."), "No change here.");
+});
+
+test("calendar has no persistent footer explanation; the selected-date alert stays beside the input with friendly dates", () => {
+  const picker = read("../app/ui/BookingDatePicker.tsx");
+  assert.doesNotMatch(picker, /fika-date-reason/); assert.match(picker, /fika-date-tip/); assert.match(picker, /aria-hidden="true" data-below/);
+  assert.match(picker, /onMouseEnter/); assert.match(picker, /onFocus=/); assert.match(picker, /setDismissed/);
+  const html = renderToStaticMarkup(createElement(BookingDatePicker, { value: "2026-10-21", onChange() {}, items: [], now: "2026-10-20T09:00:00.000Z" }));
+  assert.match(html, /role="alert"/); assert.doesNotMatch(html, /\d{4}-\d{2}-\d{2}\./, "no ISO date in the visible conflict message");
+  assert.match(html, /first available|Earliest available delivery: \w{3} \d/);
+});

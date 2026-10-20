@@ -72,7 +72,7 @@ test("the actual shared calendar marks an empty-basket selection invalid before 
     const props = { items: [], onChange() {}, context: { site }, now: "2026-10-20T18:30:00+01:00" };
     const invalid = renderToStaticMarkup(createElement(BookingDatePicker, { ...props, value: "2026-10-22" }));
     assert.match(invalid, /aria-invalid="true"/); assert.match(invalid, /role="alert"/);
-    assert.match(invalid, /Too soon for this booking/); assert.match(invalid, /2026-10-23/); assert.doesNotMatch(invalid, /sandwich/i);
+    assert.match(invalid, /Too soon for this booking/); assert.match(invalid, /Fri 23 Oct/); assert.doesNotMatch(invalid, /2026-10-23/); assert.doesNotMatch(invalid, /sandwich/i);
     const valid = renderToStaticMarkup(createElement(BookingDatePicker, { ...props, value: "2026-10-23" }));
     assert.doesNotMatch(valid, /role="alert"|aria-invalid="true"/);
   }
