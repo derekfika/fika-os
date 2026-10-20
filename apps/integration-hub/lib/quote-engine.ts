@@ -1,3 +1,4 @@
+import { formatCatalogueChoices } from "@fika/server-shared/hospitality-effective-offering";
 /**
  * Shared FIKA OS quote capability.
  *
@@ -192,7 +193,7 @@ export function brandedQuoteDocumentHtml(snapshot: QuoteCommercialSnapshot, refe
   const serviceLocation = snapshot.service.roomOrArea || snapshot.service.floorLevel || snapshot.service.deliveryPoint || "Location to confirm";
   const logo = logoUrl ? `<img class="logo" src="${esc(logoUrl)}" alt="FIKA" />` : `<span class="wordmark">FIKA<span>OS</span></span>`;
   const lineRows = snapshot.order.lines.map(line => {
-    const choices = Array.isArray(line.choices) && line.choices.length ? `<small>${esc(line.choices.map(choice => typeof choice === "object" && choice ? Object.values(choice as Record<string, unknown>).join(": ") : String(choice)).join(" · "))}</small>` : "";
+    const choices = Array.isArray(line.choices) && line.choices.length ? `<small>${esc(formatCatalogueChoices(line.choices).join(" · "))}</small>` : "";
     return `<tr><td><div class="item-name">${esc(line.name)}</div>${line.description ? `<small>${esc(line.description)}</small>` : ""}${line.servingInfo ? `<small class="muted">${esc(line.servingInfo)}</small>` : ""}${choices}${line.comments ? `<small class="note">${esc(line.comments)}</small>` : ""}</td><td class="qty">${esc(line.quantity)}</td><td class="money">${gbp(line.unitNet.amount)}</td><td class="money strong">${gbp(line.lineNet.amount)}</td></tr>`;
   }).join("");
   const chargeRows = snapshot.charges.map(charge => `<tr class="charge"><td colspan="3">${esc(charge.label)}${charge.detail ? `<small>${esc(charge.detail)}</small>` : ""}</td><td class="money strong">${gbp(charge.net.amount)}</td></tr>`).join("");

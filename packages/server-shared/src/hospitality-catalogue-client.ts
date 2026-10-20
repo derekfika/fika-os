@@ -13,7 +13,7 @@ import { CATALOGUE_PACKAGE_CONTRACT, CATALOGUE_PACKAGE_SCHEMA_VERSION, type Cata
 
 // A new, app-owned IndexedDB namespace avoids VersionError/blocking collisions
 // with the Hub admin cache and any older client schema left in a browser.
-export const CATALOGUE_CLIENT_SCHEMA_VERSION = 2;
+export const CATALOGUE_CLIENT_SCHEMA_VERSION = 3;
 export const CATALOGUE_CLIENT_CACHE_DB = `fika-hospitality-booking-catalogue-v${CATALOGUE_CLIENT_SCHEMA_VERSION}`;
 export type CatalogueManifest = { dataset: string; packageVersion: number; schemaVersion: number; contractVersion: string; objectName: string; compression: "gzip"; contentHash: string; compressedSize: number; uncompressedSize: number; recordCount: number; generatedAt: string };
 export type CachedCatalogue = { id: "current"; clientSchemaVersion: number; packageSchemaVersion: number; contentHash: string; payloadHash: string; packageVersion: number; generatedAt: string; catalogue: CataloguePackage };
@@ -25,27 +25,28 @@ export type CatalogueLoadDeps = {
   gunzipText(bytes: Uint8Array): Promise<string>;
   store: CatalogueCacheStore;
 };
+const supportedContract = (version: number, contract: string) => (version === 1 && contract === "fika.hospitality-catalogue-package.v1") || (version === CATALOGUE_PACKAGE_SCHEMA_VERSION && contract === CATALOGUE_PACKAGE_CONTRACT);
+
 export type CatalogueLoadResult = { catalogue: CataloguePackage; source: "cache" | "network" | "cache-unverified"; contentHash: string; generatedAt: string; downloaded: boolean; notes: string[] };
 
 const isPackage = (value: unknown): value is CataloguePackage => {
   if (!value || typeof value !== "object") return false;
   const pkg = value as CataloguePackage;
-  return pkg.schemaVersion === CATALOGUE_PACKAGE_SCHEMA_VERSION && pkg.contract === CATALOGUE_PACKAGE_CONTRACT &&
-    Array.isArray(pkg.items) && pkg.items.every(item => item && typeof item.id === "string" && typeof item.name === "string" && Array.isArray(item.defaultPrices)) &&
+  return supportedContract(pkg.schemaVersion, pkg.contract) &&
+    Array.isArray(pkg.items) && pkg.items.every(item => item && typeof item.id === "string" && typeof item.name === "string" && Array.isArray(item.defaultPrices) && (item.allowedOplocIds === undefined || (pkg.schemaVersion >= 2 && Array.isArray(item.allowedOplocIds) && item.allowedOplocIds.length > 0 && item.allowedOplocIds.every(id => typeof id === "string")))) &&
     Array.isArray(pkg.exceptions) && pkg.exceptions.every(exception => exception && typeof exception.id === "string" && typeof exception.itemId === "string" && typeof exception.oplocId === "string" && Array.isArray(exception.prices)) &&
     Array.isArray(pkg.oplocs) && pkg.oplocs.every(oploc => oploc && typeof oploc.id === "string" && typeof oploc.label === "string");
 };
 export function validCachedRecord(value: unknown): value is CachedCatalogue {
   if (!value || typeof value !== "object") return false;
   const record = value as Partial<CachedCatalogue>;
-  return record.id === "current" && record.clientSchemaVersion === CATALOGUE_CLIENT_SCHEMA_VERSION && record.packageSchemaVersion === CATALOGUE_PACKAGE_SCHEMA_VERSION &&
+  return record.id === "current" && record.clientSchemaVersion === CATALOGUE_CLIENT_SCHEMA_VERSION && record.packageSchemaVersion === record.catalogue?.schemaVersion &&
     typeof record.contentHash === "string" && /^[0-9a-f]{64}$/.test(record.contentHash) && typeof record.payloadHash === "string" && /^[0-9a-f]{64}$/.test(record.payloadHash) &&
     Number.isInteger(record.packageVersion) && Number(record.packageVersion) > 0 && typeof record.generatedAt === "string" && Number.isFinite(Date.parse(record.generatedAt)) && isPackage(record.catalogue);
 }
 
 function validateManifest(value: CatalogueManifest) {
-  return ["integration-hub/hospitality-catalogue", "hospitality-booking/catalogue"].includes(value?.dataset) && value.compression === "gzip" && value.schemaVersion === CATALOGUE_PACKAGE_SCHEMA_VERSION &&
-    value.contractVersion === CATALOGUE_PACKAGE_CONTRACT && Number.isInteger(value.packageVersion) && value.packageVersion > 0 &&
+  return ["integration-hub/hospitality-catalogue", "hospitality-booking/catalogue"].includes(value?.dataset) && value.compression === "gzip" && supportedContract(value.schemaVersion, value.contractVersion) && Number.isInteger(value.packageVersion) && value.packageVersion > 0 &&
     /^[0-9a-f]{64}$/.test(value.contentHash) && value.objectName.includes(value.contentHash) && Number.isInteger(value.compressedSize) && value.compressedSize > 0 &&
     typeof value.generatedAt === "string" && Number.isFinite(Date.parse(value.generatedAt));
 }
@@ -79,7 +80,7 @@ export async function loadHospitalityCatalogue(deps: CatalogueLoadDeps): Promise
   if (bytes.byteLength !== manifest.compressedSize) throw Object.assign(new Error("The downloaded catalogue package size does not match its manifest."), { code: "CATALOGUE_INTEGRITY_FAILURE" });
   if ((await deps.sha256Hex(bytes)) !== manifest.contentHash) throw Object.assign(new Error("The downloaded catalogue failed its integrity check."), { code: "CATALOGUE_INTEGRITY_FAILURE" });
   const parsed = JSON.parse(await deps.gunzipText(bytes)) as unknown;
-  if (!isPackage(parsed)) throw Object.assign(new Error("The downloaded catalogue has an unexpected structure."), { code: "CATALOGUE_SCHEMA_MISMATCH" });
+  if (!isPackage(parsed) || parsed.schemaVersion !== manifest.schemaVersion || parsed.contract !== manifest.contractVersion) throw Object.assign(new Error("The downloaded catalogue has an unexpected structure."), { code: "CATALOGUE_SCHEMA_MISMATCH" });
   const payloadHash = await deps.sha256Hex(new TextEncoder().encode(JSON.stringify(parsed)));
   const record: CachedCatalogue = { id: "current", clientSchemaVersion: CATALOGUE_CLIENT_SCHEMA_VERSION, packageSchemaVersion: parsed.schemaVersion, contentHash: manifest.contentHash, payloadHash, packageVersion: manifest.packageVersion, generatedAt: manifest.generatedAt, catalogue: parsed };
   try { await deps.store.clear(); await deps.store.write(record); } catch { notes.push("The catalogue could not be saved locally; it will be downloaded again next time."); }

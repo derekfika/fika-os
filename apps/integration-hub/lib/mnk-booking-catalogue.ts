@@ -88,6 +88,7 @@ export function governedBookingConstraintRecords(provider: string, siteLabel: st
   const resolved = hospitalityPortalReadFromRecords(records, { oplocId, serviceDate: payload.event.eventDate }).offerings as Array<{
     itemId: string;
     offeringMode: string;
+    configuration?: Record<string, unknown>;
     constraints?: { minimumQuantity?: number; minimumGuests?: number; noticeRequiredDays?: number };
   }>;
   return records.map(item => {
@@ -103,6 +104,7 @@ export function governedBookingConstraintRecords(provider: string, siteLabel: st
       ...(constraints.minimumQuantity !== undefined ? { minimumQuantity: constraints.minimumQuantity } : {}),
       ...(constraints.minimumGuests !== undefined ? { minimumGuests: constraints.minimumGuests } : {}),
       ...(constraints.noticeRequiredDays !== undefined ? { noticeRequiredDays: constraints.noticeRequiredDays } : {}),
+      configuration: matches[0].configuration,
       governedConstraintsResolved: true,
     } };
   });
@@ -115,8 +117,9 @@ export function mnkBookingPricingRecords(records: CanonicalRecord[], request: Ho
     const matches = offerings.filter(offering => offering.offeringMode === "standard" && offering.itemId === item.canonicalId);
     if (matches.length > 1) throw Object.assign(new Error("Ambiguous catalogue offering."), { status: 422 });
     const offering = matches[0] as {
+      name?: string; description?: string;
       price?: { amount: number };
-      configuration?: { servingInfo?: string; choices?: Array<{ controlType?: string }> };
+      configuration?: { servingInfo?: string; rules?: Record<string, unknown>; choices?: Array<{ controlType?: string }> };
       constraints?: { minimumQuantity?: number; minimumGuests?: number; noticeRequiredDays?: number };
     } | undefined;
     // Item.unitPrice is not a canonical price authority, even if present in old data.
@@ -125,6 +128,8 @@ export function mnkBookingPricingRecords(records: CanonicalRecord[], request: Ho
     // when the current value is intentionally absent.
     const { unitPrice: _legacyPrice, optionGroups: _legacyOptions, minimumQuantity: _legacyMinimum, minimumGuests: _legacyGuests, noticeRequiredDays: _legacyNotice, ...record } = item.record;
     return { ...item, record: { ...record, ...(offering ? {
+      name: offering.name || record.name, description: offering.description || record.description,
+      configuration: offering.configuration,
       unitPrice: offering.price?.amount,
       servingInfo: offering.configuration?.servingInfo || "",
       optionGroups: offering.configuration?.choices?.map(group => ({ ...group, selectionType: group.controlType || "select" })) || [],

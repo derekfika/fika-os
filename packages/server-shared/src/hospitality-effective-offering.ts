@@ -8,12 +8,15 @@
  * defaults". A stored exception exists only where a site genuinely differs (unavailable, price, minimum, notice, wording, configuration,
  * quote-only, operational-area scope). Archived Items and inactive OPLOCs are always unavailable; unresolved pricing fails closed.
  */
-export const CATALOGUE_PACKAGE_SCHEMA_VERSION = 1;
-export const CATALOGUE_PACKAGE_CONTRACT = "fika.hospitality-catalogue-package.v1";
+export * from "./hospitality-catalogue-rules";
+export const CATALOGUE_PACKAGE_SCHEMA_VERSION = 2;
+export const CATALOGUE_PACKAGE_CONTRACT = "fika.hospitality-catalogue-package.v2";
 
 export type PricePeriod = { amount: number; vatRate: number; from: string; to?: string };
 export type PackageItem = {
   id: string; name: string; category: string; description?: string;
+  /** Optional governed allowlist: absence preserves company-wide availability. */
+  allowedOplocIds?: string[];
   defaultPrices: PricePeriod[]; defaultMinimumQuantity?: number; defaultNoticeRequiredDays?: number; defaultMinimumGuests?: number; defaultMode?: "standard" | "quote_only"; configuration?: Record<string, unknown>;
   dietaryInformation: string[]; allergenInformation: string[];
   /** Internal Hub projection only; public booking packages deliberately omit routing. */
@@ -66,7 +69,8 @@ function indexOf(pkg: CataloguePackage): Index {
 export function resolveHospitalityOffering(pkg: CataloguePackage, itemId: string, oplocId: string, options: ResolveOptions): Resolution {
   const index = indexOf(pkg);
   const item = index.items.get(itemId);
-  if (!item) return { available: false, reason: "unknown_item" }; // archived Items are not in the package at all
+  if (!item) return { available: false, reason: "unknown_item" };
+  if (item.allowedOplocIds && !item.allowedOplocIds.includes(oplocId)) return { available: false, reason: "site_unavailable" }; // archived Items are not in the package at all
   if (!index.oplocs.has(oplocId)) return { available: false, reason: "oploc_inactive" };
   const candidates = index.exceptions.get(`${itemId}|${oplocId}`) || [];
   // Most specific wins: an operational-area exception for the requested area, else the site-wide exception, else pure inheritance.

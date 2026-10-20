@@ -50,6 +50,7 @@ import {
 import { notifyCpuProjection } from "./cpu-projection-client";
 import { deliverLogisticsProjectionForProductionOrder } from "./logistics-projection-outbox";
 import { localBookingFixtures } from "./local-booking-fixtures";
+import { catalogueMinimums, type RuleItem } from "@fika/server-shared/hospitality-effective-offering";
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { Transaction } from "firebase-admin/firestore";
@@ -111,6 +112,7 @@ export type MnkBookingPayload = {
       unitPrice: number;
       quantity: number;
       lineTotal: number;
+      productionConversion?: { multiplier: number; unit: string };
       choices?: unknown[];
       comments?: string;
     }>;
@@ -473,7 +475,7 @@ export function buildMnkCanonicalBooking(
       record.record.lifecycleState === "active",
   );
   const portalSiteId = portalSiteKeyForPayload(payload);
-  payload = { ...payload, order: trustedPublicOrder(payload, menuRecords, portalSiteId || "mnk") };
+  payload = { ...payload, order: trustedPublicOrder(payload, menuRecords, portalSiteId || "mnk", now) };
   const expectedProvider = providerForSite(portalSiteId);
   const menuByItemId = new Map(
     activeMenuItems.flatMap((record) => [
@@ -537,7 +539,7 @@ export function buildMnkCanonicalBooking(
         throw conflict(
           `${item.itemName || item.itemId} requires at least ${minimumQuantity} boxes.`,
         );
-      const minimumGuests = numberOrUndefined(menuItem?.record.minimumGuests);
+      const minimumGuests = catalogueMinimums({ id: item.itemId, name: item.itemName || item.itemId, minimumGuests: numberOrUndefined(menuItem?.record.minimumGuests), configuration: menuItem?.record.configuration as RuleItem["configuration"] }, gallagher).guests;
       if (minimumGuests !== undefined && payload.event.guestCount < minimumGuests)
         throw conflict(
           `${item.itemName || item.itemId} requires at least ${minimumGuests} guests.`,

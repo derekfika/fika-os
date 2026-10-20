@@ -175,9 +175,9 @@ test("the start-again icon opens the existing confirmation and preserves draft a
 });
 
 test("effective minimum guest constraints are enforced alongside minimum quantities", () => {
-  assert.match(booking, /function minimumGuestsFor\(items: PortalMenuItem\[\]\)/);
+  assert.match(booking, /function minimumGuestsFor\(items: PortalMenuItem\[\], gallagher = false\)/);
   assert.match(booking, /Selected items require at least \$\{minimumGuests\} guests\./);
-  assert.match(booking, /minimumGuestsFor\(selected\.map\(\(value\) => value\.item\)\)/);
+  assert.match(booking, /minimumGuestsFor\(selected\.map\(\(value\) => value\.item\), gallagher\)/);
 });
 
 test("unknown site keys and unrelated OPLOCs do not fall back to MNK", () => {

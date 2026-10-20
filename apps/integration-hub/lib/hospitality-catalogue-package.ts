@@ -34,6 +34,12 @@ const period = (price: CanonicalRecord): PricePeriod => ({ amount: typeof price.
 const byPeriod = (a: PricePeriod, b: PricePeriod) => a.from.localeCompare(b.from) || a.amount - b.amount;
 const strings = (value: unknown) => (Array.isArray(value) ? value.map(String) : []);
 
+function allowedScope(value: unknown) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.length || value.some(id => typeof id !== "string" || !id.startsWith("oploc:"))) throw new Error("Invalid governed catalogue site scope.");
+  return [...new Set(value as string[])].sort();
+}
+
 export type PackageSource = { items: CanonicalRecord[]; offerings: CanonicalRecord[]; prices: CanonicalRecord[]; oplocs: CanonicalRecord[]; routing: RoutingDoc[] };
 
 /** Pure: canonical records -> compact package. Redundant legacy Offerings (no effect beyond the defaults) are omitted: they are not exceptions. */
@@ -46,6 +52,7 @@ export function buildCataloguePackage(source: PackageSource, today: string): Cat
   }
   const routing = new Map(source.routing.map(row => [row.menuItemId, row]));
   const items: PackageItem[] = source.items.filter(live).map(item => ({
+    ...(item.record.allowedOplocIds !== undefined ? { allowedOplocIds: allowedScope(item.record.allowedOplocIds) } : {}),
     id: item.canonicalId, name: text(item.record.name), category: text(item.record.category), ...(text(item.record.description) ? { description: text(item.record.description) } : {}),
     defaultPrices: (itemPrices.get(item.canonicalId) || []).sort(byPeriod), ...(number(item.record.defaultMinimumQuantity) !== undefined ? { defaultMinimumQuantity: number(item.record.defaultMinimumQuantity) } : {}),
     ...(item.record.defaultOfferingMode === "quote_only" ? { defaultMode: "quote_only" as const } : {}), ...(number(item.record.defaultNoticeRequiredDays) !== undefined ? { defaultNoticeRequiredDays: number(item.record.defaultNoticeRequiredDays) } : {}), ...(number(item.record.defaultMinimumGuests) !== undefined ? { defaultMinimumGuests: number(item.record.defaultMinimumGuests) } : {}),

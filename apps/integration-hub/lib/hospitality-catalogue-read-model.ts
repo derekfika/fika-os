@@ -113,7 +113,8 @@ export function buildCatalogueRows(input: CatalogueReadInput): { rows: Catalogue
     }).sort((a, b) => a.oplocId.localeCompare(b.oplocId) || (a.operationalAreaId || "").localeCompare(b.operationalAreaId || ""));
     const active = offerings.filter(offering => offering.status === "active");
     const activeSites = (input.oplocs || []).filter(oploc => oploc.active).map(oploc => oploc.oplocId);
-    const unavailableAt = [...new Set(active.filter(offering => !offering.available && !offering.operationalAreaId).map(offering => offering.oplocId))].sort();
+    const restricted = Array.isArray(item.record.allowedOplocIds) ? item.record.allowedOplocIds as string[] : undefined;
+    const unavailableAt = [...new Set([...activeSites.filter(id => restricted && !restricted.includes(id)), ...active.filter(offering => !offering.available && !offering.operationalAreaId).map(offering => offering.oplocId)])].sort();
     const status = item.lifecycleStatus === "archived" || item.record.lifecycleState === "archived" ? "archived" : "active";
     const route = routingStateOf(routing.get(item.canonicalId));
     const needsReview: CatalogueRow["needsReview"] = [];

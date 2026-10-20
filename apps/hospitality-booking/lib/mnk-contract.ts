@@ -65,6 +65,9 @@ export type PortalMenuItem = {
   vatRate: number | null;
   dietaryInformation: string[];
   allergenInformation: string[];
+  rules?: import("@fika/server-shared/hospitality-effective-offering").CatalogueRules;
+  governedConstraintsResolved?: boolean;
+  quoteRequired?: boolean;
   minimumQuantity?: number;
   minimumGuests?: number;
   noticeRequiredDays?: number;
@@ -77,6 +80,7 @@ export type PortalMenuItem = {
     id: string;
     label: string;
     selectionType: string;
+    minimumQuantity?: number;
     required: boolean;
     options: Array<{ id: string; label: string }>;
   }>;

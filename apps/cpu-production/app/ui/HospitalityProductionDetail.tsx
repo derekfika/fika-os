@@ -1,4 +1,5 @@
 "use client";
+import { formatCatalogueChoices } from "@fika/server-shared/hospitality-effective-offering";
 
 import { useEffect, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
@@ -77,7 +78,7 @@ export default function HospitalityProductionDetail({
           {order.lines.map((line) => (
             <div key={line.canonicalId}>
               <strong>{(line.productionQuantity ?? line.customerQuantity).toLocaleString()}</strong>
-              <span>{line.itemName}<small>{line.productionQuantity !== undefined ? `${line.productionUnit || line.customerUnit} to produce · ` : ""}{line.customerQuantity} {line.customerUnit} ordered</small></span>
+              <span>{line.itemName}<small>{line.productionQuantity !== undefined ? `${line.productionUnit || line.customerUnit} to produce · ` : ""}{line.customerQuantity} {line.customerUnit} ordered</small>{line.choices?.length ? <small>{formatCatalogueChoices(line.choices).join(" · ")}</small> : null}</span>
             </div>
           ))}
         </div>

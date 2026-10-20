@@ -13,14 +13,9 @@ const payload = { bookingId: "MNK-ONE", submittedAt: "2026-07-30T10:00:00.000Z",
 test("active canonical menu mappings are exposed to the MNK portal", () => { const result = menuForMnkPortal([menu(), menu("archived")]); assert.equal(result.menu.length, 1); assert.equal(result.menu[0].id, "breakfast_box"); });
 test("an MNK payload keeps its existing canonical ID and provider provenance", () => { const result = buildMnkCanonicalBooking(payload, [menu()], "2026-07-30T10:01:00.000Z"); assert.equal(result.booking.canonicalId, "booking:mnk:a60b2ecb2b226c4d56b61460830a38a6"); assert.equal(result.booking.canonicalId, canonicalBookingId("MNK-ONE")); assert.equal(result.booking.source.provider, "mnk-booking-platform"); assert.equal(result.booking.order.items[0].menuItemId, "hospitality-menu-item:abc12345"); assert.equal(result.booking.lifecycleStatus, "New"); assert.equal(result.booking.source.originalPayload.bookingId, "MNK-ONE"); });
 test("inactive or unmapped menu items cannot enter a new canonical Booking", () => { assert.throws(() => buildMnkCanonicalBooking(payload, [menu("archived")])); });
-test("site-scoped compatibility menus retain a booking snapshot while canonical mappings are being promoted", () => {
+test("Angel Court legacy/local brochure IDs are refused: the governed catalogue is the only OAC price and minimum authority", () => {
   const angelPayload = { ...payload, bookingId: "ANGEL-ONE", site: "Angel Court", siteId: "angel-court", order: { ...payload.order, items: [{ ...payload.order.items[0], itemId: "deli-style-sandwich", quantity: 10, unitPrice: 10.95, lineTotal: 10.95 }] } };
-  const result = buildMnkCanonicalBooking(angelPayload, [menu()], "2026-07-30T10:01:00.000Z");
-  assert.equal(result.booking.order.items[0].itemId, "deli-style-sandwich");
-  assert.equal(result.booking.order.items[0].menuItemId, undefined);
-  assert.ok(result.validationWarnings.some(warning => /site-scoped compatibility evidence/.test(warning)));
-  assert.equal(result.booking.order.items[0].lineTotal, 109.5);
-  assert.equal(result.booking.order.netTotal, 109.5);
+  assert.throws(() => buildMnkCanonicalBooking(angelPayload, [menu()], "2026-07-30T10:01:00.000Z"), /governed canonical mapping/);
 });
 
 test("site-scoped canonical mappings are used once a portal catalogue is promoted", () => {

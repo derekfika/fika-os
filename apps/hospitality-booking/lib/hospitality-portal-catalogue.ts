@@ -9,7 +9,7 @@ export function hospitalityCatalogueServiceDate(now = new Date()) { return UK_DA
 function portalMenuItem(offering: EffectiveOffering): PortalMenuItem | undefined {
   // Quote-only work remains an enquiry path and must never be coerced into a
   // zero-priced line in the existing price-based public booking forms.
-  if (offering.offeringMode !== "standard" || !offering.price || !Number.isFinite(offering.price.amount) || offering.price.amount < 0) return undefined;
+  if (offering.offeringMode !== "quote_only" && (!offering.price || !Number.isFinite(offering.price.amount) || offering.price.amount < 0)) return undefined;
   const configuration = offering.configuration || {};
   const choices = Array.isArray(configuration.choices) ? configuration.choices as Array<Record<string, unknown>> : [];
   const optionGroups = choices.flatMap(group => {
@@ -19,12 +19,14 @@ function portalMenuItem(offering: EffectiveOffering): PortalMenuItem | undefined
       const candidate = option as { id?: unknown; label?: unknown };
       return typeof candidate.id === "string" && typeof candidate.label === "string";
     });
-    return [{ id: group.id, label: group.label, selectionType: typeof group.controlType === "string" ? group.controlType : "select", required: group.required === true, options }];
+    return [{ id: group.id, label: group.label, ...(typeof group.minimumQuantity === "number" ? { minimumQuantity: group.minimumQuantity } : {}), selectionType: typeof group.controlType === "string" ? group.controlType : "select", required: group.required === true, options }];
   });
   const serves = typeof configuration.serves === "number" || configuration.serves === null ? configuration.serves : undefined;
   return {
     id: offering.itemId, canonicalId: offering.itemId, name: offering.name, description: offering.description,
-    category: offering.category, unitPrice: offering.price.amount, vatRate: offering.price.vatRate,
+    category: offering.category, unitPrice: offering.price?.amount ?? 0, vatRate: offering.price?.vatRate ?? null,
+    governedConstraintsResolved: true, ...(offering.quoteRequired ? { quoteRequired: true } : {}),
+    ...(configuration.rules ? { rules: configuration.rules as PortalMenuItem["rules"] } : {}),
     dietaryInformation: offering.dietaryInformation, allergenInformation: offering.allergenInformation,
     minimumQuantity: offering.constraints.minimumQuantity, minimumGuests: offering.constraints.minimumGuests,
     noticeRequiredDays: offering.constraints.noticeRequiredDays, ...(serves !== undefined ? { serves } : {}),
@@ -57,12 +59,12 @@ export async function loadHospitalityPortalMenu(site: PortalSiteKey, requestedOp
     oplocId = body.oplocId;
   }
   const catalogue = await loadHospitalityCatalogue(browserCatalogueDeps("/api/hospitality-catalogue/package", init));
-  return { menu: portalMenuFromCatalogue(catalogue.catalogue, oplocId, hospitalityCatalogueServiceDate()), catalogue };
+  return { menu: portalMenuFromCatalogue(catalogue.catalogue, oplocId, hospitalityCatalogueServiceDate(), site === "angel-court"), catalogue };
 }
 
-export function portalMenuFromCatalogue(pkg: Parameters<typeof resolveSiteCatalogue>[0], oplocId: string, serviceDate: string): PortalMenuItem[] {
+export function portalMenuFromCatalogue(pkg: Parameters<typeof resolveSiteCatalogue>[0], oplocId: string, serviceDate: string, includeQuoteEnquiries = false): PortalMenuItem[] {
   return resolveSiteCatalogue(pkg, oplocId, { serviceDate }).flatMap(offering => {
     const item = portalMenuItem(offering);
-    return item ? [item] : [];
+    return item && (!item.quoteRequired || includeQuoteEnquiries) ? [item] : [];
   });
 }

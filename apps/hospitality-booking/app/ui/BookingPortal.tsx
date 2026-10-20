@@ -10,9 +10,10 @@ import { hospitalitySiteThemeStyle, portalSite, type PortalSiteConfig, type Port
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "@/lib/gallagher-rules";
 import { quantityFromInput, quantityMinimumMessage, stepQuantityDown, stepQuantityUp } from "@/lib/quantity-entry";
 import { loadHospitalityPortalMenu } from "@/lib/hospitality-portal-catalogue";
+import { catalogueMinimums, validateCatalogueRules } from "@fika/server-shared/hospitality-effective-offering";
 import StartAgainButton from "./StartAgainButton";
 
-type ChoiceValue = string | string[];
+type ChoiceValue = string | string[] | Record<string, number>;
 type Line = {
   itemId: string;
   quantity: number;
@@ -126,6 +127,7 @@ function validationSummary(errors: BookingFieldErrors) {
   return count ? `Please review ${count === 1 ? "the highlighted field" : "the highlighted fields"} before continuing.` : "";
 }
 function minimumQuantityFor(item: PortalMenuItem, gallagher = false) {
+  if (item.governedConstraintsResolved) return catalogueMinimums(item, gallagher).quantity;
   return capGallagherMinimum(Math.max(
     1,
     item.minimumQuantity || 1,
@@ -133,8 +135,8 @@ function minimumQuantityFor(item: PortalMenuItem, gallagher = false) {
     /rice paper rolls?/i.test(item.name) ? 3 : 1,
   ), gallagher);
 }
-function minimumGuestsFor(items: PortalMenuItem[]) {
-  return Math.max(1, ...items.map((item) => item.minimumGuests || 1));
+function minimumGuestsFor(items: PortalMenuItem[], gallagher = false) {
+  return Math.max(1, ...items.map((item) => catalogueMinimums(item, gallagher).guests));
 }
 
 export default function BookingPortal({
@@ -412,7 +414,7 @@ export default function BookingPortal({
         const minimum = minimumQuantityFor(belowMinimum.item, gallagher);
         return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
       }
-      const minimumGuests = minimumGuestsFor(selected.map((value) => value.item));
+      const minimumGuests = minimumGuestsFor(selected.map((value) => value.item), gallagher);
       if (details.guestCount < minimumGuests) {
         return showValidation({ guestCount: { field: "guestCount", message: `Selected items require at least ${minimumGuests} guests.`, step: 1 } }, "Please review the guest count for your selected items.", 1);
       }
@@ -421,7 +423,14 @@ export default function BookingPortal({
       const errors = Object.entries(acks).reduce<BookingFieldErrors>((result, [key, value]) => { if (!value) result[`acknowledgements.${key}`] = { field: `acknowledgements.${key}`, message: "Please confirm this acknowledgement.", step: 3 }; return result; }, {});
       return showValidation(errors, "Please confirm the highlighted acknowledgements before reviewing your booking.", 3);
     }
+    if (step === 2 && !checkGovernedRules()) return;
     changeStep((value) => Math.min(4, value + 1));
+  };
+  const checkGovernedRules = () => {
+    try {
+      validateCatalogueRules(selected.map(x => x.item), selected.map(x => ({ itemId: x.item.id, quantity: x.quantity, choices: Object.entries(x.choices).map(([id, value]) => typeof value === "object" && !Array.isArray(value) ? { id, quantities: value } : { id, value }) })), { gallagher, guestCount: details.guestCount, eventDate: details.eventDate, startTime: details.startTime, now: new Date().toISOString() });
+      return true;
+    } catch (error) { showValidation({ menu: { field: "menu", step: 2, message: (error as Error).message } }, (error as Error).message, 2); return false; }
   };
   const submit = async (event?: React.FormEvent) => {
     event?.preventDefault();
@@ -438,7 +447,7 @@ export default function BookingPortal({
       changeStep(2);
       return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
     }
-    const minimumGuests = minimumGuestsFor(selected.map((value) => value.item));
+    const minimumGuests = minimumGuestsFor(selected.map((value) => value.item), gallagher);
     if (details.guestCount < minimumGuests) {
       changeStep(1);
       return showValidation({ guestCount: { field: "guestCount", message: `Selected items require at least ${minimumGuests} guests.`, step: 1 } }, "Please review the guest count for your selected items.", 1);
@@ -539,10 +548,7 @@ export default function BookingPortal({
           lineTotal: Number(
             (value.item.unitPrice * value.quantity).toFixed(2),
           ),
-          choices: Object.entries(value.choices).map(([id, value]) => ({
-            id,
-            value,
-          })),
+          choices: Object.entries(value.choices).map(([id, value]) => typeof value === "object" && !Array.isArray(value) ? { id, quantities: value } : { id, value }),
         })),
         netTotal: total,
         vatNote:
@@ -557,6 +563,7 @@ export default function BookingPortal({
       acknowledgements: acks,
       specialInstructions: contact.specialInstructions,
     };
+    if (!checkGovernedRules()) return;
     sendingRef.current = true;
     setSending(true);
     try {
@@ -1075,6 +1082,7 @@ function Plan({
       </div>
       <div className="menu-grid" data-booking-field="menu" aria-describedby={errors.menu ? inlineErrorId("menu") : undefined} aria-invalid={errors.menu ? true : undefined}>
         {visible.map((item: PortalMenuItem) => {
+          if (item.quoteRequired) return <article key={item.canonicalId}><h3>{item.name}</h3><p>{item.description}</p><strong>{item.rules?.indicativeFrom !== undefined ? `From £${item.rules.indicativeFrom.toFixed(2)} — quote required` : "Quote required"}</strong><p>Contact your site team to agree the price and requirements. This item cannot be purchased at its starting price.</p></article>;
           const line = lines.find((value: Line) => value.itemId === item.id);
           return (
             <article key={item.canonicalId}>
@@ -1087,6 +1095,10 @@ function Plan({
                   (group.selectionType || "select").toLowerCase(),
                 );
                 const saved = line?.choices[group.id];
+                if (group.selectionType === "quantities") {
+                  const quantities = saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+                  return <fieldset className="choice-field" key={group.id}><legend>{group.label} — minimum {group.minimumQuantity} per selected variety</legend>{group.options.map(option => <label key={option.id}>{option.label}<input type="number" min="0" step="1" value={quantities[option.id] || ""} onChange={event => { const next: Record<string, number> = { ...quantities, [option.id]: quantityFromInput(event.target.value) }; const quantity = Object.values(next).reduce((sum, n) => sum + n, 0); setQuantity(item, quantity); setChoice(item.id, group.id, next); }} /></label>)}</fieldset>;
+                }
                 if (isMulti) {
                   const selectedOptions = Array.isArray(saved) ? saved : [];
                   return (
@@ -1148,7 +1160,7 @@ function Plan({
                 return (
                   <>
                     <div className="stepper">
-                      <button type="button" aria-label={`Remove one ${item.name}`} onClick={() => setQuantity(item, stepQuantityDown(line?.quantity || 0, minimum, true))}>−</button>
+                      <button type="button" aria-label={`Remove one ${item.name}`} onClick={() => setQuantity(item, stepQuantityDown(line?.quantity || 0, minimum, true))}>âˆ’</button>
                       <input
                         aria-invalid={showMinimum || undefined}
                         aria-describedby={showMinimum ? inlineErrorId(`quantity:${item.id}`) : undefined}

@@ -105,3 +105,17 @@ test("normal startup performs no Firestore access at all (the loader has no Fire
   assert.match(source, /CATALOGUE_CLIENT_CACHE_DB = `fika-hospitality-booking-catalogue-v/, "client schema uses an app-owned versioned IndexedDB name");
   assert.match(source, /payloadHash/);
 });
+
+test("new clients accept original v1 during coordinated rollout and cache its actual schema", async () => {
+  const pkg = { ...catalogue("legacy"), schemaVersion: 1, contract: "fika.hospitality-catalogue-package.v1" }; const { bytes, hash } = encode(pkg);
+  const h = harness({ manifest: { ...manifestFor(hash, 1), contractVersion: pkg.contract }, packages: { [hash]: bytes } });
+  assert.equal((await loadHospitalityCatalogue(h.deps)).catalogue.schemaVersion, 1);
+  assert.equal(validCachedRecord(h.current()), true); assert.equal((await loadHospitalityCatalogue(h.deps)).source, "cache");
+});
+test("scope restrictions cannot be hidden in v1 and manifest/payload contracts must agree", async () => {
+  const pkg = { ...catalogue("scope"), schemaVersion: 1, contract: "fika.hospitality-catalogue-package.v1" }; pkg.items[0].allowedOplocIds = ["oploc:a"];
+  const data = encode(pkg); const h = harness({ manifest: { ...manifestFor(data.hash, 1), contractVersion: pkg.contract }, packages: { [data.hash]: data.bytes } });
+  await assert.rejects(loadHospitalityCatalogue(h.deps), /unexpected structure/);
+  const current = encode(catalogue("new")); const bad = harness({ manifest: { ...manifestFor(current.hash, 1), contractVersion: pkg.contract }, packages: { [current.hash]: current.bytes } });
+  await assert.rejects(loadHospitalityCatalogue(bad.deps), /unexpected structure/);
+});

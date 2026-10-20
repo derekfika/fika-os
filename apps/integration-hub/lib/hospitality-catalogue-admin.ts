@@ -18,7 +18,8 @@ import { db } from "./firebase-admin";
 import { generateCanonicalId } from "./canonical-identities";
 import { stableDocumentId } from "./canonical-editor";
 import { sha256 } from "./profiler";
-import { parseCanonical } from "./schemas";
+import { parseCanonical, SiteConfiguration } from "./schemas";
+import type { z } from "zod";
 import type { CanonicalRecord } from "./types";
 import { existingCandidatesForNewItem, normaliseName, sourceIdentities } from "./hospitality-catalogue-canonicalisation";
 import { currentPrice, reviewGroupId, routingStateOf, ukBusinessDate } from "./hospitality-catalogue-read-model";
@@ -55,9 +56,12 @@ const isActiveOploc = isActiveOplocRecord;
 const without = (record: Record<string, unknown>, ...keys: string[]) => { const copy = { ...record }; for (const key of keys) delete copy[key]; return copy; };
 const dayBefore = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
+type Configuration = z.infer<typeof SiteConfiguration>;
+type CreationSettings = { restrictToSelectedOplocs?: boolean; configuration?: Configuration; minimumGuests?: number; noticeRequiredDays?: number; offeringMode?: "standard" | "quote_only" };
+type SiteSettings = { configuration?: Configuration | null; minimumGuests?: number | null; noticeRequiredDays?: number | null; offeringMode?: "standard" | "quote_only" };
 export type PriceInput = { amount: number; vatRate?: number };
 export type CatalogueCommand =
-  | { action: "create-item"; requestId: string; name: string; category: string; description?: string; routing: RoutingChoice; defaultPrice?: PriceInput; defaultMinimumQuantity?: number; oplocIds: string[]; providerMappings?: Array<{ provider: string; sourceItemId: string; sourceVersion?: string }> }
+  | CreationSettings & { action: "create-item"; requestId: string; name: string; category: string; description?: string; routing: RoutingChoice; defaultPrice?: PriceInput; defaultMinimumQuantity?: number; oplocIds: string[]; providerMappings?: Array<{ provider: string; sourceItemId: string; sourceVersion?: string }> }
   | { action: "update-item"; itemId: string; expectedVersion: number; name: string; category: string; description?: string; defaultMinimumQuantity: number | null; defaultPrice?: PriceInput }
   | { action: "set-default-price"; itemId: string; expectedVersion: number; price: PriceInput }
   | { action: "set-routing"; itemId: string; routing: RoutingChoice; expectedRoutingVersion: number }
@@ -65,7 +69,7 @@ export type CatalogueCommand =
   /** Availability is the default everywhere; this records or clears a sparse `available:false` exception for one OPLOC. */
   | { action: "set-site-availability"; itemId: string; expectedVersion: number; oplocId: string; available: boolean }
   /** Sparse site override (price / minimum / wording). The exception record is created on demand and retired again once it states nothing beyond the defaults. */
-  | { action: "set-site-override"; itemId: string; expectedVersion: number; oplocId: string; price?: PriceInput | null; minimumQuantity?: number | null; displayName?: string | null; description?: string | null }
+  | SiteSettings & { action: "set-site-override"; itemId: string; expectedVersion: number; oplocId: string; price?: PriceInput | null; minimumQuantity?: number | null; displayName?: string | null; description?: string | null }
   | { action: "adopt-company-default"; itemId: string; expectedVersion: number; price: PriceInput; minimumQuantity?: number | null; confirmed: boolean }
   | { action: "merge-items"; survivorItemId: string; sourceItemIds: string[]; expectedVersions: Record<string, number>; groupId?: string }
   | { action: "record-review-decision"; memberIds: string[]; decision: "keep_separate" | "defer" };
@@ -169,11 +173,12 @@ const retire = (ctx: Ctx, offering: CanonicalRecord, reason: "item-archived" | "
 function applySiteEdits(ctx: Ctx, item: CanonicalRecord, children: ItemChildren, ownPrices: CanonicalRecord[], edits: Array<{ oplocId: string; available: boolean }>, today: string) {
   const touched: string[] = [];
   for (const edit of edits) {
+    if (edit.available && Array.isArray(item.record.allowedOplocIds) && !item.record.allowedOplocIds.includes(edit.oplocId)) throw problem("This item has a governed site restriction; availability cannot broaden its scope.");
     const records = siteWide(children, edit.oplocId); const active = records.find(offering => offering.record.lifecycleState !== "archived"); const retired = records.find(offering => offering.record.lifecycleState === "archived");
     if (!edit.available) {
       if (active) { if (active.record.available === false) continue; stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, active.record), available: false }, active, "Site availability exception recorded."); }
       else if (retired) stage(ctx, "Hospitality Menu Offering", { ...without(bump(ctx, retired.record), "retiredReason"), lifecycleState: "active", available: false }, retired, "Site availability exception recorded (earlier record revived).");
-      else stage(ctx, "Hospitality Menu Offering", { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Offering", canonicalId: exceptionIdFor(item.canonicalId, edit.oplocId), hospitalityMenuItemId: item.canonicalId, oplocId: edit.oplocId, offeringMode: "standard" as const, lifecycleState: "active" as const, available: false }, undefined, "Site availability exception recorded.");
+      else stage(ctx, "Hospitality Menu Offering", { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Offering", canonicalId: exceptionIdFor(item.canonicalId, edit.oplocId), hospitalityMenuItemId: item.canonicalId, oplocId: edit.oplocId, offeringMode: item.record.defaultOfferingMode === "quote_only" ? "quote_only" as const : "standard" as const, lifecycleState: "active" as const, available: false }, undefined, "Site availability exception recorded.");
       touched.push(`-${edit.oplocId}`);
     } else {
       if (!active || active.record.available !== false) continue; // already available: inheritance needs no record
@@ -186,6 +191,30 @@ function applySiteEdits(ctx: Ctx, item: CanonicalRecord, children: ItemChildren,
   return touched;
 }
 
+function validateSettings(configuration: Configuration | undefined, mode: string, hasPrice: boolean) {
+  if (configuration) SiteConfiguration.parse(configuration);
+  if (configuration?.rules?.parentQuantity && !configuration.rules.parentItemId) throw problem("An add-on quantity rule requires its parent package.");
+  if (configuration?.rules?.productionConversion && !configuration.rules.salesUnit) throw problem("A production conversion requires an explicit sales unit.");
+  const groups = configuration?.choices || [];
+  if (new Set(groups.map(g => g.id)).size !== groups.length) throw problem("Choice groups require unique stable IDs.");
+  for (const group of groups) if (new Set(group.options.map(o => o.id)).size !== group.options.length || new Set(group.options.map(o => o.label)).size !== group.options.length) throw problem("Choice options require unique IDs and labels.");
+  if (mode === "quote_only" && hasPrice) throw problem("Quote-only offerings cannot have a purchase price.");
+  if (configuration?.rules?.indicativeFrom !== undefined && mode !== "quote_only") throw problem("A starting price requires quote-only mode.");
+  const quantityGroups = configuration?.choices?.filter(g => g.controlType === "quantities") || [];
+  if (quantityGroups.length > 1) throw problem("Use one quantity allocation group per product.");
+  for (const group of quantityGroups) if (!group.minimumQuantity) throw problem("Variety quantities need an explicit minimum per variety.");
+}
+async function validateParent(ctx: Ctx, configuration: Configuration | undefined) {
+  const id = configuration?.rules?.parentItemId;
+  if (!id) return;
+  const snapshot = await readDoc(ctx, canonical().doc(stableDocumentId(id)));
+  const parent = requireItem(snapshot);
+  if (isArchived(parent) || (parent.record.configuration as Configuration | undefined)?.rules?.parentItemId) throw problem("Choose an active base package, not another dependent add-on.");
+}
+
+/** Deterministic Item identity for a create request (replay-safe; lets a plan reference a not-yet-created parent package). */
+export const catalogueCreateItemId = (requestId: string) => `hospitality-menu-item:${crypto.createHash("sha256").update(`catalogue-create:${requestId}`).digest("hex").slice(0, 32)}`;
+
 async function createItem(ctx: Ctx, command: Extract<CatalogueCommand, { action: "create-item" }>): Promise<CatalogueCommandResult> {
   const name = command.name.trim(), category = command.category.trim();
   if (!name) throw problem("Give the item a name."); if (!category) throw problem("Choose a category.");
@@ -194,10 +223,16 @@ async function createItem(ctx: Ctx, command: Extract<CatalogueCommand, { action:
   if (!oplocIds.length) throw problem("Make the item available at at least one site.");
   const price = command.defaultPrice ? { amount: money(command.defaultPrice.amount, "Default price"), vatRate: vat(command.defaultPrice.vatRate) } : undefined;
   const minimum = command.defaultMinimumQuantity === undefined ? undefined : quantity(command.defaultMinimumQuantity, "Default minimum");
-  const itemId = `hospitality-menu-item:${crypto.createHash("sha256").update(`catalogue-create:${command.requestId}`).digest("hex").slice(0, 32)}`;
+  const itemId = catalogueCreateItemId(command.requestId);
+  const canonicalBody = (value: unknown): unknown => Array.isArray(value) ? value.map(canonicalBody) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, canonicalBody(v)])) : value;
+  const creationHash = sha256(JSON.stringify(canonicalBody(command)));
   const itemRef = canonical().doc(stableDocumentId(itemId));
   const [itemSnapshot, items, activeIds] = await Promise.all([readDoc(ctx, itemRef), allItems(ctx), activeOplocIds(ctx)]);
-  if (itemSnapshot.exists) return { itemIds: [itemId], reload: false, message: "This item was already created." }; // replay-safe retry
+  if (itemSnapshot.exists) {
+    const old = asRecord(itemSnapshot);
+    if ((old?.record.ownership as { fikaOwned?: { catalogueCreationHash?: string } } | undefined)?.fikaOwned?.catalogueCreationHash !== creationHash) throw problem("This request ID belongs to a different or unverifiable creation. Review the existing item.", 409);
+    return { itemIds: [itemId], reload: false, message: "This item was already created." };
+  } // replay-safe retry
   const sameName = existingCandidatesForNewItem(items, { name });
   if (sameName.length) throw problem(`An item called “${name}” already exists in the catalogue. Open it and make it available at the site instead of creating a duplicate.`, 409);
   if (items.some(item => isArchived(item) && normaliseName(item.record.name) === normaliseName(name))) throw problem(`An archived item called “${name}” exists. Restore it instead of creating a duplicate.`, 409);
@@ -207,13 +242,17 @@ async function createItem(ctx: Ctx, command: Extract<CatalogueCommand, { action:
   }
   oplocIds.forEach((id, index) => { if (!activeIds.includes(id)) throw problem(`Site ${index + 1} is not an active location.`); });
   const excluded = activeIds.filter(id => !oplocIds.includes(id));
-  const record = { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Item" as const, canonicalId: itemId, name, category, ...(command.description?.trim() ? { description: command.description.trim() } : {}), lifecycleState: "active" as const, ...(minimum !== undefined ? { defaultMinimumQuantity: minimum } : {}), dietaryInformation: [] as string[], allergenInformation: [] as string[], providerMappings: command.providerMappings || [] };
+  validateSettings(command.configuration, command.offeringMode || "standard", Boolean(price));
+  if (command.configuration?.rules?.parentItemId === itemId) throw problem("An add-on cannot depend on itself.");
+  await validateParent(ctx, command.configuration);
+  const record = { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Item" as const, canonicalId: itemId, name, category, ownership: { providerOwned: {}, fikaOwned: { catalogueCreationHash: creationHash } }, ...(command.restrictToSelectedOplocs ? { allowedOplocIds: oplocIds } : {}), ...(command.configuration ? { configuration: command.configuration } : {}), ...(command.minimumGuests !== undefined ? { defaultMinimumGuests: command.minimumGuests } : {}), ...(command.noticeRequiredDays !== undefined ? { defaultNoticeRequiredDays: command.noticeRequiredDays } : {}), ...(command.offeringMode ? { defaultOfferingMode: command.offeringMode } : {}), ...(command.description?.trim() ? { description: command.description.trim() } : {}), lifecycleState: "active" as const, ...(minimum !== undefined ? { defaultMinimumQuantity: minimum } : {}), dietaryInformation: [] as string[], allergenInformation: [] as string[], providerMappings: command.providerMappings || [] };
   stage(ctx, "Hospitality Menu Item", record, undefined, "Hospitality Catalogue item created.");
   if (price) stage(ctx, "Hospitality Menu Price", { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Price", canonicalId: generateCanonicalId("Hospitality Menu Price"), hospitalityMenuItemId: itemId, amount: price.amount, currency: "GBP" as const, vatRate: price.vatRate, effectiveFrom: ukBusinessDate(), lifecycleState: "active" as const }, undefined, "Company default price set at creation.");
   // Availability is the default at every active OPLOC: only the sites the operator EXCLUDED get a (sparse) exception record.
-  for (const oplocId of excluded) stage(ctx, "Hospitality Menu Offering", { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Offering", canonicalId: exceptionIdFor(itemId, oplocId), hospitalityMenuItemId: itemId, oplocId, offeringMode: "standard" as const, lifecycleState: "active" as const, available: false }, undefined, "Site exception recorded at creation.");
+  // Restricted Items need no per-site exclusion fan-out: the Item scope is authoritative, including future sites.
+  for (const oplocId of command.restrictToSelectedOplocs ? [] : excluded) stage(ctx, "Hospitality Menu Offering", { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Offering", canonicalId: exceptionIdFor(itemId, oplocId), hospitalityMenuItemId: itemId, oplocId, offeringMode: command.offeringMode || "standard" as const, lifecycleState: "active" as const, available: false }, undefined, "Site exception recorded at creation.");
   ctx.tx.create(routingCollection().doc(stableDocumentId(itemId)), { menuItemId: itemId, workstreams: ROUTING_CHOICE_WORKSTREAMS[command.routing], version: 1, createdAt: ctx.now, updatedAt: ctx.now, updatedBy: ctx.actor.uid });
-  auditEvent(ctx, "Hospitality Catalogue item created", itemId, `Created “${name}” (${labelOf(command.routing)}), available at ${oplocIds.length} of ${activeIds.length} sites${excluded.length ? ` (${excluded.length} exception${excluded.length === 1 ? "" : "s"})` : ""}.`, { itemId, after: { name, category, routing: command.routing, defaultPrice: price, defaultMinimumQuantity: minimum, availableAt: oplocIds.length, unavailableOplocIds: excluded } });
+  auditEvent(ctx, "Hospitality Catalogue item created", itemId, `Created “${name}” (${labelOf(command.routing)}), available at ${oplocIds.length} of ${activeIds.length} sites${excluded.length ? ` (${excluded.length} exception${excluded.length === 1 ? "" : "s"})` : ""}.`, { itemId, after: { name, category, routing: command.routing, restrictToSelectedOplocs: command.restrictToSelectedOplocs || false, configuration: command.configuration, minimumGuests: command.minimumGuests, noticeRequiredDays: command.noticeRequiredDays, offeringMode: command.offeringMode, defaultPrice: price, defaultMinimumQuantity: minimum, availableAt: oplocIds.length, unavailableOplocIds: excluded } });
   return { itemIds: [itemId], reload: false, message: `“${name}” created.` };
 }
 
@@ -307,15 +346,29 @@ async function setSiteOverride(ctx: Ctx, command: Extract<CatalogueCommand, { ac
   const item = requireItem(itemSnapshot); expectVersion(item, command.expectedVersion, "This item");
   if (isArchived(item)) throw problem("Restore the item before editing site overrides.");
   if (!activeIds.includes(command.oplocId)) throw problem("Choose an active location.");
-  if (command.price === undefined && command.minimumQuantity === undefined && command.displayName === undefined && command.description === undefined) throw problem("Nothing to change.");
+  if (command.price === undefined && command.minimumQuantity === undefined && command.displayName === undefined && command.description === undefined && command.configuration === undefined && command.minimumGuests === undefined && command.noticeRequiredDays === undefined && command.offeringMode === undefined) throw problem("Nothing to change.");
+  await validateParent(ctx, command.configuration || undefined);
+  if (command.configuration?.rules?.parentItemId === command.itemId) throw problem("An add-on cannot depend on itself.");
   const ownPrices = await offeringPrices(ctx, children.offerings.map(offering => offering.canonicalId));
   const today = ukBusinessDate(); const defaultPrice = currentPrice(children.itemPrices, today);
   const records = siteWide(children, command.oplocId); const existing = records.find(offering => offering.record.lifecycleState !== "archived"); const retired = records.find(offering => offering.record.lifecycleState === "archived");
   const offeringId = existing?.canonicalId ?? retired?.canonicalId ?? exceptionIdFor(item.canonicalId, command.oplocId);
   const own = ownPrices.filter(price => price.record.hospitalityMenuOfferingId === offeringId);
   const before: Record<string, unknown> = {}, after: Record<string, unknown> = {};
-  let record: Record<string, unknown> = existing ? bump(ctx, existing.record) : retired ? { ...without(bump(ctx, retired.record), "retiredReason"), lifecycleState: "active" } : { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Offering", canonicalId: offeringId, hospitalityMenuItemId: item.canonicalId, oplocId: command.oplocId, offeringMode: "standard" as const, lifecycleState: "active" as const };
+  let record: Record<string, unknown> = existing ? bump(ctx, existing.record) : retired ? { ...without(bump(ctx, retired.record), "retiredReason"), lifecycleState: "active" } : { ...base(ctx.actor, ctx.now), entityType: "Hospitality Menu Offering", canonicalId: offeringId, hospitalityMenuItemId: item.canonicalId, oplocId: command.oplocId, offeringMode: item.record.defaultOfferingMode === "quote_only" ? "quote_only" as const : "standard" as const, lifecycleState: "active" as const };
   const prior = existing ?? retired;
+  for (const key of ["minimumGuests", "noticeRequiredDays"] as const) {
+    if (command[key] !== undefined) {
+      before[key] = record[key] ?? null;
+      if (command[key] === null) record = without(record, key);
+      else record[key] = command[key];
+      after[key] = command[key];
+    }
+  }
+  if (command.offeringMode !== undefined) { before.offeringMode = record.offeringMode; record.offeringMode = command.offeringMode; after.offeringMode = command.offeringMode; }
+  if (command.configuration !== undefined) { before.configuration = record.configuration ?? null; record = command.configuration === null ? without(record, "configuration") : { ...record, configuration: command.configuration }; after.configuration = command.configuration; }
+  const effectiveConfiguration = { ...((item.record.configuration || {}) as Configuration), ...((record.configuration || {}) as Configuration) };
+  validateSettings(effectiveConfiguration, String(record.offeringMode), Boolean(command.price || (command.price !== null && currentPrice(own, today))));
   if (record.offeringMode === "quote_only" && command.price) throw problem("Quote-only offerings cannot have a price.");
   // The exception record must exist before a Price can be scoped to it.
   if (command.price !== undefined) {

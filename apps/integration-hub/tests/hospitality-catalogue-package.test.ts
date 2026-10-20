@@ -70,7 +70,7 @@ test("gzip artifact: content-addressed immutable object, hash over the compresse
   assert.equal(stored[0], 0x1f); assert.equal(stored[1], 0x8b, "gzip magic");
   assert.deepEqual(decodeReadPackage<CataloguePackage>(manifest, stored), pkg); assert.deepEqual(JSON.parse(gunzipSync(stored).toString("utf8")), pkg);
   assert.ok(manifest.compressedSize < manifest.uncompressedSize / 3, "sparse JSON gzips extremely well");
-  assert.equal(manifests.get(CATALOGUE_MANIFEST_KEY)!.schemaVersion, 1); assert.equal(manifest.compression, "gzip");
+  assert.equal(manifests.get(CATALOGUE_MANIFEST_KEY)!.schemaVersion, 2); assert.equal(manifest.compression, "gzip");
   const tampered = new Uint8Array(stored); tampered[tampered.length - 9] ^= 0xff;
   assert.throws(() => decodeReadPackage(manifest, tampered), /integrity check failed/, "integrity failure stays fail-closed");
 });

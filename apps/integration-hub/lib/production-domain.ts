@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { catalogueProductionConversion } from "@fika/server-shared/hospitality-effective-offering";
 import { bookingNotificationRecord } from "./booking-notifications";
 import { evaluateGroupConfirmation, loadGroupConfirmationContext, queueGroupConfirmation } from "./booking-group-confirmation";
 import { db } from "./firebase-admin";
@@ -16,6 +17,7 @@ import { adaptCpuProductionWorkstreams } from "../../shared/production-workstrea
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
 export type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
+
 
 export const PRODUCTION_SCHEMA_VERSION = "0.1.0";
 export type ProductionStatus = "received" | "draft" | "needs_review" | "accepted" | "planning" | "planned" | "amended" | "menu_available" | "rejected" | "needs_clarification" | "scheduled" | "in_production" | "partially_complete" | "ready" | "complete" | "cancelled" | "blocked" | "failed" | "reconciliation_required";
@@ -148,7 +150,8 @@ export async function createProductionFromApprovedBookingTransaction(actor: Acto
       return [(() => {
       const configured = conversions[item.itemId];
       const explicitRule = explicitMnkConversions[item.itemId] || Object.entries(explicitMnkConversions).find(([key]) => item.itemId.endsWith(`:${key}`))?.[1];
-      const conversion = configured ? { quantity: configured.quantity, unit: configured.unit, rule: "Explicit production conversion configuration." } : explicitRule ? { quantity: item.quantity * explicitRule.multiplier, unit: explicitRule.unit, rule: explicitRule.rule } : undefined;
+      const savedConversion = catalogueProductionConversion(item.quantity, item.productionConversion);
+      const conversion = savedConversion || (configured ? { quantity: configured.quantity, unit: configured.unit, rule: "Explicit production conversion configuration." } : explicitRule ? { quantity: item.quantity * explicitRule.multiplier, unit: explicitRule.unit, rule: explicitRule.rule } : undefined);
       const assignments = [item.menuItemId, item.itemId].filter((value): value is string => Boolean(value)).flatMap(value => routing[value] || []);
       const workstream: ProductionWorkstream = rcoaRouted.get(index) || adaptCpuProductionWorkstreams(assignments).workstreams[0] || "unassigned";
       const line: ProductionLine = { canonicalId: `production-line:${bookingId}:${index + 1}`, sourceBookingLineId: `${bookingId}:line:${index + 1}`, ...(item.menuItemId ? { sourceMenuItemId: item.menuItemId } : {}), itemName: item.itemName || item.itemId, ...(item.description ? { description: item.description } : {}), customerQuantity: item.quantity, customerUnit: item.servingInfo || "ordered unit", ...(conversion ? { productionQuantity: conversion.quantity, productionUnit: conversion.unit, conversionSnapshot: { ...conversion, rule: "Explicit configured production conversion." } } : {}), ...(item.choices ? { choices: structuredClone(item.choices) } : {}), ...(item.servingInfo ? { servingGuidance: item.servingInfo } : {}), ...(item.comments ? { productionInstructions: item.comments } : {}), dietaries: structuredClone(booking.dietaries), status: conversion ? "ready" : "exception", sortOrder: index, workstream };
