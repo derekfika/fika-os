@@ -2258,3 +2258,9 @@
   gap: 6px;
   font-size: 17px;
 }
+
+/* The shared date field adopts the RCoA underline field style so it sits level with its neighbours. */
+.field :global(.fika-form-label) { min-height: 0; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; color: inherit; }
+.field :global(.fika-date-trigger) { padding: 12px 2px; border: 0; border-bottom: 1px solid #aaa399; border-radius: 0; background: transparent; color: var(--rcoa-ink); }
+.field :global(.fika-date-trigger[aria-expanded="true"]) { border-color: var(--rcoa-accent); box-shadow: 0 1px 0 var(--rcoa-accent); }
+.field :global(.fika-date-trigger:focus-visible) { outline: 3px solid var(--rcoa-violet); outline-offset: 2px; }

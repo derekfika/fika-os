@@ -17,29 +17,36 @@
 .fika-date-placeholder { color: var(--fika-text-secondary); }
 .fika-date-conflict { margin: 0; font-size: 13px; line-height: 18px; color: var(--fika-status-danger); }
 
-.fika-date-popover { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; box-sizing: border-box; width: 320px; max-width: calc(100vw - 32px); padding: 12px; border: 1px solid var(--fika-border-default); border-radius: 12px; background: var(--fika-surface-card); color: var(--fika-text-primary); box-shadow: 0 8px 24px color-mix(in srgb, var(--fika-text-primary) 18%, transparent); }
+.fika-date-popover { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; box-sizing: border-box; width: 288px; max-width: calc(100vw - 24px); padding: 8px 10px 6px; border: 1px solid var(--fika-border-default); border-radius: 10px; background: var(--fika-surface-card); color: var(--fika-text-primary); box-shadow: 0 4px 14px color-mix(in srgb, var(--fika-text-primary) 12%, transparent); }
+.fika-date-popover[data-up] { top: auto; bottom: calc(100% + 4px); }
+.fika-date-popover[data-end] { left: auto; right: 0; }
 .fika-date-backdrop { display: none; }
-.fika-date-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-.fika-date-nav strong { font-size: 15px; line-height: 20px; }
-.fika-date-nav button { width: 36px; height: 36px; border: 0; border-radius: 8px; background: transparent; color: var(--fika-text-primary); font-size: 20px; line-height: 1; cursor: pointer; }
+.fika-date-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.fika-date-nav strong { font-size: 14px; line-height: 20px; }
+.fika-date-nav button { width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--fika-text-primary); font-size: 20px; line-height: 1; cursor: pointer; }
 .fika-date-nav button:hover { background: var(--fika-surface-subtle); }
-.fika-date-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
-.fika-date-grid > span { text-align: center; font-size: 12px; line-height: 28px; color: var(--fika-text-secondary); }
-.fika-date-day { box-sizing: border-box; height: 40px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fika-text-primary); font: inherit; font-size: 14px; cursor: pointer; }
+.fika-date-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; }
+.fika-date-grid > span { text-align: center; font-size: 11px; line-height: 24px; color: var(--fika-text-secondary); }
+.fika-date-day { box-sizing: border-box; height: 34px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fika-text-primary); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .fika-date-day[data-state="available"]:hover { background: var(--fika-surface-subtle); }
 .fika-date-day[data-today="true"] { text-decoration: underline; text-underline-offset: 4px; }
-.fika-date-day[data-state="unavailable"] { color: var(--fika-text-secondary); text-decoration: line-through; cursor: not-allowed; }
+.fika-date-day[data-state="unavailable"] { color: var(--fika-text-secondary); font-weight: 400; cursor: not-allowed; }
 .fika-date-day[data-state="selected"] { background: var(--fika-action-primary); color: var(--fika-surface-card); font-weight: 700; }
 .fika-date-day:focus-visible, .fika-date-nav button:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 1px; }
-.fika-date-reason { min-height: 36px; margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--fika-border-default); font-size: 13px; line-height: 18px; color: var(--fika-text-primary); }
-.fika-date-reason:empty { display: none; }
+.fika-date-footer { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--fika-border-default); }
+.fika-date-reason { flex: 1; min-height: 18px; margin: 4px 0 0; font-size: 12px; line-height: 16px; color: var(--fika-text-primary); }
+.fika-date-close { flex: none; min-height: 32px; padding: 4px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--fika-action-primary); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.fika-date-close:hover { background: var(--fika-surface-subtle); }
+.fika-date-close:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 1px; }
 
 @media (max-width: 640px) {
   .fika-form-grid { grid-template-columns: minmax(0, 1fr); }
   .fika-date-backdrop { display: block; position: fixed; inset: 0; z-index: 29; background: color-mix(in srgb, var(--fika-text-primary) 40%, transparent); }
-  .fika-date-popover { position: fixed; z-index: 30; inset: auto 0 0 0; width: auto; max-width: none; max-height: 85vh; overflow: auto; border-radius: 16px 16px 0 0; padding: 16px 16px 24px; }
-  .fika-date-day { height: 44px; }
+  .fika-date-popover { position: fixed; z-index: 30; inset: auto 0 0 0; width: auto; max-width: none; max-height: 85vh; overflow: auto; border-radius: 16px 16px 0 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
+  .fika-date-day { height: 44px; font-size: 15px; }
   .fika-date-nav button { width: 44px; height: 44px; }
+  .fika-date-close { min-height: 44px; padding: 8px 16px; }
+  .fika-date-reason { font-size: 13px; line-height: 18px; }
 }
 @media (prefers-reduced-motion: no-preference) { .fika-date-popover { animation: fika-date-in 120ms ease-out; } }
 @keyframes fika-date-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }

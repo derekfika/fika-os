@@ -880,8 +880,7 @@ function Choose({
       <ValidationMessage field="occasion" errors={errors} />
       {occasion && (
         <p className="guidance">
-          {SANDWICH_NOTICE_SHORT}{" "}
-          We’ll confirm availability with you.
+          {SANDWICH_NOTICE_SHORT}
         </p>
       )}
     </section>
@@ -1132,7 +1131,7 @@ function Plan({
                 return (
                   <>
                     <div className="stepper">
-                      <button type="button" aria-label={`Remove one ${item.name}`} onClick={() => setQuantity(item, stepQuantityDown(line?.quantity || 0, minimum, true))}>âˆ’</button>
+                      <button type="button" aria-label={`Remove one ${item.name}`} onClick={() => setQuantity(item, stepQuantityDown(line?.quantity || 0, minimum, true))}>&minus;</button>
                       <input
                         aria-invalid={showMinimum || undefined}
                         aria-describedby={showMinimum ? inlineErrorId(`quantity:${item.id}`) : undefined}

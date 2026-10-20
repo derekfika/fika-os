@@ -775,7 +775,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                                 <>
                                   <div className={styles.quantityRow}>
                                     <label>Quantity <input aria-label={`${item.name} quantity`} data-rcoa-field={`quantity:${item.id}`} aria-invalid={showMinimum || undefined} aria-describedby={showMinimum ? errorId : undefined} type="number" min={minimum} step="1" inputMode="numeric" value={line?.quantity || ""} onChange={(event) => setQuantity(item, quantityFromInput(event.target.value))} onBlur={() => touchQuantity(item.id)} onKeyDown={(event) => { if (event.key === "Enter") touchQuantity(item.id); }} /></label>
-                                    <button type="button" aria-label={`Remove one ${item.name}`} onClick={() => setQuantity(item, stepQuantityDown(line?.quantity || 0, minimum, false))}>−</button>
+                                    <button type="button" aria-label={`Remove one ${item.name}`} onClick={() => setQuantity(item, stepQuantityDown(line?.quantity || 0, minimum, false))}>&minus;</button>
                                     <button type="button" aria-label={`Add one ${item.name}`} onClick={() => setQuantity(item, stepQuantityUp(line?.quantity || 0, minimum))}>+</button>
                                   </div>
                                   {showMinimum && <span className={styles.fieldError} id={errorId} role="alert">{minimumMessage}</span>}

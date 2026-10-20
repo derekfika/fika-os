@@ -17,6 +17,9 @@ export function useBookingClock() {
 }
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
+/** Obvious restrictions (past dates, weekends) are shown by styling and announced to assistive tech, not written out. */
+const OBVIOUS = new Set(["PAST_DELIVERY_DATE", "DELIVERY_WEEKEND"]);
+const visibleReason = (issue?: { message: string; code?: string }) => issue && !(issue.code && OBVIOUS.has(issue.code)) ? issue.message : "";
 const utc = (date: string) => new Date(`${date}T12:00:00Z`);
 const shift = (date: string, days: number) => { const next = utc(date); next.setUTCDate(next.getUTCDate() + days); return next.toISOString().slice(0, 10); };
 const shiftMonth = (date: string, months: number) => { const next = utc(`${date.slice(0, 7)}-01`); next.setUTCMonth(next.getUTCMonth() + months); const first = next.toISOString().slice(0, 7); const last = new Date(Date.UTC(Number(first.slice(0, 4)), Number(first.slice(5, 7)), 0)).getUTCDate(); return `${first}-${String(Math.min(Number(date.slice(8)), last)).padStart(2, "0")}`; };
@@ -24,7 +27,7 @@ const shiftMonth = (date: string, months: number) => { const next = utc(`${date.
 export const ukLongBookingDate = (date: string) => ISO.test(date) ? new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(utc(date)) : "";
 
 /**
- * Date field with a compact calendar popover (bottom sheet on narrow screens). All availability rules come from the
+ * Date field with a compact calendar popover (modal bottom sheet on narrow screens). All availability rules come from the
  * governed booking policy (bookingDateIssue); this component only presents them.
  */
 export function BookingDatePicker({ value, onChange, items, context = {}, now, field = "eventDate", unavailableReason }: { value: string; onChange: (date: string) => void; items: readonly CutoffItem[]; context?: CutoffContext; now: string; field?: string; unavailableReason?: string }) {
@@ -34,45 +37,74 @@ export function BookingDatePicker({ value, onChange, items, context = {}, now, f
   const [open, setOpen] = useState(false);
   const [focusDate, setFocusDate] = useState(valid ? value : today);
   const [explanation, setExplanation] = useState("");
+  const [placement, setPlacement] = useState({ up: false, end: false });
   const trigger = useRef<HTMLButtonElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const cell = useRef<HTMLButtonElement>(null);
+  const popover = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   /** Narrow screens use a bottom sheet rendered in <body>: an animated ancestor would otherwise become the containing block of a fixed element. */
   const [sheet, setSheet] = useState(false);
   const month = focusDate.slice(0, 7), first = `${month}-01`, offset = (utc(first).getUTCDay() + 6) % 7;
-  const issueFor = useCallback((date: string) => unavailableReason ? { message: unavailableReason } : bookingDateIssue(items, date, now, context), [unavailableReason, items, now, context]);
+  const issueFor = useCallback((date: string) => unavailableReason ? { message: unavailableReason, code: undefined as string | undefined } : bookingDateIssue(items, date, now, context), [unavailableReason, items, now, context]);
   const selectedIssue = value && valid ? issueFor(value) : undefined;
   const dates: string[] = [];
   for (let date = first; date.startsWith(month); date = addBusinessDate(date)) dates.push(date);
   const monthLabel = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(utc(first));
-  const describe = (date: string) => { const issue = issueFor(date); return issue ? issue.message : "Available"; };
 
   const close = useCallback((restore: boolean) => { setOpen(false); setExplanation(""); if (restore) requestAnimationFrame(() => trigger.current?.focus()); }, []);
-  const openCalendar = () => { setSheet(window.matchMedia("(max-width: 640px)").matches); setFocusDate(valid ? value : today); setExplanation(""); setOpen(true); };
+  const openCalendar = () => {
+    const narrow = window.matchMedia("(max-width: 640px)").matches, rect = trigger.current?.getBoundingClientRect();
+    // Open upward / right-aligned only when the popover would otherwise leave the viewport.
+    if (rect) setPlacement({ up: !narrow && innerHeight - rect.bottom < 300 && rect.top > innerHeight - rect.bottom, end: !narrow && rect.left + 292 > innerWidth - 12 });
+    setSheet(narrow); setFocusDate(valid ? value : today); setExplanation(""); setOpen(true);
+  };
   // Focus the day the user is on whenever the popover opens or the roving day changes.
   useEffect(() => { if (open) cell.current?.focus(); }, [open, focusDate]);
-  // Close when focus or a pointer leaves the field and its popover.
+  // Close when a pointer leaves the field and its popover.
   useEffect(() => {
     if (!open) return;
     const away = (event: Event) => { const target = event.target as Node; if (root.current && !root.current.contains(target) && !sheetRef.current?.contains(target)) setOpen(false); };
     document.addEventListener("pointerdown", away); return () => document.removeEventListener("pointerdown", away);
   }, [open]);
-  useEffect(() => { if (open && !valid) setFocusDate(today); }, [open, valid, today]);
+  // Modal bottom sheet: keep the page behind it from scrolling.
+  useEffect(() => { if (!(open && sheet)) return; const previous = document.body.style.overflow; document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = previous; }; }, [open, sheet]);
 
   const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
     const step: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(true); return; }
+    if (event.key === "Tab") {
+      // Keep keyboard focus inside the dialog until it is closed (Close / Escape / selection).
+      const stops = Array.from(popover.current?.querySelectorAll<HTMLElement>('button:not([tabindex="-1"])') || []);
+      if (stops.length) { const at = stops.indexOf(document.activeElement as HTMLElement); event.preventDefault(); stops[event.shiftKey ? (at <= 0 ? stops.length - 1 : at - 1) : (at === stops.length - 1 ? 0 : at + 1)].focus(); }
+      return;
+    }
     let next: string | undefined;
     if (event.key in step) next = shift(focusDate, step[event.key]);
     else if (event.key === "Home") next = shift(focusDate, -((utc(focusDate).getUTCDay() + 6) % 7));
     else if (event.key === "End") next = shift(focusDate, 6 - ((utc(focusDate).getUTCDay() + 6) % 7));
     else if (event.key === "PageUp") next = shiftMonth(focusDate, event.shiftKey ? -12 : -1);
     else if (event.key === "PageDown") next = shiftMonth(focusDate, event.shiftKey ? 12 : 1);
-    if (next) { event.preventDefault(); setFocusDate(next); setExplanation(describe(next)); }
+    if (next) { event.preventDefault(); setFocusDate(next); setExplanation(visibleReason(issueFor(next))); }
   };
-  const choose = (date: string) => { const issue = issueFor(date); setExplanation(issue ? issue.message : ""); if (issue) { setFocusDate(date); return; } onChange(date); close(true); };
+  const choose = (date: string) => { const issue = issueFor(date); setExplanation(visibleReason(issue)); if (issue) { setFocusDate(date); return; } onChange(date); close(true); };
   const moveMonth = (delta: number) => { setFocusDate(shiftMonth(focusDate, delta)); setExplanation(""); };
+
+  const calendar = <>
+    <div className="fika-date-backdrop" aria-hidden="true" onClick={() => close(true)} />
+    <div ref={popover} className="fika-date-popover" data-up={placement.up || undefined} data-end={placement.end || undefined} role="dialog" aria-modal={sheet || undefined} aria-label="Choose delivery date" onKeyDown={onKey}>
+      <div className="fika-date-nav"><button type="button" aria-label="Previous month" onClick={() => moveMonth(-1)}>‹</button><strong aria-live="polite">{monthLabel}</strong><button type="button" aria-label="Next month" onClick={() => moveMonth(1)}>›</button></div>
+      <div className="fika-date-grid" role="group" aria-label={monthLabel}>
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(day => <span key={day} aria-hidden="true">{day}</span>)}
+        {Array.from({ length: offset }, (_, i) => <span key={`empty-${i}`} aria-hidden="true" />)}
+        {dates.map(date => {
+          const issue = issueFor(date), focused = date === focusDate;
+          return <button key={date} ref={focused ? cell : undefined} type="button" tabIndex={focused ? 0 : -1} className="fika-date-day" data-state={date === value ? "selected" : issue ? "unavailable" : "available"} data-today={date === today ? "true" : undefined} aria-label={`${ukLongBookingDate(date)}. ${issue?.message || "Available"}`} aria-disabled={!!issue} aria-current={date === value ? "date" : undefined} aria-pressed={date === value} onFocus={() => setExplanation(visibleReason(issue))} onMouseEnter={() => setExplanation(visibleReason(issue))} onClick={() => choose(date)}>{Number(date.slice(-2))}</button>;
+        })}
+      </div>
+      <div className="fika-date-footer"><p className="fika-date-reason" role="status" aria-live="polite">{explanation}</p><button type="button" className="fika-date-close" onClick={() => close(true)}>Close</button></div>
+    </div>
+  </>;
 
   return <div ref={root} className="fika-date-field" data-booking-field={field} data-rcoa-field={field} tabIndex={-1} onBlur={event => { const next = event.relatedTarget as Node | null; if (open && next && !event.currentTarget.contains(next) && !sheetRef.current?.contains(next)) setOpen(false); }}>
     <span className="fika-form-label" id={`${id}-label`}>Delivery date</span>
@@ -81,35 +113,6 @@ export function BookingDatePicker({ value, onChange, items, context = {}, now, f
       <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></svg>
     </button>
     {selectedIssue && <p id={`${id}-conflict`} role="alert" className="fika-date-conflict">{selectedIssue.message}</p>}
-    {open && (sheet ? createPortal(<div ref={sheetRef} className="fika-date-sheet">
-
-      <div className="fika-date-backdrop" aria-hidden="true" onClick={() => close(true)} />
-      <div className="fika-date-popover" role="dialog" aria-label="Choose delivery date" onKeyDown={onKey}>
-        <div className="fika-date-nav"><button type="button" aria-label="Previous month" onClick={() => moveMonth(-1)}>‹</button><strong aria-live="polite">{monthLabel}</strong><button type="button" aria-label="Next month" onClick={() => moveMonth(1)}>›</button></div>
-        <div className="fika-date-grid" role="group" aria-label={monthLabel}>
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(day => <span key={day} aria-hidden="true">{day}</span>)}
-          {Array.from({ length: offset }, (_, i) => <span key={`empty-${i}`} aria-hidden="true" />)}
-          {dates.map(date => {
-            const issue = issueFor(date), reason = issue?.message || "Available", focused = date === focusDate;
-            return <button key={date} ref={focused ? cell : undefined} type="button" tabIndex={focused ? 0 : -1} className="fika-date-day" data-state={date === value ? "selected" : issue ? "unavailable" : "available"} data-today={date === today ? "true" : undefined} aria-label={`${ukLongBookingDate(date)}. ${reason}`} aria-disabled={!!issue} aria-current={date === value ? "date" : undefined} aria-pressed={date === value} title={issue ? reason : undefined} onFocus={() => setExplanation(issue ? reason : "")} onMouseEnter={() => issue && setExplanation(reason)} onClick={() => choose(date)}>{Number(date.slice(-2))}</button>;
-          })}
-        </div>
-        <p className="fika-date-reason" role="status" aria-live="polite">{explanation}</p>
-      </div>
-    </div>, document.body) : <>
-      <div className="fika-date-backdrop" aria-hidden="true" onClick={() => close(true)} />
-      <div className="fika-date-popover" role="dialog" aria-label="Choose delivery date" onKeyDown={onKey}>
-        <div className="fika-date-nav"><button type="button" aria-label="Previous month" onClick={() => moveMonth(-1)}>‹</button><strong aria-live="polite">{monthLabel}</strong><button type="button" aria-label="Next month" onClick={() => moveMonth(1)}>›</button></div>
-        <div className="fika-date-grid" role="group" aria-label={monthLabel}>
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(day => <span key={day} aria-hidden="true">{day}</span>)}
-          {Array.from({ length: offset }, (_, i) => <span key={`empty-${i}`} aria-hidden="true" />)}
-          {dates.map(date => {
-            const issue = issueFor(date), reason = issue?.message || "Available", focused = date === focusDate;
-            return <button key={date} ref={focused ? cell : undefined} type="button" tabIndex={focused ? 0 : -1} className="fika-date-day" data-state={date === value ? "selected" : issue ? "unavailable" : "available"} data-today={date === today ? "true" : undefined} aria-label={`${ukLongBookingDate(date)}. ${reason}`} aria-disabled={!!issue} aria-current={date === value ? "date" : undefined} aria-pressed={date === value} title={issue ? reason : undefined} onFocus={() => setExplanation(issue ? reason : "")} onMouseEnter={() => issue && setExplanation(reason)} onClick={() => choose(date)}>{Number(date.slice(-2))}</button>;
-          })}
-        </div>
-        <p className="fika-date-reason" role="status" aria-live="polite">{explanation}</p>
-      </div>
-    </>)}
+    {open && (sheet ? createPortal(<div ref={sheetRef} className="fika-date-sheet">{calendar}</div>, document.body) : calendar)}
   </div>;
 }

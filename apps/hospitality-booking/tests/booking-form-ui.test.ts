@@ -50,6 +50,13 @@ test("form layout cannot stretch: items sit in an align-start grid, one per cell
   const section = portal.slice(portal.indexOf("When and where?"), portal.indexOf("function Plan("));
   assert.match(section, /fika-form-grid/); assert.doesNotMatch(section, /className="fields"/);
   for (const field of ["eventDate", "guestCount", "startTime", "endTime", "location"]) assert.match(section, new RegExp(`ValidationMessage field="${field}"`));
+  assert.doesNotMatch(css, /line-through/, "unavailable dates use muted colour, not strikethrough");
   const picker = read("../app/ui/BookingDatePicker.tsx");
+  assert.match(picker, /fika-date-close/); assert.match(picker, />Close</); assert.match(picker, /aria-modal/);
+  assert.match(picker, /PAST_DELIVERY_DATE/); assert.match(picker, /DELIVERY_WEEKEND/);
+  const portals = read("../app/ui/BookingPortal.tsx") + read("../app/ui/RcoaBookingPortal.tsx");
+  assert.doesNotMatch(portals, /We.ll confirm availability with you/); assert.doesNotMatch(portals, /Availability will be confirmed by the hospitality team/);
+  assert.ok(!/[âˆ’−]{2,}/.test(portals) && !portals.includes("âˆ"), "no corrupted quantity symbols");
+  assert.equal((portals.match(/&minus;<\/button>/g) || []).length, 2, "quantity decrement glyph is a safe HTML entity");
   for (const text of ["Escape", "ArrowDown", "PageDown", "createPortal", "aria-haspopup", "aria-live"]) assert.ok(picker.includes(text), text);
 });
