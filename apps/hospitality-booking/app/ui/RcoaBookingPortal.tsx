@@ -6,7 +6,7 @@ import { portalBookingId, type PortalMenuItem } from "@/lib/mnk-contract";
 import { hospitalitySiteThemeStyle, portalSite } from "@/lib/portal-sites";
 import { BookingDatePicker, useBookingClock } from "./BookingDatePicker";
 import { bookingPolicyFor } from "@fika/server-shared/hospitality-effective-offering";
-import { SANDWICH_NOTICE_SHORT } from "../../lib/booking-notice";
+import { BOOKING_NOTICE_SHORT } from "../../lib/booking-notice";
 import StartAgainButton from "./StartAgainButton";
 import {
   addAllDayService,
@@ -285,6 +285,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   const rcoaConfigured = configured;
 
   const updateContact = (key: keyof RcoaBookingDraft["contact"], value: string) => setDraft((current) => ({ ...current, contact: { ...current.contact, [key]: value } }));
+  /** A newly chosen date supersedes any earlier date error; it is re-validated on Continue. */
+  const clearEventDateError = () => setErrors(current => { if (!("eventDate" in current)) return current; const next = { ...current }; delete next.eventDate; return next; });
   const updateEvent = (key: keyof RcoaBookingDraft["event"], value: string | number) => setDraft((current) => ({ ...current, event: { ...current.event, [key]: value } }));
   // Text shown while a dietary count is being edited (so "01" never appears and the field can be cleared); the stored value is numeric.
   const [dietaryText, setDietaryText] = useState<Record<string, string>>({});
@@ -598,7 +600,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                   </button>
                 </div>
                 <ErrorMessage field="occasion" errors={errors} />
-                {draft.occasion && <div className={styles.guidance} role="status"><strong>Notice guidance</strong><span>{currentEvent?.noticeType === "large" ? "Please allow at least seven working days for larger events." : SANDWICH_NOTICE_SHORT}</span></div>}
+                {draft.occasion && <div className={styles.guidance} role="status"><strong>Notice guidance</strong><span>{currentEvent?.noticeType === "large" ? "Please allow at least seven working days for larger events." : BOOKING_NOTICE_SHORT}</span></div>}
               </section>
             )}
 
@@ -624,7 +626,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                 <div className={styles.sectionHeading}><p className={styles.eyebrow}>All Day Hospitality</p><h2 id="rcoa-allday-event-title">Tell us about the event.</h2><p>Entered once. The guest count and location below pre-fill each service, and you can change them service by service.</p></div>
                 <div className={styles.fieldGrid}>
                   <label className={`${styles.field} ${styles.fieldWide}`}><span>Event, lecture or meeting name <small>(optional)</small></span><input value={allDay.eventName} onChange={(event) => setAllDay((current) => ({ ...current, eventName: event.target.value }))} /></label>
-                  <div className={styles.field}><BookingDatePicker value={allDay.eventDate} onChange={eventDate => setAllDay(current => ({ ...current, eventDate }))} items={allDay.services.flatMap(service => service.lines.flatMap(line => menu.filter(item => item.id === line.itemId && line.quantity > 0)))} context={{ site: "rcoa", occasion: allDay.services.some(service => ["event_catering", "dining", "bespoke"].includes(service.category)) ? "event_catering" : "" }} now={now} /><ErrorMessage field="eventDate" errors={errors} /></div>
+                  <div className={styles.field}><BookingDatePicker value={allDay.eventDate} onChange={eventDate => { setAllDay(current => ({ ...current, eventDate })); clearEventDateError(); }} items={allDay.services.flatMap(service => service.lines.flatMap(line => menu.filter(item => item.id === line.itemId && line.quantity > 0)))} context={{ site: "rcoa", occasion: allDay.services.some(service => ["event_catering", "dining", "bespoke"].includes(service.category)) ? "event_catering" : "" }} now={now} /><ErrorMessage field="eventDate" errors={errors} /></div>
                   <label className={styles.field}><span>Usual number of guests</span><input type="number" min="1" step="1" value={allDay.defaultGuests || ""} onChange={(event) => setAllDay((current) => ({ ...current, defaultGuests: Number(event.target.value || 0) }))} /></label>
                   <label className={styles.field}><span>Usual room or location</span><input value={allDay.defaultLocation} onChange={(event) => setAllDay((current) => ({ ...current, defaultLocation: event.target.value }))} placeholder="e.g. Lecture Hall" /></label>
                   <label className={styles.field}><span>Floor level</span><input value={allDay.floorLevel} onChange={(event) => setAllDay((current) => ({ ...current, floorLevel: event.target.value }))} placeholder="e.g. 7" /></label>
@@ -709,7 +711,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
               <section aria-labelledby="rcoa-event-title">
                 <div className={styles.sectionHeading}><p className={styles.eyebrow}>Event details</p><h2 id="rcoa-event-title">When and where?</h2></div>
                 <div className={styles.fieldGrid}>
-                  <div className={styles.field}><BookingDatePicker value={draft.event.eventDate} onChange={eventDate => updateEvent("eventDate", eventDate)} items={draft.lines.flatMap(line => menu.filter(item => item.id === line.itemId && line.quantity > 0))} context={{ site: "rcoa", occasion: draft.occasion, startTime: draft.event.startTime || undefined }} now={now} /><ErrorMessage field="eventDate" errors={errors} /></div>
+                  <div className={styles.field}><BookingDatePicker value={draft.event.eventDate} onChange={eventDate => { updateEvent("eventDate", eventDate); clearEventDateError(); }} items={draft.lines.flatMap(line => menu.filter(item => item.id === line.itemId && line.quantity > 0))} context={{ site: "rcoa", occasion: draft.occasion, startTime: draft.event.startTime || undefined }} now={now} /><ErrorMessage field="eventDate" errors={errors} /></div>
                   <label className={styles.field}><span>Number of guests *</span><input {...fieldProps("guestCount", errors)} data-rcoa-field="guestCount" type="number" min="1" step="1" value={draft.event.guestCount || ""} onChange={(event) => updateEvent("guestCount", Number(event.target.value || 0))} /><ErrorMessage field="guestCount" errors={errors} /></label>
                   <label className={styles.field}><span>Start / service time *</span><input {...fieldProps("startTime", errors)} data-rcoa-field="startTime" type="time" value={draft.event.startTime} onChange={(event) => updateEvent("startTime", event.target.value)} /><ErrorMessage field="startTime" errors={errors} /></label>
                   <label className={styles.field}><span>End time</span><input {...fieldProps("endTime", errors)} data-rcoa-field="endTime" type="time" value={draft.event.endTime} onChange={(event) => updateEvent("endTime", event.target.value)} /><ErrorMessage field="endTime" errors={errors} /></label>

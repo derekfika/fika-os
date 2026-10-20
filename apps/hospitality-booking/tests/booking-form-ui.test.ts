@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { register } from "node:module";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SANDWICH_NOTICE_SHORT } from "../lib/booking-notice";
+import { BOOKING_NOTICE_SHORT } from "../lib/booking-notice";
 
 register("data:text/javascript," + encodeURIComponent("export async function load(url, context, next) { if (url.endsWith('.css')) return { format: 'module', source: 'export default new Proxy({}, { get: (_, key) => String(key) })', shortCircuit: true }; return next(url, context); }"));
 const { BookingDatePicker, ukLongBookingDate } = await import("../app/ui/BookingDatePicker");
@@ -12,10 +12,10 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 const NOW = "2026-10-20T09:00:00.000Z";
 
 test("customer sandwich notice is the agreed concise wording and the portals no longer show the long policy text", () => {
-  assert.equal(SANDWICH_NOTICE_SHORT, "Sandwich orders: 2 preparation days’ notice before 12 noon, or 3 from 12 noon. Some items require longer notice.");
+  assert.equal(BOOKING_NOTICE_SHORT, "Orders require 2 preparation days’ notice before 12 noon, or 3 from 12 noon. Some items require longer notice.");
   for (const file of ["../app/ui/BookingPortal.tsx", "../app/ui/RcoaBookingPortal.tsx"]) {
     const source = read(file);
-    assert.match(source, /SANDWICH_NOTICE_SHORT/); assert.doesNotMatch(source, /\bSANDWICH_NOTICE\b/);
+    assert.match(source, /BOOKING_NOTICE_SHORT/); assert.doesNotMatch(source, /\bSANDWICH_NOTICE\b/);
   }
   assert.match(read("../../../packages/server-shared/src/hospitality-booking-cutoffs.ts"), /export const SANDWICH_NOTICE = /, "the authoritative policy text is untouched");
 });
@@ -60,3 +60,24 @@ test("form layout cannot stretch: items sit in an align-start grid, one per cell
   assert.equal((portals.match(/&minus;<\/button>/g) || []).length, 2, "quantity decrement glyph is a safe HTML entity");
   for (const text of ["Escape", "ArrowDown", "PageDown", "createPortal", "aria-haspopup", "aria-live"]) assert.ok(picker.includes(text), text);
 });
+
+test("universal notice: with an EMPTY basket the picker's policy disables dates before the cutoff, with no sandwich wording", async () => {
+  const { bookingDateIssue } = await import("@fika/server-shared/hospitality-effective-offering");
+  const now = "2026-10-20T09:00:00.000Z"; // Tuesday 10:00 London, before noon
+  const tomorrow = bookingDateIssue([], "2026-10-21", now);
+  assert.equal(tomorrow?.code, "BOOKING_NOTICE");
+  assert.ok(tomorrow?.earliestDate && tomorrow.earliestDate > "2026-10-21");
+  assert.doesNotMatch(tomorrow!.message, /sandwich/i);
+  assert.equal(bookingDateIssue([], tomorrow!.earliestDate!, now), undefined, "the earliest date offered is itself bookable");
+  const html = renderToStaticMarkup(createElement(BookingDatePicker, { value: "2026-10-21", onChange() {}, items: [], now }));
+  assert.match(html, /role="alert"/); assert.doesNotMatch(html, /sandwich/i);
+  for (const file of ["../app/ui/BookingPortal.tsx", "../app/ui/RcoaBookingPortal.tsx", "../lib/booking-notice.ts"]) assert.doesNotMatch(read(file), /Sandwich orders/);
+  assert.equal(BOOKING_NOTICE_SHORT, "Orders require 2 preparation days’ notice before 12 noon, or 3 from 12 noon. Some items require longer notice.");
+});
+
+test("RCoA clears a stale event-date error when a valid date is chosen", () => {
+  const source = read("../app/ui/RcoaBookingPortal.tsx");
+  assert.match(source, /clearEventDateError/);
+  assert.equal((source.match(/clearEventDateError\(\); \}\}/g) || []).length, 2, "both single and All Day pickers clear it");
+});
+

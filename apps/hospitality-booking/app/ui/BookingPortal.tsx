@@ -1,7 +1,7 @@
 "use client";
 
 import { BookingDatePicker, useBookingClock } from "./BookingDatePicker";
-import { SANDWICH_NOTICE_SHORT } from "../../lib/booking-notice";
+import { BOOKING_NOTICE_SHORT } from "../../lib/booking-notice";
 import { assertBookingDate, bookingDateIssue, bookingPolicyFor, type CutoffItem } from "@fika/server-shared/hospitality-effective-offering";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
@@ -880,7 +880,7 @@ function Choose({
       <ValidationMessage field="occasion" errors={errors} />
       {occasion && (
         <p className="guidance">
-          {SANDWICH_NOTICE_SHORT}
+          {BOOKING_NOTICE_SHORT}
         </p>
       )}
     </section>
