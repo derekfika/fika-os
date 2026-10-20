@@ -1,6 +1,6 @@
 # Hospitality booking cutoff enforcement — 20 October 2026
 
-Status: implemented in Node applications; NOT DEPLOYED / NOT LIVE. Legacy Apps Script applications were explicitly excluded by Derek during this task and have no final source diff.
+Status: VERIFIED LIVE for the modern Node portals at application SHA `fbb53143ee0681986821afbd97e43786f8d25e8d`. Hub and Hospitality both serve `build-2026-10-20-002`, SUCCEEDED/READY at 100% traffic. Legacy Apps Script acceptance remains outside scope/unverified; universal enforcement is not claimed. The implementation notes below preserve the original pre-release evidence; the completed release record follows at the end.
 
 ## Checkout and ownership
 
@@ -107,3 +107,14 @@ Rollback: redeploy the recorded previous app SHA if needed; retaining the Hub en
 ## Cost / audit / security
 
 No new polling, broad listeners or operational audit streams. Calendar clock refresh is local at minute boundaries and visibility changes. Ordinary page loads keep the current manifest/IndexedDB package flow; staff amendment editors reuse it. Server mutation reads are bounded to the affected Items, deterministic merge/routing records, relevant sparse Offering/Prices and one OPLOC. Retry existence reads are at most 12 direct documents and only used when policy would otherwise reject an old group. No new indexes or cross-site Item fan-out. Existing business audit/version/outbox and AUTHMOD/bridge guards remain in place; no secrets, IAM or production settings changed.
+
+
+## Completed production release — 20 October 2026
+
+Derek executed the existing administrator publication endpoint (HTTP 200, published); no alternate publication/authentication mechanism used. Independently verified private v6 `e6fa618fb3fd5e8f5904e4a9afb901bbafe183122c6c73d86ae20ae737f10cdc` and public v6 `b04d129c5b29a96f9c7234dfad1d146b0c55a549216996320ab5a8e2de42d71e`, raw compressed integrity, all 80 policy entries and public routing redaction. OAC resolves to the same 74 offerings with exact commercial and availability equality; the entire catalogue differs only by additive bookingPolicy metadata.
+
+Both production backends serve the approved application SHA above, build/rollout `build-2026-10-20-002`, SUCCEEDED/READY, 100% traffic, automatic rollout disabled. All five portals load their date controls; authenticated workspace access works. Detailed OAC browser checks verify disabled short-notice/weekend dates, preserved invalid selection, Friday Summer Roll exclusion and ten-working-day earliest dates. Four actual negative submissions return the expected authoritative 422 codes and leave their deterministic booking documents absent. No valid customer booking submitted.
+
+The exact client loader, seeded with saved v5 in isolated memory and using live production HTTP, replaces it with verified v6 then serves a warm cache hit. This is not direct browser IndexedDB introspection. Noon/Sunday vectors were evaluated with synthetic clocks against production catalogue data; the production clock was not changed and a real wall-clock noon crossover was not observed. No CPU/Logistics, migration, emails, legacy or scheduler actions. No additional builds/tests repeated. Previous application SHA `85ca1cce311e70c5743b6a772f148c3d403e8466` and immutable v5 objects remain available for governed rollback.
+
+Full evidence: `C:\Users\derek\Documents\FIKA OS Migration Evidence\Booking-Cutoffs-2026-10-20\production-release-verified-live.md`, including exact hashes, live traffic receipt, negative API responses, catalogue comparisons, cache-loader receipt and browser screenshots/transcripts.
