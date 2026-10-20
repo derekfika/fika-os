@@ -1,3 +1,4 @@
+import { bookingPolicyFor } from "@fika/server-shared/hospitality-effective-offering";
 /**
  * Published Hospitality catalogue package.
  *
@@ -57,6 +58,7 @@ export function buildCataloguePackage(source: PackageSource, today: string): Cat
     defaultPrices: (itemPrices.get(item.canonicalId) || []).sort(byPeriod), ...(number(item.record.defaultMinimumQuantity) !== undefined ? { defaultMinimumQuantity: number(item.record.defaultMinimumQuantity) } : {}),
     ...(item.record.defaultOfferingMode === "quote_only" ? { defaultMode: "quote_only" as const } : {}), ...(number(item.record.defaultNoticeRequiredDays) !== undefined ? { defaultNoticeRequiredDays: number(item.record.defaultNoticeRequiredDays) } : {}), ...(number(item.record.defaultMinimumGuests) !== undefined ? { defaultMinimumGuests: number(item.record.defaultMinimumGuests) } : {}),
     ...(item.record.configuration && Object.keys(item.record.configuration as object).length ? { configuration: item.record.configuration as Record<string, unknown> } : {}),
+    bookingPolicy: bookingPolicyFor(item.canonicalId, routingStateOf(routing.get(item.canonicalId)).state, Array.isArray(item.record.providerMappings) ? item.record.providerMappings.flatMap(raw => typeof (raw as { sourceItemId?: unknown })?.sourceItemId === "string" ? [(raw as { sourceItemId: string }).sourceItemId] : []) : []),
     dietaryInformation: strings(item.record.dietaryInformation), allergenInformation: strings(item.record.allergenInformation), routing: routingStateOf(routing.get(item.canonicalId)).state,
   })).sort((a, b) => a.id.localeCompare(b.id));
   const itemById = new Map(items.map(item => [item.id, item]));
@@ -95,7 +97,7 @@ export async function publishCataloguePackage(pkg: CataloguePackage, store: Read
 /** Public booking projection. Production routing and Hub-only metadata never leave the private package. */
 export async function publishPublicCataloguePackage(pkg: CataloguePackage, store: ReadPackageStore = oplocPackageStore()): Promise<PublishOutcome> {
   const previous = await store.getManifest(PUBLIC_CATALOGUE_MANIFEST_KEY);
-  const publicPackage = { ...pkg, items: pkg.items.map(({ routing: _routing, ...item }) => item) };
+  const publicPackage = { ...pkg, items: pkg.items.map(({ routing, ...item }) => ({ ...item, bookingPolicy: { sandwich: bookingPolicyFor(item.id, routing).sandwich || item.bookingPolicy?.sandwich || false, fridayUnavailable: bookingPolicyFor(item.id).fridayUnavailable || item.bookingPolicy?.fridayUnavailable || false } })) };
   const candidate = encodeReadPackage(PUBLIC_CATALOGUE_DATASET, (previous?.packageVersion || 0) + 1, publicPackage, pkg.items.length + pkg.exceptions.length, { schemaVersion: CATALOGUE_PACKAGE_SCHEMA_VERSION, contractVersion: CATALOGUE_PACKAGE_CONTRACT });
   // Hash-only object names let an already-issued immutable URL continue to work
   // after the mutable manifest advances to a newer package.

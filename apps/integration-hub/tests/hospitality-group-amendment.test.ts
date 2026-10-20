@@ -38,13 +38,24 @@ async function cpuFixture(failEntityId?: string) {
   process.env.FIKA_LOGISTICS_BASE_URL = `http://127.0.0.1:${logisticsAddress.port}`;
   return { requests, close: async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await new Promise<void>((resolve, reject) => logistics.close(error => error ? reject(error) : resolve())); } };
 }
-async function fixture() {
+async function fixture(governedAmendment = false) {
   assert.equal(process.env.FIREBASE_PROJECT_ID, "demo-fika-os");
   assert.match(process.env.FIRESTORE_EMULATOR_HOST || "", /^(127\.0\.0\.1|localhost):\d+$/);
   const key = randomUUID(), id = `group:${key}`, item = `hospitality-menu-item:canonical:${key}`, other = `${item}:other`, inHouse = `${item}:in-house`;
   for (const [menuItemId, workstreams] of [[item, ["hospitality"]], [other, ["sandwiches"]], [inHouse, []]] as Array<[string, string[]]>) await db.collection("integrationHubHospitalityMenuProductionRouting").doc(stableDocumentId(menuItemId)).set({ menuItemId, workstreams });
   const now = new Date().toISOString();
-  const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  let date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  if (governedAmendment) {
+    const future = new Date(`${date}T12:00:00Z`); future.setUTCDate(future.getUTCDate() + 35);
+    while (future.getUTCDay() !== 1) future.setUTCDate(future.getUTCDate() + 1);
+    date = future.toISOString().slice(0, 10);
+    const put = async (id: string, entityType: string, record: Record<string, unknown>) => db.collection("integrationHubCanonical").doc(stableDocumentId(id)).set({ canonicalId: id, entityType, lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active", ...record } });
+    await put(`oploc:${key}`, "OPLOC", { approvedName: "Fixture site" });
+    for (const menuId of [item, other, inHouse]) {
+      await put(menuId, "Hospitality Menu Item", { name: "Fixture menu item", category: "Food", defaultMinimumQuantity: 1 });
+      await put(menuId + ":price", "Hospitality Menu Price", { hospitalityMenuItemId: menuId, amount: 2, vatRate: 0, effectiveFrom: "2020-01-01" });
+    }
+  }
   const children = ["09:00", "13:00", "15:00"].map((time, index) => ({ canonicalId: `booking:rcoa:${key}:${index}`, entityType: "Booking", version: 1, schemaVersion: "0.1.0", createdAt: now, updatedAt: now, createdBy: actor.uid, updatedBy: actor.uid, lifecycleStatus: "New", commercialVersion: 1,
     source: { provider: "rcoa-booking-platform", sourceBookingId: `${key}:${index}`, submissionTimestamp: now, originalPayload: {} }, bookingGroup: { id, size: 3, sequence: index + 1 }, client: { name: "Fixture", companyName: "Test", email: "fixture@example.test" },
     service: { oplocId: `oploc:${key}`, portalSiteId: "rcoa", eventDate: date, startTime: time, guestCount: 10, roomOrArea: "Test room" },
@@ -290,7 +301,7 @@ test("legacy reconciliation withdraws newer Draft orders despite older delivered
   assert.equal((await cancelHospitalityBookingGroup(actor, advancedCommand, async () => {})).projectionPropagation.status, "review_required");
 });
 test("two concurrent group amendments cannot interleave or leave half of either request committed", { skip: !enabled }, async () => {
-  const f = await fixture(), before = await f.read();
+  const f = await fixture(true), before = await f.read();
   const left = f.command(before), right = f.command(before);
   left.services[0].patch.notes = "Left amendment"; left.services[1].patch.notes = "Left amendment";
   right.services[0].patch.service.startTime = "10:00"; right.services[1].patch.service.startTime = "14:00";
@@ -304,7 +315,7 @@ test("two concurrent group amendments cannot interleave or leave half of either 
   assert.deepEqual(after[2], before[2]);
 });
 test("atomic group amendment updates quantities/time/items/dietaries/notes and preserves unchanged identities and No CPU routing", { skip: !enabled }, async () => {
-  const f = await fixture(); await f.quote(0);
+  const f = await fixture(true); await f.quote(0);
   const before = await f.read(), command = f.command(before);
   command.services[0].patch.order.items[0].quantity = 12;
   command.services[0].patch.order.items.push({ itemId: f.other, itemName: "Added item", quantity: 2, unitPrice: 3 });
@@ -326,11 +337,11 @@ test("atomic group amendment updates quantities/time/items/dietaries/notes and p
   assert.equal((await bookingWorkspace()).cpuRouting![after[0].canonicalId].status, "no_cpu_production");
 });
 test("stale versions, unresolved routing, authorization failure, missing membership and inconsistent group dates roll back every service", { skip: !enabled }, async () => {
-  const f = await fixture(), before = await f.read();
+  const f = await fixture(true), before = await f.read();
   const stale = f.command(before); stale.services[1].expectedVersion = 99; stale.services[0].patch.notes = "must roll back";
   await assert.rejects(amendHospitalityBookingGroup(actor, stale, async () => {}), /changed elsewhere/);
   const unresolved = f.command(before); unresolved.services[0].patch.notes = "must roll back"; unresolved.services[1].patch.order.items[0].itemId = "hospitality-menu-item:canonical:unresolved";
-  await assert.rejects(amendHospitalityBookingGroup(actor, unresolved, async () => {}), /routing/);
+  await assert.rejects(amendHospitalityBookingGroup(actor, unresolved, async () => {}), /routing|catalogue identity/);
   await assert.rejects(amendHospitalityBookingGroup(actor, f.command(before), async () => { throw Error("not authorized"); }), /not authorized/);
   const missing = f.command(before); missing.services.pop(); await assert.rejects(amendHospitalityBookingGroup(actor, missing, async () => {}), /exactly the current/);
   const duplicate = f.command(before); duplicate.services[1].bookingId = duplicate.services[0].bookingId; await assert.rejects(amendHospitalityBookingGroup(actor, duplicate, async () => {}), /exactly the current/);
@@ -342,7 +353,7 @@ test("stale versions, unresolved routing, authorization failure, missing members
   await assert.rejects(amendHospitalityBookingGroup(actor, f.command(cancelled), async () => {}), /Cancelled services/);
 });
 test("after-CPU amendment retires only changed work, preserves immutable quote history, and replacement handoff/retries cannot duplicate orders", { skip: !enabled }, async () => {
-  const f = await fixture(); await f.quote(0);
+  const f = await fixture(true); await f.quote(0);
   const source = await f.read();
   const original = [];
   for (const child of source.slice(0, 2)) {

@@ -84,8 +84,12 @@ test("public package omits internal CPU routing and keeps old hash-addressed obj
   assert.equal(one.manifest.dataset, "hospitality-booking/catalogue");
   assert.equal(one.manifest.objectName, `hospitality-booking/catalogue/${one.manifest.contentHash}.json.gz`);
   assert.equal(Object.hasOwn(body.items[0], "routing"), false, "booking clients receive no production routing data");
-  const updated = { ...first, items: first.items.map((item, index) => index === 0 ? { ...item, name: "Updated" } : item) };
+  const updated = { ...first, items: first.items.map((item, index) => index === 0 ? { ...item, name: "Updated", routing: "cpu_sandwiches" } : item) };
   await publishPublicCataloguePackage(updated, store);
+  const currentHead = manifests.get(PUBLIC_CATALOGUE_MANIFEST_KEY)!;
+  const currentBody = decodeReadPackage<CataloguePackage>(currentHead, objects.get(currentHead.objectName)!);
+  assert.equal(currentBody.items[0].bookingPolicy?.sandwich, true, "public policy retains an opaque Item’s sandwich eligibility without exposing routing");
+  assert.equal(Object.hasOwn(currentBody.items[0], "routing"), false);
   assert.notEqual(manifests.get(PUBLIC_CATALOGUE_MANIFEST_KEY)!.contentHash, one.manifest.contentHash);
   assert.deepEqual((await getPublicCataloguePackageBytes(one.manifest.contentHash, store))?.bytes, bytes, "the previous immutable object remains addressable after the manifest advances");
 });

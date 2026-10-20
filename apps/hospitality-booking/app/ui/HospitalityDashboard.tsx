@@ -1,5 +1,8 @@
 "use client";
 
+import { BookingDatePicker, useBookingClock } from "./BookingDatePicker";
+import { loadHospitalityPortalMenu } from "../../lib/hospitality-portal-catalogue";
+import type { PortalMenuItem } from "../../lib/mnk-contract";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { MailSearch, RefreshCw, Settings } from "lucide-react";
@@ -2700,6 +2703,17 @@ function BookingAmendmentPanel({
   onCancel: () => void;
   onSave: () => void;
 }) {
+  const now = useBookingClock();
+  const [cutoffMenu, setCutoffMenu] = useState<PortalMenuItem[]>([]);
+  const [cutoffWarning, setCutoffWarning] = useState("Checking current catalogue constraints…");
+  useEffect(() => {
+    const controller = new AbortController();
+    setCutoffWarning("Checking current catalogue constraints…");
+    void loadHospitalityPortalMenu(siteKey, booking.service.oplocId, { signal: controller.signal }).then(result => {
+      if (!controller.signal.aborted) { setCutoffMenu(result.menu); setCutoffWarning(""); }
+    }).catch(() => { if (!controller.signal.aborted) setCutoffWarning("Current catalogue constraints could not be verified. Refresh before changing the date."); });
+    return () => controller.abort();
+  }, [siteKey, booking.service.oplocId]);
   const changeClient = (key: keyof Amendment["client"], value: string) =>
     onChange({ ...amendment, client: { ...amendment.client, [key]: value } });
   const changeService = (
@@ -2787,17 +2801,7 @@ function BookingAmendmentPanel({
               />
             </label>
           )}
-          <label>
-            Service date
-            <input
-              required
-              type="date"
-              value={amendment.service.eventDate}
-              onChange={(event) =>
-                changeService("eventDate", event.target.value)
-              }
-            />
-          </label>
+          <BookingDatePicker value={amendment.service.eventDate} onChange={eventDate => changeService("eventDate", eventDate)} items={amendment.order.items.filter(line => line.quantity > 0).map(line => cutoffMenu.find(item => [item.id, item.canonicalId].includes(line.itemId)) || { id: line.itemId })} context={{ site: siteKey, occasion: amendment.order.eventType, startTime: amendment.service.startTime }} now={now} unavailableReason={cutoffWarning || undefined} />
           <label>
             Service time
             <input

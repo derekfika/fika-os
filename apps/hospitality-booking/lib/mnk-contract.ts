@@ -66,6 +66,7 @@ export type PortalMenuItem = {
   dietaryInformation: string[];
   allergenInformation: string[];
   rules?: import("@fika/server-shared/hospitality-effective-offering").CatalogueRules;
+  bookingPolicy?: import("@fika/server-shared/hospitality-effective-offering").BookingPolicy;
   governedConstraintsResolved?: boolean;
   quoteRequired?: boolean;
   minimumQuantity?: number;

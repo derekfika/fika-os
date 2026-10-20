@@ -1,3 +1,4 @@
+import { assertBookingDate, bookingDateIssue } from "@fika/server-shared/hospitality-effective-offering";
 import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { recordDataAccess, setDataTraceOutcome, withDataTrace } from "@fika/server-shared/data-source-meter-server";
@@ -25,9 +26,19 @@ export async function POST(request: NextRequest) {
     }
     try {
       built = buildRcoaGroupHubPayloads(await request.json(), governedMenu);
+      const now = new Date().toISOString();
+      const invalid = built.payloads.filter(payload => bookingDateIssue(governedMenu.filter(item => payload.order.items.some(line => line.itemId === item.id)), payload.event.eventDate, now, { site: "rcoa", occasion: payload.order.eventType, startTime: payload.event.startTime }));
+      if (invalid.length) {
+        // A stored child is a replay of historical evidence, not a new order. Never grandfather a missing child.
+        const response = await hubFetch("/api/bookings/mnk/existing", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookingIds: invalid.map(payload => payload.bookingId) }) });
+        if (!response.ok) throw Object.assign(new Error("Existing services could not be verified. Try the same request again."), { status: 503 });
+        const body = await response.json() as { existingBookingIds?: unknown };
+        if (!Array.isArray(body.existingBookingIds) || body.existingBookingIds.some(id => typeof id !== "string")) throw Object.assign(new Error("Existing services could not be verified. Try again."), { status: 503 });
+        for (const payload of invalid) if (!body.existingBookingIds.includes(payload.bookingId)) assertBookingDate(governedMenu.filter(item => payload.order.items.some(line => line.itemId === item.id)), payload.event.eventDate, now, { site: "rcoa", occasion: payload.order.eventType, startTime: payload.event.startTime });
+      }
     } catch (error) {
       const message = error instanceof ZodError ? "Some booking information was incomplete. Check each service and try again." : (error as Error).message || "The RCoA request is invalid.";
-      return NextResponse.json({ error: { message } }, { status: 400 });
+      return NextResponse.json({ error: { message, ...((error as { code?: string }).code ? { code: (error as { code: string }).code } : {}), ...((error as { earliestDate?: string }).earliestDate ? { earliestDate: (error as { earliestDate: string }).earliestDate } : {}) } }, { status: (error as { status?: number }).status || 400 });
     }
 
     const { groupId, payloads } = built;

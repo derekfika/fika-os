@@ -25,6 +25,7 @@ function portalMenuItem(offering: EffectiveOffering): PortalMenuItem | undefined
   return {
     id: offering.itemId, canonicalId: offering.itemId, name: offering.name, description: offering.description,
     category: offering.category, unitPrice: offering.price?.amount ?? 0, vatRate: offering.price?.vatRate ?? null,
+    bookingPolicy: offering.bookingPolicy,
     governedConstraintsResolved: true, ...(offering.quoteRequired ? { quoteRequired: true } : {}),
     ...(configuration.rules ? { rules: configuration.rules as PortalMenuItem["rules"] } : {}),
     dietaryInformation: offering.dietaryInformation, allergenInformation: offering.allergenInformation,

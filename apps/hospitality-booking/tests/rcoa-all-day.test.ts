@@ -212,6 +212,7 @@ function installHub(state: HubState) {
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
     const url = String(typeof input === "string" ? input : (input as { url?: string }).url);
     const catalogue = governedCatalogueResponse(url); if (catalogue) return catalogue;
+    if (url.endsWith("/api/bookings/mnk/existing")) { const body = JSON.parse(String(init?.body)) as { bookingIds: string[] }; return Response.json({ existingBookingIds: body.bookingIds.filter(id => state.bookings.has(id)) }); }
     if (!url.endsWith("/api/bookings/mnk")) throw new Error(`unexpected Hub call ${url}`);
     const payload = JSON.parse(String(init?.body)) as { bookingId: string };
     state.calls.push(payload.bookingId);
@@ -313,4 +314,26 @@ test("the shared event view feeds the existing contact, dietaries and notes scre
   assert.equal(view.contact.companyName, "The College");
   assert.equal(view.event.guestCount, 50);
   assert.equal(view.event.roomOrArea, "Lecture Hall");
+});
+
+
+test("cutoff preflight rejects a later service before any writes, but stored historical children can replay", async () => {
+  const hub = freshHub(); const restore = installHub(hub);
+  try {
+    const body = submissionFor(threeServiceDay());
+    for (const request of body.requests) request.event.eventDate = "2026-10-19";
+    const denied = await postGroup(body);
+    assert.equal(denied.status, 422);
+    assert.equal(hub.calls.length, 0);
+    assert.equal(hub.bookings.size, 0);
+    for (const request of body.requests) hub.bookings.set(request.bookingId, { canonicalBookingId: `booking:rcoa:${request.bookingId}`, payload: request as unknown as Record<string, unknown> });
+    const replay = await postGroup(body);
+    assert.equal(replay.status, 200);
+    assert.equal(replay.body.created, 0);
+    assert.equal(hub.notifications.length, 0);
+    hub.bookings.delete(body.requests[2].bookingId);
+    hub.calls.length = 0;
+    assert.equal((await postGroup(body)).status, 422, "an absent child is not grandfathered by existing siblings");
+    assert.equal(hub.calls.length, 0);
+  } finally { restore(); }
 });

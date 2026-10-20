@@ -23,7 +23,7 @@ function realRcoaSubmission() {
   const draft = createEmptyRcoaDraft();
   draft.occasion = "breakfast";
   draft.contact = { name: "Casey Guest", email: "casey@example.test", phone: "020 0000 0000", companyName: "College", invoiceReference: "" };
-  draft.event = { eventDate: "2026-10-20", guestCount: 12, startTime: "10:00", endTime: "", floorLevel: "First floor", roomOrArea: "", deliveryPoint: "", onsiteContactName: "", onsiteContactPhone: "" };
+  draft.event = { eventDate: "2026-12-01", guestCount: 12, startTime: "10:00", endTime: "", floorLevel: "First floor", roomOrArea: "", deliveryPoint: "", onsiteContactName: "", onsiteContactPhone: "" };
   draft.lines = [{ itemId: item.id, quantity: Math.max(1, item.minimumQuantity || 1), choices: Object.fromEntries((item.optionGroups || []).filter(group => group.required).map(group => [group.id, group.options[0]?.label || ""])) }];
   draft.acknowledgements = { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true };
   return buildRcoaClientRequest(draft, menu, { bookingId: "RCOA-20261012133429-AB12", submittedAt: "2026-10-12T13:34:29.000Z" });

@@ -9,11 +9,14 @@
  * quote-only, operational-area scope). Archived Items and inactive OPLOCs are always unavailable; unresolved pricing fails closed.
  */
 export * from "./hospitality-catalogue-rules";
+export * from "./hospitality-booking-cutoffs";
+import { bookingPolicyFor, type BookingPolicy } from "./hospitality-booking-cutoffs";
 export const CATALOGUE_PACKAGE_SCHEMA_VERSION = 2;
 export const CATALOGUE_PACKAGE_CONTRACT = "fika.hospitality-catalogue-package.v2";
 
 export type PricePeriod = { amount: number; vatRate: number; from: string; to?: string };
 export type PackageItem = {
+  bookingPolicy?: BookingPolicy;
   id: string; name: string; category: string; description?: string;
   /** Optional governed allowlist: absence preserves company-wide availability. */
   allowedOplocIds?: string[];
@@ -32,6 +35,7 @@ export type PackageOploc = { id: string; label: string };
 export type CataloguePackage = { schemaVersion: number; contract: string; items: PackageItem[]; exceptions: PackageException[]; oplocs: PackageOploc[] };
 
 export type EffectiveOffering = {
+  bookingPolicy?: BookingPolicy;
   offeringId: string; itemId: string; name: string; description?: string; category: string; offeringMode: "standard" | "quote_only";
   configuration?: Record<string, unknown>;
   constraints: { minimumQuantity?: number; minimumGuests?: number; noticeRequiredDays?: number };
@@ -91,7 +95,7 @@ export function resolveHospitalityOffering(pkg: CataloguePackage, itemId: string
   const description = exception?.description ?? item.description;
   const base: Omit<EffectiveOffering, "price" | "quoteRequired"> = {
     offeringId: exception?.id ?? inheritedOfferingId(itemId, oplocId), itemId, name: exception?.displayName ?? item.name, ...(description ? { description } : {}), category: item.category,
-    offeringMode: mode, ...(configuration ? { configuration: structuredClone(configuration) } : {}), constraints,
+    offeringMode: mode, bookingPolicy: { sandwich: bookingPolicyFor(item.id, item.routing).sandwich || item.bookingPolicy?.sandwich || false, fridayUnavailable: bookingPolicyFor(item.id).fridayUnavailable || item.bookingPolicy?.fridayUnavailable || false }, ...(configuration ? { configuration: structuredClone(configuration) } : {}), constraints,
     dietaryInformation: [...item.dietaryInformation], allergenInformation: [...item.allergenInformation], source: exception ? "exception" : "default",
   };
   if (mode === "quote_only") return exception && exception.prices.length ? { available: false, reason: "quote_only_has_price" } : { available: true, offering: { ...base, quoteRequired: true } };

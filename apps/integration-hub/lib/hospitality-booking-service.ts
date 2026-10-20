@@ -6,6 +6,7 @@ import { hospitalityGroupProjection } from "./hospitality-group-projection";
 import { explicitMenuProductionRouting } from "./connections-service";
 import { LEGACY_HOSPITALITY_MENU_ROUTING } from "./hospitality-routing-suggestions";
 import { BOOKING_LABELS, hospitalityPlatformOf, isGovernedRoutingPlatform, LINE_LABELS, planHospitalityCpuRouting, routingKeys } from "./hospitality-cpu-routing";
+import { assertHospitalityBookingDate } from "./hospitality-booking-cutoffs";
 import { trustedPublicOrder } from "./hospitality-price-trust";
 import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, loadRcoaBookingCatalogue, mnkBookingPricingRecords, rcoaBookingConstraintRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
@@ -50,7 +51,7 @@ import {
 import { notifyCpuProjection } from "./cpu-projection-client";
 import { deliverLogisticsProjectionForProductionOrder } from "./logistics-projection-outbox";
 import { localBookingFixtures } from "./local-booking-fixtures";
-import { catalogueMinimums, type RuleItem } from "@fika/server-shared/hospitality-effective-offering";
+import { catalogueMinimums, bookingPolicyFor, type RuleItem } from "@fika/server-shared/hospitality-effective-offering";
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { Transaction } from "firebase-admin/firestore";
@@ -705,6 +706,16 @@ export async function ingestMnkBooking(
         return snapshot.docs.map(document => document.data() as CanonicalRecord);
       });
     }
+    // Old short-hour defaults must not override the noon policy for opaque canonical sandwich IDs.
+    // Annotate only requested short-notice candidates from authoritative routing, never from client policy flags.
+    const shortNoticeItems = pricingRecords.filter(record => {
+      const hours = (record.record.configuration as { rules?: { noticeHours?: number } } | undefined)?.rules?.noticeHours;
+      return record.entityType === "Hospitality Menu Item" && hours !== undefined && hours > 0 && hours <= 72 && payload.order.items.some(line => line.itemId === record.canonicalId || (Array.isArray(record.record.providerMappings) && record.record.providerMappings.some(raw => (raw as { sourceItemId?: string }).sourceItemId === line.itemId)));
+    });
+    if (shortNoticeItems.length) {
+      const routing = await explicitMenuProductionRouting(shortNoticeItems.map(record => record.canonicalId), transaction);
+      pricingRecords = pricingRecords.map(record => shortNoticeItems.includes(record) ? { ...record, record: { ...record.record, bookingPolicy: bookingPolicyFor(record.canonicalId, routing[record.canonicalId]?.includes("sandwiches") ? "sandwiches" : undefined, Array.isArray(record.record.providerMappings) ? record.record.providerMappings.flatMap(raw => typeof (raw as { sourceItemId?: unknown })?.sourceItemId === "string" ? [(raw as { sourceItemId: string }).sourceItemId] : []) : []) } } : record);
+    }
     const result = ingestMnkBookingFromExisting(
       existingSnapshot.exists
         ? (existingSnapshot.data() as CanonicalBooking)
@@ -715,6 +726,7 @@ export async function ingestMnkBooking(
       destinationOplocId,
     );
     if (!result.created) return result;
+    await assertHospitalityBookingDate(transaction, result.booking, now, canonicalRecords);
     // Grouped services are ingested one by one: the customer gets ONE request-received email, created in the same
     // transaction that commits the last service. Single-service bookings keep their per-booking notification.
     const groupLink = result.booking.bookingGroup;
@@ -1134,6 +1146,8 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
     vatTotal: 0,
     grossTotal: items.reduce((total, item) => total + item.lineTotal, 0),
   };
+  const cutoffChanged = current.order.eventType !== next.order.eventType || current.service.eventDate !== next.service.eventDate || current.service.startTime !== next.service.startTime || current.service.oplocId !== next.service.oplocId || groupHash(current.order.items.map(i => [i.itemId, i.quantity, i.choices])) !== groupHash(items.map(i => [i.itemId, i.quantity, i.choices]));
+  if (cutoffChanged) await assertHospitalityBookingDate(transaction, next, now);
   next.notes = optional(patch.notes);
   next.deliveryChargeRequired = patch.deliveryChargeRequired ?? current.deliveryChargeRequired ?? true;
   next.commercialVersion = (current.commercialVersion || 1) + 1;

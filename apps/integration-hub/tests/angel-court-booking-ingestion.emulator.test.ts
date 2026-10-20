@@ -40,7 +40,7 @@ test("Angel Court public Hub submission enforces governed minimums before writin
       site: "Angel Court",
       siteId: "angel-court",
       client: { name: "UAT Host", email: "uat@example.test", companyName: "Ordinary customer", ...(overrides.client as object || {}) },
-      event: { eventDate: "2026-11-03", startTime: "12:00", guestCount: 10, ...(overrides.event as object || {}) },
+      event: { eventDate: "2027-02-02", startTime: "12:00", guestCount: 10, ...(overrides.event as object || {}) },
       order: { items: [{ itemId: `angel-item-${key}`, itemName: "Angel Court lunch box", quantity, unitPrice: 0.01, lineTotal: 0.01, minimumQuantity: 1 }], netTotal: 0.01 },
     };
     const response = await submitBooking(new NextRequest("http://hub.test/api/bookings/mnk", {
@@ -71,7 +71,7 @@ test("Angel Court public Hub submission enforces governed minimums before writin
     assert.notEqual((await call("gallagher-guest-minimum", 5, { client: { companyName: "Gallagher", invoiceReference: "PO-123" }, event: { guestCount: 4 } })).status, 200, "G: Gallagher requires five guests");
     assert.notEqual((await call("gallagher-reference-required", 5, { client: { companyName: "Gallagher" } })).status, 200, "H: Gallagher requires an Invoice / PO reference");
 
-    assert.equal((await call("notice-is-guidance", 8, { event: { eventDate: "2026-10-19" } })).status, 200, "notice days remain guidance, not a hard booking rejection");
+    assert.equal((await call("notice-is-hard", 8, { event: { eventDate: "2026-10-19" } })).status, 422, "ten-day and stricter governed notices are hard restrictions");
   } finally {
     for (const bookingId of savedBookingIds) {
       const auditId = `${bookingId.replace(/[^A-Za-z0-9_-]/g, "_")}:1`;

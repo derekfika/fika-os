@@ -213,7 +213,7 @@ test("notice rules compare London wall time across the spring BST transition", (
   draft.occasion = "breakfast";
   draft.event.eventDate = "2026-03-29";
   draft.event.startTime = "13:00";
-  assert.deepEqual(rcoaNoticeWarnings(draft, [], new Date("2026-03-26T12:00:00.000Z")), []);
+  assert.deepEqual(rcoaNoticeWarnings(draft, [], new Date("2026-03-26T12:00:00.000Z")), ["No deliveries on Saturdays or Sundays."]);
 
   draft.occasion = "event_catering";
   assert.ok(rcoaNoticeWarnings(draft, [], new Date("2026-03-26T12:00:00.000Z")).some((warning) => warning.includes("seven-working-day")));

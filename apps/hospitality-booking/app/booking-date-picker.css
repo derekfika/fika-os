@@ -1,0 +1,10 @@
+.fika-booking-calendar { box-sizing: border-box; margin: 0; border: 1px solid var(--fika-border-default); border-radius: 8px; padding: 12px; width: 100%; max-width: 390px; min-width: 0; color: var(--fika-text-primary); background: var(--fika-surface-card); }
+.fika-booking-calendar-navigation { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fika-booking-calendar-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-top: 8px; }
+.fika-booking-calendar-days span { text-align: center; color: var(--fika-text-secondary); font-size: 12px; }
+.fika-booking-calendar button { min-height: 44px; padding: 4px; border: 1px solid var(--fika-border-default); border-radius: 8px; color: var(--fika-text-primary); background: var(--fika-surface-card); cursor: pointer; }
+.fika-booking-calendar-navigation button { min-width: 44px; }
+.fika-booking-calendar button[aria-disabled="true"] { background: var(--fika-surface-subtle); color: var(--fika-text-secondary); cursor: not-allowed; }
+.fika-booking-calendar button[aria-pressed="true"] { border: 2px solid var(--fika-action-primary); }
+.fika-booking-calendar button:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
+.fika-booking-calendar p { margin: 8px 0 0; font-size: 14px; overflow-wrap: anywhere; }

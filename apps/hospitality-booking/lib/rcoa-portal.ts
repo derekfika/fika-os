@@ -1,3 +1,4 @@
+import { bookingDateIssue, bookingPolicyFor } from "@fika/server-shared/hospitality-effective-offering";
 import type { PortalMenuItem } from "./mnk-contract";
 
 /**
@@ -171,15 +172,15 @@ export function rcoaNoticeWarnings(draft: RcoaBookingDraft, menu: readonly Porta
   if (!isValidRcoaLondonWallTime(draft.event.eventDate, draft.event.startTime)) return ["This start time does not occur in Europe/London on the selected date. Choose another time."];
   const warnings: string[] = [];
   const workingDays = workingDaysUntil(draft.event.eventDate, now);
-  const hours = (londonWallTimeToUtc(draft.event.eventDate, draft.event.startTime) - now.getTime()) / 3_600_000;
   const event = rcoaEventTypes.find((candidate) => candidate.id === draft.occasion);
-  if (hours < 72) warnings.push("This request is within the standard 72-hour notice window. The team will confirm whether it can be accommodated.");
-  if (event?.noticeType === "large" && workingDays < 7) warnings.push("This event is inside the usual seven-working-day notice period.");
+  const cutoff = bookingDateIssue(draft.lines.flatMap(line => menu.filter(item => item.id === line.itemId && line.quantity > 0)), draft.event.eventDate, now.toISOString(), { site: "rcoa", occasion: draft.occasion, startTime: draft.event.startTime || undefined });
+  if (cutoff) warnings.push(cutoff.message);
+  if (event?.noticeType === "large" && workingDays < 7) warnings.push("This event is inside the required seven-working-day notice period.");
   if (Object.values(draft.dietaries).some((value) => typeof value === "number" && value > 0) && workingDays < 3) warnings.push("Dietary details are inside the usual three-working-day notice period.");
   const byId = new Map(menu.map((item) => [item.id, item]));
   for (const line of draft.lines) {
     const item = byId.get(line.itemId);
-    if (item?.noticeRequiredDays && workingDays < item.noticeRequiredDays) {
+    if (item?.noticeRequiredDays && !((item.bookingPolicy?.sandwich || bookingPolicyFor(item.id).sandwich) && item.noticeRequiredDays <= 3) && workingDays < item.noticeRequiredDays) {
       warnings.push(`${item.name} usually needs ${item.noticeRequiredDays} working days' notice.`);
     }
   }
@@ -233,6 +234,10 @@ export function validateRcoaStep(step: number, draft: RcoaBookingDraft, menu: re
     for (const [key, accepted] of Object.entries(draft.acknowledgements)) {
       if (!accepted) errors[`acknowledgement:${key}`] = "Confirm this acknowledgement before sending.";
     }
+  }
+  if (step >= 2 && validDate(draft.event.eventDate)) {
+    const cutoff = bookingDateIssue(draft.lines.flatMap(line => menu.filter(item => item.id === line.itemId && line.quantity > 0)), draft.event.eventDate, new Date().toISOString(), { site: "rcoa", occasion: draft.occasion, startTime: draft.event.startTime || undefined });
+    if (cutoff) errors.eventDate = cutoff.message;
   }
   return errors;
 }

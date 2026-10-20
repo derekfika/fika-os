@@ -1,3 +1,4 @@
+import { bookingPolicyFor, bookingServiceInstant } from "./hospitality-booking-cutoffs";
 /** Shared browser/Hub catalogue rules. Pure: no I/O or side effects. */
 export type CatalogueRules = {
   guestMinimumKind?: "event" | "product";
@@ -9,7 +10,7 @@ export type CatalogueRules = {
   productionConversion?: { multiplier: number; unit: string };
 };
 export type CatalogueChoice = { id: string; label: string; controlType?: string; selectionType?: string; required?: boolean; minimumQuantity?: number; options: Array<{ id: string; label: string }> };
-export type RuleItem = { quoteRequired?: boolean; id: string; name: string; minimumQuantity?: number; minimumGuests?: number; configuration?: { rules?: CatalogueRules; choices?: CatalogueChoice[] }; rules?: CatalogueRules; optionGroups?: CatalogueChoice[] };
+export type RuleItem = { bookingPolicy?: import("./hospitality-booking-cutoffs").BookingPolicy; quoteRequired?: boolean; id: string; name: string; minimumQuantity?: number; minimumGuests?: number; configuration?: { rules?: CatalogueRules; choices?: CatalogueChoice[] }; rules?: CatalogueRules; optionGroups?: CatalogueChoice[] };
 export type RuleLine = { itemId: string; quantity: number; choices?: Array<{ id?: unknown; value?: unknown; values?: unknown; quantities?: unknown }> };
 export function catalogueMinimums(item: RuleItem, gallagher: boolean) {
   const rules = item.rules || item.configuration?.rules;
@@ -17,17 +18,7 @@ export function catalogueMinimums(item: RuleItem, gallagher: boolean) {
     guests: gallagher && rules?.guestMinimumKind === "product" ? Math.min(item.minimumGuests ?? 1, 5) : item.minimumGuests ?? 1 };
 }
 /** Converts a UK wall-clock date/time to UTC; rejects nonexistent BST times rather than silently shifting them. */
-export function ukServiceInstant(date: string, time: string): number {
-  const target = Date.parse(`${date}T${time}:00Z`);
-  if (!Number.isFinite(target)) throw new Error("Choose a valid service date and time.");
-  const format = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  const parts = (value: number) => { const p = Object.fromEntries(format.formatToParts(value).map(x => [x.type, x.value])); return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:00Z`; };
-  let result = target;
-  for (let i = 0; i < 3; i++) result += target - Date.parse(parts(result));
-  if (parts(result) !== `${date}T${time}:00Z`) throw new Error("This UK service time does not exist because the clocks change. Choose another time.");
-  if (parts(result - 3600000) === `${date}T${time}:00Z` || parts(result + 3600000) === `${date}T${time}:00Z`) throw new Error("This UK service time is ambiguous because the clocks change. Choose another time.");
-  return result;
-}
+export const ukServiceInstant = bookingServiceInstant;
 export function validateCatalogueRules(items: RuleItem[], lines: RuleLine[], context: { gallagher: boolean; guestCount: number; eventDate: string; startTime: string; now: string }): void {
   const byId = new Map(items.map(x => [x.id, x]));
   if (new Set(lines.map(x => x.itemId)).size !== lines.length) throw new Error("Each menu item can appear only once.");
@@ -40,7 +31,7 @@ export function validateCatalogueRules(items: RuleItem[], lines: RuleLine[], con
     if (context.guestCount < minimum.guests) throw new Error(`${item.name} requires at least ${minimum.guests} guests.`);
     if (item.quoteRequired || rules?.indicativeFrom !== undefined) throw new Error(`${item.name} requires an agreed quote; its starting price is not a purchase price.`);
     if (rules?.noticeHours !== undefined && !Number.isFinite(Date.parse(context.now))) throw new Error("The booking clock is unavailable. Try again.");
-    if (rules?.noticeHours !== undefined && ukServiceInstant(context.eventDate, context.startTime) - Date.parse(context.now) < rules.noticeHours * 3600000) throw new Error(`${item.name} requires at least ${rules.noticeHours} hours notice.`);
+    if (rules?.noticeHours !== undefined && !((item.bookingPolicy?.sandwich || bookingPolicyFor(item.id).sandwich) && rules.noticeHours <= 72) && ukServiceInstant(context.eventDate, context.startTime) - Date.parse(context.now) < rules.noticeHours * 3600000) throw new Error(`${item.name} requires at least ${rules.noticeHours} hours notice.`);
     if (rules?.parentItemId) {
       const parent = lines.find(x => x.itemId === rules.parentItemId);
       if (!parent || parent.quantity < line.quantity || (rules.parentQuantity === "same" && parent.quantity !== line.quantity)) throw new Error(`${item.name} requires its parent package with a compatible quantity.`);

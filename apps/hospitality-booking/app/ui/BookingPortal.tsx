@@ -1,5 +1,7 @@
 "use client";
 
+import { BookingDatePicker, useBookingClock } from "./BookingDatePicker";
+import { assertBookingDate, bookingDateIssue, bookingPolicyFor, SANDWICH_NOTICE, type CutoffItem } from "@fika/server-shared/hospitality-effective-offering";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   BookingInput,
@@ -306,7 +308,9 @@ export default function BookingPortal({
   useEffect(() => {
     if (!categories.includes(category)) setCategory(categories[0] || "");
   }, [categories, category]);
-  const visible = menu.filter((item) => item.category === category);
+  const now = useBookingClock();
+  const fridayBlocked = (item: PortalMenuItem) => !!details.eventDate && new Date(details.eventDate + "T12:00:00Z").getUTCDay() === 5 && (item.bookingPolicy?.fridayUnavailable || bookingPolicyFor(item.id).fridayUnavailable);
+  const visible = menu.filter((item) => item.category === category && !fridayBlocked(item));
   const gallagher = isGallagherBooking({
     companyName: site.key === "angel-court" ? contact.clientCompany : contact.requesterCompany,
     email: contact.requesterEmail,
@@ -320,11 +324,6 @@ export default function BookingPortal({
   const total = selected.reduce(
     (sum, value) => sum + value.item.unitPrice * value.quantity,
     0,
-  );
-  const notice = Math.max(
-    0,
-    ...selected.map((value) => value.item.noticeRequiredDays || 0),
-    occasion === "event_catering" || occasion === "bespoke" ? 7 : 3,
   );
   const setQuantity = (item: PortalMenuItem, quantity: number) =>
     setLines((current) => {
@@ -428,6 +427,7 @@ export default function BookingPortal({
   };
   const checkGovernedRules = () => {
     try {
+      assertBookingDate(selected.map(x => x.item), details.eventDate, new Date().toISOString(), { site: site.key, occasion, startTime: details.startTime });
       validateCatalogueRules(selected.map(x => x.item), selected.map(x => ({ itemId: x.item.id, quantity: x.quantity, choices: Object.entries(x.choices).map(([id, value]) => typeof value === "object" && !Array.isArray(value) ? { id, quantities: value } : { id, value }) })), { gallagher, guestCount: details.guestCount, eventDate: details.eventDate, startTime: details.startTime, now: new Date().toISOString() });
       return true;
     } catch (error) { showValidation({ menu: { field: "menu", step: 2, message: (error as Error).message } }, (error as Error).message, 2); return false; }
@@ -708,12 +708,13 @@ export default function BookingPortal({
             event.preventDefault();
           }
         }}>
+          {details.eventDate && bookingDateIssue(selected.map(x => x.item), details.eventDate, now, { site: site.key, occasion, startTime: details.startTime }) && <p className="error" role="status">{bookingDateIssue(selected.map(x => x.item), details.eventDate, now, { site: site.key, occasion, startTime: details.startTime })!.message}</p>}
+          {selected.filter(x => fridayBlocked(x.item)).map(x => <p className="error" key={x.item.id}>Summer Roll Platters are unavailable on Friday. <button type="button" onClick={() => setLines(current => current.filter(line => line.itemId !== x.item.id))}>Remove {x.item.name}</button></p>)}
           {error && <p className="error" role="alert" aria-live="polite">{error}</p>}
           {step === 0 && (
             <Choose
               occasion={occasion}
               setOccasion={setOccasion}
-              notice={notice}
               errors={fieldErrors}
               clearError={clearValidation}
             />
@@ -727,6 +728,9 @@ export default function BookingPortal({
               setDetails={setDetails}
               gallagher={gallagher}
               errors={fieldErrors}
+              cutoffItems={selected.map(x => x.item)}
+              cutoffContext={{ site: site.key, occasion, startTime: details.startTime }}
+              now={now}
             />
           )}
           {step === 2 && (
@@ -844,13 +848,11 @@ function ResetModal({
 function Choose({
   occasion,
   setOccasion,
-  notice,
   errors,
   clearError,
 }: {
   occasion: string;
   setOccasion: (id: string) => void;
-  notice: number;
   errors: BookingFieldErrors;
   clearError: (field: string) => void;
 }) {
@@ -877,7 +879,7 @@ function Choose({
       <ValidationMessage field="occasion" errors={errors} />
       {occasion && (
         <p className="guidance">
-          Please allow at least {notice} working days for this type of order.
+          {SANDWICH_NOTICE} Product and event-specific notice requirements also apply.
           We’ll confirm availability with you.
         </p>
       )}
@@ -885,6 +887,7 @@ function Choose({
   );
 }
 function Details({
+  cutoffItems, cutoffContext, now,
   siteKey,
   contact,
   setContact,
@@ -893,6 +896,7 @@ function Details({
   gallagher,
   errors,
 }: {
+  cutoffItems: CutoffItem[]; cutoffContext: { site: string; occasion: string; startTime?: string }; now: string;
   siteKey: PortalSiteKey;
   contact: Record<string, string>;
   setContact: (value: any) => void;
@@ -983,18 +987,7 @@ function Details({
       </div>
       <h3 className="section-subheading">When and where?</h3>
       <div className="fields">
-        <label>
-          Date
-          <input
-            {...fieldA11y("eventDate", errors)}
-            data-booking-field="eventDate"
-            type="date"
-            value={details.eventDate}
-            onChange={(e) =>
-              setDetails({ ...details, eventDate: e.target.value })
-            }
-          />
-        </label>
+        <BookingDatePicker value={String(details.eventDate || "")} onChange={eventDate => setDetails({ ...details, eventDate })} items={cutoffItems} context={cutoffContext} now={now} />
         <label>
           Guests
           <input
