@@ -5,7 +5,8 @@ import { quantityFromInput, quantityMinimumMessage, stepQuantityDown, stepQuanti
 import { portalBookingId, type PortalMenuItem } from "@/lib/mnk-contract";
 import { hospitalitySiteThemeStyle, portalSite } from "@/lib/portal-sites";
 import { BookingDatePicker, useBookingClock } from "./BookingDatePicker";
-import { bookingPolicyFor, SANDWICH_NOTICE } from "@fika/server-shared/hospitality-effective-offering";
+import { bookingPolicyFor } from "@fika/server-shared/hospitality-effective-offering";
+import { SANDWICH_NOTICE_SHORT } from "../../lib/booking-notice";
 import StartAgainButton from "./StartAgainButton";
 import {
   addAllDayService,
@@ -597,7 +598,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                   </button>
                 </div>
                 <ErrorMessage field="occasion" errors={errors} />
-                {draft.occasion && <div className={styles.guidance} role="status"><strong>Notice guidance</strong><span>{currentEvent?.noticeType === "large" ? "Please allow at least seven working days for larger events." : SANDWICH_NOTICE} Availability will be confirmed by the hospitality team.</span></div>}
+                {draft.occasion && <div className={styles.guidance} role="status"><strong>Notice guidance</strong><span>{currentEvent?.noticeType === "large" ? "Please allow at least seven working days for larger events." : SANDWICH_NOTICE_SHORT}</span></div>}
               </section>
             )}
 

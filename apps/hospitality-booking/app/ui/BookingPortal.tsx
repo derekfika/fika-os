@@ -1,7 +1,8 @@
 "use client";
 
 import { BookingDatePicker, useBookingClock } from "./BookingDatePicker";
-import { assertBookingDate, bookingDateIssue, bookingPolicyFor, SANDWICH_NOTICE, type CutoffItem } from "@fika/server-shared/hospitality-effective-offering";
+import { SANDWICH_NOTICE_SHORT } from "../../lib/booking-notice";
+import { assertBookingDate, bookingDateIssue, bookingPolicyFor, type CutoffItem } from "@fika/server-shared/hospitality-effective-offering";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   BookingInput,
@@ -879,7 +880,7 @@ function Choose({
       <ValidationMessage field="occasion" errors={errors} />
       {occasion && (
         <p className="guidance">
-          {SANDWICH_NOTICE} Product and event-specific notice requirements also apply.
+          {SANDWICH_NOTICE_SHORT}{" "}
           We’ll confirm availability with you.
         </p>
       )}
@@ -986,61 +987,39 @@ function Details({
         <ValidationMessage field="invoiceReference" errors={errors} />
       </div>
       <h3 className="section-subheading">When and where?</h3>
-      <div className="fields">
-        <BookingDatePicker value={String(details.eventDate || "")} onChange={eventDate => setDetails({ ...details, eventDate })} items={cutoffItems} context={cutoffContext} now={now} />
-        <label>
-          Guests
-          <input
-            {...fieldA11y("guestCount", errors)}
-            data-booking-field="guestCount"
-            min="1"
-            type="number"
-            value={details.guestCount || ""}
-            onChange={(e) =>
-              setDetails({ ...details, guestCount: Number(e.target.value) })
-            }
-          />
-        </label>
-        <label>
-          Service time
-          <input
-            {...fieldA11y("startTime", errors)}
-            data-booking-field="startTime"
-            type="time"
-            value={details.startTime}
-            onChange={(e) =>
-              setDetails({ ...details, startTime: e.target.value })
-            }
-          />
-        </label>
-        <label>
-          End time <small>(optional)</small>
-          <input
-            {...fieldA11y("endTime", errors)}
-            data-booking-field="endTime"
-            type="time"
-            value={details.endTime}
-            onChange={(e) =>
-              setDetails({ ...details, endTime: e.target.value })
-            }
-          />
-        </label>
-        <label className="wide">
-          Floor, room or delivery point
-          <input
-            {...fieldA11y("location", errors)}
-            data-booking-field="location"
-            value={details.roomOrArea}
-            onChange={(e) =>
-              setDetails({ ...details, roomOrArea: e.target.value })
-            }
-          />
-        </label>
-        <ValidationMessage field="eventDate" errors={errors} />
-        <ValidationMessage field="guestCount" errors={errors} />
-        <ValidationMessage field="startTime" errors={errors} />
-        <ValidationMessage field="endTime" errors={errors} />
-        <ValidationMessage field="location" errors={errors} />
+      <div className="fika-form-grid">
+        <div className="fika-form-cell">
+          <BookingDatePicker value={String(details.eventDate || "")} onChange={eventDate => setDetails({ ...details, eventDate })} items={cutoffItems} context={cutoffContext} now={now} />
+          <ValidationMessage field="eventDate" errors={errors} />
+        </div>
+        <div className="fika-form-cell">
+          <label className="fika-form-field">
+            <span className="fika-form-label">Guests</span>
+            <input {...fieldA11y("guestCount", errors)} data-booking-field="guestCount" min="1" type="number" inputMode="numeric" value={details.guestCount || ""} onChange={(e) => setDetails({ ...details, guestCount: Number(e.target.value) })} />
+          </label>
+          <ValidationMessage field="guestCount" errors={errors} />
+        </div>
+        <div className="fika-form-cell">
+          <label className="fika-form-field">
+            <span className="fika-form-label">Service time</span>
+            <input {...fieldA11y("startTime", errors)} data-booking-field="startTime" type="time" value={details.startTime} onChange={(e) => setDetails({ ...details, startTime: e.target.value })} />
+          </label>
+          <ValidationMessage field="startTime" errors={errors} />
+        </div>
+        <div className="fika-form-cell">
+          <label className="fika-form-field">
+            <span className="fika-form-label">End time <small>(optional)</small></span>
+            <input {...fieldA11y("endTime", errors)} data-booking-field="endTime" type="time" value={details.endTime} onChange={(e) => setDetails({ ...details, endTime: e.target.value })} />
+          </label>
+          <ValidationMessage field="endTime" errors={errors} />
+        </div>
+        <div className="fika-form-cell fika-form-cell--wide">
+          <label className="fika-form-field">
+            <span className="fika-form-label">Floor, room or delivery point</span>
+            <input {...fieldA11y("location", errors)} data-booking-field="location" value={details.roomOrArea} onChange={(e) => setDetails({ ...details, roomOrArea: e.target.value })} />
+          </label>
+          <ValidationMessage field="location" errors={errors} />
+        </div>
       </div>
     </section>
   );
