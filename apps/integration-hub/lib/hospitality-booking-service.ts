@@ -1146,7 +1146,9 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
     vatTotal: 0,
     grossTotal: items.reduce((total, item) => total + item.lineTotal, 0),
   };
-  const cutoffChanged = current.order.eventType !== next.order.eventType || current.service.eventDate !== next.service.eventDate || current.service.startTime !== next.service.startTime || current.service.oplocId !== next.service.oplocId || groupHash(current.order.items.map(i => [i.itemId, i.quantity, i.choices])) !== groupHash(items.map(i => [i.itemId, i.quantity, i.choices]));
+  const cutoffChanged = current.order.eventType !== next.order.eventType ||
+    (["eventDate", "startTime", "endTime", "guestCount", "oplocId", "floorLevel", "roomOrArea", "deliveryPoint"] as const).some(key => (current.service[key] ?? "") !== (next.service[key] ?? "")) ||
+    groupHash(current.order.items.map(i => [i.itemId, i.quantity, i.choices])) !== groupHash(items.map(i => [i.itemId, i.quantity, i.choices]));
   if (cutoffChanged) await assertHospitalityBookingDate(transaction, next, now);
   next.notes = optional(patch.notes);
   next.deliveryChargeRequired = patch.deliveryChargeRequired ?? current.deliveryChargeRequired ?? true;

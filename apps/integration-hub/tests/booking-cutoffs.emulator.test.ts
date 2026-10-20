@@ -21,12 +21,12 @@ async function snapshot() {
 test("real Hub POST rejects prohibited dates before any persistence; current routing, sparse notices, retries and amendments", { skip: !enabled }, async () => {
   const reset = await fetch("http://127.0.0.1:8292/emulator/v1/projects/demo-fika-os/databases/(default)/documents", { method: "DELETE" });
   assert.ok(reset.ok);
-  const tag = randomUUID(), site = `oploc:cutoff:${tag}`, sandwich = `hospitality-menu-item:opaque:${tag}`, rolls = `hospitality-menu-item:${tag}:rice_paper_rolls`;
+  const tag = randomUUID(), site = `oploc:cutoff:${tag}`, sandwich = `hospitality-menu-item:opaque:${tag}`, rolls = `hospitality-menu-item:${tag}:rice_paper_rolls`, standard = `hospitality-menu-item:${tag}:coffee`;
   process.env.MNK_CANON_BRIDGE_TOKEN = "isolated-cutoff-test";
   const canonical = db.collection("integrationHubCanonical");
   const put = (id: string, entityType: string, record: object) => canonical.doc(stableDocumentId(id)).set({ canonicalId: id, entityType, lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active", ...record } });
   await put(site, "OPLOC", { approvedName: "Test site" });
-  for (const id of [sandwich, rolls]) {
+  for (const id of [sandwich, rolls, standard]) {
     await put(id, "Hospitality Menu Item", { name: "Test product", category: "Lunch", defaultMinimumQuantity: 1, ...(id === sandwich ? { configuration: { rules: { noticeHours: 72 } } } : {}), providerMappings: [{ provider: "angel-court-hospitality-brochure", sourceItemId: id }] });
     await put(id + ":price", "Hospitality Menu Price", { hospitalityMenuItemId: id, amount: 1, vatRate: 0, effectiveFrom: "2020-01-01" });
   }
@@ -38,7 +38,12 @@ test("real Hub POST rejects prohibited dates before any persistence; current rou
   const call = (body: unknown) => POST(new NextRequest("http://test/api/bookings/mnk", { method: "POST", headers: { "content-type": "application/json", "x-fika-mnk-bridge-token": "isolated-cutoff-test" }, body: JSON.stringify(body) }));
   const deny = async (body: unknown, code: string) => { const before = await snapshot(); const response = await call(body); assert.equal(response.status, 422); const result = await response.json(); assert.equal(result.error.code, code); assert.deepEqual(await snapshot(), before, "rejection must not write evidence, notifications, outbox, production or logistics"); };
   const tooSoon = addBusinessDate(earliestSandwichDelivery(new Date().toISOString()), -1);
-  await deny(payload(sandwich, tooSoon), [0, 6].includes(deliveryWeekday(tooSoon)) ? "DELIVERY_WEEKEND" : "SANDWICH_NOTICE");
+  const shortNoticeCode = [0, 6].includes(deliveryWeekday(tooSoon)) ? "DELIVERY_WEEKEND" : "BOOKING_NOTICE";
+  await deny(payload(sandwich, tooSoon), shortNoticeCode);
+  await deny(payload(standard, tooSoon), shortNoticeCode);
+  const beforeEmpty = await snapshot();
+  await assert.rejects(db.runTransaction(transaction => assertHospitalityBookingDate(transaction, { service: { portalSiteId: "angel-court", oplocId: site, eventDate: "2026-10-22", startTime: "09:00" }, order: { items: [], eventType: "lunch" } } as unknown as CanonicalBooking, "2026-10-20T18:30:00+01:00")), (error: any) => error.status === 422 && error.code === "BOOKING_NOTICE" && error.earliestDate === "2026-10-23");
+  assert.deepEqual(await snapshot(), beforeEmpty, "empty basket boundary checks do not write anything");
   let friday = future; while (deliveryWeekday(friday) !== 5) friday = addBusinessDate(friday);
   await deny(payload(rolls, friday), "SUMMER_ROLL_FRIDAY");
   await deny(payload(sandwich, addBusinessDate(friday)), "DELIVERY_WEEKEND");
@@ -55,20 +60,35 @@ test("real Hub POST rejects prohibited dates before any persistence; current rou
   const beforeAmend = await snapshot();
   await assert.rejects(executeBookingWorkflow(actor, current.canonicalId, current.version, { action: "amend", reason: "Test", patch }), (e: any) => e.status === 422);
   assert.deepEqual(await snapshot(), beforeAmend, "failed amendment cannot stale quotes or update downstream work");
+  const standardPayload = payload(standard, future), standardResponse = await call(standardPayload);
+  assert.equal(standardResponse.status, 200);
+  const standardCurrent = (await db.collection("fikaBookings").doc((await standardResponse.json()).canonicalBookingId).get()).data() as CanonicalBooking;
+  const standardPatch = { ...patch, client: standardCurrent.client, order: { items: [{ itemId: standard, itemName: "Coffee", unitPrice: 1, quantity: 10 }] } };
+  const beforeStandardAmend = await snapshot();
+  await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, { action: "amend", reason: "Standard booking date changed", patch: standardPatch }), (error: any) => error.status === 422 && error.code === shortNoticeCode);
+  assert.deepEqual(await snapshot(), beforeStandardAmend, "non-sandwich material amendments enforce the same minimum before writes");
   const groupId = "CUTOFF-GROUP-" + tag;
   const grouped = [];
-  for (const sequence of [1, 2]) { const p = payload(sandwich, future, { id: groupId, sequence, size: 2 }); const r = await call(p); assert.equal(r.status, 200); grouped.push((await db.collection("fikaBookings").doc(canonicalBookingId(p.bookingId, "angel-court")).get()).data() as any); }
-  const legacy = { ...current, service: { ...current.service, eventDate: earliestSandwichDelivery(new Date().toISOString()) } };
+  for (const sequence of [1, 2]) { const p = payload(standard, future, { id: groupId, sequence, size: 2 }); const r = await call(p); assert.equal(r.status, 200); grouped.push((await db.collection("fikaBookings").doc(canonicalBookingId(p.bookingId, "angel-court")).get()).data() as any); }
+  const legacy = { ...current, service: { ...current.service, eventDate: "2026-01-05" } };
   await ref.set(legacy);
+  const beforeHistoricalReplay = await snapshot();
+  assert.equal((await call({ ...accepted, event: { ...accepted.event, eventDate: legacy.service.eventDate } })).status, 200);
+  assert.deepEqual(await snapshot(), beforeHistoricalReplay, "an exact historical retry is grandfathered without any writes");
   const historicalPatch = { client: legacy.client, service: { eventDate: legacy.service.eventDate, startTime: legacy.service.startTime, guestCount: legacy.service.guestCount }, order: { items: legacy.order.items.map((item: any) => ({ itemId: item.itemId, itemName: item.itemName, unitPrice: item.unitPrice, quantity: item.quantity, ...(item.choices ? { choices: item.choices } : {}) })) }, notes: "Historical contact-only amendment" };
   await executeBookingWorkflow(actor, legacy.canonicalId, legacy.version, { action: "amend", reason: "Contact only", patch: historicalPatch });
   const historicalSaved = (await ref.get()).data() as CanonicalBooking;
+  for (const serviceChange of [{ guestCount: historicalSaved.service.guestCount + 1 }, { endTime: "10:00" }, { roomOrArea: "Changed destination" }]) {
+    const beforeMaterialHistory = await snapshot();
+    await assert.rejects(executeBookingWorkflow(actor, legacy.canonicalId, historicalSaved.version, { action: "amend", reason: "Operational service changed", patch: { ...historicalPatch, service: { ...historicalPatch.service, ...serviceChange } } }), (error: any) => error.status === 422);
+    assert.deepEqual(await snapshot(), beforeMaterialHistory, "guest counts, service windows and delivery locations are material, not historical contact-only exemptions");
+  }
   const historicalBefore = await snapshot();
   await assert.rejects(executeBookingWorkflow(actor, legacy.canonicalId, historicalSaved.version, { action: "amend", reason: "Event requirements changed", patch: { ...historicalPatch, order: { ...historicalPatch.order, eventType: "event_catering" } } }), (error: any) => error.status === 422);
   assert.deepEqual(await snapshot(), historicalBefore, "changing event requirements must not bypass notice enforcement");
   const oldItemId = "hospitality-menu-item:merged:" + tag;
   await db.collection("integrationHubHospitalityMenuItemMerges").doc(stableDocumentId(oldItemId)).set({ sourceMenuItemId: oldItemId, survivorMenuItemId: sandwich });
-  const mergedBooking = { ...historicalSaved, order: { ...historicalSaved.order, items: historicalSaved.order.items.map((item: any) => ({ ...item, itemId: oldItemId, menuItemId: oldItemId })) } };
+  const mergedBooking = { ...historicalSaved, service: { ...historicalSaved.service, eventDate: earliestSandwichDelivery(new Date().toISOString()) }, order: { ...historicalSaved.order, items: historicalSaved.order.items.map((item: any) => ({ ...item, itemId: oldItemId, menuItemId: oldItemId })) } };
   await assert.rejects(db.runTransaction(transaction => assertHospitalityBookingDate(transaction, mergedBooking as any, new Date().toISOString())), (error: any) => error.status === 422 && error.code === "PRODUCT_NOTICE");
   const oldRollId = "hospitality-menu-item:historical:rice_paper_rolls";
   await db.collection("integrationHubHospitalityMenuItemMerges").doc(stableDocumentId(oldRollId)).set({ sourceMenuItemId: oldRollId, survivorMenuItemId: sandwich });
@@ -81,6 +101,6 @@ test("real Hub POST rejects prohibited dates before any persistence; current rou
   assert.deepEqual(await existing.json(), { existingBookingIds: [oldRcoaId] });
   assert.deepEqual(await snapshot(), beforeExisting);
   const beforeGroup = await snapshot();
-  await assert.rejects(amendHospitalityBookingGroup(actor, { bookingGroupId: groupId, expectedSourceHash: groupCommercialState(groupId, grouped).sourceHash, reason: "Test", services: grouped.map(child => ({ bookingId: child.canonicalId, expectedVersion: child.version, patch: { ...patch, client: child.client } })) }, async () => {}), (e: any) => e.status === 422);
+  await assert.rejects(amendHospitalityBookingGroup(actor, { bookingGroupId: groupId, expectedSourceHash: groupCommercialState(groupId, grouped).sourceHash, reason: "Test", services: grouped.map(child => ({ bookingId: child.canonicalId, expectedVersion: child.version, patch: { ...standardPatch, client: child.client } })) }, async () => {}), (e: any) => e.status === 422 && e.code === shortNoticeCode);
   assert.deepEqual(await snapshot(), beforeGroup, "group amendment rejects atomically before any child writes");
 });

@@ -1,5 +1,7 @@
 /** Canonical booking-date policy. Pure: callers supply trusted catalogue metadata and a clock. */
-export const SANDWICH_NOTICE = "Sandwich orders require two preparation days before 12 noon, or three from 12 noon (Europe/London). Saturday is excluded from preparation; Sunday counts. Deliveries are Monday to Friday.";
+export const BOOKING_NOTICE = "Orders require two preparation days before 12 noon, or three from 12 noon (Europe/London). Saturday is excluded from preparation; Sunday counts. Deliveries are Monday to Friday. Some items require longer notice.";
+/** Compatibility for existing consumers; the minimum now applies to every booking. */
+export const SANDWICH_NOTICE = BOOKING_NOTICE;
 export type BookingPolicy = { sandwich?: boolean; fridayUnavailable?: boolean };
 export type CutoffItem = { id: string; bookingPolicy?: BookingPolicy; routing?: string; noticeRequiredDays?: number; rules?: { noticeHours?: number }; configuration?: { rules?: { noticeHours?: number } } };
 export type CutoffContext = { site?: string; occasion?: string; startTime?: string; allowedDeliveryDays?: readonly number[] };
@@ -38,13 +40,15 @@ export function bookingServiceInstant(date: string, time: string): number {
   if (parts(result - 3600000) === `${date}T${time}:00Z` || parts(result + 3600000) === `${date}T${time}:00Z`) throw new Error("This UK service time is ambiguous because the clocks change. Choose another time.");
   return result;
 }
-export function earliestSandwichDelivery(now: string): string {
+export function earliestBookingDelivery(now: string): string {
   const clock = ukBookingClock(now);
   let date = clock.date, remaining = clock.hour < 12 ? 2 : 3;
   while (remaining) { date = addBusinessDate(date); if (deliveryWeekday(date) !== 6) remaining--; }
   while ([0, 6].includes(deliveryWeekday(date))) date = addBusinessDate(date);
   return date;
 }
+/** Compatibility for existing callers of the former sandwich-only minimum. */
+export const earliestSandwichDelivery = earliestBookingDelivery;
 function workingDate(date: string, count: number) {
   while (count > 0) { date = addBusinessDate(date); if (![0, 6].includes(deliveryWeekday(date))) count--; }
   return date;
@@ -54,8 +58,8 @@ export function bookingDateIssue(items: readonly CutoffItem[], deliveryDate: str
   let weekday: number;
   try { weekday = deliveryWeekday(deliveryDate); } catch (error) { return { code: "INVALID_BOOKING_DATE", message: (error as Error).message }; }
   const policies = items.map(item => { const derived = bookingPolicyFor(item.id, item.routing); return { sandwich: derived.sandwich || item.bookingPolicy?.sandwich, fridayUnavailable: derived.fridayUnavailable || item.bookingPolicy?.fridayUnavailable }; });
-  const sandwich = policies.some(p => p.sandwich);
-  let earliest = sandwich ? earliestSandwichDelivery(now) : clock.date;
+  // The calendar must enforce this floor before any dishes have been chosen.
+  let earliest = earliestBookingDelivery(now);
   const largeEvent = ["event_catering", "drinks_reception", "bbq", "bespoke", "dining"].includes(context.occasion || "");
   const workingDays = Math.max(largeEvent ? context.site === "angel-court" ? 10 : 7 : 0, ...items.map(item => (item.noticeRequiredDays || 0) >= 10 ? item.noticeRequiredDays! : 0), 0);
   if (workingDays) earliest = [earliest, workingDate(clock.date, workingDays)].sort().pop()!;
@@ -80,7 +84,7 @@ export function bookingDateIssue(items: readonly CutoffItem[], deliveryDate: str
   if (weekday === 5 && policies.some(p => p.fridayUnavailable)) return { code: "SUMMER_ROLL_FRIDAY", message: "Summer Roll Platters are unavailable for Friday delivery. Amend the basket or choose another date.", earliestDate: earliest };
   if (deliveryDate < clock.date) return { code: "PAST_DELIVERY_DATE", message: "Choose a current or future delivery date.", earliestDate: earliest };
   if (noticeHours && bookingServiceInstant(deliveryDate, context.startTime || "00:00") < Date.parse(now) + noticeHours * 3600000) return { code: "PRODUCT_NOTICE", message: `This selection requires ${noticeHours} hours notice. Earliest available delivery: ${earliest}.`, earliestDate: earliest };
-  if (deliveryDate < earliest) return { code: workingDays && deliveryDate < workingDate(clock.date, workingDays) ? "PRODUCT_NOTICE" : "SANDWICH_NOTICE", message: workingDays && deliveryDate < workingDate(clock.date, workingDays) ? `This selection requires ${workingDays} working days' notice. Earliest available delivery: ${earliest}.` : `Too soon for sandwich orders. Earliest available delivery: ${earliest}.`, earliestDate: earliest };
+  if (deliveryDate < earliest) return { code: workingDays && deliveryDate < workingDate(clock.date, workingDays) ? "PRODUCT_NOTICE" : "BOOKING_NOTICE", message: workingDays && deliveryDate < workingDate(clock.date, workingDays) ? `This selection requires ${workingDays} working days' notice. Earliest available delivery: ${earliest}.` : `Too soon for this booking. Earliest available delivery: ${earliest}.`, earliestDate: earliest };
 }
 export function assertBookingDate(items: readonly CutoffItem[], date: string, now: string, context: CutoffContext = {}) {
   let issue: CutoffIssue | undefined;

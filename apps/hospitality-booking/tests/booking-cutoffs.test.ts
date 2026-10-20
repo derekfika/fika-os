@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { earliestSandwichDelivery, bookingDateIssue, assertBookingDate, bookingPolicyFor, validateCatalogueRules, resolveHospitalityOffering } from "@fika/server-shared/hospitality-effective-offering";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { BookingDatePicker } from "../app/ui/BookingDatePicker";
+import { earliestBookingDelivery, earliestSandwichDelivery, bookingDateIssue, assertBookingDate, bookingPolicyFor, validateCatalogueRules, resolveHospitalityOffering } from "@fika/server-shared/hospitality-effective-offering";
 const vectors = [
   ["2026-10-19T09:00:00+01:00", "2026-10-21"], ["2026-10-19T13:00:00+01:00", "2026-10-22"],
   ["2026-10-20T09:00:00+01:00", "2026-10-22"], ["2026-10-20T13:00:00+01:00", "2026-10-23"],
@@ -17,7 +20,14 @@ const vectors = [
 const sandwich = [{ id: "hospitality-menu-item:mnk:deli_sandwich_lunch" }];
 for (const [now, expected] of vectors) test(`shared date vector ${now}`, () => assert.equal(earliestSandwichDelivery(now), expected));
 for (const site of ["angel-court", "mnk", "cfc", "munich-re", "rcoa"]) test(`${site} uses the shared date vectors`, () => {
-  for (const [now, expected] of vectors) assert.equal(bookingDateIssue(sandwich, expected, now, { site }), undefined);
+  for (const items of [[], [{ id: "coffee" }], sandwich]) {
+    for (const [now, expected] of vectors) {
+      assert.equal(earliestBookingDelivery(now), expected);
+      assert.equal(bookingDateIssue(items, expected, now, { site }), undefined);
+      const prior = new Date(expected + "T12:00:00Z"); prior.setUTCDate(prior.getUTCDate() - 1);
+      assert.ok(bookingDateIssue(items, prior.toISOString().slice(0, 10), now, { site }), "the day before the minimum is never available, including empty baskets");
+    }
+  }
 });
 test("weekends, working-day notice, mixed baskets, site availability and Friday rolls fail closed", () => {
   const now = "2026-10-19T09:00:00+01:00";
@@ -28,9 +38,44 @@ test("weekends, working-day notice, mixed baskets, site availability and Friday 
   assert.equal(bookingDateIssue([{ id: "summer_rolls" }], "2026-11-13", now)?.code, "SUMMER_ROLL_FRIDAY");
   assert.equal(bookingDateIssue([{ id: "summer_rolls" }], "2026-11-12", now), undefined);
   assert.equal(bookingDateIssue(sandwich, "2026-10-21", now, { allowedDeliveryDays: [1, 2, 4] })?.code, "SITE_DELIVERY_DAY");
-  assert.equal(bookingDateIssue([{ id: "coffee" }], "2026-10-19", now), undefined, "unrelated products have no blanket sandwich notice");
+  assert.equal(bookingDateIssue([{ id: "coffee" }], "2026-10-19", now)?.code, "BOOKING_NOTICE", "standard non-sandwich bookings use the universal minimum");
   assert.throws(() => assertBookingDate(sandwich, "2026-10-20", now), (e: any) => e.status === 422 && e.earliestDate === "2026-10-21");
   assert.throws(() => assertBookingDate(sandwich, "2026-02-30", now));
+});
+
+test("empty and non-sandwich baskets enforce the universal noon boundary with generic errors", () => {
+  for (const items of [[], [{ id: "coffee" }], sandwich]) {
+    for (const [now, earliest] of [["2026-10-20T11:59:59+01:00", "2026-10-22"], ["2026-10-20T12:00:00+01:00", "2026-10-23"], ["2026-10-20T18:30:00+01:00", "2026-10-23"]]) {
+      for (const date of ["2026-10-20", "2026-10-21", ...(earliest === "2026-10-23" ? ["2026-10-22"] : [])]) {
+        const issue = bookingDateIssue(items, date, now);
+        assert.equal(issue?.code, "BOOKING_NOTICE"); assert.equal(issue?.earliestDate, earliest);
+        assert.doesNotMatch(issue!.message, /sandwich/i);
+        assert.throws(() => assertBookingDate(items, date, now), (error: any) => error.status === 422 && error.code === "BOOKING_NOTICE");
+      }
+      assert.equal(bookingDateIssue(items, earliest, now, { startTime: "07:00" }), undefined, "preparation days are not an elapsed-hour floor");
+    }
+  }
+});
+
+test("an empty basket retains stricter event and site requirements", () => {
+  const now = "2026-10-20T18:30:00+01:00";
+  const event = bookingDateIssue([], "2026-10-23", now, { site: "angel-court", occasion: "event_catering" });
+  assert.equal(event?.code, "PRODUCT_NOTICE"); assert.equal(event?.earliestDate, "2026-11-03");
+  assert.equal(bookingDateIssue([], "2026-10-23", now, { allowedDeliveryDays: [1, 2, 4] })?.code, "SITE_DELIVERY_DAY");
+  assert.equal(bookingDateIssue([], "2026-10-23", now, { allowedDeliveryDays: [] })?.code, "SITE_UNAVAILABLE");
+  assert.equal(bookingDateIssue([], "2026-10-24", now)?.code, "DELIVERY_WEEKEND");
+  assert.equal(bookingDateIssue([], "2026-10-25", now)?.code, "DELIVERY_WEEKEND");
+});
+
+test("the actual shared calendar marks an empty-basket selection invalid before dishes are chosen", () => {
+  for (const site of ["angel-court", "mnk", "cfc", "munich-re", "rcoa"]) {
+    const props = { items: [], onChange() {}, context: { site }, now: "2026-10-20T18:30:00+01:00" };
+    const invalid = renderToStaticMarkup(createElement(BookingDatePicker, { ...props, value: "2026-10-22" }));
+    assert.match(invalid, /aria-invalid="true"/); assert.match(invalid, /role="alert"/);
+    assert.match(invalid, /Too soon for this booking/); assert.match(invalid, /2026-10-23/); assert.doesNotMatch(invalid, /sandwich/i);
+    const valid = renderToStaticMarkup(createElement(BookingDatePicker, { ...props, value: "2026-10-23" }));
+    assert.doesNotMatch(valid, /role="alert"|aria-invalid="true"/);
+  }
 });
 test("routing-derived public metadata carries policy for opaque canonical IDs without exposing routing", () => {
   assert.equal(bookingPolicyFor("opaque-id", "cpu_sandwiches").sandwich, true);

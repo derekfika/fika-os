@@ -317,13 +317,16 @@ test("the shared event view feeds the existing contact, dietaries and notes scre
 });
 
 
-test("cutoff preflight rejects a later service before any writes, but stored historical children can replay", async () => {
+test("non-sandwich cutoff preflight rejects before any writes, but stored historical children can replay", async (context) => {
+  context.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-20T17:30:00Z") });
   const hub = freshHub(); const restore = installHub(hub);
   try {
-    const body = submissionFor(threeServiceDay());
-    for (const request of body.requests) request.event.eventDate = "2026-10-19";
+    let day = threeServiceDay();
+    for (const service of day.services) day = updateAllDayService(day, service.id, { category: "meeting_hospitality", lines: [{ itemId: "specialty_tea_coffee", quantity: service.guestCount, choices: {} }] });
+    const body = submissionFor(day);
+    for (const request of body.requests) request.event.eventDate = "2026-10-22";
     const denied = await postGroup(body);
-    assert.equal(denied.status, 422);
+    assert.equal(denied.status, 422, JSON.stringify(denied.body));
     assert.equal(hub.calls.length, 0);
     assert.equal(hub.bookings.size, 0);
     for (const request of body.requests) hub.bookings.set(request.bookingId, { canonicalBookingId: `booking:rcoa:${request.bookingId}`, payload: request as unknown as Record<string, unknown> });
