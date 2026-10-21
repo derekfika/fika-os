@@ -14,6 +14,15 @@ const lineage = (orderId: string, matrixContentHash: string): MatrixLineage => (
   matrixContentHash,
 });
 
+function extractSourceBetween(source: string, startMarker: string, endMarker: string): string {
+  const start = source.indexOf(startMarker);
+  assert.notEqual(start, -1, `Missing source start marker: ${startMarker}`);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  assert.notEqual(end, -1, `Missing source end marker: ${endMarker}`);
+  assert.ok(end > start, `Source end marker must follow start marker: ${endMarker}`);
+  return source.slice(start, end);
+}
+
 test("post-save signing snapshot captures fresh lineage for every master OPLOC", () => {
   const initial = lineage("order:haleon", "b".repeat(64));
   const freshHaleon = lineage("order:haleon", "c".repeat(64));
@@ -96,9 +105,9 @@ test("review edits remain local and row checkpoints are serialized before first 
   assert.match(matrix, /checkpointCompletionRef/);
   assert.match(matrix, /if \(checkpointCompletionRef\.current\) \{[\s\S]*await checkpointCompletionRef\.current/);
   assert.match(matrix, /const action = nextCheckedRows\.size === rows\.length \? "mark-planned" as const/);
-  const toggle = matrix.slice(matrix.indexOf("  const toggle ="), matrix.indexOf("\n\n  const retryCheckpoint", matrix.indexOf("  const toggle =")));
+  const toggle = extractSourceBetween(matrix, "  const toggle =", "  const retryCheckpoint =");
   assert.doesNotMatch(toggle, /setTimeout|startSave|fetch\(/);
-  const checkpoint = matrix.slice(matrix.indexOf("  const markChecked ="), matrix.indexOf("\n\n  const toggle =", matrix.indexOf("  const markChecked =")));
+  const checkpoint = extractSourceBetween(matrix, "  const markChecked =", "  const toggle =");
   assert.match(checkpoint, /startSave/);
   assert.match(matrix, /Retry save/);
   assert.match(matrix, /Confirm \$\{unresolvedCount\} as clear & mark checked/);
@@ -123,7 +132,7 @@ test("review session checkpoints only at row boundaries, never resaves between s
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
-  const toggle = matrix.slice(matrix.indexOf("  const toggle ="), matrix.indexOf("\n\n  const retryCheckpoint", matrix.indexOf("  const toggle =")));
+  const toggle = extractSourceBetween(matrix, "  const toggle =", "  const retryCheckpoint =");
   assert.equal(toggle.includes("fetch("), false);
   assert.doesNotMatch(toggle, /setTimeout|startSave/);
   assert.match(toggle, /persistDraft/);
