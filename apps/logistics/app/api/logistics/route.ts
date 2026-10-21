@@ -67,6 +67,7 @@ import { operationalDate } from "@/lib/date";
 import { addOperationalDays, operationalWeek } from "@/lib/week";
 import { addSchedulableMinutes, DEFAULT_DELIVERY_LOAD_DURATION_MINUTES, replaceLoadTiming, replaceStopTiming, resolveNextAvailableScheduleStart, validateOperationalSchedule } from "@/lib/scheduling";
 import { restoredStopStatus } from "@/lib/mobile-driver";
+import { validateRunJourneyTimes } from "@/lib/run-journey";
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import type { Transaction } from "firebase-admin/firestore";
 import type { PlannerWeekSummary } from "@/lib/planner-read-model";
@@ -312,7 +313,8 @@ async function classifyMissingProjection(serviceDate: string, cookie?: string) {
 }
 
 async function rebuildLogisticsProjection(serviceDate: string, actorId: string, lastChangeSequence?: number) {
-  return materialiseRebuildLogisticsProjection(serviceDate, actorId, lastChangeSequence);
+  const head = await getLogisticsSyncHead(serviceDate);
+  return materialiseRebuildLogisticsProjection(serviceDate, actorId, Math.max(lastChangeSequence || 0, head.sequence));
 }
 
 async function recordCanonicalLogisticsChange(input: {
@@ -715,6 +717,8 @@ async function handlePost(request: NextRequest) {
       confirmDirect?: boolean;
       loaded?: boolean;
       returnToCpuRequired?: boolean;
+      plannedCpuDepartureTime?: string;
+      plannedCpuReturnTime?: string;
       targetServiceDate?: string;
       plannedArrivalTime?: string;
       plannedWindow?: { startTime: string; endTime?: string };
@@ -1112,13 +1116,39 @@ async function handlePost(request: NextRequest) {
         const snap = await transaction.get(ref);
         if (!snap.exists) throw new HttpError(404, "Run not found.");
         const run = snap.data() as DeliveryRun;
+        authorizeRun(principal, run);
         if (run.version !== body.expectedRunVersion) throw new HttpError(409, "This run changed elsewhere. Refresh before changing its return setting.");
+        if (!body.returnToCpuRequired) throw new HttpError(422, "CPU return is mandatory for Logistics runs.");
         const next = { ...run, returnToCpuRequired: body.returnToCpuRequired, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "run-return-setting-changed", at: now, by, version: run.version + 1 }] };
         transaction.set(ref, next);
         return next;
       });
       await recordCanonicalLogisticsChange({ serviceDate: result.serviceDate, entityType: "run", entityId: result.canonicalId, changeType: "run-return-setting-changed", revision: result.version, actorId, by, changedAt: now });
       return NextResponse.json(result);
+    }
+    if (body.action === "update-run-timing" && typeof body.runId === "string") {
+      const current = await getRun(body.runId);
+      if (!current) throw new HttpError(404, "Run not found.");
+      if (body.expectedRunVersion === undefined) throw new HttpError(422, "A current run version is required.");
+      const departure = typeof body.plannedCpuDepartureTime === "string" && body.plannedCpuDepartureTime ? body.plannedCpuDepartureTime : undefined;
+      const returnTime = typeof body.plannedCpuReturnTime === "string" && body.plannedCpuReturnTime ? body.plannedCpuReturnTime : undefined;
+      const timingError = validateRunJourneyTimes({ departure, returnTime });
+      if (timingError) throw new HttpError(422, timingError);
+      const saved = await runAuthorizedTracedTransaction(async (transaction) => {
+        const ref = runs().doc(current.canonicalId);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists) throw new HttpError(404, "Run not found.");
+        const run = snapshot.data() as DeliveryRun;
+        authorizeRun(principal, run);
+        if (run.version !== body.expectedRunVersion) throw new HttpError(409, "This run changed elsewhere. Refresh before updating its journey times.");
+        if (!["draft", "planned"].includes(run.status)) throw new HttpError(422, "Journey times cannot change after a run is marked ready or departs.");
+        const { plannedCpuDepartureTime: _departure, plannedCpuReturnTime: _return, ...withoutTimes } = run;
+        const next: DeliveryRun = { ...withoutTimes, ...(departure ? { plannedCpuDepartureTime: departure, plannedCpuReturnTime: returnTime } : {}), version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: departure ? "run-journey-times-updated" : "run-journey-times-cleared", at: now, by, version: run.version + 1 }] };
+        transaction.set(ref, next);
+        return next;
+      }, principal, request.headers.get("cookie") || undefined);
+      await recordCanonicalLogisticsChange({ serviceDate: saved.serviceDate, entityType: "run", entityId: saved.canonicalId, changeType: departure ? "run-journey-times-updated" : "run-journey-times-cleared", revision: saved.version, actorId, by, changedAt: now });
+      return NextResponse.json(saved);
     }
     if (body.action === "reset-planning-day" && body.serviceDate) {
       const state = await listState(body.serviceDate);
@@ -1160,7 +1190,7 @@ async function handlePost(request: NextRequest) {
           driverLabel: requested.driverLabel,
           vehicleId: requested.vehicleId,
           vehicleLabel: logisticsVehicleLabel(requested.vehicleId!),
-          returnToCpuRequired: requested.returnToCpuRequired !== false,
+          returnToCpuRequired: true,
           orderedStopIds: [],
           version: 1,
           createdAt: now,
@@ -1216,7 +1246,7 @@ async function handlePost(request: NextRequest) {
           } else if (run.returnToCpuRequired !== false && !run.returnedToCpuAt) throw new HttpError(422, "Confirm the return to CPU first.");
           assertTransition(run.status, "completed"); status = "completed";
         }
-        const next = { ...run, status, ...(body.action === "confirm-returned-to-cpu" ? { returnToCpuPending: false, returnedToCpuAt: now, returnedToCpuBy: by } : {}), version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: body.action, at: now, by, version: run.version + 1 }] };
+        const next = { ...run, status, ...(body.action === "dispatch-run" ? { departedCpuAt: now } : {}), ...(body.action === "confirm-returned-to-cpu" ? { returnToCpuPending: false, returnedToCpuAt: now, returnedToCpuBy: by } : {}), version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: body.action, at: now, by, version: run.version + 1 }] };
         const changedLoads: import("@/lib/types").DeliveryLoad[] = [];
         if (body.action === "dispatch-run") for (const { load, lane } of work.legs) if (lane === "delivery") { const dispatched = { ...load, status: "dispatched" as const, dispatchedAt: now, version: load.version + 1, updatedAt: now, audit: [...load.audit, { action: "run-dispatched", at: now, by, version: load.version + 1 }] }; transaction.set(deliveryLoads().doc(load.id), dispatched); changedLoads.push(dispatched); }
         transaction.set(ref, next);
@@ -1311,8 +1341,10 @@ async function handlePost(request: NextRequest) {
       for (const requirement of requirements as FulfilmentRequirement[]) {
         const expected = body.expectedSourceVersions?.[requirement.canonicalId] ?? body.expectedSourceVersion;
         if (expected !== requirement.sourceVersion) throw new HttpError(409, "Fulfilment source changed. Refresh planning.");
-        if (requirement.status === "withdrawn" || requirement.destinationOplocId === CPU_SITE_OPLOC_ID || requirement.serviceDate !== target.serviceDate) throw new HttpError(422, "Requirement is not active delivery work for this run.");
+        if (requirement.destinationOplocId === CPU_SITE_OPLOC_ID || requirement.serviceDate !== target.serviceDate) throw new HttpError(422, "Requirement is not active delivery work for this run.");
       }
+      const assignable = (requirements as FulfilmentRequirement[]).filter(requirement => requirement.status === "ready_for_planning");
+      const skipped = (requirements as FulfilmentRequirement[]).filter(requirement => requirement.status !== "ready_for_planning").map(requirement => ({ requirementId: requirement.canonicalId, status: requirement.status, reason: requirement.status === "pending" ? "Fulfilment is not ready for planning." : requirement.status === "withdrawn" ? "Fulfilment requirement was withdrawn." : "Review the amended fulfilment source before assignment." }));
       const result = await runTracedTransaction(async transaction => {
         const run = (await transaction.get(runs().doc(target.canonicalId))).data() as DeliveryRun;
         if (run.version !== body.expectedRunVersion) throw new HttpError(409, "Run changed. Refresh planning.");
@@ -1322,7 +1354,7 @@ async function handlePost(request: NextRequest) {
         const datedJobs = await transaction.get(logisticsJobs().where("serviceDate", "==", run.serviceDate));
         const batch = { loads: new Map<string, import("@/lib/types").DeliveryLoad>() };
         const loads = [];
-        for (const requirement of requirements as FulfilmentRequirement[]) {
+        for (const requirement of assignable) {
           const prior = datedJobs.docs.map(doc => doc.data() as import("@/lib/types").LogisticsJob).find(job => job.requirementId === requirement.canonicalId || job.id === `logistics-job:${requirement.canonicalId}`);
           const job = logisticsJobForRequirement(requirement, prior, by, now);
           const scheduledTime = body.plannedWindow?.startTime || body.plannedArrivalTime || body.scheduledTime || job.requestedWindow?.startTime;
@@ -1336,7 +1368,7 @@ async function handlePost(request: NextRequest) {
       for (const item of result.filter(item => item.changed)) await appendLogisticsChange({ serviceDate: target.serviceDate, entityType: "assignment", entityId: item.jobId, relatedEntityId: item.load.id, changeType: "job-assigned", revision: item.load.version, changedAt: now, actorId });
       for (const item of result) if (item.plannedRun) await appendLogisticsChange({ serviceDate: target.serviceDate, entityType: "run", entityId: item.plannedRun.canonicalId, changeType: "canonical-work-planned", revision: item.plannedRun.version, changedAt: now, actorId });
       if (result.some(item => item.changed)) await rebuildLogisticsProjection(target.serviceDate, by);
-      return NextResponse.json({ loads: result.map(item => item.load), assigned: ids.length });
+      return NextResponse.json({ loads: result.map(item => item.load), assigned: assignable.length, skipped });
     }
     if (
       body.action === "unassign-requirement" &&

@@ -102,6 +102,12 @@ async function installRoutes(page: Page, options: {
   });
 }
 
+async function openStopDetails(page: Page) {
+  const details = page.locator("details").filter({ hasText: "Stop timing details" });
+  await expect(details).toHaveCount(1);
+  if (await details.getAttribute("open") === null) await details.locator("summary").click();
+}
+
 test.describe("Batch 5 production date isolation", () => {
   test("explicit service-date deep link overrides a remembered week for day and week hydration", async ({ page }) => {
     await page.addInitScript(({ date, weekCommencing }) => {
@@ -109,6 +115,7 @@ test.describe("Batch 5 production date isolation", () => {
     }, { date: MONDAY, weekCommencing: MONDAY });
     await installRoutes(page);
     await page.goto(`/?serviceDate=${NEXT_MONDAY}`);
+    await openStopDetails(page);
     await expect(page.getByTestId(`stop-stop:${NEXT_MONDAY}`)).toBeVisible();
     const week = page.getByRole("region", { name: "Operational week", exact: true });
     await expect(week.getByRole("button").first()).toContainText("Mon 12 Jan");
@@ -116,6 +123,7 @@ test.describe("Batch 5 production date isolation", () => {
     await expect(page.getByRole("region", { name: "Operational week navigation", exact: true })).toContainText("12 Jan");
     await expect(week.getByRole("button").first()).toContainText("2 loads");
     await page.reload();
+    await openStopDetails(page);
     await expect(week.getByRole("button").first()).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId(`stop-stop:${MONDAY}`)).toHaveCount(0);
   });
@@ -130,6 +138,7 @@ test.describe("Batch 5 production date isolation", () => {
     const week = page.getByRole("region", { name: "Operational week", exact: true });
     await expect(week.getByRole("button").nth(0)).toHaveAttribute("aria-pressed", "true");
     await week.getByRole("button").nth(1).click();
+    await openStopDetails(page);
     const tuesdayCard = page.getByTestId(`stop-stop:${TUESDAY}`);
     await expect(tuesdayCard).toBeVisible();
     await expect(week.getByRole("button").nth(1)).toHaveAttribute("aria-pressed", "true");
@@ -139,10 +148,12 @@ test.describe("Batch 5 production date isolation", () => {
     await expect(page.getByTestId(`stop-stop:${MONDAY}`)).toHaveCount(0);
 
     await week.getByRole("button").nth(0).click();
+    await openStopDetails(page);
     const mondayCard = page.getByTestId(`stop-stop:${MONDAY}`);
     await expect(mondayCard).toBeVisible();
     await week.getByRole("button").nth(1).click();
     await week.getByRole("button").nth(0).click();
+    await openStopDetails(page);
     await expect(mondayCard).toBeVisible();
     await expect(week.getByRole("button").nth(0)).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId(`stop-stop:${TUESDAY}`)).toHaveCount(0);
@@ -171,6 +182,7 @@ test.describe("Batch 5 production date isolation", () => {
   test("changing service date closes the prior day's Inspector selection", async ({ page }) => {
     await installRoutes(page);
     await page.goto(`/?serviceDate=${MONDAY}`);
+    await openStopDetails(page);
     const mondayCard = page.getByTestId(`stop-stop:${MONDAY}`);
     await expect(mondayCard).toBeVisible();
     await mondayCard.click();
@@ -178,6 +190,7 @@ test.describe("Batch 5 production date isolation", () => {
     await expect(inspector).toBeVisible();
 
     await page.getByRole("region", { name: "Operational week", exact: true }).getByRole("button").nth(1).click();
+    await openStopDetails(page);
     await expect(page.getByTestId(`stop-stop:${TUESDAY}`)).toBeVisible();
     await expect(inspector).toHaveCount(0);
   });
@@ -192,6 +205,7 @@ test.describe("Batch 5 production date isolation", () => {
       scheduleMutationReturned: () => mutationReturned.resolve(),
     });
     await page.goto(`/?serviceDate=${MONDAY}`);
+    await openStopDetails(page);
     const mondayCard = page.getByTestId(`stop-stop:${MONDAY}`);
     await expect(mondayCard).toBeVisible();
     await mondayCard.click();
@@ -201,6 +215,7 @@ test.describe("Batch 5 production date isolation", () => {
     await mutationStarted.promise;
 
     await page.getByRole("region", { name: "Operational week", exact: true }).getByRole("button").nth(1).click();
+    await openStopDetails(page);
     const tuesdayCard = page.getByTestId(`stop-stop:${TUESDAY}`);
     await expect(tuesdayCard).toBeVisible();
     mutationGate.resolve();

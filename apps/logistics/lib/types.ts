@@ -85,6 +85,12 @@ export type DeliveryRun = {
   vehicleId?: import("../../shared/logistics-authority").LogisticsVehicleId;
   canonicalId: string;
   serviceDate: string;
+  /** Logistics-owned planned CPU departure, in Europe/London wall time. */
+  plannedCpuDepartureTime?: string;
+  /** Logistics-owned planned CPU return, in Europe/London wall time. */
+  plannedCpuReturnTime?: string;
+  /** Actual departure timestamp, recorded when the canonical run is dispatched. */
+  departedCpuAt?: string;
   status: "draft" | "planned" | "ready" | "dispatched" | "completed";
   returnToCpuRequired?: boolean;
   returnToCpuPending?: boolean;
@@ -188,8 +194,8 @@ export type LogisticsChangeEvent = {
 };
 
 export type LogisticsProjectionJob = Pick<LogisticsJob, "sourceVersion" | "requirementId" | "id" | "sourceType" | "sourceId" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "requestedWindow" | "productionReadiness" | "deliveryStatus" | "collectionStatus" | "contents" | "notes" | "workstream"> & { version?: number; totalUnits: number; assignedLoadId?: string };
-export type LogisticsProjectionLoad = Pick<DeliveryLoad, "id" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "scheduledTime" | "scheduledEnd" | "collectionRequired" | "collectionScheduledTime" | "collectionScheduledEnd" | "collectionRunId" | "loaded" | "status" | "driverId" | "vehicleId" | "runId" | "deliveryExecution" | "collectionExecution"> & { version?: number; loadVersions?: Record<string, number>; loadIds?: string[]; jobs: Array<Pick<LogisticsJob, "sourceVersion" | "requirementId" | "version" | "id" | "sourceType" | "sourceId" | "collectionStatus" | "deliveryStatus" | "productionReadiness" | "contents" | "notes" | "workstream" | "requestedWindow"> & { totalUnits: number }>; jobCount: number; totalUnits: number; collectedCount: number; readiness: "ready" | "attention" | "awaiting_collection" };
-export type LogisticsProjectionRun = Pick<DeliveryRun, "canonicalId" | "status" | "driverId" | "driverLabel" | "vehicleLabel" | "vehicleId"> & Partial<Pick<DeliveryRun, "serviceDate" | "returnToCpuRequired" | "returnToCpuPending" | "returnedToCpuAt" | "returnedToCpuBy" | "orderedStopIds" | "version" | "createdAt" | "updatedAt" | "audit">>;
+export type LogisticsProjectionLoad = Pick<DeliveryLoad, "id" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "scheduledTime" | "scheduledEnd" | "collectionRequired" | "collectionScheduledTime" | "collectionScheduledEnd" | "collectionRunId" | "loaded" | "status" | "driverId" | "vehicleId" | "runId" | "deliveryExecution" | "collectionExecution"> & { version?: number; loadVersions?: Record<string, number>; loadIds?: string[]; jobs: Array<Pick<LogisticsJob, "sourceVersion" | "requirementId" | "version" | "id" | "sourceType" | "sourceId" | "collectionStatus" | "deliveryStatus" | "productionReadiness" | "contents" | "notes" | "workstream" | "requestedWindow"> & { totalUnits: number; assignedLoadId?: string }>; jobCount: number; totalUnits: number; collectedCount: number; readiness: "ready" | "attention" | "awaiting_collection" };
+export type LogisticsProjectionRun = Pick<DeliveryRun, "canonicalId" | "status" | "driverId" | "driverLabel" | "vehicleLabel" | "vehicleId"> & Partial<Pick<DeliveryRun, "serviceDate" | "plannedCpuDepartureTime" | "plannedCpuReturnTime" | "departedCpuAt" | "returnToCpuRequired" | "returnToCpuPending" | "returnedToCpuAt" | "returnedToCpuBy" | "orderedStopIds" | "version" | "createdAt" | "updatedAt" | "audit">>;
 export type LogisticsProjectionState = "CURRENT" | "STALE" | "PARTIAL" | "UNAVAILABLE" | "MISSING" | "VALID_EMPTY";
 export type LogisticsProjectionCompleteness = { fulfilment: "complete" | "unavailable"; cpu: "complete" | "unavailable" | "not_required"; oploc: "complete" | "unavailable" };
 export type LogisticsSourceLineage = { sourceDomain: string; sourceEntityId: string; sourceVersion: number; sourceContentHash?: string; changedAt?: string };

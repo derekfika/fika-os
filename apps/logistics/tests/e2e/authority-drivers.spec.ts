@@ -112,7 +112,7 @@ test.describe("Shared Logistics session and vehicle execution", () => {
   });
   test("scheduled work is ready without a driver login", async ({ page }) => {
     const mock = await mockAuthority(page, { restricted: true }); scheduledWork(mock);
-    await page.goto("/?serviceDate=" + date); await page.getByRole("button", { name: "Run details" }).first().click();
+    await page.goto("/?serviceDate=" + date); await page.getByRole("button", { name: "Van 1 run needs CPU journey times" }).click();
     const inspector = page.getByRole("complementary", { name: "Details inspector" });
     await expect(inspector.getByRole("button", { name: "Mark ready", exact: true })).toBeEnabled();
     await inspector.getByRole("button", { name: "Mark ready", exact: true }).click();
@@ -121,7 +121,7 @@ test.describe("Shared Logistics session and vehicle execution", () => {
   test("historical driver snapshot remains visible without blocking readiness", async ({ page }) => {
     const mock = await mockAuthority(page, { restricted: true }); scheduledWork(mock);
     Object.assign(mock.projection.runs[0], { driverId: "person:historic", driverLabel: "Historic Driver" });
-    await page.goto("/?serviceDate=" + date); await page.getByRole("button", { name: "Run details" }).first().click();
+    await page.goto("/?serviceDate=" + date); await page.getByRole("button", { name: "Van 1 run needs CPU journey times" }).click();
     const inspector = page.getByRole("complementary", { name: "Details inspector" });
     await expect(inspector.getByRole("strong").filter({ hasText: "Historic Driver" })).toBeVisible();
     await expect(inspector.getByRole("button", { name: "Mark ready", exact: true })).toBeEnabled();

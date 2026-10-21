@@ -4,10 +4,10 @@ import { createConnection } from "node:net";
 import { before, test } from "node:test";
 import { NextRequest } from "next/server";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
-import type { DeliveryRun, DeliveryStop, MovementRequest } from "../lib/types";
+import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsAssignment, LogisticsDayProjection, LogisticsJob, MovementRequest } from "../lib/types";
 import { GET, POST } from "../app/api/logistics/route";
 import { db } from "../lib/firebase";
-import { collectionPreferences, movements, runs, stops } from "../lib/store";
+import { collectionPreferences, deliveryLoads, logisticsAssignments, logisticsChanges, logisticsDayCursorId, logisticsDayProjections, logisticsJobs, logisticsChangeCursor, movements, runs, stops } from "../lib/store";
 
 before(async () => {
   const [host, rawPort] = (process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8085").split(":");
@@ -19,6 +19,7 @@ before(async () => {
     socket.once("error", fail);
     socket.once("connect", () => { socket.end(); resolve(); });
   });
+  await cleanup("integration-logistics:");
 });
 
 const serviceDate = "2099-01-01";
@@ -108,6 +109,8 @@ const markRunLoaded = async (runId: string) => {
   let currentRun = (await runs().doc(runId).get()).data() as DeliveryRun;
   const snapshots = await stops().where("runId", "==", runId).get();
   for (const snapshot of snapshots.docs) {
+    const stop = snapshot.data() as DeliveryStop;
+    if (stop.linkedOperation === "collection" || stop.movementType === "collection") continue;
     const result = await responseBody({
       action: "mark-stop-loaded",
       runId,
@@ -118,6 +121,14 @@ const markRunLoaded = async (runId: string) => {
     assert.equal(result.response.status, 200);
     currentRun = result.body.run as DeliveryRun;
   }
+  const canonicalLoads = (await deliveryLoads().where("serviceDate", "==", currentRun.serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).filter((load) => load.runId === runId && load.status !== "cancelled");
+  for (const load of canonicalLoads) {
+    const assignments = (await logisticsAssignments().where("loadId", "==", load.id).get()).docs.map((doc) => doc.data() as LogisticsAssignment);
+    const jobs = await Promise.all(assignments.map((assignment) => logisticsJobs().doc(assignment.jobId).get()));
+    const expectedJobVersions = Object.fromEntries(jobs.filter((snapshot) => snapshot.exists).map((snapshot) => { const job = snapshot.data() as LogisticsJob; return [job.id, job.version]; }));
+    const result = await responseBody({ action: "mark-delivery-load-loaded", loadId: load.id, expectedRunVersion: currentRun.version, expectedLoadVersion: load.version, expectedJobVersions });
+    assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  }
   return currentRun;
 };
 const seed = async (
@@ -127,13 +138,25 @@ const seed = async (
   await collection.doc(String(value.canonicalId)).set(value);
 };
 async function cleanup(id: string) {
-  for (const collection of [runs(), stops(), movements()]) {
-    const snapshot = await collection
-      .where("canonicalId", ">=", id)
-      .where("canonicalId", "<", `${id}\uf8ff`)
-      .get();
-    await Promise.all(snapshot.docs.map((doc) => doc.ref.delete()));
-  }
+  const [runRows, stopRows, movementRows, allJobs, allLoads, allAssignments, eventRows] = await Promise.all([
+    runs().where("canonicalId", ">=", id).where("canonicalId", "<", `${id}\uf8ff`).get(),
+    stops().where("canonicalId", ">=", id).where("canonicalId", "<", `${id}\uf8ff`).get(),
+    movements().where("canonicalId", ">=", id).where("canonicalId", "<", `${id}\uf8ff`).get(),
+    logisticsJobs().where("serviceDate", "==", serviceDate).get(),
+    deliveryLoads().where("serviceDate", "==", serviceDate).get(),
+    logisticsAssignments().where("serviceDate", "==", serviceDate).get(),
+    logisticsChanges().where("serviceDate", "==", serviceDate).get(),
+  ]);
+  const jobRows = allJobs.docs.filter((doc) => String(doc.data().id || "").startsWith(`logistics-job:${id}`) || String(doc.data().requirementId || "").startsWith(id) || String(doc.data().sourceId || "").startsWith(id));
+  const ownedJobIds = new Set(jobRows.map((doc) => String(doc.data().id || doc.id)));
+  const loadRows = allLoads.docs.filter((doc) => String(doc.data().runId || "").startsWith(id) || String(doc.data().collectionRunId || "").startsWith(id));
+  const ownedLoadIds = new Set(loadRows.map((doc) => String(doc.data().id || doc.id)));
+  const assignmentRows = allAssignments.docs.filter((doc) => ownedJobIds.has(String(doc.data().jobId || "")) || ownedLoadIds.has(String(doc.data().loadId || "")));
+  const ownedEvents = eventRows.docs.filter((doc) => String(doc.data().entityId || "").includes(id) || String(doc.data().relatedEntityId || "").includes(id) || doc.data().changeType === "collection-preference-changed" && String(doc.data().entityId || "").startsWith(serviceDate));
+  await Promise.all([...runRows.docs, ...stopRows.docs, ...movementRows.docs, ...jobRows, ...loadRows, ...assignmentRows, ...ownedEvents].map((doc) => doc.ref.delete()));
+  await Promise.all([logisticsDayProjections().doc(serviceDate).delete(), logisticsChangeCursor().doc(logisticsDayCursorId(serviceDate)).delete()]);
+  upstreamRequirements = [];
+  failFulfilment = false;
 }
 let upstreamRequirements: FulfilmentRequirement[] = [];
 let failFulfilment = false;
@@ -155,7 +178,7 @@ globalThis.fetch = (async (input: RequestInfo | URL) => {
           status: 200,
           headers: { "content-type": "application/json" },
         });
-  if (url.includes("/api/oplocs"))
+  if (url.includes("/api/internal/oplocs"))
     return new Response(
       JSON.stringify({
         oplocs: oplocs.map((item) => ({
@@ -182,9 +205,38 @@ test("create-run persists a versioned audited run in the emulator", async (t) =>
   assert.equal(saved.canonicalId, runId);
   assert.equal(saved.version, 1);
   assert.equal(saved.audit[0].action, "run-created");
+  assert.equal(saved.returnToCpuRequired, true);
   const duplicate = await responseBody({ action: "create-run", run: run(runId) });
   assert.equal(duplicate.response.status, 409);
   assert.equal(((await runs().doc(runId).get()).data() as DeliveryRun).audit.length, 1);
+  const invalidTimes = await responseBody({ action: "update-run-timing", runId, plannedCpuDepartureTime: "07:10", plannedCpuReturnTime: "16:00", expectedRunVersion: 1 });
+  assert.equal(invalidTimes.response.status, 422);
+  assert.equal(((await runs().doc(runId).get()).data() as DeliveryRun).version, 1);
+  const timed = await responseBody({ action: "update-run-timing", runId, plannedCpuDepartureTime: "07:00", plannedCpuReturnTime: "16:00", expectedRunVersion: 1 });
+  assert.equal(timed.response.status, 200);
+  const updated = (await runs().doc(runId).get()).data() as DeliveryRun;
+  assert.equal(updated.plannedCpuDepartureTime, "07:00");
+  assert.equal(updated.plannedCpuReturnTime, "16:00");
+  assert.equal(updated.version, 2);
+  assert.equal(updated.audit.at(-1)?.action, "run-journey-times-updated");
+});
+
+test("legacy Runs without CPU journey timing remain readable without being rewritten", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const legacy = run(`${id}:legacy-run`);
+  await seed(runs(), legacy);
+
+  const response = await GET(new NextRequest(`http://localhost/api/logistics?serviceDate=${serviceDate}`));
+  assert.equal(response.status, 200);
+  const body = await response.json() as { runs: DeliveryRun[]; planner?: { runs: Array<{ runId: string; plannedCpuDepartureTime?: string; plannedCpuReturnTime?: string }> } };
+  const readable = body.runs.find((item) => item.canonicalId === legacy.canonicalId);
+  assert.deepEqual(readable, legacy);
+  const plannerRun = body.planner?.runs.find((item) => item.runId === legacy.canonicalId);
+  assert.ok(plannerRun, "the planner read model must include legacy Runs");
+  assert.equal(plannerRun.plannedCpuDepartureTime, undefined);
+  assert.equal(plannerRun.plannedCpuReturnTime, undefined);
+  assert.deepEqual((await runs().doc(legacy.canonicalId).get()).data(), legacy);
 });
 
 test("movement creation is create-only and binds the authenticated server actor", async (t) => {
@@ -200,7 +252,7 @@ test("movement creation is create-only and binds the authenticated server actor"
   assert.equal(duplicate.response.status, 409);
 });
 
-test("collection-required assignment schedules one linked collection after the delivery", async (t) => {
+test("collection-required assignment persists canonical load, job, assignment and projected legs", async (t) => {
   const id = prefix();
   t.after(async () => { upstreamRequirements = []; await collectionPreferences().doc(encodeURIComponent(`${serviceDate}:oploc:integration-destination:10:15-10:45`)).delete(); await cleanup(id); });
   const req = requirement(`${id}:load`);
@@ -211,51 +263,86 @@ test("collection-required assignment schedules one linked collection after the d
   assert.equal((await responseBody({ action: "set-collection-required", by: "integration-test", groupKey, serviceDate, collectionRequired: true })).response.status, 200);
   const assigned = await responseBody({ action: "assign-group", by: "integration-test", runId, expectedRunVersion: 1, requirementIds: [req.canonicalId], expectedSourceVersions: { [req.canonicalId]: req.sourceVersion }, collectionRequired: true, plannedArrivalTime: "10:15" });
   assert.equal(assigned.response.status, 200);
-  let savedRun = (await runs().doc(runId).get()).data() as DeliveryRun;
-  let savedStops = (await stops().where("runId", "==", runId).get()).docs.map((doc) => doc.data() as DeliveryStop);
-  assert.equal(savedStops.filter((stop) => stop.linkedOperation === "collection").length, 1);
-  const delivery = savedStops.find((stop) => stop.linkedOperation === "delivery")!;
-  const collection = savedStops.find((stop) => stop.linkedOperation === "collection")!;
-  assert.equal(collection.linkedStopId, delivery.canonicalId);
-  assert.equal(collection.plannedArrivalTime, "16:15");
-  assert.equal(savedRun.orderedStopIds.length, 2);
-  const scheduled = await responseBody({ action: "schedule-stop", by: "integration-test", runId, stopId: collection.canonicalId, plannedArrivalTime: "13:00", expectedRunVersion: savedRun.version, expectedStopVersion: collection.version });
-  assert.equal(scheduled.response.status, 200);
-  savedRun = (await runs().doc(runId).get()).data() as DeliveryRun;
-  savedStops = (await stops().where("runId", "==", runId).get()).docs.map((doc) => doc.data() as DeliveryStop);
-  const returnResult = await responseBody({ action: "return-stop-to-planning", by: "integration-test", runId, stopId: delivery.canonicalId, expectedRunVersion: savedRun.version, expectedStopVersion: savedStops.find((stop) => stop.canonicalId === delivery.canonicalId)!.version });
-  assert.equal(returnResult.response.status, 200);
-  assert.equal((await stops().where("runId", "==", runId).get()).size, 0);
-  assert.equal((await runs().doc(runId).get()).data()?.orderedStopIds.length, 0);
-  assert.equal((await runs().doc(runId).get()).exists, true);
-  assert.equal((await runs().doc(runId).get()).data()?.audit.at(-1).action, "returned-to-planning");
+  const initialLoad = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).find((load) => load.runId === runId)!;
+  const collectionScheduled = await responseBody({ action: "reschedule-delivery-load", lane: "collection", loadId: initialLoad.id, targetRunId: runId, scheduledTime: "16:15", expectedLoadVersion: initialLoad.version });
+  assert.equal(collectionScheduled.response.status, 200, JSON.stringify(collectionScheduled.body));
+  const savedRun = (await runs().doc(runId).get()).data() as DeliveryRun;
+  const savedLoads = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).filter((load) => load.runId === runId);
+  const savedJobs = (await logisticsJobs().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as LogisticsJob).filter((job) => job.requirementId === req.canonicalId);
+  const savedAssignments = (await logisticsAssignments().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as LogisticsAssignment).filter((assignment) => assignment.jobId === savedJobs[0]?.id);
+  const projection = (await logisticsDayProjections().doc(serviceDate).get()).data() as LogisticsDayProjection;
+  assert.equal((await stops().where("runId", "==", runId).get()).size, 0, "fulfilment assignment must not create native DeliveryStop records");
+  assert.equal(savedRun.status, "planned");
+  assert.equal(savedRun.version, 2);
+  assert.equal(savedLoads.length, 1);
+  assert.equal(savedLoads[0].collectionRequired, true);
+  assert.equal(savedLoads[0].collectionScheduledTime, "16:15");
+  assert.deepEqual(savedJobs.map((job) => job.requirementId), [req.canonicalId]);
+  assert.equal(savedJobs[0].activeLoadId, savedLoads[0].id);
+  assert.equal(savedAssignments.length, 1);
+  assert.equal(savedAssignments[0].loadId, savedLoads[0].id);
+  const projectedLoad = projection.deliveryLoads.find((load) => load.id === savedLoads[0].id)!;
+  assert.equal(projectedLoad.jobCount, 1);
+  assert.equal(projectedLoad.collectionRequired, true);
+  assert.equal(projectedLoad.collectionScheduledTime, "16:15");
+  const dayResponse = await GET(new NextRequest(`http://localhost/api/logistics?projection=1&serviceDate=${serviceDate}`));
+  assert.equal(dayResponse.status, 200);
+  const day = await dayResponse.json() as { stops: Array<Pick<DeliveryStop, "movementType"> & { canonicalLoadIds?: string[] }> };
+  assert.deepEqual(day.stops.filter((stop) => stop.canonicalLoadIds?.includes(savedLoads[0].id)).map((stop) => stop.movementType).sort(), ["collection", "delivery"]);
 });
 
-test("collection can be postponed to a future run day and remains outstanding", async (t) => {
+test("single-load rescheduling moves one canonical load while a same-OPLOC sibling remains assigned", async (t) => {
+  const id = prefix();
+  t.after(async () => { upstreamRequirements = []; await cleanup(id); });
+  const firstRunId = `${id}:run:first`;
+  const secondRunId = `${id}:run:second`;
+  const firstRequirement = requirement(`${id}:first`);
+  const secondRequirement = requirement(`${id}:second`);
+  upstreamRequirements = [firstRequirement, secondRequirement];
+  await seed(runs(), run(firstRunId));
+  await seed(runs(), run(secondRunId));
+  for (const [req, plannedArrivalTime] of [[firstRequirement, "10:15"], [secondRequirement, "11:15"]] as const) {
+    const currentRun = (await runs().doc(firstRunId).get()).data() as DeliveryRun;
+    const assigned = await responseBody({ action: "assign-group", runId: firstRunId, expectedRunVersion: currentRun.version, requirementIds: [req.canonicalId], expectedSourceVersions: { [req.canonicalId]: req.sourceVersion }, plannedArrivalTime });
+    assert.equal(assigned.response.status, 200, JSON.stringify(assigned.body));
+  }
+  const before = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).filter((load) => load.runId === firstRunId);
+  assert.equal(before.length, 2);
+  assert.equal(before[0].destinationOplocId, before[1].destinationOplocId);
+  const moving = before.find((load) => load.scheduledTime === "10:15")!;
+  const sibling = before.find((load) => load.id !== moving.id)!;
+  const moved = await responseBody({ action: "reschedule-delivery-load", loadId: moving.id, expectedLoadVersion: moving.version, targetRunId: secondRunId, lane: "delivery", scheduledTime: "10:15" });
+  assert.equal(moved.response.status, 200, JSON.stringify(moved.body));
+  const savedMoving = (await deliveryLoads().doc(moving.id).get()).data() as DeliveryLoad;
+  const savedSibling = (await deliveryLoads().doc(sibling.id).get()).data() as DeliveryLoad;
+  assert.equal(savedMoving.runId, secondRunId);
+  assert.equal(savedSibling.runId, firstRunId);
+  assert.equal(savedSibling.id, sibling.id);
+  assert.notEqual(savedMoving.id, savedSibling.id);
+  assert.equal(savedMoving.scheduledTime, "10:15");
+  const assignments = (await logisticsAssignments().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as LogisticsAssignment);
+  assert.equal(assignments.find((assignment) => assignment.loadId === moving.id)?.jobId, (await logisticsJobs().where("requirementId", "==", firstRequirement.canonicalId).get()).docs[0]?.id);
+  assert.equal(assignments.find((assignment) => assignment.loadId === sibling.id)?.jobId, (await logisticsJobs().where("requirementId", "==", secondRequirement.canonicalId).get()).docs[0]?.id);
+});
+
+test("collection deferral remains explicitly unavailable before Gate C and preserves canonical assignment", async (t) => {
   const id = prefix();
   t.after(() => cleanup(id));
   const runId = `${id}:run`;
-  const targetRunId = `${id}:target-run`;
-  const deliveryId = `${id}:delivery`;
-  const collectionId = `${id}:collection`;
-  const targetDate = "2099-01-05";
-  await seed(runs(), { ...run(runId), status: "planned", driverId: "franco", driverLabel: "Franco", orderedStopIds: [deliveryId, collectionId] });
-  await seed(runs(), { ...run(targetRunId), serviceDate: targetDate, driverId: "franco", driverLabel: "Franco" });
-  const base = { runId, locationOplocId: "oploc:integration-destination", locationLabelSnapshot: "Integration Destination", requirementRefs: [], movementRequestIds: [], status: "planned" as const, createdAt: "now", updatedAt: "now", version: 1, audit: [] };
-  await seed(stops(), { ...base, canonicalId: deliveryId, sequence: 1, movementType: "delivery" as const, linkedStopId: collectionId, linkedOperation: "delivery" as const });
-  await seed(stops(), { ...base, canonicalId: collectionId, sequence: 2, movementType: "collection" as const, linkedStopId: deliveryId, linkedOperation: "collection" as const });
-  let result = await responseBody({ action: "mark-stop-loaded", runId, stopId: deliveryId, loaded: true, expectedRunVersion: 1, expectedStopVersion: 1 });
-  assert.equal(result.response.status, 200);
-  result = await responseBody({ action: "dispatch-run", runId, expectedRunVersion: 2 });
-  assert.equal(result.response.status, 200);
-  result = await responseBody({ action: "defer-collection", runId, stopId: collectionId, targetServiceDate: targetDate, expectedRunVersion: 3, expectedStopVersion: 1 });
-  assert.equal(result.response.status, 200);
-  assert.deepEqual(((await runs().doc(runId).get()).data() as DeliveryRun).orderedStopIds, [deliveryId]);
-  assert.deepEqual(((await runs().doc(targetRunId).get()).data() as DeliveryRun).orderedStopIds, [collectionId]);
-  const moved = (await stops().doc(collectionId).get()).data() as DeliveryStop;
-  assert.equal(moved.runId, targetRunId);
-  assert.equal(moved.postponedFromServiceDate, serviceDate);
-  assert.equal(moved.status, "planned");
+  const req = requirement(`${id}:defer`);
+  upstreamRequirements = [req];
+  await seed(runs(), run(runId));
+  const assigned = await responseBody({ action: "assign-group", runId, expectedRunVersion: 1, requirementIds: [req.canonicalId], expectedSourceVersions: { [req.canonicalId]: req.sourceVersion }, plannedArrivalTime: "10:15", collectionRequired: true });
+  assert.equal(assigned.response.status, 200);
+  let load = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).find((item) => item.runId === runId)!;
+  const collectionScheduled = await responseBody({ action: "reschedule-delivery-load", lane: "collection", loadId: load.id, targetRunId: runId, scheduledTime: "16:15", expectedLoadVersion: load.version });
+  assert.equal(collectionScheduled.response.status, 200, JSON.stringify(collectionScheduled.body));
+  load = (await deliveryLoads().doc(load.id).get()).data() as DeliveryLoad;
+  const denied = await responseBody({ action: "defer-collection", runId, stopId: `projection-stop:collection:${load.id}`, targetServiceDate: "2099-01-05", expectedRunVersion: 2, expectedLoadVersion: load.version });
+  assert.equal(denied.response.status, 422);
+  assert.match(String((denied.body.error as { message?: string })?.message), /unavailable until A10/);
+  assert.deepEqual((await deliveryLoads().doc(load.id).get()).data(), load);
+  assert.equal((await logisticsAssignments().where("jobId", "==", `logistics-job:${req.canonicalId}`).get()).size, 1);
 });
 
 test("schedule-stop and clear-stop-schedule are version-safe and audited", async (t) => {
@@ -310,6 +397,9 @@ test("week summary returns five local Monday-Friday day summaries", async (t) =>
   const id = prefix();
   t.after(() => cleanup(id));
   await seed(runs(), run(`${id}:run`));
+  const rebuild = await responseBody({ action: "rebuild-logistics-projection", serviceDate });
+  assert.equal(rebuild.response.status, 200);
+  assert.equal((rebuild.body.projection as LogisticsDayProjection).runs.some((item) => item.canonicalId === `${id}:run`), true);
   const response = await GET(
     new NextRequest("http://localhost/api/logistics?weekCommencing=2098-12-29"),
   );
@@ -326,7 +416,7 @@ test("week summary returns five local Monday-Friday day summaries", async (t) =>
   );
 });
 
-test("projection endpoint distinguishes a valid empty day from a missing materialised projection", async (t) => {
+test("projection endpoint classifies an isolated empty day without stale projection state", async (t) => {
   const id = prefix();
   t.after(() => cleanup(id));
   const response = await GET(new NextRequest(`http://localhost/api/logistics?projection=1&serviceDate=${serviceDate}`));
@@ -360,26 +450,33 @@ test("assign-group combines same-destination requirements and updates run atomic
   });
   assert.equal(result.response.status, 200);
   const savedRun = (await runs().doc(runId).get()).data() as DeliveryRun;
-  const savedStops = (await stops().where("runId", "==", runId).get()).docs.map(
-    (doc) => doc.data() as DeliveryStop,
-  );
+  const savedLoads = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).filter((load) => load.runId === runId);
+  const savedJobs = (await logisticsJobs().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as LogisticsJob).filter((job) => [first.canonicalId, second.canonicalId].includes(job.requirementId || ""));
+  const savedAssignments = (await logisticsAssignments().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as LogisticsAssignment).filter((assignment) => savedJobs.some((job) => job.id === assignment.jobId));
+  const projection = (await logisticsDayProjections().doc(serviceDate).get()).data() as LogisticsDayProjection;
   assert.equal(savedRun.version, 2);
-  assert.equal(savedRun.orderedStopIds.length, 1);
-  assert.equal(savedStops.length, 1);
+  assert.equal(savedRun.status, "planned");
+  assert.equal((await stops().where("runId", "==", runId).get()).size, 0);
+  assert.equal(savedLoads.length, 1);
+  assert.equal(savedJobs.length, 2);
+  assert.equal(savedAssignments.length, 2);
   assert.deepEqual(
-    savedStops[0].requirementRefs.map((ref) => ref.requirementId).sort(),
+    savedJobs.map((job) => job.requirementId).sort(),
     [first.canonicalId, second.canonicalId].sort(),
   );
+  assert.equal(savedJobs.every((job) => job.activeLoadId === savedLoads[0].id), true);
+  assert.deepEqual(projection.deliveryLoads.find((load) => load.id === savedLoads[0].id)?.jobs.map((job) => job.requirementId).sort(), [first.canonicalId, second.canonicalId].sort());
 });
 
-test("partial group assignment sends only remaining work and skips pending/withdrawn", async (t) => {
+test("partial group assignment adds remaining ready work and skips pending/withdrawn jobs", async (t) => {
   const id = prefix();
   t.after(() => cleanup(id));
   const runId = `${id}:run`;
   const planned = requirement(`${id}:planned`);
   const pending = requirement(`${id}:pending`, "pending");
+  const withdrawn = requirement(`${id}:withdrawn`, "withdrawn");
   const ready = requirement(`${id}:ready`);
-  upstreamRequirements = [planned, pending, ready];
+  upstreamRequirements = [planned, pending, withdrawn, ready];
   await seed(runs(), run(runId));
   const first = await responseBody({
     action: "assign-group",
@@ -393,40 +490,24 @@ test("partial group assignment sends only remaining work and skips pending/withd
     action: "assign-group",
     runId,
     expectedRunVersion: 2,
-    requirementIds: [pending.canonicalId, ready.canonicalId],
+    requirementIds: [pending.canonicalId, withdrawn.canonicalId, ready.canonicalId],
     expectedSourceVersions: {
       [pending.canonicalId]: 1,
+      [withdrawn.canonicalId]: 1,
       [ready.canonicalId]: 1,
     },
+    expectedLoadVersions: Object.fromEntries((await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => { const load = doc.data() as DeliveryLoad; return [load.id, load.version]; })),
   });
   assert.equal(second.response.status, 200);
-  assert.deepEqual(
-    (second.body.skipped as Array<{ requirementId: string }>).map(
-      (item) => item.requirementId,
-    ),
-    [pending.canonicalId],
-  );
-  const saved = (
-    await stops().where("runId", "==", runId).get()
-  ).docs[0].data() as DeliveryStop;
-  assert.equal(
-    saved.requirementRefs.filter(
-      (ref) => ref.requirementId === planned.canonicalId,
-    ).length,
-    1,
-  );
-  assert.equal(
-    saved.requirementRefs.filter(
-      (ref) => ref.requirementId === ready.canonicalId,
-    ).length,
-    1,
-  );
-  assert.equal(
-    saved.requirementRefs.some(
-      (ref) => ref.requirementId === pending.canonicalId,
-    ),
-    false,
-  );
+  assert.deepEqual((second.body.skipped as Array<{ requirementId: string }>).map((item) => item.requirementId).sort(), [pending.canonicalId, withdrawn.canonicalId].sort());
+  const loads = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).filter((load) => load.runId === runId && load.status !== "cancelled");
+  const jobIds = new Set([planned.canonicalId, pending.canonicalId, withdrawn.canonicalId, ready.canonicalId]);
+  const jobs = (await logisticsJobs().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as LogisticsJob).filter((job) => jobIds.has(job.requirementId || ""));
+  const assignments = (await logisticsAssignments().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as LogisticsAssignment).filter((assignment) => jobs.some((job) => job.id === assignment.jobId));
+  assert.equal(loads.length, 1);
+  assert.deepEqual(jobs.filter((job) => job.activeLoadId).map((job) => job.requirementId).sort(), [planned.canonicalId, ready.canonicalId].sort());
+  assert.deepEqual(assignments.map((assignment) => jobs.find((job) => job.id === assignment.jobId)?.requirementId).sort(), [planned.canonicalId, ready.canonicalId].sort());
+  assert.equal(jobs.some((job) => job.requirementId === pending.canonicalId || job.requirementId === withdrawn.canonicalId), false);
 });
 
 test("stale source version returns 409 without mutating Logistics state", async (t) => {
@@ -446,9 +527,12 @@ test("stale source version returns 409 without mutating Logistics state", async 
   assert.equal(result.response.status, 409);
   assert.equal((await runs().doc(runId).get()).data()?.version, 1);
   assert.equal((await stops().where("runId", "==", runId).get()).empty, true);
+  assert.equal((await logisticsJobs().where("serviceDate", "==", serviceDate).get()).docs.some((doc) => doc.data().requirementId === item.canonicalId), false);
+  assert.equal((await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.some((doc) => doc.data().runId === runId), false);
+  assert.equal((await logisticsAssignments().where("jobId", "==", `logistics-job:${item.canonicalId}`).get()).empty, true);
 });
 
-test("stale run version returns 409 without creating a stop", async (t) => {
+test("stale run version returns 409 without creating canonical assignment state", async (t) => {
   const id = prefix();
   t.after(() => cleanup(id));
   const runId = `${id}:run`;
@@ -464,9 +548,12 @@ test("stale run version returns 409 without creating a stop", async (t) => {
   });
   assert.equal(result.response.status, 409);
   assert.equal((await stops().where("runId", "==", runId).get()).empty, true);
+  assert.equal((await logisticsJobs().where("serviceDate", "==", serviceDate).get()).docs.some((doc) => doc.data().requirementId === item.canonicalId), false);
+  assert.equal((await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.some((doc) => doc.data().runId === runId), false);
+  assert.equal((await logisticsAssignments().where("jobId", "==", `logistics-job:${item.canonicalId}`).get()).empty, true);
 });
 
-test("unassigning work updates the multi-work stop and deletes it after the final removal", async (t) => {
+test("removing canonical jobs updates load membership and cancels the empty load", async (t) => {
   const id = prefix();
   t.after(() => cleanup(id));
   const runId = `${id}:run`;
@@ -481,34 +568,45 @@ test("unassigning work updates the multi-work stop and deletes it after the fina
     requirementIds: [first.canonicalId, second.canonicalId],
     expectedSourceVersions: { [first.canonicalId]: 1, [second.canonicalId]: 1 },
   });
-  let savedStop = (await stops().where("runId", "==", runId).get()).docs[0];
-  let savedRun = (await runs().doc(runId).get()).data() as DeliveryRun;
+  const savedRun = (await runs().doc(runId).get()).data() as DeliveryRun;
+  assert.equal(savedRun.version, 2);
+  const jobs = (await logisticsJobs().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as LogisticsJob);
+  const load = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).find((item) => item.runId === runId)!;
+  assert.equal((await stops().where("runId", "==", runId).get()).empty, true);
+  const initialAssignments = await logisticsAssignments().where("loadId", "==", load.id).get();
+  assert.equal(initialAssignments.size, 2);
   let result = await responseBody({
-    action: "unassign-requirement",
-    runId,
-    stopId: savedStop.id,
-    requirementId: first.canonicalId,
-    expectedRunVersion: savedRun.version,
-    expectedStopVersion: (savedStop.data() as DeliveryStop).version,
+    action: "remove-job-from-load",
+    loadId: load.id,
+    jobId: jobs.find((job) => job.requirementId === first.canonicalId)!.id,
+    expectedLoadVersion: load.version,
+    expectedJobVersion: jobs.find((job) => job.requirementId === first.canonicalId)!.version,
   });
-  assert.equal(result.response.status, 200);
-  savedStop = (await stops().where("runId", "==", runId).get()).docs[0];
-  assert.equal((savedStop.data() as DeliveryStop).requirementRefs.length, 1);
-  savedRun = (await runs().doc(runId).get()).data() as DeliveryRun;
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  const remainingLoad = (await deliveryLoads().doc(load.id).get()).data() as DeliveryLoad;
+  const remainingJob = (await logisticsJobs().doc(jobs.find((job) => job.requirementId === second.canonicalId)!.id).get()).data() as LogisticsJob;
+  const remainingProjection = (await logisticsDayProjections().doc(serviceDate).get()).data() as LogisticsDayProjection;
+  assert.deepEqual(remainingProjection.deliveryLoads.find((item) => item.id === load.id)?.jobs.map((job) => job.requirementId), [second.canonicalId]);
+  assert.equal(remainingJob.activeLoadId, load.id);
+  const removedJob = await logisticsJobs().doc(jobs.find((job) => job.requirementId === first.canonicalId)!.id).get();
+  assert.equal(removedJob.data()?.activeLoadId, undefined);
+  const removedAssignment = await logisticsAssignments().where("jobId", "==", jobs.find((job) => job.requirementId === first.canonicalId)!.id).get();
+  assert.equal(removedAssignment.empty, true);
+  const currentJob = (await logisticsJobs().doc(jobs.find((job) => job.requirementId === second.canonicalId)!.id).get()).data() as LogisticsJob;
   result = await responseBody({
-    action: "unassign-requirement",
-    runId,
-    stopId: savedStop.id,
-    requirementId: second.canonicalId,
-    expectedRunVersion: savedRun.version,
-    expectedStopVersion: (savedStop.data() as DeliveryStop).version,
+    action: "remove-job-from-load",
+    loadId: load.id,
+    jobId: currentJob.id,
+    expectedLoadVersion: remainingLoad.version,
+    expectedJobVersion: currentJob.version,
   });
   assert.equal(result.response.status, 200);
   assert.equal((await stops().where("runId", "==", runId).get()).empty, true);
-  assert.deepEqual(
-    ((await runs().doc(runId).get()).data() as DeliveryRun).orderedStopIds,
-    [],
-  );
+  const cancelled = (await deliveryLoads().doc(load.id).get()).data() as DeliveryLoad;
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal((await logisticsAssignments().where("loadId", "==", load.id).get()).empty, true);
+  assert.equal((await logisticsAssignments().where("loadId", "==", load.id).get()).empty, true);
+  assert.equal(((await runs().doc(runId).get()).data() as DeliveryRun).version, 2);
 });
 
 test("move-stop validates both run versions and keeps source/target sequences coherent", async (t) => {
@@ -723,7 +821,7 @@ test("lifecycle readiness, dispatch and completion are explicit and versioned", 
   const item = requirement(`${id}:item`);
   upstreamRequirements = [item];
   await seed(runs(), {
-    ...run(runId),
+    ...run(runId), status: "planned",
     driverLabel: "Franco",
     driverId: "franco",
   });
@@ -733,18 +831,19 @@ test("lifecycle readiness, dispatch and completion are explicit and versioned", 
     expectedRunVersion: 1,
   });
   assert.equal(result.response.status, 422);
-  assert.deepEqual(result.body.blockers, ["No stops"]);
-  await responseBody({
+  assert.match(String((result.body.error as { message?: string })?.message), /Run has no execution work/);
+  const assignment = await responseBody({
     action: "assign-group",
     runId,
     expectedRunVersion: 1,
     requirementIds: [item.canonicalId],
     expectedSourceVersions: { [item.canonicalId]: 1 },
   });
+  assert.equal(assignment.response.status, 200);
   result = await responseBody({
     action: "mark-run-ready",
     runId,
-    expectedRunVersion: 2,
+    expectedRunVersion: 1,
   });
   assert.equal(result.response.status, 200);
   const loadedRun = await markRunLoaded(runId);
@@ -754,24 +853,27 @@ test("lifecycle readiness, dispatch and completion are explicit and versioned", 
     expectedRunVersion: loadedRun.version,
   });
   assert.equal(result.response.status, 200);
-  const stopSnap = (await stops().where("runId", "==", runId).get()).docs[0];
   let currentRun = (await runs().doc(runId).get()).data() as DeliveryRun;
+  let load = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).find((item) => item.runId === runId)!;
+  const job = (await logisticsJobs().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as LogisticsJob).find((candidate) => candidate.requirementId === item.canonicalId)!;
+  const projectedDeliveryId = `projection-stop:delivery:${load.id}`;
   result = await responseBody({
     action: "arrive-stop",
     runId,
-    stopId: stopSnap.id,
+    stopId: projectedDeliveryId,
     expectedRunVersion: currentRun.version,
-    expectedStopVersion: (stopSnap.data() as DeliveryStop).version,
+    expectedLoadVersion: load.version,
   });
   assert.equal(result.response.status, 200);
-  const arrived = await stops().doc(stopSnap.id).get();
   currentRun = (await runs().doc(runId).get()).data() as DeliveryRun;
+  load = (await deliveryLoads().doc(load.id).get()).data() as DeliveryLoad;
   result = await responseBody({
     action: "complete-stop",
     runId,
-    stopId: stopSnap.id,
+    stopId: projectedDeliveryId,
     expectedRunVersion: currentRun.version,
-    expectedStopVersion: (arrived.data() as DeliveryStop).version,
+    expectedLoadVersion: load.version,
+    expectedJobVersions: { [job.id]: job.version },
   });
   assert.equal(result.response.status, 200);
   const readyToReturn = (await runs().doc(runId).get()).data() as DeliveryRun;
@@ -822,7 +924,7 @@ test("ready runs lock structural planning until explicitly returned", async (t) 
   assert.equal((returned.body as { status?: string }).status, "planned");
 });
 
-test("reporting and resolving an issue preserves execution status and audit state", async (t) => {
+test("reporting and resolving an issue preserves canonical load execution and audit state", async (t) => {
   const id = prefix();
   t.after(() => cleanup(id));
   const runId = `${id}:run`;
@@ -833,104 +935,95 @@ test("reporting and resolving an issue preserves execution status and audit stat
     driverLabel: "Franco",
     driverId: "franco",
   });
-  await responseBody({
+  const assigned = await responseBody({
     action: "assign-group",
     runId,
     expectedRunVersion: 1,
     requirementIds: [item.canonicalId],
     expectedSourceVersions: { [item.canonicalId]: 1 },
   });
+  assert.equal(assigned.response.status, 200);
   await responseBody({
     action: "mark-run-ready",
     runId,
     expectedRunVersion: 2,
   });
   const loadedRun = await markRunLoaded(runId);
-  await responseBody({
+  const dispatched = await responseBody({
     action: "dispatch-run",
     runId,
     expectedRunVersion: loadedRun.version,
   });
-  let stopSnap = (await stops().where("runId", "==", runId).get()).docs[0];
+  assert.equal(dispatched.response.status, 200);
   let currentRun = (await runs().doc(runId).get()).data() as DeliveryRun;
+  let load = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).find((candidate) => candidate.runId === runId)!;
+  const projectedDeliveryId = `projection-stop:delivery:${load.id}`;
   let result = await responseBody({
     action: "report-issue",
     runId,
-    stopId: stopSnap.id,
+    stopId: projectedDeliveryId,
     expectedRunVersion: currentRun.version,
-    expectedStopVersion: (stopSnap.data() as DeliveryStop).version,
+    expectedLoadVersion: load.version,
     issueDescription: "Loading bay is blocked",
     issueCategory: "Access",
   });
   assert.equal(result.response.status, 200);
-  let saved = await stops().doc(stopSnap.id).get();
-  assert.equal((saved.data() as DeliveryStop).status, "planned");
-  assert.equal((saved.data() as DeliveryStop).issues?.[0].status, "open");
+  let saved = (await deliveryLoads().doc(load.id).get()).data() as DeliveryLoad;
+  assert.equal(saved.deliveryExecution?.issues?.[0].status, "open");
+  assert.equal(saved.audit.at(-1)?.action, "report-issue:delivery");
   currentRun = (await runs().doc(runId).get()).data() as DeliveryRun;
   result = await responseBody({
     action: "arrive-stop",
     runId,
-    stopId: stopSnap.id,
+    stopId: projectedDeliveryId,
     expectedRunVersion: currentRun.version,
-    expectedStopVersion: (saved.data() as DeliveryStop).version,
+    expectedLoadVersion: saved.version,
   });
   assert.equal(result.response.status, 200);
-  saved = await stops().doc(stopSnap.id).get();
+  saved = (await deliveryLoads().doc(load.id).get()).data() as DeliveryLoad;
   currentRun = (await runs().doc(runId).get()).data() as DeliveryRun;
   result = await responseBody({
     action: "resolve-issue",
     runId,
-    stopId: stopSnap.id,
-    issueId: (saved.data() as DeliveryStop).issues![0].id,
+    stopId: projectedDeliveryId,
+    issueId: saved.deliveryExecution!.issues![0].id,
     expectedRunVersion: currentRun.version,
-    expectedStopVersion: (saved.data() as DeliveryStop).version,
+    expectedLoadVersion: saved.version,
     resolutionNotes: "Access restored",
   });
   assert.equal(result.response.status, 200);
-  assert.equal(
-    (await stops().doc(stopSnap.id).get()).data()?.status,
-    "arrived",
-  );
+  const resolved = (await deliveryLoads().doc(load.id).get()).data() as DeliveryLoad;
+  assert.equal(resolved.deliveryExecution?.arrivedAt !== undefined, true);
+  assert.equal(resolved.deliveryExecution?.issues?.[0].status, "resolved");
+  assert.equal((await runs().doc(runId).get()).data()?.status, "dispatched");
 });
 
-test("defer moves an ordinary stop later and rejects breaking a transfer", async (t) => {
+test("defer reorders legacy operational stops while preserving transfer pickup-before-drop-off", async (t) => {
   const id = prefix();
   t.after(() => cleanup(id));
   const runId = `${id}:run`;
-  const first = requirement(`${id}:first`);
-  const second = {
-    ...requirement(`${id}:second`),
-    destinationOplocId: "oploc:integration-from",
-    destinationLabelSnapshot: "Integration Loading Bay",
-  };
-  upstreamRequirements = [first, second];
+  const firstId = `${id}:first-stop`;
+  const secondId = `${id}:second-stop`;
   await seed(runs(), {
-    ...run(runId),
+    ...run(runId), status: "planned", orderedStopIds: [firstId, secondId],
     driverLabel: "Franco",
     driverId: "franco",
   });
-  await responseBody({
-    action: "assign-group",
-    runId,
-    expectedRunVersion: 1,
-    requirementIds: [first.canonicalId, second.canonicalId],
-    expectedSourceVersions: { [first.canonicalId]: 1, [second.canonicalId]: 1 },
-  });
-  await responseBody({
-    action: "mark-run-ready",
-    runId,
-    expectedRunVersion: 2,
-  });
+  const stop = (canonicalId: string, sequence: number, plannedArrivalTime: string) => ({ canonicalId, runId, sequence, locationOplocId: "oploc:integration-destination", locationLabelSnapshot: "Integration Destination", requirementRefs: [], movementRequestIds: [], plannedArrivalTime, status: "planned" as const, createdAt: "now", updatedAt: "now", version: 1, audit: [] });
+  await seed(stops(), stop(firstId, 1, "10:15"));
+  await seed(stops(), stop(secondId, 2, "11:15"));
+  const ready = await responseBody({ action: "mark-run-ready", runId, expectedRunVersion: 1 });
+  assert.equal(ready.response.status, 200);
   let savedRun = await markRunLoaded(runId);
-  await responseBody({
+  const dispatched = await responseBody({
     action: "dispatch-run",
     runId,
     expectedRunVersion: savedRun.version,
   });
+  assert.equal(dispatched.response.status, 200);
   savedRun = (await runs().doc(runId).get()).data() as DeliveryRun;
-  const firstStop = (
-    await stops().doc(savedRun.orderedStopIds[0]).get()
-  ).data() as DeliveryStop;
+  assert.deepEqual(savedRun.orderedStopIds, [firstId, secondId]);
+  const firstStop = (await stops().doc(firstId).get()).data() as DeliveryStop;
   let result = await responseBody({
     action: "defer-stop",
     runId,
@@ -955,6 +1048,7 @@ test("defer moves an ordinary stop later and rejects breaking a transfer", async
     runId: transferRun,
     expectedRunVersion: 1,
     movementId: transferId,
+    plannedArrivalTime: "10:15",
   });
   await responseBody({
     action: "mark-run-ready",

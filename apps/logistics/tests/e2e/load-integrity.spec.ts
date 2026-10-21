@@ -6,6 +6,12 @@ import { createRequire } from "node:module";
 // This proves mounted client intent parity, not Firestore emulator integration.
 const { fixture } = createRequire(import.meta.url)("../helpers/authority-route-harness.cjs");
 
+async function openStopDetails(page: Page) {
+  const details = page.locator("details").filter({ hasText: "Stop timing details" });
+  await expect(details).toHaveCount(1);
+  if (await details.getAttribute("open") === null) await details.locator("summary").click();
+}
+
 async function scenario(page: Page, collection = false, merged = false) {
   await page.setViewportSize({ width: 1600, height: 1200 });
   const f = fixture(["van1", "van2"], ["logistics.reconcile"], true); f.requirements.length = 0;
@@ -44,6 +50,7 @@ async function scenario(page: Page, collection = false, merged = false) {
     return route.fulfill({ headers: { "x-logistics-cache-scope": "batch2" }, json: { ...projectionToDashboardData(projection), projection } });
   });
   await page.goto("/?serviceDate=" + f.date);
+  await openStopDetails(page);
   return { f, commands };
 }
 
@@ -101,6 +108,7 @@ test("advisory source timing permits placement and an untimed delivery gets an e
   await expect(resize).toBeVisible();
   await assignedInspector.getByRole("button", { name: "Close inspector" }).click();
   await page.reload();
+  await openStopDetails(page);
   const reloaded = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0];
   expect(reloaded.id).toBe(projectionLoad.id);
   expect(reloaded.scheduledTime).toBe("12:00");
@@ -121,6 +129,7 @@ for (const merged of [false, true]) for (const entry of ["set-time", "drag"] as 
   await page.getByRole("complementary", { name: "Details inspector" }).getByRole("button", { name: "Clear time", exact: true }).click();
   await expect.poll(() => f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0].scheduledTime).toBeUndefined();
   await page.reload();
+  await openStopDetails(page);
   const cleared = structuredClone(f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0]);
   const queue = page.locator(`[data-timeline-queue-id="projection-delivery:${cleared.id}"]`);
   await expect(queue).toBeVisible();
@@ -156,6 +165,7 @@ for (const merged of [false, true]) for (const entry of ["set-time", "drag"] as 
   expect([...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsJobsV1/"))).toEqual(originalJobs);
   expect([...f.records.keys()].filter((key: string) => key.startsWith("fikaLogisticsDeliveryLoadsV1/"))).toHaveLength(initial.loadIds.length);
   await page.reload();
+  await openStopDetails(page);
   await expect(page.getByTestId(`stop-projection-stop:delivery:${after.id}`)).toBeVisible();
   await expect(page.getByTestId(`stop-projection-stop:delivery:${after.id}`)).toHaveCSS("cursor", "move");
   await expect(page.getByTestId(`resize-projection-stop:delivery:${after.id}`)).toHaveCSS("cursor", "ew-resize");
@@ -168,6 +178,7 @@ test("stale assigned untimed delivery queue cannot overwrite a newer canonical p
   let group = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0];
   await f.post({ action: "clear-delivery-load-schedule", loadIds: group.loadIds, expectedLoadVersions: group.loadVersions });
   await page.reload();
+  await openStopDetails(page);
   group = structuredClone(f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0]);
   await page.locator(`[data-timeline-queue-id="projection-delivery:${group.id}"]`).getByRole("button", { name: "Set time", exact: true }).click();
   const inspector = page.getByRole("complementary", { name: "Details inspector" });
@@ -193,6 +204,7 @@ test("collision-adjusted cleared delivery placement preserves the chosen window 
   const assigned = await f.post({ action: "assign-job-to-load", jobId: "logistics-job:req:obstacle", expectedJobVersion: 1, targetRunId: "r1", scheduledTime: "10:45", scheduledEnd: "11:00" });
   expect(assigned.response.status).toBe(200);
   await page.reload();
+  await openStopDetails(page);
   await page.locator(`[data-timeline-queue-id="projection-delivery:${original.id}"]`).getByRole("button", { name: "Set time", exact: true }).click();
   const inspector = page.getByRole("complementary", { name: "Details inspector" });
   await inspector.getByRole("button", { name: "Set delivery time", exact: true }).click();
@@ -311,6 +323,7 @@ test("projected merged collection Clear sends every canonical load and preserves
   });
   expect(scheduled.response.status).toBe(200);
   await page.reload();
+  await openStopDetails(page);
 
   projection = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date);
   const group = projection.deliveryLoads[0];
@@ -346,4 +359,50 @@ test("projected merged collection Clear sends every canonical load and preserves
   expect(new Set(rebuilt.deliveryLoads[0].loadIds)).toEqual(new Set(group.loadIds));
   expect(rebuilt.deliveryLoads[0].collectionScheduledTime).toBeUndefined();
   expect(rebuilt.deliveryLoads[0].collectionRunId).toBe("r2");
+});
+
+test("journey inspector keeps mixed stops chronological and moves one constituent load only", async ({ page }) => {
+  const { f } = await scenario(page, true, true);
+  const firstRun = f.records.get("fikaLogisticsDeliveryRunsV1/r1") || f.records.get("fikaLogisticsDeliveryRunsV1/run:van1");
+  const secondRun = f.records.get("fikaLogisticsDeliveryRunsV1/r2") || f.records.get("fikaLogisticsDeliveryRunsV1/run:van2");
+  expect(firstRun).toBeTruthy();
+  expect(secondRun).toBeTruthy();
+  Object.assign(firstRun, { vehicleId: "van1", vehicleLabel: "Van 1", plannedCpuDepartureTime: "07:00", plannedCpuReturnTime: "12:30" });
+  Object.assign(secondRun, { vehicleId: "van1", vehicleLabel: "Van 1", plannedCpuDepartureTime: "13:00", plannedCpuReturnTime: "17:00" });
+  await f.materialisation.rebuildLogisticsProjection(f.date, "Operator");
+  await page.reload();
+
+  const overview = page.getByRole("region", { name: "Vehicle journey timeline" });
+  await expect(overview.getByRole("button", { name: /Run r1, Van 1, Planned, 07:00 to 12:30/ })).toBeVisible();
+  await expect(overview.getByRole("button", { name: /Run r2, Van 1, Planned, 13:00 to 17:00/ })).toBeVisible();
+  await overview.getByRole("button", { name: /Run r1, Van 1,/ }).click();
+  const inspector = page.getByRole("complementary", { name: "Details inspector" });
+  const chronological = inspector.getByRole("heading", { name: "Stops · chronological" });
+  await expect(chronological).toBeVisible();
+  const deliveryStop = inspector.getByRole("button", { name: /Delivery.*Batch Two Site/ });
+  const collectionStop = inspector.getByRole("button", { name: /Collection.*CPU production/ });
+  await expect(deliveryStop).toBeVisible();
+  await expect(collectionStop).toBeVisible();
+  const stopButtons = inspector.locator(".journey-stop-list button");
+  const stopOrder = await stopButtons.allTextContents();
+  expect(stopOrder.findIndex((text) => text.includes("Delivery · Batch Two Site"))).toBeLessThan(stopOrder.findIndex((text) => text.includes("Collection · CPU production")));
+  await deliveryStop.click();
+  await expect(inspector.getByRole("heading", { name: "Individual loads" })).toBeVisible();
+  const loadButtons = inspector.getByRole("button", { name: /^Load .*1 job · 10 units$/ });
+  await expect(loadButtons).toHaveCount(2);
+  const group = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0];
+  const selectedLoadId = group.loadIds[0];
+  const siblingLoadId = group.loadIds[1];
+  await loadButtons.first().click();
+  await expect(inspector.getByRole("heading", { name: "Assigned work" })).toBeVisible();
+  await expect(inspector).toContainText("Loading progress");
+  await expect(inspector.getByRole("button", { name: "Mark this load loaded" })).toBeVisible();
+  await inspector.getByLabel("Load target run").selectOption("r2");
+  await inspector.getByLabel("delivery load time").fill("13:00");
+  await inspector.getByRole("button", { name: "Save load assignment" }).click();
+  await expect.poll(() => f.records.get("fikaLogisticsDeliveryLoadsV1/" + selectedLoadId).runId).toBe("r2");
+  expect(f.records.get("fikaLogisticsDeliveryLoadsV1/" + siblingLoadId).runId).toBe("r1");
+  await inspector.getByRole("button", { name: "Mark this load loaded" }).click();
+  await expect.poll(() => f.records.get("fikaLogisticsJobsV1/logistics-job:req:a").deliveryStatus).toBe("loaded");
+  expect(f.records.get("fikaLogisticsJobsV1/logistics-job:req:b").deliveryStatus).toBe("pending");
 });

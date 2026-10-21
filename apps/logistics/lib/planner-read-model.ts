@@ -105,6 +105,10 @@ export type PlannerRunView = {
   vehicleId?: DeliveryRun["vehicleId"];
   runId: string;
   serviceDate: string;
+  plannedCpuDepartureTime?: string;
+  plannedCpuReturnTime?: string;
+  departedCpuAt?: string;
+  returnedToCpuAt?: string;
   driverId?: string;
   driver?: string;
   vehicle?: string;
@@ -662,6 +666,10 @@ export function buildPlannerDay(input: {
       return {
         runId: run.canonicalId,
         serviceDate: run.serviceDate,
+        plannedCpuDepartureTime: run.plannedCpuDepartureTime,
+        plannedCpuReturnTime: run.plannedCpuReturnTime,
+        departedCpuAt: run.departedCpuAt,
+        returnedToCpuAt: run.returnedToCpuAt,
         driverId: run.driverId,
         vehicleId: run.vehicleId,
         driver: run.driverLabel,
