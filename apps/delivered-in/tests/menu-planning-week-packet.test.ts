@@ -72,6 +72,15 @@ test("Delivered-In consumes the shared Menu Planning packet envelope", () => {
   assert.equal(week.days[0].entries[0].quantity, 10);
 });
 
+test("Delivered-In projects new menu slots with their stable dish identity", () => {
+  const value = { ...snapshot, days: snapshot.days.map(day => ({ ...day, entries: day.entries.map(entry => ({ ...entry, slot: "GARNISH 1", canonicalDishId: "dish:garnish:herbs" })) })) };
+  const packet = decodeMenuPlanningWeekPacket(encodeWeeklyPublicationPacket(value));
+  const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-10-01");
+  const [week] = projectPublishedWeeks([publication], "oploc:haleon", new Set(["oploc:haleon"]), "2026-09-08");
+  assert.equal(week.days[0].entries[0].slot, "GARNISH 1");
+  assert.equal(week.days[0].entries[0].canonicalDishId, "dish:garnish:herbs");
+});
+
 test("a newer withdrawn day in the weekly packet hides older published bytes", () => {
   const withdrawn = { ...snapshot, days: [...snapshot.days, { ...snapshot.days[0], publicationDayId: "publication-day:mon:v4-withdrawn", version: 4, status: "withdrawn" as const, entries: [] }] };
   const packet = decodeMenuPlanningWeekPacket(encodeWeeklyPublicationPacket(withdrawn));

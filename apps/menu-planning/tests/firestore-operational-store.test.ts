@@ -19,6 +19,48 @@ function harness() {
   return { repository: new MenuPlanningFirestoreRepository(db), transaction, writes };
 }
 
+function templateSettingsHarness() {
+  const docs = new Map<string, unknown>();
+  const reads: string[] = [];
+  const writes: Array<{ path: string; value: unknown }> = [];
+  const ref = (path: string, query = false): any => ({
+    path,
+    query,
+    doc: (id: string) => ref(`${path}/${id}`),
+    collection: (name: string) => ref(`${path}/${name}`),
+    where: () => ref(`${path}?where`, true),
+    get: async () => ({ exists: docs.has(path), data: () => structuredClone(docs.get(path)) }),
+  });
+  const db = {
+    collection: (name: string) => ref(name),
+    runTransaction: async (callback: (transaction: any) => Promise<unknown>) => {
+      const pending: Array<{ path: string; value: unknown }> = [];
+      const snapshotFor = (target: any) => target.query
+        ? { size: 0, docs: [] }
+        : { exists: docs.has(target.path), data: () => structuredClone(docs.get(target.path)) };
+      const transaction = {
+        get: async (target: any) => { reads.push(target.path); return snapshotFor(target); },
+        getAll: async (...targets: any[]) => { targets.forEach(target => reads.push(target.path)); return targets.map(snapshotFor); },
+        set: (target: any, value: unknown) => pending.push({ path: target.path, value }),
+      };
+      const result = await callback(transaction);
+      for (const write of pending) { docs.set(write.path, structuredClone(write.value)); writes.push(write); }
+      return result;
+    },
+  } as any;
+  return { repository: new MenuPlanningFirestoreRepository(db), docs, reads, writes };
+}
+
+test("permanent menu-template additions persist in a bounded Firestore settings document", async () => {
+  const value = templateSettingsHarness();
+  const weekValue = week("rolling-week:template-settings");
+  value.docs.set(`fikaMenuPlanningWeeks/${weekValue.id}`, structuredClone(weekValue));
+  await value.repository.runTransaction(state => { state.rolling.menuTemplateSlots = ["FISH 1"]; }, undefined, { weekId: weekValue.id, sourceWeekId: "__none__", includeEvents: false, includeTemplateSettings: true });
+  assert.ok(value.reads.includes("fikaMenuPlanningSettings/menu-template"));
+  assert.deepEqual(value.writes.find(write => write.path === "fikaMenuPlanningSettings/menu-template")?.value, { menuTemplateSlots: ["FISH 1"] });
+  assert.deepEqual(await value.repository.getMenuTemplateSlots(), ["FISH 1"]);
+});
+
 function commandHarness() {
   const docs = new Map<string, unknown>();
   const reads: string[] = [];

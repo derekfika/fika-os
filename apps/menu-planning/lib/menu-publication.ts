@@ -8,7 +8,6 @@ import type {
   RollingEntry,
   RollingSnapshot,
 } from "./rolling-menu-types";
-import { ROLLING_SLOTS } from "./rolling-menu-types";
 import {
   getWeek,
   listWeeks,
@@ -16,6 +15,7 @@ import {
   replaceSnapshotInStored,
   saveSnapshot,
   snapshotFromStored,
+  slotsForWeek,
   validateWeek,
   activeCanonicalDishIdsFor,
   type Stored as RollingMenuStored,
@@ -283,7 +283,7 @@ const allocationIdentity = (allocation: RollingEntry["allocations"][number]) =>
 function orderedEntriesForDay(snapshot: RollingSnapshot, day: RollingDay) {
   const position = new Map((day.entryIds || []).map((id, index) => [id, index]));
   const slotPosition = new Map(
-    [...ROLLING_SLOTS, ...(snapshot.week.customSlots || [])].map((slot, index) => [slot, index]),
+    [...slotsForWeek(snapshot.week), ...(snapshot.week.customSlots || [])].map((slot, index) => [slot, index]),
   );
   return snapshot.entries
     .filter((entry) => entry.dayId === day.id && entry.itemLabel.trim() && entry.allocations.some((allocation) => Number.isFinite(allocation.quantity) && allocation.quantity > 0))
@@ -301,7 +301,7 @@ function historicalDayMatchesWorkingOrder(current: PublishedMenuDay, day: Rollin
   const originalContent = normalizePublicationValue({ sourceDayId: current.sourceDayId, date: current.date, dayName: current.dayName, entries: current.entries });
   if (contentHash(originalContent) !== current.contentHash) return false;
   const entryPosition = new Map((day.entryIds || []).map((id, index) => [id, index]));
-  const slotPosition = new Map([...ROLLING_SLOTS, ...(snapshot.week.customSlots || [])].map((slot, index) => [slot, index]));
+  const slotPosition = new Map([...slotsForWeek(snapshot.week), ...(snapshot.week.customSlots || [])].map((slot, index) => [slot, index]));
   const entries = current.entries.map(entry => ({ ...entry, allocations: entry.allocations.slice().sort((left, right) => compareStableText(allocationIdentity(left), allocationIdentity(right)) || compareStableText(left.destinationLabel, right.destinationLabel) || compareStableText(left.destinationAddress || "", right.destinationAddress || "") || left.quantity - right.quantity) })).sort((left, right) => {
     const leftPosition = entryPosition.get(left.sourceEntryId);
     const rightPosition = entryPosition.get(right.sourceEntryId);

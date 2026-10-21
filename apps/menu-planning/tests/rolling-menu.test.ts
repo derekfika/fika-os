@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, copyWeekIntoWeek, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, saveSnapshot, saveSnapshotsCreateOnly, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, copyWeekIntoWeek, createEntry, createWeekSnapshot, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, saveSnapshot, saveSnapshotsCreateOnly, slotsForWeek, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, createCanonicalMenuItems, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { buildCompiledPublicationSnapshot, buildPublishedDay, compareWorkingWeekToPublication, contentHash, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
@@ -256,11 +256,36 @@ test("Menu Planning persistence failure is not presented as an empty publication
   }
 });
 
-test("blank rolling week has seven days and the governed slot catalogue", () => {
+test("blank rolling week has seven days and the nine-category standard template rows", () => {
   const week = emptyWeek("2026-08-17");
   assert.equal(week.days.length, 7);
-  assert.ok(ROLLING_SLOTS.includes("SALAD 6"));
+  assert.deepEqual(week.week.templateSlots, [...ROLLING_SLOTS]);
+  assert.equal(ROLLING_SLOTS.filter(slot => slot.startsWith("STARCH/SIDE ")).length, 4);
+  assert.equal(ROLLING_SLOTS.filter(slot => slot.startsWith("GARNISH ")).length, 4);
+  assert.equal(ROLLING_SLOTS.filter(slot => slot.startsWith("SAUCE ")).length, 4);
   assert.equal(validateWeek(week).length, 1);
+});
+
+test("week-only and permanent menu rows persist at their intended scope", async () => {
+  const current = emptyWeek("2031-05-05");
+  const preexisting = emptyWeek("2031-05-12");
+  await saveSnapshot(current);
+  await saveSnapshot(preexisting);
+
+  const weekOnly = await addMenuSlot(current.week.id, "Starch/Side", "week", "test");
+  assert.equal(weekOnly.slot, "STARCH/SIDE 5");
+  assert.ok((await getWeek(current.week.id)).week.customSlots?.includes("STARCH/SIDE 5"));
+
+  const permanent = await addMenuSlot(current.week.id, "Vegan Main", "template", "test");
+  assert.equal(permanent.slot, "VEGAN MAIN 2");
+  const future = await createWeekSnapshot("2031-05-19");
+  assert.ok(future.week.templateSlots?.includes("VEGAN MAIN 2"));
+  assert.ok(!future.week.templateSlots?.includes("STARCH/SIDE 5"));
+
+  const existing = await getWeek(preexisting.week.id);
+  assert.ok(!slotsForWeek(existing.week).includes("VEGAN MAIN 2"));
+  assert.ok(!existing.week.customSlots?.includes("VEGAN MAIN 2"));
+  assert.ok(!slotsForWeek((await getWeek(current.week.id)).week).includes("VEGAN MAIN 2"));
 });
 
 test("only weeks with planned dishes are selectable", () => {
@@ -451,9 +476,14 @@ test("menu days publish independently and revisions supersede only that day", as
     assert.equal(replayed.failed, 0);
     assert.equal((await replayMenuPublicationOutbox(() => { throw new Error("duplicate delivery"); })).delivered, 0);
     assert.equal((await getWeek(week.week.id)).week.status, "partially_published");
-    await addMenuSlot(week.week.id, "SALAD 7");
-    await removeMenuSlot(week.week.id, "SALAD 7");
-    assert.equal((await getMenuPublication(mondayPublication.publicationId))?.days.find(day => day.sourceDayId === week.days[0].id)?.status, "published");
+    const added = await addMenuSlot(week.week.id, "Salad", "week", "test");
+    assert.equal(added.slot, "SALAD 5");
+    await removeMenuSlot(week.week.id, "SALAD 5");
+    const permanentRow = await addMenuSlot(week.week.id, "Fish", "template", "test");
+    assert.equal(permanentRow.slot, "FISH 1");
+    const publishedMonday = (await getMenuPublication(mondayPublication.publicationId))?.days.find(day => day.sourceDayId === week.days[0].id);
+    assert.equal(publishedMonday?.status, "published");
+    assert.equal(publishedMonday?.contentHash, mondayPublication.days[0].contentHash);
     const tuesdayPublication = await createPublishedMenuDay(week.week.id, week.days[1].id, await sign(week.days[1].id), "test");
     assert.equal(tuesdayPublication.days.find(day => day.sourceDayId === week.days[0].id)?.status, "published");
     const mondayVersion = mondayPublication.days.find(day => day.sourceDayId === week.days[0].id)?.version;

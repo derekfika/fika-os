@@ -67,6 +67,7 @@ function parseDocument(database: DatabaseSync, key: "rolling" | "publications") 
 export type MenuPlanningOperationalStore = {
   readonly kind: "sqlite" | "firestore";
   readRollingState<T>(): Promise<T>;
+  getMenuTemplateSlots(): Promise<string[]>;
   listWeekSummaries<T>(): Promise<T[]>;
   listWeekSummariesByCommencing<T>(weekCommencings: string[]): Promise<T[]>;
   getWeekHead<T>(weekId: string): Promise<T | undefined>;
@@ -111,6 +112,7 @@ function withMenuPlanningTransactionSync<T>(mutator: (state: TransactionState) =
 class SqliteOperationalStore implements MenuPlanningOperationalStore {
   readonly kind = "sqlite" as const;
   async readRollingState<T>() { const database = open(); try { return parseDocument(database, "rolling") as T; } finally { database.close(); } }
+  async getMenuTemplateSlots() { return (await this.readRollingState<{ menuTemplateSlots?: string[] }>()).menuTemplateSlots || []; }
   async listWeekSummaries<T>() { return (await this.readRollingState<{ weeks: T[] }>()).weeks; }
   async listWeekSummariesByCommencing<T>(weekCommencings: string[]) { const wanted = new Set(weekCommencings); return (await this.readRollingState<{ weeks: T[] }>()).weeks.filter((candidate: any) => wanted.has(candidate.weekCommencing)); }
   async getWeekHead<T>(weekId: string) { const state = await this.readRollingState<{ weeks: T[] }>(); return state.weeks.find((candidate: any) => candidate.id === weekId); }
@@ -178,6 +180,7 @@ class FirestoreOperationalStore implements MenuPlanningOperationalStore {
   readonly kind = "firestore" as const;
   constructor(private readonly repository = new MenuPlanningFirestoreRepository()) {}
   readRollingState<T>() { return this.repository.readRollingState() as Promise<T>; }
+  getMenuTemplateSlots() { return this.repository.getMenuTemplateSlots(); }
   listWeekSummaries<T>() { return this.repository.listWeekSummaries() as Promise<T[]>; }
   listWeekSummariesByCommencing<T>(weekCommencings: string[]) { return this.repository.listWeekSummariesByCommencing(weekCommencings) as Promise<T[]>; }
   getWeekHead<T>(weekId: string) { return this.repository.getWeekHead(weekId) as Promise<T | undefined>; }
@@ -213,6 +216,7 @@ export function getMenuPlanningOperationalStore(): MenuPlanningOperationalStore 
 }
 
 export function readRollingState<T>() { return getMenuPlanningOperationalStore().readRollingState<T>(); }
+export function getMenuTemplateSlots() { return getMenuPlanningOperationalStore().getMenuTemplateSlots(); }
 export function listWeekSummaries<T>() { return getMenuPlanningOperationalStore().listWeekSummaries<T>(); }
 export function listWeekSummariesByCommencing<T>(weekCommencings: string[]) { return getMenuPlanningOperationalStore().listWeekSummariesByCommencing<T>(weekCommencings); }
 export function getWeekHead<T>(weekId: string) { return getMenuPlanningOperationalStore().getWeekHead<T>(weekId); }

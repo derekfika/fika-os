@@ -76,3 +76,10 @@ test("CPU consumes the shared Menu Planning packet envelope stored on the public
   assert.equal(packet.publicationId, snapshot.publicationId);
   assert.equal(packet.days[0].entries[0].portions, 25);
 });
+
+test("CPU packet retains new menu slot identifiers and stable dish IDs", () => {
+  const value = { ...snapshot, days: snapshot.days.map(day => ({ ...day, entries: day.entries.map(entry => ({ ...entry, slot: "STARCH/SIDE 1", canonicalDishId: "dish:starch-side:potatoes" })) })) };
+  const packet = decodeMenuPlanningWeekPacket(envelope(value), value.publicationId);
+  assert.equal(packet.days[0].entries[0].slot, "STARCH/SIDE 1");
+  assert.equal(packet.days[0].entries[0].canonicalDishId, "dish:starch-side:potatoes");
+});

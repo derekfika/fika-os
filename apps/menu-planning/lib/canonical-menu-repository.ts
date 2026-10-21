@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { MenuItem } from "./domain";
 import { deterministicId } from "./domain";
-import { normaliseDishCategory } from "./dish-categories";
+import { dishCategoryForWrite, normaliseDishCategory } from "./dish-categories";
 import { normaliseDishName } from "./text";
 import type { RollingEntry } from "./rolling-menu-types";
 import { appDataPath } from "./fika-contracts";
@@ -198,6 +198,7 @@ export type CanonicalMenuItemCreateInput = { displayName: string; category?: str
 
 export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"] }, actor = "local-menu-planner"): Promise<CanonicalMenuItemCreateResult> {
   if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
+  const category = dishCategoryForWrite(input.category);
   const items = await readItems();
   const baseline = structuredClone(items);
   const displayName = normaliseDishName(input.displayName);
@@ -214,7 +215,7 @@ export async function createCanonicalMenuItem(input: { displayName: string; cate
     displayName,
     description: input.description?.trim() || undefined,
     preparationNotes: input.preparationNotes?.trim() || undefined,
-    category: normaliseDishCategory(input.category),
+    category,
     weekId: "menu-week:menu-planning",
     dayId: "",
     sourceReference: input.sourceReference || { workbook: "Menu Planning", sheet: "Local dish creation" },
@@ -232,10 +233,12 @@ export async function createCanonicalMenuItem(input: { displayName: string; cate
 
 export async function createCanonicalMenuItems(inputs: CanonicalMenuItemCreateInput[], actor = "local-menu-planner"): Promise<CanonicalMenuItemCreateResult[]> {
   if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
+  const categories = inputs.map(input => dishCategoryForWrite(input.category));
   const currentItems = await readItems();
   const baseline = structuredClone(currentItems);
   const results: CanonicalMenuItemCreateResult[] = [];
-  for (const input of inputs) {
+  for (const [index, input] of inputs.entries()) {
+    const category = categories[index];
     const displayName = normaliseDishName(input.displayName);
     const key = displayName.toLocaleLowerCase("en-GB");
     const active = currentItems.filter(item => item.reviewStatus !== "archived");
@@ -246,7 +249,7 @@ export async function createCanonicalMenuItems(inputs: CanonicalMenuItemCreateIn
     const item: MenuItem = {
       canonicalId: deterministicId("menu-item", "local", displayName), sourceName: displayName, displayName,
       description: input.description?.trim() || undefined, preparationNotes: input.preparationNotes?.trim() || undefined,
-      category: normaliseDishCategory(input.category), weekId: "menu-week:menu-planning", dayId: "",
+      category, weekId: "menu-week:menu-planning", dayId: "",
       sourceReference: input.sourceReference || { workbook: "Menu Planning", sheet: "Local dish creation" }, sourceEvidence: input.sourceEvidence,
       revision: 1, reviewStatus: "unreviewed", allergenEvidence: input.allergenEvidence || [], mayContainReviewed: Boolean(input.allergenEvidence?.length),
       audit: [{ action: "locally-created-in-menu-planning", at: new Date().toISOString(), by: actor }],
@@ -306,7 +309,7 @@ export function canonicalFromSourceCandidate(candidate: MenuItem, actor = "local
   return {
     ...structuredClone(candidate),
     displayName: normaliseDishName(candidate.displayName),
-    category: normaliseDishCategory(candidate.category),
+    category: dishCategoryForWrite(candidate.category),
     reviewStatus: "unreviewed",
     recipeStatus: "draft",
     weekId: "menu-week:canonical-catalogue",
