@@ -51,6 +51,13 @@ function visibleStatus(order: ProductionOrder): ProductionStatus {
   return order.workflowStatus;
 }
 type View = "calendar" | "day" | "queue" | "run-sheet" | "totals" | "menu-planning" | "published-menus" | "grab-and-go";
+const primaryNavigation: Array<{ icon: string; label: string; target: View }> = [
+  { icon: "▦", label: "Overview", target: "calendar" },
+  { icon: "◷", label: "Day", target: "day" },
+  { icon: "☷", label: "Queue", target: "queue" },
+  { icon: "▤", label: "Run sheet", target: "run-sheet" },
+  { icon: "▥", label: "Totals", target: "totals" },
+];
 type TotalProgress = "not_started" | "in_progress" | "produced";
 type DailyTotal = { key: string; name: string; unit: string; quantity: number; progress: TotalProgress };
 
@@ -182,12 +189,9 @@ export default function CpuProduction() {
         <div className="cpu-brand">FIKA OS</div>
         <div className="cpu-sidebar-label">CPU PRODUCTION</div>
         <nav aria-label="CPU Production navigation" className="cpu-sidebar-nav">
-          {[
-            ["▦", "Overview", "calendar"], ["◷", "Day", "day"], ["☷", "Queue", "queue"],
-            ["▤", "Run sheet", "run-sheet"], ["▥", "Totals", "totals"],
-          ].map(([icon, label, target]) => (
-            <button type="button" key={label} className={view === target ? "selected" : ""} onClick={() => setView(target as View)}>
-              <span>{icon}</span>{label}
+          {primaryNavigation.map(({ icon, label, target }) => (
+            <button type="button" key={label} className={view === target ? "selected" : ""} aria-current={view === target ? "page" : undefined} onClick={() => setView(target)}>
+              <span aria-hidden="true">{icon}</span>{label}
             </button>
           ))}
         </nav>
@@ -207,6 +211,13 @@ export default function CpuProduction() {
           <div className="cpu-header-tools"><button type="button">▣ &nbsp; {todayKey ? new Date(`${todayKey}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "Loading date…"} &nbsp;⌄</button></div>
           <small>Operational application&nbsp; · &nbsp;governed Production domain</small>
         </header>
+        <nav className="cpu-mobile-nav" aria-label="CPU Production navigation">
+          {primaryNavigation.map(({ icon, label, target }) => (
+            <button type="button" key={label} className={view === target ? "selected" : ""} aria-current={view === target ? "page" : undefined} onClick={() => setView(target)}>
+              <span aria-hidden="true">{icon}</span>{label}
+            </button>
+          ))}
+        </nav>
         <div className="cpu-main">
         <nav className="cpu-production-scope" aria-label="Production type scope">
           <span>Scope</span>

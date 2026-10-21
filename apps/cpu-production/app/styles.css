@@ -84,6 +84,65 @@ html,body{min-height:100%;background:#f7f6f4}
 @media(max-width:1200px){.cpu-dashboard-columns{grid-template-columns:minmax(0,1fr) 340px}.cpu-summary{gap:9px}.cpu-summary button{min-height:75px}.cpu-summary strong,.cpu-summary span{padding-left:12px;padding-right:12px}.cpu-header h1{font-size:4rem}}@media(max-width:980px){.cpu-sidebar{width:70px;flex-basis:70px;padding-left:8px;padding-right:8px}.cpu-brand{font-size:0;padding:0 0 30px}.cpu-brand:before{content:"F";font-size:23px}.cpu-sidebar-label{display:none}.cpu-sidebar-nav button{justify-content:center;padding:12px 4px;font-size:0}.cpu-sidebar-nav button span{font-size:19px}.cpu-sidebar-rule{margin-left:0;margin-right:0}.cpu-user-card{justify-content:center}.cpu-user-card>div:nth-child(2),.cpu-user-card>span{display:none}.cpu-dashboard-columns{grid-template-columns:1fr}.cpu-operations-rail{grid-template-columns:1fr 1fr}.cpu-header{min-height:205px}.cpu-header-tools{gap:8px}.cpu-header-tools button{font-size:10px}}@media(max-width:700px){.cpu-sidebar{display:none}.cpu-header{padding:34px 22px 29px}.cpu-header h1{font-size:3rem}.cpu-header-tools{display:none}.cpu-header>small{display:none}.cpu-main{padding:18px 14px}.cpu-summary{grid-template-columns:repeat(2,1fr)}.cpu-toolbar{align-items:stretch;flex-direction:column}.cpu-toolbar-actions{justify-content:flex-start}.cpu-operations-rail{grid-template-columns:1fr}.calendar-grid{grid-template-columns:repeat(5,190px);overflow-x:auto;padding-bottom:5px}.cpu-production-panel{padding:16px 12px}}
 .cpu-brand{width:104px;height:38px;padding:0 5px 30px;font-size:0;background:url('/fika-logo.png') left top/104px auto no-repeat;overflow:hidden}.cpu-brand:after{content:'OS';display:block;margin:6px 0 0 78px;color:#24137f;font-size:11px;font-weight:800;letter-spacing:.04em}.cpu-detail-state{position:fixed;right:24px;bottom:24px;z-index:30;padding:10px 14px;border:1px solid #d8d0f2;border-radius:9px;background:#fff;color:#4930ba;font-size:12px;box-shadow:0 8px 24px #21117522;pointer-events:none}.cpu-detail-loading:before{content:'';display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;background:#53f4bf;vertical-align:middle}
 body{font-family:var(--body,Arial,sans-serif)}
-.cpu-main{padding-inline:clamp(18px,2vw,40px)}.cpu-dashboard-columns{grid-template-columns:minmax(0,1fr) clamp(300px,24vw,397px)}
-@media(max-width:1120px){.cpu-dashboard-columns{grid-template-columns:1fr}.cpu-operations-rail{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:700px){.cpu-operations-rail{grid-template-columns:1fr}}
+.cpu-main{padding-inline:clamp(18px,2vw,40px)}
+.cpu-dashboard-columns{grid-template-columns:minmax(0,1fr) clamp(300px,24vw,397px)}
+.cpu-mobile-nav{display:none}
+.cpu-workspace,.cpu-main,.cpu-dashboard-columns,.cpu-production-panel,.production-calendar{min-width:0}
+
+/* Responsive shell overrides come after the legacy dashboard declarations above. */
+@media(max-width:1120px){
+  .cpu-dashboard-columns{grid-template-columns:minmax(0,1fr)}
+  .cpu-operations-rail{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cpu-summary{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .cpu-summary button{min-width:0;min-height:76px}
+  .cpu-summary span{overflow-wrap:anywhere}
+  .cpu-header{min-height:0;gap:16px;padding:34px clamp(18px,3vw,34px) 38px}
+  .cpu-header>div:first-child{min-width:0}
+  .cpu-header h1{font-size:clamp(2.5rem,5.1vw,3.35rem);line-height:1;text-wrap:balance}
+  .cpu-header>small{right:18px;bottom:12px}
+  .cpu-production-panel{min-width:0}
+  .cpu-sidebar-nav-note{display:none}
+}
+@media(min-width:1121px) and (max-width:1360px){
+  .cpu-operations-rail{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:1360px){
+  .cpu-main{padding-inline:clamp(16px,2.2vw,28px)}
+}
+@media(min-width:701px) and (max-width:980px){
+  .cpu-sidebar{width:148px;flex-basis:148px;padding-left:12px;padding-right:12px}
+  .cpu-sidebar-nav button{justify-content:flex-start;gap:8px;min-height:44px;padding:10px 7px;font-size:12px}
+  .cpu-sidebar-nav button span{flex:0 0 18px;width:18px;font-size:17px}
+}
+@media(max-width:1360px){
+  .production-calendar .calendar-grid{grid-template-columns:repeat(5,minmax(185px,1fr));max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+  .production-calendar .calendar-day{min-width:0}
+}
+@media(max-width:700px){
+  .cpu-sidebar{display:none}
+  .cpu-mobile-nav{position:sticky;top:0;z-index:25;display:flex;gap:4px;overflow-x:auto;padding:4px 12px;border-bottom:1px solid var(--fika-border-default);background:var(--fika-surface-card);overscroll-behavior-x:contain}
+  .cpu-mobile-nav button{display:flex;flex:1 0 auto;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:7px 10px;border:0;border-radius:8px;background:transparent;color:var(--fika-text-primary);font:600 12px var(--fika-font-body);white-space:nowrap}
+  .cpu-mobile-nav button.selected{background:var(--fika-surface-subtle);color:var(--fika-action-primary)}
+  .cpu-header{padding:30px 20px 28px}
+  .cpu-header h1{font-size:clamp(2.35rem,9vw,3rem)}
+  .cpu-header>small{display:none}
+  .cpu-header-tools{display:none}
+  .cpu-main{padding:18px 14px 40px}
+  .cpu-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .cpu-toolbar{align-items:stretch;flex-direction:column}
+  .cpu-toolbar-actions{justify-content:flex-start;flex-wrap:wrap}
+  .cpu-operations-rail{grid-template-columns:minmax(0,1fr)}
+  .cpu-production-panel{padding:16px 12px}
+  .production-calendar .calendar-grid{grid-template-columns:repeat(5,minmax(190px,1fr));padding-bottom:8px}
+}
+
+@media(max-width:1360px){
+  .cpu-sidebar-nav button,.cpu-production-scope button,.cpu-toolbar-actions button,.cpu-filters input,.cpu-filters select,.cpu-filters button,.cpu-operations-rail button,.cpu-create button,.calendar-nav button,.calendar-day-open,.cpu-detail button{min-height:44px}
+  .cpu-toolbar-actions button,.cpu-filters input,.cpu-filters select,.cpu-filters button{font-size:14px}
+  .cpu-production-scope{flex-wrap:wrap}
+  .cpu-production-scope button{padding:8px 12px}
+  .cpu-toolbar-actions{flex-wrap:wrap}
+  .calendar-nav button,.calendar-day-open{min-width:44px}
+  .cpu-booking,.cpu-attention-row{min-height:44px}
+}
+.cpu-mobile-nav button:focus-visible,.cpu-sidebar-nav button:focus-visible,.cpu-production-scope button:focus-visible,.cpu-toolbar-actions button:focus-visible,.cpu-filters button:focus-visible,.calendar-nav button:focus-visible,.calendar-day-open:focus-visible{outline:3px solid var(--fika-focus-ring);outline-offset:2px}

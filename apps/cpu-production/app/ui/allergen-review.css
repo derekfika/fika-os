@@ -6,3 +6,4 @@
 .cpu-allergen-row--error th,.cpu-allergen-row--error td{background:#fffafc}
 .cpu-allergen-row-error{display:block;max-width:190px;margin-bottom:7px;color:var(--fika-status-danger);font-size:.68rem;line-height:1.25;font-weight:800;white-space:normal}
 .cpu-allergen-state--unresolved{outline:3px solid var(--fika-status-danger);outline-offset:-3px}
+.cpu-allergen-table-wrap{max-width:100%;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}button.cpu-allergen-state{min-width:44px;min-height:44px;height:auto}.cpu-allergen-check{min-height:44px}.cpu-allergen-matrix-footer button{min-height:44px}
