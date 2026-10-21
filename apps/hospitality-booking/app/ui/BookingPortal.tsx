@@ -669,7 +669,8 @@ export default function BookingPortal({
       <section className="mnk-hero">
         <p className="eyebrow">{currentSiteLabel} · {site.theme.heroEyebrow}</p>
         <h1>
-          Hospitality,
+          {/* The space keeps "Hospitality, elevated." breakable where a site hides the <br /> (Angel Court). */}
+          Hospitality,{" "}
           <br />
           elevated.
         </h1>

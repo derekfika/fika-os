@@ -29,3 +29,5 @@
 @keyframes fika-spin-pulse{0%,100%{opacity:.35}50%{opacity:1}}
 .fika-spinner{display:inline-block;width:1em;height:1em;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:fika-spin .7s linear infinite;vertical-align:-.12em;flex:none}
 @media (prefers-reduced-motion:reduce){.fika-spinner{animation:fika-spin-pulse 1.6s ease-in-out infinite;border-right-color:currentColor}}
+/* Very narrow phones (<=360px): the widest hero word ("Hospitality,", CFC 800 weight) is 316px at the 56px floor and overflows the 272px content box at 320px. */
+@media(max-width:360px){.mnk-hero h1{font-size:clamp(2.75rem,13.5vw,3.5rem)}}
