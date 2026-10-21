@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { MenuItem } from "./domain";
 import { deterministicId } from "./domain";
-import { dishCategoryForWrite, normaliseDishCategory } from "./dish-categories";
+import { canonicalDishCategoryForSlot, dishCategoryForWrite, normaliseDishCategory } from "./dish-categories";
 import { normaliseDishName } from "./text";
 import type { RollingEntry } from "./rolling-menu-types";
 import { appDataPath } from "./fika-contracts";
@@ -285,11 +285,17 @@ export async function syncRollingEntries(entries: RollingEntry[], actor = "rolli
       }
       continue;
     }
+    const category = canonicalDishCategoryForSlot(entry.slot);
+    // A historic custom slot has no safe Dish Library classification. Keep the
+    // menu entry readable without creating an ungoverned catalogue category.
+    if (!category) continue;
     items.push({
       canonicalId: entry.itemId || deterministicId("menu-item", "rolling", name),
       sourceName: name,
       displayName: name,
-      category: normaliseDishCategory(entry.slot),
+      // A rolling-menu slot is a placement contract; convert it explicitly when
+      // promoting a legacy entry into the Dish Library category field.
+      category,
       weekId: "menu-week:rolling-import",
       dayId: "",
       sourceReference: { workbook: entry.source?.workbook || "rolling menu", sheet: entry.source?.sheet || entry.slot, ...(entry.source?.range !== undefined ? { range: entry.source.range } : {}) },

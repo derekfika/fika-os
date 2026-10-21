@@ -4,7 +4,7 @@ export const CANONICAL_DISH_CATEGORIES = [
   "Garnish",
   "Sauce",
   "Hot Main",
-  "Vegan Main",
+  "Vegan/Veggie Main",
   "Fish",
   "Soup",
   "Cold Protein",
@@ -38,7 +38,7 @@ export function normaliseDishCategory(value: string | undefined): ReadableDishCa
   if (["garnish", "garnishes"].includes(category)) return "Garnish";
   if (["sauce", "sauces"].includes(category)) return "Sauce";
   if (["hot main", "hot mains", "hot meat", "hot meats"].includes(category)) return "Hot Main";
-  if (["vegan main", "vegan mains", "hot veg", "hot veg / vegan", "hot veg vegan"].includes(category)) return "Vegan Main";
+  if (["vegan/veggie main", "vegan / veggie main", "vegan main", "vegan mains", "hot veg", "hot veg / vegan", "hot veg vegan"].includes(category)) return "Vegan/Veggie Main";
   if (["fish", "seafood"].includes(category)) return "Fish";
   if (["soup", "soups"].includes(category)) return "Soup";
   if (["cold protein", "cold proteins"].includes(category)) return "Cold Protein";
@@ -55,7 +55,7 @@ export function categoriesForMenuSlot(slot: string): readonly ReadableDishCatego
   if (/^GARNISH(?: \d+)?$/.test(value)) return ["Garnish"];
   if (/^SAUCE(?: \d+)?$/.test(value)) return ["Sauce"];
   if (/^(?:HOT MAIN|HOT MEAT)(?: \d+)?$/.test(value)) return ["Hot Main", "Fish"];
-  if (/^(?:VEGAN MAIN|HOT VEG VEGAN|HOT VEG \/ VEGAN)(?: \d+)?$/.test(value)) return ["Vegan Main"];
+  if (/^(?:VEGAN MAIN|VEGAN\/VEGGIE MAIN|HOT VEG VEGAN|HOT VEG \/ VEGAN)(?: \d+)?$/.test(value)) return ["Vegan/Veggie Main"];
   if (/^FISH(?: \d+)?$/.test(value)) return ["Fish"];
   return [normaliseDishCategory(slot)];
 }
@@ -63,4 +63,10 @@ export function categoriesForMenuSlot(slot: string): readonly ReadableDishCatego
 /** Retained for callers that need the primary category represented by a menu slot. */
 export function categoryForSlot(slot: string): ReadableDishCategory {
   return categoriesForMenuSlot(slot)[0];
+}
+
+/** Return a catalogue category only when a menu slot has a governed mapping. */
+export function canonicalDishCategoryForSlot(slot: string): CanonicalDishCategory | undefined {
+  const category = categoryForSlot(slot);
+  return isCanonicalDishCategory(category) ? category : undefined;
 }

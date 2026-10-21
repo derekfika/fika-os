@@ -6,7 +6,8 @@ const prefixForCategory: Record<CanonicalDishCategory, string> = {
   Garnish: "GARNISH",
   Sauce: "SAUCE",
   "Hot Main": "HOT MAIN",
-  "Vegan Main": "VEGAN MAIN",
+  // Keep the stable menu-slot identity while the Dish Library category uses its approved name.
+  "Vegan/Veggie Main": "VEGAN MAIN",
   Fish: "FISH",
   Soup: "SOUP",
   "Cold Protein": "COLD PROTEIN",

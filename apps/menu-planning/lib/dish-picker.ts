@@ -32,7 +32,7 @@ export function rankDishPickerItems(items: DishPickerItem[], query: string, slot
         + (item.category?.toLocaleLowerCase() === slot.toLocaleLowerCase() ? 6 : 0)
         + (slotCategories.has(normaliseDishCategory(item.category)) ? 3 : 0)
         + (slotCategories.has("Hot Main") && slot.toLocaleLowerCase().includes("meat") && meatWords.split(" ").some(word => text.includes(word)) ? 5 : 0)
-        + (slotCategories.has("Vegan Main") && slot.toLocaleLowerCase().includes("veg") && vegWords.split(" ").some(word => text.includes(word)) ? 5 : 0);
+        + (slotCategories.has("Vegan/Veggie Main") && slot.toLocaleLowerCase().includes("veg") && vegWords.split(" ").some(word => text.includes(word)) ? 5 : 0);
       const nameScore = normaliseDishName(item.name) === q && q ? 100 : normaliseDishName(item.name).startsWith(q) && q ? 20 : 0;
       return { item, score: context * 5 + nameScore };
     })

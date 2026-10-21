@@ -276,7 +276,7 @@ test("week-only and permanent menu rows persist at their intended scope", async 
   assert.equal(weekOnly.slot, "STARCH/SIDE 5");
   assert.ok((await getWeek(current.week.id)).week.customSlots?.includes("STARCH/SIDE 5"));
 
-  const permanent = await addMenuSlot(current.week.id, "Vegan Main", "template", "test");
+  const permanent = await addMenuSlot(current.week.id, "Vegan/Veggie Main", "template", "test");
   assert.equal(permanent.slot, "VEGAN MAIN 2");
   const future = await createWeekSnapshot("2031-05-19");
   assert.ok(future.week.templateSlots?.includes("VEGAN MAIN 2"));
@@ -418,11 +418,13 @@ test("week lifecycle prevents collisions, publishes once, and duplicates publish
 
 test("portion planner saves one optimistic batch and rejects stale retries", async () => {
   const initial = await saveSnapshot(emptyWeek("2099-07-05", "test"));
-  const created = await createEntry(initial.week.id, initial.days[0].id, "SALAD 1", "Batch dish", "test", "dish:batch");
+  const created = await createEntry(initial.week.id, initial.days[0].id, "HOT MAIN", "Roast Salmon", "test", "dish:fish:roast-salmon");
   const entry = created.entries.find(value => value.dayId === initial.days[0].id)!;
   const saved = await batchUpdateEntries(initial.week.id, created.week.version, [{ entryId: entry.id, allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 4 }] }], "test");
   assert.equal(saved.week.version, created.week.version + 1);
   assert.equal(saved.entries.find(value => value.id === entry.id)?.portions, 4);
+  assert.equal(saved.entries.find(value => value.id === entry.id)?.itemId, "dish:fish:roast-salmon");
+  assert.equal(saved.entries.find(value => value.id === entry.id)?.slot, "HOT MAIN");
   assert.equal(saved.entries.find(value => value.id === entry.id)?.audit.at(-1)?.action, "portion-allocations-batch-saved");
   await assert.rejects(() => batchUpdateEntries(initial.week.id, created.week.version, [{ entryId: entry.id, allocations: [] }], "test"), (error: any) => error.status === 409);
 });
