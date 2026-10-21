@@ -36,6 +36,7 @@ test("dish creation has a dedicated structured route", () => {
   const page = readFileSync(new URL("../app/dishes/new/page.tsx", import.meta.url), "utf8");
   assert.match(page, /Create dish/);
   assert.match(page, /Ingredients/);
+  assert.match(page, /action: dishId \? "update-dish" : "create-dish"/);
   assert.match(page, /Save draft dish/);
 });
 

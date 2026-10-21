@@ -104,6 +104,12 @@ async function writeItems(items: MenuItem[], options: { currentItems?: MenuItem[
         return !recordsEqual(existing, item);
       });
       if (!changed.length) return;
+      for (const item of changed.filter(candidate => candidate.reviewStatus !== "archived")) {
+        const key = item.displayName.trim().toLocaleLowerCase("en-GB");
+        if ([...nextById.values()].some(candidate => candidate.canonicalId !== item.canonicalId && candidate.reviewStatus !== "archived" && candidate.displayName.trim().toLocaleLowerCase("en-GB") === key)) {
+          throw Object.assign(new Error("An active dish with this name already exists."), { status: 409 });
+        }
+      }
       const authoritativeItems = [...nextById.values()];
       const sourceRevision = Number(manifestValue.sourceRevision ?? manifestValue.catalogueVersion ?? 0) + 1;
       const sourceHash = catalogueSourceHash(authoritativeItems);
@@ -194,11 +200,20 @@ export async function recordDishSourceAliases(aliasesById: Record<string, string
 
 export type CanonicalMenuItemCreateOutcome = "created_new" | "matched_active" | "matched_merged_alias";
 export type CanonicalMenuItemCreateResult = MenuItem & { outcome: CanonicalMenuItemCreateOutcome };
-export type CanonicalMenuItemCreateInput = { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"] };
+export type CanonicalMenuItemCreateInput = { displayName: string; category?: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[]; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"] };
 
-export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"] }, actor = "local-menu-planner"): Promise<CanonicalMenuItemCreateResult> {
+function validateRecipeFields(input: Pick<CanonicalMenuItemCreateInput, "ingredients" | "methodSteps">) {
+  if (input.ingredients !== undefined && (!Array.isArray(input.ingredients) || input.ingredients.length > 100)) throw Object.assign(new Error("Provide no more than 100 recipe ingredients."), { status: 422 });
+  for (const ingredient of input.ingredients || []) {
+    if (!ingredient || typeof ingredient.name !== "string" || !ingredient.name.trim() || ingredient.name.length > 300 || (ingredient.quantity !== undefined && (!Number.isFinite(ingredient.quantity) || ingredient.quantity < 0)) || (ingredient.unit !== undefined && typeof ingredient.unit !== "string")) throw Object.assign(new Error("Every recipe ingredient needs a valid name and quantity."), { status: 422 });
+  }
+  if (input.methodSteps !== undefined && (!Array.isArray(input.methodSteps) || input.methodSteps.length > 100 || input.methodSteps.some(step => typeof step !== "string" || step.length > 5000))) throw Object.assign(new Error("Provide no more than 100 valid method steps."), { status: 422 });
+}
+
+export async function createCanonicalMenuItem(input: CanonicalMenuItemCreateInput, actor = "local-menu-planner"): Promise<CanonicalMenuItemCreateResult> {
   if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
   const category = dishCategoryForWrite(input.category);
+  validateRecipeFields(input);
   const items = await readItems();
   const baseline = structuredClone(items);
   const displayName = normaliseDishName(input.displayName);
@@ -215,7 +230,12 @@ export async function createCanonicalMenuItem(input: { displayName: string; cate
     displayName,
     description: input.description?.trim() || undefined,
     preparationNotes: input.preparationNotes?.trim() || undefined,
+    mayContainNotes: input.mayContainNotes?.trim() || undefined,
+    subcategory: input.subcategory?.trim() || undefined,
+    ingredients: input.ingredients?.filter(ingredient => ingredient.name.trim()).map(ingredient => ({ ...ingredient, name: ingredient.name.trim(), unit: ingredient.unit?.trim() || undefined })),
+    methodSteps: input.methodSteps?.map(step => step.trim()).filter(Boolean),
     category,
+    recipeStatus: "draft",
     weekId: "menu-week:menu-planning",
     dayId: "",
     sourceReference: input.sourceReference || { workbook: "Menu Planning", sheet: "Local dish creation" },
@@ -229,6 +249,62 @@ export async function createCanonicalMenuItem(input: { displayName: string; cate
   items.push(item);
   await writeItems(items, { currentItems: baseline, actor });
   return { ...item, outcome: "created_new" };
+}
+
+export function amendCanonicalMenuItemRecord(item: MenuItem | undefined, items: readonly MenuItem[], input: { displayName: string; category: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[] }, actor: string, at = new Date().toISOString()) {
+  if (!input.displayName?.trim()) throw Object.assign(new Error("A dish name is required."), { status: 422 });
+  const category = dishCategoryForWrite(input.category);
+  validateRecipeFields(input);
+  if (!item || item.reviewStatus === "archived") throw Object.assign(new Error("The active dish was not found."), { status: 404 });
+  const displayName = normaliseDishName(input.displayName);
+  const key = displayName.toLocaleLowerCase("en-GB");
+  if (items.some(candidate => candidate.canonicalId !== item.canonicalId && candidate.reviewStatus !== "archived" && (candidate.displayName.trim().toLocaleLowerCase("en-GB") === key || (candidate.sourceAliases || []).some(alias => alias.trim().toLocaleLowerCase("en-GB") === key)))) {
+    throw Object.assign(new Error("An active dish with this name already exists."), { status: 409 });
+  }
+  const amended = structuredClone(item);
+  amended.displayName = displayName;
+  amended.sourceName = displayName;
+  amended.category = category;
+  amended.description = input.description?.trim() || undefined;
+  amended.subcategory = input.subcategory?.trim() || undefined;
+  amended.preparationNotes = input.preparationNotes?.trim() || undefined;
+  if (input.mayContainNotes !== undefined) amended.mayContainNotes = input.mayContainNotes.trim() || undefined;
+  if (input.ingredients !== undefined) amended.ingredients = input.ingredients.filter(ingredient => ingredient.name.trim()).map(ingredient => ({ ...ingredient, name: ingredient.name.trim(), unit: ingredient.unit?.trim() || undefined }));
+  if (input.methodSteps !== undefined) amended.methodSteps = input.methodSteps.map(step => step.trim()).filter(Boolean);
+  amended.revision += 1;
+  amended.reviewStatus = "unreviewed";
+  amended.audit.push({ action: "canonical-dish-amended", at, by: actor });
+  return amended;
+}
+
+/** Update the editable identity/classification fields while preserving the stable catalogue ID and safety evidence. */
+export async function updateCanonicalMenuItem(id: string, input: { displayName: string; category: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[] }, actor: string) {
+  if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
+  const cleanId = id.trim();
+  if (!cleanId) throw Object.assign(new Error("A stable dish ID is required."), { status: 422 });
+  const items = await readItems();
+  const baseline = structuredClone(items);
+  const index = items.findIndex(candidate => candidate.canonicalId === cleanId);
+  const amended = amendCanonicalMenuItemRecord(items[index], items, input, actor);
+  items[index] = amended;
+  await writeItems(items, { currentItems: baseline, actor });
+  return amended;
+}
+
+export async function archiveCanonicalMenuItem(id: string, actor: string) {
+  if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
+  const cleanId = id.trim();
+  if (!cleanId) throw Object.assign(new Error("A stable dish ID is required."), { status: 422 });
+  const items = await readItems();
+  const baseline = structuredClone(items);
+  const item = items.find(candidate => candidate.canonicalId === cleanId);
+  if (!item || item.reviewStatus === "archived") throw Object.assign(new Error("The active dish was not found."), { status: 404 });
+  item.reviewStatus = "archived";
+  item.recipeStatus = "archived";
+  item.revision += 1;
+  item.audit.push({ action: "canonical-dish-archived", at: new Date().toISOString(), by: actor });
+  await writeItems(items, { currentItems: baseline, actor });
+  return item;
 }
 
 export async function createCanonicalMenuItems(inputs: CanonicalMenuItemCreateInput[], actor = "local-menu-planner"): Promise<CanonicalMenuItemCreateResult[]> {
