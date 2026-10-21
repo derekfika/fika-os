@@ -86,63 +86,63 @@ html,body{min-height:100%;background:#f7f6f4}
 body{font-family:var(--body,Arial,sans-serif)}
 .cpu-main{padding-inline:clamp(18px,2vw,40px)}
 .cpu-dashboard-columns{grid-template-columns:minmax(0,1fr) clamp(300px,24vw,397px)}
-.cpu-mobile-nav{display:none}
+.cpu-summary{grid-template-columns:repeat(7,minmax(0,1fr))}
 .cpu-workspace,.cpu-main,.cpu-dashboard-columns,.cpu-production-panel,.production-calendar{min-width:0}
+.cpu-sidebar-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.cpu-tablet-menu-toggle,.cpu-drawer-close,.cpu-sidebar-backdrop,.cpu-tablet-attention{display:none}
+.cpu-nav-badge{display:inline-grid;place-items:center;min-width:22px;height:22px;margin-left:auto;padding:0 6px;border-radius:999px;background:var(--fika-status-warning-surface);color:var(--fika-text-primary);font-size:12px;font-weight:700}
+.cpu-sidebar-nav button>.cpu-nav-label{width:auto;text-align:left;font-size:inherit;line-height:inherit;color:inherit}
+.cpu-sidebar-nav button>.cpu-nav-badge{width:auto;flex:0 0 auto;text-align:center;line-height:1;color:var(--fika-text-primary)}
 
-/* Responsive shell overrides come after the legacy dashboard declarations above. */
-@media(max-width:1120px){
+/* A coarse pointer identifies touch tablets even when Android reports a wide CSS viewport. */
+@media (max-width:1360px), (pointer:coarse){
+  .cpu-sidebar{position:fixed;z-index:70;inset:0 auto 0 0;display:flex;flex-direction:column;width:min(320px,calc(100vw - 56px));height:100dvh;max-height:100vh;overflow-y:auto;padding:22px 18px;transform:translateX(-105%);visibility:hidden;border-right:1px solid var(--fika-border-default);background:var(--fika-surface-card);box-shadow:0 16px 44px rgba(30,20,62,.2);transition:transform 180ms ease,visibility 180ms ease}
+  .cpu-sidebar.cpu-sidebar--open{transform:translateX(0);visibility:visible}
+  .cpu-drawer-close{display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border:1px solid var(--fika-border-default);border-radius:8px;background:var(--fika-surface-card);color:var(--fika-text-primary);font:inherit;font-size:24px;cursor:pointer}
+  .cpu-sidebar-backdrop:not([hidden]){position:fixed;z-index:65;inset:0;display:block;width:100%;height:100%;border:0;background:rgba(28,20,54,.45);cursor:default}
+  .cpu-tablet-menu-toggle{position:relative;z-index:1;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:48px;min-height:48px;padding:8px 11px;border:1px solid rgba(255,255,255,.42);border-radius:8px;background:rgba(255,255,255,.1);color:#fff;font:600 14px var(--fika-font-body);cursor:pointer}
+  .cpu-tablet-menu-toggle span:first-child{font-size:20px;line-height:1}
+  .cpu-header{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:16px;min-height:0;padding:30px clamp(18px,3vw,38px) 38px}
+  .cpu-header-copy{position:relative;z-index:1;grid-column:2;min-width:0}
+  .cpu-header h1{font-size:clamp(2.5rem,4.5vw,3.7rem);line-height:1;text-wrap:balance}
+  .cpu-header>small{right:18px;bottom:12px}
   .cpu-dashboard-columns{grid-template-columns:minmax(0,1fr)}
-  .cpu-operations-rail{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cpu-operations-rail{display:none}
   .cpu-summary{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .cpu-summary button:last-child{grid-column:span 3}
   .cpu-summary button{min-width:0;min-height:76px}
   .cpu-summary span{overflow-wrap:anywhere}
-  .cpu-header{min-height:0;gap:16px;padding:34px clamp(18px,3vw,34px) 38px}
-  .cpu-header>div:first-child{min-width:0}
-  .cpu-header h1{font-size:clamp(2.5rem,5.1vw,3.35rem);line-height:1;text-wrap:balance}
-  .cpu-header>small{right:18px;bottom:12px}
-  .cpu-production-panel{min-width:0}
-  .cpu-sidebar-nav-note{display:none}
-}
-@media(min-width:1121px) and (max-width:1360px){
-  .cpu-operations-rail{grid-template-columns:minmax(0,1fr)}
-}
-@media(max-width:1360px){
-  .cpu-main{padding-inline:clamp(16px,2.2vw,28px)}
-}
-@media(min-width:701px) and (max-width:980px){
-  .cpu-sidebar{width:148px;flex-basis:148px;padding-left:12px;padding-right:12px}
-  .cpu-sidebar-nav button{justify-content:flex-start;gap:8px;min-height:44px;padding:10px 7px;font-size:12px}
-  .cpu-sidebar-nav button span{flex:0 0 18px;width:18px;font-size:17px}
-}
-@media(max-width:1360px){
-  .production-calendar .calendar-grid{grid-template-columns:repeat(5,minmax(185px,1fr));max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
-  .production-calendar .calendar-day{min-width:0}
-}
-@media(max-width:700px){
-  .cpu-sidebar{display:none}
-  .cpu-mobile-nav{position:sticky;top:0;z-index:25;display:flex;gap:4px;overflow-x:auto;padding:4px 12px;border-bottom:1px solid var(--fika-border-default);background:var(--fika-surface-card);overscroll-behavior-x:contain}
-  .cpu-mobile-nav button{display:flex;flex:1 0 auto;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:7px 10px;border:0;border-radius:8px;background:transparent;color:var(--fika-text-primary);font:600 12px var(--fika-font-body);white-space:nowrap}
-  .cpu-mobile-nav button.selected{background:var(--fika-surface-subtle);color:var(--fika-action-primary)}
-  .cpu-header{padding:30px 20px 28px}
-  .cpu-header h1{font-size:clamp(2.35rem,9vw,3rem)}
-  .cpu-header>small{display:none}
-  .cpu-header-tools{display:none}
-  .cpu-main{padding:18px 14px 40px}
-  .cpu-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-  .cpu-toolbar{align-items:stretch;flex-direction:column}
-  .cpu-toolbar-actions{justify-content:flex-start;flex-wrap:wrap}
-  .cpu-operations-rail{grid-template-columns:minmax(0,1fr)}
-  .cpu-production-panel{padding:16px 12px}
-  .production-calendar .calendar-grid{grid-template-columns:repeat(5,minmax(190px,1fr));padding-bottom:8px}
-}
-
-@media(max-width:1360px){
-  .cpu-sidebar-nav button,.cpu-production-scope button,.cpu-toolbar-actions button,.cpu-filters input,.cpu-filters select,.cpu-filters button,.cpu-operations-rail button,.cpu-create button,.calendar-nav button,.calendar-day-open,.cpu-detail button{min-height:44px}
-  .cpu-toolbar-actions button,.cpu-filters input,.cpu-filters select,.cpu-filters button{font-size:14px}
+  .cpu-main{padding:22px clamp(18px,2.2vw,30px) 40px}
+  .cpu-production-panel{min-width:0;padding:18px clamp(14px,2vw,22px)}
   .cpu-production-scope{flex-wrap:wrap}
+  .cpu-production-scope button,.cpu-toolbar-actions button,.cpu-filters button,.cpu-create button,.calendar-nav button,.calendar-day-open,.cpu-detail button{min-height:44px}
+  .cpu-toolbar-actions button,.cpu-filters input,.cpu-filters select,.cpu-filters button{font-size:14px}
   .cpu-production-scope button{padding:8px 12px}
   .cpu-toolbar-actions{flex-wrap:wrap}
   .calendar-nav button,.calendar-day-open{min-width:44px}
+  .production-calendar .calendar-grid{grid-template-columns:repeat(5,minmax(185px,1fr));max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+  .production-calendar .calendar-day{min-width:0}
   .cpu-booking,.cpu-attention-row{min-height:44px}
+  .cpu-tablet-attention{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 18px;padding:12px 16px;border:1px solid var(--fika-border-default);border-radius:10px;background:var(--fika-surface-card);color:var(--fika-text-primary)}
+  .cpu-tablet-attention button{min-height:44px;padding:8px 14px;border:0;border-radius:8px;background:var(--fika-action-primary);color:#fff;font:600 14px var(--fika-font-body);cursor:pointer}
 }
-.cpu-mobile-nav button:focus-visible,.cpu-sidebar-nav button:focus-visible,.cpu-production-scope button:focus-visible,.cpu-toolbar-actions button:focus-visible,.cpu-filters button:focus-visible,.calendar-nav button:focus-visible,.calendar-day-open:focus-visible{outline:3px solid var(--fika-focus-ring);outline-offset:2px}
+
+@media (max-width:700px){
+  .cpu-header{grid-template-columns:44px minmax(0,1fr);align-items:start;gap:12px;padding:24px 16px 32px}
+  .cpu-header-copy{grid-column:2}
+  .cpu-tablet-menu-toggle{min-width:44px;min-height:44px;padding:7px}
+  .cpu-tablet-menu-toggle span:last-child{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+  .cpu-header h1{font-size:clamp(2.1rem,8vw,3rem)}
+  .cpu-header>small,.cpu-header-tools{display:none}
+  .cpu-main{padding:18px 14px 36px}
+  .cpu-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .cpu-summary button:last-child{grid-column:span 2}
+  .cpu-toolbar{align-items:stretch;flex-direction:column}
+  .cpu-toolbar-actions{justify-content:flex-start;flex-wrap:wrap}
+  .cpu-production-panel{padding:16px 12px}
+  .cpu-tablet-attention{align-items:stretch;flex-direction:column;gap:8px;padding:12px}
+  .production-calendar .calendar-grid{grid-template-columns:repeat(5,minmax(190px,1fr));padding-bottom:8px}
+}
+
+.cpu-tablet-menu-toggle:focus-visible,.cpu-drawer-close:focus-visible,.cpu-sidebar-nav button:focus-visible,.cpu-production-scope button:focus-visible,.cpu-toolbar-actions button:focus-visible,.cpu-filters button:focus-visible,.cpu-tablet-attention button:focus-visible,.calendar-nav button:focus-visible,.calendar-day-open:focus-visible{outline:3px solid var(--fika-focus-ring);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){.cpu-sidebar{transition:none}}

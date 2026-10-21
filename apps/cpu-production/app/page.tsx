@@ -80,6 +80,59 @@ export default function CpuProduction() {
   }, []);
   const [productionScope, setProductionScope] = useState<ProductionScope>("all");
   const [view, setView] = useState<View>("calendar");
+  const [tabletNavigation, setTabletNavigation] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const menuToggleRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const drawerWasOpen = useRef(false);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1360px), (pointer: coarse)");
+    const update = () => setTabletNavigation(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (!tabletNavigation) {
+      drawerWasOpen.current = false;
+      setDrawerOpen(false);
+      return;
+    }
+    if (!drawerOpen) {
+      if (drawerWasOpen.current) menuToggleRef.current?.focus();
+      drawerWasOpen.current = false;
+      return;
+    }
+    drawerWasOpen.current = true;
+    const focusable = () => Array.from(sidebarRef.current?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ) || []);
+    focusable()[0]?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDrawerOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (!items.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !sidebarRef.current?.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !sidebarRef.current?.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [drawerOpen, tabletNavigation]);
   const [selected, setSelected] = useState<ProductionOrder>();
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
@@ -152,6 +205,18 @@ export default function CpuProduction() {
     (order) => !date || order.requiredBy.startsWith(date),
   );
   const totalsVisible = baseVisible.filter((order) => orderDate(order) === (date || dayDate));
+  const attentionCount = orders.filter((order) => Boolean(cpuAttentionLabel(order))).length;
+  const chooseView = (target: View) => {
+    setView(target);
+    setDrawerOpen(false);
+  };
+  const openAttentionQueue = () => {
+    setStatus("");
+    setOrigin("");
+    setSite("");
+    setDate("");
+    chooseView("queue");
+  };
   const openOrder = async (order: Pick<ProductionOrder, "canonicalId">, preserveOpen = false) => {
     if (!preserveOpen) setShowHospitalityAllergens(false);
     const requestId = ++detailRequest.current;
@@ -185,13 +250,26 @@ export default function CpuProduction() {
   }, {}), [totalsVisible]);
   return (
     <main className="cpu-app-shell">
-      <aside className="cpu-sidebar">
-        <div className="cpu-brand">FIKA OS</div>
+      <aside
+        className={`cpu-sidebar${drawerOpen ? " cpu-sidebar--open" : ""}`}
+        id="cpu-primary-navigation"
+        ref={sidebarRef}
+        role={tabletNavigation && drawerOpen ? "dialog" : undefined}
+        aria-label={tabletNavigation && drawerOpen ? "CPU Production menu" : undefined}
+        aria-modal={tabletNavigation && drawerOpen ? true : undefined}
+        aria-hidden={tabletNavigation ? !drawerOpen : undefined}
+        inert={tabletNavigation && !drawerOpen}
+      >
+        <div className="cpu-sidebar-heading">
+          <div className="cpu-brand">FIKA OS</div>
+          <button type="button" className="cpu-drawer-close" aria-label="Close production navigation" onClick={() => setDrawerOpen(false)}>×</button>
+        </div>
         <div className="cpu-sidebar-label">CPU PRODUCTION</div>
         <nav aria-label="CPU Production navigation" className="cpu-sidebar-nav">
           {primaryNavigation.map(({ icon, label, target }) => (
-            <button type="button" key={label} className={view === target ? "selected" : ""} aria-current={view === target ? "page" : undefined} onClick={() => setView(target)}>
-              <span aria-hidden="true">{icon}</span>{label}
+            <button type="button" key={label} className={view === target ? "selected" : ""} aria-current={view === target ? "page" : undefined} onClick={() => chooseView(target)}>
+              <span aria-hidden="true">{icon}</span><span className="cpu-nav-label">{label}</span>
+              {target === "queue" && attentionCount > 0 && <span className="cpu-nav-badge" aria-label={`${attentionCount} need attention`}>{attentionCount}</span>}
             </button>
           ))}
         </nav>
@@ -201,9 +279,26 @@ export default function CpuProduction() {
         </nav>
         <div className="cpu-user-card"><div className="cpu-avatar">OS</div><div><strong>CPU Production</strong><small>Local workspace</small></div></div>
       </aside>
+      <button
+        type="button"
+        className="cpu-sidebar-backdrop"
+        hidden={!tabletNavigation || !drawerOpen}
+        tabIndex={-1}
+        aria-label="Close production navigation"
+        onClick={() => setDrawerOpen(false)}
+      />
       <div className="cpu-workspace">
         <header className="cpu-header">
-          <div>
+          <button
+            type="button"
+            ref={menuToggleRef}
+            className="cpu-tablet-menu-toggle"
+            aria-label="Open production navigation"
+            aria-expanded={drawerOpen}
+            aria-controls="cpu-primary-navigation"
+            onClick={() => setDrawerOpen(true)}
+          ><span aria-hidden="true">☰</span><span>Menu</span></button>
+          <div className="cpu-header-copy">
             <p className="cpu-kicker">FIKA OS · CPU</p>
             <h1>Production, <em>in hand.</em></h1>
             <p>See what needs preparing, when it is required and where intervention is needed.</p>
@@ -211,13 +306,6 @@ export default function CpuProduction() {
           <div className="cpu-header-tools"><button type="button">▣ &nbsp; {todayKey ? new Date(`${todayKey}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "Loading date…"} &nbsp;⌄</button></div>
           <small>Operational application&nbsp; · &nbsp;governed Production domain</small>
         </header>
-        <nav className="cpu-mobile-nav" aria-label="CPU Production navigation">
-          {primaryNavigation.map(({ icon, label, target }) => (
-            <button type="button" key={label} className={view === target ? "selected" : ""} aria-current={view === target ? "page" : undefined} onClick={() => setView(target)}>
-              <span aria-hidden="true">{icon}</span>{label}
-            </button>
-          ))}
-        </nav>
         <div className="cpu-main">
         <nav className="cpu-production-scope" aria-label="Production type scope">
           <span>Scope</span>
@@ -241,6 +329,10 @@ export default function CpuProduction() {
             </button>
           ))}
         </section>
+        {attentionCount > 0 && <div className="cpu-tablet-attention" role="status">
+          <span><strong>{attentionCount}</strong> production record{attentionCount === 1 ? "" : "s"} need{attentionCount === 1 ? "s" : ""} attention</span>
+          <button type="button" onClick={openAttentionQueue}>Review in Queue</button>
+        </div>}
         <div className="cpu-dashboard-columns">
         <section className="cpu-production-panel">
         <div className="cpu-toolbar">
@@ -267,31 +359,6 @@ export default function CpuProduction() {
             </p>
           </div>
           <div className="cpu-toolbar-actions">
-            <button
-              className={view === "calendar" ? "selected" : ""}
-              onClick={() => setView("calendar")}
-            >
-              Week
-            </button>
-            <button className={view === "day" ? "selected" : ""} onClick={() => setView("day")}>Day</button>
-            <button
-              className={view === "queue" ? "selected" : ""}
-              onClick={() => setView("queue")}
-            >
-              Queue
-            </button>
-            <button
-              className={view === "run-sheet" ? "selected" : ""}
-              onClick={() => setView("run-sheet")}
-            >
-              Run sheet
-            </button>
-            <button
-              className={view === "totals" ? "selected" : ""}
-              onClick={() => setView("totals")}
-            >
-              Totals
-            </button>
             <button onClick={() => void load(true)} disabled={refreshing} aria-busy={refreshing} aria-label="Refresh production">
               {refreshing ? "Refreshing…" : "↻"}
             </button>
