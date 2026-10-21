@@ -33,6 +33,8 @@ test("Dish Library create and edit forms use the authenticated canonical catalog
   assert.match(createForm, /fetch\("\/api\/catalogue"/);
   assert.match(createForm, /action: dishId \? "update-dish" : "create-dish"/);
   assert.doesNotMatch(createForm, /fetch\("\/api\/menu"/);
+  assert.match(createForm, /Promise\.race\(\[invalidateCatalogueCache\(\), new Promise<void>/);
+  assert.match(createForm, /window\.location\.href = "\/catalogue"/);
   assert.match(catalogue, /dishes\/new\?id=\$\{encodeURIComponent\(selected\.id\)\}/);
 });
 

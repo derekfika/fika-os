@@ -49,20 +49,28 @@ export default function NewDishPage() {
     setSaving(true);
     setError("");
     const recipeIngredients = ingredients.filter(item => item.name.trim()).map(item => ({ name: item.name.trim(), quantity: item.quantity ? Number(item.quantity) : undefined, unit: item.unit.trim() || undefined }));
-    const response = await fetch("/api/catalogue", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        action: dishId ? "update-dish" : "create-dish",
-        ...(dishId ? { id: dishId } : {}),
-        displayName: titleCase(name), category, subcategory, description, preparationNotes, mayContainNotes,
-        ingredients: recipeIngredients, methodSteps: methodSteps.map(step => step.trim()).filter(Boolean),
-      }),
-    });
-    const body = await response.json();
-    if (!response.ok) { setError(body.error?.message || "The dish could not be saved."); setSaving(false); return; }
-    await invalidateCatalogueCache();
-    window.location.href = "/catalogue";
+    try {
+      const response = await fetch("/api/catalogue", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: dishId ? "update-dish" : "create-dish",
+          ...(dishId ? { id: dishId } : {}),
+          displayName: titleCase(name), category, subcategory, description, preparationNotes, mayContainNotes,
+          ingredients: recipeIngredients, methodSteps: methodSteps.map(step => step.trim()).filter(Boolean),
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) { setError(body.error?.message || "The dish could not be saved."); setSaving(false); return; }
+      // IndexedDB is a best-effort client cache. It must not hold a confirmed
+      // server mutation on the form; navigation also forces the library to
+      // revalidate the canonical catalogue.
+      await Promise.race([invalidateCatalogueCache(), new Promise<void>(resolve => window.setTimeout(resolve, 1200))]);
+      window.location.href = "/catalogue";
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The dish could not be saved.");
+      setSaving(false);
+    }
   };
 
   const updateIngredient = (index: number, field: keyof Ingredient, value: string) => setIngredients(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
