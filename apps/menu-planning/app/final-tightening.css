@@ -32,6 +32,44 @@
   font-weight: 900;
 }
 
+.menu-row-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.menu-row-field {
+  display: grid;
+  gap: 7px;
+  margin: 16px 0;
+  color: var(--fika-text-primary);
+  font-weight: 700;
+}
+
+.menu-row-field select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 8px;
+  background: var(--fika-surface-card);
+  color: var(--fika-text-primary);
+  font: inherit;
+}
+
+.menu-row-preview {
+  margin: 20px 0 24px;
+  padding: 12px 14px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 8px;
+  background: var(--fika-surface-subtle);
+  color: var(--fika-text-secondary);
+  line-height: 1.5;
+}
+
+.menu-row-dialog :focus-visible {
+  outline: 3px solid var(--fika-focus-ring);
+  outline-offset: 2px;
+}
+
 .week-menu-cell-button {
   text-transform: capitalize;
 }

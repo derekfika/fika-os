@@ -11,7 +11,7 @@ import { applyRollingEntryPatch, commandDayIds, commandEntryIds, type RollingMut
 function recordFirestore(operation: string, documents: number) { recordDataAccess({ app: "menu-planning", operation, source: "FIRESTORE", documents }); }
 
 export const MENU_PLANNING_COLLECTIONS = {
-  weeks: "fikaMenuPlanningWeeks", publications: "fikaMenuPlanningPublications", events: "fikaMenuPlanningEvents", outbox: "fikaMenuPlanningOutbox", archive: "fikaMenuPlanningArchiveMetadata", catalogue: "fikaMenuPlanningCatalogue", publishedSnapshots: "fikaMenuPlanningPublishedSnapshots",
+  weeks: "fikaMenuPlanningWeeks", publications: "fikaMenuPlanningPublications", events: "fikaMenuPlanningEvents", outbox: "fikaMenuPlanningOutbox", archive: "fikaMenuPlanningArchiveMetadata", catalogue: "fikaMenuPlanningCatalogue", publishedSnapshots: "fikaMenuPlanningPublishedSnapshots", settings: "fikaMenuPlanningSettings",
 } as const;
 export const MENU_PLANNING_OUTBOX_CLAIM_PAGE_SIZE = 25;
 const MENU_PLANNING_OUTBOX_COMPATIBILITY_PAGES = 4;
@@ -23,8 +23,8 @@ const queueCursorDocument = (state: QueueCursorState) => ({
   ...(state.legacy ? { legacy: state.legacy } : {}),
 });
 export type EventReplayState = "claimed" | "blocked" | "dead-lettered" | "missing";
-export type HostedTransactionState = { rolling: { version?: number; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[] }; publications: { version: number; publications: MenuPublication[]; events: DurableDomainEvent[] } };
-export type MenuPlanningTransactionScope = { weekId?: string; sourceWeekId?: string; includeEvents?: boolean };
+export type HostedTransactionState = { rolling: { version?: number; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; menuTemplateSlots?: string[] }; publications: { version: number; publications: MenuPublication[]; events: DurableDomainEvent[] } };
+export type MenuPlanningTransactionScope = { weekId?: string; sourceWeekId?: string; includeEvents?: boolean; includeTemplateSettings?: boolean };
 export class ExpectedVersionConflict extends Error { status = 409 as const; }
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const omit = (value: Record<string, unknown>, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
@@ -37,7 +37,13 @@ export function assertExpectedVersion(actual: number | undefined, expected: numb
 export class MenuPlanningFirestoreRepository {
   readonly db: Firestore;
   constructor(db = new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT })) { this.db = db; }
-  async readRollingState() { return this.db.runTransaction(transaction => this.readRolling(transaction)); }
+  async readRollingState() { return this.db.runTransaction(transaction => this.readRolling(transaction, undefined, true)); }
+  async getMenuTemplateSlots() {
+    const document = await this.db.collection(MENU_PLANNING_COLLECTIONS.settings).doc("menu-template").get();
+    recordFirestore("template.settings-read", document.exists ? 1 : 0);
+    const slots = document.exists ? document.data()?.menuTemplateSlots : undefined;
+    return Array.isArray(slots) ? slots.filter((slot): slot is string => typeof slot === "string") : [];
+  }
   async listWeekSummaries() { const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).limit(100).get(); recordFirestore("week.summaries", snapshot.size); recordMenuPlanningReadBudget({ operation: "week_summaries", reads: { weeks: snapshot.size, days: 0, entries: 0, scoped: 1 } }); return snapshot.docs.map(doc => doc.data() as RollingWeek); }
   async listWeekSummariesByCommencing(weekCommencings: string[]) {
     const wanted = [...new Set(weekCommencings.filter(Boolean))];
@@ -323,7 +329,7 @@ export class MenuPlanningFirestoreRepository {
   }
   async runTransaction<T>(mutator: (state: HostedTransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }, scope: MenuPlanningTransactionScope = {}) {
     return this.db.runTransaction(async transaction => {
-      const before = { rolling: await this.readRolling(transaction, scope.weekId), publications: await this.readPublications(transaction, scope.sourceWeekId, scope.includeEvents !== false) };
+      const before = { rolling: await this.readRolling(transaction, scope.weekId, scope.includeTemplateSettings === true), publications: await this.readPublications(transaction, scope.sourceWeekId, scope.includeEvents !== false) };
       recordMenuPlanningReadBudget({ operation: "transaction", reads: { weeks: before.rolling.weeks.length, days: before.rolling.days.length, entries: before.rolling.entries.length, publications: before.publications.publications.length, publicationDays: before.publications.publications.reduce((total, publication) => total + publication.days.length, 0), events: before.publications.events.length, scoped: scope.weekId || scope.sourceWeekId ? 1 : 0 } });
       if (expected?.weekId && expected.weekVersion !== undefined) assertExpectedVersion(before.rolling.weeks.find((week: RollingWeek) => week.id === expected.weekId)?.version, expected.weekVersion, expected.weekId);
       const state = structuredClone(before) as HostedTransactionState;
@@ -333,7 +339,7 @@ export class MenuPlanningFirestoreRepository {
       return result;
     });
   }
-  private async readRolling(transaction: Transaction, weekId?: string) {
+  private async readRolling(transaction: Transaction, weekId?: string, includeTemplateSettings = false) {
     const weekSnap = weekId ? await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(weekId)) : await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks));
     recordFirestore("week.transaction-read", weekId ? ((weekSnap as DocumentSnapshot).exists ? 1 : 0) : (weekSnap as QuerySnapshot).size);
     const weeks: RollingWeek[] = weekId ? ((weekSnap as DocumentSnapshot).exists ? [(weekSnap as DocumentSnapshot).data() as RollingWeek] : []) : (weekSnap as QuerySnapshot).docs.map(doc => doc.data() as RollingWeek);
@@ -342,7 +348,10 @@ export class MenuPlanningFirestoreRepository {
     const days = daySnap.filter(doc => doc.exists).map(doc => doc.data() as RollingDay);
     const entryRefs = days.flatMap(day => { const weekId = day.id.split(":day:")[0]; return (day.entryIds || []).map(id => this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(weekId).collection("days").doc(day.id).collection("entries").doc(id)); });
     const entrySnap = entryRefs.length ? await transaction.getAll(...entryRefs) : [];
-    return { weeks, days, entries: entrySnap.filter(doc => doc.exists).map(doc => doc.data() as RollingEntry) };
+    const settingsDocument = includeTemplateSettings ? await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.settings).doc("menu-template")) : undefined;
+    if (includeTemplateSettings) recordFirestore("template.settings-read", settingsDocument?.exists ? 1 : 0);
+    const settings = settingsDocument?.exists ? settingsDocument.data() : undefined;
+    return { weeks, days, entries: entrySnap.filter(doc => doc.exists).map(doc => doc.data() as RollingEntry), ...(Array.isArray(settings?.menuTemplateSlots) ? { menuTemplateSlots: settings.menuTemplateSlots as string[] } : includeTemplateSettings ? { menuTemplateSlots: [] } : {}) };
   }
   private async readPublications(transaction: Transaction, sourceWeekId?: string, includeEvents = true) {
     const root = sourceWeekId ? await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.publications).where("sourceWeekId", "==", sourceWeekId)) : await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.publications));
@@ -357,6 +366,7 @@ export class MenuPlanningFirestoreRepository {
     const beforeWeeks = new Map(before.weeks.map(value => [value.id, value])); const afterWeeks = new Map(after.weeks.map(value => [value.id, value]));
     const beforeDays = new Map(before.days.map(value => [value.id, value])); const afterDays = new Map(after.days.map(value => [value.id, value]));
     const beforeEntries = new Map(before.entries.map(value => [value.id, value])); const afterEntries = new Map(after.entries.map(value => [value.id, value]));
+    if (JSON.stringify(before.menuTemplateSlots || []) !== JSON.stringify(after.menuTemplateSlots || [])) transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.settings).doc("menu-template"), { menuTemplateSlots: after.menuTemplateSlots || [] });
     for (const [id, value] of afterWeeks) if (!beforeWeeks.has(id) || digest(beforeWeeks.get(id)!) !== digest(value)) transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(id), value);
     for (const [id, value] of afterDays) { const weekId = id.split(":day:")[0]; if (!beforeDays.has(id) || digest(beforeDays.get(id)!) !== digest(value)) transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(weekId).collection("days").doc(id), value); }
     for (const [id, value] of afterEntries) { const day = after.days.find(candidate => candidate.entryIds?.includes(id)); if (!day) throw new Error(`Entry ${id} is not attached to a day.`); const weekId = day.id.split(":day:")[0]; if (!beforeEntries.has(id) || digest(beforeEntries.get(id)!) !== digest(value)) transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(weekId).collection("days").doc(day.id).collection("entries").doc(id), value); }

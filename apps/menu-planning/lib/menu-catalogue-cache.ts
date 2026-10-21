@@ -169,11 +169,12 @@ export async function invalidateCatalogueCache(namespace = catalogueCacheNamespa
     const db = await openDatabase();
     await new Promise<void>((resolve, reject) => {
       const transaction = db.transaction([recordStore, metadataStore], "readwrite");
-      const records = transaction.objectStore(recordStore).openCursor();
-      records.onsuccess = () => { const cursor = records.result; if (!cursor) return; if (String(cursor.value.cacheKey).startsWith(`${namespace}|`)) cursor.delete(); cursor.continue(); };
+      const prefix = `${namespace}|`;
+      transaction.objectStore(recordStore).delete(IDBKeyRange.bound(prefix, `${prefix}\uffff`));
       transaction.objectStore(metadataStore).delete(metadataKey(namespace));
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error || new Error("Catalogue cache invalidation failed."));
+      transaction.onabort = () => reject(transaction.error || new Error("Catalogue cache invalidation was aborted."));
     });
     debug("invalidated", { namespace });
   } catch { /* Cache invalidation is best effort. */ }

@@ -6,9 +6,9 @@ import {
   cleanDuplicateEntries,
   copyWeekIntoWeek,
   createEntry,
+  createWeekSnapshot,
   defaultWeekForDate,
   duplicateWeek,
-  emptyWeek,
   getWeek,
   listWeeks,
   normaliseRollingSnapshotDestinations,
@@ -223,7 +223,7 @@ async function handleGet(request: NextRequest) {
     const snapshot = scopedSnapshot(
       normaliseRollingSnapshotDestinations(
         storedSnapshot ||
-          emptyWeek(
+          await createWeekSnapshot(
             requestedWeekCommencing || planningWeekFromQuery(undefined),
           ),
         governedOplocs,
@@ -297,7 +297,7 @@ async function handlePost(request: NextRequest) {
       const weekCommencing = planningWeekCommencing(
         String(body.weekCommencing),
       );
-      const snapshot = await saveSnapshot(emptyWeek(weekCommencing, actor.uid));
+      const snapshot = await saveSnapshot(await createWeekSnapshot(weekCommencing, actor.uid));
       return NextResponse.json({
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await listWeeks(),
@@ -427,13 +427,16 @@ async function handlePost(request: NextRequest) {
       });
     }
     if (action === "add-menu-slot") {
-      const snapshot = await addMenuSlot(
+      const result = await addMenuSlot(
         String(body.weekId),
-        String(body.slot || ""),
+        String(body.category || ""),
+        String(body.persistence || ""),
         actor.uid,
       );
+      const snapshot = result.snapshot;
       return NextResponse.json({
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
+        slot: result.slot,
         weeks: await listWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
         publicationState: await publicationState(snapshot, liveOplocs),

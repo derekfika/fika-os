@@ -36,6 +36,7 @@ test("dish creation has a dedicated structured route", () => {
   const page = readFileSync(new URL("../app/dishes/new/page.tsx", import.meta.url), "utf8");
   assert.match(page, /Create dish/);
   assert.match(page, /Ingredients/);
+  assert.match(page, /action: dishId \? "update-dish" : "create-dish"/);
   assert.match(page, /Save draft dish/);
 });
 
@@ -95,7 +96,7 @@ test("Brian recipe candidates preserve structured recipe evidence without invent
 
 test("dish creation retains Brian-style ingredients, method and yield fields", () => {
   const name = `Focused recipe ${Date.now()}`;
-  runMenuCommand({ action: "create-item", displayName: name, category: "delivered-in lunch", yieldDescription: "Makes 20 portions", ingredients: [{ name: "Olive oil", quantity: 250, unit: "ml" }], methodSteps: ["Whisk ingredients", "Chill before service"] });
+  runMenuCommand({ action: "create-item", displayName: name, category: "Cold Protein", yieldDescription: "Makes 20 portions", ingredients: [{ name: "Olive oil", quantity: 250, unit: "ml" }], methodSteps: ["Whisk ingredients", "Chill before service"] });
   const item = getMenuSnapshot().items.find(value => value.displayName === titleCase(name));
   assert.deepEqual(item?.ingredients, [{ name: "Olive oil", quantity: 250, unit: "ml" }]);
   assert.deepEqual(item?.methodSteps, ["Whisk ingredients", "Chill before service"]);

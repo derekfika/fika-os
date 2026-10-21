@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { filterCatalogueEntries, type CatalogueEntry } from "../lib/catalogue";
+import { canonicalEntry, filterCatalogueEntries, type CatalogueEntry } from "../lib/catalogue";
 import { hostedDocument, sanitiseFirestoreValue } from "../lib/canonical-menu-repository";
+import { CANONICAL_DISH_CATEGORIES } from "../lib/dish-categories";
 
 const entries: CatalogueEntry[] = [
   { id: "menu-item:salad", kind: "canonical", name: "Green salad", category: "Salads", usage: ["delivered-in"], status: "approved", reviewStatus: "approved", sourceLabel: "Brian workbook", recipeAvailable: true, allergenCount: 0 },
@@ -15,6 +16,25 @@ test("catalogue filters only canonical MenuItems", () => {
   assert.equal(filterCatalogueEntries(entries, { usage: "delivered-in" }).length, 1);
   assert.equal(filterCatalogueEntries(entries, { status: "approved" })[0]?.id, "menu-item:salad");
   assert.equal(filterCatalogueEntries(entries, { category: "Salads" })[0]?.id, "menu-item:salad");
+});
+
+test("catalogue read model retains every approved replacement category", () => {
+  const categories = CANONICAL_DISH_CATEGORIES.map((category, index) => canonicalEntry({
+    canonicalId: `dish:taxonomy:${index}`,
+    sourceName: category,
+    displayName: `${category} sample`,
+    category,
+    weekId: "menu-week:catalogue",
+    dayId: "",
+    sourceReference: { workbook: "approved replacement fixture", sheet: "catalogue" },
+    revision: 1,
+    reviewStatus: "approved",
+    allergenEvidence: [],
+    mayContainReviewed: true,
+    audit: [],
+  }));
+  assert.deepEqual(categories.map(entry => entry.category), CANONICAL_DISH_CATEGORIES);
+  assert.ok(categories.every(entry => entry.category !== "Other"));
 });
 
 test("catalogue reads do not reconcile or mutate rolling state", () => {

@@ -18,11 +18,24 @@ test("catalogue mutation routes pass the resolved actor identity to repository o
   const importer = readFileSync(new URL("../app/api/rolling-menu/import/route.ts", import.meta.url), "utf8");
   assert.match(catalogue, /requireCatalogueMutationActor\(await resolveMenuActor\(request\)\)/);
   assert.match(catalogue, /createCanonicalMenuItem\(\{ \.\.\.body, displayName: body\.displayName! \}, actor\.uid\)/);
+  assert.match(catalogue, /updateCanonicalMenuItem\(body\.id, \{ displayName: body\.displayName, category: body\.category, subcategory: body\.subcategory, description: body\.description, preparationNotes: body\.preparationNotes, mayContainNotes: body\.mayContainNotes, ingredients: body\.ingredients, methodSteps: body\.methodSteps \}, actor\.uid\)/);
+  assert.match(catalogue, /archiveCanonicalMenuItem\(body\.id, actor\.uid\)/);
   assert.match(catalogue, /createCanonicalMenuItems\(items, actor\.uid\)/);
   assert.match(catalogue, /mergeSimilarCanonicalItems\(actor\.uid/);
   assert.match(candidates, /promoteSourceCandidate\(item, actor\.uid\)/);
   assert.match(candidates, /setCandidateReview\(item\.canonicalId, "ignored", body\.reason, actor\.uid\)/);
   assert.match(importer, /recordDishSourceAliases\(aliasesById, actor!\.uid\)/);
+});
+
+test("Dish Library create and edit forms use the authenticated canonical catalogue API", () => {
+  const createForm = readFileSync(new URL("../app/dishes/new/page.tsx", import.meta.url), "utf8");
+  const catalogue = readFileSync(new URL("../app/catalogue-workspace.tsx", import.meta.url), "utf8");
+  assert.match(createForm, /fetch\("\/api\/catalogue"/);
+  assert.match(createForm, /action: dishId \? "update-dish" : "create-dish"/);
+  assert.doesNotMatch(createForm, /fetch\("\/api\/menu"/);
+  assert.match(createForm, /Promise\.race\(\[invalidateCatalogueCache\(\), new Promise<void>/);
+  assert.match(createForm, /window\.location\.href = "\/catalogue"/);
+  assert.match(catalogue, /dishes\/new\?id=\$\{encodeURIComponent\(selected\.id\)\}/);
 });
 
 test("catalogue source certification hashes the transactionally authoritative merged set", () => {
