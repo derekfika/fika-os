@@ -1,0 +1,17 @@
+{
+  "schema": "fika.release.v1",
+  "app": "hospitality",
+  "environment": "prod",
+  "project": "fika-os",
+  "backend": "fika-os-prod-hospitality",
+  "region": "europe-west4",
+  "branch": "release/prod/hospitality",
+  "sourceSha": "c8f20b897306b152cfdeb99f4d6476f3f21d47a7",
+  "rollout": "build-2026-10-22-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "baseline",
+  "scopeHash": "423af641ca12b1bfb6d659e55ff252e13b6e46e4db239c728cb37d196979884e",
+  "observedAt": "2026-10-22T17:15:23.148Z",
+  "historicalException": false
+}
