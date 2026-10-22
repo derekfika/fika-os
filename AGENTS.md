@@ -26,7 +26,7 @@ worktrees/temporary branches and direct concurrent writes to main.
 3. Install dependencies separately in each workspace. Do not share node_modules,
    .next output, environment files or mutable test state. Use workspace port
    allocations with `fika dev <app> --workspace <task> --owner <agent-task>`.
-4. Work branches integrate through PRs and the exact-source `Workflow / merge-gate`.
+4. Work branches integrate through merge-commit PRs and the exact-source `Workflow / merge-gate`.
    Do not push directly to main or integrate unfinished features just to release
    an unrelated app. Shared packages/contracts use Standard Track and validate
    every mapped consumer. New/unmapped provider paths fail conservative review.

@@ -25,7 +25,7 @@ npm run fika -- validate --base origin/main
 
 Commit scoped changes and CHANGELOG, push the task branch and open a PR to main. CI always reports `Workflow / merge-gate`, including intentional application-job skips. App jobs validate the exact source commit. Hub changes additionally run the existing booking-cutoff POST-route regression in an isolated Firestore emulator. Main requires an up-to-date passing gate and one independent PR approval; force pushes and deletion are disabled, including for administrators.
 
-Only main integrates development. Do not merge unfinished sibling branches to make a release work. For a staging-only candidate, first separate its changes into a fresh task branch from current main, or deliberately cherry-pick only approved commits into such a branch. Resolve and validate actual overlaps, then PR that source into main. Production requires its source to be integrated into main.
+Only main integrates development. Use merge-commit PR integration: repository squash/rebase merge options are disabled so reviewed/staged commits remain ancestors of main. Automatic branch deletion is disabled; retire through the guarded lifecycle. Do not merge unfinished sibling branches to make a release work. For a staging-only candidate, first separate its changes into a fresh task branch from current main, or deliberately cherry-pick only approved commits into such a branch. Resolve and validate actual overlaps, then PR that source into main. Production requires its source to be integrated into main.
 
 ## Release records and target map
 

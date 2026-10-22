@@ -89,6 +89,8 @@ async function main() {
     const branches = ['main', ...Object.keys(APPS).flatMap(app => ['staging', 'prod'].map(env => target(app, env).branch))];
     result = branches.map(branch => ({ branch, policy: protection(branch !== 'main') }));
     if (options.execute) {
+      // Preserve reviewed/staged source ancestry; squash/rebase would invalidate exact-source promotion evidence.
+      ghApi(`repos/${REPO}`, 'PATCH', { allow_merge_commit: true, allow_squash_merge: false, allow_rebase_merge: false, delete_branch_on_merge: false });
       for (const item of result) ghApi(`repos/${REPO}/branches/${encodeURIComponent(item.branch)}/protection`, 'PUT', item.policy);
       const repo = ghApi(`repos/${REPO}`); const owner = ghApi(`users/${repo.owner.login}`);
       for (const app of Object.keys(APPS)) for (const env of ['staging', 'prod']) {
