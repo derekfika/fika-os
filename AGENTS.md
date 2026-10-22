@@ -10,34 +10,65 @@ Important: `apps/delivered-in/AGENTS.md` contains Next.js-generated agent guidan
 CANONICAL SOURCE CONTROL — NON-NEGOTIABLE
 ==================================================
 
-Canonical local repository:
-C:\FIKA
+Canonical Git object store and integration checkout: `C:\Fika\fika-os`.
+Authoritative development integration branch: `origin/main`.
 
-Canonical branch:
-main
+The owner-authorised 22 October 2026 workflow replaces the former blanket ban on
+worktrees/temporary branches and direct concurrent writes to main.
 
-Canonical remote source for new work:
-origin/main
+1. Fetch origin and record origin/main before work. Do not rewrite main, force-push,
+   create another clone or discard another task's files.
+2. Each agent uses its own governed worktree/branch from a recorded origin/main:
+   `npm run fika -- workspace create <task> --owner <agent-task> --scope <paths>`.
+   Creation refuses reused paths/branches and overlapping active scope leases.
+   Never write in another agent's workspace. Existing legacy worktrees remain
+   protected until explicitly classified; process age is not evidence of disuse.
+3. Install dependencies separately in each workspace. Do not share node_modules,
+   .next output, environment files or mutable test state. Use workspace port
+   allocations with `fika dev <app> --workspace <task> --owner <agent-task>`.
+4. Work branches integrate through merge-commit PRs and the exact-source `Workflow / merge-gate`.
+   Do not push directly to main or integrate unfinished features just to release
+   an unrelated app. Shared packages/contracts use Standard Track and validate
+   every mapped consumer. New/unmapped provider paths fail conservative review.
+   PRs are agent-managed CI/integration tools. No independent human approval is
+   required. After CI passes, agents may integrate when the owner has authorised
+   integration; honour explicit instructions to stop before merging.
+5. Six app release pairs use `release/staging/<app>` and `release/prod/<app>`.
+   They are APPEND-ONLY RELEASE RECORDS, not source checkouts. Read `release.json`
+   for sourceSha. NEVER deploy a release-record branch/commit as application code.
+   Source code remains on main (or a reviewed staging candidate before integration).
+6. Use `fika deploy <app> --staging|--prod` (or `npm run fika -- ...`). Default is
+   dry-run. Execution requires passing exact-SHA CI and PR provenance. Staging
+   permits explicit --execute by an authenticated repository writer; production
+   additionally requires an explicit owner release instruction recorded by the
+   agent with --owner-approved --reason. No GitHub approval comments are used.
+   Production source must be in origin/main and preserve
+   the currently deployed lineage. No arbitrary WIP production releases.
+7. Production approvals are never inferred from a code task. The owner can say
+   "Ship it" in context; the agent pins the approved candidate and records that
+   instruction internally. Owner-supplied SHAs, comments and independent reviews
+   are unnecessary. The complete serving-to-candidate delta determines the lane:
+   cosmetic changes can use Fast Track; operational/data-sensitive changes require
+   verified staging of the same selected-app/dependency tree. No owner flag can
+   bypass automated validation, target/lineage, staging or business-data safeguards.
+8. Keep App Hosting automatic rollouts disabled. Only selected-backend, explicit-
+   SHA commands are allowed. A pending distributed release intent blocks competing
+   writers; resume from its matching journal, never blindly redeploy after failure.
+   `fika reconcile` can resolve only a positively identified terminal attempt;
+   active or unknown deployment outcomes must remain pending.
+9. Finish/retire only your own workspace. Retirement refuses dirty/untracked/
+   ignored files and unpreserved unique commits. --preserve-generated may MOVE
+   allowlisted ignored dependencies/build outputs into a recovery archive, never
+   delete their contents. Seven legacy stashes, recovery
+   archives, rollback/release/preservation refs and ambiguous active work stay.
+10. Do not bypass automated GitHub protections or force-push main. Main requires
+    a passing merge-gate and PR integration with zero mandatory human approvals.
+    Local authorised deployment is the default; optional hosted WIF provisioning
+    must never block it. Ledgers, SHA selection, rollback and recovery are internal
+    agent responsibilities, not routine administration for the owner.
 
-1. `main` is the only canonical branch.
-2. Before any read/write task, fetch origin and record the current `origin/main` SHA.
-3. Normal single-thread work is performed directly on `main` after `git pull --ff-only origin main`.
-4. NEVER create another local clone such as `C:\FIKA-UAT`, `C:\FIKA-feature-*`, `C:\FIKA-thread-*` or similar.
-5. NEVER create Git worktrees for FIKA OS development.
-6. Never rebase published `main`, force-push `main`, or rewrite canonical history.
-7. Never treat an old UAT/refactor branch as authoritative merely because it contains newer-looking code.
-8. Push `main` after successful validated work unless the user explicitly says not to push.
-9. Treat `main` as protected even if GitHub branch protection is not currently enforcing it. Never push unvalidated work simply because the remote allows it.
-
-Temporary task branches are allowed ONLY when the user or coordinator explicitly requests a parallel implementation wave. In that case:
-
-- each task branch must be created fresh from the same recorded `origin/main` baseline;
-- do not branch one task from another task branch;
-- keep scopes/file ownership disjoint;
-- do not deploy from a temporary task branch;
-- return the branch name, starting SHA and final SHA;
-- integrate completed work sequentially back into `main` after review;
-- delete/retire temporary branches after integration when appropriate.
+Operator guide: `docs/deployment/workflow.md`. `tools/workflow` owns the automation.
+Local runtime state/leases/journals live in the common Git directory, outside source.
 
 ==================================================
 MANDATORY CHANGELOG RULE

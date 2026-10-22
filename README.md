@@ -4,7 +4,20 @@ FIKA OS is FIKA Catering's internal operational software platform. It brings pla
 
 ## TL;DR
 
-FIKA OS is a governed operational platform connecting Menu Planning, CPU Production, Delivered-In, Hospitality Booking and Logistics. Work from `C:\FIKA` on `main`; run focused validation before pushing. Normal staging reset preserves reusable `fikaMenuPlanningWeeks` history. A complete planning-history reset requires the explicit hard-reset command documented below.
+FIKA OS is an operational platform connecting Menu Planning, CPU Production, Delivered-In, Hospitality Booking and Logistics. The solo owner directs AI agents; agents handle isolated workspaces, tests, CI and release mechanics. `main` is the sole integration branch. Production always needs an explicit owner release instruction. Normal staging reset preserves reusable `fikaMenuPlanningWeeks` history.
+
+## Working with an agent
+
+| Owner says | Agent does |
+|---|---|
+| "Implement this" | Creates an isolated workspace, implements, tests and prepares the change. No production deployment. |
+| "Put it on staging" | Resolves the candidate and deploys only the selected staging application, then verifies it. |
+| "Ship it" | Records explicit production authorisation, validates the full change and required staging evidence, deploys the selected app and verifies the exact serving source. |
+| "Roll it back" | Selects the verified previous release automatically, performs the authorised rollback and verifies it. |
+
+No manual SHAs, GitHub approval comments or independent human PR approvals are required. PRs and required CI remain useful automated integration safeguards; agents can integrate a green PR when the owner authorises integration. Genuinely cosmetic releases can go from CI to production after owner approval; operational and data-sensitive changes must pass staging first. An ordinary coding request never authorises production deployment.
+
+The existing authorised local deployment path works without hosted GCP workload identity. Release ledgers and recovery journals protect operations internally. See the [operator guide](docs/deployment/workflow.md) for agent commands and failure recovery.
 
 ## Applications
 
@@ -35,17 +48,7 @@ Applications are Next.js packages deployed through Firebase App Hosting staging.
 
 ## Canonical Development Source
 
-Local repository:
-C:\FIKA
-
-Canonical branch:
-main
-
-main is the only development branch.
-
-All Codex work is performed directly in C:\FIKA on main.
-
-No development branches, alternate worktrees, parallel clones or cherry-pick-based integration are used in the normal workflow.
+The shared repository is `C:\Fika\fika-os`; `origin/main` is authoritative. Agents use scoped isolated worktrees and temporary branches from a recorded main baseline. They do not create separate clones, overwrite each other's files or force-push main. Dependencies, build output and local test state remain isolated. Approved work integrates sequentially through passing CI.
 
 ## Local development and testing
 
@@ -67,4 +70,4 @@ Read the relevant root and nested `AGENTS.md`, architecture documents, specifica
 
 ## Source-control policy
 
-Keep one clean checkout on `main`. Understand the worktree before editing, pull with fast-forward-only, commit validated changes sequentially, and push `main` after successful work unless explicitly told not to.
+Keep the canonical main checkout clean and preserve other agents' work. Agents commit and push validated task branches, use PR CI, and integrate only within the owner's authorisation. Mandatory independent approvals are disabled; automated checks and force-push protection remain. Deployment is a separate explicit instruction, not a consequence of pushing or merging. Never discard unique work, stashes or recovery history to simplify Git.

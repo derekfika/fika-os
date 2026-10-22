@@ -26,6 +26,7 @@
 # Environment
 # ----------------------------------------------------------
 .env
+gha-creds-*.json
 .env.*
 !.env.example
 

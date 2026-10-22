@@ -1,32 +1,19 @@
+# Compatibility entry point; governed tooling owns all target/approval checks.
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory = $true)]
-  [ValidateSet("integration-hub", "hospitality-booking", "menu-planning", "cpu-production", "delivered-in", "logistics")]
-  [string]$App
+  [Parameter(Mandatory=$true)]
+  [ValidateSet("integration-hub","hospitality-booking","menu-planning","cpu-production","delivered-in","logistics")][string]$App,
+  [string]$Sha,
+  [switch]$Execute
 )
-
 $ErrorActionPreference = "Stop"
-$repoRoot = (git rev-parse --show-toplevel).Trim()
-$expectedRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-if ([IO.Path]::GetFullPath($repoRoot) -ne [IO.Path]::GetFullPath($expectedRoot)) {
-  throw "Run this deployment wrapper from the repository containing the script; resolved git root was '$repoRoot'."
+$aliases = @{ "integration-hub"="hub"; "hospitality-booking"="hospitality"; "menu-planning"="menu"; "cpu-production"="cpu"; "delivered-in"="delivered-in"; "logistics"="logistics" }
+$entry = Join-Path $PSScriptRoot "../tools/workflow/cli.mjs"
+$arguments = @($entry,"deploy",$aliases[$App],"--staging")
+if ($Sha) { $arguments += @("--sha",$Sha) }
+if ($Execute) {
+  $arguments += @("--execute")
 }
-
-$dirty = @(git status --porcelain)
-if ($dirty.Count -gt 0) { throw "Refusing staging rollout from a dirty worktree:`n$($dirty -join "`n")" }
-
-$sha = (git rev-parse HEAD).Trim()
-if ($sha -notmatch '^[0-9a-fA-F]{40}$') { throw "Refusing staging rollout because HEAD is not a full commit SHA: '$sha'." }
-
-$backends = @{
-  "integration-hub" = "fika-os-staging"
-  "hospitality-booking" = "fika-hospitality-staging"
-  "menu-planning" = "fika-menu-planning-staging"
-  "cpu-production" = "fika-cpu-production-staging"
-  "delivered-in" = "fika-delivered-in-staging"
-  "logistics" = "fika-logistics-staging"
-}
-$backend = $backends[$App]
-Write-Host "Creating App Hosting staging rollout for $App ($backend) at git SHA $sha"
-& firebase apphosting:rollouts:create $backend --project=fika-os-dev --git-commit $sha --force
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Write-Host "Using governed selected-app release tooling. Dry-run unless -Execute is supplied."
+& node @arguments
+exit $LASTEXITCODE
