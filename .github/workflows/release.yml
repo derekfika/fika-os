@@ -1,0 +1,95 @@
+name: Selected application release
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        type: choice
+        options: [hub, hospitality, menu, cpu, delivered-in, logistics]
+        required: true
+      environment:
+        type: choice
+        options: [staging, prod]
+        required: true
+      sha:
+        description: Exact approved source SHA (never release-ledger SHA)
+        required: true
+      execute:
+        description: Submit rollout; false is a read-only production dry-run
+        type: boolean
+        default: false
+      approval_url:
+        description: Exact-SHA repository-owner approval comment URL (required for execute)
+        required: false
+      resume_run_id:
+        description: Resume matching pending intent using the journal artifact from this workflow run; never resubmit
+        required: false
+permissions:
+  contents: write
+  checks: read
+  pull-requests: read
+  issues: read
+  actions: read
+  id-token: write
+concurrency:
+  group: release-${{ inputs.environment }}-${{ inputs.app }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ inputs.environment }}-${{ inputs.app }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: main
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Fail explicitly if release runner identity is not configured
+        env:
+          PROVIDER: ${{ vars.FIKA_GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          SERVICE_ACCOUNT: ${{ vars.FIKA_GCP_RELEASE_SERVICE_ACCOUNT }}
+        run: test -n "$PROVIDER" && test -n "$SERVICE_ACCOUNT" || { echo 'Configure a reviewed least-privilege GCP workload identity; local authorised fika deploy remains available. No rollout submitted.'; exit 1; }
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
+        with:
+          workload_identity_provider: ${{ vars.FIKA_GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.FIKA_GCP_RELEASE_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
+      - run: npm install --global firebase-tools@15.30.2
+      - name: Restore plan-scoped recovery journal when requested
+        if: inputs.resume_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS_RUN: ${{ inputs.resume_run_id }}
+          APP: ${{ inputs.app }}
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          [[ "$PREVIOUS_RUN" =~ ^[0-9]+$ ]] || exit 1
+          gh run download "$PREVIOUS_RUN" --name "release-journal-$TARGET_ENV-$APP" --dir "$RUNNER_TEMP/fika-resume"
+          mkdir -p .git/fika-workflow
+          cp "$RUNNER_TEMP/fika-resume/release-$APP-$TARGET_ENV.json" ".git/fika-workflow/"
+      - name: Exact selected-app plan / rollout
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP: ${{ inputs.app }}
+          TARGET_ENV: ${{ inputs.environment }}
+          SOURCE_SHA: ${{ inputs.sha }}
+          EXECUTE: ${{ inputs.execute }}
+          APPROVAL_URL: ${{ inputs.approval_url }}
+          PREVIOUS_RUN: ${{ inputs.resume_run_id }}
+        run: |
+          git config user.name 'FIKA Release Recorder'
+          git config user.email 'release-recorder@example.invalid'
+          args=(deploy "$APP" "--$TARGET_ENV" --sha "$SOURCE_SHA")
+          if [ "$EXECUTE" = true ]; then args+=(--execute --approval-url "$APPROVAL_URL"); fi
+          if [ -n "$PREVIOUS_RUN" ]; then args+=(--resume); fi
+          node tools/workflow/cli.mjs "${args[@]}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: release-journal-${{ inputs.environment }}-${{ inputs.app }}
+          path: .git/fika-workflow/release-${{ inputs.app }}-${{ inputs.environment }}.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 30

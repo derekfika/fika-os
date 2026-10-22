@@ -1,5 +1,10 @@
 # FIKA OS local workspace
 
+For concurrent agent tasks, use the isolated scope/port leases in
+[the governed workflow](docs/deployment/workflow.md). The fixed-port supervisor
+below is for an exclusive whole-platform local session; do not share its mutable
+emulator/runtime state between independent tasks.
+
 Double-click `fikaos.bat` to start the single foreground FIKA OS supervisor. It restores the verified local Firebase dataset, starts Firebase and all local apps on their fixed ports, starts the passive launcher, and opens one browser page: the FIKA OS launcher. Use `Start-FIKA-OS-All.cmd` as the legacy fallback.
 
 | App | URL | Port |

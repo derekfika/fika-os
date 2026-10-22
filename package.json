@@ -1,7 +1,10 @@
 {
   "name": "fika-os-local",
   "private": true,
+  "bin": { "fika": "tools/workflow/cli.mjs" },
   "scripts": {
+    "fika": "node tools/workflow/cli.mjs",
+    "test:workflow": "node --test tools/workflow/*.test.mjs",
     "dev": "node tools/dev/supervisor.mjs",
 
     "dev:hub": "npm --prefix apps/integration-hub run dev",

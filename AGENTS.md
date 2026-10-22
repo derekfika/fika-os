@@ -10,34 +10,52 @@ Important: `apps/delivered-in/AGENTS.md` contains Next.js-generated agent guidan
 CANONICAL SOURCE CONTROL — NON-NEGOTIABLE
 ==================================================
 
-Canonical local repository:
-C:\FIKA
+Canonical Git object store and integration checkout: `C:\Fika\fika-os`.
+Authoritative development integration branch: `origin/main`.
 
-Canonical branch:
-main
+The owner-authorised 22 October 2026 workflow replaces the former blanket ban on
+worktrees/temporary branches and direct concurrent writes to main.
 
-Canonical remote source for new work:
-origin/main
+1. Fetch origin and record origin/main before work. Do not rewrite main, force-push,
+   create another clone or discard another task's files.
+2. Each agent uses its own governed worktree/branch from a recorded origin/main:
+   `npm run fika -- workspace create <task> --owner <agent-task> --scope <paths>`.
+   Creation refuses reused paths/branches and overlapping active scope leases.
+   Never write in another agent's workspace. Existing legacy worktrees remain
+   protected until explicitly classified; process age is not evidence of disuse.
+3. Install dependencies separately in each workspace. Do not share node_modules,
+   .next output, environment files or mutable test state. Use workspace port
+   allocations with `fika dev <app> --workspace <task> --owner <agent-task>`.
+4. Work branches integrate through PRs and the exact-source `Workflow / merge-gate`.
+   Do not push directly to main or integrate unfinished features just to release
+   an unrelated app. Shared packages/contracts use Standard Track and validate
+   every mapped consumer. New/unmapped provider paths fail conservative review.
+5. Six app release pairs use `release/staging/<app>` and `release/prod/<app>`.
+   They are APPEND-ONLY RELEASE RECORDS, not source checkouts. Read `release.json`
+   for sourceSha. NEVER deploy a release-record branch/commit as application code.
+   Source code remains on main (or a reviewed staging candidate before integration).
+6. Use `fika deploy <app> --staging|--prod` (or `npm run fika -- ...`). Default is
+   dry-run. Execution requires passing exact-SHA CI and an exact app/environment/
+   SHA owner approval URL. Production source must be in origin/main and preserve
+   the currently deployed lineage. No arbitrary WIP production releases.
+7. Production approvals are never inferred from a code task. Standard Track needs
+   staging with identical selected-app/dependency tree and independent review;
+   a seven-day maximum, recorded owner-exception may replace independent review,
+   never source, CI, staging, target, integrity or AUTHMOD safety gates.
+8. Keep App Hosting automatic rollouts disabled. Only selected-backend, explicit-
+   SHA commands are allowed. A pending distributed release intent blocks competing
+   writers; resume from its matching journal, never blindly redeploy after failure.
+9. Finish/retire only your own workspace. Retirement refuses dirty/untracked/
+   ignored files and unpreserved unique commits. Seven legacy stashes, recovery
+   archives, rollback/release/preservation refs and ambiguous active work stay.
+10. Do not bypass GitHub protections. Main requires a PR, successful merge-gate and
+    independent approval. If no reviewer is available, state the blocker promptly;
+    the owner must resolve it through a separately recorded authorised repository
+    administration decision. A release-review exception does not bypass main's
+    GitHub-required PR review.
 
-1. `main` is the only canonical branch.
-2. Before any read/write task, fetch origin and record the current `origin/main` SHA.
-3. Normal single-thread work is performed directly on `main` after `git pull --ff-only origin main`.
-4. NEVER create another local clone such as `C:\FIKA-UAT`, `C:\FIKA-feature-*`, `C:\FIKA-thread-*` or similar.
-5. NEVER create Git worktrees for FIKA OS development.
-6. Never rebase published `main`, force-push `main`, or rewrite canonical history.
-7. Never treat an old UAT/refactor branch as authoritative merely because it contains newer-looking code.
-8. Push `main` after successful validated work unless the user explicitly says not to push.
-9. Treat `main` as protected even if GitHub branch protection is not currently enforcing it. Never push unvalidated work simply because the remote allows it.
-
-Temporary task branches are allowed ONLY when the user or coordinator explicitly requests a parallel implementation wave. In that case:
-
-- each task branch must be created fresh from the same recorded `origin/main` baseline;
-- do not branch one task from another task branch;
-- keep scopes/file ownership disjoint;
-- do not deploy from a temporary task branch;
-- return the branch name, starting SHA and final SHA;
-- integrate completed work sequentially back into `main` after review;
-- delete/retire temporary branches after integration when appropriate.
+Operator guide: `docs/deployment/workflow.md`. `tools/workflow` owns the automation.
+Local runtime state/leases/journals live in the common Git directory, outside source.
 
 ==================================================
 MANDATORY CHANGELOG RULE
