@@ -1764,11 +1764,11 @@ function RealPlanner(props: RealPlannerProps) {
         <aside className="mock-queue" aria-label="Planning queue" data-logistics-planning-queue>
           <header><div><span>QUEUE</span><h2>Unassigned work <em>({queueCount})</em></h2><p className="queue-subtitle">Work still needing assignment, timing or review.</p></div><button type="button" className="queue-collapse" aria-label={queueCollapsed ? "Expand planning queue" : "Collapse planning queue"} aria-expanded={!queueCollapsed} onClick={() => setQueueCollapsed((value) => !value)}>{queueCollapsed ? "›" : "‹"}</button></header>
           <label className="queue-search"><span>Search unassigned work</span><input type="search" value={queueSearch} onChange={(event) => setQueueSearch(event.target.value)} placeholder="Site, item or source" /></label>
-          <div className="mock-filter-pills" role="tablist" aria-label="Planning queue state">
-            <button className={props.queueFilter === "all" ? "active" : ""} onClick={() => props.setQueueFilter("all")}>All <b>{countFor("all")}</b></button>
-            <button className={props.queueFilter === "unassigned" ? "active" : ""} onClick={() => props.setQueueFilter("unassigned")}>Unassigned <b>{countFor("unassigned")}</b></button>
-            <button className={props.queueFilter === "needs_time" ? "active" : ""} onClick={() => props.setQueueFilter("needs_time")}>Needs time <b>{countFor("needs_time")}</b></button>
-            <button className={props.queueFilter === "attention" ? "active" : ""} onClick={() => props.setQueueFilter("attention")}>Attention <b>{countFor("attention")}</b></button>
+          <div className="mock-filter-pills" role="group" aria-label="Planning queue state">
+            <button className={props.queueFilter === "all" ? "active" : ""} aria-pressed={props.queueFilter === "all"} onClick={() => props.setQueueFilter("all")}>All <b>{countFor("all")}</b></button>
+            <button className={props.queueFilter === "unassigned" ? "active" : ""} aria-pressed={props.queueFilter === "unassigned"} onClick={() => props.setQueueFilter("unassigned")}>Unassigned <b>{countFor("unassigned")}</b></button>
+            <button className={props.queueFilter === "needs_time" ? "active" : ""} aria-pressed={props.queueFilter === "needs_time"} onClick={() => props.setQueueFilter("needs_time")}>Needs time <b>{countFor("needs_time")}</b></button>
+            <button className={props.queueFilter === "attention" ? "active" : ""} aria-pressed={props.queueFilter === "attention"} onClick={() => props.setQueueFilter("attention")}>Attention <b>{countFor("attention")}</b></button>
           </div>
           <div className="mock-secondary-filter"><label>Type <select value={props.queueTypeFilter} onChange={(event) => props.setQueueTypeFilter(event.target.value as RealPlannerProps["queueTypeFilter"])}><option value="all">All work</option><option value="delivery">Delivery</option><option value="collection">Collection</option><option value="transfer">Transfer</option></select></label></div>
           <div className="mock-queue-list">
@@ -2318,7 +2318,7 @@ function Inspector({
   const assignedRun = assignedDelivery && group
     ? runs.find((item) => item.runId === group.requirementRefs.find((ref) => ref.stopId === assignedDelivery.stopId)?.runId)
     : undefined;
-  return <aside className="mock-inspector" aria-label="Details inspector">
+  return <aside className="mock-inspector" aria-label="Details inspector" onKeyDown={(event) => { if (event.key === "Escape" && !event.defaultPrevented && !(event.target instanceof HTMLElement && event.target.closest("[role=dialog]"))) { event.preventDefault(); onClose(); } }}>
     <header><div><p className="eyebrow">{run ? "Run inspector" : stop ? "Stop inspector" : selection.kind === "load" ? "Load inspector" : "Inspector"}</p><h2>{group?.destinationLabel || movement?.type || stopTitle || (selection.kind === "load" ? `Load · ${selectedStop?.destination.label || "Details"}` : undefined) || runName || "Details"}</h2></div><button className="close" onClick={onClose} aria-label="Close inspector">×</button></header>
     {group && <>
       {group.deliveryWindow && <><InspectorMeta label="Preferred source timing" value={formatWindow(group.deliveryWindow)!} /><p className="context-line">Advisory timing · Logistics sets the operational schedule.</p></>}
@@ -2588,10 +2588,11 @@ function RunCreatePopover({
   useEffect(() => { void catalogue.refresh(); }, []);
   useEffect(() => { if (!vehicleId || !catalogue.vehicles.includes(vehicleId)) setVehicleId(catalogue.vehicles[0]); }, [catalogue.vehicles, vehicleId]);
   return (
+    <div className="run-create-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <div
       className="run-create-popover"
       role="dialog"
-      aria-label="Create delivery run"
+      aria-labelledby="run-create-title"
       aria-modal="true"
       ref={dialog}
       tabIndex={-1}
@@ -2605,13 +2606,17 @@ function RunCreatePopover({
         }
       }}
     >
+      <h2 id="run-create-title">Create delivery run</h2>
       <label>Vehicle <select aria-label="Vehicle" value={vehicleId || ""} disabled={catalogue.loading || Boolean(catalogue.error)} onChange={event => { setVehicleId(event.target.value as LogisticsVehicleId); setDriverId(""); }}>{catalogue.vehicles.map(id => <option key={id} value={id}>{logisticsVehicleLabel(id)}</option>)}</select></label>
       {catalogue.error && <p role="alert">{catalogue.error} <button type="button" className="secondary" onClick={() => void catalogue.refresh()}>Retry vehicles</button></p>}
       <p className="context-line">Every run returns to CPU after its deliveries and collections are complete.</p>
-      <button disabled={!vehicleId || catalogue.loading || Boolean(catalogue.error)} onClick={() => vehicleId && onCreate(vehicleId)}>Create run</button>
-      <button className="popover-close" onClick={onClose}>
-        Cancel
-      </button>
+      <div className="run-create-actions">
+        <button className="popover-close" onClick={onClose}>
+          Cancel
+        </button>
+        <button disabled={!vehicleId || catalogue.loading || Boolean(catalogue.error)} onClick={() => vehicleId && onCreate(vehicleId)}>Create run</button>
+      </div>
+    </div>
     </div>
   );
 }

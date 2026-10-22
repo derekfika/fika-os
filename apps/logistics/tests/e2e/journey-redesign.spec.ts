@@ -155,7 +155,7 @@ test("actual journey planner is readable at all target viewport sizes with loade
       const inspectorBounds = await runDialog.boundingBox();
       expect(canvasBounds).not.toBeNull();
       expect(inspectorBounds).not.toBeNull();
-      expect(inspectorBounds!.x).toBeGreaterThan(canvasBounds!.x + canvasBounds!.width);
+      expect(inspectorBounds!.x, "inspector docks beside, never over, the planner canvas").toBeGreaterThanOrEqual(canvasBounds!.x + canvasBounds!.width - 0.5);
       await screenshot(`${prefix}-selected-run.png`);
       await expect(runDialog.getByLabel("Planned CPU departure")).toHaveValue("06:30");
       await expect(runDialog.getByLabel("Planned CPU return")).toHaveValue("09:30");

@@ -343,7 +343,6 @@
 .real-planner .mock-inspector .inspector-actions { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0; }
 .real-planner .mock-inspector .inspector-actions button { min-height:34px; border:0; border-radius:7px; padding:8px 11px; background:#4f34c7; color:#fff; font-size:11px; font-weight:800; }
 .real-planner .mock-inspector .inspector-actions button.secondary { border:1px solid #d8d0ea; background:#f7f4ff; color:#4f34c7; }
-.real-planner .mock-inspector .journey-stop-list { max-height: 235px; overflow-y: auto; }
 .real-planner .mock-inspector .inspector-row-button { display:grid; width:100%; gap:4px; padding:0; border:0; background:transparent; color:#34266e; text-align:left; cursor:pointer; }
 .real-planner .mock-inspector .inspector-row-button:hover { color:#4f34c7; }
 .real-planner .mock-inspector .inspector-row-button span { display:flex; justify-content:space-between; gap:8px; font-weight:700; }
@@ -408,7 +407,8 @@
 .real-planner .stable-timeline > .timeline-tools > button:last-child::after { content:"Fit work"; font-size:10px; }
 .real-planner .stable-lane .stable-drag-preview { display:none !important; }
 
-.real-planner { overflow-x: hidden; }
+/* clip, not hidden: hidden would also make the page root a scroll container and break the sticky queue. */
+.real-planner { overflow-x: clip; }
 .real-planner .stable-section-heading > strong { position:sticky; left:12px; z-index:12; display:block; padding-right:10px; background:#fcfbff; }
 .real-planner .stable-section-heading > strong { font-size:0; }
 .real-planner .delivery-group .stable-section-heading > strong::before { content:"DELIVERIES"; font-size:9px; }
@@ -623,7 +623,6 @@
 .day-actions { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .day-actions button, .day-actions a { min-height: 31px; padding: 6px 9px; border: 1px solid var(--purple); border-radius: 6px; background: var(--purple); color: #fff; font-size: .66rem; font-weight: 800; text-decoration: none; white-space: nowrap; }
 .day-actions .secondary, .day-actions a { border-color: var(--line); background: var(--surface); color: var(--purple); }
-.day-actions .run-create-popover { top: 38px; right: 0; left: auto; z-index: 30; }
 .week-strip { width: min(1480px, calc(100% - 64px)); margin-left: auto; margin-right: auto; }
 .page-intro { width: min(1480px, calc(100% - 64px)); margin: 0 auto; padding-left: 0; padding-right: 0; }
 .page-intro h2 { font-size: 1.55rem; letter-spacing: -.035em; }
@@ -1305,13 +1304,6 @@ button:disabled {
   font-size: 0.74rem;
 }
 
-/* Desktop planning balance. */
-.real-planner .mock-workspace { grid-template-columns: minmax(280px, 28%) minmax(0, 72%); align-items: start; }
-.real-planner .mock-schedule { height: max-content; }
-.real-planner .mock-schedule [data-testid="mounted-timeline-viewport"] { height: max-content; }
-@media (max-width: 1050px) {
-  .real-planner .mock-workspace { grid-template-columns: 1fr; }
-}
 .passive-sync-warning {
   display: inline-flex;
   align-items: center;
@@ -1352,7 +1344,6 @@ button:disabled {
 
 /* Logistics V2 journey workspace: keep the timeline as the primary surface. */
 .real-planner { color: var(--fika-text-primary); font-family: var(--font-body); }
-.real-planner .mock-canvas { width: min(1680px, calc(100% - 64px)); padding-top: 18px; }
 .real-planner .mock-heading h1 { font: 900 30px/1.15 var(--font-display); color: var(--fika-text-primary); letter-spacing: -.025em; }
 .real-planner .mock-heading p { margin-top: 3px; color: var(--fika-text-secondary); }
 .real-planner .mock-week-nav { height: 42px; margin: 8px auto 10px; box-shadow: none; }
@@ -1368,9 +1359,7 @@ button:disabled {
 .real-planner .mock-actions { align-items: center; gap: 6px; }
 .real-planner .mock-actions button, .real-planner .mock-actions a { min-height: 34px; padding: 7px 10px; border-radius: 8px; border-color: var(--fika-border-default); color: var(--fika-text-primary); font-size: 11px; }
 .real-planner .mock-actions button:first-child { border-color: var(--fika-action-primary); background: var(--fika-action-primary); color: #fff; }
-.real-planner .mock-workspace { grid-template-columns: minmax(270px, 300px) minmax(0, 1fr); gap: 10px; align-items: stretch; }
 .real-planner .mock-queue, .real-planner .mock-schedule { border-color: var(--fika-border-default); border-radius: 12px; box-shadow: none; }
-.real-planner .mock-queue { display: flex; max-height: min(690px, calc(100vh - 235px)); flex-direction: column; }
 .real-planner .mock-queue > header { flex: 0 0 auto; gap: 8px; padding: 12px 12px 9px; border-color: var(--fika-border-default); }
 .real-planner .mock-queue header span, .real-planner .mock-schedule-head span { color: var(--fika-text-secondary); font-size: 10px; letter-spacing: .08em; }
 .real-planner .mock-queue h2, .real-planner .mock-schedule h2 { margin-top: 3px; color: var(--fika-text-primary); font-size: 16px; letter-spacing: -.015em; }
@@ -1379,13 +1368,12 @@ button:disabled {
 .real-planner .queue-search { display: grid; gap: 4px; padding: 8px 10px; color: var(--fika-text-secondary); font-size: 10px; font-weight: 700; }
 .real-planner .queue-search input { min-height: 36px; width: 100%; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--fika-border-default); border-radius: 8px; background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; font-size: 12px; }
 .real-planner .queue-search input:focus-visible, .real-planner select:focus-visible, .real-planner button:focus-visible, .real-planner a:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
-.real-planner .mock-filter-pills { gap: 4px; padding: 6px 8px; overflow-x: auto; border-color: var(--fika-border-default); }
+.real-planner .mock-filter-pills { gap: 4px; padding: 6px 8px; border-color: var(--fika-border-default); }
 .real-planner .mock-filter-pills button { flex: 0 0 auto; min-height: 30px; padding: 5px 7px; border-color: var(--fika-border-default); border-radius: 7px; color: var(--fika-text-secondary); font-size: 10px; }
 .real-planner .mock-filter-pills button.active { border-color: var(--fika-action-primary); background: var(--fika-action-primary); color: #fff; }
 .real-planner .mock-secondary-filter { padding: 5px 9px; border-color: var(--fika-border-default); }
 .real-planner .mock-secondary-filter label { color: var(--fika-text-secondary); }
 .real-planner .mock-secondary-filter select, .real-planner .mock-inspector select { min-height: 34px; border-color: var(--fika-border-default); border-radius: 8px; background: var(--fika-surface-card); color: var(--fika-text-primary); }
-.real-planner .mock-queue-list { max-height: none; min-height: 80px; flex: 1; overflow: auto; overscroll-behavior: contain; }
 .real-planner .mock-queue-item { padding: 9px 10px; border-color: var(--fika-border-default); }
 .real-planner .mock-queue-item .run-chooser, .real-planner .mock-inspector .run-chooser { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; width: 100%; min-width: 0; box-sizing: border-box; margin: 8px 0 0; padding: 10px; border: 1px solid var(--fika-border-default); border-radius: 8px; background: var(--fika-surface-subtle); }
 .real-planner .mock-queue-item .run-chooser > *, .real-planner .mock-inspector .run-chooser > *, .real-planner .mock-queue-item .run-chooser select, .real-planner .mock-inspector .run-chooser select, .real-planner .mock-queue-item .run-chooser label, .real-planner .mock-inspector .run-chooser label { width: 100%; min-width: 0; box-sizing: border-box; }
@@ -1406,11 +1394,6 @@ button:disabled {
 .real-planner .mock-summary { margin: 8px; border-color: var(--fika-border-default); }
 .real-planner .mock-summary div { padding: 7px; border-color: var(--fika-border-default); }
 .real-planner .mock-summary span { color: var(--fika-text-secondary); }
-.real-planner .queue-collapsed { grid-template-columns: 48px minmax(0, 1fr); }
-.real-planner .queue-collapsed .mock-queue { min-height: 120px; align-items: center; }
-.real-planner .queue-collapsed .mock-queue > header { height: 100%; flex-direction: column; justify-content: flex-start; padding: 8px 5px; }
-.real-planner .queue-collapsed .mock-queue > header > div, .real-planner .queue-collapsed .mock-queue > :not(header) { display: none; }
-.real-planner .queue-collapsed .queue-collapse { width: 36px; min-width: 36px; }
 .real-planner .mock-inspector { z-index: 40; width: min(420px, calc(100vw - 24px)); height: 100dvh; max-height: 100dvh; box-sizing: border-box; overflow-y: auto; padding: 0 18px 24px; border-left: 1px solid var(--fika-border-default); background: var(--fika-surface-page); box-shadow: -12px 0 30px rgb(40 15 140 / 12%); }
 .real-planner .mock-inspector > header { position: sticky; z-index: 2; top: 0; margin: 0 -18px 12px; padding: 13px 18px 11px; border-bottom: 1px solid var(--fika-border-default); background: var(--fika-surface-card); color: var(--fika-text-primary); }
 .real-planner .mock-inspector > header p, .real-planner .mock-inspector > header .eyebrow, .real-planner .mock-inspector > header span { color: var(--fika-text-secondary); }
@@ -1441,20 +1424,10 @@ button:disabled {
 .real-planner .route-sheet-footer { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin-top: 8px; padding: 12px; border: 1px solid var(--fika-border-default); border-radius: 10px; background: var(--fika-surface-card); color: var(--fika-text-secondary); font-size: 12px; }
 .real-planner .route-sheet-footer strong { color: var(--fika-text-primary); }
 .real-planner .route-sheet-footer span { grid-column: 2; }
-@media (max-width: 1050px) {
-  .real-planner .mock-canvas { width: calc(100% - 40px); }
-  .real-planner .mock-workspace, .real-planner .queue-collapsed { grid-template-columns: minmax(0, 1fr); }
-  .real-planner .mock-queue { max-height: 390px; }
-  .real-planner .queue-collapsed .mock-queue { min-height: 0; max-height: none; }
-  .real-planner .queue-collapsed .mock-queue > header { width: 100%; flex-direction: row; justify-content: space-between; }
-  .real-planner .queue-collapsed .mock-queue > header > div { display: block; }
-  .real-planner .queue-collapsed .mock-queue > :not(header) { display: none; }
-  .real-planner .mock-schedule { min-height: 440px; }
-}
 @media (max-width: 600px) {
   .real-planner .mock-shell { height: 58px; padding: 0 16px; }
   .real-planner .mock-brand img { width: 86px; }
-  .real-planner .mock-canvas { width: calc(100% - 32px); padding-top: 12px; }
+  .real-planner .mock-canvas { padding-top: 12px; }
   .real-planner .mock-heading h1 { font-size: 24px; }
   .real-planner .mock-week-nav { width: 100%; grid-template-columns: 42px minmax(0, 1fr) 84px 42px; }
   .real-planner .mock-day-cards { grid-template-columns: repeat(5, minmax(114px, 1fr)); overflow-x: auto; padding-bottom: 3px; }
@@ -2206,19 +2179,6 @@ button:disabled {
    and a docked inspector that reserves room instead of covering the timeline. */
 .real-planner .mock-day-cards > button { min-height: 82px; padding: 14px 16px; }
 .real-planner .mock-day-summary { display: block; margin-top: 12px; color: var(--fika-text-secondary); font-size: 12px; line-height: 1.35; }
-.real-planner .mock-workspace { min-height: calc(100dvh - 460px); align-items: stretch; }
-.real-planner .mock-workspace:not(.queue-collapsed) { grid-template-columns: minmax(250px, 34fr) minmax(0, 66fr); gap: 12px; }
-.real-planner .mock-queue { display: flex; min-height: 0; align-self: start; max-height: min(620px, calc(100dvh - 460px)); flex-direction: column; }
-.real-planner .mock-queue-list { min-height: 0; max-height: none; flex: 1 1 auto; overflow: auto; }
-.real-planner .mock-schedule { display: flex; min-height: max(440px, calc(100dvh - 640px)); flex-direction: column; }
-.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
-.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
-.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) > div:first-child { min-height: 0; flex: 1 1 auto; }
-.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) > div:first-child > div { height: 100%; }
-.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) > div:first-child > div > section { display: flex; min-height: 100%; flex-direction: column; }
-.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) > div:first-child > div > section > div:not(:first-child) { min-height: 82px; flex: 1 1 auto; }
-.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) > div:first-child > div > section > div:not(:first-child) > div:nth-child(2) { height: 100% !important; }
-.real-planner .mock-summary { margin-top: auto; }
 .real-planner .queue-search input:focus-visible,
 .real-planner .mock-secondary-filter select:focus-visible,
 .real-planner .mock-queue-actions button:focus-visible,
@@ -2231,22 +2191,71 @@ button:disabled {
   outline: 3px solid var(--fika-focus-ring);
   outline-offset: 2px;
 }
-@media (min-width: 1051px) {
-  .real-planner.has-inspector .mock-canvas {
-    width: min(1450px, calc(100% - 468px));
-    margin-right: 420px;
-    margin-left: max(24px, calc((100% - 1870px) / 2));
-  }
-  .real-planner.has-inspector .mock-inspector {
-    width: min(390px, calc(100vw - 24px));
-  }
+/* ==========================================================================
+   Journey Planner layout — the single authority for planner geometry.
+   Geometry lives here only; earlier layers must not size the workspace.
+
+   Page            : one document scroll.
+   Queue column    : sticky, bounded to the viewport; header, search and
+                     filters are fixed-height rows and ONLY the card list
+                     scrolls (one scrollbar).
+   Timeline column : natural height; the timeline viewport owns its own
+                     horizontal scroll and is capped to the viewport height so
+                     its scrollbar is always reachable.
+   Inspector       : fixed right dock; the page reserves its width instead of
+                     being covered. Below 1280px the queue stacks above the
+                     timeline so the timeline keeps a usable width.
+   ========================================================================== */
+.real-planner { --planner-gutter: 32px; --queue-width: 300px; --inspector-width: 390px; --planner-sticky-gap: 12px; }
+.real-planner .mock-canvas { box-sizing: border-box; width: 100%; max-width: 1680px; margin: 0 auto; padding: 18px var(--planner-gutter) 32px; }
+.real-planner .mock-workspace { display: grid; grid-template-columns: var(--queue-width) minmax(0, 1fr); align-items: start; gap: 12px; }
+.real-planner .mock-workspace.queue-collapsed { grid-template-columns: 48px minmax(0, 1fr); }
+.real-planner .mock-queue { position: sticky; top: var(--planner-sticky-gap); display: flex; min-height: 0; max-height: calc(100dvh - 2 * var(--planner-sticky-gap)); flex-direction: column; }
+.real-planner .mock-queue > * { flex: 0 0 auto; }
+.real-planner .mock-queue > .mock-queue-list { min-height: 96px; flex: 1 1 auto; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+.real-planner .mock-filter-pills { flex-wrap: wrap; }
+.real-planner .mock-schedule { display: block; min-width: 0; }
+.real-planner .queue-collapsed .mock-queue { align-items: center; max-height: none; }
+.real-planner .queue-collapsed .mock-queue > header { flex-direction: column; justify-content: flex-start; padding: 8px 5px; }
+.real-planner .queue-collapsed .mock-queue > header > div, .real-planner .queue-collapsed .mock-queue > :not(header) { display: none; }
+.real-planner .queue-collapsed .queue-collapse { width: 36px; min-width: 36px; }
+.real-planner .mock-inspector { width: var(--inspector-width); max-width: calc(100vw - 24px); }
+@media (min-width: 900px) {
+  .real-planner.has-inspector { padding-right: var(--inspector-width); }
+}
+@media (max-width: 1499px) {
+  .real-planner { --planner-gutter: 20px; --queue-width: 264px; --inspector-width: 360px; }
+}
+@media (min-width: 900px) and (max-width: 1279px) {
+  .real-planner.has-inspector .mock-workspace, .real-planner.has-inspector .mock-workspace.queue-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .real-planner.has-inspector .mock-queue { position: static; max-height: 340px; }
+  .real-planner.has-inspector .queue-collapsed .mock-queue { align-items: stretch; }
+  .real-planner.has-inspector .queue-collapsed .mock-queue > header { flex-direction: row; justify-content: space-between; }
+  .real-planner.has-inspector .queue-collapsed .mock-queue > header > div { display: block; }
 }
 @media (max-width: 1050px) {
-  .real-planner .mock-workspace:not(.queue-collapsed) { grid-template-columns: minmax(0, 1fr); }
-  .real-planner .mock-workspace { min-height: 0; }
-  .real-planner .mock-schedule { min-height: 440px; }
-  .real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) > div:first-child > div > section > div:not(:first-child) { min-height: 82px; }
+  .real-planner { --planner-gutter: 20px; }
+  .real-planner .mock-workspace, .real-planner .mock-workspace.queue-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .real-planner .mock-queue { position: static; max-height: 390px; }
+  .real-planner .queue-collapsed .mock-queue { align-items: stretch; max-height: none; }
+  .real-planner .queue-collapsed .mock-queue > header { width: 100%; flex-direction: row; justify-content: space-between; }
+  .real-planner .queue-collapsed .mock-queue > header > div { display: block; }
 }
+@media (max-width: 600px) {
+  .real-planner { --planner-gutter: 16px; --inspector-width: 100vw; }
+  .real-planner .mock-inspector { max-width: 100vw; }
+}
+/* Create-run dialog: a real modal, contained by the viewport. */
+.run-create-backdrop { position: fixed; z-index: 80; inset: 0; display: grid; place-items: center; padding: 16px; background: rgb(24 18 50 / 42%); }
+.run-create-popover { box-sizing: border-box; display: grid; width: min(420px, 100%); max-height: calc(100dvh - 32px); gap: 16px; overflow-y: auto; padding: 20px; border: 1px solid var(--fika-border-default); border-radius: 16px; background: var(--fika-surface-card); box-shadow: 0 18px 48px rgb(40 15 140 / 22%); }
+.run-create-popover h2 { margin: 0; color: var(--fika-text-primary); font-size: 1.125rem; line-height: 1.3; }
+.run-create-popover label { display: grid; gap: 8px; color: var(--fika-text-primary); font-size: 0.875rem; font-weight: 600; }
+.run-create-popover select { min-height: 44px; border: 1px solid var(--fika-border-default); border-radius: 8px; padding: 8px 12px; background: var(--fika-surface-card); color: var(--fika-text-primary); }
+.run-create-popover .context-line { margin: 0; color: var(--fika-text-secondary); font-size: 0.8125rem; line-height: 1.4; }
+.run-create-popover button { min-height: 44px; padding: 8px 16px; border-radius: 8px; }
+.run-create-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.run-create-popover .popover-close { border: 1px solid var(--fika-border-default); background: var(--fika-surface-card); color: var(--fika-text-primary); }
+.run-create-popover:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
 @media (max-width: 600px) {
   .real-planner .mock-day-cards > button { min-height: 62px; padding: 8px; }
   .real-planner .mock-day-summary { margin-top: 5px; font-size: 10px; }
@@ -2923,46 +2932,11 @@ button:disabled {
   margin-left: auto;
   flex-shrink: 0;
 }
-.run-create-popover {
-  position: absolute;
-  z-index: 5;
-  top: calc(100% - 2px);
-  left: 32px;
-  display: grid;
-  width: min(560px, calc(100vw - 32px));
-  gap: 16px;
-  padding: 20px;
-  border: 1px solid var(--fika-border-default);
-  border-radius: 16px;
-  background: var(--fika-surface-card);
-}
-.run-create-popover label {
-  display: grid;
-  gap: 8px;
-  color: var(--fika-text-primary);
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-.run-create-popover select {
-  min-height: 44px;
-  border: 1px solid var(--fika-border-default);
-  border-radius: 8px;
-  padding: 8px 12px;
-}
-.run-create-popover button {
-  min-height: 44px;
-  padding: 8px 16px;
-  border-radius: 8px;
-}
-.run-create-popover .popover-close {
-  background: transparent;
-  color: var(--fika-text-secondary);
-}
 .run-driver-control { display: grid; gap: 8px; }
 .run-driver-control label { display: grid; gap: 8px; color: var(--fika-text-primary); }
 .run-driver-control select { width: 100%; min-height: 44px; color: var(--fika-text-primary); background: var(--fika-surface-card); border: 1px solid var(--fika-border-default); border-radius: 8px; padding: 8px 12px; }
 .run-driver-control p { margin: 0; color: var(--fika-text-secondary); font-size: 0.875rem; }
-.run-driver-control select:focus-visible, .run-create-popover:focus-visible { outline: 2px solid var(--fika-focus-ring); outline-offset: 2px; }
+.run-driver-control select:focus-visible { outline: 2px solid var(--fika-focus-ring); outline-offset: 2px; }
 .status-line {
   padding: 4px 32px;
   font-size: 0.68rem;
@@ -3067,10 +3041,6 @@ button:disabled {
   .toolbar-actions {
     width: 100%;
     margin-left: 0;
-  }
-  .run-create-popover {
-    left: 12px;
-    right: 12px;
   }
   .week-strip {
     margin-left: 12px;
