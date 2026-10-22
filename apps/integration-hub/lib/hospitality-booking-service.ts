@@ -216,6 +216,69 @@ type IngestionResult = {
 };
 const bookings = () => db.collection("fikaBookings");
 
+/** Exact Gallagher match: company "Gallagher" or requester domain redington.co.uk, whitespace/case-normalised. */
+function isGallagherDashboardBooking(booking: CanonicalBooking) {
+  const normalize = (value: unknown) => String(value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-GB");
+  const company = booking.client?.requester?.companyName || booking.client?.companyName;
+  const email = normalize(booking.client?.requester?.email || booking.client?.email);
+  const at = email.lastIndexOf("@");
+  const domain = at > 0 && email.indexOf("@") === at ? email.slice(at + 1).replace(/\.$/, "") : "";
+  return normalize(company) === "gallagher" || domain === "redington.co.uk";
+}
+
+/**
+ * Customer-safe projection: only the fields the Gallagher ledger renders.
+ * Audit trail, status history, actors, attachments, dietary/acknowledgement
+ * records and routing state never leave the Hub through this contract.
+ */
+export function projectGallagherDashboardBookings(documents: CanonicalBooking[]) {
+  return documents.filter(isGallagherDashboardBooking).map((booking) => ({
+    canonicalId: booking.canonicalId,
+    lifecycleStatus: booking.lifecycleStatus,
+    createdAt: booking.createdAt,
+    updatedAt: booking.updatedAt,
+    source: {
+      sourceBookingId: booking.source.sourceBookingId,
+      provider: booking.source.provider,
+      originalPayload: {
+        legacyBookingId: (booking as CanonicalBooking & { legacyBookingId?: string }).legacyBookingId,
+        legacyBookingReference: (booking.source.originalPayload as unknown as Record<string, unknown>)?.legacyBookingReference,
+      },
+    },
+    client: {
+      name: booking.client?.name, email: booking.client?.email, companyName: booking.client?.companyName, invoiceReference: booking.client?.invoiceReference,
+      requester: booking.client?.requester ? { name: booking.client.requester.name, email: booking.client.requester.email, companyName: booking.client.requester.companyName } : undefined,
+    },
+    service: {
+      eventDate: booking.service?.eventDate, startTime: booking.service?.startTime, endTime: booking.service?.endTime, guestCount: booking.service?.guestCount,
+      roomOrArea: booking.service?.roomOrArea, floorLevel: booking.service?.floorLevel, deliveryPoint: booking.service?.deliveryPoint,
+      portalSiteId: booking.service?.portalSiteId, portalSiteLabel: booking.service?.portalSiteLabel,
+    },
+    // Stored totals only: no unit prices or line pricing leave the Hub through this contract.
+    order: {
+      items: (booking.order?.items || []).map((item) => ({ itemId: item.itemId, itemName: item.itemName, description: item.description, quantity: item.quantity, comments: item.comments })),
+      grossTotal: booking.order?.grossTotal,
+    },
+    quoteState: {
+      currentRevisionId: booking.quoteState?.currentRevisionId,
+      revisions: (booking.quoteState?.revisions || []).map((revision) => ({ id: revision.id, snapshot: { totals: { gross: { amount: (revision.snapshot as { totals?: { gross?: { amount?: number } } } | undefined)?.totals?.gross?.amount } } } })),
+    },
+    notes: booking.notes,
+    legacyBookingId: (booking as CanonicalBooking & { legacyBookingId?: string }).legacyBookingId,
+  }));
+}
+
+/** Narrow, read-only service contract for the PIN-gated Gallagher customer ledger. */
+export async function gallagherDashboardBookings() {
+  const snapshot = await bookings()
+    .where("service.portalSiteId", "==", "angel-court")
+    .limit(501)
+    .get();
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.gallagher-dashboard.bookings", source: "FIRESTORE", dataset: "fikaBookings", documents: snapshot.size, estimatedBillableReads: snapshot.size, firestoreReadKind: "query" });
+  if (snapshot.size > 500) throw Object.assign(new Error("The Gallagher booking result exceeds the safe display limit."), { status: 503 });
+  return projectGallagherDashboardBookings(snapshot.docs.map((document) => document.data() as CanonicalBooking));
+}
+
 export async function getBookingByCanonicalId(canonicalId: string) {
   const snapshot = await bookings().doc(canonicalId).get();
   recordDataAccess({ app: "integration-hub", operation: "hospitality.booking.by-id", source: "FIRESTORE", dataset: "fikaBookings", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });

@@ -34,6 +34,23 @@ env:
   - variable: MNK_CANON_BRIDGE_TOKEN
     secret: MNK_CANON_BRIDGE_TOKEN
     availability: [RUNTIME]
+  # Gallagher customer-ledger access stays server-side (Secret Manager only;
+  # never NEXT_PUBLIC_*). Values differ per environment.
+  - variable: GALLAGHER_DASHBOARD_PIN_HASH
+    secret: GALLAGHER_DASHBOARD_PIN_HASH
+    availability: [RUNTIME]
+  - variable: GALLAGHER_DASHBOARD_SESSION_SECRET
+    secret: GALLAGHER_DASHBOARD_SESSION_SECRET
+    availability: [RUNTIME]
+  - variable: GALLAGHER_DASHBOARD_BRIDGE_TOKEN
+    secret: GALLAGHER_DASHBOARD_BRIDGE_TOKEN
+    availability: [RUNTIME]
+  - variable: GALLAGHER_LEGACY_SHEET_ID
+    secret: GALLAGHER_LEGACY_SHEET_ID
+    availability: [RUNTIME]
+  - variable: GALLAGHER_SHEETS_IMPERSONATED_USER
+    secret: GALLAGHER_SHEETS_IMPERSONATED_USER
+    availability: [RUNTIME]
   - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     availability: [RUNTIME]
