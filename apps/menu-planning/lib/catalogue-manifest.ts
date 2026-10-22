@@ -93,7 +93,8 @@ export async function migrateLegacyCatalogueSourceIdentity(db = firestore()): Pr
     const sourceRevision = Number(value.sourceRevision ?? value.catalogueVersion ?? 0) + 1;
     const sourceHash = catalogueSourceHash(items);
     const now = new Date().toISOString();
-    transaction.set(ref, { schemaVersion: 1, sourceHashVersion: CATALOGUE_SOURCE_HASH_VERSION, catalogueVersion: sourceRevision, sourceRevision, sourceHash, dishCount: items.length, updatedAt: now, packageState: { status: "pending", sourceRevision, sourceHash, requestedAt: now, updatedAt: now, attempts: 0 } }, { merge: true });
+    const fields = { schemaVersion: 1, sourceHashVersion: CATALOGUE_SOURCE_HASH_VERSION, catalogueVersion: sourceRevision, sourceRevision, sourceHash, dishCount: items.length, updatedAt: now, packageState: { status: "pending", sourceRevision, sourceHash, requestedAt: now, updatedAt: now, attempts: 0 } };
+    transaction.set(ref, fields, { mergeFields: Object.keys(fields) });
   });
 }
 
@@ -138,7 +139,7 @@ async function updateHostedPackageState(state: CataloguePackageState) {
     const value = snapshot.exists ? snapshot.data() || {} : {};
     const sourceRevision = Number(value.sourceRevision ?? value.catalogueVersion ?? 0);
     if (sourceRevision !== state.sourceRevision || value.sourceHash !== state.sourceHash) return;
-    transaction.set(ref, { packageState: state }, { merge: true });
+    transaction.set(ref, { packageState: state }, { mergeFields: ["packageState"] });
     applied = true;
   });
   return applied;
@@ -151,7 +152,8 @@ export async function markCataloguePackagePending(source: { sourceRevision: numb
     const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;
     if (!projectId) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
     const db = firestore();
-    await db.collection(collectionName).doc("catalogue").set({ packageState: state, ...(actor ? { lastMutationBy: actor } : {}) }, { merge: true });
+    const fields = { packageState: state, ...(actor ? { lastMutationBy: actor } : {}) };
+    await db.collection(collectionName).doc("catalogue").set(fields, { mergeFields: Object.keys(fields) });
   } else {
     await updateLocalPackageState(state);
   }
@@ -164,7 +166,15 @@ export async function ensureCatalogueSourceIdentity(source: { sourceRevision: nu
   if (hosted()) {
     const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;
     if (!projectId) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
-    await firestore().collection(collectionName).doc("catalogue").set({ schemaVersion: 1, catalogueVersion: source.sourceRevision, sourceRevision: source.sourceRevision, sourceHash: source.sourceHash, updatedAt: now, dishCount }, { merge: true });
+    // Conditional backfill: never overwrite an identity a concurrent catalogue mutation has since committed.
+    const db = firestore();
+    const ref = db.collection(collectionName).doc("catalogue");
+    await db.runTransaction(async transaction => {
+      const snapshot = await transaction.get(ref);
+      if (snapshot.exists && snapshot.data()?.sourceHash) return;
+      const fields = { schemaVersion: 1, catalogueVersion: source.sourceRevision, sourceRevision: source.sourceRevision, sourceHash: source.sourceHash, updatedAt: now, dishCount };
+      transaction.set(ref, fields, { mergeFields: Object.keys(fields) });
+    });
     return;
   }
   await updateLocalPackageState({ status: "pending", sourceRevision: source.sourceRevision, sourceHash: source.sourceHash, requestedAt: now, updatedAt: now, attempts: 0 });

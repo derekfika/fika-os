@@ -117,10 +117,17 @@ async function writeItems(items: MenuItem[], options: { currentItems?: MenuItem[
       for (const item of changed) {
         const existing = currentById.get(item.canonicalId);
         const ref = db.collection("fikaMenuPlanningCatalogue").doc(item.canonicalId);
-        transaction.set(ref, sanitiseFirestoreValue({ ...(existing ? { id: item.canonicalId, kind: "dish", record: existing } : hostedDocument(item)), id: item.canonicalId, kind: "dish", record: item }), { merge: true });
+        // The source hash is computed over `item`, so the persisted `record` must equal `item` exactly.
+        // A merge-set deep-merges map fields and would retain keys the edit removed (e.g. a cleared
+        // description), so existing documents have their `record` map replaced wholesale instead.
+        if (existing) transaction.update(ref, sanitiseFirestoreValue({ id: item.canonicalId, kind: "dish", record: item }));
+        else transaction.set(ref, hostedDocument(item));
       }
       const at = new Date().toISOString();
-      transaction.set(manifestRef, sanitiseFirestoreValue({ schemaVersion: 1, sourceHashVersion: CATALOGUE_SOURCE_HASH_VERSION, catalogueVersion: sourceRevision, sourceRevision, sourceHash, updatedAt: at, dishCount: authoritativeItems.length, packageState: { status: "pending", sourceRevision, sourceHash, requestedAt: at, updatedAt: at, attempts: 0 } satisfies CataloguePackageState, ...(options.actor ? { lastMutationBy: options.actor } : {}) }), { merge: true });
+      // `packageState` is a replaced field (not deep-merged) so a new pending state cannot inherit the
+      // previous revision's packageHash/packageVersion/lastError.
+      const manifestFields = sanitiseFirestoreValue({ schemaVersion: 1, sourceHashVersion: CATALOGUE_SOURCE_HASH_VERSION, catalogueVersion: sourceRevision, sourceRevision, sourceHash, updatedAt: at, dishCount: authoritativeItems.length, packageState: { status: "pending", sourceRevision, sourceHash, requestedAt: at, updatedAt: at, attempts: 0 } satisfies CataloguePackageState, ...(options.actor ? { lastMutationBy: options.actor } : {}) });
+      transaction.set(manifestRef, manifestFields, { mergeFields: Object.keys(manifestFields) });
     });
     recordDataAccess({ app: "menu-planning", operation: "catalogue.mutation-write", source: "FIRESTORE", documents: requested.length, estimatedFirestoreWrites: requested.length });
     invalidateHostedCatalogueCache();
