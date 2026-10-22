@@ -41,7 +41,7 @@ export function aggregateProductionTotals(orders: ProductionOrder[]): Production
       categoriesForOrder.add(category);
       const bucket = categories.get(category) || { orderIds: new Set<string>(), items: new Map<string, ProductionTotalItem>() };
       const key = `${line.itemName} · ${line.customerUnit}`;
-      const progress: ProductionTotalProgress = order.status === "complete" || line.status === "complete" ? "produced" : ["in_production", "partially_complete", "ready"].includes(order.status) ? "in_progress" : "not_started";
+      const progress: ProductionTotalProgress = order.status === "complete" || line.status === "complete" ? "produced" : ["in_production", "partially_complete"].includes(order.status) ? "in_progress" : "not_started";
       const current = bucket.items.get(key);
       bucket.items.set(key, { key: `${category}:${key}`, name: line.itemName, unit: line.customerUnit, quantity: (current?.quantity || 0) + line.customerQuantity, progress: current && rank[current.progress] > rank[progress] ? current.progress : progress });
       categories.set(category, bucket);

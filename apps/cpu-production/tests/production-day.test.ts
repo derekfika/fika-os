@@ -35,6 +35,20 @@ test("production Totals count canonical orders and line quantities once by expli
   ]);
 });
 
+test("production Totals keep ready orders not started until production begins", () => {
+  const base = order("Totals status", 5);
+  const ready = { ...base, canonicalId: "production-order:ready", status: "ready" as const, lines: [{ ...base.lines[0], itemName: "Ready dish" }] };
+  const inProduction = { ...base, canonicalId: "production-order:in-production", status: "in_production" as const, lines: [{ ...base.lines[0], itemName: "Cooking dish" }] };
+  const complete = { ...base, canonicalId: "production-order:complete", status: "complete" as const, lines: [{ ...base.lines[0], itemName: "Finished dish" }] };
+
+  const items = aggregateProductionTotals([ready, inProduction, complete]).flatMap(({ items }) => items);
+  assert.deepEqual(items.map(({ name, progress }) => [name, progress]), [
+    ["Ready dish", "not_started"],
+    ["Cooking dish", "in_progress"],
+    ["Finished dish", "produced"],
+  ]);
+});
+
 test("Day Delivered-In action opens the canonical Production Order used by the detail", () => {
   const menuOrders = [order("Haleon", 10), order("FIKA Xchange", 10)];
   assert.equal(firstDeliveredInOrder(menuOrders)?.canonicalId, "production-order:Haleon");
