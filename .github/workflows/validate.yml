@@ -79,9 +79,13 @@ jobs:
       - run: npm ci --prefix '${{ steps.app.outputs.path }}'
       - run: npm --prefix '${{ steps.app.outputs.path }}' test
       - run: npm --prefix '${{ steps.app.outputs.path }}' run typecheck
-      - run: npm --prefix '${{ steps.app.outputs.path }}' run build
+      - name: Build exact checked-out application source
         env:
           NODE_ENV: production
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          GITHUB_SHA="$SOURCE_SHA" npm --prefix '${{ steps.app.outputs.path }}' run build
   hub-emulator:
     needs: scope
     if: needs.scope.outputs.hub == 'true'
