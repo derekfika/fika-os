@@ -103,9 +103,9 @@ test("safe mounted fixture makes no Logistics API request", async ({ page }) => 
 test("journey overview groups runs into two vehicle lanes and warns about overlap", async ({ page }) => {
   await page.reload();
   const overview = page.getByRole("region", { name: "Vehicle journey timeline" });
-  await expect(overview.getByRole("button", { name: /Run run-1, Van 1, Planned, 07:00 to 10:00/ })).toBeVisible();
-  await expect(overview.getByRole("button", { name: /Run run-3, Van 1, Planned, 09:00 to 12:00.*overlaps another run/i })).toBeVisible();
-  await expect(overview.getByRole("button", { name: /Run run-2, Van 2, Planned, 08:00 to 15:00/ })).toBeVisible();
+  await expect(overview.getByRole("button", { name: /Van 1 Run 1, Planned, 07:00 to 10:00/ })).toBeVisible();
+  await expect(overview.getByRole("button", { name: /Van 1 Run 2, Planned, 09:00 to 12:00.*overlaps another run/i })).toBeVisible();
+  await expect(overview.getByRole("button", { name: /Van 2 Run 1, Planned, 08:00 to 15:00/ })).toBeVisible();
   await expect(page.locator("details").filter({ hasText: "Stop timing details" })).not.toHaveAttribute("open", "");
   await page.locator("details").filter({ hasText: "Stop timing details" }).locator("summary").click();
   await expect(page.locator('[data-lane="run-3:delivery"]')).toBeVisible();

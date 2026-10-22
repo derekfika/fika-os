@@ -18,7 +18,10 @@ type DragTarget = { kind: "lane"; runId: string; lane: Lane; minute: number; end
 const minutes = (value: string) => { const [hour, minute] = value.split(":").map(Number); return hour * 60 + minute; };
 const laneName = (lane: Lane) => lane === "delivery" ? "Delivery" : "Collection";
 const addMinutes = (start: string, duration: number) => formatTimelineMinute(minutes(start) + duration);
-const runLabel = (runId: string) => runId.split(":").at(-1)?.slice(-8) || runId.slice(-8);
+const runLabel = (run: PlannerDay["runs"][number], vehicleRuns: PlannerDay["runs"]) => {
+  const ordered = [...vehicleRuns].sort((left, right) => (left.plannedCpuDepartureTime || "99:99").localeCompare(right.plannedCpuDepartureTime || "99:99"));
+  return `Run ${ordered.findIndex((item) => item.runId === run.runId) + 1}`;
+};
 const runStatusText = (run: PlannerDay["runs"][number]) => run.operationalStatus === "attention" ? "Attention" : run.operationalStatus === "complete" || run.operationalStatus === "returned" ? "Completed" : run.operationalStatus === "dispatched" || run.operationalStatus === "in_progress" ? "Dispatched" : run.status === "ready" ? "Ready" : run.status === "planned" ? "Planned" : "Draft";
 const hourTicks = Array.from({ length: 25 }, (_, index) => index * 60);
 const MINUTE_PX = 2;
@@ -301,19 +304,20 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
               const timed = vehicleRuns.filter(run => run.plannedCpuDepartureTime && run.plannedCpuReturnTime);
               const intervals = timed.map(run => ({ id: run.runId, startMinute: minutes(run.plannedCpuDepartureTime!), durationMinutes: minutes(run.plannedCpuReturnTime!) - minutes(run.plannedCpuDepartureTime!) }));
               const packed = timelineVisualSubrows(intervals);
-              const trackHeight = Math.max(54, 12 + Math.max(1, ...packed.values()) * 46);
+              const packedRows = Math.max(0, ...packed.values()) + 1;
+              const trackHeight = Math.max(72, 16 + packedRows * 52);
               return <div className={styles.journeyRow} key={vehicleId}>
                 <div className={styles.journeyLabel}><strong>{vehicleLabel}</strong><span>{vehicleRuns.length} {vehicleRuns.length === 1 ? "run" : "runs"}</span></div>
                 <div className={styles.journeyTrack} style={{ width: `${contentWidth}px`, height: `${trackHeight}px`, "--timeline-quarter-hour": `${15 * pxPerMinute}px`, "--timeline-hour": `${60 * pxPerMinute}px` } as React.CSSProperties}>
                   {timed.map(run => {
                     const startMinute = minutes(run.plannedCpuDepartureTime!);
                     const endMinute = minutes(run.plannedCpuReturnTime!);
-                    const label = runLabel(run.runId);
+                    const label = runLabel(run, vehicleRuns);
                     const overlaps = overlappingRuns.has(run.runId);
-                    const top = 7 + (packed.get(run.runId) || 0) * 46;
-                    const loads = run.stops.reduce((total, stop) => total + Math.max(stop.requirementCount, stop.movementCount), 0);
-                    return <button type="button" key={run.runId} className={`${styles.journeyBlock} ${run.operationalStatus === "attention" ? styles.journeyAttention : run.operationalStatus === "complete" || run.operationalStatus === "returned" ? styles.journeyComplete : run.status === "dispatched" ? styles.journeyDispatched : run.status === "ready" ? styles.journeyReady : ""} ${overlaps ? styles.journeyConflict : ""}`} data-journey-run-id={run.runId} title={`Run ${label} · ${vehicleLabel} · ${run.plannedCpuDepartureTime}–${run.plannedCpuReturnTime}${overlaps ? " · Overlaps another run" : ""}`} aria-label={`Run ${label}, ${vehicleLabel}, ${runStatusText(run)}, ${run.plannedCpuDepartureTime} to ${run.plannedCpuReturnTime}, ${run.stopCount} stops, ${loads} loads${overlaps ? ", overlaps another run" : ""}`} style={{ left: `${startMinute * pxPerMinute}px`, top: `${top}px`, width: `${Math.max(40, (endMinute - startMinute) * pxPerMinute)}px` }} onClick={() => onRun(run.runId)}>
-                      <span><strong>Run {label}</strong><b>{runStatusText(run)}</b></span>
+                    const top = Math.max(8, (trackHeight - packedRows * 52) / 2) + (packed.get(run.runId) || 0) * 52;
+                    const loads = run.stops.reduce((total, stop) => total + (stop.loadCount ?? stop.requirementCount), 0);
+                    return <button type="button" key={run.runId} className={`${styles.journeyBlock} ${run.operationalStatus === "attention" ? styles.journeyAttention : run.operationalStatus === "complete" || run.operationalStatus === "returned" ? styles.journeyComplete : run.status === "dispatched" ? styles.journeyDispatched : run.status === "ready" ? styles.journeyReady : ""} ${overlaps ? styles.journeyConflict : ""}`} data-journey-run-id={run.runId} title={`${vehicleLabel} · ${label} · ${run.plannedCpuDepartureTime}–${run.plannedCpuReturnTime}${overlaps ? " · Overlaps another run" : ""}`} aria-label={`${vehicleLabel} ${label}, ${runStatusText(run)}, ${run.plannedCpuDepartureTime} to ${run.plannedCpuReturnTime}, ${run.stopCount} stops, ${loads} loads${overlaps ? ", overlaps another run" : ""}`} style={{ left: `${startMinute * pxPerMinute}px`, top: `${top}px`, width: `${Math.max(40, (endMinute - startMinute) * pxPerMinute)}px` }} onClick={() => onRun(run.runId)}>
+                      <span><strong>{vehicleLabel} · {label}</strong><b>{runStatusText(run)}</b></span>
                       <span>{run.plannedCpuDepartureTime}–{run.plannedCpuReturnTime} · {run.stopCount} stops · {loads} loads</span>
                       {overlaps && <small>Schedule overlap</small>}
                     </button>;

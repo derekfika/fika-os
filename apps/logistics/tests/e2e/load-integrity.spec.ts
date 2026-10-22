@@ -234,9 +234,10 @@ for (const entry of ["queue", "inspector", "timeline"] as const) for (const coll
         await inspector.getByRole("button", { name: collection ? "Schedule collection" : "Assign eligible", exact: true }).last().click();
       } else {
         await queue.getByRole("button", { name: "Assign", exact: true }).click();
-        await queue.getByLabel("Target delivery run").selectOption("r1");
-        await queue.getByLabel("Schedule time", { exact: true }).fill("10:30");
-        await queue.getByRole("button", { name: "Assign all", exact: true }).click();
+        const inspector = page.getByRole("complementary", { name: "Details inspector" });
+        await inspector.getByLabel("Target delivery run").selectOption("r1");
+        await inspector.getByLabel("Schedule time", { exact: true }).fill("10:30");
+        await inspector.getByRole("button", { name: "Assign eligible", exact: true }).click();
       }
     }
     const action = collection ? "reschedule-delivery-loads" : "assign-job-to-load";
@@ -373,9 +374,9 @@ test("journey inspector keeps mixed stops chronological and moves one constituen
   await page.reload();
 
   const overview = page.getByRole("region", { name: "Vehicle journey timeline" });
-  await expect(overview.getByRole("button", { name: /Run r1, Van 1, Planned, 07:00 to 12:30/ })).toBeVisible();
-  await expect(overview.getByRole("button", { name: /Run r2, Van 1, Planned, 13:00 to 17:00/ })).toBeVisible();
-  await overview.getByRole("button", { name: /Run r1, Van 1,/ }).click();
+  await expect(overview.getByRole("button", { name: /Van 1 Run 1, Planned, 07:00 to 12:30/ })).toBeVisible();
+  await expect(overview.getByRole("button", { name: /Van 1 Run 2, Planned, 13:00 to 17:00/ })).toBeVisible();
+  await overview.getByRole("button", { name: /Van 1 Run 1,/ }).click();
   const inspector = page.getByRole("complementary", { name: "Details inspector" });
   const chronological = inspector.getByRole("heading", { name: "Stops · chronological" });
   await expect(chronological).toBeVisible();

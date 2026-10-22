@@ -347,6 +347,8 @@
 .real-planner .mock-inspector .inspector-row-button { display:grid; width:100%; gap:4px; padding:0; border:0; background:transparent; color:#34266e; text-align:left; cursor:pointer; }
 .real-planner .mock-inspector .inspector-row-button:hover { color:#4f34c7; }
 .real-planner .mock-inspector .inspector-row-button span { display:flex; justify-content:space-between; gap:8px; font-weight:700; }
+.real-planner .mock-inspector .inspector-row-button > span:first-child { display:block; line-height:1.35; overflow-wrap:anywhere; }
+.real-planner .mock-inspector .inspector-row-button > span:first-child strong { margin-right:4px; }
 .real-planner .mock-inspector .inspector-row-button span + span { color:#4f34c7; font-variant-numeric:tabular-nums; }
 .real-planner .mock-inspector .inspector-row-button small { color:#6d6782; font-size:10px; }
 .real-planner .mock-inspector .inspector-breadcrumb { display:flex; align-items:center; gap:7px; margin:0 0 12px; color:#6d6782; font-size:10px; }
@@ -357,7 +359,7 @@
 .real-planner .mock-inspector .individual-load-editor select:focus,
 .real-planner .mock-inspector .individual-load-editor input:focus,
 .real-planner .mock-inspector .inspector-row-button:focus-visible,
-.real-planner .mock-inspector .inspector-breadcrumb button:focus-visible { outline:3px solid #17a88a; outline-offset:2px; }
+.real-planner .mock-inspector .inspector-breadcrumb button:focus-visible { outline:3px solid var(--fika-focus-ring); outline-offset:2px; }
 .real-planner .mock-inspector .stop-panel { margin:16px 0 0; border-top:1px solid #ece8f4; }
 .real-planner .mock-inspector .stop-detail { padding:12px 0 20px; }
 .real-planner .postpone-collection { display:flex; align-items:end; gap:8px; margin:10px 0; padding:8px 10px; border:1px solid #ded9ed; border-radius:6px; background:#faf9ff; }
@@ -1347,6 +1349,136 @@ button:disabled {
   margin: 10px 0;
   overflow: hidden;
 }
+
+/* Logistics V2 journey workspace: keep the timeline as the primary surface. */
+.real-planner { color: var(--fika-text-primary); font-family: var(--font-body); }
+.real-planner .mock-canvas { width: min(1680px, calc(100% - 64px)); padding-top: 18px; }
+.real-planner .mock-heading h1 { font: 900 30px/1.15 var(--font-display); color: var(--fika-text-primary); letter-spacing: -.025em; }
+.real-planner .mock-heading p { margin-top: 3px; color: var(--fika-text-secondary); }
+.real-planner .mock-week-nav { height: 42px; margin: 8px auto 10px; box-shadow: none; }
+.real-planner .mock-day-cards { gap: 8px; }
+.real-planner .mock-day-cards > button { min-height: 68px; padding: 10px 12px; box-shadow: none; }
+.real-planner .mock-day-cards > button.selected { border: 1px solid var(--fika-action-primary); background: var(--fika-surface-subtle); box-shadow: inset 0 -2px 0 var(--fika-action-primary); }
+.real-planner .mock-day-title { font-size: 13px; }
+.real-planner .mock-day-metrics { display: flex; gap: 10px; margin-top: 7px; color: var(--fika-text-secondary); font-size: 10px; }
+.real-planner .mock-updated { margin: 7px 1px; color: var(--fika-text-muted); }
+.real-planner .mock-selected-day { min-height: 44px; margin-bottom: 8px; padding: 5px 10px; }
+.real-planner .mock-selected-day strong { color: var(--fika-text-primary); font-size: 12px; letter-spacing: .02em; }
+.real-planner .mock-selected-day small { color: var(--fika-text-secondary); }
+.real-planner .mock-actions { align-items: center; gap: 6px; }
+.real-planner .mock-actions button, .real-planner .mock-actions a { min-height: 34px; padding: 7px 10px; border-radius: 8px; border-color: var(--fika-border-default); color: var(--fika-text-primary); font-size: 11px; }
+.real-planner .mock-actions button:first-child { border-color: var(--fika-action-primary); background: var(--fika-action-primary); color: #fff; }
+.real-planner .mock-workspace { grid-template-columns: minmax(270px, 300px) minmax(0, 1fr); gap: 10px; align-items: stretch; }
+.real-planner .mock-queue, .real-planner .mock-schedule { border-color: var(--fika-border-default); border-radius: 12px; box-shadow: none; }
+.real-planner .mock-queue { display: flex; max-height: min(690px, calc(100vh - 235px)); flex-direction: column; }
+.real-planner .mock-queue > header { flex: 0 0 auto; gap: 8px; padding: 12px 12px 9px; border-color: var(--fika-border-default); }
+.real-planner .mock-queue header span, .real-planner .mock-schedule-head span { color: var(--fika-text-secondary); font-size: 10px; letter-spacing: .08em; }
+.real-planner .mock-queue h2, .real-planner .mock-schedule h2 { margin-top: 3px; color: var(--fika-text-primary); font-size: 16px; letter-spacing: -.015em; }
+.real-planner .queue-subtitle { color: var(--fika-text-secondary); font-size: 11px; }
+.real-planner .queue-collapse, .real-planner .panel-toggle { min-width: 36px; min-height: 34px; padding: 5px 9px; border: 1px solid var(--fika-border-default); border-radius: 8px; background: var(--fika-surface-card); color: var(--fika-text-primary); font-size: 12px; font-weight: 700; }
+.real-planner .queue-search { display: grid; gap: 4px; padding: 8px 10px; color: var(--fika-text-secondary); font-size: 10px; font-weight: 700; }
+.real-planner .queue-search input { min-height: 36px; width: 100%; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--fika-border-default); border-radius: 8px; background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; font-size: 12px; }
+.real-planner .queue-search input:focus-visible, .real-planner select:focus-visible, .real-planner button:focus-visible, .real-planner a:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
+.real-planner .mock-filter-pills { gap: 4px; padding: 6px 8px; overflow-x: auto; border-color: var(--fika-border-default); }
+.real-planner .mock-filter-pills button { flex: 0 0 auto; min-height: 30px; padding: 5px 7px; border-color: var(--fika-border-default); border-radius: 7px; color: var(--fika-text-secondary); font-size: 10px; }
+.real-planner .mock-filter-pills button.active { border-color: var(--fika-action-primary); background: var(--fika-action-primary); color: #fff; }
+.real-planner .mock-secondary-filter { padding: 5px 9px; border-color: var(--fika-border-default); }
+.real-planner .mock-secondary-filter label { color: var(--fika-text-secondary); }
+.real-planner .mock-secondary-filter select, .real-planner .mock-inspector select { min-height: 34px; border-color: var(--fika-border-default); border-radius: 8px; background: var(--fika-surface-card); color: var(--fika-text-primary); }
+.real-planner .mock-queue-list { max-height: none; min-height: 80px; flex: 1; overflow: auto; overscroll-behavior: contain; }
+.real-planner .mock-queue-item { padding: 9px 10px; border-color: var(--fika-border-default); }
+.real-planner .mock-queue-item .run-chooser, .real-planner .mock-inspector .run-chooser { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; width: 100%; min-width: 0; box-sizing: border-box; margin: 8px 0 0; padding: 10px; border: 1px solid var(--fika-border-default); border-radius: 8px; background: var(--fika-surface-subtle); }
+.real-planner .mock-queue-item .run-chooser > *, .real-planner .mock-inspector .run-chooser > *, .real-planner .mock-queue-item .run-chooser select, .real-planner .mock-inspector .run-chooser select, .real-planner .mock-queue-item .run-chooser label, .real-planner .mock-inspector .run-chooser label { width: 100%; min-width: 0; box-sizing: border-box; }
+.real-planner .mock-queue-item .run-chooser label, .real-planner .mock-inspector .run-chooser label { display: grid; gap: 4px; color: var(--fika-text-secondary); font-size: 12px; }
+.real-planner .mock-queue-item .run-chooser input, .real-planner .mock-inspector .run-chooser input, .real-planner .mock-queue-item .run-chooser select, .real-planner .mock-inspector .run-chooser select { min-height: 36px; border: 1px solid var(--fika-border-default); border-radius: 8px; padding: 6px 9px; background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; }
+.real-planner .mock-queue-main { color: var(--fika-text-primary); }
+.real-planner .mock-queue-main strong { font-size: 13px; }
+.real-planner .mock-queue-main small, .real-planner .mock-item-time { color: var(--fika-text-secondary); }
+.real-planner .mock-state.ready { color: var(--fika-status-success); }
+.real-planner .mock-state.needs-time, .real-planner .mock-state.planned { color: var(--fika-status-warning); }
+.real-planner .mock-state.attention { color: var(--fika-status-danger); }
+.real-planner .mock-queue-actions button { min-height: 32px; border-color: var(--fika-border-default); border-radius: 7px; color: var(--fika-action-primary); }
+.real-planner .mock-schedule { min-width: 0; }
+.real-planner .mock-schedule-head { gap: 14px; padding: 11px 13px; border-color: var(--fika-border-default); }
+.real-planner .schedule-heading-actions { display: flex; align-items: center; gap: 10px; }
+.real-planner .mock-schedule-head > .schedule-heading-actions > strong { color: var(--fika-text-secondary); font-size: 11px; font-weight: 600; text-align: right; }
+.real-planner .mock-legend { min-height: 32px; padding: 4px 12px; border-color: var(--fika-border-default); color: var(--fika-text-secondary); }
+.real-planner .mock-summary { margin: 8px; border-color: var(--fika-border-default); }
+.real-planner .mock-summary div { padding: 7px; border-color: var(--fika-border-default); }
+.real-planner .mock-summary span { color: var(--fika-text-secondary); }
+.real-planner .queue-collapsed { grid-template-columns: 48px minmax(0, 1fr); }
+.real-planner .queue-collapsed .mock-queue { min-height: 120px; align-items: center; }
+.real-planner .queue-collapsed .mock-queue > header { height: 100%; flex-direction: column; justify-content: flex-start; padding: 8px 5px; }
+.real-planner .queue-collapsed .mock-queue > header > div, .real-planner .queue-collapsed .mock-queue > :not(header) { display: none; }
+.real-planner .queue-collapsed .queue-collapse { width: 36px; min-width: 36px; }
+.real-planner .mock-inspector { z-index: 40; width: min(420px, calc(100vw - 24px)); height: 100dvh; max-height: 100dvh; box-sizing: border-box; overflow-y: auto; padding: 0 18px 24px; border-left: 1px solid var(--fika-border-default); background: var(--fika-surface-page); box-shadow: -12px 0 30px rgb(40 15 140 / 12%); }
+.real-planner .mock-inspector > header { position: sticky; z-index: 2; top: 0; margin: 0 -18px 12px; padding: 13px 18px 11px; border-bottom: 1px solid var(--fika-border-default); background: var(--fika-surface-card); color: var(--fika-text-primary); }
+.real-planner .mock-inspector > header p, .real-planner .mock-inspector > header .eyebrow, .real-planner .mock-inspector > header span { color: var(--fika-text-secondary); }
+.real-planner .mock-inspector > header h2 { max-width: 330px; color: var(--fika-text-primary); font-size: 18px; line-height: 1.25; }
+.real-planner .mock-inspector > header button { color: var(--fika-text-secondary); }
+.real-planner .mock-inspector h3 { margin: 14px 0 7px; color: var(--fika-text-primary); font-size: 12px; letter-spacing: .02em; }
+.real-planner .mock-inspector .schedule-editor { margin: 8px 0 14px; padding: 12px; border-color: var(--fika-border-default); border-radius: 10px; background: var(--fika-surface-card); box-shadow: none; }
+.real-planner .mock-inspector .inspector-row-button { color: var(--fika-text-primary); }
+.real-planner .mock-inspector .inspector-list { padding-left: 0; list-style: none; }
+.real-planner .mock-inspector .inspector-list > li { padding: 7px 0; border-bottom: 1px solid var(--fika-border-default); color: var(--fika-text-primary); font-size: 12px; line-height: 1.4; }
+.real-planner .mock-inspector .inspector-list > li:last-child { border-bottom: 0; }
+.real-planner .route-sheet-backdrop { position: fixed; z-index: 60; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(24 18 50 / 42%); }
+.real-planner .route-sheet { display: flex; width: min(760px, 100%); max-height: min(88dvh, 900px); flex-direction: column; overflow: hidden; border: 1px solid var(--fika-border-default); border-radius: 16px; background: var(--fika-surface-page); box-shadow: 0 18px 48px rgb(40 15 140 / 22%); }
+.real-planner .route-sheet > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--fika-border-default); background: var(--fika-surface-card); }
+.real-planner .route-sheet > header h2 { margin: 3px 0 0; color: var(--fika-text-primary); font-size: 20px; }
+.real-planner .route-sheet > header p { margin: 4px 0 0; color: var(--fika-text-secondary); font-size: 12px; }
+.real-planner .route-sheet > header button { min-width: 40px; min-height: 40px; border: 1px solid var(--fika-border-default); border-radius: 8px; background: var(--fika-surface-card); color: var(--fika-text-primary); font-size: 22px; }
+.real-planner .route-sheet-body { overflow: auto; padding: 8px 20px 18px; }
+.real-planner .route-sheet-stop { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 10px; padding: 13px 0; border-bottom: 1px solid var(--fika-border-default); }
+.real-planner .route-sheet-time { color: var(--fika-text-secondary); font-size: 12px; font-weight: 700; }
+.real-planner .route-sheet-stop-main > button:first-child { display: flex; width: 100%; align-items: center; gap: 8px; padding: 0; border: 0; background: none; color: var(--fika-text-primary); font: inherit; font-size: 14px; font-weight: 750; text-align: left; }
+.real-planner .route-sheet-stop-main p { margin: 5px 0; color: var(--fika-text-secondary); font-size: 12px; }
+.real-planner .route-sheet-loads { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.real-planner .route-sheet-loads button { padding: 5px 8px; border: 1px solid var(--fika-border-default); border-radius: 7px; background: var(--fika-surface-card); color: var(--fika-action-primary); font-size: 11px; font-weight: 700; }
+.real-planner .route-sheet-progress { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--fika-text-secondary); font-size: 11px; }
+.real-planner .route-sheet-progress > span { width: 96px; height: 6px; overflow: hidden; border-radius: 9px; background: var(--fika-surface-subtle); }
+.real-planner .route-sheet-progress i { display: block; height: 100%; background: var(--fika-status-success); }
+.real-planner .route-sheet-footer { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin-top: 8px; padding: 12px; border: 1px solid var(--fika-border-default); border-radius: 10px; background: var(--fika-surface-card); color: var(--fika-text-secondary); font-size: 12px; }
+.real-planner .route-sheet-footer strong { color: var(--fika-text-primary); }
+.real-planner .route-sheet-footer span { grid-column: 2; }
+@media (max-width: 1050px) {
+  .real-planner .mock-canvas { width: calc(100% - 40px); }
+  .real-planner .mock-workspace, .real-planner .queue-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .real-planner .mock-queue { max-height: 390px; }
+  .real-planner .queue-collapsed .mock-queue { min-height: 0; max-height: none; }
+  .real-planner .queue-collapsed .mock-queue > header { width: 100%; flex-direction: row; justify-content: space-between; }
+  .real-planner .queue-collapsed .mock-queue > header > div { display: block; }
+  .real-planner .queue-collapsed .mock-queue > :not(header) { display: none; }
+  .real-planner .mock-schedule { min-height: 440px; }
+}
+@media (max-width: 600px) {
+  .real-planner .mock-shell { height: 58px; padding: 0 16px; }
+  .real-planner .mock-brand img { width: 86px; }
+  .real-planner .mock-canvas { width: calc(100% - 32px); padding-top: 12px; }
+  .real-planner .mock-heading h1 { font-size: 24px; }
+  .real-planner .mock-week-nav { width: 100%; grid-template-columns: 42px minmax(0, 1fr) 84px 42px; }
+  .real-planner .mock-day-cards { grid-template-columns: repeat(5, minmax(114px, 1fr)); overflow-x: auto; padding-bottom: 3px; }
+  .real-planner .mock-day-cards > button { min-height: 62px; padding: 8px; }
+  .real-planner .mock-day-metrics { gap: 6px; font-size: 9px; }
+  .real-planner .mock-selected-day { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .real-planner .mock-selected-day > div:first-child { flex-wrap: wrap; gap: 5px 8px; }
+  .real-planner .mock-selected-day small { width: 100%; }
+  .real-planner .mock-actions { width: 100%; flex-wrap: wrap; }
+  .real-planner .mock-actions button, .real-planner .mock-actions a { flex: 1 1 auto; justify-content: center; text-align: center; }
+  .real-planner .schedule-heading-actions { align-items: flex-end; flex-direction: column; gap: 5px; }
+  .real-planner .mock-schedule-head > .schedule-heading-actions > strong { font-size: 10px; }
+  .real-planner .mock-legend { flex-wrap: wrap; gap: 6px 12px; }
+  .real-planner .mock-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .real-planner .mock-summary div:nth-child(2n) { border-right: 0; }
+  .real-planner .mock-summary div:last-child { grid-column: 1 / -1; }
+  .real-planner .mock-inspector { width: 100vw; padding-right: 14px; padding-left: 14px; }
+  .real-planner .mock-inspector > header { margin-right: -14px; margin-left: -14px; padding-right: 14px; padding-left: 14px; }
+  .real-planner .route-sheet-backdrop { padding: 8px; }
+  .real-planner .route-sheet { max-height: 94dvh; border-radius: 12px; }
+  .real-planner .route-sheet > header { padding: 13px; }
+  .real-planner .route-sheet-body { padding: 6px 13px 14px; }
+  .real-planner .route-sheet-stop { grid-template-columns: 62px minmax(0, 1fr); gap: 7px; }
+}
 .card-main {
   position: relative;
   display: grid;
@@ -2068,6 +2200,56 @@ button:disabled {
 .driver-app textarea:focus-visible {
   outline: 3px solid var(--fika-focus-ring);
   outline-offset: 2px;
+}
+
+/* Desktop journey workspace: concise week summaries, a taller planning area,
+   and a docked inspector that reserves room instead of covering the timeline. */
+.real-planner .mock-day-cards > button { min-height: 82px; padding: 14px 16px; }
+.real-planner .mock-day-summary { display: block; margin-top: 12px; color: var(--fika-text-secondary); font-size: 12px; line-height: 1.35; }
+.real-planner .mock-workspace { min-height: calc(100dvh - 460px); align-items: stretch; }
+.real-planner .mock-workspace:not(.queue-collapsed) { grid-template-columns: minmax(250px, 34fr) minmax(0, 66fr); gap: 12px; }
+.real-planner .mock-queue { display: flex; min-height: 0; align-self: start; max-height: min(620px, calc(100dvh - 460px)); flex-direction: column; }
+.real-planner .mock-queue-list { min-height: 0; max-height: none; flex: 1 1 auto; overflow: auto; }
+.real-planner .mock-schedule { display: flex; min-height: max(440px, calc(100dvh - 640px)); flex-direction: column; }
+.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) > div:first-child { min-height: 0; flex: 1 1 auto; }
+.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) > div:first-child > div { height: 100%; }
+.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) > div:first-child > div > section { display: flex; min-height: 100%; flex-direction: column; }
+.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) > div:first-child > div > section > div:not(:first-child) { min-height: 82px; flex: 1 1 auto; }
+.real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) > div:first-child > div > section > div:not(:first-child) > div:nth-child(2) { height: 100% !important; }
+.real-planner .mock-summary { margin-top: auto; }
+.real-planner .queue-search input:focus-visible,
+.real-planner .mock-secondary-filter select:focus-visible,
+.real-planner .mock-queue-actions button:focus-visible,
+.real-planner .mock-actions button:focus-visible,
+.real-planner .mock-actions a:focus-visible,
+.real-planner .mock-day-cards button:focus-visible,
+.real-planner .mock-inspector button:focus-visible,
+.real-planner .mock-inspector input:focus-visible,
+.real-planner .mock-inspector select:focus-visible {
+  outline: 3px solid var(--fika-focus-ring);
+  outline-offset: 2px;
+}
+@media (min-width: 1051px) {
+  .real-planner.has-inspector .mock-canvas {
+    width: min(1450px, calc(100% - 468px));
+    margin-right: 420px;
+    margin-left: max(24px, calc((100% - 1870px) / 2));
+  }
+  .real-planner.has-inspector .mock-inspector {
+    width: min(390px, calc(100vw - 24px));
+  }
+}
+@media (max-width: 1050px) {
+  .real-planner .mock-workspace:not(.queue-collapsed) { grid-template-columns: minmax(0, 1fr); }
+  .real-planner .mock-workspace { min-height: 0; }
+  .real-planner .mock-schedule { min-height: 440px; }
+  .real-planner .mock-schedule > [data-testid="mounted-react-timeline"] > div:nth-child(2) > div:first-child > div > section > div:not(:first-child) { min-height: 82px; }
+}
+@media (max-width: 600px) {
+  .real-planner .mock-day-cards > button { min-height: 62px; padding: 8px; }
+  .real-planner .mock-day-summary { margin-top: 5px; font-size: 10px; }
 }
 .driver-app button {
   min-height: 44px;

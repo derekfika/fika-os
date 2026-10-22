@@ -86,6 +86,8 @@ export type PlannerStopView = {
   plannedArrivalTime?: string;
   plannedWindow?: { startTime: string; endTime?: string };
   loaded?: boolean;
+  /** Number of canonical delivery loads represented by this physical stop. */
+  loadCount?: number;
   requirementCount: number;
   movementCount: number;
   movementTypes: MovementType[];
@@ -586,6 +588,7 @@ export function buildPlannerDay(input: {
           plannedArrivalTime: stop.plannedArrivalTime,
           plannedWindow: stop.plannedWindow,
           loaded: Boolean(stop.loaded),
+          loadCount: stop.canonicalLoadIds?.length ?? stop.requirementRefs.length,
           requirementCount: stop.requirementRefs.length,
           movementCount: (
             stop.movementRequestIds ||

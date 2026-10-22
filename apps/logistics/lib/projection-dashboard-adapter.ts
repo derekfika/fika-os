@@ -31,6 +31,17 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
   const actualStops = (projection.stops || []).filter((stop) => runIds.has(stop.runId));
   const loadStops: DeliveryStop[] = [];
   const loadStopIdsByRun = new Map<string, string[]>();
+  const movements = projection.movements || [];
+  const nativeStopRepresentsLoad = (runId: string, load: LogisticsDayProjection["deliveryLoads"][number], lane: "delivery" | "collection") => {
+    const ids = load.loadIds?.length ? load.loadIds : [load.id];
+    return actualStops.some((stop) => {
+      if (stop.runId !== runId || !ids.every((id) => (stop.canonicalLoadIds || []).includes(id))) return false;
+      const nativeLane = stop.linkedOperation || stop.movementType;
+      if (!nativeLane || nativeLane === lane) return true;
+      const movementTypes = (stop.movementRequestIds || []).map((id) => movements.find((movement) => movement.canonicalId === id)?.type);
+      return movementTypes.includes(lane);
+    });
+  };
 
   for (const load of projection.deliveryLoads) {
     const deliveryRunId = load.runId && runIds.has(load.runId) ? load.runId : unassignedRunId;
@@ -40,6 +51,9 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
       ...(load.collectionRequired && collectionRunId ? [{ runId: collectionRunId, lane: "collection" as const }] : []),
     ];
     for (const { runId, lane } of entries) {
+      // An authoritative physical stop can already own this canonical load.
+      // Keep the richer stop (including any mixed movements) as one visit.
+      if (nativeStopRepresentsLoad(runId, load, lane)) continue;
       const collection = lane === "collection";
       const stopId = `projection-stop:${lane}:${load.id}`;
       const scheduledTime = collection ? load.collectionScheduledTime : load.scheduledTime;
@@ -83,7 +97,6 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
     ])),
   }));
   const stops = [...actualStops, ...loadStops];
-  const movements = projection.movements || [];
   const basePlanner = buildPlannerDay({
     serviceDate: projection.serviceDate,
     requirements: [],
