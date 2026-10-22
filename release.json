@@ -1,0 +1,17 @@
+{
+  "schema": "fika.release.v1",
+  "app": "hub",
+  "environment": "prod",
+  "project": "fika-os",
+  "backend": "fika-os-prod-hub",
+  "region": "europe-west4",
+  "branch": "release/prod/hub",
+  "sourceSha": "c8f20b897306b152cfdeb99f4d6476f3f21d47a7",
+  "rollout": "build-2026-10-22-002",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "baseline",
+  "scopeHash": "fcfca93283ec2285b9de9794f85f3cf773fe929b5ec9503d7bb94b1832f98b40",
+  "observedAt": "2026-10-22T17:14:44.649Z",
+  "historicalException": false
+}
