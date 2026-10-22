@@ -1,0 +1,17 @@
+{
+  "schema": "fika.release.v1",
+  "app": "cpu",
+  "environment": "staging",
+  "project": "fika-os-dev",
+  "backend": "fika-cpu-production-staging",
+  "region": "europe-west4",
+  "branch": "release/staging/cpu",
+  "sourceSha": "9f7115245f2fe77140f9d7c0b918834f9a306045",
+  "rollout": "build-2026-10-17-002",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "baseline",
+  "scopeHash": "1ad5c7faf326aaf8b2c83ebebfe362e755c83b1c148eb1bc6a935ddc09838471",
+  "observedAt": "2026-10-22T17:16:04.447Z",
+  "historicalException": false
+}
