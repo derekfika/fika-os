@@ -1,0 +1,17 @@
+{
+  "schema": "fika.release.v1",
+  "app": "logistics",
+  "environment": "prod",
+  "project": "fika-os",
+  "backend": "fika-os-prod-logistics",
+  "region": "europe-west4",
+  "branch": "release/prod/logistics",
+  "sourceSha": "5348f500bad837be5a4972fe9cfadcbed61aa8f5",
+  "rollout": "build-2026-10-19-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "baseline",
+  "scopeHash": "25e3dde7209c4c8694ad13bfce432aa960d3ecb71e7e0c3bdfa110f2d2d22009",
+  "observedAt": "2026-10-22T17:21:06.039Z",
+  "historicalException": false
+}
