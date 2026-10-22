@@ -1,0 +1,18 @@
+{
+  "schema": "fika.release.v1",
+  "app": "cpu",
+  "environment": "prod",
+  "project": "fika-os",
+  "backend": "fika-os-prod-cpu",
+  "region": "europe-west4",
+  "branch": "release/prod/cpu",
+  "sourceSha": "94287ecf98504cc67ba6c09a0de32dcfe8d949da",
+  "rollout": "build-2026-10-22-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "baseline",
+  "scopeHash": "861ab15f282e3f2007995da55ffc5a70083d1b5882ef595218981c13234b514c",
+  "observedAt": "2026-10-22T17:16:18.518Z",
+  "historicalException": true,
+  "reconciliation": "Existing deployed source not integrated into main; preserve, reconcile by reviewed PR before any new production promotion"
+}
