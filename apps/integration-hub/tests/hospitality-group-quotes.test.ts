@@ -195,7 +195,7 @@ test("Firestore adapter commits all child quote sections together and replays on
   const cpuA = await createProductionFromApprovedBooking(actor, children[1].canonicalId, `${id}:cpu-a`);
   const cpuB = await createProductionFromApprovedBooking(actor, children[2].canonicalId, `${id}:cpu-b`);
   assert.notEqual(cpuA.order!.canonicalId, cpuB.order!.canonicalId); assert.equal(cpuA.order!.sourceBookingId, children[1].canonicalId); assert.equal(cpuB.order!.sourceBookingId, children[2].canonicalId);
-  assert.equal(cpuA.order!.serviceWindow.startTime, children[1].service.startTime);
+  assert.equal(cpuA.order!.serviceWindow!.startTime, children[1].service.startTime);
   const latest = (await db.collection("fikaBookings").doc(children[3].canonicalId).get()).data() as CanonicalBooking;
   await assert.rejects(executeBookingWorkflow(actor, latest.canonicalId, latest.version, { action: "quote" }), /consolidated quote/);
 });
