@@ -35,6 +35,12 @@ export function successfulValidation(sha) {
   if (!check) throw Error(`Required GitHub Actions check ${MAIN_CHECK} has not passed for exact source ${sha}`);
   return { id: check.id, url: check.html_url, sha };
 }
+export function rolloutArguments(plan) {
+  const t = target(plan.app, plan.environment);
+  if (plan.backend !== t.backend || plan.project !== t.project) throw Error('Rollout target differs from governed mapping');
+  // --force skips Firebase's interactive confirmation only, after our exact-SHA approval gates.
+  return ['apphosting:rollouts:create', t.backend, '--project', t.project, '--git-commit', exactSha(plan.sourceSha), '--non-interactive', '--force'];
+}
 export function approval(options, t, sha) {
   const match = /^https:\/\/github\.com\/derekfika\/fika-os\/(?:pull|issues)\/(\d+)#issuecomment-(\d+)$/.exec(options['approval-url'] || '');
   if (!match) throw Error('--approval-url must identify a GitHub issue/PR comment in this repository');
@@ -117,7 +123,7 @@ export async function deploy(app, environment, options) {
       journal.intentCommit = appendRecord(plan, { schema: 'fika.release.v1', ...plan, kind: 'intent', state: 'PENDING', releaseId: journal.releaseId, previousGood: before, createdAt: journal.createdAt }, pointer.commit);
       save(journalFile, journal);
       // Exactly one selected backend; no branch-based or project-wide deployment command.
-      try { command('firebase', ['apphosting:rollouts:create', plan.backend, '--project', plan.project, '--git-commit', plan.sourceSha, '--non-interactive'], { stdio: ['ignore', 'inherit', 'inherit'] }); }
+      try { command('firebase', rolloutArguments(plan), { stdio: ['ignore', 'inherit', 'inherit'] }); }
       catch { throw Error(`Rollout submission/completion uncertain. Journal ${journalFile}; use --resume, NEVER blindly resubmit.`); }
     }
     let verified; const deadline = Date.now() + Number(options['timeout-ms'] || 1200000);
