@@ -174,6 +174,16 @@ test("customer data route exposes only GET and client bundle contains no Google 
   assert.doesNotMatch(client, /GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON|GALLAGHER_DASHBOARD_SESSION_SECRET|GALLAGHER_DASHBOARD_PIN_HASH|sheets\.googleapis\.com/);
 });
 
+test("customer header uses the approved wording and never says read-only (presentation only; data route stays GET-only)", async () => {
+  const fs = await import("node:fs");
+  const client = fs.readFileSync(new URL("../app/angel-court/gallagher/GallagherDashboard.tsx", import.meta.url), "utf8");
+  const hero = client.slice(client.indexOf('<section className={styles.hero}'), client.indexOf("{hasData ? <SummaryTiles"));
+  assert.match(hero, /Gallagher bookings/);
+  assert.match(hero, /Your hospitality bookings, upcoming and past\./);
+  assert.doesNotMatch(hero, /read-only|read only|readonly/i);
+  assert.doesNotMatch(client, /A read-only record of your hospitality bookings/);
+});
+
 test("responsive dashboard uses cards on mobile and keeps a readable desktop table", async () => {
   const fs = await import("node:fs");
   const css = fs.readFileSync(new URL("../app/angel-court/gallagher/GallagherDashboard.module.css", import.meta.url), "utf8");
