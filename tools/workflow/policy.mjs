@@ -52,8 +52,10 @@ export function validateApproval(comment, repository, request, now = Date.now())
 export function partialPathOverlap(a, b) { return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`); }
 export function assertResume(intent, journal, plan) {
   if (!journal || intent?.schema !== 'fika.release.v1' || intent.kind !== 'intent' || intent.state !== 'PENDING' || intent.releaseId !== journal.releaseId) throw Error('Missing/wrong release journal or intent');
+  const expected = target(intent.app, intent.environment);
+  for (const key of ['project','backend','region','branch']) if (intent[key] !== expected[key]) throw Error('Intent target differs from governed mapping');
   for (const key of ['app','environment','project','backend','sourceSha','scopeHash']) if (intent[key] !== plan[key] || journal.plan[key] !== plan[key]) throw Error(`Resume ${key} differs from original intent`);
-  if (intent.approval?.id !== plan.approval?.id || digest(intent.previousGood) !== digest(journal.before)) throw Error('Resume approval/rollback baseline differs from original intent');
+  if (intent.approval?.id !== plan.approval?.id || digest(intent.previousGood) !== digest(journal.before) || intent.previousGoodRecord !== journal.previousGoodRecord) throw Error('Resume approval/rollback baseline differs from original intent');
 }
 export function assertServingLineage(plan, current, containsCurrent, sameTree) {
   if (plan.environment === 'prod' && !plan.rollback && !containsCurrent && !sameTree) throw Error('Candidate omits the currently deployed production lineage. Reconcile its approved changes into main first; only explicit verified rollback may go backwards.');

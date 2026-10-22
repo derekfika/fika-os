@@ -13,8 +13,8 @@ $entry = Join-Path $PSScriptRoot "../tools/workflow/cli.mjs"
 $arguments = @($entry,"deploy",$aliases[$App],"--staging")
 if ($Sha) { $arguments += @("--sha",$Sha) }
 if ($Execute) {
-  if (!$ApprovalUrl) { throw "-Execute requires -ApprovalUrl for the exact source SHA." }
-  $arguments += @("--execute","--approval-url",$ApprovalUrl)
+  $arguments += @("--execute")
+  if ($ApprovalUrl) { $arguments += @("--approval-url",$ApprovalUrl) }
 }
 Write-Host "Using governed selected-app release tooling. Dry-run unless -Execute is supplied."
 & node @arguments

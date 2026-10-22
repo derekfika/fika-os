@@ -35,8 +35,10 @@ worktrees/temporary branches and direct concurrent writes to main.
    for sourceSha. NEVER deploy a release-record branch/commit as application code.
    Source code remains on main (or a reviewed staging candidate before integration).
 6. Use `fika deploy <app> --staging|--prod` (or `npm run fika -- ...`). Default is
-   dry-run. Execution requires passing exact-SHA CI and an exact app/environment/
-   SHA owner approval URL. Production source must be in origin/main and preserve
+   dry-run. Execution requires passing exact-SHA CI and PR provenance. Staging
+   permits explicit --execute by an authenticated repository writer; production
+   additionally requires an exact app/environment/SHA owner approval URL.
+   Production source must be in origin/main and preserve
    the currently deployed lineage. No arbitrary WIP production releases.
 7. Production approvals are never inferred from a code task. Standard Track needs
    staging with identical selected-app/dependency tree and independent review;
@@ -45,8 +47,12 @@ worktrees/temporary branches and direct concurrent writes to main.
 8. Keep App Hosting automatic rollouts disabled. Only selected-backend, explicit-
    SHA commands are allowed. A pending distributed release intent blocks competing
    writers; resume from its matching journal, never blindly redeploy after failure.
+   `fika reconcile` can resolve only a positively identified terminal attempt;
+   active or unknown deployment outcomes must remain pending.
 9. Finish/retire only your own workspace. Retirement refuses dirty/untracked/
-   ignored files and unpreserved unique commits. Seven legacy stashes, recovery
+   ignored files and unpreserved unique commits. --preserve-generated may MOVE
+   allowlisted ignored dependencies/build outputs into a recovery archive, never
+   delete their contents. Seven legacy stashes, recovery
    archives, rollback/release/preservation refs and ambiguous active work stay.
 10. Do not bypass GitHub protections. Main requires a PR, successful merge-gate and
     independent approval. If no reviewer is available, state the blocker promptly;

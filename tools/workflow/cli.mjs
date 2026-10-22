@@ -5,12 +5,13 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { APPS, REPO, MAIN_CHECK, affected, risk, target, digest } from './policy.mjs';
 import { git, root, command, ghApi, save, stateDir, jsonFile } from './runtime.mjs';
 import { createWorkspace, checkWorkspace, finishWorkspace, retireWorkspace, workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
-import { bootstrap, deploy, planRelease } from './releases.mjs';
+import { bootstrap, deploy, reconcile, planRelease } from './releases.mjs';
+import { hostedTrust, assertHostedContext } from './hosted.mjs';
 
 export function parse(args) {
   const positional = []; const options = {};
-  const flags = new Set(['execute', 'staging', 'prod', 'resume', 'archive', 'plan', 'tools-only']);
-  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'approval-url', 'record', 'timeout-ms', 'output', 'workspace']);
+  const flags = new Set(['execute', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only']);
+  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'approval-url', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason']);
   for (let i = 0; i < args.length; i++) {
     if (!args[i].startsWith('--')) { positional.push(args[i]); continue; }
     const key = args[i].slice(2); if (Object.hasOwn(options, key)) throw Error(`Duplicate --${key}`);
@@ -52,7 +53,7 @@ async function main() {
     if (options.output) writeFileSync(options.output, JSON.stringify(result));
   } else if (verb === 'validate') {
     const paths = changePaths(options); const scope = changeScope(paths, options);
-    const commands = [{ program: process.execPath, args: ['--test', ...['policy', 'workspaces', 'releases'].map(n => `tools/workflow/${n}.test.mjs`)] }];
+    const commands = [{ program: process.execPath, args: ['--test', ...['policy', 'workspaces', 'releases', 'recovery', 'hosted'].map(n => `tools/workflow/${n}.test.mjs`)] }];
     if (!options['tools-only']) for (const app of scope.apps) {
       for (const script of ['test', 'typecheck', 'build']) commands.push({ program: 'npm', args: ['--prefix', APPS[app].path, 'run', script], app });
     }
@@ -80,11 +81,15 @@ async function main() {
     git('fetch', 'origin'); result = [];
     for (const app of arg ? [arg] : Object.keys(APPS)) for (const env of ['staging', 'prod']) result.push(await bootstrap(target(app, env), options));
     if (options.output) save(options.output, result);
-  } else if (verb === 'deploy' || verb === 'rollback') {
+  } else if (verb === 'deploy' || verb === 'rollback' || verb === 'reconcile') {
     if (!options.staging && !options.prod) throw Error('Specify --staging or --prod');
     if (verb === 'rollback' && (!options.record || !options.sha)) throw Error('Rollback needs --record <verified ledger commit> and --sha <its source SHA>');
-    result = await deploy(arg, options.prod ? 'prod' : 'staging', options);
+    result = await (verb === 'reconcile' ? reconcile : deploy)(arg, options.prod ? 'prod' : 'staging', options);
     if (options.output) save(options.output, result);
+  } else if (verb === 'hosted-check' || verb === 'trust') {
+    if (!options.staging && !options.prod) throw Error('Specify --staging or --prod');
+    const environment = options.prod ? 'prod' : 'staging';
+    result = verb === 'trust' ? hostedTrust(arg, environment) : assertHostedContext(process.env, target(arg, environment));
   } else if (verb === 'protect') {
     const branches = ['main', ...Object.keys(APPS).flatMap(app => ['staging', 'prod'].map(env => target(app, env).branch))];
     result = branches.map(branch => ({ branch, policy: protection(branch !== 'main') }));
@@ -94,12 +99,19 @@ async function main() {
       for (const item of result) ghApi(`repos/${REPO}/branches/${encodeURIComponent(item.branch)}/protection`, 'PUT', item.policy);
       const repo = ghApi(`repos/${REPO}`); const owner = ghApi(`users/${repo.owner.login}`);
       for (const app of Object.keys(APPS)) for (const env of ['staging', 'prod']) {
-        ghApi(`repos/${REPO}/environments/${encodeURIComponent(`${env}-${app}`)}`, 'PUT', env === 'prod' ? { reviewers: [{ type: 'User', id: owner.id }], prevent_self_review: false } : {});
+        const environment = `${env}-${app}`;
+        ghApi(`repos/${REPO}/environments/${encodeURIComponent(environment)}`, 'PUT', {
+          ...(env === 'prod' ? { reviewers: [{ type: 'User', id: owner.id }], prevent_self_review: false } : {}),
+          deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+        });
+        const policies = ghApi(`repos/${REPO}/environments/${encodeURIComponent(environment)}/deployment-branch-policies`).branch_policies;
+        if (policies.some(p => p.name !== 'main' || p.type !== 'branch')) throw Error(`Review existing non-main environment policies for ${environment}; never silently retain or delete them`);
+        if (!policies.some(p => p.name === 'main' && p.type === 'branch')) ghApi(`repos/${REPO}/environments/${encodeURIComponent(environment)}/deployment-branch-policies`, 'POST', { name: 'main', type: 'branch' });
       }
     }
     if (options.output) save(options.output, { applied: Boolean(options.execute), protections: result });
   } else {
-    result = { usage: ['fika workspace create <task> --owner <agent> --scope apps/cpu-production', 'fika affected --base origin/main', 'fika validate --base origin/main', 'fika deploy cpu --staging [--sha <40-char SHA>] [--execute --approval-url <owner comment>]', 'fika deploy cpu --prod [--sha <40-char SHA>] [--execute --approval-url <owner comment>]', 'fika rollback cpu --prod --record <verified release commit> --sha <source> [--execute --approval-url <owner comment>]', 'fika cleanup --output <plan.json>', 'fika cleanup --execute --file <plan.json> --approve-hash <hash>'], safety: 'Default deploy/rollback/bootstrap/cleanup is dry-run. Production always requires explicit exact-SHA owner approval; no project-wide deploy.' };
+    result = { usage: ['fika workspace create <task> --owner <agent> --scope apps/cpu-production', 'fika workspace retire <task> --owner <agent> [--preserve-generated] [--archive]', 'fika affected --base origin/main', 'fika validate --base origin/main', 'fika deploy cpu --staging [--sha <40-char SHA>] [--execute]', 'fika deploy cpu --prod [--sha <40-char SHA>] [--execute --approval-url <owner comment>]', 'fika reconcile cpu --staging|--prod --release-id <pending-id> [--resolution abandon|complete --rollout <ID> --reason <text> --execute]', 'fika trust cpu --prod', 'fika rollback cpu --prod --record <verified release commit> --sha <source> [--execute --approval-url <owner comment>]', 'fika cleanup --output <plan.json>', 'fika cleanup --execute --file <plan.json> --approve-hash <hash>'], safety: 'Default deploy/rollback/reconcile/bootstrap/cleanup is dry-run. Production always requires explicit exact-SHA owner approval; no project-wide deploy or force abandonment.' };
   }
   console.log(JSON.stringify(result, null, 2));
 }

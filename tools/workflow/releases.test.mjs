@@ -6,7 +6,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { protection } from './cli.mjs';
 import { APPS, target, validateRecord } from './policy.mjs';
-import { rolloutArguments } from './releases.mjs';
+import { rolloutArguments, assertFastTrack, stagingAuthorization, assertReconciliationApproval, assertApprovalPurpose } from './releases.mjs';
+test('staging needs explicit execution by a repository writer, not a separate owner comment; production remains excluded',()=>{
+ const access={env:{},github:endpoint=>endpoint==='user'?{login:'writer',type:'User'}:{permissions:{push:true}}};
+ const auth=stagingAuthorization(target('cpu','staging'),'a'.repeat(40),access);assert.equal(auth.actor,'writer');assert.equal(auth.explicitExecute,true);assert.equal(auth.lane,'staging');
+ assert.throws(()=>stagingAuthorization(target('cpu','prod'),'a'.repeat(40),access));
+ assert.throws(()=>stagingAuthorization(target('cpu','staging'),'a'.repeat(40),{env:{},github:endpoint=>endpoint==='user'?{login:'reader',type:'User'}:{permissions:{push:false}}}));
+});
+test('ordinary production deployment approval cannot abandon an intent without its exact action authorisation',()=>{
+ assert.throws(()=>assertReconciliationApproval({reason:'Reason: deploy candidate'},'release','abandon'));
+ assert.throws(()=>assertReconciliationApproval({reason:'Action: reconcile other abandon'},'release','abandon'));
+ assert.throws(()=>assertReconciliationApproval({reason:'Action: reconcile release complete'},'release','abandon'));
+ assertReconciliationApproval({reason:'Reason: confirmed terminal failure\nAction: reconcile release abandon'},'release','abandon');
+ assert.throws(()=>assertApprovalPurpose('Action: reconcile release abandon','deploy'));
+ assert.throws(()=>assertApprovalPurpose('Reason: ordinary deployment','reconcile'));
+ assertApprovalPurpose('Action: reconcile release abandon','reconcile');assertApprovalPurpose('Reason: ordinary deployment','deploy');
+});
 test('rollout command targets exactly one governed backend and skips Firebase prompt only after approval',()=>{
  for(const app of Object.keys(APPS)) for(const env of ['staging','prod']) {
   const t=target(app,env);const sourceSha='a'.repeat(40);const args=rolloutArguments({...t,sourceSha});
@@ -16,6 +31,19 @@ test('rollout command targets exactly one governed backend and skips Firebase pr
 });
 test('main/release protection prohibits force pushes and deletion',()=>{for(const release of [false,true]){const p=protection(release);assert.equal(p.allow_force_pushes,false);assert.equal(p.allow_deletions,false);assert.equal(p.enforce_admins,true);}assert.equal(protection(false).required_pull_request_reviews.required_approving_review_count,1);});
 test('a pending release intent is never accepted as known-good rollback',()=>{assert.throws(()=>validateRecord({schema:'fika.release.v1',...target('cpu','prod'),sourceSha:'a'.repeat(40),kind:'intent',state:'PENDING'}));});
+test('abandoned outcomes are never accepted as known-good rollback records',()=>{assert.throws(()=>validateRecord({schema:'fika.release.v1',...target('cpu','prod'),sourceSha:'a'.repeat(40),kind:'abandoned',state:'SUCCEEDED',percent:100,scopeHash:'scope',rollout:'build-new'}));});
+test('Fast Track rejects PR1 backend changes hidden behind PR2 cosmetics, using the complete real Git production delta',()=>{
+ const base=mkdtempSync(path.join(os.tmpdir(),'fika-workflow-test-'));const git=(...a)=>execFileSync('git',a,{cwd:base,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+ const moduleUrl=new URL('./releases.mjs',import.meta.url).href;
+ const delta=(from,to,ok=true)=>{const r=spawnSync(process.execPath,['--input-type=module','-e',`import {productionDelta} from ${JSON.stringify(moduleUrl)};console.log(JSON.stringify(productionDelta(${JSON.stringify(from)},${JSON.stringify(to)})));`],{cwd:base,encoding:'utf8'});assert.equal(r.status===0,ok,r.stderr);return r.status===0?JSON.parse(r.stdout):undefined;};
+ try {
+  git('init','-b','main');git('config','user.name','Workflow test');git('config','user.email','test@example.invalid');writeFileSync(path.join(base,'README.md'),'fixture');git('add','.');git('commit','-m','Production baseline');const production=git('rev-parse','HEAD');
+  mkdirSync(path.join(base,'apps/cpu-production/app/api'),{recursive:true});writeFileSync(path.join(base,'apps/cpu-production/app/api/route.ts'),'operational backend');git('add','.');git('commit','-m','PR1 backend');const pr1=git('rev-parse','HEAD');
+  mkdirSync(path.join(base,'apps/cpu-production/app/ui'));writeFileSync(path.join(base,'apps/cpu-production/app/ui/style.css'),'cosmetic change');git('add','.');git('commit','-m','PR2 cosmetic');const pr2=git('rev-parse','HEAD');
+  const complete=delta(production,pr2);assert.ok(complete.paths.includes('apps/cpu-production/app/api/route.ts'));assert.equal(complete.risk,'standard');assert.throws(()=>assertFastTrack(complete,'fast','Risk: cosmetic-only'),/Standard Track/);assertFastTrack(complete,'standard');assertFastTrack(complete,'owner-exception');
+  const cosmetic=delta(pr1,pr2);assert.equal(cosmetic.risk,'fast');assertFastTrack(cosmetic,'fast');delta('f'.repeat(40),pr2,false);delta('main',pr2,false);assert.throws(()=>assertFastTrack(undefined,'fast'));
+ } finally {assert.equal(path.dirname(path.resolve(base)),path.resolve(os.tmpdir()));assert.ok(path.basename(base).startsWith('fika-workflow-test-'));rmSync(base,{recursive:true,force:true});}
+});
 test('real release ledger preserves source objects; a competing stale writer is rejected before rollout',()=>{
  const base=mkdtempSync(path.join(os.tmpdir(),'fika-workflow-test-'));const remote=path.join(base,'remote.git'),repo=path.join(base,'repo');mkdirSync(repo);
  const git=(...a)=>execFileSync('git',a,{cwd:repo,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();

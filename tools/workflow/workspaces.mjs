@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { existsSync, readdirSync, mkdirSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, mkdirSync, lstatSync, renameSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { git, common, stateDir, save, jsonFile, lock, ancestor, inside, command, ref, ghApi } from './runtime.mjs';
 import { safeScope, partialPathOverlap, digest, REPO, APPS } from './policy.mjs';
 
@@ -54,20 +55,51 @@ export function retireWorkspace(name, options) {
     if (record.owner !== options.owner || record.state !== 'finished') throw Error('Retirement requires the owner and a finished lease');
     inside(managedRoot(), record.directory);
     if (path.resolve(record.directory) === path.resolve(git('rev-parse', '--show-toplevel'))) throw Error('Cannot retire the calling workspace');
-    if (command('git', ['status', '--porcelain', '--ignored'], { cwd: record.directory })) throw Error('Dirty/untracked/ignored files must be preserved before retirement');
+    if (command('git', ['status', '--porcelain'], { cwd: record.directory })) throw Error('Dirty/untracked files must be preserved before retirement');
     const head = command('git', ['rev-parse', 'HEAD'], { cwd: record.directory });
     if (head !== record.finalSha) throw Error('Workspace changed after finish');
     git('fetch', 'origin');
-    if (!ancestor(head, 'origin/main')) {
-      if (!options.archive) throw Error('Unique commits: integrate first or explicitly --archive the finished clean workspace');
+    const unique = !ancestor(head, 'origin/main');
+    if (unique && !options.archive) throw Error('Unique commits: integrate first or explicitly --archive the finished clean workspace');
+    const generated = generatedPlan(record, options);
+    if (unique) {
       const archive = path.join(stateDir(), 'archives'); mkdirSync(archive, { recursive: true });
       record.preservationRef = `refs/preserve/workspace/${name}`;
       git('update-ref', record.preservationRef, head, '0000000000000000000000000000000000000000');
       record.bundle = path.join(archive, `${name}.bundle`); git('bundle', 'create', record.bundle, record.preservationRef); git('bundle', 'verify', record.bundle);
     }
+    if (generated.length) {
+      const archive = path.join(stateDir(), 'archives', `${name}-generated-${randomUUID()}`);
+      mkdirSync(path.dirname(archive), { recursive: true }); mkdirSync(archive);
+      const manifest = { name, owner: record.owner, head, source: record.directory, archive, createdAt: new Date().toISOString(), items: generated.map(item => ({ path: item, moved: false })) };
+      record.generatedArchive = archive; record.generatedArchives = [...(record.generatedArchives || []), archive]; save(file, record); save(path.join(archive, 'manifest.json'), manifest);
+      for (const item of manifest.items) {
+        const from = inside(record.directory, path.join(record.directory, item.path));
+        const to = path.join(archive, item.path); mkdirSync(path.dirname(to), { recursive: true });
+        renameSync(from, to); item.moved = true; save(path.join(archive, 'manifest.json'), manifest);
+      }
+    }
+    if (command('git', ['status', '--porcelain', '--ignored'], { cwd: record.directory })) throw Error('Workspace changed or ignored files remain; preserve it and inspect generated archive manifest');
     git('worktree', 'remove', record.directory); // no --force and no recursive shell deletion
     if (ancestor(head, 'origin/main')) git('branch', '-d', record.branch);
     record.state = 'retired'; record.retiredAt = new Date().toISOString(); save(file, record); return record;
+  });
+}
+function generatedPlan(record, options) {
+  const ignored = command('git', ['status', '--porcelain', '-z', '--ignored'], { cwd: record.directory }).split('\0').filter(Boolean);
+  if (!ignored.length) return [];
+  if (!options['preserve-generated']) throw Error('Ignored files remain; --preserve-generated archives only allowlisted ignored dependencies/build outputs, never deletes them');
+  const allowed = ['node_modules', ...Object.values(APPS).flatMap(app => [`${app.path}/node_modules`, `${app.path}/.next`, `${app.path}/tsconfig.tsbuildinfo`])];
+  for (const entry of ignored) {
+    const name = entry.slice(3).replace(/\/$/, '');
+    if (!entry.startsWith('!! ') || !allowed.some(a => name === a || name.startsWith(`${a}/`))) throw Error(`Non-disposable ignored file must be preserved separately: ${name}`);
+  }
+  return allowed.filter(a => existsSync(path.join(record.directory, a))).map(a => {
+    const p = inside(record.directory, path.join(record.directory, a));
+    if (lstatSync(p).isSymbolicLink()) throw Error(`Generated root is a link; inspect instead of retiring: ${a}`);
+    command('git', ['check-ignore', '-q', '--', a], { cwd: record.directory });
+    if (command('git', ['ls-files', '--', a], { cwd: record.directory })) throw Error(`Generated path contains tracked files: ${a}`);
+    return a;
   });
 }
 export function cleanupPlan() {

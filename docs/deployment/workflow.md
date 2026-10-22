@@ -44,7 +44,9 @@ Initial ledgers capture observed READY/SUCCEEDED, 100%-serving builds without re
 
 ## Approval and release lanes
 
-Every execution requires an actual repository-owner approval comment on a repository issue/PR, tied to the exact target and source. Never manufacture approval from a routine implementation request. The first line is:
+Staging execution requires explicit `--execute`, an authenticated repository writer (or the authorised main release workflow), exact-source CI and repository PR provenance. It does not need a separate owner comment. The actor/run is recorded in the intent; production approval is never inferred from staging.
+
+Production execution requires an actual repository-owner approval comment on a repository issue/PR, tied to the exact target and source. Never manufacture approval from a routine implementation request. The first line is:
 
 ```text
 /fika-approve cpu prod <40-character-source-sha> standard <expiry-UTC-ISO>
@@ -52,7 +54,7 @@ Every execution requires an actual repository-owner approval comment on a reposi
 
 Expiry must be in the future and at most seven days after comment creation. Use the comment URL, including `#issuecomment-...`. An approval for another app, environment or SHA is invalid. Production approval remains explicit even after a PR is merged.
 
-- **Fast:** cosmetic CSS/assets/docs; JSX presentation changes additionally require owner `Risk: cosmetic-only` attestation and UI-only paths. Exact-source CI and main integration still apply. Operational, shared, backend and configuration changes cannot use this lane.
+- **Fast:** evaluated from the actual currently serving production SHA to the proposed SHA, across the complete Git tree delta, not just the latest PR. Both exact commit objects must be available. Intervening backend/shared/operational changes require Standard even if the final PR is cosmetic. Cosmetic CSS/assets/docs qualify; JSX presentation changes additionally require owner `Risk: cosmetic-only` attestation and UI-only paths throughout the delta. Exact-source CI, production-lineage protection and main integration still apply. The delta is recorded in the intent and revalidated on resume.
 - **Standard:** exact-source CI, a verified staging record with the same selected-app/dependency tree, main integration, and an independent trusted approval on the exact source PR head.
 - **Owner exception:** `owner-exception` plus a second line `Reason: ...` can replace the independent release review when unavailable. It does not replace CI, staging, main integration, target safety or GitHub's required main PR approval. A missing reviewer is an explicit handoff blocker, never an indefinite silent wait. If owner and all agents share one GitHub identity, a separate trusted collaborator must approve the main PR, or the human owner must separately authorise and document a repository-administration exception. Agents must not disable protection to self-approve.
 
@@ -62,7 +64,7 @@ Prerequisites: clean task workspace, Git, Node 22.13+, GitHub CLI with repositor
 
 ```powershell
 fika deploy cpu --staging --sha <full-source-sha>
-fika deploy cpu --staging --sha <full-source-sha> --execute --approval-url <owner-comment-url>
+fika deploy cpu --staging --sha <full-source-sha> --execute
 fika deploy cpu --prod --sha <full-integrated-source-sha>
 fika deploy cpu --prod --sha <full-integrated-source-sha> --execute --approval-url <owner-comment-url>
 ```
@@ -77,7 +79,20 @@ An uncertain submission, failed build or failed smoke leaves the intent and jour
 fika deploy cpu --staging --sha <original-sha> --execute --approval-url <original-comment> --resume
 ```
 
-Resume only verifies the original intent; it does not resubmit. If no rollout exists or a failed rollout cannot recover, an operator must review the journal/platform state and explicitly reconcile that intent before a newly approved attempt. Locks left by a killed process likewise require inspection, not automatic deletion.
+Resume only verifies the original intent; it does not resubmit. Locks left by a killed process require inspection, not automatic deletion. For a failed or unverifiable outcome, use the audited procedure below rather than editing the journal or remote release pointer.
+
+### Resolve a failed release intent
+
+```powershell
+fika reconcile cpu --staging --release-id <original-release-id>
+fika reconcile cpu --staging --release-id <original-release-id> --resolution abandon --rollout <exact-build-rollout-id> --reason "Confirmed failed build; prior release remains serving" --execute
+```
+
+The first command is read-only inspection. Execution requires the original plan-scoped journal, preserved known-good ledger record, and positive identification of a terminal rollout/build with the exact intended source created during the recorded submission. The original Firebase command must have returned. A killed/unknown submitter, missing attempt, active/unknown build or rollout, unfinished operation, traffic transition, source mismatch or changing evidence blocks reconciliation. Full paginated build/rollout/operation discovery is an exceptional administrative recovery read, never a normal release or interactive application scan. Only non-secret state/identity fields are recorded.
+
+The tool checks the entire snapshot twice, verifies the current remote intent again, archives the immutable original journal, then appends a non-force resolution with actor/reason, evidence hash and rollback lineage. It submits no Firebase deployment and never removes old ledger history. A healthy exact-source successful rollout must use `--resolution complete`; it cannot be concealed by abandonment. An abandoned unhealthy serving release permits only an explicitly approved verified rollback, and an abandoned record is never a known-good rollback target. Unknown outcomes remain pending: there is deliberately no force-abandon option.
+
+Production additionally requires a fresh exact-source owner approval whose body includes `Action: reconcile <release-id> <abandon-or-complete>` and the command's `--approval-url`. That action-specific approval cannot authorise a normal deployment, and an ordinary deployment approval cannot authorise reconciliation. For a hosted attempt, download its `release-journal-<environment>-<app>` artifact with `gh run download`, restore its exact JSON to the CLI-reported common-Git journal path, and use the same procedure from an authorised local operator session. Preserve artifact/archives if investigation exceeds 30-day retention.
 
 ## Rollback
 
@@ -92,23 +107,26 @@ A historical verified record may predate CI; this narrow rollback exception is r
 
 ## GitHub-hosted releases
 
-The selected-application `workflow_dispatch` uses the same CLI, explicit SHA, app/environment concurrency group and environment review. Production environments require the owner reviewer. Actions are pinned to immutable commits. The workflow fails before rollout if either reviewed environment variable is absent:
+The selected-application `workflow_dispatch` uses the same CLI, explicit SHA, app/environment concurrency group and environment review. Its job and pre-credential check require the exact repository numeric IDs, `refs/heads/main`, `.github/workflows/release.yml@refs/heads/main`, `workflow_dispatch` and the selected app/environment. Feature-ref, fork and other-workflow contexts cannot obtain credentials through this workflow. Production environments require the owner reviewer. Future `fika protect --execute` configuration permits only the main branch in each environment; it refuses unexpected existing branch policies rather than silently keeping/deleting them. This correction task only verifies existing remote settings; it does not change them. Actions are pinned to immutable commits. The workflow fails before rollout if either reviewed environment variable is absent:
 
 - `FIKA_GCP_WORKLOAD_IDENTITY_PROVIDER`
 - `FIKA_GCP_RELEASE_SERVICE_ACCOUNT`
 
-Provisioning a least-privilege GCP workload identity is a separate IAM decision; this task does not change production IAM. Existing authorised local `fika deploy` works independently. Hosted jobs retain the non-secret plan journal artifact for 30 days. Supply `resume_run_id` with the original app/environment/SHA/approval to restore it; remote intent and plan identity must still match. Missing artifacts fail closed. Download a pending journal before retention expires if recovery takes longer. Never upload credentials or whole `.git` directories.
+Generate the future exact-target trust specification with `fika trust cpu --prod` (or the selected app/environment). Its CEL condition binds repository and owner numeric IDs, the main ref, exact workflow ref, dispatch event and exact `repo:derekfika/fika-os:environment:prod-cpu` subject. Use dedicated per-target provider/service-account bindings and environment-scoped variables, not a shared repository-wide principalSet or wildcard binding. Bind the service account only to that exact provider-validated subject. Workflow-side checks are additional protection, not a substitute for these GCP issuer/audience/claim and IAM restrictions. Provisioning and verifying actual least-privilege GCP workload identity remains a separate IAM approval; this task does not change production IAM or claim that a provider has been installed.
+
+Existing authorised local `fika deploy` works independently. Hosted jobs retain the non-secret plan journal artifact for 30 days. Supply `resume_run_id` with the original app/environment/SHA/approval to restore it; remote intent and plan identity must still match. Missing artifacts fail closed. Download a pending journal before retention expires if recovery takes longer. Never upload credentials or whole `.git` directories.
 
 ## Finish and guarded cleanup
 
 ```powershell
 fika workspace finish cpu-calendar --owner codex-task-123
 fika workspace retire cpu-calendar --owner codex-task-123
+fika workspace retire cpu-calendar --owner codex-task-123 --preserve-generated
 fika cleanup --output <external-plan.json>
 fika cleanup --execute --file <external-plan.json> --approve-hash <reported-planHash>
 ```
 
-Finish refuses dirty work. Retire refuses untracked/ignored files (including dependency/runtime files), changed finished HEADs and unique commits. Preserve needed files first; `--archive` explicitly preserves unique clean commits in a recovery ref and verified Git bundle before removing the owned workspace. Never force-remove another agent's worktree.
+Finish refuses dirty work. Retire refuses untracked/ignored files, changed finished HEADs and unique commits. `--preserve-generated` permits only ignored root/app `node_modules`, app `.next` and app `tsconfig.tsbuildinfo`: it MOVES their complete contents into a new recovery archive and records a manifest before removing the workspace. It deletes no generated content; even a unique note accidentally stored under dependencies survives. Root links, tracked files under these paths and other ignored files such as `.env` block retirement. A failed move leaves the workspace and manifest for inspection. Archives require a separate retention decision. `--archive` separately preserves unique clean commits in a recovery ref and verified Git bundle. Never force-remove another agent's worktree.
 
 Cleanup is bounded to eight unattached, fully integrated temporary local branch refs per exact fresh plan. Open-PR heads, attached branches, unique commits, main, integration/release/recovery namespaces, stashes and archives are protected. Every removed local branch first receives a recovery ref. Remote branch deletion is not automated. `git remote prune origin` removes only already-deleted remote tracking refs after inspection; it does not delete remote branches. Age alone is never a retention decision.
 

@@ -18,7 +18,7 @@ on:
         type: boolean
         default: false
       approval_url:
-        description: Exact-SHA repository-owner approval comment URL (required for execute)
+        description: Exact-SHA repository-owner approval comment URL (required for production execute)
         required: false
       resume_run_id:
         description: Resume matching pending intent using the journal artifact from this workflow run; never resubmit
@@ -35,9 +35,12 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release:
+    if: github.repository == 'derekfika/fika-os' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.workflow_ref == 'derekfika/fika-os/.github/workflows/release.yml@refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: ${{ inputs.environment }}-${{ inputs.app }}
+    env:
+      FIKA_RELEASE_ENVIRONMENT: ${{ inputs.environment }}-${{ inputs.app }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -46,6 +49,11 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
+      - name: Verify authorised workflow, main ref and selected environment before credentials
+        env:
+          APP: ${{ inputs.app }}
+          TARGET_ENV: ${{ inputs.environment }}
+        run: node tools/workflow/cli.mjs hosted-check "$APP" "--$TARGET_ENV"
       - name: Fail explicitly if release runner identity is not configured
         env:
           PROVIDER: ${{ vars.FIKA_GCP_WORKLOAD_IDENTITY_PROVIDER }}

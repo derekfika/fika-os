@@ -14,7 +14,7 @@ export function command(program, args, options = {}) {
 }
 export const git = (...args) => command('git', args);
 export const root = () => git('rev-parse', '--show-toplevel');
-export const common = () => path.resolve(root(), git('rev-parse', '--git-common-dir'));
+export const common = () => git('rev-parse', '--path-format=absolute', '--git-common-dir');
 export const stateDir = () => { const dir = path.join(common(), 'fika-workflow'); mkdirSync(dir, { recursive: true }); return dir; };
 export function ancestor(a, b) { return spawnSync('git', ['merge-base', '--is-ancestor', a, b], { windowsHide: true }).status === 0; }
 export function ref(name) { const r = spawnSync('git', ['rev-parse', '--verify', name], { encoding: 'utf8', windowsHide: true }); return r.status === 0 ? r.stdout.trim() : undefined; }
