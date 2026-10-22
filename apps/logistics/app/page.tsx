@@ -28,6 +28,7 @@ import type {
 import type { LogisticsDayProjection, LogisticsProjectionState } from "../lib/types";
 import { projectionToDashboardData } from "../lib/projection-dashboard-adapter";
 import { RunOrganiser } from "./run-organiser";
+import type { StopPiece } from "../lib/run-stop-order";
 import type { CreatingRun, PendingRunTiming } from "./journey-lanes";
 import { operationalDate } from "../lib/date";
 import { clientErrorDetails, requireSuccessfulResponse } from "../lib/client-errors";
@@ -2375,6 +2376,27 @@ function Inspector({
   const assignedRun = assignedDelivery && group
     ? runs.find((item) => item.runId === group.requirementRefs.find((ref) => ref.stopId === assignedDelivery.stopId)?.runId)
     : undefined;
+  /** Individually tracked work inside each physical stop, derived from canonical loads / movements (never from names). */
+  const stopPieces = (target: PlannerDay["runs"][number]) => Object.fromEntries(target.stops.map((item): [string, StopPiece[]] => {
+    if (item.stopId.startsWith("projection-stop:")) {
+      const lane = item.stopId.startsWith("projection-stop:collection:") ? "collection" as const : "delivery" as const;
+      const anchor = item.stopId.slice(`projection-stop:${lane}:`.length);
+      const group = projection?.deliveryLoads.find((load) => load.id === anchor || (load.loadIds || []).includes(anchor));
+      const ids = group?.loadIds?.length ? group.loadIds : group ? [group.id] : [];
+      const found = ids.flatMap((id) => {
+        const jobs = group!.jobs.filter((job) => job.assignedLoadId === id || (ids.length === 1 && !job.assignedLoadId));
+        return jobs.length ? jobs.map((job) => ({ key: job.id, kind: lane, label: job.contents.map((content) => `${content.quantity} ${content.unit} ${content.description}`).join(", ") || item.destination.label })) : [{ key: id, kind: lane, label: item.destination.label }];
+      });
+      return [item.stopId, found];
+    }
+    const raw = rawStops.find((candidate) => candidate.canonicalId === item.stopId);
+    const fromMovements = (raw?.movementRequestIds || []).flatMap((id) => {
+      const movement = planner.movements.find((candidate) => candidate.movementId === id);
+      return movement ? [{ key: id, kind: movement.type, label: movement.items.map((line) => `${line.quantity} × ${line.description}`).join(", ") }] : [];
+    });
+    const fromRequirements = (raw?.requirementRefs || []).map((ref) => ({ key: ref.requirementId, kind: (raw?.linkedOperation === "collection" ? "collection" : "delivery") as StopPiece["kind"], label: rawRequirements.find((requirement) => requirement.canonicalId === ref.requirementId)?.lines.map((line) => line.displayNameSnapshot).join(", ") || item.destination.label }));
+    return [item.stopId, [...fromRequirements, ...fromMovements]];
+  }));
   return <aside className="mock-inspector" aria-label="Details inspector" onKeyDown={(event) => { if (event.key === "Escape" && !event.defaultPrevented && !(event.target instanceof HTMLElement && event.target.closest("[role=dialog]"))) { event.preventDefault(); onClose(); } }}>
     <header><div><p className="eyebrow">{run ? "Run inspector" : stop ? "Stop inspector" : selection.kind === "load" ? "Load inspector" : "Inspector"}</p><h2>{group?.destinationLabel || movement?.type || stopTitle || (selection.kind === "load" ? `Load · ${selectedStop?.destination.label || "Details"}` : undefined) || runName || "Details"}</h2></div><button className="close" onClick={onClose} aria-label="Close inspector">×</button></header>
     {group && <>
@@ -2407,7 +2429,7 @@ function Inspector({
       <InspectorMeta label="Vehicle" value={run.vehicle || "No vehicle label"} />
       {run.driver && <InspectorMeta label="Historical driver assignment" value={run.driver} />}
       <div className="route-sheet-action"><span>Run · {run.stopCount} stops</span><button ref={routeSheetTrigger} type="button" className="secondary" onClick={() => setRouteSheetOpen(true)}>View route</button></div>
-      <RunJourneyTimesEditor key={`${run.runId}:${run.version}`} run={run} onAction={onAction} pending={placementPending} />
+      <RunJourneyTimesEditor key={`${run.runId}:${run.version}`} run={run} siblings={planner.runs.filter((other) => other.runId !== run.runId && other.vehicleId === run.vehicleId)} onAction={onAction} pending={placementPending} />
       {(() => {
         const loadProgress = (projection?.deliveryLoads.filter((load) => load.runId === run.runId) || []).flatMap((load) => {
           const ids = load.loadIds?.length ? load.loadIds : [load.id];
@@ -2420,6 +2442,7 @@ function Inspector({
         return <>
           <InspectorMeta label="Loading progress" value={`${loadedLoads} of ${loadProgress.length} individual delivery load${loadProgress.length === 1 ? "" : "s"} loaded`} />
           <RunOrganiser
+            pieces={stopPieces(run)}
             run={run}
             pending={placementPending}
             onSave={(stopIds) => onAction({ action: "set-run-stop-order", runId: run.runId, expectedRunVersion: run.version, stopIds })}
@@ -2549,17 +2572,20 @@ function projectedRunLoadProgress(projection: LogisticsDayProjection | undefined
   return { total: loads.length, loaded: loads.filter((load) => load.loaded).length };
 }
 
-function RunJourneyTimesEditor({ run, onAction, pending }: { run: PlannerDay["runs"][number]; onAction: (payload: object) => void; pending: boolean }) {
+function RunJourneyTimesEditor({ run, siblings = [], onAction, pending }: { run: PlannerDay["runs"][number]; siblings?: PlannerDay["runs"]; onAction: (payload: object) => void; pending: boolean }) {
   const [departure, setDeparture] = useState(run.plannedCpuDepartureTime || "");
   const [returnTime, setReturnTime] = useState(run.plannedCpuReturnTime || "");
   useEffect(() => { setDeparture(run.plannedCpuDepartureTime || ""); setReturnTime(run.plannedCpuReturnTime || ""); }, [run.plannedCpuDepartureTime, run.plannedCpuReturnTime]);
   const editable = run.status === "draft" || run.status === "planned";
   const complete = Boolean(departure && returnTime && departure < returnTime);
   const changed = departure !== (run.plannedCpuDepartureTime || "") || returnTime !== (run.plannedCpuReturnTime || "");
+  // Warning-first policy: an overlap with another Run on the same vehicle is surfaced, never blocked, and never edits the other Run.
+  const overlapping = complete ? siblings.filter((other) => other.plannedCpuDepartureTime && other.plannedCpuReturnTime && other.plannedCpuDepartureTime < returnTime && other.plannedCpuReturnTime > departure) : [];
   return <div className="schedule-editor"><h3>CPU journey times</h3><p className="context-line">Run times describe the van’s CPU departure and final return. Stop ETAs and requested windows stay separate.</p>
     <label>Planned CPU departure <input aria-label="Planned CPU departure" type="time" step={900} max="23:45" disabled={!editable || pending} value={departure} onChange={event => setDeparture(event.target.value)} /></label>
     <label>Planned CPU return <input aria-label="Planned CPU return" type="time" step={900} max="23:45" disabled={!editable || pending} value={returnTime} onChange={event => setReturnTime(event.target.value)} /></label>
     {!complete && (departure || returnTime) && <p className="attention-note" role="status">Set both times and make the return later than departure.</p>}
+    {overlapping.length > 0 && <p className="attention-note" role="status" data-testid="run-overlap-warning">⚠ Overlaps {overlapping.map((other) => `${other.vehicle || "this vehicle"} run ${other.plannedCpuDepartureTime}–${other.plannedCpuReturnTime}`).join(", ")}. You can still save; the other run is not changed. Review before dispatch.</p>}
     {editable && <div className="inspector-actions"><button disabled={pending || !complete || !changed} onClick={() => onAction({ action: "update-run-timing", runId: run.runId, plannedCpuDepartureTime: departure, plannedCpuReturnTime: returnTime, expectedRunVersion: run.version })}>Save journey times</button>{(run.plannedCpuDepartureTime || run.plannedCpuReturnTime) && <button className="secondary" disabled={pending} onClick={() => onAction({ action: "update-run-timing", runId: run.runId, plannedCpuDepartureTime: "", plannedCpuReturnTime: "", expectedRunVersion: run.version })}>Clear times</button>}</div>}
   </div>;
 }

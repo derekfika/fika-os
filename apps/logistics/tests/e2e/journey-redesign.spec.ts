@@ -164,7 +164,7 @@ test("actual journey planner is readable at all target viewport sizes with loade
       const routeSheet = page.locator(".route-sheet[role='dialog']");
       await expect(routeSheet).toBeVisible();
       await expect(routeSheet.getByRole("button", { name: "Close route sheet" })).toBeFocused();
-      await expect(page.getByText("Delivery + Collection")).toBeVisible();
+      await expect(routeSheet.getByText("Delivery + Collection").first()).toBeVisible();
       await screenshot(`${prefix}-mixed-delivery-collection-stop.png`);
       await routeSheet.getByRole("button", { name: /Load .*jobs/ }).first().click();
       await expect(runDialog.getByText("Load inspector")).toBeVisible();

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PlannerRunView, PlannerStopView } from "../lib/planner-read-model";
+import { describePieces, type StopPiece } from "../lib/run-stop-order";
 import styles from "./run-organiser.module.css";
 
 type Props = {
@@ -12,6 +13,8 @@ type Props = {
   onOpenStop: (stopId: string) => void;
   onReturnStop: (stopId: string) => void;
   onRetire: () => void;
+  /** Individually tracked work inside each physical stop, keyed by stop id. */
+  pieces?: Record<string, StopPiece[]>;
 };
 
 const startOf = (stop: PlannerStopView) => stop.plannedWindow?.startTime || stop.plannedArrivalTime;
@@ -28,10 +31,10 @@ export function orderConflicts(stops: PlannerStopView[]): Array<{ earlier: Plann
   return conflicts;
 }
 
-const typeLabel = (stop: PlannerStopView) => stop.movementTypes.includes("transfer") ? "Transfer" : stop.lane === "collection" ? "Collection" : "Delivery";
+const typeLabel = (stop: PlannerStopView) => stop.movementTypes.includes("transfer") ? "Transfer" : stop.movementTypes.includes("delivery") && stop.movementTypes.includes("collection") ? "Delivery + Collection" : stop.lane === "collection" ? "Collection" : "Delivery";
 const loadText = (stop: PlannerStopView) => `${stop.loadCount ?? stop.requirementCount} ${(stop.loadCount ?? stop.requirementCount) === 1 ? "load" : "loads"}`;
 
-export function RunOrganiser({ run, pending, onSave, onOpenStop, onReturnStop, onRetire }: Props) {
+export function RunOrganiser({ run, pending, onSave, onOpenStop, onReturnStop, onRetire, pieces = {} }: Props) {
   const planningOpen = run.status === "draft" || run.status === "planned";
   const original = run.stops.map((stop) => stop.stopId);
   const [order, setOrder] = useState(original);
@@ -78,8 +81,12 @@ export function RunOrganiser({ run, pending, onSave, onOpenStop, onReturnStop, o
         <span className={styles.number}>{index + 1}</span>
         <button type="button" className={styles.main} onClick={() => onOpenStop(stop.stopId)} aria-label={`Open ${typeLabel(stop)} ${stop.destination.label}`}>
           <strong>{stop.destination.label}</strong>
-          <span>{typeLabel(stop)} · {loadText(stop)}{startOf(stop) ? ` · ${stop.plannedWindow?.endTime ? `${startOf(stop)}–${stop.plannedWindow.endTime}` : startOf(stop)}` : " · time to confirm"}</span>
+          <span>{typeLabel(stop)} · {(pieces[stop.stopId]?.length ?? 0) > 0 ? describePieces(pieces[stop.stopId]) : loadText(stop)}{startOf(stop) ? ` · ${stop.plannedWindow?.endTime ? `${startOf(stop)}–${stop.plannedWindow.endTime}` : startOf(stop)}` : " · time to confirm"}</span>
         </button>
+        {(pieces[stop.stopId]?.length ?? 0) > 1 && <details className={styles.pieces}>
+          <summary>{pieces[stop.stopId].length} pieces of work in this stop</summary>
+          <ul>{pieces[stop.stopId].map((piece) => <li key={piece.key}><b>{piece.kind === "delivery" ? "Delivery" : piece.kind === "collection" ? "Collection" : "Transfer"}</b> {piece.label}</li>)}</ul>
+        </details>}
         {planningOpen && <span className={styles.controls}>
           <button type="button" aria-label={`Move ${stop.destination.label} up`} disabled={pending || index === 0} onClick={() => move(index, index - 1)}>↑</button>
           <button type="button" aria-label={`Move ${stop.destination.label} down`} disabled={pending || index === ordered.length - 1} onClick={() => move(index, index + 1)}>↓</button>

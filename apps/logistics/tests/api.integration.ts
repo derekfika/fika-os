@@ -1150,3 +1150,43 @@ test("retire-empty-run soft-retires only an empty planning Run, keeps its audit,
   assert.equal((await responseBody({ action: "retire-empty-run", runId: busyId, expectedRunVersion: 1 })).response.status, 422);
   assert.equal(((await runs().doc(busyId).get()).data() as DeliveryRun).retiredAt, undefined);
 });
+
+test("a planned Run holding assigned work cannot be retired; stale and invalid requests leave authoritative state unchanged", async (t) => {
+  const id = prefix();
+  t.after(async () => { upstreamRequirements = []; await cleanup(id); });
+  const req = requirement(`${id}:busy`);
+  upstreamRequirements = [req];
+  const runId = `${id}:run`;
+  await seed(runs(), run(runId));
+  const assigned = await responseBody({ action: "assign-group", by: "integration-test", runId, expectedRunVersion: 1, requirementIds: [req.canonicalId], expectedSourceVersions: { [req.canonicalId]: req.sourceVersion }, scheduledTime: "10:00" });
+  assert.equal(assigned.response.status, 200, JSON.stringify(assigned.body));
+  const before = (await runs().doc(runId).get()).data() as DeliveryRun;
+  const loadsBefore = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).filter((load) => load.runId === runId);
+  assert.equal(loadsBefore.length, 1);
+  const busy = await responseBody({ action: "retire-empty-run", runId, expectedRunVersion: before.version });
+  assert.equal(busy.response.status, 422, JSON.stringify(busy.body));
+  const stale = await responseBody({ action: "retire-empty-run", runId, expectedRunVersion: before.version - 1 });
+  assert.equal(stale.response.status, 409);
+  const badOrder = await responseBody({ action: "set-run-stop-order", runId, expectedRunVersion: before.version, stopIds: ["projection-stop:delivery:not-a-load"] });
+  assert.ok([404, 422].includes(badOrder.response.status), String(badOrder.response.status));
+  const after = (await runs().doc(runId).get()).data() as DeliveryRun;
+  assert.deepEqual(after, before, "no rejected command may change the authoritative Run");
+  const loadsAfter = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).filter((load) => load.runId === runId);
+  assert.deepEqual(loadsAfter, loadsBefore, "nor its assigned work");
+});
+
+test("overlapping Runs on one vehicle are allowed (warning-first): both persist and the other Run is untouched", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const first = `${id}:first`, second = `${id}:second`;
+  assert.equal((await responseBody({ action: "create-run", run: { ...run(first), plannedCpuDepartureTime: "08:00", plannedCpuReturnTime: "11:00" } })).response.status, 200);
+  const firstSaved = (await runs().doc(first).get()).data() as DeliveryRun;
+  const created = await responseBody({ action: "create-run", run: { ...run(second), plannedCpuDepartureTime: "10:00", plannedCpuReturnTime: "13:00" } });
+  assert.equal(created.response.status, 200, JSON.stringify(created.body));
+  const moved = await responseBody({ action: "update-run-timing", runId: second, plannedCpuDepartureTime: "09:00", plannedCpuReturnTime: "12:00", expectedRunVersion: 1 });
+  assert.equal(moved.response.status, 200, JSON.stringify(moved.body));
+  assert.deepEqual((await runs().doc(first).get()).data(), firstSaved, "the overlapped Run is never modified");
+  assert.equal(((await runs().doc(second).get()).data() as DeliveryRun).plannedCpuDepartureTime, "09:00");
+  assert.equal((await responseBody({ action: "update-run-timing", runId: second, plannedCpuDepartureTime: "07:00", plannedCpuReturnTime: "12:00", expectedRunVersion: 1 })).response.status, 409);
+  assert.equal(((await runs().doc(second).get()).data() as DeliveryRun).plannedCpuDepartureTime, "09:00");
+});

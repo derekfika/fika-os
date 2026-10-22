@@ -25,6 +25,7 @@ export default defineConfig({
     { name: "journey-redesign-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /journey-redesign\.spec\.ts/ },
     { name: "desktop-usability-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /desktop-usability.*\.spec\.ts/ },
     { name: "run-planning-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /run-planning\.spec\.ts/ },
+    { name: "mobile-visit-order-chromium", use: { ...devices["Pixel 7"] }, testMatch: /mobile-visit-order\.spec\.ts/ },
     { name: "mobile-chromium", use: { ...devices["Pixel 7"] }, testMatch: /mobile\.spec\.ts/ },
   ],
 });

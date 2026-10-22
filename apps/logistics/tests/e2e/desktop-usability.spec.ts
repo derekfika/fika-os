@@ -161,7 +161,7 @@ for (const viewport of MATRIX) {
       const routeSheet = page.locator(".route-sheet[role='dialog']");
       await expect(routeSheet).toBeVisible();
       await expect(routeSheet.getByRole("button", { name: "Close route sheet" })).toBeFocused();
-      await expect(page.getByText("Delivery + Collection")).toBeVisible();
+      await expect(routeSheet.getByText("Delivery + Collection").first()).toBeVisible();
       const sheet = await rect(page, ".route-sheet");
       expect(sheet.left).toBeGreaterThanOrEqual(0); expect(sheet.right).toBeLessThanOrEqual(viewport.width); expect(sheet.top).toBeGreaterThanOrEqual(0); expect(sheet.bottom).toBeLessThanOrEqual(viewport.height);
       expect(await auditLayout(page), "route sheet layout").toEqual([]);

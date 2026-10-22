@@ -14,7 +14,7 @@
 .main strong { overflow-wrap: anywhere; font-size: 13px; }
 .main span { color: var(--fika-text-secondary); font-size: 12px; }
 .main:focus-visible, .controls button:focus-visible, .actions button:focus-visible, .destructiveLink:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
-.controls { display: inline-flex; gap: 4px; }
+.controls { display: inline-flex; grid-column: 4; grid-row: 1; gap: 4px; }
 .controls button { min-width: 32px; min-height: 32px; border: 1px solid var(--fika-border-default); border-radius: 8px; background: var(--fika-surface-card); color: var(--fika-action-primary); font: inherit; font-weight: 700; cursor: pointer; }
 .controls button:disabled { color: var(--fika-text-muted); cursor: not-allowed; }
 .controls .remove { color: var(--fika-text-secondary); }
@@ -30,3 +30,8 @@
 .destructiveLink { justify-self: start; padding: 6px 2px; border: 0; background: transparent; color: var(--fika-status-danger); font: inherit; font-size: 13px; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .confirm { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--fika-status-danger); border-radius: 10px; background: var(--fika-status-danger-surface); font-size: 13px; }
 .confirm p { margin: 0; color: var(--fika-text-secondary); }
+.pieces { grid-column: 3 / -1; grid-row: 2; margin-top: 2px; font-size: 12px; color: var(--fika-text-secondary); }
+.pieces summary { cursor: pointer; color: var(--fika-action-primary); font-weight: 600; }
+.pieces summary:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
+.pieces ul { display: grid; gap: 4px; margin: 6px 0 0; padding-left: 16px; }
+.pieces b { color: var(--fika-text-primary); font-weight: 700; }

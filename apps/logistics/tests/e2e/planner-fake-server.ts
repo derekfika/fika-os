@@ -12,7 +12,7 @@ const stamp = "2026-10-22T08:00:00.000Z";
 const pad = (value: number) => String(value).padStart(2, "0");
 
 export type FakeJob = { id: string; destination: string; oploc: string; what: string; quantity: number; unit: string; runId?: string; time?: string; requestedStart?: string };
-export type FakeMovement = { id: string; type: "collection" | "delivery" | "transfer"; destination: string; oploc: string; what: string; quantity: number; runId?: string; time?: string };
+export type FakeMovement = { id: string; type: "collection" | "delivery" | "transfer"; destination: string; oploc: string; what: string; quantity: number; runId?: string; time?: string; assignedAt?: number };
 export type FakeRun = { id: string; vehicleId: "van1" | "van2"; status: "draft" | "planned" | "ready" | "dispatched" | "completed"; dep?: string; ret?: string; version: number; orderedStopIds: string[]; retired?: boolean };
 export type FakeState = { serviceDate: string; revision: number; runs: FakeRun[]; jobs: FakeJob[]; movements: FakeMovement[]; clock: number };
 export type FailureRule = { action: string; status: number; message: string; once?: boolean };
@@ -45,11 +45,22 @@ export class FakeLogisticsServer {
   interfere(runId: string) { const run = this.run(runId); if (run) { run.version += 1; this.state.revision += 1; } }
   failNext(rule: FailureRule) { this.failures.push({ once: true, ...rule }); }
 
-  /** Native stops for assigned movements. */
+  /**
+   * Native stops mirror planning.combineStop: movements assigned to the same Run at the same OPLOC
+   * share ONE physical stop (a mixed delivery + collection visit), identified by its first movement.
+   */
+  private nativeGroups() {
+    const groups = new Map<string, FakeMovement[]>();
+    for (const movement of [...this.state.movements].filter((item) => item.runId && this.run(item.runId)).sort((a, b) => (a.assignedAt || 0) - (b.assignedAt || 0))) {
+      const key = `${movement.runId}|${movement.oploc}`;
+      groups.set(key, [...(groups.get(key) || []), movement]);
+    }
+    return [...groups.values()];
+  }
   private nativeStops() {
-    return this.state.movements.filter((movement) => movement.runId && this.run(movement.runId)).map((movement) => ({
-      canonicalId: `stop:${movement.id}`, runId: movement.runId!, sequence: 1, locationOplocId: movement.oploc, locationLabelSnapshot: movement.destination,
-      requirementRefs: [], movementRequestIds: [movement.id], plannedArrivalTime: movement.time, movementType: movement.type, status: "planned", version: 1, createdAt: stamp, updatedAt: stamp, audit: [],
+    return this.nativeGroups().map((group) => ({
+      canonicalId: `stop:${group[0].id}`, runId: group[0].runId!, sequence: 1, locationOplocId: group[0].oploc, locationLabelSnapshot: group[0].destination,
+      requirementRefs: [], movementRequestIds: group.map((item) => item.id), plannedArrivalTime: group.map((item) => item.time).filter(Boolean).sort()[0], movementType: group[0].type, status: "planned", version: 1, createdAt: stamp, updatedAt: stamp, audit: [],
     }));
   }
   private loadFor(job: FakeJob) {
@@ -59,6 +70,16 @@ export class FakeLogisticsServer {
       loadVersions: { [id]: 3 }, loadIds: [id], jobs: [{ id: job.id, requirementId: `fulfilment:${job.id}`, sourceVersion: 1, version: 2, sourceType: "cpu-production", sourceId: `production:${job.id}`, serviceDate: this.state.serviceDate, originOplocId: "cpu-main", destinationOplocId: job.oploc, destinationLabelSnapshot: job.destination, productionReadiness: "ready", deliveryStatus: "pending", collectionStatus: "awaiting", workstream: "CPU production", contents: [{ description: job.what, quantity: job.quantity, unit: job.unit }], totalUnits: job.quantity, assignedLoadId: id }],
       jobCount: 1, totalUnits: job.quantity, collectedCount: 0, readiness: "ready",
     };
+  }
+  /** Mirrors buildLogisticsDayProjection: loads sharing one placement (run + OPLOC + time) are ONE projected stop. */
+  private mergedLoads(assigned: FakeJob[]) {
+    const groups = new Map<string, FakeJob[]>();
+    for (const job of assigned) groups.set(`${job.runId}|${job.oploc}|${job.time}`, [...(groups.get(`${job.runId}|${job.oploc}|${job.time}`) || []), job]);
+    return [...groups.values()].map((jobs) => {
+      const loads = jobs.map((job) => this.loadFor(job));
+      const [first] = loads;
+      return { ...first, loadIds: loads.map((load) => load.id), loadVersions: Object.fromEntries(loads.map((load) => [load.id, 3])), jobs: loads.flatMap((load) => load.jobs), jobCount: loads.length, totalUnits: loads.reduce((sum, load) => sum + load.totalUnits, 0) };
+    });
   }
   private queueJob(job: FakeJob) {
     return { id: job.id, requirementId: `fulfilment:${job.id}`, sourceVersion: 1, version: 1, sourceType: "cpu-production", sourceId: `production:${job.id}`, serviceDate: this.state.serviceDate, originOplocId: "cpu-main", destinationOplocId: job.oploc, destinationLabelSnapshot: job.destination, ...(job.requestedStart ? { requestedWindow: { startTime: job.requestedStart } } : {}), productionReadiness: "ready", deliveryStatus: "pending", collectionStatus: "awaiting", workstream: "CPU production", contents: [{ description: job.what, quantity: job.quantity, unit: job.unit }], totalUnits: job.quantity };
@@ -77,7 +98,7 @@ export class FakeLogisticsServer {
     }));
     return {
       serviceDate, revision: this.state.revision, lastChangeSequence: this.state.revision, state: "CURRENT", completeness: { fulfilment: "complete", cpu: "complete", oploc: "complete" },
-      planningQueue: queue.map((job) => this.queueJob(job)), deliveryLoads: assigned.map((job) => this.loadFor(job)), runs, stops: this.nativeStops(), movements, exceptions: [],
+      planningQueue: queue.map((job) => this.queueJob(job)), deliveryLoads: this.mergedLoads(assigned), runs, stops: this.nativeStops(), movements, exceptions: [],
       summary: { queuedJobs: queue.length, loads: assigned.length, assignedJobs: assigned.length, collectedJobs: 0 }, rebuiltAt: stamp,
     };
   }
@@ -164,14 +185,18 @@ export class FakeLogisticsServer {
         const run = this.requireRun(body.runId, body.expectedRunVersion);
         if (!movement) this.reject(404, "Movement not found.");
         if (!["draft", "planned"].includes(run.status)) this.reject(422, "Run is not open for planning.");
-        movement.runId = run.id; movement.time = body.plannedArrivalTime; run.orderedStopIds.push(`stop:${movement.id}`); if (run.status === "draft") run.status = "planned"; run.version += 1; this.bump();
+        const existing = state.movements.find((item) => item.runId === run.id && item.oploc === movement.oploc);
+        movement.runId = run.id; movement.time = body.plannedArrivalTime; movement.assignedAt = ++state.clock;
+        if (!existing) run.orderedStopIds.push(`stop:${movement.id}`);
+        if (run.status === "draft") run.status = "planned"; run.version += 1; this.bump();
         return { ok: true };
       }
       case "return-stop-to-planning": {
         const run = this.requireRun(body.runId, body.expectedRunVersion);
-        const movement = state.movements.find((item) => `stop:${item.id}` === body.stopId);
-        if (!movement) this.reject(404, "Stop not found.");
-        delete movement.runId; delete movement.time; run.orderedStopIds = run.orderedStopIds.filter((id) => id !== body.stopId); run.version += 1; this.bump();
+        const group = this.nativeGroups().find((items) => `stop:${items[0].id}` === body.stopId);
+        if (!group) this.reject(404, "Stop not found.");
+        for (const movement of group) { delete movement.runId; delete movement.time; delete movement.assignedAt; }
+        run.orderedStopIds = run.orderedStopIds.filter((id) => id !== body.stopId); run.version += 1; this.bump();
         return { ok: true };
       }
       case "set-run-stop-order": {

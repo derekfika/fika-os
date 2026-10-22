@@ -371,3 +371,99 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 1536, height: 96
     });
   });
 }
+
+/** A run whose physical stops are: a native MIXED stop (delivery + collection, one OPLOC), a merged load-backed stop (two deliveries, same placement) and a deliberate repeat visit to that same OPLOC at another time. */
+function physicalStopSeed(): FakeOptions {
+  const runId = `run:${DATE}:work`;
+  const seed = ownerSeed(DATE);
+  seed.runs!.push({ id: runId, vehicleId: "van1", status: "planned", dep: "07:00", ret: "15:00", orderedStopIds: ["stop:movement:mnk-delivery"] });
+  seed.jobs = [
+    { id: "job:h1", destination: "Harbour House", oploc: "site:h", what: "Hot lunch", quantity: 8, unit: "trays", runId, time: "09:00" },
+    { id: "job:h2", destination: "Harbour House", oploc: "site:h", what: "Sandwiches", quantity: 6, unit: "trays", runId, time: "09:00" },
+    { id: "job:h3", destination: "Harbour House", oploc: "site:h", what: "Afternoon tea", quantity: 4, unit: "boxes", runId, time: "12:00" },
+  ];
+  seed.movements = [
+    { id: "movement:mnk-delivery", type: "delivery", destination: "MNK", oploc: "site:mnk", what: "Chilled items", quantity: 2, runId, time: "08:00", assignedAt: 1 },
+    { id: "movement:mnk-collection", type: "collection", destination: "MNK", oploc: "site:mnk", what: "Empty crates", quantity: 3, runId, time: "08:00", assignedAt: 2 },
+  ];
+  return seed;
+}
+
+test.describe("physical stops in Organise Run · 1536x960", () => {
+  test.use({ viewport: { width: 1536, height: 960 } });
+
+  test("a mixed delivery + collection stop and a merged same-placement stop are ONE row each; a repeat visit stays separate; order persists", async ({ page }) => {
+    const runId = `run:${DATE}:work`;
+    const { server, issues } = await boot(page, physicalStopSeed());
+    await runBlock(page, runId).locator("button").click();
+    const inspector = page.getByRole("complementary", { name: "Details inspector" });
+    const rows = inspector.getByRole("list", { name: "Stops in visiting order" }).locator(":scope > li");
+    // 2 + 1 + 1 pieces of work, but exactly three physical stops.
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0)).toContainText("MNK");
+    await expect(rows.nth(0)).toContainText("Delivery + Collection");
+    await expect(rows.nth(0)).toContainText("1 delivery · 1 collection");
+    await expect(rows.nth(1)).toContainText("Harbour House");
+    await expect(rows.nth(1)).toContainText("2 deliveries");
+    await expect(rows.nth(1)).toContainText("09:00");
+    await expect(rows.nth(2)).toContainText("Harbour House");
+    await expect(rows.nth(2)).toContainText("12:00");
+    await expect(rows.nth(2)).toContainText("1 delivery");
+    // The pieces are individually listed (by kind and content), not collapsed away.
+    await rows.nth(0).getByText("2 pieces of work in this stop").click();
+    await expect(rows.nth(0)).toContainText("Chilled items");
+    await expect(rows.nth(0)).toContainText("Empty crates");
+    await rows.nth(1).getByText("2 pieces of work in this stop").click();
+    await expect(rows.nth(1)).toContainText("Hot lunch");
+    await expect(rows.nth(1)).toContainText("Sandwiches");
+    expect(await auditLayout(page), "organise run with physical stops").toEqual([]);
+    // Reorder whole physical stops: move the MNK mixed stop last, save, refresh.
+    await inspector.getByRole("button", { name: "Move MNK down" }).click();
+    await inspector.getByRole("button", { name: "Move MNK down" }).click();
+    await inspector.getByRole("button", { name: "Save order" }).click();
+    await expect.poll(() => commandsOf(server, "set-run-stop-order").length).toBe(1);
+    const saved = commandsOf(server, "set-run-stop-order")[0].stopIds as string[];
+    expect(saved).toHaveLength(3);
+    expect(saved[2]).toBe("stop:movement:mnk-delivery");
+    await page.reload();
+    await runBlock(page, runId).locator("button").click();
+    const after = page.getByRole("complementary", { name: "Details inspector" }).getByRole("list", { name: "Stops in visiting order" }).locator(":scope > li");
+    await expect(after).toHaveCount(3);
+    await expect(after.nth(2)).toContainText("MNK");
+    await expect(after.nth(2)).toContainText("1 delivery · 1 collection");
+    expectClean(issues, "physical stops");
+  });
+
+  test("an order that omits a piece's physical stop (or splits a merged stop) is rejected by the server", async ({ page }) => {
+    const runId = `run:${DATE}:work`;
+    const { server } = await boot(page, physicalStopSeed());
+    const run = server.run(runId)!;
+    const twice = ["stop:movement:mnk-delivery", "projection-stop:delivery:load:job:h1", "projection-stop:delivery:load:job:h2", "projection-stop:delivery:load:job:h3"];
+    const response = await page.request.post("/api/logistics", { data: { action: "set-run-stop-order", runId, expectedRunVersion: run.version, stopIds: twice } }).catch(() => undefined);
+    void response; // the route is mocked in-page; assert through the fake's shared validator instead
+    expect(() => server.apply({ action: "set-run-stop-order", runId, expectedRunVersion: run.version, stopIds: twice })).toThrow(/same physical stop twice/);
+    expect(server.run(runId)!.orderedStopIds).toEqual(["stop:movement:mnk-delivery"]);
+  });
+});
+
+test.describe("overlap scheduling is warning-first · 1536x960", () => {
+  test.use({ viewport: { width: 1536, height: 960 } });
+  test("an overlapping schedule is warned in the inspector and on the timeline, can still be saved, and never edits the other Run", async ({ page }) => {
+    const seed = ownerSeed(DATE);
+    seed.runs!.push({ id: `run:${DATE}:a`, vehicleId: "van1", status: "planned", dep: "08:00", ret: "11:00", version: 4 }, { id: `run:${DATE}:b`, vehicleId: "van1", status: "draft", dep: "12:00", ret: "15:00", version: 2 });
+    const { server } = await boot(page, seed);
+    await runBlock(page, `run:${DATE}:b`).locator("button").click();
+    const inspector = page.getByRole("complementary", { name: "Details inspector" });
+    await expect(inspector.getByTestId("run-overlap-warning")).toHaveCount(0);
+    await inspector.getByLabel("Planned CPU departure").fill("10:00");
+    await expect(inspector.getByTestId("run-overlap-warning")).toContainText("08:00–11:00");
+    await expect(inspector.getByTestId("run-overlap-warning")).toContainText("You can still save");
+    await expect(inspector.getByRole("button", { name: "Save journey times" })).toBeEnabled();
+    await inspector.getByRole("button", { name: "Save journey times" }).click();
+    await expect.poll(() => server.run(`run:${DATE}:b`)?.dep).toBe("10:00");
+    expect(server.run(`run:${DATE}:a`)).toMatchObject({ dep: "08:00", ret: "11:00", version: 4 });
+    await expect(runBlock(page, `run:${DATE}:a`)).toContainText("Schedule overlap");
+    await expect(runBlock(page, `run:${DATE}:b`)).toContainText("Schedule overlap");
+    expect(commandsOf(server, "update-run-timing")).toHaveLength(1);
+  });
+});

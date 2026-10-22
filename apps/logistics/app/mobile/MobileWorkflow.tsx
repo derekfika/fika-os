@@ -225,8 +225,8 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
   const driver = selectedVehicle ? logisticsVehicleLabel(selectedVehicle) : "Select vehicle";
   const runs = useMemo(() => vehicleRuns.filter(run => run.canonicalId === selectedRunId), [vehicleRuns, selectedRunId]);
   const stops = useMemo(() => runs
-    .flatMap((run) => run.orderedStopIds.map((id) => visibleData?.stops.find((stop) => stop.canonicalId === id)).filter(Boolean) as DeliveryStop[])
-    .sort((a, b) => mobileStopMinutes(a) - mobileStopMinutes(b) || a.sequence - b.sequence), [runs, visibleData?.stops]);
+    // The dispatcher's saved visiting order (Run.orderedStopIds, already time-ordered for work not yet ordered) is what the driver follows.
+    .flatMap((run) => run.orderedStopIds.map((id) => visibleData?.stops.find((stop) => stop.canonicalId === id)).filter(Boolean) as DeliveryStop[]), [runs, visibleData?.stops]);
   const deliveries = stops.filter((stop) => !stopIsCollection(stop));
   const collections = stops.filter((stop) => stopIsCollection(stop));
   const deliveryCounts = stopCounts(deliveries);
@@ -373,7 +373,6 @@ function formatDate(date: string) { return new Intl.DateTimeFormat("en-GB", { we
 function addDays(date: string, days: number) { const value = new Date(`${date}T12:00:00`); value.setDate(value.getDate() + days); return value.toISOString().slice(0, 10); }
 function dateOptions(startDate = operationalDate()) { const start = new Date(`${startDate}T12:00:00`); return Array.from({ length: 8 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); return date.toISOString().slice(0, 10); }); }
 function timeFor(stop: DeliveryStop) { const planned = stop.plannedWindow; if (planned) return `${planned.startTime}${planned.endTime ? ` – ${planned.endTime}` : ""}`; if (stop.plannedArrivalTime) return stop.plannedArrivalTime; const required = stop.window; return required ? `${required.startTime}${required.endTime ? ` – ${required.endTime}` : ""}` : stop.requiredTime || "Time to confirm"; }
-function mobileStopMinutes(stop: DeliveryStop) { const value = stop.plannedWindow?.startTime || stop.plannedArrivalTime || stop.window?.startTime || stop.requiredTime; if (!value) return Number.MAX_SAFE_INTEGER; const [hours, minutes] = value.split(":").map(Number); return hours * 60 + minutes; }
 function loadSubloads(stop: DeliveryStop, data: Data, movement?: MovementRequest) {
   const rows = stop.requirementRefs.flatMap((ref) => {
     const requirement = data.requirements.find((item) => item.canonicalId === ref.requirementId);

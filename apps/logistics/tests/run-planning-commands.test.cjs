@@ -18,7 +18,9 @@ const run = (f, id) => f.records.get(RUNS + '/' + id);
 const reconcile = f => f.materialisation.reconcileLogisticsDay(f.date, 'Operator');
 const jobVersion = (f, id) => f.records.get('fikaLogisticsJobsV1/logistics-job:req:' + id).version;
 async function assign(f, id, runId, time) {
-  const result = await f.post({ action: 'assign-job-to-load', jobId: 'logistics-job:req:' + id, targetRunId: runId, scheduledTime: time, expectedJobVersion: jobVersion(f, id), expectedRunVersion: run(f, runId).version });
+  // Joining an existing placement (same run, OPLOC and time) must name that load's current version.
+  const existing = [...f.records].filter(([key]) => key.startsWith('fikaLogisticsDeliveryLoadsV1/')).map(([, load]) => load).find(load => load.runId === runId && load.scheduledTime === time && load.status !== 'cancelled' && f.records.get('fikaLogisticsJobsV1/logistics-job:req:' + id).destinationOplocId === load.destinationOplocId);
+  const result = await f.post({ action: 'assign-job-to-load', jobId: 'logistics-job:req:' + id, targetRunId: runId, scheduledTime: time, expectedJobVersion: jobVersion(f, id), expectedRunVersion: run(f, runId).version, ...(existing ? { expectedLoadVersion: existing.version, expectedLoadVersions: { [existing.id]: existing.version } } : {}) });
   assert.equal(result.response.status, 200, JSON.stringify(result.body));
 }
 async function withThreeStops() {
@@ -181,4 +183,50 @@ test('ensure-vehicle-day-runs does not resurrect a vehicle whose runs were delib
   const again = await f.post({ action: 'ensure-vehicle-day-runs', serviceDate: f.date });
   assert.equal(again.response.status, 200, JSON.stringify(again.body));
   assert.equal([...f.records.values()].filter(item => item.vehicleId === 'van1' && !item.retiredAt).length, 0, 'retired vehicle is not silently re-created');
+});
+
+test('physical stops: work sharing one placement is ONE stop (any member id names it); a same-OPLOC visit at another time stays a separate repeat visit', async () => {
+  const f = setup();
+  f.requirements.push(requirement(f, 'a', 'site:m'), requirement(f, 'b', 'site:m'), requirement(f, 'c', 'site:m'));
+  await reconcile(f);
+  await assign(f, 'a', 'r1', '09:00'); await assign(f, 'b', 'r1', '09:00'); await assign(f, 'c', 'r1', '12:00');
+  const projection = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date);
+  const stops = projection.deliveryLoads.filter(load => load.runId === 'r1');
+  assert.equal(stops.length, 2, 'two physical stops: the shared 09:00 placement and the 12:00 repeat visit');
+  const shared = stops.find(load => load.jobCount === 2);
+  const repeat = stops.find(load => load.jobCount === 1);
+  assert.ok(shared && repeat && shared.jobCount === 2, 'both pieces of work stay individually tracked inside the one stop');
+  const dashboardStops = adapter(f)(projection).stops.filter(stop => stop.runId === 'r1');
+  assert.equal(dashboardStops.length, 2);
+  // Naming the stop by ANY member load is accepted and refers to the same single stop.
+  const memberId = `projection-stop:delivery:${(shared.loadIds || [shared.id]).at(-1)}`; // any member id names the stop
+  const repeatId = `projection-stop:delivery:${repeat.id}`;
+  const ok = await f.post({ action: 'set-run-stop-order', runId: 'r1', expectedRunVersion: run(f, 'r1').version, stopIds: [repeatId, memberId] });
+  assert.equal(ok.response.status, 200, JSON.stringify(ok.body));
+  // Listing the shared stop twice (once per member) or omitting the repeat visit is rejected.
+  const both = [memberId, memberId];
+  const dup = await f.post({ action: 'set-run-stop-order', runId: 'r1', expectedRunVersion: run(f, 'r1').version, stopIds: [...both, repeatId] });
+  assert.equal(dup.response.status, 422); assert.match(JSON.stringify(dup.body), /duplicate/);
+  const omitted = await f.post({ action: 'set-run-stop-order', runId: 'r1', expectedRunVersion: run(f, 'r1').version, stopIds: [memberId] });
+  assert.equal(omitted.response.status, 422); assert.match(JSON.stringify(omitted.body), /every physical stop/);
+});
+
+test('overlapping Runs are warned about by the client but never rejected: both saves succeed and the other Run is untouched', async () => {
+  const f = setup();
+  const a = await f.post({ action: 'create-run', run: { canonicalId: `run:${f.date}:oa`, serviceDate: f.date, vehicleId: 'van1', status: 'draft', plannedCpuDepartureTime: '08:00', plannedCpuReturnTime: '11:00', orderedStopIds: [] } });
+  assert.equal(a.response.status, 200);
+  const before = structuredClone(run(f, `run:${f.date}:oa`));
+  const b = await f.post({ action: 'create-run', run: { canonicalId: `run:${f.date}:ob`, serviceDate: f.date, vehicleId: 'van1', status: 'draft', plannedCpuDepartureTime: '10:00', plannedCpuReturnTime: '13:00', orderedStopIds: [] } });
+  assert.equal(b.response.status, 200, 'creating an overlapping Run is allowed');
+  const moved = await f.post({ action: 'update-run-timing', runId: `run:${f.date}:ob`, plannedCpuDepartureTime: '09:00', plannedCpuReturnTime: '12:00', expectedRunVersion: run(f, `run:${f.date}:ob`).version });
+  assert.equal(moved.response.status, 200, 're-timing into an overlap is allowed');
+  assert.deepEqual(run(f, `run:${f.date}:oa`), before, 'the other Run is never silently changed');
+  assert.equal(run(f, `run:${f.date}:ob`).audit.at(-1).action, 'run-journey-times-updated');
+  const stale = await f.post({ action: 'update-run-timing', runId: `run:${f.date}:ob`, plannedCpuDepartureTime: '07:00', plannedCpuReturnTime: '12:00', expectedRunVersion: 1 });
+  assert.equal(stale.response.status, 409, 'version checks still apply to overlapping schedules');
+  assert.equal(run(f, `run:${f.date}:ob`).plannedCpuDepartureTime, '09:00');
+  // Lifecycle rules still win: a dispatched Run cannot be re-timed even if the new time would not overlap.
+  run(f, `run:${f.date}:oa`).status = 'dispatched';
+  const locked = await f.post({ action: 'update-run-timing', runId: `run:${f.date}:oa`, plannedCpuDepartureTime: '08:15', plannedCpuReturnTime: '11:00', expectedRunVersion: run(f, `run:${f.date}:oa`).version });
+  assert.equal(locked.response.status, 422);
 });

@@ -51,3 +51,36 @@ for (const viewport of [{ width: 1536, height: 960 }, { width: 1280, height: 800
     await shot("06-delete-empty-run-confirm");
   });
 }
+
+for (const viewport of [{ width: 1536, height: 960 }, { width: 1280, height: 800 }]) {
+  test(`planning evidence mixed physical stop ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const directory = path.resolve(process.cwd(), "../../artifacts/logistics-desktop-uat", label!);
+    await mkdir(directory, { recursive: true });
+    const runId = `run:${DATE}:work`;
+    const seed = ownerSeed(DATE);
+    seed.runs!.push({ id: runId, vehicleId: "van1", status: "planned", dep: "07:00", ret: "15:00", orderedStopIds: ["stop:movement:mnk-delivery"] });
+    seed.jobs = [
+      { id: "job:h1", destination: "Harbour House", oploc: "site:h", what: "Hot lunch", quantity: 8, unit: "trays", runId, time: "09:00" },
+      { id: "job:h2", destination: "Harbour House", oploc: "site:h", what: "Sandwiches", quantity: 6, unit: "trays", runId, time: "09:00" },
+      { id: "job:h3", destination: "Harbour House", oploc: "site:h", what: "Afternoon tea", quantity: 4, unit: "boxes", runId, time: "12:00" },
+    ];
+    seed.movements = [
+      { id: "movement:mnk-delivery", type: "delivery", destination: "MNK", oploc: "site:mnk", what: "Chilled items", quantity: 2, runId, time: "08:00", assignedAt: 1 },
+      { id: "movement:mnk-collection", type: "collection", destination: "MNK", oploc: "site:mnk", what: "Empty crates", quantity: 3, runId, time: "08:00", assignedAt: 2 },
+    ];
+    await installStatefulApi(page, new FakeLogisticsServer(seed));
+    await page.goto(`/?serviceDate=${DATE}`);
+    await expect(page.getByRole("region", { name: "Vehicle journey timeline" })).toBeVisible();
+    await page.waitForLoadState("networkidle"); await page.waitForTimeout(500);
+    await page.locator(`[data-journey-run-id="${runId}"] button`).click();
+    const inspector = page.getByRole("complementary", { name: "Details inspector" });
+    const rows = inspector.getByRole("list", { name: "Stops in visiting order" }).locator(":scope > li");
+    await rows.nth(0).getByText("2 pieces of work in this stop").click();
+    await rows.nth(1).getByText("2 pieces of work in this stop").click();
+    await inspector.locator(".organiser, [aria-label='Organise run']").scrollIntoViewIfNeeded();
+    await inspector.getByRole("list", { name: "Stops in visiting order" }).scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: path.join(directory, `${viewport.width}x${viewport.height}-07-organise-run-mixed-physical-stop.png`) });
+  });
+}

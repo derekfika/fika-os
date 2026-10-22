@@ -72,3 +72,16 @@ export function applyStoredStopOrder<T extends { id: string; aliases?: string[] 
   const unordered = stops.filter((stop) => index(stop) < 0).sort(fallback);
   return [...ordered, ...unordered];
 }
+
+/** One individually tracked piece of work inside a physical stop. */
+export type StopPiece = { key: string; kind: "delivery" | "collection" | "transfer"; label: string };
+
+/** "2 deliveries · 1 collection" */
+export function describePieces(pieces: StopPiece[]): string {
+  const noun = { delivery: ["delivery", "deliveries"], collection: ["collection", "collections"], transfer: ["transfer", "transfers"] } as const;
+  return (["delivery", "collection", "transfer"] as const)
+    .map((kind) => ({ kind, count: pieces.filter((piece) => piece.kind === kind).length }))
+    .filter((item) => item.count > 0)
+    .map((item) => `${item.count} ${noun[item.kind][item.count === 1 ? 0 : 1]}`)
+    .join(" · ");
+}
