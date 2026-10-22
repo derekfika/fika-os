@@ -23,7 +23,7 @@ import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperat
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
 import { aggregateProductionTotals, orderDate, type ProductionTotalProgress as TotalProgress } from "../lib/production-day";
-import { cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
+import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 import { readApiResponse } from "./lib/api-response";
 import { readCpuProjection, writeCpuProjection } from "./lib/cpu-indexeddb";
 import { europeLondonDate } from "../lib/operational-date";
@@ -164,14 +164,19 @@ export default function CpuProduction() {
       const cached = await readCpuProjection<any>(cacheKey, cacheScope);
       if (!isCurrentRequest()) return [];
       if (cached?.value) {
-        setOrders(cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope)));
-        setError("");
+        const cachedNeedsRecovery = cpuProjectionHasAmbiguousWorkstreamMapping(cached.value);
+        if (cachedNeedsRecovery) {
+          setOrders([]);
+        } else {
+          setOrders(cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope)));
+          setError("");
+        }
         try {
           const head = await fetch(`/api/production?projectionHead=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}`, { cache: "no-store" });
           const headBody = await head.json() as { lastChangeSequence?: number; packageVersion?: number; contentHash?: string; sourceVersion?: string };
           if (!isCurrentRequest()) return [];
           if (!head.ok) { setOrders([]); setError("Production freshness could not be verified. Refresh to try again."); return []; }
-          if (Number(headBody.lastChangeSequence || 0) === cached.lastChangeSequence && Number(headBody.packageVersion || 0) === Number(cached.packageVersion || 0) && headBody.contentHash === cached.contentHash && headBody.sourceVersion === cached.sourceVersion) return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope));
+          if (!cachedNeedsRecovery && Number(headBody.lastChangeSequence || 0) === cached.lastChangeSequence && Number(headBody.packageVersion || 0) === Number(cached.packageVersion || 0) && headBody.contentHash === cached.contentHash && headBody.sourceVersion === cached.sourceVersion) return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope));
           const response = await fetch(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, { cache: "no-store" });
           const refreshedBody = await readApiResponse<{ projection?: any; package?: { packageVersion?: number; contentHash?: string; sourceVersion?: string } }>(response);
           if (!isCurrentRequest()) return [];

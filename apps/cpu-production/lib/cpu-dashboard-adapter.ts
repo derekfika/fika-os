@@ -98,15 +98,22 @@ export function filterCpuProjectionForScope(projection: CpuDayProjection, scope:
       return [{ ...row, quantities, productionScope: selected.map((index) => workstreams[index]).join(",") }];
     }
 
-    // Older stored projections omitted unassigned entries from productionScope,
-    // so their scope list cannot be paired safely with individual quantities.
-    // Honor any explicit workstream at order level and use origin only when no
-    // workstream was recorded at all.
+    // Older projections omitted unassigned entries, so an explicit shortened
+    // scope list cannot be paired with quantities. Never assign an ambiguous
+    // row to every scope it mentions; the API rebuilds it from canonical orders.
     const explicit = workstreams.filter((workstream) => workstream !== "unassigned");
-    if (explicit.length) return explicit.includes(scope) ? [{ ...row }] : [];
+    if (explicit.length) return [];
     return matchesOrigin(row) ? [{ ...row }] : [];
   });
   return { ...projection, orders, summary: { ...projection.summary, orders: orders.length, ready: orders.filter((order) => order.planningReadiness === "ready").length, attention: orders.filter((order) => order.attention.length > 0).length, planned: orders.filter((order) => order.workflowStatus === "planned").length, totalUnits: orders.reduce((sum, order) => sum + order.quantities.reduce((total, item) => total + item.quantity, 0), 0) } };
+}
+
+/** True when a legacy projection has lost the per-line workstream alignment. */
+export function cpuProjectionHasAmbiguousWorkstreamMapping(projection: CpuDayProjection): boolean {
+  return projection.orders.some((row) => {
+    const workstreams = (row.productionScope || "").split(",").filter(Boolean);
+    return workstreams.some((workstream) => workstream !== "unassigned") && workstreams.length !== row.quantities.length;
+  });
 }
 
 export function cpuProjectionMatchesOrders(projection: CpuDayProjection, orders: ProductionOrder[]) {

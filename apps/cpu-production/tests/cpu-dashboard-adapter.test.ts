@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cpuProjectionToOrders, filterCpuProjectionForScope } from "../lib/cpu-dashboard-adapter";
+import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, filterCpuProjectionForScope } from "../lib/cpu-dashboard-adapter";
 import type { CpuDayProjection } from "../lib/cpu-projection";
 
 const projection = {
@@ -54,4 +54,18 @@ test("legacy projection scope prefers an explicit Sandwiches assignment over boo
   legacy.orders[0].quantities = [legacy.orders[0].quantities[0]];
   assert.equal(filterCpuProjectionForScope(legacy, "sandwiches").orders.length, 1);
   assert.equal(filterCpuProjectionForScope(legacy, "hospitality").orders.length, 0);
+});
+
+test("mixed legacy Sandwiches and Hospitality projection is withheld for authoritative recovery", () => {
+  const legacy = structuredClone(projection);
+  legacy.orders[0].productionScope = "sandwiches,hospitality";
+  legacy.orders[0].quantities.push({ sourceLineId: "line:unassigned", name: "Fruit", quantity: 4, unit: "portion", dietaries: {} });
+
+  assert.equal(cpuProjectionHasAmbiguousWorkstreamMapping(legacy), true);
+  const sandwiches = filterCpuProjectionForScope(legacy, "sandwiches");
+  const hospitality = filterCpuProjectionForScope(legacy, "hospitality");
+  assert.deepEqual(sandwiches.orders, []);
+  assert.deepEqual(hospitality.orders, []);
+  assert.equal(sandwiches.summary.totalUnits, 0);
+  assert.equal(hospitality.summary.totalUnits, 0);
 });
