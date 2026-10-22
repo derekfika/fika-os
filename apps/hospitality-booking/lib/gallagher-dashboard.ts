@@ -11,7 +11,12 @@ export type GallagherBooking = {
   guestCount: number | null;
   items: Array<{ name: string; quantity: number | null; notes?: string }>;
   totalPrice: number | null;
+  /** Company exactly as recorded (legacy `ClientCompany` is NOT verified to be the booking company). */
   company: string;
+  /** Requester's own company; only set when the source record explicitly distinguishes it from the end client. */
+  bookingCompany: string;
+  /** End-client company the meeting is for; only set when explicitly distinguished from the booking company. */
+  endClientCompany: string;
   requesterName: string;
   requesterEmail: string;
   location: string;
@@ -34,53 +39,66 @@ const numberOrNull = (value: unknown): number | null => {
   return Number.isFinite(valueNumber) ? valueNumber : null;
 };
 
+export const GALLAGHER_REQUESTER_DOMAIN = "redington.co.uk";
+
 export function normalizeCompany(value: unknown) {
   return text(value).replace(/\s+/g, " ").toLocaleLowerCase("en-GB");
+}
+
+/** Same normalisation as the Gallagher commercial rule: case, spaces and punctuation are ignored. */
+export function isGallagherCompanyName(value: unknown) {
+  return text(value).toLocaleLowerCase("en-GB").replace(/[^a-z0-9]/g, "") === "gallagher";
 }
 
 export function normalizeEmail(value: unknown) {
   return text(value).replace(/\s+/g, " ").toLocaleLowerCase("en-GB");
 }
 
+/** The exact domain of a single, well-formed address; anything ambiguous yields "". */
 export function exactEmailDomain(value: unknown) {
   const email = normalizeEmail(value);
   const at = email.lastIndexOf("@");
-  if (at <= 0 || at === email.length - 1 || email.indexOf("@") !== at) return "";
-  return email.slice(at + 1).replace(/\.$/, "");
+  if (at <= 0 || at === email.length - 1 || email.indexOf("@") !== at || /[\s,;<>]/.test(email)) return "";
+  return email.slice(at + 1);
+}
+
+export function isRedingtonRequesterEmail(value: unknown) {
+  return exactEmailDomain(value) === GALLAGHER_REQUESTER_DOMAIN;
 }
 
 /**
- * Customer-dashboard visibility policy (dashboard visibility only; the Gallagher
- * commercial/minimum-order rules are separate and unchanged).
- *
- * The legacy booking data carries no explicit account, cost-centre or ownership
- * field. `ClientCompany` is free text (it holds the end client for many
- * requests) and the requester domain alone does not prove ownership, so a
- * record is visible only when its requester is explicitly approved by the
- * account owner. Nothing is approved by default: an unconfigured policy shows
- * no bookings and the data route reports "not configured" instead.
+ * Confirmed customer visibility rule (dashboard visibility only; the Gallagher
+ * commercial/minimum-order rules are separate and unchanged). A booking is shown
+ * when EITHER the requester's email domain is exactly `redington.co.uk` (no
+ * subdomains or look-alikes) OR the BOOKING company, not the end-client company,
+ * is Gallagher. `bookingCompany` must be "" when the source cannot verify that
+ * a company field means the booking company, so an end-client name never counts.
  */
-export type GallagherVisibilityPolicy = { approvedRequesters: ReadonlySet<string>; approvedDomains: ReadonlySet<string> };
-
-const list = (value: string | undefined) => (value || "").split(/[,;\s]+/).map((entry) => entry.trim().toLocaleLowerCase("en-GB")).filter(Boolean);
-
-export function visibilityPolicyFromEnvironment(env: Record<string, string | undefined> = process.env): GallagherVisibilityPolicy {
-  return {
-    approvedRequesters: new Set(list(env.GALLAGHER_DASHBOARD_APPROVED_REQUESTERS).filter((entry) => exactEmailDomain(entry) !== "")),
-    approvedDomains: new Set(list(env.GALLAGHER_DASHBOARD_APPROVED_DOMAINS).filter((entry) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(entry))),
-  };
+export function isVisibleToGallagher(input: { requesterEmail: unknown; bookingCompany: unknown }) {
+  return isRedingtonRequesterEmail(input.requesterEmail) || isGallagherCompanyName(input.bookingCompany);
 }
 
-export function visibilityPolicyConfigured(policy: GallagherVisibilityPolicy) {
-  return policy.approvedRequesters.size + policy.approvedDomains.size > 0;
+/**
+ * Legacy Apps Script rows. `ClientCompany` holds the END client for client-platform
+ * submissions (`clientCompany: booking.client.clientCompanyName`); the requester's
+ * own company is `clientBooking.client.companyName`. That split is only verifiable
+ * when the row's ParsedJSON carries the original `clientBooking.client` payload.
+ * Rows without it (e.g. scanned from email) keep `ClientCompany` as an unverified
+ * recorded value and can match on the requester domain only.
+ */
+export function legacyCompanies(row: LegacyBookingRow) {
+  const parsed = parseJson<Record<string, unknown>>(row.ParsedJSON, {});
+  const recorded = text(row.ClientCompany || parsed.clientCompany);
+  const original = (parsed.clientBooking && typeof parsed.clientBooking === "object" ? (parsed.clientBooking as Record<string, unknown>).client : undefined) as Record<string, unknown> | undefined;
+  if (original && typeof original === "object" && "clientCompanyName" in original) {
+    return { recorded, bookingCompany: text(original.companyName), endClientCompany: text(original.clientCompanyName) || recorded, verified: true };
+  }
+  return { recorded, bookingCompany: "", endClientCompany: "", verified: false };
 }
 
-/** Fail closed: only an exact approved requester address, or an explicitly approved domain, is visible. */
-export function isApprovedGallagherRequester(email: unknown, policy: GallagherVisibilityPolicy = visibilityPolicyFromEnvironment()) {
-  const normalized = normalizeEmail(email);
-  const domain = exactEmailDomain(normalized);
-  if (!domain) return false;
-  return policy.approvedRequesters.has(normalized) || policy.approvedDomains.has(domain);
+export function legacyRowVisible(row: LegacyBookingRow) {
+  const parsed = parseJson<Record<string, unknown>>(row.ParsedJSON, {});
+  return isVisibleToGallagher({ requesterEmail: row.HostEmail || parsed.hostEmail, bookingCompany: legacyCompanies(row).bookingCompany });
 }
 
 export function parseLegacyDate(value: unknown): string {
@@ -125,6 +143,7 @@ export function normalizeLegacyBooking(row: LegacyBookingRow, today: string): Ga
     quantity: numberOrNull(item.qty ?? item.quantity),
     ...(text(item.notes || item.comments) ? { notes: text(item.notes || item.comments) } : {}),
   }));
+  const companies = legacyCompanies(row);
   const reference = text(row.BookingID || parsed.bookingId);
   const date = parseLegacyDate(row.EventDate || parsed.eventDate);
   return {
@@ -138,7 +157,9 @@ export function normalizeLegacyBooking(row: LegacyBookingRow, today: string): Ga
     items,
     // GrossPrice is the legacy quote's stored total-to-pay (after fee and VAT).
     totalPrice: numberOrNull(row.GrossPrice ?? parsed.grossPrice),
-    company: text(row.ClientCompany || parsed.clientCompany),
+    company: companies.recorded,
+    bookingCompany: companies.bookingCompany,
+    endClientCompany: companies.endClientCompany,
     requesterName: text(row.HostName || parsed.hostName),
     requesterEmail: text(row.HostEmail || parsed.hostEmail),
     location: [text(row.Location || parsed.location), text(row.Floor || parsed.floor)].filter(Boolean).join(" · "),
@@ -159,9 +180,26 @@ function currentQuoteTotal(booking: FikaBooking): number | null {
   return numberOrNull(snapshotGross ?? booking.order?.grossTotal);
 }
 
-export function fikaBookingMatches(booking: FikaBooking, policy: GallagherVisibilityPolicy = visibilityPolicyFromEnvironment()) {
-  const requester = booking.client?.requester || {};
-  return isApprovedGallagherRequester(requester.email || booking.client?.email, policy);
+/**
+ * Canonical bookings: the portal payload carries the requester's company
+ * (`requester.companyName`/`companyName`) separately from the end client
+ * (`clientCompany`/`clientName`). The split is trusted only when the record
+ * carries the end-client fields; otherwise the company is unverified.
+ */
+export function fikaCompanies(booking: FikaBooking) {
+  const client = booking.client || {};
+  const requester = client.requester || {};
+  const distinguished = client.clientCompany !== undefined || client.clientName !== undefined;
+  return {
+    bookingCompany: distinguished ? text(requester.companyName || client.companyName) : "",
+    endClientCompany: distinguished ? text(client.clientCompany) : "",
+    recorded: text(requester.companyName || client.companyName || client.clientCompany),
+  };
+}
+
+export function fikaBookingMatches(booking: FikaBooking) {
+  const client = booking.client || {};
+  return isVisibleToGallagher({ requesterEmail: client.requester?.email || client.email, bookingCompany: fikaCompanies(booking).bookingCompany });
 }
 
 export function normalizeFikaBooking(booking: FikaBooking, today: string): GallagherBooking {
@@ -191,7 +229,9 @@ export function normalizeFikaBooking(booking: FikaBooking, today: string): Galla
       ...(text(item.comments) ? { notes: text(item.comments) } : {}),
     })),
     totalPrice: currentQuoteTotal(booking),
-    company: text(requester.companyName || client.companyName || client.clientCompany),
+    company: fikaCompanies(booking).recorded,
+    bookingCompany: fikaCompanies(booking).bookingCompany,
+    endClientCompany: fikaCompanies(booking).endClientCompany,
     requesterName: text(requester.name || client.name || client.clientName),
     requesterEmail: text(requester.email || client.email),
     location: [text(service.roomOrArea || service.floorLevel || service.deliveryPoint), text(service.portalSiteLabel)].filter(Boolean).join(" · "),
@@ -204,12 +244,10 @@ export function normalizeFikaBooking(booking: FikaBooking, today: string): Galla
   };
 }
 
-export function aggregateGallagherBookings(legacyRows: LegacyBookingRow[], fikaRows: FikaBooking[], today: string, policy: GallagherVisibilityPolicy = visibilityPolicyFromEnvironment()) {
-  const fika = fikaRows.filter((booking) => fikaBookingMatches(booking, policy)).map((booking) => normalizeFikaBooking(booking, today));
+export function aggregateGallagherBookings(legacyRows: LegacyBookingRow[], fikaRows: FikaBooking[], today: string) {
+  const fika = fikaRows.filter(fikaBookingMatches).map((booking) => normalizeFikaBooking(booking, today));
   const superseded = new Set(fika.map((booking) => booking.supersededLegacyBookingId || booking.sourceBookingId));
-  const legacyVisible = legacyRows
-    .map((row) => normalizeLegacyBooking(row, today))
-    .filter((booking) => isApprovedGallagherRequester(booking.requesterEmail, policy));
+  const legacyVisible = legacyRows.filter(legacyRowVisible).map((row) => normalizeLegacyBooking(row, today));
   const legacy = legacyVisible.filter((booking) => !superseded.has(booking.sourceBookingId));
   const bookings = [...legacy, ...fika].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) || a.bookingReference.localeCompare(b.bookingReference));
   return {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { GallagherBooking } from "../lib/gallagher-dashboard";
 import {
+  clientLabel,
   defaultSort,
   emptyFilters,
   filterBookings,
@@ -21,7 +22,7 @@ const today = "2026-10-22";
 function booking(overrides: Partial<GallagherBooking> = {}): GallagherBooking {
   return {
     source: "legacy", sourceBookingId: "AC-1", bookingReference: "AC-1", date: "2026-10-25", startTime: "09:00", endTime: "",
-    guestCount: 10, items: [{ name: "Working lunch", quantity: 10 }], totalPrice: 100, company: "Gallagher", requesterName: "Priya Patel",
+    guestCount: 10, items: [{ name: "Working lunch", quantity: 10 }], totalPrice: 100, company: "Gallagher", bookingCompany: "Gallagher", endClientCompany: "", requesterName: "Priya Patel",
     requesterEmail: "priya@redington.co.uk", location: "Meeting room 3", poReference: "PO-9", status: "Upcoming", notes: "", createdAt: "", updatedAt: "",
     ...overrides,
   };
@@ -113,4 +114,11 @@ test("time and item summaries state missing data instead of inventing it", () =>
   assert.equal(summariseItems([]), "Items not recorded");
   assert.equal(summariseItems([{ name: "A", quantity: null }]), "A");
   assert.equal(summariseItems([{ name: "A", quantity: 2 }, { name: "B", quantity: 3 }, { name: "C", quantity: 4 }]), "A × 2, B × 3 +1 more");
+});
+
+test("client label prefers the verified end client and search finds bookings by client company", () => {
+  assert.equal(clientLabel({ endClientCompany: "Qinetiq", company: "Whoever" }), "Qinetiq");
+  assert.equal(clientLabel({ endClientCompany: "", company: "Recorded Co" }), "Recorded Co");
+  const rows = [booking({ sourceBookingId: "Q", endClientCompany: "Qinetiq", bookingCompany: "Redington" }), booking({ sourceBookingId: "T", endClientCompany: "Thames Water" })];
+  assert.deepEqual(filterBookings(rows, { ...emptyFilters, query: "qinetiq" }).map((item) => item.sourceBookingId), ["Q"]);
 });

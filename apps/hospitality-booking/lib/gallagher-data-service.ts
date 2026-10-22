@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { aggregateGallagherBookings, visibilityPolicyConfigured, visibilityPolicyFromEnvironment } from "@/lib/gallagher-dashboard";
+import { aggregateGallagherBookings } from "@/lib/gallagher-dashboard";
 import { getGallagherLegacyRows } from "@/lib/gallagher-legacy-sheet";
 import { hasGallagherSession } from "@/lib/gallagher-session";
 
@@ -32,10 +32,8 @@ export async function gallagherDataResponse(
 ) {
   if (!hasGallagherSession(request)) return NextResponse.json({ error: "A Gallagher dashboard session is required." }, { status: 401, headers: privateHeaders });
   try {
-    const policy = visibilityPolicyFromEnvironment();
-    if (!visibilityPolicyConfigured(policy)) throw new Error("Gallagher dashboard visibility policy is not configured.");
     const [legacyRows, fikaRows] = await Promise.all([(dependencies.readLegacy || getGallagherLegacyRows)(), (dependencies.readFika || readFikaBookings)()]);
-    const result = aggregateGallagherBookings(legacyRows, fikaRows, londonToday(), policy);
+    const result = aggregateGallagherBookings(legacyRows, fikaRows, londonToday());
     const bookings = result.bookings.map(({ supersededLegacyBookingId: _superseded, canonicalBookingId: _canonical, ...booking }) => booking);
     return NextResponse.json({ ...result, bookings }, { headers: privateHeaders });
   } catch (error) {

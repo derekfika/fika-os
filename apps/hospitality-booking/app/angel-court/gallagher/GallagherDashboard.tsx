@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { GallagherBooking } from "@/lib/gallagher-dashboard";
 import {
+  clientLabel,
   defaultSort,
   emptyFilters,
   filterBookings,
@@ -132,7 +133,8 @@ function BookingDetails({ booking, onClose }: { booking: GallagherBooking; onClo
         <section aria-labelledby="detail-contact">
           <h3 id="detail-contact">Requested by</h3>
           <dl className={styles.detailGrid}>
-            <div><dt>Company</dt><dd>{booking.company || "Not recorded"}</dd></div>
+            {booking.bookingCompany ? <div><dt>Booked by (company)</dt><dd>{booking.bookingCompany}</dd></div> : null}
+            <div><dt>{booking.endClientCompany ? "Client company" : "Company (as recorded)"}</dt><dd>{clientLabel(booking) || "Not recorded"}</dd></div>
             <div><dt>Contact</dt><dd>{booking.requesterName || "Not recorded"}{booking.requesterEmail ? <><br /><a href={`mailto:${booking.requesterEmail}`}>{booking.requesterEmail}</a></> : null}</dd></div>
             <div><dt>PO / invoice reference</dt><dd>{booking.poReference || "Not recorded"}</dd></div>
             <div><dt>Booking reference</dt><dd className={styles.mono}>{booking.bookingReference || "Not recorded"}</dd></div>
@@ -176,6 +178,7 @@ function BookingList({ bookings, onSelect, sort, onToggleSort }: { bookings: Gal
             <button type="button" className={styles.sortButton} onClick={onToggleSort}>Date <span aria-hidden="true">{sort === "asc" ? "↑" : "↓"}</span><span className={styles.srOnly}>, sorted {sort === "asc" ? "oldest first" : "newest first"}. Activate to reverse.</span></button>
           </th>
           <th scope="col">Time</th>
+          <th scope="col">Client</th>
           <th scope="col" className={styles.num}>Guests</th>
           <th scope="col">Items</th>
           <th scope="col">Location</th>
@@ -187,6 +190,7 @@ function BookingList({ bookings, onSelect, sort, onToggleSort }: { bookings: Gal
         <tbody>{bookings.map((booking) => <tr key={bookingKey(booking)} className={booking.status === "Cancelled" ? styles.rowCancelled : undefined}>
           <th scope="row" className={styles.dateCell}>{formatBusinessDate(booking.date)}</th>
           <td className={styles.timeCell}>{booking.startTime ? formatTimeRange(booking) : "—"}</td>
+          <td className={styles.clientCell}>{clientLabel(booking) || "—"}</td>
           <td className={styles.num}>{booking.guestCount ?? "—"}</td>
           <td className={styles.itemsCell} title={booking.items.map((item) => item.name).join(", ") || undefined}>{summariseItems(booking.items)}</td>
           <td className={styles.locationCell}>{booking.location || "—"}</td>
@@ -201,6 +205,7 @@ function BookingList({ bookings, onSelect, sort, onToggleSort }: { bookings: Gal
       <button className={`${styles.bookingCard} ${booking.status === "Cancelled" ? styles.rowCancelled : ""}`} type="button" onClick={() => onSelect(booking)} aria-label={`View details for ${formatBusinessDate(booking.date)}, ${booking.status}`}>
         <span className={styles.cardTop}><strong>{formatBusinessDate(booking.date)}</strong><StatusBadge status={booking.status} /></span>
         <span className={styles.cardMeta}>{formatTimeRange(booking)} · {booking.guestCount === null ? "Guests not recorded" : `${booking.guestCount} guests`}</span>
+        {clientLabel(booking) ? <span className={styles.cardClient}>{clientLabel(booking)}</span> : null}
         <span className={styles.cardItems}>{summariseItems(booking.items)}</span>
         <span className={styles.cardBottom}><span className={styles.mono}>{booking.bookingReference || "No reference"}</span><strong>{formatPrice(booking.totalPrice)}</strong></span>
       </button>
@@ -388,7 +393,7 @@ export default function GallagherDashboard() {
           <form className={styles.toolbar} role="search" aria-label="Filter bookings" onSubmit={(event) => event.preventDefault()}>
             <div className={`${styles.field} ${styles.searchField}`}>
               <label htmlFor={`${idBase}-q`}>Search</label>
-              <div className={styles.searchBox}><Icon name="search" /><input id={`${idBase}-q`} type="search" value={filters.query} placeholder="Reference, item, room, contact…" onChange={(event) => updateFilters({ query: event.target.value })} autoComplete="off" /></div>
+              <div className={styles.searchBox}><Icon name="search" /><input id={`${idBase}-q`} type="search" value={filters.query} placeholder="Client, reference, item, room…" onChange={(event) => updateFilters({ query: event.target.value })} autoComplete="off" /></div>
             </div>
             <div className={styles.field}><label htmlFor={`${idBase}-from`}>From</label><input id={`${idBase}-from`} type="date" value={filters.from} max={filters.to || undefined} onChange={(event) => updateFilters({ from: event.target.value })} /></div>
             <div className={styles.field}><label htmlFor={`${idBase}-to`}>To</label><input id={`${idBase}-to`} type="date" value={filters.to} min={filters.from || undefined} onChange={(event) => updateFilters({ to: event.target.value })} /></div>

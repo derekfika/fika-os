@@ -35,7 +35,7 @@ export function sortBookings(bookings: GallagherBooking[], direction: DateSort) 
 
 function haystack(booking: GallagherBooking) {
   return [
-    booking.bookingReference, booking.poReference, booking.requesterName, booking.requesterEmail,
+    booking.bookingReference, booking.poReference, booking.company, booking.bookingCompany, booking.endClientCompany, booking.requesterName, booking.requesterEmail,
     booking.location, booking.notes, booking.status,
     ...booking.items.map((item) => item.name),
   ].join(" ").toLocaleLowerCase("en-GB");
@@ -92,6 +92,11 @@ export function formatBusinessDate(value: string, style: "short" | "long" = "sho
 export function formatTimeRange(booking: Pick<GallagherBooking, "startTime" | "endTime">) {
   if (!booking.startTime) return "Not recorded";
   return booking.endTime ? `${booking.startTime} – ${booking.endTime}` : booking.startTime;
+}
+
+/** The client the meeting is for: the verified end client, else the company as recorded. */
+export function clientLabel(booking: Pick<GallagherBooking, "endClientCompany" | "company">) {
+  return booking.endClientCompany || booking.company || "";
 }
 
 export function summariseItems(items: GallagherBooking["items"], limit = 2) {

@@ -154,6 +154,7 @@
 .table tbody th { font-weight: 700; color: var(--fika-text-primary); }
 .dateCell { white-space: nowrap; }
 .itemsCell { max-width: 260px; }
+.clientCell { max-width: 200px; font-weight: 700; overflow-wrap: anywhere; }
 .locationCell { max-width: 200px; overflow-wrap: anywhere; }
 .rowCancelled { color: var(--fika-text-secondary); }
 .rowCancelled th { color: var(--fika-text-secondary); text-decoration: line-through; text-decoration-color: var(--fika-text-muted); }
@@ -179,6 +180,7 @@
 .cardTop, .cardBottom { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .cardTop strong { font-size: 15px; }
 .cardMeta { color: var(--fika-text-secondary); }
+.cardClient { font-weight: 700; overflow-wrap: anywhere; }
 .cardItems { overflow-wrap: anywhere; }
 .cardBottom { padding-top: 8px; border-top: 1px solid var(--fika-border-default); }
 .cardBottom .mono { color: var(--fika-text-secondary); }

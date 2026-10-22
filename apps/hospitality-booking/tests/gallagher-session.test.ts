@@ -21,8 +21,6 @@ const originalSessionSecret = process.env.GALLAGHER_DASHBOARD_SESSION_SECRET;
 const salt = Buffer.from("1234567890abcdef1234567890abcdef", "hex");
 process.env.GALLAGHER_DASHBOARD_PIN_HASH = createGallagherPinHash("2580", salt);
 process.env.GALLAGHER_DASHBOARD_SESSION_SECRET = "test-session-secret-with-at-least-32-bytes";
-const originalApproved = process.env.GALLAGHER_DASHBOARD_APPROVED_REQUESTERS;
-process.env.GALLAGHER_DASHBOARD_APPROVED_REQUESTERS = "r@redington.co.uk, person@redington.co.uk";
 
 test("correct PIN verifies against salted scrypt hash and wrong PIN fails", async () => {
   assert.equal(await verifyGallagherPin("2580"), true);
@@ -117,24 +115,12 @@ test("customer response omits internal lineage and canonical identifiers", async
   assert.equal(JSON.stringify(body).includes("booking:internal-1"), false);
 });
 
-test("data API fails closed with 503 and reads nothing when no visibility policy is configured", async () => {
-  const saved = process.env.GALLAGHER_DASHBOARD_APPROVED_REQUESTERS;
-  delete process.env.GALLAGHER_DASHBOARD_APPROVED_REQUESTERS;
-  try {
-    let reads = 0;
-    const request = new NextRequest("https://hospitality.example/angel-court/gallagher/data", { headers: { cookie: `fika_gallagher_session=${createGallagherSession()}` } });
-    const response = await gallagherDataResponse(request, { readLegacy: async () => { reads += 1; return []; }, readFika: async () => { reads += 1; return []; } });
-    assert.equal(response.status, 503);
-    assert.equal(reads, 0);
-  } finally { process.env.GALLAGHER_DASHBOARD_APPROVED_REQUESTERS = saved; }
-});
-
-test("regression: a strangers booking returned by an upstream is dropped before the browser response", async () => {
+test("regression: a non-matching booking returned by an upstream is dropped before the browser response", async () => {
   const request = new NextRequest("https://hospitality.example/angel-court/gallagher/data", { headers: { cookie: `fika_gallagher_session=${createGallagherSession()}` } });
   const response = await gallagherDataResponse(request, {
     readLegacy: async () => [
-      { BookingID: "MINE", ClientCompany: "Qinetiq", HostEmail: "person@redington.co.uk", EventDate: "2026-10-16", GrossPrice: 1 },
-      { BookingID: "THEIRS", ClientCompany: "Gallagher", HostEmail: "someone@other-tenant.example", EventDate: "2026-10-16", GrossPrice: 2 },
+      { BookingID: "MINE", ClientCompany: "Qinetiq", HostEmail: "PERSON@Redington.co.uk", EventDate: "2026-10-16", GrossPrice: 1 },
+      { BookingID: "THEIRS", ClientCompany: "Gallagher", HostEmail: "someone@other-tenant.example", ParsedJSON: "", EventDate: "2026-10-16", GrossPrice: 2 },
     ],
     readFika: async () => [],
   });
@@ -199,8 +185,6 @@ test("responsive dashboard uses cards on mobile and keeps a readable desktop tab
 
 test.after(() => {
   clearFailureBucketsForTests();
-  if (originalApproved === undefined) delete process.env.GALLAGHER_DASHBOARD_APPROVED_REQUESTERS;
-  else process.env.GALLAGHER_DASHBOARD_APPROVED_REQUESTERS = originalApproved;
   if (originalPinHash === undefined) delete process.env.GALLAGHER_DASHBOARD_PIN_HASH;
   else process.env.GALLAGHER_DASHBOARD_PIN_HASH = originalPinHash;
   if (originalSessionSecret === undefined) delete process.env.GALLAGHER_DASHBOARD_SESSION_SECRET;

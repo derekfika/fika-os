@@ -4,17 +4,18 @@ import {
   aggregateGallagherBookings,
   exactEmailDomain,
   fikaBookingMatches,
-  isApprovedGallagherRequester,
+  fikaCompanies,
+  isGallagherCompanyName,
+  isRedingtonRequesterEmail,
+  isVisibleToGallagher,
+  legacyCompanies,
+  legacyRowVisible,
   normalizeCompany,
   normalizeFikaBooking,
   normalizeLegacyBooking,
   parseLegacyDate,
   partitionBookings,
-  visibilityPolicyConfigured,
-  visibilityPolicyFromEnvironment,
 } from "../lib/gallagher-dashboard";
-
-const policy = visibilityPolicyFromEnvironment({ GALLAGHER_DASHBOARD_APPROVED_REQUESTERS: "person@redington.co.uk, frontofhouse@redington.co.uk" });
 
 const today = "2026-10-15";
 
@@ -57,60 +58,94 @@ function fika(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test("company text alone never makes a booking visible; only an approved requester does", () => {
-  assert.equal(normalizeCompany("  GALLAGHER  "), "gallagher");
-  assert.equal(isApprovedGallagherRequester("stranger@example.com", policy), false);
-  assert.equal(isApprovedGallagherRequester("person@redington.co.uk", policy), true);
-  assert.equal(isApprovedGallagherRequester(" Person@REDINGTON.CO.UK ", policy), true);
-});
+/** A legacy client-platform row: ClientCompany is the END client; the requester's company is in the original payload. */
+function portalLegacy(input: { bookingCompany: string; endClient: string; email: string; id?: string }) {
+  return legacy({
+    BookingID: input.id ?? "AC-PORTAL-1",
+    ClientCompany: input.endClient,
+    HostEmail: input.email,
+    ParsedJSON: JSON.stringify({ clientCompany: input.endClient, hostEmail: input.email, clientBooking: { client: { name: "R", email: input.email, companyName: input.bookingCompany, clientName: "C", clientCompanyName: input.endClient } } }),
+  });
+}
 
-test("an unapproved address on the Redington domain is not visible unless the domain is explicitly approved", () => {
+test("requester domain matching is exact and case-insensitive: no subdomains or look-alikes", () => {
+  for (const email of ["a@redington.co.uk", " A@REDINGTON.CO.UK "]) assert.equal(isRedingtonRequesterEmail(email), true, email);
+  for (const email of ["a@mail.redington.co.uk", "a@redington.co.uk.evil.test", "a@xredington.co.uk", "a@redington.com", "a@redington.co", "a@notredington.co.uk", "a@redington.co.uk@evil.test", "Name <a@redington.co.uk>", "a@redington.co.uk, b@example.com", "redington.co.uk", "@redington.co.uk", "a@", "", undefined, null]) {
+    assert.equal(isRedingtonRequesterEmail(email), false, String(email));
+  }
   assert.equal(exactEmailDomain(" Person@REDINGTON.CO.UK "), "redington.co.uk");
-  assert.equal(isApprovedGallagherRequester("someone.else@redington.co.uk", policy), false);
-  const domainPolicy = visibilityPolicyFromEnvironment({ GALLAGHER_DASHBOARD_APPROVED_DOMAINS: "redington.co.uk" });
-  assert.equal(isApprovedGallagherRequester("someone.else@redington.co.uk", domainPolicy), true);
-  assert.equal(isApprovedGallagherRequester("someone@redington.co.uk.evil.test", domainPolicy), false);
 });
 
-test("malformed, display-name, multi-address and empty requester values fail closed", () => {
-  for (const value of ["", undefined, null, "redington.co.uk", "Person <person@redington.co.uk>", "person@redington.co.uk, other@example.com", "person@redington.co.uk@evil.test", "@redington.co.uk", "person@"]) {
-    assert.equal(isApprovedGallagherRequester(value, policy), false, String(value));
+test("booking company matching ignores case, spacing and punctuation but not extra words", () => {
+  for (const name of ["Gallagher", "  gAlLaGhEr ", "GALLAGHER.", "G.A.L.L.A.G.H.E.R!"]) assert.equal(isGallagherCompanyName(name), true, name);
+  for (const name of ["Gallagher Services", "Gallagher-ish", "Gallagher Re", "Gallagher/ First Actuarial", "", undefined]) assert.equal(isGallagherCompanyName(name), false, String(name));
+  assert.equal(normalizeCompany("  GALLAGHER  "), "gallagher");
+});
+
+test("visibility is EITHER condition, never requiring both", () => {
+  assert.equal(isVisibleToGallagher({ requesterEmail: "x@redington.co.uk", bookingCompany: "Qinetiq" }), true);
+  assert.equal(isVisibleToGallagher({ requesterEmail: "x@example.com", bookingCompany: "Gallagher" }), true);
+  assert.equal(isVisibleToGallagher({ requesterEmail: "x@redington.co.uk", bookingCompany: "Gallagher" }), true);
+  assert.equal(isVisibleToGallagher({ requesterEmail: "x@example.com", bookingCompany: "Qinetiq" }), false);
+  assert.equal(isVisibleToGallagher({ requesterEmail: "", bookingCompany: "" }), false);
+});
+
+test("legacy: Redington booking for an external client (Qinetiq, Thames Water, Royal Mail) is visible via the requester domain", () => {
+  for (const endClient of ["Qinetiq", "Thames Water", "Royal Mail"]) {
+    const row = portalLegacy({ bookingCompany: "Redington", endClient, email: "frontofhouse@redington.co.uk" });
+    assert.equal(legacyRowVisible(row), true, endClient);
+    assert.equal(normalizeLegacyBooking(row, today).endClientCompany, endClient);
+    assert.equal(normalizeLegacyBooking(row, today).bookingCompany, "Redington");
   }
 });
 
-test("an unconfigured or invalid policy approves nothing", () => {
-  const empty = visibilityPolicyFromEnvironment({});
-  assert.equal(visibilityPolicyConfigured(empty), false);
-  assert.equal(isApprovedGallagherRequester("person@redington.co.uk", empty), false);
-  const invalid = visibilityPolicyFromEnvironment({ GALLAGHER_DASHBOARD_APPROVED_REQUESTERS: "not-an-email, *", GALLAGHER_DASHBOARD_APPROVED_DOMAINS: "*, localhost" });
-  assert.equal(visibilityPolicyConfigured(invalid), false);
+test("legacy: a Gallagher-booked meeting for an external client is visible even from a non-Redington address", () => {
+  const row = portalLegacy({ bookingCompany: "Gallagher", endClient: "Qinetiq", email: "someone@ajg.example" });
+  assert.equal(legacyRowVisible(row), true);
+  assert.equal(legacyCompanies(row).bookingCompany, "Gallagher");
 });
 
-test("regression: unrelated companies bookings cannot be exposed through the Gallagher dashboard", () => {
-  const unrelated = [
-    legacy({ BookingID: "OTHER-1", ClientCompany: "Qinetiq", HostEmail: "buyer@qinetiq.com" }),
-    legacy({ BookingID: "OTHER-2", ClientCompany: "Thames Water", HostEmail: "pa@thameswater.co.uk" }),
-    // A different tenant typing "Gallagher" into the free-text company field must not surface.
-    legacy({ BookingID: "SPOOF-1", ClientCompany: "Gallagher", HostEmail: "attacker@example.com" }),
-    legacy({ BookingID: "SPOOF-2", ClientCompany: "  GALLAGHER ", HostEmail: "" }),
-    // Look-alike Redington addresses and unapproved colleagues.
-    legacy({ BookingID: "LOOKALIKE", ClientCompany: "Other", HostEmail: "person@redington.co.uk.example.com" }),
-    legacy({ BookingID: "UNAPPROVED-COLLEAGUE", ClientCompany: "Other", HostEmail: "unknown@redington.co.uk" }),
+test("legacy: Gallagher as the END client of someone else's booking is not enough", () => {
+  const row = portalLegacy({ bookingCompany: "Qinetiq", endClient: "Gallagher", email: "buyer@qinetiq.example" });
+  assert.equal(legacyRowVisible(row), false);
+});
+
+test("legacy: ClientCompany alone is never treated as the booking company when its meaning is unverified", () => {
+  const unverified = legacy({ BookingID: "OLD-1", ClientCompany: "Gallagher", HostEmail: "someone@example.com", ParsedJSON: "" });
+  assert.equal(legacyCompanies(unverified).verified, false);
+  assert.equal(legacyRowVisible(unverified), false);
+  // The requester domain still includes an unverified row.
+  assert.equal(legacyRowVisible(legacy({ BookingID: "OLD-2", ClientCompany: "Whoever", HostEmail: "x@redington.co.uk", ParsedJSON: "" })), true);
+});
+
+test("incorrect domains and non-Gallagher bookings are not exposed", () => {
+  const rows = [
+    portalLegacy({ id: "SUBDOMAIN", bookingCompany: "Other", endClient: "Qinetiq", email: "x@mail.redington.co.uk" }),
+    portalLegacy({ id: "LOOKALIKE", bookingCompany: "Other", endClient: "Qinetiq", email: "x@redington.co.uk.evil.test" }),
+    portalLegacy({ id: "WRONGTLD", bookingCompany: "Other", endClient: "Thames Water", email: "x@redington.com" }),
+    portalLegacy({ id: "NONGALLAGHER", bookingCompany: "Royal Mail", endClient: "Royal Mail", email: "x@royalmail.example" }),
+    portalLegacy({ id: "END-CLIENT-ONLY", bookingCompany: "Other", endClient: "Gallagher", email: "x@other.example" }),
+    portalLegacy({ id: "VISIBLE-DOMAIN", bookingCompany: "Redington", endClient: "Qinetiq", email: "X@Redington.CO.UK" }),
+    portalLegacy({ id: "VISIBLE-COMPANY", bookingCompany: "Gallagher", endClient: "Royal Mail", email: "y@gallagher.example" }),
   ];
-  const approved = legacy({ BookingID: "APPROVED", ClientCompany: "Qinetiq", HostEmail: "frontofhouse@redington.co.uk" });
-  const output = aggregateGallagherBookings([...unrelated, approved], [], today, policy);
-  assert.deepEqual(output.bookings.map((booking) => booking.sourceBookingId), ["APPROVED"]);
-  assert.equal(JSON.stringify(output).includes("Thames Water"), false);
-  assert.equal(output.counts.dedupedTotal, 1);
+  const output = aggregateGallagherBookings(rows, [], today);
+  assert.deepEqual(output.bookings.map((booking) => booking.sourceBookingId).sort(), ["VISIBLE-COMPANY", "VISIBLE-DOMAIN"]);
+  assert.equal(output.counts.dedupedTotal, 2);
 });
 
-test("canonical FIKA OS bookings pass through the same fail-closed gate", () => {
-  const stranger = fika({ client: { name: "X", email: "x@example.com", companyName: "Gallagher", requester: { name: "X", email: "x@example.com", companyName: "Gallagher" } } });
-  const colleague = fika({ client: { name: "X", email: "unknown@redington.co.uk", companyName: "Other", requester: { name: "X", email: "unknown@redington.co.uk", companyName: "Other" } } });
-  assert.equal(fikaBookingMatches(stranger, policy), false);
-  assert.equal(fikaBookingMatches(colleague, policy), false);
-  assert.equal(fikaBookingMatches(fika(), policy), true);
-  assert.deepEqual(aggregateGallagherBookings([], [stranger, colleague], today, policy).bookings, []);
+test("FIKA OS: requester company vs end client is trusted only when the payload distinguishes them", () => {
+  const portal = (requesterCompany: string, clientCompany: string, email: string) => fika({
+    client: { name: "R", email, companyName: requesterCompany, requester: { name: "R", email, companyName: requesterCompany }, clientName: "C", clientCompany },
+  });
+  assert.equal(fikaBookingMatches(portal("Redington", "Qinetiq", "x@redington.co.uk")), true);
+  assert.equal(fikaBookingMatches(portal("Gallagher", "Thames Water", "x@example.com")), true);
+  assert.equal(fikaBookingMatches(portal("Other", "Gallagher", "x@example.com")), false);
+  assert.equal(fikaBookingMatches(portal("Other", "Qinetiq", "x@redington.co.uk.evil.test")), false);
+  // A canonical record without end-client fields (e.g. calendar-derived) has an unverified company.
+  const undistinguished = fika({ client: { name: "R", email: "x@example.com", companyName: "Gallagher", requester: { name: "R", email: "x@example.com", companyName: "Gallagher" } } });
+  assert.equal(fikaCompanies(undistinguished).bookingCompany, "");
+  assert.equal(fikaBookingMatches(undistinguished), false);
+  assert.equal(normalizeFikaBooking(portal("Redington", "Qinetiq", "x@redington.co.uk"), today).endClientCompany, "Qinetiq");
 });
 
 test("legacy normalizer retains stored gross price, booking details and cancellation", () => {
@@ -141,7 +176,7 @@ test("FIKA OS uses the stored quote total rather than recomputing line prices", 
   assert.equal(result.items[0].quantity, 35);
   assert.equal(result.poReference, "PO-456");
   assert.equal(result.location, "Meeting room · One Angel Court");
-  assert.equal(fikaBookingMatches(fika(), policy), true);
+  assert.equal(fikaBookingMatches(fika()), true);
 });
 
 test("missing authoritative price stays unavailable and FIKA cancellation is customer-facing", () => {
@@ -154,19 +189,19 @@ test("missing authoritative price stays unavailable and FIKA cancellation is cus
 test("aggregation deduplicates only an exact stable legacy reference or explicit provenance", () => {
   const exact = fika({ source: { sourceBookingId: "AC-20261016-001", provider: "angel-court-hospitality", originalPayload: {} } });
   const linked = fika({ source: { sourceBookingId: "ANGEL-002", provider: "angel-court-hospitality", originalPayload: { legacyBookingReference: "AC-OLD-002" } } });
-  const output = aggregateGallagherBookings([legacy(), legacy({ BookingID: "AC-OLD-002" })], [exact, linked], today, policy);
+  const output = aggregateGallagherBookings([legacy(), legacy({ BookingID: "AC-OLD-002" })], [exact, linked], today);
   assert.equal(output.bookings.length, 2);
   assert.equal(output.bookings.every((booking) => booking.source === "fika-os"), true);
   assert.equal(output.bookings.find((booking) => booking.sourceBookingId === "ANGEL-002")?.supersededLegacyBookingId, "AC-OLD-002");
 
   const unrelated = fika({ source: { sourceBookingId: "ANGEL-003", provider: "angel-court-hospitality", originalPayload: {} }, service: { eventDate: "2026-10-16", startTime: "09:00", guestCount: 20, portalSiteLabel: "One Angel Court" } });
-  assert.equal(aggregateGallagherBookings([legacy()], [unrelated], today, policy).bookings.length, 2);
+  assert.equal(aggregateGallagherBookings([legacy()], [unrelated], today).bookings.length, 2);
 });
 
 test("unrelated One Angel Court records stay excluded", () => {
   const unrelated = fika({ client: { name: "Other", email: "other@example.com", companyName: "Other Co", requester: { name: "Other", email: "other@example.com", companyName: "Other Co" } } });
-  assert.equal(fikaBookingMatches(unrelated, policy), false);
-  assert.equal(aggregateGallagherBookings([legacy({ ClientCompany: "Other", HostEmail: "other@example.com" })], [unrelated], today, policy).bookings.length, 0);
+  assert.equal(fikaBookingMatches(unrelated), false);
+  assert.equal(aggregateGallagherBookings([legacy({ ClientCompany: "Other", HostEmail: "other@example.com" })], [unrelated], today).bookings.length, 0);
 });
 
 test("upcoming order is nearest-first and history order is newest-first", () => {

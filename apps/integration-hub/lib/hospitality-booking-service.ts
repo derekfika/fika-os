@@ -216,14 +216,26 @@ type IngestionResult = {
 };
 const bookings = () => db.collection("fikaBookings");
 
-/** Exact Gallagher match: company "Gallagher" or requester domain redington.co.uk, whitespace/case-normalised. */
+/**
+ * Gallagher dashboard candidate rule. Must stay a SUPERSET of (or equal to) the
+ * Hospitality dashboard's final gate so the Hub never withholds a record the
+ * dashboard should show: a booking is included when EITHER the requester email
+ * domain is exactly `redington.co.uk` OR the BOOKING (requester) company is
+ * Gallagher. The company condition is applied only when the payload explicitly
+ * separates the requester's company from the end client (`clientCompany` /
+ * `clientName`); an end-client name alone never matches, and a company that
+ * cannot be verified as the booking company is ignored. Mirrors
+ * apps/hospitality-booking/lib/gallagher-dashboard.ts (`isVisibleToGallagher`).
+ */
 function isGallagherDashboardBooking(booking: CanonicalBooking) {
-  const normalize = (value: unknown) => String(value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-GB");
-  const company = booking.client?.requester?.companyName || booking.client?.companyName;
-  const email = normalize(booking.client?.requester?.email || booking.client?.email);
+  const client = booking.client;
+  const email = String(client?.requester?.email || client?.email || "").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-GB");
   const at = email.lastIndexOf("@");
-  const domain = at > 0 && email.indexOf("@") === at ? email.slice(at + 1).replace(/\.$/, "") : "";
-  return normalize(company) === "gallagher" || domain === "redington.co.uk";
+  const domain = at > 0 && at < email.length - 1 && email.indexOf("@") === at && !/[\s,;<>]/.test(email) ? email.slice(at + 1) : "";
+  if (domain === "redington.co.uk") return true;
+  const distinguished = client?.clientCompany !== undefined || client?.clientName !== undefined;
+  const bookingCompany = distinguished ? String(client?.requester?.companyName || client?.companyName || "") : "";
+  return bookingCompany.toLocaleLowerCase("en-GB").replace(/[^a-z0-9]/g, "") === "gallagher";
 }
 
 /**
@@ -247,6 +259,8 @@ export function projectGallagherDashboardBookings(documents: CanonicalBooking[])
     },
     client: {
       name: booking.client?.name, email: booking.client?.email, companyName: booking.client?.companyName, invoiceReference: booking.client?.invoiceReference,
+      // End-client fields let the dashboard tell the requester's company from the client the meeting is for.
+      clientName: booking.client?.clientName, clientCompany: booking.client?.clientCompany,
       requester: booking.client?.requester ? { name: booking.client.requester.name, email: booking.client.requester.email, companyName: booking.client.requester.companyName } : undefined,
     },
     service: {
