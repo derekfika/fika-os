@@ -3,6 +3,8 @@ import { test } from "node:test";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import { CPU_SITE_OPLOC_ID } from "../../shared/production-location";
 import { activeLogisticsRequirements, logisticsJobForRequirement } from "../lib/logistics-materialisation";
+import { assertRunReady } from "../lib/run-execution";
+import type { DeliveryLoad, DeliveryRun } from "../lib/types";
 
 function requirement(status: FulfilmentRequirement["status"] = "pending", destinationOplocId = "oploc:customer"): FulfilmentRequirement {
   return {
@@ -51,4 +53,24 @@ test("reconciliation preserves an existing job identity while updating its sourc
   assert.equal(next.id, prior.id);
   assert.equal(next.sourceVersion, 2);
   assert.equal(next.version, prior.version + 1);
+});
+
+test("a requirement without a delivery window stays unscheduled: no requested window, so no fallback time can be derived", () => {
+  const { requiredDeliveryWindow: _window, ...unscheduled } = requirement("ready_for_planning");
+  const job = logisticsJobForRequirement(unscheduled as FulfilmentRequirement, undefined, "test", "2026-09-22T08:01:00.000Z");
+  assert.equal(job.requestedWindow, undefined);
+  // Both planner assignment fallbacks are `body.scheduledTime || job.requestedWindow?.startTime`, so no window means no invented time.
+  assert.equal(logisticsJobForRequirement(requirement("ready_for_planning"), undefined, "test", "2026-09-22T08:01:00.000Z").requestedWindow?.startTime, "10:00", "a genuine window is still honoured");
+});
+
+test("a run cannot depart on a load that has no planner-assigned time, even though the job is production-ready", async () => {
+  const { requiredDeliveryWindow: _window, ...unscheduled } = requirement("ready_for_planning");
+  const source = unscheduled as FulfilmentRequirement;
+  const job = logisticsJobForRequirement(source, undefined, "test", "2026-09-22T08:01:00.000Z");
+  const run = { canonicalId: "run:1", serviceDate: source.serviceDate } as DeliveryRun;
+  const load = { id: "load:1", serviceDate: source.serviceDate } as DeliveryLoad;
+  await assert.rejects(
+    assertRunReady({} as never, run, { native: [], legs: [{ lane: "delivery", load, jobs: [job as never] }] }, [source], true),
+    /Required delivery\/collection timing is missing/,
+  );
 });

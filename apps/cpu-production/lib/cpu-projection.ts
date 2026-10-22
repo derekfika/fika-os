@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { productionQueue, productionQueueForWeek } from "./production-http-client";
 import { withReadableDestinations } from "./cpu-oploc-labels";
-import { appendCpuChange as appendProjectionChange, cpuChanges, cpuProjections, loadPlansForOrders, type CpuChangeWithPropagation, writeCpuProjectionMonotonically } from "./cpu-projection-repository";
+import { appendCpuChange as appendProjectionChange, cpuChanges, cpuProjections, loadPlansForOrders, type CpuChangeWithPropagation, repairLegacyCpuProjectionWorkstreams, writeCpuProjectionMonotonically } from "./cpu-projection-repository";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { ReadPackageManifest } from "@fika/server-shared/read-package";
@@ -10,6 +10,7 @@ import type { ProductionLine, ProductionOrder, ProductionStatus } from "./produc
 import { effectiveProductionPlanStatus, signedAllergenReviewMatchesOrder, type ProductionPlan } from "../app/lib/production-plan";
 import { isProductionPlanMatrixComplete } from "../app/lib/production-plan-state";
 import { publishCpuProjectionPackage, type CpuPackagePublicationContext } from "./cpu-read-package";
+import { cpuProjectionHasAmbiguousWorkstreamMapping } from "./cpu-dashboard-adapter";
 
 export type CpuChangeEvent = { sequence: number; serviceDate: string; entityType: "productionOrder" | "productionPlan"; entityId: string; revision: number; changeType: string; actorId: string; changedAt: string; idempotencyKey?: string };
 export type CpuProjectionLine = { sourceLineId: string; sourceBookingLineId?: string; sourceMenuItemId?: string; name: string; quantity: number; unit: string; productionQuantity?: number; productionUnit?: string; dietaries: Record<string, unknown>; allergenEvidenceStatus?: ProductionLine["allergenEvidenceStatus"]; approvedAllergenSnapshot?: ProductionLine["approvedAllergenSnapshot"]; notes?: string };
@@ -37,13 +38,29 @@ export function buildCpuDayProjection(serviceDate: string, orders: ProductionOrd
   return { serviceDate, revision, lastChangeSequence, orders: projectedWithPublicationIdentity, summary: { orders: projectedWithPublicationIdentity.length, ready: projectedWithPublicationIdentity.filter((order) => order.planningReadiness === "ready").length, attention: projectedWithPublicationIdentity.filter((order) => order.attention.length > 0).length, planned: projectedWithPublicationIdentity.filter((order) => order.workflowStatus === "planned").length, totalUnits: projectedWithPublicationIdentity.reduce((sum, order) => sum + order.quantities.reduce((total, item) => total + item.quantity, 0), 0) }, rebuiltAt: now };
 }
 
+async function writeCpuProjectionWithLegacyWorkstreamRecovery<T extends CpuDayProjection | CpuWeekProjection>(ref: FirebaseFirestore.DocumentReference, projection: T) {
+  try {
+    return await writeCpuProjectionMonotonically(ref, projection);
+  } catch (error) {
+    if (!error || typeof error !== "object" || (error as { code?: string }).code !== "CPU_PROJECTION_SEQUENCE_CONFLICT") throw error;
+    const migrated = await repairLegacyCpuProjectionWorkstreams(
+      ref,
+      projection,
+      value => cpuProjectionHasAmbiguousWorkstreamMapping(value as CpuDayProjection),
+      value => !cpuProjectionHasAmbiguousWorkstreamMapping(value as CpuDayProjection),
+    );
+    if (migrated) return migrated as typeof migrated & { projection: T };
+    throw error;
+  }
+}
+
 export async function materialiseCpuDayProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number) {
   const [rawOrders, previous] = await Promise.all([productionQueue(request, serviceDate), cpuProjections().doc(serviceDate).get()]);
   recordDataAccess({ app: "cpu-production", operation: "projection.by-service-date", source: "FIRESTORE", documents: previous.exists ? 1 : 0, firestoreReadKind: "document" });
   const orders = await withReadableDestinations(request, rawOrders);
   const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
-  const written = await writeCpuProjectionMonotonically(cpuProjections().doc(serviceDate), projection);
+  const written = await writeCpuProjectionWithLegacyWorkstreamRecovery(cpuProjections().doc(serviceDate), projection);
   const current = written.projection as CpuDayProjection;
   const manifest = await publishCpuProjectionPackage(current, cpuPackagePublicationContext(request));
   recordDeliveredInReadBudget({ stage: "day_projection_rebuild", projectionDocs: 1, selectedIds: orders.length, rebuildScopes: 1 });
@@ -73,7 +90,7 @@ export async function rebuildCpuWeekProjection(request: NextRequest, weekCommenc
   const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const projection = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   const week: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };
-  const written = await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), week);
+  const written = await writeCpuProjectionWithLegacyWorkstreamRecovery(cpuProjections().doc(`week:${weekCommencing}`), week);
   if (written.status === "superseded") return written.projection as CpuWeekProjection;
   await publishCpuProjectionPackage(written.projection as CpuWeekProjection, cpuPackagePublicationContext(request));
   recordDeliveredInReadBudget({ stage: "week_projection_rebuild", projectionDocs: 1, selectedIds: orders.length, rebuildScopes: 1 });
