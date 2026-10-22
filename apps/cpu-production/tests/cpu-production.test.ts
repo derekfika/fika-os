@@ -486,7 +486,7 @@ test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
 
 test("weekly production cards use scoped fluid layout and safe truncation", () => {
   assert.match(stylesCss, /grid-template-columns:minmax\(0,1fr\) clamp\(300px,24vw,397px\)/);
-  assert.match(stylesCss, /@media\(max-width:1120px\)\{\.cpu-dashboard-columns\{grid-template-columns:1fr\}/);
+  assert.match(stylesCss, /\.cpu-dashboard-columns\{grid-template-columns:minmax\(0,1fr\)\}/);
   assert.match(calendarCss, /\.production-calendar\{container-type:inline-size\}/);
   assert.match(calendarCss, /\.calendar-day\{container-type:inline-size;min-width:0\}/);
   assert.match(calendarCss, /\.calendar-day-summary>\*\{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/);
@@ -633,6 +633,7 @@ test("weekly calendar uses local operational date keys and is not trapped by the
   assert.match(calendar, /getMonth\(\)/);
   assert.match(calendar, /getDate\(\)/);
   assert.match(page, /ProductionCalendar orders=\{baseVisible\}/);
+  assert.match(page, /const summaryOrders = view === "calendar" \? baseVisible : visible/);
   assert.match(calendar, /calendar-day-summary/);
   assert.match(calendar, /Dietary:/);
   assert.match(calendar, /production-card--\$\{status\}/);

@@ -10,6 +10,47 @@ export function allergenReviewKey(order: ProductionOrder, line: ProductionLine) 
 
 export function orderDate(order: ProductionOrder) { return order.serviceDate || order.requiredBy.slice(0, 10); }
 export function orderQuantity(order: ProductionOrder) { return order.lines.reduce((sum, line) => sum + line.customerQuantity, 0); }
+export type ProductionTotalProgress = "not_started" | "in_progress" | "produced";
+export type ProductionTotalItem = { key: string; name: string; unit: string; quantity: number; progress: ProductionTotalProgress };
+export type ProductionTotalsCategory = { category: string; orderCount: number; items: ProductionTotalItem[] };
+
+function productionLineCategory(order: ProductionOrder, line: ProductionLine) {
+  if (line.workstream === "sandwiches") return "Sandwiches";
+  if (line.workstream === "hospitality") return "Hospitality";
+  if (line.workstream === "delivered_in") return "Delivered-In";
+  if (line.workstream === "grab_and_go") return "Grab & Go";
+  if (order.productionCategory === "fine_dining") return "Fine Dining · Delivered-In";
+  if (order.productionCategory === "delivered_in") return "Delivered-In";
+  if (order.productionCategory === "events") return "Events & Corporate";
+  if (order.productionCategory === "hospitality") return "Hospitality";
+  if (order.productionCategory === "grab_and_go" || order.origin === "grab_and_go") return "Grab & Go";
+  if (order.origin === "menu_planning") return "Delivered-In";
+  if (order.origin === "hospitality_booking") return "Hospitality";
+  if (order.origin === "cpu_created") return "CPU-created work";
+  return "Other production";
+}
+
+/** Aggregates canonical Production Order lines once, preserving their units and workstreams. */
+export function aggregateProductionTotals(orders: ProductionOrder[]): ProductionTotalsCategory[] {
+  const categories = new Map<string, { orderIds: Set<string>; items: Map<string, ProductionTotalItem> }>();
+  const rank: Record<ProductionTotalProgress, number> = { not_started: 0, in_progress: 1, produced: 2 };
+  for (const order of orders) {
+    const categoriesForOrder = new Set<string>();
+    for (const line of order.lines) {
+      const category = productionLineCategory(order, line);
+      categoriesForOrder.add(category);
+      const bucket = categories.get(category) || { orderIds: new Set<string>(), items: new Map<string, ProductionTotalItem>() };
+      const key = `${line.itemName} · ${line.customerUnit}`;
+      const progress: ProductionTotalProgress = order.status === "complete" || line.status === "complete" ? "produced" : ["in_production", "partially_complete"].includes(order.status) ? "in_progress" : "not_started";
+      const current = bucket.items.get(key);
+      bucket.items.set(key, { key: `${category}:${key}`, name: line.itemName, unit: line.customerUnit, quantity: (current?.quantity || 0) + line.customerQuantity, progress: current && rank[current.progress] > rank[progress] ? current.progress : progress });
+      categories.set(category, bucket);
+    }
+    for (const category of categoriesForOrder) categories.get(category)?.orderIds.add(order.canonicalId);
+  }
+  return [...categories].map(([category, value]) => ({ category, orderCount: value.orderIds.size, items: [...value.items.values()] }));
+}
+
 /** Production quantities keep their units and never fall back to commercial portions. */
 export function productionQuantitySummary(order: Pick<ProductionOrder, "lines">) {
   const quantities = new Map<string, number>();

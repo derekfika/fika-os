@@ -15,7 +15,7 @@ import { NextRequest } from "next/server";
 const PORT = 8197;
 const HOST = `127.0.0.1:${PORT}`;
 const PROJECT = "demo-fika-os";
-const saved = { snapshots: process.env.FIKA_SNAPSHOT_DIR, mode: process.env.FIKA_RUNTIME_MODE, host: process.env.FIRESTORE_EMULATOR_HOST, project: process.env.FIREBASE_PROJECT_ID, store: process.env.FIKA_CPU_PLAN_STORE, fetch: globalThis.fetch };
+const saved = { nodeEnv: process.env.NODE_ENV, snapshots: process.env.FIKA_SNAPSHOT_DIR, mode: process.env.FIKA_RUNTIME_MODE, host: process.env.FIRESTORE_EMULATOR_HOST, project: process.env.FIREBASE_PROJECT_ID, store: process.env.FIKA_CPU_PLAN_STORE, fetch: globalThis.fetch };
 let emulator: ChildProcess | undefined;
 let workdir = "";
 
@@ -29,7 +29,7 @@ before(async () => {
   assert.equal(await listening(), false, `port ${PORT} is already in use; refusing to share someone else's emulator`);
   workdir = mkdtempSync(path.join(tmpdir(), "fika-cpu-route-emulator-"));
   writeFileSync(path.join(workdir, "firebase.json"), JSON.stringify({ emulators: { firestore: { host: "127.0.0.1", port: PORT }, ui: { enabled: false } } }));
-  emulator = spawn("firebase", ["emulators:start", "--only", "firestore", "--project", PROJECT], { cwd: workdir, shell: true, stdio: "ignore" });
+  emulator = spawn("firebase", ["emulators:start", "--only", "firestore", "--project", PROJECT], { cwd: workdir, shell: true, detached: process.platform !== "win32", stdio: "ignore" });
   const deadline = Date.now() + 90_000;
   while (!(await listening())) {
     assert.ok(Date.now() < deadline, "the isolated Firestore emulator did not start within 90 seconds");
@@ -39,14 +39,21 @@ before(async () => {
   process.env.FIRESTORE_EMULATOR_HOST = HOST;
   process.env.FIREBASE_PROJECT_ID = PROJECT;
   process.env.FIKA_SNAPSHOT_DIR = path.join(workdir, "read-packages"); // package store writes stay inside this throw-away directory
+  Reflect.deleteProperty(process.env, "NODE_ENV"); // CI sets test, which otherwise forces the memory repository and bypasses these emulator transactions
   delete process.env.FIKA_CPU_PLAN_STORE; // the real Firestore-backed repository, pointed at the emulator
 }, { timeout: 120_000 });
 
 after(() => {
   globalThis.fetch = saved.fetch;
   const restore = (key: string, value: string | undefined) => { if (value === undefined) delete process.env[key]; else process.env[key] = value; };
-  restore("FIKA_SNAPSHOT_DIR", saved.snapshots); restore("FIKA_RUNTIME_MODE", saved.mode); restore("FIRESTORE_EMULATOR_HOST", saved.host); restore("FIREBASE_PROJECT_ID", saved.project); restore("FIKA_CPU_PLAN_STORE", saved.store);
-  if (emulator?.pid) spawnSync("taskkill", ["/pid", String(emulator.pid), "/T", "/F"], { stdio: "ignore" });
+  restore("NODE_ENV", saved.nodeEnv); restore("FIKA_SNAPSHOT_DIR", saved.snapshots); restore("FIKA_RUNTIME_MODE", saved.mode); restore("FIRESTORE_EMULATOR_HOST", saved.host); restore("FIREBASE_PROJECT_ID", saved.project); restore("FIKA_CPU_PLAN_STORE", saved.store);
+  if (emulator?.pid) {
+    if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(emulator.pid), "/T", "/F"], { stdio: "ignore" });
+    else {
+      try { process.kill(-emulator.pid, "SIGTERM"); } // only the process group created by this fixture
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+    }
+  }
   if (workdir) rmSync(workdir, { recursive: true, force: true });
   setTimeout(() => process.exit(process.exitCode ?? 0), 50).unref();
 });

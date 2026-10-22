@@ -18,7 +18,7 @@ export function normaliseProductionScope(value: string | null | undefined): Prod
     : "all";
 }
 
-function orderTypes(order: ProductionOrder, routing: ProductionRouting): Set<Exclude<ProductionScope, "all">> {
+function fallbackOrderTypes(order: ProductionOrder): Set<Exclude<ProductionScope, "all">> {
   const types = new Set<Exclude<ProductionScope, "all">>();
   if (order.productionCategory === "grab_and_go") types.add("grab_and_go");
   if (order.productionCategory === "hospitality" || order.productionCategory === "events") types.add("hospitality");
@@ -26,17 +26,21 @@ function orderTypes(order: ProductionOrder, routing: ProductionRouting): Set<Exc
   if (order.origin === "grab_and_go") types.add("grab_and_go");
   if (order.origin === "hospitality_booking") types.add("hospitality");
   if (order.origin === "menu_planning" || order.origin === "cpu_created" || order.origin === "legacy_import") types.add("delivered_in");
-  for (const line of order.lines) {
-    const ids = [line.sourceMenuItemId, line.sourceOfferingId].filter((value): value is string => Boolean(value));
-    if (line.workstream && line.workstream !== "unassigned") types.add(line.workstream);
-    const assignments = ids.flatMap((id) => adaptCpuProductionWorkstreams(routing[id] || []).workstreams);
-    if (assignments.includes("sandwiches")) types.add("sandwiches");
-    if (assignments.includes("hospitality")) types.add("hospitality");
-    if (assignments.includes("delivered_in")) types.add("delivered_in");
-  }
-  // A booking without a routing decision is still canonical work, but its
-  // production type is not safe to infer from display names.
   return types;
+}
+
+function lineTypes(order: ProductionOrder, line: ProductionOrder["lines"][number], routing: ProductionRouting): Set<Exclude<ProductionScope, "all">> {
+  const assigned = new Set<Exclude<ProductionScope, "all">>();
+  if (line.workstream && line.workstream !== "unassigned") return new Set([line.workstream]);
+  const ids = [line.sourceMenuItemId, line.sourceOfferingId].filter((value): value is string => Boolean(value));
+  const routed = ids.flatMap((id) => adaptCpuProductionWorkstreams(routing[id] || []).workstreams);
+  for (const workstream of routed) assigned.add(workstream);
+
+  // An explicit Hub/CPU line assignment is more specific than the booking's
+  // entry route. In particular, a hospitality booking can contain a sandwich
+  // line that belongs only to the Sandwiches production scope.
+  if (assigned.size) return assigned;
+  return fallbackOrderTypes(order);
 }
 
 export function filterProductionOrdersForScope(
@@ -46,9 +50,6 @@ export function filterProductionOrdersForScope(
 ): ProductionOrder[] {
   if (scope === "all") return orders;
   return orders
-    .map((order) => ({ ...order, lines: order.origin === "hospitality_booking" && scope === "hospitality" ? order.lines : order.lines.filter((line) => {
-      const scoped = orderTypes({ ...order, lines: [line] }, routing);
-      return scoped.has(scope);
-    }) }))
+    .map((order) => ({ ...order, lines: order.lines.filter((line) => lineTypes(order, line, routing).has(scope)) }))
     .filter((order) => order.lines.length > 0);
 }

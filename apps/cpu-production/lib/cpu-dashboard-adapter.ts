@@ -25,7 +25,7 @@ export function cpuProjectionToOrders(projection: CpuDayProjection): ProductionO
       ...(quantity.notes ? { productionInstructions: quantity.notes } : {}),
       status: "ready",
       sortOrder: index,
-      workstream: row.productionScope?.split(",")[index] as ProductionLine["workstream"],
+      workstream: (row.productionScope?.split(",")[index] || "unassigned") as ProductionLine["workstream"],
     }));
     return {
       canonicalId: row.id,
@@ -79,14 +79,41 @@ export function cpuProjectionToOrders(projection: CpuDayProjection): ProductionO
 
 export function filterCpuProjectionForScope(projection: CpuDayProjection, scope: ProductionScope): CpuDayProjection {
   if (scope === "all") return projection;
-  const orders = projection.orders.filter((row) => {
-    const workstreams = row.productionScope || "";
-    if (scope === "sandwiches") return workstreams.includes("sandwiches");
-    if (scope === "hospitality") return row.origin === "hospitality_booking" || workstreams.includes("hospitality");
-    if (scope === "grab_and_go") return row.origin === "grab_and_go";
-    return ["cpu_created", "menu_planning", "legacy_import"].includes(row.origin || "") || workstreams.includes("delivered_in");
+  const matchesOrigin = (row: CpuDayProjection["orders"][number]) => {
+    if (scope === "hospitality") return row.origin === "hospitality_booking" || row.productionCategory === "hospitality" || row.productionCategory === "events";
+    if (scope === "grab_and_go") return row.origin === "grab_and_go" || row.productionCategory === "grab_and_go";
+    if (scope === "sandwiches") return false;
+    return ["cpu_created", "menu_planning", "legacy_import"].includes(row.origin || "") || ["delivered_in", "fine_dining", "other"].includes(row.productionCategory || "");
+  };
+  const orders = projection.orders.flatMap((row) => {
+    const workstreams = (row.productionScope || "").split(",").filter(Boolean);
+    const aligned = workstreams.length === row.quantities.length;
+    if (aligned) {
+      const quantities = row.quantities.filter((_, index) => {
+        const workstream = workstreams[index];
+        return workstream && workstream !== "unassigned" ? workstream === scope : matchesOrigin(row);
+      });
+      if (!quantities.length) return [];
+      const selected = quantities.map((quantity) => row.quantities.indexOf(quantity));
+      return [{ ...row, quantities, productionScope: selected.map((index) => workstreams[index]).join(",") }];
+    }
+
+    // Older projections omitted unassigned entries, so an explicit shortened
+    // scope list cannot be paired with quantities. Never assign an ambiguous
+    // row to every scope it mentions; the API rebuilds it from canonical orders.
+    const explicit = workstreams.filter((workstream) => workstream !== "unassigned");
+    if (explicit.length) return [];
+    return matchesOrigin(row) ? [{ ...row }] : [];
   });
   return { ...projection, orders, summary: { ...projection.summary, orders: orders.length, ready: orders.filter((order) => order.planningReadiness === "ready").length, attention: orders.filter((order) => order.attention.length > 0).length, planned: orders.filter((order) => order.workflowStatus === "planned").length, totalUnits: orders.reduce((sum, order) => sum + order.quantities.reduce((total, item) => total + item.quantity, 0), 0) } };
+}
+
+/** True when a legacy projection has lost the per-line workstream alignment. */
+export function cpuProjectionHasAmbiguousWorkstreamMapping(projection: CpuDayProjection): boolean {
+  return projection.orders.some((row) => {
+    const workstreams = (row.productionScope || "").split(",").filter(Boolean);
+    return workstreams.some((workstream) => workstream !== "unassigned") && workstreams.length !== row.quantities.length;
+  });
 }
 
 export function cpuProjectionMatchesOrders(projection: CpuDayProjection, orders: ProductionOrder[]) {
