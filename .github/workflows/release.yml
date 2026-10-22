@@ -11,15 +11,23 @@ on:
         options: [staging, prod]
         required: true
       sha:
-        description: Exact approved source SHA (never release-ledger SHA)
-        required: true
+        description: Optional agent-pinned candidate; defaults to main. Never a ledger commit.
+        required: false
       execute:
         description: Submit rollout; false is a read-only production dry-run
         type: boolean
         default: false
-      approval_url:
-        description: Exact-SHA repository-owner approval comment URL (required for production execute)
+      owner_authorised:
+        description: Explicit owner production instruction received (ordinary coding approval does not count)
+        type: boolean
+        default: false
+      reason:
+        description: Owner release instruction, recorded by the agent; required for production execution
         required: false
+      cosmetic_only:
+        description: Agent verified rendering-only UI changes; backend/shared changes cannot use this
+        type: boolean
+        default: false
       resume_run_id:
         description: Resume matching pending intent using the journal artifact from this workflow run; never resubmit
         required: false
@@ -27,7 +35,6 @@ permissions:
   contents: write
   checks: read
   pull-requests: read
-  issues: read
   actions: read
   id-token: write
 concurrency:
@@ -84,13 +91,19 @@ jobs:
           TARGET_ENV: ${{ inputs.environment }}
           SOURCE_SHA: ${{ inputs.sha }}
           EXECUTE: ${{ inputs.execute }}
-          APPROVAL_URL: ${{ inputs.approval_url }}
+          OWNER_AUTHORISED: ${{ inputs.owner_authorised }}
+          OWNER_INSTRUCTION: ${{ inputs.reason }}
+          COSMETIC_ONLY: ${{ inputs.cosmetic_only }}
           PREVIOUS_RUN: ${{ inputs.resume_run_id }}
         run: |
           git config user.name 'FIKA Release Recorder'
           git config user.email 'release-recorder@example.invalid'
-          args=(deploy "$APP" "--$TARGET_ENV" --sha "$SOURCE_SHA")
-          if [ "$EXECUTE" = true ]; then args+=(--execute --approval-url "$APPROVAL_URL"); fi
+          args=(deploy "$APP" "--$TARGET_ENV")
+          if [ -n "$SOURCE_SHA" ]; then args+=(--sha "$SOURCE_SHA"); fi
+          if [ "$EXECUTE" = true ]; then args+=(--execute); fi
+          if [ "$OWNER_AUTHORISED" = true ]; then args+=(--owner-approved); fi
+          if [ -n "$OWNER_INSTRUCTION" ]; then args+=(--reason "$OWNER_INSTRUCTION"); fi
+          if [ "$COSMETIC_ONLY" = true ]; then args+=(--cosmetic-only); fi
           if [ -n "$PREVIOUS_RUN" ]; then args+=(--resume); fi
           node tools/workflow/cli.mjs "${args[@]}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

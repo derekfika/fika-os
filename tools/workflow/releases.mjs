@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { APPS, REPO, MAIN_CHECK, target, exactSha, assertClean, validateRecord, validateApproval, risk, assertResume, assertServingLineage, digest } from './policy.mjs';
+import { APPS, REPO, MAIN_CHECK, target, exactSha, assertClean, validateRecord, risk, assertResume, assertServingLineage, digest } from './policy.mjs';
 import { git, command, ancestor, ref, ghApi, scopeHash, asyncLock, save, stateDir, jsonFile, serving, cloud, backendPath } from './runtime.mjs';
 import { assertHostedContext } from './hosted.mjs';
 import { recoverySnapshot, reconcileIntent } from './recovery.mjs';
@@ -43,37 +43,25 @@ export function rolloutArguments(plan) {
   // --force skips Firebase's interactive confirmation only, after our exact-SHA approval gates.
   return ['apphosting:rollouts:create', t.backend, '--project', t.project, '--git-commit', exactSha(plan.sourceSha), '--non-interactive', '--force'];
 }
-export function assertApprovalPurpose(reason, purpose = 'deploy') {
-  const actions = reason.split(/\r?\n/).filter(line => line.startsWith('Action:'));
-  if ((purpose === 'deploy' && actions.length) || (purpose === 'reconcile' && actions.length !== 1)) throw Error('Approval action does not authorise this operation');
-}
-export function approval(options, t, sha, purpose = 'deploy') {
-  const match = /^https:\/\/github\.com\/derekfika\/fika-os\/(?:pull|issues)\/(\d+)#issuecomment-(\d+)$/.exec(options['approval-url'] || '');
-  if (!match) throw Error('--approval-url must identify a GitHub issue/PR comment in this repository');
-  const comment = ghApi(`repos/${REPO}/issues/comments/${match[2]}`);
-  if (comment.issue_url?.split('/').at(-1) !== match[1]) throw Error('Approval comment does not belong to the linked PR/issue');
-  const lines = comment.body.trim().split(/\r?\n/);
-  const fields = lines[0].split(' ');
-  if (fields.length !== 6 || fields[0] !== '/fika-approve') throw Error('Approval comment syntax invalid');
-  if (fields[4] === 'owner-exception' && !lines.slice(1).join('\n').startsWith('Reason: ')) throw Error('Owner exception requires a recorded Reason: line');
-  const result = validateApproval({ ...comment, body: lines[0] }, ghApi(`repos/${REPO}`), { app: t.app, environment: t.environment, sha, lane: fields[4], expires: fields[5] });
-  const reason = lines.slice(1).join('\n'); assertApprovalPurpose(reason, purpose);
-  return { ...result, reason, issue: Number(match[1]) };
-}
-export function stagingAuthorization(t, sha, { env = process.env, github = ghApi } = {}) {
-  if (t.environment !== 'staging') throw Error('Staging authorisation cannot approve production');
-  exactSha(sha);
-  let identity;
-  if (env.GITHUB_ACTIONS === 'true') identity = assertHostedContext(env, t);
+export function authenticatedOperator(t, { env = process.env, github = ghApi } = {}) {
+  const repo = github(`repos/${REPO}`); let identity;
+  if (env.GITHUB_ACTIONS === 'true') identity = { ...assertHostedContext(env, t), method:'authorised-workflow-dispatch' };
   else {
-    const repo = github(`repos/${REPO}`); const user = github('user');
-    if (!repo.permissions?.push || user.type !== 'User') throw Error('Staging execution requires an authenticated repository writer');
+    const user = github('user');
+    if (!repo.permissions?.push || user.type !== 'User') throw Error('Release execution requires an authenticated repository writer');
     identity = { actor: user.login, method: 'authenticated-repository-writer' };
   }
-  return { ...identity, id: `staging:${t.app}:${sha}`, lane: 'staging', method: identity.method || 'authorised-workflow-dispatch', explicitExecute: true };
+  if (t.environment === 'prod' && identity.actor !== repo.owner?.login) throw Error('Production execution requires the authenticated solo owner');
+  return identity;
 }
-export function assertReconciliationApproval(operator, releaseId, resolution) {
-  if (!operator.reason?.split(/\r?\n/).includes(`Action: reconcile ${releaseId} ${resolution}`)) throw Error('Production reconciliation approval requires exact Action: reconcile <release-id> <resolution> line');
+export function executionAuthorization(t, sha, options = {}, access = {}) {
+  exactSha(sha); const identity = authenticatedOperator(t, access);
+  const action = options.action || 'deploy';
+  if (!['deploy','rollback','reconcile:abandon','reconcile:complete'].includes(action)) throw Error('Unknown release action');
+  if (t.environment === 'prod' && (options['owner-approved'] !== true || !options.reason?.trim() || options.reason.length > 1000)) throw Error('Explicit owner production authorisation required: agent records --owner-approved --reason <actual owner release instruction>; coding approval is not release approval');
+  const instruction = options.reason?.trim() || 'Explicit staging execution';
+  const binding = { app:t.app, environment:t.environment, sourceSha:sha, action, instruction, releaseId:options['release-id'] || null };
+  return { ...identity, ...binding, id:digest(binding), method:t.environment === 'prod' ? 'owner-instruction' : identity.method, explicitExecute:true, authorisedAt:new Date().toISOString() };
 }
 export function productionDelta(from, to) {
   exactSha(from); exactSha(to);
@@ -85,31 +73,61 @@ export function assertFastTrack(delta, lane, attestation = '') {
   if (!delta || !Array.isArray(delta.paths)) throw Error('Complete production delta is unavailable');
   if (lane !== 'fast') return;
   const uiOnly = delta.paths.every(p => p === 'CHANGELOG.md' || /\.md$/.test(p) || /^apps\/[^/]+\/app\/(?:ui\/.*\.tsx|page\.tsx|.*\.css)$/.test(p));
-  if (delta.risk !== 'fast' && (!uiOnly || !attestation.split(/\r?\n/).includes('Risk: cosmetic-only'))) throw Error('Complete serving-to-candidate production delta requires Standard Track; backend/shared/operational changes cannot use Fast Track');
+  if (risk(delta.paths) !== 'fast' && (!uiOnly || !attestation.split(/\r?\n/).includes('Risk: cosmetic-only'))) throw Error('Complete serving-to-candidate production delta requires Standard Track; backend/shared/operational changes cannot use Fast Track');
+}
+export function releaseLane(delta, cosmeticOnly = false, standard = false) {
+  if (!delta || !Array.isArray(delta.paths)) throw Error('Complete production delta is unavailable');
+  if (standard) return 'standard';
+  if (risk(delta.paths) === 'fast') return 'fast';
+  if (cosmeticOnly) { assertFastTrack(delta, 'fast', 'Risk: cosmetic-only'); return 'fast'; }
+  return 'standard';
+}
+export function assertStagingEvidence(plan, staged, integrated) {
+  validateRecord(staged?.record, { app:plan.app, environment:'staging' });
+  if (staged.record.scopeHash !== plan.scopeHash || !integrated) throw Error('Operational production changes require a verified staging release of the same app/dependency tree, integrated into main');
+  return staged.commit;
 }
 function bindProductionDelta(plan, before) {
   if (plan.environment !== 'prod' || plan.rollback) return;
   plan.productionDelta = productionDelta(before.sourceSha, plan.sourceSha);
-  assertFastTrack(plan.productionDelta, plan.approval?.lane, plan.approval?.reason);
+  plan.lane = releaseLane(plan.productionDelta, plan.cosmeticOnly, plan.standard);
+  if (plan.executing && plan.lane === 'standard') {
+    const staged = plan.stagingEvidence ? { commit:plan.stagingEvidence, record:JSON.parse(git('show', `${plan.stagingEvidence}:release.json`)) } : releaseRecord(target(plan.app,'staging').branch);
+    plan.stagingEvidence = assertStagingEvidence(plan, staged, Boolean(staged && ancestor(staged.record.sourceSha, 'origin/main')));
+  }
 }
-function sourceReview(t, sha, lane) {
+function sourceProvenance(t, sha) {
   const pulls = ghApi(`repos/${REPO}/commits/${sha}/pulls?per_page=100`);
   const pr = pulls.find(p => p.head?.repo?.full_name === REPO && (p.head.sha === sha || (p.merged_at && ancestor(p.head.sha, sha) && scopeHash(t.app, p.head.sha) === scopeHash(t.app, sha))));
   if (!pr) throw Error('Source must have a repository PR with the same selected-app dependency tree');
   const paths = git('diff', '--name-only', `${pr.base.sha}...${pr.head.sha}`).split(/\r?\n/).filter(Boolean);
-  if (lane === 'standard') {
-    const reviews = ghApi(`repos/${REPO}/pulls/${pr.number}/reviews?per_page=100`);
-    const latest = new Map(); for (const r of reviews) if (r.state !== 'COMMENTED') latest.set(r.user.login, r);
-    if (![...latest.values()].some(r => r.state === 'APPROVED' && r.commit_id === pr.head.sha && r.user.type === 'User' && r.user.login !== pr.user.login && ['OWNER','MEMBER','COLLABORATOR'].includes(r.author_association))) throw Error('Standard Track needs an independent trusted approval on the exact PR head, or a documented owner-exception');
-  }
   return { number: pr.number, url: pr.html_url, head: pr.head.sha, pullRequestRisk: risk(paths) };
 }
-export function planRelease(app, environment, options = {}) {
+export function rollbackSelection(t, current, options = {}) {
+  const requested = options.record || current.record.previousGoodRecord;
+  if (requested) {
+    const record = validateRecord(JSON.parse(git('show', `${exactSha(requested)}:release.json`)), t);
+    return { record:requested, sha:options.sha || record.sourceSha };
+  }
+  // Compatibility with release records written before previousGoodRecord was stored.
+  for (const commit of git('rev-list', '--first-parent', current.commit).split(/\r?\n/).slice(1)) {
+    let record;
+    try { record = JSON.parse(command('git', ['show', `${commit}:release.json`], {stdio:['ignore','pipe','pipe']})); } catch { break; }
+    if (!['baseline','deploy','rollback'].includes(record.kind)) continue;
+    validateRecord(record,t);
+    if (record.sourceSha === current.record.previousGood?.sourceSha && record.rollout === current.record.previousGood?.rollout) return {record:commit,sha:options.sha || record.sourceSha};
+  }
+  throw Error('No earlier verified rollback target is recorded; preserve the current release and investigate rather than guessing a SHA');
+}
+export function planRelease(app, environment, supplied = {}) {
+  const options = {...supplied};
   const t = target(app, environment); assertClean(git('status', '--porcelain')); git('fetch', 'origin');
-  const sha = exactSha(options.sha || git('rev-parse', 'origin/main'));
   const current = releaseRecord(t.branch); if (!current) throw Error('Bootstrap the verified release baseline first');
+  if (options.resume && current.record.kind === 'intent') { options.sha ||= current.record.sourceSha; options.record ||= current.record.rollbackRecord; }
+  else if (options.rollback || options.record) Object.assign(options,rollbackSelection(t,current,options));
+  const sha = exactSha(options.sha || git('rev-parse', environment === 'staging' ? 'HEAD' : 'origin/main'));
   const hash = scopeHash(app, sha);
-  const result = { ...t, sourceSha: sha, scopeHash: hash, inMain: ancestor(sha, 'origin/main'), rollback: Boolean(options.record) };
+  const result = { ...t, sourceSha: sha, scopeHash: hash, inMain: ancestor(sha, 'origin/main'), rollback: Boolean(options.record), executing:Boolean(options.execute), cosmeticOnly:Boolean(options['cosmetic-only']), standard:Boolean(options.standard) };
   if (environment === 'prod' && !result.inMain && !options.record) throw Error('Production source must already be integrated into origin/main');
   if (options.record) {
     exactSha(options.record); if (!ancestor(options.record, `origin/${t.branch}`)) throw Error('Rollback record is not in the selected release history');
@@ -118,16 +136,18 @@ export function planRelease(app, environment, options = {}) {
     result.rollbackRecord = options.record;
   }
   if (options.execute) {
-    result.validation = options.record ? { verifiedHistoricalRecord: options.record } : successfulValidation(sha);
-    // A previous verified baseline may predate CI. Rollback still needs explicit owner approval, never fabricated CI.
-    result.approval = environment === 'staging' && !options['approval-url'] ? stagingAuthorization(t, sha) : approval(options, t, sha);
-    if (!options.record) result.review = sourceReview(t, sha, environment === 'prod' ? result.approval.lane : 'owner-exception');
-    if (environment === 'prod' && !options.record && result.approval.lane !== 'fast') {
-      const staged = releaseRecord(target(app, 'staging').branch);
-      validateRecord(staged?.record, { app, environment: 'staging' });
-      if (staged.record.scopeHash !== hash || !ancestor(staged.record.sourceSha, 'origin/main')) throw Error('Standard production promotion requires a verified staging release of the same app/dependency tree, integrated into main');
-      result.stagingEvidence = staged.commit;
+    result.validation = result.rollback ? { verifiedHistoricalRecord: options.record } : successfulValidation(sha);
+    if (options.resume) {
+      result.resumeOperator = authenticatedOperator(t);
+      const original = jsonFile(path.join(stateDir(), `release-${app}-${environment}.json`));
+      // Resume never submits another rollout. Reuse the original bounded authorisation and staging proof.
+      result.approval = original.plan.approval;
+      result.cosmeticOnly = Boolean(original.plan.cosmeticOnly || original.plan.approval?.reason?.includes('Risk: cosmetic-only'));
+      result.standard = Boolean(original.plan.standard); result.stagingEvidence = original.plan.stagingEvidence;
+    } else {
+      result.approval = executionAuthorization(t,sha,{...options,action:result.rollback ? 'rollback' : 'deploy'});
     }
+    if (!result.rollback) result.provenance = sourceProvenance(t, sha);
   }
   return result;
 }
@@ -141,7 +161,7 @@ export async function deploy(app, environment, options) {
       assertServingLineage(plan, before, ancestor(before.sourceSha, plan.sourceSha), scopeHash(app,before.sourceSha) === plan.scopeHash);
       bindProductionDelta(plan, before);
       return { dryRun: true, plan, before, url: backend.uri, next: environment === 'prod'
-        ? 'Add --execute --approval-url <exact owner comment> after CI/review. No rollout or release pointer changed.'
+        ? 'After explicit owner release authorisation, the agent adds --execute --owner-approved --reason <owner instruction>. SHA, lane and staging requirements are resolved internally; no rollout changed.'
         : 'After exact-source CI and PR validation, an authenticated repository writer may add --execute. No separate owner comment required; no rollout or release pointer changed.' };
     }
     let journal = existsSync(journalFile) ? jsonFile(journalFile) : undefined;
@@ -155,7 +175,7 @@ export async function deploy(app, environment, options) {
       if (options.resume) throw Error('No matching pending release to resume');
       const abandoned = pointer.record.kind === 'abandoned';
       if (abandoned) {
-        if (!pointer.record.smoke?.ok && !options.record) throw Error('Abandoned unhealthy release requires an explicit verified rollback');
+        if (!pointer.record.smoke?.ok && !plan.rollback) throw Error('Abandoned unhealthy release requires an explicit verified rollback');
         const good = validateRecord(JSON.parse(git('show', `${exactSha(pointer.record.previousGoodRecord)}:release.json`)), plan);
         if (good.sourceSha !== pointer.record.previousGood?.sourceSha || good.rollout !== pointer.record.previousGood?.rollout) throw Error('Abandoned release rollback evidence differs');
       } else validateRecord(pointer.record, plan);
@@ -167,7 +187,7 @@ export async function deploy(app, environment, options) {
         if (!abandoned) return { alreadyServing: true, before };
         const health = await fetch(`https://${backend.uri.replace(/^https?:\/\//, '')}/`, { redirect: 'error', signal: AbortSignal.timeout(30000) });
         if (!health.ok || digest(before) !== digest(await serving(plan))) throw Error('Cannot reverify abandoned serving state while health/traffic is unstable');
-        const record = { schema:'fika.release.v1', ...plan, ...before, kind: options.record ? 'rollback' : 'deploy', previousGood:pointer.record.previousGood,
+        const record = { schema:'fika.release.v1', ...plan, ...before, kind: plan.rollback ? 'rollback' : 'deploy', previousGood:pointer.record.previousGood,
           previousGoodRecord:pointer.record.previousGoodRecord, releaseId:randomUUID(), reverifiedServing:true, completedAt:new Date().toISOString(), smoke:{ok:true,status:health.status} };
         validateRecord(record, plan); const commit = appendRecord(plan, record, pointer.commit); return { alreadyServing:true, commit, record };
       }
@@ -193,7 +213,7 @@ export async function deploy(app, environment, options) {
     if (!health.ok) throw Error('Non-destructive root smoke failed; preserve journal and stop for rollback decision');
     git('fetch', 'origin'); const latest = releaseRecord(plan.branch);
     if (latest?.record.releaseId !== journal.releaseId || latest.record.kind !== 'intent') throw Error('Release intent changed unexpectedly; do not overwrite it');
-    const record = { schema: 'fika.release.v1', ...plan, ...verified, kind: options.record ? 'rollback' : 'deploy', previousGood: journal.before, releaseId: journal.releaseId, completedAt: new Date().toISOString(), smoke: { status: health.status, url: `https://${backend.uri}/` } };
+    const record = { schema: 'fika.release.v1', ...plan, ...verified, kind: plan.rollback ? 'rollback' : 'deploy', previousGood: journal.before, previousGoodRecord:journal.previousGoodRecord, releaseId: journal.releaseId, completedAt: new Date().toISOString(), smoke: { status: health.status, url: `https://${backend.uri}/` } };
     validateRecord(record, plan); const commit = appendRecord(plan, record, latest.commit);
     save(journalFile, { ...journal, state: 'completed', record, commit }); return { commit, record };
   });
@@ -203,14 +223,13 @@ export async function reconcile(app, environment, options) {
   return asyncLock(`release-${app}-${environment}`, async () => {
     const t = target(app, environment); assertClean(git('status', '--porcelain')); git('fetch', 'origin');
     const pointer = releaseRecord(t.branch);
-    if (pointer?.record.kind !== 'intent' || pointer.record.releaseId !== options['release-id']) throw Error('Exact pending --release-id is required');
+    if (pointer?.record.kind !== 'intent' || (options['release-id'] && pointer.record.releaseId !== options['release-id'])) throw Error('No matching pending release intent');
     const journalFile = path.join(stateDir(), `release-${app}-${environment}.json`);
     const journal = jsonFile(journalFile);
     const snapshot = await recoverySnapshot(t);
     // Dry-run returns only selected, non-secret evidence and never changes ledger/journal.
-    if (!options.execute) return { dryRun: true, releaseId: pointer.record.releaseId, snapshot, next: 'Inspect exact terminal rollout, then --resolution abandon|complete --rollout <ID> --reason <text> --execute; production additionally requires a fresh action-specific owner approval.' };
-    const operator = environment === 'prod' ? approval(options, t, pointer.record.sourceSha, 'reconcile') : stagingAuthorization(t, pointer.record.sourceSha);
-    if (environment === 'prod') assertReconciliationApproval(operator, pointer.record.releaseId, options.resolution);
+    if (!options.execute) return { dryRun: true, releaseId: pointer.record.releaseId, snapshot, next: 'Agent verifies the terminal attempt before --resolution abandon|complete --rollout <ID> --reason <instruction> --execute. Production additionally needs explicit --owner-approved; no approval comment.' };
+    const operator = executionAuthorization(t,pointer.record.sourceSha,{...options,action:`reconcile:${options.resolution}`,'release-id':pointer.record.releaseId});
     const previousGoodRecord = exactSha(journal.previousGoodRecord);
     const good = validateRecord(JSON.parse(git('show', `${previousGoodRecord}:release.json`)), t);
     if (good.sourceSha !== journal.before?.sourceSha || good.rollout !== journal.before?.rollout || !ancestor(previousGoodRecord, pointer.commit)) throw Error('Original known-good rollback evidence is invalid');

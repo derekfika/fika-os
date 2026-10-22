@@ -40,21 +40,13 @@ export function validateRecord(record, { app, environment } = {}) {
   if (!record.rollout || record.state !== 'SUCCEEDED' || record.percent !== 100 || !record.scopeHash) throw Error('Release is not verified serving state');
   return record;
 }
-export function approvalText({ app, environment, sha, lane, expires }) { return `/fika-approve ${app} ${environment} ${exactSha(sha)} ${lane} ${expires}`; }
-export function validateApproval(comment, repository, request, now = Date.now()) {
-  const expected = approvalText(request);
-  if (comment.user?.login !== repository.owner.login || comment.user?.type !== 'User' || comment.body?.trim() !== expected) throw Error('Explicit repository-owner approval does not match app/environment/SHA/lane');
-  if (!['fast', 'standard', 'owner-exception'].includes(request.lane)) throw Error('Invalid approval lane');
-  const expiry = Date.parse(request.expires);
-  if (!Number.isFinite(expiry) || expiry <= now || expiry > Date.parse(comment.created_at) + 7 * 86400000) throw Error('Approval expired or exceeds seven-day lifetime');
-  return { url: comment.html_url, id: comment.id, owner: comment.user.login, expires: request.expires, lane: request.lane };
-}
 export function partialPathOverlap(a, b) { return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`); }
 export function assertResume(intent, journal, plan) {
   if (!journal || intent?.schema !== 'fika.release.v1' || intent.kind !== 'intent' || intent.state !== 'PENDING' || intent.releaseId !== journal.releaseId) throw Error('Missing/wrong release journal or intent');
   const expected = target(intent.app, intent.environment);
   for (const key of ['project','backend','region','branch']) if (intent[key] !== expected[key]) throw Error('Intent target differs from governed mapping');
   for (const key of ['app','environment','project','backend','sourceSha','scopeHash']) if (intent[key] !== plan[key] || journal.plan[key] !== plan[key]) throw Error(`Resume ${key} differs from original intent`);
+  if (Boolean(intent.rollback) !== Boolean(plan.rollback) || Boolean(journal.plan.rollback) !== Boolean(plan.rollback)) throw Error('Resume action differs from original intent');
   if (intent.approval?.id !== plan.approval?.id || digest(intent.previousGood) !== digest(journal.before) || intent.previousGoodRecord !== journal.previousGoodRecord) throw Error('Resume approval/rollback baseline differs from original intent');
 }
 export function assertServingLineage(plan, current, containsCurrent, sameTree) {

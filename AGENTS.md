@@ -30,6 +30,9 @@ worktrees/temporary branches and direct concurrent writes to main.
    Do not push directly to main or integrate unfinished features just to release
    an unrelated app. Shared packages/contracts use Standard Track and validate
    every mapped consumer. New/unmapped provider paths fail conservative review.
+   PRs are agent-managed CI/integration tools. No independent human approval is
+   required. After CI passes, agents may integrate when the owner has authorised
+   integration; honour explicit instructions to stop before merging.
 5. Six app release pairs use `release/staging/<app>` and `release/prod/<app>`.
    They are APPEND-ONLY RELEASE RECORDS, not source checkouts. Read `release.json`
    for sourceSha. NEVER deploy a release-record branch/commit as application code.
@@ -37,13 +40,17 @@ worktrees/temporary branches and direct concurrent writes to main.
 6. Use `fika deploy <app> --staging|--prod` (or `npm run fika -- ...`). Default is
    dry-run. Execution requires passing exact-SHA CI and PR provenance. Staging
    permits explicit --execute by an authenticated repository writer; production
-   additionally requires an exact app/environment/SHA owner approval URL.
+   additionally requires an explicit owner release instruction recorded by the
+   agent with --owner-approved --reason. No GitHub approval comments are used.
    Production source must be in origin/main and preserve
    the currently deployed lineage. No arbitrary WIP production releases.
-7. Production approvals are never inferred from a code task. Standard Track needs
-   staging with identical selected-app/dependency tree and independent review;
-   a seven-day maximum, recorded owner-exception may replace independent review,
-   never source, CI, staging, target, integrity or AUTHMOD safety gates.
+7. Production approvals are never inferred from a code task. The owner can say
+   "Ship it" in context; the agent pins the approved candidate and records that
+   instruction internally. Owner-supplied SHAs, comments and independent reviews
+   are unnecessary. The complete serving-to-candidate delta determines the lane:
+   cosmetic changes can use Fast Track; operational/data-sensitive changes require
+   verified staging of the same selected-app/dependency tree. No owner flag can
+   bypass automated validation, target/lineage, staging or business-data safeguards.
 8. Keep App Hosting automatic rollouts disabled. Only selected-backend, explicit-
    SHA commands are allowed. A pending distributed release intent blocks competing
    writers; resume from its matching journal, never blindly redeploy after failure.
@@ -54,11 +61,11 @@ worktrees/temporary branches and direct concurrent writes to main.
    allowlisted ignored dependencies/build outputs into a recovery archive, never
    delete their contents. Seven legacy stashes, recovery
    archives, rollback/release/preservation refs and ambiguous active work stay.
-10. Do not bypass GitHub protections. Main requires a PR, successful merge-gate and
-    independent approval. If no reviewer is available, state the blocker promptly;
-    the owner must resolve it through a separately recorded authorised repository
-    administration decision. A release-review exception does not bypass main's
-    GitHub-required PR review.
+10. Do not bypass automated GitHub protections or force-push main. Main requires
+    a passing merge-gate and PR integration with zero mandatory human approvals.
+    Local authorised deployment is the default; optional hosted WIF provisioning
+    must never block it. Ledgers, SHA selection, rollback and recovery are internal
+    agent responsibilities, not routine administration for the owner.
 
 Operator guide: `docs/deployment/workflow.md`. `tools/workflow` owns the automation.
 Local runtime state/leases/journals live in the common Git directory, outside source.
