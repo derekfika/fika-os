@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ProductionOrder } from "../lib/production-types";
-import { aggregateDeliveredIn, buildAllergenReviewRows, buildDeliveredInAllergenReview, buildDeliveredInDishRows, categorySummary, deliveredInMenuOrdersForServiceDate, deliveredInTotals, firstDeliveredInOrder, groupByRequiredTime, orderSummary } from "../lib/production-day";
+import { aggregateDeliveredIn, aggregateProductionTotals, buildAllergenReviewRows, buildDeliveredInAllergenReview, buildDeliveredInDishRows, categorySummary, deliveredInMenuOrdersForServiceDate, deliveredInTotals, firstDeliveredInOrder, groupByRequiredTime, orderSummary } from "../lib/production-day";
 import { readFileSync } from "node:fs";
 
 function order(destinationLabel: string, quantity: number, sourceMenuItemId = "dish:leaf"): ProductionOrder {
@@ -20,6 +20,21 @@ test("Day grouping keeps operational times and compact quantities separate from 
   assert.equal(groupByRequiredTime([first, second])[0].orders.length, 2);
 });
 
+test("production Totals count canonical orders and line quantities once by explicit workstream", () => {
+  const makeLine = (canonicalId: string, itemName: string, quantity: number, workstream: "sandwiches" | "hospitality" | "delivered_in") => ({ canonicalId, sourceBookingLineId: canonicalId, itemName, customerQuantity: quantity, customerUnit: "portion", productionQuantity: quantity, productionUnit: "portion", dietaries: {}, status: "ready" as const, sortOrder: 0, workstream });
+  const sourceOrder = order("RCA", 0);
+  const deliOrder = { ...sourceOrder, canonicalId: "production-order:deli", origin: "hospitality_booking" as const, productionCategory: "hospitality" as const, lines: [makeLine("deli:line", "Deli Style Sandwich Lunch", 12, "sandwiches")] };
+  const hospitalityOrder = { ...sourceOrder, canonicalId: "production-order:hospitality", destinationLabel: "Haleon", origin: "hospitality_booking" as const, lines: [makeLine("hospitality:line", "Buffet Lunch", 8, "hospitality")] };
+  const menuOrder = { ...order("Angel Court", 0), canonicalId: "production-order:menu", lines: [makeLine("menu:line", "Mixed Baby Leaf", 15, "delivered_in")] };
+
+  const totals = aggregateProductionTotals([deliOrder, hospitalityOrder, menuOrder]);
+  assert.deepEqual(totals.map(({ category, orderCount, items }) => [category, orderCount, items.map(({ name, quantity, unit }) => [name, quantity, unit])]), [
+    ["Sandwiches", 1, [["Deli Style Sandwich Lunch", 12, "portion"]]],
+    ["Hospitality", 1, [["Buffet Lunch", 8, "portion"]]],
+    ["Delivered-In", 1, [["Mixed Baby Leaf", 15, "portion"]]],
+  ]);
+});
+
 test("Day Delivered-In action opens the canonical Production Order used by the detail", () => {
   const menuOrders = [order("Haleon", 10), order("FIKA Xchange", 10)];
   assert.equal(firstDeliveredInOrder(menuOrders)?.canonicalId, "production-order:Haleon");
@@ -32,6 +47,15 @@ test("Day Delivered-In action opens the canonical Production Order used by the d
   assert.match(page, /<Queue orders=\{visible\} open=\{openOrder\}/);
   assert.match(page, /<ProductionCalendar orders=\{baseVisible\}/);
   assert.match(readFileSync(new URL("../app/ui/ProductionCalendar.tsx", import.meta.url), "utf8"), /reviewAllergens\(orderDate\(order\)\)/);
+});
+
+test("Delivered-In calendar cards are compact and still open the existing Inspector", () => {
+  const calendar = readFileSync(new URL("../app/ui/ProductionCalendar.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+  assert.match(calendar, /production-card--delivered-in/);
+  assert.match(calendar, /production-card-delivered-in[\s\S]*?\{siteName\}[\s\S]*?\{portions\.toLocaleString\(\)\} portions/);
+  assert.match(calendar, /open\(order\)/);
+  assert.match(page, /selected\.origin === "menu_planning"[\s\S]*?<DeliveredInProductionDetail/);
 });
 
 test("Golden Week Monday Delivered-In detail totals aggregate to 315 portions, 15 dishes, and 2 destinations", () => {

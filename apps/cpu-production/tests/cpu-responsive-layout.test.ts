@@ -14,6 +14,8 @@ test("CPU shell keeps labelled navigation and responsive overrides after desktop
     assert.match(page, new RegExp(`label: "${label}"`));
   }
   assert.match(page, /aria-current=\{view === target \? "page" : undefined\}/);
+  assert.match(page, /cpu-sidebar-collapse[\s\S]*?aria-label=\{sidebarCollapsed \? "Expand production navigation" : "Collapse production navigation"\}/);
+  assert.match(page, /title=\{sidebarCollapsed \? label : undefined\}/);
   assert.ok(styles.lastIndexOf("@media (max-width:1360px), (pointer:coarse)") > styles.indexOf(".cpu-summary{grid-template-columns:repeat(6"));
   assert.match(styles, /\.cpu-summary\{grid-template-columns:repeat\(7,minmax\(0,1fr\)\)\}/);
   assert.match(styles, /@media \(max-width:1360px\), \(pointer:coarse\)[\s\S]*?\.cpu-summary\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
@@ -39,10 +41,19 @@ test("tablet navigation uses a touch-aware drawer and hides the desktop operatio
   assert.doesNotMatch(page, /className="cpu-mobile-nav"/);
   assert.match(page, /Review in Queue/);
   assert.match(page, /setStatus\(""\);[\s\S]*setOrigin\(""\);[\s\S]*setSite\(""\);[\s\S]*setDate\(""\)/);
-  assert.match(styles, /@media \(max-width:1360px\), \(pointer:coarse\)[\s\S]*?\.cpu-operations-rail\{display:none\}/);
+  assert.match(styles, /\.cpu-dashboard-columns\{grid-template-columns:minmax\(0,1fr\)\}/);
+  assert.match(styles, /@media \(max-width:1360px\), \(pointer:coarse\)[\s\S]*?\.cpu-operations-rail\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/);
+  assert.match(styles, /@media \(max-width:700px\)[\s\S]*?\.cpu-operations-rail\{grid-template-columns:minmax\(0,1fr\)\}/);
   assert.match(styles, /\.cpu-sidebar\.cpu-sidebar--open\{transform:translateX\(0\);visibility:visible\}/);
   assert.match(styles, /\.cpu-sidebar-backdrop:not\(\[hidden\]\)[\s\S]*?display:block/);
   assert.match(styles, /\.cpu-tablet-menu-toggle:focus-visible[\s\S]*?outline:3px solid var\(--fika-focus-ring\)/);
+});
+
+test("CPU Overview exposes Day, Week and Run sheet controls beside refresh", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /className="cpu-view-switch"[\s\S]*?>Week<\/button>[\s\S]*?>Day<\/button>[\s\S]*?>Run sheet<\/button>[\s\S]*?aria-label="Refresh production"/);
+  assert.match(page, /const chooseDayView = \(\) => \{[\s\S]*setDayDate\(selectedDate\)[\s\S]*setWeekCommencing\(weekCommencingFor\(selectedDate\)\)/);
+  assert.match(page, /onClick=\{\(\) => chooseView\("run-sheet"\)\}/);
 });
 
 test("CPU calendar and interactive detail styles retain bounded scrolling and touch targets", async () => {
