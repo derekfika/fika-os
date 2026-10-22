@@ -22,7 +22,7 @@ import styles from "./GallagherDashboard.module.css";
 
 type DashboardData = {
   bookings: GallagherBooking[];
-  counts: { legacyMatches: number; legacyEmailMatches: number; fikaMatches: number; dedupedTotal: number };
+  counts: { legacyMatches: number; fikaMatches: number; dedupedTotal: number };
 };
 type Phase = "checking" | "locked" | "ready";
 

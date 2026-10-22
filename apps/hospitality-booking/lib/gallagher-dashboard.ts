@@ -22,8 +22,6 @@ export type GallagherBooking = {
   updatedAt: string;
   /** Internal lineage only. The UI never renders this field. */
   supersededLegacyBookingId?: string;
-  /** Internal filter evidence. Removed from the customer API response. */
-  matchedBy?: "company" | "email-domain" | "both";
 };
 
 type LegacyBookingRow = Record<string, unknown>;
@@ -40,23 +38,49 @@ export function normalizeCompany(value: unknown) {
   return text(value).replace(/\s+/g, " ").toLocaleLowerCase("en-GB");
 }
 
+export function normalizeEmail(value: unknown) {
+  return text(value).replace(/\s+/g, " ").toLocaleLowerCase("en-GB");
+}
+
 export function exactEmailDomain(value: unknown) {
-  const email = text(value).replace(/\s+/g, " ").toLocaleLowerCase("en-GB");
+  const email = normalizeEmail(value);
   const at = email.lastIndexOf("@");
   if (at <= 0 || at === email.length - 1 || email.indexOf("@") !== at) return "";
   return email.slice(at + 1).replace(/\.$/, "");
 }
 
-export function matchedGallagherRecord(company: unknown, email: unknown) {
-  const companyMatch = normalizeCompany(company) === "gallagher";
-  const emailMatch = exactEmailDomain(email) === "redington.co.uk";
-  return companyMatch || emailMatch;
+/**
+ * Customer-dashboard visibility policy (dashboard visibility only; the Gallagher
+ * commercial/minimum-order rules are separate and unchanged).
+ *
+ * The legacy booking data carries no explicit account, cost-centre or ownership
+ * field. `ClientCompany` is free text (it holds the end client for many
+ * requests) and the requester domain alone does not prove ownership, so a
+ * record is visible only when its requester is explicitly approved by the
+ * account owner. Nothing is approved by default: an unconfigured policy shows
+ * no bookings and the data route reports "not configured" instead.
+ */
+export type GallagherVisibilityPolicy = { approvedRequesters: ReadonlySet<string>; approvedDomains: ReadonlySet<string> };
+
+const list = (value: string | undefined) => (value || "").split(/[,;\s]+/).map((entry) => entry.trim().toLocaleLowerCase("en-GB")).filter(Boolean);
+
+export function visibilityPolicyFromEnvironment(env: Record<string, string | undefined> = process.env): GallagherVisibilityPolicy {
+  return {
+    approvedRequesters: new Set(list(env.GALLAGHER_DASHBOARD_APPROVED_REQUESTERS).filter((entry) => exactEmailDomain(entry) !== "")),
+    approvedDomains: new Set(list(env.GALLAGHER_DASHBOARD_APPROVED_DOMAINS).filter((entry) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(entry))),
+  };
 }
 
-function matchReason(company: unknown, email: unknown): GallagherBooking["matchedBy"] {
-  const companyMatch = normalizeCompany(company) === "gallagher";
-  const emailMatch = exactEmailDomain(email) === "redington.co.uk";
-  return companyMatch && emailMatch ? "both" : companyMatch ? "company" : emailMatch ? "email-domain" : undefined;
+export function visibilityPolicyConfigured(policy: GallagherVisibilityPolicy) {
+  return policy.approvedRequesters.size + policy.approvedDomains.size > 0;
+}
+
+/** Fail closed: only an exact approved requester address, or an explicitly approved domain, is visible. */
+export function isApprovedGallagherRequester(email: unknown, policy: GallagherVisibilityPolicy = visibilityPolicyFromEnvironment()) {
+  const normalized = normalizeEmail(email);
+  const domain = exactEmailDomain(normalized);
+  if (!domain) return false;
+  return policy.approvedRequesters.has(normalized) || policy.approvedDomains.has(domain);
 }
 
 export function parseLegacyDate(value: unknown): string {
@@ -123,7 +147,6 @@ export function normalizeLegacyBooking(row: LegacyBookingRow, today: string): Ga
     notes: text(row.Notes || parsed.notes),
     createdAt: legacyTimestamp(row.CreatedAt, parsed.createdAt),
     updatedAt: legacyTimestamp(row.UpdatedAt, parsed.updatedAt),
-    matchedBy: matchReason(row.ClientCompany || parsed.clientCompany, row.HostEmail || parsed.hostEmail),
   };
 }
 
@@ -136,10 +159,9 @@ function currentQuoteTotal(booking: FikaBooking): number | null {
   return numberOrNull(snapshotGross ?? booking.order?.grossTotal);
 }
 
-export function fikaBookingMatches(booking: FikaBooking) {
-  const company = booking.client?.requester?.companyName || booking.client?.companyName;
-  const email = booking.client?.requester?.email || booking.client?.email;
-  return matchedGallagherRecord(company, email);
+export function fikaBookingMatches(booking: FikaBooking, policy: GallagherVisibilityPolicy = visibilityPolicyFromEnvironment()) {
+  const requester = booking.client?.requester || {};
+  return isApprovedGallagherRequester(requester.email || booking.client?.email, policy);
 }
 
 export function normalizeFikaBooking(booking: FikaBooking, today: string): GallagherBooking {
@@ -179,26 +201,20 @@ export function normalizeFikaBooking(booking: FikaBooking, today: string): Galla
     createdAt: text(booking.createdAt),
     updatedAt: text(booking.updatedAt),
     ...(migratedLegacyId ? { supersededLegacyBookingId: migratedLegacyId } : {}),
-    matchedBy: matchReason(requester.companyName || client.companyName || client.clientCompany, requester.email || client.email),
   };
 }
 
-export function aggregateGallagherBookings(legacyRows: LegacyBookingRow[], fikaRows: FikaBooking[], today: string) {
-  const fika = fikaRows.filter(fikaBookingMatches).map((booking) => normalizeFikaBooking(booking, today));
+export function aggregateGallagherBookings(legacyRows: LegacyBookingRow[], fikaRows: FikaBooking[], today: string, policy: GallagherVisibilityPolicy = visibilityPolicyFromEnvironment()) {
+  const fika = fikaRows.filter((booking) => fikaBookingMatches(booking, policy)).map((booking) => normalizeFikaBooking(booking, today));
   const superseded = new Set(fika.map((booking) => booking.supersededLegacyBookingId || booking.sourceBookingId));
-  const legacy = legacyRows
+  const legacyVisible = legacyRows
     .map((row) => normalizeLegacyBooking(row, today))
-    .filter((booking) => matchedGallagherRecord(booking.company, booking.requesterEmail))
-    .filter((booking) => !superseded.has(booking.sourceBookingId));
+    .filter((booking) => isApprovedGallagherRequester(booking.requesterEmail, policy));
+  const legacy = legacyVisible.filter((booking) => !superseded.has(booking.sourceBookingId));
   const bookings = [...legacy, ...fika].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) || a.bookingReference.localeCompare(b.bookingReference));
   return {
     bookings,
-    counts: {
-      legacyMatches: legacyRows.map((row) => normalizeLegacyBooking(row, today)).filter((booking) => normalizeCompany(booking.company) === "gallagher").length,
-      legacyEmailMatches: legacyRows.map((row) => normalizeLegacyBooking(row, today)).filter((booking) => exactEmailDomain(booking.requesterEmail) === "redington.co.uk").length,
-      fikaMatches: fika.length,
-      dedupedTotal: bookings.length,
-    },
+    counts: { legacyMatches: legacyVisible.length, fikaMatches: fika.length, dedupedTotal: bookings.length },
   };
 }
 

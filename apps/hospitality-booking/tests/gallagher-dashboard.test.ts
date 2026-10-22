@@ -4,13 +4,17 @@ import {
   aggregateGallagherBookings,
   exactEmailDomain,
   fikaBookingMatches,
-  matchedGallagherRecord,
+  isApprovedGallagherRequester,
   normalizeCompany,
   normalizeFikaBooking,
   normalizeLegacyBooking,
   parseLegacyDate,
   partitionBookings,
+  visibilityPolicyConfigured,
+  visibilityPolicyFromEnvironment,
 } from "../lib/gallagher-dashboard";
+
+const policy = visibilityPolicyFromEnvironment({ GALLAGHER_DASHBOARD_APPROVED_REQUESTERS: "person@redington.co.uk, frontofhouse@redington.co.uk" });
 
 const today = "2026-10-15";
 
@@ -53,18 +57,60 @@ function fika(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test("Gallagher company matching is case-insensitive and whitespace-normalized but exact", () => {
+test("company text alone never makes a booking visible; only an approved requester does", () => {
   assert.equal(normalizeCompany("  GALLAGHER  "), "gallagher");
-  assert.equal(matchedGallagherRecord("  gAlLaGhEr ", "someone@example.com"), true);
-  assert.equal(matchedGallagherRecord("Gallagher Services", "someone@example.com"), false);
-  assert.equal(matchedGallagherRecord("Unrelated client", "someone@example.com"), false);
+  assert.equal(isApprovedGallagherRequester("stranger@example.com", policy), false);
+  assert.equal(isApprovedGallagherRequester("person@redington.co.uk", policy), true);
+  assert.equal(isApprovedGallagherRequester(" Person@REDINGTON.CO.UK ", policy), true);
 });
 
-test("email matching compares the exact case-insensitive domain", () => {
+test("an unapproved address on the Redington domain is not visible unless the domain is explicitly approved", () => {
   assert.equal(exactEmailDomain(" Person@REDINGTON.CO.UK "), "redington.co.uk");
-  assert.equal(matchedGallagherRecord("Unrelated client", " Person@REDINGTON.CO.UK "), true);
-  assert.equal(matchedGallagherRecord("Unrelated client", "person@redington.co.uk.example.com"), false);
-  assert.equal(matchedGallagherRecord("Unrelated client", "redington.co.uk"), false);
+  assert.equal(isApprovedGallagherRequester("someone.else@redington.co.uk", policy), false);
+  const domainPolicy = visibilityPolicyFromEnvironment({ GALLAGHER_DASHBOARD_APPROVED_DOMAINS: "redington.co.uk" });
+  assert.equal(isApprovedGallagherRequester("someone.else@redington.co.uk", domainPolicy), true);
+  assert.equal(isApprovedGallagherRequester("someone@redington.co.uk.evil.test", domainPolicy), false);
+});
+
+test("malformed, display-name, multi-address and empty requester values fail closed", () => {
+  for (const value of ["", undefined, null, "redington.co.uk", "Person <person@redington.co.uk>", "person@redington.co.uk, other@example.com", "person@redington.co.uk@evil.test", "@redington.co.uk", "person@"]) {
+    assert.equal(isApprovedGallagherRequester(value, policy), false, String(value));
+  }
+});
+
+test("an unconfigured or invalid policy approves nothing", () => {
+  const empty = visibilityPolicyFromEnvironment({});
+  assert.equal(visibilityPolicyConfigured(empty), false);
+  assert.equal(isApprovedGallagherRequester("person@redington.co.uk", empty), false);
+  const invalid = visibilityPolicyFromEnvironment({ GALLAGHER_DASHBOARD_APPROVED_REQUESTERS: "not-an-email, *", GALLAGHER_DASHBOARD_APPROVED_DOMAINS: "*, localhost" });
+  assert.equal(visibilityPolicyConfigured(invalid), false);
+});
+
+test("regression: unrelated companies bookings cannot be exposed through the Gallagher dashboard", () => {
+  const unrelated = [
+    legacy({ BookingID: "OTHER-1", ClientCompany: "Qinetiq", HostEmail: "buyer@qinetiq.com" }),
+    legacy({ BookingID: "OTHER-2", ClientCompany: "Thames Water", HostEmail: "pa@thameswater.co.uk" }),
+    // A different tenant typing "Gallagher" into the free-text company field must not surface.
+    legacy({ BookingID: "SPOOF-1", ClientCompany: "Gallagher", HostEmail: "attacker@example.com" }),
+    legacy({ BookingID: "SPOOF-2", ClientCompany: "  GALLAGHER ", HostEmail: "" }),
+    // Look-alike Redington addresses and unapproved colleagues.
+    legacy({ BookingID: "LOOKALIKE", ClientCompany: "Other", HostEmail: "person@redington.co.uk.example.com" }),
+    legacy({ BookingID: "UNAPPROVED-COLLEAGUE", ClientCompany: "Other", HostEmail: "unknown@redington.co.uk" }),
+  ];
+  const approved = legacy({ BookingID: "APPROVED", ClientCompany: "Qinetiq", HostEmail: "frontofhouse@redington.co.uk" });
+  const output = aggregateGallagherBookings([...unrelated, approved], [], today, policy);
+  assert.deepEqual(output.bookings.map((booking) => booking.sourceBookingId), ["APPROVED"]);
+  assert.equal(JSON.stringify(output).includes("Thames Water"), false);
+  assert.equal(output.counts.dedupedTotal, 1);
+});
+
+test("canonical FIKA OS bookings pass through the same fail-closed gate", () => {
+  const stranger = fika({ client: { name: "X", email: "x@example.com", companyName: "Gallagher", requester: { name: "X", email: "x@example.com", companyName: "Gallagher" } } });
+  const colleague = fika({ client: { name: "X", email: "unknown@redington.co.uk", companyName: "Other", requester: { name: "X", email: "unknown@redington.co.uk", companyName: "Other" } } });
+  assert.equal(fikaBookingMatches(stranger, policy), false);
+  assert.equal(fikaBookingMatches(colleague, policy), false);
+  assert.equal(fikaBookingMatches(fika(), policy), true);
+  assert.deepEqual(aggregateGallagherBookings([], [stranger, colleague], today, policy).bookings, []);
 });
 
 test("legacy normalizer retains stored gross price, booking details and cancellation", () => {
@@ -77,7 +123,6 @@ test("legacy normalizer retains stored gross price, booking details and cancella
   assert.equal(result.items[0].quantity, 20);
   assert.equal(result.location, "One Angel Court · Level 4");
   assert.equal(result.poReference, "PO-123");
-  assert.equal(result.matchedBy, "both");
   assert.equal(result.endTime, "");
 });
 
@@ -96,7 +141,7 @@ test("FIKA OS uses the stored quote total rather than recomputing line prices", 
   assert.equal(result.items[0].quantity, 35);
   assert.equal(result.poReference, "PO-456");
   assert.equal(result.location, "Meeting room · One Angel Court");
-  assert.equal(fikaBookingMatches(fika()), true);
+  assert.equal(fikaBookingMatches(fika(), policy), true);
 });
 
 test("missing authoritative price stays unavailable and FIKA cancellation is customer-facing", () => {
@@ -109,19 +154,19 @@ test("missing authoritative price stays unavailable and FIKA cancellation is cus
 test("aggregation deduplicates only an exact stable legacy reference or explicit provenance", () => {
   const exact = fika({ source: { sourceBookingId: "AC-20261016-001", provider: "angel-court-hospitality", originalPayload: {} } });
   const linked = fika({ source: { sourceBookingId: "ANGEL-002", provider: "angel-court-hospitality", originalPayload: { legacyBookingReference: "AC-OLD-002" } } });
-  const output = aggregateGallagherBookings([legacy(), legacy({ BookingID: "AC-OLD-002" })], [exact, linked], today);
+  const output = aggregateGallagherBookings([legacy(), legacy({ BookingID: "AC-OLD-002" })], [exact, linked], today, policy);
   assert.equal(output.bookings.length, 2);
   assert.equal(output.bookings.every((booking) => booking.source === "fika-os"), true);
   assert.equal(output.bookings.find((booking) => booking.sourceBookingId === "ANGEL-002")?.supersededLegacyBookingId, "AC-OLD-002");
 
   const unrelated = fika({ source: { sourceBookingId: "ANGEL-003", provider: "angel-court-hospitality", originalPayload: {} }, service: { eventDate: "2026-10-16", startTime: "09:00", guestCount: 20, portalSiteLabel: "One Angel Court" } });
-  assert.equal(aggregateGallagherBookings([legacy()], [unrelated], today).bookings.length, 2);
+  assert.equal(aggregateGallagherBookings([legacy()], [unrelated], today, policy).bookings.length, 2);
 });
 
 test("unrelated One Angel Court records stay excluded", () => {
   const unrelated = fika({ client: { name: "Other", email: "other@example.com", companyName: "Other Co", requester: { name: "Other", email: "other@example.com", companyName: "Other Co" } } });
-  assert.equal(fikaBookingMatches(unrelated), false);
-  assert.equal(aggregateGallagherBookings([legacy({ ClientCompany: "Other", HostEmail: "other@example.com" })], [unrelated], today).bookings.length, 0);
+  assert.equal(fikaBookingMatches(unrelated, policy), false);
+  assert.equal(aggregateGallagherBookings([legacy({ ClientCompany: "Other", HostEmail: "other@example.com" })], [unrelated], today, policy).bookings.length, 0);
 });
 
 test("upcoming order is nearest-first and history order is newest-first", () => {

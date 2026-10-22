@@ -1,5 +1,5 @@
 import { JWT } from "google-auth-library";
-import { matchedGallagherRecord } from "@/lib/gallagher-dashboard";
+import { isApprovedGallagherRequester, visibilityPolicyConfigured, visibilityPolicyFromEnvironment } from "@/lib/gallagher-dashboard";
 
 const SHEET_NAME = "Dashboard Data";
 const MAX_ROWS = 5000;
@@ -19,6 +19,7 @@ function environment(name: string) {
 }
 
 function assertConfiguration() {
+  if (!visibilityPolicyConfigured(visibilityPolicyFromEnvironment())) throw new Error("Gallagher dashboard visibility policy is not configured; no bookings are shown.");
   if (!environment("GALLAGHER_LEGACY_SHEET_ID")) throw new Error("Gallagher legacy booking source is not configured.");
   if (!environment("GALLAGHER_SHEETS_IMPERSONATED_USER")) throw new Error("Gallagher Sheets reader is not configured.");
   if (!environment("GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON")) throw new Error("Google Workspace delegated access is not configured.");
@@ -44,6 +45,7 @@ function columns(headers: string[], values: unknown[]) {
 
 async function readLegacyRows(): Promise<LegacyRow[]> {
   assertConfiguration();
+  const policy = visibilityPolicyFromEnvironment();
   const token = await accessToken();
   const id = encodeURIComponent(environment("GALLAGHER_LEGACY_SHEET_ID"));
   const url = new URL(`https://sheets.googleapis.com/v4/spreadsheets/${id}/values:batchGet`);
@@ -74,7 +76,7 @@ async function readLegacyRows(): Promise<LegacyRow[]> {
     const values = [...(left[index] || []), ...(right[index] || [])];
     if (!values.some((value) => value !== "" && value !== null && value !== undefined)) continue;
     const row = columns(headers, values);
-    if (matchedGallagherRecord(row.ClientCompany, row.HostEmail)) rows.push(row);
+    if (isApprovedGallagherRequester(row.HostEmail, policy)) rows.push(row);
   }
   return rows;
 }

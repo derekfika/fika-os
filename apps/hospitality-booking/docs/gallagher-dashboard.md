@@ -9,7 +9,7 @@
 - Legacy reference: `BookingID`. Company/contact: `ClientCompany`, `HostName`, `HostEmail`. Service: `EventDate`, `ServiceTimes`, `Pax`, `ItemsJSON`/`ParsedJSON`, `Location`, `Floor`. Invoice reference: `InvoiceReference`. State and cancellation: `Status` plus cancellation evidence inside `ParsedJSON`. Created/updated: `CreatedAt`, `UpdatedAt`.
 - Legacy amount: `GrossPrice` is the stored quote total to pay (management fee plus VAT). `TotalPrice` is the item subtotal before the management fee and VAT. The dashboard displays the stored gross amount and never re-prices historical bookings.
 - FIKA OS amount: use the stored gross total in the current quote revision snapshot when available, otherwise the stored canonical `order.grossTotal`. No current catalogue values are read or applied.
-- Include rule: normalized company exactly `Gallagher`, or the exact requester email domain `redington.co.uk`, case-insensitively. Both checks are whitespace-normalized; email subdomains do not match.
+- Visibility rule (fail closed): a booking is shown only when its requester email exactly matches an address in `GALLAGHER_DASHBOARD_APPROVED_REQUESTERS` (or, if the account owner explicitly chooses, a domain in `GALLAGHER_DASHBOARD_APPROVED_DOMAINS`). Company text is never sufficient, the `redington.co.uk` domain is not approved by default, and with no policy configured the data route returns 503 and reads nothing. Audit basis: the legacy sheet has no account, cost-centre or ownership column; `ClientCompany` is free text that often holds the end client. The Gallagher commercial/minimum-order rule (company "Gallagher" or `redington.co.uk`) is unrelated and unchanged.
 - Dedupe: an exact legacy `BookingID` match to canonical `sourceBookingId`, or an explicit migration provenance reference, collapses to the FIKA OS row. No fuzzy matching is used. The current schema contains no general legacy-to-canonical link, so historical records without one remain separate until explicit provenance is recorded.
 
 ## Server-only configuration
@@ -18,9 +18,10 @@ Both the staging and production App Hosting manifests list secret references onl
 
 | Secret | Value |
 | --- | --- |
-| `GALLAGHER_DASHBOARD_PIN_HASH` | Scrypt verifier produced by `npm --prefix apps/hospitality-booking run gallagher:pin-hash` (6–12 digits enforced by the utility); store only this verifier, never the PIN. |
+| `GALLAGHER_DASHBOARD_PIN_HASH` | Scrypt verifier produced by `npm --prefix apps/hospitality-booking run gallagher:pin-hash` (6–12 digits enforced by the generation utility only; an already-configured 4–12 digit verifier keeps working because only the hash is stored); store only this verifier, never the PIN. |
 | `GALLAGHER_DASHBOARD_SESSION_SECRET` | At least 32 random bytes encoded as a string. |
 | `GALLAGHER_DASHBOARD_BRIDGE_TOKEN` | One random staging-only token shared by Hospitality and Integration Hub. |
+| `GALLAGHER_DASHBOARD_APPROVED_REQUESTERS` | Comma-separated exact requester emails approved by the account owner. Required; empty means no bookings are visible. |
 | `GALLAGHER_LEGACY_SHEET_ID` | The bound source spreadsheet ID. Keep it server-side. |
 | `GALLAGHER_SHEETS_IMPERSONATED_USER` | Workspace user with read access to the bound spreadsheet. |
 

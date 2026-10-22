@@ -45,6 +45,11 @@ env:
   - variable: GALLAGHER_DASHBOARD_BRIDGE_TOKEN
     secret: GALLAGHER_DASHBOARD_BRIDGE_TOKEN
     availability: [RUNTIME]
+  # Dashboard visibility allow-list (exact requester emails, comma separated).
+  # Nothing is visible until the account owner approves requesters; unset = fail closed.
+  - variable: GALLAGHER_DASHBOARD_APPROVED_REQUESTERS
+    secret: GALLAGHER_DASHBOARD_APPROVED_REQUESTERS
+    availability: [RUNTIME]
   - variable: GALLAGHER_LEGACY_SHEET_ID
     secret: GALLAGHER_LEGACY_SHEET_ID
     availability: [RUNTIME]
