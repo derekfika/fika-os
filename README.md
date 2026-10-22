@@ -66,7 +66,11 @@ npm run staging:reset -- --confirm-staging-reset --hard-reset-planning-history -
 
 ## Architecture and documentation
 
-Read the relevant root and nested `AGENTS.md`, architecture documents, specifications, `COST-EFFICIENCY.md`, `LOCAL-WORKSPACE.md` and audit guidance before changing a boundary. Preserve stable identity, history, ownership, bounded reads, audit evidence and fail-closed semantics.
+Start with the concise [root agent guide](AGENTS.md), then only the affected app guides: [Integration Hub](apps/integration-hub/AGENTS.md), [Hospitality](apps/hospitality-booking/AGENTS.md), [Menu Planning](apps/menu-planning/AGENTS.md), [CPU Production](apps/cpu-production/AGENTS.md), [Delivered-In](apps/delivered-in/AGENTS.md) and [Logistics](apps/logistics/AGENTS.md). Root rules apply globally; scoped guides add ownership, contract boundaries, tests and links rather than repeating platform policy.
+
+Codex reads the applicable AGENTS.md hierarchy. Root and app-level CLAUDE.md files are import-only wrappers for the same guides, using [Claude's documented file imports and scoped loading](https://code.claude.com/docs/en/memory); do not maintain a second policy copy. From a root-started session, explicitly read the affected app guide before editing. Existing generated Next.js instructions remain intact. Check loaded context in the agent session when diagnosing instruction-discovery problems; links to detailed references do not automatically load every architecture document.
+
+The [detailed platform reference](docs/ai/agent-reference.md) retains the former root's safety, persistence, performance, audit and testing requirements. Use the root task-routing table to load relevant sections before changing those boundaries. A small UI change needs its app guide and the [Style Guide](docs/STYLE-GUIDE.md); CPU signing, production quantities or other data changes additionally require the applicable detailed safety rules. See also [operator workflow](docs/deployment/workflow.md), [cost guardrails](COST-EFFICIENCY.md), [local runtime](LOCAL-WORKSPACE.md) and [logging/audit strategy](docs/ai/LOGGING-AUDIT-STRATEGY.md).
 
 ## Source-control policy
 
