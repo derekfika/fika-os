@@ -156,10 +156,26 @@ export function combineStop(
     by: string;
     now?: string;
     allowExistingMovement?: boolean;
+    /** Deliberate repeat visit: never join an existing stop at this location. */
+    newVisit?: boolean;
+    /** Join this specific stop (must be an open stop at this location on this run). */
+    targetStopId?: string;
   },
 ) {
   const now = input.now || new Date().toISOString();
-  const existing = stops.find(
+  const sameVisitLocation = (stop: DeliveryStop) =>
+    stop.runId === input.runId &&
+    (input.locationOplocId
+      ? stop.locationOplocId === input.locationOplocId && !stop.oneOffEndpointId
+      : Boolean(input.oneOffEndpointId) && stop.oneOffEndpointId === input.oneOffEndpointId) &&
+    stop.status !== "completed";
+  const openVisits = stops.filter(sameVisitLocation);
+  if (input.targetStopId && !openVisits.some((stop) => stop.canonicalId === input.targetStopId))
+    throw Object.assign(new Error("That visit is not an open stop at this customer on this run."), { code: "INVALID_REQUEST" });
+  // Several open visits at one customer: never guess. Franco chooses one, or starts a new visit.
+  if (!input.newVisit && !input.targetStopId && openVisits.length > 1 && !input.transferMovementId)
+    throw Object.assign(new Error("This customer already has more than one visit on this run. Choose which visit to add this work to, or start a new visit."), { code: "LOGISTICS_VISIT_CHOICE_REQUIRED" });
+  const existing = input.newVisit ? undefined : input.targetStopId ? openVisits.find((stop) => stop.canonicalId === input.targetStopId) : stops.find(
     (stop) =>
       stop.runId === input.runId &&
       (input.locationOplocId
@@ -308,6 +324,7 @@ export function assignMovementStops(
   movement: MovementRequest,
   labels: { from?: string; to?: string },
   by: string,
+  visit: { newVisit?: boolean; targetStopId?: string } = {},
 ) {
   const scoped = stops.filter((stop) => stop.runId === runId);
   let working = scoped;
@@ -349,6 +366,7 @@ export function assignMovementStops(
       movement,
       runId,
       by,
+      ...visit,
     });
     working = [
       ...working.filter((stop) => stop.canonicalId !== next.canonicalId),

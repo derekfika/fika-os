@@ -381,11 +381,13 @@ test("journey inspector keeps mixed stops chronological and moves one constituen
   const chronological = inspector.getByRole("heading", { name: /Stops · visiting order/ });
   await expect(chronological).toBeVisible();
   const deliveryStop = inspector.getByRole("button", { name: /Delivery.*Batch Two Site/ });
-  const collectionStop = inspector.getByRole("button", { name: /Collection.*CPU production/ });
+  // Collections happen at the CUSTOMER, not at CPU.
+  const collectionStop = inspector.getByRole("button", { name: /Collection.*Batch Two Site/ });
   await expect(deliveryStop).toBeVisible();
   await expect(collectionStop).toBeVisible();
-  const stopOrder = await inspector.getByRole("list", { name: "Stops in visiting order" }).getByRole("listitem").allTextContents();
-  expect(stopOrder.findIndex((text) => text.includes("Batch Two Site"))).toBeLessThan(stopOrder.findIndex((text) => text.includes("CPU production")));
+  const stopOrder = await inspector.getByRole("list", { name: "Stops in visiting order" }).locator(":scope > li").allTextContents();
+  expect(stopOrder.findIndex((text) => text.includes("Delivery"))).toBeLessThan(stopOrder.findIndex((text) => text.includes("Collection")));
+  expect(stopOrder.join(" ")).not.toContain("CPU production");
   await deliveryStop.click();
   await expect(inspector.getByRole("heading", { name: "Individual loads" })).toBeVisible();
   const loadButtons = inspector.getByRole("button", { name: /^Load .*1 job · 10 units$/ });

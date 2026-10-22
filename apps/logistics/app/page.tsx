@@ -29,6 +29,8 @@ import type { LogisticsDayProjection, LogisticsProjectionState } from "../lib/ty
 import { projectionToDashboardData } from "../lib/projection-dashboard-adapter";
 import { RunOrganiser } from "./run-organiser";
 import type { StopPiece } from "../lib/run-stop-order";
+import { VisitChooser, type VisitChoicePrompt } from "./visit-chooser";
+import { chooseVisit, legRunId, legVisitId, visitCandidates, visitRequestFor, type VisitLoad } from "../lib/stop-visits";
 import type { CreatingRun, PendingRunTiming } from "./journey-lanes";
 import { operationalDate } from "../lib/date";
 import { clientErrorDetails, requireSuccessfulResponse } from "../lib/client-errors";
@@ -227,6 +229,46 @@ function PlannerContents() {
   };
 
   const lastFailure = useRef<{ message: string; requestId: string } | undefined>(undefined);
+  const [visitChoice, setVisitChoice] = useState<{ prompt: VisitChoicePrompt; resolve: (request?: string) => void } | undefined>();
+  /**
+   * Physical-visit choice. The server stays authoritative; this only asks Franco when his own data shows
+   * the customer already has SEVERAL visits on the target Run (an unambiguous visit is joined silently).
+   * Returns the request to send ("new" / visit id / member:<loadId>), undefined to let the server decide, or "cancel".
+   */
+  async function resolveVisitForCommand(payload: Record<string, unknown>): Promise<string | undefined> {
+    if (payload.visit !== undefined || !data?.projection) return undefined;
+    const groups = data.projection.deliveryLoads as VisitLoad[];
+    const action = String(payload.action || "");
+    let runId: string | undefined, customer: string | undefined, label: string | undefined;
+    let excludeLegs: Array<{ loadId: string; lane: "delivery" | "collection" }> = [];
+    if (action === "assign-job-to-load" && payload.lane !== "collection" && typeof payload.jobId === "string" && typeof payload.targetRunId === "string") {
+      const queued = data.projection.planningQueue.find((job) => job.id === payload.jobId);
+      const current = data.projection.deliveryLoads.find((group) => group.jobs.some((job) => job.id === payload.jobId));
+      if (current?.runId === payload.targetRunId) return undefined; // already on this run: it keeps its visit
+      runId = payload.targetRunId; customer = (queued || current)?.destinationOplocId; label = (queued || current)?.destinationLabelSnapshot;
+    } else if (["reschedule-delivery-load", "reschedule-delivery-loads"].includes(action) && (typeof payload.collectionRunId === "string" || typeof payload.targetRunId === "string")) {
+      const lane = payload.lane === "collection" ? "collection" as const : "delivery" as const;
+      const ids = (Array.isArray(payload.loadIds) ? payload.loadIds : [payload.loadId]).filter((id): id is string => typeof id === "string");
+      const group = data.projection.deliveryLoads.find((candidate) => ids.some((id) => candidate.id === id || (candidate.loadIds || []).includes(id)));
+      if (!group) return undefined;
+      runId = (lane === "collection" ? payload.collectionRunId || payload.targetRunId : payload.targetRunId) as string;
+      const ownVisit = Boolean(legVisitId(group, lane));
+      const otherVisit = Boolean(legVisitId(group, lane === "collection" ? "delivery" : "collection"));
+      const moves = runId !== legRunId(group, lane);
+      if (!(moves || (!ownVisit && otherVisit))) return undefined; // plain time edit on the same run: membership is unchanged
+      customer = group.destinationOplocId; label = group.destinationLabelSnapshot;
+      excludeLegs = [{ loadId: group.id, lane }];
+    }
+    if (!runId || !customer) return undefined;
+    const candidates = visitCandidates(groups, { runId, customerOplocId: customer, excludeLegs });
+    if (chooseVisit(candidates).kind !== "choice-required") return undefined;
+    const choice = await new Promise<string | undefined>((resolve) => setVisitChoice({
+      prompt: { customer: label || customer!, options: candidates.map((candidate) => ({ request: visitRequestFor(candidate), label: `${label || customer} · ${candidate.firstTime || "time to confirm"}`, detail: `${candidate.legs.length} ${candidate.legs.length === 1 ? "piece" : "pieces"} of work in this visit` })) },
+      resolve,
+    }));
+    setVisitChoice(undefined);
+    return choice === undefined ? "cancel" : choice;
+  }
   const recordError = (cause: unknown, fallback: string) => {
     const details = clientErrorDetails(cause, fallback);
     lastFailure.current = { message: details.message, requestId: details.requestId || "" };
@@ -581,9 +623,12 @@ function PlannerContents() {
     if (failure) { setError(failure.message); setErrorReference(failure.requestId); }
     return false;
   }
-  async function placementCommand(payload: object): Promise<PlacementOutcome> {
+  async function placementCommand(requested: object): Promise<PlacementOutcome> {
     const context = dayContext;
     const summaryContext = weekContext;
+    const visit = await resolveVisitForCommand(requested as Record<string, unknown>);
+    if (visit === "cancel") return { ok: false, uncertain: false, message: "Placement cancelled. Nothing was changed." };
+    const payload = visit ? { ...requested, visit } : requested;
     try {
       const response = await fetch("/api/logistics", {
         method: "POST",
@@ -780,6 +825,7 @@ function PlannerContents() {
     loadFresh={loadFresh}
     act={act}
     actAndReconcile={actAndReconcile}
+    visitChoice={visitChoice ? { prompt: visitChoice.prompt, resolve: visitChoice.resolve } : undefined}
     placementCommand={placementCommand}
     createRun={createRun}
     createMovement={createMovement}
@@ -995,6 +1041,7 @@ type RealPlannerProps = {
   loadFresh: (silent?: boolean, mode?: LoadMode) => Promise<LoadResult>;
   act: (payload: object) => Promise<boolean | Record<string, unknown>>;
   actAndReconcile: (payload: object) => Promise<boolean | Record<string, unknown>>;
+  visitChoice?: { prompt: VisitChoicePrompt; resolve: (request?: string) => void };
   placementCommand: (payload: object) => Promise<PlacementOutcome>;
   createRun: (vehicleId: LogisticsVehicleId, departure?: string, returnTime?: string, canonicalId?: string) => Promise<boolean | Record<string, unknown>>;
   createMovement: () => void;
@@ -1817,6 +1864,7 @@ function RealPlanner(props: RealPlannerProps) {
       {props.error && <div className="alert" role="alert"><span>{props.error}{props.errorReference && <> <small>Reference: {props.errorReference}</small></>}</span><button className="secondary" onClick={() => void props.load(true, props.projectionNeedsMaterialisation)} disabled={props.refreshing}>{props.projectionNeedsMaterialisation ? "Materialise and retry" : "Try again"}</button>{props.authRequired && <button className="secondary" onClick={props.onSignInAgain}>Sign in again</button>}</div>}
       {props.showMovement && <MovementForm draft={props.draft} setDraft={props.setDraft} onClose={() => props.setShowMovement(false)} onSave={props.createMovement} busy={props.busy} />}
       {needsMovementLabels && locations.loading && <p role="status">Loading governed movement labels…</p>}{needsMovementLabels && locations.error && <div className="degraded-note" role="alert">{locations.error} <button onClick={() => void locations.retry()}>Retry movement labels</button></div>}<section className="mock-selected-day"><div><span>▣</span><strong>{selectedDateLabel}</strong><small>{metricsReady ? loadCount ?? "—" : "—"} loads · {metricsReady ? data?.planner.movements.length ?? 0 : "—"} movements · {metricsReady ? vehicleCount : "—"} vans / {metricsReady ? runs.length : "—"} runs &nbsp;·&nbsp; {metric(summary?.scheduledStops)} scheduled · {queueCount} in queue · {metric(summary?.needsTime)} needs time · {metric(summary?.attention)} attention</small></div><div className="mock-actions"><button onClick={() => props.setShowRunCreate(true)}>＋ New run</button><button onClick={() => props.setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button><button onClick={() => void props.load(true)} disabled={props.refreshing} aria-busy={props.refreshing}>{props.refreshing ? "Refreshing…" : "↻ Refresh"}</button><a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>▦ Driver view</a></div></section>
+      {props.visitChoice && <VisitChooser prompt={props.visitChoice.prompt} onChoose={props.visitChoice.resolve} />}
       {props.showRunCreate && <RunCreatePopover driverId={props.newRunDriverId} setDriverId={props.setNewRunDriverId} driverOptions={props.data?.runs || []} onCreate={props.createRun} onClose={() => props.setShowRunCreate(false)} />}
       <section className={`mock-workspace${queueCollapsed ? " queue-collapsed" : ""}`}>
         <aside className="mock-queue" aria-label="Planning queue" data-logistics-planning-queue>

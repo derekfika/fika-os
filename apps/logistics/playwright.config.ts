@@ -26,6 +26,7 @@ export default defineConfig({
     { name: "desktop-usability-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /desktop-usability.*\.spec\.ts/ },
     { name: "run-planning-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /run-planning\.spec\.ts/ },
     { name: "mobile-visit-order-chromium", use: { ...devices["Pixel 7"] }, testMatch: /mobile-visit-order\.spec\.ts/ },
+    { name: "stop-visits-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /stop-visits\.spec\.ts/ },
     { name: "mobile-chromium", use: { ...devices["Pixel 7"] }, testMatch: /mobile\.spec\.ts/ },
   ],
 });

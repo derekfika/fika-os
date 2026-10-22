@@ -17,10 +17,10 @@ const requirement = (f, id, site, window = { startTime: '10:00', endTime: '11:00
 const run = (f, id) => f.records.get(RUNS + '/' + id);
 const reconcile = f => f.materialisation.reconcileLogisticsDay(f.date, 'Operator');
 const jobVersion = (f, id) => f.records.get('fikaLogisticsJobsV1/logistics-job:req:' + id).version;
-async function assign(f, id, runId, time) {
+async function assign(f, id, runId, time, extra = {}) {
   // Joining an existing placement (same run, OPLOC and time) must name that load's current version.
   const existing = [...f.records].filter(([key]) => key.startsWith('fikaLogisticsDeliveryLoadsV1/')).map(([, load]) => load).find(load => load.runId === runId && load.scheduledTime === time && load.status !== 'cancelled' && f.records.get('fikaLogisticsJobsV1/logistics-job:req:' + id).destinationOplocId === load.destinationOplocId);
-  const result = await f.post({ action: 'assign-job-to-load', jobId: 'logistics-job:req:' + id, targetRunId: runId, scheduledTime: time, expectedJobVersion: jobVersion(f, id), expectedRunVersion: run(f, runId).version, ...(existing ? { expectedLoadVersion: existing.version, expectedLoadVersions: { [existing.id]: existing.version } } : {}) });
+  const result = await f.post({ action: 'assign-job-to-load', jobId: 'logistics-job:req:' + id, targetRunId: runId, scheduledTime: time, expectedJobVersion: jobVersion(f, id), expectedRunVersion: run(f, runId).version, ...extra, ...(existing ? { expectedLoadVersion: existing.version, expectedLoadVersions: { [existing.id]: existing.version } } : {}) });
   assert.equal(result.response.status, 200, JSON.stringify(result.body));
 }
 async function withThreeStops() {
@@ -189,7 +189,7 @@ test('physical stops: work sharing one placement is ONE stop (any member id name
   const f = setup();
   f.requirements.push(requirement(f, 'a', 'site:m'), requirement(f, 'b', 'site:m'), requirement(f, 'c', 'site:m'));
   await reconcile(f);
-  await assign(f, 'a', 'r1', '09:00'); await assign(f, 'b', 'r1', '09:00'); await assign(f, 'c', 'r1', '12:00');
+  await assign(f, 'a', 'r1', '09:00'); await assign(f, 'b', 'r1', '09:00'); await assign(f, 'c', 'r1', '12:00', { visit: 'new' }); // deliberate repeat visit
   const projection = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date);
   const stops = projection.deliveryLoads.filter(load => load.runId === 'r1');
   assert.equal(stops.length, 2, 'two physical stops: the shared 09:00 placement and the 12:00 repeat visit');

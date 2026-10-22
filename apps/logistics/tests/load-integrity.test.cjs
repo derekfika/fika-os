@@ -233,6 +233,11 @@ for (const unrelated of [false, true]) test('withdrawal aggregates duplicate rem
   assert.equal(assignments(f).length, unrelated ? 1 : 0); assert.equal(loads(f)[0].status, unrelated ? 'planned' : 'cancelled'); assert.equal(loads(f)[0].version, original.version + 1);
   const before = structuredClone([...f.records]); await reconcile(f); assert.deepEqual([...f.records], before);
 });
+/** Loads created before visit identity existed carry no visit id: the original placement rule (identical placement = one stop) applies. */
+async function legacyPlacements(f) {
+  for (const value of f.records.values()) if (value && value.destinationOplocId && value.scheduledTime) { delete value.deliveryVisitId; delete value.collectionVisitId; }
+  await f.materialisation.rebuildLogisticsProjection(f.date, 'Operator'); return f;
+}
 async function merged() {
   const f = await assigned(); const first = loads(f)[0]; const job = jobs(f)[0];
   f.seed('fikaLogisticsDeliveryLoadsV1', 'historical-load:b', { ...first, id: 'historical-load:b' });
@@ -291,8 +296,8 @@ test('second owner becoming unauthorized inside transaction commits neither memb
   for (const load of loads(f)) { assert.equal(load.scheduledTime, '10:30'); assert.equal(load.version, originals.find(l => l.id === load.id).version); }
 });
 for (const ids of [[], ['x', 'x'], Array.from({ length: 51 }, (_, i) => 'x' + i)]) test('bulk rejects invalid bounded ID set length=' + ids.length, async () => { const f = setup(); assert.equal((await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-loads', loadIds: ids, scheduledTime: '10:00' })).response.status, 422); });
-test('one explicit divergent operation legitimately splits the projection', async () => {
-  const f = await merged(); const load = loads(f)[0]; const result = await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '10:45' }); assert.equal(result.response.status, 200); assert.equal(f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).deliveryLoads.length, 2);
+test('legacy loads (no visit id): one explicit divergent operation legitimately splits the projection', async () => {
+  const f = await legacyPlacements(await merged()); const load = loads(f)[0]; const result = await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '10:45' }); assert.equal(result.response.status, 200); assert.equal(f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).deliveryLoads.length, 2);
 });
 test('clean multi-job load passes membership checks and marks loaded once', async () => { const f = await assigned(); f.requirements.push(requirement(f, 'b')); await reconcile(f); assert.equal((await assign(f, 'logistics-job:req:b')).response.status, 200); const load = loads(f)[0]; const result = await f.post({ ...executionAuthority(f), action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version }); assert.equal(result.response.status, 200); assert.equal(loads(f)[0].version, load.version + 1); });
 
@@ -301,7 +306,7 @@ test('merged placement resolves one collision-adjusted arrival for every constit
   const selected = loads(f).filter(l => l.id !== 'collision'); const result = await f.post(bulk(f, { loadIds: selected.map(l => l.id), scheduledTime: '10:45', scheduledEnd: undefined }));
   assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.equal(result.body.loads[0].scheduledTime, '11:00'); assert.equal(result.body.loads[1].scheduledTime, '11:00');
 });
-test('incompatible grouping semantics cannot be bundled into one placement', async () => { const f = await merged(); const second = loads(f)[1]; f.seed('fikaLogisticsDeliveryLoadsV1', second.id, { ...second, scheduledEnd: '12:00' }); const before = structuredClone([...f.records]); assert.equal((await f.post(bulk(f))).response.status, 409); assert.deepEqual([...f.records], before); });
+test('legacy loads (no visit id): incompatible grouping semantics cannot be bundled into one placement', async () => { const f = await legacyPlacements(await merged()); const second = loads(f)[1]; f.seed('fikaLogisticsDeliveryLoadsV1', second.id, { ...second, scheduledEnd: '12:00' }); const before = structuredClone([...f.records]); assert.equal((await f.post(bulk(f))).response.status, 409); assert.deepEqual([...f.records], before); });
 
 test('merged projected delivery clear unschedules every canonical load and rebuilds without stale timing', async () => {
   const f = await merged();
@@ -424,4 +429,17 @@ test('single projected clear accepts plural canonical identity and per-load CAS'
   assert.equal(result.response.status, 200, JSON.stringify(result.body));
   assert.equal(Object.hasOwn(result.body, 'scheduledTime'), false);
   assert.equal(loads(f)[0].version, load.version + 1);
+});
+
+test('visit-bearing loads: editing one loads time does NOT split an established physical stop, and a bulk move may carry members with different windows', async () => {
+  const f = await merged(); const [first, second] = loads(f);
+  assert.ok(first.deliveryVisitId && first.deliveryVisitId === second.deliveryVisitId, 'both loads belong to one visit');
+  const edited = await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-load', loadId: first.id, expectedLoadVersion: first.version, scheduledTime: '10:45' });
+  assert.equal(edited.response.status, 200, JSON.stringify(edited.body));
+  const projection = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date);
+  assert.equal(projection.deliveryLoads.length, 1, 'still ONE projected stop');
+  assert.equal(projection.deliveryLoads[0].jobCount, 2);
+  assert.equal(projection.deliveryLoads[0].scheduledTime, '10:30', 'the stop is shown from its earliest member time');
+  f.seed('fikaLogisticsDeliveryLoadsV1', second.id, { ...f.records.get('fikaLogisticsDeliveryLoadsV1/' + second.id), scheduledEnd: '12:00' });
+  assert.equal((await f.post(bulk(f))).response.status, 200, 'members of one visit may differ in window');
 });

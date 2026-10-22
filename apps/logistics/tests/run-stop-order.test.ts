@@ -4,8 +4,8 @@ import { applyStoredStopOrder, emptyRunRetirementBlocker, physicalStops, project
 import { projectionToDashboardData } from "../lib/projection-dashboard-adapter";
 import type { LogisticsDayProjection } from "../lib/types";
 
-const key = (load: { id: string; destinationOplocId?: string; scheduledTime?: string }) => `${load.destinationOplocId}|${load.scheduledTime}`;
-const load = (id: string, destinationOplocId: string, scheduledTime = "10:00") => ({ id, destinationOplocId, scheduledTime });
+const key = (load: { id: string; destinationOplocId?: string; scheduledTime?: string }, lane: string) => `${lane}|${load.destinationOplocId}|${load.scheduledTime}`;
+const load = (id: string, destinationOplocId: string, scheduledTime = "10:00") => ({ id, destinationOplocId, scheduledTime, serviceDate: "2026-10-28", originOplocId: "cpu", status: "planned" as const });
 
 test("merged loads at one placement are ONE physical stop and any member id names it", () => {
   const work = { native: [], legs: [{ load: load("a", "site:1"), lane: "delivery" as const }, { load: load("b", "site:1"), lane: "delivery" as const }, { load: load("c", "site:2", "11:00"), lane: "delivery" as const }] };

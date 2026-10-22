@@ -1,4 +1,5 @@
 import type { DeliveryLoad, DeliveryRun, DeliveryStop } from "./types";
+import { visitStopId, type VisitLoad } from "./stop-visits";
 
 /**
  * Canonical visiting order for a Run.
@@ -12,24 +13,29 @@ import type { DeliveryLoad, DeliveryRun, DeliveryStop } from "./types";
  */
 export type RunStopWork = {
   native: Pick<DeliveryStop, "canonicalId" | "canonicalLoadIds">[];
-  legs: Array<{ load: Pick<DeliveryLoad, "id"> & Partial<DeliveryLoad>; lane: "delivery" | "collection" }>;
+  legs: Array<{ load: VisitLoad; lane: "delivery" | "collection" }>;
 };
 
 export const projectedStopId = (lane: "delivery" | "collection", loadId: string) => `projection-stop:${lane}:${loadId}`;
 
 export type PhysicalStop = { key: string; ids: string[] };
 
-/** Every physical stop of the run, as the set of identities that may name it. */
-export function physicalStops(work: RunStopWork, groupKey: (load: RunStopWork["legs"][number]["load"]) => string): PhysicalStop[] {
+/**
+ * Every physical stop of the run, as the set of identities that may name it.
+ * `groupKey(load, lane)` is the physical-stop identity (see stop-visits.physicalStopKey): legs that
+ * share a visit id are ONE stop (a mixed delivery + collection visit when both lanes share it).
+ */
+export function physicalStops(work: RunStopWork, groupKey: (load: RunStopWork["legs"][number]["load"], lane: "delivery" | "collection") => string): PhysicalStop[] {
   const result: PhysicalStop[] = work.native.map((stop) => ({ key: stop.canonicalId, ids: [stop.canonicalId] }));
   const groups = new Map<string, string[]>();
   for (const leg of work.legs) {
     // A native stop that already owns the load represents it; never double count a visit.
     if (work.native.some((stop) => (stop.canonicalLoadIds || []).includes(leg.load.id))) continue;
-    const key = `${leg.lane}|${groupKey(leg.load)}`;
-    groups.set(key, [...(groups.get(key) || []), projectedStopId(leg.lane, leg.load.id)]);
+    const key = groupKey(leg.load, leg.lane);
+    const visit = leg.lane === "delivery" ? leg.load.deliveryVisitId : leg.load.collectionVisitId;
+    groups.set(key, [...(groups.get(key) || []), projectedStopId(leg.lane, leg.load.id), ...(visit ? [visitStopId(visit)] : [])]);
   }
-  for (const [key, ids] of groups) result.push({ key, ids });
+  for (const [key, ids] of groups) result.push({ key, ids: [...new Set(ids)] });
   return result;
 }
 
@@ -63,12 +69,12 @@ export function emptyRunRetirementBlocker(run: Pick<DeliveryRun, "status" | "ord
  * Applies a stored order to the current stop ids. Stops named in `stored` keep that
  * relative order; stops not yet ordered (new work) follow, ordered by `fallback`.
  */
-export function applyStoredStopOrder<T extends { id: string; aliases?: string[] }>(stops: T[], stored: string[], fallback: (a: T, b: T) => number): T[] {
+export function applyStoredStopOrder<T extends { id: string; aliases?: string[] }>(stops: T[], stored: string[], fallback: (a: T, b: T) => number, tie: (a: T, b: T) => number = () => 0): T[] {
   const index = (stop: T) => {
     const positions = [stop.id, ...(stop.aliases || [])].map((id) => stored.indexOf(id)).filter((position) => position >= 0);
     return positions.length ? Math.min(...positions) : -1;
   };
-  const ordered = stops.filter((stop) => index(stop) >= 0).sort((a, b) => index(a) - index(b));
+  const ordered = stops.filter((stop) => index(stop) >= 0).sort((a, b) => index(a) - index(b) || tie(a, b));
   const unordered = stops.filter((stop) => index(stop) < 0).sort(fallback);
   return [...ordered, ...unordered];
 }

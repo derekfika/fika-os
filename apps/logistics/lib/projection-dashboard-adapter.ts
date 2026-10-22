@@ -4,6 +4,7 @@ import { fulfilmentWorkstream } from "../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, LogisticsDayProjection } from "./types";
 import { buildPlannerDay, type PlannerLine, type PlannerWorkGroup } from "./planner-read-model";
 import { applyStoredStopOrder } from "./run-stop-order";
+import { visitStopId } from "./stop-visits";
 
 /** Adapts the durable projection without rereading upstream authorities. */
 export function projectionToDashboardData(projection: LogisticsDayProjection) {
@@ -67,8 +68,10 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
         canonicalJobVersions: Object.fromEntries(load.jobs.filter(job => job.version !== undefined).map(job => [job.id, job.version])),
         runId,
         sequence: (loadStopIdsByRun.get(runId)?.length || 0) + 1,
-        locationOplocId: collection ? load.originOplocId : load.destinationOplocId,
-        locationLabelSnapshot: collection ? "CPU production" : load.destinationLabelSnapshot || load.destinationOplocId,
+        // Both legs happen at the customer. CPU (originOplocId) is only the eventual return destination.
+        locationOplocId: load.destinationOplocId,
+        locationLabelSnapshot: load.destinationLabelSnapshot || load.destinationOplocId,
+        ...((collection ? load.collectionVisitId : load.deliveryVisitId) ? { visitId: (collection ? load.collectionVisitId : load.deliveryVisitId) as string } : {}),
         requirementRefs: load.jobs.map((job) => ({ requirementId: job.id, sourceVersion: job.sourceVersion || 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], ...(job.workstream ? { workstream: job.workstream } : {}) })),
         movementRequestIds: [],
         ...(scheduledTime ? (scheduledEnd ? { plannedWindow: { startTime: scheduledTime, endTime: scheduledEnd } } : { plannedArrivalTime: scheduledTime }) : {}),
@@ -99,9 +102,9 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
     const nativeIds = (run.orderedStopIds || []).filter((id) => actualStops.some((stop) => stop.canonicalId === id));
     const candidates = [
       ...nativeIds.map((id) => ({ id, stop: actualStops.find((stop) => stop.canonicalId === id)! })),
-      ...(loadStopsByRun.get(run.canonicalId) || []).map((stop) => ({ id: stop.canonicalId, stop, aliases: (stop.canonicalLoadIds || []).map((loadId) => `projection-stop:${stop.movementType === "collection" ? "collection" : "delivery"}:${loadId}`) })),
+      ...(loadStopsByRun.get(run.canonicalId) || []).map((stop) => ({ id: stop.canonicalId, stop, aliases: [...(stop.canonicalLoadIds || []).map((loadId) => `projection-stop:${stop.movementType === "collection" ? "collection" : "delivery"}:${loadId}`), ...(stop.visitId ? [visitStopId(stop.visitId)] : [])] })),
     ];
-    const ordered = applyStoredStopOrder(candidates, run.orderedStopIds || [], (left, right) => plannedStart(left.stop).localeCompare(plannedStart(right.stop)) || left.id.localeCompare(right.id));
+    const ordered = applyStoredStopOrder(candidates, run.orderedStopIds || [], (left, right) => plannedStart(left.stop).localeCompare(plannedStart(right.stop)) || left.id.localeCompare(right.id), (left, right) => Number(left.stop.movementType === "collection") - Number(right.stop.movementType === "collection"));
     ordered.forEach((item, index) => stopOrderById.set(item.id, index + 1));
     return { ...run, orderedStopIds: Array.from(new Set(ordered.map((item) => item.id))) };
   });
@@ -168,8 +171,8 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
     workGroups.push({
       groupKey: `projection-collection:${load.id}`,
       serviceDate: projection.serviceDate,
-      destinationOplocId: load.originOplocId,
-      destinationLabel: "CPU production",
+      destinationOplocId: load.destinationOplocId,
+      destinationLabel: load.destinationLabelSnapshot || load.destinationOplocId,
       requiredTimes: [],
       requirementRefs: load.jobs.map((job) => ({ requirementId: job.id, sourceVersion: job.sourceVersion || 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], sourceEntityId: job.sourceId, status: "ready_for_planning", workstream: job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType }), ...(runId ? { runId, stopId: collectionStopId } : {}) })),
       requirementCount: load.jobCount,

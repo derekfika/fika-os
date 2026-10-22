@@ -49,6 +49,7 @@ import { aggregateDelivery, assertLoadVersion, compatibleLoad, assertDispatchabl
 import { assignmentIntegrityDiagnostic } from "@/lib/assignment-integrity-diagnostic";
 import { executeProjected, projectedActions, executionGroupKey } from "@/lib/projected-execution";
 import { emptyRunRetirementBlocker, validateRunStopOrder } from "@/lib/run-stop-order";
+import { projectionGroupKey, physicalStopKey, chooseVisit, newVisitId, visitCandidates, legRunId, legVisitId } from "@/lib/stop-visits";
 import { readRunWork, assertRunReady, workOutstanding, workIssuesOpen, finaliseRun } from "@/lib/run-execution";
 import { assignCanonicalJob, assertLoadAssignmentsCurrent } from "@/lib/load-assignment";
 import { CPU_PRODUCTION_LOCATION_ID, CPU_SITE_OPLOC_ID } from "../../../../shared/production-location";
@@ -174,8 +175,8 @@ function nextAvailableLoadTime(loads: import("@/lib/types").DeliveryLoad[], inpu
   const conflicts = loads.flatMap((load) => {
     if (load.id === input.loadId || load.status === "cancelled" || !input.runId) return [];
     const sameRun = input.lane === "collection" ? (load.collectionRunId || load.runId) === input.runId : load.runId === input.runId;
-    const destination = input.lane === "collection" ? load.originOplocId : load.destinationOplocId;
-    if (!sameRun || destination === input.destinationOplocId) return [];
+    // Both legs happen at the customer; CPU is only the eventual return destination.
+    if (!sameRun || load.destinationOplocId === input.destinationOplocId) return [];
     const start = input.lane === "collection" ? load.collectionScheduledTime : load.scheduledTime;
     if (!start) return [];
     return [{ id: load.id, start, end: input.lane === "collection" ? load.collectionScheduledEnd : load.scheduledEnd }];
@@ -710,6 +711,9 @@ async function handlePost(request: NextRequest) {
       resolutionNotes?: string;
       groupKey?: string;
       collectionRequired?: boolean;
+      visit?: string;
+      newVisit?: boolean;
+      targetStopId?: string;
       vehicleSlot?: "van-1" | "van-2";
       vehicleId?: "van1" | "van2";
       driverId?: string;
@@ -834,12 +838,14 @@ async function handlePost(request: NextRequest) {
       validatePlannedSchedule(undefined, { startTime: scheduledTime, ...(body.scheduledEnd ? { endTime: body.scheduledEnd } : {}) });
       const result = await runTracedTransaction(async transaction => {
         await assertProjectionCurrent(job.serviceDate, transaction);
-        return assignCanonicalJob(transaction, { jobId, targetRunId: body.targetRunId, scheduledTime, scheduledEnd: body.scheduledEnd, resolveSchedule: (loads, currentJob) => resolveCanonicalLoadSchedule(loads, currentJob, body.targetRunId, scheduledTime, body.scheduledEnd), collectionRequired: body.collectionRequired, expectedJobVersion: body.expectedJobVersion, expectedLoadVersions: body.expectedLoadVersions }, by, now);
+        return assignCanonicalJob(transaction, { jobId, targetRunId: body.targetRunId, scheduledTime, scheduledEnd: body.scheduledEnd, resolveSchedule: (loads, currentJob) => resolveCanonicalLoadSchedule(loads, currentJob, body.targetRunId, scheduledTime, body.scheduledEnd), collectionRequired: body.collectionRequired, visit: body.visit, expectedJobVersion: body.expectedJobVersion, expectedLoadVersions: body.expectedLoadVersions }, by, now);
       });
       if (result.changed) {
         const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "assignment", entityId: job.id, relatedEntityId: result.load.id, changeType: "job-assigned", revision: result.load.version, changedAt: now, actorId });
         const plannedEvent = result.plannedRun ? await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "run", entityId: result.plannedRun.canonicalId, changeType: "canonical-work-planned", revision: result.plannedRun.version, changedAt: now, actorId }) : undefined;
-        await rebuildLogisticsProjection(job.serviceDate, by, plannedEvent?.sequence || event.sequence);
+        let latest = plannedEvent?.sequence || event.sequence;
+        for (const member of result.backfilled || []) latest = Math.max(latest, (await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "deliveryLoad", entityId: member.id, changeType: "visit-association-backfilled", revision: member.version, changedAt: now, actorId })).sequence);
+        await rebuildLogisticsProjection(job.serviceDate, by, latest);
       }
       return NextResponse.json(result.load);
     }
@@ -858,7 +864,7 @@ async function handlePost(request: NextRequest) {
         const loads = snapshots.map(snapshot => snapshot.data() as import("@/lib/types").DeliveryLoad);
         const first = loads[0];
         if (loads.some(load => load.serviceDate !== first.serviceDate)) throw new HttpError(409, "All projected loads must belong to the same service date.");
-        const placementKey = (load: import("@/lib/types").DeliveryLoad) => JSON.stringify([load.serviceDate, load.originOplocId, load.destinationOplocId, load.runId, load.vehicleId, load.scheduledTime, load.scheduledEnd, Boolean(load.collectionRequired), load.collectionRunId, load.collectionScheduledTime, load.collectionScheduledEnd, load.status]);
+        const placementKey = (load: import("@/lib/types").DeliveryLoad) => projectionGroupKey(load);
         if (loads.some(load => placementKey(load) !== placementKey(first))) throw new HttpError(409, "Projected loads no longer form one compatible placement. Refresh planning.");
         const projection = await assertProjectionCurrent(first.serviceDate, transaction);
         const projectedGroup = projection.deliveryLoads.find(load => (load.loadIds || [load.id]).some(id => loadIds.includes(id)));
@@ -906,11 +912,13 @@ async function handlePost(request: NextRequest) {
       if (body.lane && !["delivery", "collection"].includes(body.lane)) throw new HttpError(422, "Choose delivery or collection.");
       if (body.targetRunId && body.collectionRunId && collection && body.targetRunId !== body.collectionRunId) throw new HttpError(422, "Choose one canonical collection run.");
       const requestedRunId = collection ? body.collectionRunId || body.targetRunId : body.targetRunId;
+      let backfilledByCommand: import("@/lib/types").DeliveryLoad[] = [];
       const result = await runTracedTransaction(async transaction => {
+        backfilledByCommand = [];
         const snapshots = await Promise.all(loadIds.map(id => transaction.get(deliveryLoads().doc(id))));
         if (snapshots.some(snapshot => !snapshot.exists)) throw new HttpError(404, "Delivery load not found.");
         const loads = snapshots.map(snapshot => snapshot.data() as import("@/lib/types").DeliveryLoad);
-        const placementKey = (load: import("@/lib/types").DeliveryLoad) => JSON.stringify([load.serviceDate, load.originOplocId, load.destinationOplocId, load.runId, load.vehicleId, load.scheduledTime, load.scheduledEnd, Boolean(load.collectionRequired), load.collectionRunId, load.collectionScheduledTime, load.collectionScheduledEnd, load.status]);
+        const placementKey = (load: import("@/lib/types").DeliveryLoad) => projectionGroupKey(load);
         for (const load of loads) {
           assertLoadVersion(load, body.expectedLoadVersions?.[load.id] ?? (loadIds.length === 1 ? body.expectedLoadVersion : undefined));
           await assertLoadAssignmentsCurrent(transaction, load);
@@ -955,13 +963,45 @@ async function handlePost(request: NextRequest) {
           : usableCurrentDuration ?? (collection ? undefined : DEFAULT_DELIVERY_LOAD_DURATION_MINUTES);
         const requestedEnd = requestedDuration === undefined ? undefined : addSchedulableMinutes(requestedTime, requestedDuration);
         if (requestedDuration !== undefined && !requestedEnd) throw new HttpError(409, "The requested window does not fit within the operational day.");
-        const effectiveScheduledTime = nextAvailableLoadTime(currentLoads, { runId, lane: collection ? "collection" : "delivery", destinationOplocId: collection ? first.originOplocId : first.destinationOplocId, start: requestedTime, end: body.scheduledEnd || requestedEnd });
+        const effectiveScheduledTime = nextAvailableLoadTime(currentLoads, { runId, lane: collection ? "collection" : "delivery", destinationOplocId: first.destinationOplocId, start: requestedTime, end: body.scheduledEnd || requestedEnd });
         if (body.resizeEndOnly && effectiveScheduledTime !== requestedTime) throw new HttpError(409, "The resized window conflicts with current work; its start must remain fixed.");
         const effectiveScheduledEnd = requestedDuration === undefined ? undefined : addSchedulableMinutes(effectiveScheduledTime, requestedDuration);
         if (requestedDuration !== undefined && !effectiveScheduledEnd) throw new HttpError(409, "The requested window does not fit within the operational day.");
+        // Physical visit: a time edit on the same run never changes membership. Moving a leg to another run,
+        // first scheduling a collection beside a visited delivery, or an explicit choice re-resolves the visit.
+        const laneName = collection ? "collection" as const : "delivery" as const;
+        const otherLane = collection ? "delivery" as const : "collection" as const;
+        const currentLegRun = legRunId(first, laneName);
+        const legMovesRun = Boolean(runId) && runId !== currentLegRun;
+        const hasOwnVisit = loads.some(load => legVisitId(load, laneName));
+        const hasOtherLaneVisit = loads.some(load => legVisitId(load, otherLane));
+        let resolvedVisit: string | undefined;
+        const backfilledLoads: import("@/lib/types").DeliveryLoad[] = [];
+        if (runId && (body.visit || legMovesRun || (!hasOwnVisit && hasOtherLaneVisit))) {
+          const choice = chooseVisit(visitCandidates(currentLoads.concat(loads), { runId, customerOplocId: first.destinationOplocId, excludeLegs: loads.map(load => ({ loadId: load.id, lane: laneName })) }), body.visit);
+          if (choice.kind === "choice-required") throw Object.assign(new HttpError(422, "This customer already has more than one visit on this run. Choose which visit to add this work to, or start a new visit."), { code: "LOGISTICS_VISIT_CHOICE_REQUIRED" });
+          if (choice.kind === "invalid") throw new HttpError(422, choice.reason);
+          if (choice.kind === "new") resolvedVisit = newVisitId();
+          else if (choice.candidate.visitId) resolvedVisit = choice.candidate.visitId;
+          else {
+            resolvedVisit = newVisitId();
+            for (const leg of choice.candidate.legs) {
+              const member = currentLoads.find(load => load.id === leg.loadId) || loads.find(load => load.id === leg.loadId);
+              if (!member || loadIds.includes(member.id) && leg.lane === laneName) continue;
+              const touched = backfilledLoads.find(item => item.id === member.id);
+              const field = leg.lane === "delivery" ? "deliveryVisitId" : "collectionVisitId";
+              const updated = touched ? { ...touched, [field]: resolvedVisit } : { ...member, [field]: resolvedVisit, updatedAt: now, version: member.version + 1, audit: [...member.audit, { action: "visit-association-backfilled", at: now, by, version: member.version + 1 }] };
+              if (touched) backfilledLoads.splice(backfilledLoads.indexOf(touched), 1);
+              backfilledLoads.push(updated);
+            }
+          }
+        }
+        backfilledByCommand = backfilledLoads.filter(item => !loadIds.includes(item.id));
         const nextLoads = loads.map(load => {
           const timing = replaceLoadTiming(load, collection ? "collection" : "delivery", { start: effectiveScheduledTime, ...(effectiveScheduledEnd ? { end: effectiveScheduledEnd } : {}) });
-          return { ...timing, ...(collection ? { collectionRequired: true, collectionRunId: runId } : { runId, vehicleId }), updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: collection ? "collection-rescheduled" : "load-rescheduled", at: now, by, version: load.version + 1 }] };
+          const visitPatch = resolvedVisit ? (collection ? { collectionVisitId: resolvedVisit } : { deliveryVisitId: resolvedVisit }) : {};
+          const sameLoadBackfill = backfilledLoads.find(item => item.id === load.id);
+          return { ...timing, ...(sameLoadBackfill ? { deliveryVisitId: sameLoadBackfill.deliveryVisitId, collectionVisitId: sameLoadBackfill.collectionVisitId } : {}), ...visitPatch, ...(collection ? { collectionRequired: true, collectionRunId: runId } : { runId, vehicleId }), updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: collection ? "collection-rescheduled" : "load-rescheduled", at: now, by, version: load.version + 1 }] };
         });
         for (const next of nextLoads) await assertLoadAssignmentsCurrent(transaction, next);
         if (targetRun?.status === "draft") {
@@ -969,6 +1009,7 @@ async function handlePost(request: NextRequest) {
           transaction.set(runs().doc(targetRun.canonicalId), { ...targetRun, status: "planned", version, updatedAt: now, audit: [...targetRun.audit, { action: "canonical-work-planned", at: now, by, version }] });
         }
         for (const next of nextLoads) transaction.set(deliveryLoads().doc(next.id), next);
+        for (const member of backfilledByCommand) transaction.set(deliveryLoads().doc(member.id), member);
         return nextLoads;
       });
       let sequence = 0;
@@ -976,6 +1017,7 @@ async function handlePost(request: NextRequest) {
         const event = await appendLogisticsChange({ serviceDate: load.serviceDate, entityType: "deliveryLoad", entityId: load.id, changeType: collection ? "collection-rescheduled" : "load-rescheduled", revision: load.version, changedAt: now, actorId });
         sequence = Math.max(sequence, event.sequence);
       }
+      for (const member of backfilledByCommand) sequence = Math.max(sequence, (await appendLogisticsChange({ serviceDate: member.serviceDate, entityType: "deliveryLoad", entityId: member.id, changeType: "visit-association-backfilled", revision: member.version, changedAt: now, actorId })).sequence);
       await rebuildLogisticsProjection(result[0].serviceDate, by, sequence);
       return NextResponse.json(body.action === "reschedule-delivery-loads" ? { ...result[0], loads: result } : result[0]);
     }
@@ -1246,7 +1288,7 @@ async function handlePost(request: NextRequest) {
         if (run.version !== body.expectedRunVersion) throw new HttpError(409, "This run changed elsewhere. Refresh before saving the stop order.");
         assertPlanningOpen(run);
         const work = await readRunWork(transaction, run);
-        const problem = validateRunStopOrder(body.stopIds, work, (load) => executionGroupKey(load as import("@/lib/types").DeliveryLoad));
+        const problem = validateRunStopOrder(body.stopIds, work, physicalStopKey);
         if (problem) throw new HttpError(422, problem);
         // Native stops keep the existing movement-order safety rules (e.g. transfer pickup before drop).
         const submitted = body.stopIds as string[];
@@ -1423,13 +1465,14 @@ async function handlePost(request: NextRequest) {
           const scheduledTime = body.plannedWindow?.startTime || body.plannedArrivalTime || body.scheduledTime || job.requestedWindow?.startTime;
           if (!scheduledTime) throw new HttpError(422, "Choose a Logistics scheduled arrival.");
           validatePlannedSchedule(undefined, { startTime: scheduledTime, ...(body.plannedWindow?.endTime || body.scheduledEnd ? { endTime: body.plannedWindow?.endTime || body.scheduledEnd } : {}) });
-          const assigned = await assignCanonicalJob(transaction, { jobId: job.id, sourceJob: job, expectedJobVersion: body.expectedJobVersions?.[job.id], resolveSchedule: (loads, currentJob) => resolveCanonicalLoadSchedule(loads, currentJob, run.canonicalId, scheduledTime, body.plannedWindow?.endTime || body.scheduledEnd), targetRunId: run.canonicalId, scheduledTime, scheduledEnd: body.plannedWindow?.endTime || body.scheduledEnd, collectionRequired: body.collectionRequired, expectedLoadVersions: body.expectedLoadVersions }, by, now, batch);
+          const assigned = await assignCanonicalJob(transaction, { visit: typeof body.visit === "string" ? body.visit : undefined, jobId: job.id, sourceJob: job, expectedJobVersion: body.expectedJobVersions?.[job.id], resolveSchedule: (loads, currentJob) => resolveCanonicalLoadSchedule(loads, currentJob, run.canonicalId, scheduledTime, body.plannedWindow?.endTime || body.scheduledEnd), targetRunId: run.canonicalId, scheduledTime, scheduledEnd: body.plannedWindow?.endTime || body.scheduledEnd, collectionRequired: body.collectionRequired, expectedLoadVersions: body.expectedLoadVersions }, by, now, batch);
           loads.push(assigned);
         }
         return loads;
       });
       for (const item of result.filter(item => item.changed)) await appendLogisticsChange({ serviceDate: target.serviceDate, entityType: "assignment", entityId: item.jobId, relatedEntityId: item.load.id, changeType: "job-assigned", revision: item.load.version, changedAt: now, actorId });
       for (const item of result) if (item.plannedRun) await appendLogisticsChange({ serviceDate: target.serviceDate, entityType: "run", entityId: item.plannedRun.canonicalId, changeType: "canonical-work-planned", revision: item.plannedRun.version, changedAt: now, actorId });
+      for (const item of result) for (const member of item.backfilled || []) await appendLogisticsChange({ serviceDate: target.serviceDate, entityType: "deliveryLoad", entityId: member.id, changeType: "visit-association-backfilled", revision: member.version, changedAt: now, actorId });
       if (result.some(item => item.changed)) await rebuildLogisticsProjection(target.serviceDate, by);
       return NextResponse.json({ loads: result.map(item => item.load), assigned: assignable.length, skipped });
     }
@@ -2004,6 +2047,8 @@ async function handlePost(request: NextRequest) {
                 requirement,
                 runId: run.canonicalId,
                 by,
+                newVisit: body.newVisit === true,
+                targetStopId: typeof body.targetStopId === "string" ? body.targetStopId : undefined,
               }),
             ]
           : assignMovementStops(
@@ -2019,6 +2064,7 @@ async function handlePost(request: NextRequest) {
                   : movement!.toAddress,
               },
               by,
+              { newVisit: body.newVisit === true, targetStopId: typeof body.targetStopId === "string" ? body.targetStopId : undefined },
             );
         const byId = new Map(scoped.map((stop) => [stop.canonicalId, stop]));
         newStops.forEach((stop) => byId.set(stop.canonicalId, stop));

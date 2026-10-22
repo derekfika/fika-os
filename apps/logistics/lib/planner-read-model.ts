@@ -79,6 +79,8 @@ export type PlannerMovementView = {
 };
 export type PlannerStopView = {
   stopId: string;
+  /** Physical visit shared by the delivery/collection leg-stops of one Stop (see lib/stop-visits.ts). */
+  visitId?: string;
   sequence: number;
   destination: { id: string; label: string };
   requiredTime?: string;
@@ -588,6 +590,7 @@ export function buildPlannerDay(input: {
           plannedArrivalTime: stop.plannedArrivalTime,
           plannedWindow: stop.plannedWindow,
           loaded: Boolean(stop.loaded),
+          ...(stop.visitId ? { visitId: stop.visitId } : {}),
           loadCount: stop.canonicalLoadIds?.length ?? stop.requirementRefs.length,
           requirementCount: stop.requirementRefs.length,
           movementCount: (
