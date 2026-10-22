@@ -112,6 +112,52 @@ export async function writeCpuProjectionMonotonically<T extends ProjectionRecord
   });
 }
 
+/**
+ * Migrate only a recognized legacy projection whose per-line workstream map
+ * was shortened. This deliberately does not weaken the normal monotonic
+ * writer: the transaction accepts a same-sequence rewrite only when the
+ * authoritative rebuild changes productionScope and nothing else.
+ */
+export async function repairLegacyCpuProjectionWorkstreams<T extends ProjectionRecord & { orders?: unknown[] }>(
+  ref: DocumentReference,
+  incoming: T,
+  isAmbiguousLegacy: (projection: T) => boolean,
+  isAligned: (projection: T) => boolean,
+  runTransaction: <R>(update: (transaction: Transaction) => Promise<R>) => Promise<R> = update => db.runTransaction(update),
+): Promise<MonotonicProjectionWrite<T> | undefined> {
+  return runTransaction(async transaction => {
+    const snapshot = await transaction.get(ref);
+    recordDataAccess({ app: "cpu-production", operation: "projection.legacy-workstream-migration-read", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "transaction" });
+    if (!snapshot.exists) return undefined;
+    const current = snapshot.data() as T;
+    if (!isAmbiguousLegacy(current) || !isAligned(incoming)
+      || Number(current.lastChangeSequence || 0) !== Number(incoming.lastChangeSequence || 0)) return undefined;
+
+    const withoutScope = (projection: T) => {
+      const value = withoutProjectionMetadata(projection) as Record<string, unknown>;
+      const orders = Array.isArray(value.orders) ? value.orders.map(order => {
+        if (!order || typeof order !== "object") return order;
+        const { productionScope: _productionScope, ...rest } = order as Record<string, unknown>;
+        return rest;
+      }) : value.orders;
+      return { ...value, orders };
+    };
+    // Protect authoritative quantities, identities, status and all other
+    // projection content. Only the recovered scope mapping may differ.
+    if (canonicalJson(withoutScope(current)) !== canonicalJson(withoutScope(incoming))) return undefined;
+    if (canonicalJson(current.orders) === canonicalJson(incoming.orders)) return undefined;
+
+    const migrated = {
+      ...incoming,
+      projectionContentHash: cpuProjectionContentHash(incoming),
+      revision: Number(current.revision || 0) + 1,
+    } as T;
+    transaction.set(ref, migrated);
+    recordDataAccess({ app: "cpu-production", operation: "projection.legacy-workstream-migration-write", source: "FIRESTORE", documents: 1, estimatedFirestoreWrites: 1 });
+    return { status: "advanced", projection: migrated };
+  });
+}
+
 export async function appendCpuChange<T extends CpuChangeWithPropagation & Record<string, unknown>>(input: T) {
   return db.runTransaction(async transaction => appendCpuChangeInTransaction(transaction, input));
 }

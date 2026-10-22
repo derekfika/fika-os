@@ -30,7 +30,17 @@ test("production type scope filters canonical order lines without inventing reco
   const routing: ProductionRouting = { "menu:sandwich": ["sandwiches"], "menu:hospitality": ["hospitality"] };
   assert.equal(filterProductionOrdersForScope([base], "all", routing).length, 1);
   assert.deepEqual(filterProductionOrdersForScope([base], "sandwiches", routing)[0].lines.map((line) => line.canonicalId), ["line:sandwich"]);
-  assert.deepEqual(filterProductionOrdersForScope([base], "hospitality", routing)[0].lines.map((line) => line.canonicalId), ["line:sandwich", "line:hospitality"]);
+  assert.deepEqual(filterProductionOrdersForScope([base], "hospitality", routing)[0].lines.map((line) => line.canonicalId), ["line:hospitality"]);
   const grab = { canonicalId: "grab", origin: "grab_and_go", lines: [{ canonicalId: "line:sandwich", sourceMenuItemId: "menu:sandwich", workstream: "grab_and_go" }] } as never;
   assert.deepEqual(filterProductionOrdersForScope([grab], "grab_and_go", routing)[0].lines.map((line) => line.canonicalId), ["line:sandwich"]);
+});
+
+test("an explicit Hub Sandwiches workstream wins over a Hospitality booking origin", () => {
+  const sandwich = { canonicalId: "order:deli", origin: "hospitality_booking", productionCategory: "hospitality", lines: [
+    { canonicalId: "line:deli", sourceMenuItemId: "menu:deli", workstream: "sandwiches" },
+  ] } as never;
+  const routing: ProductionRouting = { "menu:deli": ["hospitality"] };
+  assert.equal(filterProductionOrdersForScope([sandwich], "sandwiches", routing).length, 1);
+  assert.equal(filterProductionOrdersForScope([sandwich], "hospitality", routing).length, 0);
+  assert.equal(filterProductionOrdersForScope([sandwich], "all", routing).length, 1);
 });

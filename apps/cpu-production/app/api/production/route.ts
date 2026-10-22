@@ -5,7 +5,7 @@ import { requireCpuActor } from "../../../lib/cpu-access-client";
 import { acknowledgeProductionCancellation, createCpuProductionOrder, productionOrderDetail, productionQueue, productionQueueForWeek, reportProductionAllergenDiscrepancy, transitionProductionOrder, updateProductionLines } from "../../../lib/production-http-client";
 import { ordersForScope } from "../../../lib/cpu-routing";
 import { withReadableDestinations } from "../../../lib/cpu-oploc-labels";
-import { filterCpuProjectionForScope } from "../../../lib/cpu-dashboard-adapter";
+import { cpuProjectionHasAmbiguousWorkstreamMapping, filterCpuProjectionForScope } from "../../../lib/cpu-dashboard-adapter";
 // Scope filtering remains backed by the existing hospitalityMenuProductionRouting adapter.
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { normaliseProductionScope } from "../../../lib/production-scope";
@@ -183,7 +183,16 @@ async function handleGet(request: NextRequest) {
         try {
           const packaged = await getCpuProjectionPackage(projectionDate, week || undefined);
           if (packaged) {
-            const projection = packaged.value.projection;
+            let projection = packaged.value.projection;
+            if (cpuProjectionHasAmbiguousWorkstreamMapping(projection)) {
+              projection = week
+                ? await rebuildCpuWeekProjection(request, week)
+                : await rebuildCpuDayProjection(request, projectionDate);
+              recordDeliveredInReadBudget({ stage: "projection_refresh", projectionDocs: 1, selectedIds: projection.orders.length, rebuildScopes: 1 });
+              const manifest = await getCpuProjectionManifest(projectionDate, week || undefined);
+              const filtered = filterCpuProjectionForScope(projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
+              return withServerTiming(NextResponse.json({ projection: filtered, package: manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
+            }
             const filtered = filterCpuProjectionForScope(projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
             recordDeliveredInReadBudget({ stage: "package_body_load", projectionDocs: 0, selectedIds: filtered.orders.length });
             return withServerTiming(NextResponse.json({ projection: filtered, package: packaged.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });

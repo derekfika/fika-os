@@ -22,8 +22,8 @@ import ProductionOrderDetail from "./ui/ProductionOrderDetail";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
-import { orderDate } from "../lib/production-day";
-import { cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
+import { aggregateProductionTotals, orderDate, type ProductionTotalProgress as TotalProgress } from "../lib/production-day";
+import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 import { readApiResponse } from "./lib/api-response";
 import { readCpuProjection, writeCpuProjection } from "./lib/cpu-indexeddb";
 import { europeLondonDate } from "../lib/operational-date";
@@ -58,8 +58,6 @@ const primaryNavigation: Array<{ icon: string; label: string; target: View }> = 
   { icon: "▤", label: "Run sheet", target: "run-sheet" },
   { icon: "▥", label: "Totals", target: "totals" },
 ];
-type TotalProgress = "not_started" | "in_progress" | "produced";
-type DailyTotal = { key: string; name: string; unit: string; quantity: number; progress: TotalProgress };
 
 export default function CpuProduction() {
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
@@ -80,6 +78,7 @@ export default function CpuProduction() {
   }, []);
   const [productionScope, setProductionScope] = useState<ProductionScope>("all");
   const [view, setView] = useState<View>("calendar");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [tabletNavigation, setTabletNavigation] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const menuToggleRef = useRef<HTMLButtonElement>(null);
@@ -141,55 +140,81 @@ export default function CpuProduction() {
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const loadGeneration = useRef(0);
+  const lastQueryKey = useRef("");
   const load = async (showFeedback = false): Promise<ProductionOrder[]> => {
     if (!dayDate || !weekCommencing) return [];
+    const requestId = ++loadGeneration.current;
+    const isCurrentRequest = () => requestId === loadGeneration.current;
     if (showFeedback) setRefreshing(true);
+    const isDayProjection = view === "day" || view === "totals";
+    const projectionDate = view === "totals" ? date || dayDate : isDayProjection ? dayDate : weekCommencing;
+    const cacheKey = `${isDayProjection ? "day" : "week"}:${projectionDate}:${productionScope}`;
+    if (lastQueryKey.current !== cacheKey) {
+      lastQueryKey.current = cacheKey;
+      setOrders([]);
+    }
     try {
-      const isDayProjection = view === "day" || view === "totals";
-      const projectionDate = isDayProjection ? dayDate : weekCommencing;
-      const cacheKey = `${isDayProjection ? "day" : "week"}:${projectionDate}:${productionScope}`;
       // Compatibility marker for existing dashboard contract checks: /api/production?scope=${productionScope}
       const scopeResponse = await fetch("/api/production?cacheScope=1", { cache: "no-store" });
       const scopeBody = await readApiResponse<{ cacheScope?: string; error?: { message?: string } }>(scopeResponse);
-      if (!scopeResponse.ok || !scopeBody.cacheScope) { setError(scopeBody.error?.message || "CPU cache scope could not be established."); return []; }
+      if (!isCurrentRequest()) return [];
+      if (!scopeResponse.ok || !scopeBody.cacheScope) { setError(scopeBody.error?.message || "CPU cache scope could not be established."); setOrders([]); return []; }
       const cacheScope = scopeBody.cacheScope;
       const cached = await readCpuProjection<any>(cacheKey, cacheScope);
+      if (!isCurrentRequest()) return [];
       if (cached?.value) {
-        setOrders(cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope)));
-        setError("");
+        const cachedNeedsRecovery = cpuProjectionHasAmbiguousWorkstreamMapping(cached.value);
+        if (cachedNeedsRecovery) {
+          setOrders([]);
+        } else {
+          setOrders(cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope)));
+          setError("");
+        }
         try {
           const head = await fetch(`/api/production?projectionHead=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}`, { cache: "no-store" });
           const headBody = await head.json() as { lastChangeSequence?: number; packageVersion?: number; contentHash?: string; sourceVersion?: string };
-          if (head.ok && Number(headBody.lastChangeSequence || 0) === cached.lastChangeSequence && Number(headBody.packageVersion || 0) === Number(cached.packageVersion || 0) && headBody.contentHash === cached.contentHash && headBody.sourceVersion === cached.sourceVersion) return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope));
+          if (!isCurrentRequest()) return [];
+          if (!head.ok) { setOrders([]); setError("Production freshness could not be verified. Refresh to try again."); return []; }
+          if (!cachedNeedsRecovery && Number(headBody.lastChangeSequence || 0) === cached.lastChangeSequence && Number(headBody.packageVersion || 0) === Number(cached.packageVersion || 0) && headBody.contentHash === cached.contentHash && headBody.sourceVersion === cached.sourceVersion) return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope));
           const response = await fetch(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, { cache: "no-store" });
           const refreshedBody = await readApiResponse<{ projection?: any; package?: { packageVersion?: number; contentHash?: string; sourceVersion?: string } }>(response);
+          if (!isCurrentRequest()) return [];
           const newer = refreshedBody.projection;
           if (response.ok && newer) {
             await writeCpuProjection({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: Number(newer.lastChangeSequence || 0), revision: Number(newer.revision || 0), packageVersion: Number(refreshedBody.package?.packageVersion || 0), contentHash: refreshedBody.package?.contentHash, sourceVersion: refreshedBody.package?.sourceVersion, value: newer });
+            if (!isCurrentRequest()) return [];
             const refreshed = cpuProjectionToOrders(filterCpuProjectionForScope(newer, productionScope));
             setOrders(refreshed);
             setError("");
             return refreshed;
           }
-          return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope));
-        } catch { return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope)); }
+          setOrders([]);
+          setError("Current production data could not be loaded. Refresh to try again.");
+          return [];
+        } catch {
+          if (isCurrentRequest()) { setOrders([]); setError("Production freshness could not be verified. Refresh to try again."); }
+          return [];
+        }
       }
       const response = await fetch(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, { cache: "no-store" });
       const body = await readApiResponse<{ projection?: any; package?: { packageVersion?: number; contentHash?: string; sourceVersion?: string }; error?: { message?: string } }>(response);
-      if (!response.ok) { setError(body.error?.message || "Could not load production."); return []; }
+      if (!isCurrentRequest()) return [];
+      if (!response.ok) { setOrders([]); setError(body.error?.message || "Could not load production."); return []; }
       const projection = body.projection;
       const projectedOrders: ProductionOrder[] = projection ? cpuProjectionToOrders(filterCpuProjectionForScope(projection, productionScope)) : [];
       if (projection) await writeCpuProjection({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: Number(projection.lastChangeSequence || 0), revision: Number(projection.revision || 0), packageVersion: Number(body.package?.packageVersion || 0), contentHash: body.package?.contentHash, sourceVersion: body.package?.sourceVersion, value: projection });
+      if (!isCurrentRequest()) return [];
       setOrders(projectedOrders);
       setError("");
       return projectedOrders;
     } finally {
-      if (showFeedback) setRefreshing(false);
+      if (isCurrentRequest()) setRefreshing(false);
     }
   };
   useEffect(() => {
     void load();
-  }, [view, dayDate, weekCommencing, productionScope]);
+  }, [view, date, dayDate, weekCommencing, productionScope]);
   const sites = [
     ...new Set(
       orders.map((order) => order.destinationOplocId).filter(Boolean),
@@ -202,13 +227,20 @@ export default function CpuProduction() {
       (!site || order.destinationOplocId === site),
   );
   const visible = baseVisible.filter(
-    (order) => !date || order.requiredBy.startsWith(date),
+    (order) => !date || orderDate(order) === date,
   );
+  const summaryOrders = view === "calendar" ? baseVisible : visible;
   const totalsVisible = baseVisible.filter((order) => orderDate(order) === (date || dayDate));
   const attentionCount = orders.filter((order) => Boolean(cpuAttentionLabel(order))).length;
   const chooseView = (target: View) => {
     setView(target);
     setDrawerOpen(false);
+  };
+  const chooseDayView = () => {
+    const selectedDate = date || dayDate;
+    setDayDate(selectedDate);
+    setWeekCommencing(weekCommencingFor(selectedDate));
+    chooseView("day");
   };
   const openAttentionQueue = () => {
     setStatus("");
@@ -249,7 +281,7 @@ export default function CpuProduction() {
     return sum;
   }, {}), [totalsVisible]);
   return (
-    <main className="cpu-app-shell">
+    <main className={`cpu-app-shell${sidebarCollapsed ? " cpu-app-shell--sidebar-collapsed" : ""}`}>
       <aside
         className={`cpu-sidebar${drawerOpen ? " cpu-sidebar--open" : ""}`}
         id="cpu-primary-navigation"
@@ -262,12 +294,13 @@ export default function CpuProduction() {
       >
         <div className="cpu-sidebar-heading">
           <div className="cpu-brand">FIKA OS</div>
+          <button type="button" className="cpu-sidebar-collapse" aria-label={sidebarCollapsed ? "Expand production navigation" : "Collapse production navigation"} aria-expanded={!sidebarCollapsed} title={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"} onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}><span aria-hidden="true">{sidebarCollapsed ? "›" : "‹"}</span></button>
           <button type="button" className="cpu-drawer-close" aria-label="Close production navigation" onClick={() => setDrawerOpen(false)}>×</button>
         </div>
         <div className="cpu-sidebar-label">CPU PRODUCTION</div>
         <nav aria-label="CPU Production navigation" className="cpu-sidebar-nav">
           {primaryNavigation.map(({ icon, label, target }) => (
-            <button type="button" key={label} className={view === target ? "selected" : ""} aria-current={view === target ? "page" : undefined} onClick={() => chooseView(target)}>
+            <button type="button" key={label} className={view === target ? "selected" : ""} aria-label={label} title={sidebarCollapsed ? label : undefined} aria-current={view === target ? "page" : undefined} onClick={() => chooseView(target)}>
               <span aria-hidden="true">{icon}</span><span className="cpu-nav-label">{label}</span>
               {target === "queue" && attentionCount > 0 && <span className="cpu-nav-badge" aria-label={`${attentionCount} need attention`}>{attentionCount}</span>}
             </button>
@@ -323,7 +356,7 @@ export default function CpuProduction() {
               onClick={() => setStatus(status === item ? "" : item)}
             >
               <strong>
-                {visible.filter((order) => cpuLifecycle(order) === item).length}
+                {summaryOrders.filter((order) => cpuLifecycle(order) === item).length}
               </strong>
               <span>{cpuLifecycleLabels[item]}</span>
             </button>
@@ -359,6 +392,11 @@ export default function CpuProduction() {
             </p>
           </div>
           <div className="cpu-toolbar-actions">
+            {view === "calendar" && <div className="cpu-view-switch" role="group" aria-label="Production week view">
+              <button type="button" className="selected" aria-pressed="true" onClick={() => { if (date) setWeekCommencing(weekCommencingFor(date)); chooseView("calendar"); }}>Week</button>
+              <button type="button" aria-pressed="false" onClick={chooseDayView}>Day</button>
+              <button type="button" aria-pressed="false" onClick={() => chooseView("run-sheet")}>Run sheet</button>
+            </div>}
             <button onClick={() => void load(true)} disabled={refreshing} aria-busy={refreshing} aria-label="Refresh production">
               {refreshing ? "Refreshing…" : "↻"}
             </button>
@@ -370,7 +408,7 @@ export default function CpuProduction() {
             <input
               type="date"
               value={date}
-              onChange={(event) => setDate(event.target.value)}
+              onChange={(event) => { setDate(event.target.value); if (view === "day" || view === "totals") setDayDate(event.target.value); }}
             />
           </label>
           <label>
@@ -420,9 +458,9 @@ export default function CpuProduction() {
           />
         )}
         {view === "calendar" && (
-          weekCommencing ? <ProductionCalendar orders={baseVisible} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} weekCommencing={weekCommencing} onWeekChange={(nextWeek) => setWeekCommencing(nextWeek)} onDayOpen={(selectedDate) => { setDayDate(selectedDate); setWeekCommencing(weekCommencingFor(selectedDate)); setView("day"); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} /> : <p role="status">Loading production calendar…</p>
+          weekCommencing ? <ProductionCalendar orders={baseVisible} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} weekCommencing={weekCommencing} onWeekChange={(nextWeek) => setWeekCommencing(nextWeek)} onDayOpen={(selectedDate) => { setDate(selectedDate); setDayDate(selectedDate); setWeekCommencing(weekCommencingFor(selectedDate)); setView("day"); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} /> : <p role="status">Loading production calendar…</p>
         )}
-        {view === "day" && <ProductionDayView orders={baseVisible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
+        {view === "day" && <ProductionDayView orders={visible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDate(nextDate); setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
         {view === "run-sheet" && <RunSheet orders={visible} />}
         {view === "totals" && <Totals sourceTotals={sourceTotals} orders={totalsVisible} date={date || dayDate} />}
@@ -470,7 +508,7 @@ export default function CpuProduction() {
 
 function OperationsRail({ orders, date, open, onCancelBooking }: { orders: ProductionOrder[]; date: string; open: (order: ProductionOrder) => void; onCancelBooking: (order: ProductionOrder) => void }) {
   const todayOrders = orders
-    .filter((order) => order.requiredBy.startsWith(date))
+    .filter((order) => orderDate(order) === date)
     .sort((a, b) => a.requiredBy.localeCompare(b.requiredBy));
   const attention = orders.filter((order) => Boolean(cpuAttentionLabel(order)));
   const attentionByStatus = (status: string) => attention.filter((order) => cpuAttentionKey(order) === status).length;
@@ -628,23 +666,7 @@ function Totals({
       return updated;
     });
   };
-  const categoryTotals = useMemo(() => {
-    const categoryFor = (order: ProductionOrder) => order.productionCategory === "fine_dining" ? "Fine Dining · Delivered-In" : order.productionCategory === "delivered_in" ? "Delivered-In" : order.productionCategory === "events" ? "Events & Corporate" : order.productionCategory === "hospitality" ? "Hospitality" : order.productionCategory === "grab_and_go" || order.origin === "grab_and_go" ? "Grab & Go" : order.origin === "menu_planning" ? "Delivered-In" : order.origin === "hospitality_booking" ? "Hospitality" : order.origin === "cpu_created" ? "CPU-created work" : "Other production";
-    const grouped = new Map<string, Map<string, DailyTotal>>();
-    const rank = { not_started: 0, in_progress: 1, produced: 2 };
-    for (const order of orders) {
-      const category = categoryFor(order);
-      const items = grouped.get(category) || new Map<string, DailyTotal>();
-      for (const line of order.lines) {
-        const key = `${line.itemName} · ${line.customerUnit}`;
-        const progress: TotalProgress = order.status === "complete" || line.status === "complete" ? "produced" : ["in_production", "partially_complete", "ready"].includes(order.status) ? "in_progress" : "not_started";
-        const current = items.get(key);
-        items.set(key, { key: `${category}:${key}`, name: line.itemName, unit: line.customerUnit, quantity: (current?.quantity || 0) + line.customerQuantity, progress: current && rank[current.progress] > rank[progress] ? current.progress : progress });
-      }
-      grouped.set(category, items);
-    }
-    return [...grouped.entries()].map(([category, items]) => ({ category, items: [...items.values()] }));
-  }, [orders]);
+  const categoryTotals = useMemo(() => aggregateProductionTotals(orders), [orders]);
   return (
     <section className="cpu-totals">
       <header>
@@ -659,8 +681,8 @@ function Totals({
       <p>
         Quantities grouped by item and unit across all production sources.
       </p>
-      {categoryTotals.length ? categoryTotals.map(({ category, items }) => <section className="cpu-total-category" key={category}>
-        <header><h4>{category}</h4><span>{items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString()} total units</span></header>
+        {categoryTotals.length ? categoryTotals.map(({ category, orderCount, items }) => <section className="cpu-total-category" key={category}>
+        <header><h4>{category}</h4><span>{orderCount} order{orderCount === 1 ? "" : "s"} · {items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString()} total units</span></header>
         <div className="cpu-total-card-grid">{items.map((total) => {
           const state = progress[total.key] || total.progress;
           const label = state === "in_progress" ? "In progress" : state === "produced" ? "Produced" : "Not started";

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCpuDayProjection } from "../lib/cpu-projection";
-import { compareMonotonicProjectionWrite, cpuProjectionContentHash } from "../lib/cpu-projection-repository";
-import { cpuProjectionToOrders } from "../lib/cpu-dashboard-adapter";
+import { compareMonotonicProjectionWrite, cpuProjectionContentHash, repairLegacyCpuProjectionWorkstreams } from "../lib/cpu-projection-repository";
+import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, filterCpuProjectionForScope } from "../lib/cpu-dashboard-adapter";
 import type { ProductionOrder } from "../lib/production-types";
 import type { ProductionPlan } from "../app/lib/production-plan";
 import { allergenMatrixContentHash } from "../lib/cpu-allergen-release";
@@ -169,4 +169,48 @@ test("projection hash ordering remains compatible and reordered same-sequence co
   const stored = { ...first, projectionContentHash: firstHash };
   const incoming = { ...reordered, projectionContentHash: reorderedHash };
   assert.throws(() => compareMonotonicProjectionWrite(stored, incoming), /conflicting content/);
+});
+
+test("same-sequence legacy mixed-workstream projection is safely migrated from canonical line assignments", async () => {
+  const canonical = {
+    ...order("order:mixed-legacy"),
+    lines: [
+      { ...order("order:mixed-legacy").lines[0], canonicalId: "line:sandwich", itemName: "Sandwich platter", customerQuantity: 12, workstream: "sandwiches" as const },
+      { ...order("order:mixed-legacy").lines[0], canonicalId: "line:hospitality", itemName: "Hot lunch", customerQuantity: 8, workstream: "hospitality" as const },
+    ],
+  };
+  const rebuilt = buildCpuDayProjection("2026-08-24", [canonical], [], 41, 4, "2026-08-24T12:00:00.000Z");
+  const storedLegacy = {
+    ...rebuilt,
+    revision: 3,
+    rebuiltAt: "2026-08-24T11:00:00.000Z",
+    orders: rebuilt.orders.map(row => ({ ...row, productionScope: "sandwiches" })),
+  };
+  storedLegacy.projectionContentHash = cpuProjectionContentHash(storedLegacy);
+  assert.equal(cpuProjectionHasAmbiguousWorkstreamMapping(storedLegacy), true);
+  assert.equal(storedLegacy.lastChangeSequence, rebuilt.lastChangeSequence);
+
+  let persisted: typeof storedLegacy | typeof rebuilt = storedLegacy;
+  const ref = {} as never;
+  const runTransaction = async <T>(update: (transaction: never) => Promise<T>) => update({
+    get: async () => ({ exists: true, data: () => persisted }),
+    set: (_ref: unknown, value: typeof persisted) => { persisted = value; },
+  } as never);
+  const result = await repairLegacyCpuProjectionWorkstreams(
+    ref,
+    rebuilt,
+    value => cpuProjectionHasAmbiguousWorkstreamMapping(value as typeof rebuilt),
+    value => !cpuProjectionHasAmbiguousWorkstreamMapping(value as typeof rebuilt),
+    runTransaction,
+  );
+
+  assert.equal(result?.status, "advanced");
+  assert.equal(cpuProjectionHasAmbiguousWorkstreamMapping(persisted as typeof rebuilt), false);
+  assert.equal((persisted as typeof rebuilt).lastChangeSequence, 41);
+  assert.equal((persisted as typeof rebuilt).revision, 4);
+  assert.equal((persisted as typeof rebuilt).projectionContentHash, cpuProjectionContentHash(persisted as typeof rebuilt));
+  const sandwiches = filterCpuProjectionForScope(persisted as typeof rebuilt, "sandwiches");
+  const hospitality = filterCpuProjectionForScope(persisted as typeof rebuilt, "hospitality");
+  assert.deepEqual(sandwiches.orders[0].quantities.map(line => [line.sourceLineId, line.quantity]), [["line:sandwich", 12]]);
+  assert.deepEqual(hospitality.orders[0].quantities.map(line => [line.sourceLineId, line.quantity]), [["line:hospitality", 8]]);
 });
