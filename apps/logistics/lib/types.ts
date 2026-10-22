@@ -100,6 +100,9 @@ export type DeliveryRun = {
   driverLabel?: string;
   vehicleLabel?: string;
   orderedStopIds: string[];
+  /** Soft retirement of an empty draft/planned run. Retired runs stay in storage as audit evidence but are never planned or projected. */
+  retiredAt?: string;
+  retiredBy?: string;
   version: number;
   createdAt: string;
   updatedAt: string;

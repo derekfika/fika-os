@@ -1081,3 +1081,72 @@ test("defer reorders legacy operational stops while preserving transfer pickup-b
     transferRunSaved.orderedStopIds,
   );
 });
+
+// ---- Interactive Run planning commands (emulator-backed) -------------------------------
+// NOT EXECUTED in the authoring environment (no Firestore emulator on 127.0.0.1:8085).
+// The same behaviours are covered against the real route + isolated transactional store in
+// tests/run-planning-commands.test.cjs; these prove the identical commands on the emulator.
+test("create-run accepts validated journey times; invalid pairs are rejected without persisting", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const timedId = `${id}:timed`;
+  const timed = await responseBody({ action: "create-run", run: { ...run(timedId), plannedCpuDepartureTime: "09:00", plannedCpuReturnTime: "12:00" } });
+  assert.equal(timed.response.status, 200, JSON.stringify(timed.body));
+  const saved = (await runs().doc(timedId).get()).data() as DeliveryRun;
+  assert.deepEqual([saved.plannedCpuDepartureTime, saved.plannedCpuReturnTime, saved.status], ["09:00", "12:00", "draft"]);
+  const badId = `${id}:bad`;
+  for (const [departure, returnTime] of [["09:00", undefined], ["12:00", "09:00"], ["09:10", "12:00"]] as const) {
+    const bad = await responseBody({ action: "create-run", run: { ...run(badId), plannedCpuDepartureTime: departure, plannedCpuReturnTime: returnTime } });
+    assert.equal(bad.response.status, 422);
+  }
+  assert.equal((await runs().doc(badId).get()).exists, false);
+});
+
+test("set-run-stop-order persists a version-checked, audited order for load-backed stops and rejects stale or non-exact orders", async (t) => {
+  const id = prefix();
+  t.after(async () => { upstreamRequirements = []; await cleanup(id); });
+  const reqs = ["a", "b"].map((suffix) => ({ ...requirement(`${id}:${suffix}`), destinationOplocId: `oploc:integration-destination-${suffix}` }));
+  upstreamRequirements = reqs;
+  const runId = `${id}:run`;
+  await seed(runs(), run(runId));
+  for (const [index, req] of reqs.entries()) {
+    const assigned = await responseBody({ action: "assign-group", by: "integration-test", runId, expectedRunVersion: (index + 1), requirementIds: [req.canonicalId], expectedSourceVersions: { [req.canonicalId]: req.sourceVersion }, scheduledTime: index ? "11:00" : "10:00" });
+    assert.equal(assigned.response.status, 200, JSON.stringify(assigned.body));
+  }
+  const projection = (await logisticsDayProjections().doc(serviceDate).get()).data() as LogisticsDayProjection;
+  const stopIds = projection.deliveryLoads.filter((load) => load.runId === runId).map((load) => `projection-stop:delivery:${load.id}`);
+  assert.equal(stopIds.length, 2);
+  const current = (await runs().doc(runId).get()).data() as DeliveryRun;
+  const reversed = [...stopIds].reverse();
+  const saved = await responseBody({ action: "set-run-stop-order", runId, expectedRunVersion: current.version, stopIds: reversed });
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+  const after = (await runs().doc(runId).get()).data() as DeliveryRun;
+  assert.deepEqual(after.orderedStopIds, reversed);
+  assert.equal(after.version, current.version + 1);
+  assert.equal(after.audit.at(-1)?.action, "run-stop-order-saved");
+  assert.equal((await responseBody({ action: "set-run-stop-order", runId, expectedRunVersion: current.version, stopIds: stopIds })).response.status, 409);
+  assert.equal((await responseBody({ action: "set-run-stop-order", runId, expectedRunVersion: after.version, stopIds: stopIds.slice(0, 1) })).response.status, 422);
+  assert.deepEqual(((await runs().doc(runId).get()).data() as DeliveryRun).orderedStopIds, reversed);
+  const day = await (await GET(new NextRequest(`http://localhost/api/logistics?projection=1&serviceDate=${serviceDate}`))).json() as { runs: DeliveryRun[] };
+  assert.deepEqual(day.runs.find((item) => item.canonicalId === runId)?.orderedStopIds, reversed);
+});
+
+test("retire-empty-run soft-retires only an empty planning Run, keeps its audit, and ensure-vehicle-day-runs does not resurrect it", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const runId = `${id}:run`;
+  await seed(runs(), run(runId));
+  assert.equal((await responseBody({ action: "retire-empty-run", runId, expectedRunVersion: 99 })).response.status, 409);
+  const retired = await responseBody({ action: "retire-empty-run", runId, expectedRunVersion: 1 });
+  assert.equal(retired.response.status, 200, JSON.stringify(retired.body));
+  const saved = (await runs().doc(runId).get()).data() as DeliveryRun;
+  assert.ok(saved.retiredAt, "retired, not physically deleted");
+  assert.equal(saved.audit.at(-1)?.action, "run-retired-empty");
+  assert.equal((await responseBody({ action: "retire-empty-run", runId, expectedRunVersion: saved.version })).response.status, 200, "replay is idempotent");
+  const projection = (await logisticsDayProjections().doc(serviceDate).get()).data() as LogisticsDayProjection | undefined;
+  assert.ok(!projection?.runs.some((item) => item.canonicalId === runId));
+  const busyId = `${id}:busy`;
+  await seed(runs(), { ...run(busyId), status: "dispatched" });
+  assert.equal((await responseBody({ action: "retire-empty-run", runId: busyId, expectedRunVersion: 1 })).response.status, 422);
+  assert.equal(((await runs().doc(busyId).get()).data() as DeliveryRun).retiredAt, undefined);
+});

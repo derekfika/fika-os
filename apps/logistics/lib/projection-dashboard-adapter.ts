@@ -3,6 +3,7 @@ import { lineBreakdown } from "./ordered-quantity";
 import { fulfilmentWorkstream } from "../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, LogisticsDayProjection } from "./types";
 import { buildPlannerDay, type PlannerLine, type PlannerWorkGroup } from "./planner-read-model";
+import { applyStoredStopOrder } from "./run-stop-order";
 
 /** Adapts the durable projection without rereading upstream authorities. */
 export function projectionToDashboardData(projection: LogisticsDayProjection) {
@@ -31,6 +32,7 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
   const actualStops = (projection.stops || []).filter((stop) => runIds.has(stop.runId));
   const loadStops: DeliveryStop[] = [];
   const loadStopIdsByRun = new Map<string, string[]>();
+  const loadStopsByRun = new Map<string, DeliveryStop[]>();
   const movements = projection.movements || [];
   const nativeStopRepresentsLoad = (runId: string, load: LogisticsDayProjection["deliveryLoads"][number], lane: "delivery" | "collection") => {
     const ids = load.loadIds?.length ? load.loadIds : [load.id];
@@ -86,17 +88,24 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
         audit: [],
       });
       loadStopIdsByRun.set(runId, [...(loadStopIdsByRun.get(runId) || []), stopId]);
+      loadStopsByRun.set(runId, [...(loadStopsByRun.get(runId) || []), loadStops[loadStops.length - 1]]);
     }
   }
 
-  const runs = projectedRuns.map((run) => ({
-    ...run,
-    orderedStopIds: Array.from(new Set([
-      ...(run.orderedStopIds || []).filter((id) => actualStops.some((stop) => stop.canonicalId === id)),
-      ...(loadStopIdsByRun.get(run.canonicalId) || []),
-    ])),
-  }));
-  const stops = [...actualStops, ...loadStops];
+  // Visiting order: the stored canonical order wins; work not yet ordered follows by planned time (untimed last).
+  const plannedStart = (stop: DeliveryStop) => stop.plannedWindow?.startTime || stop.plannedArrivalTime || "99:99";
+  const stopOrderById = new Map<string, number>();
+  const runs = projectedRuns.map((run) => {
+    const nativeIds = (run.orderedStopIds || []).filter((id) => actualStops.some((stop) => stop.canonicalId === id));
+    const candidates = [
+      ...nativeIds.map((id) => ({ id, stop: actualStops.find((stop) => stop.canonicalId === id)! })),
+      ...(loadStopsByRun.get(run.canonicalId) || []).map((stop) => ({ id: stop.canonicalId, stop, aliases: (stop.canonicalLoadIds || []).map((loadId) => `projection-stop:${stop.movementType === "collection" ? "collection" : "delivery"}:${loadId}`) })),
+    ];
+    const ordered = applyStoredStopOrder(candidates, run.orderedStopIds || [], (left, right) => plannedStart(left.stop).localeCompare(plannedStart(right.stop)) || left.id.localeCompare(right.id));
+    ordered.forEach((item, index) => stopOrderById.set(item.id, index + 1));
+    return { ...run, orderedStopIds: Array.from(new Set(ordered.map((item) => item.id))) };
+  });
+  const stops = [...actualStops, ...loadStops].map((stop) => stopOrderById.has(stop.canonicalId) ? { ...stop, sequence: stopOrderById.get(stop.canonicalId)! } : stop);
   const basePlanner = buildPlannerDay({
     serviceDate: projection.serviceDate,
     requirements: [],

@@ -378,15 +378,14 @@ test("journey inspector keeps mixed stops chronological and moves one constituen
   await expect(overview.getByRole("button", { name: /Van 1 Run 2, Planned, 13:00 to 17:00/ })).toBeVisible();
   await overview.getByRole("button", { name: /Van 1 Run 1,/ }).click();
   const inspector = page.getByRole("complementary", { name: "Details inspector" });
-  const chronological = inspector.getByRole("heading", { name: "Stops · chronological" });
+  const chronological = inspector.getByRole("heading", { name: /Stops · visiting order/ });
   await expect(chronological).toBeVisible();
   const deliveryStop = inspector.getByRole("button", { name: /Delivery.*Batch Two Site/ });
   const collectionStop = inspector.getByRole("button", { name: /Collection.*CPU production/ });
   await expect(deliveryStop).toBeVisible();
   await expect(collectionStop).toBeVisible();
-  const stopButtons = inspector.locator(".journey-stop-list button");
-  const stopOrder = await stopButtons.allTextContents();
-  expect(stopOrder.findIndex((text) => text.includes("Delivery · Batch Two Site"))).toBeLessThan(stopOrder.findIndex((text) => text.includes("Collection · CPU production")));
+  const stopOrder = await inspector.getByRole("list", { name: "Stops in visiting order" }).getByRole("listitem").allTextContents();
+  expect(stopOrder.findIndex((text) => text.includes("Batch Two Site"))).toBeLessThan(stopOrder.findIndex((text) => text.includes("CPU production")));
   await deliveryStop.click();
   await expect(inspector.getByRole("heading", { name: "Individual loads" })).toBeVisible();
   const loadButtons = inspector.getByRole("button", { name: /^Load .*1 job · 10 units$/ });

@@ -27,6 +27,8 @@ import type {
 } from "../lib/planner-read-model";
 import type { LogisticsDayProjection, LogisticsProjectionState } from "../lib/types";
 import { projectionToDashboardData } from "../lib/projection-dashboard-adapter";
+import { RunOrganiser } from "./run-organiser";
+import type { CreatingRun, PendingRunTiming } from "./journey-lanes";
 import { operationalDate } from "../lib/date";
 import { clientErrorDetails, requireSuccessfulResponse } from "../lib/client-errors";
 import { drainIncrementalPages } from "../lib/incremental-sync";
@@ -223,8 +225,10 @@ function PlannerContents() {
     setData(next);
   };
 
+  const lastFailure = useRef<{ message: string; requestId: string } | undefined>(undefined);
   const recordError = (cause: unknown, fallback: string) => {
     const details = clientErrorDetails(cause, fallback);
+    lastFailure.current = { message: details.message, requestId: details.requestId || "" };
     if ([401, 403].includes(details.status)) requestsBlocked.current = true;
     if ([401, 403].includes(details.status)) setAuthRequired(true);
     setProjectionNeedsMaterialisation(details.code === "LOGISTICS_PROJECTION_NOT_MATERIALIZED");
@@ -566,6 +570,16 @@ function PlannerContents() {
       if (context) dayRequests.commit(context, () => setBusy(false));
     }
   }
+  /** Runs a command; on rejection reconciles with the server (confirmed state wins) but keeps the failure message visible. */
+  async function actAndReconcile(payload: object): Promise<boolean | Record<string, unknown>> {
+    lastFailure.current = undefined;
+    const outcome = await act(payload);
+    if (outcome) return outcome;
+    const failure = lastFailure.current as { message: string; requestId: string } | undefined;
+    await load(true);
+    if (failure) { setError(failure.message); setErrorReference(failure.requestId); }
+    return false;
+  }
   async function placementCommand(payload: object): Promise<PlacementOutcome> {
     const context = dayContext;
     const summaryContext = weekContext;
@@ -599,16 +613,17 @@ function PlannerContents() {
   const movements = data?.planner.movements || [];
   const filteredGroups = queueTypeFilter === "all" || queueTypeFilter === "delivery" ? groups : [];
   const filteredMovements = movements.filter((movement) => queueTypeFilter === "all" || movement.type === queueTypeFilter);
-  const createRun = (vehicleId: LogisticsVehicleId) => {
+  const createRun = (vehicleId: LogisticsVehicleId, departure?: string, returnTime?: string, canonicalId = `run:${date}:${Date.now()}`) => {
     setShowRunCreate(false);
-    void act({
+    return actAndReconcile({
       action: "create-run",
       run: {
-        canonicalId: `run:${date}:${Date.now()}`,
+        canonicalId,
         serviceDate: date,
         status: "draft",
         driverId: newRunDriverId || undefined,
         vehicleId,
+        ...(departure && returnTime ? { plannedCpuDepartureTime: departure, plannedCpuReturnTime: returnTime } : {}),
         returnToCpuRequired: true,
         orderedStopIds: [],
         version: 1,
@@ -763,6 +778,7 @@ function PlannerContents() {
     load={load}
     loadFresh={loadFresh}
     act={act}
+    actAndReconcile={actAndReconcile}
     placementCommand={placementCommand}
     createRun={createRun}
     createMovement={createMovement}
@@ -977,8 +993,9 @@ type RealPlannerProps = {
   load: (silent?: boolean, materialiseMissing?: boolean) => Promise<LoadResult>;
   loadFresh: (silent?: boolean, mode?: LoadMode) => Promise<LoadResult>;
   act: (payload: object) => Promise<boolean | Record<string, unknown>>;
+  actAndReconcile: (payload: object) => Promise<boolean | Record<string, unknown>>;
   placementCommand: (payload: object) => Promise<PlacementOutcome>;
-  createRun: (vehicleId: LogisticsVehicleId) => void;
+  createRun: (vehicleId: LogisticsVehicleId, departure?: string, returnTime?: string, canonicalId?: string) => Promise<boolean | Record<string, unknown>>;
   createMovement: () => void;
   assignGroup: (group: PlannerWorkGroup, choice?: AssignmentChoice) => void | Promise<PlacementOutcome>;
   assignMovement: (movement: PlannerMovementView, choice?: AssignmentChoice) => void | Promise<PlacementOutcome>;
@@ -1013,6 +1030,8 @@ function RealPlanner(props: RealPlannerProps) {
   } : sourceData, [sourceData, locations.oplocs]);
   const movements = data?.planner.movements || props.movements;
   const [queueCollapsed, setQueueCollapsed] = useState(false);
+  const [pendingRunTimings, setPendingRunTimings] = useState<Record<string, PendingRunTiming>>({});
+  const [creatingRuns, setCreatingRuns] = useState<CreatingRun[]>([]);
   const [queueSearch, setQueueSearch] = useState("");
   const [pendingSchedules, setPendingSchedules] = useState<Record<string, PendingScheduleOperation>>({});
   const pendingSchedulesRef = useRef<Record<string, PendingScheduleOperation>>({});
@@ -1200,6 +1219,12 @@ function RealPlanner(props: RealPlannerProps) {
       const rawStop = data.stops.find((item) => item.canonicalId === action.stopId);
       for (const ref of rawStop?.requirementRefs || []) await props.act({ action: "remove-job-from-load", jobId: ref.requirementId });
       props.setInspector(undefined);
+      return;
+    }
+    if (action.action === "set-run-stop-order" || action.action === "retire-empty-run") {
+      // Authoritative confirmation only: on rejection, reconcile with the server and keep confirmed state.
+      const outcome = await props.actAndReconcile(payload);
+      if (outcome && action.action === "retire-empty-run") props.setInspector(undefined);
       return;
     }
     const succeeded = await props.act(payload);
@@ -1638,6 +1663,38 @@ function RealPlanner(props: RealPlannerProps) {
     }
     coordinatePlacement(stopId, original, original, () => props.placementCommand({ action: "clear-stop-schedule", runId, stopId, expectedRunVersion: run.version, expectedStopVersion: rawStop.version }), () => undefined);
   };
+  /** Proposes run times; the block shows "Saving…" and only the refreshed server state is treated as saved. */
+  const runTimingCommand = async (runId: string, departure: string, returnTime: string) => {
+    const run = runs.find((item) => item.runId === runId);
+    if (!run || pendingRunTimings[runId]) return;
+    setPendingRunTimings((current) => ({ ...current, [runId]: { start: departure, end: returnTime } }));
+    try {
+      await props.actAndReconcile({ action: "update-run-timing", runId, plannedCpuDepartureTime: departure, plannedCpuReturnTime: returnTime, expectedRunVersion: run.version });
+    } finally {
+      setPendingRunTimings((current) => { const { [runId]: _settled, ...rest } = current; return rest; });
+    }
+  };
+  const createRunOnTimeline = async (vehicleId: string, departure?: string, returnTime?: string) => {
+    if (vehicleId !== "van1" && vehicleId !== "van2") return;
+    const id = `run:${date}:${Date.now()}`;
+    setCreatingRuns((current) => [...current, { id, vehicleId, start: departure, end: returnTime }]);
+    try {
+      await props.createRun(vehicleId, departure, returnTime, id);
+    } finally {
+      setCreatingRuns((current) => current.filter((item) => item.id !== id));
+    }
+  };
+  const assignQueueItemToUntimedRun = (kind: "group" | "movement", id: string, runId: string) => {
+    const group = kind === "group" ? groups.find((item) => item.groupKey === id) : undefined;
+    const movement = kind === "movement" ? movements.find((item) => item.movementId === id) : undefined;
+    const requested = group ? group.deliveryWindow?.startTime || group.requiredTimes[0] : movement?.window?.startTime || movement?.requiredTime;
+    if (requested && /^\d\d:(00|15|30|45)$/.test(requested)) { assignQueueItem(kind, id, runId, requested, movement?.type === "collection" ? "collection" : "delivery"); return; }
+    // Genuinely needs a time: open the assignment form already targeted at this run.
+    props.setAssigning(id);
+    props.setTargetRun(runId);
+    props.setInspector(group ? { kind: "group", id } : { kind: "movement", id });
+    props.setError("This work has no requested time. Choose a time to place it in this run.");
+  };
   const returnWorkToPlanning = (runId: string, stopId: string) => {
     const rawStop = data?.stops.find((item) => item.canonicalId === stopId);
     const displayed = runs.flatMap((candidate) => candidate.stops.map((stop) => ({ run: candidate, stop }))).find((entry) => entry.stop.stopId === stopId);
@@ -1780,7 +1837,7 @@ function RealPlanner(props: RealPlannerProps) {
             {filteredMovements.map((movement) => <RealQueueMovement key={movement.movementId} movement={movement} runs={runs} queueState={queueStateForMovement(movement)} assigning={false} placementPending={Boolean(pendingSchedules[movement.movementId])} targetRun={props.targetRun} onInspect={() => props.setInspector({ kind: "movement", id: movement.movementId })} onAssign={() => { props.setAssigning(movement.movementId); props.setTargetRun(runs.length === 1 ? runs[0].runId : ""); props.setInspector({ kind: "movement", id: movement.movementId }); }} setTargetRun={props.setTargetRun} onConfirm={(choice) => submitMovementAssignment(movement, choice)} />)}
           </div>
         </aside>
-        <section className="mock-schedule" aria-label="Dispatch schedule"><header className="mock-schedule-head"><div><span>JOURNEY TIMELINE · {selectedDateLabel}</span><h2>Vehicle runs</h2></div><div className="schedule-heading-actions"><strong>{metricsReady ? runs.length : "—"} runs · {metric(summary?.scheduledStops)} stops · {metric(summary?.needsTime)} need a time</strong><button type="button" className="panel-toggle" aria-label={queueCollapsed ? "Show planning queue" : "Hide planning queue"} aria-expanded={!queueCollapsed} onClick={() => setQueueCollapsed((value) => !value)}>{queueCollapsed ? "Show queue" : "Hide queue"}</button></div></header><div className="mock-legend"><span><i className="green-dot" /> Delivery</span><span><i className="blue-dot" /> Collection</span><span><i className="amber-dot" /> Transfer</span><span><i className="red-dot" /> Attention</span></div>{Object.entries(placementErrors).map(([identity, message]) => <div className="degraded-note" role="status" key={identity}>{message}</div>)}{!data && <Empty title={props.projectionState === "LOADING" ? "Loading dispatch schedule" : "Dispatch schedule unavailable"} body={props.projectionState === "LOADING" ? "Waiting for the materialised Logistics projection." : "The authoritative projection could not be loaded."} />}{data && props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" && <div className="degraded-note">This materialised view is not current. Refresh before dispatching.</div>}{data && <MountedReactTimeline planner={{ ...data.planner, runs }} queueItems={deriveTimelineQueueCards(groups, movements, runs, pendingSchedules)} pendingSchedules={pendingSchedules} confirmedSchedules={confirmedSchedules} onStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onSchedule={scheduleStop} onQueueDrop={(kind, id, runId, time, lane, collectionRequired) => assignQueueItem(kind, id, runId, time, lane, collectionRequired)} onReturnToQueue={returnWorkToPlanning} onRun={(runId) => props.setInspector({ kind: "run", id: runId })} />}<RealScheduleSummary planner={data?.planner} /></section>
+        <section className="mock-schedule" aria-label="Dispatch schedule"><header className="mock-schedule-head"><div><span>JOURNEY TIMELINE · {selectedDateLabel}</span><h2>Vehicle runs</h2></div><div className="schedule-heading-actions"><strong>{metricsReady ? runs.length : "—"} runs · {metric(summary?.scheduledStops)} stops · {metric(summary?.needsTime)} need a time</strong><button type="button" className="panel-toggle" aria-label={queueCollapsed ? "Show planning queue" : "Hide planning queue"} aria-expanded={!queueCollapsed} onClick={() => setQueueCollapsed((value) => !value)}>{queueCollapsed ? "Show queue" : "Hide queue"}</button></div></header><div className="mock-legend"><span><i className="green-dot" /> Delivery</span><span><i className="blue-dot" /> Collection</span><span><i className="amber-dot" /> Transfer</span><span><i className="red-dot" /> Attention</span></div>{Object.entries(placementErrors).map(([identity, message]) => <div className="degraded-note" role="status" key={identity}>{message}</div>)}{!data && <Empty title={props.projectionState === "LOADING" ? "Loading dispatch schedule" : "Dispatch schedule unavailable"} body={props.projectionState === "LOADING" ? "Waiting for the materialised Logistics projection." : "The authoritative projection could not be loaded."} />}{data && props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" && <div className="degraded-note">This materialised view is not current. Refresh before dispatching.</div>}{data && <MountedReactTimeline planner={{ ...data.planner, runs }} queueItems={deriveTimelineQueueCards(groups, movements, runs, pendingSchedules)} pendingSchedules={pendingSchedules} confirmedSchedules={confirmedSchedules} selectedRunId={props.inspector && (props.inspector.kind === "run" ? props.inspector.id : props.inspector.kind === "stop" || props.inspector.kind === "load" ? props.inspector.runId : undefined)} pendingRuns={pendingRunTimings} creatingRuns={creatingRuns} onRunTiming={runTimingCommand} onCreateRun={createRunOnTimeline} onQueueDropToUntimedRun={assignQueueItemToUntimedRun} onStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onSchedule={scheduleStop} onQueueDrop={(kind, id, runId, time, lane, collectionRequired) => assignQueueItem(kind, id, runId, time, lane, collectionRequired)} onReturnToQueue={returnWorkToPlanning} onRun={(runId) => props.setInspector({ kind: "run", id: runId })} />}<RealScheduleSummary planner={data?.planner} /></section>
       </section>
     </div>
     {props.inspector && data && <Inspector selection={props.inspector} planner={data.planner} projection={data.projection} rawRequirements={data.requirements} rawStops={data.stops} onClose={() => props.setInspector(undefined)} onSelectRun={(runId) => props.setInspector({ kind: "run", id: runId })} onSelectStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onSelectLoad={(runId, stopId, loadId) => props.setInspector({ kind: "load", id: loadId, runId, stopId })} onAction={handleInspectorAction} onScheduleStop={scheduleStop} runs={runs} targetRun={props.targetRun} setTargetRun={props.setTargetRun} assigning={props.assigning} setAssigning={props.setAssigning} onAssignGroup={(group, choice) => submitGroupAssignment(group, choice)} onAssignMovement={(movement, choice) => submitMovementAssignment(movement, choice)} placementPending={Boolean(props.busy || pendingSchedules[inspectorPendingIdentity] || (props.inspector.kind === "group" && confirmedSchedules[inspectorPendingIdentity]))} />}
@@ -2352,11 +2409,6 @@ function Inspector({
       <div className="route-sheet-action"><span>Run · {run.stopCount} stops</span><button ref={routeSheetTrigger} type="button" className="secondary" onClick={() => setRouteSheetOpen(true)}>View route</button></div>
       <RunJourneyTimesEditor key={`${run.runId}:${run.version}`} run={run} onAction={onAction} pending={placementPending} />
       {(() => {
-        const chronologicalStops = [...run.stops].sort((left, right) => {
-          const leftTime = left.plannedWindow?.startTime || left.plannedArrivalTime;
-          const rightTime = right.plannedWindow?.startTime || right.plannedArrivalTime;
-          return (leftTime ? clockMinutes(leftTime) : Number.MAX_SAFE_INTEGER) - (rightTime ? clockMinutes(rightTime) : Number.MAX_SAFE_INTEGER) || left.sequence - right.sequence;
-        });
         const loadProgress = (projection?.deliveryLoads.filter((load) => load.runId === run.runId) || []).flatMap((load) => {
           const ids = load.loadIds?.length ? load.loadIds : [load.id];
           return ids.map((id) => {
@@ -2367,8 +2419,14 @@ function Inspector({
         const loadedLoads = loadProgress.filter((load) => load.loaded).length;
         return <>
           <InspectorMeta label="Loading progress" value={`${loadedLoads} of ${loadProgress.length} individual delivery load${loadProgress.length === 1 ? "" : "s"} loaded`} />
-          <h3>Stops · chronological</h3>
-          <ul className="inspector-list journey-stop-list">{chronologicalStops.map((item) => <li key={item.stopId}><button className="inspector-row-button" onClick={() => onSelectStop(run.runId, item.stopId)}><span><strong>{item.lane === "collection" ? "Collection" : "Delivery"}</strong> · {item.destination.label}</span><span>{item.plannedWindow?.startTime || item.plannedArrivalTime || "Time to confirm"}</span><small>{stopOperationalStatusLabel(item.operationalStatus)}</small></button></li>)}</ul>
+          <RunOrganiser
+            run={run}
+            pending={placementPending}
+            onSave={(stopIds) => onAction({ action: "set-run-stop-order", runId: run.runId, expectedRunVersion: run.version, stopIds })}
+            onOpenStop={(stopId) => onSelectStop(run.runId, stopId)}
+            onReturnStop={(stopId) => onAction({ action: "return-stop-to-planning", runId: run.runId, stopId })}
+            onRetire={() => onAction({ action: "retire-empty-run", runId: run.runId, expectedRunVersion: run.version })}
+          />
         </>;
       })()}
       {run.departedCpuAt && <InspectorMeta label="Actual CPU departure" value={new Date(run.departedCpuAt).toLocaleString("en-GB", { timeZone: "Europe/London" })} />}

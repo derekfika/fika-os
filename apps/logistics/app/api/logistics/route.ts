@@ -47,7 +47,8 @@ import {
 } from "@/lib/store";
 import { aggregateDelivery, assertLoadVersion, compatibleLoad, assertDispatchable, removeAssignment, setJobCollectionStatus } from "@/lib/delivery-loads";
 import { assignmentIntegrityDiagnostic } from "@/lib/assignment-integrity-diagnostic";
-import { executeProjected, projectedActions } from "@/lib/projected-execution";
+import { executeProjected, projectedActions, executionGroupKey } from "@/lib/projected-execution";
+import { emptyRunRetirementBlocker, validateRunStopOrder } from "@/lib/run-stop-order";
 import { readRunWork, assertRunReady, workOutstanding, workIssuesOpen, finaliseRun } from "@/lib/run-execution";
 import { assignCanonicalJob, assertLoadAssignmentsCurrent } from "@/lib/load-assignment";
 import { CPU_PRODUCTION_LOCATION_ID, CPU_SITE_OPLOC_ID } from "../../../../shared/production-location";
@@ -1051,6 +1052,7 @@ async function handlePost(request: NextRequest) {
       const existing = (await listState(serviceDate)).runs;
       if (existing.some(run => !isLogisticsVehicleId(run.vehicleId))) throw Object.assign(new HttpError(409, "Existing runs require reviewed vehicle identity mapping."), { code: "LOGISTICS_VEHICLE_IDENTITY_REQUIRED" });
       const slots = ([{ slot: "van-1", vehicleId: "van1" }, { slot: "van-2", vehicleId: "van2" }] as const).filter(item => vehicleScope(principal).includes(item.vehicleId));
+      let retiredVehicleIds: Set<DeliveryRun["vehicleId"]> | undefined;
       const result: DeliveryRun[] = [];
       const missing: Array<{ slot: "van-1" | "van-2"; vehicleLabel: string; vehicleId: "van1" | "van2" }> = [];
       for (const item of slots) {
@@ -1060,6 +1062,9 @@ async function handlePost(request: NextRequest) {
           result.push(current);
           continue;
         }
+        // A vehicle whose runs were all deliberately retired today must not have a draft re-created behind the planner's back.
+        retiredVehicleIds ??= new Set((await runs().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryRun).filter((run) => run.retiredAt).map((run) => run.vehicleId));
+        if (retiredVehicleIds.has(item.vehicleId)) continue;
         missing.push({ slot: item.slot, vehicleLabel, vehicleId: item.vehicleId });
       }
       const created = missing.length ? await runTracedTransaction(async (transaction) => {
@@ -1178,6 +1183,10 @@ async function handlePost(request: NextRequest) {
         audit: [],
       };
       if (!requested.canonicalId || !validOperationalDate(requested.serviceDate)) throw new HttpError(422, "A stable run ID and valid service date are required.");
+      const requestedDeparture = requested.plannedCpuDepartureTime || undefined;
+      const requestedReturn = requested.plannedCpuReturnTime || undefined;
+      const requestedTimingError = validateRunJourneyTimes({ departure: requestedDeparture, returnTime: requestedReturn });
+      if (requestedTimingError) throw new HttpError(422, requestedTimingError);
       const saved = await runTracedTransaction(async (transaction) => {
         const ref = runs().doc(requested.canonicalId);
         const snapshot = await transaction.get(ref);
@@ -1190,6 +1199,7 @@ async function handlePost(request: NextRequest) {
           driverLabel: requested.driverLabel,
           vehicleId: requested.vehicleId,
           vehicleLabel: logisticsVehicleLabel(requested.vehicleId!),
+          ...(requestedDeparture ? { plannedCpuDepartureTime: requestedDeparture, plannedCpuReturnTime: requestedReturn } : {}),
           returnToCpuRequired: true,
           orderedStopIds: [],
           version: 1,
@@ -1201,6 +1211,59 @@ async function handlePost(request: NextRequest) {
         return run;
       });
       await recordCanonicalLogisticsChange({ serviceDate: saved.serviceDate, entityType: "run", entityId: saved.canonicalId, changeType: "run-created", revision: saved.version, actorId, by, changedAt: now });
+      return NextResponse.json(saved);
+    }
+    if (body.action === "retire-empty-run" && typeof body.runId === "string") {
+      if (body.expectedRunVersion === undefined) throw new HttpError(422, "A current run version is required to retire a run.");
+      const retired = await runTracedTransaction(async (transaction) => {
+        const ref = runs().doc(body.runId!);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists) throw new HttpError(404, "Run not found.");
+        const run = snapshot.data() as DeliveryRun;
+        authorizeRun(principal, run);
+        if (run.retiredAt) return run; // idempotent replay
+        if (run.version !== body.expectedRunVersion) throw new HttpError(409, "This run changed elsewhere. Refresh before retiring it.");
+        const work = await readRunWork(transaction, run);
+        const blocker = emptyRunRetirementBlocker(run, work);
+        if (blocker) throw new HttpError(422, blocker);
+        const next: DeliveryRun = { ...run, retiredAt: now, retiredBy: by, orderedStopIds: [], version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "run-retired-empty", at: now, by, version: run.version + 1 }] };
+        transaction.set(ref, next);
+        return next;
+      });
+      const event = await appendLogisticsChange({ serviceDate: retired.serviceDate, entityType: "run", entityId: retired.canonicalId, changeType: "run-retired", revision: retired.version, changedAt: now, actorId });
+      await rebuildLogisticsProjection(retired.serviceDate, by, event.sequence);
+      return NextResponse.json(retired);
+    }
+    if (body.action === "set-run-stop-order" && typeof body.runId === "string") {
+      if (body.expectedRunVersion === undefined) throw new HttpError(422, "A current run version is required to save the stop order.");
+      const saved = await runTracedTransaction(async (transaction) => {
+        const ref = runs().doc(body.runId!);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists) throw new HttpError(404, "Run not found.");
+        const run = snapshot.data() as DeliveryRun;
+        authorizeRun(principal, run);
+        if (run.retiredAt) throw new HttpError(409, "This run has been retired.");
+        if (run.version !== body.expectedRunVersion) throw new HttpError(409, "This run changed elsewhere. Refresh before saving the stop order.");
+        assertPlanningOpen(run);
+        const work = await readRunWork(transaction, run);
+        const problem = validateRunStopOrder(body.stopIds, work, (load) => executionGroupKey(load as import("@/lib/types").DeliveryLoad));
+        if (problem) throw new HttpError(422, problem);
+        // Native stops keep the existing movement-order safety rules (e.g. transfer pickup before drop).
+        const submitted = body.stopIds as string[];
+        const nativeInOrder = submitted.map((id) => work.native.find((stop) => stop.canonicalId === id)).filter((stop): stop is DeliveryStop => Boolean(stop));
+        const movementIds = [...new Set(nativeInOrder.flatMap((stop) => stop.movementRequestIds || (stop.movementRequestId ? [stop.movementRequestId] : [])))];
+        const movementSnapshots = await Promise.all(movementIds.map((id) => transaction.get(movements().doc(id))));
+        if (movementSnapshots.some((item) => !item.exists)) throw new HttpError(409, "A linked movement identity is unavailable; review run integrity before reordering.");
+        const orderProblem = transferOrderProblem(nativeInOrder.map((stop, index) => ({ ...stop, sequence: index + 1 })), movementSnapshots.map((item) => item.data() as MovementRequest));
+        if (orderProblem) throw new HttpError(orderProblem.includes("incomplete or ambiguous") ? 409 : 422, orderProblem);
+        if (JSON.stringify(run.orderedStopIds) === JSON.stringify(submitted)) return run; // idempotent replay
+        for (const [index, stop] of nativeInOrder.entries()) transaction.set(stops().doc(stop.canonicalId), { ...stop, sequence: index + 1 });
+        const next: DeliveryRun = { ...run, orderedStopIds: submitted, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "run-stop-order-saved", at: now, by, version: run.version + 1 }] };
+        transaction.set(ref, next);
+        return next;
+      });
+      const event = await appendLogisticsChange({ serviceDate: saved.serviceDate, entityType: "run", entityId: saved.canonicalId, changeType: "run-stop-order-saved", revision: saved.version, changedAt: now, actorId });
+      await rebuildLogisticsProjection(saved.serviceDate, by, event.sequence);
       return NextResponse.json(saved);
     }
     if (

@@ -67,7 +67,9 @@ export function scopeProjection(projection: LogisticsDayProjection, principal: L
   const movements = (projection.movements || []).filter(item => organisation || movementIds.has(item.canonicalId));
   const planningQueue = organisation ? projection.planningQueue : [];
   // Lineage, exceptions and preference keys can contain out-of-scope entity IDs.
-  return { ...projection, runs: runs.map(run => ({ ...run, orderedStopIds: (run.orderedStopIds || []).filter(id => stops.some(stop => stop.canonicalId === id)), audit: [] })), stops, deliveryLoads, movements, planningQueue,
+  // A stored visiting order may name native stops AND load-backed projected stops; keep only ids the caller can see.
+  const visibleStopIds = new Set([...stops.map(stop => stop.canonicalId), ...deliveryLoads.flatMap(load => (load.loadIds || [load.id]).flatMap(id => [`projection-stop:delivery:${id}`, `projection-stop:collection:${id}`]))]);
+  return { ...projection, runs: runs.map(run => ({ ...run, orderedStopIds: (run.orderedStopIds || []).filter(id => visibleStopIds.has(id)), audit: [] })), stops, deliveryLoads, movements, planningQueue,
     sourceLineage: organisation ? projection.sourceLineage : [], exceptions: organisation ? projection.exceptions : [], collectionRequiredKeys: organisation ? projection.collectionRequiredKeys : [],
     summary: { queuedJobs: planningQueue.length, loads: deliveryLoads.length, assignedJobs: deliveryLoads.reduce((n, load) => n + load.jobCount, 0), collectedJobs: deliveryLoads.reduce((n, load) => n + load.collectedCount, 0) } };
 }
