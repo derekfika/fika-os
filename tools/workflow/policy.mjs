@@ -62,4 +62,3 @@ export function safeScope(scope) {
   if (!scope || scope.includes('..') || scope.includes('\\') || scope.startsWith('/') || scope.includes(':') || !/^[a-zA-Z0-9._/-]+$/.test(scope)) throw Error('Invalid workspace scope');
   return scope.replace(/\/$/, '');
 }
-
