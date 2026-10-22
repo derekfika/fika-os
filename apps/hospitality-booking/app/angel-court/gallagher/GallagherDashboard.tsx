@@ -367,7 +367,7 @@ export default function GallagherDashboard() {
         <div>
           <p className={styles.eyebrow}>One Angel Court</p>
           <h1 id="dashboard-title">Gallagher bookings</h1>
-          <p className={styles.lead}>A read-only record of your hospitality bookings, upcoming and past.</p>
+          <p className={styles.lead}>Your hospitality bookings, upcoming and past.</p>
         </div>
         {hasData ? <SummaryTiles data={data!} today={today} /> : null}
       </section>
