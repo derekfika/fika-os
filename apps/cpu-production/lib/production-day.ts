@@ -34,9 +34,17 @@ function productionLineCategory(order: ProductionOrder, line: ProductionLine) {
 export function aggregateProductionTotals(orders: ProductionOrder[]): ProductionTotalsCategory[] {
   const categories = new Map<string, { orderIds: Set<string>; items: Map<string, ProductionTotalItem> }>();
   const rank: Record<ProductionTotalProgress, number> = { not_started: 0, in_progress: 1, produced: 2 };
+  const uniqueOrders = new Map<string, ProductionOrder>();
   for (const order of orders) {
+    const prior = uniqueOrders.get(order.canonicalId);
+    if (!prior || order.version > prior.version) uniqueOrders.set(order.canonicalId, order);
+  }
+  for (const order of uniqueOrders.values()) {
     const categoriesForOrder = new Set<string>();
+    const seenLines = new Set<string>();
     for (const line of order.lines) {
+      if (seenLines.has(line.canonicalId)) continue;
+      seenLines.add(line.canonicalId);
       const category = productionLineCategory(order, line);
       categoriesForOrder.add(category);
       const bucket = categories.get(category) || { orderIds: new Set<string>(), items: new Map<string, ProductionTotalItem>() };
@@ -48,7 +56,7 @@ export function aggregateProductionTotals(orders: ProductionOrder[]): Production
     }
     for (const category of categoriesForOrder) categories.get(category)?.orderIds.add(order.canonicalId);
   }
-  return [...categories].map(([category, value]) => ({ category, orderCount: value.orderIds.size, items: [...value.items.values()] }));
+  return [...categories].map(([category, value]) => ({ category, orderCount: value.orderIds.size, items: [...value.items.values()].sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }) || a.unit.localeCompare(b.unit, "en", { sensitivity: "base" })) }));
 }
 
 /** Production quantities keep their units and never fall back to commercial portions. */

@@ -1,5 +1,5 @@
 import type { ProductionOrder, ProductionLine } from "./production-types";
-import type { CpuDayProjection } from "./cpu-projection";
+import type { CpuDayProjection, CpuWeekProjection } from "./cpu-projection";
 import type { ProductionScope } from "./production-scope";
 import { europeLondonDate } from "./operational-date";
 
@@ -7,7 +7,9 @@ export function weekCommencingFor(serviceDate: string) { const date = new Date(`
 export function dashboardOperationalDate(now = new Date()) { const date = new Date(`${europeLondonDate(now)}T12:00:00Z`); const day = date.getUTCDay(); if (day === 0) date.setUTCDate(date.getUTCDate() + 1); else if (day === 6) date.setUTCDate(date.getUTCDate() + 2); return date.toISOString().slice(0, 10); }
 
 /** Rehydrates the compact day read model into the shape used by the existing UI. */
-export function cpuProjectionToOrders(projection: CpuDayProjection): ProductionOrder[] {
+export type CpuProjection = CpuDayProjection | CpuWeekProjection;
+
+export function cpuProjectionToOrders(projection: CpuProjection): ProductionOrder[] {
   return projection.orders.map((row) => {
     const cancellationNotice = row.cancellationNotice || (row.workflowStatus === "cancelled" ? "Booking cancelled in Manager dashboard." : undefined);
     const lines: ProductionLine[] = row.quantities.map((quantity, index) => ({
@@ -77,7 +79,7 @@ export function cpuProjectionToOrders(projection: CpuDayProjection): ProductionO
   });
 }
 
-export function filterCpuProjectionForScope(projection: CpuDayProjection, scope: ProductionScope): CpuDayProjection {
+export function filterCpuProjectionForScope<T extends CpuProjection>(projection: T, scope: ProductionScope): T {
   if (scope === "all") return projection;
   const matchesOrigin = (row: CpuDayProjection["orders"][number]) => {
     if (scope === "hospitality") return row.origin === "hospitality_booking" || row.productionCategory === "hospitality" || row.productionCategory === "events";
@@ -105,11 +107,11 @@ export function filterCpuProjectionForScope(projection: CpuDayProjection, scope:
     if (explicit.length) return [];
     return matchesOrigin(row) ? [{ ...row }] : [];
   });
-  return { ...projection, orders, summary: { ...projection.summary, orders: orders.length, ready: orders.filter((order) => order.planningReadiness === "ready").length, attention: orders.filter((order) => order.attention.length > 0).length, planned: orders.filter((order) => order.workflowStatus === "planned").length, totalUnits: orders.reduce((sum, order) => sum + order.quantities.reduce((total, item) => total + item.quantity, 0), 0) } };
+  return { ...projection, orders, summary: { ...projection.summary, orders: orders.length, ready: orders.filter((order) => order.planningReadiness === "ready").length, attention: orders.filter((order) => order.attention.length > 0).length, planned: orders.filter((order) => order.workflowStatus === "planned").length, totalUnits: orders.reduce((sum, order) => sum + order.quantities.reduce((total, item) => total + item.quantity, 0), 0) } } as T;
 }
 
 /** True when a legacy projection has lost the per-line workstream alignment. */
-export function cpuProjectionHasAmbiguousWorkstreamMapping(projection: CpuDayProjection): boolean {
+export function cpuProjectionHasAmbiguousWorkstreamMapping(projection: CpuProjection): boolean {
   return projection.orders.some((row) => {
     const workstreams = (row.productionScope || "").split(",").filter(Boolean);
     return workstreams.some((workstream) => workstream !== "unassigned") && workstreams.length !== row.quantities.length;

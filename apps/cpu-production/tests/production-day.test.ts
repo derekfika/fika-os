@@ -43,9 +43,9 @@ test("production Totals keep ready orders not started until production begins", 
 
   const items = aggregateProductionTotals([ready, inProduction, complete]).flatMap(({ items }) => items);
   assert.deepEqual(items.map(({ name, progress }) => [name, progress]), [
-    ["Ready dish", "not_started"],
     ["Cooking dish", "in_progress"],
     ["Finished dish", "produced"],
+    ["Ready dish", "not_started"],
   ]);
 });
 
