@@ -1,0 +1,18 @@
+{
+  "schema": "fika.release.v1",
+  "app": "menu",
+  "environment": "staging",
+  "project": "fika-os-dev",
+  "backend": "fika-menu-planning-staging",
+  "region": "europe-west4",
+  "branch": "release/staging/menu",
+  "sourceSha": "db96857f3d8e1150465a8ad2d84f88b7cca8eec5",
+  "rollout": "build-2026-10-22-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "baseline",
+  "scopeHash": "1230062cadd7a35c8af78431538194ba75cc05bb1d3eddf6ab46fdc860fb3337",
+  "observedAt": "2026-10-22T17:15:40.058Z",
+  "historicalException": true,
+  "reconciliation": "Existing deployed source not integrated into main; preserve, reconcile by reviewed PR before any new production promotion"
+}
