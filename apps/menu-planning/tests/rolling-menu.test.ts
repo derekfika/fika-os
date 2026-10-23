@@ -56,6 +56,20 @@ test("planner default week prefers the current service week over distant future 
   assert.equal(defaultWeekForDate([future, current], "2026-08-19")?.weekCommencing, "2026-08-17");
 });
 
+test("copy-style create-entry requires the captured week version and does not overwrite concurrent changes", async () => {
+  const week = emptyWeek("2098-10-19", "copy-version-test");
+  await saveSnapshot(week);
+  const expectedVersion = week.week.version;
+  await createEntry(week.week.id, week.days[0].id, "COLD PROTEIN", "Source dish", "test", "dish:source", expectedVersion);
+  await assert.rejects(
+    createEntry(week.week.id, week.days[1].id, "COLD PROTEIN", "Copied dish", "test", "dish:source", expectedVersion),
+    (cause: unknown) => Boolean(cause && typeof cause === "object" && "status" in cause && cause.status === 409),
+  );
+  const persisted = await getWeek(week.week.id);
+  assert.equal(persisted.entries.length, 1);
+  assert.equal(persisted.entries[0].dayId, week.days[0].id);
+});
+
 test("concurrent historic imports cannot overwrite the same week", async () => {
   const source = emptyWeek("2099-01-05", "test-import");
   source.week.status = "imported"; source.week.sourceFiles = ["WC 05_01_2099.xlsx"];
