@@ -7,11 +7,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseExternalProductionMaterialisation, type ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
-import { db } from "../lib/firebase-admin";
-import { stableDocumentId } from "../lib/canonical-editor";
-import { materialiseExternalProductionOrder, materialisedProductionId, type ProductionOrder } from "../lib/production-domain";
-import { reconcileProductionFulfilmentForServiceDate } from "../lib/fulfilment-projection";
-import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
+import { db } from "../../lib/firebase-admin";
+import { stableDocumentId } from "../../lib/canonical-editor";
+import { materialiseExternalProductionOrder, materialisedProductionId, type ProductionOrder } from "../../lib/production-domain";
+import { reconcileProductionFulfilmentForServiceDate } from "../../lib/fulfilment-projection";
+import type { FulfilmentRequirement } from "../../../shared/fulfilment-requirement";
 
 const skip = process.env.FIRESTORE_EMULATOR_HOST || process.env.FIKA_RUNTIME_MODE === "local" ? false : "Firestore emulator is not running.";
 const actor = { uid: "grab-go-standing-test", name: "Standing order test", role: "integration-admin", synthetic: true } as never;
@@ -27,7 +27,7 @@ const productionOrder = async () => (await db.collection("fikaProductionOrdersV1
 const requirements = async () => (await db.collection("fikaFulfilmentRequirementsV1").where("serviceDate", "==", serviceDate).get()).docs.map(document => document.data() as FulfilmentRequirement).filter(requirement => requirement.sourceEntityId === sourceEntityId);
 const quantities = (order: ProductionOrder) => Object.fromEntries(order.lines.map(line => [line.sourceMenuItemId, line.productionQuantity]));
 
-test("standing-order source versions reconcile exactly through the Production Order and the Logistics fulfilment requirement", { skip }, async () => {
+test("emulator: standing-order source versions reconcile exactly through the Production Order and the Logistics fulfilment requirement", { skip }, async () => {
   try {
     for (const version of [payload(1, "submitted", { "product:a": 5, "product:b": 2 }), payload(2, "submitted", { "product:a": 9 }), payload(3, "cancelled", { "product:a": 9 })]) assert.deepEqual(parseExternalProductionMaterialisation(version), version, "payload passes the shared intake contract");
     const v1 = await materialiseExternalProductionOrder(actor, payload(1, "submitted", { "product:a": 5, "product:b": 2 }));
