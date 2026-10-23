@@ -148,6 +148,16 @@ h1, h2, h3, h4, p { text-wrap: pretty; }
 .week-menu-cell { min-height: 54px; padding: 7px; }
 .week-menu-cell-button { min-height: 40px; color: var(--fika-action-secondary); }
 .week-menu-cell-button:hover, .week-menu-cell-button:focus-visible { border-color: var(--fika-action-primary); background: var(--fika-status-info-surface); box-shadow: none; }
+.week-menu-cell--copy-target { outline: 2px dashed var(--fika-action-primary); outline-offset: -3px; background: var(--fika-status-info-surface); }
+.week-menu-cell-button[draggable="true"] { cursor: grab; }
+.week-menu-cell-button[draggable="true"]:active { cursor: grabbing; }
+.week-menu-drag-handle { float: right; margin-left: 6px; color: var(--fika-text-muted); font-size: 1rem; }
+.week-menu-cell-actions { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.week-menu-copy-action { min-height: 32px; border: 0; border-radius: var(--radius-sm); padding: 4px 7px; color: var(--fika-action-primary); background: transparent; font: inherit; font-size: .72rem; font-weight: 700; cursor: pointer; }
+.week-menu-copy-action:hover, .week-menu-copy-action:focus-visible { background: var(--fika-status-info-surface); outline: 2px solid var(--fika-focus-ring); outline-offset: 1px; }
+.week-menu-copy-action:disabled { color: var(--fika-text-muted); cursor: not-allowed; }
+.menu-copy-feedback { margin: 0 clamp(20px,4vw,56px) 10px; color: var(--fika-text-secondary); font-size: .85rem; }
+.copy-dish-dialog select { width: 100%; min-height: 42px; }
 
 .table-wrap { border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); }
 .portion-matrix th, .portion-matrix td, .operational-allergen-matrix th, .operational-allergen-matrix td { border-color: var(--fika-border-default); padding: 10px 9px; }

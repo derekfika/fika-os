@@ -403,6 +403,7 @@ async function handlePost(request: NextRequest) {
         String(body.itemLabel || ""),
         actor.uid,
         body.itemId ? String(body.itemId) : undefined,
+        body.expectedWeekVersion === undefined ? undefined : Number(body.expectedWeekVersion),
       );
       return NextResponse.json({
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
