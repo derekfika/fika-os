@@ -1219,6 +1219,22 @@ function RealPlanner(props: RealPlannerProps) {
       }
     }
   }, [data?.stops, props.projectionState]);
+  /** After work is returned to the queue, keep the inspector: a Run stays selected; a selected stop/load follows its work to the queue item. */
+  const reselectRef = useRef<{ jobIds: string[] } | undefined>(undefined);
+  const retainAfterReturn = (runId: string, stopId: string, jobIds: string[]) => {
+    const selection = props.inspector;
+    if (!selection || selection.kind === "run" || selection.kind === "group" || selection.kind === "movement") return;
+    const selectedStop = selection.kind === "stop" ? selection.id : selection.stopId;
+    if (selectedStop !== stopId) return;
+    reselectRef.current = { jobIds };
+    props.setInspector({ kind: "run", id: runId });
+  };
+  useEffect(() => {
+    const pending = reselectRef.current;
+    if (!pending) return;
+    const group = groups.find((item) => item.requirementRefs.some((ref) => pending.jobIds.includes(ref.requirementId)));
+    if (group) { reselectRef.current = undefined; props.setInspector({ kind: "group", id: group.groupKey }); }
+  }, [groups]);
   useEffect(() => {
     const selection = props.inspector;
     if (!selection) return;
@@ -1227,9 +1243,9 @@ function RealPlanner(props: RealPlannerProps) {
     } else if (selection.kind === "movement" && !movements.some((movement) => movement.movementId === selection.id)) {
       props.setInspector(undefined);
     } else if (selection.kind === "stop" && !runs.some((run) => run.runId === selection.runId && run.stops.some((stop) => stop.stopId === selection.id))) {
-      props.setInspector(undefined);
+      props.setInspector(runs.some((run) => run.runId === selection.runId) ? { kind: "run", id: selection.runId } : undefined);
     } else if (selection.kind === "load" && !data?.projection?.deliveryLoads.some((load) => (load.loadIds || [load.id]).includes(selection.id))) {
-      props.setInspector(undefined);
+      props.setInspector(runs.some((run) => run.runId === selection.runId) ? { kind: "run", id: selection.runId } : undefined);
     } else if (selection.kind === "run" && !runs.some((run) => run.runId === selection.id)) {
       props.setInspector(undefined);
     }
@@ -1291,7 +1307,7 @@ function RealPlanner(props: RealPlannerProps) {
     if (data?.projection && action.action === "defer-stop" && action.stopId) {
       const rawStop = data.stops.find((item) => item.canonicalId === action.stopId);
       for (const ref of rawStop?.requirementRefs || []) await props.act({ action: "remove-job-from-load", jobId: ref.requirementId });
-      props.setInspector(undefined);
+      if (rawStop) retainAfterReturn(rawStop.runId, rawStop.canonicalId, (rawStop.requirementRefs || []).map((ref) => ref.requirementId)); else props.setInspector(undefined);
       return;
     }
     if (action.action === "set-run-stop-order" || action.action === "retire-empty-run") {
@@ -1785,7 +1801,7 @@ function RealPlanner(props: RealPlannerProps) {
           if (!outcome.ok) return index ? { ...outcome, uncertain: true, body: lastBody } : outcome;
           lastBody = outcome.body;
         }
-        props.setInspector(undefined);
+        retainAfterReturn(runId, stopId, requirementIds);
         return { ok: true, body: lastBody };
       }
       try {
@@ -1795,7 +1811,7 @@ function RealPlanner(props: RealPlannerProps) {
         const freshStop = current.stops.find((item) => item.canonicalId === stopId);
         if (!freshRun || !freshStop) return { ok: false, uncertain: false, message: "The stop or run no longer exists." };
         const outcome = await props.placementCommand({ action: "return-stop-to-planning", runId, stopId, expectedRunVersion: freshRun.version, expectedStopVersion: freshStop.version });
-        if (outcome.ok) props.setInspector(undefined);
+        if (outcome.ok) retainAfterReturn(runId, stopId, rawStop.requirementRefs.map((ref) => ref.requirementId));
         return outcome;
       } catch (error) {
         return { ok: false, uncertain: true, message: error instanceof Error ? error.message : "Could not confirm the stop before returning it to planning." };
@@ -1930,9 +1946,10 @@ function RealPlanner(props: RealPlannerProps) {
     returnStop: (runId, stopId) => returnWorkToPlanning(runId, stopId),
     viewStop: (runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId }),
     retireRun: (runId) => { const run = runs.find((item) => item.runId === runId); if (run) void handleInspectorAction({ action: "retire-empty-run", runId, expectedRunVersion: run.version }); },
-    dateStep: (delta) => goToDate(addOperationalDays(date, delta)),
+    dateStep: (delta) => { let next = addOperationalDays(date, delta); while ([0, 6].includes(new Date(`${next}T12:00:00Z`).getUTCDay())) next = addOperationalDays(next, delta); goToDate(next); },
+    weekStep: (delta) => goToDate(addOperationalDays(date, 7 * delta)),
     dateSet: goToDate,
-    thisWeek: () => goToDate(operationalDate()),
+    thisWeek: () => { let today = operationalDate(); while ([0, 6].includes(new Date(`${today}T12:00:00Z`).getUTCDay())) today = addOperationalDays(today, 1); goToDate(today); },
     refresh: () => void props.load(true, props.projectionNeedsMaterialisation),
   };
   const liveNotices: ShellNotice[] = [
@@ -1950,6 +1967,9 @@ function RealPlanner(props: RealPlannerProps) {
     return <JourneyPlannerLive
       date={date}
       dateLabel={formatOperationalDate(date, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+      weekCommencing={weekCommencing}
+      weekDays={weekData?.days}
+      projectionCurrent={props.projectionState === "CURRENT" || props.projectionState === "VALID_EMPTY"}
       planner={data?.planner || EMPTY_PLANNER}
       runs={runs}
       selectedRunId={selection ? selection.kind === "run" ? selection.id : selection.kind === "stop" || selection.kind === "load" ? selection.runId : undefined : undefined}

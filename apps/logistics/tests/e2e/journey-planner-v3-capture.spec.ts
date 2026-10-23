@@ -4,6 +4,24 @@ import { assignedSeed, boot, DATE } from "./v3-helpers";
 
 /** Review screenshots of the mounted real planner (V3). Runs only when SHOT_DIR is set; not a pass/fail test. */
 const out = process.env.SHOT_DIR;
+const phaseC = [
+  { name: "phaseC-1536x960-narrow-inspector", width: 1536, height: 960, inspectorWidth: 320 },
+  { name: "phaseC-1536x960-wide-inspector", width: 1536, height: 960, inspectorWidth: 550 },
+  { name: "phaseC-1280x800-narrow-inspector", width: 1280, height: 800, inspectorWidth: 320 },
+  { name: "phaseC-1280x800-wide-inspector", width: 1280, height: 800, inspectorWidth: 550 },
+];
+for (const shot of phaseC) {
+  test(`capture ${shot.name}`, async ({ page }) => {
+    test.skip(!out, "SHOT_DIR not set");
+    await page.setViewportSize({ width: shot.width, height: shot.height });
+    await page.addInitScript((width) => { try { window.localStorage.setItem("fika.logistics.journeyPlanner.inspectorWidth", String(width)); } catch { /* ignore */ } }, shot.inspectorWidth);
+    await boot(page, assignedSeed());
+    await page.locator(`[data-run-bar="run:${DATE}:a"]`).click();
+    await page.getByRole("button", { name: "Expand Studio Café" }).click();
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(out!, `${shot.name}.png`) });
+  });
+}
 const shots = [
   { name: "live-1536x960-inspector", width: 1536, height: 960, run: true },
   { name: "live-1920x1080-inspector", width: 1920, height: 1080, run: true },
