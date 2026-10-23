@@ -27,7 +27,16 @@ import type {
 } from "../lib/planner-read-model";
 import type { LogisticsDayProjection, LogisticsProjectionState } from "../lib/types";
 import { projectionToDashboardData } from "../lib/projection-dashboard-adapter";
+import { RunOrganiser } from "./run-organiser";
+import { JourneyPlannerLive, type LiveCallbacks } from "./journey-planner/JourneyPlannerLive";
+import dialogStyles from "./journey-planner/dialog.module.css";
+import { stopPiecesForRun } from "../lib/stop-pieces";
+import { VisitChooser, type VisitChoicePrompt } from "./visit-chooser";
+import { chooseVisit, legRunId, legVisitId, visitCandidates, visitRequestFor, type VisitLoad } from "../lib/stop-visits";
+import type { CreatingRun, PendingRunTiming } from "./journey-lanes";
+import type { ShellNotice } from "./journey-planner/JourneyPlannerShell";
 import { operationalDate } from "../lib/date";
+import { groupIntoVisitRows } from "../lib/stop-visits";
 import { clientErrorDetails, requireSuccessfulResponse } from "../lib/client-errors";
 import { drainIncrementalPages } from "../lib/incremental-sync";
 import { readCachedProjection, writeCachedProjection } from "../lib/logistics-cache";
@@ -152,6 +161,7 @@ function PlannerContents() {
   const emptyProjection = (serviceDate: string): LogisticsDayProjection => ({ serviceDate, revision: 0, lastChangeSequence: 0, planningQueue: [], deliveryLoads: [], runs: [], exceptions: [], summary: { queuedJobs: 0, loads: 0, assignedJobs: 0, collectedJobs: 0 }, rebuiltAt: new Date().toISOString() });
   const [error, setError] = useState("");
   const [errorReference, setErrorReference] = useState("");
+  const [commandFailure, setCommandFailure] = useState<{ message: string; requestId: string }>();
   const [passiveSyncError, setPassiveSyncError] = useState("");
   const [projectionNeedsMaterialisation, setProjectionNeedsMaterialisation] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
@@ -200,6 +210,7 @@ function PlannerContents() {
     setPassiveSyncError("");
     setError("");
     setErrorReference("");
+    setCommandFailure(undefined);
     setLastUpdated(undefined);
     setRefreshing(false);
     setInspector(undefined);
@@ -223,8 +234,50 @@ function PlannerContents() {
     setData(next);
   };
 
+  const lastFailure = useRef<{ message: string; requestId: string; status: number } | undefined>(undefined);
+  const [visitChoice, setVisitChoice] = useState<{ prompt: VisitChoicePrompt; resolve: (request?: string) => void } | undefined>();
+  /**
+   * Physical-visit choice. The server stays authoritative; this only asks Franco when his own data shows
+   * the customer already has SEVERAL visits on the target Run (an unambiguous visit is joined silently).
+   * Returns the request to send ("new" / visit id / member:<loadId>), undefined to let the server decide, or "cancel".
+   */
+  async function resolveVisitForCommand(payload: Record<string, unknown>): Promise<string | undefined> {
+    if (payload.visit !== undefined || !data?.projection) return undefined;
+    const groups = data.projection.deliveryLoads as VisitLoad[];
+    const action = String(payload.action || "");
+    let runId: string | undefined, customer: string | undefined, label: string | undefined;
+    let excludeLegs: Array<{ loadId: string; lane: "delivery" | "collection" }> = [];
+    if (action === "assign-job-to-load" && payload.lane !== "collection" && typeof payload.jobId === "string" && typeof payload.targetRunId === "string") {
+      const queued = data.projection.planningQueue.find((job) => job.id === payload.jobId);
+      const current = data.projection.deliveryLoads.find((group) => group.jobs.some((job) => job.id === payload.jobId));
+      if (current?.runId === payload.targetRunId) return undefined; // already on this run: it keeps its visit
+      runId = payload.targetRunId; customer = (queued || current)?.destinationOplocId; label = (queued || current)?.destinationLabelSnapshot;
+    } else if (["reschedule-delivery-load", "reschedule-delivery-loads"].includes(action) && (typeof payload.collectionRunId === "string" || typeof payload.targetRunId === "string")) {
+      const lane = payload.lane === "collection" ? "collection" as const : "delivery" as const;
+      const ids = (Array.isArray(payload.loadIds) ? payload.loadIds : [payload.loadId]).filter((id): id is string => typeof id === "string");
+      const group = data.projection.deliveryLoads.find((candidate) => ids.some((id) => candidate.id === id || (candidate.loadIds || []).includes(id)));
+      if (!group) return undefined;
+      runId = (lane === "collection" ? payload.collectionRunId || payload.targetRunId : payload.targetRunId) as string;
+      const ownVisit = Boolean(legVisitId(group, lane));
+      const otherVisit = Boolean(legVisitId(group, lane === "collection" ? "delivery" : "collection"));
+      const moves = runId !== legRunId(group, lane);
+      if (!(moves || (!ownVisit && otherVisit))) return undefined; // plain time edit on the same run: membership is unchanged
+      customer = group.destinationOplocId; label = group.destinationLabelSnapshot;
+      excludeLegs = [{ loadId: group.id, lane }];
+    }
+    if (!runId || !customer) return undefined;
+    const candidates = visitCandidates(groups, { runId, customerOplocId: customer, excludeLegs });
+    if (chooseVisit(candidates).kind !== "choice-required") return undefined;
+    const choice = await new Promise<string | undefined>((resolve) => setVisitChoice({
+      prompt: { customer: label || customer!, options: candidates.map((candidate) => ({ request: visitRequestFor(candidate), label: `${label || customer} · ${candidate.firstTime || "time to confirm"}`, detail: `${candidate.legs.length} ${candidate.legs.length === 1 ? "piece" : "pieces"} of work in this visit` })) },
+      resolve,
+    }));
+    setVisitChoice(undefined);
+    return choice === undefined ? "cancel" : choice;
+  }
   const recordError = (cause: unknown, fallback: string) => {
     const details = clientErrorDetails(cause, fallback);
+    lastFailure.current = { message: details.message, requestId: details.requestId || "", status: details.status };
     if ([401, 403].includes(details.status)) requestsBlocked.current = true;
     if ([401, 403].includes(details.status)) setAuthRequired(true);
     setProjectionNeedsMaterialisation(details.code === "LOGISTICS_PROJECTION_NOT_MATERIALIZED");
@@ -546,6 +599,7 @@ function PlannerContents() {
     const context = dayContext;
     const summaryContext = weekContext;
     setBusy(true);
+    setCommandFailure(undefined);
     setError("");
     try {
       const response = await fetch("/api/logistics", {
@@ -560,15 +614,42 @@ function PlannerContents() {
       }
       return result;
     } catch (cause) {
-      if (context) dayRequests.commit(context, () => recordError(cause, "Action failed."));
+      if (context) dayRequests.commit(context, () => {
+        recordError(cause, "Action failed.");
+        const failure = lastFailure.current;
+        if (failure) setCommandFailure(failure);
+      });
       return false;
     } finally {
       if (context) dayRequests.commit(context, () => setBusy(false));
     }
   }
-  async function placementCommand(payload: object): Promise<PlacementOutcome> {
+  /** Runs a command; on rejection reconciles with the server (confirmed state wins) but keeps the failure message visible. */
+  async function actAndReconcile(payload: object): Promise<boolean | Record<string, unknown>> {
+    lastFailure.current = undefined;
+    const outcome = await act(payload);
+    if (outcome) return outcome;
+    const failure = lastFailure.current as { message: string; requestId: string; status: number } | undefined;
+    const reconciliation = await load(true);
+    if (failure) {
+      const message = failure.status === 0
+        ? reconciliation.ok
+          ? "The action response could not be confirmed. The latest plan has been reloaded; check its saved state before retrying."
+          : "The action response could not be confirmed, and the latest plan could not be reloaded. Refresh and check its saved state before retrying."
+        : reconciliation.ok ? failure.message : `${failure.message} The latest plan could not be reloaded; refresh before retrying.`;
+      const persistentFailure = { message, requestId: failure.requestId };
+      setCommandFailure(persistentFailure);
+      setError(message);
+      setErrorReference(failure.requestId);
+    }
+    return false;
+  }
+  async function placementCommand(requested: object): Promise<PlacementOutcome> {
     const context = dayContext;
     const summaryContext = weekContext;
+    const visit = await resolveVisitForCommand(requested as Record<string, unknown>);
+    if (visit === "cancel") return { ok: false, uncertain: false, message: "Placement cancelled. Nothing was changed." };
+    const payload = visit ? { ...requested, visit } : requested;
     try {
       const response = await fetch("/api/logistics", {
         method: "POST",
@@ -599,16 +680,17 @@ function PlannerContents() {
   const movements = data?.planner.movements || [];
   const filteredGroups = queueTypeFilter === "all" || queueTypeFilter === "delivery" ? groups : [];
   const filteredMovements = movements.filter((movement) => queueTypeFilter === "all" || movement.type === queueTypeFilter);
-  const createRun = (vehicleId: LogisticsVehicleId) => {
+  const createRun = (vehicleId: LogisticsVehicleId, departure?: string, returnTime?: string, canonicalId = `run:${date}:${Date.now()}`) => {
     setShowRunCreate(false);
-    void act({
+    return actAndReconcile({
       action: "create-run",
       run: {
-        canonicalId: `run:${date}:${Date.now()}`,
+        canonicalId,
         serviceDate: date,
         status: "draft",
         driverId: newRunDriverId || undefined,
         vehicleId,
+        ...(departure && returnTime ? { plannedCpuDepartureTime: departure, plannedCpuReturnTime: returnTime } : {}),
         returnToCpuRequired: true,
         orderedStopIds: [],
         version: 1,
@@ -729,6 +811,7 @@ function PlannerContents() {
     data={data?.serviceDate === date ? data : undefined}
     error={error}
     errorReference={errorReference}
+    commandFailure={commandFailure}
     passiveSyncError={passiveSyncError}
     projectionNeedsMaterialisation={projectionNeedsMaterialisation}
     authRequired={authRequired}
@@ -763,6 +846,8 @@ function PlannerContents() {
     load={load}
     loadFresh={loadFresh}
     act={act}
+    actAndReconcile={actAndReconcile}
+    visitChoice={visitChoice ? { prompt: visitChoice.prompt, resolve: visitChoice.resolve } : undefined}
     placementCommand={placementCommand}
     createRun={createRun}
     createMovement={createMovement}
@@ -944,6 +1029,7 @@ type RealPlannerProps = {
   projectionState: LogisticsProjectionState | "LOADING";
   error: string;
   errorReference: string;
+  commandFailure?: { message: string; requestId: string };
   passiveSyncError: string;
   projectionNeedsMaterialisation: boolean;
   authRequired: boolean;
@@ -977,8 +1063,10 @@ type RealPlannerProps = {
   load: (silent?: boolean, materialiseMissing?: boolean) => Promise<LoadResult>;
   loadFresh: (silent?: boolean, mode?: LoadMode) => Promise<LoadResult>;
   act: (payload: object) => Promise<boolean | Record<string, unknown>>;
+  actAndReconcile: (payload: object) => Promise<boolean | Record<string, unknown>>;
+  visitChoice?: { prompt: VisitChoicePrompt; resolve: (request?: string) => void };
   placementCommand: (payload: object) => Promise<PlacementOutcome>;
-  createRun: (vehicleId: LogisticsVehicleId) => void;
+  createRun: (vehicleId: LogisticsVehicleId, departure?: string, returnTime?: string, canonicalId?: string) => Promise<boolean | Record<string, unknown>>;
   createMovement: () => void;
   assignGroup: (group: PlannerWorkGroup, choice?: AssignmentChoice) => void | Promise<PlacementOutcome>;
   assignMovement: (movement: PlannerMovementView, choice?: AssignmentChoice) => void | Promise<PlacementOutcome>;
@@ -1001,6 +1089,8 @@ function groupCollectionPending(group: PlannerWorkGroup, runs: PlannerDay["runs"
   });
 }
 
+const EMPTY_PLANNER: PlannerDay = { serviceDate: "", workGroups: [], movements: [], runs: [], summary: { requirements: 0, destinations: 0, unplanned: 0, partiallyPlanned: 0, planned: 0, attention: 0, movements: 0, loads: 0, deliveries: 0, collections: 0, transfers: 0, assignedWork: 0, scheduledStops: 0, needsTime: 0 }, upstreamHealth: { fulfilment: { available: false }, oplocs: { available: false }, enrichment: { available: false } } };
+
 function RealPlanner(props: RealPlannerProps) {
   const { data: sourceData, weekData, date, weekCommencing, runs, groups } = props;
   const needsMovementLabels = Boolean(sourceData?.projection?.movements?.some(movement => movement.fromOplocId && !movement.fromLabelSnapshot || movement.toOplocId && !movement.toLabelSnapshot));
@@ -1012,6 +1102,10 @@ function RealPlanner(props: RealPlannerProps) {
     planner: projectionToDashboardData({ ...sourceData.projection, movements: movementDisplaySnapshots(sourceData.projection.movements || [], [], locations.oplocs) }).planner,
   } : sourceData, [sourceData, locations.oplocs]);
   const movements = data?.planner.movements || props.movements;
+  const [queueCollapsed, setQueueCollapsed] = useState(false);
+  const [pendingRunTimings, setPendingRunTimings] = useState<Record<string, PendingRunTiming>>({});
+  const [creatingRuns, setCreatingRuns] = useState<CreatingRun[]>([]);
+  const [queueSearch, setQueueSearch] = useState("");
   const [pendingSchedules, setPendingSchedules] = useState<Record<string, PendingScheduleOperation>>({});
   const pendingSchedulesRef = useRef<Record<string, PendingScheduleOperation>>({});
   const [confirmedSchedules, setConfirmedSchedules] = useState<Record<string, ConfirmedPlacement>>({});
@@ -1200,6 +1294,12 @@ function RealPlanner(props: RealPlannerProps) {
       props.setInspector(undefined);
       return;
     }
+    if (action.action === "set-run-stop-order" || action.action === "retire-empty-run") {
+      // Authoritative confirmation only: on rejection, reconcile with the server and keep confirmed state.
+      const outcome = await props.actAndReconcile(payload);
+      if (outcome && action.action === "retire-empty-run") props.setInspector(undefined);
+      return;
+    }
     const succeeded = await props.act(payload);
   };
   const queueStateForGroup = (group: PlannerWorkGroup) => groupCollectionPending(group, runs) ? "needs_time" as const : workGroupQueueState(group, runs);
@@ -1218,8 +1318,9 @@ function RealPlanner(props: RealPlannerProps) {
   };
   const includeState = (state: ReturnType<typeof workGroupQueueState>) => props.queueFilter === "all" || props.queueFilter === state;
   const includeType = (type: "delivery" | "collection" | "transfer") => props.queueTypeFilter === "all" || props.queueTypeFilter === type;
-  const filteredGroups = groups.filter((group) => queueStateForGroup(group) !== "scheduled" && includeState(queueStateForGroup(group)) && includeType("delivery"));
-  const filteredMovements = movements.filter((movement) => queueStateForMovement(movement) !== "scheduled" && includeState(queueStateForMovement(movement)) && includeType(movement.type));
+  const searchTerm = queueSearch.trim().toLocaleLowerCase("en-GB");
+  const filteredGroups = groups.filter((group) => queueStateForGroup(group) !== "scheduled" && includeState(queueStateForGroup(group)) && includeType("delivery") && (!searchTerm || [group.destinationLabel, group.destinationOplocId, ...group.sourceLabels, ...group.combinedLines.map((line) => line.displayName), group.notes].filter(Boolean).join(" ").toLocaleLowerCase("en-GB").includes(searchTerm)));
+  const filteredMovements = movements.filter((movement) => queueStateForMovement(movement) !== "scheduled" && includeState(queueStateForMovement(movement)) && includeType(movement.type) && (!searchTerm || [movement.type, movement.from?.label, movement.to?.label, movement.from?.id, movement.to?.id, movement.notes, ...movement.items.map((item) => item.description)].filter(Boolean).join(" ").toLocaleLowerCase("en-GB").includes(searchTerm)));
   const summary = data?.planner.summary;
   const metricsReady = props.projectionState === "CURRENT" || props.projectionState === "VALID_EMPTY";
   const metric = (value: number | undefined) => metricsReady && value !== undefined ? value : "—";
@@ -1228,6 +1329,8 @@ function RealPlanner(props: RealPlannerProps) {
   const queueCount = metricsReady ? queueGroups.length + queueMovements.length : "—";
   const countFor = (filter: RealPlannerProps["queueFilter"]) => filter === "all" ? queueGroups.length + queueMovements.length : groups.filter((group) => queueStateForGroup(group) === filter).length + movements.filter((movement) => queueStateForMovement(movement) === filter).length;
   const selectedDateLabel = formatOperationalDate(date, { weekday: "long", day: "numeric", month: "long" }).toUpperCase();
+  const vehicleCount = new Set(runs.map((run) => run.vehicleId).filter(Boolean)).size;
+  const loadCount = data?.projection?.deliveryLoads.length;
   const responseVersion = (result: Record<string, unknown>) => {
     const value = (result.stop && typeof result.stop === "object" ? result.stop : result) as Record<string, unknown>;
     const version = typeof value.version === "number" ? value.version : undefined;
@@ -1633,6 +1736,38 @@ function RealPlanner(props: RealPlannerProps) {
     }
     coordinatePlacement(stopId, original, original, () => props.placementCommand({ action: "clear-stop-schedule", runId, stopId, expectedRunVersion: run.version, expectedStopVersion: rawStop.version }), () => undefined);
   };
+  /** Proposes run times; the block shows "Saving…" and only the refreshed server state is treated as saved. */
+  const runTimingCommand = async (runId: string, departure: string, returnTime: string) => {
+    const run = runs.find((item) => item.runId === runId);
+    if (!run || pendingRunTimings[runId]) return;
+    setPendingRunTimings((current) => ({ ...current, [runId]: { start: departure, end: returnTime } }));
+    try {
+      await props.actAndReconcile({ action: "update-run-timing", runId, plannedCpuDepartureTime: departure, plannedCpuReturnTime: returnTime, expectedRunVersion: run.version });
+    } finally {
+      setPendingRunTimings((current) => { const { [runId]: _settled, ...rest } = current; return rest; });
+    }
+  };
+  const createRunOnTimeline = async (vehicleId: string, departure?: string, returnTime?: string) => {
+    if (vehicleId !== "van1" && vehicleId !== "van2") return;
+    const id = `run:${date}:${Date.now()}`;
+    setCreatingRuns((current) => [...current, { id, vehicleId, start: departure, end: returnTime }]);
+    try {
+      await props.createRun(vehicleId, departure, returnTime, id);
+    } finally {
+      setCreatingRuns((current) => current.filter((item) => item.id !== id));
+    }
+  };
+  const assignQueueItemToUntimedRun = (kind: "group" | "movement", id: string, runId: string) => {
+    const group = kind === "group" ? groups.find((item) => item.groupKey === id) : undefined;
+    const movement = kind === "movement" ? movements.find((item) => item.movementId === id) : undefined;
+    const requested = group ? group.deliveryWindow?.startTime || group.requiredTimes[0] : movement?.window?.startTime || movement?.requiredTime;
+    if (requested && /^\d\d:(00|15|30|45)$/.test(requested)) { assignQueueItem(kind, id, runId, requested, movement?.type === "collection" ? "collection" : "delivery"); return; }
+    // Genuinely needs a time: open the assignment form already targeted at this run.
+    props.setAssigning(id);
+    props.setTargetRun(runId);
+    props.setInspector(group ? { kind: "group", id } : { kind: "movement", id });
+    props.setError("This work has no requested time. Choose a time to place it in this run.");
+  };
   const returnWorkToPlanning = (runId: string, stopId: string) => {
     const rawStop = data?.stops.find((item) => item.canonicalId === stopId);
     const displayed = runs.flatMap((candidate) => candidate.stops.map((stop) => ({ run: candidate, stop }))).find((entry) => entry.stop.stopId === stopId);
@@ -1740,7 +1875,109 @@ function RealPlanner(props: RealPlannerProps) {
     document.addEventListener("dragstart", hideNativeDragImage, true);
     return () => document.removeEventListener("dragstart", hideNativeDragImage, true);
   }, []);
-  return <main className="mock-tower real-planner">
+  // ---- Journey Planner V3 (default desktop UI). `?ui=classic` keeps the previous timeline as a rollback aid. ----
+  const classicUi = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("ui") === "classic";
+  const legacyInspector = props.inspector && data ? <Inspector selection={props.inspector} planner={data.planner} projection={data.projection} rawRequirements={data.requirements} rawStops={data.stops} onClose={() => props.setInspector(undefined)} onSelectRun={(runId) => props.setInspector({ kind: "run", id: runId })} onSelectStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onSelectLoad={(runId, stopId, loadId) => props.setInspector({ kind: "load", id: loadId, runId, stopId })} onAction={handleInspectorAction} onScheduleStop={scheduleStop} runs={runs} targetRun={props.targetRun} setTargetRun={props.setTargetRun} assigning={props.assigning} setAssigning={props.setAssigning} onAssignGroup={(group, choice) => submitGroupAssignment(group, choice)} onAssignMovement={(movement, choice) => submitMovementAssignment(movement, choice)} placementPending={Boolean(props.busy || pendingSchedules[inspectorPendingIdentity] || (props.inspector.kind === "group" && confirmedSchedules[inspectorPendingIdentity]))} /> : undefined;
+  const goToDate = (next: string) => { const week = mondayOf(next); if (week !== weekCommencing) props.setWeekCommencing(week); props.setDate(next); };
+  /** Drop (or otherwise assign) a queue item on a Run row. A requested time is used as the planned time; otherwise Franco chooses one. */
+  const dropQueueOnRun = (itemId: string, runId: string, chosenTime?: string): "needs-time" | void => {
+    const group = groups.find((item) => item.groupKey === itemId);
+    const movement = group ? undefined : movements.find((item) => item.movementId === itemId);
+    const run = runs.find((item) => item.runId === runId);
+    if (!group && !movement) return;
+    if (!run || !["draft", "planned"].includes(run.status)) { props.setError(run ? `This run is ${run.status}. Return it to planning before adding work.` : "This run no longer exists."); return; }
+    const kind = group ? "group" as const : "movement" as const;
+    const lane: "delivery" | "collection" = group ? (groupCollectionPending(group, runs) || group.groupKey.startsWith("projection-collection:") ? "collection" : "delivery") : movement!.type === "collection" ? "collection" : "delivery";
+    const requested = chosenTime ?? (group ? group.deliveryWindow?.startTime || group.requiredTimes[0] : movement?.window?.startTime || movement?.requiredTime);
+    if (!requested || !/^\d\d:(00|15|30|45)$/.test(requested)) return "needs-time";
+    assignQueueItem(kind, itemId, runId, requested, lane);
+  };
+  /** + Add collection inside a physical stop: a governed collection movement AT THE CUSTOMER, then assigned to the same run (joining the native stop of that visit when it has one). */
+  const addCollectionToStop = async (runId: string, collection: { stopKey: string; movementId: string; description: string; quantity: number; unit: string; notes?: string }): Promise<boolean> => {
+    const run = runs.find((item) => item.runId === runId);
+    const row = run ? groupIntoVisitRows(run.stops).find((candidate) => candidate.key === collection.stopKey) : undefined;
+    const customer = row?.stops[0]?.destination.id;
+    if (!run || !row || !customer) { props.setError("This stop has no governed customer location, so a collection cannot be added to it."); return false; }
+    if (!collection.description || !(collection.quantity >= 1) || !collection.unit) { props.setError("Describe what is being collected and give a quantity and unit."); return false; }
+    const now = new Date().toISOString();
+    const movementId = collection.movementId;
+    const movement: MovementRequest = { canonicalId: movementId, entityType: "Movement Request", type: "collection", serviceDate: date, fromOplocId: customer, items: [{ description: collection.description, quantity: collection.quantity, unit: collection.unit }], ...(collection.notes ? { notes: collection.notes } : {}), createdBy: "", status: "open", version: 1, createdAt: now, updatedAt: now, audit: [] };
+    const saved = await props.actAndReconcile({ action: "save-movement", movement });
+    if (!saved) return false;
+    const nativeStop = row.stops.filter((stop) => !stop.stopId.startsWith("projection-stop:")).map((stop) => data?.stops.find((item) => item.canonicalId === stop.stopId)).find(Boolean);
+    const outcome = await props.placementCommand({ action: "assign", runId, expectedRunVersion: run.version, movementId, ...(nativeStop ? { targetStopId: nativeStop.canonicalId } : collection.stopKey.startsWith("projection-visit:") ? { visit: collection.stopKey } : {}) });
+    if (!outcome.ok) {
+      const refreshed = await props.load(true);
+      props.setError(outcome.uncertain
+        ? refreshed.ok
+          ? "The collection was saved, but the assignment response was uncertain. The plan has been refreshed; check the Run and queue before retrying."
+          : "The collection was saved, but the assignment response was uncertain and the plan could not be refreshed. Refresh before retrying."
+        : `The collection was saved, but assignment was rejected: ${outcome.message} It remains available in planning; assign it from the queue.`);
+    }
+    return true;
+  };
+  const live: LiveCallbacks = {
+    selectRun: (runId) => props.setInspector({ kind: "run", id: runId }),
+    closeInspector: () => props.setInspector(undefined),
+    createRun: (vehicleId, departure, returnTime) => { void createRunOnTimeline(vehicleId, departure, returnTime); },
+    runTiming: (runId, departure, returnTime) => { void runTimingCommand(runId, departure, returnTime); },
+    queueOpen: (itemId) => props.setInspector(groups.some((item) => item.groupKey === itemId) ? { kind: "group", id: itemId } : { kind: "movement", id: itemId }),
+    queueDrop: dropQueueOnRun,
+    newCollection: () => { props.setDraft({ ...props.draft, type: "collection" }); props.setShowMovement(true); },
+    newMovement: () => props.setShowMovement(true),
+    saveOrder: (runId, stopIds) => { const run = runs.find((item) => item.runId === runId); if (run) void handleInspectorAction({ action: "set-run-stop-order", runId, expectedRunVersion: run.version, stopIds }); },
+    addCollection: (runId, collection) => addCollectionToStop(runId, collection),
+    returnStop: (runId, stopId) => returnWorkToPlanning(runId, stopId),
+    viewStop: (runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId }),
+    retireRun: (runId) => { const run = runs.find((item) => item.runId === runId); if (run) void handleInspectorAction({ action: "retire-empty-run", runId, expectedRunVersion: run.version }); },
+    dateStep: (delta) => goToDate(addOperationalDays(date, delta)),
+    dateSet: goToDate,
+    thisWeek: () => goToDate(operationalDate()),
+    refresh: () => void props.load(true, props.projectionNeedsMaterialisation),
+  };
+  const liveNotices: ShellNotice[] = [
+    ...((props.commandFailure || props.error) ? [{ id: "error", tone: "error" as const, text: <>{props.commandFailure?.message || props.error}{(props.commandFailure?.requestId || props.errorReference) && <> <small>Reference: {props.commandFailure?.requestId || props.errorReference}</small></>}</>, action: { label: props.projectionNeedsMaterialisation ? "Materialise and retry" : "Try again", onClick: () => void props.load(true, props.projectionNeedsMaterialisation) } }] : []),
+    ...(props.authRequired ? [{ id: "auth", tone: "error" as const, text: "Your session needs signing in again.", action: { label: "Sign in again", onClick: props.onSignInAgain } }] : []),
+    ...(props.passiveSyncError ? [{ id: "passive", tone: "warning" as const, text: props.passiveSyncError }] : []),
+    ...(data && props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" ? [{ id: "stale", tone: "warning" as const, text: "This materialised view is not current. Refresh before dispatching." }] : []),
+    ...(data && !data.planner.upstreamHealth.fulfilment.available ? [{ id: "fulfilment", tone: "warning" as const, text: "Incoming work is unavailable; existing vehicle schedules remain visible." }] : []),
+    ...(needsMovementLabels && locations.error ? [{ id: "labels", tone: "warning" as const, text: locations.error, action: { label: "Retry movement labels", onClick: () => void locations.retry() } }] : []),
+    ...Object.entries(placementErrors).map(([identity, message]) => ({ id: `placement:${identity}`, tone: "warning" as const, text: message })),
+  ];
+  if (!classicUi) {
+    const pieces = Object.assign({}, ...runs.map((run) => stopPiecesForRun(run, { projection: data?.projection, rawStops: data?.stops || [], rawRequirements: data?.requirements || [], movements })));
+    const selection = props.inspector;
+    return <JourneyPlannerLive
+      date={date}
+      dateLabel={formatOperationalDate(date, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+      planner={data?.planner || EMPTY_PLANNER}
+      runs={runs}
+      selectedRunId={selection ? selection.kind === "run" ? selection.id : selection.kind === "stop" || selection.kind === "load" ? selection.runId : undefined : undefined}
+      runInspectorOpen={selection?.kind === "run"}
+      status={!data ? (props.projectionState === "LOADING" ? "loading" : "error") : "ready"}
+      pendingRunTimings={pendingRunTimings}
+      creatingRuns={creatingRuns}
+      queueWork={{
+        groups: groups.map((group) => ({ group, state: queueStateForGroup(group), collectionPending: groupCollectionPending(group, runs) })).filter((entry) => entry.state !== "scheduled"),
+        movements: movements.map((movement) => ({ movement, state: queueStateForMovement(movement) })).filter((entry) => entry.state !== "scheduled"),
+      }}
+      pendingQueueIds={new Set(Object.keys(pendingSchedules))}
+      pieces={pieces}
+      busy={props.busy}
+      notices={liveNotices}
+      fetchedAt={props.data?.fetchedAt}
+      refreshing={props.refreshing}
+      newMovementDisabled={!data?.planner.upstreamHealth.oplocs.available}
+      healthNote={<Health health={data?.planner.upstreamHealth} />}
+      sidePanel={selection && selection.kind !== "run" ? legacyInspector : undefined}
+      modals={<>
+        {props.showMovement && <div className={dialogStyles.backdrop} onKeyDown={(event) => { if (event.key === "Escape") props.setShowMovement(false); }}><div className={`${dialogStyles.dialog} ${dialogStyles.wide}`} role="dialog" aria-modal="true" aria-label="New movement"><MovementForm draft={props.draft} setDraft={props.setDraft} onClose={() => props.setShowMovement(false)} onSave={props.createMovement} busy={props.busy} /></div></div>}
+        {props.visitChoice && <VisitChooser prompt={props.visitChoice.prompt} onChoose={props.visitChoice.resolve} />}
+      </>}
+      callbacks={live}
+    />;
+  }
+  return <main className={`mock-tower real-planner${props.inspector ? " has-inspector" : ""}`}>
     <header className="mock-shell">
       <div className="mock-brand"><img src="/brand-assets/logos/fika_logo_white_png.png" alt="FIKA" /><span>OS</span></div>
       <div className="mock-context"><span>Operations workspace</span><strong>Logistics</strong></div><div className="mock-shell-spacer" />
@@ -1748,21 +1985,23 @@ function RealPlanner(props: RealPlannerProps) {
     <div className="mock-canvas">
       <section className="mock-heading"><h1>Logistics</h1><p>Plan and dispatch daily deliveries.</p></section>
       <section className="mock-week-nav" aria-label="Operational week navigation"><button aria-label="Previous week" onClick={() => { const next = addOperationalDays(weekCommencing, -7); props.setWeekCommencing(next); props.setDate(next); }}>‹</button><strong>WC {formatWeekRange(weekCommencing)}</strong><button className="mock-this-week" onClick={() => { const next = mondayOf(operationalDate()); props.setWeekCommencing(next); props.setDate(next); }}>This week</button><button aria-label="Next week" onClick={() => { const next = addOperationalDays(weekCommencing, 7); props.setWeekCommencing(next); props.setDate(next); }}>›</button></section>
-      <section className="mock-day-cards" aria-label="Operational week">{operationalWeek(weekCommencing).map((day) => { const item = weekData?.days.find((summaryItem) => summaryItem.serviceDate === day); const weekMetricsReady = item?.projectionState === "CURRENT" || item?.projectionState === "VALID_EMPTY"; const weekMetric = (value: number | undefined) => weekMetricsReady && value !== undefined ? value : "—"; return <button key={day} className={day === date ? "selected" : ""} aria-pressed={day === date} onClick={() => props.setDate(day)}><div className="mock-day-title"><strong>{formatOperationalDate(day, { weekday: "short", day: "numeric", month: "short" })}</strong>{day === date && <b>✓</b>}</div><div className="mock-day-metrics"><span><i className="purple-dot" />{weekMetric(item?.loads)} loads</span><span><i className="purple-dot" />{weekMetric(item?.scheduled)} scheduled</span><span><i className="green-dot" />{weekMetric(item?.queue)} in queue</span><span><i className="blue-dot" />{weekMetric(item?.needsTime)} needs time</span><span><i className="red-dot" />{weekMetric(item?.attention)} attention</span></div></button>; })}</section>
+      <section className="mock-day-cards" aria-label="Operational week">{operationalWeek(weekCommencing).map((day) => { const item = weekData?.days.find((summaryItem) => summaryItem.serviceDate === day); const weekMetricsReady = item?.projectionState === "CURRENT" || item?.projectionState === "VALID_EMPTY"; const daySummary = !weekMetricsReady ? "Summary loading" : `${item?.loads ?? 0} loads${item?.queue ? ` · ${item.queue} in queue` : ""}`; return <button key={day} className={day === date ? "selected" : ""} aria-pressed={day === date} onClick={() => props.setDate(day)}><div className="mock-day-title"><strong>{formatOperationalDate(day, { weekday: "short", day: "numeric", month: "short" })}</strong>{day === date && <b>✓</b>}</div><span className="mock-day-summary">{daySummary}</span></button>; })}</section>
       <div className="mock-updated">{props.refreshing ? "Refreshing…" : props.data?.fetchedAt ? `Last updated ${new Date(props.data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for data"}<Health health={data?.planner.upstreamHealth} /></div>
       {props.passiveSyncError && <div className="passive-sync-warning" role="status" aria-live="polite">{props.passiveSyncError}</div>}
       {props.error && <div className="alert" role="alert"><span>{props.error}{props.errorReference && <> <small>Reference: {props.errorReference}</small></>}</span><button className="secondary" onClick={() => void props.load(true, props.projectionNeedsMaterialisation)} disabled={props.refreshing}>{props.projectionNeedsMaterialisation ? "Materialise and retry" : "Try again"}</button>{props.authRequired && <button className="secondary" onClick={props.onSignInAgain}>Sign in again</button>}</div>}
       {props.showMovement && <MovementForm draft={props.draft} setDraft={props.setDraft} onClose={() => props.setShowMovement(false)} onSave={props.createMovement} busy={props.busy} />}
-      {needsMovementLabels && locations.loading && <p role="status">Loading governed movement labels…</p>}{needsMovementLabels && locations.error && <div className="degraded-note" role="alert">{locations.error} <button onClick={() => void locations.retry()}>Retry movement labels</button></div>}<section className="mock-selected-day"><div><span>▣</span><strong>{selectedDateLabel}</strong><small>{metric(summary?.loads)} loads · {metricsReady ? runs.length : "—"} vans &nbsp;·&nbsp; {metric(summary?.scheduledStops)} scheduled · {queueCount} in queue · {metric(summary?.needsTime)} needs time · {metric(summary?.attention)} attention</small></div><div className="mock-actions"><button onClick={() => props.setShowRunCreate(true)}>＋ New run</button><button onClick={() => props.setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button><button onClick={() => void props.load(true)} disabled={props.refreshing} aria-busy={props.refreshing}>{props.refreshing ? "Refreshing…" : "↻ Refresh"}</button><a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>▦ Driver view</a></div></section>
+      {needsMovementLabels && locations.loading && <p role="status">Loading governed movement labels…</p>}{needsMovementLabels && locations.error && <div className="degraded-note" role="alert">{locations.error} <button onClick={() => void locations.retry()}>Retry movement labels</button></div>}<section className="mock-selected-day"><div><span>▣</span><strong>{selectedDateLabel}</strong><small>{metricsReady ? loadCount ?? "—" : "—"} loads · {metricsReady ? data?.planner.movements.length ?? 0 : "—"} movements · {metricsReady ? vehicleCount : "—"} vans / {metricsReady ? runs.length : "—"} runs &nbsp;·&nbsp; {metric(summary?.scheduledStops)} scheduled · {queueCount} in queue · {metric(summary?.needsTime)} needs time · {metric(summary?.attention)} attention</small></div><div className="mock-actions"><button onClick={() => props.setShowRunCreate(true)}>＋ New run</button><button onClick={() => props.setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button><button onClick={() => void props.load(true)} disabled={props.refreshing} aria-busy={props.refreshing}>{props.refreshing ? "Refreshing…" : "↻ Refresh"}</button><a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>▦ Driver view</a></div></section>
+      {props.visitChoice && <VisitChooser prompt={props.visitChoice.prompt} onChoose={props.visitChoice.resolve} />}
       {props.showRunCreate && <RunCreatePopover driverId={props.newRunDriverId} setDriverId={props.setNewRunDriverId} driverOptions={props.data?.runs || []} onCreate={props.createRun} onClose={() => props.setShowRunCreate(false)} />}
-      <section className="mock-workspace">
+      <section className={`mock-workspace${queueCollapsed ? " queue-collapsed" : ""}`}>
         <aside className="mock-queue" aria-label="Planning queue" data-logistics-planning-queue>
-          <header><div><span>QUEUE</span><h2>Planning queue <em>({queueCount})</em></h2><p className="queue-subtitle">Work still needing assignment, timing or review.</p></div></header>
-          <div className="mock-filter-pills" role="tablist" aria-label="Planning queue state">
-            <button className={props.queueFilter === "all" ? "active" : ""} onClick={() => props.setQueueFilter("all")}>All <b>{countFor("all")}</b></button>
-            <button className={props.queueFilter === "unassigned" ? "active" : ""} onClick={() => props.setQueueFilter("unassigned")}>Unassigned <b>{countFor("unassigned")}</b></button>
-            <button className={props.queueFilter === "needs_time" ? "active" : ""} onClick={() => props.setQueueFilter("needs_time")}>Needs time <b>{countFor("needs_time")}</b></button>
-            <button className={props.queueFilter === "attention" ? "active" : ""} onClick={() => props.setQueueFilter("attention")}>Attention <b>{countFor("attention")}</b></button>
+          <header><div><span>QUEUE</span><h2>Unassigned work <em>({queueCount})</em></h2><p className="queue-subtitle">Work still needing assignment, timing or review.</p></div><button type="button" className="queue-collapse" aria-label={queueCollapsed ? "Expand planning queue" : "Collapse planning queue"} aria-expanded={!queueCollapsed} onClick={() => setQueueCollapsed((value) => !value)}>{queueCollapsed ? "›" : "‹"}</button></header>
+          <label className="queue-search"><span>Search unassigned work</span><input type="search" value={queueSearch} onChange={(event) => setQueueSearch(event.target.value)} placeholder="Site, item or source" /></label>
+          <div className="mock-filter-pills" role="group" aria-label="Planning queue state">
+            <button className={props.queueFilter === "all" ? "active" : ""} aria-pressed={props.queueFilter === "all"} onClick={() => props.setQueueFilter("all")}>All <b>{countFor("all")}</b></button>
+            <button className={props.queueFilter === "unassigned" ? "active" : ""} aria-pressed={props.queueFilter === "unassigned"} onClick={() => props.setQueueFilter("unassigned")}>Unassigned <b>{countFor("unassigned")}</b></button>
+            <button className={props.queueFilter === "needs_time" ? "active" : ""} aria-pressed={props.queueFilter === "needs_time"} onClick={() => props.setQueueFilter("needs_time")}>Needs time <b>{countFor("needs_time")}</b></button>
+            <button className={props.queueFilter === "attention" ? "active" : ""} aria-pressed={props.queueFilter === "attention"} onClick={() => props.setQueueFilter("attention")}>Attention <b>{countFor("attention")}</b></button>
           </div>
           <div className="mock-secondary-filter"><label>Type <select value={props.queueTypeFilter} onChange={(event) => props.setQueueTypeFilter(event.target.value as RealPlannerProps["queueTypeFilter"])}><option value="all">All work</option><option value="delivery">Delivery</option><option value="collection">Collection</option><option value="transfer">Transfer</option></select></label></div>
           <div className="mock-queue-list">
@@ -1770,11 +2009,11 @@ function RealPlanner(props: RealPlannerProps) {
             {data && !data.planner.upstreamHealth.fulfilment.available && <div className="degraded-note">Incoming work is unavailable; existing vehicle schedules remain visible.</div>}
             {data && props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" && <div className="degraded-note">This queue is from a non-current materialised view. Refresh before dispatching.</div>}
             {data && !filteredGroups.length && !filteredMovements.length && <Empty title="No work in this queue" body="Fully scheduled work stays on the dispatch timeline." />}
-            {filteredGroups.map((group) => <RealQueueGroup key={group.groupKey} group={group} runs={runs} queueState={queueStateForGroup(group)} assigning={props.assigning === group.groupKey} placementPending={Boolean(pendingSchedules[group.groupKey])} targetRun={props.targetRun} onInspect={() => props.setInspector({ kind: "group", id: group.groupKey })} onAssign={() => { props.setAssigning(group.groupKey); props.setTargetRun(runs.length === 1 ? runs[0].runId : ""); props.setInspector({ kind: "group", id: group.groupKey }); }} setTargetRun={props.setTargetRun} onConfirm={(choice) => submitGroupAssignment(group, choice)} onCollectionRequired={async (value) => Boolean(await props.act({ action: "set-collection-required", groupKey: group.groupKey, serviceDate: group.serviceDate, collectionRequired: value }))} />)}
-            {filteredMovements.map((movement) => <RealQueueMovement key={movement.movementId} movement={movement} runs={runs} queueState={queueStateForMovement(movement)} assigning={props.assigning === movement.movementId} placementPending={Boolean(pendingSchedules[movement.movementId])} targetRun={props.targetRun} onInspect={() => props.setInspector({ kind: "movement", id: movement.movementId })} onAssign={() => { props.setAssigning(movement.movementId); props.setTargetRun(runs.length === 1 ? runs[0].runId : ""); props.setInspector({ kind: "movement", id: movement.movementId }); }} setTargetRun={props.setTargetRun} onConfirm={(choice) => submitMovementAssignment(movement, choice)} />)}
+            {filteredGroups.map((group) => <RealQueueGroup key={group.groupKey} group={group} runs={runs} queueState={queueStateForGroup(group)} assigning={false} placementPending={Boolean(pendingSchedules[group.groupKey])} targetRun={props.targetRun} onInspect={() => props.setInspector({ kind: "group", id: group.groupKey })} onAssign={() => { props.setAssigning(group.groupKey); props.setTargetRun(runs.length === 1 ? runs[0].runId : ""); props.setInspector({ kind: "group", id: group.groupKey }); }} setTargetRun={props.setTargetRun} onConfirm={(choice) => submitGroupAssignment(group, choice)} onCollectionRequired={async (value) => Boolean(await props.act({ action: "set-collection-required", groupKey: group.groupKey, serviceDate: group.serviceDate, collectionRequired: value }))} />)}
+            {filteredMovements.map((movement) => <RealQueueMovement key={movement.movementId} movement={movement} runs={runs} queueState={queueStateForMovement(movement)} assigning={false} placementPending={Boolean(pendingSchedules[movement.movementId])} targetRun={props.targetRun} onInspect={() => props.setInspector({ kind: "movement", id: movement.movementId })} onAssign={() => { props.setAssigning(movement.movementId); props.setTargetRun(runs.length === 1 ? runs[0].runId : ""); props.setInspector({ kind: "movement", id: movement.movementId }); }} setTargetRun={props.setTargetRun} onConfirm={(choice) => submitMovementAssignment(movement, choice)} />)}
           </div>
         </aside>
-        <section className="mock-schedule" aria-label="Dispatch schedule"><header className="mock-schedule-head"><div><span>PLANNING SURFACE · {selectedDateLabel}</span><h2>Dispatch schedule</h2></div><strong>{metricsReady ? runs.length : "—"} vehicles · {metric(summary?.scheduledStops)} scheduled · {metric(summary?.needsTime)} needs time</strong></header><div className="mock-legend"><span><i className="green-dot" /> Delivery</span><span><i className="blue-dot" /> Collection</span><span><i className="amber-dot" /> Transfer</span><span><i className="red-dot" /> Attention</span></div>{Object.entries(placementErrors).map(([identity, message]) => <div className="degraded-note" role="status" key={identity}>{message}</div>)}{!data && <Empty title={props.projectionState === "LOADING" ? "Loading dispatch schedule" : "Dispatch schedule unavailable"} body={props.projectionState === "LOADING" ? "Waiting for the materialised Logistics projection." : "The authoritative projection could not be loaded."} />}{data && props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" && <div className="degraded-note">This materialised view is not current. Refresh before dispatching.</div>}{data && <MountedReactTimeline planner={{ ...data.planner, runs }} queueItems={deriveTimelineQueueCards(groups, movements, runs, pendingSchedules)} pendingSchedules={pendingSchedules} confirmedSchedules={confirmedSchedules} onStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onSchedule={scheduleStop} onQueueDrop={(kind, id, runId, time, lane, collectionRequired) => assignQueueItem(kind, id, runId, time, lane, collectionRequired)} onReturnToQueue={returnWorkToPlanning} onRun={(runId) => props.setInspector({ kind: "run", id: runId })} />}<RealScheduleSummary planner={data?.planner} /></section>
+        <section className="mock-schedule" aria-label="Dispatch schedule"><header className="mock-schedule-head"><div><span>JOURNEY TIMELINE · {selectedDateLabel}</span><h2>Vehicle runs</h2></div><div className="schedule-heading-actions"><strong>{metricsReady ? runs.length : "—"} runs · {metric(summary?.scheduledStops)} stops · {metric(summary?.needsTime)} need a time</strong><button type="button" className="panel-toggle" aria-label={queueCollapsed ? "Show planning queue" : "Hide planning queue"} aria-expanded={!queueCollapsed} onClick={() => setQueueCollapsed((value) => !value)}>{queueCollapsed ? "Show queue" : "Hide queue"}</button></div></header><div className="mock-legend"><span><i className="green-dot" /> Delivery</span><span><i className="blue-dot" /> Collection</span><span><i className="amber-dot" /> Transfer</span><span><i className="red-dot" /> Attention</span></div>{Object.entries(placementErrors).map(([identity, message]) => <div className="degraded-note" role="status" key={identity}>{message}</div>)}{!data && <Empty title={props.projectionState === "LOADING" ? "Loading dispatch schedule" : "Dispatch schedule unavailable"} body={props.projectionState === "LOADING" ? "Waiting for the materialised Logistics projection." : "The authoritative projection could not be loaded."} />}{data && props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" && <div className="degraded-note">This materialised view is not current. Refresh before dispatching.</div>}{data && <MountedReactTimeline planner={{ ...data.planner, runs }} queueItems={deriveTimelineQueueCards(groups, movements, runs, pendingSchedules)} pendingSchedules={pendingSchedules} confirmedSchedules={confirmedSchedules} selectedRunId={props.inspector && (props.inspector.kind === "run" ? props.inspector.id : props.inspector.kind === "stop" || props.inspector.kind === "load" ? props.inspector.runId : undefined)} pendingRuns={pendingRunTimings} creatingRuns={creatingRuns} onRunTiming={runTimingCommand} onCreateRun={createRunOnTimeline} onQueueDropToUntimedRun={assignQueueItemToUntimedRun} onStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onSchedule={scheduleStop} onQueueDrop={(kind, id, runId, time, lane, collectionRequired) => assignQueueItem(kind, id, runId, time, lane, collectionRequired)} onReturnToQueue={returnWorkToPlanning} onRun={(runId) => props.setInspector({ kind: "run", id: runId })} />}<RealScheduleSummary planner={data?.planner} /></section>
       </section>
     </div>
     {props.inspector && data && <Inspector selection={props.inspector} planner={data.planner} projection={data.projection} rawRequirements={data.requirements} rawStops={data.stops} onClose={() => props.setInspector(undefined)} onSelectRun={(runId) => props.setInspector({ kind: "run", id: runId })} onSelectStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onSelectLoad={(runId, stopId, loadId) => props.setInspector({ kind: "load", id: loadId, runId, stopId })} onAction={handleInspectorAction} onScheduleStop={scheduleStop} runs={runs} targetRun={props.targetRun} setTargetRun={props.setTargetRun} assigning={props.assigning} setAssigning={props.setAssigning} onAssignGroup={(group, choice) => submitGroupAssignment(group, choice)} onAssignMovement={(movement, choice) => submitMovementAssignment(movement, choice)} placementPending={Boolean(props.busy || pendingSchedules[inspectorPendingIdentity] || (props.inspector.kind === "group" && confirmedSchedules[inspectorPendingIdentity]))} />}
@@ -2070,11 +2309,12 @@ function LegacyTimeline({ runs, serviceDate, onStop, onRun, onSchedule, onQueueD
 
 function RealScheduleSummary({ planner }: { planner?: PlannerDay }) {
   if (!planner) return null;
+  const vehicles = new Set(planner.runs.map((run) => run.vehicleId).filter(Boolean));
   const stops = planner.runs.reduce((total, run) => total + run.stopCount, 0);
   const completed = planner.runs.reduce((total, run) => total + run.completedStops, 0);
   const assignedWork = planner.runs.reduce((total, run) => total + run.stops.reduce((count, stop) => count + stop.requirementCount + stop.movementCount, 0), 0);
   const openIssues = planner.runs.reduce((total, run) => total + run.openIssueCount, 0);
-  return <footer className="mock-summary"><div><b>▣</b><strong>{planner.runs.length}</strong><span>Vehicles in service</span></div><div><b>⌖</b><strong>{planner.summary.scheduledStops} / {stops}</strong><span>Stops scheduled</span></div><div><b>◇</b><strong>{assignedWork}</strong><span>Assigned work items</span></div><div><b>◷</b><strong>{planner.summary.needsTime}</strong><span>Need time</span></div><div className="attention"><b>!</b><strong>{openIssues + planner.summary.attention}</strong><span>Attention / issues</span></div></footer>;
+  return <footer className="mock-summary"><div><b>▣</b><strong>{vehicles.size}</strong><span>Vehicles in service</span></div><div><b>⌖</b><strong>{planner.summary.scheduledStops} / {stops}</strong><span>Stops scheduled</span></div><div><b>◇</b><strong>{assignedWork}</strong><span>Assigned work items</span></div><div><b>◷</b><strong>{planner.summary.needsTime}</strong><span>Need time</span></div><div className="attention"><b>!</b><strong>{openIssues + planner.summary.attention}</strong><span>Attention / issues</span></div></footer>;
 }
 
 
@@ -2277,6 +2517,9 @@ function Inspector({
   onAssignMovement: (movement: PlannerMovementView, choice?: AssignmentChoice) => void;
   placementPending: boolean;
 }) {
+  const [routeSheetOpen, setRouteSheetOpen] = useState(false);
+  const routeSheetTrigger = useRef<HTMLButtonElement>(null);
+  const closeRouteSheet = React.useCallback(() => setRouteSheetOpen(false), []);
   const group = selection.kind === "group" ? planner.workGroups.find((item) => item.groupKey === selection.id) : undefined;
   const movement = selection.kind === "movement" ? planner.movements.find((item) => item.movementId === selection.id) : undefined;
   const run = selection.kind === "run" ? planner.runs.find((item) => item.runId === selection.id) : undefined;
@@ -2302,12 +2545,16 @@ function Inspector({
     : undefined;
   const stopTitle = stop ? `${stop.destination.label} · ${stop.plannedWindow?.startTime || stop.plannedArrivalTime || "Time to confirm"}` : undefined;
   const collectionPending = group ? groupCollectionPending(group, planner.runs) : false;
+  const runNumber = run ? [...planner.runs].filter((candidate) => candidate.vehicleId === run.vehicleId).sort((left, right) => (left.plannedCpuDepartureTime || "99:99").localeCompare(right.plannedCpuDepartureTime || "99:99")).findIndex((candidate) => candidate.runId === run.runId) + 1 : undefined;
+  const runName = run ? `${run.vehicle || "Vehicle"} · Run ${Math.max(1, runNumber || 1)}` : undefined;
   const assignedDelivery = group && untimedAssignedDeliveryStop(group, planner.runs);
   const assignedRun = assignedDelivery && group
     ? runs.find((item) => item.runId === group.requirementRefs.find((ref) => ref.stopId === assignedDelivery.stopId)?.runId)
     : undefined;
-  return <aside className="mock-inspector" aria-label="Details inspector">
-    <header><div><p className="eyebrow">Inspector</p><h2>{group?.destinationLabel || movement?.type || stopTitle || (selection.kind === "load" ? `Load · ${selectedStop?.destination.label || "Details"}` : undefined) || run?.vehicle || "Details"}</h2></div><button className="close" onClick={onClose} aria-label="Close inspector">×</button></header>
+  /** Individually tracked work inside each physical stop, derived from canonical loads / movements (never from names). */
+  const stopPieces = (target: PlannerDay["runs"][number]) => stopPiecesForRun(target, { projection, rawStops, rawRequirements, movements: planner.movements });
+  return <aside className="mock-inspector" aria-label="Details inspector" onKeyDown={(event) => { if (event.key === "Escape" && !event.defaultPrevented && !(event.target instanceof HTMLElement && event.target.closest("[role=dialog]"))) { event.preventDefault(); onClose(); } }}>
+    <header><div><p className="eyebrow">{run ? "Run inspector" : stop ? "Stop inspector" : selection.kind === "load" ? "Load inspector" : "Inspector"}</p><h2>{group?.destinationLabel || movement?.type || stopTitle || (selection.kind === "load" ? `Load · ${selectedStop?.destination.label || "Details"}` : undefined) || runName || "Details"}</h2></div><button className="close" onClick={onClose} aria-label="Close inspector">×</button></header>
     {group && <>
       {group.deliveryWindow && <><InspectorMeta label="Preferred source timing" value={formatWindow(group.deliveryWindow)!} /><p className="context-line">Advisory timing · Logistics sets the operational schedule.</p></>}
       {!group.deliveryWindow && group.requiredTimes[0] && <><InspectorMeta label="Preferred source timing" value={formatAdvisoryTime(group.requiredTimes[0])} /><p className="context-line">Advisory timing · Logistics sets the operational schedule.</p></>}
@@ -2322,7 +2569,7 @@ function Inspector({
       {group.productionContext?.operationalNotes && <p className="notes-block">Notes: {group.productionContext.operationalNotes}</p>}
       {group.notes && <p className="notes-block">Notes: {group.notes}</p>}
       {group.attention.map((item) => <div className="attention-note" key={item}>⚠ {item}</div>)}
-      <div className="inspector-actions"><button disabled={placementPending} onClick={() => { setAssigning(group.groupKey); setTargetRun(assignedDelivery ? group.requirementRefs.find(ref => ref.runId)?.runId || "" : runs.length === 1 ? runs[0].runId : ""); }}>{placementPending ? "Saving…" : assignedDelivery ? "Set delivery time" : collectionPending ? "Schedule collection" : "Assign to vehicle"}</button></div>
+      {assigning !== group.groupKey && <div className="inspector-actions"><button disabled={placementPending} onClick={() => { setAssigning(group.groupKey); setTargetRun(assignedDelivery ? group.requirementRefs.find(ref => ref.runId)?.runId || "" : runs.length === 1 ? runs[0].runId : ""); }}>{placementPending ? "Saving…" : assignedDelivery ? "Set delivery time" : collectionPending ? "Schedule collection" : "Assign to vehicle"}</button></div>}
       {assigning === group.groupKey && <RunChooser key={`${group.groupKey}-${collectionPending ? "collection" : "delivery"}`} runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} allowedLanes={collectionPending ? ["collection"] : ["delivery"]} onConfirm={(choice) => onAssignGroup(group, choice)} label={assignedDelivery ? "Set time" : collectionPending ? "Schedule collection" : "Assign eligible"} pending={placementPending} />}
     </>}
     {movement && <>
@@ -2330,26 +2577,35 @@ function Inspector({
       <InspectorMeta label="Timing" value={formatWindow(movement.window) || movement.requiredTime || "Unscheduled"} />
       <h3>Items</h3><ul className="inspector-list">{movement.items.map((item, index) => <li key={`${item.description}-${index}`}>{item.quantity} × {item.description}</li>)}</ul>
       {movement.notes && <p className="notes-block">Notes: {movement.notes}</p>}
-      <div className="inspector-actions"><button disabled={placementPending} onClick={() => { setAssigning(movement.movementId); setTargetRun(runs.length === 1 ? runs[0].runId : ""); }}>{placementPending ? "Saving…" : "Assign to vehicle"}</button></div>
+      {assigning !== movement.movementId && <div className="inspector-actions"><button disabled={placementPending} onClick={() => { setAssigning(movement.movementId); setTargetRun(runs.length === 1 ? runs[0].runId : ""); }}>{placementPending ? "Saving…" : "Assign to vehicle"}</button></div>}
       {assigning === movement.movementId && <RunChooser runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} allowedLanes={movement.type === "collection" ? ["collection"] : ["delivery"]} onConfirm={(choice) => onAssignMovement(movement, choice)} pending={placementPending} />}
     </>}
     {run && <>
       <InspectorMeta label="Status" value={liveStatusLabel(run.operationalStatus)} />
       <InspectorMeta label="Vehicle" value={run.vehicle || "No vehicle label"} />
       {run.driver && <InspectorMeta label="Historical driver assignment" value={run.driver} />}
-      <RunJourneyTimesEditor key={`${run.runId}:${run.version}`} run={run} onAction={onAction} pending={placementPending} />
+      <div className="route-sheet-action"><span>Run · {run.stopCount} stops</span><button ref={routeSheetTrigger} type="button" className="secondary" onClick={() => setRouteSheetOpen(true)}>View route</button></div>
+      <RunJourneyTimesEditor key={`${run.runId}:${run.version}`} run={run} siblings={planner.runs.filter((other) => other.runId !== run.runId && other.vehicleId === run.vehicleId)} onAction={onAction} pending={placementPending} />
       {(() => {
-        const chronologicalStops = [...run.stops].sort((left, right) => {
-          const leftTime = left.plannedWindow?.startTime || left.plannedArrivalTime;
-          const rightTime = right.plannedWindow?.startTime || right.plannedArrivalTime;
-          return (leftTime ? clockMinutes(leftTime) : Number.MAX_SAFE_INTEGER) - (rightTime ? clockMinutes(rightTime) : Number.MAX_SAFE_INTEGER) || left.sequence - right.sequence;
+        const loadProgress = (projection?.deliveryLoads.filter((load) => load.runId === run.runId) || []).flatMap((load) => {
+          const ids = load.loadIds?.length ? load.loadIds : [load.id];
+          return ids.map((id) => {
+            const jobs = load.jobs.filter((job) => job.assignedLoadId === id || (ids.length === 1 && !job.assignedLoadId));
+            return { jobs, loaded: jobs.length > 0 && jobs.every((job) => job.deliveryStatus === "loaded" || job.deliveryStatus === "delivered") };
+          });
         });
-        const loadJobs = (projection?.deliveryLoads.filter((load) => load.runId === run.runId) || []).flatMap((load) => load.jobs);
-        const loadedJobs = loadJobs.filter((job) => job.deliveryStatus === "loaded" || job.deliveryStatus === "delivered").length;
+        const loadedLoads = loadProgress.filter((load) => load.loaded).length;
         return <>
-          <InspectorMeta label="Loading progress" value={`${loadedJobs} of ${loadJobs.length} delivery job${loadJobs.length === 1 ? "" : "s"} loaded`} />
-          <h3>Stops · chronological</h3>
-          <ul className="inspector-list journey-stop-list">{chronologicalStops.map((item) => <li key={item.stopId}><button className="inspector-row-button" onClick={() => onSelectStop(run.runId, item.stopId)}><span><strong>{item.lane === "collection" ? "Collection" : "Delivery"}</strong> · {item.destination.label}</span><span>{item.plannedWindow?.startTime || item.plannedArrivalTime || "Time to confirm"}</span><small>{stopOperationalStatusLabel(item.operationalStatus)}</small></button></li>)}</ul>
+          <InspectorMeta label="Loading progress" value={`${loadedLoads} of ${loadProgress.length} individual delivery load${loadProgress.length === 1 ? "" : "s"} loaded`} />
+          <RunOrganiser
+            pieces={stopPieces(run)}
+            run={run}
+            pending={placementPending}
+            onSave={(stopIds) => onAction({ action: "set-run-stop-order", runId: run.runId, expectedRunVersion: run.version, stopIds })}
+            onOpenStop={(stopId) => onSelectStop(run.runId, stopId)}
+            onReturnStop={(stopId) => onAction({ action: "return-stop-to-planning", runId: run.runId, stopId })}
+            onRetire={() => onAction({ action: "retire-empty-run", runId: run.runId, expectedRunVersion: run.version })}
+          />
         </>;
       })()}
       {run.departedCpuAt && <InspectorMeta label="Actual CPU departure" value={new Date(run.departedCpuAt).toLocaleString("en-GB", { timeZone: "Europe/London" })} />}
@@ -2363,6 +2619,7 @@ function Inspector({
         {run.status === "ready" && <button className="secondary" onClick={() => onAction({ action: "return-run-to-planning", runId: run.runId, expectedRunVersion: run.version })}>Return to planning</button>}
       </div>
     </>}
+    {routeSheetOpen && run && <RouteSheet run={run} runName={runName || "Run"} projection={projection} rawStops={rawStops} trigger={routeSheetTrigger} onClose={closeRouteSheet} onSelectStop={(stopId) => { setRouteSheetOpen(false); onSelectStop(run.runId, stopId); }} onSelectLoad={(stopId, loadId) => { setRouteSheetOpen(false); onSelectLoad(run.runId, stopId, loadId); }} />}
     {stop && rawStop && <>
       <div className="inspector-breadcrumb"><button className="secondary" onClick={() => onSelectRun(stopRun!.runId)}>← Run</button><span>Run › Stop</span></div>
       <InspectorMeta label="Destination" value={stop.destination.label} />
@@ -2374,7 +2631,7 @@ function Inspector({
       <InspectorMeta label="Status" value={stopOperationalStatusLabel(stop.operationalStatus)} />
       {projectedLoad?.collectionRequired && <InspectorMeta label="Collection" value={projectedLoad.jobs.every((job) => job.collectionStatus === "collected") ? "Collected" : "Required · outstanding"} />}
       {projectedLoad && <InspectorMeta label="Load lifecycle" value={projectedLoad.status[0].toUpperCase() + projectedLoad.status.slice(1)} />}
-      {stop.lane === "delivery" && projectedLoad && <InspectorMeta label="Loading progress" value={`${projectedLoad.jobs.filter((job) => job.deliveryStatus === "loaded" || job.deliveryStatus === "delivered").length} of ${projectedLoad.jobs.length} jobs loaded`} />}
+      {stop.lane === "delivery" && stopLoads.length > 0 && <InspectorMeta label="Loading progress" value={`${stopLoads.filter(({ jobs }) => jobs.length > 0 && jobs.every((job) => job.deliveryStatus === "loaded" || job.deliveryStatus === "delivered")).length} of ${stopLoads.length} individual loads ready`} />}
       {stopLoads.length > 0 && <><h3>Individual loads</h3><ul className="inspector-list">{stopLoads.map(({ id, jobs }) => <li key={id}><button className="inspector-row-button" onClick={() => onSelectLoad(stopRun!.runId, stop.stopId, id)}><span>Load {id.slice(-8)}</span><span>{jobs.length} job{jobs.length === 1 ? "" : "s"} · {jobs.reduce((sum, job) => sum + job.totalUnits, 0)} units</span></button></li>)}</ul></>}
       {stop.attention.map((item) => <div className="attention-note" key={item}>⚠ {item}</div>)}
       <div className="inspector-actions"><button className="secondary" disabled={placementPending} onClick={() => onAction({ action: "return-stop-to-planning", runId: rawStop.runId, stopId: stop.stopId, expectedRunVersion: stopRun!.version, expectedStopVersion: rawStop.version })}>Return to planning queue</button></div><ScheduleEditor stop={stop} run={stopRun!} rawStop={rawStop} runs={runs} onScheduleStop={onScheduleStop} onAction={onAction} placementPending={placementPending} /><StopPanel stop={stop} index={Math.max(0, stop.sequence - 1)} run={stopRun!} runs={runs} rawStop={rawStop} rawRequirements={rawRequirements} projection={projection} expanded onToggle={() => undefined} onAction={onAction} placementPending={placementPending} />
@@ -2393,17 +2650,98 @@ function Inspector({
   </aside>;
 }
 
-function RunJourneyTimesEditor({ run, onAction, pending }: { run: PlannerDay["runs"][number]; onAction: (payload: object) => void; pending: boolean }) {
+function RouteSheet({ run, runName, projection, rawStops, trigger, onClose, onSelectStop, onSelectLoad }: {
+  run: PlannerDay["runs"][number];
+  runName: string;
+  projection?: LogisticsDayProjection;
+  rawStops: DeliveryStop[];
+  trigger: React.RefObject<HTMLButtonElement | null>;
+  onClose: () => void;
+  onSelectStop: (stopId: string) => void;
+  onSelectLoad: (stopId: string, loadId: string) => void;
+}) {
+  const dialog = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const closeButton = dialog.current?.querySelector<HTMLButtonElement>("[data-route-close]");
+    closeButton?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
+      if (event.key !== "Tab") return;
+      const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>("button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex='0']") || []);
+      if (!controls.length) { event.preventDefault(); dialog.current?.focus(); return; }
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.current)) { event.preventDefault(); first.focus(); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => { window.removeEventListener("keydown", onKeyDown); trigger.current?.focus(); };
+  }, [onClose, trigger]);
+  const chronologicalStops = [...run.stops].sort((left, right) => {
+    const leftTime = left.plannedWindow?.startTime || left.plannedArrivalTime;
+    const rightTime = right.plannedWindow?.startTime || right.plannedArrivalTime;
+    return (leftTime ? clockMinutes(leftTime) : Number.MAX_SAFE_INTEGER) - (rightTime ? clockMinutes(rightTime) : Number.MAX_SAFE_INTEGER) || left.sequence - right.sequence;
+  });
+  const loadProgress = projectedRunLoadProgress(projection, run.runId);
+  return <div className="route-sheet-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section ref={dialog} className="route-sheet" role="dialog" aria-modal="true" aria-labelledby="route-sheet-title" aria-label="Chronological route sheet" tabIndex={-1}>
+      <header><div><p className="eyebrow">Route sheet · {run.vehicle || "Vehicle"}</p><h2 id="route-sheet-title">{runName}</h2><p>{run.plannedCpuDepartureTime || "Departure time not set"} CPU departure <span aria-hidden="true">→</span> {run.plannedCpuReturnTime || "Return time not set"} CPU return</p></div><button data-route-close type="button" aria-label="Close route sheet" onClick={onClose}>×</button></header>
+      <div className="route-sheet-body">
+        {!chronologicalStops.length && <Empty title="No stops on this run" body="Add assigned work to build the route." />}
+        {chronologicalStops.map((stop) => {
+          const raw = rawStops.find((item) => item.canonicalId === stop.stopId);
+          const loadIds = raw?.canonicalLoadIds || [];
+          const stopLoads = loadIds.flatMap((id) => {
+            const source = projection?.deliveryLoads.find((item) => (item.loadIds || [item.id]).includes(id));
+            if (!source) return [];
+            const ids = source.loadIds?.length ? source.loadIds : [source.id];
+            const jobs = source.jobs.filter((job) => job.assignedLoadId === id || (ids.length === 1 && !job.assignedLoadId));
+            return [{ id, jobs, loaded: jobs.length > 0 && jobs.every((job) => job.deliveryStatus === "loaded" || job.deliveryStatus === "delivered") }];
+          });
+          const types = stop.movementTypes.length ? stop.movementTypes : [stop.lane];
+          return <article className="route-sheet-stop" key={stop.stopId}>
+            <time className="route-sheet-time">{stop.plannedWindow?.startTime || stop.plannedArrivalTime || "Time to confirm"}{stop.plannedWindow?.endTime ? `–${stop.plannedWindow.endTime}` : ""}</time>
+            <div className="route-sheet-stop-main">
+              <button type="button" onClick={() => onSelectStop(stop.stopId)}><span aria-hidden="true">{stop.lane === "collection" ? "↑" : "↓"}</span>{stop.destination.label}<small>{types.map(typeText).join(" + ")}</small></button>
+              <p>{stop.sourceLabels.join(" · ") || "Work at this stop"} · {stopOperationalStatusLabel(stop.operationalStatus)}</p>
+              {!!stop.combinedLines.length && <p>{stop.combinedLines.map((line) => `${lineDisplayText(line)}`).join(" · ")}</p>}
+              {!!stopLoads.length && <>
+                <div className="route-sheet-loads" aria-label="Individual loads at this stop">{stopLoads.map(({ id, jobs, loaded }) => <button type="button" key={id} onClick={() => onSelectLoad(stop.stopId, id)}>Load {id.slice(-8)} · {jobs.length} jobs · {loaded ? "Loaded" : "Loading needed"}</button>)}</div>
+                {stop.lane === "delivery" && <div className="route-sheet-progress"><span aria-label={`${stopLoads.filter((load) => load.loaded).length} of ${stopLoads.length} loads loaded`}><i style={{ width: `${Math.round(stopLoads.filter((load) => load.loaded).length / stopLoads.length * 100)}%` }} /></span>{stopLoads.filter((load) => load.loaded).length} of {stopLoads.length} loads loaded</div>}
+              </>}
+            </div>
+          </article>;
+        })}
+        <div className="route-sheet-footer"><strong>CPU return</strong><span>Planned {run.plannedCpuReturnTime || "not set"} · {run.returnToCpuRequired ? "Required" : "Return requirement unavailable"}</span>{run.returnedToCpuAt && <span>Actual {new Date(run.returnedToCpuAt).toLocaleTimeString("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" })}</span>}<span>{loadProgress.loaded} of {loadProgress.total} individual delivery loads loaded</span></div>
+      </div>
+    </section>
+  </div>;
+}
+
+function projectedRunLoadProgress(projection: LogisticsDayProjection | undefined, runId: string) {
+  const loads = (projection?.deliveryLoads.filter((load) => load.runId === runId) || []).flatMap((load) => {
+    const ids = load.loadIds?.length ? load.loadIds : [load.id];
+    return ids.map((id) => {
+      const jobs = load.jobs.filter((job) => job.assignedLoadId === id || (ids.length === 1 && !job.assignedLoadId));
+      return { loaded: jobs.length > 0 && jobs.every((job) => job.deliveryStatus === "loaded" || job.deliveryStatus === "delivered") };
+    });
+  });
+  return { total: loads.length, loaded: loads.filter((load) => load.loaded).length };
+}
+
+function RunJourneyTimesEditor({ run, siblings = [], onAction, pending }: { run: PlannerDay["runs"][number]; siblings?: PlannerDay["runs"]; onAction: (payload: object) => void; pending: boolean }) {
   const [departure, setDeparture] = useState(run.plannedCpuDepartureTime || "");
   const [returnTime, setReturnTime] = useState(run.plannedCpuReturnTime || "");
   useEffect(() => { setDeparture(run.plannedCpuDepartureTime || ""); setReturnTime(run.plannedCpuReturnTime || ""); }, [run.plannedCpuDepartureTime, run.plannedCpuReturnTime]);
   const editable = run.status === "draft" || run.status === "planned";
   const complete = Boolean(departure && returnTime && departure < returnTime);
   const changed = departure !== (run.plannedCpuDepartureTime || "") || returnTime !== (run.plannedCpuReturnTime || "");
+  // Warning-first policy: an overlap with another Run on the same vehicle is surfaced, never blocked, and never edits the other Run.
+  const overlapping = complete ? siblings.filter((other) => other.plannedCpuDepartureTime && other.plannedCpuReturnTime && other.plannedCpuDepartureTime < returnTime && other.plannedCpuReturnTime > departure) : [];
   return <div className="schedule-editor"><h3>CPU journey times</h3><p className="context-line">Run times describe the van’s CPU departure and final return. Stop ETAs and requested windows stay separate.</p>
     <label>Planned CPU departure <input aria-label="Planned CPU departure" type="time" step={900} max="23:45" disabled={!editable || pending} value={departure} onChange={event => setDeparture(event.target.value)} /></label>
     <label>Planned CPU return <input aria-label="Planned CPU return" type="time" step={900} max="23:45" disabled={!editable || pending} value={returnTime} onChange={event => setReturnTime(event.target.value)} /></label>
     {!complete && (departure || returnTime) && <p className="attention-note" role="status">Set both times and make the return later than departure.</p>}
+    {overlapping.length > 0 && <p className="attention-note" role="status" data-testid="run-overlap-warning">⚠ Overlaps {overlapping.map((other) => `${other.vehicle || "this vehicle"} run ${other.plannedCpuDepartureTime}–${other.plannedCpuReturnTime}`).join(", ")}. You can still save; the other run is not changed. Review before dispatch.</p>}
     {editable && <div className="inspector-actions"><button disabled={pending || !complete || !changed} onClick={() => onAction({ action: "update-run-timing", runId: run.runId, plannedCpuDepartureTime: departure, plannedCpuReturnTime: returnTime, expectedRunVersion: run.version })}>Save journey times</button>{(run.plannedCpuDepartureTime || run.plannedCpuReturnTime) && <button className="secondary" disabled={pending} onClick={() => onAction({ action: "update-run-timing", runId: run.runId, plannedCpuDepartureTime: "", plannedCpuReturnTime: "", expectedRunVersion: run.version })}>Clear times</button>}</div>}
   </div>;
 }
@@ -2490,10 +2828,11 @@ function RunCreatePopover({
   useEffect(() => { void catalogue.refresh(); }, []);
   useEffect(() => { if (!vehicleId || !catalogue.vehicles.includes(vehicleId)) setVehicleId(catalogue.vehicles[0]); }, [catalogue.vehicles, vehicleId]);
   return (
+    <div className="run-create-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <div
       className="run-create-popover"
       role="dialog"
-      aria-label="Create delivery run"
+      aria-labelledby="run-create-title"
       aria-modal="true"
       ref={dialog}
       tabIndex={-1}
@@ -2507,13 +2846,17 @@ function RunCreatePopover({
         }
       }}
     >
+      <h2 id="run-create-title">Create delivery run</h2>
       <label>Vehicle <select aria-label="Vehicle" value={vehicleId || ""} disabled={catalogue.loading || Boolean(catalogue.error)} onChange={event => { setVehicleId(event.target.value as LogisticsVehicleId); setDriverId(""); }}>{catalogue.vehicles.map(id => <option key={id} value={id}>{logisticsVehicleLabel(id)}</option>)}</select></label>
       {catalogue.error && <p role="alert">{catalogue.error} <button type="button" className="secondary" onClick={() => void catalogue.refresh()}>Retry vehicles</button></p>}
       <p className="context-line">Every run returns to CPU after its deliveries and collections are complete.</p>
-      <button disabled={!vehicleId || catalogue.loading || Boolean(catalogue.error)} onClick={() => vehicleId && onCreate(vehicleId)}>Create run</button>
-      <button className="popover-close" onClick={onClose}>
-        Cancel
-      </button>
+      <div className="run-create-actions">
+        <button className="popover-close" onClick={onClose}>
+          Cancel
+        </button>
+        <button disabled={!vehicleId || catalogue.loading || Boolean(catalogue.error)} onClick={() => vehicleId && onCreate(vehicleId)}>Create run</button>
+      </div>
+    </div>
     </div>
   );
 }

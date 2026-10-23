@@ -67,7 +67,9 @@ export function scopeProjection(projection: LogisticsDayProjection, principal: L
   const movements = (projection.movements || []).filter(item => organisation || movementIds.has(item.canonicalId));
   const planningQueue = organisation ? projection.planningQueue : [];
   // Lineage, exceptions and preference keys can contain out-of-scope entity IDs.
-  return { ...projection, runs: runs.map(run => ({ ...run, orderedStopIds: (run.orderedStopIds || []).filter(id => stops.some(stop => stop.canonicalId === id)), audit: [] })), stops, deliveryLoads, movements, planningQueue,
+  // A stored visiting order may name native stops AND load-backed projected stops; keep only ids the caller can see.
+  const visibleStopIds = new Set([...stops.map(stop => stop.canonicalId), ...deliveryLoads.flatMap(load => (load.loadIds || [load.id]).flatMap(id => [`projection-stop:delivery:${id}`, `projection-stop:collection:${id}`]).concat([load.deliveryVisitId, load.collectionVisitId].filter((id): id is string => Boolean(id)).map(id => `projection-visit:${id}`)))]);
+  return { ...projection, runs: runs.map(run => ({ ...run, orderedStopIds: (run.orderedStopIds || []).filter(id => visibleStopIds.has(id)), audit: [] })), stops, deliveryLoads, movements, planningQueue,
     sourceLineage: organisation ? projection.sourceLineage : [], exceptions: organisation ? projection.exceptions : [], collectionRequiredKeys: organisation ? projection.collectionRequiredKeys : [],
     summary: { queuedJobs: planningQueue.length, loads: deliveryLoads.length, assignedJobs: deliveryLoads.reduce((n, load) => n + load.jobCount, 0), collectedJobs: deliveryLoads.reduce((n, load) => n + load.collectedCount, 0) } };
 }
@@ -96,6 +98,8 @@ export async function authorizeCommand(principal: LogisticsPrincipal, body: Reco
   const commandStopIds = body.action === "reorder" ? submittedStopIds.filter((id: unknown): id is string => typeof id === "string") : submittedStopIds;
   for (const id of [...new Set([body.stopId, body.stop?.canonicalId, ...commandStopIds].filter(Boolean))] as string[]) {
     if (id.startsWith("projection-stop:")) { await checkLoad(id.split(":").slice(2).join(":")); continue; }
+    // A visit identity is only meaningful inside one Run; the command validates it against that Run's own work after authorizing the Run.
+    if (id.startsWith("projection-visit:")) continue;
     const stop = await reader.stop(id);
     if (!stop) {
       if (body.action === "reorder") continue;

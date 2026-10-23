@@ -77,7 +77,7 @@ test.describe.serial("Golden Week whole-system contract", () => {
       await scope.click();
       await expect(scope).toHaveClass(/selected/);
     }
-    await page.goto(`${urls.logistics}/?serviceDate=${goldenWeek.week.start}`);
+    await page.goto(`${urls.logistics}/?ui=classic&serviceDate=${goldenWeek.week.start}`);
     await expect(page.getByRole("heading", { name: /Planning queue/ })).toBeVisible();
   });
 });

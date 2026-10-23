@@ -1,0 +1,37 @@
+.organiser { display: grid; gap: 12px; margin: 14px 0; }
+.organiser .heading h3 { margin: 0; color: var(--fika-text-primary); font-size: 13px; letter-spacing: 0; text-transform: none; }
+.organiser .heading h3 span { color: var(--fika-text-secondary); font-weight: 500; }
+.heading p, .empty, .hint { margin: 4px 0 0; color: var(--fika-text-secondary); font-size: 12px; line-height: 1.4; }
+.list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.item { display: grid; grid-template-columns: 16px 24px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--fika-border-default); border-radius: 10px; background: var(--fika-surface-card); }
+.item[draggable="true"] { cursor: grab; }
+.item[draggable="true"]:active { cursor: grabbing; }
+.dragging { opacity: .5; border-style: dashed; }
+.over { border-color: var(--fika-action-primary); box-shadow: 0 0 0 2px var(--fika-focus-ring); }
+.grip { color: var(--fika-text-muted); font-size: 16px; line-height: 1; }
+.number { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 50%; background: var(--fika-action-primary); color: var(--fika-text-on-primary, #fff); font-size: 12px; font-weight: 700; }
+.main { display: grid; min-width: 0; gap: 2px; padding: 0; border: 0; background: transparent; color: var(--fika-text-primary); font: inherit; text-align: left; cursor: pointer; }
+.main strong { overflow-wrap: anywhere; font-size: 13px; }
+.main span { color: var(--fika-text-secondary); font-size: 12px; }
+.main:focus-visible, .controls button:focus-visible, .actions button:focus-visible, .destructiveLink:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
+.controls { display: inline-flex; grid-column: 4; grid-row: 1; gap: 4px; }
+.controls button { min-width: 32px; min-height: 32px; border: 1px solid var(--fika-border-default); border-radius: 8px; background: var(--fika-surface-card); color: var(--fika-action-primary); font: inherit; font-weight: 700; cursor: pointer; }
+.controls button:disabled { color: var(--fika-text-muted); cursor: not-allowed; }
+.controls .remove { color: var(--fika-text-secondary); }
+.conflict { padding: 10px 12px; border: 1px solid var(--fika-status-warning); border-radius: 10px; background: var(--fika-status-warning-surface); color: var(--fika-text-primary); font-size: 12px; }
+.conflict ul { margin: 6px 0; padding-left: 18px; }
+.conflict p { margin: 0; color: var(--fika-text-secondary); }
+.actions { display: flex; justify-content: flex-end; gap: 8px; }
+.actions button { min-height: 36px; padding: 6px 14px; border-radius: 8px; font: inherit; font-weight: 700; cursor: pointer; }
+.primary { border: 1px solid var(--fika-action-primary); background: var(--fika-action-primary); color: var(--fika-text-on-primary, #fff); }
+.secondary { border: 1px solid var(--fika-border-default); background: var(--fika-surface-card); color: var(--fika-text-primary); }
+.danger { border: 1px solid var(--fika-status-danger); background: var(--fika-status-danger); color: var(--fika-text-on-primary, #fff); }
+.actions button:disabled { opacity: .55; cursor: not-allowed; }
+.destructiveLink { justify-self: start; padding: 6px 2px; border: 0; background: transparent; color: var(--fika-status-danger); font: inherit; font-size: 13px; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.confirm { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--fika-status-danger); border-radius: 10px; background: var(--fika-status-danger-surface); font-size: 13px; }
+.confirm p { margin: 0; color: var(--fika-text-secondary); }
+.pieces { grid-column: 3 / -1; grid-row: 2; margin-top: 2px; font-size: 12px; color: var(--fika-text-secondary); }
+.pieces summary { cursor: pointer; color: var(--fika-action-primary); font-weight: 600; }
+.pieces summary:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
+.pieces ul { display: grid; gap: 4px; margin: 6px 0 0; padding-left: 16px; }
+.pieces b { color: var(--fika-text-primary); font-weight: 700; }

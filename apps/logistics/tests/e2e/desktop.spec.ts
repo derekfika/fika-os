@@ -19,7 +19,7 @@ test.describe.serial("Logistics desktop planner", () => {
   test("creates a movement and run, assigns the movement, and controls readiness", async ({
     page,
   }) => {
-    await page.goto("/?serviceDate=" + E2E_DATE);
+    await page.goto("/?ui=classic&serviceDate=" + E2E_DATE);
     await openStopDetails(page);
     await page.getByRole("button", { name: "Refresh" }).click();
     await expect(
@@ -123,7 +123,7 @@ test.describe.serial("Logistics desktop planner", () => {
   test("keeps operational screens usable at desktop width without fake navigation", async ({
     page,
   }) => {
-    await page.goto("/?serviceDate=" + E2E_DATE);
+    await page.goto("/?ui=classic&serviceDate=" + E2E_DATE);
     await openStopDetails(page);
     await page.getByRole("button", { name: "Refresh" }).click();
     await expect(page.locator(".mock-updated")).toContainText("Last updated");
@@ -139,7 +139,7 @@ test.describe.serial("Logistics desktop planner", () => {
   });
 
   test("production planner keeps canonical timing modes and renders true window duration through resize and clear", async ({ page }) => {
-    await page.goto("/?serviceDate=" + E2E_DATE);
+    await page.goto("/?ui=classic&serviceDate=" + E2E_DATE);
     await openStopDetails(page);
     await expect(page.getByTestId("mounted-react-timeline")).toBeVisible();
     const api = async () => (await page.request.get("/api/logistics?serviceDate=" + E2E_DATE)).json();
@@ -246,7 +246,7 @@ test.describe.serial("Logistics desktop planner", () => {
       expect(timed.ok(), await timed.text()).toBeTruthy();
     }
 
-    await page.goto("/?serviceDate=" + E2E_DATE);
+    await page.goto("/?ui=classic&serviceDate=" + E2E_DATE);
     const journeys = page.getByRole("region", { name: "Vehicle journey timeline" });
     for (const [index, runId] of runIds.entries()) {
       const journey = journeys.locator(`[data-journey-run-id="${runId}"]`);
@@ -285,7 +285,7 @@ test.describe.serial("Logistics desktop planner", () => {
     const movement = assignedState.movements.find((candidate: { canonicalId: string }) => candidate.canonicalId === movementId);
     expect(movement).toMatchObject({ status: "planned", version: 2 });
 
-    await page.goto("/?serviceDate=" + E2E_DATE);
+    await page.goto("/?ui=classic&serviceDate=" + E2E_DATE);
     await openStopDetails(page);
     const timelineCard = page.getByTestId(`stop-${stop.canonicalId}`);
     await expect(timelineCard).toBeVisible();
