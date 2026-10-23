@@ -1,6 +1,7 @@
 import "./styles.css";
 import "./delivered-in-polish.css";
 import "./presentation-overrides.css";
+import "./grab-and-go-standing.css";
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 

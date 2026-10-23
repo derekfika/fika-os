@@ -19,7 +19,7 @@ Root [AGENTS.md](../../AGENTS.md) and the generated Next.js guidance above apply
 - Operational allergens come only from the current verified compressed CPU packet. Revoked historical releases remain evidence, not current truth. Preserve source/version/signature checks and root post-signing invalidation rules.
 - IndexedDB/process caches validate schema, hash, version and freshness; invalidate withdrawn/stale current pointers. Distinguish rebuildable absence from integrity failure and never silently present stale safety data as current. Read detailed §§5.1–5.4 before package/cache changes.
 - Preserve production/staging upstream allowlists and effective configuration. Every credential-bearing request (session, internal token, Google bearer) must retain its existing destination guard and `redirect: 'error'`; never forward credentials/body via redirects or log credentials. Browser cookie isolation is a separate boundary, not permission to weaken server routing.
-- Grab & Go uses governed catalogue/OPLOC eligibility and the canonical request → Production Order path. Do not invent a parallel standing-order/service-enablement authority or activate unfinished generators/schedulers.
+- Grab & Go uses governed catalogue/OPLOC eligibility and the canonical request → Production Order path. Standing orders are versioned per-OPLOC templates that only produce ordinary Grab & Go orders through that path ([design](../../docs/deployment/grab-and-go-standing-orders.md)); do not invent a parallel standing-order/service-enablement authority, never overwrite manual orders or resurrect cancellations, and never create or activate a scheduler job without separate owner approval.
 
 ## UI and validation
 
