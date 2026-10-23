@@ -43,8 +43,32 @@ export function rolloutArguments(plan) {
   // --force skips Firebase's interactive confirmation only, after our exact-SHA approval gates.
   return ['apphosting:rollouts:create', t.backend, '--project', t.project, '--git-commit', exactSha(plan.sourceSha), '--non-interactive', '--force'];
 }
-export async function releaseHealthProbe(app, backendUri, sourceSha, fetchImpl = fetch) {
+// Applications behind AUTHMOD answer an unauthenticated root request with a redirect to the Hub. That is the expected fail-closed
+// behaviour, accepted ONLY when the redirect is exactly the governed Hub launch for this app and backend.
+const HUB_ORIGINS = { staging: 'https://staging-os.fikacatering.com', prod: 'https://os.fikacatering.com' };
+const AUTHMOD_APPS = new Set(['logistics']);
+export function authmodFailClosedRedirect(app, environment, origin, response) {
+  if (!AUTHMOD_APPS.has(app) || !HUB_ORIGINS[environment] || ![302, 303, 307].includes(response?.status)) return false;
+  let location;
+  try { location = new URL(response.headers.get('location') || ''); } catch { return false; }
+  const params = location.searchParams;
+  return location.origin === HUB_ORIGINS[environment] && location.pathname === '/'
+    && params.get('appId') === app && params.get('launchError') === 'FIKA_SESSION_MISSING' && params.get('returnTo') === `${origin}/`
+    && [...params.keys()].every(key => ['returnTo', 'launchError', 'appId'].includes(key));
+}
+export async function releaseHealthProbe(app, backendUri, sourceSha, fetchImpl = fetch, environment) {
   const origin = `https://${String(backendUri).replace(/^https?:\/\//, '').replace(/\/$/, '')}`;
+  if (AUTHMOD_APPS.has(app) && HUB_ORIGINS[environment]) {
+    const url = `${origin}/`;
+    try {
+      const response = await fetchImpl(url, { redirect: 'manual', signal: AbortSignal.timeout(30000) });
+      if (response.ok) return { ok: true, status: response.status, url };
+      if (authmodFailClosedRedirect(app, environment, origin, response)) return { ok: true, status: response.status, url, authmodFailClosed: true };
+      return { ok: false, status: response.status, url, reason: response.status >= 300 && response.status < 400 ? 'unexpected_redirect' : 'unexpected_status' };
+    } catch {
+      return { ok: false, status: null, url, reason: 'request_failed' };
+    }
+  }
   if (app !== 'menu') {
     const url = `${origin}/`;
     try {
@@ -213,7 +237,7 @@ export async function deploy(app, environment, options) {
       assertServingLineage(plan, before, ancestor(before.sourceSha, plan.sourceSha), scopeHash(app,before.sourceSha) === plan.scopeHash);
       bindProductionDelta(plan, before);
       if (before.sourceSha === plan.sourceSha) {
-        const health = await releaseHealthProbe(app, backend.uri, before.sourceSha);
+        const health = await releaseHealthProbe(app, backend.uri, before.sourceSha, undefined, plan.environment);
         if (!health.ok || digest(before) !== digest(await serving(plan))) throw Error('Cannot verify already-serving release while health/traffic is unstable');
         if (!abandoned) return { alreadyServing: true, before, smoke: health };
         const record = { schema:'fika.release.v1', ...plan, ...before, kind: plan.rollback ? 'rollback' : 'deploy', previousGood:pointer.record.previousGood,
@@ -238,7 +262,7 @@ export async function deploy(app, environment, options) {
       await new Promise(resolve => setTimeout(resolve, 15000));
     }
     if (!verified) throw Error(`Serving verification incomplete; retain pending intent and ${journalFile}. Resume without duplicate submission.`);
-    const health = await releaseHealthProbe(app, backend.uri, verified.sourceSha);
+    const health = await releaseHealthProbe(app, backend.uri, verified.sourceSha, undefined, plan.environment);
     if (!health.ok) throw Error(`Non-destructive release health probe failed (${health.reason || health.status}); preserve journal and stop for rollback decision`);
     git('fetch', 'origin'); const latest = releaseRecord(plan.branch);
     if (latest?.record.releaseId !== journal.releaseId || latest.record.kind !== 'intent') throw Error('Release intent changed unexpectedly; do not overwrite it');
@@ -265,7 +289,7 @@ export async function reconcile(app, environment, options) {
     const backend = await cloud(backendPath(t));
     return reconcileIntent({ pointer, journal, t, operator, rolloutId: options.rollout, resolution: options.resolution, reason: options.reason }, {
       inspect: () => recoverySnapshot(t),
-      smoke: sourceSha => releaseHealthProbe(app, backend.uri, sourceSha),
+      smoke: sourceSha => releaseHealthProbe(app, backend.uri, sourceSha, undefined, t.environment),
       scopeHash: sha => scopeHash(app, sha),
       latest: () => { git('fetch', 'origin'); return releaseRecord(t.branch); },
       archive: original => {
