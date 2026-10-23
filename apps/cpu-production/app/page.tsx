@@ -17,6 +17,9 @@ import PublishedMenuView from "./ui/PublishedMenuView";
 import GrabAndGoProductionView from "./ui/GrabAndGoProductionView";
 import GrabAndGoOrderDetail from "./ui/GrabAndGoOrderDetail";
 import "./totals.css";
+import "./kitchen.css";
+import KitchenRunSheet from "./ui/KitchenRunSheet";
+import { printKitchenDocument, totalsPrintHtml } from "./ui/kitchen-print";
 import HospitalityProductionDetail from "./ui/HospitalityProductionDetail";
 import ProductionOrderDetail from "./ui/ProductionOrderDetail";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
@@ -597,8 +600,8 @@ export default function CpuProduction() {
         )}
         {view === "day" && <ProductionDayView orders={visible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDate(nextDate); setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
-        {view === "run-sheet" && <RunSheet orders={visible} />}
-        {view === "totals" && <Totals orders={totalsSelectedOrders} range={totalsRange} selectedPeriod={totalsCustomRange ? "Custom date range" : formatProductionTotalsSelection(weekCommencing, totalsSelectedDays)} hasSelection={totalsCustomRange || selectedTotalsDates.length > 0} rangeError={totalsRangeResolution.error} loadError={error} loading={totalsLoading} />}
+        {view === "run-sheet" && <KitchenRunSheet orders={visible} />}
+        {view === "totals" && <Totals filters={[site === "all" ? "All sites" : (totalsSelectedOrders.find(o=>o.destinationOplocId===site)?.destinationLabel || site), origin === "all" ? "All origins" : origin, productionScope === "all" ? "All production scopes" : productionScope].join(" · ")} orders={totalsSelectedOrders} range={totalsRange} selectedPeriod={totalsCustomRange ? "Custom date range" : formatProductionTotalsSelection(weekCommencing, totalsSelectedDays)} hasSelection={totalsCustomRange || selectedTotalsDates.length > 0} rangeError={totalsRangeResolution.error} loadError={error} loading={totalsLoading} />}
         </section>
         {view !== "totals" && <OperationsRail orders={visible} date={date || todayKey} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} />}
         </div>
@@ -736,50 +739,8 @@ function Queue({
   );
 }
 
-function RunSheet({ orders }: { orders: ProductionOrder[] }) {
-  return (
-    <section className="cpu-run-sheet">
-      {!orders.length ? (
-        <div className="cpu-empty">
-          <h3>No production work is waiting.</h3>
-          <p>Set a date or clear filters to see the run sheet.</p>
-        </div>
-      ) : (
-        orders
-          .sort((a, b) => a.requiredBy.localeCompare(b.requiredBy))
-          .map((order) => (
-            <article key={order.canonicalId}>
-              <header>
-                <strong>{order.requiredBy.replace("T", " · ")}</strong>
-                <span>
-                  {cpuSourceLabel(order)} · {cpuDestinationLabel(order)}
-                </span>
-              </header>
-              {order.lines.map((line) => (
-                <div className="cpu-run-line" key={line.canonicalId}>
-                  <strong>
-                    {line.customerQuantity} {line.customerUnit}
-                  </strong>
-                  <span>{line.itemName}</span>
-                  <small>
-                    {Object.entries(line.dietaries || {})
-                      .filter(([, value]) => value && value !== 0)
-                      .map(([key, value]) => `${key}: ${value}`)
-                      .join(" · ") || "No dietary flags"}
-                    {line.productionInstructions
-                      ? ` · ${line.productionInstructions}`
-                      : ""}
-                  </small>
-                </div>
-              ))}
-            </article>
-          ))
-      )}
-    </section>
-  );
-}
-
 function Totals({
+  filters,
   orders,
   range,
   selectedPeriod,
@@ -788,6 +749,7 @@ function Totals({
   loadError,
   loading,
 }: {
+  filters: string;
   orders: ProductionOrder[];
   range?: { from: string; to: string };
   selectedPeriod: string;
@@ -801,6 +763,7 @@ function Totals({
     <section className="cpu-totals">
       <header>
         <small>Read-only production planning · customer ordered quantities</small>
+        <button type="button" className="kitchen-button kitchen-totals-print" disabled={loading || !!rangeError || !!loadError || !hasSelection || !categoryTotals.length} onClick={()=>printKitchenDocument(totalsPrintHtml(categoryTotals, selectedPeriod + (range ? " · " + formatProductionTotalsDateRange(range) : ""), filters))}>Print Totals</button>
         <h2>{selectedPeriod === "No days selected" ? "Select production days" : selectedPeriod}</h2>
         {range && <p className="cpu-totals-range-label">{formatProductionTotalsDateRange(range)}</p>}
         {range && !loading && !rangeError && !loadError && <p>{orders.length} production order{orders.length === 1 ? "" : "s"} included · units remain grouped separately</p>}
