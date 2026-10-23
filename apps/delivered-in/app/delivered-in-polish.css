@@ -13,3 +13,5 @@
 @media(max-width:680px){.period-controls{display:grid;align-items:stretch;padding:12px 14px}.period-controls label{min-width:0}.day-selector{overflow:auto;flex-wrap:nowrap}.day-selector button{min-width:64px}}
 .brand-lockup strong{display:none}.brand-lockup{gap:8px}.fika-brand-crop{display:block;width:75px;height:30px;overflow:hidden}.fika-brand-crop img{display:block;width:75px;height:auto}.brand-os{color:var(--purple);font-size:.75rem;font-weight:900;letter-spacing:.05em}
 .brand-lockup:before{content:"";display:block;width:75px;height:30px;background:url('/fika-logo.png') left top/75px auto no-repeat}.brand-lockup:after{display:none}.brand-divider{width:auto;height:auto;border:0;background:none}.brand-divider:before{content:'OS';color:var(--purple);font-size:.75rem;font-weight:900;letter-spacing:.05em}
+
+@media(max-width:680px){.compact-header{min-width:0}.brand-lockup{min-width:0;white-space:nowrap}.header-actions{min-width:0;max-width:60vw}.site-picker{min-width:0}.site-picker select{width:min(40vw,150px);min-width:0}}
