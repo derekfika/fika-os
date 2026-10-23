@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { protection } from './cli.mjs';
 import { APPS, target, validateRecord } from './policy.mjs';
-import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe } from './releases.mjs';
+import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe, authmodFailClosedRedirect } from './releases.mjs';
 test('Menu Planner health probe requires the exact uncached build identity endpoint',async()=>{
  const sha='a'.repeat(40);let request;
  const ok=await releaseHealthProbe('menu','https://menu-backend.hosted.app/',sha,async(url,options)=>{request={url,options};return {status:200,json:async()=>({appId:'menu-planning',buildSha:sha})};});
@@ -86,4 +86,44 @@ test('real release ledger preserves source objects; a competing stale writer is 
   const first=append({...record,kind:'intent',releaseId:'first',state:'PENDING'},deployed);append({...record,kind:'intent',releaseId:'competing',state:'PENDING'},deployed,false);
   assert.equal(git('ls-remote','origin','refs/heads/release/staging/cpu').split(/\s/)[0],first);assert.equal(git('merge-base','--is-ancestor',sourceSha,first),'');
  } finally {assert.equal(path.dirname(path.resolve(base)),path.resolve(os.tmpdir()));assert.ok(path.basename(base).startsWith('fika-workflow-test-'));rmSync(base,{recursive:true,force:true});}
+});
+
+const backend = 'fika-logistics-staging--fika-os-dev.europe-west4.hosted.app';
+const hubLocation = (extra = '', host = 'https://staging-os.fikacatering.com') => `${host}/?returnTo=${encodeURIComponent(`https://${backend}/`)}&launchError=FIKA_SESSION_MISSING&appId=logistics${extra}`;
+const redirect = (location, status = 307) => async () => ({ ok: false, status, headers: new Headers(location === undefined ? {} : { location }) });
+test('Logistics AUTHMOD fail-closed Hub redirect is a healthy release probe, fetched without following redirects', async () => {
+  let request;
+  const result = await releaseHealthProbe('logistics', backend, 'a'.repeat(40), async (url, options) => { request = { url, options }; return redirect(hubLocation())(); }, 'staging');
+  assert.equal(result.ok, true); assert.equal(result.status, 307); assert.equal(result.authmodFailClosed, true);
+  assert.equal(request.url, `https://${backend}/`); assert.equal(request.options.redirect, 'manual');
+});
+test('production Logistics accepts only the production Hub launch redirect', async () => {
+  const prod = 'fika-os-prod-logistics--fika-os.europe-west4.hosted.app';
+  const location = host => `${host}/?returnTo=${encodeURIComponent(`https://${prod}/`)}&launchError=FIKA_SESSION_MISSING&appId=logistics`;
+  assert.equal((await releaseHealthProbe('logistics', prod, 'a'.repeat(40), redirect(location('https://os.fikacatering.com')), 'prod')).ok, true);
+  assert.equal((await releaseHealthProbe('logistics', prod, 'a'.repeat(40), redirect(location('https://staging-os.fikacatering.com')), 'prod')).ok, false);
+});
+test('arbitrary, mismatched or widened redirects are never accepted as healthy', async () => {
+  const cases = [
+    ['other host', hubLocation('', 'https://evil.example.com')],
+    ['lookalike host', hubLocation('', 'https://staging-os.fikacatering.com.evil.example')],
+    ['http downgrade', hubLocation('', 'http://staging-os.fikacatering.com')],
+    ['wrong app id', hubLocation('').replace('appId=logistics', 'appId=cpu')],
+    ['different launch error', hubLocation('').replace('FIKA_SESSION_MISSING', 'FIKA_SESSION_EXPIRED')],
+    ['returnTo another backend', hubLocation('').replace(encodeURIComponent(`https://${backend}/`), encodeURIComponent('https://other.hosted.app/'))],
+    ['extra parameter', hubLocation('&next=https%3A%2F%2Fevil.example')],
+    ['no location', undefined],
+    ['not a URL', 'not a url'],
+  ];
+  for (const [name, location] of cases) assert.equal((await releaseHealthProbe('logistics', backend, 'a'.repeat(40), redirect(location), 'staging')).ok, false, name);
+  assert.equal((await releaseHealthProbe('logistics', backend, 'a'.repeat(40), redirect(hubLocation(), 301), 'staging')).ok, false, 'permanent redirect');
+  assert.equal((await releaseHealthProbe('logistics', backend, 'a'.repeat(40), async () => ({ ok: false, status: 401, headers: new Headers() }), 'staging')).ok, false, '401 alone');
+  assert.equal((await releaseHealthProbe('logistics', backend, 'a'.repeat(40), async () => ({ ok: false, status: 503, headers: new Headers() }), 'staging')).ok, false, '5xx');
+  assert.equal((await releaseHealthProbe('logistics', backend, 'a'.repeat(40), async () => { throw Error('timeout'); }, 'staging')).reason, 'request_failed');
+  assert.equal((await releaseHealthProbe('logistics', backend, 'a'.repeat(40), async () => ({ ok: true, status: 200, headers: new Headers() }), 'staging')).ok, true, 'a plain 200 stays healthy');
+});
+test('other applications never get the redirect allowance and still reject redirects', async () => {
+  const result = await releaseHealthProbe('cpu', backend, 'a'.repeat(40), async () => { throw Error('redirect: error semantics'); }, 'staging');
+  assert.equal(result.ok, false);
+  assert.equal(authmodFailClosedRedirect('cpu', 'staging', `https://${backend}`, { status: 307, headers: new Headers({ location: hubLocation().replace('appId=logistics', 'appId=cpu') }) }), false);
 });
