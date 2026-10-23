@@ -6,6 +6,7 @@ const app = new URL("../app/", import.meta.url);
 const styles = readFileSync(new URL("visual-system.css", app), "utf8");
 const shellStyles = readFileSync(new URL("shell.css", app), "utf8");
 const planner = readFileSync(new URL("week-planner.tsx", app), "utf8");
+const finalTightening = readFileSync(new URL("final-tightening.css", app), "utf8");
 
 test("Week Planner exposes a synchronized horizontal scrollbar above the weekday grid", () => {
   assert.match(planner, /aria-label="Scroll weekdays horizontally"/);
@@ -25,4 +26,8 @@ test("Menu Planning uses one coherent stacked sidebar at split-screen widths", (
   assert.match(styles, /@media\s*\(max-width:\s*900px\)\s*\{[^}]*\.menu-shell\s*\{\s*display:\s*block/s);
   assert.match(styles, /\.menu-sidebar-nav\s*\{[^}]*overflow-x:\s*auto/s);
   assert.match(styles, /\.menu-sidebar-link[^}]*white-space:\s*nowrap/s);
+});
+
+test("Week Planner preserves entered dish-name capitalisation", () => {
+  assert.doesNotMatch(finalTightening, /\.week-menu-cell-button\s*\{[^}]*text-transform:\s*capitalize/s);
 });

@@ -53,3 +53,17 @@ test("keyboard targets include only compatible empty destinations", () => {
   const targets = compatibleDishCopyTargets(snapshot, dishes, "source", ["COLD PROTEIN", "SOUP"]);
   assert.deepEqual(targets.map(target => target.key), ["tuesday|COLD PROTEIN", "wednesday|COLD PROTEIN", "thursday|COLD PROTEIN", "friday|COLD PROTEIN"]);
 });
+
+test("Dessert-category dishes can be selected and copied between the three Dessert slots", () => {
+  const snapshot = fixture();
+  const dessert = { id: "dish:pavlova", name: "Mini pavlova", category: "Dessert" };
+  snapshot.entries.push({ id: "dessert-source", dayId: "monday", date: snapshot.days[0].date, slot: "DESSERT 1", itemId: dessert.id, itemLabel: dessert.name, portions: 12, allocations: [{ destinationLabel: "Site A", quantity: 12 }], allergens: { eggs: "contains" }, audit: [] });
+  const result = assessDishCopyTarget(snapshot, [dessert], "dessert-source", { dayId: "tuesday", slot: "DESSERT 2" });
+  assert.equal(result.allowed, true);
+  if (result.allowed) assert.equal(result.dish.id, dessert.id);
+  const targets = compatibleDishCopyTargets(snapshot, [dessert], "dessert-source", ["DESSERT 1", "DESSERT 2", "DESSERT 3"]);
+  assert.equal(targets.some(target => target.dayId === "monday"), false);
+  assert.ok(targets.some(target => target.dayId === "tuesday" && target.slot === "DESSERT 2"));
+  assert.ok(targets.some(target => target.dayId === "tuesday" && target.slot === "DESSERT 3"));
+  assert.ok(targets.every(target => target.slot.startsWith("DESSERT ")));
+});

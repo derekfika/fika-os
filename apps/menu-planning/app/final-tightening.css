@@ -70,10 +70,6 @@
   outline-offset: 2px;
 }
 
-.week-menu-cell-button {
-  text-transform: capitalize;
-}
-
 .destination-add {
   min-width: 190px;
 }

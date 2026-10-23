@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import MenuPlanningShell from "./menu-planning-shell";
-import { groupedSlots, slotLabel, useRollingData, type Dish } from "./planner-data";
+import { slotLabel, useRollingData, type Dish } from "./planner-data";
+import { groupedSlots } from "@/lib/week-planner-layout";
 import PlanningContextNav from "./planning-context-nav";
 import { rankDishPickerItems } from "@/lib/dish-picker";
 import { categoryForSlot } from "@/lib/dish-categories";

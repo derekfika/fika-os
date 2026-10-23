@@ -17,7 +17,7 @@ test("hosted dish amendment keeps stable identity and existing allergen evidence
   const original = { ...candidate, canonicalId: "dish:stable", displayName: "Old name", sourceName: "Old name", category: "Fish", revision: 4, allergenEvidence: [{ allergen: "fish", value: "contains" as const, source: "review", reviewedBy: "reviewer", reviewedAt: "2026-01-01T00:00:00.000Z" }], mayContainReviewed: true, audit: [] };
   const amended = amendCanonicalMenuItemRecord(original, [original], { displayName: "Corrected name", category: "Fish", description: "Updated description", ingredients: [{ name: "Cod", quantity: 2, unit: "kg" }], methodSteps: ["Bake gently"] }, "staff:42", "2026-10-21T12:00:00.000Z");
   assert.equal(amended.canonicalId, "dish:stable");
-  assert.equal(amended.displayName, "Corrected Name");
+  assert.equal(amended.displayName, "Corrected name");
   assert.equal(amended.category, "Fish");
   assert.equal(amended.revision, 5);
   assert.deepEqual(amended.allergenEvidence, original.allergenEvidence);
