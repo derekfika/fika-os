@@ -11,8 +11,10 @@ import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { recordDeliveredInAppReadBudget } from "./delivered-in-read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { stageGrabHandoff } from "./grab-and-go-handoff";
+import { standingOrderIdFor, standingVersionIdFor, type StandingOrder, type StandingStatus, type StandingTransition, type StandingVersion } from "./grab-and-go-standing";
 
-type Stored = { version: 1; orders: GrabAndGoOrder[]; events: DurableDomainEvent[]; /** Legacy migration field; central Integration Hub is authoritative. */ fulfilmentRequirements?: FulfilmentRequirement[] };
+type StandingState = { heads: StandingOrder[]; versions: StandingVersion[] };
+type Stored = { version: 1; orders: GrabAndGoOrder[]; events: DurableDomainEvent[]; /** Local-runtime mirror of the governed standing-order collection. */ standing?: StandingState; /** Legacy migration field; central Integration Hub is authoritative. */ fulfilmentRequirements?: FulfilmentRequirement[] };
 const file = appDataPath("delivered-in", "delivered-in", "grab-and-go-orders.json");
 const databaseFile = appDataPath("delivered-in", "delivered-in", "grab-and-go.sqlite");
 const unavailable = (message: string, cause?: unknown) => Object.assign(new Error(message, cause ? { cause } : undefined), { status: 503 });
@@ -45,7 +47,7 @@ function open() {
   } catch (cause) { try { database?.close(); } catch { /* preserve original persistence error */ } if (cause && typeof cause === "object" && "status" in cause) throw cause; throw unavailable("Grab & Go operational persistence is unavailable.", cause); }
 }
 function parse(database: DatabaseSync): Stored {
-  try { const row = database.prepare("SELECT state_json FROM grab_and_go_state WHERE state_id = 1").get() as { state_json?: string } | undefined; if (!row?.state_json) throw new Error("missing state"); const value = JSON.parse(row.state_json) as Stored; if (!Array.isArray(value.orders) || !Array.isArray(value.events)) throw new Error("invalid state"); return { version: 1, orders: value.orders, events: value.events }; } catch (cause) { throw unavailable("Grab & Go order data is unavailable; no order list was loaded.", cause); }
+  try { const row = database.prepare("SELECT state_json FROM grab_and_go_state WHERE state_id = 1").get() as { state_json?: string } | undefined; if (!row?.state_json) throw new Error("missing state"); const value = JSON.parse(row.state_json) as Stored; if (!Array.isArray(value.orders) || !Array.isArray(value.events)) throw new Error("invalid state"); return { version: 1, orders: value.orders, events: value.events, ...(value.standing ? { standing: value.standing } : {}) }; } catch (cause) { throw unavailable("Grab & Go order data is unavailable; no order list was loaded.", cause); }
 }
 const read = (): Stored => { const database = open(); try { const stored = parse(database); recordDataAccess({ app: "delivered-in", operation: "grab-and-go.sqlite.read", source: "STATIC", documents: stored.orders.length }); return stored; } finally { database.close(); } };
 function backfillMissingFulfilmentEvents(_stored: Stored) { /* CPU materialisation owns the only production-bound fulfilment path. */ }
@@ -78,9 +80,19 @@ export async function getGrabAndGoOrderHosted(oplocId: string, deliveryDate: str
   recordDeliveredInAppReadBudget({ stage: "grab_and_go_direct_order", recordsInspected: snapshot.exists ? 1 : 0, oplocId, knownId: true });
   return snapshot.exists ? snapshot.data() as GrabAndGoOrder : undefined;
 }
-export async function saveGrabAndGoOrderHosted(order: GrabAndGoOrder, expectedVersion?: number) {
-  if (!hosted()) return saveGrabAndGoOrder(order, expectedVersion);
+/**
+ * A standing-order template precondition checked inside the same transaction as the order write, so a
+ * pause/terminate/amendment that lands between planning and commit prevents the stale write.
+ */
+export type StandingGuard = { oplocId: string; expectedVersion: number; statuses: StandingStatus[] };
+const guardFailure = () => Object.assign(new Error("The standing order changed while this order was being prepared. No order was written."), { status: 409 });
+const guardAllows = (head: StandingOrder | undefined, guard: StandingGuard) => Boolean(head && head.version === guard.expectedVersion && guard.statuses.includes(head.status));
+export async function saveGrabAndGoOrderHosted(order: GrabAndGoOrder, expectedVersion?: number, guard?: StandingGuard) {
+  if (!hosted()) return saveGrabAndGoOrder(order, expectedVersion, guard);
   await db.runTransaction(async transaction => {
+    const guardSnapshot = guard ? await transaction.get(standingHeadRef(guard.oplocId)) : undefined;
+    const guardHead = guardSnapshot?.exists ? guardSnapshot.data() : undefined;
+    if (guard && !guardAllows(isHead(guardHead) ? guardHead : undefined, guard)) throw guardFailure();
     const ref = hostedOrders().doc(stableDocumentId(order.orderId));
     const snapshot = await transaction.get(ref);
     recordDataAccess({ app: "delivered-in", operation: "grab-and-go.order.transaction-read", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "transaction" });
@@ -95,8 +107,9 @@ export async function saveGrabAndGoOrderHosted(order: GrabAndGoOrder, expectedVe
   recordDeliveredInAppReadBudget({ stage: "grab_and_go_order_mutation", recordsInspected: 1, oplocId: order.oplocId, knownId: true });
   return order;
 }
-export function saveGrabAndGoOrder(order: GrabAndGoOrder, expectedVersion?: number) {
+export function saveGrabAndGoOrder(order: GrabAndGoOrder, expectedVersion?: number, guard?: StandingGuard) {
   return withTransaction(stored => {
+  if (guard && !guardAllows(stored.standing?.heads.find(head => head.oplocId === guard.oplocId), guard)) throw guardFailure();
   const index = stored.orders.findIndex(value => value.orderId === order.orderId); const previous = index >= 0 ? stored.orders[index] : undefined;
   if (previous && expectedVersion !== previous.version) throw Object.assign(new Error(`This Grab & Go order changed elsewhere (expected version ${previous.version}). Refresh and try again.`), { status: 409 });
   if (!previous && expectedVersion !== undefined) throw Object.assign(new Error("This Grab & Go order no longer exists. Refresh and try again."), { status: 409 });
@@ -132,4 +145,61 @@ export async function replayGrabAndGoOutbox(consumer: (event: DurableDomainEvent
     }
   }
   return { delivered, failed };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Standing-order persistence boundary: `fikaDeliveredInGrabAndGoStandingOrdersV1`.
+// One head per OPLOC (doc id = sha256 of the standingOrderId) plus immutable version records.
+// Legacy (pre-v2) documents carry no `schemaVersion: 2`/`recordType` and are ignored, never rewritten.
+// ---------------------------------------------------------------------------------------------------
+export const STANDING_COLLECTION = "fikaDeliveredInGrabAndGoStandingOrdersV1";
+const standingCollection = () => db.collection(STANDING_COLLECTION);
+const standingHeadRef = (oplocId: string) => standingCollection().doc(stableDocumentId(standingOrderIdFor(oplocId)));
+const standingVersionRef = (oplocId: string, version: number) => standingCollection().doc(stableDocumentId(standingVersionIdFor(standingOrderIdFor(oplocId), version)));
+function isHead(value: unknown): value is StandingOrder { return Boolean(value) && (value as StandingOrder).schemaVersion === 2 && (value as StandingOrder).recordType === "head"; }
+const standingState = (stored: Stored) => stored.standing || (stored.standing = { heads: [], versions: [] });
+
+export async function getStandingOrderHosted(oplocId: string): Promise<StandingOrder | undefined> {
+  if (!hosted()) return structuredClone(read().standing?.heads.find(head => head.oplocId === oplocId));
+  const snapshot = await standingHeadRef(oplocId).get();
+  recordDataAccess({ app: "delivered-in", operation: "grab-and-go.standing.by-oploc", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
+  const value = snapshot.exists ? snapshot.data() : undefined;
+  return isHead(value) && value.oplocId === oplocId ? value : undefined;
+}
+export async function listStandingVersionsHosted(oplocId: string, limit = 50): Promise<StandingVersion[]> {
+  if (!hosted()) return structuredClone((read().standing?.versions || []).filter(version => version.oplocId === oplocId).sort((a, b) => b.version - a.version).slice(0, limit));
+  const snapshot = await standingCollection().where("recordType", "==", "version").where("oplocId", "==", oplocId).orderBy("version", "desc").limit(limit).get();
+  recordDataAccess({ app: "delivered-in", operation: "grab-and-go.standing.versions", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" });
+  return snapshot.docs.map(document => document.data() as StandingVersion);
+}
+/** Bounded scan for the scheduler: active heads only, equality-filtered, never an unbounded collection read. */
+export async function listActiveStandingOrdersHosted(limit: number): Promise<StandingOrder[]> {
+  if (!hosted()) return structuredClone((read().standing?.heads || []).filter(head => head.status === "active")).slice(0, limit);
+  const snapshot = await standingCollection().where("recordType", "==", "head").where("status", "==", "active").limit(limit).get();
+  recordDataAccess({ app: "delivered-in", operation: "grab-and-go.standing.active", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" });
+  return snapshot.docs.map(document => document.data()).filter(isHead);
+}
+/** Atomically compare-and-set the head and create the immutable version record. */
+export async function saveStandingOrderHosted(transition: Extract<StandingTransition, { version: StandingVersion }>, expectedVersion?: number) {
+  const { head, version } = transition;
+  const stale = (current?: number) => Object.assign(new Error(`This standing order changed elsewhere (expected version ${current ?? "none"}). Refresh and try again.`), { status: 409 });
+  const skipped = () => Object.assign(new Error("The submitted standing-order version is stale. Refresh and try again."), { status: 409 });
+  if (!hosted()) return withTransaction(stored => {
+    const state = standingState(stored); const index = state.heads.findIndex(candidate => candidate.oplocId === head.oplocId); const previous = index >= 0 ? state.heads[index] : undefined;
+    if (previous?.version !== expectedVersion) throw stale(previous?.version);
+    if (head.version !== (previous?.version || 0) + 1) throw skipped();
+    if (index >= 0) state.heads[index] = head; else state.heads.push(head);
+    state.versions.push(version);
+    return head;
+  });
+  await db.runTransaction(async transaction => {
+    const ref = standingHeadRef(head.oplocId);
+    const snapshot = await transaction.get(ref); const value = snapshot.exists ? snapshot.data() : undefined; const previous = isHead(value) ? value : undefined;
+    if (snapshot.exists && !previous) throw Object.assign(new Error("The governed standing-order record is not in a supported format; it was left unchanged."), { status: 409 });
+    if (previous?.version !== expectedVersion) throw stale(previous?.version);
+    if (head.version !== (previous?.version || 0) + 1) throw skipped();
+    transaction.create(standingVersionRef(head.oplocId, version.version), version);
+    transaction.set(ref, head);
+  });
+  return head;
 }
