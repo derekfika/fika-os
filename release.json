@@ -7,39 +7,11 @@
   "region": "europe-west4",
   "branch": "release/staging/menu",
   "sourceSha": "11fd4c576706f15a7cdeb1eeab7758584be0314e",
+  "rollout": "build-2026-10-23-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
   "scopeHash": "bd499e5ba49f830e9a5019a7830c4c88529be7ceb675e39ab408a59bc9d8e667",
-  "inMain": false,
-  "rollback": false,
-  "executing": true,
-  "cosmeticOnly": false,
-  "standard": false,
-  "validation": {
-    "id": 120327559292,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/39927359203/job/120327559292",
-    "sha": "11fd4c576706f15a7cdeb1eeab7758584be0314e"
-  },
-  "approval": {
-    "actor": "derekfika",
-    "method": "authenticated-repository-writer",
-    "app": "menu",
-    "environment": "staging",
-    "sourceSha": "11fd4c576706f15a7cdeb1eeab7758584be0314e",
-    "action": "deploy",
-    "instruction": "Explicit staging execution",
-    "releaseId": null,
-    "id": "815e37388150ca091fe12d4f8403410023de1780da5f596fc5b2e590400fca69",
-    "explicitExecute": true,
-    "authorisedAt": "2026-10-23T08:51:17.814Z"
-  },
-  "provenance": {
-    "number": 9,
-    "url": "https://github.com/derekfika/fika-os/pull/9",
-    "head": "11fd4c576706f15a7cdeb1eeab7758584be0314e",
-    "pullRequestRisk": "standard"
-  },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "bdd32418-df80-4c81-bf08-12e906b644e2",
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "db96857f3d8e1150465a8ad2d84f88b7cca8eec5",
     "rollout": "build-2026-10-22-001",
@@ -47,5 +19,34 @@
     "percent": 100
   },
   "previousGoodRecord": "727e3fa0f00d9075a9470a21f39ea0739e416daf",
-  "createdAt": "2026-10-23T08:51:21.625Z"
+  "releaseId": "bdd32418-df80-4c81-bf08-12e906b644e2",
+  "originalIntent": "72b14636803b6e6ef42c8a19c68090b9ee7652ee",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-menu-planning-staging--fika-os-dev.europe-west4.hosted.app/api/build-info",
+    "appId": "menu-planning",
+    "buildSha": "11fd4c576706f15a7cdeb1eeab7758584be0314e"
+  },
+  "recovery": {
+    "resolution": "complete",
+    "reason": "Complete original staging intent using exact-source build-info, rollout and serving evidence",
+    "operator": {
+      "actor": "derekfika",
+      "method": "authenticated-repository-writer",
+      "app": "menu",
+      "environment": "staging",
+      "sourceSha": "11fd4c576706f15a7cdeb1eeab7758584be0314e",
+      "action": "reconcile:complete",
+      "instruction": "Complete original staging intent using exact-source build-info, rollout and serving evidence",
+      "releaseId": "bdd32418-df80-4c81-bf08-12e906b644e2",
+      "id": "16374c538af08cfe42dfb3cee8a99c86e2ddf05f1479cba36d30e6ad18e47c46",
+      "explicitExecute": true,
+      "authorisedAt": "2026-10-23T09:33:19.882Z"
+    },
+    "rollout": "build-2026-10-23-001",
+    "evidenceHash": "b965a9795c300bea57cd721834e59f4e789ba3fc0bc0ebb4630338990420da6a",
+    "journalHash": "217392b355bda4b887b3181a17140100e68aa817ec14b286c15eeb9f76c9aa79",
+    "at": "2026-10-23T09:33:23.154Z"
+  }
 }
