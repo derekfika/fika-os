@@ -11,9 +11,9 @@ import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { recordDeliveredInAppReadBudget } from "./delivered-in-read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { stageGrabHandoff } from "./grab-and-go-handoff";
-import { standingOrderIdFor, standingVersionIdFor, type StandingOrder, type StandingStatus, type StandingTransition, type StandingVersion } from "./grab-and-go-standing";
+import { standingOrderIdFor, standingVersionIdFor, type StandingOrder, type StandingStatus, type StandingOperation, type StandingTransition, type StandingVersion } from "./grab-and-go-standing";
 
-type StandingState = { heads: StandingOrder[]; versions: StandingVersion[] };
+type StandingState = { heads: StandingOrder[]; versions: StandingVersion[]; operations?: StandingOperation[] };
 type Stored = { version: 1; orders: GrabAndGoOrder[]; events: DurableDomainEvent[]; /** Local-runtime mirror of the governed standing-order collection. */ standing?: StandingState; /** Legacy migration field; central Integration Hub is authoritative. */ fulfilmentRequirements?: FulfilmentRequirement[] };
 const file = appDataPath("delivered-in", "delivered-in", "grab-and-go-orders.json");
 const databaseFile = appDataPath("delivered-in", "delivered-in", "grab-and-go.sqlite");
@@ -202,4 +202,16 @@ export async function saveStandingOrderHosted(transition: Extract<StandingTransi
     transaction.set(ref, head);
   });
   return head;
+}
+
+/** Append-only audit of a user-triggered bulk operation. Best-effort after the order commits; the orders' own history remains authoritative. */
+export async function recordStandingOperationHosted(operation: StandingOperation) {
+  if (!hosted()) { withTransaction(stored => { const state = standingState(stored); (state.operations ||= []).push(operation); }); return; }
+  await standingCollection().doc(stableDocumentId(`${operation.standingOrderId}:op:${operation.operationId}`)).create(operation);
+}
+export async function listStandingOperationsHosted(oplocId: string, limit = 20): Promise<StandingOperation[]> {
+  if (!hosted()) return structuredClone((read().standing?.operations || []).filter(operation => operation.oplocId === oplocId).sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit));
+  const snapshot = await standingCollection().where("recordType", "==", "operation").where("oplocId", "==", oplocId).orderBy("at", "desc").limit(limit).get();
+  recordDataAccess({ app: "delivered-in", operation: "grab-and-go.standing.operations", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" });
+  return snapshot.docs.map(document => document.data() as StandingOperation);
 }

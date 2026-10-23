@@ -7,8 +7,8 @@ import { assertAuthorisedOploc } from "@/lib/projection";
 import { deliveredInErrorBody, resolveAccess } from "@/lib/server";
 
 export const dynamic = "force-dynamic";
-const ACTIONS = ["save", "populate-slot", "activate", "pause", "resume", "terminate", "cancel-upcoming"] as const;
-const BODY_KEYS = new Set(["oplocId", "action", "expectedVersion", "slots", "note", "deliveryDate", "upcomingOrders"]);
+const ACTIONS = ["save", "populate-slot", "activate", "pause", "resume", "terminate", "cancel-upcoming", "generate"] as const;
+const BODY_KEYS = new Set(["oplocId", "action", "expectedVersion", "slots", "note", "deliveryDate"]);
 const noStore = { "Cache-Control": "no-store, max-age=0" };
 
 async function authorisedSite(request: NextRequest, requested?: string) {
@@ -34,10 +34,11 @@ async function handlePost(request: NextRequest) {
     const action = body.action as typeof ACTIONS[number];
     if (!ACTIONS.includes(action)) return NextResponse.json({ error: { message: "A valid standing-order action is required." } }, { status: 422 });
     if (body.expectedVersion !== undefined && !Number.isInteger(body.expectedVersion)) return NextResponse.json({ error: { message: "Current version must be a whole number." } }, { status: 422 });
-    if (body.upcomingOrders !== undefined && !["keep", "cancel"].includes(String(body.upcomingOrders))) return NextResponse.json({ error: { message: "Upcoming orders must be kept or cancelled." } }, { status: 422 });
+    if (body.deliveryDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.deliveryDate))) return NextResponse.json({ error: { message: "Delivery date must be YYYY-MM-DD." } }, { status: 422 });
+    if (["generate", "cancel-upcoming"].includes(action) && !Number.isInteger(body.expectedVersion)) return NextResponse.json({ error: { message: "The current standing-order version is required." } }, { status: 422 });
     const { oplocId, access } = await authorisedSite(request, typeof body.oplocId === "string" ? body.oplocId : undefined);
     const catalogue = (await getGrabAndGoCataloguePackage()).catalogue.products;
-    const result = await mutateStandingOrder({ action, oplocId, actor: access.email, expectedVersion: body.expectedVersion as number | undefined, slots: body.slots, note: typeof body.note === "string" ? body.note : undefined, deliveryDate: typeof body.deliveryDate === "string" ? body.deliveryDate : undefined, upcomingOrders: body.upcomingOrders as "keep" | "cancel" | undefined }, catalogue);
+    const result = await mutateStandingOrder({ action, oplocId, actor: access.email, expectedVersion: body.expectedVersion as number | undefined, slots: body.slots, note: typeof body.note === "string" ? body.note : undefined, deliveryDate: typeof body.deliveryDate === "string" ? body.deliveryDate : undefined }, catalogue);
     return NextResponse.json(result, { status: result.version && result.version.version === 1 ? 201 : 200, headers: noStore });
   } catch (error) { return NextResponse.json(deliveredInErrorBody(error, "The standing order could not be saved."), { status: Number((error as { status?: number }).status) || 502 }); }
 }

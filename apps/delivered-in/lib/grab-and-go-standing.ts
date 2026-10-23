@@ -1,4 +1,4 @@
-import { DELIVERY_WEEKDAYS, addIsoDays, deliveryCutoff, isBeforeOrderCutoff, londonToday, orderIdFor, productsForDeliveryDate, representativeDeliveryDate, rotationWeekForDate, weekdayOf, type GrabAndGoOrder, type GrabAndGoProduct } from "./grab-and-go";
+import { DELIVERY_WEEKDAYS, addIsoDays, availableDeliveryDates, deliveryCutoff, isBeforeOrderCutoff, londonInstant, londonToday, orderIdFor, productsForDeliveryDate, representativeDeliveryDate, rotationWeekForDate, weekdayOf, type GrabAndGoOrder, type GrabAndGoProduct } from "./grab-and-go";
 
 /**
  * Grab & Go standing orders: one versioned template per OPLOC describing the quantities for each
@@ -6,7 +6,11 @@ import { DELIVERY_WEEKDAYS, addIsoDays, deliveryCutoff, isBeforeOrderCutoff, lon
  * an order: it only produces ordinary canonical Grab & Go orders through applyOrderAction.
  */
 export const STANDING_WEEKS = [1, 2, 3, 4] as const;
-export const STANDING_HORIZON_DAYS = 14;
+/** Overview shows two weeks; scheduled runs only look at orders that can already exist (<= next three deliveries). */
+export const STANDING_DISPLAY_DAYS = 14;
+export const STANDING_SYNC_DAYS = 8;
+/** Fixed London generation times: Monday 12:01 -> Wednesday's order; Thursday 12:01 -> the following Monday's order. */
+export const STANDING_GENERATION_TIME = { hour: 12, minute: 1 } as const;
 export const STANDING_MAX_LINES_PER_SLOT = 60;
 export const STANDING_MAX_QUANTITY = 9999;
 export type StandingWeekday = typeof DELIVERY_WEEKDAYS[number];
@@ -132,7 +136,8 @@ export function applyStandingAction(existing: StandingOrder | undefined, input: 
 }
 
 export type OccurrenceState =
-  | "generate"            // template will create the order (or has just been asked to)
+  | "generate"            // generation time has passed and the date is still open: the scheduler (or "Generate now") will create it
+  | "scheduled"           // slot configured, generation time not reached yet
   | "in-sync"             // automatic order already matches the template slot
   | "sync"                // automatic order differs from the template and is still editable
   | "manual-order"        // a manually controlled order exists; the template never touches it
@@ -141,29 +146,51 @@ export type OccurrenceState =
   | "slot-removed"        // automatic order exists but its slot is no longer configured
   | "no-slot"             // slot not configured: nothing is generated
   | "not-active"          // template draft/paused/terminated
-  | "cutoff-passed";      // cutoff passed; the order (if any) is read-only
+  | "missed"              // active template, slot configured, generation time passed and cutoff passed with no order
+  | "cutoff-passed";      // cutoff passed; the order is read-only
 export type Occurrence = {
-  deliveryDate: string; weekday: StandingWeekday; rotationWeek: number; slotKey: string; cutoff: string; cutoffPassed: boolean; state: OccurrenceState;
-  templateLines: StandingLine[]; unavailableProductIds: string[]; order?: GrabAndGoOrder;
+  deliveryDate: string; weekday: StandingWeekday; rotationWeek: number; slotKey: string; cutoff: string; cutoffPassed: boolean;
+  /** When the schedule generates this date (Europe/London 12:01 on Monday for Wednesday, Thursday for Monday). */
+  generationAt: string; state: OccurrenceState; templateLines: StandingLine[]; unavailableProductIds: string[]; order?: GrabAndGoOrder;
 };
 
+/** Generation instant for a delivery date: Wednesday <- Monday 12:01, Monday <- the preceding Thursday 12:01 (London). */
+export function generationInstant(deliveryDate: string) {
+  const weekday = weekdayOf(deliveryDate) as StandingWeekday;
+  return londonInstant(addIsoDays(deliveryDate, weekday === "Wednesday" ? -2 : -4), STANDING_GENERATION_TIME.hour, STANDING_GENERATION_TIME.minute);
+}
+/** Due = generation time reached and ordering still open. Missed runs recover only inside this bounded window. */
+export const isGenerationDue = (deliveryDate: string, now: Date) => generationInstant(deliveryDate).getTime() <= now.getTime() && isBeforeOrderCutoff(deliveryDate, now);
+/** The next two open deliveries, exactly the dates the ordering UI offers. Manual generation is limited to these. */
+export const manualGenerationDates = (now: Date) => availableDeliveryDates(now, 14).slice(0, 2).map(date => date.date);
+
 /** Mon/Wed delivery dates from today to `days` ahead (inclusive of today), regardless of cutoff. */
-export function standingDeliveryDates(now: Date, days = STANDING_HORIZON_DAYS) {
+export function standingDeliveryDates(now: Date, days = STANDING_DISPLAY_DAYS) {
   const today = londonToday(now); const dates: string[] = [];
   for (let offset = 0; offset <= days; offset += 1) { const date = addIsoDays(today, offset); if (DELIVERY_WEEKDAYS.includes(weekdayOf(date) as StandingWeekday)) dates.push(date); }
   return dates;
 }
+/** The next generation moments after `now` (at most `count`), for display. */
+export function upcomingGenerations(now: Date, count = 2) {
+  const found: Array<{ deliveryDate: string; generationAt: string }> = []; const today = londonToday(now);
+  for (let offset = 0; offset <= 14 && found.length < count + 2; offset += 1) { const date = addIsoDays(today, offset); if (DELIVERY_WEEKDAYS.includes(weekdayOf(date) as StandingWeekday)) { const at = generationInstant(date); if (at.getTime() > now.getTime()) found.push({ deliveryDate: date, generationAt: at.toISOString() }); } }
+  return found.sort((a, b) => a.generationAt.localeCompare(b.generationAt)).slice(0, count);
+}
 
-/** Classify every upcoming delivery against the template, orders and catalogue. Pure and idempotent. */
-export function planStandingOccurrences(head: StandingOrder | undefined, ordersByDate: Map<string, GrabAndGoOrder>, catalogue: GrabAndGoProduct[], now: Date, days = STANDING_HORIZON_DAYS): Occurrence[] {
+/** Classify every delivery in the window against the template, orders and catalogue. Pure and idempotent. */
+export function planStandingOccurrences(head: StandingOrder | undefined, ordersByDate: Map<string, GrabAndGoOrder>, catalogue: GrabAndGoProduct[], now: Date, days = STANDING_DISPLAY_DAYS): Occurrence[] {
   return standingDeliveryDates(now, days).map(deliveryDate => {
     const weekday = weekdayOf(deliveryDate) as StandingWeekday; const rotationWeek = rotationWeekForDate(deliveryDate); const key = slotKey(rotationWeek, weekday);
-    const order = ordersByDate.get(deliveryDate); const templateLines = head?.slots[key] || []; const open = isBeforeOrderCutoff(deliveryDate, now);
+    const order = ordersByDate.get(deliveryDate); const templateLines = head?.slots[key] || []; const open = isBeforeOrderCutoff(deliveryDate, now); const generationAt = generationInstant(deliveryDate);
     const unavailableProductIds = templateLines.length ? unavailableLines(templateLines, catalogue, deliveryDate) : [];
-    const result = (state: OccurrenceState): Occurrence => ({ deliveryDate, weekday, rotationWeek, slotKey: key, cutoff: deliveryCutoff(deliveryDate).toISOString(), cutoffPassed: !open, state, templateLines, unavailableProductIds, ...(order ? { order } : {}) });
+    const result = (state: OccurrenceState): Occurrence => ({ deliveryDate, weekday, rotationWeek, slotKey: key, cutoff: deliveryCutoff(deliveryDate).toISOString(), cutoffPassed: !open, generationAt: generationAt.toISOString(), state, templateLines, unavailableProductIds, ...(order ? { order } : {}) });
     if (order?.status === "cancelled") return result("cancelled");
     if (order && !(order.control === "automatic" && order.source)) return result("manual-order");
-    if (!open) return result(order || templateLines.length ? "cutoff-passed" : "no-slot");
+    if (!open) {
+      if (order) return result("cutoff-passed");
+      if (!templateLines.length) return result("no-slot");
+      return result(head?.status === "active" && head.activatedAt && generationAt.toISOString() >= head.activatedAt ? "missed" : "cutoff-passed");
+    }
     if (order) { // automatic, submitted, editable
       if (head?.status !== "active") return result("in-sync");
       if (!templateLines.length) return result("slot-removed");
@@ -172,7 +199,15 @@ export function planStandingOccurrences(head: StandingOrder | undefined, ordersB
     }
     if (!head || !templateLines.length) return result("no-slot");
     if (head.status !== "active") return result("not-active");
-    return result(unavailableProductIds.length ? "unavailable-lines" : "generate");
+    if (unavailableProductIds.length) return result("unavailable-lines");
+    return result(generationAt.getTime() <= now.getTime() ? "generate" : "scheduled");
   });
 }
+
+/** Append-only audit of a user-triggered bulk operation (manual generation, explicit cancellation of automatic orders). */
+export type StandingOperation = {
+  schemaVersion: 2; recordType: "operation"; operationId: string; standingOrderId: string; oplocId: string; operation: "manual-generate" | "cancel-upcoming";
+  templateVersion: number; at: string; actor: string; complete: boolean;
+  items: Array<{ deliveryDate: string; outcome: string; orderVersion?: number; handoff?: string; message?: string }>;
+};
 export { orderIdFor };

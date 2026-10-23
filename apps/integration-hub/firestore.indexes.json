@@ -18,6 +18,7 @@
     { "collectionGroup": "fikaCpuPropagationOutboxV1", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "outboxStatus", "order": "ASCENDING" }, { "fieldPath": "nextEligibleAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" }] },
     { "collectionGroup": "fikaDeliveredInGrabAndGoHandoffV1", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "outboxStatus", "order": "ASCENDING" }, { "fieldPath": "nextEligibleAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" }] },
     { "collectionGroup": "fikaDeliveredInGrabAndGoStandingOrdersV1", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "recordType", "order": "ASCENDING" }, { "fieldPath": "oplocId", "order": "ASCENDING" }, { "fieldPath": "version", "order": "DESCENDING" }] },
+    { "collectionGroup": "fikaDeliveredInGrabAndGoStandingOrdersV1", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "recordType", "order": "ASCENDING" }, { "fieldPath": "oplocId", "order": "ASCENDING" }, { "fieldPath": "at", "order": "DESCENDING" }] },
     { "collectionGroup": "fikaCpuProductionChangesV1", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "serviceDate", "order": "ASCENDING" }, { "fieldPath": "sequence", "order": "DESCENDING" }, { "fieldPath": "__name__", "order": "DESCENDING" }] }
   ],
   "fieldOverrides": []

@@ -33,6 +33,14 @@ export function deliveryCutoff(deliveryDate: string) {
   return new Date(targetUtc - (renderedAsUtc - targetUtc));
 }
 
+/** The exact instant a London wall-clock time occurs on an ISO date (BST/GMT aware; used for fixed noon-ish times only). */
+export function londonInstant(isoDate: string, hour: number, minute = 0) {
+  const day = dateOnly(isoDate); const targetUtc = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour, minute);
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(targetUtc)).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  const renderedAsUtc = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute));
+  return new Date(targetUtc - (renderedAsUtc - targetUtc));
+}
+
 export function isBeforeOrderCutoff(deliveryDate: string, now = new Date()) { return now.getTime() < deliveryCutoff(deliveryDate).getTime(); }
 
 export function availableDeliveryDates(now = new Date(), daysAhead = 28) {
