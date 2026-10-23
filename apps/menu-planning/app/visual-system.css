@@ -131,9 +131,16 @@ h1, h2, h3, h4, p { text-wrap: pretty; }
 .publication-readiness--changed { border-color: #e7cf80; background: var(--fika-status-warning-surface); }
 .menu-error { border-left-width: 4px; border-radius: var(--radius-sm); background: var(--fika-status-danger-surface); color: var(--fika-status-danger); }
 
-.week-planner-panel, .portion-panel, .allergen-panel { margin-left: 32px; margin-right: 32px; padding: 16px; overflow: hidden; }
+.week-planner-panel, .portion-panel, .allergen-panel { margin-left: 32px; margin-right: 32px; padding: 16px; }
 .week-planner-panel { padding: 12px; }
+.week-planner-panel { overflow: visible; }
+.week-matrix-scrollbar { max-width: 100%; overflow-x: auto; overflow-y: hidden; height: 18px; margin-bottom: 6px; border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-subtle); scrollbar-color: var(--fika-action-primary) var(--fika-surface-subtle); scrollbar-width: auto; scroll-behavior: auto; }
+.week-matrix-scrollbar > div { height: 1px; }
+.week-matrix-scrollbar:focus-visible, .week-matrix-viewport:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
+.week-matrix-viewport { max-width: 100%; overflow: auto; overscroll-behavior-x: contain; scrollbar-color: var(--fika-action-primary) var(--fika-surface-subtle); scroll-behavior: auto; }
 .week-matrix { border: 1px solid var(--fika-border-default); background: var(--fika-border-default); }
+.week-matrix-corner { position: sticky; left: 0; z-index: 3; }
+.week-matrix-row > strong { position: sticky; left: 0; z-index: 1; box-shadow: 1px 0 var(--fika-border-default); }
 .week-matrix-corner, .week-matrix-day, .week-matrix-group, .portion-matrix thead th, .operational-allergen-matrix thead th { background: var(--fika-action-secondary); }
 .week-matrix-corner, .week-matrix-day { padding: 12px; }
 .week-matrix-group { padding: 8px 12px; }
@@ -178,25 +185,20 @@ h1, h2, h3, h4, p { text-wrap: pretty; }
 .import-conflict-group { border-color: var(--fika-status-warning); background: var(--fika-status-warning-surface); }
 
 @media (max-width: 900px) {
-  .menu-shell { grid-template-columns: 76px minmax(0, 1fr); }
-  .menu-sidebar { padding-inline: 10px; }
-  .menu-sidebar-brand { width: 56px; overflow: hidden; padding-inline: 0; }
-  .menu-sidebar-kicker, .menu-sidebar-link:not(.menu-sidebar-link--active) { font-size: 0; }
-  .menu-sidebar-link { justify-content: center; padding-inline: 0; }
-  .menu-sidebar-link span { width: auto; font-size: 16px; }
-  .menu-sidebar-link--active { font-size: 0; }
-  .menu-sidebar-link--active span { font-size: 16px; }
+  .menu-shell { display: block; }
+  .menu-sidebar { position: static; display: block; height: auto; min-height: 0; padding: 10px 16px; }
+  .menu-sidebar-brand { width: 112px; height: 38px; margin: 0 0 6px; padding: 0; overflow: visible; }
+  .menu-sidebar-kicker { display: none; }
+  .menu-sidebar-nav { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-color: var(--fika-action-primary) var(--fika-surface-subtle); }
+  .menu-sidebar-link, .menu-sidebar-link--active, .menu-sidebar-link:not(.menu-sidebar-link--active) { flex: 0 0 auto; justify-content: flex-start; min-height: 40px; padding-inline: 10px; font-size: 13px; white-space: nowrap; }
+  .menu-sidebar-link span, .menu-sidebar-link--active span { flex: 0 0 18px; width: 18px; font-size: 16px; }
+  .menu-sidebar-footer { display: flex; margin: 0; border: 0; padding: 0; }
+  .menu-sidebar-footer .menu-sidebar-link { min-height: 36px; }
+  .menu-shell-header { min-height: 72px; }
   .menu-shell-header, .workspace-intro, .planner-intro, .menu-page-heading, .planner-toolbar, .planning-context { padding-inline: 24px; }
   .week-planner-panel, .portion-panel, .allergen-panel { margin-inline: 24px; }
 }
 @media (max-width: 700px) {
-  .menu-shell { display: block; }
-  .menu-sidebar { position: static; height: auto; min-height: auto; padding: 12px 16px; }
-  .menu-sidebar-brand { width: 112px; margin-bottom: 10px; }
-  .menu-sidebar-kicker { display: none; }
-  .menu-sidebar-nav { display: flex; overflow-x: auto; gap: 4px; }
-  .menu-sidebar-link, .menu-sidebar-link--active, .menu-sidebar-link:not(.menu-sidebar-link--active) { justify-content: flex-start; min-height: 42px; padding-inline: 10px; font-size: 13px; }
-  .menu-sidebar-link span, .menu-sidebar-link--active span { width: 18px; font-size: 16px; }
   .menu-shell-header { min-height: 72px; padding: 14px 16px; }
   .menu-shell-header h1 { font-size: 20px; }
   .menu-shell-actions { gap: 5px; }
