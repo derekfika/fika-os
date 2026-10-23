@@ -28,7 +28,13 @@ export function assertRecoveryEvidence(intent, journal, snapshot, rolloutId) {
   assertResume(intent, journal, journal?.plan || {});
   if (!Number.isFinite(Date.parse(journal.submissionStartedAt)) || !Number.isFinite(Date.parse(journal.submissionFinishedAt))) throw Error('Submission outcome is unknown: original submitter must have returned; do not abandon');
   if (!/^[a-z][a-z0-9-]{2,100}$/.test(rolloutId || '')) throw Error('Reconciliation requires the exact observed --rollout ID');
-  if (snapshot.builds.some(b => !['READY','FAILED','DELETED','CANCELLED'].includes(b.state) || b.reconciling) || snapshot.rollouts.some(r => !['SUCCEEDED','FAILED','CANCELLED'].includes(r.state) || r.reconciling) || snapshot.operations.some(o => !o.done)) throw Error('Deployment may still be active or its outcome is unknown; do not abandon');
+  // SKIPPED is accepted only for records predating this submission. A newer
+  // skip could belong to a competing attempt and remains unresolved. The
+  // selected rollout/build below still has to match the original submission,
+  // and successful completion still requires exact-source serving evidence.
+  const submissionStarted = Date.parse(journal.submissionStartedAt);
+  const oldSkipped = item => item.state === 'SKIPPED' && Number.isFinite(Date.parse(item.createTime)) && Date.parse(item.createTime) < submissionStarted;
+  if (snapshot.builds.some(b => (!['READY','FAILED','DELETED','CANCELLED'].includes(b.state) && !oldSkipped(b)) || b.reconciling) || snapshot.rollouts.some(r => (!['SUCCEEDED','FAILED','CANCELLED'].includes(r.state) && !oldSkipped(r)) || r.reconciling) || snapshot.operations.some(o => !o.done)) throw Error('Deployment may still be active or its outcome is unknown; do not abandon');
   const traffic = snapshot.traffic;
   if (!traffic.autoDisabled || traffic.reconciling || traffic.current.length !== 1 || traffic.current[0].percent !== 100 || (traffic.target.length && digest(traffic.target) !== digest(traffic.current))) throw Error('Traffic is not quiescent; do not abandon');
   const matches = snapshot.rollouts.filter(r => r.name === `${intent.backend}/rollouts/${rolloutId}`);
