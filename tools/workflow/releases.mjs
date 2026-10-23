@@ -43,6 +43,35 @@ export function rolloutArguments(plan) {
   // --force skips Firebase's interactive confirmation only, after our exact-SHA approval gates.
   return ['apphosting:rollouts:create', t.backend, '--project', t.project, '--git-commit', exactSha(plan.sourceSha), '--non-interactive', '--force'];
 }
+export async function releaseHealthProbe(app, backendUri, sourceSha, fetchImpl = fetch) {
+  const origin = `https://${String(backendUri).replace(/^https?:\/\//, '').replace(/\/$/, '')}`;
+  if (app !== 'menu') {
+    const url = `${origin}/`;
+    try {
+      const response = await fetchImpl(url, { redirect: 'error', signal: AbortSignal.timeout(30000) });
+      return { ok: response.ok, status: response.status, url };
+    } catch {
+      return { ok: false, status: null, url, reason: 'request_failed_or_redirected' };
+    }
+  }
+
+  const url = `${origin}/api/build-info`;
+  if (!/^[a-f0-9]{40}$/.test(sourceSha || '')) return { ok: false, status: null, url, reason: 'invalid_expected_source_sha' };
+  let response;
+  try {
+    response = await fetchImpl(url, { redirect: 'manual', cache: 'no-store', headers: { accept: 'application/json' }, signal: AbortSignal.timeout(30000) });
+  } catch {
+    return { ok: false, status: null, url, reason: 'request_failed' };
+  }
+  if (response.status !== 200) return { ok: false, status: response.status, url, reason: response.status >= 300 && response.status < 400 ? 'unexpected_redirect' : 'unexpected_status' };
+  let body;
+  try { body = await response.json(); }
+  catch { return { ok: false, status: response.status, url, reason: 'invalid_json' }; }
+  if (body?.appId !== 'menu-planning') return { ok: false, status: response.status, url, reason: 'app_identity_mismatch', appId: body?.appId };
+  if (!/^[a-f0-9]{40}$/.test(body?.buildSha || '')) return { ok: false, status: response.status, url, reason: 'missing_or_invalid_build_sha', appId: body.appId };
+  if (body.buildSha !== sourceSha) return { ok: false, status: response.status, url, reason: 'source_sha_mismatch', appId: body.appId, buildSha: body.buildSha };
+  return { ok: true, status: response.status, url, appId: body.appId, buildSha: body.buildSha };
+}
 export function authenticatedOperator(t, { env = process.env, github = ghApi } = {}) {
   const repo = github(`repos/${REPO}`); let identity;
   if (env.GITHUB_ACTIONS === 'true') identity = { ...assertHostedContext(env, t), method:'authorised-workflow-dispatch' };
@@ -184,11 +213,11 @@ export async function deploy(app, environment, options) {
       assertServingLineage(plan, before, ancestor(before.sourceSha, plan.sourceSha), scopeHash(app,before.sourceSha) === plan.scopeHash);
       bindProductionDelta(plan, before);
       if (before.sourceSha === plan.sourceSha) {
-        if (!abandoned) return { alreadyServing: true, before };
-        const health = await fetch(`https://${backend.uri.replace(/^https?:\/\//, '')}/`, { redirect: 'error', signal: AbortSignal.timeout(30000) });
-        if (!health.ok || digest(before) !== digest(await serving(plan))) throw Error('Cannot reverify abandoned serving state while health/traffic is unstable');
+        const health = await releaseHealthProbe(app, backend.uri, before.sourceSha);
+        if (!health.ok || digest(before) !== digest(await serving(plan))) throw Error('Cannot verify already-serving release while health/traffic is unstable');
+        if (!abandoned) return { alreadyServing: true, before, smoke: health };
         const record = { schema:'fika.release.v1', ...plan, ...before, kind: plan.rollback ? 'rollback' : 'deploy', previousGood:pointer.record.previousGood,
-          previousGoodRecord:pointer.record.previousGoodRecord, releaseId:randomUUID(), reverifiedServing:true, completedAt:new Date().toISOString(), smoke:{ok:true,status:health.status} };
+          previousGoodRecord:pointer.record.previousGoodRecord, releaseId:randomUUID(), reverifiedServing:true, completedAt:new Date().toISOString(), smoke:health };
         validateRecord(record, plan); const commit = appendRecord(plan, record, pointer.commit); return { alreadyServing:true, commit, record };
       }
       journal = { releaseId: randomUUID(), plan, before: abandoned ? pointer.record.previousGood : before, observedBefore: before,
@@ -209,11 +238,11 @@ export async function deploy(app, environment, options) {
       await new Promise(resolve => setTimeout(resolve, 15000));
     }
     if (!verified) throw Error(`Serving verification incomplete; retain pending intent and ${journalFile}. Resume without duplicate submission.`);
-    const health = await fetch(`https://${backend.uri.replace(/^https?:\/\//, '')}/`, { redirect: 'error', signal: AbortSignal.timeout(30000) });
-    if (!health.ok) throw Error('Non-destructive root smoke failed; preserve journal and stop for rollback decision');
+    const health = await releaseHealthProbe(app, backend.uri, verified.sourceSha);
+    if (!health.ok) throw Error(`Non-destructive release health probe failed (${health.reason || health.status}); preserve journal and stop for rollback decision`);
     git('fetch', 'origin'); const latest = releaseRecord(plan.branch);
     if (latest?.record.releaseId !== journal.releaseId || latest.record.kind !== 'intent') throw Error('Release intent changed unexpectedly; do not overwrite it');
-    const record = { schema: 'fika.release.v1', ...plan, ...verified, kind: plan.rollback ? 'rollback' : 'deploy', previousGood: journal.before, previousGoodRecord:journal.previousGoodRecord, releaseId: journal.releaseId, completedAt: new Date().toISOString(), smoke: { status: health.status, url: `https://${backend.uri}/` } };
+    const record = { schema: 'fika.release.v1', ...plan, ...verified, kind: plan.rollback ? 'rollback' : 'deploy', previousGood: journal.before, previousGoodRecord:journal.previousGoodRecord, releaseId: journal.releaseId, completedAt: new Date().toISOString(), smoke: health };
     validateRecord(record, plan); const commit = appendRecord(plan, record, latest.commit);
     save(journalFile, { ...journal, state: 'completed', record, commit }); return { commit, record };
   });
@@ -236,10 +265,7 @@ export async function reconcile(app, environment, options) {
     const backend = await cloud(backendPath(t));
     return reconcileIntent({ pointer, journal, t, operator, rolloutId: options.rollout, resolution: options.resolution, reason: options.reason }, {
       inspect: () => recoverySnapshot(t),
-      smoke: async () => {
-        try { const r = await fetch(`https://${backend.uri.replace(/^https?:\/\//, '')}/`, { redirect: 'error', signal: AbortSignal.timeout(30000) }); return { ok: r.ok, status: r.status }; }
-        catch { return { ok: false, status: null }; }
-      },
+      smoke: sourceSha => releaseHealthProbe(app, backend.uri, sourceSha),
       scopeHash: sha => scopeHash(app, sha),
       latest: () => { git('fetch', 'origin'); return releaseRecord(t.branch); },
       archive: original => {

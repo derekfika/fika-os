@@ -21,13 +21,13 @@ function fixture() {
  const build={name:`${t.backend}/builds/build-new`,state:'FAILED',sourceSha,createTime:'2026-10-22T12:00:10Z'};
  const rollout={name:`${t.backend}/rollouts/build-new`,build:build.name,state:'FAILED',createTime:build.createTime,reconciling:false};
  const snapshot={builds:[build],rollouts:[rollout],operations:[],traffic:{current:[{build:`${t.backend}/builds/build-old`,percent:100}],target:[],reconciling:false,autoDisabled:true},current:structuredClone(before)};
- const calls=[];const io={inspect:async()=>structuredClone(snapshot),smoke:async()=>({ok:true,status:200}),latest:async()=>pointer,scopeHash:async()=> 'scope',archive:async j=>calls.push(['archive',structuredClone(j)]),append:async(r,p)=>{calls.push(['append',r,p]);return 'e'.repeat(40);},finish:async j=>calls.push(['finish',j])};
- return {input:{t,pointer,journal,rolloutId:'build-new',resolution:'abandon',reason:'Confirmed failed build; previous release still serves',operator:{actor:'writer'}},snapshot,io,calls};
+ const calls=[],smokeSources=[];const io={inspect:async()=>structuredClone(snapshot),smoke:async sourceSha=>{smokeSources.push(sourceSha);return {ok:true,status:200};},latest:async()=>pointer,scopeHash:async()=> 'scope',archive:async j=>calls.push(['archive',structuredClone(j)]),append:async(r,p)=>{calls.push(['append',r,p]);return 'e'.repeat(40);},finish:async j=>calls.push(['finish',j])};
+ return {input:{t,pointer,journal,rolloutId:'build-new',resolution:'abandon',reason:'Confirmed failed build; previous release still serves',operator:{actor:'writer'}},snapshot,io,calls,smokeSources};
 }
 test('failed terminal intent is abandoned with original journal and rollback evidence preserved before resolution',async()=>{
  const f=fixture();const original=structuredClone(f.input.journal);const result=await reconcileIntent(f.input,f.io);
  assert.equal(result.record.kind,'abandoned');assert.equal(result.record.previousGoodRecord,original.previousGoodRecord);
- assert.deepEqual(f.calls.map(x=>x[0]),['archive','append','finish']);assert.deepEqual(f.calls[0][1],original);assert.deepEqual(f.input.journal,original);assert.equal(f.calls[1][2],f.input.pointer.commit);assert.equal(result.record.sourceSha,original.before.sourceSha);
+ assert.deepEqual(f.calls.map(x=>x[0]),['archive','append','finish']);assert.deepEqual(f.smokeSources,[original.before.sourceSha]);assert.deepEqual(f.calls[0][1],original);assert.deepEqual(f.input.journal,original);assert.equal(f.calls[1][2],f.input.pointer.commit);assert.equal(result.record.sourceSha,original.before.sourceSha);
 });
 test('failed ledger CAS keeps archived journal and never reports the intent resolved',async()=>{
  const f=fixture();f.io.append=async()=>{throw Error('competing writer');};await assert.rejects(reconcileIntent(f.input,f.io),/competing writer/);assert.deepEqual(f.calls.map(c=>c[0]),['archive']);assert.equal(f.input.journal.state,undefined);
@@ -42,7 +42,7 @@ test('recovery evidence or remote intent changing during verification cannot be 
 test('healthy successful exact-source outcome completes; it cannot be concealed by abandonment',async()=>{
  const f=fixture();f.snapshot.builds[0].state='READY';f.snapshot.rollouts[0].state='SUCCEEDED';f.snapshot.current={...f.snapshot.current,sourceSha:f.input.pointer.record.sourceSha,rollout:'build-new'};f.snapshot.traffic.current[0].build=`${f.input.t.backend}/builds/build-new`;
  await assert.rejects(reconcileIntent(f.input,f.io),/must be completed/);assert.equal(f.calls.length,0);
- f.input.resolution='complete';const r=await reconcileIntent(f.input,f.io);assert.equal(r.record.kind,'deploy');assert.equal(r.record.state,'SUCCEEDED');
+ f.input.resolution='complete';const r=await reconcileIntent(f.input,f.io);assert.equal(r.record.kind,'deploy');assert.equal(r.record.state,'SUCCEEDED');assert.deepEqual(f.smokeSources,[f.input.pointer.record.sourceSha,f.input.pointer.record.sourceSha]);
 });
 test('unrelated historical SKIPPED build and rollout do not block completion of the exact successful intent',async()=>{
  const f=fixture();f.snapshot.builds[0].state='READY';f.snapshot.rollouts[0].state='SUCCEEDED';f.snapshot.current={...f.snapshot.current,sourceSha:f.input.pointer.record.sourceSha,rollout:'build-new'};f.snapshot.traffic.current[0].build=`${f.input.t.backend}/builds/build-new`;

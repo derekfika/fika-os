@@ -6,7 +6,25 @@ import os from 'node:os';
 import path from 'node:path';
 import { protection } from './cli.mjs';
 import { APPS, target, validateRecord } from './policy.mjs';
-import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence } from './releases.mjs';
+import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe } from './releases.mjs';
+test('Menu Planner health probe requires the exact uncached build identity endpoint',async()=>{
+ const sha='a'.repeat(40);let request;
+ const ok=await releaseHealthProbe('menu','https://menu-backend.hosted.app/',sha,async(url,options)=>{request={url,options};return {status:200,json:async()=>({appId:'menu-planning',buildSha:sha})};});
+ assert.deepEqual(ok,{ok:true,status:200,url:'https://menu-backend.hosted.app/api/build-info',appId:'menu-planning',buildSha:sha});
+ assert.equal(request.url,'https://menu-backend.hosted.app/api/build-info');assert.equal(request.options.redirect,'manual');assert.equal(request.options.cache,'no-store');
+});
+test('Menu Planner health probe fails closed for redirects, statuses and missing or mismatched provenance',async()=>{
+ const sha='a'.repeat(40);const response=(status,body)=>({status,json:async()=>body});
+ for(const [res,reason] of [[response(307,{appId:'menu-planning',buildSha:sha}),'unexpected_redirect'],[response(503,{}),'unexpected_status'],[response(200,{appId:'cpu-production',buildSha:sha}),'app_identity_mismatch'],[response(200,{appId:'menu-planning'}),'missing_or_invalid_build_sha'],[response(200,{appId:'menu-planning',buildSha:'short'}),'missing_or_invalid_build_sha'],[response(200,{appId:'menu-planning',buildSha:'b'.repeat(40)}),'source_sha_mismatch'],[{status:200,json:async()=>{throw Error('invalid JSON');}},'invalid_json']]) {
+  const result=await releaseHealthProbe('menu','menu-backend.hosted.app',sha,async()=>res);assert.equal(result.ok,false);assert.equal(result.reason,reason);
+ }
+ const network=await releaseHealthProbe('menu','menu-backend.hosted.app',sha,async()=>{throw Error('network down');});assert.equal(network.ok,false);assert.equal(network.reason,'request_failed');
+ const invalidExpected=await releaseHealthProbe('menu','menu-backend.hosted.app','abc',async()=>{throw Error('must not fetch');});assert.equal(invalidExpected.ok,false);assert.equal(invalidExpected.reason,'invalid_expected_source_sha');
+});
+test('other application health probes retain root endpoint smoke semantics',async()=>{
+ let request;const result=await releaseHealthProbe('cpu','cpu-backend.hosted.app','a'.repeat(40),async(url,options)=>{request={url,options};return {ok:true,status:200};});
+ assert.deepEqual(result,{ok:true,status:200,url:'https://cpu-backend.hosted.app/'});assert.equal(request.url,'https://cpu-backend.hosted.app/');assert.equal(request.options.redirect,'error');
+});
 test('staging executes with repository-write authority and no approval comment or WIF',()=>{
  const access={env:{},github:endpoint=>endpoint==='user'?{login:'writer',type:'User'}:{permissions:{push:true}}};
  const auth=executionAuthorization(target('cpu','staging'),'a'.repeat(40),{},access);assert.equal(auth.actor,'writer');assert.equal(auth.explicitExecute,true);assert.equal(auth.method,'authenticated-repository-writer');
