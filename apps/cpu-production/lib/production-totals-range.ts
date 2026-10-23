@@ -74,6 +74,27 @@ export function filterProductionTotalsOrders(orders: ProductionOrder[], range: P
   return [...unique.values()];
 }
 
+/** Apply an already-verified selected-day set after weekly canonical deduplication. */
+export function filterProductionTotalsOrdersToDates(orders: ProductionOrder[], selectedDates: string[]): ProductionOrder[] {
+  const dates = new Set(selectedDates.filter(isOperationalDate));
+  return orders.filter(order => dates.has(orderDate(order)));
+}
+
+export function productionTotalsWeekDates(weekCommencing: string): string[] {
+  if (!isOperationalDate(weekCommencing) || operationalWeekRange(weekCommencing).from !== weekCommencing) return [];
+  return Array.from({ length: 7 }, (_, index) => addOperationalDays(weekCommencing, index));
+}
+
+export function formatProductionTotalsSelection(weekCommencing: string, selectedDays: number[]): string {
+  const dates = productionTotalsWeekDates(weekCommencing);
+  const indexes = [...new Set(selectedDays)].filter(index => Number.isInteger(index) && index >= 0 && index < dates.length).sort((a, b) => a - b);
+  if (!indexes.length) return "No days selected";
+  const shortDate = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  if (indexes.length === 7) return `All days · ${shortDate(dates[0])} – ${shortDate(dates[6])}`;
+  if (indexes.length === 5 && indexes.every((day, index) => day === index)) return `Weekdays · ${shortDate(dates[0])} – ${shortDate(dates[4])}`;
+  return `Selected days · ${indexes.map(index => shortDate(dates[index])).join(", ")}`;
+}
+
 export function formatProductionTotalsDateRange(range: ProductionTotalsDateRange): string {
   const format = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
   return `${format(range.from)} – ${format(range.to)}`;

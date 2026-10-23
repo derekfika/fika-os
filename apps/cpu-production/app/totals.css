@@ -32,35 +32,105 @@
   font-size: .84rem;
 }
 
-.cpu-totals-presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
+.cpu-totals-week-navigation {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
   width: 100%;
 }
 
-.cpu-totals-presets button {
+.cpu-totals-week-navigation strong {
+  color: var(--fika-text-primary);
+  font-size: .95rem;
+  text-align: center;
+}
+
+.cpu-totals-week-navigation button,
+.cpu-totals-shortcuts button,
+.cpu-totals-day-shortcuts button,
+.cpu-totals-custom > button {
   min-height: 44px;
   padding: 9px 13px;
   border: 1px solid var(--fika-border-default);
   border-radius: 8px;
   background: var(--fika-surface-card);
-  color: var(--fika-text-primary);
+  color: var(--brand-dark);
   font: 600 .82rem var(--fika-font-body);
   cursor: pointer;
 }
 
-.cpu-totals-presets button.selected,
-.cpu-totals-presets button[aria-pressed="true"] {
-  border-color: var(--fika-action-primary);
-  background: var(--fika-action-primary);
-  color: #fff;
+.cpu-totals-shortcuts,
+.cpu-totals-day-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.cpu-totals-presets button:focus-visible,
+.cpu-totals-shortcuts button[aria-pressed="true"],
+.cpu-totals-day-shortcuts button[aria-pressed="true"] {
+  border-color: var(--fika-action-primary);
+  background: var(--fika-surface-subtle);
+  color: var(--fika-action-primary);
+}
+
+.cpu-totals-day-picker {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.cpu-totals-day-picker button {
+  display: grid;
+  min-width: 0;
+  min-height: 72px;
+  place-content: center;
+  gap: 4px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 10px;
+  background: var(--fika-surface-card);
+  color: var(--fika-text-secondary);
+  font: 500 .78rem var(--fika-font-body);
+  cursor: pointer;
+}
+
+.cpu-totals-day-picker .cpu-totals-weekday { border-width: 2px; }
+.cpu-totals-day-picker .cpu-totals-weekend { background: var(--fika-surface-subtle); }
+.cpu-totals-day-picker button span { text-transform: uppercase; font-size: .7rem; font-weight: 700; }
+.cpu-totals-day-picker button strong { color: var(--fika-text-primary); font-size: 1.1rem; }
+.cpu-totals-day-picker button[aria-pressed="true"] { border-color: var(--fika-action-primary); background: var(--fika-action-primary); color: #fff; }
+.cpu-totals-day-picker button[aria-pressed="true"] strong { color: #fff; }
+.cpu-totals-week-navigation button:hover,
+.cpu-totals-shortcuts button:hover,
+.cpu-totals-day-shortcuts button:hover,
+.cpu-totals-custom > button:hover { border-color: var(--fika-action-primary); color: var(--fika-action-primary); }
+
+.cpu-totals-week-navigation button:focus-visible,
+.cpu-totals-shortcuts button:focus-visible,
+.cpu-totals-day-shortcuts button:focus-visible,
+.cpu-totals-custom > button:focus-visible,
+.cpu-totals-day-picker button:focus-visible,
 .cpu-total-list:focus-visible {
   outline: 3px solid var(--fika-focus-ring);
   outline-offset: 2px;
+}
+
+.cpu-totals-custom { display: grid; gap: 10px; }
+.cpu-totals-custom-fields { display: flex; flex-wrap: wrap; gap: 12px; }
+.cpu-totals-custom-fields label { display: grid; gap: 5px; min-width: 180px; color: var(--fika-text-primary); font-size: .8rem; font-weight: 700; }
+.cpu-totals-range-label { color: var(--fika-text-secondary); font-size: .84rem; }
+.cpu-totals-empty-selection { grid-column: 1 / -1; }
+
+@media (max-width: 700px) {
+  .cpu-totals-week-navigation { grid-template-columns: 1fr 1fr; }
+  .cpu-totals-week-navigation strong { grid-column: 1 / -1; grid-row: 1; }
+  .cpu-totals-day-picker { gap: 4px; }
+  .cpu-totals-day-picker button { min-height: 64px; border-radius: 7px; }
+}
+
+@media (max-width: 420px) {
+  .cpu-totals-day-picker { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 .cpu-totals-filters label {

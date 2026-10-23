@@ -10,7 +10,7 @@ h1,h2,h3,h4{font-family:var(--display)}
 .cpu-toolbar-actions button,.cpu-create button{border-radius:8px;background:var(--brand-dark);font-family:var(--body);font-weight:700}.cpu-toolbar-actions button{color:#fff}
 .cpu-toolbar-actions button.selected{background:var(--brand-primary)}
 .cpu-toolbar-actions button:hover,.cpu-create button:hover{background:var(--brand-primary)}
-.cpu-toolbar-actions button{color:#fff!important}
+.cpu-toolbar-actions>button{color:#fff!important}
 .cpu-filters input,.cpu-filters select,.cpu-toolbar button,.cpu-create input,.cpu-create textarea,.cpu-create select{font-family:var(--body);border-color:var(--border)}
 .calendar-day>header span{display:flex;align-items:center;gap:5px}.calendar-day-open{padding:3px 5px;border:1px solid var(--border);border-radius:5px;background:#fff;color:var(--brand-primary);font-size:.6rem;font-weight:900;cursor:pointer}
 .production-calendar{border-radius:1.25rem;background:var(--surface)}

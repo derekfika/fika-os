@@ -149,10 +149,11 @@ body{font-family:var(--body,Arial,sans-serif)}
 .cpu-operations-rail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}
 .cpu-toolbar-actions{align-items:center}
 .cpu-view-switch{display:inline-flex;align-items:center;gap:2px;padding:3px;border:1px solid var(--fika-border-default);border-radius:9px;background:var(--fika-surface-subtle)}
-.cpu-view-switch button{min-height:36px;padding:7px 11px;border:0;border-radius:6px;background:transparent;color:var(--fika-text-primary);font:600 12px var(--fika-font-body);cursor:pointer}
-.cpu-toolbar-actions .cpu-view-switch button:last-child{background:transparent;color:var(--fika-text-primary)}
-.cpu-view-switch button.selected,.cpu-view-switch button[aria-pressed="true"],.cpu-toolbar-actions .cpu-view-switch button[aria-pressed="true"]{background:var(--fika-action-primary);color:#fff}
-.cpu-view-switch button:focus-visible,.cpu-sidebar-collapse:focus-visible{outline:3px solid var(--fika-focus-ring);outline-offset:2px}
+.cpu-view-switch button{min-height:44px;padding:8px 12px;border:0;border-radius:6px;background:var(--fika-surface-card);color:var(--brand-dark);font:600 12px var(--fika-font-body);cursor:pointer}
+.cpu-toolbar-actions .cpu-view-switch button:not([aria-pressed="true"]){background:var(--fika-surface-card);color:var(--brand-dark)}
+.cpu-view-switch button:hover:not([aria-pressed="true"]){background:var(--fika-surface-subtle);color:var(--fika-action-primary)}
+.cpu-view-switch button.selected,.cpu-view-switch button[aria-pressed="true"]{background:var(--fika-action-primary);color:#fff}
+.cpu-view-switch button:focus-visible,.cpu-sidebar-collapse:focus-visible{outline:3px solid var(--fika-focus-ring);outline-offset:2px;position:relative;z-index:1}
 .cpu-sidebar-collapse{display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;border:1px solid var(--fika-border-default);border-radius:8px;background:var(--fika-surface-card);color:var(--fika-text-primary);font:600 21px var(--fika-font-body);cursor:pointer}
 .cpu-app-shell--sidebar-collapsed .cpu-sidebar{width:76px;flex-basis:76px;padding-inline:8px}
 .cpu-app-shell--sidebar-collapsed .cpu-sidebar-heading{align-items:center;flex-direction:column}

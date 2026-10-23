@@ -3,7 +3,7 @@ import test from "node:test";
 import type { ProductionOrder } from "../lib/production-types";
 import { aggregateProductionTotals } from "../lib/production-day";
 import { loadProductionTotalsRange } from "../lib/cpu-totals-loader";
-import { addOperationalDays, filterProductionTotalsOrders, operationalWeekRange, productionWeeksInRange, resolveProductionTotalsRange } from "../lib/production-totals-range";
+import { addOperationalDays, filterProductionTotalsOrders, filterProductionTotalsOrdersToDates, formatProductionTotalsSelection, operationalWeekRange, productionTotalsWeekDates, productionWeeksInRange, resolveProductionTotalsRange } from "../lib/production-totals-range";
 import type { CpuWeekProjection } from "../lib/cpu-projection";
 
 function order(id: string, serviceDate: string, itemName: string, quantity: number, unit = "portion", workstream: "delivered_in" | "sandwiches" | "hospitality" = "delivered_in"): ProductionOrder {
@@ -66,6 +66,46 @@ test("totals aggregate multiple sites while keeping workstreams, units and dupli
   assert.equal(filterProductionTotalsOrders([a, b, otherUnit], { from: "2026-10-26", to: "2026-10-27" }, "site:other").length, 1);
 });
 
+test("selected totals days recalculate from a verified week without changing its canonical deduplication", () => {
+  const week = [
+    order("order:mon", "2026-10-19", "Soup", 10),
+    order("order:tue", "2026-10-20", "Soup", 20),
+    order("order:fri", "2026-10-23", "Soup", 50),
+    order("order:sat", "2026-10-24", "Soup", 60),
+    order("order:sun", "2026-10-25", "Soup", 70),
+    order("order:next-week", "2026-10-26", "Soup", 100),
+  ];
+  const verifiedWeek = filterProductionTotalsOrders(week, operationalWeekRange("2026-10-19"));
+  const singleDay = filterProductionTotalsOrdersToDates(verifiedWeek, ["2026-10-20"]);
+  const weekdays = filterProductionTotalsOrdersToDates(verifiedWeek, productionTotalsWeekDates("2026-10-19").slice(0, 5));
+  const multipleDays = filterProductionTotalsOrdersToDates(verifiedWeek, ["2026-10-20", "2026-10-24"]);
+  const allDays = filterProductionTotalsOrdersToDates(verifiedWeek, productionTotalsWeekDates("2026-10-19"));
+  assert.equal(weekdays.length, 3);
+  assert.equal(aggregateProductionTotals(weekdays)[0].items[0].quantity, 80);
+  assert.equal(singleDay.length, 1);
+  assert.equal(aggregateProductionTotals(singleDay)[0].items[0].quantity, 20);
+  assert.equal(multipleDays.length, 2);
+  assert.equal(aggregateProductionTotals(multipleDays)[0].items[0].quantity, 80);
+  assert.equal(allDays.length, 5);
+  assert.equal(aggregateProductionTotals(allDays)[0].items[0].quantity, 210);
+  assert.equal(filterProductionTotalsOrdersToDates(verifiedWeek, []).length, 0);
+  assert.equal(formatProductionTotalsSelection("2026-10-19", [0, 1, 2, 3, 4]), "Weekdays · Mon 19 Oct – Fri 23 Oct");
+  assert.equal(formatProductionTotalsSelection("2026-10-19", [0, 1, 2, 3, 4, 5, 6]), "All days · Mon 19 Oct – Sun 25 Oct");
+  assert.equal(formatProductionTotalsSelection("2026-10-19", []), "No days selected");
+});
+
+test("selected-day filtering runs after canonical version selection and preserves site and origin filters", () => {
+  const older = order("order:changed", "2026-10-19", "Soup", 10);
+  const newer = { ...order("order:changed", "2026-10-20", "Soup", 14), version: 2 };
+  const hospitality = order("order:hospitality", "2026-10-20", "Tart", 3, "tray", "hospitality");
+  const siteOrder = { ...order("order:site", "2026-10-20", "Tart", 8, "tray", "hospitality"), destinationOplocId: "site:other" };
+  const selectedWeek = filterProductionTotalsOrders([older, newer, hospitality, siteOrder], operationalWeekRange("2026-10-19"));
+  assert.equal(filterProductionTotalsOrdersToDates(selectedWeek, ["2026-10-19"]).some(row => row.canonicalId === "order:changed"), false);
+  assert.equal(filterProductionTotalsOrdersToDates(selectedWeek, ["2026-10-20"]).find(row => row.canonicalId === "order:changed")?.version, 2);
+  assert.deepEqual(filterProductionTotalsOrders(selectedWeek, operationalWeekRange("2026-10-19"), "", "hospitality_booking").map(row => row.canonicalId).sort(), ["order:hospitality", "order:site"]);
+  assert.deepEqual(filterProductionTotalsOrders(selectedWeek, operationalWeekRange("2026-10-19"), "site:other").map(row => row.canonicalId), ["order:site"]);
+});
+
 test("failed projection freshness does not become an empty successful totals result; stale requests are discarded", async () => {
   const projection = weekly("2026-10-19", [{ id: "order:a", date: "2026-10-20", name: "Dish", quantity: 1 }]);
   await assert.rejects(loadProductionTotalsRange({ from: "2026-10-20", to: "2026-10-20" }, "all", async () => response(projection, false)), /Current production totals could not be verified/);
@@ -85,6 +125,13 @@ test("Totals uses a semantic responsive read-only table and exposes loading/fail
   assert.match(page, /<table className="cpu-total-list">/);
   assert.match(page, /Loading and verifying production totals/);
   assert.match(page, /role="alert">\{rangeError \|\| loadError\}/);
+  assert.match(page, /Production view/);
+  assert.match(page, /Previous week/);
+  assert.match(page, /All days/);
+  assert.match(page, /filterProductionTotalsOrdersToDates\(filterProductionTotalsOrders/);
+  assert.match(page, /No production days selected[\s\S]*?Select one or more days above/);
+  assert.doesNotMatch(page, /\[view, date, dayDate, weekCommencing, productionScope, todayKey, totalsCustomRange, customFrom, customTo, totalsSelectedDays\]/);
+  assert.doesNotMatch(page, /onClick=\{\(\) => \{[^}]*fetch\(/);
   assert.doesNotMatch(page, /cpu-total-card-grid|fika-cpu-total-progress/);
   assert.match(css, /@media \(max-width: 560px\)/);
   assert.match(css, /min-height: 44px/);
