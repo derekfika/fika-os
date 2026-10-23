@@ -6,6 +6,7 @@ import {
   FirestorePackingRepository,
   validatePackingOrder,
 } from "../../../lib/packing-checklist";
+import { assertPackingOrigin } from "../../../lib/packing-origin";
 export const dynamic = "force-dynamic";
 const id = z.string().min(1).max(400);
 const command = z
@@ -71,12 +72,7 @@ export async function GET(request: NextRequest) {
 }
 export async function POST(request: NextRequest) {
   try {
-    const origin = request.headers.get("origin");
-    if (origin && origin !== request.nextUrl.origin)
-      throw Object.assign(
-        new Error("Cross-origin packing updates are not permitted."),
-        { status: 403 },
-      );
+    assertPackingOrigin(request);
     const c = command.parse(await request.json());
     const { actor, order } = await authorisedOrder(request, c.orderId);
     return NextResponse.json(

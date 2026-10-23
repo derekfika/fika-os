@@ -681,3 +681,23 @@ test("packing failed Firestore write leaves no success state and same command ca
   assert.equal((await f.ref.get()).data()?.revision, 1);
   assert.equal((await f.ref.collection("commands").get()).size, 1);
 });
+
+
+test("packing actual POST route accepts configured App Hosting public origin and retains CPU authorisation", async () => {
+  const f = await packingFixture("proxy-route");
+  const { POST } = await import("../app/api/packing/route");
+  const keys = ["FIKA_RUNTIME_MODE", "CPU_PUBLIC_BASE_URL", "FIKA_HUB_BASE_URL"];
+  const prior = keys.map(key=>process.env[key]);
+  try {
+    process.env.FIKA_RUNTIME_MODE="staging";
+    process.env.CPU_PUBLIC_BASE_URL="https://cpu-staging.fikacatering.com";
+    process.env.FIKA_HUB_BASE_URL="https://staging-os.fikacatering.com";
+    const request = (origin:string) => new NextRequest("http://localhost:8080/api/packing", {method:"POST",headers:{origin,"x-forwarded-host":"cpu-staging.fikacatering.com","x-forwarded-proto":"https",cookie:"session=first","content-type":"application/json"},body:JSON.stringify(f.command())});
+    assert.equal((await POST(request("https://attacker.example"))).status,403);
+    assert.equal((await f.ref.get()).exists,false);
+    assert.equal((await POST(request("https://cpu-staging.fikacatering.com"))).status,200);
+    f.deny();
+    assert.equal((await POST(request("https://cpu-staging.fikacatering.com"))).status,403);
+    assert.equal((await f.ref.collection("commands").get()).size,1);
+  } finally { keys.forEach((key,i)=>{if(prior[i]===undefined)delete process.env[key];else process.env[key]=prior[i];}); }
+});
