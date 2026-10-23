@@ -594,3 +594,90 @@ test("root cause reproduced: signing with the lineage loaded BEFORE Save (what t
   const fresh = await post(route.POST, signBody(orderId, "production_chef", saved.signingLineage));
   assert.equal(fresh.status, 200);
 });
+
+
+// Real packing route + isolated Firestore persistence; no plan/signature/feed writers.
+async function packingFixture(name: string) {
+  const { GET, POST } = await import("../app/api/packing/route");
+  const { db } = await import("../lib/firebase-admin");
+  const { PACKING_COLLECTION, packingHash } = await import("../lib/packing-checklist");
+  let order = { ...orderFor(`packing:${name}`), lines: [{ ...orderFor(`packing:${name}`).lines[0], customerUnit: "portions", description: "Original recipe" }] };
+  let allow = true;
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    if (String(input).includes("/api/cpu-production/access")) return Response.json(allow ? { principal: { id: new Headers(init?.headers).get("cookie") === "session=second" ? "authid:second" : "authid:first" } } : { error: { message: "CPU access denied" } }, { status: allow ? 200 : 403 });
+    if (String(input).includes("/api/production?canonicalId=")) return Response.json({ order });
+    throw Error("Unexpected packing upstream: " + input);
+  }) as typeof fetch;
+  const get = () => GET(new NextRequest(`http://localhost/api/packing?orderId=${encodeURIComponent(order.canonicalId)}`, { headers: { cookie: "session=first" } }));
+  const post = (body: unknown, actor = "first", origin = "http://localhost") => POST(new NextRequest("http://localhost/api/packing", { method: "POST", headers: { cookie: `session=${actor}`, origin, "content-type": "application/json" }, body: JSON.stringify(body) }));
+  const initial = await (await get()).json();
+  const command = (overrides = {}) => ({ orderId: order.canonicalId, orderVersion: order.version, lineId: order.lines[0].canonicalId, fingerprint: initial.lines[0].fingerprint, packed: true, expectedRevision: initial.revision, commandId: crypto.randomUUID(), ...overrides });
+  const ref = db.collection(PACKING_COLLECTION).doc(packingHash(order.canonicalId));
+  const current = () => order;
+  return { db, get, post, command, ref, current, amend: () => { order = { ...order, version: order.version + 1, lines: order.lines.map(line => ({ ...line, customerQuantity: 9 })) }; }, deny: () => { allow = false; } };
+}
+
+test("packing route persists across devices, permits unticking and audits once per change", async () => {
+  const f = await packingFixture("sessions");
+  const before = await snapshotEvidence(f.db, f.current().canonicalId);
+  const c = f.command();
+  assert.equal((await f.post(c)).status, 200);
+  assert.equal((await f.post(c)).status, 200);
+  assert.equal((await (await f.get()).json()).packedCount, 1);
+  assert.equal((await f.ref.collection("commands").get()).size, 1);
+  assert.equal((await f.post(f.command({ expectedRevision: 1, packed: false }), "second")).status, 200);
+  assert.equal((await (await f.get()).json()).packedCount, 0);
+  const events = (await f.ref.collection("commands").get()).docs.map(doc => doc.data());
+  assert.equal(events.length, 2);
+  assert.deepEqual(new Set(events.map(event => event.actorId)), new Set(["authid:first", "authid:second"]));
+  assert.deepEqual(await snapshotEvidence(f.db, f.current().canonicalId), before);
+});
+
+test("packing concurrent route writes reject stale revisions without silent overwrite", async () => {
+  const f = await packingFixture("concurrent");
+  const replies = await Promise.all([f.post(f.command()), f.post(f.command(), "second")]);
+  assert.deepEqual(replies.map(reply => reply.status).sort(), [200, 409]);
+  assert.equal((await f.ref.get()).data()?.revision, 1);
+  assert.equal((await f.ref.collection("commands").get()).size, 1);
+});
+
+test("packing amendments invalidate ticks, reject stale writes and retain audit evidence", async () => {
+  const f = await packingFixture("amendment"); const old = f.command();
+  assert.equal((await f.post(old)).status, 200); f.amend();
+  const current = await (await f.get()).json();
+  assert.equal(current.packedCount, 0); assert.equal(current.lines[0].changed, true);
+  assert.equal((await f.post(old)).status, 409);
+  assert.equal((await f.post(f.command({ orderVersion: 2, expectedRevision: 1 }))).status, 409);
+  assert.equal((await f.post(f.command({ orderVersion: 2, expectedRevision: 1, fingerprint: current.lines[0].fingerprint }))).status, 200);
+  assert.equal((await f.ref.collection("commands").get()).size, 2);
+});
+
+test("packing rejects denied access, cross-origin and reused command identities before writes", async () => {
+  const f = await packingFixture("access"); const c = f.command();
+  assert.equal((await f.post(c, "first", "https://untrusted.example")).status, 403);
+  f.deny(); assert.equal((await f.post(c)).status, 403); assert.equal((await f.get()).status, 403);
+  assert.equal((await f.ref.get()).exists, false);
+  const second = await packingFixture("identity"); const valid = second.command();
+  assert.equal((await second.post(valid)).status, 200);
+  assert.equal((await second.post({ ...valid, packed: false })).status, 409);
+  assert.equal((await second.post(valid, "second")).status, 409);
+  assert.equal((await second.ref.collection("commands").get()).size, 1);
+});
+
+
+test("packing failed Firestore write leaves no success state and same command can retry safely", async () => {
+  const f = await packingFixture("failed-write");
+  const original = f.db.runTransaction.bind(f.db);
+  f.db.runTransaction = (async () => { throw Error("Injected unavailable store"); }) as typeof f.db.runTransaction;
+  const c = f.command();
+  try {
+    assert.equal((await f.post(c)).status, 503);
+    assert.equal((await f.ref.get()).exists, false);
+    assert.equal((await f.ref.collection("commands").get()).size, 0);
+  } finally { f.db.runTransaction = original; }
+  assert.equal((await f.post(c)).status, 200);
+  const noop = f.command({ expectedRevision: 1 });
+  assert.equal((await f.post(noop)).status, 200);
+  assert.equal((await f.ref.get()).data()?.revision, 1);
+  assert.equal((await f.ref.collection("commands").get()).size, 1);
+});
