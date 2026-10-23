@@ -5,6 +5,8 @@ import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilment
 import { applyFulfilmentEvent, listFulfilmentReceipts, listFulfilmentRequirements, normaliseFulfilmentEvent, shouldApplyFulfilmentVersion } from "../lib/fulfilment-projection";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
+
+const emulatorEnabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os" && process.env.FIRESTORE_EMULATOR_HOST === "127.0.0.1:8292" && (process.env.FIKA_RUNTIME_MODE || "local") === "local";
 import { getLogisticsProjectionOutboxEvent } from "../lib/logistics-projection-outbox";
 import { logisticsProjectionEventId } from "../../shared/logistics-projection";
 
@@ -120,7 +122,7 @@ test("Production Fulfilment hashing and reconciliation distinguish delivery chan
   assert.equal(cancellation.status, "withdrawn");
 });
 
-test("the central store receives all three sources and applies amendments, withdrawal and duplicate replay safely", async () => {
+test("emulator: the central store receives all three sources and applies amendments, withdrawal and duplicate replay safely", { skip: !emulatorEnabled }, async () => {
   const suffix = `${Date.now()}:${process.pid}`;
   const menu = { ...menuDay, sourceDayId: `rolling-week:contract:${suffix}` };
   const grab = { ...grabOrder, orderId: `grab-and-go:contract:${suffix}` };
@@ -165,7 +167,7 @@ test("the central store receives all three sources and applies amendments, withd
   }
 });
 
-test("normal Fulfilment reads require an indexed scope and retain all predicates", async () => {
+test("emulator: normal Fulfilment reads require an indexed scope and retain all predicates", { skip: !emulatorEnabled }, async () => {
   await assert.rejects(() => listFulfilmentRequirements(), /service date, status or OPLOC scope is required/i);
   const matching = fulfilmentFromPublishedMenuDay({ ...menuDay, publicationDayId: `publication:day:bounded:${Date.now()}` }, "oploc:bounded");
   const outsideDate = { ...matching, canonicalId: `${matching.canonicalId}:outside-date`, serviceDate: "2099-01-02" };
@@ -180,7 +182,7 @@ test("normal Fulfilment reads require an indexed scope and retain all predicates
   }
 });
 
-test("Fulfilment week reads use a bounded service-date range", async () => {
+test("emulator: Fulfilment week reads use a bounded service-date range", { skip: !emulatorEnabled }, async () => {
   const matching = fulfilmentFromPublishedMenuDay({ ...menuDay, publicationDayId: `publication:day:range:${Date.now()}` }, "oploc:range");
   const outsideRange = { ...matching, canonicalId: `${matching.canonicalId}:outside`, serviceDate: "2099-01-08" };
   try {

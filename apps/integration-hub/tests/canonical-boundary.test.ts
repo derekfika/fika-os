@@ -3,7 +3,7 @@ import test from "node:test";
 import { acceptedPublishedCanonicalPage, acceptedPublishedOplocPage } from "../lib/canonical-boundary";
 import type { CanonicalRecord } from "../lib/types";
 
-const record = (canonicalId: string, entityType: CanonicalRecord["entityType"], lifecycleStatus: CanonicalRecord["lifecycleStatus"], primaryLocationType?: "Site" | "Venue") => ({ canonicalId, entityType, lifecycleStatus, dataHash: "hash", record: { schemaVersion: "0.1.0", primaryLocationType, raw: "must-not-shape-selection" } }) as CanonicalRecord;
+const record = (canonicalId: string, entityType: CanonicalRecord["entityType"], lifecycleStatus: CanonicalRecord["lifecycleStatus"], primaryLocationType?: "Site" | "Venue") => ({ canonicalId, entityType, lifecycleStatus, publicationStatus: lifecycleStatus === "published" ? "published" : undefined, dataHash: "hash", record: { schemaVersion: "0.1.0", primaryLocationType, ...(entityType === "OPLOC" ? { lifecycleState: "active" } : {}), raw: "must-not-shape-selection" } }) as CanonicalRecord;
 
 test("canonical boundary exposes published OPLOCs only with type filters and deterministic pagination", () => {
   const input = [record("oploc:c", "OPLOC", "published", "Venue"), record("site:legacy", "Site", "published"), record("oploc:b", "OPLOC", "needs-review", "Site"), record("oploc:a", "OPLOC", "published", "Site")];

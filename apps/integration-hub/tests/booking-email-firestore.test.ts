@@ -13,18 +13,27 @@ import type { CanonicalRecord } from "../lib/types";
 import { GmailSendFailure, type BookingSender } from "../lib/booking-email-delivery";
 import { createRcoaEmailTestFixture, RCOA_EMAIL_TEST_NOTIFICATION_IDS, RCOA_EMAIL_TEST_RECIPIENT } from "../lib/booking-email-test-fixture";
 
-test("canonical transitions atomically queue distinct lifecycle obligations; retries preserve earlier payloads", async () => {
+const emulatorEnabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os"
+  && process.env.FIRESTORE_EMULATOR_HOST === "127.0.0.1:8292";
+
+test("emulator: canonical transitions atomically queue distinct lifecycle obligations; retries preserve earlier payloads", { skip: !emulatorEnabled }, async () => {
   assert.equal(process.env.FIKA_RUNTIME_MODE || "local", "local");
   const key = `email-test-${crypto.randomUUID()}`;
   const now = new Date().toISOString();
-  const menu = { canonicalId: `hospitality-menu-item:${key}`, dataHash: "test", entityType: "Hospitality Menu Item", lifecycleStatus: "published", record: { lifecycleState: "active", name: "Test lunch", unitPrice: 12, providerMappings: [{ provider: "mnk-booking-platform", sourceItemId: key }] } } as CanonicalRecord;
-  const payload = { bookingId: key, siteId: `oploc:${key}`, site: key, submittedAt: now, client: { name: "Test Host", companyName: "Test", email: "host@example.test" }, event: { eventDate: "2026-10-19", startTime: "12:00", guestCount: 3 }, order: { items: [{ itemId: key, unitPrice: .01, quantity: 3, lineTotal: .01 }], netTotal: .01 } };
+  const eventDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000));
+  const menu = { canonicalId: `hospitality-menu-item:${key}`, dataHash: "test", entityType: "Hospitality Menu Item", lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active", name: "Test lunch", unitPrice: 12, providerMappings: [{ provider: "mnk-booking-platform", sourceItemId: key }] } } as CanonicalRecord;
+  const offeringId = `hospitality-menu-offering:${key}`;
+  const oploc = `oploc:mnk-email-test:${key}`;
+  const offering = { canonicalId: offeringId, dataHash: "test", entityType: "Hospitality Menu Offering", lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active", hospitalityMenuItemId: menu.canonicalId, oplocId: oploc, offeringMode: "standard" } } as CanonicalRecord;
+  const price = { canonicalId: `hospitality-menu-price:${key}`, dataHash: "test", entityType: "Hospitality Menu Price", lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active", hospitalityMenuOfferingId: offeringId, amount: 12, vatRate: 0, effectiveFrom: "2020-01-01" } } as CanonicalRecord;
+  const payload = { bookingId: key, siteId: "mnk", site: "MNK", submittedAt: now, client: { name: "Test Host", companyName: "Test", email: "host@example.test" }, event: { eventDate, startTime: "12:00", guestCount: 3 }, order: { items: [{ itemId: key, unitPrice: .01, quantity: 3, lineTotal: .01 }], netTotal: .01 } };
   const mappingRef = db.collection("integrationHubSourceMappings").doc(key);
-  const oploc = `oploc:${key}`;
   await db.collection("integrationHubCanonical").doc(stableDocumentId(menu.canonicalId)).set(menu);
+  await db.collection("integrationHubCanonical").doc(stableDocumentId(offeringId)).set(offering);
+  await db.collection("integrationHubCanonical").doc(stableDocumentId(price.canonicalId)).set(price);
   await db.collection("integrationHubCanonical").doc(stableDocumentId(oploc)).set({ canonicalId: oploc, entityType: "OPLOC", lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active" } });
   const actor = { uid: "test-multi-site-manager", role: "integration-admin" } as Actor;
-  await mappingRef.set({ sourceIdentifier: key, sourceEntityType: "provider-location", mappingStatus: "confirmed", oplocId: oploc });
+  await mappingRef.set({ sourceIdentifier: "mnk", sourceEntityType: "provider-location", mappingStatus: "confirmed", oplocId: oploc });
   const ingested = await ingestMnkBooking(payload);
   let booking: CanonicalBooking = ingested.booking;
   assert.equal(ingested.created, true);
@@ -58,10 +67,16 @@ test("canonical transitions atomically queue distinct lifecycle obligations; ret
   assert.equal((await db.collection("fikaBookingNotifications").where("bookingId", "==", booking.canonicalId).limit(10).get()).size, 3);
   assert.equal(await bookingEmailStore.arm(confirmation.id, "wrong-claim", now), false);
   assert.ok(handoff.order!.canonicalId);
-  await mappingRef.delete();
+  await Promise.all([
+    mappingRef.delete(),
+    db.collection("integrationHubCanonical").doc(stableDocumentId(menu.canonicalId)).delete(),
+    db.collection("integrationHubCanonical").doc(stableDocumentId(offeringId)).delete(),
+    db.collection("integrationHubCanonical").doc(stableDocumentId(price.canonicalId)).delete(),
+    db.collection("integrationHubCanonical").doc(stableDocumentId(oploc)).delete(),
+  ]);
 });
 
-test("Firestore worker CAS prevents duplicate sends, suppresses source races, and audits manual dead-letter recovery", async () => {
+test("emulator: Firestore worker CAS prevents duplicate sends, suppresses source races, and audits manual dead-letter recovery", { skip: !emulatorEnabled }, async () => {
   assert.equal(process.env.FIKA_RUNTIME_MODE || "local", "local");
   const key = `email-worker-${crypto.randomUUID()}`;
   const booking = { canonicalId: `booking:${key}`, version: 4, commercialVersion: 2, lifecycleStatus: "Sent to CPU", service: { oplocId: `oploc:${key}`, portalSiteId: "mnk", eventDate: "2026-10-19", startTime: "12:00" }, source: { sourceBookingId: key }, client: { name: "Host", email: "host@example.test" }, order: { items: [], netTotal: 12, vatTotal: 0, grossTotal: 12 }, updatedAt: "2026-10-01T00:00:00Z" } as unknown as CanonicalBooking;
@@ -98,7 +113,7 @@ test("Firestore worker CAS prevents duplicate sends, suppresses source races, an
   assert.equal((await amendedRef.collection("recovery").get()).size, 1);
 });
 
-test("fixed synthetic RCoA test notification uses the durable worker once without creating a booking", async () => {
+test("emulator: fixed synthetic RCoA test notification uses the durable worker once without creating a booking", { skip: !emulatorEnabled }, async () => {
   assert.equal(process.env.FIKA_RUNTIME_MODE || "local", "local");
   const id = RCOA_EMAIL_TEST_NOTIFICATION_IDS.submitted;
   const ref = db.collection("fikaBookingNotifications").doc(id);

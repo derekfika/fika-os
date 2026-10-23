@@ -23,7 +23,10 @@ test("records without explicit lifecycle are needs-review and never silently pub
 
 test("completeness register covers restricted and unknown BrightHR fields", () => {
   assert.ok(BrightHrCompleteness.some(field => field.fieldId === "brighthr:emergency-contact" && field.classification === "restricted-sensitive"));
-  assert.ok(BrightHrCompleteness.some(field => field.fieldId === "brighthr:start-date" && field.classification === "unknown-investigation"));
+  const startDate = BrightHrCompleteness.find(field => field.fieldId === "brighthr:start-date");
+  assert.equal(startDate?.classification, "mapped-now");
+  assert.equal(startDate?.canonicalTarget, "Employment.startDate");
+  assert.equal(startDate?.sourcePath, "employee.employment.start");
   assert.ok(RotaCompleteness.every(field => field.provider === "rota"));
 });
 

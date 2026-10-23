@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { db } from "../lib/firebase-admin";
+
+const emulatorEnabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os" && process.env.FIRESTORE_EMULATOR_HOST === "127.0.0.1:8292" && (process.env.FIKA_RUNTIME_MODE || "local") === "local";
 import { stableDocumentId } from "../lib/canonical-editor";
 import { applyFulfilmentEvent, reconcileProductionFulfilmentForServiceDate } from "../lib/fulfilment-projection";
 import { ensureLogisticsProjectionEvent, logisticsProjectionRequirementRevision } from "../lib/logistics-projection-outbox";
@@ -69,7 +71,7 @@ test("identity: the first revision keeps the sourceVersion identity and a same-v
   assert.equal(logisticsProjectionRequirementRevision(amended), undefined);
 });
 
-test("historical retirement stages a distinct withdrawal event and leaves the original delivered v1 event byte-identical", async () => {
+test("emulator: historical retirement stages a distinct withdrawal event and leaves the original delivered v1 event byte-identical", { skip: !emulatorEnabled }, async () => {
   const serviceDate = "2099-12-11";
   const active = order({ name: "retire-me", serviceDate, status: "planned" });
   const cancelled = { ...active, status: "cancelled" as ProductionStatus };
@@ -104,7 +106,7 @@ test("historical retirement stages a distinct withdrawal event and leaves the or
   } finally { await cleanup(serviceDate, [active]); }
 });
 
-test("repeating the same recovery is idempotent: no further event and no duplicate requirement audit", async () => {
+test("emulator: repeating the same recovery is idempotent: no further event and no duplicate requirement audit", { skip: !emulatorEnabled }, async () => {
   const serviceDate = "2099-12-12";
   const active = order({ name: "idempotent", serviceDate, status: "planned" });
   try {
@@ -128,7 +130,7 @@ test("repeating the same recovery is idempotent: no further event and no duplica
   } finally { await cleanup(serviceDate, [active]); }
 });
 
-test("mixed historical and current state retires only stale work and leaves the current revision untouched", async () => {
+test("emulator: mixed historical and current state retires only stale work and leaves the current revision untouched", { skip: !emulatorEnabled }, async () => {
   const serviceDate = "2099-12-13";
   const stale = ["a", "b", "c"].map(name => order({ name: `stale-${name}`, serviceDate, status: "planned" }));
   const current = order({ name: "current-r17", serviceDate, status: "planned" });
@@ -157,7 +159,7 @@ test("mixed historical and current state retires only stale work and leaves the 
   } finally { await cleanup(serviceDate, [...stale, current]); }
 });
 
-test("replaying the exact older event after retirement neither resurrects work nor overwrites the withdrawal event", async () => {
+test("emulator: replaying the exact older event after retirement neither resurrects work nor overwrites the withdrawal event", { skip: !emulatorEnabled }, async () => {
   const serviceDate = "2099-12-14";
   const active = order({ name: "replay", serviceDate, status: "planned" });
   try {
@@ -185,7 +187,7 @@ test("replaying the exact older event after retirement neither resurrects work n
   }
 });
 
-test("legacy repair never fabricates a transition identity and an existing transition event can never be overwritten", async () => {
+test("emulator: legacy repair never fabricates a transition identity and an existing transition event can never be overwritten", { skip: !emulatorEnabled }, async () => {
   const serviceDate = "2099-12-15";
   const active = order({ name: "legacy-repair", serviceDate, status: "planned" });
   try {

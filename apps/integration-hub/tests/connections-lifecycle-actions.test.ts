@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { parseCanonical } from "../lib/schemas";
+import ConfirmationModal from "../app/ui/ConfirmationModal";
 
 const source = fs.readFileSync(path.join(process.cwd(), "app/ui/OperationalConfigurationPanel.tsx"), "utf8");
 
@@ -22,8 +25,24 @@ test("service and allocation actions require explicit confirmation and support r
   assert.match(source, /End service/);
   assert.match(source, /Restore service/);
   assert.match(source, /Restore allocation/);
-  assert.match(source, /window\.confirm/);
+  assert.match(source, /Remove allocation/);
+  assert.match(source, /setConfirmation\(/);
+  assert.match(source, /confirmation\s*&&\s*<ConfirmationModal/);
+  assert.match(source, /onCancel=\{\(\) => setConfirmation\(null\)\}/);
+  assert.match(source, /onConfirm=\{confirmation\.onConfirm\}/);
+  assert.doesNotMatch(source, /\bwindow\.(?:confirm|prompt)\s*\(/);
   assert.match(source, /Include ended \/ archived/);
+  const markup = renderToStaticMarkup(createElement(ConfirmationModal, {
+    title: "End service?",
+    description: "The historical arrangement will be retained.",
+    confirmLabel: "End service",
+    destructive: true,
+    onCancel: () => undefined,
+    onConfirm: () => undefined,
+  }));
+  assert.match(markup, /role="dialog"/);
+  assert.match(markup, />Cancel<\/button>/);
+  assert.match(markup, />End service<\/button>/);
 });
 
 function base(entityType: string, canonicalId: string, values: Record<string, unknown>) { const now = "2026-07-30T09:00:00.000Z"; return { schemaVersion: "0.1.0", version: 1, createdAt: now, createdBy: "person:admin", updatedAt: now, updatedBy: "person:admin", active: true, externalIdentities: [], provenanceIds: [], ownership: { providerOwned: {}, fikaOwned: {} }, entityType, canonicalId, ...values }; }
