@@ -64,12 +64,26 @@ export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving =
   const arrival = view.stops.find((stop) => stop.kind === "cpu-return");
   const move = (from: number, to: number) => { if (to < 0 || to >= order.length || from === to) return; const next = [...order]; const [item] = next.splice(from, 1); next.splice(to, 0, item); setOrder(next); };
   const confirmCancel = useRef<HTMLButtonElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const lastStopIndex = useRef(-1);
+  // When the stop that had keyboard focus disappears (e.g. returned to the queue) keep focus inside the inspector, on the neighbouring stop.
+  useEffect(() => {
+    const index = lastStopIndex.current;
+    if (index < 0) return;
+    const frame = window.requestAnimationFrame(() => {
+      const root = scrollRef.current; if (!root) return;
+      if (root.contains(document.activeElement) && document.activeElement !== root) return;
+      const toggles = root.querySelectorAll<HTMLElement>("[data-stop-key] button[aria-expanded]");
+      (toggles[Math.min(index, toggles.length - 1)] ?? root).focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [signature]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (confirm) confirmCancel.current?.focus(); }, [confirm]);
 
   const summaryInner = <>
     <div className={styles.plannedRow}>
       <div>
-        <div className={styles.plannedLabel}>Planned times</div>
+        <div className={styles.plannedLabel}>Planned times{tab === "stops" && <> · {run.stopCount} {run.stopCount === 1 ? "stop" : "stops"} · {run.loadCount} {run.loadCount === 1 ? "load" : "loads"}</>}</div>
         <div className={styles.plannedTimes} data-missing={run.departure ? undefined : "true"}>{run.departure && run.return ? <>{run.departure}<span className={styles.arrowGlyph}>→</span>{run.return}</> : "Set departure and return"}</div>
       </div>
       <button type="button" className={styles.outline} disabled={!run.editable || run.pending} aria-expanded={timesOpen} onClick={() => onTimesOpen?.(!timesOpen)} title={run.editable ? undefined : "Times can’t change once a run is ready or dispatched."}><PencilIcon size={17} />Edit times</button>
@@ -80,11 +94,11 @@ export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving =
       {timesTouched && timesProblem && <p className={styles.formProblem} role="alert">{timesProblem}</p>}
       <div className={styles.formActions}><button type="button" className={styles.outline} style={{ height: 38 }} onClick={() => { onTimesOpen?.(false); setDep(run.departure ?? ""); setRet(run.return ?? ""); }}>Cancel</button><button type="submit" className={styles.primary} style={{ height: 38, flex: "0 0 auto" }}>Save times</button></div>
     </form>}
-    <div className={styles.facts}>
+    {tab !== "stops" && <><div className={styles.facts}>
       <div className={styles.fact}><span>Vehicle</span><strong>{run.vehicleLabel}</strong></div>
       <div className={styles.fact}><span>Status</span><strong><i className={styles.dot} data-status={run.status} />{statusLabel(run.status)}{run.pending ? " · saving" : ""}</strong></div>
     </div>
-    <div className={styles.counts}>{run.stopCount} {run.stopCount === 1 ? "stop" : "stops"} · {run.loadCount} {run.loadCount === 1 ? "load" : "loads"}</div>
+    <div className={styles.counts}>{run.stopCount} {run.stopCount === 1 ? "stop" : "stops"} · {run.loadCount} {run.loadCount === 1 ? "load" : "loads"}</div></>}
     {run.overlapWarning && <div className={styles.warning} role="status">⚠ {run.overlapWarning}</div>}
   </>;
 
@@ -97,7 +111,7 @@ export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving =
       {TABS.map((item) => <button key={item.id} type="button" role="tab" id={`tab-${item.id}`} className={styles.tab} aria-selected={tab === item.id} aria-controls="inspector-panel" tabIndex={tab === item.id ? 0 : -1} onClick={() => onTab(item.id)}
         onKeyDown={(event) => { const index = TABS.findIndex((candidate) => candidate.id === tab); if (event.key === "ArrowRight") onTab(TABS[(index + 1) % TABS.length].id); if (event.key === "ArrowLeft") onTab(TABS[(index + TABS.length - 1) % TABS.length].id); }}>{item.label}</button>)}
     </div>
-    <div className={styles.scroll} role="tabpanel" id="inspector-panel" aria-labelledby={`tab-${tab}`}>
+    <div className={styles.scroll} ref={scrollRef} tabIndex={-1} role="tabpanel" id="inspector-panel" aria-labelledby={`tab-${tab}`}>
       {tab !== "stops" && <div className={styles.summary}>{summaryInner}</div>}
       {tab === "overview" && <>
         {run.attention && <div className={styles.warning} role="status" style={{ margin: "0 0 14px" }}>⚠ {run.attention}</div>}
@@ -107,7 +121,7 @@ export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving =
       {tab === "stops" && <>
         <div className={styles.summary}>
           {summaryInner}
-        <ol className={styles.stops} aria-label="Stops in visiting order">
+        <ol className={styles.stops} aria-label="Stops in visiting order" onFocusCapture={(event) => { const li = (event.target as HTMLElement).closest<HTMLElement>("[data-stop-key]"); if (li) lastStopIndex.current = Math.max(0, order.indexOf(li.dataset.stopKey || "")); }}>
           <li className={styles.stop}><div className={styles.stopHead}>
             <span /><span className={styles.number}>1</span><span className={styles.glyph}><CpuIcon size={22} /></span>
             <span><span className={styles.stopName}>CPU</span><span className={styles.stopSub}>Departure{departure && "time" in departure && departure.time ? ` · ${departure.time}` : ""}</span></span>

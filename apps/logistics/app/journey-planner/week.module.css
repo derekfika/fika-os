@@ -1,0 +1,20 @@
+.ribbon { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px; margin: 0 0 10px 14px; }
+.step { display: grid; width: 32px; height: 52px; place-items: center; border: 1px solid var(--jp-line-strong); border-radius: 10px; background: var(--fika-surface-card); cursor: pointer; }
+.step:hover { border-color: var(--jp-primary); color: var(--jp-primary); }
+.days { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.day { display: grid; gap: 3px; min-width: 0; height: 52px; padding: 7px 11px; border: 1px solid var(--jp-line-strong); border-radius: 10px; background: var(--fika-surface-card); text-align: left; cursor: pointer; }
+.day:hover { border-color: var(--jp-lilac-edge); }
+.day[data-selected="true"] { border-color: var(--jp-primary); background: var(--jp-primary); color: var(--fika-surface-card); box-shadow: 0 0 0 2px color-mix(in srgb, var(--jp-primary) 22%, transparent); }
+.dayHead { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 13.5px; white-space: nowrap; }
+.dayHead strong { font-weight: 700; }
+.dayHead span { overflow: hidden; color: var(--jp-ink-2); text-overflow: ellipsis; }
+.day[data-selected="true"] .dayHead span, .day[data-selected="true"] .counts { color: color-mix(in srgb, var(--fika-surface-card) 88%, transparent); }
+.counts { display: flex; gap: 10px; color: var(--jp-ink-2); font-size: 12.5px; white-space: nowrap; }
+.counts b { color: inherit; font-weight: 700; }
+.day:not([data-selected="true"]) .counts b { color: var(--jp-ink); }
+.counts [data-unplanned="true"] b { color: var(--jp-amber-ink); }
+.day[data-selected="true"] .counts [data-unplanned="true"] b { color: var(--fika-surface-card); }
+.flag { margin-left: auto; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--fika-status-warning); align-self: center; }
+.range { color: var(--jp-ink-2); font-size: 12.5px; white-space: nowrap; }
+@container ws (max-width: 900px) { .range { display: none; } }
+@container ws (max-width: 760px) { .day { height: auto; min-height: 52px; } .counts { flex-direction: column; gap: 0; } .step { height: auto; align-self: stretch; } }

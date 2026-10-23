@@ -6,6 +6,7 @@ import { JourneyTimeline } from "./JourneyTimeline";
 import { NewRunDialog, type NewRunInput } from "./NewRunDialog";
 import { RunInspector, type InspectorTab, type NewCollection } from "./RunInspector";
 import { UnassignedWorkQueue } from "./UnassignedWorkQueue";
+import { WeekRibbon, type WeekRibbonView } from "./WeekRibbon";
 import type { PlannerStatus, PlannerViewModel, QueueItemView, VehicleId } from "./model";
 import styles from "./shell.module.css";
 
@@ -15,6 +16,49 @@ function useMediaQuery(query: string) {
   const [matches, setMatches] = useState(false);
   useEffect(() => { const list = window.matchMedia(query); const update = () => setMatches(list.matches); update(); list.addEventListener("change", update); return () => list.removeEventListener("change", update); }, [query]);
   return matches;
+}
+
+
+export const INSPECTOR_MIN = 320;
+export const INSPECTOR_DEFAULT = 360;
+const INSPECTOR_HARD_MAX = 550;
+const STORAGE_KEY = "fika.logistics.journeyPlanner.inspectorWidth";
+/** Never let the inspector take more than 45% of the window, so the timeline stays usable. */
+const maxFor = (viewport: number) => Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_HARD_MAX, Math.floor(viewport * 0.45)));
+function useInspectorWidth() {
+  const [width, setWidth] = useState(INSPECTOR_DEFAULT);
+  const [max, setMax] = useState(INSPECTOR_HARD_MAX);
+  const widthRef = useRef(width); widthRef.current = width;
+  useEffect(() => {
+    try { const stored = Number(window.localStorage.getItem(STORAGE_KEY)); if (Number.isFinite(stored) && stored >= INSPECTOR_MIN) setWidth(stored); } catch { /* storage may be blocked */ }
+    const measure = () => { const limit = maxFor(window.innerWidth); setMax(limit); setWidth((current) => Math.min(limit, Math.max(INSPECTOR_MIN, current))); };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+  const commit = (next: number) => {
+    const clamped = Math.min(maxFor(window.innerWidth), Math.max(INSPECTOR_MIN, Math.round(next)));
+    setWidth(clamped);
+    try { window.localStorage.setItem(STORAGE_KEY, String(clamped)); } catch { /* storage may be blocked */ }
+  };
+  const begin = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const target = event.currentTarget; const startX = event.clientX; const startWidth = widthRef.current;
+    try { target.setPointerCapture(event.pointerId); } catch { /* window listeners are the fallback */ }
+    document.body.style.userSelect = "none";
+    const move = (moveEvent: PointerEvent) => commit(startWidth + (startX - moveEvent.clientX));
+    const end = () => { document.body.style.userSelect = ""; window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end); window.removeEventListener("pointercancel", end); };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", end); window.addEventListener("pointercancel", end);
+  };
+  const key = (event: React.KeyboardEvent) => {
+    const step = event.shiftKey ? 48 : 16;
+    if (event.key === "ArrowLeft") { event.preventDefault(); commit(widthRef.current + step); }
+    else if (event.key === "ArrowRight") { event.preventDefault(); commit(widthRef.current - step); }
+    else if (event.key === "Home") { event.preventDefault(); commit(INSPECTOR_MIN); }
+    else if (event.key === "End") { event.preventDefault(); commit(maxFor(window.innerWidth)); }
+  };
+  return { width, max, begin, key, reset: () => commit(INSPECTOR_DEFAULT) };
 }
 
 /** Everything the screen can ask for. The container decides which command (if any) each maps to. */
@@ -36,6 +80,10 @@ export type ShellActions = {
   onRetireRun?: (runId: string) => void;
   onDateStep?: (delta: -1 | 1) => void;
   onDateSet?: (date: string) => void;
+  /** A working-week day card was chosen. */
+  onSelectDate?: (date: string) => void;
+  /** Previous / next WORKING week. */
+  onWeekStep?: (delta: -1 | 1) => void;
   onThisWeek?: () => void;
   onRetryLoad?: () => void;
 };
@@ -47,7 +95,7 @@ export type ShellNotice = { id: string; tone: "error" | "warning" | "info"; text
  * (filters, zoom, collapsed rows, tab, drag previews); no operational truth lives here. The preview route and the
  * live planner render this same component.
  */
-export function JourneyPlannerShell({ model, status = "ready", actions = {}, saving = false, showPreviewTag = false, initialExpandedKey, dateValue, notices = [], statusLine, sidePanel, modals, creatingRun = false }: {
+export function JourneyPlannerShell({ model, status = "ready", actions = {}, saving = false, showPreviewTag = false, initialExpandedKey, dateValue, notices = [], statusLine, sidePanel, modals, creatingRun = false, week }: {
   model: PlannerViewModel;
   status?: PlannerStatus;
   actions?: ShellActions;
@@ -62,6 +110,8 @@ export function JourneyPlannerShell({ model, status = "ready", actions = {}, sav
   sidePanel?: ReactNode;
   modals?: ReactNode;
   creatingRun?: boolean;
+  /** Real weekly summary for the Monday–Friday ribbon (omit to hide it, e.g. in the fixture preview). */
+  week?: WeekRibbonView;
 }) {
   const [vehicle, setVehicle] = useState<"all" | VehicleId>("all");
   const [zoomIndex, setZoomIndex] = useState(1);
@@ -83,6 +133,7 @@ export function JourneyPlannerShell({ model, status = "ready", actions = {}, sav
   const toggleCollapsed = (runId: string) => setCollapsed((current) => { const next = new Set(current); if (next.has(runId)) next.delete(runId); else next.add(runId); return next; });
   const zoom = ZOOM_STEPS[zoomIndex];
   const pickerRef = useRef<HTMLInputElement>(null);
+  const inspector = useInspectorWidth();
 
   // ----- queue -> Run row drag -----
   type QueueDrag = { item: QueueItemView; pointerId: number; startX: number; startY: number; started: boolean };
@@ -164,7 +215,7 @@ export function JourneyPlannerShell({ model, status = "ready", actions = {}, sav
       <ChevronRightIcon size={22} />
       <div className={styles.user}><span className={styles.avatar} aria-hidden="true">{model.user.initials}</span><span className={styles.userText}><strong>{model.user.name}</strong><span>{model.user.role}</span></span><ChevronDownIcon size={18} /></div>
     </header>
-    <div className={styles.body} data-inspector={inspectorOpen ? "open" : "closed"}>
+    <div className={styles.body} data-inspector={inspectorOpen ? "open" : "closed"} style={{ "--jp-inspector-w": `${inspector.width}px` } as React.CSSProperties}>
       <main className={styles.workspace}>
         <div className={styles.toolbar}>
           <div className={styles.titleBlock}><h1 className={styles.title}>Journey Planner</h1><p className={styles.subtitle}>Plan and dispatch daily deliveries.</p></div>
@@ -188,6 +239,7 @@ export function JourneyPlannerShell({ model, status = "ready", actions = {}, sav
             <button type="button" className={styles.primaryButton} onClick={() => setNewRunOpen(true)} disabled={creatingRun}><PlusIcon size={20} />New Run</button>
           </div>
         </div>
+        {week && <WeekRibbon week={week} onSelect={(date) => actions.onSelectDate?.(date)} onPrevious={() => actions.onWeekStep?.(-1)} onNext={() => actions.onWeekStep?.(1)} />}
         {statusLine && <div className={styles.statusLine}>{statusLine}</div>}
         {status === "error" && <div className={styles.banner} role="alert"><span>The planner could not refresh. Showing nothing unconfirmed.</span>{actions.onRetryLoad && <button type="button" onClick={actions.onRetryLoad}>Try again</button>}</div>}
         {notices.map((notice) => <div key={notice.id} className={styles.notice} data-tone={notice.tone} role={notice.tone === "error" ? "alert" : "status"}><span>{notice.text}</span>{notice.action && <button type="button" onClick={notice.action.onClick}>{notice.action.label}</button>}</div>)}
@@ -210,6 +262,8 @@ export function JourneyPlannerShell({ model, status = "ready", actions = {}, sav
             onRetryLoad={actions.onRetryLoad} />
         </div>
       </main>
+      {inspectorOpen && <div className={styles.resizer} role="separator" aria-orientation="vertical" aria-label="Resize inspector" aria-valuemin={INSPECTOR_MIN} aria-valuemax={inspector.max} aria-valuenow={inspector.width} tabIndex={0} data-inspector-resizer
+        onPointerDown={inspector.begin} onKeyDown={inspector.key} onDoubleClick={inspector.reset} title="Drag to resize the inspector. Arrow keys resize; Home/End jump; double-click resets." />}
       {sidePanel ?? (model.inspector && <RunInspector view={model.inspector} tab={tab} onTab={setTab} expandedKey={expandedKey} onExpand={setExpandedKey} saving={saving || Boolean(selectedRun?.pending)} timesOpen={timesOpen} onTimesOpen={setTimesOpen} retireConfirmOpen={retireConfirm} onRetireConfirmOpen={setRetireConfirm} onClose={() => { setTimesOpen(false); setRetireConfirm(false); actions.onCloseInspector?.(); }}
         onSaveOrder={(keys) => actions.onSaveOrder?.(model.inspector!.run.id, keys)}
         onAddCollection={async (collection) => actions.onAddCollection?.(model.inspector!.run.id, collection)}

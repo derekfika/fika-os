@@ -6,9 +6,9 @@ import type { PlannerStatus, RunRowView } from "./model";
 import { formatMinute, RunTimelineRow, type BarMode, type BarPreview } from "./RunTimelineRow";
 import styles from "./timeline.module.css";
 
-export const LABEL_WIDTH = 140;
+export const LABEL_WIDTH = 128;
 /** Right gutter reserved for the row action buttons so bars never sit underneath them at the default zoom. */
-export const ACTIONS_GUTTER = 100;
+export const ACTIONS_GUTTER = 84;
 /** At zoom 1 the visible window is 05:30–18:00 (06:00–18:00 fully shown); other zooms scale around that. */
 const WINDOW_START_HOUR = 5.5;
 const WINDOW_HOURS = 12.5;
@@ -81,6 +81,10 @@ export function JourneyTimeline({ runs, status = "ready", zoom = 1, selectedRunI
   const fit = viewport > 0 ? (viewport - LABEL_WIDTH - ACTIONS_GUTTER) / WINDOW_HOURS : 56;
   const pxPerHour = Math.max(MIN_PX_PER_HOUR, fit * zoom);
   const pxRef = useRef(pxPerHour); pxRef.current = pxPerHour;
+  // Only the user moving the scroller re-anchors the view; browser clamping while the layout resizes must not.
+  const userScroll = useRef(false);
+  const userTimer = useRef<number | undefined>(undefined);
+  const markUser = () => { userScroll.current = true; window.clearTimeout(userTimer.current); userTimer.current = window.setTimeout(() => { userScroll.current = false; }, 400); };
   // Open on the working window; when the scale changes (inspector opens, zoom, resize) keep the same time at the left edge.
   useEffect(() => { if (viewport > 0 && scroller.current) { scroller.current.scrollLeft = anchorHour.current * pxPerHour; setScrollX(scroller.current.scrollLeft); } }, [viewport, pxPerHour]);
 
@@ -190,7 +194,7 @@ export function JourneyTimeline({ runs, status = "ready", zoom = 1, selectedRunI
   const cssVars = { "--ph": `${pxPerHour}px`, "--label-w": `${LABEL_WIDTH}px`, "--gutter-w": `${ACTIONS_GUTTER}px` } as React.CSSProperties;
   const showNow = nowMinute !== undefined;
   return <section className={styles.timeline} aria-label="Vehicle journey timeline" style={cssVars}>
-    <div className={styles.scroller} ref={scroller} data-testid="journey-timeline-scroller" onScroll={(event) => { const left = event.currentTarget.scrollLeft; setScrollX(left); anchorHour.current = left / pxRef.current; }}>
+    <div className={styles.scroller} ref={scroller} data-testid="journey-timeline-scroller" onWheel={markUser} onPointerDown={markUser} onTouchStart={markUser} onKeyDown={markUser} onScroll={(event) => { const left = event.currentTarget.scrollLeft; setScrollX(left); if (userScroll.current) anchorHour.current = left / pxRef.current; }}>
       <div className={styles.canvas}>
         <div className={styles.rulerRow}>
           <div className={styles.rulerCorner} />

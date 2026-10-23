@@ -38,13 +38,13 @@ for (const viewport of viewports) {
   });
 }
 
-test("inspector is docked at ~398px beside the workspace at 1536 and 1920", async ({ page }) => {
+test("inspector is docked at ~360px beside the workspace at 1536 and 1920", async ({ page }) => {
   for (const viewport of [{ width: 1536, height: 960 }, { width: 1920, height: 1080 }]) {
     await page.setViewportSize(viewport);
     await open(page, "full-day", "&run=fx-run-1");
     const box = await page.getByRole("complementary", { name: "Run inspector" }).boundingBox();
-    expect(box?.width).toBeGreaterThan(390);
-    expect(box?.width).toBeLessThan(406);
+    expect(box?.width).toBeGreaterThan(354);
+    expect(box?.width).toBeLessThan(366);
     expect(Math.round((box?.x ?? 0) + (box?.width ?? 0))).toBeGreaterThanOrEqual(viewport.width - 1);
   }
 });

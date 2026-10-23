@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { PlannerDay } from "../../lib/planner-read-model";
+import type { PlannerDay, PlannerWeekSummary } from "../../lib/planner-read-model";
+import { formatOperationalDate, formatWeekRange, operationalWeek } from "../../lib/week";
 import { groupIntoVisitRows } from "../../lib/stop-visits";
 import type { StopPiece } from "../../lib/run-stop-order";
 import { inspectorFor, queueItemsFromWork, runRows, type QueueWork } from "./adapter";
@@ -29,6 +30,7 @@ export type LiveCallbacks = {
   viewStop: (runId: string, stopId: string) => void;
   retireRun: (runId: string) => void;
   dateStep: (delta: -1 | 1) => void;
+  weekStep: (delta: -1 | 1) => void;
   dateSet: (date: string) => void;
   thisWeek: () => void;
   refresh: () => void;
@@ -37,6 +39,10 @@ export type LiveCallbacks = {
 export type LiveProps = {
   date: string;
   dateLabel: string;
+  weekCommencing: string;
+  /** Authoritative weekly summaries already fetched by the host (no extra reads here). */
+  weekDays?: PlannerWeekSummary[];
+  projectionCurrent: boolean;
   planner: PlannerDay;
   /** The schedulable runs the host plans against (already filtered by the host). */
   runs: PlannerDay["runs"];
@@ -134,10 +140,26 @@ export function JourneyPlannerLive(props: LiveProps) {
     onViewStop: (runId, key) => { const [stopId] = memberStopIds(runId, key); if (stopId) callbacks.viewStop(runId, stopId); },
     onRetireRun: callbacks.retireRun,
     onDateStep: callbacks.dateStep,
+    onSelectDate: callbacks.dateSet,
+    onWeekStep: callbacks.weekStep,
     onDateSet: callbacks.dateSet,
     onThisWeek: callbacks.thisWeek,
     onRetryLoad: callbacks.refresh,
   };
+  const week = useMemo(() => ({
+    label: formatWeekRange(props.weekCommencing),
+    selectedDate: props.date,
+    days: operationalWeek(props.weekCommencing).map((day) => {
+      const summary = props.weekDays?.find((item) => item.serviceDate === day);
+      const summaryCurrent = summary?.projectionState === "CURRENT" || summary?.projectionState === "VALID_EMPTY";
+      // The selected day uses the live board (instant after a drop); other days use the authoritative weekly summary.
+      const live = day === props.date && props.projectionCurrent;
+      const runs = live ? model.runs.filter((run) => !run.pending).length : summaryCurrent ? summary?.runs ?? 0 : undefined;
+      const unplanned = live ? model.queue.length : summaryCurrent ? summary?.queue ?? 0 : undefined;
+      const attention = live ? props.runs.some((run) => run.openIssueCount > 0) || model.queue.some((item) => item.stateLabel) : summaryCurrent && ((summary?.attention ?? 0) > 0 || (summary?.needsTime ?? 0) > 0);
+      return { date: day, weekday: formatOperationalDate(day, { weekday: "short", day: undefined, month: undefined }), dayLabel: formatOperationalDate(day, { day: "numeric", month: "short" }), runs, unplanned, attention: Boolean(attention) };
+    }),
+  }), [props.weekCommencing, props.weekDays, props.date, props.projectionCurrent, props.runs, model.runs, model.queue]);
   const placingItem = placing ? model.queue.find((item) => item.id === placing.itemId) : undefined;
   const placingRun = placing ? model.runs.find((run) => run.id === placing.runId) : undefined;
   const statusLine = <>
@@ -148,7 +170,7 @@ export function JourneyPlannerLive(props: LiveProps) {
   </>;
   return <JourneyPlannerShell
     model={model} status={props.status} actions={actions} saving={props.busy} dateValue={props.date}
-    notices={props.notices} statusLine={statusLine} creatingRun={props.creatingRuns.length > 0}
+    week={week} notices={props.notices} statusLine={statusLine} creatingRun={props.creatingRuns.length > 0}
     sidePanel={props.sidePanel}
     modals={<>
       {props.modals}

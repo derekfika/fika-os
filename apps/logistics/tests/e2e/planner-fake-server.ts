@@ -105,12 +105,14 @@ export class FakeLogisticsServer {
       summary: { queuedJobs: queue.length, loads: assigned.length, assignedJobs: assigned.length, collectedJobs: 0 }, rebuiltAt: stamp,
     };
   }
+  /** Monday-Friday only, as the real route returns (operationalWeek). Counts mirror summarizeLogisticsProjection. */
   weekSummary(monday: string) {
-    return Array.from({ length: 7 }, (_, index) => {
+    return Array.from({ length: 5 }, (_, index) => {
       const day = new Date(`${monday}T12:00:00Z`); day.setUTCDate(day.getUTCDate() + index);
       const date = day.toISOString().slice(0, 10);
       const here = date === this.state.serviceDate;
-      return { serviceDate: date, projectionState: "CURRENT", loads: here ? this.state.jobs.filter((job) => job.runId && this.run(job.runId)).length : 0, scheduled: 0, queue: here ? this.state.jobs.filter((job) => !job.runId).length : 0, needsTime: 0, attention: 0 };
+      const queued = here ? this.state.jobs.filter((job) => !job.runId || !this.run(job.runId)).length + this.state.movements.filter((movement) => !movement.runId).length : 0;
+      return { serviceDate: date, projectionState: "CURRENT", loads: here ? this.state.jobs.filter((job) => job.runId && this.run(job.runId)).length : 0, runs: here ? this.state.runs.filter((run) => !run.retired).length : 0, scheduled: 0, queue: queued, needsTime: 0, attention: 0 };
     });
   }
 
