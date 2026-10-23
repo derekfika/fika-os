@@ -15,7 +15,7 @@ async function boot(page: Page, seed: FakeOptions = ownerSeed(DATE)) {
   const issues = trackIssues(page);
   const server = new FakeLogisticsServer(seed);
   await installStatefulApi(page, server, issues);
-  await page.goto(`/?serviceDate=${DATE}`);
+  await page.goto(`/?ui=classic&serviceDate=${DATE}`);
   await expect(page.getByRole("region", { name: "Vehicle journey timeline" })).toBeVisible({ timeout: 20_000 });
   await page.evaluate(() => document.fonts.ready);
   await expect(page.getByLabel("Search unassigned work")).toBeVisible();

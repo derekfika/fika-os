@@ -12,7 +12,7 @@ const BUSY: FixtureOptions = { serviceDate: "2026-10-28", runs: TIMED_RUNS, load
 
 async function open(page: Page, scenario: FixtureOptions) {
   await installFixtureApi(page, (serviceDate) => ({ ...scenario, serviceDate }));
-  await page.goto("/");
+  await page.goto("/?ui=classic");
   await page.getByRole("button", { name: "Next week" }).click();
   await page.getByRole("button", { name: /Wed 28 Oct/ }).click();
   await page.getByRole("region", { name: "Vehicle journey timeline" }).waitFor({ timeout: 20_000 });

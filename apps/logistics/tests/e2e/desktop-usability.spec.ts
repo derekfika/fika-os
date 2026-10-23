@@ -35,7 +35,7 @@ async function openPlanner(page: Page, scenarioName: keyof typeof SCENARIOS, iss
   const scenario = SCENARIOS[scenarioName];
   await page.unroute("**/api/**").catch(() => undefined);
   const commands = await installFixtureApi(page, (serviceDate) => ({ ...scenario, serviceDate }), issues);
-  await page.goto(`/?serviceDate=${DATE}`);
+  await page.goto(`/?ui=classic&serviceDate=${DATE}`);
   await expect(page.locator(".mock-selected-day")).toContainText("WEDNESDAY 28 OCTOBER", { ignoreCase: true });
   await page.evaluate(() => document.fonts.ready);
   await expect(page.getByLabel("Search unassigned work")).toBeVisible();

@@ -49,7 +49,7 @@ async function scenario(page: Page, collection = false, merged = false) {
     if (url.searchParams.has("planningAttention")) return route.fulfill({ json: { attention: [] } });
     return route.fulfill({ headers: { "x-logistics-cache-scope": "batch2" }, json: { ...projectionToDashboardData(projection), projection } });
   });
-  await page.goto("/?serviceDate=" + f.date);
+  await page.goto("/?ui=classic&serviceDate=" + f.date);
   await openStopDetails(page);
   return { f, commands };
 }

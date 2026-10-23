@@ -30,7 +30,7 @@ export type ShellActions = {
   onQueueDrop?: (itemId: string, runId: string) => void;
   onNewCollection?: () => void;
   onSaveOrder?: (runId: string, visitKeys: string[]) => void;
-  onAddCollection?: (runId: string, collection: NewCollection) => void;
+  onAddCollection?: (runId: string, collection: NewCollection) => Promise<boolean | void>;
   onReturnStop?: (runId: string, stopKey: string) => void;
   onViewStop?: (runId: string, stopKey: string) => void;
   onRetireRun?: (runId: string) => void;
@@ -212,7 +212,7 @@ export function JourneyPlannerShell({ model, status = "ready", actions = {}, sav
       </main>
       {sidePanel ?? (model.inspector && <RunInspector view={model.inspector} tab={tab} onTab={setTab} expandedKey={expandedKey} onExpand={setExpandedKey} saving={saving || Boolean(selectedRun?.pending)} timesOpen={timesOpen} onTimesOpen={setTimesOpen} retireConfirmOpen={retireConfirm} onRetireConfirmOpen={setRetireConfirm} onClose={() => { setTimesOpen(false); setRetireConfirm(false); actions.onCloseInspector?.(); }}
         onSaveOrder={(keys) => actions.onSaveOrder?.(model.inspector!.run.id, keys)}
-        onAddCollection={(collection) => actions.onAddCollection?.(model.inspector!.run.id, collection)}
+        onAddCollection={async (collection) => actions.onAddCollection?.(model.inspector!.run.id, collection)}
         onSaveTimes={(departure, returnTime) => actions.onRunTiming?.(model.inspector!.run.id, departure, returnTime)}
         onReturnStop={(key) => actions.onReturnStop?.(model.inspector!.run.id, key)}
         onViewLoads={(key) => actions.onViewStop?.(model.inspector!.run.id, key)}

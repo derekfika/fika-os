@@ -242,7 +242,7 @@ test("legacy Runs without CPU journey timing remain readable without being rewri
   assert.deepEqual((await runs().doc(legacy.canonicalId).get()).data(), legacy);
 });
 
-test("movement creation is create-only and binds the authenticated server actor", async (t) => {
+test("movement creation is idempotent for an identical actor-bound replay and rejects ID reuse with different content", async (t) => {
   const id = prefix();
   t.after(() => cleanup(id));
   const requested = movement(`${id}:movement`);
@@ -251,8 +251,14 @@ test("movement creation is create-only and binds the authenticated server actor"
   const saved = (await movements().doc(requested.canonicalId).get()).data() as MovementRequest;
   assert.notEqual(saved.createdBy, "spoofed-browser-actor");
   assert.equal(saved.version, 1);
-  const duplicate = await responseBody({ action: "save-movement", movement: requested });
-  assert.equal(duplicate.response.status, 409);
+  const replay = await responseBody({ action: "save-movement", movement: requested });
+  assert.equal(replay.response.status, 200);
+  assert.equal(replay.body.canonicalId, requested.canonicalId);
+  assert.equal((await movements().doc(requested.canonicalId).get()).data()?.version, 1, "a retry must not create or advance a second movement");
+  const changeEvents = await logisticsChanges().where("serviceDate", "==", serviceDate).get();
+  assert.equal(changeEvents.docs.filter((doc) => doc.data().entityId === requested.canonicalId && doc.data().changeType === "movement-created").length, 1, "a replay must not append a second canonical movement event");
+  const conflictingReuse = await responseBody({ action: "save-movement", movement: { ...requested, items: [{ description: "Different collection", quantity: 3 }] } });
+  assert.equal(conflictingReuse.response.status, 409);
 });
 
 test("collection-required assignment persists canonical load, job, assignment and projected legs", async (t) => {

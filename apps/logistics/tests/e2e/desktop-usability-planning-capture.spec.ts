@@ -24,7 +24,7 @@ for (const viewport of [{ width: 1536, height: 960 }, { width: 1280, height: 800
     seed.jobs![2] = { ...seed.jobs![2], runId: `run:${DATE}:am`, time: "10:15" };
     const server = new FakeLogisticsServer(seed);
     await installStatefulApi(page, server);
-    await page.goto(`/?serviceDate=${DATE}`);
+    await page.goto(`/?ui=classic&serviceDate=${DATE}`);
     await expect(page.getByRole("region", { name: "Vehicle journey timeline" })).toBeVisible();
     await page.waitForLoadState("networkidle"); await page.waitForTimeout(500);
     await shot("01-planner");
@@ -70,7 +70,7 @@ for (const viewport of [{ width: 1536, height: 960 }, { width: 1280, height: 800
       { id: "movement:mnk-collection", type: "collection", destination: "MNK", oploc: "site:mnk", what: "Empty crates", quantity: 3, runId, time: "08:00", assignedAt: 2 },
     ];
     await installStatefulApi(page, new FakeLogisticsServer(seed));
-    await page.goto(`/?serviceDate=${DATE}`);
+    await page.goto(`/?ui=classic&serviceDate=${DATE}`);
     await expect(page.getByRole("region", { name: "Vehicle journey timeline" })).toBeVisible();
     await page.waitForLoadState("networkidle"); await page.waitForTimeout(500);
     await page.locator(`[data-journey-run-id="${runId}"] button`).click();

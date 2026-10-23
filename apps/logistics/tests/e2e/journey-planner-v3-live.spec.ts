@@ -87,6 +87,45 @@ test.describe("Journey Planner V3 · mounted real planner · 1536x960", () => {
     await expect(runRow(page, run.id).getByRole("button", { name: /Market Hall/ })).toBeVisible();
   });
 
+  test("a standalone collection starts without a guessed time and needs an explicit time before it joins a Run", async ({ page }) => {
+    const { server } = await boot(page, assignedSeed());
+    await page.route("**/api/logistics/locations", (route) => route.fulfill({ json: { oplocs: [{ id: "site:1", label: "Market Hall" }] } }));
+    await page.getByRole("button", { name: "+ New collection" }).click();
+    const form = page.getByRole("dialog", { name: "New movement" });
+    await expect(form.getByLabel("Type")).toHaveValue("collection");
+    await form.getByLabel("From OPLOC").selectOption("site:1");
+    await form.getByLabel("Item description").fill("Standalone collection crates");
+    await form.getByLabel("Quantity").fill("2");
+    await expect(form.getByLabel("Required time")).toHaveValue("");
+    await expect(form.getByLabel("Window start")).toHaveValue("");
+    await expect(form.getByLabel("Window end")).toHaveValue("");
+    await form.getByRole("button", { name: "Create movement" }).click();
+    await expect.poll(() => commandsOf(server, "save-movement").length).toBe(1);
+    const movement = commandsOf(server, "save-movement")[0].movement;
+    expect(movement).toMatchObject({ type: "collection", fromOplocId: "site:1", items: [{ description: "Standalone collection crates", quantity: 2 }] });
+    expect(movement.requiredTime).toBeUndefined();
+    expect(movement.window).toBeUndefined();
+    await expect(form).toHaveCount(0);
+
+    const queued = queueItem(page, "Standalone collection crates");
+    await expect(queued).toBeVisible();
+    const targetRunId = server.state.runs[1].id;
+    const targetRun = runRow(page, targetRunId);
+    await drag(page, await centre(queued), await centre(targetRun.locator("h3")));
+    const chooseTime = page.getByRole("dialog", { name: "Choose a collection time" });
+    await expect(chooseTime).toBeVisible();
+    expect(commandsOf(server, "assign")).toHaveLength(0);
+    await chooseTime.getByLabel("Planned collection time").fill("13:15");
+    await chooseTime.getByRole("button", { name: "Add to Run 2" }).click();
+    await expect.poll(() => commandsOf(server, "assign").length).toBe(1);
+    expect(commandsOf(server, "assign")[0]).toMatchObject({ runId: targetRunId, movementId: movement.canonicalId, plannedArrivalTime: "13:15" });
+    await expect.poll(() => server.state.movements.find((item) => item.id === movement.canonicalId)?.runId).toBe(targetRunId);
+    expect(server.state.movements.filter((item) => item.id === movement.canonicalId)).toHaveLength(1);
+    await page.reload();
+    await expect(runRow(page, targetRunId).getByRole("button", { name: /Market Hall/ })).toBeVisible();
+    expect(server.state.movements.filter((item) => item.id === movement.canonicalId)).toHaveLength(1);
+  });
+
   test("a dispatched run is an invalid target: the row says why and nothing is sent", async ({ page }) => {
     const seed = v3Seed();
     seed.runs = [{ id: `run:${DATE}:d`, vehicleId: "van1", status: "dispatched", dep: "08:00", ret: "12:00" }, ...(seed.runs || []).slice(1)];

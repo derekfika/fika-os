@@ -47,7 +47,7 @@ async function mount(page: Page, f: any) {
     if (url.searchParams.has("planningAttention")) return route.fulfill({ json: { attention: [] } });
     return route.fulfill({ headers: { "x-logistics-cache-scope": "visits" }, json: { ...projectionToDashboardData(projection), projection } });
   });
-  await page.goto("/?serviceDate=" + f.date);
+  await page.goto("/?ui=classic&serviceDate=" + f.date);
   await expect(page.getByRole("region", { name: "Vehicle journey timeline" })).toBeVisible({ timeout: 20_000 });
   await page.waitForLoadState("networkidle");
   return commands;

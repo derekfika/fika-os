@@ -161,6 +161,7 @@ function PlannerContents() {
   const emptyProjection = (serviceDate: string): LogisticsDayProjection => ({ serviceDate, revision: 0, lastChangeSequence: 0, planningQueue: [], deliveryLoads: [], runs: [], exceptions: [], summary: { queuedJobs: 0, loads: 0, assignedJobs: 0, collectedJobs: 0 }, rebuiltAt: new Date().toISOString() });
   const [error, setError] = useState("");
   const [errorReference, setErrorReference] = useState("");
+  const [commandFailure, setCommandFailure] = useState<{ message: string; requestId: string }>();
   const [passiveSyncError, setPassiveSyncError] = useState("");
   const [projectionNeedsMaterialisation, setProjectionNeedsMaterialisation] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
@@ -209,6 +210,7 @@ function PlannerContents() {
     setPassiveSyncError("");
     setError("");
     setErrorReference("");
+    setCommandFailure(undefined);
     setLastUpdated(undefined);
     setRefreshing(false);
     setInspector(undefined);
@@ -232,7 +234,7 @@ function PlannerContents() {
     setData(next);
   };
 
-  const lastFailure = useRef<{ message: string; requestId: string } | undefined>(undefined);
+  const lastFailure = useRef<{ message: string; requestId: string; status: number } | undefined>(undefined);
   const [visitChoice, setVisitChoice] = useState<{ prompt: VisitChoicePrompt; resolve: (request?: string) => void } | undefined>();
   /**
    * Physical-visit choice. The server stays authoritative; this only asks Franco when his own data shows
@@ -275,7 +277,7 @@ function PlannerContents() {
   }
   const recordError = (cause: unknown, fallback: string) => {
     const details = clientErrorDetails(cause, fallback);
-    lastFailure.current = { message: details.message, requestId: details.requestId || "" };
+    lastFailure.current = { message: details.message, requestId: details.requestId || "", status: details.status };
     if ([401, 403].includes(details.status)) requestsBlocked.current = true;
     if ([401, 403].includes(details.status)) setAuthRequired(true);
     setProjectionNeedsMaterialisation(details.code === "LOGISTICS_PROJECTION_NOT_MATERIALIZED");
@@ -597,6 +599,7 @@ function PlannerContents() {
     const context = dayContext;
     const summaryContext = weekContext;
     setBusy(true);
+    setCommandFailure(undefined);
     setError("");
     try {
       const response = await fetch("/api/logistics", {
@@ -611,7 +614,11 @@ function PlannerContents() {
       }
       return result;
     } catch (cause) {
-      if (context) dayRequests.commit(context, () => recordError(cause, "Action failed."));
+      if (context) dayRequests.commit(context, () => {
+        recordError(cause, "Action failed.");
+        const failure = lastFailure.current;
+        if (failure) setCommandFailure(failure);
+      });
       return false;
     } finally {
       if (context) dayRequests.commit(context, () => setBusy(false));
@@ -622,9 +629,19 @@ function PlannerContents() {
     lastFailure.current = undefined;
     const outcome = await act(payload);
     if (outcome) return outcome;
-    const failure = lastFailure.current as { message: string; requestId: string } | undefined;
-    await load(true);
-    if (failure) { setError(failure.message); setErrorReference(failure.requestId); }
+    const failure = lastFailure.current as { message: string; requestId: string; status: number } | undefined;
+    const reconciliation = await load(true);
+    if (failure) {
+      const message = failure.status === 0
+        ? reconciliation.ok
+          ? "The action response could not be confirmed. The latest plan has been reloaded; check its saved state before retrying."
+          : "The action response could not be confirmed, and the latest plan could not be reloaded. Refresh and check its saved state before retrying."
+        : reconciliation.ok ? failure.message : `${failure.message} The latest plan could not be reloaded; refresh before retrying.`;
+      const persistentFailure = { message, requestId: failure.requestId };
+      setCommandFailure(persistentFailure);
+      setError(message);
+      setErrorReference(failure.requestId);
+    }
     return false;
   }
   async function placementCommand(requested: object): Promise<PlacementOutcome> {
@@ -794,6 +811,7 @@ function PlannerContents() {
     data={data?.serviceDate === date ? data : undefined}
     error={error}
     errorReference={errorReference}
+    commandFailure={commandFailure}
     passiveSyncError={passiveSyncError}
     projectionNeedsMaterialisation={projectionNeedsMaterialisation}
     authRequired={authRequired}
@@ -1011,6 +1029,7 @@ type RealPlannerProps = {
   projectionState: LogisticsProjectionState | "LOADING";
   error: string;
   errorReference: string;
+  commandFailure?: { message: string; requestId: string };
   passiveSyncError: string;
   projectionNeedsMaterialisation: boolean;
   authRequired: boolean;
@@ -1874,20 +1893,28 @@ function RealPlanner(props: RealPlannerProps) {
     assignQueueItem(kind, itemId, runId, requested, lane);
   };
   /** + Add collection inside a physical stop: a governed collection movement AT THE CUSTOMER, then assigned to the same run (joining the native stop of that visit when it has one). */
-  const addCollectionToStop = async (runId: string, collection: { stopKey: string; description: string; quantity: number; unit: string; notes?: string }) => {
+  const addCollectionToStop = async (runId: string, collection: { stopKey: string; movementId: string; description: string; quantity: number; unit: string; notes?: string }): Promise<boolean> => {
     const run = runs.find((item) => item.runId === runId);
     const row = run ? groupIntoVisitRows(run.stops).find((candidate) => candidate.key === collection.stopKey) : undefined;
     const customer = row?.stops[0]?.destination.id;
-    if (!run || !row || !customer) { props.setError("This stop has no governed customer location, so a collection cannot be added to it."); return; }
-    if (!collection.description || !(collection.quantity >= 1) || !collection.unit) { props.setError("Describe what is being collected and give a quantity and unit."); return; }
+    if (!run || !row || !customer) { props.setError("This stop has no governed customer location, so a collection cannot be added to it."); return false; }
+    if (!collection.description || !(collection.quantity >= 1) || !collection.unit) { props.setError("Describe what is being collected and give a quantity and unit."); return false; }
     const now = new Date().toISOString();
-    const movementId = `movement:${Date.now()}`;
+    const movementId = collection.movementId;
     const movement: MovementRequest = { canonicalId: movementId, entityType: "Movement Request", type: "collection", serviceDate: date, fromOplocId: customer, items: [{ description: collection.description, quantity: collection.quantity, unit: collection.unit }], ...(collection.notes ? { notes: collection.notes } : {}), createdBy: "", status: "open", version: 1, createdAt: now, updatedAt: now, audit: [] };
-    const saved = await props.act({ action: "save-movement", movement });
-    if (!saved) return;
+    const saved = await props.actAndReconcile({ action: "save-movement", movement });
+    if (!saved) return false;
     const nativeStop = row.stops.filter((stop) => !stop.stopId.startsWith("projection-stop:")).map((stop) => data?.stops.find((item) => item.canonicalId === stop.stopId)).find(Boolean);
     const outcome = await props.placementCommand({ action: "assign", runId, expectedRunVersion: run.version, movementId, ...(nativeStop ? { targetStopId: nativeStop.canonicalId } : collection.stopKey.startsWith("projection-visit:") ? { visit: collection.stopKey } : {}) });
-    if (!outcome.ok) props.setError(`The collection was saved but could not be added to this run yet: ${outcome.message} It is waiting in the queue; nothing was lost.`);
+    if (!outcome.ok) {
+      const refreshed = await props.load(true);
+      props.setError(outcome.uncertain
+        ? refreshed.ok
+          ? "The collection was saved, but the assignment response was uncertain. The plan has been refreshed; check the Run and queue before retrying."
+          : "The collection was saved, but the assignment response was uncertain and the plan could not be refreshed. Refresh before retrying."
+        : `The collection was saved, but assignment was rejected: ${outcome.message} It remains available in planning; assign it from the queue.`);
+    }
+    return true;
   };
   const live: LiveCallbacks = {
     selectRun: (runId) => props.setInspector({ kind: "run", id: runId }),
@@ -1899,7 +1926,7 @@ function RealPlanner(props: RealPlannerProps) {
     newCollection: () => { props.setDraft({ ...props.draft, type: "collection" }); props.setShowMovement(true); },
     newMovement: () => props.setShowMovement(true),
     saveOrder: (runId, stopIds) => { const run = runs.find((item) => item.runId === runId); if (run) void handleInspectorAction({ action: "set-run-stop-order", runId, expectedRunVersion: run.version, stopIds }); },
-    addCollection: (runId, collection) => { void addCollectionToStop(runId, collection); },
+    addCollection: (runId, collection) => addCollectionToStop(runId, collection),
     returnStop: (runId, stopId) => returnWorkToPlanning(runId, stopId),
     viewStop: (runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId }),
     retireRun: (runId) => { const run = runs.find((item) => item.runId === runId); if (run) void handleInspectorAction({ action: "retire-empty-run", runId, expectedRunVersion: run.version }); },
@@ -1909,7 +1936,7 @@ function RealPlanner(props: RealPlannerProps) {
     refresh: () => void props.load(true, props.projectionNeedsMaterialisation),
   };
   const liveNotices: ShellNotice[] = [
-    ...(props.error ? [{ id: "error", tone: "error" as const, text: <>{props.error}{props.errorReference && <> <small>Reference: {props.errorReference}</small></>}</>, action: { label: props.projectionNeedsMaterialisation ? "Materialise and retry" : "Try again", onClick: () => void props.load(true, props.projectionNeedsMaterialisation) } }] : []),
+    ...((props.commandFailure || props.error) ? [{ id: "error", tone: "error" as const, text: <>{props.commandFailure?.message || props.error}{(props.commandFailure?.requestId || props.errorReference) && <> <small>Reference: {props.commandFailure?.requestId || props.errorReference}</small></>}</>, action: { label: props.projectionNeedsMaterialisation ? "Materialise and retry" : "Try again", onClick: () => void props.load(true, props.projectionNeedsMaterialisation) } }] : []),
     ...(props.authRequired ? [{ id: "auth", tone: "error" as const, text: "Your session needs signing in again.", action: { label: "Sign in again", onClick: props.onSignInAgain } }] : []),
     ...(props.passiveSyncError ? [{ id: "passive", tone: "warning" as const, text: props.passiveSyncError }] : []),
     ...(data && props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" ? [{ id: "stale", tone: "warning" as const, text: "This materialised view is not current. Refresh before dispatching." }] : []),

@@ -12,7 +12,7 @@ const stamp = "2026-10-22T08:00:00.000Z";
 const pad = (value: number) => String(value).padStart(2, "0");
 
 export type FakeJob = { id: string; destination: string; oploc: string; what: string; quantity: number; unit: string; runId?: string; time?: string; requestedStart?: string };
-export type FakeMovement = { id: string; type: "collection" | "delivery" | "transfer"; destination: string; oploc: string; what: string; quantity: number; unit?: string; runId?: string; time?: string; assignedAt?: number };
+export type FakeMovement = { id: string; type: "collection" | "delivery" | "transfer"; destination: string; oploc: string; what: string; quantity: number; unit?: string; runId?: string; time?: string; assignedAt?: number; request?: Record<string, any> };
 export type FakeRun = { id: string; vehicleId: "van1" | "van2"; status: "draft" | "planned" | "ready" | "dispatched" | "completed"; dep?: string; ret?: string; version: number; orderedStopIds: string[]; retired?: boolean };
 export type FakeState = { serviceDate: string; revision: number; runs: FakeRun[]; jobs: FakeJob[]; movements: FakeMovement[]; clock: number };
 export type FailureRule = { action: string; status: number; message: string; once?: boolean };
@@ -34,6 +34,7 @@ export class FakeLogisticsServer {
   state: FakeState;
   commands: Record<string, unknown>[] = [];
   failures: FailureRule[] = [];
+  private responseLosses: string[] = [];
   constructor(options: FakeOptions) {
     this.state = {
       serviceDate: options.serviceDate, revision: 10, clock: 0, jobs: structuredClone(options.jobs || []), movements: structuredClone(options.movements || []),
@@ -44,6 +45,8 @@ export class FakeLogisticsServer {
   /** Another operator changes the run: any in-flight expectedRunVersion becomes stale. */
   interfere(runId: string) { const run = this.run(runId); if (run) { run.version += 1; this.state.revision += 1; } }
   failNext(rule: FailureRule) { this.failures.push({ once: true, ...rule }); }
+  loseNextResponseAfterApply(action: string) { this.responseLosses.push(action); }
+  consumeResponseLoss(action: string) { const index = this.responseLosses.indexOf(action); if (index < 0) return false; this.responseLosses.splice(index, 1); return true; }
 
   /**
    * Native stops mirror planning.combineStop: movements assigned to the same Run at the same OPLOC
@@ -137,8 +140,14 @@ export class FakeLogisticsServer {
         const requested = body.movement;
         const oploc = requested.fromOplocId || requested.toOplocId;
         if (!oploc || !requested.items?.[0]?.description || !(requested.items[0].quantity >= 1)) this.reject(422, "A movement needs a governed location and an item with quantity.");
+        const existing = state.movements.find((item) => item.id === requested.canonicalId);
+        if (existing) {
+          const same = existing.request && JSON.stringify({ type: existing.request.type, serviceDate: existing.request.serviceDate, fromOplocId: existing.request.fromOplocId, toOplocId: existing.request.toOplocId, items: existing.request.items, notes: existing.request.notes }) === JSON.stringify({ type: requested.type, serviceDate: requested.serviceDate, fromOplocId: requested.fromOplocId, toOplocId: requested.toOplocId, items: requested.items, notes: requested.notes });
+          if (!same) this.reject(409, "This movement already exists. Refresh before creating another movement.");
+          return { movement: existing.request };
+        }
         const destination = state.jobs.find((job) => job.oploc === oploc)?.destination || oploc;
-        state.movements.push({ id: requested.canonicalId, type: requested.type, destination, oploc, what: requested.items[0].description, quantity: requested.items[0].quantity, unit: requested.items[0].unit });
+        state.movements.push({ id: requested.canonicalId, type: requested.type, destination, oploc, what: requested.items[0].description, quantity: requested.items[0].quantity, unit: requested.items[0].unit, request: structuredClone(requested) });
         this.bump();
         return { movement: requested };
       }
@@ -237,7 +246,12 @@ export async function installStatefulApi(page: Page, server: FakeLogisticsServer
     if (url.pathname === "/api/logistics/locations") return route.fulfill({ json: { oplocs: [{ id: "cpu-main", label: "CPU Main Kitchen" }] } });
     if (url.pathname !== "/api/logistics") { issues?.network.push(`${request.method()} ${url.pathname}`); return route.fulfill({ status: 404, json: { error: "Unexpected endpoint in fixture" } }); }
     if (request.method() === "POST") {
-      try { return await route.fulfill({ status: 200, json: server.apply(request.postDataJSON() as Record<string, any>) }); }
+      try {
+        const body = request.postDataJSON() as Record<string, any>;
+        const result = server.apply(body);
+        if (server.consumeResponseLoss(body.action)) return route.abort("connectionreset");
+        return await route.fulfill({ status: 200, json: result });
+      }
       catch (error) { const failure = error as { status?: number; message: string }; if (failure.status === 0) return route.abort("connectionreset"); return route.fulfill({ status: failure.status || 500, json: { error: failure.message } }); }
     }
     const params = url.searchParams;

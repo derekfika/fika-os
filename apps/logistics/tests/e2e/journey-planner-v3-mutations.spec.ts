@@ -17,7 +17,7 @@ test.describe("Journey Planner V3 · mutation states · 1536x960", () => {
     const ppm = await pxPerMinute(page);
     const box = (await bar.boundingBox())!;
     await drag(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, { x: box.x + box.width / 2 + 60 * ppm, y: box.y + box.height / 2 });
-    await expect(page.getByRole("alert").filter({ hasText: "cannot change after a run is marked ready" })).toBeVisible();
+    await expect(page.locator("[data-journey-planner] [role=alert]").filter({ hasText: "cannot change after a run is marked ready" })).toBeVisible();
     await expect(bar).toContainText("09:00 – 12:00");
     expect(server.run(run.id)!.dep).toBe("09:00");
   });
@@ -30,12 +30,15 @@ test.describe("Journey Planner V3 · mutation states · 1536x960", () => {
     server.interfere(run.id);
     const box = (await bar.boundingBox())!;
     await drag(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, { x: box.x + box.width / 2 + 60 * ppm, y: box.y + box.height / 2 });
-    await expect(page.getByRole("alert").filter({ hasText: "changed elsewhere" })).toBeVisible();
+    const plannerConflict = page.locator("[data-journey-planner] [role=alert]").filter({ hasText: "changed elsewhere" });
+    await expect(plannerConflict).toBeVisible();
     expect(server.run(run.id)!.dep).toBe("09:00");
     await expect(bar).toContainText("09:00 – 12:00");
     const retry = (await bar.boundingBox())!;
     await drag(page, { x: retry.x + retry.width / 2, y: retry.y + retry.height / 2 }, { x: retry.x + retry.width / 2 + 60 * ppm, y: retry.y + retry.height / 2 });
     await expect.poll(() => server.run(run.id)!.dep).toBe("10:00");
+    await expect(bar).toContainText("10:00 – 13:00");
+    await expect(plannerConflict).toHaveCount(0);
   });
 
   test("an uncertain timing change (connection lost) is not shown as saved; the confirmed time remains", async ({ page }) => {
@@ -46,7 +49,9 @@ test.describe("Journey Planner V3 · mutation states · 1536x960", () => {
     const ppm = await pxPerMinute(page);
     const box = (await bar.boundingBox())!;
     await drag(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, { x: box.x + box.width / 2 + 60 * ppm, y: box.y + box.height / 2 });
-    await expect(page.locator("[data-journey-planner] [role=alert]").first()).toBeVisible();
+    const plannerAlert = page.locator("[data-journey-planner] [role=alert]");
+    await expect(plannerAlert).toBeVisible();
+    await expect(plannerAlert).toContainText("response could not be confirmed");
     await expect(bar).toContainText("09:00 – 12:00");
     expect(server.run(run.id)!.dep).toBe("09:00");
   });

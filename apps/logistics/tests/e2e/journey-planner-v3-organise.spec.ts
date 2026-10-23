@@ -96,7 +96,7 @@ test.describe("Journey Planner V3 · Organise Run and rejected mutations · 1536
     await inspector.getByRole("button", { name: "Move Market Hall down" }).click();
     server.interfere(RUN); // another operator changed the run: expectedRunVersion is now stale
     await inspector.getByRole("button", { name: "Save order" }).click();
-    await expect(page.getByRole("alert").filter({ hasText: "changed elsewhere" })).toBeVisible();
+    await expect(page.locator("[data-journey-planner] [role=alert]").filter({ hasText: "changed elsewhere" })).toBeVisible();
     expect(server.run(RUN)!.orderedStopIds).toEqual([]);
     await inspector.getByRole("button", { name: "Save order" }).click();
     await expect.poll(() => server.run(RUN)!.orderedStopIds.length).toBe(3);
@@ -110,7 +110,10 @@ test.describe("Journey Planner V3 · Organise Run and rejected mutations · 1536
     server.failNext({ action: "set-run-stop-order", status: 0, message: "network" });
     await inspector.getByRole("button", { name: "Move Market Hall down" }).click();
     await inspector.getByRole("button", { name: "Save order" }).click();
-    await expect(page.getByRole("alert")).toBeVisible();
+    const plannerAlert = page.locator("[data-journey-planner] [role=alert]");
+    await expect(plannerAlert).toBeVisible();
+    await expect(plannerAlert).toContainText("response could not be confirmed");
+    await expect(plannerAlert).toContainText("latest plan has been reloaded");
     await expect(inspector.getByTestId("order-unsaved")).toBeVisible();
     expect(await chipNames(page)).toEqual(["Market Hall", "Studio Café", "Harbour House"]);
     expect(server.run(RUN)!.orderedStopIds).toEqual([]);
@@ -191,6 +194,9 @@ test.describe("Journey Planner V3 · Organise Run and rejected mutations · 1536
     await expect.poll(() => commandsOf(server, "assign").length).toBe(1);
     expect(commandsOf(server, "assign")[0]).toMatchObject({ runId: RUN, movementId: movement.canonicalId });
     expect(server.state.movements.find((item) => item.id === movement.canonicalId)!.runId).toBe(RUN);
+    const collectionQueueItem = queueItem(page, "Studio Café");
+    await expect(collectionQueueItem).toContainText("On Run · Needs time");
+    await expect(collectionQueueItem).toHaveAttribute("data-draggable", "false");
     expectClean(issues, "add collection");
   });
 
@@ -204,9 +210,37 @@ test.describe("Journey Planner V3 · Organise Run and rejected mutations · 1536
     await form.getByLabel("What is being collected").fill("Empty hot boxes");
     server.failNext({ action: "assign", status: 422, message: "Run is not open for planning." });
     await form.getByRole("button", { name: "Add collection" }).click();
-    await expect(page.getByRole("alert").filter({ hasText: "saved but could not be added" })).toBeVisible();
+    await expect(page.locator("[data-journey-planner] [role=alert]").filter({ hasText: "saved, but assignment was rejected" })).toBeVisible();
     expect(server.state.movements.some((item) => item.what === "Empty hot boxes" && !item.runId)).toBe(true);
     await expect(queueItem(page, "Studio Café")).toBeVisible();
+  });
+
+  test("an uncertain collection save keeps the form request ID so a retry assigns one saved collection", async ({ page }) => {
+    const { server } = await boot(page, assignedSeed());
+    await openRun(page);
+    const inspector = inspectorOf(page);
+    await inspector.getByRole("button", { name: "Expand Studio Café" }).click();
+    await inspector.getByRole("button", { name: /Add collection/ }).click();
+    const form = inspector.getByRole("form", { name: "Add a collection at Studio Café" });
+    await form.getByLabel("What is being collected").fill("Uncertain response crates");
+    await form.getByLabel("Quantity").fill("2");
+    await form.getByLabel("Unit").fill("crates");
+    server.loseNextResponseAfterApply("save-movement");
+    await form.getByRole("button", { name: "Add collection" }).click();
+    const alert = page.locator("[data-journey-planner] [role=alert]");
+    await expect(alert).toContainText("response could not be confirmed");
+    await expect(form).toBeVisible();
+    expect(server.state.movements.filter((item) => item.what === "Uncertain response crates")).toHaveLength(1);
+    const originalId = (commandsOf(server, "save-movement")[0] as any).movement.canonicalId;
+
+    await form.getByRole("button", { name: "Add collection" }).click();
+    await expect.poll(() => commandsOf(server, "assign").length).toBe(1);
+    const saveCommands = commandsOf(server, "save-movement") as Array<{ movement: { canonicalId: string } }>;
+    expect(saveCommands).toHaveLength(2);
+    expect(saveCommands[1].movement.canonicalId).toBe(originalId);
+    expect(server.state.movements.filter((item) => item.id === originalId)).toHaveLength(1);
+    expect(server.state.movements.find((item) => item.id === originalId)?.runId).toBe(RUN);
+    await expect(form).toHaveCount(0);
   });
 
   test("queue-to-run drag onto the second run while the first is selected keeps the inspector and selection", async ({ page }) => {

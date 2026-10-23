@@ -87,6 +87,22 @@ class HttpError extends Error {
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : "Unknown upstream error.";
 
+function sameMovementSubmission(existing: MovementRequest, requested: MovementRequest, actorId: string) {
+  const normalized = (movement: MovementRequest) => ({
+    type: movement.type,
+    serviceDate: movement.serviceDate,
+    fromOplocId: movement.fromOplocId || undefined,
+    fromAddress: movement.fromAddress?.trim() || undefined,
+    toOplocId: movement.toOplocId || undefined,
+    toAddress: movement.toAddress?.trim() || undefined,
+    requiredTime: movement.requiredTime || undefined,
+    window: movement.window,
+    items: movement.items.map((item) => ({ description: item.description.trim(), quantity: item.quantity, unit: item.unit || undefined })),
+    notes: movement.notes?.trim() || undefined,
+  });
+  return existing.createdBy === actorId && JSON.stringify(normalized(existing)) === JSON.stringify(normalized(requested));
+}
+
 async function runAuthorizedTracedTransaction<T>(
   callback: (transaction: Transaction) => Promise<T>,
   principal: LogisticsPrincipal,
@@ -1375,10 +1391,14 @@ async function handlePost(request: NextRequest) {
         requested.toOplocId,
       ].filter(Boolean) as string[])
         labelFor(oplocs, id);
-      const saved = await runTracedTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const ref = movements().doc(requested.canonicalId);
         const snapshot = await transaction.get(ref);
-        if (snapshot.exists) throw new HttpError(409, "This movement already exists. Refresh before creating another movement.");
+        if (snapshot.exists) {
+          const existing = snapshot.data() as MovementRequest;
+          if (sameMovementSubmission(existing, requested as MovementRequest, actorId)) return { movement: existing, replayed: true };
+          throw new HttpError(409, "This movement already exists. Refresh before creating another movement.");
+        }
         const movement: MovementRequest = {
           canonicalId: requested.canonicalId, entityType: "Movement Request", type: requested.type, serviceDate: requested.serviceDate,
           ...(requested.fromOplocId ? { fromOplocId: requested.fromOplocId, fromLabelSnapshot: labelFor(oplocs, requested.fromOplocId) } : {}),
@@ -1393,10 +1413,10 @@ async function handlePost(request: NextRequest) {
           audit: [{ action: "movement-created", at: now, by, version: 1 }],
         };
         transaction.create(ref, movement);
-        return movement;
+        return { movement, replayed: false };
       });
-      await recordCanonicalLogisticsChange({ serviceDate: saved.serviceDate, entityType: "movement", entityId: saved.canonicalId, changeType: "movement-created", revision: saved.version, actorId, by, changedAt: now });
-      return NextResponse.json(saved);
+      if (!result.replayed) await recordCanonicalLogisticsChange({ serviceDate: result.movement.serviceDate, entityType: "movement", entityId: result.movement.canonicalId, changeType: "movement-created", revision: result.movement.version, actorId, by, changedAt: now });
+      return NextResponse.json(result.movement);
     }
     if (body.action === "update-run" && body.run) {
       if (body.expectedRunVersion === undefined) throw new HttpError(422, "A current run version is required.");

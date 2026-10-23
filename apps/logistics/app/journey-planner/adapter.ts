@@ -115,6 +115,7 @@ export function queueItemsFromWork(work: QueueWork, context: Pick<AdapterContext
   });
   const movements = work.movements.map(({ movement, state }): QueueItemView => {
     const pending = Boolean(context.pendingQueueIds?.has(movement.movementId));
+    const assignedNeedsTime = movement.assignedStops.length > 0 && state === "needs_time";
     return {
       id: movement.movementId,
       kind: movement.type === "collection" ? "collection" : "delivery",
@@ -123,9 +124,9 @@ export function queueItemsFromWork(work: QueueWork, context: Pick<AdapterContext
       ...(windowText(movement.window) || movement.requiredTime ? { window: windowText(movement.window) || movement.requiredTime } : {}),
       quantity: movement.items.map((item) => `${item.quantity}${item.unit ? ` ${item.unit}` : ""}`).join(" · "),
       ...(movement.notes ? { attention: "Notes attached" } : {}),
-      ...(stateLabelFor(state) ? { stateLabel: stateLabelFor(state) } : {}),
+      ...(assignedNeedsTime ? { stateLabel: "On Run · Needs time" } : stateLabelFor(state) ? { stateLabel: stateLabelFor(state) } : {}),
       pending,
-      draggable: !pending,
+      draggable: !pending && !assignedNeedsTime,
     };
   });
   return [...groups, ...movements];

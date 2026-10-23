@@ -101,7 +101,7 @@ async function installCanonicalPresentationMocks(page: Page) {
 }
 
 async function settlePlanner(page: Page) {
-  await page.goto("/");
+  await page.goto("/?ui=classic");
   await expect(page.getByRole("heading", { name: "Logistics" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Vehicle journey timeline" })).toBeVisible({ timeout: 15_000 });
   await page.evaluate(() => document.fonts.ready);

@@ -7,7 +7,7 @@ import { journeyTimeProblem } from "./NewRunDialog";
 import styles from "./inspector.module.css";
 
 export type InspectorTab = "overview" | "stops" | "loads" | "driver";
-export type NewCollection = { stopKey: string; description: string; quantity: number; unit: string; notes?: string };
+export type NewCollection = { stopKey: string; movementId: string; description: string; quantity: number; unit: string; notes?: string };
 const TABS: Array<{ id: InspectorTab; label: string }> = [{ id: "overview", label: "Overview" }, { id: "stops", label: "Stops" }, { id: "loads", label: "Loads" }, { id: "driver", label: "Driver view" }];
 const summary = (stop: Extract<InspectorStopView, { kind: "visit" }>) => [stop.deliveries ? `${stop.deliveries} deliver${stop.deliveries === 1 ? "y" : "ies"}` : "", stop.collections ? `${stop.collections} collection${stop.collections === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
 
@@ -24,7 +24,7 @@ export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving =
   saving?: boolean;
   onClose: () => void;
   onSaveOrder?: (visitKeys: string[]) => void;
-  onAddCollection?: (collection: NewCollection) => void;
+  onAddCollection?: (collection: NewCollection) => Promise<boolean | void>;
   onViewLoads?: (stopKey: string) => void;
   /** Proposes exact planned CPU times. Saved only when the host confirms. */
   onSaveTimes?: (departure: string, returnTime: string) => void;
@@ -47,13 +47,16 @@ export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving =
   const confirm = retireConfirmOpen ?? localConfirm;
   const setConfirm = (open: boolean) => { setLocalConfirm(open); onRetireConfirmOpen?.(open); };
   const [collectionFor, setCollectionFor] = useState<string>();
+  const [collectionRequestId, setCollectionRequestId] = useState<string>();
+  const [collectionSaving, setCollectionSaving] = useState(false);
+  const collectionSavingRef = useRef(false);
   const [dep, setDep] = useState(run.departure ?? "");
   const [ret, setRet] = useState(run.return ?? "");
   const [timesTouched, setTimesTouched] = useState(false);
   useEffect(() => { setDep(run.departure ?? ""); setRet(run.return ?? ""); setTimesTouched(false); }, [run.id, run.departure, run.return]);
   const timesProblem = journeyTimeProblem(dep, ret) ?? (!dep && !ret ? "Enter a departure and a return time." : undefined);
   const signature = `${run.id}:${original.join("|")}`;
-  useEffect(() => { setOrder(original); setLocalConfirm(false); setCollectionFor(undefined); }, [signature]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setOrder(original); setLocalConfirm(false); setCollectionFor(undefined); setCollectionRequestId(undefined); }, [signature]); // eslint-disable-line react-hooks/exhaustive-deps
   const changed = order.join("|") !== original.join("|");
   const byKey = new Map(visits.map((stop) => [stop.key, stop]));
   const ordered = order.map((key) => byKey.get(key)).filter((stop): stop is Extract<InspectorStopView, { kind: "visit" }> => Boolean(stop));
@@ -142,20 +145,26 @@ export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving =
                   <span className={styles.badge} data-kind={piece.kind}>{piece.kind === "delivery" ? "Delivery" : "Collection"}</span>
                 </div>)}
                 <div className={styles.pieceActions}>
-                  {stop.canAddCollection && <button type="button" className={`${styles.outline} ${styles.primaryOutline}`} onClick={() => setCollectionFor(collectionFor === stop.key ? undefined : stop.key)} aria-expanded={collectionFor === stop.key}><PlusIcon size={17} />Add collection</button>}
+                  {stop.canAddCollection && <button type="button" className={`${styles.outline} ${styles.primaryOutline}`} onClick={() => { if (collectionFor === stop.key) { setCollectionFor(undefined); setCollectionRequestId(undefined); } else { setCollectionRequestId(`movement:${crypto.randomUUID()}`); setCollectionFor(stop.key); } }} aria-expanded={collectionFor === stop.key}><PlusIcon size={17} />Add collection</button>}
                   <button type="button" className={styles.outline} onClick={() => onViewLoads?.(stop.key)}>View loads</button>
                   {run.editable && <button type="button" className={styles.outline} disabled={saving} onClick={() => onReturnStop?.(stop.key)} aria-label={`Return ${stop.name} to the queue`}>Return to queue</button>}
                 </div>
                 {collectionFor === stop.key && <form className={styles.collectionForm} aria-label={`Add a collection at ${stop.name}`} onSubmit={(event) => {
                   event.preventDefault();
+                  if (collectionSavingRef.current || !collectionRequestId) return;
                   const data = new FormData(event.currentTarget);
-                  onAddCollection?.({ stopKey: stop.key, description: String(data.get("description") || "").trim(), quantity: Number(data.get("quantity")), unit: String(data.get("unit") || "").trim(), notes: String(data.get("notes") || "").trim() || undefined });
-                  setCollectionFor(undefined);
+                  collectionSavingRef.current = true;
+                  setCollectionSaving(true);
+                  void Promise.resolve(onAddCollection?.({ stopKey: stop.key, movementId: collectionRequestId, description: String(data.get("description") || "").trim(), quantity: Number(data.get("quantity")), unit: String(data.get("unit") || "").trim(), notes: String(data.get("notes") || "").trim() || undefined })).then((handled) => {
+                    if (handled === false) return;
+                    setCollectionFor(undefined);
+                    setCollectionRequestId(undefined);
+                  }).catch(() => undefined).finally(() => { collectionSavingRef.current = false; setCollectionSaving(false); });
                 }}>
                   <label>What is being collected<input name="description" required placeholder="Empty catering crates" /></label>
                   <div className={styles.row2}><label>Quantity<input name="quantity" type="number" min={1} required defaultValue={1} /></label><label>Unit<input name="unit" required defaultValue="crates" /></label></div>
                   <label>Notes (optional)<input name="notes" /></label>
-                  <div className={styles.formActions}><button type="button" className={styles.outline} style={{ height: 38 }} onClick={() => setCollectionFor(undefined)}>Cancel</button><button type="submit" className={styles.primary} style={{ height: 38, flex: "0 0 auto" }}>Add collection</button></div>
+                  <div className={styles.formActions}><button type="button" className={styles.outline} style={{ height: 38 }} disabled={collectionSaving} onClick={() => { setCollectionFor(undefined); setCollectionRequestId(undefined); }}>Cancel</button><button type="submit" className={styles.primary} style={{ height: 38, flex: "0 0 auto" }} disabled={collectionSaving} aria-busy={collectionSaving}>{collectionSaving ? "Saving collection…" : "Add collection"}</button></div>
                 </form>}
               </div>}
             </li>;
