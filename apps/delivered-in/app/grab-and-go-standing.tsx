@@ -2,12 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DELIVERY_WEEKDAYS, productsForDeliveryDate, representativeDeliveryDate, type GrabAndGoProduct } from "../lib/grab-and-go";
-import { STANDING_WEEKS, configuredSlotCount, slotKey, type OccurrenceState, type StandingLine, type StandingOperation, type StandingSlots, type StandingStatus, type StandingVersion } from "../lib/grab-and-go-standing";
+import { STANDING_MAX_QUANTITY, STANDING_WEEKS, configuredSlotCount, slotKey, type OccurrenceState, type StandingLine, type StandingOperation, type StandingSlots, type StandingStatus, type StandingVersion } from "../lib/grab-and-go-standing";
+import { mapStandingSlotProducts, type StandingSlotProductMapping } from "../lib/grab-and-go-standing-copy";
 import type { StandingMutationResult, StandingOverview, UpcomingDelivery } from "../lib/grab-and-go-standing-service";
 
 type Props = { oplocId: string; catalogue: GrabAndGoProduct[]; cutoffHour: number; onChanged: () => void; refreshToken: number };
 type Quantities = Record<string, Record<string, number>>;
 type Confirm = { kind: "activate" | "pause" | "terminate" | "resume" | "cancel-upcoming" | "generate"; invoker: HTMLElement | null; deliveryDate?: string };
+type SlotCopyPair = { sourceKey: string; targetKey: string };
+type SlotCopyPreview = { sourceKey: string; targetKey: string; mappings: StandingSlotProductMapping[] };
+type CopyPlan = { title: string; copies: SlotCopyPreview[]; overwriteKeys: string[] };
+type Clipboard = { sourceKey: string; quantities: Record<string, number> };
 
 const API = "/api/delivered-in/grab-and-go/standing-orders";
 const STATUS_LABEL: Record<StandingStatus | "none", string> = { none: "Not set up", draft: "Draft", active: "Active", paused: "Paused", terminated: "Terminated" };
@@ -51,7 +56,9 @@ function describe(result: StandingMutationResult, success: string) {
 
 export default function GrabAndGoStandingOrders({ oplocId, catalogue, cutoffHour, onChanged, refreshToken }: Props) {
   const [overview, setOverview] = useState<StandingOverview>(); const [quantities, setQuantities] = useState<Quantities>({}); const [saved, setSaved] = useState<Quantities>({});
-  const [selected, setSelected] = useState<string>(); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [problems, setProblems] = useState<string[]>([]); const [confirm, setConfirm] = useState<Confirm>();
+  const [selected, setSelected] = useState<string>(slotKey(1, "Monday")); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [problems, setProblems] = useState<string[]>([]); const [confirm, setConfirm] = useState<Confirm>();
+  const [clipboard, setClipboard] = useState<Clipboard>(); const [copyPlan, setCopyPlan] = useState<CopyPlan>(); const [copyMessage, setCopyMessage] = useState("");
+  const [copyWeek, setCopyWeek] = useState("2"); const [referenceWeek, setReferenceWeek] = useState("1");
   const head = overview?.standingOrder || undefined; const status: StandingStatus | "none" = head?.status || "none"; const dirty = !sameQuantities(quantities, saved);
 
   const load = useCallback(async (keepEdits = false) => {
@@ -80,13 +87,47 @@ export default function GrabAndGoStandingOrders({ oplocId, catalogue, cutoffHour
     catch (cause) { setError((cause as Error).message); } finally { setBusy(false); }
   };
 
-  const slotProducts = useMemo(() => selected ? productsForDeliveryDate(catalogue, (() => { const [week, weekday] = selected.split(":"); return representativeDeliveryDate(Number(week), weekday as typeof DELIVERY_WEEKDAYS[number]); })()) : [], [catalogue, selected]);
+  const productsForSlot = useCallback((key: string) => {
+    const [week, weekday] = key.split(":");
+    return productsForDeliveryDate(catalogue, representativeDeliveryDate(Number(week), weekday as typeof DELIVERY_WEEKDAYS[number]));
+  }, [catalogue]);
+  const slotProducts = useMemo(() => selected ? productsForSlot(selected) : [], [productsForSlot, selected]);
   if (!overview) return <div className="empty-state" role={error ? "alert" : "status"}><p>{error || "Loading standing orders…"}</p></div>;
   const editable = status !== "terminated"; const configured = configuredSlotCount(toSlots(quantities));
-  const setQuantity = (productId: string, quantity: number) => selected && setQuantities(current => ({ ...current, [selected]: { ...current[selected], [productId]: quantity } }));
+  const setQuantity = (productId: string, quantity: number) => { if (!selected) return; setCopyPlan(undefined); setQuantities(current => ({ ...current, [selected]: { ...current[selected], [productId]: quantity } })); };
+  const prepareCopy = (pairs: SlotCopyPair[], title: string, sourceOverrides: Record<string, Record<string, number>> = {}) => {
+    if (!pairs.length) { setCopyMessage("There are no eligible empty rotation slots to fill."); setCopyPlan(undefined); return; }
+    const copies: SlotCopyPreview[] = [];
+    for (const pair of pairs) {
+      if (pair.sourceKey === pair.targetKey) { setCopyMessage("Choose a different rotation slot for the copy."); setCopyPlan(undefined); return; }
+      const source = sourceOverrides[pair.sourceKey] || quantities[pair.sourceKey] || {};
+      const mapping = mapStandingSlotProducts(productsForSlot(pair.sourceKey), productsForSlot(pair.targetKey), source);
+      if (!mapping.ok) { setCopyMessage(`${pair.targetKey.replace(":", " · ")}: ${mapping.reason}`); setCopyPlan(undefined); return; }
+      copies.push({ ...pair, mappings: mapping.mappings });
+    }
+    const overwriteKeys = copies.filter(copy => Object.values(quantities[copy.targetKey] || {}).some(quantity => quantity > 0)).map(copy => copy.targetKey);
+    setCopyMessage(""); setCopyPlan({ title, copies, overwriteKeys });
+  };
+  const copySelectedDay = () => {
+    if (!selected) return;
+    setClipboard({ sourceKey: selected, quantities: { ...(quantities[selected] || {}) } }); setCopyPlan(undefined);
+    setCopyMessage(`Copied Week ${selected.replace(":", " · ")} quantities locally. Select another slot, then preview the mapping.`);
+  };
+  const applyCopy = () => {
+    if (!copyPlan) return;
+    setQuantities(current => {
+      const next = { ...current };
+      for (const copy of copyPlan.copies) next[copy.targetKey] = Object.fromEntries(copy.mappings.map(mapping => [mapping.targetProductId, mapping.quantity]));
+      return next;
+    });
+    setCopyMessage(`Copied quantities into ${copyPlan.copies.length} rotation slot${copyPlan.copies.length === 1 ? "" : "s"}. Changes are unsaved.`); setCopyPlan(undefined);
+  };
   const open = (kind: Confirm["kind"], deliveryDate?: string) => (event: React.MouseEvent<HTMLButtonElement>) => setConfirm({ kind, invoker: event.currentTarget, deliveryDate });
   const outstandingAutomatic = overview.upcoming.filter(item => item.order?.control === "automatic" && item.order.editable);
   const next = overview.schedule.nextGenerations[0];
+  const selectedParts = selected?.split(":") || [];
+  const selectedWeek = Number(selectedParts[0] || 1);
+  const selectedDay = selectedParts[1] as typeof DELIVERY_WEEKDAYS[number] | undefined;
 
   return <div className="standing-panel">
     <section className="standing-status" aria-labelledby="standing-heading">
@@ -99,32 +140,57 @@ export default function GrabAndGoStandingOrders({ oplocId, catalogue, cutoffHour
     {problems.length > 0 && <div className="grab-error" role="alert"><strong>Needs attention</strong><ul>{problems.map(problem => <li key={problem}>{problem}</li>)}</ul></div>}
     {notice && <p className={problems.length ? "grab-handoff-notice" : "standing-success"} role="status">{notice}</p>}
     <section className="standing-section" aria-labelledby="rotation-heading">
-      <header><h3 id="rotation-heading">Quantities by rotation week</h3><p>Each Monday and Wednesday is set independently. A day with no quantity is never ordered.</p></header>
-      <div className="standing-table-wrap" role="region" aria-label="Rotation quantities" tabIndex={0}>
-        <table className="standing-table"><caption className="visually-hidden">Standing quantities for each Monday and Wednesday of the four-week rotation</caption>
-          <thead><tr><th scope="col">Rotation week</th>{DELIVERY_WEEKDAYS.map(day => <th scope="col" key={day}>{day}</th>)}</tr></thead>
-          <tbody>{STANDING_WEEKS.map(week => <tr key={week}><th scope="row">Week {week}</th>{DELIVERY_WEEKDAYS.map(day => { const key = slotKey(week, day); const count = total(Object.entries(quantities[key] || {}).map(([, quantity]) => ({ quantity }))); return <td key={day}>
-            <button type="button" className={`standing-slot${selected === key ? " selected" : ""}`} aria-pressed={selected === key} disabled={!editable || busy} onClick={() => setSelected(selected === key ? undefined : key)} aria-label={`${count ? "Edit" : "Set"} Week ${week} ${day} standing quantities, ${count ? `${count} items` : "not set"}`}>
-              <strong>{count ? `${count} items` : "Not set"}</strong><small>{count ? `${Object.values(quantities[key] || {}).filter(quantity => quantity > 0).length} products` : "No order"}</small></button></td>; })}</tr>)}</tbody></table>
+      <header><h3 id="rotation-heading">Four-week quantities</h3><p>Select a day to edit. Monday and Wednesday remain independent; empty slots never generate orders.</p></header>
+      <div className="standing-workspace">
+        <div className="standing-overview">
+          <div className="standing-table-wrap" role="region" aria-label="Rotation quantities" tabIndex={0}>
+            <table className="standing-table"><caption className="visually-hidden">Standing quantities for each Monday and Wednesday of the four-week rotation</caption>
+              <thead><tr><th scope="col">Week</th>{DELIVERY_WEEKDAYS.map(day => <th scope="col" key={day}>{day}</th>)}</tr></thead>
+              <tbody>{STANDING_WEEKS.map(week => <tr key={week}><th scope="row">{week}</th>{DELIVERY_WEEKDAYS.map(day => { const key = slotKey(week, day); const count = total(Object.entries(quantities[key] || {}).map(([, quantity]) => ({ quantity }))); return <td key={day}>
+                <button type="button" className={`standing-slot${selected === key ? " selected" : ""}`} aria-pressed={selected === key} disabled={!editable || busy} onClick={() => setSelected(key)} aria-label={`Edit Week ${week} ${day} standing quantities, ${count ? `${count} items` : "not set"}`}>
+                  <strong>{count ? `${count} items` : "Not set"}</strong><small>{count ? `${Object.values(quantities[key] || {}).filter(quantity => quantity > 0).length} products` : "No order"}</small></button></td>; })}</tr>)}</tbody></table>
+          </div>
+          <p className="standing-overview-note">Copy quantities once, review the product mapping, then save all slot changes together.</p>
+        </div>
+        {selected && <div className="standing-edit-column">
+          <div className="standing-editor" role="group" aria-labelledby="editor-heading">
+            <header><h4 id="editor-heading">Week {selectedWeek} · {selectedDay}</h4><button type="button" className="secondary-button" disabled={busy || !editable} onClick={() => { setQuantities(current => ({ ...current, [selected]: {} })); setCopyPlan(undefined); }}>Clear day</button></header>
+            {slotProducts.length === 0 ? <p className="grab-copy-note">The catalogue offers no products for this rotation day.</p> : <div className="grab-product-list">{slotProducts.map(product => { const quantity = quantities[selected]?.[product.productId] || 0; return <div className="grab-product-row" key={product.productId}><span className="product-mark" aria-hidden="true">✦</span><strong>{product.name}<small>{product.category === "grab_250ml" ? "250ml pot" : "750ml pot"}</small></strong><div className="grab-quantity"><input aria-label={`Quantity of ${product.name}`} type="number" min={0} max={STANDING_MAX_QUANTITY} step={1} inputMode="numeric" value={quantity} disabled={busy || !editable} onChange={event => { const value = event.currentTarget.value === "" ? 0 : Number(event.currentTarget.value); if (Number.isInteger(value) && value >= 0 && value <= STANDING_MAX_QUANTITY) setQuantity(product.productId, value); }} /></div></div>; })}</div>}
+            {editable && <div className="standing-copy-tools" aria-label="Copy quantities">
+              <div className="standing-copy-row"><button type="button" className="secondary-button" disabled={busy || !total(Object.entries(quantities[selected] || {}).map(([, quantity]) => ({ quantity })))} onClick={copySelectedDay}>Copy this day</button>
+                {clipboard && clipboard.sourceKey !== selected && <button type="button" className="secondary-button" disabled={busy} onClick={() => prepareCopy([{ sourceKey: clipboard.sourceKey, targetKey: selected }], `Paste Week ${clipboard.sourceKey.replace(":", " · ")} into Week ${selected.replace(":", " · ")}`, { [clipboard.sourceKey]: clipboard.quantities })}>Preview paste</button>}
+              </div>
+              {selectedDay && <div className="standing-copy-row"><button type="button" className="secondary-button" disabled={busy || !total(Object.entries(quantities[selected] || {}).map(([, quantity]) => ({ quantity })))} onClick={() => prepareCopy(STANDING_WEEKS.filter(week => week !== selectedWeek).map(week => ({ sourceKey: selected, targetKey: slotKey(week, selectedDay) })), `Copy Week ${selectedWeek} ${selectedDay} to the other ${selectedDay}s`)}>Copy to other {selectedDay}s</button>
+                <label>Copy week to <select aria-label="Target rotation week" value={copyWeek} onChange={event => setCopyWeek(event.target.value)}>{STANDING_WEEKS.filter(week => week !== selectedWeek).map(week => <option key={week} value={week}>Week {week}</option>)}</select></label>
+                <button type="button" className="secondary-button" disabled={busy || !DELIVERY_WEEKDAYS.some(day => total(Object.entries(quantities[slotKey(selectedWeek, day)] || {}).map(([, quantity]) => ({ quantity }))) > 0)} onClick={() => prepareCopy(DELIVERY_WEEKDAYS.map(day => ({ sourceKey: slotKey(selectedWeek, day), targetKey: slotKey(Number(copyWeek), day) })), `Copy Week ${selectedWeek} into Week ${copyWeek}`)}>Preview week copy</button></div>}
+              <div className="standing-copy-row"><label>Reference week <select aria-label="Reference rotation week" value={referenceWeek} onChange={event => setReferenceWeek(event.target.value)}>{STANDING_WEEKS.map(week => <option key={week} value={week}>Week {week}</option>)}</select></label>
+                <button type="button" className="secondary-button" disabled={busy || !DELIVERY_WEEKDAYS.some(day => total(Object.entries(quantities[slotKey(Number(referenceWeek), day)] || {}).map(([, quantity]) => ({ quantity }))) > 0)} onClick={() => { const sourceWeek = Number(referenceWeek); const pairs = DELIVERY_WEEKDAYS.flatMap(day => { const sourceKey = slotKey(sourceWeek, day); const targets = STANDING_WEEKS.filter(week => week !== sourceWeek).map(week => slotKey(week, day)).filter(key => !Object.values(quantities[key] || {}).some(quantity => quantity > 0)); return total(Object.entries(quantities[sourceKey] || {}).map(([, quantity]) => ({ quantity }))) ? targets.map(targetKey => ({ sourceKey, targetKey })) : []; }); prepareCopy(pairs, `Fill empty slots from Week ${sourceWeek}`); }}>Fill empty weeks</button></div>
+              {copyMessage && <p className="standing-copy-message" role="status">{copyMessage}</p>}
+              {copyPlan && <section className="standing-copy-preview" aria-labelledby="copy-preview-heading">
+                <h5 id="copy-preview-heading">Review product mapping</h5><p>{copyPlan.title}. Product identities use each target week’s catalogue.</p>
+                {copyPlan.overwriteKeys.length > 0 && <p className="standing-copy-warning">This replaces existing quantities in {copyPlan.overwriteKeys.map(key => `Week ${key.replace(":", " · ")}`).join(", ")}.</p>}
+                <div className="standing-copy-mappings">{copyPlan.copies.map(copy => <div key={`${copy.sourceKey}-${copy.targetKey}`}><strong>Week {copy.sourceKey.replace(":", " · ")} → Week {copy.targetKey.replace(":", " · ")}</strong><ul>{copy.mappings.map(mapping => <li key={mapping.targetProductId}>{mapping.sourceName} → {mapping.targetName}: {mapping.quantity}</li>)}</ul></div>)}</div>
+                <div className="standing-copy-actions"><button type="button" className="secondary-button" onClick={() => setCopyPlan(undefined)}>Cancel</button><button type="button" className="primary-button" disabled={busy} onClick={applyCopy}>{copyPlan.overwriteKeys.length ? "Overwrite quantities" : "Apply copy"}</button></div>
+              </section>}
+            </div>}
+          </div>
+          <footer className="standing-actions">
+            {dirty && <span className="standing-unsaved" role="status">Unsaved changes</span>}
+            {dirty && status === "active" && outstandingAutomatic.length > 0 && <p className="standing-amendment-impact">Saving can also update {outstandingAutomatic.length} editable automatic order{outstandingAutomatic.length === 1 ? "" : "s"} already generated{outstandingAutomatic.length <= 3 ? ` (${outstandingAutomatic.map(item => displayDate(item.deliveryDate)).join(", ")})` : ""}.</p>}
+            {(status === "none" || status === "draft") && <><button type="button" className="secondary-button" disabled={busy || !dirty} onClick={() => void act("save", {}, "Draft saved.")}>Save draft</button><button type="button" className="primary-button" disabled={busy || configured === 0} onClick={open("activate")}>Activate…</button></>}
+            {(status === "active" || status === "paused") && <button type="button" className="primary-button" disabled={busy || !dirty || configured === 0} onClick={() => void act("save", {}, "Amendment saved. Existing automatic orders that are still open were updated.")}>Save changes</button>}
+            {status === "active" && <button type="button" className="secondary-button" disabled={busy} onClick={open("pause")}>Pause generation…</button>}
+            {status === "paused" && <button type="button" className="secondary-button" disabled={busy} onClick={open("resume")}>Resume…</button>}
+            {(status === "paused" || status === "terminated") && outstandingAutomatic.length > 0 && <button type="button" className="secondary-button" disabled={busy} onClick={open("cancel-upcoming")}>Cancel {outstandingAutomatic.length} automatic order{outstandingAutomatic.length === 1 ? "" : "s"}…</button>}
+            {(status === "draft" || status === "active" || status === "paused") && <button type="button" className="danger-button" disabled={busy} onClick={open("terminate")}>Terminate…</button>}
+            {status === "terminated" && <button type="button" className="primary-button" disabled={busy || configured === 0} onClick={() => void act("save", {}, "A new draft was started from the previous quantities.")}>Start a new draft</button>}
+          </footer>
+        </div>}
       </div>
-      {selected && <div className="standing-editor" role="group" aria-labelledby="editor-heading">
-        <header><h4 id="editor-heading">Week {selected.split(":")[0]} · {selected.split(":")[1]}</h4><div><button type="button" className="secondary-button" disabled={busy} onClick={() => setQuantities(current => ({ ...current, [selected]: {} }))}>Clear this day</button><button type="button" className="secondary-button" onClick={() => setSelected(undefined)}>Done</button></div></header>
-        {slotProducts.length === 0 ? <p className="grab-copy-note">The catalogue offers no products for this rotation day.</p> : <div className="grab-product-list">{slotProducts.map(product => { const quantity = quantities[selected]?.[product.productId] || 0; return <div className="grab-product-row" key={product.productId}><span className="product-mark" aria-hidden="true">✦</span><strong>{product.name}<small>{product.category === "grab_250ml" ? "250ml pot" : "750ml pot"}</small></strong><div className="grab-quantity"><button type="button" aria-label={`Decrease ${product.name}`} disabled={busy || !quantity} onClick={() => setQuantity(product.productId, Math.max(0, quantity - 1))}>−</button><output aria-label={`${quantity} ${product.name}`}>{quantity}</output><button type="button" aria-label={`Increase ${product.name}`} disabled={busy} onClick={() => setQuantity(product.productId, quantity + 1)}>+</button></div></div>; })}</div>}
-      </div>}
-      <footer className="standing-actions">
-        {dirty && <span className="standing-unsaved" role="status">Unsaved changes</span>}
-        {(status === "none" || status === "draft") && <><button type="button" className="secondary-button" disabled={busy || !dirty} onClick={() => void act("save", {}, "Draft saved.")}>Save draft</button><button type="button" className="primary-button" disabled={busy || configured === 0} onClick={open("activate")}>Activate…</button></>}
-        {(status === "active" || status === "paused") && <button type="button" className="primary-button" disabled={busy || !dirty || configured === 0} onClick={() => void act("save", {}, "Amendment saved. Existing automatic orders that are still open were updated.")}>Save amendment</button>}
-        {status === "active" && <button type="button" className="secondary-button" disabled={busy} onClick={open("pause")}>Pause generation…</button>}
-        {status === "paused" && <button type="button" className="secondary-button" disabled={busy} onClick={open("resume")}>Resume…</button>}
-        {(status === "paused" || status === "terminated") && outstandingAutomatic.length > 0 && <button type="button" className="secondary-button" disabled={busy} onClick={open("cancel-upcoming")}>Cancel {outstandingAutomatic.length} automatic order{outstandingAutomatic.length === 1 ? "" : "s"}…</button>}
-        {(status === "draft" || status === "active" || status === "paused") && <button type="button" className="danger-button" disabled={busy} onClick={open("terminate")}>Terminate…</button>}
-        {status === "terminated" && <button type="button" className="primary-button" disabled={busy || configured === 0} onClick={() => void act("save", {}, "A new draft was started from the previous quantities.")}>Start a new draft</button>}
-      </footer>
     </section>
-    <UpcomingTable upcoming={overview.upcoming} cutoffHour={cutoffHour} busy={busy} onGenerate={(item, event) => open("generate", item.deliveryDate)(event)} onRetry={item => void retryHandoff(item)} />
+    <details className="standing-section standing-collapsible"><summary>Upcoming deliveries ({overview.upcoming.length})</summary><UpcomingTable upcoming={overview.upcoming} cutoffHour={cutoffHour} busy={busy} onGenerate={(item, event) => open("generate", item.deliveryDate)(event)} onRetry={item => void retryHandoff(item)} /></details>
     {!overview.historyAvailable && <p className="grab-copy-note" role="note">Version history is temporarily unavailable. Your standing order and upcoming deliveries are unaffected.</p>}
-    <History versions={overview.versions} operations={overview.operations} />
+    <details className="standing-section standing-collapsible"><summary>Audit history ({overview.versions.length + overview.operations.length})</summary><History versions={overview.versions} operations={overview.operations} /></details>
     {confirm && <ConfirmDialog {...dialogFor(confirm.kind, { upcoming: overview.upcoming, deliveryDate: confirm.deliveryDate, outstanding: outstandingAutomatic })} busy={busy} invoker={confirm.invoker} onCancel={() => setConfirm(undefined)}
       onConfirm={() => void (confirm.kind === "activate" ? act("activate", {}, "Standing order activated. No orders were created yet.") : confirm.kind === "resume" ? act("resume", {}, "Standing order resumed. No orders were created yet.") : confirm.kind === "pause" ? act("pause", {}, "Automatic generation paused. Existing orders were left in place.") : confirm.kind === "terminate" ? act("terminate", {}, "Standing order terminated. Existing orders were left in place.") : confirm.kind === "generate" ? act("generate", { deliveryDate: confirm.deliveryDate }, `Order for ${displayDate(confirm.deliveryDate || "")} generated.`) : act("cancel-upcoming", {}, "Outstanding automatic orders cancelled."))} />}
   </div>;
