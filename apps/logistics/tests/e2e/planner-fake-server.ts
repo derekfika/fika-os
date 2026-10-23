@@ -12,7 +12,7 @@ const stamp = "2026-10-22T08:00:00.000Z";
 const pad = (value: number) => String(value).padStart(2, "0");
 
 export type FakeJob = { id: string; destination: string; oploc: string; what: string; quantity: number; unit: string; runId?: string; time?: string; requestedStart?: string };
-export type FakeMovement = { id: string; type: "collection" | "delivery" | "transfer"; destination: string; oploc: string; what: string; quantity: number; runId?: string; time?: string; assignedAt?: number };
+export type FakeMovement = { id: string; type: "collection" | "delivery" | "transfer"; destination: string; oploc: string; what: string; quantity: number; unit?: string; runId?: string; time?: string; assignedAt?: number };
 export type FakeRun = { id: string; vehicleId: "van1" | "van2"; status: "draft" | "planned" | "ready" | "dispatched" | "completed"; dep?: string; ret?: string; version: number; orderedStopIds: string[]; retired?: boolean };
 export type FakeState = { serviceDate: string; revision: number; runs: FakeRun[]; jobs: FakeJob[]; movements: FakeMovement[]; clock: number };
 export type FailureRule = { action: string; status: number; message: string; once?: boolean };
@@ -94,7 +94,7 @@ export class FakeLogisticsServer {
     const queue = this.state.jobs.filter((job) => !job.runId || !this.run(job.runId));
     const movements = this.state.movements.map((movement) => ({
       canonicalId: movement.id, entityType: "Movement Request", type: movement.type, serviceDate, fromOplocId: "cpu-main", fromLabelSnapshot: "CPU Main Kitchen", toOplocId: movement.oploc, toLabelSnapshot: movement.destination,
-      items: [{ description: movement.what, quantity: movement.quantity, unit: "crates" }], createdBy: "fixture:planner", status: movement.runId && this.run(movement.runId) ? "planned" : "open", version: 2, createdAt: stamp, updatedAt: stamp, audit: [],
+      items: [{ description: movement.what, quantity: movement.quantity, unit: movement.unit || "crates" }], createdBy: "fixture:planner", status: movement.runId && this.run(movement.runId) ? "planned" : "open", version: 2, createdAt: stamp, updatedAt: stamp, audit: [],
     }));
     return {
       serviceDate, revision: this.state.revision, lastChangeSequence: this.state.revision, state: "CURRENT", completeness: { fulfilment: "complete", cpu: "complete", oploc: "complete" },
@@ -133,6 +133,15 @@ export class FakeLogisticsServer {
     const { state } = this;
     switch (body.action) {
       case "ensure-vehicle-day-runs": return { changed: false };
+      case "save-movement": {
+        const requested = body.movement;
+        const oploc = requested.fromOplocId || requested.toOplocId;
+        if (!oploc || !requested.items?.[0]?.description || !(requested.items[0].quantity >= 1)) this.reject(422, "A movement needs a governed location and an item with quantity.");
+        const destination = state.jobs.find((job) => job.oploc === oploc)?.destination || oploc;
+        state.movements.push({ id: requested.canonicalId, type: requested.type, destination, oploc, what: requested.items[0].description, quantity: requested.items[0].quantity, unit: requested.items[0].unit });
+        this.bump();
+        return { movement: requested };
+      }
       case "create-run": {
         const requested = body.run;
         if (state.runs.some((run) => run.id === requested.canonicalId)) this.reject(409, "This run already exists. Refresh before creating another run.");
@@ -229,7 +238,7 @@ export async function installStatefulApi(page: Page, server: FakeLogisticsServer
     if (url.pathname !== "/api/logistics") { issues?.network.push(`${request.method()} ${url.pathname}`); return route.fulfill({ status: 404, json: { error: "Unexpected endpoint in fixture" } }); }
     if (request.method() === "POST") {
       try { return await route.fulfill({ status: 200, json: server.apply(request.postDataJSON() as Record<string, any>) }); }
-      catch (error) { const failure = error as { status?: number; message: string }; return route.fulfill({ status: failure.status || 500, json: { error: failure.message } }); }
+      catch (error) { const failure = error as { status?: number; message: string }; if (failure.status === 0) return route.abort("connectionreset"); return route.fulfill({ status: failure.status || 500, json: { error: failure.message } }); }
     }
     const params = url.searchParams;
     if (params.has("syncHead")) return route.fulfill({ json: { sequence: server.state.revision } });

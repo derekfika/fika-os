@@ -26,6 +26,10 @@ export type QueueItemView = {
   attention?: string;
   /** True while a placement command for this item is unresolved. */
   pending?: boolean;
+  /** False when the item cannot be dragged (placement in flight). It can still be opened. */
+  draggable?: boolean;
+  /** Short operational state, e.g. "Needs time". Presentation only. */
+  stateLabel?: string;
 };
 
 /** One compact chip in a Run's visiting sequence. */
@@ -55,6 +59,8 @@ export type RunRowView = {
   retireBlocker?: string;
   /** Lifecycle permits time/order edits. */
   editable: boolean;
+  /** Driver app link for this run (preview only; execution happens in the driver app). */
+  driverHref?: string;
 };
 
 export type StopPieceView = {

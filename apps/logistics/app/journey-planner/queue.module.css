@@ -39,3 +39,11 @@
 .srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .collapseButton { margin-left: auto; width: 34px; height: 34px; }
 .newCollection { display: flex; align-items: center; justify-content: center; gap: 6px; height: 40px; margin: 6px 0 8px; border: 1px dashed var(--jp-lilac-edge); border-radius: 10px; background: transparent; color: var(--jp-primary); font-weight: 600; cursor: pointer; }
+
+.peek { position: absolute; z-index: 40; top: 0; left: 0; width: var(--jp-queue-w); max-height: calc(100dvh - 120px); box-shadow: var(--shadow-md); }
+.dockButton { display: block; margin: -4px 0 12px; height: 34px; padding: 0 12px; border: 1px solid var(--jp-line-strong); border-radius: 10px; background: var(--fika-surface-card); color: var(--jp-primary); font-weight: 600; cursor: pointer; }
+.state { color: var(--jp-amber-ink); font-size: 13.5px; font-weight: 600; }
+.item[data-draggable="true"] { cursor: grab; }
+.item[data-dragging="true"] { opacity: .45; }
+/* While work is being dragged out of the peek, step aside so every Run row (including its label) is a reachable drop target. */
+:global([data-queue-dragging="true"]) .peek { opacity: .18; pointer-events: none; transition: opacity .12s; }

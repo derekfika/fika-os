@@ -28,11 +28,15 @@ import type {
 import type { LogisticsDayProjection, LogisticsProjectionState } from "../lib/types";
 import { projectionToDashboardData } from "../lib/projection-dashboard-adapter";
 import { RunOrganiser } from "./run-organiser";
-import type { StopPiece } from "../lib/run-stop-order";
+import { JourneyPlannerLive, type LiveCallbacks } from "./journey-planner/JourneyPlannerLive";
+import dialogStyles from "./journey-planner/dialog.module.css";
+import { stopPiecesForRun } from "../lib/stop-pieces";
 import { VisitChooser, type VisitChoicePrompt } from "./visit-chooser";
 import { chooseVisit, legRunId, legVisitId, visitCandidates, visitRequestFor, type VisitLoad } from "../lib/stop-visits";
 import type { CreatingRun, PendingRunTiming } from "./journey-lanes";
+import type { ShellNotice } from "./journey-planner/JourneyPlannerShell";
 import { operationalDate } from "../lib/date";
+import { groupIntoVisitRows } from "../lib/stop-visits";
 import { clientErrorDetails, requireSuccessfulResponse } from "../lib/client-errors";
 import { drainIncrementalPages } from "../lib/incremental-sync";
 import { readCachedProjection, writeCachedProjection } from "../lib/logistics-cache";
@@ -1066,6 +1070,8 @@ function groupCollectionPending(group: PlannerWorkGroup, runs: PlannerDay["runs"
   });
 }
 
+const EMPTY_PLANNER: PlannerDay = { serviceDate: "", workGroups: [], movements: [], runs: [], summary: { requirements: 0, destinations: 0, unplanned: 0, partiallyPlanned: 0, planned: 0, attention: 0, movements: 0, loads: 0, deliveries: 0, collections: 0, transfers: 0, assignedWork: 0, scheduledStops: 0, needsTime: 0 }, upstreamHealth: { fulfilment: { available: false }, oplocs: { available: false }, enrichment: { available: false } } };
+
 function RealPlanner(props: RealPlannerProps) {
   const { data: sourceData, weekData, date, weekCommencing, runs, groups } = props;
   const needsMovementLabels = Boolean(sourceData?.projection?.movements?.some(movement => movement.fromOplocId && !movement.fromLabelSnapshot || movement.toOplocId && !movement.toLabelSnapshot));
@@ -1850,6 +1856,100 @@ function RealPlanner(props: RealPlannerProps) {
     document.addEventListener("dragstart", hideNativeDragImage, true);
     return () => document.removeEventListener("dragstart", hideNativeDragImage, true);
   }, []);
+  // ---- Journey Planner V3 (default desktop UI). `?ui=classic` keeps the previous timeline as a rollback aid. ----
+  const classicUi = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("ui") === "classic";
+  const legacyInspector = props.inspector && data ? <Inspector selection={props.inspector} planner={data.planner} projection={data.projection} rawRequirements={data.requirements} rawStops={data.stops} onClose={() => props.setInspector(undefined)} onSelectRun={(runId) => props.setInspector({ kind: "run", id: runId })} onSelectStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onSelectLoad={(runId, stopId, loadId) => props.setInspector({ kind: "load", id: loadId, runId, stopId })} onAction={handleInspectorAction} onScheduleStop={scheduleStop} runs={runs} targetRun={props.targetRun} setTargetRun={props.setTargetRun} assigning={props.assigning} setAssigning={props.setAssigning} onAssignGroup={(group, choice) => submitGroupAssignment(group, choice)} onAssignMovement={(movement, choice) => submitMovementAssignment(movement, choice)} placementPending={Boolean(props.busy || pendingSchedules[inspectorPendingIdentity] || (props.inspector.kind === "group" && confirmedSchedules[inspectorPendingIdentity]))} /> : undefined;
+  const goToDate = (next: string) => { const week = mondayOf(next); if (week !== weekCommencing) props.setWeekCommencing(week); props.setDate(next); };
+  /** Drop (or otherwise assign) a queue item on a Run row. A requested time is used as the planned time; otherwise Franco chooses one. */
+  const dropQueueOnRun = (itemId: string, runId: string, chosenTime?: string): "needs-time" | void => {
+    const group = groups.find((item) => item.groupKey === itemId);
+    const movement = group ? undefined : movements.find((item) => item.movementId === itemId);
+    const run = runs.find((item) => item.runId === runId);
+    if (!group && !movement) return;
+    if (!run || !["draft", "planned"].includes(run.status)) { props.setError(run ? `This run is ${run.status}. Return it to planning before adding work.` : "This run no longer exists."); return; }
+    const kind = group ? "group" as const : "movement" as const;
+    const lane: "delivery" | "collection" = group ? (groupCollectionPending(group, runs) || group.groupKey.startsWith("projection-collection:") ? "collection" : "delivery") : movement!.type === "collection" ? "collection" : "delivery";
+    const requested = chosenTime ?? (group ? group.deliveryWindow?.startTime || group.requiredTimes[0] : movement?.window?.startTime || movement?.requiredTime);
+    if (!requested || !/^\d\d:(00|15|30|45)$/.test(requested)) return "needs-time";
+    assignQueueItem(kind, itemId, runId, requested, lane);
+  };
+  /** + Add collection inside a physical stop: a governed collection movement AT THE CUSTOMER, then assigned to the same run (joining the native stop of that visit when it has one). */
+  const addCollectionToStop = async (runId: string, collection: { stopKey: string; description: string; quantity: number; unit: string; notes?: string }) => {
+    const run = runs.find((item) => item.runId === runId);
+    const row = run ? groupIntoVisitRows(run.stops).find((candidate) => candidate.key === collection.stopKey) : undefined;
+    const customer = row?.stops[0]?.destination.id;
+    if (!run || !row || !customer) { props.setError("This stop has no governed customer location, so a collection cannot be added to it."); return; }
+    if (!collection.description || !(collection.quantity >= 1) || !collection.unit) { props.setError("Describe what is being collected and give a quantity and unit."); return; }
+    const now = new Date().toISOString();
+    const movementId = `movement:${Date.now()}`;
+    const movement: MovementRequest = { canonicalId: movementId, entityType: "Movement Request", type: "collection", serviceDate: date, fromOplocId: customer, items: [{ description: collection.description, quantity: collection.quantity, unit: collection.unit }], ...(collection.notes ? { notes: collection.notes } : {}), createdBy: "", status: "open", version: 1, createdAt: now, updatedAt: now, audit: [] };
+    const saved = await props.act({ action: "save-movement", movement });
+    if (!saved) return;
+    const nativeStop = row.stops.filter((stop) => !stop.stopId.startsWith("projection-stop:")).map((stop) => data?.stops.find((item) => item.canonicalId === stop.stopId)).find(Boolean);
+    const outcome = await props.placementCommand({ action: "assign", runId, expectedRunVersion: run.version, movementId, ...(nativeStop ? { targetStopId: nativeStop.canonicalId } : collection.stopKey.startsWith("projection-visit:") ? { visit: collection.stopKey } : {}) });
+    if (!outcome.ok) props.setError(`The collection was saved but could not be added to this run yet: ${outcome.message} It is waiting in the queue; nothing was lost.`);
+  };
+  const live: LiveCallbacks = {
+    selectRun: (runId) => props.setInspector({ kind: "run", id: runId }),
+    closeInspector: () => props.setInspector(undefined),
+    createRun: (vehicleId, departure, returnTime) => { void createRunOnTimeline(vehicleId, departure, returnTime); },
+    runTiming: (runId, departure, returnTime) => { void runTimingCommand(runId, departure, returnTime); },
+    queueOpen: (itemId) => props.setInspector(groups.some((item) => item.groupKey === itemId) ? { kind: "group", id: itemId } : { kind: "movement", id: itemId }),
+    queueDrop: dropQueueOnRun,
+    newCollection: () => { props.setDraft({ ...props.draft, type: "collection" }); props.setShowMovement(true); },
+    newMovement: () => props.setShowMovement(true),
+    saveOrder: (runId, stopIds) => { const run = runs.find((item) => item.runId === runId); if (run) void handleInspectorAction({ action: "set-run-stop-order", runId, expectedRunVersion: run.version, stopIds }); },
+    addCollection: (runId, collection) => { void addCollectionToStop(runId, collection); },
+    returnStop: (runId, stopId) => returnWorkToPlanning(runId, stopId),
+    viewStop: (runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId }),
+    retireRun: (runId) => { const run = runs.find((item) => item.runId === runId); if (run) void handleInspectorAction({ action: "retire-empty-run", runId, expectedRunVersion: run.version }); },
+    dateStep: (delta) => goToDate(addOperationalDays(date, delta)),
+    dateSet: goToDate,
+    thisWeek: () => goToDate(operationalDate()),
+    refresh: () => void props.load(true, props.projectionNeedsMaterialisation),
+  };
+  const liveNotices: ShellNotice[] = [
+    ...(props.error ? [{ id: "error", tone: "error" as const, text: <>{props.error}{props.errorReference && <> <small>Reference: {props.errorReference}</small></>}</>, action: { label: props.projectionNeedsMaterialisation ? "Materialise and retry" : "Try again", onClick: () => void props.load(true, props.projectionNeedsMaterialisation) } }] : []),
+    ...(props.authRequired ? [{ id: "auth", tone: "error" as const, text: "Your session needs signing in again.", action: { label: "Sign in again", onClick: props.onSignInAgain } }] : []),
+    ...(props.passiveSyncError ? [{ id: "passive", tone: "warning" as const, text: props.passiveSyncError }] : []),
+    ...(data && props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" ? [{ id: "stale", tone: "warning" as const, text: "This materialised view is not current. Refresh before dispatching." }] : []),
+    ...(data && !data.planner.upstreamHealth.fulfilment.available ? [{ id: "fulfilment", tone: "warning" as const, text: "Incoming work is unavailable; existing vehicle schedules remain visible." }] : []),
+    ...(needsMovementLabels && locations.error ? [{ id: "labels", tone: "warning" as const, text: locations.error, action: { label: "Retry movement labels", onClick: () => void locations.retry() } }] : []),
+    ...Object.entries(placementErrors).map(([identity, message]) => ({ id: `placement:${identity}`, tone: "warning" as const, text: message })),
+  ];
+  if (!classicUi) {
+    const pieces = Object.assign({}, ...runs.map((run) => stopPiecesForRun(run, { projection: data?.projection, rawStops: data?.stops || [], rawRequirements: data?.requirements || [], movements })));
+    const selection = props.inspector;
+    return <JourneyPlannerLive
+      date={date}
+      dateLabel={formatOperationalDate(date, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+      planner={data?.planner || EMPTY_PLANNER}
+      runs={runs}
+      selectedRunId={selection ? selection.kind === "run" ? selection.id : selection.kind === "stop" || selection.kind === "load" ? selection.runId : undefined : undefined}
+      runInspectorOpen={selection?.kind === "run"}
+      status={!data ? (props.projectionState === "LOADING" ? "loading" : "error") : "ready"}
+      pendingRunTimings={pendingRunTimings}
+      creatingRuns={creatingRuns}
+      queueWork={{
+        groups: groups.map((group) => ({ group, state: queueStateForGroup(group), collectionPending: groupCollectionPending(group, runs) })).filter((entry) => entry.state !== "scheduled"),
+        movements: movements.map((movement) => ({ movement, state: queueStateForMovement(movement) })).filter((entry) => entry.state !== "scheduled"),
+      }}
+      pendingQueueIds={new Set(Object.keys(pendingSchedules))}
+      pieces={pieces}
+      busy={props.busy}
+      notices={liveNotices}
+      fetchedAt={props.data?.fetchedAt}
+      refreshing={props.refreshing}
+      newMovementDisabled={!data?.planner.upstreamHealth.oplocs.available}
+      healthNote={<Health health={data?.planner.upstreamHealth} />}
+      sidePanel={selection && selection.kind !== "run" ? legacyInspector : undefined}
+      modals={<>
+        {props.showMovement && <div className={dialogStyles.backdrop} onKeyDown={(event) => { if (event.key === "Escape") props.setShowMovement(false); }}><div className={`${dialogStyles.dialog} ${dialogStyles.wide}`} role="dialog" aria-modal="true" aria-label="New movement"><MovementForm draft={props.draft} setDraft={props.setDraft} onClose={() => props.setShowMovement(false)} onSave={props.createMovement} busy={props.busy} /></div></div>}
+        {props.visitChoice && <VisitChooser prompt={props.visitChoice.prompt} onChoose={props.visitChoice.resolve} />}
+      </>}
+      callbacks={live}
+    />;
+  }
   return <main className={`mock-tower real-planner${props.inspector ? " has-inspector" : ""}`}>
     <header className="mock-shell">
       <div className="mock-brand"><img src="/brand-assets/logos/fika_logo_white_png.png" alt="FIKA" /><span>OS</span></div>
@@ -2425,26 +2525,7 @@ function Inspector({
     ? runs.find((item) => item.runId === group.requirementRefs.find((ref) => ref.stopId === assignedDelivery.stopId)?.runId)
     : undefined;
   /** Individually tracked work inside each physical stop, derived from canonical loads / movements (never from names). */
-  const stopPieces = (target: PlannerDay["runs"][number]) => Object.fromEntries(target.stops.map((item): [string, StopPiece[]] => {
-    if (item.stopId.startsWith("projection-stop:")) {
-      const lane = item.stopId.startsWith("projection-stop:collection:") ? "collection" as const : "delivery" as const;
-      const anchor = item.stopId.slice(`projection-stop:${lane}:`.length);
-      const group = projection?.deliveryLoads.find((load) => load.id === anchor || (load.loadIds || []).includes(anchor));
-      const ids = group?.loadIds?.length ? group.loadIds : group ? [group.id] : [];
-      const found = ids.flatMap((id) => {
-        const jobs = group!.jobs.filter((job) => job.assignedLoadId === id || (ids.length === 1 && !job.assignedLoadId));
-        return jobs.length ? jobs.map((job) => ({ key: job.id, kind: lane, label: job.contents.map((content) => `${content.quantity} ${content.unit} ${content.description}`).join(", ") || item.destination.label })) : [{ key: id, kind: lane, label: item.destination.label }];
-      });
-      return [item.stopId, found];
-    }
-    const raw = rawStops.find((candidate) => candidate.canonicalId === item.stopId);
-    const fromMovements = (raw?.movementRequestIds || []).flatMap((id) => {
-      const movement = planner.movements.find((candidate) => candidate.movementId === id);
-      return movement ? [{ key: id, kind: movement.type, label: movement.items.map((line) => `${line.quantity} × ${line.description}`).join(", ") }] : [];
-    });
-    const fromRequirements = (raw?.requirementRefs || []).map((ref) => ({ key: ref.requirementId, kind: (raw?.linkedOperation === "collection" ? "collection" : "delivery") as StopPiece["kind"], label: rawRequirements.find((requirement) => requirement.canonicalId === ref.requirementId)?.lines.map((line) => line.displayNameSnapshot).join(", ") || item.destination.label }));
-    return [item.stopId, [...fromRequirements, ...fromMovements]];
-  }));
+  const stopPieces = (target: PlannerDay["runs"][number]) => stopPiecesForRun(target, { projection, rawStops, rawRequirements, movements: planner.movements });
   return <aside className="mock-inspector" aria-label="Details inspector" onKeyDown={(event) => { if (event.key === "Escape" && !event.defaultPrevented && !(event.target instanceof HTMLElement && event.target.closest("[role=dialog]"))) { event.preventDefault(); onClose(); } }}>
     <header><div><p className="eyebrow">{run ? "Run inspector" : stop ? "Stop inspector" : selection.kind === "load" ? "Load inspector" : "Inspector"}</p><h2>{group?.destinationLabel || movement?.type || stopTitle || (selection.kind === "load" ? `Load · ${selectedStop?.destination.label || "Details"}` : undefined) || runName || "Details"}</h2></div><button className="close" onClick={onClose} aria-label="Close inspector">×</button></header>
     {group && <>

@@ -99,9 +99,15 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
   const plannedStart = (stop: DeliveryStop) => stop.plannedWindow?.startTime || stop.plannedArrivalTime || "99:99";
   const stopOrderById = new Map<string, number>();
   const runs = projectedRuns.map((run) => {
-    const nativeIds = (run.orderedStopIds || []).filter((id) => actualStops.some((stop) => stop.canonicalId === id));
+    // Native stops are placed by their own id, or - when they joined a load-backed visit - by that visit's id, so saving an
+    // order that names the visit never drops its native collection member.
+    const stored = new Set(run.orderedStopIds || []);
+    const nativeIds = Array.from(new Set([
+      ...(run.orderedStopIds || []).filter((id) => actualStops.some((stop) => stop.canonicalId === id)),
+      ...actualStops.filter((stop) => stop.runId === run.canonicalId && stop.visitId && stored.has(visitStopId(stop.visitId))).map((stop) => stop.canonicalId),
+    ]));
     const candidates = [
-      ...nativeIds.map((id) => ({ id, stop: actualStops.find((stop) => stop.canonicalId === id)! })),
+      ...nativeIds.map((id) => { const stop = actualStops.find((candidate) => candidate.canonicalId === id)!; return { id, stop, aliases: stop.visitId ? [visitStopId(stop.visitId)] : [] }; }),
       ...(loadStopsByRun.get(run.canonicalId) || []).map((stop) => ({ id: stop.canonicalId, stop, aliases: [...(stop.canonicalLoadIds || []).map((loadId) => `projection-stop:${stop.movementType === "collection" ? "collection" : "delivery"}:${loadId}`), ...(stop.visitId ? [visitStopId(stop.visitId)] : [])] })),
     ];
     const ordered = applyStoredStopOrder(candidates, run.orderedStopIds || [], (left, right) => plannedStart(left.stop).localeCompare(plannedStart(right.stop)) || left.id.localeCompare(right.id), (left, right) => Number(left.stop.movementType === "collection") - Number(right.stop.movementType === "collection"));

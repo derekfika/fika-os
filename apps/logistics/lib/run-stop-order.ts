@@ -12,7 +12,7 @@ import { visitStopId, type VisitLoad } from "./stop-visits";
  * later regrouping does not strand a stored order.
  */
 export type RunStopWork = {
-  native: Pick<DeliveryStop, "canonicalId" | "canonicalLoadIds">[];
+  native: Pick<DeliveryStop, "canonicalId" | "canonicalLoadIds" | "visitId">[];
   legs: Array<{ load: VisitLoad; lane: "delivery" | "collection" }>;
 };
 
@@ -26,8 +26,10 @@ export type PhysicalStop = { key: string; ids: string[] };
  * share a visit id are ONE stop (a mixed delivery + collection visit when both lanes share it).
  */
 export function physicalStops(work: RunStopWork, groupKey: (load: RunStopWork["legs"][number]["load"], lane: "delivery" | "collection") => string): PhysicalStop[] {
-  const result: PhysicalStop[] = work.native.map((stop) => ({ key: stop.canonicalId, ids: [stop.canonicalId] }));
+  // A native stop that joined a load-backed visit IS that physical stop: it shares the visit's key and may be named by the visit id.
+  const result: PhysicalStop[] = work.native.filter((stop) => !stop.visitId).map((stop) => ({ key: stop.canonicalId, ids: [stop.canonicalId] }));
   const groups = new Map<string, string[]>();
+  for (const stop of work.native) if (stop.visitId) groups.set(`visit:${stop.visitId}`, [...(groups.get(`visit:${stop.visitId}`) || []), stop.canonicalId, visitStopId(stop.visitId)]);
   for (const leg of work.legs) {
     // A native stop that already owns the load represents it; never double count a visit.
     if (work.native.some((stop) => (stop.canonicalLoadIds || []).includes(leg.load.id))) continue;

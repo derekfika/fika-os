@@ -78,3 +78,27 @@ test("a stored id for work that has since left the run is ignored, not resurrect
   const result = projectionToDashboardData(projectionWith(["projection-stop:delivery:gone", "projection-stop:delivery:b"]));
   assert.deepEqual(result.runs[0].orderedStopIds, ["projection-stop:delivery:b", "projection-stop:delivery:a", "projection-stop:delivery:c"]);
 });
+
+test("a native collection stop that joined a load-backed visit IS that physical stop: one order key, either id names it, naming both is refused", () => {
+  const visitLoad = { ...load("a", "site:1"), deliveryVisitId: "visit:v1" };
+  const group = (candidate: typeof visitLoad) => `visit:${candidate.deliveryVisitId}`;
+  const work = { native: [{ canonicalId: "stop:collect", visitId: "visit:v1" }, { canonicalId: "stop:other" }], legs: [{ load: visitLoad, lane: "delivery" as const }] };
+  assert.equal(physicalStops(work, group as never).length, 2, "the joined native stop does not add a stop");
+  assert.equal(validateRunStopOrder(["stop:other", "projection-visit:visit:v1"], work, group as never), undefined);
+  assert.equal(validateRunStopOrder(["stop:other", "stop:collect"], work, group as never), undefined, "its own id also names the visit");
+  assert.match(validateRunStopOrder(["stop:other", "stop:collect", "projection-visit:visit:v1"], work, group as never)!, /same physical stop twice/);
+});
+
+test("saving an order that names the visit keeps its native collection member on the run (read model)", () => {
+  const projection: LogisticsDayProjection = {
+    serviceDate: "2026-10-28", revision: 2, lastChangeSequence: 10, state: "CURRENT", planningQueue: [], exceptions: [],
+    summary: { queuedJobs: 0, loads: 1, assignedJobs: 1, collectedJobs: 0 }, rebuiltAt: "2026-10-28T08:00:00.000Z",
+    runs: [{ canonicalId: "r1", serviceDate: "2026-10-28", vehicleId: "van1", status: "planned", version: 3, orderedStopIds: ["projection-visit:visit:v1"], returnToCpuRequired: true, createdAt: "now", updatedAt: "now", audit: [] } as never],
+    deliveryLoads: [{ id: "load:a", serviceDate: "2026-10-28", originOplocId: "cpu", destinationOplocId: "site:1", destinationLabelSnapshot: "Site One", scheduledTime: "10:00", status: "planned", runId: "r1", vehicleId: "van1", deliveryVisitId: "visit:v1", jobs: [], jobCount: 0, totalUnits: 0, collectedCount: 0, readiness: "ready" } as never],
+  };
+  (projection as unknown as { stops: unknown[] }).stops = [{ canonicalId: "stop:collect", runId: "r1", sequence: 1, locationOplocId: "site:1", locationLabelSnapshot: "Site One", visitId: "visit:v1", movementRequestIds: ["m1"], movementType: "collection", requirementRefs: [], status: "planned", version: 1, audit: [], createdAt: "now", updatedAt: "now" }];
+  const planner = projectionToDashboardData(projection).planner;
+  const stops = planner.runs[0].stops;
+  assert.deepEqual(stops.map((stop) => stop.visitId), ["visit:v1", "visit:v1"], "delivery leg and native collection are both on the run, in one visit");
+  assert.ok(stops.some((stop) => stop.stopId === "stop:collect"));
+});

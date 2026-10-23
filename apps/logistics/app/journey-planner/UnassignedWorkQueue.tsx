@@ -7,11 +7,17 @@ import styles from "./queue.module.css";
 
 type Filter = "all" | "delivery" | "collection";
 
-export function UnassignedWorkQueue({ items, status = "ready", collapsed, onToggleCollapsed, onOpen, onNewCollection }: {
+export function UnassignedWorkQueue({ items, status = "ready", collapsed, peek = false, onToggleCollapsed, onOpen, onNewCollection, onItemPointerDown, onDock }: {
   items: QueueItemView[];
   status?: PlannerStatus;
   collapsed: boolean;
+  /** Rendered as a temporary overlay over a collapsed rail (so the Run inspector and its selection stay put). */
+  peek?: boolean;
   onToggleCollapsed: () => void;
+  /** Pointer press on a card: the host decides whether it becomes a drag. */
+  onItemPointerDown?: (event: React.PointerEvent<HTMLElement>, item: QueueItemView) => void;
+  /** Peek only: pin the queue open as a docked column. */
+  onDock?: () => void;
   onOpen?: (itemId: string) => void;
   /** Standalone collection: becomes ordinary assignable queue work (maps to New movement). */
   onNewCollection?: () => void;
@@ -26,12 +32,13 @@ export function UnassignedWorkQueue({ items, status = "ready", collapsed, onTogg
     <span className={styles.railCount} aria-label={`${items.length} unassigned`}>{items.length}</span>
     <span className={styles.railLabel}>Unassigned</span>
   </aside>;
-  return <aside className={`${styles.queue}`} aria-label="Unassigned work" data-logistics-planning-queue>
+  return <aside className={`${styles.queue} ${peek ? styles.peek : ""}`} aria-label="Unassigned work" data-logistics-planning-queue data-queue-peek={peek ? "true" : undefined}>
     <div className={styles.heading}>
       <h2>Unassigned work</h2><span aria-label={`${items.length} items`}>({items.length})</span>
       <button type="button" className={`${styles.railButton} ${styles.collapseButton}`} onClick={onToggleCollapsed} aria-label="Collapse unassigned work" aria-expanded="true"><ChevronLeftIcon size={18} /></button>
     </div>
     <p className={styles.hint}>Drag to a run, or click for details.</p>
+    {peek && onDock && <button type="button" className={styles.dockButton} onClick={onDock}>Dock beside the timeline</button>}
     <div className={styles.filters} role="group" aria-label="Work type">
       {(["all", "delivery", "collection"] as const).map((key) => <button key={key} type="button" className={styles.filter} aria-pressed={filter === key} onClick={() => setFilter(key)}>{key === "all" ? "All" : key === "delivery" ? "Deliveries" : "Collections"} <b>{counts[key]}</b></button>)}
     </div>
@@ -39,12 +46,13 @@ export function UnassignedWorkQueue({ items, status = "ready", collapsed, onTogg
     {status === "loading" ? <div aria-busy="true" aria-label="Loading unassigned work">{[0, 1, 2, 3, 4].map((index) => <div key={index} className={styles.skeleton} />)}</div>
       : <ul className={styles.list} aria-label="Unassigned work items">
         {visible.length === 0 && <li className={styles.empty}><strong>{items.length === 0 ? "No unassigned work" : "No matching work"}</strong>{items.length === 0 ? "Everything for this day is on a run." : "Try a different filter or search."}</li>}
-        {visible.map((item) => <li key={item.id} className={styles.item} data-timeline-queue-id={item.id} data-kind={item.kind} data-pending={item.pending ? "true" : undefined}>
+        {visible.map((item) => <li key={item.id} className={styles.item} data-timeline-queue-id={item.id} data-kind={item.kind} data-pending={item.pending ? "true" : undefined} data-draggable={item.draggable === false || item.pending ? "false" : "true"} onPointerDown={item.draggable === false || item.pending ? undefined : (event) => onItemPointerDown?.(event, item)}>
           <span className={styles.grip} aria-hidden="true"><GripIcon /></span>
           <button type="button" className={styles.body} onClick={() => onOpen?.(item.id)} aria-label={`${item.destination}, ${item.kind}${item.window ? `, ${item.window}` : ""}. Open details`}>
             <span className={styles.name} title={item.destination}>{item.destination}</span>
             <span className={styles.desc}>{item.description}</span>
             {(item.window || item.quantity) && <span className={styles.meta} title={[item.window, item.quantity].filter(Boolean).join(" · ")}>{item.window ?? item.quantity}</span>}
+            {item.stateLabel && <span className={styles.state}>{item.stateLabel}</span>}
             {item.attention && <span className={styles.attention}>⚠ {item.attention}</span>}
           </button>
           <span className={styles.badge} data-kind={item.kind}><BoxIcon size={15} />{item.kind === "delivery" ? "Delivery" : "Collection"}</span>

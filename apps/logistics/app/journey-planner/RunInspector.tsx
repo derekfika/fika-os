@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDownIcon, ArrowUpIcon, BoxIcon, BuildingIcon, ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, CloseIcon, CpuIcon, GripIcon, InfoIcon, LockIcon, PencilIcon, PlusIcon, TrashIcon } from "./icons";
 import { statusLabel, type InspectorStopView, type RunInspectorView } from "./model";
+import { journeyTimeProblem } from "./NewRunDialog";
 import styles from "./inspector.module.css";
 
 export type InspectorTab = "overview" | "stops" | "loads" | "driver";
@@ -14,7 +15,7 @@ const summary = (stop: Extract<InspectorStopView, { kind: "visit" }>) => [stop.d
  * Docked Run inspector. Presentation only: ordering edits are local until "Save order", which raises an
  * event; the container maps it to the authoritative `set-run-stop-order` command and re-seeds from the result.
  */
-export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving = false, onClose, onSaveOrder, onAddCollection, onViewLoads, onEditTimes, onRetire }: {
+export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving = false, timesOpen = false, onTimesOpen, retireConfirmOpen, onRetireConfirmOpen, onClose, onSaveOrder, onAddCollection, onViewLoads, onSaveTimes, onReturnStop, onRetire }: {
   view: RunInspectorView;
   tab: InspectorTab;
   onTab: (tab: InspectorTab) => void;
@@ -25,7 +26,15 @@ export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving =
   onSaveOrder?: (visitKeys: string[]) => void;
   onAddCollection?: (collection: NewCollection) => void;
   onViewLoads?: (stopKey: string) => void;
-  onEditTimes?: () => void;
+  /** Proposes exact planned CPU times. Saved only when the host confirms. */
+  onSaveTimes?: (departure: string, returnTime: string) => void;
+  onReturnStop?: (stopKey: string) => void;
+  /** The host may open the exact-times editor (e.g. from the row menu or the draft slot). */
+  timesOpen?: boolean;
+  onTimesOpen?: (open: boolean) => void;
+  /** The host may open the delete confirmation (e.g. from the row menu). */
+  retireConfirmOpen?: boolean;
+  onRetireConfirmOpen?: (open: boolean) => void;
   onRetire?: () => void;
 }) {
   const { run } = view;
@@ -34,10 +43,17 @@ export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving =
   const [order, setOrder] = useState(original);
   const [dragging, setDragging] = useState<string>();
   const [over, setOver] = useState<string>();
-  const [confirm, setConfirm] = useState(false);
+  const [localConfirm, setLocalConfirm] = useState(false);
+  const confirm = retireConfirmOpen ?? localConfirm;
+  const setConfirm = (open: boolean) => { setLocalConfirm(open); onRetireConfirmOpen?.(open); };
   const [collectionFor, setCollectionFor] = useState<string>();
+  const [dep, setDep] = useState(run.departure ?? "");
+  const [ret, setRet] = useState(run.return ?? "");
+  const [timesTouched, setTimesTouched] = useState(false);
+  useEffect(() => { setDep(run.departure ?? ""); setRet(run.return ?? ""); setTimesTouched(false); }, [run.id, run.departure, run.return]);
+  const timesProblem = journeyTimeProblem(dep, ret) ?? (!dep && !ret ? "Enter a departure and a return time." : undefined);
   const signature = `${run.id}:${original.join("|")}`;
-  useEffect(() => { setOrder(original); setConfirm(false); setCollectionFor(undefined); }, [signature]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setOrder(original); setLocalConfirm(false); setCollectionFor(undefined); }, [signature]); // eslint-disable-line react-hooks/exhaustive-deps
   const changed = order.join("|") !== original.join("|");
   const byKey = new Map(visits.map((stop) => [stop.key, stop]));
   const ordered = order.map((key) => byKey.get(key)).filter((stop): stop is Extract<InspectorStopView, { kind: "visit" }> => Boolean(stop));
@@ -53,8 +69,14 @@ export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving =
         <div className={styles.plannedLabel}>Planned times</div>
         <div className={styles.plannedTimes} data-missing={run.departure ? undefined : "true"}>{run.departure && run.return ? <>{run.departure}<span className={styles.arrowGlyph}>→</span>{run.return}</> : "Set departure and return"}</div>
       </div>
-      <button type="button" className={styles.outline} disabled={!run.editable} onClick={onEditTimes} title={run.editable ? undefined : "Times can’t change once a run is ready or dispatched."}><PencilIcon size={17} />Edit times</button>
+      <button type="button" className={styles.outline} disabled={!run.editable || run.pending} aria-expanded={timesOpen} onClick={() => onTimesOpen?.(!timesOpen)} title={run.editable ? undefined : "Times can’t change once a run is ready or dispatched."}><PencilIcon size={17} />Edit times</button>
     </div>
+    {timesOpen && run.editable && <form className={styles.timesForm} aria-label="Edit planned CPU times" onSubmit={(event) => { event.preventDefault(); setTimesTouched(true); if (timesProblem) return; onSaveTimes?.(dep, ret); onTimesOpen?.(false); }}>
+      <label>CPU departure<input name="departure" type="time" step={900} value={dep} onChange={(event) => setDep(event.target.value)} aria-invalid={timesTouched && Boolean(timesProblem)} /></label>
+      <label>CPU return<input name="return" type="time" step={900} value={ret} onChange={(event) => setRet(event.target.value)} aria-invalid={timesTouched && Boolean(timesProblem)} /></label>
+      {timesTouched && timesProblem && <p className={styles.formProblem} role="alert">{timesProblem}</p>}
+      <div className={styles.formActions}><button type="button" className={styles.outline} style={{ height: 38 }} onClick={() => { onTimesOpen?.(false); setDep(run.departure ?? ""); setRet(run.return ?? ""); }}>Cancel</button><button type="submit" className={styles.primary} style={{ height: 38, flex: "0 0 auto" }}>Save times</button></div>
+    </form>}
     <div className={styles.facts}>
       <div className={styles.fact}><span>Vehicle</span><strong>{run.vehicleLabel}</strong></div>
       <div className={styles.fact}><span>Status</span><strong><i className={styles.dot} data-status={run.status} />{statusLabel(run.status)}{run.pending ? " · saving" : ""}</strong></div>
@@ -122,6 +144,7 @@ export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving =
                 <div className={styles.pieceActions}>
                   {stop.canAddCollection && <button type="button" className={`${styles.outline} ${styles.primaryOutline}`} onClick={() => setCollectionFor(collectionFor === stop.key ? undefined : stop.key)} aria-expanded={collectionFor === stop.key}><PlusIcon size={17} />Add collection</button>}
                   <button type="button" className={styles.outline} onClick={() => onViewLoads?.(stop.key)}>View loads</button>
+                  {run.editable && <button type="button" className={styles.outline} disabled={saving} onClick={() => onReturnStop?.(stop.key)} aria-label={`Return ${stop.name} to the queue`}>Return to queue</button>}
                 </div>
                 {collectionFor === stop.key && <form className={styles.collectionForm} aria-label={`Add a collection at ${stop.name}`} onSubmit={(event) => {
                   event.preventDefault();
@@ -144,18 +167,20 @@ export function RunInspector({ view, tab, onTab, expandedKey, onExpand, saving =
           </div></li>
         </ol>
         </div>
+        {changed && !saving && <p className={styles.unsaved} role="status" data-testid="order-unsaved">Order changed — not saved yet.</p>}
         {view.orderWarnings.length > 0 && <div className={styles.warning} role="status" style={{ margin: "14px 0 0" }}><strong>Order conflicts with planned times</strong><br />{view.orderWarnings.join(" ")} Times were not changed.</div>}
         <div className={styles.note}><InfoIcon size={20} /><span>Reordering stops changes the visiting order. Planned times are not automatically adjusted.</span></div>
       </>}
       {tab === "loads" && <div>{visits.length === 0 && <p className={styles.plannedLabel}>No work on this run yet.</p>}{visits.map((stop) => <div key={stop.key} className={styles.loadsGroup}><h3 className={styles.sectionTitle}>{stop.name}</h3>{stop.pieces.map((piece) => <div key={piece.key} className={styles.piece} data-kind={piece.kind} style={{ gridTemplateColumns: "40px minmax(0,1fr) auto" }}><span className={styles.pieceIcon}><BoxIcon size={20} /></span><span><span className={styles.pieceTitle}>{piece.title}</span><span className={styles.pieceDetail}>{piece.detail}</span></span><span className={styles.badge} data-kind={piece.kind}>{piece.kind === "delivery" ? "Delivery" : "Collection"}</span></div>)}</div>)}</div>}
-      {tab === "driver" && <div><p className={styles.plannedLabel} style={{ margin: "0 0 10px" }}>Preview of the driver’s route. Execution happens in the driver app.</p><ol className={styles.driverList}><li><span className={styles.number}>1</span><div><strong>CPU</strong><span>Depart{departure && "time" in departure && departure.time ? ` ${departure.time}` : ""}</span></div></li>{ordered.map((stop, index) => <li key={stop.key}><span className={styles.number}>{index + 2}</span><div><strong>{stop.name}</strong><span>{summary(stop)}</span></div></li>)}<li><span className={styles.number}>{ordered.length + 2}</span><div><strong>CPU</strong><span>Return{arrival && "time" in arrival && arrival.time ? ` ${arrival.time}` : ""}</span></div></li></ol></div>}
+      {tab === "driver" && <div><p className={styles.plannedLabel} style={{ margin: "0 0 10px" }}>Preview of the driver’s route in saved visiting order. Execution happens in the driver app.{run.driverHref && <> <a href={run.driverHref}>Open driver workflow →</a></>}</p><ol className={styles.driverList}><li><span className={styles.number}>1</span><div><strong>CPU</strong><span>Depart{departure && "time" in departure && departure.time ? ` ${departure.time}` : ""}</span></div></li>{ordered.map((stop, index) => <li key={stop.key}><span className={styles.number}>{index + 2}</span><div><strong>{stop.name}</strong><span>{summary(stop)}</span></div></li>)}<li><span className={styles.number}>{ordered.length + 2}</span><div><strong>CPU</strong><span>Return{arrival && "time" in arrival && arrival.time ? ` ${arrival.time}` : ""}</span></div></li></ol></div>}
     </div>
     <div className={styles.footer}>
       {confirm
         ? <div className={styles.confirm} role="alertdialog" aria-label="Delete empty run" onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setConfirm(false); } }}><strong>Delete this empty run?</strong><span>It will be removed from the timeline. Its history is kept for audit.</span><div><button type="button" ref={confirmCancel} onClick={() => setConfirm(false)}>Cancel</button><button type="button" data-danger onClick={() => { setConfirm(false); onRetire?.(); }}>Delete empty run</button></div></div>
         : <>
           {run.canRetire && <button type="button" className={styles.danger} onClick={() => setConfirm(true)}><TrashIcon size={18} />Delete empty run</button>}
-          {tab === "stops" && <button type="button" className={styles.primary} disabled={!changed || saving || !run.editable} onClick={() => onSaveOrder?.(order)}>{saving ? "Saving…" : changed ? "Save order" : "Save order"}</button>}
+          {tab === "stops" && changed && !saving && <button type="button" className={styles.outline} style={{ height: 46 }} onClick={() => setOrder(original)}>Reset</button>}
+          {tab === "stops" && <button type="button" className={styles.primary} data-order-state={saving ? "saving" : changed ? "unsaved" : "saved"} disabled={!changed || saving || !run.editable} onClick={() => onSaveOrder?.(order)}>{saving ? "Saving…" : "Save order"}</button>}
         </>}
     </div>
   </aside>;

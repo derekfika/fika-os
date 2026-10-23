@@ -2036,6 +2036,16 @@ async function handlePost(request: NextRequest) {
               "This movement is no longer open for planning.",
             );
         }
+        // Joining a LOAD-BACKED visit (explicit visit id only): the id must name a visit at this customer on this run.
+        let joinVisitId: string | undefined;
+        if (movement && typeof body.visit === "string" && body.visit !== "new" && movement.type !== "transfer") {
+          const requestedVisit = body.visit.startsWith("projection-visit:") ? body.visit.slice("projection-visit:".length) : body.visit;
+          const customer = movement.toOplocId || movement.fromOplocId;
+          const dayLoads = (await transaction.get(deliveryLoads().where("serviceDate", "==", run.serviceDate))).docs.map((doc) => doc.data() as import("@/lib/types").DeliveryLoad);
+          const candidate = customer ? visitCandidates(dayLoads, { runId: run.canonicalId, customerOplocId: customer }).find((item) => item.visitId === requestedVisit) : undefined;
+          if (!candidate) throw new HttpError(422, "That visit is not at this customer on this run.");
+          joinVisitId = requestedVisit;
+        }
         const planned = body.plannedArrivalTime !== undefined || body.plannedWindow !== undefined
           ? validatePlannedSchedule(body.plannedArrivalTime, body.plannedWindow)
           : undefined;
@@ -2064,7 +2074,7 @@ async function handlePost(request: NextRequest) {
                   : movement!.toAddress,
               },
               by,
-              { newVisit: body.newVisit === true, targetStopId: typeof body.targetStopId === "string" ? body.targetStopId : undefined },
+              { newVisit: body.newVisit === true || body.visit === "new", targetStopId: typeof body.targetStopId === "string" ? body.targetStopId : undefined, ...(joinVisitId ? { visitId: joinVisitId } : {}) },
             );
         const byId = new Map(scoped.map((stop) => [stop.canonicalId, stop]));
         newStops.forEach((stop) => byId.set(stop.canonicalId, stop));

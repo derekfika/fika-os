@@ -160,6 +160,8 @@ export function combineStop(
     newVisit?: boolean;
     /** Join this specific stop (must be an open stop at this location on this run). */
     targetStopId?: string;
+    /** Make this work part of a LOAD-BACKED physical visit (already verified by the caller): the new native stop carries the visit id. */
+    visitId?: string;
   },
 ) {
   const now = input.now || new Date().toISOString();
@@ -173,9 +175,9 @@ export function combineStop(
   if (input.targetStopId && !openVisits.some((stop) => stop.canonicalId === input.targetStopId))
     throw Object.assign(new Error("That visit is not an open stop at this customer on this run."), { code: "INVALID_REQUEST" });
   // Several open visits at one customer: never guess. Franco chooses one, or starts a new visit.
-  if (!input.newVisit && !input.targetStopId && openVisits.length > 1 && !input.transferMovementId)
+  if (!input.newVisit && !input.targetStopId && !input.visitId && openVisits.length > 1 && !input.transferMovementId)
     throw Object.assign(new Error("This customer already has more than one visit on this run. Choose which visit to add this work to, or start a new visit."), { code: "LOGISTICS_VISIT_CHOICE_REQUIRED" });
-  const existing = input.newVisit ? undefined : input.targetStopId ? openVisits.find((stop) => stop.canonicalId === input.targetStopId) : stops.find(
+  const existing = input.newVisit ? undefined : input.targetStopId ? openVisits.find((stop) => stop.canonicalId === input.targetStopId) : input.visitId ? openVisits.find((stop) => stop.visitId === input.visitId) : stops.find(
     (stop) =>
       stop.runId === input.runId &&
       (input.locationOplocId
@@ -203,6 +205,7 @@ export function combineStop(
         runId: input.runId,
         sequence: stops.length + 1,
         locationOplocId: input.locationOplocId,
+        ...(input.visitId ? { visitId: input.visitId } : {}),
         ...(input.oneOffEndpointId ? { oneOffEndpointId: input.oneOffEndpointId } : {}),
         locationLabelSnapshot: input.locationLabel,
         requirementRefs: input.requirement
@@ -324,7 +327,7 @@ export function assignMovementStops(
   movement: MovementRequest,
   labels: { from?: string; to?: string },
   by: string,
-  visit: { newVisit?: boolean; targetStopId?: string } = {},
+  visit: { newVisit?: boolean; targetStopId?: string; visitId?: string } = {},
 ) {
   const scoped = stops.filter((stop) => stop.runId === runId);
   let working = scoped;

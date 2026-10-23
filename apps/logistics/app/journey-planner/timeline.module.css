@@ -53,7 +53,8 @@
 .actionsWrap { position: absolute; z-index: 3; inset: 12px 0 auto 0; display: flex; pointer-events: none; }
 .actions { position: sticky; right: 0; display: flex; gap: 10px; margin-left: auto; padding: 0 12px 0 14px; pointer-events: auto; background: linear-gradient(90deg, transparent, var(--fika-surface-card) 14px); }
 .actionButton { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid var(--jp-line-strong); border-radius: 10px; background: var(--fika-surface-card); cursor: pointer; }
-.menu { position: absolute; z-index: 20; top: 46px; right: 12px; display: grid; min-width: 210px; padding: 6px; border: 1px solid var(--jp-line-strong); border-radius: 11px; background: var(--fika-surface-card); box-shadow: var(--shadow-md); pointer-events: auto; }
+.menuAnchor { position: relative; }
+.menu { position: fixed; z-index: 70; display: grid; min-width: 210px; padding: 6px; border: 1px solid var(--jp-line-strong); border-radius: 11px; background: var(--fika-surface-card); box-shadow: var(--shadow-md); pointer-events: auto; }
 .menu button { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; }
 .menu button:hover:not(:disabled) { background: var(--jp-lilac); }
 .menu button:disabled { color: var(--jp-muted); cursor: not-allowed; }
@@ -83,3 +84,19 @@ button.chip:hover { border-color: var(--jp-primary); }
 .empty span { color: var(--jp-ink-2); }
 .skeletonRow { height: 112px; margin-bottom: 12px; border-radius: 13px; background: linear-gradient(90deg, var(--jp-lilac), var(--fika-surface-subtle), var(--jp-lilac)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
 @keyframes shimmer { to { background-position: -200% 0; } }
+
+.titleVehicle { color: var(--jp-ink-2); font-weight: 400; }
+.status[data-status="pending"] { border-color: var(--jp-lilac-edge); color: var(--jp-primary-ink); }
+.row[data-pending="true"] .bar { opacity: .75; border-style: dashed; cursor: progress; }
+.bar[data-dragging="true"] { z-index: 4; cursor: grabbing; box-shadow: var(--shadow-md); }
+.bar[data-invalid="true"] { border-color: var(--fika-status-danger); background: var(--fika-status-danger-surface); color: var(--fika-status-danger); }
+.bar[data-editable="true"] { cursor: grab; }
+.barGripEnd[role="slider"] { cursor: ew-resize; }
+.row[data-drop="valid"] .track, .row[data-drop="valid"] .label { background: color-mix(in srgb, var(--fika-status-success-surface) 70%, var(--fika-surface-card)); }
+.row[data-drop="invalid"] .track, .row[data-drop="invalid"] .label { background: color-mix(in srgb, var(--fika-status-danger-surface) 55%, var(--fika-surface-card)); }
+.dropLabel { position: sticky; left: calc(var(--label-w) + 14px); z-index: 5; display: inline-flex; width: max-content; margin: -4px 0 0 14px; padding: 4px 11px; border-radius: 999px; background: var(--fika-surface-card); box-shadow: 0 0 0 1px currentColor; font-size: 13.5px; font-weight: 700; pointer-events: none; }
+.row[data-drop="valid"] .dropLabel { color: var(--fika-status-success); }
+.row[data-drop="invalid"] .dropLabel { color: var(--fika-status-danger); }
+.chip[data-active="true"] { border-color: var(--jp-primary); box-shadow: 0 0 0 2px var(--jp-lilac); }
+.chip[data-kind="visit"] { max-width: min(170px, 30cqw); }
+.arrow { margin-left: -2px; }

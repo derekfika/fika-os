@@ -3,8 +3,8 @@ import { expect, type Page } from "@playwright/test";
 export type Issues = { console: string[]; network: string[] };
 
 /** Layout audit run inside the page: returns human-readable violations. */
-export async function auditLayout(page: Page, scope = ".real-planner") {
-  return page.evaluate((scopeSelector) => {
+export async function auditLayout(page: Page, scope = ".real-planner", extraScrollers: string[] = []) {
+  return page.evaluate(([scopeSelector, extra]) => {
     const violations: string[] = [];
     const root = document.querySelector<HTMLElement>(scopeSelector);
     if (!root) return ["scope missing: " + scopeSelector];
@@ -13,7 +13,7 @@ export async function auditLayout(page: Page, scope = ".real-planner") {
       return `${element.tagName.toLowerCase()}${(element as HTMLElement).className && typeof (element as HTMLElement).className === "string" ? "." + (element as HTMLElement).className.split(" ")[0] : ""}${label ? `[${label}]` : ""}`;
     };
     // Regions that are SUPPOSED to scroll. Any other scrolling box is a defect.
-    const allowedScrollers = [".mock-queue-list", "[data-testid=mounted-timeline-viewport]", ".mock-inspector", ".route-sheet-body", ".run-create-popover"];
+    const allowedScrollers = [".mock-queue-list", "[data-testid=mounted-timeline-viewport]", ".mock-inspector", ".route-sheet-body", ".run-create-popover", ...(extra as string[])];
     const isAllowed = (element: Element) => allowedScrollers.some((selector) => element.matches(selector)) || element === document.documentElement || element === document.body;
     const scrolls = (element: HTMLElement, axis: "x" | "y") => {
       const cs = getComputedStyle(element);
@@ -70,7 +70,7 @@ export async function auditLayout(page: Page, scope = ".real-planner") {
     // 4. Page must not scroll horizontally.
     if (document.documentElement.scrollWidth > window.innerWidth + 1) violations.push(`document horizontal overflow ${document.documentElement.scrollWidth}>${window.innerWidth}`);
     return violations;
-  }, scope);
+  }, [scope, extraScrollers] as [string, string[]]);
 }
 
 export async function rect(page: Page, selector: string) {

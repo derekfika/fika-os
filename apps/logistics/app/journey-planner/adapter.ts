@@ -80,35 +80,62 @@ export function runRows(planner: PlannerDay, context: AdapterContext): RunRowVie
       ...(overlaps.has(run.runId) ? { overlapWarning: "Overlaps another run on this vehicle. You can still save; review before dispatch." } : {}),
       ...(run.openIssueCount ? { attention: `${run.openIssueCount} open issue${run.openIssueCount === 1 ? "" : "s"}` } : {}),
       canRetire: retire,
+      driverHref: `/mobile?run=${encodeURIComponent(run.runId)}`,
       ...(retire ? {} : { retireBlocker: !planning ? "Only a draft or planned run can be deleted." : "A run with work can’t be deleted. Return its work to the queue first." }),
       editable: planning,
     };
   });
 }
 
-export function queueItems(planner: PlannerDay, context: AdapterContext): QueueItemView[] {
-  const window = (value?: { startTime: string; endTime?: string }) => value ? (value.endTime ? `${value.startTime} – ${value.endTime}` : value.startTime) : undefined;
-  const groups = planner.workGroups.filter((group) => workGroupQueueState(group, planner.runs) !== "scheduled").map((group): QueueItemView => ({
-    id: group.groupKey,
-    kind: group.groupKey.startsWith("projection-collection:") ? "collection" : "delivery",
-    destination: group.destinationLabel,
-    description: group.sourceLabels.join(" · ") || "Fulfilment work",
-    ...(window(group.deliveryWindow) || group.requiredTimes[0] ? { window: window(group.deliveryWindow) || group.requiredTimes[0] } : {}),
-    ...(group.unitBreakdown.length ? { quantity: group.unitBreakdown.map((line) => `${line.quantity} ${line.unit}`).join(" · ") } : {}),
-    ...(group.attention.length ? { attention: group.attention[0] } : {}),
-    pending: context.pendingQueueIds?.has(group.groupKey),
-  }));
-  const movements = planner.movements.filter((movement) => movementQueueState(movement, planner.runs) !== "scheduled").map((movement): QueueItemView => ({
-    id: movement.movementId,
-    kind: movement.type === "collection" ? "collection" : "delivery",
-    destination: movement.to?.label || movement.from?.label || "Movement",
-    description: movement.type === "transfer" ? "Transfer" : movement.items.map((item) => item.description).join(", "),
-    ...(window(movement.window) || movement.requiredTime ? { window: window(movement.window) || movement.requiredTime } : {}),
-    quantity: movement.items.map((item) => `${item.quantity}${item.unit ? ` ${item.unit}` : ""}`).join(" · "),
-    ...(movement.notes ? { attention: "Notes attached" } : {}),
-    pending: context.pendingQueueIds?.has(movement.movementId),
-  }));
+const windowText = (value?: { startTime: string; endTime?: string }) => value ? (value.endTime ? `${value.startTime} – ${value.endTime}` : value.startTime) : undefined;
+type QueueState = ReturnType<typeof workGroupQueueState>;
+const stateLabelFor = (state: QueueState) => state === "needs_time" ? "Needs time" : state === "attention" ? "Needs attention" : undefined;
+
+export type QueueWork = {
+  groups: Array<{ group: PlannerDay["workGroups"][number]; state: QueueState; /** The delivery is placed; this item is its outstanding collection. */ collectionPending?: boolean }>;
+  movements: Array<{ movement: PlannerDay["movements"][number]; state: QueueState }>;
+};
+
+/** Queue rows from work the host has ALREADY classified (the host owns the queue-state rules, incl. collection-pending). */
+export function queueItemsFromWork(work: QueueWork, context: Pick<AdapterContext, "pendingQueueIds">): QueueItemView[] {
+  const groups = work.groups.map(({ group, state, collectionPending }): QueueItemView => {
+    const pending = Boolean(context.pendingQueueIds?.has(group.groupKey));
+    return {
+      id: group.groupKey,
+      kind: collectionPending || group.groupKey.startsWith("projection-collection:") ? "collection" : "delivery",
+      destination: group.destinationLabel,
+      description: group.sourceLabels.join(" · ") || "Fulfilment work",
+      ...(windowText(group.deliveryWindow) || group.requiredTimes[0] ? { window: windowText(group.deliveryWindow) || group.requiredTimes[0] } : {}),
+      ...(group.unitBreakdown.length ? { quantity: group.unitBreakdown.map((line) => `${line.quantity} ${line.unit}`).join(" · ") } : {}),
+      ...(group.attention.length ? { attention: group.attention[0] } : {}),
+      ...(stateLabelFor(state) ? { stateLabel: stateLabelFor(state) } : {}),
+      pending,
+      draggable: !pending,
+    };
+  });
+  const movements = work.movements.map(({ movement, state }): QueueItemView => {
+    const pending = Boolean(context.pendingQueueIds?.has(movement.movementId));
+    return {
+      id: movement.movementId,
+      kind: movement.type === "collection" ? "collection" : "delivery",
+      destination: movement.to?.label || movement.from?.label || "Movement",
+      description: movement.type === "transfer" ? "Transfer" : movement.items.map((item) => item.description).join(", "),
+      ...(windowText(movement.window) || movement.requiredTime ? { window: windowText(movement.window) || movement.requiredTime } : {}),
+      quantity: movement.items.map((item) => `${item.quantity}${item.unit ? ` ${item.unit}` : ""}`).join(" · "),
+      ...(movement.notes ? { attention: "Notes attached" } : {}),
+      ...(stateLabelFor(state) ? { stateLabel: stateLabelFor(state) } : {}),
+      pending,
+      draggable: !pending,
+    };
+  });
   return [...groups, ...movements];
+}
+
+export function queueItems(planner: PlannerDay, context: AdapterContext): QueueItemView[] {
+  return queueItemsFromWork({
+    groups: planner.workGroups.map((group) => ({ group, state: workGroupQueueState(group, planner.runs) })).filter((entry) => entry.state !== "scheduled"),
+    movements: planner.movements.map((movement) => ({ movement, state: movementQueueState(movement, planner.runs) })).filter((entry) => entry.state !== "scheduled"),
+  }, context);
 }
 
 export function inspectorFor(planner: PlannerDay, row: RunRowView, context: AdapterContext): RunInspectorView | undefined {

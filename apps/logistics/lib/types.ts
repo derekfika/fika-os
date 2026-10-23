@@ -39,7 +39,10 @@ export type StopIssue = {
 };
 export type RequirementRef = { requirementId: string; sourceVersion: number; sourceDomain?: FulfilmentRequirement["sourceDomain"]; workstream?: FulfilmentWorkstream };
 export type DeliveryStop = {
-  /** Read-model only: the physical visit this projected leg-stop belongs to (lane stops sharing it are one mixed Stop). */
+  /**
+   * The physical visit this stop belongs to. Projected leg-stops get it from their load; a NATIVE collection stop
+   * carries it (persisted) when it was added to a load-backed visit, so both are ONE physical stop on the Run.
+   */
   visitId?: string;
   /** Stable identity for a one-off movement endpoint; never derived from address text. */
   oneOffEndpointId?: string;

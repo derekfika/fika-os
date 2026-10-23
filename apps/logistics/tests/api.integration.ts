@@ -1425,3 +1425,95 @@ test("native stops: several visits at one customer need an explicit choice; New 
   assert.equal(after.length, 2, "joined an existing visit, no third stop");
   assert.equal(after.find((stop) => stop.canonicalId === firstStop.canonicalId)!.movementRequestIds.length, 2);
 });
+
+// ============================================================================================
+// Journey Planner V3: "+ Add collection" inside a physical stop — a governed collection movement AT THE CUSTOMER
+// that joins the (load-backed) visit by explicit visit id, so both are ONE physical stop on the Run.
+// ============================================================================================
+const collectionMovement = (mid: string, customer = customerA, quantity = 3): MovementRequest => ({
+  canonicalId: mid, entityType: "Movement Request", type: "collection", serviceDate, fromOplocId: customer,
+  items: [{ description: "Empty hot boxes", quantity, unit: "boxes" }], createdBy: "integration-test", status: "open", version: 1,
+  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), audit: [],
+});
+async function addCollection(runId: string, mid: string, extra: Record<string, unknown> = {}, customer = customerA) {
+  const saved = await responseBody({ action: "save-movement", movement: collectionMovement(mid, customer) });
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+  return responseBody({ action: "assign", by: "integration-test", runId, expectedRunVersion: await runVersion(runId), movementId: mid, ...extra });
+}
+
+test("collections 1: a collection movement joins the load-backed visit by explicit visit id: ONE physical stop, one order key, driver order follows", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const { first } = await seededRuns(id);
+  const a = reqFor(`${id}:a`), other = reqFor(`${id}:o`, customerB);
+  await assignReq(a, first, "10:00");
+  await assignReq(other, first, "11:00");
+  const la = await loadOf(a);
+  assert.ok(la.deliveryVisitId);
+  const mid = `${id}:collect`;
+  const joined = await addCollection(first, mid, { visit: visitStopId(la.deliveryVisitId!) });
+  assert.equal(joined.response.status, 200, JSON.stringify(joined.body));
+  const native = (await stops().where("runId", "==", first).get()).docs.map((doc) => doc.data() as DeliveryStop);
+  assert.equal(native.length, 1);
+  assert.equal(native[0].visitId, la.deliveryVisitId, "the native collection stop carries the visit id");
+  assert.equal(native[0].locationOplocId, customerA, "the pickup is the selected customer, never CPU");
+  assert.deepEqual(native[0].movementRequestIds, [mid]);
+  const saved = (await movements().doc(mid).get()).data() as MovementRequest;
+  assert.deepEqual(saved.items, [{ description: "Empty hot boxes", quantity: 3, unit: "boxes" }]);
+  assert.equal(saved.fromOplocId, customerA);
+  const { planner } = await dashboardRun(first);
+  const rows = physicalRows(planner);
+  assert.equal(rows.length, 2, "customer A (delivery + collection) and customer B");
+  const mixed = rows.find((row) => row.key === visitStopId(la.deliveryVisitId!))!;
+  assert.deepEqual(mixed.stops.map((stop) => stop.lane).sort(), ["collection", "delivery"]);
+  // the existing delivery is unchanged
+  assert.equal((await loadOf(a)).deliveryVisitId, la.deliveryVisitId);
+  assert.equal((await loadOf(a)).scheduledTime, "10:00");
+  // exact-permutation order validation treats the visit as ONE stop and accepts any member id of it
+  const otherLoad = await loadOf(other);
+  const order = [visitStopId(otherLoad.deliveryVisitId!), visitStopId(la.deliveryVisitId!)];
+  const ok = await responseBody({ action: "set-run-stop-order", runId: first, expectedRunVersion: await runVersion(first), stopIds: order });
+  assert.equal(ok.response.status, 200, JSON.stringify(ok.body));
+  const twice = await responseBody({ action: "set-run-stop-order", runId: first, expectedRunVersion: await runVersion(first), stopIds: [order[0], native[0].canonicalId, order[1]] });
+  assert.equal(twice.response.status, 422, "naming the same physical stop twice (visit id + its native member) is refused");
+  assert.deepEqual(((await runs().doc(first).get()).data() as DeliveryRun).orderedStopIds, order, "the stored order names visits");
+  const reordered = (await dashboardRun(first)).planner;
+  assert.equal(reordered.stops[0].destination.id, customerB, "saved order is honoured");
+});
+
+test("collections 2: a visit id at another customer or run is refused and writes nothing; a second collection joins the same native stop", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const { first, second } = await seededRuns(id);
+  const a = reqFor(`${id}:a`), other = reqFor(`${id}:o`, customerB);
+  await assignReq(a, first, "10:00");
+  await assignReq(other, first, "11:00");
+  const [la, lo] = [await loadOf(a), await loadOf(other)];
+  const before = JSON.stringify((await stops().where("runId", "==", first).get()).docs.map((doc) => doc.data()));
+  const wrongCustomer = await addCollection(first, `${id}:c1`, { visit: visitStopId(lo.deliveryVisitId!) }); // visit B offered to a collection at customer A
+  assert.equal(wrongCustomer.response.status, 422, JSON.stringify(wrongCustomer.body));
+  const wrongRun = await addCollection(second, `${id}:c2`, { visit: visitStopId(la.deliveryVisitId!) }); // visit A lives on the first run
+  assert.equal(wrongRun.response.status, 422, JSON.stringify(wrongRun.body));
+  assert.equal(JSON.stringify((await stops().where("runId", "==", first).get()).docs.map((doc) => doc.data())), before, "rejected joins write no stop");
+  assert.equal((await stops().where("runId", "==", second).get()).size, 0);
+  assert.equal(((await movements().doc(`${id}:c1`).get()).data() as MovementRequest).status, "open", "the movement stays open in the queue, nothing is lost");
+  const ok = await addCollection(first, `${id}:c3`, { visit: visitStopId(la.deliveryVisitId!) });
+  assert.equal(ok.response.status, 200, JSON.stringify(ok.body));
+  const again = await responseBody({ action: "assign", by: "integration-test", runId: first, expectedRunVersion: await runVersion(first), movementId: `${id}:c1`, visit: visitStopId(la.deliveryVisitId!) });
+  assert.equal(again.response.status, 200, JSON.stringify(again.body));
+  const native = (await stops().where("runId", "==", first).get()).docs.map((doc) => doc.data() as DeliveryStop);
+  assert.equal(native.length, 1, "the second collection joined the existing native member of the visit");
+  assert.equal(native[0].movementRequestIds.length, 2);
+  assert.equal(physicalRows((await dashboardRun(first)).planner).length, 2);
+});
+
+test("collections 3: an explicit New visit keeps a collection separate from the delivery visit", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const { first } = await seededRuns(id);
+  const a = reqFor(`${id}:a`);
+  await assignReq(a, first, "10:00");
+  const separate = await addCollection(first, `${id}:sep`, { visit: "new" });
+  assert.equal(separate.response.status, 200, JSON.stringify(separate.body));
+  const native = (await stops().where("runId", "==", first).get()).docs.map((doc) => doc.data() as DeliveryStop);
+  assert.equal(native.length, 1);
+  assert.equal(native[0].visitId, undefined);
+  assert.equal(physicalRows((await dashboardRun(first)).planner).length, 2, "delivery visit and the deliberate separate collection stop");
+});
