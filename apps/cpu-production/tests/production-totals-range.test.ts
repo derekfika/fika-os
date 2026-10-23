@@ -3,7 +3,7 @@ import test from "node:test";
 import type { ProductionOrder } from "../lib/production-types";
 import { aggregateProductionTotals } from "../lib/production-day";
 import { loadProductionTotalsRange } from "../lib/cpu-totals-loader";
-import { addOperationalDays, filterProductionTotalsOrders, operationalWeekRange, productionWeeksInRange, resolveProductionTotalsRange } from "../lib/production-totals-range";
+import { addOperationalDays, filterProductionTotalsOrders, formatProductionTotalsDateRange, operationalWeekRange, productionWeeksInRange, resolveProductionTotalsRange } from "../lib/production-totals-range";
 import type { CpuWeekProjection } from "../lib/cpu-projection";
 
 function order(id: string, serviceDate: string, itemName: string, quantity: number, unit = "portion", workstream: "delivered_in" | "sandwiches" | "hospitality" = "delivered_in"): ProductionOrder {
@@ -28,6 +28,12 @@ test("totals presets use inclusive London operational dates and Monday to Sunday
 });
 
 test("custom range is inclusive and bounded to 31 days", () => {
+  assert.deepEqual(resolveProductionTotalsRange("custom", "2026-10-23", "2026-10-26", "2026-10-27").range, { from: "2026-10-26", to: "2026-10-27" });
+  assert.deepEqual(resolveProductionTotalsRange("custom", "2026-10-23", "2026-10-26", "2026-10-26").range, { from: "2026-10-26", to: "2026-10-26" });
+  assert.match(resolveProductionTotalsRange("custom", "2026-10-23", "", "2026-10-27").error || "", /both a valid From and To date/);
+  assert.match(resolveProductionTotalsRange("custom", "2026-10-23", "2026-10-26", "").error || "", /both a valid From and To date/);
+  assert.match(resolveProductionTotalsRange("custom", "2026-10-23", "2026-10-27", "2026-10-26").error || "", /on or before/);
+  assert.equal(formatProductionTotalsDateRange({ from: "2026-10-26", to: "2026-10-27" }), "Monday, 26 October 2026 – Tuesday, 27 October 2026");
   assert.deepEqual(resolveProductionTotalsRange("custom", "2026-01-01", "2026-01-01", "2026-01-31").range, { from: "2026-01-01", to: "2026-01-31" });
   assert.match(resolveProductionTotalsRange("custom", "2026-01-01", "2026-01-01", "2026-02-01").error || "", /31 days/);
   assert.match(resolveProductionTotalsRange("custom", "2026-01-01", "2026-02-01", "2026-01-01").error || "", /on or before/);
@@ -88,4 +94,6 @@ test("Totals uses a semantic responsive read-only table and exposes loading/fail
   assert.doesNotMatch(page, /cpu-total-card-grid|fika-cpu-total-progress/);
   assert.match(css, /@media \(max-width: 560px\)/);
   assert.match(css, /min-height: 44px/);
+  assert.match(page, /aria-label="From date" type="date"[^>]*onInput=/);
+  assert.match(page, /aria-label="To date" type="date"[^>]*onInput=/);
 });

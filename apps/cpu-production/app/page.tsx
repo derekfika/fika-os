@@ -456,8 +456,8 @@ export default function CpuProduction() {
               {([ ["today", "Today"], ["tomorrow", "Tomorrow"], ["this_week", "This week"], ["next_week", "Next week"], ["custom", "Custom range"] ] as Array<[ProductionTotalsPreset, string]>).map(([preset, label]) => <button type="button" key={preset} className={totalsPreset === preset ? "selected" : ""} aria-pressed={totalsPreset === preset} onClick={() => { setTotalsPreset(preset); setTotalsLoading(true); setOrders([]); setError(""); if (preset === "custom") { setCustomFrom(""); setCustomTo(""); } }}>{label}</button>)}
             </div>
             {totalsPreset === "custom" && <>
-              <label>From<input aria-label="From date" type="date" value={customFrom} onChange={(event) => { setCustomFrom(event.target.value); setTotalsLoading(true); setOrders([]); setError(""); }} /></label>
-              <label>To<input aria-label="To date" type="date" min={customFrom || undefined} value={customTo} onChange={(event) => { setCustomTo(event.target.value); setTotalsLoading(true); setOrders([]); setError(""); }} /></label>
+              <label>From<input aria-label="From date" type="date" value={customFrom} onInput={(event) => { setCustomFrom(event.currentTarget.value); setTotalsLoading(true); setOrders([]); setError(""); }} onChange={(event) => { setCustomFrom(event.currentTarget.value); setTotalsLoading(true); setOrders([]); setError(""); }} /></label>
+              <label>To<input aria-label="To date" type="date" min={customFrom || undefined} value={customTo} onInput={(event) => { setCustomTo(event.currentTarget.value); setTotalsLoading(true); setOrders([]); setError(""); }} onChange={(event) => { setCustomTo(event.currentTarget.value); setTotalsLoading(true); setOrders([]); setError(""); }} /></label>
             </>}
           </> : <label>
             Date
