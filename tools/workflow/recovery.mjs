@@ -54,8 +54,8 @@ export async function reconcileIntent(input, io) {
   if (!['abandon','complete'].includes(resolution) || !reason?.trim() || reason.length > 500) throw Error('Reconciliation requires --resolution abandon|complete and a concise --reason');
   const snapshot = await io.inspect();
   const { rollout, build } = assertRecoveryEvidence(pointer.record, journal, snapshot, rolloutId);
-  const smoke = await io.smoke();
   const current = snapshot.current;
+  const smoke = await io.smoke(current.sourceSha);
   if (resolution === 'complete' && (rollout.state !== 'SUCCEEDED' || build.state !== 'READY' || current.sourceSha !== pointer.record.sourceSha || !smoke.ok)) throw Error('Cannot complete without healthy exact-source serving evidence');
   if (resolution === 'abandon' && current.sourceSha === pointer.record.sourceSha && smoke.ok) throw Error('Healthy successful rollout must be completed, not abandoned');
   const second = await io.inspect();
