@@ -44,6 +44,18 @@ test('healthy successful exact-source outcome completes; it cannot be concealed 
  await assert.rejects(reconcileIntent(f.input,f.io),/must be completed/);assert.equal(f.calls.length,0);
  f.input.resolution='complete';const r=await reconcileIntent(f.input,f.io);assert.equal(r.record.kind,'deploy');assert.equal(r.record.state,'SUCCEEDED');
 });
+test('unrelated historical SKIPPED build and rollout do not block completion of the exact successful intent',async()=>{
+ const f=fixture();f.snapshot.builds[0].state='READY';f.snapshot.rollouts[0].state='SUCCEEDED';f.snapshot.current={...f.snapshot.current,sourceSha:f.input.pointer.record.sourceSha,rollout:'build-new'};f.snapshot.traffic.current[0].build=`${f.input.t.backend}/builds/build-new`;
+ const oldBuild={name:`${f.input.t.backend}/builds/old-skipped`,state:'SKIPPED',sourceSha:'f'.repeat(40),createTime:'2026-08-31T09:18:01Z',reconciling:false};
+ const oldRollout={name:`${f.input.t.backend}/rollouts/old-skipped`,build:oldBuild.name,state:'SKIPPED',createTime:oldBuild.createTime,reconciling:false};
+ f.snapshot.builds.push(oldBuild);f.snapshot.rollouts.push(oldRollout);f.input.resolution='complete';
+ const r=await reconcileIntent(f.input,f.io);assert.equal(r.record.kind,'deploy');assert.equal(r.record.state,'SUCCEEDED');assert.equal(r.record.recovery.rollout,'build-new');
+});
+test('a SKIPPED build/rollout at or after submission remains unresolved',async()=>{
+ const f=fixture();f.snapshot.builds[0].state='SKIPPED';f.snapshot.rollouts[0].state='SKIPPED';f.snapshot.current={...f.snapshot.current,sourceSha:f.input.pointer.record.sourceSha,rollout:'build-new'};f.snapshot.traffic.current[0].build=`${f.input.t.backend}/builds/build-new`;f.input.resolution='complete';
+ f.snapshot.builds[0].createTime='2026-10-22T12:00:10Z';f.snapshot.rollouts[0].createTime='2026-10-22T12:00:10Z';
+ await assert.rejects(reconcileIntent(f.input,f.io),/may still be active or its outcome is unknown/);assert.equal(f.calls.length,0);
+});
 test('an unhealthy terminal serving release is never known-good: completion fails, abandonment retains rollback-only evidence',async()=>{
  const f=fixture();f.snapshot.builds[0].state='READY';f.snapshot.rollouts[0].state='SUCCEEDED';f.snapshot.current={...f.snapshot.current,sourceSha:f.input.pointer.record.sourceSha,rollout:'build-new'};f.snapshot.traffic.current[0].build=`${f.input.t.backend}/builds/build-new`;f.io.smoke=async()=>({ok:false,status:503});
  f.input.resolution='complete';await assert.rejects(reconcileIntent(f.input,f.io));assert.equal(f.calls.length,0);f.input.resolution='abandon';const r=await reconcileIntent(f.input,f.io);assert.equal(r.record.kind,'abandoned');assert.equal(r.record.smoke.ok,false);assert.equal(r.record.previousGoodRecord,f.input.journal.previousGoodRecord);
