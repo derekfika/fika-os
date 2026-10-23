@@ -42,6 +42,34 @@ test("projection carries explicit workstream into queue and assigned stop labels
   assert.deepEqual(result.planner.workGroups[0].deliveryWindow, { startTime: "07:00" });
 });
 
+test("native physical stop owns its canonical load and mixed movements without a duplicate projected visit", () => {
+  const projection = base();
+  projection.runs = [{ canonicalId: "run:mixed", serviceDate: projection.serviceDate, status: "planned", vehicleLabel: "Van 1", orderedStopIds: ["stop:mixed"], version: 2, createdAt: "now", updatedAt: "now", audit: [] }];
+  projection.deliveryLoads = [{
+    id: "load:mixed", serviceDate: projection.serviceDate, originOplocId: "oploc:cpu", destinationOplocId: "oploc:site", destinationLabelSnapshot: "Riverside",
+    scheduledTime: "09:00", status: "planned", runId: "run:mixed", vehicleId: "van1", version: 3,
+    jobs: [{ id: "job:mixed", sourceId: "order:mixed", sourceType: "cpu-production", sourceVersion: 1, version: 2, productionReadiness: "ready", collectionStatus: "awaiting", deliveryStatus: "pending", assignedLoadId: "load:mixed", totalUnits: 2, contents: [{ description: "Lunch trays", quantity: 2, unit: "tray" }] }],
+    jobCount: 1, totalUnits: 2, collectedCount: 0, readiness: "ready",
+  }];
+  projection.movements = (["delivery", "collection"] as const).map((type, index) => ({
+    canonicalId: `movement:${type}`, entityType: "Movement Request" as const, type, serviceDate: projection.serviceDate,
+    fromOplocId: "oploc:cpu", fromLabelSnapshot: "CPU", toOplocId: "oploc:site", toLabelSnapshot: "Riverside",
+    items: [{ description: index ? "Empty crates" : "Extra chilled items", quantity: 1, unit: "crate" }],
+    createdBy: "fixture", status: "planned" as const, version: 1, createdAt: "now", updatedAt: "now", audit: [],
+  }));
+  projection.stops = [{
+    canonicalId: "stop:mixed", runId: "run:mixed", sequence: 1, locationOplocId: "oploc:site", locationLabelSnapshot: "Riverside",
+    canonicalLoadIds: ["load:mixed"], canonicalLoadVersions: { "load:mixed": 3 }, requirementRefs: [], movementRequestIds: ["movement:delivery", "movement:collection"],
+    plannedArrivalTime: "09:00", movementType: "delivery", status: "planned", version: 2, createdAt: "now", updatedAt: "now", audit: [],
+  }];
+  const result = projectionToDashboardData(projection);
+  assert.equal(result.stops.length, 1, "the native physical stop represents the canonical load");
+  assert.equal(result.stops[0].canonicalId, "stop:mixed");
+  assert.deepEqual(result.planner.runs[0].stops[0].movementTypes, ["delivery", "collection"]);
+  assert.equal(result.planner.runs[0].stopCount, 1);
+  assert.equal(result.planner.runs[0].stops[0].loadCount, 1, "movement items do not inflate canonical load count");
+});
+
 test("assigned untimed delivery stays reachable with merged canonical authority after projection reload", () => {
   const projection = base();
   projection.runs = [{ canonicalId: "run:two", serviceDate: projection.serviceDate, status: "planned", vehicleLabel: "Van 2", version: 2 }];

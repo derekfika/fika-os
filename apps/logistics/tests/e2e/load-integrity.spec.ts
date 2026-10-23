@@ -49,7 +49,7 @@ async function scenario(page: Page, collection = false, merged = false) {
     if (url.searchParams.has("planningAttention")) return route.fulfill({ json: { attention: [] } });
     return route.fulfill({ headers: { "x-logistics-cache-scope": "batch2" }, json: { ...projectionToDashboardData(projection), projection } });
   });
-  await page.goto("/?serviceDate=" + f.date);
+  await page.goto("/?ui=classic&serviceDate=" + f.date);
   await openStopDetails(page);
   return { f, commands };
 }
@@ -234,9 +234,10 @@ for (const entry of ["queue", "inspector", "timeline"] as const) for (const coll
         await inspector.getByRole("button", { name: collection ? "Schedule collection" : "Assign eligible", exact: true }).last().click();
       } else {
         await queue.getByRole("button", { name: "Assign", exact: true }).click();
-        await queue.getByLabel("Target delivery run").selectOption("r1");
-        await queue.getByLabel("Schedule time", { exact: true }).fill("10:30");
-        await queue.getByRole("button", { name: "Assign all", exact: true }).click();
+        const inspector = page.getByRole("complementary", { name: "Details inspector" });
+        await inspector.getByLabel("Target delivery run").selectOption("r1");
+        await inspector.getByLabel("Schedule time", { exact: true }).fill("10:30");
+        await inspector.getByRole("button", { name: "Assign eligible", exact: true }).click();
       }
     }
     const action = collection ? "reschedule-delivery-loads" : "assign-job-to-load";
@@ -373,19 +374,20 @@ test("journey inspector keeps mixed stops chronological and moves one constituen
   await page.reload();
 
   const overview = page.getByRole("region", { name: "Vehicle journey timeline" });
-  await expect(overview.getByRole("button", { name: /Run r1, Van 1, Planned, 07:00 to 12:30/ })).toBeVisible();
-  await expect(overview.getByRole("button", { name: /Run r2, Van 1, Planned, 13:00 to 17:00/ })).toBeVisible();
-  await overview.getByRole("button", { name: /Run r1, Van 1,/ }).click();
+  await expect(overview.getByRole("button", { name: /Van 1 Run 1, Planned, 07:00 to 12:30/ })).toBeVisible();
+  await expect(overview.getByRole("button", { name: /Van 1 Run 2, Planned, 13:00 to 17:00/ })).toBeVisible();
+  await overview.getByRole("button", { name: /Van 1 Run 1,/ }).click();
   const inspector = page.getByRole("complementary", { name: "Details inspector" });
-  const chronological = inspector.getByRole("heading", { name: "Stops · chronological" });
+  const chronological = inspector.getByRole("heading", { name: /Stops · visiting order/ });
   await expect(chronological).toBeVisible();
   const deliveryStop = inspector.getByRole("button", { name: /Delivery.*Batch Two Site/ });
-  const collectionStop = inspector.getByRole("button", { name: /Collection.*CPU production/ });
+  // Collections happen at the CUSTOMER, not at CPU.
+  const collectionStop = inspector.getByRole("button", { name: /Collection.*Batch Two Site/ });
   await expect(deliveryStop).toBeVisible();
   await expect(collectionStop).toBeVisible();
-  const stopButtons = inspector.locator(".journey-stop-list button");
-  const stopOrder = await stopButtons.allTextContents();
-  expect(stopOrder.findIndex((text) => text.includes("Delivery · Batch Two Site"))).toBeLessThan(stopOrder.findIndex((text) => text.includes("Collection · CPU production")));
+  const stopOrder = await inspector.getByRole("list", { name: "Stops in visiting order" }).locator(":scope > li").allTextContents();
+  expect(stopOrder.findIndex((text) => text.includes("Delivery"))).toBeLessThan(stopOrder.findIndex((text) => text.includes("Collection")));
+  expect(stopOrder.join(" ")).not.toContain("CPU production");
   await deliveryStop.click();
   await expect(inspector.getByRole("heading", { name: "Individual loads" })).toBeVisible();
   const loadButtons = inspector.getByRole("button", { name: /^Load .*1 job · 10 units$/ });

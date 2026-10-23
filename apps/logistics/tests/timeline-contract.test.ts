@@ -21,13 +21,24 @@ test("mounted timeline retains source-aware move and explicit-window resize sema
   assert.match(timelineStyles, /resizeHandle/);
 });
 
-test("desktop layout gives the schedule the wider surface and retains mobile fallback", () => {
-  assert.match(styles, /mock-workspace \{ grid-template-columns: minmax\(280px, 28%\) minmax\(0, 72%\)/);
-  assert.match(styles, /@media \(max-width: 1050px\) \{\s*\.real-planner \.mock-workspace \{ grid-template-columns: 1fr; \}/);
+test("desktop layout has one authoritative planner layout block, a bounded queue and a mobile fallback", () => {
+  assert.match(styles, /Journey Planner layout — the single authority for planner geometry/);
+  assert.match(styles, /\.real-planner \.mock-workspace \{ display: grid; grid-template-columns: var\(--queue-width\) minmax\(0, 1fr\);/);
+  assert.match(styles, /\.real-planner \.mock-queue \{ position: sticky;[^}]*max-height: calc\(100dvh/);
+  assert.match(styles, /\.mock-queue > \.mock-queue-list \{[^}]*overflow-y: auto/);
+  assert.match(styles, /\.mock-queue > \* \{ flex: 0 0 auto; \}/, "queue header/search/filters must never shrink and clip");
+  assert.match(styles, /@media \(max-width: 1050px\) \{[^}]*\.real-planner \{ --planner-gutter: 20px; \}[\s\S]*?\.real-planner \.mock-workspace[^}]*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(styles, /\.real-planner\.has-inspector \{ padding-right: var\(--inspector-width\); \}/);
+  // Regressions that previously fought the layout: structural nth-child sizing hacks and forced heights.
+  assert.doesNotMatch(styles, /mounted-react-timeline"\] > div:nth-child/);
+  assert.doesNotMatch(styles, /height: 100% !important/);
+  assert.doesNotMatch(styles, /\.real-planner \.mock-queue \{[^}]*max-height: min\((620|690)px/);
   assert.match(timelineStyles, /\.collection[^}]*fika-status-info/);
   assert.match(timelineStyles, /\.attention[^}]*fika-status-danger/);
-  assert.match(timelineStyles, /\.axisViewport \{ overflow: auto/);
-  assert.match(styles, /\.real-planner \{ overflow-x: hidden; \}/);
+  assert.match(timelineStyles, /\.axisViewport \{[^}]*overflow: auto/);
+  // overflow-x:hidden on the page root turns it into a scroll container and silently breaks sticky.
+  assert.match(styles, /\.real-planner \{ overflow-x: clip; \}/);
+  assert.doesNotMatch(styles, /\.real-planner \{ overflow-x: hidden; \}/);
 });
 
 test("projection dashboard labels are human-facing and do not expose source ids", () => {

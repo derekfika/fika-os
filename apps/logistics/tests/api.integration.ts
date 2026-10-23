@@ -26,6 +26,7 @@ const serviceDate = "2099-01-01";
 const oplocs = [
   { id: "oploc:integration-from", label: "Integration Loading Bay" },
   { id: "oploc:integration-destination", label: "Integration Destination" },
+  { id: "oploc:integration-other", label: "Other Customer" },
 ];
 const prefix = () => `integration-logistics:${randomUUID()}`;
 const requirement = (
@@ -157,13 +158,15 @@ async function cleanup(id: string) {
   await Promise.all([logisticsDayProjections().doc(serviceDate).delete(), logisticsChangeCursor().doc(logisticsDayCursorId(serviceDate)).delete()]);
   upstreamRequirements = [];
   failFulfilment = false;
+  principalVehicles = ["van1", "van2"];
 }
+let principalVehicles = ["van1", "van2"];
 let upstreamRequirements: FulfilmentRequirement[] = [];
 let failFulfilment = false;
 const originalFetch = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL) => {
   const url = String(input);
-  if (url.includes("/api/logistics/access")) return Response.json({ principal: { authmodIdentityId: "identity:integration-operator", displayName: "Integration operator", identityKind: "person", permittedVehicleIds: ["van1", "van2"], maintenanceAuthorities: ["logistics.repair", "logistics.reconcile", "logistics.reset"] } });
+  if (url.includes("/api/logistics/access")) return Response.json({ principal: { authmodIdentityId: "identity:integration-operator", displayName: "Integration operator", identityKind: "person", permittedVehicleIds: principalVehicles, maintenanceAuthorities: ["logistics.repair", "logistics.reconcile", "logistics.reset"] } });
   if (url.includes("/api/logistics/drivers")) {
     const requested = new URL(url).searchParams.get("driverId");
     const drivers = ["identity:integration-franco", "franco", "dee"].map(driverId => ({ driverId, displayName: driverId === "dee" ? "Dee" : "Franco", permittedDriverVehicleIds: ["van1", "van2"] }));
@@ -239,7 +242,7 @@ test("legacy Runs without CPU journey timing remain readable without being rewri
   assert.deepEqual((await runs().doc(legacy.canonicalId).get()).data(), legacy);
 });
 
-test("movement creation is create-only and binds the authenticated server actor", async (t) => {
+test("movement creation is idempotent for an identical actor-bound replay and rejects ID reuse with different content", async (t) => {
   const id = prefix();
   t.after(() => cleanup(id));
   const requested = movement(`${id}:movement`);
@@ -248,8 +251,14 @@ test("movement creation is create-only and binds the authenticated server actor"
   const saved = (await movements().doc(requested.canonicalId).get()).data() as MovementRequest;
   assert.notEqual(saved.createdBy, "spoofed-browser-actor");
   assert.equal(saved.version, 1);
-  const duplicate = await responseBody({ action: "save-movement", movement: requested });
-  assert.equal(duplicate.response.status, 409);
+  const replay = await responseBody({ action: "save-movement", movement: requested });
+  assert.equal(replay.response.status, 200);
+  assert.equal(replay.body.canonicalId, requested.canonicalId);
+  assert.equal((await movements().doc(requested.canonicalId).get()).data()?.version, 1, "a retry must not create or advance a second movement");
+  const changeEvents = await logisticsChanges().where("serviceDate", "==", serviceDate).get();
+  assert.equal(changeEvents.docs.filter((doc) => doc.data().entityId === requested.canonicalId && doc.data().changeType === "movement-created").length, 1, "a replay must not append a second canonical movement event");
+  const conflictingReuse = await responseBody({ action: "save-movement", movement: { ...requested, items: [{ description: "Different collection", quantity: 3 }] } });
+  assert.equal(conflictingReuse.response.status, 409);
 });
 
 test("collection-required assignment persists canonical load, job, assignment and projected legs", async (t) => {
@@ -1080,4 +1089,437 @@ test("defer reorders legacy operational stops while preserving transfer pickup-b
       .orderedStopIds,
     transferRunSaved.orderedStopIds,
   );
+});
+
+// ---- Interactive Run planning commands (emulator-backed) -------------------------------
+// NOT EXECUTED in the authoring environment (no Firestore emulator on 127.0.0.1:8085).
+// The same behaviours are covered against the real route + isolated transactional store in
+// tests/run-planning-commands.test.cjs; these prove the identical commands on the emulator.
+test("create-run accepts validated journey times; invalid pairs are rejected without persisting", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const timedId = `${id}:timed`;
+  const timed = await responseBody({ action: "create-run", run: { ...run(timedId), plannedCpuDepartureTime: "09:00", plannedCpuReturnTime: "12:00" } });
+  assert.equal(timed.response.status, 200, JSON.stringify(timed.body));
+  const saved = (await runs().doc(timedId).get()).data() as DeliveryRun;
+  assert.deepEqual([saved.plannedCpuDepartureTime, saved.plannedCpuReturnTime, saved.status], ["09:00", "12:00", "draft"]);
+  const badId = `${id}:bad`;
+  for (const [departure, returnTime] of [["09:00", undefined], ["12:00", "09:00"], ["09:10", "12:00"]] as const) {
+    const bad = await responseBody({ action: "create-run", run: { ...run(badId), plannedCpuDepartureTime: departure, plannedCpuReturnTime: returnTime } });
+    assert.equal(bad.response.status, 422);
+  }
+  assert.equal((await runs().doc(badId).get()).exists, false);
+});
+
+test("set-run-stop-order persists a version-checked, audited order for load-backed stops and rejects stale or non-exact orders", async (t) => {
+  const id = prefix();
+  t.after(async () => { upstreamRequirements = []; await cleanup(id); });
+  const reqs = ["a", "b"].map((suffix) => ({ ...requirement(`${id}:${suffix}`), destinationOplocId: `oploc:integration-destination-${suffix}` }));
+  upstreamRequirements = reqs;
+  const runId = `${id}:run`;
+  await seed(runs(), run(runId));
+  for (const [index, req] of reqs.entries()) {
+    const assigned = await responseBody({ action: "assign-group", by: "integration-test", runId, expectedRunVersion: (index + 1), requirementIds: [req.canonicalId], expectedSourceVersions: { [req.canonicalId]: req.sourceVersion }, scheduledTime: index ? "11:00" : "10:00" });
+    assert.equal(assigned.response.status, 200, JSON.stringify(assigned.body));
+  }
+  const projection = (await logisticsDayProjections().doc(serviceDate).get()).data() as LogisticsDayProjection;
+  const stopIds = projection.deliveryLoads.filter((load) => load.runId === runId).map((load) => `projection-stop:delivery:${load.id}`);
+  assert.equal(stopIds.length, 2);
+  const current = (await runs().doc(runId).get()).data() as DeliveryRun;
+  const reversed = [...stopIds].reverse();
+  const saved = await responseBody({ action: "set-run-stop-order", runId, expectedRunVersion: current.version, stopIds: reversed });
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+  const after = (await runs().doc(runId).get()).data() as DeliveryRun;
+  assert.deepEqual(after.orderedStopIds, reversed);
+  assert.equal(after.version, current.version + 1);
+  assert.equal(after.audit.at(-1)?.action, "run-stop-order-saved");
+  assert.equal((await responseBody({ action: "set-run-stop-order", runId, expectedRunVersion: current.version, stopIds: stopIds })).response.status, 409);
+  assert.equal((await responseBody({ action: "set-run-stop-order", runId, expectedRunVersion: after.version, stopIds: stopIds.slice(0, 1) })).response.status, 422);
+  assert.deepEqual(((await runs().doc(runId).get()).data() as DeliveryRun).orderedStopIds, reversed);
+  const day = await (await GET(new NextRequest(`http://localhost/api/logistics?projection=1&serviceDate=${serviceDate}`))).json() as { runs: DeliveryRun[] };
+  assert.deepEqual(day.runs.find((item) => item.canonicalId === runId)?.orderedStopIds, reversed);
+});
+
+test("retire-empty-run soft-retires only an empty planning Run, keeps its audit, and ensure-vehicle-day-runs does not resurrect it", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const runId = `${id}:run`;
+  await seed(runs(), run(runId));
+  assert.equal((await responseBody({ action: "retire-empty-run", runId, expectedRunVersion: 99 })).response.status, 409);
+  const retired = await responseBody({ action: "retire-empty-run", runId, expectedRunVersion: 1 });
+  assert.equal(retired.response.status, 200, JSON.stringify(retired.body));
+  const saved = (await runs().doc(runId).get()).data() as DeliveryRun;
+  assert.ok(saved.retiredAt, "retired, not physically deleted");
+  assert.equal(saved.audit.at(-1)?.action, "run-retired-empty");
+  assert.equal((await responseBody({ action: "retire-empty-run", runId, expectedRunVersion: saved.version })).response.status, 200, "replay is idempotent");
+  const projection = (await logisticsDayProjections().doc(serviceDate).get()).data() as LogisticsDayProjection | undefined;
+  assert.ok(!projection?.runs.some((item) => item.canonicalId === runId));
+  const busyId = `${id}:busy`;
+  await seed(runs(), { ...run(busyId), status: "dispatched" });
+  assert.equal((await responseBody({ action: "retire-empty-run", runId: busyId, expectedRunVersion: 1 })).response.status, 422);
+  assert.equal(((await runs().doc(busyId).get()).data() as DeliveryRun).retiredAt, undefined);
+});
+
+test("a planned Run holding assigned work cannot be retired; stale and invalid requests leave authoritative state unchanged", async (t) => {
+  const id = prefix();
+  t.after(async () => { upstreamRequirements = []; await cleanup(id); });
+  const req = requirement(`${id}:busy`);
+  upstreamRequirements = [req];
+  const runId = `${id}:run`;
+  await seed(runs(), run(runId));
+  const assigned = await responseBody({ action: "assign-group", by: "integration-test", runId, expectedRunVersion: 1, requirementIds: [req.canonicalId], expectedSourceVersions: { [req.canonicalId]: req.sourceVersion }, scheduledTime: "10:00" });
+  assert.equal(assigned.response.status, 200, JSON.stringify(assigned.body));
+  const before = (await runs().doc(runId).get()).data() as DeliveryRun;
+  const loadsBefore = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).filter((load) => load.runId === runId);
+  assert.equal(loadsBefore.length, 1);
+  const busy = await responseBody({ action: "retire-empty-run", runId, expectedRunVersion: before.version });
+  assert.equal(busy.response.status, 422, JSON.stringify(busy.body));
+  const stale = await responseBody({ action: "retire-empty-run", runId, expectedRunVersion: before.version - 1 });
+  assert.equal(stale.response.status, 409);
+  const badOrder = await responseBody({ action: "set-run-stop-order", runId, expectedRunVersion: before.version, stopIds: ["projection-stop:delivery:not-a-load"] });
+  assert.ok([404, 422].includes(badOrder.response.status), String(badOrder.response.status));
+  const after = (await runs().doc(runId).get()).data() as DeliveryRun;
+  assert.deepEqual(after, before, "no rejected command may change the authoritative Run");
+  const loadsAfter = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad).filter((load) => load.runId === runId);
+  assert.deepEqual(loadsAfter, loadsBefore, "nor its assigned work");
+});
+
+test("overlapping Runs on one vehicle are allowed (warning-first): both persist and the other Run is untouched", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const first = `${id}:first`, second = `${id}:second`;
+  assert.equal((await responseBody({ action: "create-run", run: { ...run(first), plannedCpuDepartureTime: "08:00", plannedCpuReturnTime: "11:00" } })).response.status, 200);
+  const firstSaved = (await runs().doc(first).get()).data() as DeliveryRun;
+  const created = await responseBody({ action: "create-run", run: { ...run(second), plannedCpuDepartureTime: "10:00", plannedCpuReturnTime: "13:00" } });
+  assert.equal(created.response.status, 200, JSON.stringify(created.body));
+  const moved = await responseBody({ action: "update-run-timing", runId: second, plannedCpuDepartureTime: "09:00", plannedCpuReturnTime: "12:00", expectedRunVersion: 1 });
+  assert.equal(moved.response.status, 200, JSON.stringify(moved.body));
+  assert.deepEqual((await runs().doc(first).get()).data(), firstSaved, "the overlapped Run is never modified");
+  assert.equal(((await runs().doc(second).get()).data() as DeliveryRun).plannedCpuDepartureTime, "09:00");
+  assert.equal((await responseBody({ action: "update-run-timing", runId: second, plannedCpuDepartureTime: "07:00", plannedCpuReturnTime: "12:00", expectedRunVersion: 1 })).response.status, 409);
+  assert.equal(((await runs().doc(second).get()).data() as DeliveryRun).plannedCpuDepartureTime, "09:00");
+});
+
+// ============================================================================================
+// Physical-stop (visit) identity and collection location — emulator-backed.
+// ============================================================================================
+import { FieldValue } from "firebase-admin/firestore";
+import { projectionToDashboardData } from "../lib/projection-dashboard-adapter";
+import { rebuildLogisticsProjection } from "../lib/logistics-materialisation";
+import { groupIntoVisitRows, visitStopId } from "../lib/stop-visits";
+
+const customerA = "oploc:integration-destination";
+const customerB = "oploc:integration-other";
+const reqFor = (id: string, customer = customerA): FulfilmentRequirement => ({ ...requirement(id), destinationOplocId: customer, destinationLabelSnapshot: customer === customerA ? "Integration Destination" : "Other Customer" });
+const runVersion = async (runId: string) => ((await runs().doc(runId).get()).data() as DeliveryRun).version;
+const loadsOnDay = async () => (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as DeliveryLoad);
+const jobOf = async (req: FulfilmentRequirement) => (await logisticsJobs().where("serviceDate", "==", serviceDate).get()).docs.map((doc) => doc.data() as LogisticsJob).find((job) => job.requirementId === req.canonicalId)!;
+const loadOf = async (req: FulfilmentRequirement) => { const job = await jobOf(req); return (await deliveryLoads().doc(job.activeLoadId!).get()).data() as DeliveryLoad; };
+const projectionDoc = async () => (await logisticsDayProjections().doc(serviceDate).get()).data() as LogisticsDayProjection;
+const dashboardRun = async (runId: string) => { const data = projectionToDashboardData(await projectionDoc()); return { data, run: data.runs.find((item) => item.canonicalId === runId)!, planner: data.planner.runs.find((item) => item.runId === runId)! }; };
+async function assignReq(req: FulfilmentRequirement, runId: string, time: string, extra: Record<string, unknown> = {}, status = 200) {
+  upstreamRequirements = [...upstreamRequirements.filter((item) => item.canonicalId !== req.canonicalId), req];
+  const expectedLoadVersions = Object.fromEntries((await loadsOnDay()).map((load) => [load.id, load.version]));
+  const result = await responseBody({ action: "assign-group", by: "integration-test", runId, expectedRunVersion: await runVersion(runId), requirementIds: [req.canonicalId], expectedSourceVersions: { [req.canonicalId]: req.sourceVersion }, scheduledTime: time, expectedLoadVersions, ...extra });
+  assert.equal(result.response.status, status, JSON.stringify(result.body));
+  return result;
+}
+async function scheduleCollection(req: FulfilmentRequirement, runId: string, time: string, extra: Record<string, unknown> = {}, status = 200) {
+  const load = await loadOf(req);
+  const result = await responseBody({ action: "reschedule-delivery-load", lane: "collection", loadId: load.id, targetRunId: runId, scheduledTime: time, expectedLoadVersion: load.version, ...extra });
+  assert.equal(result.response.status, status, JSON.stringify(result.body));
+  return result;
+}
+const seededRuns = async (id: string) => { const first = `${id}:run1`, second = `${id}:run2`; await seed(runs(), run(first)); await seed(runs(), { ...run(second), vehicleId: "van2" }); return { first, second }; };
+const physicalRows = (planner: { stops: Array<{ stopId: string; visitId?: string; lane: string }> }) => groupIntoVisitRows(planner.stops);
+
+test("visits 1+5: two deliveries to one customer share ONE physical stop, and the collection stop resolves to the customer, not CPU", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const { first } = await seededRuns(id);
+  const a = reqFor(`${id}:a`), b = reqFor(`${id}:b`);
+  await assignReq(a, first, "10:00");
+  await assignReq(b, first, "10:30"); // different time, same customer, one unambiguous visit -> joins
+  const [la, lb] = [await loadOf(a), await loadOf(b)];
+  assert.notEqual(la.id, lb.id, "individual loads keep their own identity");
+  assert.ok(la.deliveryVisitId && la.deliveryVisitId === lb.deliveryVisitId, "same visit id");
+  const originBefore = la.originOplocId;
+  assert.equal(la.destinationOplocId, customerA);
+  const { planner } = await dashboardRun(first);
+  assert.equal(physicalRows(planner).length, 1, "ONE physical stop");
+  assert.equal((await projectionDoc()).deliveryLoads.filter((load) => load.runId === first).length, 1, "projected as one stop even though the planned times differ");
+  await scheduleCollection(a, first, "15:00");
+  const view = await dashboardRun(first);
+  const collection = view.data.stops.find((stop) => stop.movementType === "collection")!;
+  assert.equal(collection.locationOplocId, customerA, "collection stop location is the CUSTOMER");
+  assert.equal(collection.locationLabelSnapshot, "Integration Destination");
+  assert.notEqual(collection.locationOplocId, la.originOplocId);
+  const after = await loadOf(a);
+  assert.equal(after.originOplocId, originBefore, "origin/destination never rewritten by collection scheduling");
+  assert.equal(after.destinationOplocId, customerA);
+});
+
+test("visit 2: a delivery plus a collection at one customer on one Run is ONE mixed physical stop", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const { first } = await seededRuns(id);
+  const a = reqFor(`${id}:a`), b = reqFor(`${id}:b`);
+  await assignReq(a, first, "10:00");
+  await assignReq(b, first, "10:00");
+  await scheduleCollection(a, first, "15:00");
+  const la = await loadOf(a);
+  assert.ok(la.deliveryVisitId);
+  assert.equal(la.collectionVisitId, la.deliveryVisitId, "the collection joined the delivery visit by default");
+  const { planner } = await dashboardRun(first);
+  const rows = physicalRows(planner);
+  assert.equal(rows.length, 1, "one mixed physical stop");
+  assert.deepEqual(rows[0].stops.map((stop) => stop.lane).sort(), ["collection", "delivery"]);
+  const ok = await responseBody({ action: "set-run-stop-order", runId: first, expectedRunVersion: await runVersion(first), stopIds: [visitStopId(la.deliveryVisitId!)] });
+  assert.equal(ok.response.status, 200, JSON.stringify(ok.body));
+});
+
+test("visit 3: deliberate repeat visits to one customer on one Run; ambiguity forces an explicit choice; New visit is explicit", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const { first } = await seededRuns(id);
+  const [a, b, c, d] = ["a", "b", "c", "d"].map((x) => reqFor(`${id}:${x}`));
+  await assignReq(a, first, "09:00");
+  await assignReq(b, first, "12:00", { visit: "new" });
+  const [la, lb] = [await loadOf(a), await loadOf(b)];
+  assert.notEqual(la.deliveryVisitId, lb.deliveryVisitId, "an explicit new visit is a separate physical stop");
+  assert.equal(physicalRows((await dashboardRun(first)).planner).length, 2);
+  const ambiguous = await assignReq(c, first, "10:00", {}, 422);
+  assert.equal((ambiguous.body.error as { code?: string }).code, "LOGISTICS_VISIT_CHOICE_REQUIRED");
+  assert.equal((await logisticsJobs().where("serviceDate", "==", serviceDate).get()).docs.some((doc) => (doc.data() as LogisticsJob).requirementId === c.canonicalId && (doc.data() as LogisticsJob).activeLoadId), false, "a rejected choice writes nothing");
+  await assignReq(c, first, "10:00", { visit: lb.deliveryVisitId });
+  assert.equal((await loadOf(c)).deliveryVisitId, lb.deliveryVisitId);
+  upstreamRequirements = [...upstreamRequirements, d];
+  assert.equal((await responseBody({ action: "assign-group", by: "integration-test", runId: first, expectedRunVersion: await runVersion(first), requirementIds: [d.canonicalId], expectedSourceVersions: { [d.canonicalId]: 1 }, scheduledTime: "11:00", visit: "visit:not-at-this-customer" })).response.status, 422);
+  assert.equal(physicalRows((await dashboardRun(first)).planner).length, 2, "still two physical stops");
+});
+
+test("visit 4: delivery on one Run/vehicle and collection on another are different physical stops", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const { first, second } = await seededRuns(id);
+  const a = reqFor(`${id}:a`);
+  await assignReq(a, first, "10:00");
+  await scheduleCollection(a, second, "15:00");
+  const la = await loadOf(a);
+  assert.equal(la.runId, first); assert.equal(la.collectionRunId, second);
+  assert.ok(la.deliveryVisitId && la.collectionVisitId && la.deliveryVisitId !== la.collectionVisitId, "each leg has its own visit on its own Run");
+  const [one, two] = [await dashboardRun(first), await dashboardRun(second)];
+  assert.deepEqual(physicalRows(one.planner).map((row) => row.stops.map((stop) => stop.lane)), [["delivery"]]);
+  assert.deepEqual(physicalRows(two.planner).map((row) => row.stops.map((stop) => stop.lane)), [["collection"]]);
+  assert.equal(two.planner.stops[0].destination.id, customerA, "the collection stop on the other vehicle is at the customer");
+  assert.equal(((await runs().doc(second).get()).data() as DeliveryRun).vehicleId, "van2");
+});
+
+test("visit 6: editing a load time never splits its physical stop; moving it to another Run leaves the visit", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const { first, second } = await seededRuns(id);
+  const [a, b] = [reqFor(`${id}:a`), reqFor(`${id}:b`)];
+  await assignReq(a, first, "10:00"); await assignReq(b, first, "10:30"); // two loads, one visit
+  assert.notEqual((await loadOf(a)).id, (await loadOf(b)).id);
+  const lb = await loadOf(b);
+  const edited = await responseBody({ action: "reschedule-delivery-load", loadId: lb.id, targetRunId: first, scheduledTime: "13:30", expectedLoadVersion: lb.version });
+  assert.equal(edited.response.status, 200, JSON.stringify(edited.body));
+  assert.equal((await loadOf(b)).deliveryVisitId, (await loadOf(a)).deliveryVisitId, "membership unchanged by a time edit");
+  assert.equal(physicalRows((await dashboardRun(first)).planner).length, 1, "still ONE stop");
+  assert.equal((await projectionDoc()).deliveryLoads.filter((load) => load.runId === first)[0].jobCount, 2);
+  const current = await loadOf(b);
+  const moved = await responseBody({ action: "reschedule-delivery-load", loadId: current.id, targetRunId: second, scheduledTime: "11:00", expectedLoadVersion: current.version });
+  assert.equal(moved.response.status, 200, JSON.stringify(moved.body));
+  const [la, lbAfter] = [await loadOf(a), await loadOf(b)];
+  assert.equal(lbAfter.runId, second);
+  assert.notEqual(lbAfter.deliveryVisitId, la.deliveryVisitId);
+  assert.equal(physicalRows((await dashboardRun(first)).planner).length, 1);
+  assert.equal(physicalRows((await dashboardRun(second)).planner).length, 1);
+});
+
+test("visits 7+8: reordering physical stops persists membership and order; the driver projection and execution follow it without completing unrelated work", async (t) => {
+  const id = prefix(); t.after(async () => { upstreamRequirements = []; await cleanup(id); });
+  const { first } = await seededRuns(id);
+  const [a, b, c] = [reqFor(`${id}:a`), reqFor(`${id}:b`), reqFor(`${id}:c`, customerB)];
+  await assignReq(a, first, "09:00"); await assignReq(b, first, "09:30"); await assignReq(c, first, "08:00");
+  const [la, lb, lc] = [await loadOf(a), await loadOf(b), await loadOf(c)];
+  assert.equal(la.deliveryVisitId, lb.deliveryVisitId);
+  assert.notEqual(la.deliveryVisitId, lc.deliveryVisitId);
+  const baseline = (await dashboardRun(first)).planner.stops.map((stop) => stop.destination.id);
+  assert.deepEqual(baseline, [customerB, customerA], "unordered work follows planned time");
+  const order = [visitStopId(la.deliveryVisitId!), visitStopId(lc.deliveryVisitId!)];
+  const saved = await responseBody({ action: "set-run-stop-order", runId: first, expectedRunVersion: await runVersion(first), stopIds: order });
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+  assert.deepEqual(((await runs().doc(first).get()).data() as DeliveryRun).orderedStopIds, order, "stored on the canonical Run");
+  const day = await (await GET(new NextRequest(`http://localhost/api/logistics?projection=1&serviceDate=${serviceDate}`))).json() as { planner: { runs: Array<{ runId: string; stops: Array<{ destination: { id: string }; sequence: number }> }> } };
+  const driverStops = day.planner.runs.find((item) => item.runId === first)!.stops;
+  assert.deepEqual(driverStops.map((stop) => stop.destination.id), [customerA, customerB], "driver sees the chosen visit sequence");
+  assert.deepEqual(driverStops.map((stop) => stop.sequence), [1, 2]);
+  const projection = await projectionDoc();
+  const group = projection.deliveryLoads.find((load) => (load.loadIds || [load.id]).includes(la.id))!;
+  assert.equal((group.loadIds || []).length, 2, "both loads execute as one projected stop despite different planned times");
+  const jobA = await jobOf(a), jobB = await jobOf(b), jobC = await jobOf(c);
+  const one = await responseBody({ action: "mark-subload-loaded", runId: first, expectedRunVersion: await runVersion(first), stopId: `projection-stop:delivery:${group.id}`, loadIds: group.loadIds, expectedLoadVersions: group.loadVersions, jobId: jobA.id, expectedJobVersion: jobA.version, loaded: true });
+  assert.equal(one.response.status, 200, JSON.stringify(one.body));
+  assert.equal((await jobOf(a)).deliveryStatus, "loaded");
+  assert.notEqual((await jobOf(b)).deliveryStatus, "loaded", "the sibling in the same physical stop is untouched");
+  assert.notEqual((await jobOf(c)).deliveryStatus, "loaded", "so is the other visit");
+  assert.equal(jobB.version, (await jobOf(b)).version); assert.equal(jobC.version, (await jobOf(c)).version);
+});
+
+test("visit 9: legacy loads without visit fields stay readable by placement and gain an id only when work is deliberately joined", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const { first } = await seededRuns(id);
+  const [a, b, c] = [reqFor(`${id}:a`), reqFor(`${id}:b`), reqFor(`${id}:c`)];
+  await assignReq(a, first, "10:00"); await assignReq(b, first, "11:00", { visit: "new" });
+  for (const load of await loadsOnDay()) if (load.runId === first) await deliveryLoads().doc(load.id).update({ deliveryVisitId: FieldValue.delete(), collectionVisitId: FieldValue.delete() });
+  await rebuildLogisticsProjection(serviceDate, "legacy-test");
+  const legacy = await dashboardRun(first);
+  assert.equal(physicalRows(legacy.planner).length, 2, "legacy placements project exactly as before: one stop per placement");
+  assert.ok(legacy.planner.stops.every((stop) => stop.visitId === undefined));
+  await assignReq(c, first, "10:00", {}, 422);
+  const lb = await loadOf(b);
+  await assignReq(c, first, "10:00", { visit: `member:${lb.id}` });
+  const [lbAfter, lc, la] = [await loadOf(b), await loadOf(c), await loadOf(a)];
+  assert.ok(lbAfter.deliveryVisitId, "the joined legacy load was given an explicit identity in the same transaction");
+  assert.equal(lc.deliveryVisitId, lbAfter.deliveryVisitId);
+  assert.equal(la.deliveryVisitId, undefined, "unrelated legacy load is untouched");
+  assert.equal(physicalRows((await dashboardRun(first)).planner).length, 2);
+});
+
+test("visit 10: stale versions, vehicle authority, idempotency and rejected mutations leave authoritative state unchanged", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const { first, second } = await seededRuns(id);
+  const [a, b] = [reqFor(`${id}:a`), reqFor(`${id}:b`)];
+  await assignReq(a, first, "10:00"); await assignReq(b, first, "10:00");
+  const snapshot = async () => JSON.stringify([(await loadsOnDay()).sort((x, y) => x.id.localeCompare(y.id)), (await runs().doc(first).get()).data(), (await runs().doc(second).get()).data()]);
+  const before = await snapshot();
+  const lb = await loadOf(b);
+  assert.equal((await responseBody({ action: "reschedule-delivery-load", loadId: lb.id, targetRunId: second, scheduledTime: "11:00", expectedLoadVersion: lb.version - 1 })).response.status, 409);
+  assert.equal((await responseBody({ action: "set-run-stop-order", runId: first, expectedRunVersion: 0, stopIds: [] })).response.status, 409);
+  assert.equal((await responseBody({ action: "set-run-stop-order", runId: first, expectedRunVersion: await runVersion(first), stopIds: ["projection-visit:visit:nope"] })).response.status, 422);
+  assert.equal((await responseBody({ action: "reschedule-delivery-load", loadId: lb.id, targetRunId: second, scheduledTime: "11:00", expectedLoadVersion: lb.version, visit: "visit:not-on-this-run" })).response.status, 422);
+  principalVehicles = ["van1"];
+  const forbidden = await responseBody({ action: "reschedule-delivery-load", loadId: lb.id, targetRunId: second, scheduledTime: "11:00", expectedLoadVersion: lb.version });
+  assert.ok([403, 404].includes(forbidden.response.status), String(forbidden.response.status));
+  assert.ok([403, 404].includes((await responseBody({ action: "set-run-stop-order", runId: second, expectedRunVersion: 1, stopIds: [] })).response.status));
+  principalVehicles = ["van1", "van2"];
+  assert.equal(await snapshot(), before, "no rejected command changed any Run or load");
+  const la = await loadOf(a);
+  const order = { action: "set-run-stop-order", runId: first, stopIds: [visitStopId(la.deliveryVisitId!)] };
+  assert.equal((await responseBody({ ...order, expectedRunVersion: await runVersion(first) })).response.status, 200);
+  const settled = await snapshot();
+  assert.equal((await responseBody({ ...order, expectedRunVersion: await runVersion(first) })).response.status, 200);
+  assert.equal(await snapshot(), settled, "replay changes nothing");
+  const replay = await assignReq(a, first, "10:00");
+  assert.equal(replay.response.status, 200);
+  assert.equal((await loadOf(a)).deliveryVisitId, la.deliveryVisitId);
+});
+
+test("native stops: several visits at one customer need an explicit choice; New visit and a target stop are honoured", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const runId = `${id}:run`;
+  await seed(runs(), run(runId));
+  const ids = [`${id}:m1`, `${id}:m2`, `${id}:m3`];
+  for (const mid of ids) await seed(movements(), movement(mid));
+  const assignMovement = async (mid: string, extra: Record<string, unknown> = {}) => responseBody({ action: "assign", by: "integration-test", runId, expectedRunVersion: await runVersion(runId), movementId: mid, plannedArrivalTime: "10:00", ...extra });
+  assert.equal((await assignMovement(ids[0])).response.status, 200);
+  assert.equal((await assignMovement(ids[1], { newVisit: true })).response.status, 200, "deliberate repeat visit at the same customer");
+  assert.equal((await stops().where("runId", "==", runId).get()).size, 2);
+  const ambiguous = await assignMovement(ids[2]);
+  assert.ok([400, 422].includes(ambiguous.response.status), String(ambiguous.response.status));
+  assert.equal((ambiguous.body.error as { code?: string }).code, "LOGISTICS_VISIT_CHOICE_REQUIRED");
+  const [firstStop] = (await stops().where("runId", "==", runId).get()).docs.map((doc) => doc.data() as DeliveryStop).sort((x, y) => x.sequence - y.sequence);
+  assert.equal((await assignMovement(ids[2], { targetStopId: firstStop.canonicalId })).response.status, 200);
+  const after = (await stops().where("runId", "==", runId).get()).docs.map((doc) => doc.data() as DeliveryStop);
+  assert.equal(after.length, 2, "joined an existing visit, no third stop");
+  assert.equal(after.find((stop) => stop.canonicalId === firstStop.canonicalId)!.movementRequestIds.length, 2);
+});
+
+// ============================================================================================
+// Journey Planner V3: "+ Add collection" inside a physical stop — a governed collection movement AT THE CUSTOMER
+// that joins the (load-backed) visit by explicit visit id, so both are ONE physical stop on the Run.
+// ============================================================================================
+const collectionMovement = (mid: string, customer = customerA, quantity = 3): MovementRequest => ({
+  canonicalId: mid, entityType: "Movement Request", type: "collection", serviceDate, fromOplocId: customer,
+  items: [{ description: "Empty hot boxes", quantity, unit: "boxes" }], createdBy: "integration-test", status: "open", version: 1,
+  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), audit: [],
+});
+async function addCollection(runId: string, mid: string, extra: Record<string, unknown> = {}, customer = customerA) {
+  const saved = await responseBody({ action: "save-movement", movement: collectionMovement(mid, customer) });
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+  return responseBody({ action: "assign", by: "integration-test", runId, expectedRunVersion: await runVersion(runId), movementId: mid, ...extra });
+}
+
+test("collections 1: a collection movement joins the load-backed visit by explicit visit id: ONE physical stop, one order key, driver order follows", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const { first } = await seededRuns(id);
+  const a = reqFor(`${id}:a`), other = reqFor(`${id}:o`, customerB);
+  await assignReq(a, first, "10:00");
+  await assignReq(other, first, "11:00");
+  const la = await loadOf(a);
+  assert.ok(la.deliveryVisitId);
+  const mid = `${id}:collect`;
+  const joined = await addCollection(first, mid, { visit: visitStopId(la.deliveryVisitId!) });
+  assert.equal(joined.response.status, 200, JSON.stringify(joined.body));
+  const native = (await stops().where("runId", "==", first).get()).docs.map((doc) => doc.data() as DeliveryStop);
+  assert.equal(native.length, 1);
+  assert.equal(native[0].visitId, la.deliveryVisitId, "the native collection stop carries the visit id");
+  assert.equal(native[0].locationOplocId, customerA, "the pickup is the selected customer, never CPU");
+  assert.deepEqual(native[0].movementRequestIds, [mid]);
+  const saved = (await movements().doc(mid).get()).data() as MovementRequest;
+  assert.deepEqual(saved.items, [{ description: "Empty hot boxes", quantity: 3, unit: "boxes" }]);
+  assert.equal(saved.fromOplocId, customerA);
+  const { planner } = await dashboardRun(first);
+  const rows = physicalRows(planner);
+  assert.equal(rows.length, 2, "customer A (delivery + collection) and customer B");
+  const mixed = rows.find((row) => row.key === visitStopId(la.deliveryVisitId!))!;
+  assert.deepEqual(mixed.stops.map((stop) => stop.lane).sort(), ["collection", "delivery"]);
+  // the existing delivery is unchanged
+  assert.equal((await loadOf(a)).deliveryVisitId, la.deliveryVisitId);
+  assert.equal((await loadOf(a)).scheduledTime, "10:00");
+  // exact-permutation order validation treats the visit as ONE stop and accepts any member id of it
+  const otherLoad = await loadOf(other);
+  const order = [visitStopId(otherLoad.deliveryVisitId!), visitStopId(la.deliveryVisitId!)];
+  const ok = await responseBody({ action: "set-run-stop-order", runId: first, expectedRunVersion: await runVersion(first), stopIds: order });
+  assert.equal(ok.response.status, 200, JSON.stringify(ok.body));
+  const twice = await responseBody({ action: "set-run-stop-order", runId: first, expectedRunVersion: await runVersion(first), stopIds: [order[0], native[0].canonicalId, order[1]] });
+  assert.equal(twice.response.status, 422, "naming the same physical stop twice (visit id + its native member) is refused");
+  assert.deepEqual(((await runs().doc(first).get()).data() as DeliveryRun).orderedStopIds, order, "the stored order names visits");
+  const reordered = (await dashboardRun(first)).planner;
+  assert.equal(reordered.stops[0].destination.id, customerB, "saved order is honoured");
+});
+
+test("collections 2: a visit id at another customer or run is refused and writes nothing; a second collection joins the same native stop", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const { first, second } = await seededRuns(id);
+  const a = reqFor(`${id}:a`), other = reqFor(`${id}:o`, customerB);
+  await assignReq(a, first, "10:00");
+  await assignReq(other, first, "11:00");
+  const [la, lo] = [await loadOf(a), await loadOf(other)];
+  const before = JSON.stringify((await stops().where("runId", "==", first).get()).docs.map((doc) => doc.data()));
+  const wrongCustomer = await addCollection(first, `${id}:c1`, { visit: visitStopId(lo.deliveryVisitId!) }); // visit B offered to a collection at customer A
+  assert.equal(wrongCustomer.response.status, 422, JSON.stringify(wrongCustomer.body));
+  const wrongRun = await addCollection(second, `${id}:c2`, { visit: visitStopId(la.deliveryVisitId!) }); // visit A lives on the first run
+  assert.equal(wrongRun.response.status, 422, JSON.stringify(wrongRun.body));
+  assert.equal(JSON.stringify((await stops().where("runId", "==", first).get()).docs.map((doc) => doc.data())), before, "rejected joins write no stop");
+  assert.equal((await stops().where("runId", "==", second).get()).size, 0);
+  assert.equal(((await movements().doc(`${id}:c1`).get()).data() as MovementRequest).status, "open", "the movement stays open in the queue, nothing is lost");
+  const ok = await addCollection(first, `${id}:c3`, { visit: visitStopId(la.deliveryVisitId!) });
+  assert.equal(ok.response.status, 200, JSON.stringify(ok.body));
+  const again = await responseBody({ action: "assign", by: "integration-test", runId: first, expectedRunVersion: await runVersion(first), movementId: `${id}:c1`, visit: visitStopId(la.deliveryVisitId!) });
+  assert.equal(again.response.status, 200, JSON.stringify(again.body));
+  const native = (await stops().where("runId", "==", first).get()).docs.map((doc) => doc.data() as DeliveryStop);
+  assert.equal(native.length, 1, "the second collection joined the existing native member of the visit");
+  assert.equal(native[0].movementRequestIds.length, 2);
+  assert.equal(physicalRows((await dashboardRun(first)).planner).length, 2);
+});
+
+test("collections 3: an explicit New visit keeps a collection separate from the delivery visit", async (t) => {
+  const id = prefix(); t.after(() => cleanup(id));
+  const { first } = await seededRuns(id);
+  const a = reqFor(`${id}:a`);
+  await assignReq(a, first, "10:00");
+  const separate = await addCollection(first, `${id}:sep`, { visit: "new" });
+  assert.equal(separate.response.status, 200, JSON.stringify(separate.body));
+  const native = (await stops().where("runId", "==", first).get()).docs.map((doc) => doc.data() as DeliveryStop);
+  assert.equal(native.length, 1);
+  assert.equal(native[0].visitId, undefined);
+  assert.equal(physicalRows((await dashboardRun(first)).planner).length, 2, "delivery visit and the deliberate separate collection stop");
 });

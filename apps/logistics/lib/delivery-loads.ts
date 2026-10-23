@@ -1,7 +1,7 @@
 import type { DeliveryLoad, LogisticsAssignment, LogisticsJob } from "./types";
 import { HttpError } from "./http-error";
 
-export type LoadKey = Pick<DeliveryLoad, "serviceDate" | "originOplocId" | "destinationOplocId" | "scheduledTime" | "scheduledEnd" | "runId" | "vehicleId" | "collectionRequired">;
+export type LoadKey = Pick<DeliveryLoad, "serviceDate" | "originOplocId" | "destinationOplocId" | "scheduledTime" | "scheduledEnd" | "runId" | "vehicleId" | "collectionRequired"> & Partial<Pick<DeliveryLoad, "deliveryVisitId">>;
 
 /** Source timing constrains arrival, never the Logistics-owned service duration. */
 export function arrivalWithinSource(window: LogisticsJob["requestedWindow"], arrival: string) {
@@ -74,7 +74,7 @@ export function createLoad(input: LoadKey & { destinationLabelSnapshot?: string;
     throw new Error("A load requires canonical origin and destination OPLOC IDs and a scheduled time.");
   const now = input.now || new Date().toISOString();
   const id = deliveryLoadId(input);
-  return { id, serviceDate: input.serviceDate, originOplocId: input.originOplocId, destinationOplocId: input.destinationOplocId, ...(input.collectionRequired ? { collectionRequired: true } : {}), ...(input.runId ? { runId: input.runId } : {}), ...(input.vehicleId ? { vehicleId: input.vehicleId } : {}), ...(input.destinationLabelSnapshot ? { destinationLabelSnapshot: input.destinationLabelSnapshot } : {}), scheduledTime: input.scheduledTime, ...(input.scheduledEnd ? { scheduledEnd: input.scheduledEnd } : {}), status: "planned", createdAt: now, updatedAt: now, version: 1, audit: [{ action: "load-created", at: now, by: input.by, version: 1 }] };
+  return { id, serviceDate: input.serviceDate, originOplocId: input.originOplocId, destinationOplocId: input.destinationOplocId, ...(input.collectionRequired ? { collectionRequired: true } : {}), ...(input.runId ? { runId: input.runId } : {}), ...(input.deliveryVisitId ? { deliveryVisitId: input.deliveryVisitId } : {}), ...(input.vehicleId ? { vehicleId: input.vehicleId } : {}), ...(input.destinationLabelSnapshot ? { destinationLabelSnapshot: input.destinationLabelSnapshot } : {}), scheduledTime: input.scheduledTime, ...(input.scheduledEnd ? { scheduledEnd: input.scheduledEnd } : {}), status: "planned", createdAt: now, updatedAt: now, version: 1, audit: [{ action: "load-created", at: now, by: input.by, version: 1 }] };
 }
 
 export function assignJob(job: LogisticsJob, load: DeliveryLoad, existing: LogisticsAssignment[], by: string, now = new Date().toISOString()) {

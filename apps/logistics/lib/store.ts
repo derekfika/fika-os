@@ -80,7 +80,7 @@ export async function listState(serviceDate?: string) {
     : [await stops().get()];
   const stopDocs = stopSnapshots.flatMap((snapshot) => snapshot?.docs || []);
   const state = {
-    runs: runSnap.docs.map((d) => d.data() as DeliveryRun),
+    runs: runSnap.docs.map((d) => d.data() as DeliveryRun).filter((run) => !run.retiredAt),
     stops: stopDocs.map((d) => normalizeStop(d.data())),
     movements: movementSnap.docs.map((d) => d.data() as MovementRequest),
   };

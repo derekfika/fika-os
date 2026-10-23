@@ -22,6 +22,13 @@ export default defineConfig({
     { name: "desktop-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /desktop\.spec\.ts/ },
     { name: "timeline-poc-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /timeline-poc\.spec\.ts/ },
     { name: "mounted-timeline-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /mounted-timeline\.spec\.ts/ },
+    { name: "journey-redesign-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /journey-redesign\.spec\.ts/ },
+    { name: "desktop-usability-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /desktop-usability.*\.spec\.ts/ },
+    { name: "run-planning-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /run-planning\.spec\.ts/ },
+    { name: "mobile-visit-order-chromium", use: { ...devices["Pixel 7"] }, testMatch: /mobile-visit-order\.spec\.ts/ },
+    { name: "journey-planner-v2-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /journey-planner-v2-preview\.spec\.ts/ },
+    { name: "journey-planner-v3-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /journey-planner-v3.*\.spec\.ts/ },
+    { name: "stop-visits-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /stop-visits\.spec\.ts/ },
     { name: "mobile-chromium", use: { ...devices["Pixel 7"] }, testMatch: /mobile\.spec\.ts/ },
   ],
 });

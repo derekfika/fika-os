@@ -4,9 +4,10 @@ import { assignJob, aggregateDelivery, assertLoadVersion, compatibleAssignedLoad
 import { HttpError } from "./http-error";
 import { assertRunPlanningOpen } from "./planning";
 import type { DeliveryLoad, DeliveryRun, LogisticsAssignment, LogisticsJob } from "./types";
+import { chooseVisit, newVisitId, visitCandidates } from "./stop-visits";
 
 export const assignmentId = (jobId: string) => `assignment:${encodeURIComponent(jobId)}`;
-export type AssignmentIntent = { resolveSchedule?: (loads: DeliveryLoad[], job: LogisticsJob) => { scheduledTime: string; scheduledEnd?: string }; jobId: string; targetRunId?: string; scheduledTime: string; scheduledEnd?: string; collectionRequired?: boolean; expectedJobVersion?: number; expectedLoadVersions?: Record<string, number>; sourceJob?: LogisticsJob };
+export type AssignmentIntent = { resolveSchedule?: (loads: DeliveryLoad[], job: LogisticsJob) => { scheduledTime: string; scheduledEnd?: string }; jobId: string; targetRunId?: string; scheduledTime: string; scheduledEnd?: string; collectionRequired?: boolean; /** "new" or an existing visit id at this customer on the target run; omitted = join the one unambiguous visit, else choose. */ visit?: string; expectedJobVersion?: number; expectedLoadVersions?: Record<string, number>; sourceJob?: LogisticsJob };
 export type AssignmentBatch = { loads: Map<string, DeliveryLoad>; plannedRuns?: Set<string>; members?: Map<string, LogisticsJob[]>; dayLoads?: DeliveryLoad[]; nativeRequirements?: Set<string> };
 
 export async function assertLoadAssignmentsCurrent(tx: Transaction, load: DeliveryLoad) {
@@ -77,9 +78,43 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
   const available = new Map(datedLoads.map(load => [load.id, load]));
   for (const [id, load] of batch?.loads || []) available.set(id, load);
   if (intent.resolveSchedule) intent = { ...intent, ...intent.resolveSchedule([...available.values()], job) };
-  const proposed = createLoad({ serviceDate: job.serviceDate, originOplocId: job.originOplocId, destinationOplocId: job.destinationOplocId, scheduledTime: intent.scheduledTime, scheduledEnd: intent.scheduledEnd, collectionRequired: intent.collectionRequired, runId: intent.targetRunId, vehicleId, destinationLabelSnapshot: job.destinationLabelSnapshot, by, now });
+  // ---- Physical visit (Stop) selection -------------------------------------------------
+  // The job's current load, if it is already on this run, keeps its visit (a time edit never splits a visit).
+  const currentLoad = assigned.docs[0] ? available.get((assigned.docs[0].data() as LogisticsAssignment).loadId) : undefined;
+  let deliveryVisitId: string | undefined;
+  const backfilled: DeliveryLoad[] = [];
+  const originals = new Map<string, DeliveryLoad>();
+  if (intent.targetRunId && currentLoad && currentLoad.runId === intent.targetRunId && !intent.visit) {
+    deliveryVisitId = currentLoad.deliveryVisitId;
+  } else if (intent.targetRunId) {
+    const choice = chooseVisit(visitCandidates([...available.values()], { runId: intent.targetRunId, customerOplocId: job.destinationOplocId, excludeLegs: currentLoad ? [{ loadId: currentLoad.id, lane: "delivery" }] : [] }), intent.visit);
+    if (choice.kind === "choice-required") throw Object.assign(new HttpError(422, "This customer already has more than one visit on this run. Choose which visit to add this work to, or start a new visit."), { code: "LOGISTICS_VISIT_CHOICE_REQUIRED" });
+    if (choice.kind === "invalid") throw new HttpError(422, choice.reason);
+    if (choice.kind === "new") deliveryVisitId = newVisitId();
+    else if (choice.candidate.visitId) deliveryVisitId = choice.candidate.visitId;
+    else {
+      // Joining a legacy placement (no visit id yet): give its members one explicit identity so the
+      // association survives later time edits. Done inside this transaction, never by name or OPLOC.
+      deliveryVisitId = newVisitId();
+      for (const leg of choice.candidate.legs) {
+        const member = available.get(leg.loadId);
+        if (!member) continue;
+        if (!originals.has(member.id)) originals.set(member.id, member);
+        const touched = backfilled.find(item => item.id === member.id);
+        const field = leg.lane === "delivery" ? "deliveryVisitId" : "collectionVisitId";
+        const updated: DeliveryLoad = touched
+          ? { ...touched, [field]: deliveryVisitId }
+          : { ...member, [field]: deliveryVisitId, updatedAt: now, version: member.version + 1, audit: [...member.audit, { action: "visit-association-backfilled", at: now, by, version: member.version + 1 }] };
+        if (touched) backfilled.splice(backfilled.indexOf(touched), 1);
+        backfilled.push(updated);
+        available.set(updated.id, updated);
+        if (batch?.dayLoads) batch.dayLoads = batch.dayLoads.map(item => item.id === updated.id ? updated : item);
+      }
+    }
+  }
+  const proposed = createLoad({ deliveryVisitId, serviceDate: job.serviceDate, originOplocId: job.originOplocId, destinationOplocId: job.destinationOplocId, scheduledTime: intent.scheduledTime, scheduledEnd: intent.scheduledEnd, collectionRequired: intent.collectionRequired, runId: intent.targetRunId, vehicleId, destinationLabelSnapshot: job.destinationLabelSnapshot, by, now });
   if (!compatibleLoad(job, proposed)) throw new HttpError(422, "The job and delivery load no longer match the current operational details.");
-  const matching = [...available.values()].filter(l => l.status !== "cancelled" && l.originOplocId === proposed.originOplocId && l.destinationOplocId === proposed.destinationOplocId && l.runId === proposed.runId && l.vehicleId === proposed.vehicleId && l.scheduledTime === proposed.scheduledTime && l.scheduledEnd === proposed.scheduledEnd && Boolean(l.collectionRequired) === Boolean(intent.collectionRequired));
+  const matching = [...available.values()].filter(l => l.status !== "cancelled" && l.originOplocId === proposed.originOplocId && l.destinationOplocId === proposed.destinationOplocId && l.runId === proposed.runId && l.vehicleId === proposed.vehicleId && l.scheduledTime === proposed.scheduledTime && l.scheduledEnd === proposed.scheduledEnd && Boolean(l.collectionRequired) === Boolean(intent.collectionRequired) && l.deliveryVisitId === proposed.deliveryVisitId);
   if (matching.length > 1 || assigned.size > 1) throw new HttpError(409, "Duplicate canonical load or assignment requires review.");
   const baseId = proposed.id;
   let generation = 0;
@@ -95,7 +130,8 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
   if (intent.sourceJob && existing.length && !Number.isInteger(intent.expectedJobVersion)) throw new HttpError(409, "Job was assigned elsewhere. Refresh planning and use its canonical version.");
   if ((!intent.sourceJob || existing.length) && !Number.isInteger(intent.expectedJobVersion)) throw new HttpError(422, "The current job version is required.");
   if ((!intent.sourceJob || existing.length) && job.version !== intent.expectedJobVersion) throw new HttpError(409, "Job assignment changed. Refresh Logistics and retry.");
-  if (matching.length && !batch?.loads.has(load.id)) assertLoadVersion(load, intent.expectedLoadVersions?.[load.id]);
+  // The caller observed the load BEFORE any in-transaction visit backfill, so check that version.
+  if (matching.length && !batch?.loads.has(load.id)) assertLoadVersion(originals.get(load.id) || load, intent.expectedLoadVersions?.[load.id]);
   const targetJobs = matching.length && !batch?.loads.has(load.id) ? (await assertLoadAssignmentsCurrent(tx, load)).jobs : batch?.members?.get(load.id) || [];
   const oldLoad = existing[0] && existing[0].loadId !== load.id ? (await tx.get(deliveryLoads().doc(existing[0].loadId))).data() as DeliveryLoad | undefined : undefined;
   const oldMembers = oldLoad ? await tx.get(logisticsAssignments().where("loadId", "==", oldLoad.id)) : undefined;
@@ -121,8 +157,9 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
   for (const doc of assigned.docs) tx.delete(doc.ref);
   tx.set(logisticsAssignments().doc(assignmentId(job.id)), next.assignment);
   tx.set(jobRef, { ...job, activeLoadId: load.id, version: job.version + 1, updatedAt: now, audit: [...job.audit, { action: `job-assigned:${load.id}`, at: now, by, version: job.version + 1 }] });
+  for (const member of backfilled) if (member.id !== load.id) tx.set(deliveryLoads().doc(member.id), member);
   tx.set(deliveryLoads().doc(load.id), saved);
   if (oldLoad) tx.set(deliveryLoads().doc(oldLoad.id), aggregateDelivery({ ...oldLoad, ...(oldMembers!.size <= 1 ? { status: "cancelled" } : {}), version: oldLoad.version + 1, updatedAt: now, audit: [...oldLoad.audit, { action: `job-moved-out:${job.id}`, at: now, by, version: oldLoad.version + 1 }] }, oldJobs));
   batch?.loads.set(saved.id, saved);
-  return { jobId: job.id, load: saved, plannedRun, changed: true };
+  return { jobId: job.id, load: saved, plannedRun, changed: true, backfilled };
 }

@@ -39,6 +39,11 @@ export type StopIssue = {
 };
 export type RequirementRef = { requirementId: string; sourceVersion: number; sourceDomain?: FulfilmentRequirement["sourceDomain"]; workstream?: FulfilmentWorkstream };
 export type DeliveryStop = {
+  /**
+   * The physical visit this stop belongs to. Projected leg-stops get it from their load; a NATIVE collection stop
+   * carries it (persisted) when it was added to a load-backed visit, so both are ONE physical stop on the Run.
+   */
+  visitId?: string;
   /** Stable identity for a one-off movement endpoint; never derived from address text. */
   oneOffEndpointId?: string;
   canonicalLoadIds?: string[];
@@ -100,6 +105,9 @@ export type DeliveryRun = {
   driverLabel?: string;
   vehicleLabel?: string;
   orderedStopIds: string[];
+  /** Soft retirement of an empty draft/planned run. Retired runs stay in storage as audit evidence but are never planned or projected. */
+  retiredAt?: string;
+  retiredBy?: string;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -157,6 +165,10 @@ export type DeliveryLoad = {
   collectionScheduledTime?: string;
   collectionScheduledEnd?: string;
   collectionRunId?: string;
+  /** Physical visit (Stop) this load's DELIVERY leg belongs to on `runId`. Absent on legacy loads. See lib/stop-visits.ts. */
+  deliveryVisitId?: string;
+  /** Physical visit this load's COLLECTION leg belongs to on its collection Run. The same id as a delivery leg = one mixed Stop. */
+  collectionVisitId?: string;
   loaded?: boolean;
   status: "planned" | "ready" | "dispatched" | "delivered" | "cancelled";
   driverId?: string;
@@ -194,7 +206,7 @@ export type LogisticsChangeEvent = {
 };
 
 export type LogisticsProjectionJob = Pick<LogisticsJob, "sourceVersion" | "requirementId" | "id" | "sourceType" | "sourceId" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "requestedWindow" | "productionReadiness" | "deliveryStatus" | "collectionStatus" | "contents" | "notes" | "workstream"> & { version?: number; totalUnits: number; assignedLoadId?: string };
-export type LogisticsProjectionLoad = Pick<DeliveryLoad, "id" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "scheduledTime" | "scheduledEnd" | "collectionRequired" | "collectionScheduledTime" | "collectionScheduledEnd" | "collectionRunId" | "loaded" | "status" | "driverId" | "vehicleId" | "runId" | "deliveryExecution" | "collectionExecution"> & { version?: number; loadVersions?: Record<string, number>; loadIds?: string[]; jobs: Array<Pick<LogisticsJob, "sourceVersion" | "requirementId" | "version" | "id" | "sourceType" | "sourceId" | "collectionStatus" | "deliveryStatus" | "productionReadiness" | "contents" | "notes" | "workstream" | "requestedWindow"> & { totalUnits: number; assignedLoadId?: string }>; jobCount: number; totalUnits: number; collectedCount: number; readiness: "ready" | "attention" | "awaiting_collection" };
+export type LogisticsProjectionLoad = Pick<DeliveryLoad, "id" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "scheduledTime" | "scheduledEnd" | "collectionRequired" | "collectionScheduledTime" | "collectionScheduledEnd" | "collectionRunId" | "deliveryVisitId" | "collectionVisitId" | "loaded" | "status" | "driverId" | "vehicleId" | "runId" | "deliveryExecution" | "collectionExecution"> & { version?: number; loadVersions?: Record<string, number>; loadIds?: string[]; jobs: Array<Pick<LogisticsJob, "sourceVersion" | "requirementId" | "version" | "id" | "sourceType" | "sourceId" | "collectionStatus" | "deliveryStatus" | "productionReadiness" | "contents" | "notes" | "workstream" | "requestedWindow"> & { totalUnits: number; assignedLoadId?: string }>; jobCount: number; totalUnits: number; collectedCount: number; readiness: "ready" | "attention" | "awaiting_collection" };
 export type LogisticsProjectionRun = Pick<DeliveryRun, "canonicalId" | "status" | "driverId" | "driverLabel" | "vehicleLabel" | "vehicleId"> & Partial<Pick<DeliveryRun, "serviceDate" | "plannedCpuDepartureTime" | "plannedCpuReturnTime" | "departedCpuAt" | "returnToCpuRequired" | "returnToCpuPending" | "returnedToCpuAt" | "returnedToCpuBy" | "orderedStopIds" | "version" | "createdAt" | "updatedAt" | "audit">>;
 export type LogisticsProjectionState = "CURRENT" | "STALE" | "PARTIAL" | "UNAVAILABLE" | "MISSING" | "VALID_EMPTY";
 export type LogisticsProjectionCompleteness = { fulfilment: "complete" | "unavailable"; cpu: "complete" | "unavailable" | "not_required"; oploc: "complete" | "unavailable" };

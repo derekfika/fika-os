@@ -47,7 +47,7 @@ test("fresh projected multi-job driver journey completes delivery, collection an
   await openDelivery(); await page.locator(".subload-card").nth(1).click();
   await expect.poll(() => jobs(f).every((job: any) => job.deliveryStatus === "delivered")).toBe(true); expect(jobs(f).every((job: any) => job.collectionStatus === "awaiting")).toBe(true);
   await page.getByRole("button", { name: /Collections/ }).last().click();
-  const openCollection = () => page.getByRole("button", { name: "Open details for CPU production" }).click();
+  const openCollection = () => page.getByRole("button", { name: "Open details for Execution site" }).click();
   await openCollection(); await expect(page.getByRole("button", { name: "Postpone collection", exact: true })).toHaveCount(0); await page.getByRole("button", { name: "Mark arrived" }).click();
   await openCollection(); await page.locator(".subload-card").nth(0).click();
   await expect.poll(() => jobs(f)[0].collectionStatus).toBe("collected"); expect(jobs(f)[1].collectionStatus).toBe("awaiting");

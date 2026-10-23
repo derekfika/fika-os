@@ -1,0 +1,22 @@
+.backdrop { position: fixed; z-index: 80; inset: 0; display: grid; place-items: center; padding: 20px; background: color-mix(in srgb, var(--fika-text-primary) 38%, transparent); }
+.dialog { width: min(460px, 100%); max-height: calc(100dvh - 40px); overflow-y: auto; padding: 26px; border-radius: 16px; background: var(--fika-surface-card); box-shadow: var(--shadow-md); color: var(--fika-text-primary); font-family: var(--fika-font-body); }
+.dialog:focus-visible, .dialog *:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
+.dialog h2 { margin: 0 0 6px; color: var(--fika-action-secondary); font-size: 24px; font-weight: 700; }
+.lede { margin: 0 0 18px; color: var(--fika-text-secondary); font-size: 15px; line-height: 1.4; }
+.vehicles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 18px; padding: 0; border: 0; }
+.vehicles legend { margin-bottom: 8px; padding: 0; color: var(--fika-text-secondary); font-size: 14px; font-weight: 600; }
+.vehicle { display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 16px; border: 1.5px solid var(--fika-border-default); border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; }
+.vehicle input { position: absolute; opacity: 0; pointer-events: none; }
+.vehicle[data-selected="true"] { border-color: var(--fika-action-primary); background: color-mix(in srgb, var(--fika-action-primary) 10%, var(--fika-surface-card)); color: var(--fika-action-secondary); }
+.vehicle:has(input:focus-visible) { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
+.times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.times label { display: grid; gap: 6px; color: var(--fika-text-secondary); font-size: 14px; font-weight: 600; }
+.times input { height: 46px; padding: 0 12px; border: 1px solid var(--fika-border-default); border-radius: 10px; background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; font-size: 16px; }
+.times input[aria-invalid="true"] { border-color: var(--fika-status-danger); }
+.problem { margin: 10px 0 0; color: var(--fika-status-danger); font-size: 14px; font-weight: 600; }
+.actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.primary, .secondary { height: 46px; padding: 0 22px; border-radius: 11px; font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
+.primary { border: 0; background: var(--fika-action-primary); color: var(--fika-surface-card); }
+.primary:disabled { opacity: .6; cursor: progress; }
+.secondary { border: 1px solid var(--fika-border-default); background: var(--fika-surface-card); color: var(--fika-text-primary); }
+.wide { width: min(760px, 100%); }

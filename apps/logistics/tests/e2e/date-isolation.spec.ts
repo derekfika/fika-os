@@ -114,7 +114,7 @@ test.describe("Batch 5 production date isolation", () => {
       window.localStorage.setItem("fika-logistics-view", JSON.stringify({ date, weekCommencing }));
     }, { date: MONDAY, weekCommencing: MONDAY });
     await installRoutes(page);
-    await page.goto(`/?serviceDate=${NEXT_MONDAY}`);
+    await page.goto(`/?ui=classic&serviceDate=${NEXT_MONDAY}`);
     await openStopDetails(page);
     await expect(page.getByTestId(`stop-stop:${NEXT_MONDAY}`)).toBeVisible();
     const week = page.getByRole("region", { name: "Operational week", exact: true });
@@ -132,7 +132,7 @@ test.describe("Batch 5 production date isolation", () => {
     const mondayGate = deferred();
     const mondayStarted = deferred();
     await installRoutes(page, { delayMondayProjection: mondayGate.promise, mondayProjectionReached: () => mondayStarted.resolve() });
-    await page.goto(`/?serviceDate=${MONDAY}`);
+    await page.goto(`/?ui=classic&serviceDate=${MONDAY}`);
     await mondayStarted.promise;
 
     const week = page.getByRole("region", { name: "Operational week", exact: true });
@@ -168,7 +168,7 @@ test.describe("Batch 5 production date isolation", () => {
       mondayWeekReached: () => mondayStarted.resolve(),
       mondayWeekReturned: () => mondayReturned.resolve(),
     });
-    await page.goto(`/?serviceDate=${MONDAY}`);
+    await page.goto(`/?ui=classic&serviceDate=${MONDAY}`);
     await mondayStarted.promise;
 
     await page.getByRole("button", { name: "Next week" }).click();
@@ -181,7 +181,7 @@ test.describe("Batch 5 production date isolation", () => {
 
   test("changing service date closes the prior day's Inspector selection", async ({ page }) => {
     await installRoutes(page);
-    await page.goto(`/?serviceDate=${MONDAY}`);
+    await page.goto(`/?ui=classic&serviceDate=${MONDAY}`);
     await openStopDetails(page);
     const mondayCard = page.getByTestId(`stop-stop:${MONDAY}`);
     await expect(mondayCard).toBeVisible();
@@ -204,7 +204,7 @@ test.describe("Batch 5 production date isolation", () => {
       scheduleMutationReached: () => mutationStarted.resolve(),
       scheduleMutationReturned: () => mutationReturned.resolve(),
     });
-    await page.goto(`/?serviceDate=${MONDAY}`);
+    await page.goto(`/?ui=classic&serviceDate=${MONDAY}`);
     await openStopDetails(page);
     const mondayCard = page.getByTestId(`stop-stop:${MONDAY}`);
     await expect(mondayCard).toBeVisible();

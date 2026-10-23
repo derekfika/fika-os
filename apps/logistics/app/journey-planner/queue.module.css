@@ -1,0 +1,49 @@
+.queue { position: sticky; top: 14px; display: flex; max-height: calc(100dvh - 28px); flex-direction: column; padding: 18px 18px 8px; border: 1px solid var(--jp-line); border-radius: 14px; background: var(--fika-surface-card); }
+.heading { display: flex; align-items: baseline; gap: 8px; }
+.heading h2 { margin: 0; color: var(--jp-primary-ink); font-size: 21px; font-weight: 700; letter-spacing: -.01em; }
+.heading span { color: var(--jp-ink-2); font-size: 17px; font-weight: 500; }
+.hint { margin: 6px 0 14px; color: var(--jp-ink-2); font-size: 14.5px; line-height: 1.35; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.filter { display: inline-flex; height: 36px; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid var(--jp-lilac); border-radius: 10px; background: var(--jp-lilac); color: var(--jp-primary-ink); font-size: 14px; font-weight: 600; cursor: pointer; }
+.filter b { font-weight: 600; }
+.filter[aria-pressed="true"] { border-color: var(--jp-primary); background: var(--jp-primary); color: var(--fika-surface-card); }
+.search { display: flex; height: 44px; align-items: center; gap: 10px; margin-bottom: 4px; padding: 0 13px; border: 1px solid var(--jp-line-strong); border-radius: 11px; color: var(--jp-ink-2); }
+.search input { min-width: 0; flex: 1; border: 0; background: transparent; color: var(--jp-ink); font: inherit; font-size: 15px; outline: none; }
+.search input::placeholder { color: var(--jp-muted); }
+.search:focus-within { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
+/* The only scroll region in the queue. */
+.list { min-height: 0; flex: 1 1 auto; margin: 0 -18px; padding: 0 18px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
+.item { position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 16px 0 15px; border-bottom: 1px solid var(--jp-line); cursor: grab; touch-action: none; user-select: none; }
+.item:last-child { border-bottom: 0; }
+.item[data-pending="true"] { opacity: .55; cursor: progress; }
+.item:hover .name { color: var(--jp-primary); }
+.grip { padding-top: 4px; color: var(--jp-muted); }
+.body { min-width: 0; display: grid; gap: 4px; text-align: left; background: transparent; border: 0; padding: 0; cursor: inherit; }
+.name { overflow: hidden; color: var(--jp-ink); font-size: 17px; font-weight: 700; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.desc, .meta { overflow: hidden; color: var(--jp-ink-2); font-size: 14.5px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.attention { color: var(--jp-amber-ink); font-size: 13.5px; font-weight: 600; }
+.badge { display: inline-flex; height: 30px; align-items: center; gap: 6px; padding: 0 10px; border-radius: 8px; font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+.badge[data-kind="delivery"] { background: var(--jp-lilac); color: var(--jp-primary-ink); }
+.badge[data-kind="collection"] { background: var(--jp-amber-surface); color: var(--jp-amber-ink); }
+.empty { padding: 26px 4px 22px; color: var(--jp-ink-2); text-align: center; }
+.empty strong { display: block; margin-bottom: 4px; color: var(--jp-ink); font-size: 16px; }
+.skeleton { height: 54px; margin: 10px 0; border-radius: 10px; background: linear-gradient(90deg, var(--jp-lilac), var(--fika-surface-subtle), var(--jp-lilac)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* Collapsed rail */
+.rail { position: sticky; top: 14px; display: flex; width: 58px; border: 1px solid var(--jp-line); border-radius: 14px; background: var(--fika-surface-card); flex-direction: column; align-items: center; gap: 10px; padding: 12px 0; }
+.railButton { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid var(--jp-line-strong); border-radius: 11px; background: var(--fika-surface-card); cursor: pointer; }
+.railCount { display: grid; min-width: 30px; height: 30px; place-items: center; border-radius: 999px; background: var(--jp-primary); color: var(--fika-surface-card); font-size: 13.5px; font-weight: 700; }
+.railLabel { writing-mode: vertical-rl; color: var(--jp-ink-2); font-size: 13.5px; font-weight: 600; letter-spacing: .02em; }
+
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.collapseButton { margin-left: auto; width: 34px; height: 34px; }
+.newCollection { display: flex; align-items: center; justify-content: center; gap: 6px; height: 40px; margin: 6px 0 8px; border: 1px dashed var(--jp-lilac-edge); border-radius: 10px; background: transparent; color: var(--jp-primary); font-weight: 600; cursor: pointer; }
+
+.peek { position: absolute; z-index: 40; top: 0; left: 0; width: var(--jp-queue-w); max-height: calc(100dvh - 120px); box-shadow: var(--shadow-md); }
+.dockButton { display: block; margin: -4px 0 12px; height: 34px; padding: 0 12px; border: 1px solid var(--jp-line-strong); border-radius: 10px; background: var(--fika-surface-card); color: var(--jp-primary); font-weight: 600; cursor: pointer; }
+.state { color: var(--jp-amber-ink); font-size: 13.5px; font-weight: 600; }
+.item[data-draggable="true"] { cursor: grab; }
+.item[data-dragging="true"] { opacity: .45; }
+/* While work is being dragged out of the peek, step aside so every Run row (including its label) is a reachable drop target. */
+:global([data-queue-dragging="true"]) .peek { opacity: .18; pointer-events: none; transition: opacity .12s; }

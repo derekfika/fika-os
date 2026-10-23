@@ -9,11 +9,12 @@ import { authorizeLoad } from "./resource-authority";
 import { aggregateDelivery, assertJobSource, collectionComplete, deliveryComplete, deliveryLoaded, finaliseRun, readRunWork } from "./run-execution";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import { HttpError } from "./http-error";
+import { projectionGroupKey } from "./stop-visits";
 
 export const projectedActions = ["arrive-stop", "mark-stop-loaded", "mark-subload-loaded", "mark-subload-delivered", "mark-subload-collected", "complete-stop", "undo-completion", "report-issue", "resolve-issue", "defer-collection"];
 export type ProjectedIntent = { action: string; stopId?: string; runId?: string; loadIds?: string[]; expectedLoadVersion?: number; expectedLoadVersions?: Record<string, number>; expectedJobVersions?: Record<string, number>; expectedJobVersion?: number; expectedRunVersion?: number; requirementId?: string; jobId?: string; loaded?: boolean; confirmDirect?: boolean; issueDescription?: string; issueCategory?: import("./types").StopIssue["category"]; issueId?: string; resolutionNotes?: string };
 /** Same grouping tuple as the canonical projection; execution changes may split a card. */
-export const executionGroupKey = (l: DeliveryLoad) => JSON.stringify([l.serviceDate, l.originOplocId, l.destinationOplocId, l.runId, l.vehicleId, l.scheduledTime, l.scheduledEnd, Boolean(l.collectionRequired), l.collectionRunId, l.collectionScheduledTime, l.collectionScheduledEnd, l.status]);
+export const executionGroupKey = (l: DeliveryLoad) => projectionGroupKey(l);
 export function projectedLane(id?: string) {
   if (id?.startsWith("projection-stop:delivery:")) return "delivery" as const;
   if (id?.startsWith("projection-stop:collection:")) return "collection" as const;
