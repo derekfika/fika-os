@@ -18,6 +18,10 @@
     "url": "https://github.com/derekfika/fika-os/actions/runs/39966593876/job/120458869062",
     "sha": "0252be80d99220269eb0e25de1e4fe3b9bed9c0a"
   },
+  "resumeOperator": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer"
+  },
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
@@ -37,9 +41,10 @@
     "head": "0252be80d99220269eb0e25de1e4fe3b9bed9c0a",
     "pullRequestRisk": "standard"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "cc7d93a3-a576-4ea8-8c88-58c7b270b365",
+  "rollout": "build-2026-10-23-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "e66307c75eb7eb02afe8d7b51c9cbd0e297696f8",
     "rollout": "build-2026-10-22-004",
@@ -47,5 +52,12 @@
     "percent": 100
   },
   "previousGoodRecord": "e679f9e3f9e55818a8a7054a61029d260d18073a",
-  "createdAt": "2026-10-23T14:11:22.109Z"
+  "releaseId": "cc7d93a3-a576-4ea8-8c88-58c7b270b365",
+  "completedAt": "2026-10-23T15:30:10.606Z",
+  "smoke": {
+    "ok": true,
+    "status": 307,
+    "url": "https://fika-logistics-staging--fika-os-dev.europe-west4.hosted.app/",
+    "authmodFailClosed": true
+  }
 }
