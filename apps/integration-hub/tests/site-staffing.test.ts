@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import * as ts from "typescript";
 import { permissionsForRole } from "../lib/authmod";
 import { SchemaCatalogue } from "../lib/schema-catalogue";
 import { parseCanonical, type CanonicalEntityType } from "../lib/schemas";
@@ -269,16 +270,53 @@ test("operational roles do not create AUTHMOD permissions", () => {
   );
 });
 
-test("cancel creates no mutation and saves refresh both views", () => {
+test("Cancel closes the staffing modal without saving; successful saves refresh both views", () => {
   const source = fs.readFileSync(
     path.join(process.cwd(), "app/ui/Connections.tsx"),
     "utf8",
   );
-  assert.match(source, /type="button" onClick=\{close\}>Cancel/);
-  assert.doesNotMatch(source, /\bprompt\s*\(|\bconfirm\s*\(/);
-  assert.match(source, /setOverview\(body\)/);
-  assert.match(source, /By OPLOC and By Legend now show the same saved relationships/);
+  const file = ts.createSourceFile("Connections.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const actions = findFunction(file, "ModalActions");
+  assert.ok(actions, "staffing modals must render the shared actions component");
+  assert.ok(hasCancelCloseButton(actions), "Cancel must invoke only the supplied close handler");
+  const save = findFunction(findFunction(file, "Connections")!, "save");
+  assert.ok(save, "Connections must retain its save flow");
+  const calls = callExpressions(save);
+  const names = calls.map(callName);
+  assert.ok(names.includes("fetch"), "staffing save must submit to the Hub API");
+  assert.ok(names.includes("setOverview"), "successful save must refresh the shared overview used by both views");
+  assert.ok(names.includes("setEditor"), "successful save must close the editor after the server response");
+  assert.match(save.getText(file), /By OPLOC and By Legend now show the same saved relationships/);
+  assert.ok(!callExpressions(file).some(call => ["confirm", "prompt"].includes(callName(call))), "the workflow must use its accessible modal instead of browser dialogs");
 });
+
+function findFunction(root: ts.Node, name: string): ts.FunctionDeclaration | undefined {
+  let found: ts.FunctionDeclaration | undefined;
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name) { found = node; return; }
+    ts.forEachChild(node, visit);
+  };
+  visit(root);
+  return found;
+}
+function callName(call: ts.CallExpression) { return ts.isIdentifier(call.expression) ? call.expression.text : ts.isPropertyAccessExpression(call.expression) ? call.expression.name.text : ""; }
+function callExpressions(root: ts.Node): ts.CallExpression[] {
+  const result: ts.CallExpression[] = [];
+  const visit = (node: ts.Node) => { if (ts.isCallExpression(node)) result.push(node); ts.forEachChild(node, visit); };
+  visit(root); return result;
+}
+function hasCancelCloseButton(root: ts.Node) {
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxElement(node) && ts.isIdentifier(node.openingElement.tagName) && node.openingElement.tagName.text === "button") {
+      const closeHandler = node.openingElement.attributes.properties.some(property => ts.isJsxAttribute(property) && property.name.getText() === "onClick" && property.initializer && ts.isJsxExpression(property.initializer) && property.initializer.expression && ts.isIdentifier(property.initializer.expression) && property.initializer.expression.text === "close");
+      const isCancel = node.children.some(child => ts.isJsxText(child) && child.text.trim() === "Cancel");
+      if (closeHandler && isCancel) found = true;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(root); return found;
+}
 
 function assignmentValues(
   legendId: string,
