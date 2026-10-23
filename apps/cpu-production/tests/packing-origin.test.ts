@@ -47,6 +47,23 @@ for (const [mode, origin] of [
     }
   });
 }
+test("packing staging: a bare configured host is normalised to https and still allow-listed", () => {
+  const origin = "https://cpu-staging.fikacatering.com";
+  assert.doesNotThrow(() =>
+    assertPackingOrigin(
+      new Request("http://localhost:8080/api/packing", { headers: { origin } }),
+      { FIKA_RUNTIME_MODE: "staging", CPU_PUBLIC_BASE_URL: "cpu-staging.fikacatering.com" },
+    ),
+  );
+  assert.throws(
+    () =>
+      assertPackingOrigin(
+        new Request("http://localhost:8080/api/packing", { headers: { origin } }),
+        { FIKA_RUNTIME_MODE: "staging", CPU_PUBLIC_BASE_URL: "cpu.fikacatering.com" },
+      ),
+    /configured/,
+  );
+});
 test("packing hosted origin configuration cannot silently select a foreign host or wrong environment", () => {
   for (const configured of [
     undefined,

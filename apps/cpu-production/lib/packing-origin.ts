@@ -32,7 +32,9 @@ export function assertPackingOrigin(
           : [];
     const configured = env.CPU_PUBLIC_BASE_URL || env.CPU_PRODUCTION_BASE_URL;
     try {
-      const url = new URL(configured || "");
+      // A bare host (no scheme) is normalised to https; the exact allow-list still applies.
+      const raw = (configured || "").trim();
+      const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
       if (
         !allowed.includes(url.origin) ||
         url.username ||
