@@ -49,7 +49,7 @@ async function writeRequirement(requirement: FulfilmentRequirement) {
   await db.collection("fikaFulfilmentRequirementsV1").doc(stableDocumentId(requirement.canonicalId)).set(requirement);
 }
 
-test("bounded Production Order reconciliation repairs missing/stale work and excludes local CPU production", { skip: !emulatorEnabled }, async () => {
+test("emulator: bounded Production Order reconciliation repairs missing/stale work and excludes local CPU production", { skip: !emulatorEnabled }, async () => {
   const draft = order({ name: "draft", destinationOplocId: "oploc:draft", status: "draft", requiresDelivery: false });
   const ready = order({ name: "ready", destinationOplocId: "oploc:ready", status: "planned" });
   const staleCurrent = order({ name: "stale", destinationOplocId: "oploc:stale", status: "planned", version: 2 });
@@ -100,7 +100,7 @@ test("bounded Production Order reconciliation repairs missing/stale work and exc
   }
 });
 
-test("destination changes replace the old requirement and preserve amendment attention", { skip: !emulatorEnabled }, async () => {
+test("emulator: destination changes replace the old requirement and preserve amendment attention", { skip: !emulatorEnabled }, async () => {
   const destinationDate = "2099-12-30";
   const source = { ...order({ name: "destination-change", destinationOplocId: "oploc:old-destination", status: "planned" }), serviceDate: destinationDate, requiredBy: `${destinationDate}T09:00:00.000Z` };
   const moved = { ...source, destinationOplocId: "oploc:new-destination", destinationLabel: "New destination" };

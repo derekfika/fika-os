@@ -30,7 +30,7 @@ async function seed(mutate?: (lines: Array<Record<string, unknown>>) => void) {
 }
 const read = async (path: string, id: string) => (await db.collection(path).doc(id).get()).data() as Record<string, any>;
 
-test("dry run reports the exact diff and writes nothing", { skip: !emulatorEnabled }, async () => {
+test("emulator: dry run reports the exact diff and writes nothing", { skip: !emulatorEnabled }, async () => {
   const { requirementId } = await seed();
   const before = await read("fikaFulfilmentRequirementsV1", stableDocumentId(requirementId));
   const plan = await planOrderedQuantityBackfill(db, orderId);
@@ -45,7 +45,7 @@ test("dry run reports the exact diff and writes nothing", { skip: !emulatorEnabl
   assert.deepEqual(await read("fikaFulfilmentRequirementsV1", stableDocumentId(requirementId)), before, "nothing was written");
 });
 
-test("apply adds only the ordered fields: version, hash, status, quantities and units are unchanged; a repeat is a no-op", { skip: !emulatorEnabled }, async () => {
+test("emulator: apply adds only the ordered fields: version, hash, status, quantities and units are unchanged; a repeat is a no-op", { skip: !emulatorEnabled }, async () => {
   const { requirementId, legacy } = await seed();
   const result = await applyOrderedQuantityBackfill(db, orderId, "test-operator", "2026-10-19T09:00:00.000Z");
   assert.equal(result.written, true);
@@ -65,12 +65,12 @@ test("apply adds only the ordered fields: version, hash, status, quantities and 
   assert.equal(again.upToDate, true);
 });
 
-test("it refuses to write when the requirement does not match the Production Order", { skip: !emulatorEnabled }, async () => {
+test("emulator: it refuses to write when the requirement does not match the Production Order", { skip: !emulatorEnabled }, async () => {
   await seed((lines) => { lines[0].quantity = 31; });
   await assert.rejects(applyOrderedQuantityBackfill(db, orderId, "test-operator"), /Refusing to write:.*operational quantity/);
 });
 
-test("it refuses to write if the documents changed since the dry run", { skip: !emulatorEnabled }, async () => {
+test("emulator: it refuses to write if the documents changed since the dry run", { skip: !emulatorEnabled }, async () => {
   const { requirementId } = await seed();
   const plan = await planOrderedQuantityBackfill(db, orderId);
   assert.ok(plan.changes.length);

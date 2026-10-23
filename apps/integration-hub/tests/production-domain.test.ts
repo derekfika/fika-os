@@ -31,7 +31,7 @@ test("Grab & Go external production is immediately plannable without CPU accepta
   assert.equal(externalProductionStatus({ sourceDomain: "menu-planning", status: "published" }), "menu_available");
 });
 
-test("late Grab & Go and Menu source deliveries cannot overwrite a newer cancellation or its history", { skip: !emulatorEnabled }, async () => {
+test("emulator: late Grab & Go and Menu source deliveries cannot overwrite a newer cancellation or its history", { skip: !emulatorEnabled }, async () => {
   const actor = { uid: "integration-test", name: "Integration Test", role: "integration-admin" as const, synthetic: true as const };
   for (const sourceDomain of ["grab-and-go", "menu-planning"] as const) {
     const input = { sourceDomain, sourceEntityId: `late-source:${sourceDomain}:${Date.now()}:${process.pid}`, destinationOplocId: "oploc:haleon", serviceDate: "2026-10-12", sourceVersion: 1, status: sourceDomain === "grab-and-go" ? "submitted" as const : "published" as const, lines: [{ sourceLineId: "line:owned", itemName: "Owned item", quantity: 1, unit: "item" }] };
@@ -59,7 +59,7 @@ test("late Grab & Go and Menu source deliveries cannot overwrite a newer cancell
   }
 });
 
-test("Menu withdrawal dominates replay of the same content version and permits a newer republish", { skip: !emulatorEnabled }, async () => {
+test("emulator: Menu withdrawal dominates replay of the same content version and permits a newer republish", { skip: !emulatorEnabled }, async () => {
   const actor = { uid: "integration-test", name: "Integration Test", role: "integration-admin" as const, synthetic: true as const };
   const input = { sourceDomain: "menu-planning" as const, sourceEntityId: `same-content-withdrawal:${Date.now()}:${process.pid}`, destinationOplocId: "oploc:haleon", serviceDate: "2026-10-12", sourceVersion: 4, sourceContentHash: "a".repeat(64), status: "amended" as const, lines: [{ sourceLineId: "owned-line", itemName: "Owned item", quantity: 15, unit: "portion" }] };
   await materialiseExternalProductionOrder(actor, input);
@@ -74,7 +74,7 @@ test("Menu withdrawal dominates replay of the same content version and permits a
   assert.equal(republished.order.audit.length, 3);
 });
 
-test("Menu publication materialisation is idempotent and preserves publication lineage", { skip: !emulatorEnabled }, async () => {
+test("emulator: Menu publication materialisation is idempotent and preserves publication lineage", { skip: !emulatorEnabled }, async () => {
   const suffix = `${Date.now()}:${process.pid}`;
   const input = {
     sourceDomain: "menu-planning" as const,
@@ -117,7 +117,7 @@ test("Menu publication materialisation is idempotent and preserves publication l
   }
 });
 
-test("Menu publication materialisation preserves all canonical No Key Allergens states on the CPU order", { skip: !emulatorEnabled }, async () => {
+test("emulator: Menu publication materialisation preserves all canonical No Key Allergens states on the CPU order", { skip: !emulatorEnabled }, async () => {
   const suffix = `${Date.now()}:${process.pid}:no-key`;
   const input = {
     sourceDomain: "menu-planning" as const,
@@ -182,7 +182,7 @@ test("CPU delivery creation requires a canonical destination OPLOC", async () =>
   );
 });
 
-test("explicitly internal CPU production creates no Fulfilment work on create or transition", { skip: !emulatorEnabled }, async () => {
+test("emulator: explicitly internal CPU production creates no Fulfilment work on create or transition", { skip: !emulatorEnabled }, async () => {
   const idempotencyKey = `cpu-internal-test:${Date.now()}`;
   const result = await createCpuProductionOrder({ uid: "test", name: "Test", role: "integration-admin", synthetic: true }, {
     clientName: "Internal prep",

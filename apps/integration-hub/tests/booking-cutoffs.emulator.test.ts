@@ -18,7 +18,7 @@ async function snapshot() {
   for (const collection of await db.listCollections()) for (const doc of (await collection.get()).docs) rows.push([doc.ref.path, doc.data()]);
   return rows.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 }
-test("real Hub POST rejects prohibited dates before any persistence; current routing, sparse notices, retries and amendments", { skip: !enabled }, async () => {
+test("emulator: real Hub POST rejects prohibited dates before any persistence; current routing, sparse notices, retries and amendments", { skip: !enabled }, async () => {
   const reset = await fetch("http://127.0.0.1:8292/emulator/v1/projects/demo-fika-os/databases/(default)/documents", { method: "DELETE" });
   assert.ok(reset.ok);
   const tag = randomUUID(), site = `oploc:cutoff:${tag}`, sandwich = `hospitality-menu-item:opaque:${tag}`, rolls = `hospitality-menu-item:${tag}:rice_paper_rolls`, standard = `hospitality-menu-item:${tag}:coffee`;

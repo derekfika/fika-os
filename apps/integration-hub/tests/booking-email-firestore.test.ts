@@ -16,7 +16,7 @@ import { createRcoaEmailTestFixture, RCOA_EMAIL_TEST_NOTIFICATION_IDS, RCOA_EMAI
 const emulatorEnabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os"
   && process.env.FIRESTORE_EMULATOR_HOST === "127.0.0.1:8292";
 
-test("canonical transitions atomically queue distinct lifecycle obligations; retries preserve earlier payloads", { skip: !emulatorEnabled }, async () => {
+test("emulator: canonical transitions atomically queue distinct lifecycle obligations; retries preserve earlier payloads", { skip: !emulatorEnabled }, async () => {
   assert.equal(process.env.FIKA_RUNTIME_MODE || "local", "local");
   const key = `email-test-${crypto.randomUUID()}`;
   const now = new Date().toISOString();
@@ -76,7 +76,7 @@ test("canonical transitions atomically queue distinct lifecycle obligations; ret
   ]);
 });
 
-test("Firestore worker CAS prevents duplicate sends, suppresses source races, and audits manual dead-letter recovery", { skip: !emulatorEnabled }, async () => {
+test("emulator: Firestore worker CAS prevents duplicate sends, suppresses source races, and audits manual dead-letter recovery", { skip: !emulatorEnabled }, async () => {
   assert.equal(process.env.FIKA_RUNTIME_MODE || "local", "local");
   const key = `email-worker-${crypto.randomUUID()}`;
   const booking = { canonicalId: `booking:${key}`, version: 4, commercialVersion: 2, lifecycleStatus: "Sent to CPU", service: { oplocId: `oploc:${key}`, portalSiteId: "mnk", eventDate: "2026-10-19", startTime: "12:00" }, source: { sourceBookingId: key }, client: { name: "Host", email: "host@example.test" }, order: { items: [], netTotal: 12, vatTotal: 0, grossTotal: 12 }, updatedAt: "2026-10-01T00:00:00Z" } as unknown as CanonicalBooking;
@@ -113,7 +113,7 @@ test("Firestore worker CAS prevents duplicate sends, suppresses source races, an
   assert.equal((await amendedRef.collection("recovery").get()).size, 1);
 });
 
-test("fixed synthetic RCoA test notification uses the durable worker once without creating a booking", { skip: !emulatorEnabled }, async () => {
+test("emulator: fixed synthetic RCoA test notification uses the durable worker once without creating a booking", { skip: !emulatorEnabled }, async () => {
   assert.equal(process.env.FIKA_RUNTIME_MODE || "local", "local");
   const id = RCOA_EMAIL_TEST_NOTIFICATION_IDS.submitted;
   const ref = db.collection("fikaBookingNotifications").doc(id);

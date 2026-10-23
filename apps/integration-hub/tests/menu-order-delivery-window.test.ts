@@ -34,7 +34,7 @@ async function cleanup(inputs: Ref[]) {
 
 const requirementsFor = async (input: Ref) => (await db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", materialisedProductionId(input)).get()).docs.map(doc => doc.data());
 
-test("a Menu order with no supplied delivery window carries no window and creates an unscheduled Logistics requirement", { skip: !emulatorEnabled }, async () => {
+test("emulator: a Menu order with no supplied delivery window carries no window and creates an unscheduled Logistics requirement", { skip: !emulatorEnabled }, async () => {
   const input = menuInput("no-window");
   try {
     const { order, created } = await materialiseExternalProductionOrder(actor, input);
@@ -55,7 +55,7 @@ test("a Menu order with no supplied delivery window carries no window and create
   } finally { await cleanup([input]); }
 });
 
-test("a genuinely supplied Menu delivery window is preserved end to end", { skip: !emulatorEnabled }, async () => {
+test("emulator: a genuinely supplied Menu delivery window is preserved end to end", { skip: !emulatorEnabled }, async () => {
   const input = menuInput("real-window", { serviceWindow: { startTime: "11:30", endTime: "12:00" } });
   try {
     const { order } = await materialiseExternalProductionOrder(actor, input);
@@ -65,7 +65,7 @@ test("a genuinely supplied Menu delivery window is preserved end to end", { skip
   } finally { await cleanup([input]); }
 });
 
-test("replaying the same Menu event is idempotent: one order, one requirement, still unscheduled", { skip: !emulatorEnabled }, async () => {
+test("emulator: replaying the same Menu event is idempotent: one order, one requirement, still unscheduled", { skip: !emulatorEnabled }, async () => {
   const input = menuInput("replay");
   try {
     const first = await materialiseExternalProductionOrder(actor, input);
@@ -83,7 +83,7 @@ test("replaying the same Menu event is idempotent: one order, one requirement, s
   } finally { await cleanup([input]); }
 });
 
-test("FIKA Xchange Menu orders still create a CPU production order but no Logistics requirement", { skip: !emulatorEnabled }, async () => {
+test("emulator: FIKA Xchange Menu orders still create a CPU production order but no Logistics requirement", { skip: !emulatorEnabled }, async () => {
   const input = menuInput("xchange", { destinationOplocId: CPU_SITE_OPLOC_ID, destinationLabel: "FIKA Xchange" });
   try {
     const { order } = await materialiseExternalProductionOrder(actor, input);
@@ -101,7 +101,7 @@ test("existing Hospitality fulfilment behaviour is unchanged", () => {
   assert.equal(fulfilmentFromProductionOrder(base as never, "test").requiredDeliveryWindow, undefined);
 });
 
-test("Grab & Go orders keep their existing default window", { skip: !emulatorEnabled }, async () => {
+test("emulator: Grab & Go orders keep their existing default window", { skip: !emulatorEnabled }, async () => {
   const input = { sourceDomain: "grab-and-go" as const, sourceEntityId: `window-test:${stamp}:gng`, sourceVersion: 1, sourceContentHash: "g1", destinationOplocId: "oploc:haleon", destinationLabel: "Haleon", serviceDate: "2026-10-26", status: "submitted" as const, lines: [line] };
   try {
     const { order } = await materialiseExternalProductionOrder(actor, input);
