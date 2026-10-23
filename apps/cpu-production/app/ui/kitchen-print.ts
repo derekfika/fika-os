@@ -19,7 +19,11 @@ export function collectionQuantity(line: ProductionLine) {
     : line.customerQuantity.toLocaleString("en-GB") + " " + line.customerUnit;
 }
 export function collectionTime(order: ProductionOrder) {
-  if (order.serviceWindow?.startTime) return cpuServiceWindow(order);
+  if (
+    order.serviceWindow?.startTime &&
+    order.serviceWindow.startTime !== "00:00"
+  )
+    return cpuServiceWindow(order);
   const date = new Date(order.requiredBy);
   return Number.isFinite(date.getTime()) && !order.requiredBy.includes("T00:00")
     ? new Intl.DateTimeFormat("en-GB", {
@@ -133,20 +137,33 @@ export function totalsPrintHtml(
       "<footer>Prepared / checked by: __________________ &nbsp; Date: ______________</footer>",
   );
 }
-export function printKitchenDocument(html: string) {
-  const frame = document.createElement("iframe");
-  frame.title = "Printable kitchen sheet";
-  frame.setAttribute("aria-hidden", "true");
-  frame.setAttribute("sandbox", "allow-same-origin allow-modals");
-  frame.style.cssText =
-    "position:fixed;left:-10000px;top:0;width:210mm;height:297mm;border:0";
-  frame.onload = () => {
-    const win = frame.contentWindow;
-    if (!win) return;
-    win.onafterprint = () => frame.remove();
-    win.focus();
-    win.print();
-  };
-  frame.srcdoc = html;
-  document.body.appendChild(frame);
+export function printKitchenDocument(
+  html: string,
+  prepare?: (doc: Document) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const frame = document.createElement("iframe");
+    frame.title = "Printable kitchen sheet";
+    frame.setAttribute("aria-hidden", "true");
+    frame.setAttribute("sandbox", "allow-same-origin allow-modals");
+    frame.style.cssText =
+      "position:fixed;left:-10000px;top:0;width:210mm;height:297mm;border:0";
+    frame.onload = async () => {
+      try {
+        await frame.contentDocument?.fonts.ready;
+        if (prepare && frame.contentDocument) prepare(frame.contentDocument);
+        const win = frame.contentWindow;
+        if (!win) return;
+        win.onafterprint = () => frame.remove();
+        win.focus();
+        win.print();
+        resolve();
+      } catch (error) {
+        frame.remove();
+        reject(error);
+      }
+    };
+    frame.srcdoc = html;
+    document.body.appendChild(frame);
+  });
 }

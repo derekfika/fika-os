@@ -1,4 +1,9 @@
 "use client";
+import {
+  dayProductionPrintHtml,
+  paginateDayProduction,
+} from "./day-production-print";
+import { loadWholeDay } from "./whole-day-production";
 import { useEffect, useId, useRef, useState } from "react";
 import type {
   ProductionLine,
@@ -14,7 +19,6 @@ import {
   normaliseOperationalAllergens,
 } from "../../../shared/allergen-contract";
 import {
-  collectionPrintHtml,
   printKitchenDocument,
   collectionQuantity,
   collectionDate,
@@ -106,14 +110,6 @@ export function CollectionCard({
               .join(" · ")}
           </p>
         </div>
-        <button
-          type="button"
-          className="kitchen-button"
-          disabled={inactive}
-          onClick={() => printKitchenDocument(collectionPrintHtml(order))}
-        >
-          Print collection sheet
-        </button>
       </header>
       <p className="kitchen-progress" role="status">
         {inactive
@@ -369,24 +365,80 @@ function SavedCollection({ order }: { order: ProductionOrder }) {
 }
 export default function KitchenRunSheet({
   orders,
+  productionDate = "",
+  onProductionDateChange,
 }: {
   orders: ProductionOrder[];
+  productionDate?: string;
+  onProductionDateChange?: (date: string) => void;
 }) {
+  const [printing, setPrinting] = useState(false);
+  const [printError, setPrintError] = useState("");
+  const printDay = async () => {
+    if (printing || !productionDate) return;
+    setPrinting(true);
+    setPrintError("");
+    try {
+      const allOrders = await loadWholeDay(productionDate);
+      await printKitchenDocument(
+        dayProductionPrintHtml(allOrders, productionDate),
+        paginateDayProduction,
+      );
+    } catch (error) {
+      setPrintError(
+        error instanceof Error
+          ? error.message
+          : "The complete day's production could not be printed. Refresh and retry.",
+      );
+    } finally {
+      setPrinting(false);
+    }
+  };
   return (
-    <section
-      className="kitchen-run-sheet"
-      aria-label="Collection packing workspace"
-    >
-      {!orders.length ? (
-        <div className="cpu-empty">
-          <h3>No collections in this selection.</h3>
-          <p>Choose a date or clear filters.</p>
-        </div>
-      ) : (
-        collectionOrders(orders).map((o) => (
-          <SavedCollection key={o.canonicalId + ":" + o.version} order={o} />
-        ))
-      )}
-    </section>
+    <>
+      <div className="kitchen-print-toolbar">
+        <label>
+          Production date for printing
+          <input
+            type="date"
+            value={productionDate}
+            onChange={(e) => onProductionDateChange?.(e.target.value)}
+          />
+        </label>
+        <button
+          type="button"
+          className="kitchen-button kitchen-print-primary"
+          disabled={!productionDate || printing}
+          onClick={() => void printDay()}
+        >
+          {printing ? "Preparing complete day…" : "Print day's production"}
+        </button>
+        <p>
+          {productionDate
+            ? "Prints the complete selected day across all sites, origins and production scopes. Screen filters do not limit printing; cancelled and superseded orders are excluded."
+            : "Select a production date before printing. Only that day will be printed."}
+        </p>
+        {printError && (
+          <p className="kitchen-error" role="alert">
+            {printError}
+          </p>
+        )}
+      </div>
+      <section
+        className="kitchen-run-sheet"
+        aria-label="Collection packing workspace"
+      >
+        {!orders.length ? (
+          <div className="cpu-empty">
+            <h3>No collections in this selection.</h3>
+            <p>Choose a date or clear filters.</p>
+          </div>
+        ) : (
+          collectionOrders(orders).map((o) => (
+            <SavedCollection key={o.canonicalId + ":" + o.version} order={o} />
+          ))
+        )}
+      </section>
+    </>
   );
 }

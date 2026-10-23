@@ -600,7 +600,7 @@ export default function CpuProduction() {
         )}
         {view === "day" && <ProductionDayView orders={visible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDate(nextDate); setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
-        {view === "run-sheet" && <KitchenRunSheet orders={visible} />}
+        {view === "run-sheet" && <KitchenRunSheet orders={visible} productionDate={date} onProductionDateChange={nextDate => { setDate(nextDate); if (nextDate) { setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); } }} />}
         {view === "totals" && <Totals filters={[site === "all" ? "All sites" : (totalsSelectedOrders.find(o=>o.destinationOplocId===site)?.destinationLabel || site), origin === "all" ? "All origins" : origin, productionScope === "all" ? "All production scopes" : productionScope].join(" · ")} orders={totalsSelectedOrders} range={totalsRange} selectedPeriod={totalsCustomRange ? "Custom date range" : formatProductionTotalsSelection(weekCommencing, totalsSelectedDays)} hasSelection={totalsCustomRange || selectedTotalsDates.length > 0} rangeError={totalsRangeResolution.error} loadError={error} loading={totalsLoading} />}
         </section>
         {view !== "totals" && <OperationsRail orders={visible} date={date || todayKey} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} />}
