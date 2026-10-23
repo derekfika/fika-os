@@ -1,3 +1,4 @@
+let diagnosed = false;
 /** CPU-only browser write boundary. Configured public origins take precedence over
  * internal App Hosting URLs. Forwarded hosts never establish trust. */
 export function assertPackingOrigin(
@@ -48,6 +49,37 @@ export function assertPackingOrigin(
         { status: 503 },
       );
     }
+  }
+  // Existing trace flag; one safe technical sample per process, never credentials
+  // or a Firestore audit write. Makes the App Hosting proxy boundary observable.
+  if (env.FIKA_DATA_SOURCE_TRACE === "1" && !diagnosed) {
+    diagnosed = true;
+    const safeOrigin = (value: string | null) => {
+      try {
+        return new URL(value || "").origin;
+      } catch {
+        return "invalid-or-missing";
+      }
+    };
+    const proto = request.headers
+      .get("x-forwarded-proto")
+      ?.split(",", 1)[0]
+      ?.trim();
+    const host = request.headers
+      .get("x-forwarded-host")
+      ?.split(",", 1)[0]
+      ?.trim();
+    console.info("CPU packing origin diagnostic", {
+      event: "cpu.packing.origin",
+      expectedOrigin: expected,
+      browserOrigin: safeOrigin(origin),
+      internalOrigin: safeOrigin(request.url),
+      forwardedOrigin:
+        proto === "https" || proto === "http"
+          ? safeOrigin(`${proto}://${host}`)
+          : "invalid-or-missing",
+      allowed: origin === expected,
+    });
   }
   if (origin !== expected) throw denied();
 }
