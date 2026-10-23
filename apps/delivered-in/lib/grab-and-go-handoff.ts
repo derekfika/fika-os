@@ -79,6 +79,28 @@ export async function deliverGrabHandoff(eventId: string, at = new Date()) {
   return settled?.delivery.status === "delivered" ? "delivered" as const : settled?.delivery.status === "dead-letter" ? "intervention-required" as const : "pending" as const;
 }
 
+export type GrabHandoffState = "delivered" | "pending" | "intervention-required" | "not-staged" | "not-tracked";
+const RUNTIME_HOSTED = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
+
+/** Deliver the committed source version through the canonical outbox (hosted) or direct forward (local). Never throws. */
+export async function dispatchGrabHandoff(order: GrabAndGoOrder, at = new Date()): Promise<"delivered" | "pending" | "intervention-required"> {
+  try { return RUNTIME_HOSTED() ? await deliverGrabHandoff(grabHandoffId(order), at) : await forwardProductionMaterialisation(grabHandoffEvent(order).payload, { allowPending: true }); }
+  catch { console.warn("Grab & Go source saved; production handoff remains pending", { orderId: order.orderId, sourceVersion: order.version }); return "pending"; }
+}
+
+/** CPU handoff state of each order's current source version: bounded direct reads of known outbox ids. */
+export async function readGrabHandoffStates(orders: Array<Pick<GrabAndGoOrder, "orderId" | "version">>): Promise<Map<string, GrabHandoffState>> {
+  const states = new Map<string, GrabHandoffState>();
+  if (!RUNTIME_HOSTED()) { for (const order of orders) states.set(order.orderId, "not-tracked"); return states; }
+  await Promise.all(orders.slice(0, 25).map(async order => {
+    const snapshot = await eventRef(grabHandoffId(order)).get();
+    if (!snapshot.exists) { states.set(order.orderId, "not-staged"); return; }
+    const status = (snapshot.data() as HandoffEvent).delivery.status;
+    states.set(order.orderId, status === "delivered" ? "delivered" : status === "dead-letter" ? "intervention-required" : "pending");
+  }));
+  return states;
+}
+
 export async function recoverGrabHandoffs(limit = 25, at = new Date()) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 25) throw Object.assign(new Error("Recovery limit must be 1–25."), { status: 422 });
   const snapshot = await events()

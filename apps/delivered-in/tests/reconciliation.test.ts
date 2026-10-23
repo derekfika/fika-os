@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { reconcileDeliveredInDay } from "../lib/delivered-in-reconciliation";
 import { markDeliveredInProjectionDayUnavailable, readDeliveredInProjection, readDeliveredInProjectionIndex } from "../lib/delivered-in-projection-store";
@@ -41,7 +42,7 @@ const menuPacket: MenuPlanningWeekPacket = {
 };
 
 test("bounded internal reconciliation uses the immutable Menu packet without a browser cookie", async () => {
-  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-internal-reconcile-`);
+  const root = await mkdtemp(join(tmpdir(), "fika-delivered-in-internal-reconcile-"));
   const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;
   process.env.FIKA_SNAPSHOT_DIR = root;
   globalThis.fetch = (async () => { throw new Error("interactive access must not be called"); }) as typeof fetch;
@@ -91,7 +92,7 @@ test("interactive reconciliation still resolves normal session access", async ()
 });
 
 test("reconciliation creates, then no-ops a current projection and preserves it on upstream failure", async () => {
-  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-reconcile-`);
+  const root = await mkdtemp(join(tmpdir(), "fika-delivered-in-reconcile-"));
   const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;
   process.env.FIKA_SNAPSHOT_DIR = root; globalThis.fetch = fetchSequence(true) as typeof fetch;
   try {
@@ -105,7 +106,7 @@ test("reconciliation creates, then no-ops a current projection and preserves it 
 });
 
 test("an omitted packet day falls back to authoritative Menu, restores availability, and keeps CPU failure degraded", async () => {
-  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-omitted-day-`);
+  const root = await mkdtemp(join(tmpdir(), "fika-delivered-in-omitted-day-"));
   const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;
   process.env.FIKA_SNAPSHOT_DIR = root; globalThis.fetch = fetchSequence(true) as typeof fetch;
   let authoritativeCalls = 0;
@@ -133,7 +134,7 @@ test("an omitted packet day falls back to authoritative Menu, restores availabil
 });
 
 test("authoritative withdrawal is distinct from packet omission", async () => {
-  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-withdrawn-day-`);
+  const root = await mkdtemp(join(tmpdir(), "fika-delivered-in-withdrawn-day-"));
   const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;
   process.env.FIKA_SNAPSHOT_DIR = root; globalThis.fetch = fetchSequence(true) as typeof fetch;
   const withdrawn = { ...sourcePublication, days: [{ ...sourcePublication.days[0], version: 2, status: "withdrawn" as const }] };
@@ -151,7 +152,7 @@ test("authoritative withdrawal is distinct from packet omission", async () => {
 });
 
 test("authoritative Menu failure leaves an unavailable day unavailable and never withdraws it", async () => {
-  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-unavailable-day-`);
+  const root = await mkdtemp(join(tmpdir(), "fika-delivered-in-unavailable-day-"));
   const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;
   process.env.FIKA_SNAPSHOT_DIR = root; globalThis.fetch = fetchSequence(true) as typeof fetch;
   try {
@@ -170,7 +171,7 @@ test("authoritative Menu failure leaves an unavailable day unavailable and never
 });
 
 test("a healthy packet day does not perform authoritative fallback", async () => {
-  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-healthy-packet-`);
+  const root = await mkdtemp(join(tmpdir(), "fika-delivered-in-healthy-packet-"));
   const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;
   process.env.FIKA_SNAPSHOT_DIR = root; globalThis.fetch = fetchSequence(true) as typeof fetch;
   let authoritativeCalls = 0;
