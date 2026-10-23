@@ -9,6 +9,7 @@ import { invalidateAuthmodAdmissionCache } from "../authmod-admission-cache";
 import { getAuthmodReferenceReadPackage, type AuthmodReferenceReadPackage } from "../authmod-reference-read-package";
 import { bumpCacheDatasets } from "../integration-cache-server";
 import { getOplocReadPackage } from "../oploc-read-package";
+import { publishAfterCommit } from "./commit-publication";
 import { bootstrapAuthmodAccessPackage, bumpAuthmodAccessHead, getAuthmodAccessReadPackage } from "../authmod-access-read-package";
 const collections = { identities: "authmodIdentities", custodians: "authmodCustodianAssignments", applications: "authmodApplications", sites: "authmodSiteAssignments", apps: "authmodAppAssignments", grants: "authmodAuthorityGrants", delegations: "authmodDelegations", services: "authmodServicePrincipals", imports: "authmodImports", resolutions: "authmodImportResolutions", audits: "authmodAccessAudit" } as const;
 const REFERENCE_CACHE_SCOPE = "global";
@@ -103,9 +104,9 @@ export class FirestoreAuthModRepository implements AuthModRepository {
       bumpAuthmodAccessHead(transaction, input.assignment.identityId);
       if (input.audit) transaction.create(db.collection(collections.audits).doc(input.audit.id), input.audit as unknown as DocumentData);
     });
-    await bootstrapAuthmodAccessPackage(input.assignment.identityId);
     invalidateAuthmodReferenceCaches();
     invalidateAuthmodAdmissionCache();
+    await publishAfterCommit(input.assignment.identityId, bootstrapAuthmodAccessPackage);
   }
   async revokeStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }) {
     await db.runTransaction(async transaction => {
@@ -116,9 +117,9 @@ export class FirestoreAuthModRepository implements AuthModRepository {
       bumpAuthmodAccessHead(transaction, input.assignment.identityId);
       if (input.audit) transaction.create(db.collection(collections.audits).doc(input.audit.id), input.audit as unknown as DocumentData);
     });
-    await bootstrapAuthmodAccessPackage(input.assignment.identityId);
     invalidateAuthmodReferenceCaches();
     invalidateAuthmodAdmissionCache();
+    await publishAfterCommit(input.assignment.identityId, bootstrapAuthmodAccessPackage);
   }
   async getServicePrincipal(id: string) { const snapshot = await firestoreRead("getServicePrincipal", collections.services, () => db.collection(collections.services).doc(id).get()); return snapshot.exists ? snapshot.data() as ServicePrincipal : undefined; }
   async listServicePrincipals() { return readAll<ServicePrincipal>(collections.services); }

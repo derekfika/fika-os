@@ -1,5 +1,6 @@
 export * from "./model";
 export * from "./repository";
+export * from "./commit-publication";
 export * from "./memory-repository";
 export * from "./firestore-repository";
 export * from "./audit";

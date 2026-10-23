@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import styles from "./account-detail.module.css";
 import { ROUTINE_ACCESS_REASONS } from "@/lib/authmod-reasons";
 import { loadAuthmodOptions } from "../../../ui/authmod-options-cache";
+import { errorSectionFor, readActionResponse } from "./action-response";
 
 type Account = { identity: { id: string; displayName: string; email?: string; identityKind: "person" | "operational"; status: string; identityLinkStatus: string; legendId?: string; legendLabel?: string; representedOplocId?: string; representedOplocLabel?: string; operationalPurpose?: string; provenance: string; version: number }; custodian?: { id: string; legendId: string; label: string; version: number }; sites: { id: string; label: string }[]; apps: { id: string; label: string }[]; specialAuthority: { id: string; resource: string; action: string; scope: { kind: string; ids: string[] }; reason?: string; provenance: string }[]; temporaryAccess?: { id: string; capability: string; label: string; type: string; scope: { kind: string; ids: string[] }; effectiveFrom?: string; effectiveTo?: string; status: string; source?: string }[]; delegatedBy?: { id: string; delegatorName: string; capability: string; scope: { kind: string; ids: string[] }; effectiveFrom?: string; effectiveTo?: string; status: string }[]; fullAccess: boolean; authmodAdmin: boolean };
 type Options = { applications: { appId: string; displayName: string; standardActions: string[] }[]; oplocs: { id: string; label: string }[]; legends: { id: string; label: string }[] };
@@ -20,6 +21,7 @@ export default function AccountDetail({ id }: { id: string }) {
   const [options, setOptions] = useState<Options>({ applications: [], oplocs: [], legends: [] });
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [error, setError] = useState("");
+  const [appMessage, setAppMessage] = useState<{ tone: "error" | "warning"; text: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [siteBusy, setSiteBusy] = useState(false);
   const [pendingCommand, setPendingCommand] = useState<Record<string, unknown> | null>(null);
@@ -45,11 +47,19 @@ export default function AccountDetail({ id }: { id: string }) {
 
   async function mutate(command: Record<string, unknown>) {
     if (!command.reason && !command.reasonCode) { const period = command.action === "site" || command.action === "app"; const reasonSelector = period || command.action === "legend"; setPendingCommand(command); setPendingTitle(String(command.action || "Confirm AUTHMOD change").replaceAll("-", " ")); setPendingReasonCode(reasonSelector ? (command.action === "legend" ? "access_correction" : "role_requirement") : "other"); setPendingReasonNote(""); setPendingPeriod(period && command.enabled === true); setPendingAccessType("permanent"); setPendingFrom(""); setPendingTo(""); return; }
+    const section = errorSectionFor(command);
+    if (section === "apps") setAppMessage(null);
     try {
-      const result = await read<{ account: Account }>(await fetch(`/api/authmod/accounts/${id}/actions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...command, expectedVersion: account?.identity.version }) }));
+      const result = await readActionResponse<Account>(await fetch(`/api/authmod/accounts/${id}/actions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...command, expectedVersion: account?.identity.version }) }));
       setAccount(result.account);
       setError("");
-    } catch (e) { setError((e as Error).message); }
+      if (section === "apps" && result.warning) setAppMessage({ tone: "warning", text: result.warning });
+    } catch (e) {
+      if (section === "apps") { setAppMessage({ tone: "error", text: (e as Error).message }); void refreshAccount(); } else setError((e as Error).message);
+    }
+  }
+  async function refreshAccount() {
+    try { setAccount((await read<{ account: Account }>(await fetch(`/api/authmod/accounts/${id}`, { cache: "no-store" }))).account); } catch { /* the displayed error already explains the failed save */ }
   }
   async function confirmPending() { const routine = pendingCommand?.action === "site" || pendingCommand?.action === "app" || pendingCommand?.action === "legend" || pendingCommand?.action === "bulk-sites"; if (!pendingCommand || (routine ? (pendingReasonCode === "other" && pendingReasonNote.trim().length < 3) : pendingReasonNote.trim().length < 3)) { setError(routine ? "Choose a reason; Other requires a short explanation." : "Enter a specific administrative reason before confirming."); return; } if (pendingPeriod && pendingAccessType !== "permanent" && (!pendingFrom || !pendingTo || new Date(pendingFrom) >= new Date(pendingTo))) { setError("Temporary and cover access require a valid start and end."); return; } const command = pendingCommand; setPendingCommand(null); const period = pendingPeriod ? { accessType: pendingAccessType, effectiveFrom: pendingFrom ? new Date(pendingFrom).toISOString() : undefined, effectiveTo: pendingTo ? new Date(pendingTo).toISOString() : undefined } : {}; const reasonFields = { reasonCode: pendingReasonCode, reasonNote: pendingReasonNote.trim() || undefined }; if (command.action === "bulk-sites") { setSiteBusy(true); try { for (const site of options.oplocs) if (sites.has(site.id) !== command.enabled) await mutate({ action: "site", oplocId: site.id, enabled: command.enabled, ...period, ...reasonFields }); } finally { setSiteBusy(false); } } else await mutate({ ...command, ...period, ...reasonFields }); }
 
@@ -73,7 +83,7 @@ export default function AccountDetail({ id }: { id: string }) {
     <div className={styles.layout}><div className={styles.primary}>
       <Card title="Identity" subtitle={person ? "Person identity and Workspace linkage." : "Operational context, separate from authorization."}><div className={styles.facts}><Fact label="Type" value={person ? "Person" : "Operational account"} /><Fact label="Email" value={account.identity.email || "Not supplied"} /><Fact label="Status" value={account.identity.status} /><Fact label="Provenance" value={account.identity.provenance} />{!person && <Fact label="Represents" value={account.identity.representedOplocLabel || account.identity.operationalPurpose || "Not classified"} />}</div>{person ? <IdentityEditor account={account} options={options} mutate={mutate} /> : <OperationalEditor account={account} options={options} mutate={mutate} />} {!person && <div className={styles.notice}><ServerCog size={17} /><span>This account represents an operational context rather than an individual person. Custodianship never grants or transfers permissions.</span></div>}</Card>
       <Card title="Site Access" subtitle="Canonical OPLOC access is separate from operational representation."><div className={styles.bulkActions}><strong>{account.sites.length} of {options.oplocs.length} sites enabled</strong><button className={styles.secondary} disabled={siteBusy || allSitesEnabled} onClick={() => void setAllSites(true)}>Select all sites</button><button className={styles.secondary} disabled={siteBusy || account.sites.length === 0} onClick={() => void setAllSites(false)}>Clear sites</button></div><div className={styles.accessList}>{options.oplocs.map(site => <AccessRow key={site.id} title={site.label} detail="Operational Location" enabled={sites.has(site.id)} onChange={enabled => void mutate({ action: "site", oplocId: site.id, enabled })} />)}</div></Card>
-      <Card title="Application Access" subtitle="Each toggle controls the approved standard application bundle."><div className={styles.accessList}>{options.applications.map(app => <AccessRow key={app.appId} title={app.displayName} detail={`Normal access: ${app.standardActions.join(" · ")}`} enabled={apps.has(app.appId)} onChange={enabled => void mutate({ action: "app", appId: app.appId, enabled })} />)}</div></Card>
+      <Card title="Application Access" subtitle="Each toggle controls the approved standard application bundle.">{appMessage && <div role={appMessage.tone === "error" ? "alert" : "status"} className={styles.error}>{appMessage.tone === "error" ? "Application access was not saved. " : ""}{appMessage.text}</div>}<div className={styles.accessList}>{options.applications.map(app => <AccessRow key={app.appId} title={app.displayName} detail={`Normal access: ${app.standardActions.join(" · ")}`} enabled={apps.has(app.appId)} onChange={enabled => void mutate({ action: "app", appId: app.appId, enabled })} />)}</div></Card>
       <Card title="Temporary & delegated access" subtitle="Historical and scheduled access remains visible without authorizing expired records."><HistoryList account={account} /></Card>
       <DelegationEditor targetId={id} accountsUrl="/api/authmod/accounts" />
     </div><div className={styles.secondaryColumn}>
