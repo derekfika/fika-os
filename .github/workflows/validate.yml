@@ -102,10 +102,11 @@ jobs:
           distribution: temurin
           java-version: '21'
       - run: npm ci && npm ci --prefix apps/integration-hub && npm install --global firebase-tools@15.30.2
-      - run: firebase emulators:exec --only firestore --project demo-fika-os --config tools/workflow/emulator.json 'cd apps/integration-hub && npx tsx --test --test-concurrency=1 tests/booking-cutoffs.emulator.test.ts'
+      - run: firebase emulators:exec --only firestore --project demo-fika-os --config tools/workflow/emulator.json 'cd apps/integration-hub && npm run test:emulator'
         env:
           FIREBASE_PROJECT_ID: demo-fika-os
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8292
+          FIKA_RUNTIME_MODE: local
           FIKA_CUTOFF_EMULATOR_TEST: 'true'
           FIKA_CPU_PLAN_STORE: memory
   merge-gate:
