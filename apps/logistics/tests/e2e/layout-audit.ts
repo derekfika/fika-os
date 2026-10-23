@@ -92,4 +92,3 @@ export function expectClean(issues: Issues, context: string) {
   expect(issues.console, `console errors (${context})`).toEqual([]);
   expect(issues.network, `network failures (${context})`).toEqual([]);
 }
-
