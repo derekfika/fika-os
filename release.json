@@ -6,13 +6,46 @@
   "backend": "fika-logistics-staging",
   "region": "europe-west4",
   "branch": "release/staging/logistics",
-  "sourceSha": "e66307c75eb7eb02afe8d7b51c9cbd0e297696f8",
-  "rollout": "build-2026-10-22-004",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "baseline",
-  "scopeHash": "848c073e7ffe73e7046b256ba70a988a1211f4f04984df80afdf77f4a9fefe4f",
-  "observedAt": "2026-10-22T17:20:52.989Z",
-  "historicalException": true,
-  "reconciliation": "Existing deployed source not integrated into main; preserve, reconcile by reviewed PR before any new production promotion"
+  "sourceSha": "0252be80d99220269eb0e25de1e4fe3b9bed9c0a",
+  "scopeHash": "b400977818250c492daec7a997cdc8dbc80cd8d0ab9855a1710253f0366c15b4",
+  "inMain": true,
+  "rollback": false,
+  "executing": true,
+  "cosmeticOnly": false,
+  "standard": false,
+  "validation": {
+    "id": 120458869062,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/39966593876/job/120458869062",
+    "sha": "0252be80d99220269eb0e25de1e4fe3b9bed9c0a"
+  },
+  "approval": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "app": "logistics",
+    "environment": "staging",
+    "sourceSha": "0252be80d99220269eb0e25de1e4fe3b9bed9c0a",
+    "action": "deploy",
+    "instruction": "Explicit staging execution",
+    "releaseId": null,
+    "id": "036daf7439b4439cf45129823dbc7acfcf8895b8385603a3ac4cb3b477001374",
+    "explicitExecute": true,
+    "authorisedAt": "2026-10-23T14:11:17.491Z"
+  },
+  "provenance": {
+    "number": 19,
+    "url": "https://github.com/derekfika/fika-os/pull/19",
+    "head": "0252be80d99220269eb0e25de1e4fe3b9bed9c0a",
+    "pullRequestRisk": "standard"
+  },
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "cc7d93a3-a576-4ea8-8c88-58c7b270b365",
+  "previousGood": {
+    "sourceSha": "e66307c75eb7eb02afe8d7b51c9cbd0e297696f8",
+    "rollout": "build-2026-10-22-004",
+    "state": "SUCCEEDED",
+    "percent": 100
+  },
+  "previousGoodRecord": "e679f9e3f9e55818a8a7054a61029d260d18073a",
+  "createdAt": "2026-10-23T14:11:22.109Z"
 }
