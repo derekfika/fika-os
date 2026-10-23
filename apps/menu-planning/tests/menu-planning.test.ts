@@ -6,7 +6,6 @@ import { inspectWorkbook } from "../lib/importer";
 import { getMenuSnapshot, runMenuCommand } from "../lib/store";
 import * as XLSX from "xlsx";
 import { listSavedSandwiches, saveSandwich } from "../lib/sandwiches";
-import { titleCase } from "../lib/text";
 
 test("menu IDs are deterministic and publication blocks unresolved safety evidence", () => {
   assert.equal(deterministicId("menu-item-import", "WC 20_07_2026.xlsx", "mon", "3", "Mixed Leaf Salad"), deterministicId("menu-item-import", "WC 20_07_2026.xlsx", "mon", "3", "Mixed Leaf Salad"));
@@ -48,7 +47,7 @@ test("recipe commands preserve the source dish while supporting revision and dup
   assert.equal(afterDuplicate.items.length, before.items.length + 1);
   runMenuCommand({ action: "edit-item", itemId: item.canonicalId, displayName: "Renamed test dish", reason: "Test revision" });
   const amended = getMenuSnapshot().items.find(value => value.canonicalId === item.canonicalId);
-  assert.equal(amended?.displayName, "Renamed Test Dish");
+  assert.equal(amended?.displayName, "Renamed test dish");
   assert.equal(amended?.revision, item.revision + 1);
 });
 
@@ -70,7 +69,7 @@ test("saved sandwiches keep a stable title and mutually exclusive allergen patte
   const first = await saveSandwich("test saved sandwich", { gluten: "contains", milk: "may_contain" }, "test");
   const second = await saveSandwich("test saved sandwich", { noKeyAllergens: "contains", gluten: "contains" }, "test");
   assert.equal(first.id, second.id);
-  assert.equal(second.title, "Test Saved Sandwich");
+  assert.equal(second.title, "test saved sandwich");
   assert.equal(second.allergens.noKeyAllergens, "contains");
   assert.equal(second.allergens.gluten, "clear");
   assert.ok((await listSavedSandwiches()).some(item => item.id === first.id));
@@ -97,7 +96,7 @@ test("Brian recipe candidates preserve structured recipe evidence without invent
 test("dish creation retains Brian-style ingredients, method and yield fields", () => {
   const name = `Focused recipe ${Date.now()}`;
   runMenuCommand({ action: "create-item", displayName: name, category: "Cold Protein", yieldDescription: "Makes 20 portions", ingredients: [{ name: "Olive oil", quantity: 250, unit: "ml" }], methodSteps: ["Whisk ingredients", "Chill before service"] });
-  const item = getMenuSnapshot().items.find(value => value.displayName === titleCase(name));
+  const item = getMenuSnapshot().items.find(value => value.displayName === name);
   assert.deepEqual(item?.ingredients, [{ name: "Olive oil", quantity: 250, unit: "ml" }]);
   assert.deepEqual(item?.methodSteps, ["Whisk ingredients", "Chill before service"]);
   assert.equal(item?.yieldDescription, "Makes 20 portions");

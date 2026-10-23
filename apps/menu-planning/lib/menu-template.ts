@@ -11,6 +11,7 @@ const prefixForCategory: Record<CanonicalDishCategory, string> = {
   Fish: "FISH",
   Soup: "SOUP",
   "Cold Protein": "COLD PROTEIN",
+  Dessert: "DESSERT",
 };
 
 export function menuSlotPrefix(category: string) {

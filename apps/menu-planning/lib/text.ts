@@ -1,23 +1,6 @@
-/** Normalise dish/menu names for consistent display and storage. */
-const dishSpellingCorrections: Array<[RegExp, string]> = [
-  [/\bavacado\b/gi, "avocado"],
-  [/\bavocordo\b/gi, "avocado"],
-  [/\bcorriander\b/gi, "coriander"],
-  [/\bcoriandar\b/gi, "coriander"],
-  [/\bmayonaisse\b/gi, "mayonnaise"],
-  [/\bmayonaise\b/gi, "mayonnaise"],
-  [/\bmozzarela\b/gi, "mozzarella"],
-  [/\bmozarella\b/gi, "mozzarella"],
-  [/\bpomegrante\b/gi, "pomegranate"],
-  [/\btumeric\b/gi, "turmeric"],
-];
-
+/** Preserve the user's spelling and capitalisation; native spellcheck is advisory only. */
 export function normaliseDishName(value: string): string {
-  let cleaned = value.trim().replace(/\s+/g, " ");
-  cleaned = cleaned.replace(/\s+([,;:])/g, "$1").replace(/([,;:])(?=\S)/g, "$1 ");
-  cleaned = cleaned.replace(/\s*&\s*/g, " & ");
-  for (const [pattern, replacement] of dishSpellingCorrections) cleaned = cleaned.replace(pattern, replacement);
-  return titleCase(cleaned);
+  return value.trim();
 }
 
 export function titleCase(value: string): string {

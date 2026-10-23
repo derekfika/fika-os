@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { CANONICAL_DISH_CATEGORIES, canonicalDishCategoryForSlot, categoriesForMenuSlot, dishCategoryForWrite, normaliseDishCategory } from "../lib/dish-categories";
 import { rankDishPickerItems, type DishPickerItem } from "../lib/dish-picker";
 
-test("Dish Library exposes exactly the nine governed taxonomy values", () => {
-  assert.deepEqual(CANONICAL_DISH_CATEGORIES, ["Salad", "Starch/Side", "Garnish", "Sauce", "Hot Main", "Vegan/Veggie Main", "Fish", "Soup", "Cold Protein"]);
+test("Dish Library exposes exactly the ten governed taxonomy values", () => {
+  assert.deepEqual(CANONICAL_DISH_CATEGORIES, ["Salad", "Starch/Side", "Garnish", "Sauce", "Hot Main", "Vegan/Veggie Main", "Fish", "Soup", "Cold Protein", "Dessert"]);
   for (const category of CANONICAL_DISH_CATEGORIES) {
     assert.equal(normaliseDishCategory(category), category);
     assert.equal(dishCategoryForWrite(category), category);
@@ -20,13 +20,16 @@ test("legacy Side and Other records remain readable without rewriting their stor
   assert.throws(() => dishCategoryForWrite("Side"), /governed Dish Library categories/);
   assert.throws(() => dishCategoryForWrite("Other"), /governed Dish Library categories/);
   assert.throws(() => dishCategoryForWrite("Vegan Main"), /governed Dish Library categories/);
-  assert.throws(() => dishCategoryForWrite("Dessert"), /governed Dish Library categories/);
+  assert.equal(normaliseDishCategory("Pudding"), "Dessert");
+  assert.throws(() => dishCategoryForWrite("Pudding"), /governed Dish Library categories/);
 });
 
 test("menu slots stay distinct from dish categories and Hot Main accepts Fish dishes", () => {
   assert.deepEqual(categoriesForMenuSlot("HOT MAIN"), ["Hot Main", "Fish"]);
   assert.equal(canonicalDishCategoryForSlot("HOT MAIN"), "Hot Main");
   assert.equal(canonicalDishCategoryForSlot("STARCH/SIDE 1"), "Starch/Side");
+  assert.equal(canonicalDishCategoryForSlot("DESSERT 1"), "Dessert");
+  assert.deepEqual(categoriesForMenuSlot("DESSERT 3"), ["Dessert"]);
   assert.equal(canonicalDishCategoryForSlot("CUSTOM DESSERT"), undefined);
   const fish: DishPickerItem = { id: "fish-1", name: "Roast Salmon", category: "Fish" };
   assert.deepEqual(rankDishPickerItems([fish], "", "HOT MAIN").map(item => item.id), ["fish-1"]);

@@ -20,7 +20,7 @@ export default function MenuPlanningShell({ children, section, actions }: { chil
   useEffect(() => { setQuery(window.location.search); }, [pathname]);
   const hrefFor = (href: string) => { const current = new URLSearchParams(query); const next = new URLSearchParams(); const week = current.get("week"); const day = current.get("day"); if (week && ["/", "/portions", "/allergens"].includes(href)) next.set("week", week); if (day && ["/portions", "/allergens"].includes(href)) next.set("day", day); return next.toString() ? `${href}?${next}` : href; };
   const active = (href: string) => href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`) || (href === "/history" && pathname === "/sources");
-  return <main className="menu-shell">
+  return <main className="menu-shell" lang="en-GB" spellCheck={true}>
     <aside className="menu-sidebar">
       <Link href="/" className="menu-sidebar-brand" aria-label="FIKA OS Menu Planning"><strong>FIKA</strong><span>OS</span></Link>
       <div className="menu-sidebar-kicker">MENU PLANNING</div>

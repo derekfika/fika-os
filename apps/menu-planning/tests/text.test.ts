@@ -7,6 +7,6 @@ test("titleCase normalises menu names while preserving useful separators", () =>
   assert.equal(titleCase("honey-mustard & egg mayo"), "Honey-Mustard & Egg Mayo");
 });
 
-test("normaliseDishName applies safe dish spelling and punctuation corrections", () => {
-  assert.equal(normaliseDishName("  avocordo,corriander &  lime  "), "Avocado, Coriander & Lime");
+test("normaliseDishName preserves spelling, capitalisation and punctuation", () => {
+  assert.equal(normaliseDishName("  avocordo,corriander &  lime  "), "avocordo,corriander &  lime");
 });

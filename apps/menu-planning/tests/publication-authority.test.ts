@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { buildPublishedDay, publishedDayMatrixHtml } from "../lib/menu-publication";
+import { buildCompiledPublicationSnapshot, buildPublishedDay, publishedDayMatrixHtml } from "../lib/menu-publication";
+import { decodeWeeklyPublicationPacket, encodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 import type { MenuItem } from "../lib/domain";
 import type { RollingDay, RollingSnapshot } from "../lib/rolling-menu-types";
 
@@ -53,6 +54,32 @@ test("valid governed evidence publishes the exact expected allergen snapshot", (
   const published = buildPublishedDay(baseSnapshot(), day, [dish({ allergenEvidence: [{ allergen: "sesame", value: "contains", source: "Firestore review" }, { allergen: "milk", value: "may_contain", source: "Firestore review" }] })], strict);
   assert.equal(published.entries[0].allergens.sesame, "contains");
   assert.equal(published.entries[0].allergens.milk, "may_contain");
+});
+
+test("Dessert dishes keep their governed slot and identity through publication and CPU packet encoding", () => {
+  const dessertDay = { ...day, entryIds: ["entry:dessert"] };
+  const snapshot = baseSnapshot();
+  snapshot.week.entryIds = ["entry:dessert"];
+  snapshot.entries = [{ id: "entry:dessert", dayId: dessertDay.id, date: dessertDay.date, slot: "DESSERT 1", itemId: "dish:dessert", itemLabel: "mini pavlova", portions: 12, allocations: [{ destinationId: "oploc:1", destinationLabel: "Site", quantity: 12 }], allergens: {}, audit: [] }];
+  const dessert = dish({ canonicalId: "dish:dessert", sourceName: "mini pavlova", displayName: "mini pavlova", category: "Dessert" });
+  const built = buildPublishedDay(snapshot, dessertDay, [dessert], strict);
+  assert.equal(built.entries[0].slot, "DESSERT 1");
+  assert.equal(built.entries[0].canonicalDishId, "dish:dessert");
+  assert.equal(built.entries[0].dishName, "mini pavlova");
+
+  const compiled = buildCompiledPublicationSnapshot({
+    publicationId: "menu-publication:dessert",
+    sourceWeekId: snapshot.week.id,
+    weekCommencing: snapshot.week.weekCommencing,
+    weekEnding: snapshot.week.weekEnding,
+    publicationVersion: 1,
+    publicationStatus: "published",
+    days: [{ publicationDayId: "published-dessert-day", sourceDayId: dessertDay.id, date: dessertDay.date, dayName: dessertDay.dayName, version: 1, status: "published", contentHash: built.contentHash, publishedAt: "2026-09-14T12:00:00.000Z", publishedBy: "test", entries: built.entries }],
+    audit: [],
+  }, snapshot.week.version);
+  const decoded = decodeWeeklyPublicationPacket(encodeWeeklyPublicationPacket(compiled));
+  assert.equal(decoded.days[0].entries[0].slot, "DESSERT 1");
+  assert.equal(decoded.days[0].entries[0].canonicalDishId, "dish:dessert");
 });
 
 test("ordinary publication has no catalogue reconciliation side effect", () => {

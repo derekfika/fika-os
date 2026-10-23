@@ -270,10 +270,13 @@ test("Menu Planning persistence failure is not presented as an empty publication
   }
 });
 
-test("blank rolling week has seven days and the nine-category standard template rows", () => {
+test("blank rolling week has seven days and the ten-category standard template rows", () => {
   const week = emptyWeek("2026-08-17");
   assert.equal(week.days.length, 7);
   assert.deepEqual(week.week.templateSlots, [...ROLLING_SLOTS]);
+  assert.deepEqual(week.week.templateSlots.slice(-3), ["DESSERT 1", "DESSERT 2", "DESSERT 3"]);
+  assert.ok(!ROLLING_SLOTS.includes("SALAD 5" as typeof ROLLING_SLOTS[number]));
+  assert.ok(!ROLLING_SLOTS.includes("SALAD 6" as typeof ROLLING_SLOTS[number]));
   assert.equal(ROLLING_SLOTS.filter(slot => slot.startsWith("STARCH/SIDE ")).length, 4);
   assert.equal(ROLLING_SLOTS.filter(slot => slot.startsWith("GARNISH ")).length, 4);
   assert.equal(ROLLING_SLOTS.filter(slot => slot.startsWith("SAUCE ")).length, 4);

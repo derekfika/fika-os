@@ -8,6 +8,7 @@ export const CANONICAL_DISH_CATEGORIES = [
   "Fish",
   "Soup",
   "Cold Protein",
+  "Dessert",
 ] as const;
 
 /** Values retained so legacy Dish Library records remain readable during transition. */
@@ -42,6 +43,7 @@ export function normaliseDishCategory(value: string | undefined): ReadableDishCa
   if (["fish", "seafood"].includes(category)) return "Fish";
   if (["soup", "soups"].includes(category)) return "Soup";
   if (["cold protein", "cold proteins"].includes(category)) return "Cold Protein";
+  if (["dessert", "desserts", "pudding", "puddings"].includes(category)) return "Dessert";
   return "Other";
 }
 
@@ -50,6 +52,7 @@ export function categoriesForMenuSlot(slot: string): readonly ReadableDishCatego
   const value = slot.trim().toLocaleUpperCase().replace(/\s+/g, " ");
   if (/^SALAD(?: \d+)?$/.test(value)) return ["Salad"];
   if (/^SOUP(?: \d+)?$/.test(value)) return ["Soup"];
+  if (/^DESSERT(?: \d+)?$/.test(value)) return ["Dessert"];
   if (/^COLD PROTEIN(?: \d+)?$/.test(value)) return ["Cold Protein"];
   if (/^(?:STARCH\/SIDE|EXTRAS|SIDE)(?: \d+)?$/.test(value)) return ["Starch/Side"];
   if (/^GARNISH(?: \d+)?$/.test(value)) return ["Garnish"];
