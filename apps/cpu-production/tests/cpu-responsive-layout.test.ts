@@ -10,7 +10,7 @@ test("CPU shell keeps labelled navigation and responsive overrides after desktop
   ]);
   assert.equal((page.match(/aria-label="CPU Production navigation"/g) || []).length, 1);
   assert.match(page, /className="cpu-sidebar-nav"[\s\S]*?primaryNavigation\.map/);
-  for (const label of ["Overview", "Day", "Queue", "Run sheet", "Totals"]) {
+  for (const label of ["Week", "Day", "Queue", "Run sheet", "Totals"]) {
     assert.match(page, new RegExp(`label: "${label}"`));
   }
   assert.match(page, /aria-current=\{view === target \? "page" : undefined\}/);
@@ -23,6 +23,8 @@ test("CPU shell keeps labelled navigation and responsive overrides after desktop
   assert.match(styles, /@media \(max-width:700px\)[\s\S]*?\.cpu-summary\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(styles, /\.cpu-summary button:last-child\{grid-column:span 2\}/);
   assert.match(styles, /\.cpu-sidebar-nav button:focus-visible[\s\S]*?outline:3px solid var\(--fika-focus-ring\)/);
+  assert.match(styles, /\.cpu-toolbar-actions \.cpu-view-switch button:not\(\[aria-pressed="true"\]\)[^{]*\{[^}]*background:var\(--fika-surface-card\);color:var\(--brand-dark\)/);
+  assert.match(styles, /\.cpu-view-switch button\[aria-pressed="true"\][^{]*\{background:var\(--fika-action-primary\);color:#fff\}/);
 });
 
 test("tablet navigation uses a touch-aware drawer and hides the desktop operations rail", async () => {
@@ -49,11 +51,18 @@ test("tablet navigation uses a touch-aware drawer and hides the desktop operatio
   assert.match(styles, /\.cpu-tablet-menu-toggle:focus-visible[\s\S]*?outline:3px solid var\(--fika-focus-ring\)/);
 });
 
-test("CPU Overview exposes Day, Week and Run sheet controls beside refresh", async () => {
+test("all four operational views expose consistent view controls beside refresh", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /className="cpu-view-switch"[\s\S]*?>Week<\/button>[\s\S]*?>Day<\/button>[\s\S]*?>Run sheet<\/button>[\s\S]*?aria-label="Refresh production"/);
+  assert.match(page, /\["calendar", "day", "run-sheet", "totals"\]\.includes\(view\)[\s\S]*?className="cpu-view-switch"[\s\S]*?>Week<\/button>[\s\S]*?>Day<\/button>[\s\S]*?>Run sheet<\/button>[\s\S]*?>Totals<\/button>[\s\S]*?aria-label="Refresh production"/);
   assert.match(page, /const chooseDayView = \(\) => \{[\s\S]*setDayDate\(selectedDate\)[\s\S]*setWeekCommencing\(weekCommencingFor\(selectedDate\)\)/);
-  assert.match(page, /onClick=\{\(\) => chooseView\("run-sheet"\)\}/);
+  assert.match(page, /const chooseRunSheetView = \(\) =>/);
+  assert.match(page, /aria-pressed=\{view === "totals"\}/);
+});
+
+test("toolbar brand override leaves view navigation inactive text readable", async () => {
+  const overrides = await readFile(new URL("../app/brand-overrides.css", import.meta.url), "utf8");
+  assert.match(overrides, /\.cpu-toolbar-actions>button\{color:#fff!important\}/);
+  assert.doesNotMatch(overrides, /\.cpu-toolbar-actions button\{color:#fff!important\}/);
 });
 
 test("CPU calendar and interactive detail styles retain bounded scrolling and touch targets", async () => {

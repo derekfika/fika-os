@@ -24,7 +24,7 @@ import { productionScopes, type ProductionScope } from "../lib/production-scope"
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
 import { aggregateProductionTotals, orderDate } from "../lib/production-day";
 import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
-import { filterProductionTotalsOrders, formatProductionTotalsDateRange, resolveProductionTotalsRange, type ProductionTotalsPreset } from "../lib/production-totals-range";
+import { addOperationalDays, filterProductionTotalsOrders, filterProductionTotalsOrdersToDates, formatProductionTotalsDateRange, formatProductionTotalsSelection, operationalWeekRange, productionTotalsWeekDates, resolveProductionTotalsRange } from "../lib/production-totals-range";
 import { loadProductionTotalsRange } from "../lib/cpu-totals-loader";
 import { readApiResponse } from "./lib/api-response";
 import { readCpuProjection, writeCpuProjection } from "./lib/cpu-indexeddb";
@@ -54,7 +54,7 @@ function visibleStatus(order: ProductionOrder): ProductionStatus {
 }
 type View = "calendar" | "day" | "queue" | "run-sheet" | "totals" | "menu-planning" | "published-menus" | "grab-and-go";
 const primaryNavigation: Array<{ icon: string; label: string; target: View }> = [
-  { icon: "▦", label: "Overview", target: "calendar" },
+  { icon: "▦", label: "Week", target: "calendar" },
   { icon: "◷", label: "Day", target: "day" },
   { icon: "☷", label: "Queue", target: "queue" },
   { icon: "▤", label: "Run sheet", target: "run-sheet" },
@@ -71,7 +71,8 @@ export default function CpuProduction() {
   const [todayKey, setTodayKey] = useState("");
   const [dayDate, setDayDate] = useState("");
   const [weekCommencing, setWeekCommencing] = useState("");
-  const [totalsPreset, setTotalsPreset] = useState<ProductionTotalsPreset>("next_week");
+  const [totalsCustomRange, setTotalsCustomRange] = useState(false);
+  const [totalsSelectedDays, setTotalsSelectedDays] = useState<number[]>([0, 1, 2, 3, 4]);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   useEffect(() => {
@@ -154,7 +155,9 @@ export default function CpuProduction() {
     const isCurrentRequest = () => requestId === loadGeneration.current;
     if (showFeedback) setRefreshing(true);
     if (view === "totals") {
-      const resolution = resolveProductionTotalsRange(totalsPreset, todayKey, customFrom, customTo);
+      const resolution = totalsCustomRange
+        ? resolveProductionTotalsRange("custom", todayKey, customFrom, customTo)
+        : weekCommencing ? { range: operationalWeekRange(weekCommencing) } : { error: "The selected production week is not ready yet." };
       if (!resolution.range) {
         setOrders([]);
         setTotalsLoading(false);
@@ -255,7 +258,7 @@ export default function CpuProduction() {
   };
   useEffect(() => {
     void load();
-  }, [view, date, dayDate, weekCommencing, productionScope, todayKey, totalsPreset, customFrom, customTo]);
+  }, [view, date, dayDate, weekCommencing, productionScope, todayKey, totalsCustomRange, customFrom, customTo]);
   const sites = [
     ...new Set(
       orders.map((order) => order.destinationOplocId).filter(Boolean),
@@ -271,13 +274,20 @@ export default function CpuProduction() {
     (order) => !date || orderDate(order) === date,
   );
   const summaryOrders = view === "calendar" ? baseVisible : visible;
-  const totalsRangeResolution = useMemo(() => resolveProductionTotalsRange(totalsPreset, todayKey, customFrom, customTo), [totalsPreset, todayKey, customFrom, customTo]);
+  const totalsRangeResolution = useMemo(() => totalsCustomRange
+    ? resolveProductionTotalsRange("custom", todayKey, customFrom, customTo)
+    : weekCommencing ? { range: operationalWeekRange(weekCommencing) } : { error: "The selected production week is not ready yet." }, [totalsCustomRange, todayKey, customFrom, customTo, weekCommencing]);
   const totalsRange = totalsRangeResolution.range;
-  const totalsVisible = filterProductionTotalsOrders(orders, totalsRange, site, origin);
+  const totalsWeekDates = productionTotalsWeekDates(weekCommencing);
+  const selectedTotalsDates = totalsWeekDates.filter((_, index) => totalsSelectedDays.includes(index));
+  const totalsSelectedOrders = totalsCustomRange
+    ? filterProductionTotalsOrders(orders, totalsRange, site, origin)
+    : filterProductionTotalsOrdersToDates(filterProductionTotalsOrders(orders, totalsRange, site, origin), selectedTotalsDates);
   const attentionCount = orders.filter((order) => Boolean(cpuAttentionLabel(order))).length;
   const chooseView = (target: View) => {
     if (target === "totals") {
-      setTotalsPreset("next_week");
+      setTotalsCustomRange(false);
+      setTotalsSelectedDays([0, 1, 2, 3, 4]);
       setCustomFrom("");
       setCustomTo("");
       setStatus("");
@@ -289,11 +299,45 @@ export default function CpuProduction() {
     setDrawerOpen(false);
   };
   const chooseDayView = () => {
-    const selectedDate = date || dayDate;
+    const selectedWeek = weekCommencing || weekCommencingFor(dayDate);
+    const selectedDate = view === "totals"
+      ? (selectedTotalsDates[0] || selectedWeek || dayDate)
+      : date && weekCommencingFor(date) === selectedWeek
+        ? date
+        : dayDate && weekCommencingFor(dayDate) === selectedWeek
+          ? dayDate
+          : selectedWeek;
     setDayDate(selectedDate);
+    setDate(selectedDate);
     setWeekCommencing(weekCommencingFor(selectedDate));
     chooseView("day");
   };
+  const chooseWeekView = () => {
+    if (view === "totals" && weekCommencing) setWeekCommencing(weekCommencing);
+    chooseView("calendar");
+  };
+  const chooseRunSheetView = () => {
+    if (view === "totals" && selectedTotalsDates[0]) setDate(selectedTotalsDates[0]);
+    chooseView("run-sheet");
+  };
+  const chooseTotalsView = () => {
+    if (!weekCommencing) {
+      const selectedDate = date || dayDate;
+      if (selectedDate) setWeekCommencing(weekCommencingFor(selectedDate));
+    }
+    chooseView("totals");
+  };
+  const chooseTotalsWeek = (nextWeek: string) => {
+    setWeekCommencing(nextWeek);
+    setDate("");
+    setTotalsCustomRange(false);
+    setCustomFrom("");
+    setCustomTo("");
+    setOrders([]);
+    setTotalsLoading(true);
+    setError("");
+  };
+  const selectTotalsDays = (days: number[]) => setTotalsSelectedDays([...new Set(days)].filter(day => day >= 0 && day < 7).sort((a, b) => a - b));
   const openAttentionQueue = () => {
     setStatus("");
     setOrigin("");
@@ -440,10 +484,11 @@ export default function CpuProduction() {
             </p>
           </div>
           <div className="cpu-toolbar-actions">
-            {view === "calendar" && <div className="cpu-view-switch" role="group" aria-label="Production week view">
-              <button type="button" className="selected" aria-pressed="true" onClick={() => { if (date) setWeekCommencing(weekCommencingFor(date)); chooseView("calendar"); }}>Week</button>
-              <button type="button" aria-pressed="false" onClick={chooseDayView}>Day</button>
-              <button type="button" aria-pressed="false" onClick={() => chooseView("run-sheet")}>Run sheet</button>
+            {["calendar", "day", "run-sheet", "totals"].includes(view) && <div className="cpu-view-switch" role="group" aria-label="Production view">
+              <button type="button" className={view === "calendar" ? "selected" : ""} aria-pressed={view === "calendar"} onClick={chooseWeekView}>Week</button>
+              <button type="button" className={view === "day" ? "selected" : ""} aria-pressed={view === "day"} onClick={chooseDayView}>Day</button>
+              <button type="button" className={view === "run-sheet" ? "selected" : ""} aria-pressed={view === "run-sheet"} onClick={chooseRunSheetView}>Run sheet</button>
+              <button type="button" className={view === "totals" ? "selected" : ""} aria-pressed={view === "totals"} onClick={chooseTotalsView}>Totals</button>
             </div>}
             <button onClick={() => void load(true)} disabled={refreshing} aria-busy={refreshing} aria-label="Refresh production">
               {refreshing ? "Refreshing…" : "↻"}
@@ -452,13 +497,47 @@ export default function CpuProduction() {
         </div>
         {view !== "menu-planning" && view !== "published-menus" && view !== "grab-and-go" && <div className={`cpu-filters${view === "totals" ? " cpu-totals-filters" : ""}`}>
           {view === "totals" ? <>
-            <div className="cpu-totals-presets" role="group" aria-label="Totals date range">
-              {([ ["today", "Today"], ["tomorrow", "Tomorrow"], ["this_week", "This week"], ["next_week", "Next week"], ["custom", "Custom range"] ] as Array<[ProductionTotalsPreset, string]>).map(([preset, label]) => <button type="button" key={preset} className={totalsPreset === preset ? "selected" : ""} aria-pressed={totalsPreset === preset} onClick={() => { setTotalsPreset(preset); setTotalsLoading(true); setOrders([]); setError(""); if (preset === "custom") { setCustomFrom(""); setCustomTo(""); } }}>{label}</button>)}
+            <div className="cpu-totals-week-navigation" aria-label="Select production week">
+              <button type="button" aria-label="Previous week" onClick={() => { if (weekCommencing) chooseTotalsWeek(addOperationalDays(weekCommencing, -7)); }}>‹ Previous week</button>
+              <strong>{weekCommencing ? formatProductionTotalsDateRange(operationalWeekRange(weekCommencing)) : "Loading week…"}</strong>
+              <button type="button" aria-label="Next week" onClick={() => { if (weekCommencing) chooseTotalsWeek(addOperationalDays(weekCommencing, 7)); }}>Next week ›</button>
             </div>
-            {totalsPreset === "custom" && <>
-              <label>From<input aria-label="From date" type="date" value={customFrom} onChange={(event) => { setCustomFrom(event.target.value); setTotalsLoading(true); setOrders([]); setError(""); }} /></label>
-              <label>To<input aria-label="To date" type="date" min={customFrom || undefined} value={customTo} onChange={(event) => { setCustomTo(event.target.value); setTotalsLoading(true); setOrders([]); setError(""); }} /></label>
+            <div className="cpu-totals-shortcuts" role="group" aria-label="Week shortcuts">
+              <button type="button" aria-pressed={!totalsCustomRange && weekCommencing === (todayKey ? weekCommencingFor(todayKey) : "")} onClick={() => { if (todayKey) chooseTotalsWeek(weekCommencingFor(todayKey)); }}>This week</button>
+              <button type="button" aria-pressed={!totalsCustomRange && weekCommencing === (todayKey ? addOperationalDays(weekCommencingFor(todayKey), 7) : "")} onClick={() => { if (todayKey) chooseTotalsWeek(addOperationalDays(weekCommencingFor(todayKey), 7)); }}>Next week</button>
+            </div>
+            {!totalsCustomRange && <>
+              <div className="cpu-totals-day-picker" role="group" aria-label="Production days">
+                {totalsWeekDates.map((day, index) => {
+                  const date = new Date(`${day}T12:00:00Z`);
+                  const weekday = new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" }).format(date);
+                  const label = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(date);
+                  const pressed = totalsSelectedDays.includes(index);
+                  return <button type="button" key={day} className={`${index < 5 ? "cpu-totals-weekday" : "cpu-totals-weekend"}${pressed ? " selected" : ""}`} aria-label={`${label}${index >= 5 ? ", weekend" : ""}`} aria-pressed={pressed} onClick={() => selectTotalsDays(pressed ? totalsSelectedDays.filter(value => value !== index) : [...totalsSelectedDays, index])}><span>{weekday}</span><strong>{date.getUTCDate()}</strong></button>;
+                })}
+              </div>
+              <div className="cpu-totals-day-shortcuts" role="group" aria-label="Day selection shortcuts">
+                <button type="button" aria-pressed={totalsSelectedDays.length === 5 && totalsSelectedDays.every((day, index) => day === index)} onClick={() => selectTotalsDays([0, 1, 2, 3, 4])}>Weekdays</button>
+                <button type="button" aria-pressed={totalsSelectedDays.length === 7} onClick={() => selectTotalsDays([0, 1, 2, 3, 4, 5, 6])}>All days</button>
+              </div>
             </>}
+            <div className="cpu-totals-custom">
+              <button type="button" aria-expanded={totalsCustomRange} onClick={() => {
+                if (!totalsCustomRange && weekCommencing) {
+                  const range = operationalWeekRange(weekCommencing);
+                  setCustomFrom(range.from);
+                  setCustomTo(range.to);
+                }
+                setTotalsCustomRange(value => !value);
+                setOrders([]);
+                setTotalsLoading(true);
+                setError("");
+              }}>{totalsCustomRange ? "Use selected week" : "Choose a custom date range"}</button>
+              {totalsCustomRange && <div className="cpu-totals-custom-fields">
+                <label>From<input aria-label="From date" type="date" value={customFrom} onChange={(event) => { setCustomFrom(event.target.value); setTotalsLoading(true); setOrders([]); setError(""); }} /></label>
+                <label>To<input aria-label="To date" type="date" min={customFrom || undefined} value={customTo} onChange={(event) => { setCustomTo(event.target.value); setTotalsLoading(true); setOrders([]); setError(""); }} /></label>
+              </div>}
+            </div>
           </> : <label>
             Date
             <input type="date" value={date} onChange={(event) => { setDate(event.target.value); if (view === "day") setDayDate(event.target.value); }} />
@@ -495,7 +574,8 @@ export default function CpuProduction() {
               setOrigin("");
               setSite("");
               setDate("");
-              setTotalsPreset("next_week");
+              setTotalsCustomRange(false);
+              setTotalsSelectedDays([0, 1, 2, 3, 4]);
               setCustomFrom("");
               setCustomTo("");
             }}
@@ -518,7 +598,7 @@ export default function CpuProduction() {
         {view === "day" && <ProductionDayView orders={visible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDate(nextDate); setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
         {view === "run-sheet" && <RunSheet orders={visible} />}
-        {view === "totals" && <Totals orders={totalsVisible} range={totalsRange} rangeError={totalsRangeResolution.error} loadError={error} loading={totalsLoading} />}
+        {view === "totals" && <Totals orders={totalsSelectedOrders} range={totalsRange} selectedPeriod={totalsCustomRange ? "Custom date range" : formatProductionTotalsSelection(weekCommencing, totalsSelectedDays)} hasSelection={totalsCustomRange || selectedTotalsDates.length > 0} rangeError={totalsRangeResolution.error} loadError={error} loading={totalsLoading} />}
         </section>
         {view !== "totals" && <OperationsRail orders={visible} date={date || todayKey} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} />}
         </div>
@@ -702,12 +782,16 @@ function RunSheet({ orders }: { orders: ProductionOrder[] }) {
 function Totals({
   orders,
   range,
+  selectedPeriod,
+  hasSelection,
   rangeError,
   loadError,
   loading,
 }: {
   orders: ProductionOrder[];
   range?: { from: string; to: string };
+  selectedPeriod: string;
+  hasSelection: boolean;
   rangeError?: string;
   loadError: string;
   loading: boolean;
@@ -717,10 +801,11 @@ function Totals({
     <section className="cpu-totals">
       <header>
         <small>Read-only production planning · customer ordered quantities</small>
-        <h2>{range ? formatProductionTotalsDateRange(range) : "Select a date range"}</h2>
+        <h2>{selectedPeriod === "No days selected" ? "Select production days" : selectedPeriod}</h2>
+        {range && <p className="cpu-totals-range-label">{formatProductionTotalsDateRange(range)}</p>}
         {range && !loading && !rangeError && !loadError && <p>{orders.length} production order{orders.length === 1 ? "" : "s"} included · units remain grouped separately</p>}
       </header>
-      {loading ? <p className="cpu-totals-state" role="status">Loading and verifying production totals…</p> : rangeError || loadError ? <p className="cpu-totals-state" role="alert">{rangeError || loadError}</p> : categoryTotals.length ? categoryTotals.map(({ category, items }) => <section className="cpu-total-category" key={category}>
+      {loading ? <p className="cpu-totals-state" role="status">Loading and verifying production totals…</p> : rangeError || loadError ? <><p className="cpu-totals-state" role="alert">{rangeError || loadError}</p>{!hasSelection && <div className="cpu-empty cpu-totals-empty-selection"><h3>No production days selected</h3><p>Select one or more days above to see production quantities and order counts.</p></div>}</> : !hasSelection ? <div className="cpu-empty cpu-totals-empty-selection"><h3>No production days selected</h3><p>Select one or more days above to see production quantities and order counts.</p></div> : categoryTotals.length ? categoryTotals.map(({ category, items }) => <section className="cpu-total-category" key={category}>
         <h3>{category}</h3>
         <table className="cpu-total-list"><thead><tr><th scope="col">Production item</th><th scope="col">Total quantity</th><th scope="col">Unit</th></tr></thead><tbody>{items.map((total) => <tr key={total.key}><th scope="row">{total.name}</th><td>{total.quantity.toLocaleString("en-GB")}</td><td>{total.unit}</td></tr>)}</tbody></table>
       </section>) : (
