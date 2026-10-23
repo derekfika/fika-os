@@ -160,12 +160,12 @@ test("Grab & Go rotation repeats from week 4 to week 1 and filters products by d
 });
 
 test("Grab & Go orders are OPLOC-scoped, snapshot products, and preserve audit history on amendment", () => {
-  const created = applyOrderAction(undefined, { action: "submit", oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 4 }], actor: "site@local.fika", at: "2026-08-23T11:59:00" }, grabProducts);
+  const created = applyOrderAction(undefined, { action: "submit", oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 4 }], actor: "site@local.fika", at: "2026-08-23T10:59:00Z" }, grabProducts);
   assert.equal(created.orderId, orderIdFor(haleon, "2026-08-24"));
   assert.equal(created.lines[0].productName, "Week One Pot");
   assert.equal(created.lines[0].price, 1.85);
-  assert.throws(() => applyOrderAction(created, { action: "amend", oplocId: xchange, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 2 }], actor: "other@local.fika", at: "2026-08-23T11:00:00" }, grabProducts), (error: any) => error.status === 403);
-  const amended = applyOrderAction(created, { action: "amend", expectedVersion: 1, oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 7 }], actor: "site@local.fika", at: "2026-08-23T11:59:30" }, grabProducts);
+  assert.throws(() => applyOrderAction(created, { action: "amend", oplocId: xchange, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 2 }], actor: "other@local.fika", at: "2026-08-23T10:00:00Z" }, grabProducts), (error: any) => error.status === 403);
+  const amended = applyOrderAction(created, { action: "amend", expectedVersion: 1, oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 7 }], actor: "site@local.fika", at: "2026-08-23T10:59:30Z" }, grabProducts);
   assert.equal(amended.version, 2);
   assert.equal(amended.lines[0].quantity, 7);
   assert.equal(amended.history.length, 2);
@@ -181,11 +181,12 @@ test("Grab & Go commands are strict and reject stale versions", () => {
 });
 
 test("Grab & Go submit, amend and cancel are blocked at the next-day noon cutoff", () => {
-  assert.equal(isBeforeOrderCutoff("2026-08-24", new Date("2026-08-23T11:59:59")), true);
-  assert.equal(isBeforeOrderCutoff("2026-08-24", new Date("2026-08-23T12:00:00")), false);
-  const created = applyOrderAction(undefined, { action: "submit", oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 1 }], actor: "site@local.fika", at: "2026-08-23T11:00:00" }, grabProducts);
-  assert.throws(() => applyOrderAction(created, { action: "amend", oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 2 }], actor: "site@local.fika", at: "2026-08-23T12:00:00" }, grabProducts), (error: any) => error.status === 409);
-  const cancelled = applyOrderAction(created, { action: "cancel", expectedVersion: 1, oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, actor: "site@local.fika", at: "2026-08-23T11:30:00" }, grabProducts);
+  // 2026-08-24 is a BST date: the 12:00 London cutoff is 11:00Z on 2026-08-23.
+  assert.equal(isBeforeOrderCutoff("2026-08-24", new Date("2026-08-23T10:59:59Z")), true, "11:59:59 BST is still open");
+  assert.equal(isBeforeOrderCutoff("2026-08-24", new Date("2026-08-23T11:00:00Z")), false, "12:00 BST is closed");
+  const created = applyOrderAction(undefined, { action: "submit", oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 1 }], actor: "site@local.fika", at: "2026-08-23T10:00:00Z" }, grabProducts);
+  assert.throws(() => applyOrderAction(created, { action: "amend", oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 2 }], actor: "site@local.fika", at: "2026-08-23T11:00:00Z" }, grabProducts), (error: any) => error.status === 409);
+  const cancelled = applyOrderAction(created, { action: "cancel", expectedVersion: 1, oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, actor: "site@local.fika", at: "2026-08-23T10:30:00Z" }, grabProducts);
   assert.equal(cancelled.status, "cancelled");
   assert.equal(cancelled.history[1].action, "cancelled");
 });

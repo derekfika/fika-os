@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { markDeliveredInProjectionDayUnavailable, readDeliveredInProjection, readDeliveredInProjectionIndex, writeDeliveredInProjection } from "../lib/delivered-in-projection-store";
 import { packetPublicationsForRange, type MenuPlanningWeekPacket } from "../lib/menu-planning-week-packet";
@@ -36,7 +37,7 @@ function projection(serviceDate: string) {
 }
 
 test("concurrent day recovery preserves every valid day and marks one failed day unavailable", async () => {
-  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-partial-week-`);
+  const root = await mkdtemp(join(tmpdir(), "fika-delivered-in-partial-week-"));
   const previousRoot = process.env.FIKA_SNAPSHOT_DIR;
   process.env.FIKA_SNAPSHOT_DIR = root;
   try {
@@ -67,7 +68,7 @@ test("requested-week recovery selects only missing or unavailable published days
 });
 
 test("requested-week recovery repairs a published day omitted from the packet without touching healthy days", async () => {
-  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-requested-recovery-`);
+  const root = await mkdtemp(join(tmpdir(), "fika-delivered-in-requested-recovery-"));
   const previousRoot = process.env.FIKA_SNAPSHOT_DIR;
   const previousFetch = globalThis.fetch;
   process.env.FIKA_SNAPSHOT_DIR = root;
@@ -107,7 +108,7 @@ test("requested-week recovery repairs a published day omitted from the packet wi
 });
 
 test("requested-week recovery keeps a known-unavailable omitted day unavailable when Menu is unreachable", async () => {
-  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-requested-recovery-failure-`);
+  const root = await mkdtemp(join(tmpdir(), "fika-delivered-in-requested-recovery-failure-"));
   const previousRoot = process.env.FIKA_SNAPSHOT_DIR;
   const previousFetch = globalThis.fetch;
   process.env.FIKA_SNAPSHOT_DIR = root;
