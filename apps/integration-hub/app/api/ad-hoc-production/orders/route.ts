@@ -3,6 +3,7 @@ import { z } from "zod";
 import { errorResponse } from "@/lib/api";
 import { adHocCaller, authoriseAdHocDestination, requireAdHocService } from "@/lib/ad-hoc-production-auth";
 import { adHocOrderStatus, cancelAdHocProductionOrder, submitAdHocProductionOrder } from "@/lib/production-domain";
+import { notifyMaterialisedCpuProjection } from "@/lib/cpu-projection-client";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import type { AdHocOrderInput, AdHocSendCommand } from "../../../../../shared/ad-hoc-production-contract";
 
@@ -43,7 +44,7 @@ async function handlePost(request: NextRequest) {
     const caller = await adHocCaller(request);
     const command = Command.parse(await request.json().catch(() => { throw unprocessable("A JSON body is required."); }));
     if (command.action === "cancel") {
-      try { return NextResponse.json(await cancelAdHocProductionOrder(caller.actor, command.requestId, command.reason), { headers: { "Cache-Control": "no-store" } }); }
+      try { const { projection, ...result } = await cancelAdHocProductionOrder(caller.actor, command.requestId, command.reason); await notifyMaterialisedCpuProjection(projection); return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } }); }
       catch (error) {
         // errorResponse rewrites 404s into booking wording; keep the Ad-Hoc meaning explicit.
         if ((error as { code?: string }).code === "AD_HOC_ORDER_NOT_FOUND") return NextResponse.json({ error: { code: "AD_HOC_ORDER_NOT_FOUND", message: "No Production Order exists for this request." } }, { status: 404, headers: { "Cache-Control": "no-store" } });
@@ -53,7 +54,10 @@ async function handlePost(request: NextRequest) {
     // OPLOC authority is read only for OPLOC destinations; one-off destinations never touch it.
     const scope = !command.order.destinationAddress ? await caller.loadOplocs() : undefined;
     const { order, destination } = authoriseAdHocDestination(command, scope);
-    const result = await submitAdHocProductionOrder(caller.actor, order, command.idempotencyKey);
+    const { projection, ...result } = await submitAdHocProductionOrder(caller.actor, order, command.idempotencyKey);
+    // CPU's projection only learns of an order through this notification (as for Hospitality). A failure fails the request,
+    // so Ad-Hoc records nothing; the retry replays the idempotent submit and re-notifies.
+    await notifyMaterialisedCpuProjection(projection);
     return NextResponse.json({ ...result, destination }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof z.ZodError) return errorResponse(unprocessable(error.issues.map(issue => `${issue.path.join(".") || "request"}: ${issue.message}`).join("; ")), request.headers.get("x-request-id") || undefined);

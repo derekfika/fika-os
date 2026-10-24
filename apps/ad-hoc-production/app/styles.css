@@ -148,3 +148,5 @@ a{color:inherit}
   .line-head{display:none}.line{grid-template-columns:1fr 1fr;padding:var(--space-3);border:1px solid var(--fika-border-default);border-radius:var(--radius-sm)}.line>.grip{display:none}.line>.field:first-of-type,.line>.field:nth-of-type(4),.line-actions{grid-column:1/-1}
   h1{font-size:1.9rem}.actions{grid-template-columns:1fr}
 }
+
+.allergen-checker-status p{margin:0 0 var(--space-2)}.checker-state{display:flex;align-items:center;gap:var(--space-2)}.checker-signed{color:var(--fika-status-success,#11604c)}.checker-withdrawn{color:var(--fika-status-danger,#b42318)}.checker-pending{color:var(--fika-text-secondary)}.checker-detail{color:var(--fika-text-secondary);overflow-wrap:anywhere}.checker-link{font-weight:700;text-decoration:underline}

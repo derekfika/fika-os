@@ -1,11 +1,13 @@
 "use client";
 
+import { allergenCheckerView } from "../lib/allergen-checker-view";
+import type { AdHocAllergenChecker } from "../../shared/ad-hoc-production-contract";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AD_HOC_CATEGORIES, AD_HOC_UNITS, NOTES_LIMIT, STATUS_LABELS, blankDraft, contentKey, isArchived, isSent, newLineId, readiness, submitBlockers, type AdHocCategory, type AdHocDraft, type AdHocLine, type AdHocRequest } from "../lib/ad-hoc-domain";
 import { Icon } from "./icons";
 
-type OplocOption = { canonicalId: string; label: string; address?: string; lifecycleStatus?: string };
+type OplocOption = { canonicalId: string; label: string; address?: string };
 const toDraft = (request: AdHocRequest): AdHocDraft => ({ eventName: request.eventName, serviceDate: request.serviceDate, requiredReadyTime: request.requiredReadyTime, category: request.category, guestCount: request.guestCount, notes: request.notes, destination: structuredClone(request.destination), lines: structuredClone(request.lines) });
 const longDate = (date: string) => date ? new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "—";
 const categoryLabel = (value: string) => AD_HOC_CATEGORIES.find(item => item.value === value)?.label || "—";
@@ -21,6 +23,7 @@ export function OrderForm({ id }: { id: string }) {
   const isNew = id === "new";
   const [request, setRequest] = useState<AdHocRequest | null>(null);
   const [cpuCancelled, setCpuCancelled] = useState(false);
+  const [allergenChecker, setAllergenChecker] = useState<AdHocAllergenChecker | undefined>(undefined);
   const [draft, setDraft] = useState<AdHocDraft>(() => blankDraft());
   const [loading, setLoading] = useState(!isNew);
   const [oplocs, setOplocs] = useState<OplocOption[]>([]);
@@ -36,14 +39,14 @@ export function OrderForm({ id }: { id: string }) {
     let active = true;
     setLoading(true); setError("");
     void fetch(`/api/requests?id=${encodeURIComponent(id)}`, { cache: "no-store" })
-      .then(async response => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body?.error?.message || "This order could not be loaded."); setCpuCancelled(Boolean(body.downstream?.cancelled)); return body.request as AdHocRequest; })
+      .then(async response => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body?.error?.message || "This order could not be loaded."); setCpuCancelled(Boolean(body.downstream?.cancelled)); setAllergenChecker(body.downstream?.allergenChecker); return body.request as AdHocRequest; })
       .then(loaded => { if (active) { setRequest(loaded); setDraft(toDraft(loaded)); } })
       .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "This order could not be loaded."); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [id, isNew]);
   useEffect(() => {
-    void fetch("/api/oplocs", { cache: "no-store" }).then(async response => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body?.error?.message || "OPLOC destinations could not be loaded."); setOplocs((body.oplocs || []).filter((item: OplocOption) => !item.lifecycleStatus || item.lifecycleStatus.toLowerCase() === "active")); })
+    void fetch("/api/oplocs", { cache: "no-store" }).then(async response => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body?.error?.message || "OPLOC destinations could not be loaded."); setOplocs(body.oplocs || []); })
       .catch(cause => setOplocError(cause instanceof Error ? cause.message : "OPLOC destinations could not be loaded."));
   }, []);
 
@@ -173,6 +176,12 @@ export function OrderForm({ id }: { id: string }) {
         <dl className="summary"><h3><Icon name="pin" size={18} />Destination</h3>
           <div><dt>Type</dt><dd>{destination.mode === "oploc" ? "Existing OPLOC" : "One-off address"}</dd></div><div><dt>{destination.mode === "oploc" ? "OPLOC" : "Name"}</dt><dd>{destination.label || "—"}</dd></div><div><dt>Address</dt><dd>{destination.address || "—"}</dd></div>{destination.contactName && <div><dt>Contact</dt><dd>{destination.contactName}</dd></div>}{destination.contactPhone && <div><dt>Phone</dt><dd>{destination.contactPhone}</dd></div>}
         </dl>
+        {request && isSent(request) && (() => { const view = allergenCheckerView(allergenChecker, iso => new Date(iso).toLocaleString("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })); return (
+          <section className="summary allergen-checker-status" aria-labelledby="allergen-checker-title"><h3 id="allergen-checker-title"><Icon name="check" size={18} />Allergen checker</h3>
+            <p className={`checker-state checker-${view.tone}`}><strong>{view.label}</strong></p>
+            {view.detail && <p className="checker-detail">{view.detail}</p>}
+            {view.link && <p><a className="checker-link" href={view.link} target="_blank" rel="noopener noreferrer">Open signed PDF<span className="visually-hidden"> (opens in a new tab)</span></a></p>}
+          </section>); })()}
         <dl className="summary"><h3><Icon name="fork" size={18} />Menu items</h3>
           <div><dt>Production lines</dt><dd>{draft.lines.length}</dd></div>
         </dl>

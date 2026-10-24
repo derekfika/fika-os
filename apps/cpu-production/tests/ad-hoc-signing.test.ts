@@ -66,3 +66,45 @@ test("signed Ad-Hoc release is PDF-only: one Drive PDF, no OPLOC needed, no Deli
     Object.assign(process.env, saved.env);
   }
 });
+
+import { adHocAllergenCheckerReport, reportAdHocAllergenChecker } from "../lib/ad-hoc-allergen-checker-report";
+
+const release = (extra: Record<string, unknown> = {}) => ({
+  releaseId: "cpu-allergen-release:2026-11-17:x:v1", version: 1, status: "current", materializationStatus: "ready", sourceRevision: 2, signedAt: "2026-10-24T10:00:00.000Z",
+  signatures: [{ role: "production_chef", printedName: "Chef A", valid: true }, { role: "head_chef_site_manager", printedName: "Chef B", valid: true }],
+  masterArtifact: { fileName: "AdHoc-UAT.pdf", driveUrl: "https://drive.google.com/file/d/abc/view", driveFileId: "abc" }, ...extra,
+});
+const planWith = (extra: Record<string, unknown>) => ({ orderId: order().canonicalId, ...extra }) as never;
+
+test("CPU reports a signed Ad-Hoc checker only for a current, materialised release with a Drive link", () => {
+  const report = adHocAllergenCheckerReport(planWith({ currentAllergenRelease: release() }))!;
+  assert.equal(report.state, "signed");
+  assert.equal(report.driveUrl, "https://drive.google.com/file/d/abc/view");
+  assert.equal(report.sourceRevision, 2);
+  assert.deepEqual(report.signers, [{ role: "production_chef", name: "Chef A" }, { role: "head_chef_site_manager", name: "Chef B" }]);
+  assert.equal(adHocAllergenCheckerReport(planWith({ currentAllergenRelease: release({ materializationStatus: "pending", status: "pending" }) })), undefined, "a release still preparing its PDF reports nothing");
+  assert.equal(adHocAllergenCheckerReport(planWith({})), undefined, "nothing signed reports nothing");
+  assert.equal(adHocAllergenCheckerReport({ orderId: "production-order:v1:booking:x", currentAllergenRelease: release() } as never), undefined, "only Ad-Hoc orders are reported");
+});
+
+test("CPU reports a withdrawal for a revoked release that had a PDF link, never a link", () => {
+  const report = adHocAllergenCheckerReport(planWith({ allergenReleaseHistory: [release({ status: "revoked" })] }))!;
+  assert.equal(report.state, "withdrawn");
+  assert.equal(report.driveUrl, undefined);
+  assert.match(report.reason || "", /changed after it was signed/);
+  assert.equal(adHocAllergenCheckerReport(planWith({ allergenReleaseHistory: [release({ status: "revoked", masterArtifact: { fileName: "x.pdf" } })] })), undefined, "a release that never had a PDF link is not reported");
+});
+
+test("reporting posts to the Hub and a Hub outage never throws into the CPU sign-off", async () => {
+  const saved = globalThis.fetch; const seen: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const request = new NextRequest("http://localhost/api/production-plan", { headers: { "x-fika-internal-token": "t" } });
+  try {
+    globalThis.fetch = (async (input: unknown, init?: RequestInit) => { seen.push({ url: String(input), body: JSON.parse(String(init?.body)) }); return new Response(JSON.stringify({ applied: true }), { status: 200 }); }) as typeof fetch;
+    assert.equal((await reportAdHocAllergenChecker(request, planWith({ currentAllergenRelease: release() }))).reported, true);
+    assert.match(seen[0].url, /\/api\/production\/allergen-checker$/);
+    assert.equal(seen[0].body.state, "signed");
+    globalThis.fetch = (async () => { throw new Error("hub down"); }) as typeof fetch;
+    const failed = await reportAdHocAllergenChecker(request, planWith({ currentAllergenRelease: release() }));
+    assert.equal(failed.reported, false);
+  } finally { globalThis.fetch = saved; }
+});

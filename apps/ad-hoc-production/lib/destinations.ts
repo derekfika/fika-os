@@ -11,7 +11,7 @@ export function resolveOplocDestination(destination: AdHocDestination, access: P
   const requested = destination.oplocId?.trim();
   if (!requested) return destination;
   const canonicalId = access.redirects?.[requested] || requested;
-  const match = (access.oplocs || []).find(oploc => oploc.canonicalId === canonicalId && (!oploc.lifecycleStatus || oploc.lifecycleStatus.toLowerCase() === "active"));
+  const match = (access.oplocs || []).find(oploc => oploc.canonicalId === canonicalId);
   if (!match) throw Object.assign(new Error("That destination is not an active OPLOC you are authorised to use."), { status: 422 });
   return { ...destination, oplocId: match.canonicalId, label: match.label, address: match.address || "", identity: match.canonicalId };
 }

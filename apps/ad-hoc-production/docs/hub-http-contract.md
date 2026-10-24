@@ -24,9 +24,10 @@ service identity (`localAdHocServiceAllowed`: `NODE_ENV !== production`, `FIKA_R
 | Method + path | Auth | Purpose |
 | --- | --- | --- |
 | `GET /api/ad-hoc-production/access[?oplocs=true]` | session + AUTHMOD | Caller identity `{principal}`; with `oplocs=true` also the caller's authorised active OPLOCs and alias `redirects`. Mirrors CPU's access route. |
-| `GET /api/ad-hoc-production/orders?requestId=` | session + AUTHMOD + service token | Authoritative status `{canonicalId, orderStatus, orderVersion, cancelled}`; `404` if no order exists. |
+| `GET /api/ad-hoc-production/orders?requestId=` | session + AUTHMOD + service token | Authoritative status `{canonicalId, orderStatus, orderVersion, cancelled, allergenChecker}`; `404` if no order exists. `allergenChecker` is `{state: not_signed\|signed\|withdrawn, fileName?, driveUrl?, signedAt?, signers?, reason?}`: a PDF link is present only while CPU's signed release is current for the order's present revision (an amendment or cancellation turns it into `withdrawn`). |
 | `POST /api/ad-hoc-production/orders` `{action:"send"}` | same | Create-or-amend the request's single canonical Production Order. Returns `{canonicalId, orderVersion, orderStatus, outcome: created\|amended\|already_applied, destination}`. |
 | `POST /api/ad-hoc-production/orders` `{action:"cancel", requestId, reason}` | same | Governed cancellation (withdraws the Logistics requirement). `{outcome: cancelled\|already_cancelled}`; `404` if no order. |
+| `POST /api/production/allergen-checker` (CPU → Hub, not called by Ad-Hoc) | CPU actor (`integration-admin`/`reviewer`, `canonical.edit`) | CPU reports `{canonicalId, state: signed\|withdrawn, releaseId, releaseVersion, sourceRevision, fileName?, driveUrl?, signedAt?, signers?, reason?}` for an Ad-Hoc order. Idempotent and monotonic by `releaseVersion`; a signed report for an already-withdrawn release is ignored. A derived projection: CPU remains the release authority. |
 
 Request bodies are strictly validated (unknown fields rejected). Errors use the Hub's `{error:{code,message,requestId}}` shape.
 

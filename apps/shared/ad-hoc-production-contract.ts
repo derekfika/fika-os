@@ -72,7 +72,33 @@ export type AdHocSendResult = {
   destination: { oplocId?: string; label: string; address?: string };
 };
 export type AdHocCancelResult = { canonicalId: string; orderStatus: string; outcome: "cancelled" | "already_cancelled" };
-export type AdHocOrderStatus = { canonicalId: string; orderStatus: string; orderVersion: number; cancelled: boolean };
+/** CPU -> Hub: reports that an Ad-Hoc order's signed allergen checker PDF exists, or has been withdrawn. */
+export const AD_HOC_ALLERGEN_CHECKER_API = "/api/production/allergen-checker";
+export type AdHocAllergenCheckerSigner = { role: "production_chef" | "head_chef_site_manager"; name: string };
+export type AdHocAllergenCheckerReport = {
+  canonicalId: string;
+  state: "signed" | "withdrawn";
+  releaseId: string;
+  /** Monotonic CPU release version; the Hub ignores a report older than the one it holds. */
+  releaseVersion: number;
+  /** The order amendment revision the signature is bound to. A later order revision withdraws the checker. */
+  sourceRevision: number;
+  fileName?: string;
+  driveUrl?: string;
+  signedAt?: string;
+  signers?: AdHocAllergenCheckerSigner[];
+  reason?: string;
+};
+/** What the requester sees. A link is present only while the signed release is current. */
+export type AdHocAllergenChecker = {
+  state: "not_signed" | "signed" | "withdrawn";
+  fileName?: string;
+  driveUrl?: string;
+  signedAt?: string;
+  signers?: AdHocAllergenCheckerSigner[];
+  reason?: string;
+};
+export type AdHocOrderStatus = { canonicalId: string; orderStatus: string; orderVersion: number; cancelled: boolean; allergenChecker?: AdHocAllergenChecker };
 
 export type AdHocOploc = { canonicalId: string; label: string; address?: string; lifecycleStatus?: string };
 export type AdHocAccess = {

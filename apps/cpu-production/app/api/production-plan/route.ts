@@ -19,6 +19,7 @@ import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
 import { buildCpuAllergenReleaseEvent, eventTypeForConsumers, notifyCpuConsumerInvalidations, notifyDeliveredInAllergenRelease } from "../../../lib/cpu-consumer-invalidation";
 import { deliverCpuPropagation, replayCpuPropagation, type CpuDurableDeliveryInput } from "../../../lib/cpu-durable-outbox";
 import { stampAllergenReviews } from "../../lib/allergen-review-stamp";
+import { reportAdHocAllergenChecker } from "../../../lib/ad-hoc-allergen-checker-report";
 import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRelease } from "../../../lib/cpu-allergen-release";
 import { releaseMaterializationDelivery, retryCommittedCpuMaterialization } from "../../../lib/cpu-retry-materialization";
 import { cpuMasterReviewId } from "../../../lib/cpu-master-review";
@@ -839,4 +840,14 @@ async function handlePost(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) { return withDataTrace({ app: "cpu-production", action: "cpu-production.plan.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }
-export async function POST(request: NextRequest) { return withDataTrace({ app: "cpu-production", action: "cpu-production.plan.mutation", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handlePost(request)); }
+/** After a successful plan write, tell the Hub about an Ad-Hoc order's signed allergen checker (or its withdrawal). Best-effort. */
+async function handlePostAndReport(request: NextRequest) {
+  const response = await handlePost(request);
+  if (response.status >= 400) return response;
+  try {
+    const body = await response.clone().json() as { plan?: ProductionPlan };
+    if (body.plan) await reportAdHocAllergenChecker(request, body.plan);
+  } catch { /* reporting never changes the CPU response */ }
+  return response;
+}
+export async function POST(request: NextRequest) { return withDataTrace({ app: "cpu-production", action: "cpu-production.plan.mutation", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handlePostAndReport(request)); }
