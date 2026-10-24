@@ -3,10 +3,8 @@ import { z } from "zod";
 import { setDataTraceOutcome, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { AD_HOC_CATEGORIES, AD_HOC_UNITS, isDate, isTime, londonBusinessDate, weekStart, type AdHocDraft } from "../../../lib/ad-hoc-domain";
 import { archiveRequest, cancelRequest, createRequest, downstreamState, duplicateRequest, getRequest, listRequests, sendToCpu, updateRequest } from "../../../lib/ad-hoc-service";
-import { requestActor } from "../../../lib/actor";
-import { resolveOplocDestination } from "../../../lib/hub-oplocs";
-
-const actor = requestActor;
+import { callerFor, isHubError } from "../../../lib/hub-client";
+import { resolveOplocDestination } from "../../../lib/destinations";
 
 const text = (max: number) => z.string().max(max);
 const draft = z.object({
@@ -25,7 +23,7 @@ const body = z.discriminatedUnion("action", [
 ]);
 
 const fail = (error: unknown) => {
-  const status = error instanceof z.ZodError ? 422 : (error as { status?: number }).status || 500;
+  const status = error instanceof z.ZodError ? 422 : isHubError(error) || (error as { status?: number }).status ? (error as { status: number }).status : 500;
   setDataTraceOutcome(status === 401 || status === 403 ? "DENIED" : "ERROR");
   const message = error instanceof z.ZodError ? error.issues.map(issue => `${issue.path.join(".") || "request"}: ${issue.message}`).join("; ") : error instanceof Error ? error.message : String(error);
   return NextResponse.json({ error: { message } }, { status });
@@ -34,10 +32,10 @@ const fail = (error: unknown) => {
 export async function GET(req: NextRequest) {
   return withDataTrace({ app: "ad-hoc-production", action: "request.list", path: "/api/requests", dataset: "ad-hoc-production/requests", outcome: "SUCCESS" }, async () => {
     try {
-      const who = await actor(req);
+      const { actor: who, hub } = await callerFor(req);
       const params = req.nextUrl.searchParams;
       const id = params.get("id");
-      if (id) { const request = await getRequest(id); return request ? NextResponse.json({ request, downstream: await downstreamState(request), actor: { name: who.name } }) : NextResponse.json({ error: { message: "Request not found." } }, { status: 404 }); }
+      if (id) { const request = await getRequest(id); return request ? NextResponse.json({ request, downstream: await downstreamState(request, hub), actor: { name: who.name } }) : NextResponse.json({ error: { message: "Request not found." } }, { status: 404 }); }
       const from = params.get("from");
       return NextResponse.json({ requests: await listRequests(isDate(from) ? from : weekStart(londonBusinessDate()), Number(params.get("days")) || 7), actor: { name: who.name } });
     } catch (error) { return fail(error); }
@@ -47,20 +45,16 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   return withDataTrace({ app: "ad-hoc-production", action: "request.mutate", path: "/api/requests", dataset: "ad-hoc-production/requests", outcome: "SUCCESS" }, async () => {
     try {
-      const who = await actor(req);
       const input = body.parse(await req.json());
-      const cookie = req.headers.get("cookie") || "";
-      const checked = async (value: z.infer<typeof draft>) => ({ ...value, destination: await resolveOplocDestination({ identity: "", ...value.destination }, cookie) }) as AdHocDraft;
+      const needsOplocs = (input.action === "create" || input.action === "update") && input.draft.destination.mode === "oploc";
+      const { actor: who, hub, access } = await callerFor(req, { oplocs: needsOplocs });
+      const checked = (value: z.infer<typeof draft>) => ({ ...value, destination: resolveOplocDestination({ identity: "", ...value.destination }, access) }) as AdHocDraft;
       switch (input.action) {
-        case "create": return NextResponse.json({ request: await createRequest(await checked(input.draft), who) });
-        case "update": return NextResponse.json({ request: await updateRequest(input.id, input.expectedVersion, await checked(input.draft), who) });
-        case "send": {
-          const current = await getRequest(input.id);
-          const verified = current?.destination.mode === "oploc" ? await resolveOplocDestination(current.destination, cookie) : undefined;
-          return NextResponse.json(await sendToCpu(input.id, input.expectedVersion, who, verified));
-        }
+        case "create": return NextResponse.json({ request: await createRequest(checked(input.draft), who) });
+        case "update": return NextResponse.json({ request: await updateRequest(input.id, input.expectedVersion, checked(input.draft), who) });
+        case "send": return NextResponse.json(await sendToCpu(input.id, input.expectedVersion, who, hub));
         case "archive": return NextResponse.json({ request: await archiveRequest(input.id, input.expectedVersion, who) });
-        case "cancel": return NextResponse.json({ request: await cancelRequest(input.id, input.expectedVersion, input.reason, who) });
+        case "cancel": return NextResponse.json({ request: await cancelRequest(input.id, input.expectedVersion, input.reason, who, hub) });
         case "duplicate": return NextResponse.json({ request: await duplicateRequest(input.id, who) });
       }
     } catch (error) { return fail(error); }

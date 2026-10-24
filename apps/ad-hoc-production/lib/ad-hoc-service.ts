@@ -1,10 +1,13 @@
 import crypto from "node:crypto";
-import { db } from "@hub/lib/firebase-admin";
-import { adHocProductionOrderId, amendAdHocProductionOrder, createCpuProductionOrder, productionOrderDetail, transitionProductionOrder } from "@hub/lib/production-domain";
-import type { Actor } from "@hub/lib/auth";
-import { stableDocumentId } from "@hub/lib/canonical-editor";
+import { stableDocumentId } from "@fika/server-shared/stable-document-id";
+import { adHocSendKey } from "../../shared/ad-hoc-production-contract";
+import { db } from "./firebase-admin";
 import { addDays, applySendRecord, contentKey, isArchived, isSent, londonBusinessDate, newLineId, submitBlockers, toProductionInput, type AdHocAudit, type AdHocDraft, type AdHocRequest } from "./ad-hoc-domain";
+import type { HubPort } from "./hub-client";
 import { recordAdHocReadBudget } from "./ad-hoc-read-budget";
+
+/** The authenticated caller, as resolved by the Hub. */
+export type Actor = { uid: string; name?: string };
 
 // Ad-Hoc requests live in their own collection. The legacy quote-era documents
 // in fikaAdHocProductionRequestsV1 are historical evidence and are never read
@@ -107,63 +110,46 @@ export async function duplicateRequest(id: string, actor: Actor) {
   }, actor, source.reference);
 }
 
-async function createOrAmendOrder(actor: Actor, input: ReturnType<typeof toProductionInput>, idempotencyKey: string) {
-  const canonicalId = adHocProductionOrderId(input.sourceEntityId!);
-  if (await productionOrderDetail(canonicalId)) return (await amendAdHocProductionOrder(actor, canonicalId, input, idempotencyKey)).order;
-  try { return (await createCpuProductionOrder(actor, input, idempotencyKey)).order; }
-  catch (error) {
-    // A concurrent first send created it between the lookup and the create.
-    if ((error as { code?: number }).code !== 6 && !/already exists/i.test((error as Error).message)) throw error;
-    return (await amendAdHocProductionOrder(actor, canonicalId, input, idempotencyKey)).order;
-  }
-}
-
 /**
- * Sends the request to CPU through the Hub-owned Production Order contract.
- * First send creates the canonical Production Order (idempotent by request id +
- * version); later sends amend that same order, so no revision can create a
- * second order or a second Logistics requirement. Retrying after a partial
- * failure replays the same Hub idempotency key and converges.
+ * Sends the request to CPU through the Hub (the authority for Production Orders).
+ * The Hub keeps ONE canonical order per request: the first send creates it, later
+ * sends amend it, and replaying a version is a no-op, so retries and concurrent
+ * sends cannot create a second order or Logistics requirement. This app records a
+ * send only after the Hub has confirmed it; a failure or timeout leaves the
+ * request exactly as it was and is safe to retry.
  */
-export async function sendToCpu(id: string, expectedVersion: number, actor: Actor, verifiedDestination?: AdHocRequest["destination"]) {
+export async function sendToCpu(id: string, expectedVersion: number, actor: Actor, hub: HubPort) {
   const request = await getRequest(id);
   if (!request) throw httpError(404, "Request not found.");
   if (isArchived(request)) throw httpError(409, "A cancelled or archived request cannot be sent.");
   if (request.version !== expectedVersion) throw httpError(409, "This request changed elsewhere. Refresh and review the latest version.");
   if (request.status === "SENT_TO_CPU") return { request, sent: false as const };
-  const outgoing: AdHocRequest = verifiedDestination ? { ...request, destination: verifiedDestination } : request;
-  const blockers = submitBlockers(outgoing);
+  const blockers = submitBlockers(request);
   if (blockers.length) throw httpError(422, blockers.join("; "));
-  const input = toProductionInput(outgoing, request.version);
-  const idempotencyKey = `adhoc-send:${request.id}:v${request.version}`;
-  // One canonical Production Order per request, whatever the request version.
-  // Looking it up from the request id (not from state this app saved) keeps a
-  // retry after a lost write from creating a second order.
-  const order = await createOrAmendOrder(actor, input, idempotencyKey);
-  // The Hub write has committed. Converge the request on it; never fail here.
+  const result = await hub.send({ action: "send", requestId: request.id, requestVersion: request.version, idempotencyKey: adHocSendKey(request.id, request.version), order: toProductionInput(request, request.version) });
+  // The Hub write is confirmed. Converge the request on it; never fail here.
+  const destination = request.destination.mode === "oploc" ? { ...request.destination, oplocId: result.destination.oplocId || request.destination.oplocId, label: result.destination.label, address: result.destination.address ?? request.destination.address, identity: result.destination.oplocId || request.destination.identity } : undefined;
   const next = await db.runTransaction(async tx => {
     const ref = collection().doc(stableDocumentId(id));
     const current = (await tx.get(ref)).data() as AdHocRequest;
-    const merged = applySendRecord(current, request.version, order.canonicalId, actorName(actor), new Date().toISOString(), outgoing.destination);
+    const merged = applySendRecord(current, request.version, result.canonicalId, actorName(actor), new Date().toISOString(), destination);
     if (merged !== current) tx.set(ref, merged);
     return merged;
   });
   return { request: next, sent: true as const };
 }
 
-/** Cancels a sent request by withdrawing its Production Order (and, through the Hub, the Logistics requirement). */
-export async function cancelRequest(id: string, expectedVersion: number, reason: string, actor: Actor) {
+/** Cancels a sent request by withdrawing its Production Order through the Hub (which withdraws the Logistics requirement). */
+export async function cancelRequest(id: string, expectedVersion: number, reason: string, actor: Actor, hub: HubPort) {
   const request = await getRequest(id);
   if (!request) throw httpError(404, "Request not found.");
   if (request.status === "CANCELLED") return request;
   if (!isSent(request)) throw httpError(409, "Only a sent request can be cancelled. Archive a draft instead.");
   if (request.version !== expectedVersion) throw httpError(409, "This request changed elsewhere. Refresh and review the latest version.");
   if (!reason.trim()) throw httpError(422, "A cancellation reason is required.");
-  {
-    // Resolve by the request's stable identity, so a send whose result was never recorded here is still withdrawn.
-    const order = await productionOrderDetail(request.productionOrderId || adHocProductionOrderId(request.id));
-    if (order && order.status !== "cancelled") await transitionProductionOrder(actor, order.canonicalId, order.version, "cancelled", `Ad-Hoc request ${request.reference} cancelled: ${reason.trim()}`);
-  }
+  // The Hub cancels by the request's stable identity and is repeat-safe, so a retry after a lost
+  // response (or after CPU cancelled first) converges. The request is marked only after confirmation.
+  await hub.cancel({ action: "cancel", requestId: request.id, reason: reason.trim() });
   return mutate(id, expectedVersion, actor, (_current, at) => ({ status: "CANCELLED", cancelledAt: at, cancelReason: reason.trim(), audit: { action: "request-cancelled", at, by: "", version: 0, reason: reason.trim() } }));
 }
 
@@ -172,10 +158,10 @@ export async function cancelRequest(id: string, expectedVersion: number, reason:
  * for the single request being opened (one bounded read, no sync job). It is
  * display-only: the request is not rewritten, so there is no two-way state.
  */
-export async function downstreamState(request: AdHocRequest) {
+export async function downstreamState(request: AdHocRequest, hub: HubPort) {
   if (!isSent(request)) return null;
   try {
-    const order = await productionOrderDetail(request.productionOrderId || adHocProductionOrderId(request.id));
-    return order ? { status: order.status as string, cancelled: order.status === "cancelled" } : null;
+    const order = await hub.status(request.id);
+    return order ? { status: order.orderStatus, cancelled: order.cancelled } : null;
   } catch { return null; }
 }

@@ -1,4 +1,4 @@
-import type { CpuCreatedProductionInput, ProductionCategory } from "@hub/lib/production-domain";
+import type { AdHocOrderInput, AdHocProductionCategory as ProductionCategory } from "../../shared/ad-hoc-production-contract";
 
 // Ad-Hoc Production owns only the requester's bespoke request. Production
 // Orders, allergen review and fulfilment remain owned by Hub/CPU/Logistics.
@@ -80,7 +80,7 @@ export function submitBlockers(draft: AdHocDraft, today = londonBusinessDate()) 
  * order-scoped snapshot under a request-scoped identity, never as an OPLOC.
  * No allergen evidence is sent: CPU's own review/sign-off applies.
  */
-export function toProductionInput(request: AdHocRequest, version = request.version): CpuCreatedProductionInput {
+export function toProductionInput(request: AdHocRequest, version = request.version): AdHocOrderInput {
   const category = AD_HOC_CATEGORIES.find(item => item.value === request.category) || AD_HOC_CATEGORIES[AD_HOC_CATEGORIES.length - 1];
   const destination = request.destination;
   const contact = [destination.contactName, destination.contactPhone].filter(Boolean).join(" · ") || undefined;
@@ -89,7 +89,7 @@ export function toProductionInput(request: AdHocRequest, version = request.versi
     clientName: request.eventName, productionCategory: category.production, serviceDate: request.serviceDate,
     deliveryDateTime: `${request.serviceDate}T${request.requiredReadyTime}`, requiredBy: `${request.serviceDate}T${request.requiredReadyTime}`,
     serviceWindow: { startTime: request.requiredReadyTime },
-    destinationOplocId: oneOff ? destination.identity : destination.oplocId, requiresDelivery: true, deliveryLocation: destination.label,
+    destinationOplocId: oneOff ? destination.identity : (destination.oplocId || destination.identity), requiresDelivery: true, deliveryLocation: destination.label,
     ...(oneOff ? { destinationAddress: { identity: destination.identity, label: destination.label, address: destination.address, ...(destination.deliveryInstructions ? { deliveryInstructions: destination.deliveryInstructions } : {}), ...(contact ? { contact } : {}) } } : {}),
     ...(contact ? { contact } : {}), serviceType: `Ad-hoc · ${category.label}`, pax: request.guestCount || 1, priority: "normal",
     sourceReference: request.reference, sourceEntityId: request.id, sourceVersion: version, stableSourceIdentity: true, ...(request.notes ? { notes: request.notes } : {}),

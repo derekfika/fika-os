@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test --test-concurrency=1 tests/*.test.ts tests/*.test.cjs",
-    "test:emulator": "node scripts/verify-test-firestore-emulator.mjs && tsx --test --test-concurrency=1 --test-name-pattern=emulator: tests/ad-hoc-production-order.test.ts tests/booking-cutoffs.emulator.test.ts tests/booking-email-firestore.test.ts tests/fulfilment-projection.test.ts tests/logistics-event-identity.test.ts tests/menu-order-delivery-window.test.ts tests/ordered-quantity-backfill.test.ts tests/production-domain.test.ts tests/production-fulfilment-reconciliation.test.ts tests/emulator/grab-and-go-standing-downstream.emulator.test.ts",
+    "test:emulator": "node scripts/verify-test-firestore-emulator.mjs && tsx --test --test-concurrency=1 --test-name-pattern=emulator: tests/ad-hoc-production-order.test.ts tests/ad-hoc-production-route.test.ts tests/booking-cutoffs.emulator.test.ts tests/booking-email-firestore.test.ts tests/fulfilment-projection.test.ts tests/logistics-event-identity.test.ts tests/menu-order-delivery-window.test.ts tests/ordered-quantity-backfill.test.ts tests/production-domain.test.ts tests/production-fulfilment-reconciliation.test.ts tests/emulator/grab-and-go-standing-downstream.emulator.test.ts",
     "test:logistics-authority": "node --test tests/logistics-driver-authority.test.cjs",
     "test:logistics-regression": "node --test tests/logistics-access-regression.cjs",
     "emulators": "firebase emulators:start --config firebase.json",

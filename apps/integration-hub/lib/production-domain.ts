@@ -13,6 +13,7 @@ import { stageFulfilmentEvent } from "./fulfilment-projection";
 import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requirement";
 import { explicitMenuProductionRouting, LEGACY_HOSPITALITY_MENU_ROUTING } from "./connections-service";
 import { hospitalityPlatformOf, isGovernedRoutingPlatform, planHospitalityCpuRouting, routingBlockedMessage, routingKeys, type RoutingPlan } from "./hospitality-cpu-routing";
+import { adHocProductionOrderId } from "../../shared/ad-hoc-production-contract";
 import { adaptCpuProductionWorkstreams } from "../../shared/production-workstreams";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
@@ -292,8 +293,7 @@ export async function productionQueueForWeek(weekCommencing: string) {
 export async function productionOrderDetail(canonicalId: string) { const snapshot = await orders().doc(stableDocumentId(canonicalId)).get(); recordDeliveredInReadBudget({ stage: "known_order_lookup", canonicalOrderDocs: snapshot.exists ? 1 : 0, knownId: true }); return snapshot.exists ? enrichOrder(withoutAutomaticQuantityBlockers(snapshot.data() as ProductionOrder)) : undefined; }
 
 export type CpuCreatedProductionInput = { clientName: string; serviceDate: string; deliveryDateTime: string; requiredBy: string; serviceWindow: { startTime: string; endTime?: string }; productionLocationId?: string; productionCategory?: ProductionCategory; destinationOplocId?: string; requiresDelivery?: boolean; deliveryLocation: string; destinationAddress?: ProductionDestinationAddress; floorRoom?: string; contact?: string; serviceType: string; pax: number; lines: Array<{ sourceLineId?: string; itemName: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; dietary?: Record<string, unknown>; approvedAllergenSnapshot?: { allergens: Record<string, string>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; mayContainNotes?: string }; notes?: string }>; priority?: "normal" | "high" | "urgent"; sourceReference?: string; sourceEntityId?: string; sourceVersion?: number; /** One canonical order per source request across all versions (Ad-Hoc); later versions amend it. */ stableSourceIdentity?: boolean; notes?: string };
-/** The single canonical Production Order identity for an Ad-Hoc request, independent of its version. */
-export const adHocProductionOrderId = (requestId: string) => `production-order:v1:ad-hoc:${requestId}`;
+export { adHocProductionOrderId };
 export async function createCpuProductionOrder(actor: Actor, input: CpuCreatedProductionInput, idempotencyKey: string) {
   if (!idempotencyKey.trim()) throw conflict("An idempotency key is required.");
   if (input.requiresDelivery !== false && !input.destinationOplocId?.trim()) throw Object.assign(new Error("A CPU delivery Production Order requires a canonical destination OPLOC ID."), { status: 422 });
@@ -356,6 +356,48 @@ export async function amendAdHocProductionOrder(actor: Actor, canonicalId: strin
     stageDomainEvent(transaction, event);
     return { applied: true, status: "amended" as const, order: next };
   });
+}
+
+const alreadyExists = (error: unknown) => (error as { code?: number }).code === 6 || /already exists/i.test((error as Error)?.message || "");
+
+/**
+ * Create-or-amend the single canonical Production Order for an Ad-Hoc request.
+ * The order is looked up by the request's stable identity (never by state the
+ * caller saved), so a retry after a lost response, an edit between attempts or
+ * two concurrent first sends all converge on ONE order and ONE Logistics
+ * requirement. Idempotent per request version.
+ */
+export async function submitAdHocProductionOrder(actor: Actor, input: CpuCreatedProductionInput, idempotencyKey: string) {
+  if (!input.sourceEntityId) throw Object.assign(new Error("An Ad-Hoc order requires its source request."), { status: 422 });
+  const canonicalId = adHocProductionOrderId(input.sourceEntityId);
+  const summarise = (order: ProductionOrder, outcome: "created" | "amended" | "already_applied") => ({ canonicalId: order.canonicalId, orderVersion: order.version, orderStatus: order.status as string, outcome });
+  const amend = async () => { const result = await amendAdHocProductionOrder(actor, canonicalId, input, idempotencyKey); return summarise(result.order, result.status === "amended" ? "amended" : "already_applied"); };
+  if ((await orders().doc(stableDocumentId(canonicalId)).get()).exists) return amend();
+  try { const created = await createCpuProductionOrder(actor, { ...input, stableSourceIdentity: true }, idempotencyKey); return summarise(created.order, created.created ? "created" : "already_applied"); }
+  catch (error) { if (alreadyExists(error)) return amend(); throw error; }
+}
+
+/** Authoritative status of an Ad-Hoc request's Production Order, or undefined when none exists. */
+export async function adHocOrderStatus(requestId: string) {
+  const snapshot = await orders().doc(stableDocumentId(adHocProductionOrderId(requestId))).get();
+  if (!snapshot.exists) return undefined;
+  const order = snapshot.data() as ProductionOrder;
+  return { canonicalId: order.canonicalId, orderStatus: order.status as string, orderVersion: order.version, cancelled: order.status === "cancelled" };
+}
+
+/** Cancels the Ad-Hoc order through the governed lifecycle (which withdraws its Logistics requirement). Repeat-safe. */
+export async function cancelAdHocProductionOrder(actor: Actor, requestId: string, reason: string) {
+  const canonicalId = adHocProductionOrderId(requestId);
+  for (let attempt = 0; ; attempt += 1) {
+    const snapshot = await orders().doc(stableDocumentId(canonicalId)).get();
+    if (!snapshot.exists) throw Object.assign(new Error("No Production Order exists for this request."), { status: 404, code: "AD_HOC_ORDER_NOT_FOUND" });
+    const order = snapshot.data() as ProductionOrder;
+    if (order.status === "cancelled") return { canonicalId, orderStatus: "cancelled", outcome: "already_cancelled" as const };
+    try {
+      const next = await transitionProductionOrder(actor, canonicalId, order.version, "cancelled", `Ad-Hoc request cancelled: ${reason}`);
+      return { canonicalId, orderStatus: next.status as string, outcome: "cancelled" as const };
+    } catch (error) { if (attempt === 0 && /changed elsewhere/i.test((error as Error).message)) continue; throw error; }
+  }
 }
 
 export function materialisedProductionId(input: Pick<ExternalProductionMaterialisation, "sourceDomain" | "sourceEntityId" | "destinationOplocId">) {

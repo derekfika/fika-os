@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adHocProductionOrderId, amendAdHocProductionOrder, createCpuProductionOrder, transitionProductionOrder, type CpuCreatedProductionInput } from "../lib/production-domain";
+import { adHocOrderStatus, adHocProductionOrderId, amendAdHocProductionOrder, cancelAdHocProductionOrder, createCpuProductionOrder, submitAdHocProductionOrder, transitionProductionOrder, type CpuCreatedProductionInput } from "../lib/production-domain";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
 
@@ -104,4 +104,61 @@ test("emulator: Ad-Hoc orders stay outside the signed Delivered-In release chain
   const renamed = await amendAdHocProductionOrder(actor, created.canonicalId, input(requestId, 3, { lines: input(requestId, 3).lines.map(line => ({ ...line, itemName: `${line.itemName} (new recipe)` })) }), `adhoc-send:${requestId}:v3`);
   assert.ok(renamed.order.lines.every(line => line.allergenEvidenceStatus === undefined && !line.approvedAllergenSnapshot && Object.keys(line.dietaries).length === 0), "a changed item returns to allergen review with no stale evidence");
   assert.equal(renamed.order.status, "draft");
+});
+
+const stable = (requestId: string, version: number, overrides: Partial<CpuCreatedProductionInput> = {}) => ({ ...input(requestId, version, overrides), stableSourceIdentity: true as const });
+
+test("emulator: submit creates once, replays idempotently and amends the same order", { skip: !emulatorEnabled }, async () => {
+  const requestId = `adhoc-request:${crypto.randomUUID()}`;
+  const first = await submitAdHocProductionOrder(actor, stable(requestId, 1), `adhoc-send:${requestId}:v1`);
+  assert.equal(first.outcome, "created");
+  assert.equal(first.canonicalId, adHocProductionOrderId(requestId));
+  assert.equal((await submitAdHocProductionOrder(actor, stable(requestId, 1), `adhoc-send:${requestId}:v1`)).outcome, "already_applied");
+  const amended = await submitAdHocProductionOrder(actor, stable(requestId, 2), `adhoc-send:${requestId}:v2`);
+  assert.equal(amended.outcome, "amended");
+  assert.equal(amended.canonicalId, first.canonicalId);
+  assert.equal(amended.orderVersion, first.orderVersion + 1);
+  assert.equal((await requirementsFor(first.canonicalId)).length, 1, "one Logistics requirement across versions");
+  assert.deepEqual(await adHocOrderStatus(requestId), { canonicalId: first.canonicalId, orderStatus: "draft", orderVersion: amended.orderVersion, cancelled: false });
+});
+
+test("emulator: concurrent submissions, including different versions, converge on one order and one requirement", { skip: !emulatorEnabled }, async () => {
+  const requestId = `adhoc-request:${crypto.randomUUID()}`;
+  const results = await Promise.allSettled([1, 1, 1, 2].map(version => submitAdHocProductionOrder(actor, stable(requestId, version), `adhoc-send:${requestId}:v${version}`)));
+  assert.ok(results.some(result => result.status === "fulfilled"));
+  for (const result of results) if (result.status === "rejected") assert.doesNotMatch((result.reason as Error).message, /not found/i);
+  const ids = new Set(results.flatMap(result => result.status === "fulfilled" ? [result.value.canonicalId] : []));
+  assert.deepEqual([...ids], [adHocProductionOrderId(requestId)]);
+  assert.equal((await requirementsFor(adHocProductionOrderId(requestId))).length, 1);
+  const settled = await submitAdHocProductionOrder(actor, stable(requestId, 3), `adhoc-send:${requestId}:v3`);
+  assert.ok(["created", "amended"].includes(settled.outcome));
+});
+
+test("emulator: cancel withdraws the requirement, is repeat-safe, and a missing order is a 404", { skip: !emulatorEnabled }, async () => {
+  const requestId = `adhoc-request:${crypto.randomUUID()}`;
+  await assert.rejects(cancelAdHocProductionOrder(actor, requestId, "x"), (error: any) => error.status === 404 && error.code === "AD_HOC_ORDER_NOT_FOUND");
+  await submitAdHocProductionOrder(actor, stable(requestId, 1), `adhoc-send:${requestId}:v1`);
+  const first = await cancelAdHocProductionOrder(actor, requestId, "Client cancelled");
+  assert.equal(first.outcome, "cancelled");
+  assert.equal((await cancelAdHocProductionOrder(actor, requestId, "again")).outcome, "already_cancelled");
+  assert.equal((await requirementsFor(first.canonicalId))[0].status, "withdrawn");
+  assert.equal((await adHocOrderStatus(requestId))?.cancelled, true);
+  await assert.rejects(submitAdHocProductionOrder(actor, stable(requestId, 2), `adhoc-send:${requestId}:v2`), (error: any) => /Contact CPU/.test(error.message), "a cancelled order is never resurrected");
+});
+
+test("emulator: a first send adopts an order whose result the caller never recorded, even for a later version", { skip: !emulatorEnabled }, async () => {
+  const requestId = `adhoc-request:${crypto.randomUUID()}`;
+  await submitAdHocProductionOrder(actor, stable(requestId, 1), `adhoc-send:${requestId}:v1`);
+  const later = await submitAdHocProductionOrder(actor, stable(requestId, 4, { lines: input(requestId, 4).lines.map(line => ({ ...line, customerQuantity: 9, productionQuantity: 9 })) }), `adhoc-send:${requestId}:v4`);
+  assert.equal(later.outcome, "amended");
+  assert.equal((await requirementsFor(later.canonicalId)).length, 1);
+  assert.equal((await requirementsFor(later.canonicalId))[0].lines[0].quantity, 9);
+});
+
+test("emulator: cancelling an order CPU already cancelled is a repeat-safe success", { skip: !emulatorEnabled }, async () => {
+  const requestId = `adhoc-request:${crypto.randomUUID()}`;
+  const order = await submitAdHocProductionOrder(actor, stable(requestId, 1), `adhoc-send:${requestId}:v1`);
+  await transitionProductionOrder(actor, order.canonicalId, order.orderVersion, "cancelled", "CPU cancelled.");
+  assert.equal((await adHocOrderStatus(requestId))?.cancelled, true);
+  assert.equal((await cancelAdHocProductionOrder(actor, requestId, "Recording CPU cancellation")).outcome, "already_cancelled");
 });
