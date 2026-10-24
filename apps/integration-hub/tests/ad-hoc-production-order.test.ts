@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { amendAdHocProductionOrder, createCpuProductionOrder, transitionProductionOrder, type CpuCreatedProductionInput } from "../lib/production-domain";
+import { adHocProductionOrderId, amendAdHocProductionOrder, createCpuProductionOrder, transitionProductionOrder, type CpuCreatedProductionInput } from "../lib/production-domain";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
 
@@ -80,4 +80,13 @@ test("emulator: cancelling an Ad-Hoc order withdraws its Logistics requirement",
 test("amendment rejects a different request's order and requires a source version", async () => {
   await assert.rejects(amendAdHocProductionOrder(actor, "production-order:v1:ad-hoc:x:v1", { ...input("x", 2), sourceEntityId: undefined }, "key"), (error: any) => /source request and version/.test(error.message));
   await assert.rejects(amendAdHocProductionOrder(actor, "production-order:v1:ad-hoc:x:v1", input("x", 2), " "), (error: any) => /idempotency key/i.test(error.message));
+});
+
+test("emulator: a stable-identity Ad-Hoc order has one canonical id across request versions", { skip: !emulatorEnabled }, async () => {
+  const requestId = `adhoc-request:${crypto.randomUUID()}`;
+  const created = (await createCpuProductionOrder(actor, { ...input(requestId, 1), stableSourceIdentity: true }, `adhoc-send:${requestId}:v1`)).order;
+  assert.equal(created.canonicalId, adHocProductionOrderId(requestId));
+  // A different version and key against the same request cannot create a second order.
+  await assert.rejects(createCpuProductionOrder(actor, { ...input(requestId, 2), stableSourceIdentity: true }, `adhoc-send:${requestId}:v2`));
+  assert.equal((await requirementsFor(created.canonicalId)).length, 1);
 });

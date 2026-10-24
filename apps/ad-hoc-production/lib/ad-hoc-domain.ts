@@ -92,9 +92,26 @@ export function toProductionInput(request: AdHocRequest, version = request.versi
     destinationOplocId: oneOff ? destination.identity : destination.oplocId, requiresDelivery: true, deliveryLocation: destination.label,
     ...(oneOff ? { destinationAddress: { identity: destination.identity, label: destination.label, address: destination.address, ...(destination.deliveryInstructions ? { deliveryInstructions: destination.deliveryInstructions } : {}), ...(contact ? { contact } : {}) } } : {}),
     ...(contact ? { contact } : {}), serviceType: `Ad-hoc · ${category.label}`, pax: request.guestCount || 1, priority: "normal",
-    sourceReference: request.reference, sourceEntityId: request.id, sourceVersion: version, ...(request.notes ? { notes: request.notes } : {}),
+    sourceReference: request.reference, sourceEntityId: request.id, sourceVersion: version, stableSourceIdentity: true, ...(request.notes ? { notes: request.notes } : {}),
     lines: [...request.lines].sort((a, b) => a.sortOrder - b.sortOrder).map(line => ({ sourceLineId: line.id, itemName: line.description, customerQuantity: line.quantity, customerUnit: line.unit, productionQuantity: line.quantity, productionUnit: line.unit, ...(line.note ? { notes: line.note } : {}) })),
   };
+}
+
+/**
+ * Records a committed Hub send on the request. The Hub write is already durable,
+ * so this never rejects: it converges the request on that truth.
+ * - Already recorded for this version (concurrent double send / retry): unchanged.
+ * - Cancelled meanwhile: stays cancelled (a send must never resurrect it).
+ * - Archived meanwhile: the order now exists downstream, so the archive is superseded.
+ * - Edited meanwhile: flagged Needs update, since the Hub holds an older version.
+ */
+export function applySendRecord(current: AdHocRequest, sentVersion: number, orderId: string, by: string, at: string, destination?: AdHocDestination): AdHocRequest {
+  if (current.status === "CANCELLED") return current;
+  if (current.sentVersion === sentVersion && current.productionOrderId === orderId && !current.archivedAt) return current;
+  const { archivedAt: _superseded, ...rest } = current;
+  const unchanged = current.version === sentVersion;
+  const first = !current.productionOrderId;
+  return { ...rest, ...(unchanged && destination ? { destination } : {}), productionOrderId: orderId, sentVersion, sentAt: at, sentBy: by, status: unchanged ? "SENT_TO_CPU" : "NEEDS_UPDATE", version: current.version + 1, updatedAt: at, updatedBy: by, audit: [...current.audit, { action: first ? "sent-to-cpu" : "update-sent-to-cpu", at, by, version: current.version + 1, reason: orderId }] };
 }
 
 /** Fields whose change after sending means CPU/Logistics hold out-of-date information. */

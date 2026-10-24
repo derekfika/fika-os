@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 import { db } from "@hub/lib/firebase-admin";
-import { amendAdHocProductionOrder, createCpuProductionOrder, productionOrderDetail, transitionProductionOrder } from "@hub/lib/production-domain";
+import { adHocProductionOrderId, amendAdHocProductionOrder, createCpuProductionOrder, productionOrderDetail, transitionProductionOrder } from "@hub/lib/production-domain";
 import type { Actor } from "@hub/lib/auth";
 import { stableDocumentId } from "@hub/lib/canonical-editor";
-import { addDays, contentKey, isArchived, isSent, londonBusinessDate, newLineId, submitBlockers, toProductionInput, type AdHocAudit, type AdHocDraft, type AdHocRequest } from "./ad-hoc-domain";
+import { addDays, applySendRecord, contentKey, isArchived, isSent, londonBusinessDate, newLineId, submitBlockers, toProductionInput, type AdHocAudit, type AdHocDraft, type AdHocRequest } from "./ad-hoc-domain";
 import { recordAdHocReadBudget } from "./ad-hoc-read-budget";
 
 // Ad-Hoc requests live in their own collection. The legacy quote-era documents
@@ -107,6 +107,17 @@ export async function duplicateRequest(id: string, actor: Actor) {
   }, actor, source.reference);
 }
 
+async function createOrAmendOrder(actor: Actor, input: ReturnType<typeof toProductionInput>, idempotencyKey: string) {
+  const canonicalId = adHocProductionOrderId(input.sourceEntityId!);
+  if (await productionOrderDetail(canonicalId)) return (await amendAdHocProductionOrder(actor, canonicalId, input, idempotencyKey)).order;
+  try { return (await createCpuProductionOrder(actor, input, idempotencyKey)).order; }
+  catch (error) {
+    // A concurrent first send created it between the lookup and the create.
+    if ((error as { code?: number }).code !== 6 && !/already exists/i.test((error as Error).message)) throw error;
+    return (await amendAdHocProductionOrder(actor, canonicalId, input, idempotencyKey)).order;
+  }
+}
+
 /**
  * Sends the request to CPU through the Hub-owned Production Order contract.
  * First send creates the canonical Production Order (idempotent by request id +
@@ -125,18 +136,16 @@ export async function sendToCpu(id: string, expectedVersion: number, actor: Acto
   if (blockers.length) throw httpError(422, blockers.join("; "));
   const input = toProductionInput(outgoing, request.version);
   const idempotencyKey = `adhoc-send:${request.id}:v${request.version}`;
-  const order = request.productionOrderId
-    ? (await amendAdHocProductionOrder(actor, request.productionOrderId, input, idempotencyKey)).order
-    : (await createCpuProductionOrder(actor, input, idempotencyKey)).order;
-  // The Hub write has committed. Never fail here: record what was sent, and if
-  // the requester edited meanwhile, leave the request flagged as needing an update.
+  // One canonical Production Order per request, whatever the request version.
+  // Looking it up from the request id (not from state this app saved) keeps a
+  // retry after a lost write from creating a second order.
+  const order = await createOrAmendOrder(actor, input, idempotencyKey);
+  // The Hub write has committed. Converge the request on it; never fail here.
   const next = await db.runTransaction(async tx => {
     const ref = collection().doc(stableDocumentId(id));
     const current = (await tx.get(ref)).data() as AdHocRequest;
-    const at = new Date().toISOString();
-    const unchanged = current.version === request.version;
-    const merged: AdHocRequest = { ...current, ...(unchanged ? { destination: outgoing.destination } : {}), productionOrderId: order.canonicalId, sentVersion: request.version, sentAt: at, sentBy: actor.uid, status: unchanged ? "SENT_TO_CPU" : "NEEDS_UPDATE", version: current.version + 1, updatedAt: at, updatedBy: actor.uid, audit: [...current.audit, { action: request.productionOrderId ? "update-sent-to-cpu" : "sent-to-cpu", at, by: actorName(actor), version: current.version + 1, reason: order.canonicalId }] };
-    tx.set(ref, merged);
+    const merged = applySendRecord(current, request.version, order.canonicalId, actorName(actor), new Date().toISOString(), outgoing.destination);
+    if (merged !== current) tx.set(ref, merged);
     return merged;
   });
   return { request: next, sent: true as const };
@@ -150,8 +159,9 @@ export async function cancelRequest(id: string, expectedVersion: number, reason:
   if (!isSent(request)) throw httpError(409, "Only a sent request can be cancelled. Archive a draft instead.");
   if (request.version !== expectedVersion) throw httpError(409, "This request changed elsewhere. Refresh and review the latest version.");
   if (!reason.trim()) throw httpError(422, "A cancellation reason is required.");
-  if (request.productionOrderId) {
-    const order = await productionOrderDetail(request.productionOrderId);
+  {
+    // Resolve by the request's stable identity, so a send whose result was never recorded here is still withdrawn.
+    const order = await productionOrderDetail(request.productionOrderId || adHocProductionOrderId(request.id));
     if (order && order.status !== "cancelled") await transitionProductionOrder(actor, order.canonicalId, order.version, "cancelled", `Ad-Hoc request ${request.reference} cancelled: ${reason.trim()}`);
   }
   return mutate(id, expectedVersion, actor, (_current, at) => ({ status: "CANCELLED", cancelledAt: at, cancelReason: reason.trim(), audit: { action: "request-cancelled", at, by: "", version: 0, reason: reason.trim() } }));

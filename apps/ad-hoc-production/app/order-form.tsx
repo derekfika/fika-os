@@ -89,7 +89,6 @@ export function OrderForm({ id }: { id: string }) {
   const invalid = (ok: boolean) => showErrors && !ok;
   const done = (key: string) => checklist.find(item => item.key === key)?.done ?? false;
   const destination = draft.destination;
-  const totalQuantity = draft.lines.reduce((sum, line) => sum + (line.quantity > 0 ? line.quantity : 0), 0);
   const sendLabel = status === "NEEDS_UPDATE" || (request && isSent(request) && dirty) ? "Send update to CPU" : "Send to CPU";
   const sendDisabled = Boolean(busy) || readOnly || (status === "SENT_TO_CPU" && !dirty);
 
@@ -173,7 +172,7 @@ export function OrderForm({ id }: { id: string }) {
           <div><dt>Type</dt><dd>{destination.mode === "oploc" ? "Existing OPLOC" : "One-off address"}</dd></div><div><dt>{destination.mode === "oploc" ? "OPLOC" : "Name"}</dt><dd>{destination.label || "—"}</dd></div><div><dt>Address</dt><dd>{destination.address || "—"}</dd></div>{destination.contactName && <div><dt>Contact</dt><dd>{destination.contactName}</dd></div>}{destination.contactPhone && <div><dt>Phone</dt><dd>{destination.contactPhone}</dd></div>}
         </dl>
         <dl className="summary"><h3><Icon name="fork" size={18} />Menu items</h3>
-          <div><dt>Total lines</dt><dd>{draft.lines.length}</dd></div><div><dt>Total quantity</dt><dd>{totalQuantity}</dd></div>
+          <div><dt>Production lines</dt><dd>{draft.lines.length}</dd></div>
         </dl>
         <section className="checklist" aria-labelledby="ready-title"><h3 id="ready-title"><Icon name="check" size={18} />Readiness checklist</h3>
           <ul>{checklist.map(item => <li key={item.key} className={item.done ? "ok" : ""}><span className="tick" aria-hidden="true">{item.done && <Icon name="check" size={14} />}</span><span><strong>{item.label}</strong><small>{item.hint}</small></span><span className="visually-hidden">{item.done ? "Complete" : "Incomplete"}</span></li>)}</ul>
