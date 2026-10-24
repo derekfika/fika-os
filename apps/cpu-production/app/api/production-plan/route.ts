@@ -163,7 +163,11 @@ function strictServerAllergens(raw: Record<string, unknown> | undefined) {
 }
 function normalisePlanAllergens(plan: ProductionPlan, previous?: { items: PlannedMenuItem[]; actor: string }): ProductionPlan {
   const normalised = { ...plan, menuItems: plan.menuItems.map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, allergens: strictServerAllergens(sub.allergens) })) })) };
-  return previous ? { ...normalised, menuItems: stampAllergenReviews(previous.items, normalised.menuItems, previous.actor, now()) } : normalised;
+  if (!previous) return normalised;
+  const baseline = new Map(previous.items.map(item => [item.id, item.sourceItemName] as const));
+  // sourceItemName is server-owned: whatever a client sent is replaced by the stored baseline.
+  const carried = normalised.menuItems.map(({ sourceItemName: _client, ...item }) => baseline.get(item.id) === undefined ? item : { ...item, sourceItemName: baseline.get(item.id) });
+  return { ...normalised, menuItems: stampAllergenReviews(previous.items, carried, previous.actor, now()) };
 }
 function assertAllergenMatrixComplete(menuItems: PlannedMenuItem[], context: string) {
   if (!isProductionPlanMatrixComplete(menuItems)) throw Object.assign(new Error(`Record every allergen state, including No key allergens, before ${context}.`), { status: 422, code: "CPU_ALLERGEN_REVIEW_INCOMPLETE" });
@@ -253,7 +257,7 @@ async function isVisibleForCpu(request: NextRequest, orderId: string) {
 }
 function initialPlan(orderId: string, order?: Awaited<ReturnType<typeof productionOrderDetail>> | ProductionOrder): ProductionPlan {
   const timestamp = now();
-  return { id: `production-plan:${orderId}`, orderId, status: "draft", menuItems: (order?.lines || []).map((line, index) => ({ id: `menu-item:${orderId}:${index + 1}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:${index + 1}:1`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" }] })), planningNotes: "", updatedAt: timestamp, updatedBy: "local-fixture", audit: [{ action: "plan-created", at: timestamp, by: "local-fixture" }] };
+  return { id: `production-plan:${orderId}`, orderId, status: "draft", menuItems: (order?.lines || []).map((line, index) => ({ id: `menu-item:${orderId}:${index + 1}`, sourceLineId: line.canonicalId, name: line.itemName, sourceItemName: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:${index + 1}:1`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" }] })), planningNotes: "", updatedAt: timestamp, updatedBy: "local-fixture", audit: [{ action: "plan-created", at: timestamp, by: "local-fixture" }] };
 }
 async function getPlan(request: NextRequest, orderId: string, knownPlan?: ProductionPlan) {
   if (knownPlan) { const normalized = normalisePlanAllergens(knownPlan); plans.set(orderId, { ...normalized, status: effectiveProductionPlanStatus(normalized) }); }

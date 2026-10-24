@@ -69,3 +69,12 @@ test("row badge is text-first: Not reviewed, Checked (legacy), Checked, not yet 
   assert.equal(stamped.tone, "checked");
   assert.match(stamped.text, /^Checked by Chef A, 24 Oct, 12:00$/, "shown in Europe/London time (BST)");
 });
+
+test("an unnamed sub-item is identified by its menu item name and is stamped", () => {
+  const unnamed = (extra: Partial<PlannedSubItem> = {}) => item(confirmed({ name: "", ...extra }));
+  const [row] = stampAllergenReviews([item(sub({ name: "" }))], [unnamed()], "Chef A", at)[0].subItems;
+  assert.equal(row.allergenReview?.confirmedBy, "Chef A");
+  assert.ok(isRowConfirmed({ allergens: row.allergens, review: row.allergenReview, identity: "Soup" }));
+  const again = stampAllergenReviews([item(row)], [unnamed()], "Chef B", "2026-10-24T12:00:00.000Z")[0].subItems[0];
+  assert.equal(again.allergenReview?.confirmedBy, "Chef A", "an unchanged unnamed row keeps its stamp");
+});

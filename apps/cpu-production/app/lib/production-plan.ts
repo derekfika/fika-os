@@ -16,7 +16,11 @@ export type PlannedSubItem = {
   /** Server-stamped chef confirmation (reviewer, time, inputs fingerprint). Workflow evidence: not part of the signed matrix hash. */
   allergenReview?: import("../../../shared/allergen-review").AllergenRowReview;
 };
-export type PlannedMenuItem = { id: string; sourceLineId?: string; name: string; note: string; subItems: PlannedSubItem[] };
+export type PlannedMenuItem = {
+  id: string; sourceLineId?: string; name: string; note: string; subItems: PlannedSubItem[];
+  /** Server-owned: the Production Order line name this item was last reconciled with. A different present name means the source dish changed. */
+  sourceItemName?: string;
+};
 export type MatrixSignatureScope = {
   productionOrderId: string;
   serviceDate: string;
