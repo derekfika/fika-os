@@ -10,8 +10,10 @@ import type { CanonicalBooking, MnkBookingPayload } from "../lib/hospitality-boo
 
 const item = hospitalityCatalogues.cfc.items.find(item => item.lifecycleState === "active")!;
 const payload = { order: { items: [{ itemId: item.source.sourceItemId, quantity: 3, unitPrice: .01, lineTotal: .01 }], netTotal: .01 } } as MnkBookingPayload;
-const booking = { canonicalId: "booking:test", version: 4, commercialVersion: 2, lifecycleStatus: "Sent to CPU", updatedAt: "2026-10-08T10:00:00Z", updatedBy: "multi-site-manager", source: { sourceBookingId: "TEST-001" }, service: { oplocId: "oploc:mnk", portalSiteId: "mnk", portalSiteLabel: "MNK", eventDate: "2026-10-19", startTime: "12:00", guestCount: 3 }, client: { name: "Host", email: "host@example.test", companyName: "Test" }, order: { items: [{ itemId: "test", itemName: "Current lunch", quantity: 3, unitPrice: 12, lineTotal: 36 }], netTotal: 36, vatTotal: 0, grossTotal: 36 } } as CanonicalBooking;
-const sender: BookingSender = { from: "mnk@example.test", replyTo: "mnk@example.test", displayName: "MNK Catering", authenticatedAccount: "delivery@example.test", verifiedSendAs: true, enabled: ["submitted", "confirmed", "amended", "cancelled"] };
+const MNK_OPLOC = "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f";
+const RCOA_OPLOC = "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2";
+const booking = { canonicalId: "booking:test", version: 4, commercialVersion: 2, lifecycleStatus: "Sent to CPU", updatedAt: "2026-10-08T10:00:00Z", updatedBy: "multi-site-manager", source: { sourceBookingId: "TEST-001" }, service: { oplocId: MNK_OPLOC, portalSiteId: "mnk", portalSiteLabel: "MNK", eventDate: "2026-10-19", startTime: "12:00", guestCount: 3 }, client: { name: "Host", email: "host@example.test", companyName: "Test" }, order: { items: [{ itemId: "test", itemName: "Current lunch", quantity: 3, unitPrice: 12, lineTotal: 36 }], netTotal: 36, vatTotal: 0, grossTotal: 36 } } as CanonicalBooking;
+const sender: BookingSender = { from: "mnk@fikacatering.com", replyTo: "mnk@fikacatering.com", displayName: "MNK Catering", authenticatedAccount: "mnk@fikacatering.com", verifiedSendAs: true, enabled: ["submitted", "confirmed", "amended", "cancelled"] };
 
 test("public price, line and overall tampering cannot alter canonical totals; quantity is authoritative input", () => {
   const actual = trustedPublicOrder(payload, [], "cfc");
@@ -54,13 +56,14 @@ test("stale or cancelled source never emits a current confirmation", () => {
   assert.equal(claimBookingEmail(message, { ...booking, lifecycleStatus: "Cancelled" }, "claim", booking.updatedAt)?.delivery?.status, "dead-letter");
 });
 test("site OPLOC selects From/Reply-To independently of multi-site manager; missing or unverified sender fails closed", () => {
-  const env = { FIKA_HOSPITALITY_EMAIL_SENDERS_JSON: JSON.stringify({ "oploc:mnk": sender, "oploc:rcoa": { ...sender, from: "rcoa@example.test" } }) };
+  const rcoa = { ...sender, from: "rcoa@fikacatering.com", replyTo: "rcoa@fikacatering.com", authenticatedAccount: "rcoa@fikacatering.com" };
+  const env = { FIKA_HOSPITALITY_EMAIL_SENDERS_JSON: JSON.stringify({ [MNK_OPLOC]: sender, [RCOA_OPLOC]: rcoa }) };
   assert.equal(resolveBookingSender(booking.service.oplocId, "confirmed", env).from, sender.from);
-  assert.equal(resolveBookingSender("oploc:rcoa", "confirmed", env).from, "rcoa@example.test");
+  assert.equal(resolveBookingSender(RCOA_OPLOC, "confirmed", env).from, "rcoa@fikacatering.com");
   assert.throws(() => resolveBookingSender("missing", "confirmed", env));
-  assert.throws(() => resolveBookingSender("oploc:mnk", "confirmed", { FIKA_HOSPITALITY_EMAIL_SENDERS_JSON: JSON.stringify({ "oploc:mnk": { ...sender, verifiedSendAs: false } }) }));
+  assert.throws(() => resolveBookingSender(MNK_OPLOC, "confirmed", { FIKA_HOSPITALITY_EMAIL_SENDERS_JSON: JSON.stringify({ [MNK_OPLOC]: { ...sender, verifiedSendAs: false } }) }));
   const raw = gmailRawMessage(bookingNotificationRecord(booking, "confirmed", 4, booking.updatedAt), sender);
-  assert.match(raw, /<mnk@example.test>/); assert.match(raw, /Reply-To: mnk@example.test/); assert.match(raw, /multipart\/alternative/);
+  assert.match(raw, /<mnk@fikacatering\.com>/); assert.match(raw, /Reply-To: mnk@fikacatering\.com/); assert.match(raw, /multipart\/alternative/);
   assert.doesNotMatch(raw, /attachment/);
 });
 
@@ -70,11 +73,11 @@ test("only the explicit RCoA test mode can use its authenticated mailbox as From
     FIKA_RUNTIME_MODE: "production",
     FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED: "true",
     FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT: "derek@fikacatering.com",
-    FIKA_HOSPITALITY_EMAIL_SENDERS_JSON: JSON.stringify({ "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2": rcoaSender }),
+    FIKA_HOSPITALITY_EMAIL_SENDERS_JSON: JSON.stringify({ [RCOA_OPLOC]: rcoaSender }),
   };
-  assert.equal(resolveBookingSender("oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2", "submitted", config).from, "rcoa@fikacatering.com");
-  assert.throws(() => resolveBookingSender("oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2", "submitted", { ...config, FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT: "customer@example.com" }));
-  assert.throws(() => resolveBookingSender("oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2", "submitted", { ...config, FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED: "false" }));
+  assert.equal(resolveBookingSender(RCOA_OPLOC, "submitted", config).from, "rcoa@fikacatering.com");
+  assert.throws(() => resolveBookingSender(RCOA_OPLOC, "submitted", { ...config, FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT: "customer@example.com" }));
+  assert.throws(() => resolveBookingSender(RCOA_OPLOC, "submitted", { ...config, FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED: "false" }));
 });
 
 function harness() {

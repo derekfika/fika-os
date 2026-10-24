@@ -1,5 +1,6 @@
 import type { BookingNotificationRecord } from "./booking-notifications";
 import { isRcoaEmailTestFixture, RCOA_EMAIL_TEST_NOTIFICATION_IDS, RCOA_EMAIL_TEST_OPLOC, RCOA_EMAIL_TEST_RECIPIENT } from "./booking-email-test-fixture";
+import { HOSPITALITY_EMAIL_SITE_IDENTITIES, RCOA_HOSPITALITY_OPLOC_ID } from "./booking-email-site-identities";
 
 type Env = Record<string, string | undefined>;
 const list = (value: string | undefined) => (value || "").split(",").map(value => value.trim()).filter(Boolean);
@@ -16,12 +17,37 @@ export const RCOA_UAT_NOTIFICATION_EXCLUSIONS = Object.freeze([
 ] as const);
 const excludedNotificationIds = new Set<string>(RCOA_UAT_NOTIFICATION_EXCLUSIONS);
 
+function utcMillis(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const millis = Date.parse(value);
+  return Number.isFinite(millis) && new Date(millis).toISOString() === value ? millis : undefined;
+}
+
+/** New site launches must pin a cutoff so pre-launch queued rows stay inert. */
+function isAfterSiteLaunch(message: BookingNotificationRecord, env: Env) {
+  if (env.FIKA_RUNTIME_MODE !== "production" || message.oplocId === RCOA_HOSPITALITY_OPLOC_ID) return true;
+  const oplocId = message.oplocId;
+  if (!oplocId || !Object.hasOwn(HOSPITALITY_EMAIL_SITE_IDENTITIES, oplocId)) return false;
+  let cutoffs: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(env.FIKA_HOSPITALITY_EMAIL_LAUNCH_CUTOFFS_JSON || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    cutoffs = parsed as Record<string, unknown>;
+  } catch { return false; }
+  if (Object.entries(cutoffs).some(([key, value]) => !Object.hasOwn(HOSPITALITY_EMAIL_SITE_IDENTITIES, key) || utcMillis(value) === undefined)) return false;
+  const cutoff = cutoffs[oplocId];
+  const cutoffMillis = utcMillis(cutoff);
+  const createdAt = Date.parse(message.createdAt || "");
+  return cutoffMillis !== undefined && Number.isFinite(createdAt) && createdAt >= cutoffMillis;
+}
+
 /** Production fails closed without an OPLOC allowlist. Skipped records remain unchanged for audit. */
 export function emailRolloutDisposition(message: BookingNotificationRecord, env: Env = process.env): "eligible" | "skip" {
   if (excludedNotificationIds.has(message.notificationId)) return "skip";
   const allowed = list(env.FIKA_HOSPITALITY_EMAIL_ALLOWED_OPLOCS);
   if (env.FIKA_RUNTIME_MODE === "production" && !allowed.length) return "skip";
   if (allowed.length && (!message.oplocId || !allowed.includes(message.oplocId))) return "skip";
+  if (!isAfterSiteLaunch(message, env)) return "skip";
   const testIds = list(env.FIKA_HOSPITALITY_EMAIL_TEST_NOTIFICATION_IDS);
   const testMode = env.FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED === "true";
   if (message.testFixture === true && !testMode) return "skip";
