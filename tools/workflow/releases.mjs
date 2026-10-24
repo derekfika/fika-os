@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { APPS, REPO, MAIN_CHECK, target, exactSha, assertClean, validateRecord, risk, assertResume, assertServingLineage, digest } from './policy.mjs';
 import { git, command, ancestor, ref, ghApi, scopeHash, asyncLock, save, stateDir, jsonFile, serving, cloud, backendPath } from './runtime.mjs';
 import { assertHostedContext } from './hosted.mjs';
-import { recoverySnapshot, reconcileIntent } from './recovery.mjs';
+import { recoverySnapshot, reconcileIntent, resubmitNeverSubmitted, submissionAttempts, describeSubmissionEvidence } from './recovery.mjs';
 
 export function releaseRecord(branch) {
   const sha = ref(`refs/remotes/origin/${branch}`);
@@ -148,6 +148,21 @@ export function rollbackSelection(t, current, options = {}) {
   }
   throw Error('No earlier verified rollback target is recorded; preserve the current release and investigate rather than guessing a SHA');
 }
+/** Fails before any release state is written when the Firebase CLI cannot make an authenticated call. */
+export function firebaseAuthPreflight(t, run = command) {
+  let listing;
+  try { listing = run('firebase', ['apphosting:backends:list', '--project', t.project, '--json']); }
+  catch { throw Error(`Firebase CLI is not authenticated for ${t.project}; operator action: run 'firebase login --reauth'. No release state was written.`); }
+  if (!String(listing).includes(t.backend)) throw Error(`Firebase CLI cannot see backend ${t.backend} in ${t.project}; no release state was written.`);
+}
+/** Cloud Audit Log evidence of App Hosting create calls for this backend since a time. Unreadable logs are reported, never assumed empty. */
+export function auditCreateEvents(t, sinceMs, run = command) {
+  try {
+    const filter = `protoPayload.serviceName="firebaseapphosting.googleapis.com" AND protoPayload.methodName=~"(CreateRollout|CreateBuild)" AND timestamp>="${new Date(sinceMs).toISOString()}"`;
+    const rows = JSON.parse(run('gcloud', ['logging', 'read', filter, '--project', t.project, '--limit', '50', '--format', 'json']) || '[]');
+    return { readable: Array.isArray(rows), events: (Array.isArray(rows) ? rows : []).filter(row => String(row.protoPayload?.resourceName || '').includes(`/backends/${t.backend}`)).map(row => ({ at: row.timestamp, method: row.protoPayload?.methodName })) };
+  } catch { return { readable: false, events: [] }; }
+}
 export function planRelease(app, environment, supplied = {}) {
   const options = {...supplied};
   const t = target(app, environment); assertClean(git('status', '--porcelain')); git('fetch', 'origin');
@@ -220,6 +235,7 @@ export async function deploy(app, environment, options) {
           previousGoodRecord:pointer.record.previousGoodRecord, releaseId:randomUUID(), reverifiedServing:true, completedAt:new Date().toISOString(), smoke:health };
         validateRecord(record, plan); const commit = appendRecord(plan, record, pointer.commit); return { alreadyServing:true, commit, record };
       }
+      firebaseAuthPreflight(target(plan.app, plan.environment));
       journal = { releaseId: randomUUID(), plan, before: abandoned ? pointer.record.previousGood : before, observedBefore: before,
         previousGoodRecord: abandoned ? pointer.record.previousGoodRecord : pointer.commit, state: 'pending', createdAt: new Date().toISOString() };
       save(journalFile, journal);
@@ -228,16 +244,39 @@ export async function deploy(app, environment, options) {
       save(journalFile, journal);
       // Exactly one selected backend; no branch-based or project-wide deployment command.
       journal.submissionStartedAt = new Date().toISOString(); save(journalFile, journal);
+      let submissionFailure;
       try { command('firebase', rolloutArguments(plan), { stdio: ['ignore', 'inherit', 'inherit'] }); }
-      catch { throw Error(`Rollout submission/completion uncertain. Journal ${journalFile}; use --resume, NEVER blindly resubmit.`); }
-      finally { journal.submissionFinishedAt = new Date().toISOString(); save(journalFile, journal); }
+      catch (error) { submissionFailure = { exitStatus: error?.status ?? null, message: String(error?.message || error).slice(0, 300) }; throw Error(`Rollout submission/completion uncertain. Journal ${journalFile}; use --resume, NEVER blindly resubmit.`); }
+      finally {
+        journal.submissionFinishedAt = new Date().toISOString();
+        if (submissionFailure) journal.submissionFailure = submissionFailure;
+        journal.submissionAttempts = [{ n: 1, startedAt: journal.submissionStartedAt, finishedAt: journal.submissionFinishedAt, ...(submissionFailure ? { failure: submissionFailure } : {}) }];
+        save(journalFile, journal);
+      }
+    }
+    let resubmissionNote = '';
+    if (options.resume) {
+      const t = target(plan.app, plan.environment);
+      const io = {
+        inspect: () => recoverySnapshot(t),
+        audit: sinceMs => auditCreateEvents(t, sinceMs),
+        // Compare-and-swap on the durable journal: only one invocation can claim the single resubmission.
+        claim: (expectedAttempts, next) => { if (submissionAttempts(jsonFile(journalFile)).length !== expectedAttempts) throw Error('Another resume already claimed the resubmission'); save(journalFile, next); journal = next; },
+        submit: () => { firebaseAuthPreflight(t); command('firebase', rolloutArguments(plan), { stdio: ['ignore', 'inherit', 'inherit'] }); },
+        finish: (n, patch) => { const stored = jsonFile(journalFile); save(journalFile, { ...stored, submissionAttempts: stored.submissionAttempts.map(attempt => attempt.n === n ? { ...attempt, ...patch } : attempt) }); },
+      };
+      try { await resubmitNeverSubmitted({ intent: pointer.record, journal }, io); resubmissionNote = 'Original submission was proven never to have reached Firebase and was resubmitted once for the same intent.'; }
+      catch (error) { if (error.failure) throw error; resubmissionNote = `Resubmission not attempted: ${error.message}.`; }
     }
     let verified; const deadline = Date.now() + Number(options['timeout-ms'] || 1200000);
     while (Date.now() < deadline) {
       try { const s = await serving(plan); if (s.sourceSha === plan.sourceSha) { verified = s; break; } } catch { /* transient rollout state, no resubmission */ }
       await new Promise(resolve => setTimeout(resolve, 15000));
     }
-    if (!verified) throw Error(`Serving verification incomplete; retain pending intent and ${journalFile}. Resume without duplicate submission.`);
+    if (!verified) {
+      let evidence = ''; try { evidence = describeSubmissionEvidence(await recoverySnapshot(target(plan.app, plan.environment)), journal); } catch { evidence = 'Firebase state could not be read.'; }
+      throw Error(`Serving verification incomplete; retain pending intent and ${journalFile}. ${evidence} ${resubmissionNote}`.trim());
+    }
     const health = await releaseHealthProbe(app, backend.uri, verified.sourceSha);
     if (!health.ok) throw Error(`Non-destructive release health probe failed (${health.reason || health.status}); preserve journal and stop for rollback decision`);
     git('fetch', 'origin'); const latest = releaseRecord(plan.branch);

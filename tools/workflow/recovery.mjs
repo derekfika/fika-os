@@ -74,3 +74,62 @@ export async function reconcileIntent(input, io) {
   await io.finish({ ...journal, state: resolution === 'complete' ? 'completed' : 'abandoned', resolutionCommit: commit, resolution: record });
   return { commit, record };
 }
+
+// ── Guarded resubmission of a staging rollout that provably never reached Firebase ──────────────
+// `deploy --resume` normally only verifies. It may resubmit the SAME intent (same release ID, pinned SHA and
+// approval) once, and only when independently gathered evidence shows the original submission never reached
+// Firebase. Any doubt leaves the intent pending for escalation. No new command and no ledger edit are involved.
+export const RESUBMIT_QUIET_MS = 10 * 60 * 1000;
+const CLOCK_SKEW_MS = 60 * 1000;
+export const submissionAttempts = journal => journal.submissionAttempts?.length
+  ? journal.submissionAttempts
+  : [{ n: 1, startedAt: journal.submissionStartedAt, finishedAt: journal.submissionFinishedAt, ...(journal.submissionFailure ? { failure: journal.submissionFailure } : {}) }];
+
+export function assertNeverSubmitted({ intent, journal, first, second, audit, now = Date.now(), quietMs = RESUBMIT_QUIET_MS }) {
+  assertResume(intent, journal, journal?.plan || {});
+  if (journal.plan.environment !== 'staging') throw Error('Automatic resubmission is limited to staging; production submission uncertainty is escalated');
+  const attempts = submissionAttempts(journal);
+  if (attempts.length !== 1) throw Error('A resubmission was already recorded for this intent; submission state is uncertain, do not resubmit');
+  const started = Date.parse(attempts[0].startedAt); const finished = Date.parse(attempts[0].finishedAt); const created = Date.parse(journal.createdAt);
+  if (![started, finished, created].every(Number.isFinite)) throw Error('Submission outcome is unknown: original submitter must have returned');
+  const waitMs = finished + quietMs - now;
+  if (waitMs > 0) throw Error(`Quiet period not elapsed; evidence is not yet conclusive (retry in ${Math.ceil(waitMs / 60000)} minute(s))`);
+  if (digest(first) !== digest(second)) throw Error('Deployment evidence changed between snapshots; not resubmitting');
+  const since = created - CLOCK_SKEW_MS;
+  // A missing or unparsable createTime counts as "possibly new": doubt never permits resubmission.
+  const possiblyNew = item => !(Date.parse(item.createTime) < since);
+  const present = [...first.builds.filter(possiblyNew), ...first.rollouts.filter(possiblyNew)].map(item => item.name);
+  if (present.length) throw Error(`Firebase already holds ${present.join(', ')} created after the intent; the submission may have reached Firebase`);
+  if (first.operations.length) throw Error('Firebase operations are still in flight; submission state is uncertain');
+  const traffic = first.traffic;
+  if (!traffic.autoDisabled || traffic.reconciling || traffic.current.length !== 1 || traffic.current[0].percent !== 100 || (traffic.target.length && digest(traffic.target) !== digest(traffic.current))) throw Error('Traffic is not quiescent; not resubmitting');
+  const before = journal.observedBefore || journal.before; const current = first.current;
+  if (current.state !== 'SUCCEEDED' || current.percent !== 100 || current.sourceSha !== before.sourceSha || current.rollout !== before.rollout || traffic.current[0].build !== `${intent.backend}/builds/${current.rollout}`) throw Error('Serving state differs from the state recorded before the submission; not resubmitting');
+  if (!audit?.readable) throw Error('Cloud Audit Logs could not be read; non-submission cannot be proven');
+  if (audit.events.length) throw Error(`Cloud Audit Logs show ${audit.events.length} App Hosting create call(s) after the intent; the submission may have reached Firebase`);
+  return attempts;
+}
+
+/** io: inspect, audit(sinceMs), claim(expectedAttempts, nextJournal), submit, finish(n, patch), now. Exactly one invocation can claim. */
+export async function resubmitNeverSubmitted({ intent, journal }, io) {
+  const now = () => io.now?.() ?? Date.now();
+  const first = await io.inspect(); const audit = await io.audit(Date.parse(journal.createdAt) - CLOCK_SKEW_MS); const second = await io.inspect();
+  const attempts = assertNeverSubmitted({ intent, journal, first, second, audit, now: now() });
+  const attempt = { n: attempts.length + 1, startedAt: new Date(now()).toISOString(), reason: 'verified-never-submitted', evidenceHash: digest({ first, events: audit.events }), ...(attempts[0].failure ? { previousFailure: attempts[0].failure } : {}) };
+  // Write-ahead compare-and-swap: the claim is durable BEFORE the submission, so a second or crashed invocation can never resubmit.
+  await io.claim(attempts.length, { ...journal, submissionAttempts: [...attempts, attempt] });
+  let failure;
+  try { await io.submit(); } catch (error) { failure = { exitStatus: error?.status ?? null, message: String(error?.message || error).slice(0, 300) }; }
+  await io.finish(attempt.n, { finishedAt: new Date(now()).toISOString(), ...(failure ? { failure } : {}) });
+  if (failure) throw Object.assign(Error(`Resubmission failed (${failure.message}); the intent is retained, do not resubmit`), { failure });
+  return { attempt };
+}
+
+/** Human-readable state of Firebase relative to an intent, for resume diagnostics. */
+export function describeSubmissionEvidence(snapshot, journal) {
+  const since = Date.parse(journal.createdAt) - CLOCK_SKEW_MS;
+  const newer = [...snapshot.builds, ...snapshot.rollouts].filter(item => !(Date.parse(item.createTime) < since));
+  return newer.length
+    ? `Firebase holds ${newer.map(item => `${item.name} (${item.state})`).join(', ')} created after the intent; resume is verifying it.`
+    : `Firebase holds no build or rollout created after the intent (serving ${snapshot.current.sourceSha.slice(0, 8)} at ${snapshot.current.percent}%): the submission has not reached Firebase.`;
+}

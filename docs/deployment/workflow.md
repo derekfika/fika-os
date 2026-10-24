@@ -68,6 +68,13 @@ Twelve append-only `release/staging/<app>` and `release/prod/<app>` ledgers rema
 
 For terminal failures the agent inspects `fika reconcile <app> --prod`, then uses `--resolution abandon|complete --rollout <observed-ID> --execute --owner-approved --reason <owner recovery/rollback instruction>`. The agent resolves attempt IDs internally. Reconciliation requires a returned submitter, positive terminal identity, paginated build/rollout/operation discovery, two stable snapshots and original journal/rollback lineage. Active or unknown outcomes cannot be abandoned. The original journal is archived before a non-force resolution; no deployment is submitted. Healthy successes must be completed. Abandoned unhealthy releases permit only verified rollback and are never themselves known-good targets. There is no force-abandon option.
 
+
+### Pre-submission failures (staging)
+
+`deploy --execute` first proves the Firebase CLI is authenticated (a read of the target backend) and only then writes the release intent, so an expired login stops with `firebase login --reauth` and writes nothing. The original submission's CLI exit status and an attempts list are recorded in the journal.
+
+If a staging submission fails and Firebase holds no build or rollout for it, `deploy <app> --staging --resume --execute` resubmits the SAME intent (same release ID, pinned SHA and authorisation) exactly once, only when all of these hold: the original submitter returned, a 10-minute quiet period has passed, two identical recovery snapshots show no build or rollout created after the intent, no operation is in flight, traffic is quiescent and serving equals the pre-submission state, and Cloud Audit Logs are readable and show no `CreateRollout`/`CreateBuild` for the backend since the intent. The attempt is claimed durably before submitting, so a second or concurrent resume can never submit again; a failed resubmission is recorded and never retried automatically. Any doubt (including a build or rollout in any state) leaves the intent pending and resume verifies as before, now reporting what Firebase holds. Production never resubmits automatically.
+
 ## Optional hosted runner
 
 Local releases need no new cloud identity. Optional `workflow_dispatch` uses the same owner-instruction inputs and CLI, without manual environment review. Pre-credential checks require the exact repository numeric IDs, main ref, release workflow, dispatch event and app/environment. Production also checks the owner actor and explicit authorisation input.
