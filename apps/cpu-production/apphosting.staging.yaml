@@ -41,7 +41,10 @@ env:
   # impersonates this governed staging Workspace identity; the folder root is
   # optional because the adapter resolves the default CPU Production path.
   - variable: GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION
-    value: derek@fikacatering.com
+    value: cpux@fikacatering.com
+    availability: [RUNTIME]
+  - variable: GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID
+    value: 1GUTenN7hFPUnl4_7DK_FsbQLcDbeq5qP
     availability: [RUNTIME]
   - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON

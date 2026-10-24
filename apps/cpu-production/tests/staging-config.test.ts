@@ -30,7 +30,7 @@ test("CPU and Delivered-In staging configs converge on shared runtime contracts"
   assert.doesNotMatch(delivered, /DELIVERED_IN_INTERNAL_API_TOKEN/);
   assert.match(cpu, /FIKA_SNAPSHOT_BUCKET[\s\S]*fika-os-dev-staging-read-packages-europe-west4/);
   assert.match(delivered, /FIKA_SNAPSHOT_BUCKET[\s\S]*fika-os-dev-staging-read-packages-europe-west4/);
-  assert.match(cpuStaging, /GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION[\s\S]*derek@fikacatering\.com/);
+  assert.match(cpuStaging, /GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION[\s\S]*cpux@fikacatering\.com/);
   assert.match(cpuStaging, /GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON[\s\S]*secret:\s*GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON/);
 });
 

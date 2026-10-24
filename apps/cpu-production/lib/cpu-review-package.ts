@@ -25,7 +25,7 @@ export type CpuReviewEntry = {
   mayContainNotes?: string;
   evidenceStatus: string;
 };
-export type CpuReviewSignature = { role: "production_chef" | "head_chef_site_manager"; printedName: string; signedAt: string; actor?: string; attestation?: string; scope?: { productionOrderId: string; serviceDate: string; sourceOrigin?: "menu_planning" | "hospitality_booking"; sourceDayId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string; sourceRevision?: number; sourceVersion: number; sourceContentHash: string; matrixContentHash: string } };
+export type CpuReviewSignature = { role: "production_chef" | "head_chef_site_manager"; printedName: string; signedAt: string; actor?: string; attestation?: string; scope?: { productionOrderId: string; serviceDate: string; sourceOrigin?: "menu_planning" | "hospitality_booking" | "ad_hoc_production"; sourceDayId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string; sourceRevision?: number; sourceVersion: number; sourceContentHash: string; matrixContentHash: string } };
 export type CpuReviewOrder = {
   productionOrderId: string;
   orderVersion: number;
@@ -38,7 +38,7 @@ export type CpuReviewOrder = {
   signatures: CpuReviewSignature[];
   entries: CpuReviewEntry[];
   matrixArtifact?: { id: string; driveUrl?: string; localUrl?: string; contentHash?: string };
-  sourceIdentity?: { sourceOrigin?: "menu_planning" | "hospitality_booking"; sourceDayId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string; sourceRevision?: number; sourceVersion: number; sourceContentHash: string; matrixContentHash: string };
+  sourceIdentity?: { sourceOrigin?: "menu_planning" | "hospitality_booking" | "ad_hoc_production"; sourceDayId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string; sourceRevision?: number; sourceVersion: number; sourceContentHash: string; matrixContentHash: string };
 };
 export type CpuReviewProjection = {
   contractVersion: "cpu-production.delivered-in-review.v1";
