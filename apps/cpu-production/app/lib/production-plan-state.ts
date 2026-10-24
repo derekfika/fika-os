@@ -20,7 +20,19 @@ export function effectiveProductionPlanStatus(plan: Pick<ProductionPlan, "status
 export function mergeMissingProductionOrderLines(plan: ProductionPlan, orderId: string, lines: Array<{ canonicalId: string; itemName: string; customerQuantity: number }>) {
   const existing = new Set(plan.menuItems.map((item) => item.sourceLineId || item.id));
   const missing = lines.filter((line) => !existing.has(line.canonicalId)).map((line, index) => ({ id: `menu-item:${orderId}:original:${index}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:original:${index}`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" as const }] }));
-  const next = missing.length ? { ...plan, menuItems: [...plan.menuItems, ...missing] } : plan;
+  const sourceName = new Map(lines.map((line) => [line.canonicalId, line.itemName] as const));
+  const sameName = (left: string, right: string) => left.trim().toLocaleLowerCase("en-GB") === right.trim().toLocaleLowerCase("en-GB");
+  // A reviewed dish whose Production Order line was renamed is a different dish: it takes the new source name and every row is
+  // reopened (unrecorded, unconfirmed). The baseline is server-owned; an item with no baseline simply adopts the current name.
+  const reconciled = plan.menuItems.map((item) => {
+    const current = item.sourceLineId ? sourceName.get(item.sourceLineId) : undefined;
+    if (current === undefined) return item;
+    if (item.sourceItemName === undefined || sameName(item.sourceItemName, current)) return item.sourceItemName === current ? item : { ...item, sourceItemName: current };
+    return { ...item, name: current, sourceItemName: current, subItems: item.subItems.map(({ allergenReview: _dropped, ...sub }) => ({ ...sub, allergens: {}, mayContainNotes: "", evidenceStatus: "not_completed" as const })) };
+  });
+  const changed = reconciled.some((item, index) => item !== plan.menuItems[index]);
+  const base = changed ? { ...plan, menuItems: reconciled } : plan;
+  const next = missing.length ? { ...base, menuItems: [...base.menuItems, ...missing.map((item) => ({ ...item, sourceItemName: item.name }))] } : base;
   return { ...next, status: effectiveProductionPlanStatus(next) };
 }
 

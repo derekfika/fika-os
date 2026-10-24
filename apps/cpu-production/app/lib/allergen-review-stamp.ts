@@ -1,7 +1,7 @@
 import { confirmRow, isRowConfirmed, rowFingerprint, type AllergenRowReview } from "../../../shared/allergen-review";
 import type { PlannedMenuItem, PlannedSubItem } from "./production-plan";
 
-const sameAllergens = (left: PlannedSubItem, right: PlannedSubItem) => rowFingerprint(left.name, left.allergens, left.mayContainNotes) === rowFingerprint(right.name, right.allergens, right.mayContainNotes);
+const sameAllergens = (left: PlannedSubItem, right: PlannedSubItem, leftIdentity: string, rightIdentity: string) => rowFingerprint(leftIdentity, left.allergens, left.mayContainNotes) === rowFingerprint(rightIdentity, right.allergens, right.mayContainNotes);
 
 /**
  * Server-owned confirmation evidence for CPU rows. Whatever `allergenReview` a client sends is discarded; a completed row keeps
@@ -14,13 +14,15 @@ export function stampAllergenReviews(previous: PlannedMenuItem[], next: PlannedM
   return next.map(item => ({
     ...item,
     subItems: item.subItems.map(sub => {
+      // CPU sub-items are often unnamed (the dish name is on the menu item), so identity falls back to the menu item name.
+      const identityOf = (row: PlannedSubItem) => row.name.trim() || item.name;
       const { allergenReview: _clientRecord, ...row } = sub;
       if (row.evidenceStatus !== "completed") return row;
       const prior = before.get(row.id);
-      if (prior?.allergenReview && isRowConfirmed({ allergens: row.allergens, review: prior.allergenReview, identity: row.name, mayContainNotes: row.mayContainNotes })) return { ...row, allergenReview: prior.allergenReview };
-      if (prior && prior.evidenceStatus === "completed" && !prior.allergenReview && sameAllergens(prior, row)) return row;
+      if (prior?.allergenReview && isRowConfirmed({ allergens: row.allergens, review: prior.allergenReview, identity: identityOf(row), mayContainNotes: row.mayContainNotes })) return { ...row, allergenReview: prior.allergenReview };
+      if (prior && prior.evidenceStatus === "completed" && !prior.allergenReview && sameAllergens(prior, row, identityOf(prior), identityOf(row))) return row;
       try {
-        const review: AllergenRowReview = confirmRow({ allergens: row.allergens, identity: row.name, mayContainNotes: row.mayContainNotes, actor, now: at }).review;
+        const review: AllergenRowReview = confirmRow({ allergens: row.allergens, identity: identityOf(row), mayContainNotes: row.mayContainNotes, actor, now: at }).review;
         return { ...row, allergenReview: review };
       } catch {
         return row;
