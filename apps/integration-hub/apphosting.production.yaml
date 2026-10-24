@@ -28,7 +28,7 @@ env:
   - variable: FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED
     value: "true"
     availability: [RUNTIME]
-  # Synthetic RCoA test path stays disabled; live RCoA customer delivery is scoped by the allowlist below.
+  # Delivery currently serves RCoA only. Other sites need a verified sender, mailbox allowlist, OPLOC entry and UTC launch cutoff.
   - variable: FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED
     value: "false"
     availability: [RUNTIME]
@@ -36,9 +36,17 @@ env:
   - variable: FIKA_HOSPITALITY_EMAIL_DWD_VERIFY_ENABLED
     value: "false"
     availability: [RUNTIME]
-  # RCoA-only launch scope. Delivery stays disabled for the runtime DWD verification release.
+  # RCoA-only launch scope. Do not add another site until its Workspace identity is verified and approved.
   - variable: FIKA_HOSPITALITY_EMAIL_ALLOWED_OPLOCS
     value: oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2
+    availability: [RUNTIME]
+  # Empty by default. Each additional site's activation must set a UTC cutoff so older queued notifications stay excluded.
+  - variable: FIKA_HOSPITALITY_EMAIL_LAUNCH_CUTOFFS_JSON
+    value: '{}'
+    availability: [RUNTIME]
+  # No delegated aliases are authorised by default; add mailbox entries only after Workspace verification.
+  - variable: FIKA_HOSPITALITY_EMAIL_AUTHENTICATED_ACCOUNTS_JSON
+    value: '{}'
     availability: [RUNTIME]
   - variable: FIKA_HOSPITALITY_EMAIL_SENDERS_JSON
     value: '{"oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2":{"from":"rcoa@fikacatering.com","replyTo":"rcoa@fikacatering.com","authenticatedAccount":"rcoa@fikacatering.com","displayName":"RCoA Hospitality","verifiedSendAs":true,"enabled":["submitted","confirmed","amended","cancelled"]}}'

@@ -1,34 +1,41 @@
 import crypto from "node:crypto";
 import { workspaceGmailToken } from "./workspace-gmail-dwd";
+import { authorizedHospitalityMailboxes, HOSPITALITY_EMAIL_SITE_IDENTITIES, RCOA_HOSPITALITY_OPLOC_ID, type HospitalityEmailOplocId } from "./booking-email-site-identities";
 import { readGmailOAuthFiles, refreshGmailAccessToken } from "./gmail-client";
 import type { BookingNotificationKind, BookingNotificationRecord } from "./booking-notifications";
 import type { CanonicalBooking } from "./hospitality-booking-service";
 import { EMAIL_FOOTER_MARKER, emailInlineImages } from "./booking-email-template";
 
 export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
-const RCOA_EMAIL_TEST_OPLOC = "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2";
+const RCOA_EMAIL_TEST_OPLOC = RCOA_HOSPITALITY_OPLOC_ID;
 const RCOA_EMAIL_TEST_RECIPIENT = "derek@fikacatering.com";
 const RCOA_EMAIL_SENDER = "rcoa@fikacatering.com";
-export type BookingSender = { from: string; replyTo: string; displayName: string; enabled: BookingNotificationKind[]; authenticatedAccount: string; verifiedSendAs: boolean };
+export type BookingSender = { from: string; replyTo: string; displayName: string; enabled: BookingNotificationKind[]; authenticatedAccount: string; verifiedSendAs: boolean; oplocId?: HospitalityEmailOplocId };
 const address = (value: string) => /^[^\s<>@,;\r\n]+@[^\s<>@,;\r\n]+\.[^\s<>@,;\r\n]+$/.test(value);
 
 /** Configuration keyed only by the Booking's canonical OPLOC, never by actor/display name. */
 export function resolveBookingSender(oplocId: string | undefined, kind: BookingNotificationKind, env: Record<string, string | undefined> = process.env): BookingSender {
   if (!oplocId) throw new Error("Booking sender requires a canonical OPLOC.");
+  const identity = HOSPITALITY_EMAIL_SITE_IDENTITIES[oplocId as HospitalityEmailOplocId];
+  if (!identity) throw new Error("Booking OPLOC has no approved sender identity.");
   let senders: Record<string, BookingSender>;
   try { senders = JSON.parse(env.FIKA_HOSPITALITY_EMAIL_SENDERS_JSON || "{}"); } catch { throw new Error("Booking sender configuration is invalid."); }
   const sender = senders[oplocId];
-  if (!sender || !address(sender.from || "") || !address(sender.replyTo || "") || !address(sender.authenticatedAccount || "") || !sender.displayName || /[\r\n]/.test(sender.displayName)) throw new Error("Booking site sender is not configured.");
+  if (!sender || typeof sender !== "object" || typeof sender.from !== "string" || typeof sender.replyTo !== "string" || typeof sender.authenticatedAccount !== "string" || typeof sender.displayName !== "string"
+    || !address(sender.from) || !address(sender.replyTo) || !address(sender.authenticatedAccount) || !sender.displayName || /[\r\n]/.test(sender.displayName)) throw new Error("Booking site sender is not configured.");
+  if (sender.from !== identity.from || sender.replyTo !== identity.replyTo) throw new Error("Booking site sender does not match its OPLOC identity.");
+  const authenticatedAccount = sender.authenticatedAccount.trim().toLowerCase();
+  if (!authorizedHospitalityMailboxes(oplocId, env).has(authenticatedAccount)) throw new Error("Workspace mailbox is not explicitly authorised for this OPLOC.");
   const scopedRcoaTest = env.FIKA_RUNTIME_MODE === "production"
     && env.FIKA_HOSPITALITY_EMAIL_TEST_MODE_ENABLED === "true"
     && env.FIKA_HOSPITALITY_EMAIL_TEST_RECIPIENT?.trim().toLowerCase() === RCOA_EMAIL_TEST_RECIPIENT
     && oplocId === RCOA_EMAIL_TEST_OPLOC
     && sender.from === RCOA_EMAIL_SENDER
     && sender.replyTo === RCOA_EMAIL_SENDER
-    && sender.authenticatedAccount === RCOA_EMAIL_SENDER;
-  if (!sender.verifiedSendAs && !scopedRcoaTest) throw new Error("Booking site From identity has not been verified by its Workspace owner.");
-  if (!sender.enabled?.includes(kind)) throw new Error("This site lifecycle notification is disabled.");
-  return sender;
+    && authenticatedAccount === RCOA_EMAIL_SENDER;
+  if (sender.verifiedSendAs !== true && !scopedRcoaTest) throw new Error("Booking site From identity has not been verified by its Workspace owner.");
+  if (!Array.isArray(sender.enabled) || !sender.enabled.includes(kind)) throw new Error("This site lifecycle notification is disabled.");
+  return { ...sender, authenticatedAccount, oplocId: oplocId as HospitalityEmailOplocId };
 }
 
 export function notificationIsCurrent(message: BookingNotificationRecord, booking: CanonicalBooking) {
@@ -95,7 +102,7 @@ export async function bookingGmailToken(sender: BookingSender) {
     if (process.env.FIKA_GMAIL_AUTH_ACCOUNT !== sender.authenticatedAccount) throw new Error("Gmail authenticated account does not match site configuration.");
     return refreshGmailAccessToken(client, token);
   }
-  return workspaceGmailToken(sender.authenticatedAccount);
+  return workspaceGmailToken(sender.authenticatedAccount, process.env, undefined, sender.oplocId || RCOA_EMAIL_TEST_OPLOC);
 }
 
 export class GmailSendFailure extends Error {
