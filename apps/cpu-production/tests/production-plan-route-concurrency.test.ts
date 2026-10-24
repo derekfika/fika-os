@@ -701,3 +701,63 @@ test("packing actual POST route accepts configured App Hosting public origin and
     assert.equal((await f.ref.collection("commands").get()).size,1);
   } finally { keys.forEach((key,i)=>{if(prior[i]===undefined)delete process.env[key];else process.env[key]=prior[i];}); }
 });
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Row confirmation evidence through the real route: the server stamps reviewer/time, a metadata-only re-save never disturbs a
+// signed release, and a material edit after signing revokes the release while retaining the historical record.
+// ---------------------------------------------------------------------------------------------------------------------------
+test("allergen row confirmation: stamped by the server, survives re-save, and a material edit after signing revokes the release but keeps history", { timeout: 180_000 }, async () => {
+  const orderId = "production-order:confirm-sign-edit-revoke";
+  installMeteredHospitalityHub(orderId, "2026-12-14", { hubLatencyMs: 0, materialization: "fail" });
+  const route = await importRouteWithTransactionGate();
+  route.open();
+  const rowFor = (allergens: Record<string, unknown>, evidenceStatus: string) => [{ id: "menu:1", sourceLineId: `line:${orderId}`, name: "Concurrency dish", note: "", subItems: [{ id: "sub:1", name: "Concurrency dish", quantity: 4, allergens, note: "", evidenceStatus }] }];
+  const { confirmAllergenReviewMap } = await import("../app/lib/allergen-review-state");
+  const confirmed = confirmAllergenReviewMap({ milk: "contains" }).states;
+
+  const created = await post(route.POST, { action: "save-plan", orderId, planningNotes: "", expectedRevision: null, menuItems: rowFor({ milk: "contains" }, "not_completed") });
+  const createdBody = await created.json();
+  assert.equal(created.status, 200, JSON.stringify(createdBody).slice(0, 300));
+  assert.equal((await storedPlanOf(route.db, orderId))!.menuItems[0].subItems[0].allergenReview, undefined, "an unchecked row carries no confirmation");
+
+  // A forged client record is ignored; the server stamps its own reviewer and time.
+  const forged = { status: "confirmed", semantics: 2, confirmedBy: "Forged Chef", confirmedAt: "2020-01-01T00:00:00.000Z", statement: "recipe-ingredients-allergens-verified", inputFingerprint: "x" };
+  const items = rowFor(confirmed, "completed"); (items[0].subItems[0] as Record<string, unknown>).allergenReview = forged;
+  const planned = await post(route.POST, { action: "mark-planned", orderId, planningNotes: "", expectedRevision: createdBody.revision, menuItems: items });
+  const plannedBody = await planned.json();
+  assert.equal(planned.status, 200, JSON.stringify(plannedBody).slice(0, 300));
+  const stamped = (await storedPlanOf(route.db, orderId))!.menuItems[0].subItems[0].allergenReview;
+  assert.ok(stamped, "the server stamped the confirmed row");
+  assert.notEqual(stamped.confirmedBy, "Forged Chef");
+  assert.notEqual(stamped.confirmedAt, forged.confirmedAt);
+
+  const first = await post(route.POST, signBody(orderId, "production_chef", plannedBody.signingLineage));
+  const firstBody = await first.json();
+  assert.equal(first.status, 200, JSON.stringify(firstBody).slice(0, 300));
+  const second = await post(route.POST, signBody(orderId, "head_chef_site_manager", firstBody.signingLineage ?? plannedBody.signingLineage));
+  const secondBody = await second.json();
+  assert.equal(second.status, 200, JSON.stringify(secondBody).slice(0, 300));
+  const signed = (await storedPlanOf(route.db, orderId))!;
+  assert.equal(signed.signatures.length, 2);
+  assert.ok(signed.currentAllergenRelease, "a release is bound to the signed matrix");
+  assert.deepEqual(signed.menuItems[0].subItems[0].allergenReview, stamped, "signing did not restamp the confirmed row");
+  const signedHash = signed.signedMenuContentHash;
+
+  // A material edit after signing: positives change and the row is no longer confirmed -> authority is revoked, history retained.
+  const edited = await post(route.POST, { action: "save-plan", orderId, planningNotes: "", expectedRevision: signed.updatedAt, menuItems: rowFor({ milk: "contains", eggs: "contains" }, "not_completed") });
+  const editedBody = await edited.json();
+  assert.equal(edited.status, 200, JSON.stringify(editedBody).slice(0, 300));
+  const after = (await storedPlanOf(route.db, orderId))!;
+  assert.equal(after.signatures, undefined, "signatures are withdrawn");
+  assert.equal(after.currentAllergenRelease, undefined, "no current release remains");
+  assert.equal(after.signedMenuContentHash, undefined);
+  const history = after.allergenReleaseHistory as Array<Record<string, any>>;
+  assert.ok(history.some(release => release.releaseId === signed.currentAllergenRelease.releaseId), "the withdrawn release is retained as historical evidence");
+  assert.notEqual(history.find(release => release.releaseId === signed.currentAllergenRelease.releaseId)!.status, "current", "a withdrawn release is never current");
+  assert.equal(history.find(release => release.releaseId === signed.currentAllergenRelease.releaseId)!.signatures.length, 2, "the historical record keeps its signatures");
+  assert.ok((after.audit as Array<{ action: string }>).some(entry => entry.action === "allergen-release-revoked"));
+  const row = after.menuItems[0].subItems[0];
+  assert.equal(row.evidenceStatus, "not_completed");
+  assert.equal(row.allergenReview, undefined, "the edited row needs a fresh confirmation");
+  assert.equal(row.allergens.sesame, undefined, "no derived Clear survives on the reopened row");
+});

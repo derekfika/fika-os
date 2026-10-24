@@ -57,3 +57,15 @@ test("signed-release safeguards: confirmation metadata never changes the matrix 
   const edited = [item(sub({ allergens: applyHospitalityCellClick(stamped[0].subItems[0].allergens, "eggs"), evidenceStatus: "not_completed" }))];
   assert.notEqual(allergenMatrixContentHash(edited), allergenMatrixContentHash(stamped), "an edit changes the signed hash, which makes the release authority mismatch and revoke");
 });
+
+test("row badge is text-first: Not reviewed, Checked (legacy), Checked, not yet saved, and Checked by <reviewer>", async () => {
+  const { rowReviewBadge } = await import("../app/ui/allergen-cell-state");
+  const complete = confirmAllergenReviewMap({ milk: "contains" }).states;
+  assert.equal(rowReviewBadge({ evidenceStatus: "not_completed", allergens: complete }).text, "Not reviewed");
+  assert.equal(rowReviewBadge({ evidenceStatus: "completed", allergens: { milk: "contains" } }).text, "Not reviewed", "a completed flag over an incomplete map is never shown as checked");
+  assert.equal(rowReviewBadge({ evidenceStatus: "completed", allergens: complete }).text, "Checked (legacy)");
+  assert.equal(rowReviewBadge({ evidenceStatus: "completed", allergens: complete }, true).text, "Checked, not yet saved");
+  const stamped = rowReviewBadge({ evidenceStatus: "completed", allergens: complete, allergenReview: { confirmedBy: "Chef A", confirmedAt: "2026-10-24T11:00:00.000Z" } });
+  assert.equal(stamped.tone, "checked");
+  assert.match(stamped.text, /^Checked by Chef A, 24 Oct, 12:00$/, "shown in Europe/London time (BST)");
+});
