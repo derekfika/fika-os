@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FIKA OS · Deploy Control</title>
+<style>
+:root{
+  --color-brand-primary:#4F34C7;--color-brand-dark:#280F8C;
+  --fika-surface-page:#F6F5FA;--fika-surface-card:#FFFFFF;--fika-surface-subtle:#FAF9FC;
+  --fika-text-primary:#211C35;--fika-text-secondary:#4A4360;--fika-text-muted:#6B6580;
+  --fika-border-default:#E1DEEA;--fika-action-primary:#4F34C7;--fika-action-primary-hover:#3F28A8;--fika-focus-ring:#8E7BEF;
+  --fika-status-success:#1E6B2E;--fika-status-success-surface:#E7F5EA;
+  --fika-status-warning:#7A4B00;--fika-status-warning-surface:#FFF3DC;
+  --fika-status-danger:#A0261C;--fika-status-danger-surface:#FDECEA;
+  --fika-status-info:#2A3E9E;--fika-status-info-surface:#E9EDFD;
+  font-family:Inter,"Segoe UI",Arial,sans-serif;color:var(--fika-text-primary);background:var(--fika-surface-page);
+}
+*{box-sizing:border-box}body{margin:0}
+header{background:var(--color-brand-dark);color:#fff;padding:18px max(16px,calc((100vw - 1400px)/2));display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+header h1{font-size:22px;margin:0;letter-spacing:-.4px}header h1 span{font-weight:400;opacity:.8}
+header p{margin:4px 0 0;font-size:13px;color:#E4DEFF}
+main{max-width:1400px;margin:auto;padding:24px 16px 60px}
+.head{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.head h2{font-size:24px;margin:0 0 4px}.head p{margin:0;font-size:14px;color:var(--fika-text-secondary)}
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{min-height:40px;border-radius:8px;border:1px solid var(--fika-border-default);padding:8px 14px;background:var(--fika-surface-card);color:var(--fika-text-primary);font:600 13px inherit;font-family:inherit;cursor:pointer}
+button:hover:not([disabled]){border-color:var(--color-brand-primary)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--fika-focus-ring);outline-offset:2px}
+button[disabled]{opacity:.55;cursor:not-allowed}
+.primary{background:var(--fika-action-primary);border-color:var(--fika-action-primary);color:#fff}.primary:hover:not([disabled]){background:var(--fika-action-primary-hover)}
+.stage{color:var(--color-brand-primary);border-color:#CFC6F6;background:#F3F0FF;white-space:nowrap}
+.prod{color:#8A3A00;border-color:#EBC9B0;background:#FFF1E6;white-space:nowrap}
+.banner{border-radius:10px;padding:11px 14px;font-size:13px;margin-bottom:14px;border:1px solid var(--fika-border-default);background:var(--fika-surface-card)}
+.banner.warn{background:var(--fika-status-warning-surface);color:var(--fika-status-warning);border-color:#F0D9A8}
+.banner.err{background:var(--fika-status-danger-surface);color:var(--fika-status-danger);border-color:#F2C2BD}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--fika-surface-card);border:1px solid var(--fika-border-default);border-radius:12px;padding:14px 16px}
+.stat span{font-size:12px;font-weight:700;color:var(--fika-text-muted);letter-spacing:.5px}.stat strong{display:block;font-size:26px;margin-top:4px}
+.card{background:var(--fika-surface-card);border:1px solid var(--fika-border-default);border-radius:12px;overflow:hidden;margin-bottom:16px}
+.card h3{margin:0;padding:14px 16px;font-size:16px}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:1100px;text-align:left}
+th{background:var(--fika-surface-subtle);color:var(--fika-text-muted);font-size:11px;letter-spacing:.8px;text-transform:uppercase;padding:11px 14px;border-top:1px solid var(--fika-border-default)}
+td{padding:14px;border-top:1px solid var(--fika-border-default);vertical-align:top;font-size:13px}
+td strong.name{font-size:14px}td small,.sub{display:block;color:var(--fika-text-muted);font-size:12px;margin-top:4px;overflow-wrap:anywhere}
+.mono{font-family:ui-monospace,Consolas,monospace}
+select,input[type=text]{min-height:36px;padding:6px 8px;border:1px solid var(--fika-border-default);border-radius:8px;background:#fff;color:var(--fika-text-primary);font:600 13px inherit;font-family:inherit;width:100%}
+select{min-width:104px}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;margin-top:6px;border:1px solid transparent}
+.chip.success{background:var(--fika-status-success-surface);color:var(--fika-status-success)}
+.chip.warning{background:var(--fika-status-warning-surface);color:var(--fika-status-warning)}
+.chip.danger{background:var(--fika-status-danger-surface);color:var(--fika-status-danger)}
+.chip.info{background:var(--fika-status-info-surface);color:var(--fika-status-info)}
+.chip.muted{background:#EEECF3;color:var(--fika-text-secondary)}
+.note{color:var(--fika-status-warning);font-size:12px;margin-top:4px}
+.modal{position:fixed;inset:0;background:rgba(28,18,60,.55);display:none;place-items:center;padding:16px;z-index:5}.modal.show{display:grid}
+.dialog{background:#fff;width:min(100%,640px);max-height:92vh;overflow:auto;border-radius:14px;padding:22px;box-shadow:0 20px 60px rgba(25,12,58,.3)}
+.dialog h3{margin:0 0 10px;font-size:18px}.dialog label{display:block;font-size:12px;font-weight:700;color:var(--fika-text-secondary);margin:12px 0 4px}
+.dialog .help{font-size:12px;color:var(--fika-text-muted);margin-top:4px}
+.actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.facts{background:var(--fika-surface-subtle);border:1px solid var(--fika-border-default);border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.6}
+#log{background:#F4F2FA;color:var(--fika-text-primary);border:1px solid var(--fika-border-default);border-radius:8px;padding:10px;margin-top:12px;max-height:260px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap}
+#log .error{color:var(--fika-status-danger);font-weight:700}#log .success{color:var(--fika-status-success);font-weight:700}#log .warning{color:var(--fika-status-warning)}#log .phase{color:var(--color-brand-primary);font-weight:700}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row label{margin:0}
+.history td{font-size:12px}
+@media(max-width:900px){.stats{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>FIKA <span>OS / DEPLOY CONTROL</span></h1><p>Seven applications · staging and production · live from Firebase App Hosting</p></div>
+  <div class="tools"><span id="mode" class="chip muted">Loading…</span></div>
+</header>
+<main>
+  <div class="head">
+    <div><h2>Deployment overview</h2><p>Versions are read live from Firebase. Agent assignments are advisory and never start or block a deployment.</p></div>
+    <div class="tools"><span class="sub" id="readAt"></span><button id="refresh">Refresh from Firebase</button></div>
+  </div>
+  <div id="banner" class="banner" hidden role="status"></div>
+  <div class="stats">
+    <div class="stat"><span>APPLICATIONS</span><strong id="sApps">7</strong></div>
+    <div class="stat"><span>FREE</span><strong id="sFree">–</strong></div>
+    <div class="stat"><span>ASSIGNED</span><strong id="sAssigned">–</strong></div>
+    <div class="stat"><span>ROLLOUTS IN PROGRESS</span><strong id="sActive">–</strong></div>
+  </div>
+  <div class="card"><div class="scroll"><table>
+    <thead><tr><th>Application</th><th>Agent</th><th>Staging (Firebase)</th><th>Staging deploy</th><th>Production (Firebase)</th><th>Production deploy</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="6">Loading live status…</td></tr></tbody>
+  </table></div></div>
+  <div class="card"><h3>Recent dashboard activity (local record)</h3><div class="scroll"><table class="history"><thead><tr><th>When</th><th>App</th><th>Env</th><th>Event</th><th>SHA</th><th>Detail</th></tr></thead><tbody id="recent"></tbody></table></div></div>
+</main>
+
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+  <div class="dialog">
+    <h3 id="dTitle">Deploy</h3>
+    <div class="facts" id="dFacts"></div>
+    <div id="dForm">
+      <label for="dSha">Source commit SHA (full 40 characters)</label>
+      <input type="text" id="dSha" class="mono" autocomplete="off" spellcheck="false">
+      <div class="row" style="margin-top:6px"><button id="useMain" type="button">Use origin/main</button><span class="help" id="mainHelp"></span></div>
+      <div id="prodConfirm" hidden>
+        <label for="cEnv">Type the environment: <b>production</b></label><input type="text" id="cEnv" autocomplete="off">
+        <label for="cApp">Type the target app id: <b id="cAppName"></b></label><input type="text" id="cApp" autocomplete="off">
+        <label for="cSha">Paste the source SHA again</label><input type="text" id="cSha" class="mono" autocomplete="off" spellcheck="false">
+        <p class="help">The previous production build stays in Firebase and is recorded below, so it can be redeployed by pinning its SHA.</p>
+      </div>
+      <div class="row" style="margin-top:12px"><input type="checkbox" id="dDry" style="width:auto;min-height:0"><label for="dDry" style="margin:0">Dry run: run every check but do not submit a rollout</label></div>
+      <div class="help" id="dError" role="alert" style="color:var(--fika-status-danger)"></div>
+    </div>
+    <div id="log" aria-live="polite" hidden></div>
+    <div class="actions"><button id="dClose">Close</button><button class="primary" id="dGo">Deploy</button></div>
+  </div>
+</div>
+
+<script>
+const TOKEN='__DASHBOARD_TOKEN__';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const short=s=>s?String(s).slice(0,12):'unknown';
+const when=iso=>iso?new Date(iso).toLocaleString('en-GB',{timeZone:'Europe/London',dateStyle:'medium',timeStyle:'short'}):'';
+let state=null,current=null,stream=null,running=false;
+
+async function api(path,opts={}){
+  const res=await fetch(path,{...opts,headers:{'content-type':'application/json','x-dashboard-token':TOKEN,...(opts.headers||{})}});
+  const body=await res.json().catch(()=>({}));
+  if(!res.ok)throw Error(body.error||`HTTP ${res.status}`);
+  return body;
+}
+function envCell(app,env){
+  const s=state.statuses[`${app.id}:${env}`];
+  if(!s)return '<span class="sub">No data</span>';
+  if(!s.ok)return `<span class="chip danger">STATUS UNAVAILABLE</span><span class="sub">${esc(s.error)}</span><span class="sub mono">${esc(s.backend)}</span>`;
+  const sv=s.serving,local=state.localRecords[`${app.id}:${env}`];
+  const parts=[];
+  parts.push(sv?`<strong class="mono">${esc(short(sv.sourceSha))}</strong><span class="sub">Build ${esc(sv.buildId)} · ${sv.percent}% · ${esc(sv.buildState)}${sv.since?` · since ${esc(when(sv.since))}`:''}</span>`:'<strong>Nothing serving</strong>');
+  parts.push(`<span class="chip ${s.rolloutStatus.tone}">${esc(s.rolloutStatus.label)}</span><span class="sub">${esc(s.rolloutStatus.detail)}</span>`);
+  if(s.lastSuccess)parts.push(`<span class="sub">Last success: ${esc(short(s.lastSuccess.sourceSha))} · ${esc(s.lastSuccess.buildId)} · ${esc(when(s.lastSuccess.finishedAt))}</span>`);
+  parts.push(`<span class="sub">Local record: ${local?`${esc(short(local.sha))} verified ${esc(when(local.at))}`:'none (not deployed from this dashboard)'}</span>`);
+  if(sv&&local&&local.sha!==sv.sourceSha)parts.push('<div class="note">Firebase differs from the local record; Firebase is authoritative.</div>');
+  s.issues.forEach(i=>parts.push(`<div class="note">${esc(i)}</div>`));
+  parts.push(`<span class="sub mono">${esc(s.project)} / ${esc(s.backend)}</span>`);
+  return parts.join('');
+}
+function render(){
+  const apps=state.apps;
+  $('sApps').textContent=apps.length;
+  $('sFree').textContent=apps.filter(a=>a.agent==='free').length;
+  $('sAssigned').textContent=apps.filter(a=>a.agent!=='free').length;
+  $('sActive').textContent=Object.values(state.statuses).filter(s=>s.ok&&s.activeRollouts.length).length;
+  $('mode').textContent=state.productionEnabled?'Production deploys ENABLED':'Production deploys disabled';
+  $('mode').className='chip '+(state.productionEnabled?'warning':'muted');
+  $('readAt').textContent=`Read ${when(state.now)}`;
+  $('rows').innerHTML=apps.map(a=>`<tr>
+    <td><strong class="name">${esc(a.name)}</strong><small class="mono">${esc(a.id)} · ${esc(a.path)}</small></td>
+    <td><label class="sub" for="ag-${esc(a.id)}" style="margin:0 0 4px">Agent</label><select id="ag-${esc(a.id)}" data-agent="${esc(a.id)}">${state.agents.map(n=>`<option value="${n}" ${a.agent===n?'selected':''}>${n}</option>`).join('')}</select>
+      <span class="sub">${a.assignment?`${esc(a.assignment.branch||'no branch')} · since ${esc(when(a.assignment.since))}${a.assignment.task?`<br>${esc(a.assignment.task)}`:''}`:'Advisory only'}</span></td>
+    <td>${envCell(a,'staging')}</td>
+    <td><button class="stage" data-deploy="staging" data-app="${esc(a.id)}" aria-label="Deploy ${esc(a.name)} to staging">Deploy Staging</button></td>
+    <td>${envCell(a,'production')}</td>
+    <td><button class="prod" data-deploy="production" data-app="${esc(a.id)}" aria-label="Deploy ${esc(a.name)} to production" ${state.productionEnabled?'':'disabled title="Start the dashboard with --enable-production"'}>Deploy Production</button></td>
+  </tr>`).join('');
+  $('recent').innerHTML=state.recent.length?state.recent.map(e=>`<tr><td>${esc(when(e.at))}</td><td>${esc(e.app)}</td><td>${esc(e.environment)}</td><td><b>${esc(e.type)}</b></td><td class="mono">${esc(short(e.sha))}</td><td>${esc(e.reason||e.rollout||'')}</td></tr>`).join(''):'<tr><td colspan="6">No deployments recorded yet.</td></tr>';
+}
+async function load(refresh){
+  $('refresh').disabled=true;
+  try{state=await api('/api/state'+(refresh?'?refresh=1':''));$('banner').hidden=true;render();}
+  catch(e){$('banner').hidden=false;$('banner').className='banner err';$('banner').textContent='Could not load dashboard state: '+e.message;}
+  $('refresh').disabled=false;
+}
+$('refresh').onclick=()=>load(true);
+$('rows').addEventListener('change',async e=>{
+  const id=e.target.dataset.agent;if(!id)return;
+  try{await api('/api/agent',{method:'POST',body:JSON.stringify({app:id,agent:e.target.value})});await load(false);}
+  catch(err){$('banner').hidden=false;$('banner').className='banner err';$('banner').textContent='Assignment not saved: '+err.message;}
+});
+$('rows').addEventListener('click',e=>{const b=e.target.closest('button[data-deploy]');if(b)openDialog(b.dataset.app,b.dataset.deploy);});
+
+function openDialog(appId,env){
+  const app=state.apps.find(a=>a.id===appId),s=state.statuses[`${appId}:${env}`];
+  current={app,env};running=false;
+  $('dTitle').textContent=`${env==='production'?'Production':'Staging'} deploy · ${app.name}`;
+  $('dFacts').innerHTML=`Target: <b class="mono">${esc(app[env].project)} / ${esc(app[env].backend)}</b><br>Now serving: <b class="mono">${esc(short(s?.serving?.sourceSha))}</b> (${esc(s?.serving?.buildId||'none')})<br>Firebase rollout state: ${esc(s?.rolloutStatus?.label||'unknown')}`;
+  $('dSha').value='';$('dSha').disabled=false;$('dDry').checked=env==='production';$('dDry').disabled=false;
+  $('prodConfirm').hidden=env!=='production';$('cAppName').textContent=appId;['cEnv','cApp','cSha'].forEach(i=>$(i).value='');
+  $('mainHelp').textContent=state.refs.originMain?`origin/main = ${short(state.refs.originMain)}`:'origin/main not found locally';
+  $('dError').textContent='';$('log').hidden=true;$('log').textContent='';$('dForm').hidden=false;
+  $('dGo').hidden=false;$('dGo').disabled=false;$('dGo').textContent=env==='production'?'Deploy to production':'Deploy to staging';
+  $('modal').classList.add('show');$('dSha').focus();
+}
+$('useMain').onclick=()=>{if(state.refs.originMain){$('dSha').value=state.refs.originMain;$('cSha').value=state.refs.originMain;}};
+$('dClose').onclick=()=>{if(stream)stream.close();$('modal').classList.remove('show');load(true);};
+$('dGo').onclick=async()=>{
+  const sha=$('dSha').value.trim().toLowerCase(),{app,env}=current,dry=$('dDry').checked;
+  $('dError').textContent='';
+  if(!/^[a-f0-9]{40}$/.test(sha)){$('dError').textContent='Enter the full 40-character lowercase commit SHA.';return;}
+  let confirm=true;
+  if(env==='production'){
+    confirm={environment:$('cEnv').value.trim(),app:$('cApp').value.trim(),sha:$('cSha').value.trim().toLowerCase()};
+    if(confirm.environment!=='production'||confirm.app!==app.id||confirm.sha!==sha){$('dError').textContent='Confirmation must repeat: production, the app id, and the same full SHA.';return;}
+  }
+  $('dGo').disabled=true;$('dForm').hidden=true;$('log').hidden=false;$('log').textContent='';
+  try{
+    const {deploymentId}=await api('/api/deploy',{method:'POST',body:JSON.stringify({app:app.id,environment:env,sha,confirm,dryRun:dry})});
+    follow(deploymentId);
+  }catch(err){$('log').innerHTML=`<span class="error">${esc(err.message)}</span>`;$('dGo').hidden=true;}
+};
+function line(cls,text){const d=document.createElement('div');d.className=cls;d.textContent=text;$('log').appendChild(d);$('log').scrollTop=$('log').scrollHeight;}
+function follow(id){
+  stream=new EventSource(`/api/deploy/${id}/events`);
+  stream.onmessage=m=>{
+    const e=JSON.parse(m.data);
+    if(e.type==='phase')line('phase','▶ '+e.name);
+    else if(e.type==='log')line(e.level,e.message);
+    else if(e.type==='result'){
+      const ok=['verified','already-serving','dry-run'].includes(e.outcome);
+      line(ok?'success':'error',`RESULT: ${e.outcome.toUpperCase()}${e.message?' — '+e.message:''}${e.rollout?` (rollout ${e.rollout})`:''}`);
+      stream.close();$('dGo').hidden=true;
+    }
+  };
+  stream.onerror=()=>{stream.close();};
+}
+load(false);setInterval(()=>{if(!$('modal').classList.contains('show')&&!document.hidden)load(false);},60000);
+</script>
+</body>
+</html>

@@ -196,3 +196,8 @@ Menu Data/
 assets/fonts/GILROY-*.TTF
 assets/fonts/VimSM*.otf
 assets/Fika Brand Guidelines v1.0 (1).pdf
+
+# Deploy dashboard: append-only local deployment history (audit evidence, never committed)
+tools/deploy-dashboard/data/
+tools/deploy-dashboard/*.tmp
+tools/deploy-dashboard/*.tmp.*
