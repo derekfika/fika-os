@@ -13,6 +13,7 @@ import { stageFulfilmentEvent } from "./fulfilment-projection";
 import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requirement";
 import { explicitMenuProductionRouting, LEGACY_HOSPITALITY_MENU_ROUTING } from "./connections-service";
 import { hospitalityPlatformOf, isGovernedRoutingPlatform, planHospitalityCpuRouting, routingBlockedMessage, routingKeys, type RoutingPlan } from "./hospitality-cpu-routing";
+import { adHocProductionOrderId } from "../../shared/ad-hoc-production-contract";
 import { adaptCpuProductionWorkstreams } from "../../shared/production-workstreams";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
@@ -291,15 +292,16 @@ export async function productionQueueForWeek(weekCommencing: string) {
 }
 export async function productionOrderDetail(canonicalId: string) { const snapshot = await orders().doc(stableDocumentId(canonicalId)).get(); recordDeliveredInReadBudget({ stage: "known_order_lookup", canonicalOrderDocs: snapshot.exists ? 1 : 0, knownId: true }); return snapshot.exists ? enrichOrder(withoutAutomaticQuantityBlockers(snapshot.data() as ProductionOrder)) : undefined; }
 
-export type CpuCreatedProductionInput = { clientName: string; serviceDate: string; deliveryDateTime: string; requiredBy: string; serviceWindow: { startTime: string; endTime?: string }; productionLocationId?: string; productionCategory?: ProductionCategory; destinationOplocId?: string; requiresDelivery?: boolean; deliveryLocation: string; destinationAddress?: ProductionDestinationAddress; floorRoom?: string; contact?: string; serviceType: string; pax: number; lines: Array<{ itemName: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; dietary?: Record<string, unknown>; approvedAllergenSnapshot?: { allergens: Record<string, string>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; mayContainNotes?: string }; notes?: string }>; priority?: "normal" | "high" | "urgent"; sourceReference?: string; sourceEntityId?: string; sourceVersion?: number; notes?: string };
+export type CpuCreatedProductionInput = { clientName: string; serviceDate: string; deliveryDateTime: string; requiredBy: string; serviceWindow: { startTime: string; endTime?: string }; productionLocationId?: string; productionCategory?: ProductionCategory; destinationOplocId?: string; requiresDelivery?: boolean; deliveryLocation: string; destinationAddress?: ProductionDestinationAddress; floorRoom?: string; contact?: string; serviceType: string; pax: number; lines: Array<{ sourceLineId?: string; itemName: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; dietary?: Record<string, unknown>; approvedAllergenSnapshot?: { allergens: Record<string, string>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; mayContainNotes?: string }; notes?: string }>; priority?: "normal" | "high" | "urgent"; sourceReference?: string; sourceEntityId?: string; sourceVersion?: number; /** One canonical order per source request across all versions (Ad-Hoc); later versions amend it. */ stableSourceIdentity?: boolean; notes?: string };
+export { adHocProductionOrderId };
 export async function createCpuProductionOrder(actor: Actor, input: CpuCreatedProductionInput, idempotencyKey: string) {
   if (!idempotencyKey.trim()) throw conflict("An idempotency key is required.");
   if (input.requiresDelivery !== false && !input.destinationOplocId?.trim()) throw Object.assign(new Error("A CPU delivery Production Order requires a canonical destination OPLOC ID."), { status: 422 });
   return db.runTransaction(async transaction => {
-    const canonicalId = input.sourceEntityId ? `production-order:v1:ad-hoc:${input.sourceEntityId}:v${input.sourceVersion || 1}` : `production-order:v1:cpu:${crypto.randomUUID()}`;
+    const canonicalId = input.sourceEntityId ? (input.stableSourceIdentity ? adHocProductionOrderId(input.sourceEntityId) : `production-order:v1:ad-hoc:${input.sourceEntityId}:v${input.sourceVersion || 1}`) : `production-order:v1:cpu:${crypto.randomUUID()}`;
     const existingSnapshot = await transaction.get(orders().where("idempotencyKey", "==", idempotencyKey).limit(1)); if (!existingSnapshot.empty) return { created: false, status: "already_exists" as const, order: existingSnapshot.docs[0].data() as ProductionOrder };
     const ref = orders().doc(stableDocumentId(canonicalId));
-    const now = new Date().toISOString(); const exceptions: ProductionException[] = []; const lines: ProductionLine[] = input.lines.map((line, index) => { const complete = typeof line.productionQuantity === "number" && Boolean(line.productionUnit); return { canonicalId: `${canonicalId}:line:${index + 1}`, sourceBookingLineId: input.sourceEntityId ? `${input.sourceEntityId}:line:${index + 1}` : `${canonicalId}:source:${index + 1}`, itemName: line.itemName, customerQuantity: line.customerQuantity, customerUnit: line.customerUnit, ...(complete ? { productionQuantity: line.productionQuantity, productionUnit: line.productionUnit, conversionSnapshot: { quantity: line.productionQuantity!, unit: line.productionUnit!, rule: "Explicit CPU entry." } } : {}), dietaries: line.dietary || {}, ...(line.approvedAllergenSnapshot ? { approvedAllergenSnapshot: line.approvedAllergenSnapshot, allergenEvidenceStatus: "confirmed" as const } : {}), status: complete ? "ready" as const : "pending" as const, sortOrder: index, ...(line.notes ? { productionInstructions: line.notes } : {}) }; });
+    const now = new Date().toISOString(); const exceptions: ProductionException[] = []; const lines: ProductionLine[] = input.lines.map((line, index) => { const complete = typeof line.productionQuantity === "number" && Boolean(line.productionUnit); const lineKey = line.sourceLineId ? adHocLineKey(line.sourceLineId) : String(index + 1); return { canonicalId: `${canonicalId}:line:${lineKey}`, sourceBookingLineId: input.sourceEntityId ? `${input.sourceEntityId}:line:${lineKey}` : `${canonicalId}:source:${index + 1}`, itemName: line.itemName, customerQuantity: line.customerQuantity, customerUnit: line.customerUnit, ...(complete ? { productionQuantity: line.productionQuantity, productionUnit: line.productionUnit, conversionSnapshot: { quantity: line.productionQuantity!, unit: line.productionUnit!, rule: "Explicit CPU entry." } } : {}), dietaries: line.dietary || {}, ...(line.approvedAllergenSnapshot ? { approvedAllergenSnapshot: line.approvedAllergenSnapshot, allergenEvidenceStatus: "confirmed" as const } : {}), status: complete ? "ready" as const : "pending" as const, sortOrder: index, ...(line.notes ? { productionInstructions: line.notes } : {}) }; });
     const order: ProductionOrder = { canonicalId, entityType: "Production Order", schemaVersion: PRODUCTION_SCHEMA_VERSION, version: 1, requirementIds: [], sourceBookingId: input.sourceReference || canonicalId, sourceQuoteRevisionId: "", ...(input.sourceEntityId ? { sourceEntityId: input.sourceEntityId, sourceVersion: input.sourceVersion || 1 } : {}), productionLocationId: input.productionLocationId || process.env.CPU_PRODUCTION_LOCATION_ID, ...(input.productionCategory ? { productionCategory: input.productionCategory } : {}), requiresDelivery: input.requiresDelivery !== false, ...(input.destinationOplocId ? { destinationOplocId: input.destinationOplocId } : {}), destinationLabel: input.deliveryLocation, ...(input.destinationAddress ? { destinationAddress: input.destinationAddress } : {}), clientName: input.clientName, serviceType: input.serviceType, serviceDate: input.serviceDate, guestCount: input.pax, requiredBy: input.requiredBy, serviceWindow: input.serviceWindow, status: exceptions.length ? "needs_review" : "draft", priority: input.priority || "normal", lines, exceptions, operationalNotes: `${input.clientName} · ${input.serviceType} · ${input.deliveryLocation}${input.floorRoom ? ` · ${input.floorRoom}` : ""}${input.contact ? ` · ${input.contact}` : ""}${input.notes ? ` · ${input.notes}` : ""}${input.destinationAddress ? ` · ${input.destinationAddress.address}` : ""}`, origin: "cpu_created", currentRevision: 1, createdAt: now, createdBy: actor.uid, idempotencyKey, externalReferences: [], audit: [{ action: "cpu-production-order-created", at: now, by: actor.uid, newState: exceptions.length ? "needs_review" : "draft", reason: "Created by authorised CPU user; no external side effects.", idempotencyKey }] };
     const event = createDomainEvent({ eventType: "production.order.created", sourceAggregateId: order.canonicalId, sourceVersion: order.version, occurredAt: now, correlationId: idempotencyKey, payload: { canonicalId: order.canonicalId, version: order.version, status: order.status, sourceBookingId: order.sourceBookingId, serviceDate: order.serviceDate, productionLocationId: order.productionLocationId, destinationOplocId: order.destinationOplocId, destinationLabel: order.destinationLabel, lineIds: order.lines.map(line => line.canonicalId), productionOrder: order } });
     if (productionOrderRequiresFulfilment(order)) await stageFulfilmentEvent(transaction, event);
@@ -307,6 +309,95 @@ export async function createCpuProductionOrder(actor: Actor, input: CpuCreatedPr
     stageDomainEvent(transaction, event);
     return { created: true, status: "created" as const, order };
   });
+}
+
+/** Request-scoped line identity: stable across amendments, safe inside a Firestore document ID. */
+function adHocLineKey(sourceLineId: string) { return sourceLineId.replace(/[^A-Za-z0-9_-]+/g, "_"); }
+
+// Ad-Hoc orders may be amended by the requester only while CPU has not started
+// work. Later states belong to CPU; the requester must contact CPU instead.
+const AD_HOC_AMENDABLE_STATUSES: ProductionStatus[] = ["draft", "needs_review", "needs_clarification", "accepted", "blocked"];
+
+/**
+ * Applies a later Ad-Hoc request version to the SAME canonical Production Order
+ * created by the first submission, so a revision never creates a second order
+ * or a second Fulfilment Requirement. Idempotent by source version: replaying an
+ * already-applied version is a no-op. Allergen evidence is carried over only for
+ * a line whose stable ID and item name are unchanged; changed or new lines have
+ * none and so return to CPU's normal allergen review.
+ */
+export async function amendAdHocProductionOrder(actor: Actor, canonicalId: string, input: CpuCreatedProductionInput, idempotencyKey: string) {
+  if (!idempotencyKey.trim()) throw conflict("An idempotency key is required.");
+  if (!input.sourceEntityId || !input.sourceVersion) throw conflict("An Ad-Hoc amendment requires its source request and version.");
+  if (input.requiresDelivery !== false && !input.destinationOplocId?.trim()) throw Object.assign(new Error("A CPU delivery Production Order requires a destination identity."), { status: 422 });
+  return db.runTransaction(async transaction => {
+    const ref = orders().doc(stableDocumentId(canonicalId));
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) throw conflict("The Production Order for this request was not found.");
+    const current = snapshot.data() as ProductionOrder;
+    if (current.sourceEntityId !== input.sourceEntityId) throw conflict("This Production Order belongs to a different request.");
+    if ((current.sourceVersion || 0) >= input.sourceVersion!) return { applied: false, status: "already_applied" as const, order: current };
+    if (!AD_HOC_AMENDABLE_STATUSES.includes(current.status)) throw conflict(`CPU has already moved this order to ${current.status}. Contact CPU to change it.`);
+    const now = new Date().toISOString();
+    const previousLines = new Map(current.lines.map(line => [line.canonicalId, line]));
+    const lines: ProductionLine[] = input.lines.map((line, index) => {
+      const lineKey = line.sourceLineId ? adHocLineKey(line.sourceLineId) : String(index + 1);
+      const lineId = `${canonicalId}:line:${lineKey}`;
+      const previous = previousLines.get(lineId);
+      const sameItem = previous && previous.itemName === line.itemName;
+      const complete = typeof line.productionQuantity === "number" && Boolean(line.productionUnit);
+      return { canonicalId: lineId, sourceBookingLineId: `${input.sourceEntityId}:line:${lineKey}`, itemName: line.itemName, customerQuantity: line.customerQuantity, customerUnit: line.customerUnit, ...(complete ? { productionQuantity: line.productionQuantity, productionUnit: line.productionUnit, conversionSnapshot: { quantity: line.productionQuantity!, unit: line.productionUnit!, rule: "Explicit requester entry." } } : {}), dietaries: sameItem ? previous.dietaries : {}, ...(sameItem && previous.approvedAllergenSnapshot ? { approvedAllergenSnapshot: previous.approvedAllergenSnapshot } : {}), ...(sameItem && previous.allergenEvidenceStatus ? { allergenEvidenceStatus: previous.allergenEvidenceStatus } : {}), status: complete ? "ready" as const : "pending" as const, sortOrder: index, ...(line.notes ? { productionInstructions: line.notes } : {}) };
+    });
+    const status: ProductionStatus = current.status === "accepted" || current.status === "blocked" ? "needs_review" : current.status;
+    const next: ProductionOrder = { ...current, version: current.version + 1, currentRevision: current.currentRevision + 1, sourceVersion: input.sourceVersion, ...(input.productionCategory ? { productionCategory: input.productionCategory } : {}), requiresDelivery: input.requiresDelivery !== false, ...(input.destinationOplocId ? { destinationOplocId: input.destinationOplocId } : {}), destinationLabel: input.deliveryLocation, ...(input.destinationAddress ? { destinationAddress: input.destinationAddress } : {}), clientName: input.clientName, serviceType: input.serviceType, serviceDate: input.serviceDate, guestCount: input.pax, requiredBy: input.requiredBy, serviceWindow: input.serviceWindow, priority: input.priority || current.priority, status, lines, operationalNotes: `${input.clientName} · ${input.serviceType} · ${input.deliveryLocation}${input.contact ? ` · ${input.contact}` : ""}${input.notes ? ` · ${input.notes}` : ""}${input.destinationAddress ? ` · ${input.destinationAddress.address}` : ""}`, audit: [...current.audit, { action: "ad-hoc-production-order-amended", at: now, by: actor.uid, previousState: current.status, newState: status, reason: `Requester sent Ad-Hoc request version ${input.sourceVersion}.`, idempotencyKey }] };
+    const event = createDomainEvent({ eventType: "production.order.amended", sourceAggregateId: next.canonicalId, sourceVersion: next.version, occurredAt: now, correlationId: idempotencyKey, payload: { canonicalId: next.canonicalId, version: next.version, status: next.status, sourceBookingId: next.sourceBookingId, serviceDate: next.serviceDate, productionLocationId: next.productionLocationId, destinationOplocId: next.destinationOplocId, destinationLabel: next.destinationLabel, lineIds: next.lines.map(line => line.canonicalId), productionOrder: next } });
+    if (productionOrderRequiresFulfilment(next)) await stageFulfilmentEvent(transaction, event);
+    transaction.set(ref, next);
+    stageDomainEvent(transaction, event);
+    return { applied: true, status: "amended" as const, order: next };
+  });
+}
+
+const alreadyExists = (error: unknown) => (error as { code?: number }).code === 6 || /already exists/i.test((error as Error)?.message || "");
+
+/**
+ * Create-or-amend the single canonical Production Order for an Ad-Hoc request.
+ * The order is looked up by the request's stable identity (never by state the
+ * caller saved), so a retry after a lost response, an edit between attempts or
+ * two concurrent first sends all converge on ONE order and ONE Logistics
+ * requirement. Idempotent per request version.
+ */
+export async function submitAdHocProductionOrder(actor: Actor, input: CpuCreatedProductionInput, idempotencyKey: string) {
+  if (!input.sourceEntityId) throw Object.assign(new Error("An Ad-Hoc order requires its source request."), { status: 422 });
+  const canonicalId = adHocProductionOrderId(input.sourceEntityId);
+  const summarise = (order: ProductionOrder, outcome: "created" | "amended" | "already_applied") => ({ canonicalId: order.canonicalId, orderVersion: order.version, orderStatus: order.status as string, outcome });
+  const amend = async () => { const result = await amendAdHocProductionOrder(actor, canonicalId, input, idempotencyKey); return summarise(result.order, result.status === "amended" ? "amended" : "already_applied"); };
+  if ((await orders().doc(stableDocumentId(canonicalId)).get()).exists) return amend();
+  try { const created = await createCpuProductionOrder(actor, { ...input, stableSourceIdentity: true }, idempotencyKey); return summarise(created.order, created.created ? "created" : "already_applied"); }
+  catch (error) { if (alreadyExists(error)) return amend(); throw error; }
+}
+
+/** Authoritative status of an Ad-Hoc request's Production Order, or undefined when none exists. */
+export async function adHocOrderStatus(requestId: string) {
+  const snapshot = await orders().doc(stableDocumentId(adHocProductionOrderId(requestId))).get();
+  if (!snapshot.exists) return undefined;
+  const order = snapshot.data() as ProductionOrder;
+  return { canonicalId: order.canonicalId, orderStatus: order.status as string, orderVersion: order.version, cancelled: order.status === "cancelled" };
+}
+
+/** Cancels the Ad-Hoc order through the governed lifecycle (which withdraws its Logistics requirement). Repeat-safe. */
+export async function cancelAdHocProductionOrder(actor: Actor, requestId: string, reason: string) {
+  const canonicalId = adHocProductionOrderId(requestId);
+  for (let attempt = 0; ; attempt += 1) {
+    const snapshot = await orders().doc(stableDocumentId(canonicalId)).get();
+    if (!snapshot.exists) throw Object.assign(new Error("No Production Order exists for this request."), { status: 404, code: "AD_HOC_ORDER_NOT_FOUND" });
+    const order = snapshot.data() as ProductionOrder;
+    if (order.status === "cancelled") return { canonicalId, orderStatus: "cancelled", outcome: "already_cancelled" as const };
+    try {
+      const next = await transitionProductionOrder(actor, canonicalId, order.version, "cancelled", `Ad-Hoc request cancelled: ${reason}`);
+      return { canonicalId, orderStatus: next.status as string, outcome: "cancelled" as const };
+    } catch (error) { if (attempt === 0 && /changed elsewhere/i.test((error as Error).message)) continue; throw error; }
+  }
 }
 
 export function materialisedProductionId(input: Pick<ExternalProductionMaterialisation, "sourceDomain" | "sourceEntityId" | "destinationOplocId">) {

@@ -1,16 +1,62 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "node:crypto";
 import { z } from "zod";
-import { requireActor } from "@hub/lib/auth";
 import { setDataTraceOutcome, withDataTrace } from "@fika/server-shared/data-source-meter-server";
-import { createRequest, generateMenu, generateQuote, getRequest, handoffToCpu, listRequests, reviewRequest, updateRequest, cancelRequest, lineFromInput } from "../../../lib/ad-hoc-service";
-import type { AdHocRequest, AdHocLine, AdHocProductionCategory } from "../../../lib/ad-hoc-domain";
-const localActor = {uid:"local-ad-hoc",name:"Operations user",role:"integration-admin" as const,synthetic:true as const};
-async function actor(req: NextRequest) { try{return await requireActor(req,["integration-admin","reviewer"]);}catch(error){if(process.env.NODE_ENV!=="production"&&(error as {status?:number}).status===401)return localActor;throw error;} }
-const line=z.object({id:z.string().optional(),title:z.string(),quantity:z.number(),unit:z.string(),unitPrice:z.number().optional(),allergens:z.record(z.string(),z.string()).optional(),mayContainNotes:z.string().optional(),productionNotes:z.string().optional(),sortOrder:z.number().optional(),canonicalDishId:z.string().optional()});
-const body=z.object({action:z.string(),id:z.string().optional(),expectedVersion:z.number().optional(),reason:z.string().optional(),title:z.string().optional(),clientName:z.string().optional(),productionCategory:z.enum(["delivered_in","fine_dining","hospitality","events","grab_and_go","other"]).optional(),serviceDate:z.string().optional(),requiredReadyTime:z.string().optional(),serviceWindowEnd:z.string().optional(),pax:z.number().optional(),priority:z.enum(["normal","high","urgent"]).optional(),deliveryRequired:z.boolean().optional(),quoteRequired:z.boolean().optional(),quoteBypassReason:z.string().optional(),deliveryCharge:z.number().optional(),vatRate:z.number().optional(),destination:z.object({mode:z.enum(["oploc","one_off"]),oplocId:z.string().optional(),label:z.string(),address:z.string(),room:z.string().optional(),deliveryInstructions:z.string().optional(),contact:z.string().optional(),identity:z.string()}).optional(),lines:z.array(line).optional(),notes:z.string().optional()});
-export async function GET(req:NextRequest){return withDataTrace({app:"ad-hoc-production",action:"request.list",path:"/api/requests",dataset:"ad-hoc-production/requests",outcome:"SUCCESS"},async()=>{try{const a=await actor(req);const id=req.nextUrl.searchParams.get("id");return NextResponse.json(id?{request:await getRequest(id)}:{requests:await listRequests(req.nextUrl.searchParams.get("week")||undefined)});}catch(e){setDataTraceOutcome((e as {status?:number}).status===401?"DENIED":"ERROR");return NextResponse.json({error:{message:e instanceof Error?e.message:String(e)}},{status:(e as {status?:number}).status||500});}})}
-export async function POST(req:NextRequest){return withDataTrace({app:"ad-hoc-production",action:"request.mutate",path:"/api/requests",dataset:"ad-hoc-production/requests",outcome:"SUCCESS"},async()=>{try{const a=await actor(req);const input=body.parse(await req.json());const expected=input.expectedVersion||0;let result;
-if(input.action==="create") result=await createRequest({title:input.title||"",clientName:input.clientName||"",productionCategory:(input.productionCategory||"delivered_in") as AdHocProductionCategory,serviceDate:input.serviceDate||"",requiredReadyTime:input.requiredReadyTime||"",serviceWindowEnd:input.serviceWindowEnd,pax:input.pax,priority:input.priority||"normal",deliveryRequired:input.deliveryRequired!==false,quoteRequired:input.quoteRequired!==false,quoteBypassReason:input.quoteBypassReason,deliveryCharge:input.deliveryCharge||0,vatRate:input.vatRate??.2,destination:input.destination||{mode:"one_off",label:"",address:"",identity:`adhoc-destination:${crypto.randomUUID()}`},lines:(input.lines||[]).map((line,index)=>lineFromInput({...line,sortOrder:index} as Partial<AdHocLine>,index)),notes:input.notes},a);
-else if(!input.id) throw new Error("A request ID is required."); else if(input.action==="review") result=await reviewRequest(input.id,expected,a); else if(input.action==="quote") result=await generateQuote(input.id,expected,a); else if(input.action==="menu") result=await generateMenu(input.id,expected,a); else if(input.action==="handoff") result=await handoffToCpu(input.id,expected,a); else if(input.action==="cancel") result=await cancelRequest(input.id,expected,input.reason||"",a); else result=await updateRequest({...input,id:input.id,expectedVersion:expected} as unknown as Partial<AdHocRequest> & {id:string;expectedVersion:number},a);
-return NextResponse.json(result);}catch(e){setDataTraceOutcome((e as {status?:number}).status===401?"DENIED":"ERROR");return NextResponse.json({error:{message:e instanceof Error?e.message:String(e)}},{status:(e as {status?:number}).status||400});}})}
+import { AD_HOC_CATEGORIES, AD_HOC_UNITS, isDate, isTime, londonBusinessDate, weekStart, type AdHocDraft } from "../../../lib/ad-hoc-domain";
+import { archiveRequest, cancelRequest, createRequest, downstreamState, duplicateRequest, getRequest, listRequests, sendToCpu, updateRequest } from "../../../lib/ad-hoc-service";
+import { callerFor, isHubError } from "../../../lib/hub-client";
+import { resolveOplocDestination } from "../../../lib/destinations";
+
+const text = (max: number) => z.string().max(max);
+const draft = z.object({
+  eventName: text(120), serviceDate: z.string().refine(isDate, "Enter a valid service date."), requiredReadyTime: z.string().refine(isTime, "Enter a valid ready time."),
+  category: z.enum(AD_HOC_CATEGORIES.map(item => item.value) as [string, ...string[]]), guestCount: z.number().int().positive().max(100000).optional(), notes: text(600).optional(),
+  destination: z.object({ mode: z.enum(["oploc", "one_off"]), oplocId: text(200).optional(), label: text(160), address: text(400), contactName: text(120).optional(), contactPhone: text(40).optional(), deliveryInstructions: text(400).optional(), identity: text(200).optional() }),
+  lines: z.array(z.object({ id: text(80).optional(), description: text(200), quantity: z.number().positive().max(100000), unit: z.enum(AD_HOC_UNITS), note: text(300).optional(), sortOrder: z.number().optional() })).max(100),
+});
+const body = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("create"), draft }),
+  z.object({ action: z.literal("update"), id: z.string(), expectedVersion: z.number().int(), draft }),
+  z.object({ action: z.literal("send"), id: z.string(), expectedVersion: z.number().int() }),
+  z.object({ action: z.literal("archive"), id: z.string(), expectedVersion: z.number().int() }),
+  z.object({ action: z.literal("cancel"), id: z.string(), expectedVersion: z.number().int(), reason: z.string().max(300) }),
+  z.object({ action: z.literal("duplicate"), id: z.string() }),
+]);
+
+const fail = (error: unknown) => {
+  const status = error instanceof z.ZodError ? 422 : isHubError(error) || (error as { status?: number }).status ? (error as { status: number }).status : 500;
+  setDataTraceOutcome(status === 401 || status === 403 ? "DENIED" : "ERROR");
+  const message = error instanceof z.ZodError ? error.issues.map(issue => `${issue.path.join(".") || "request"}: ${issue.message}`).join("; ") : error instanceof Error ? error.message : String(error);
+  return NextResponse.json({ error: { message } }, { status });
+};
+
+export async function GET(req: NextRequest) {
+  return withDataTrace({ app: "ad-hoc-production", action: "request.list", path: "/api/requests", dataset: "ad-hoc-production/requests", outcome: "SUCCESS" }, async () => {
+    try {
+      const { actor: who, hub } = await callerFor(req);
+      const params = req.nextUrl.searchParams;
+      const id = params.get("id");
+      if (id) { const request = await getRequest(id); return request ? NextResponse.json({ request, downstream: await downstreamState(request, hub), actor: { name: who.name } }) : NextResponse.json({ error: { message: "Request not found." } }, { status: 404 }); }
+      const from = params.get("from");
+      return NextResponse.json({ requests: await listRequests(isDate(from) ? from : weekStart(londonBusinessDate()), Number(params.get("days")) || 7), actor: { name: who.name } });
+    } catch (error) { return fail(error); }
+  });
+}
+
+export async function POST(req: NextRequest) {
+  return withDataTrace({ app: "ad-hoc-production", action: "request.mutate", path: "/api/requests", dataset: "ad-hoc-production/requests", outcome: "SUCCESS" }, async () => {
+    try {
+      const input = body.parse(await req.json());
+      const needsOplocs = (input.action === "create" || input.action === "update") && input.draft.destination.mode === "oploc";
+      const { actor: who, hub, access } = await callerFor(req, { oplocs: needsOplocs });
+      const checked = (value: z.infer<typeof draft>) => ({ ...value, destination: resolveOplocDestination({ identity: "", ...value.destination }, access) }) as AdHocDraft;
+      switch (input.action) {
+        case "create": return NextResponse.json({ request: await createRequest(checked(input.draft), who) });
+        case "update": return NextResponse.json({ request: await updateRequest(input.id, input.expectedVersion, checked(input.draft), who) });
+        case "send": return NextResponse.json(await sendToCpu(input.id, input.expectedVersion, who, hub));
+        case "archive": return NextResponse.json({ request: await archiveRequest(input.id, input.expectedVersion, who) });
+        case "cancel": return NextResponse.json({ request: await cancelRequest(input.id, input.expectedVersion, input.reason, who, hub) });
+        case "duplicate": return NextResponse.json({ request: await duplicateRequest(input.id, who) });
+      }
+    } catch (error) { return fail(error); }
+  });
+}

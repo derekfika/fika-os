@@ -20,7 +20,10 @@ test("emulator: canonical transitions atomically queue distinct lifecycle obliga
   assert.equal(process.env.FIKA_RUNTIME_MODE || "local", "local");
   const key = `email-test-${crypto.randomUUID()}`;
   const now = new Date().toISOString();
-  const eventDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000));
+  const londonDate = (offsetDays: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000));
+  // Hospitality deliveries are weekday-only: roll a weekend candidate forward so the fixture is valid on any day the suite runs.
+  const weekdayOffset = (offsetDays: number) => { const weekday = new Date(`${londonDate(offsetDays)}T12:00:00Z`).getUTCDay(); return offsetDays + (weekday === 6 ? 2 : weekday === 0 ? 1 : 0); };
+  const eventDate = londonDate(weekdayOffset(14));
   const menu = { canonicalId: `hospitality-menu-item:${key}`, dataHash: "test", entityType: "Hospitality Menu Item", lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active", name: "Test lunch", unitPrice: 12, providerMappings: [{ provider: "mnk-booking-platform", sourceItemId: key }] } } as CanonicalRecord;
   const offeringId = `hospitality-menu-offering:${key}`;
   const oploc = `oploc:mnk-email-test:${key}`;
