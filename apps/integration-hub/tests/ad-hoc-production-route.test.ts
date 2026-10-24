@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { NextRequest } from "next/server";
-import { authoriseAdHocDestination, localAdHocServiceAllowed } from "../lib/ad-hoc-production-auth";
+import { authoriseAdHocDestination, localAdHocServiceAllowed, scopeOplocs } from "../lib/ad-hoc-production-auth";
 import { GET as ordersGet, POST as ordersPost } from "../app/api/ad-hoc-production/orders/route";
 import { GET as accessGet } from "../app/api/ad-hoc-production/access/route";
 import { adHocOneOffDestinationId, adHocProductionOrderId, adHocSendKey, AD_HOC_HUB_API, AD_HOC_SERVICE_TOKEN_HEADER, type AdHocOrderInput, type AdHocSendCommand } from "../../shared/ad-hoc-production-contract";
@@ -114,4 +114,13 @@ test("emulator: malformed or forged commands are rejected before any Hub write",
     const written = await db.collection("fikaProductionOrdersV1").doc((await import("../lib/canonical-editor")).stableDocumentId(adHocProductionOrderId(requestId))).get();
     assert.equal(written.exists, false, "nothing was written");
   });
+});
+
+test("OPLOC scope keeps published OPLOCs (the real package vocabulary) and applies the caller's permitted ids and redirects", () => {
+  const value = { oplocs: [{ canonicalId: "oploc:a", label: "A", lifecycleStatus: "published", publicationStatus: "published", address: "1 A St" }, { canonicalId: "oploc:b", label: "B", lifecycleStatus: "published" }], redirects: { "oploc:old": "oploc:a" } };
+  assert.deepEqual(scopeOplocs(value, "all").oplocs.map(item => item.canonicalId), ["oploc:a", "oploc:b"]);
+  const narrowed = scopeOplocs(value, { all: false, ids: new Set(["oploc:a"]) });
+  assert.deepEqual(narrowed.oplocs.map(item => item.label), ["A"]);
+  assert.deepEqual(narrowed.redirects, { "oploc:old": "oploc:a" });
+  assert.deepEqual(scopeOplocs(value, { all: false, ids: new Set() }).oplocs, []);
 });
