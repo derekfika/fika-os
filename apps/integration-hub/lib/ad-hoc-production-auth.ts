@@ -4,7 +4,7 @@ import { FirestoreAuthModRepository } from "@/lib/authmod-core";
 import { createAuthModEvaluationContext, resolveUserAccess } from "@/lib/authmod-core/evaluator";
 import { requireFikaSession } from "@/lib/fika-session";
 import { filterAuthorizedOplocs, resolvePermittedOplocIds } from "@/lib/oploc-authorization";
-import { getOplocReadPackage, validateOplocReadPackage } from "@/lib/oploc-read-package";
+import { getOplocReadPackage, validateOplocReadPackage, type OplocReadPackage } from "@/lib/oploc-read-package";
 import { internalProductionRequestAllowed } from "@/lib/production-internal-auth";
 import { adHocOneOffDestinationId, adHocSendKey, type AdHocAccess, type AdHocOploc, type AdHocOrderInput, type AdHocSendCommand } from "../../shared/ad-hoc-production-contract";
 
@@ -26,12 +26,20 @@ export function localAdHocServiceAllowed(env: Record<string, string | undefined>
 export type AdHocOplocScope = { oplocs: AdHocOploc[]; redirects?: Record<string, string> };
 export type AdHocCaller = { actor: Actor; principal: AdHocAccess["principal"]; loadOplocs: () => Promise<AdHocOplocScope> };
 
-const isActive = (oploc: { lifecycleStatus?: string }) => !oploc.lifecycleStatus || oploc.lifecycleStatus.toLowerCase() === "active";
+type OplocScopeInput = Awaited<ReturnType<typeof resolvePermittedOplocIds>> | "all";
 
-async function authorisedOplocs(scope: Awaited<ReturnType<typeof resolvePermittedOplocIds>> | "all"): Promise<AdHocOplocScope> {
-  const value = validateOplocReadPackage((await getOplocReadPackage()).value);
+/**
+ * Projects the OPLOC read package onto what a caller may use. The package is built from active OPLOCs only
+ * (`rebuildOplocReadPackage`), whose lifecycleStatus is "published", so no further lifecycle filtering is
+ * applied here: re-filtering on a different status vocabulary silently emptied the list on staging.
+ */
+export function scopeOplocs(value: OplocReadPackage, scope: OplocScopeInput): AdHocOplocScope {
   const filtered = scope === "all" ? value : filterAuthorizedOplocs(value, scope);
-  return { oplocs: filtered.oplocs.filter(isActive) as AdHocOploc[], ...(filtered.redirects && Object.keys(filtered.redirects).length ? { redirects: filtered.redirects } : {}) };
+  return { oplocs: filtered.oplocs as AdHocOploc[], ...(filtered.redirects && Object.keys(filtered.redirects).length ? { redirects: filtered.redirects } : {}) };
+}
+
+async function authorisedOplocs(scope: OplocScopeInput): Promise<AdHocOplocScope> {
+  return scopeOplocs(validateOplocReadPackage((await getOplocReadPackage()).value), scope);
 }
 
 /**
