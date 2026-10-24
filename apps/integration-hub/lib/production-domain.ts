@@ -358,6 +358,12 @@ export async function amendAdHocProductionOrder(actor: Actor, canonicalId: strin
   });
 }
 
+/**
+ * What the Hub must tell CPU so its projection (a monotonic read model, refreshed only by change events) learns about an Ad-Hoc order.
+ * Returned on every submit/cancel outcome, including replays, so a retry after a failed notification heals it.
+ */
+const cpuProjectionSnapshot = (order: ProductionOrder) => ({ canonicalId: order.canonicalId, version: order.version, serviceDate: order.serviceDate, status: order.status, createdAt: order.createdAt, ...(order.updatedAt ? { updatedAt: order.updatedAt } : {}) });
+
 const alreadyExists = (error: unknown) => (error as { code?: number }).code === 6 || /already exists/i.test((error as Error)?.message || "");
 
 /**
@@ -370,7 +376,7 @@ const alreadyExists = (error: unknown) => (error as { code?: number }).code === 
 export async function submitAdHocProductionOrder(actor: Actor, input: CpuCreatedProductionInput, idempotencyKey: string) {
   if (!input.sourceEntityId) throw Object.assign(new Error("An Ad-Hoc order requires its source request."), { status: 422 });
   const canonicalId = adHocProductionOrderId(input.sourceEntityId);
-  const summarise = (order: ProductionOrder, outcome: "created" | "amended" | "already_applied") => ({ canonicalId: order.canonicalId, orderVersion: order.version, orderStatus: order.status as string, outcome });
+  const summarise = (order: ProductionOrder, outcome: "created" | "amended" | "already_applied") => ({ canonicalId: order.canonicalId, orderVersion: order.version, orderStatus: order.status as string, outcome, projection: cpuProjectionSnapshot(order) });
   const amend = async () => { const result = await amendAdHocProductionOrder(actor, canonicalId, input, idempotencyKey); return summarise(result.order, result.status === "amended" ? "amended" : "already_applied"); };
   if ((await orders().doc(stableDocumentId(canonicalId)).get()).exists) return amend();
   try { const created = await createCpuProductionOrder(actor, { ...input, stableSourceIdentity: true }, idempotencyKey); return summarise(created.order, created.created ? "created" : "already_applied"); }
@@ -392,10 +398,10 @@ export async function cancelAdHocProductionOrder(actor: Actor, requestId: string
     const snapshot = await orders().doc(stableDocumentId(canonicalId)).get();
     if (!snapshot.exists) throw Object.assign(new Error("No Production Order exists for this request."), { status: 404, code: "AD_HOC_ORDER_NOT_FOUND" });
     const order = snapshot.data() as ProductionOrder;
-    if (order.status === "cancelled") return { canonicalId, orderStatus: "cancelled", outcome: "already_cancelled" as const };
+    if (order.status === "cancelled") return { canonicalId, orderStatus: "cancelled", outcome: "already_cancelled" as const, projection: cpuProjectionSnapshot(order) };
     try {
       const next = await transitionProductionOrder(actor, canonicalId, order.version, "cancelled", `Ad-Hoc request cancelled: ${reason}`);
-      return { canonicalId, orderStatus: next.status as string, outcome: "cancelled" as const };
+      return { canonicalId, orderStatus: next.status as string, outcome: "cancelled" as const, projection: cpuProjectionSnapshot(next as ProductionOrder) };
     } catch (error) { if (attempt === 0 && /changed elsewhere/i.test((error as Error).message)) continue; throw error; }
   }
 }

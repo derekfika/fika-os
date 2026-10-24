@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
+import test, { after } from "node:test";
 import { NextRequest } from "next/server";
 import { authoriseAdHocDestination, localAdHocServiceAllowed, scopeOplocs } from "../lib/ad-hoc-production-auth";
 import { GET as ordersGet, POST as ordersPost } from "../app/api/ad-hoc-production/orders/route";
@@ -8,6 +10,14 @@ import { adHocOneOffDestinationId, adHocProductionOrderId, adHocSendKey, AD_HOC_
 import { db } from "../lib/firebase-admin";
 
 const emulatorEnabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os" && process.env.FIRESTORE_EMULATOR_HOST === "127.0.0.1:8292" && (process.env.FIKA_RUNTIME_MODE || "local") === "local";
+
+// CPU's projection only learns of an Ad-Hoc order through the Hub's change notification; the tests stand in for CPU.
+type CpuCall = { changeType: string; entityId: string; revision: number; serviceDate: string; idempotencyKey: string };
+const cpuCalls: CpuCall[] = []; let cpuFailures = 0;
+const fakeCpu = http.createServer((req, res) => { let body = ""; req.on("data", chunk => { body += chunk; }); req.on("end", () => { if (cpuFailures > 0) { cpuFailures -= 1; res.writeHead(500); res.end("{}"); return; } cpuCalls.push(JSON.parse(body)); res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ applied: true })); }); });
+await new Promise<void>(resolve => fakeCpu.listen(0, "127.0.0.1", resolve));
+const CPU_URL = `http://127.0.0.1:${(fakeCpu.address() as AddressInfo).port}`;
+after(() => { fakeCpu.closeAllConnections(); fakeCpu.close(); });
 
 const order = (requestId: string, version = 1, overrides: Partial<AdHocOrderInput> = {}): AdHocOrderInput => ({
   clientName: "Board lunch", productionCategory: "hospitality", serviceDate: "2099-03-02", deliveryDateTime: "2099-03-02T12:00", requiredBy: "2099-03-02T12:00", serviceWindow: { startTime: "12:00" },
@@ -70,7 +80,7 @@ test("privileged order operations require the service token whenever one is conf
 });
 
 test("emulator: send, amend, status and cancel over the route contract create exactly one order and requirement", { skip: !emulatorEnabled }, async () => {
-  await withEnv({ NODE_ENV: "test", FIKA_RUNTIME_MODE: "local", FIKA_INTERNAL_API_TOKEN: undefined }, async () => {
+  await withEnv({ NODE_ENV: "test", FIKA_RUNTIME_MODE: "local", FIKA_INTERNAL_API_TOKEN: undefined, CPU_PRODUCTION_BASE_URL: CPU_URL }, async () => {
     const requestId = `adhoc-request:${crypto.randomUUID()}`;
     const post = async (body: unknown) => { const response = await ordersPost(call("POST", AD_HOC_HUB_API.orders, body)); return { status: response.status, body: await response.json() }; };
 
@@ -87,6 +97,11 @@ test("emulator: send, amend, status and cancel over the route contract create ex
     assert.equal(requirements.length, 1);
     assert.equal(requirements[0].lines[0].quantity, 20);
 
+    // CPU was told about every outcome, including the replay (so a lost notification heals on retry).
+    const mine = cpuCalls.filter(call => call.entityId === created.body.canonicalId);
+    assert.deepEqual(mine.map(call => [call.changeType, call.revision]), [["created", 1], ["created", 1], ["amended", 2]]);
+    assert.ok(mine.every(call => call.serviceDate === "2099-03-02" && call.idempotencyKey === `cpu-projection:${created.body.canonicalId}:v${call.revision}`));
+
     const status = await ordersGet(call("GET", `${AD_HOC_HUB_API.orders}?requestId=${encodeURIComponent(requestId)}`));
     assert.deepEqual(await status.json(), { canonicalId: created.body.canonicalId, orderStatus: "draft", orderVersion: amended.body.orderVersion, cancelled: false });
 
@@ -94,6 +109,7 @@ test("emulator: send, amend, status and cancel over the route contract create ex
     assert.equal(cancelled.body.outcome, "cancelled");
     assert.equal((await post({ action: "cancel", requestId, reason: "again" })).body.outcome, "already_cancelled");
     assert.equal((await requirementsFor(created.body.canonicalId))[0].status, "withdrawn");
+    assert.deepEqual(cpuCalls.filter(call => call.entityId === created.body.canonicalId).slice(-2).map(call => [call.changeType, call.revision]), [["withdrawn", 3], ["withdrawn", 3]], "withdrawal (and its repeat) is announced to CPU");
     assert.equal((await ordersGet(call("GET", `${AD_HOC_HUB_API.orders}?requestId=${encodeURIComponent(requestId)}`))).status, 200);
     assert.equal((await ordersGet(call("GET", `${AD_HOC_HUB_API.orders}?requestId=adhoc-request:none`))).status, 404);
     assert.equal((await post({ action: "cancel", requestId: "adhoc-request:none", reason: "x" })).status, 404);
@@ -101,7 +117,7 @@ test("emulator: send, amend, status and cancel over the route contract create ex
 });
 
 test("emulator: malformed or forged commands are rejected before any Hub write", { skip: !emulatorEnabled }, async () => {
-  await withEnv({ NODE_ENV: "test", FIKA_RUNTIME_MODE: "local", FIKA_INTERNAL_API_TOKEN: undefined }, async () => {
+  await withEnv({ NODE_ENV: "test", FIKA_RUNTIME_MODE: "local", FIKA_INTERNAL_API_TOKEN: undefined, CPU_PRODUCTION_BASE_URL: CPU_URL }, async () => {
     const requestId = `adhoc-request:${crypto.randomUUID()}`;
     const post = async (body: unknown) => (await ordersPost(call("POST", AD_HOC_HUB_API.orders, body))).status;
     assert.equal(await post({ ...send(requestId), extra: true }), 422, "unknown fields are refused (strict contract)");
@@ -123,4 +139,19 @@ test("OPLOC scope keeps published OPLOCs (the real package vocabulary) and appli
   assert.deepEqual(narrowed.oplocs.map(item => item.label), ["A"]);
   assert.deepEqual(narrowed.redirects, { "oploc:old": "oploc:a" });
   assert.deepEqual(scopeOplocs(value, { all: false, ids: new Set() }).oplocs, []);
+});
+
+test("emulator: a failed CPU notification fails the request, leaves one order, and the retry heals the projection", { skip: !emulatorEnabled }, async () => {
+  await withEnv({ NODE_ENV: "test", FIKA_RUNTIME_MODE: "local", FIKA_INTERNAL_API_TOKEN: undefined, CPU_PRODUCTION_BASE_URL: CPU_URL }, async () => {
+    const requestId = `adhoc-request:${crypto.randomUUID()}`;
+    const post = async (body: unknown) => (await ordersPost(call("POST", AD_HOC_HUB_API.orders, body))).status;
+    cpuFailures = 2; // the Hub client retries once, so two failures exhaust one request
+    const failed = await post(send(requestId));
+    assert.ok(failed >= 400, `the send must not report success while CPU was not notified (got ${failed})`);
+    assert.equal((await requirementsFor(adHocProductionOrderId(requestId))).length, 1, "the order exists exactly once");
+    assert.equal(cpuCalls.filter(call => call.entityId === adHocProductionOrderId(requestId)).length, 0);
+    assert.equal(await post(send(requestId)), 200, "the retry succeeds");
+    assert.deepEqual(cpuCalls.filter(call => call.entityId === adHocProductionOrderId(requestId)).map(call => call.changeType), ["created"], "CPU now knows the order, with no duplicate order created");
+    assert.equal((await requirementsFor(adHocProductionOrderId(requestId))).length, 1);
+  });
 });
