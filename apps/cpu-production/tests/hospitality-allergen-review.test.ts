@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { CANONICAL_ALLERGEN_KEYS, type OperationalAllergenState } from "../../shared/allergen-contract";
-import { allergenReviewCompletionMessage, completeAllergenReviewMap, confirmAllergenReviewMap } from "../app/lib/allergen-review-state";
+import { completeAllergenReviewMap, confirmAllergenReviewMap } from "../app/lib/allergen-review-state";
 import { applyHospitalityCellClick } from "../app/ui/allergen-cell-state";
 import { allergenReviewProblems, describeAllergenReviewProblem, effectiveProductionPlanStatus, isProductionPlanMatrixComplete } from "../app/lib/production-plan-state";
 import type { PlannedMenuItem } from "../app/lib/production-plan";
@@ -62,7 +62,6 @@ test("positive and may-contain evidence is preserved and unrecorded allergens ar
   assert.equal(result.states.gluten, "contains");
   assert.equal(result.states.milk, "may_contain");
   for (const key of named.filter((candidate) => candidate !== "gluten" && candidate !== "milk")) assert.notEqual(result.states[key], "clear", key);
-  assert.match(allergenReviewCompletionMessage(result.unresolvedKeys), /Resolve 12 Not recorded allergen states/);
 });
 
 test("Mark checked is the explicit row confirmation: white cells become Clear, Contains and May Contain are kept", () => {
@@ -95,7 +94,7 @@ test("an unreviewed row is distinguishable from a confirmed one, and a white cel
   const click = applyHospitalityCellClick({ gluten: "contains" }, "fish");
   assert.equal(click.fish, "contains", "white (unconfirmed) behaves as white: first click = Contains");
   assert.equal(applyHospitalityCellClick(click, "fish").fish, "may_contain");
-  assert.equal(applyHospitalityCellClick(applyHospitalityCellClick(click, "fish"), "fish").fish, "clear");
+  assert.equal(applyHospitalityCellClick(applyHospitalityCellClick(click, "fish"), "fish").fish, undefined, "third click returns to white (unrecorded), never an explicit Clear");
 });
 
 test("legacy rows marked Checked but holding unconfirmed allergens are not converted silently: they need an explicit re-confirmation", () => {

@@ -1,4 +1,5 @@
-import { deriveNoKeyAllergens, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey, type OperationalAllergenState } from "../../../shared/allergen-contract";
+import { deriveNoKeyAllergens, normaliseOperationalAllergens, type OperationalAllergenState } from "../../../shared/allergen-contract";
+import { rowPositives } from "../../../shared/allergen-review";
 
 /** A row with no recorded assessment carries no allergen values; every cell then renders neutral. */
 export function emptyAllergens(): Record<string, OperationalAllergenState> {
@@ -28,11 +29,16 @@ export function cellLabel(state: OperationalAllergenState): string {
 }
 
 /**
- * What clicking an allergen cell does in the Hospitality review. "No key allergens" is derived and never changes. A white cell
- * (clear or not yet confirmed) behaves as white: the first click declares Contains, then May Contain, then back to white. Nothing is
- * recorded as confirmed Clear by a click; that happens when the chef confirms the whole row with Mark checked.
+ * What clicking an allergen cell does in the CPU review. "No key allergens" is derived and never changes. A white cell (clear or
+ * not yet confirmed) behaves as white: the first click declares Contains, then May Contain, then back to white (unrecorded).
+ * Nothing is recorded as Clear by a click: any edit reopens the row, so Clears that came from an earlier confirmation revert to
+ * unrecorded and only the chef's explicit positives remain until the row is confirmed again with Mark checked.
  */
 export function applyHospitalityCellClick(allergens: Record<string, OperationalAllergenState>, key: string): Record<string, OperationalAllergenState> {
   if (key === "no_key_allergens") return allergens;
-  return toggleOperationalAllergen(allergens, key as CanonicalAllergenKey);
+  const next = { ...rowPositives(allergens) } as Record<string, OperationalAllergenState>;
+  if (next[key] === "contains") next[key] = "may_contain";
+  else if (next[key] === "may_contain") delete next[key];
+  else next[key] = "contains";
+  return deriveNoKeyAllergens(next);
 }
