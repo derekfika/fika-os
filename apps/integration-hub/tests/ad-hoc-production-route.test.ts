@@ -103,7 +103,7 @@ test("emulator: send, amend, status and cancel over the route contract create ex
     assert.ok(mine.every(call => call.serviceDate === "2099-03-02" && call.idempotencyKey === `cpu-projection:${created.body.canonicalId}:v${call.revision}`));
 
     const status = await ordersGet(call("GET", `${AD_HOC_HUB_API.orders}?requestId=${encodeURIComponent(requestId)}`));
-    assert.deepEqual(await status.json(), { canonicalId: created.body.canonicalId, orderStatus: "draft", orderVersion: amended.body.orderVersion, cancelled: false });
+    assert.deepEqual(await status.json(), { canonicalId: created.body.canonicalId, orderStatus: "draft", orderVersion: amended.body.orderVersion, cancelled: false, allergenChecker: { state: "not_signed" } });
 
     const cancelled = await post({ action: "cancel", requestId, reason: "Client cancelled" });
     assert.equal(cancelled.body.outcome, "cancelled");

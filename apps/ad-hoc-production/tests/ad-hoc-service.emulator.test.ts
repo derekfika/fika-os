@@ -126,9 +126,9 @@ test("emulator: a lost cancel response does not mark the request cancelled; the 
 test("emulator: a CPU-originated cancellation is visible on demand without rewriting the request", { skip: !emulatorEnabled }, async () => {
   const hub = new FakeHub();
   const sent = (await sendToCpu((await createRequest(oneOff("CPU cancels"), actor)).id, 1, actor, hub)).request;
-  assert.deepEqual(await downstreamState(sent, hub), { status: "draft", cancelled: false });
+  assert.deepEqual(await downstreamState(sent, hub), { status: "draft", cancelled: false, allergenChecker: { state: "not_signed" } });
   hub.cpuCancel(sent.id);
-  assert.deepEqual(await downstreamState(sent, hub), { status: "cancelled", cancelled: true });
+  assert.deepEqual(await downstreamState(sent, hub), { status: "cancelled", cancelled: true, allergenChecker: { state: "not_signed" } });
   const stored = (await getRequest(sent.id))!;
   assert.equal(stored.version, sent.version, "reading downstream state writes nothing");
   assert.equal(stored.status, "SENT_TO_CPU");

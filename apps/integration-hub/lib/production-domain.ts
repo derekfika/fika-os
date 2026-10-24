@@ -14,6 +14,7 @@ import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requi
 import { explicitMenuProductionRouting, LEGACY_HOSPITALITY_MENU_ROUTING } from "./connections-service";
 import { hospitalityPlatformOf, isGovernedRoutingPlatform, planHospitalityCpuRouting, routingBlockedMessage, routingKeys, type RoutingPlan } from "./hospitality-cpu-routing";
 import { adHocProductionOrderId } from "../../shared/ad-hoc-production-contract";
+import { projectAdHocAllergenChecker, readAdHocAllergenChecker } from "./ad-hoc-allergen-checker";
 import { adaptCpuProductionWorkstreams } from "../../shared/production-workstreams";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
@@ -388,7 +389,8 @@ export async function adHocOrderStatus(requestId: string) {
   const snapshot = await orders().doc(stableDocumentId(adHocProductionOrderId(requestId))).get();
   if (!snapshot.exists) return undefined;
   const order = snapshot.data() as ProductionOrder;
-  return { canonicalId: order.canonicalId, orderStatus: order.status as string, orderVersion: order.version, cancelled: order.status === "cancelled" };
+  const allergenChecker = projectAdHocAllergenChecker(await readAdHocAllergenChecker(order.canonicalId), order);
+  return { canonicalId: order.canonicalId, orderStatus: order.status as string, orderVersion: order.version, cancelled: order.status === "cancelled", allergenChecker };
 }
 
 /** Cancels the Ad-Hoc order through the governed lifecycle (which withdraws its Logistics requirement). Repeat-safe. */

@@ -119,7 +119,7 @@ test("emulator: submit creates once, replays idempotently and amends the same or
   assert.equal(amended.canonicalId, first.canonicalId);
   assert.equal(amended.orderVersion, first.orderVersion + 1);
   assert.equal((await requirementsFor(first.canonicalId)).length, 1, "one Logistics requirement across versions");
-  assert.deepEqual(await adHocOrderStatus(requestId), { canonicalId: first.canonicalId, orderStatus: "draft", orderVersion: amended.orderVersion, cancelled: false });
+  assert.deepEqual(await adHocOrderStatus(requestId), { canonicalId: first.canonicalId, orderStatus: "draft", orderVersion: amended.orderVersion, cancelled: false, allergenChecker: { state: "not_signed" } });
 });
 
 test("emulator: concurrent submissions, including different versions, converge on one order and one requirement", { skip: !emulatorEnabled }, async () => {
@@ -161,4 +161,49 @@ test("emulator: cancelling an order CPU already cancelled is a repeat-safe succe
   await transitionProductionOrder(actor, order.canonicalId, order.orderVersion, "cancelled", "CPU cancelled.");
   assert.equal((await adHocOrderStatus(requestId))?.cancelled, true);
   assert.equal((await cancelAdHocProductionOrder(actor, requestId, "Recording CPU cancellation")).outcome, "already_cancelled");
+});
+
+test("emulator: the signed allergen checker link follows CPU's release and is withdrawn by an amendment or cancellation", { skip: !emulatorEnabled }, async () => {
+  const { recordAdHocAllergenChecker } = await import("../lib/ad-hoc-allergen-checker");
+  const requestId = `adhoc-request:${crypto.randomUUID()}`;
+  const created = (await createCpuProductionOrder(actor, input(requestId, 1, { stableSourceIdentity: true }), `adhoc-send:${requestId}:v1`)).order;
+  assert.deepEqual((await adHocOrderStatus(requestId))!.allergenChecker, { state: "not_signed" });
+
+  const report = { canonicalId: created.canonicalId, state: "signed" as const, releaseId: "cpu-allergen-release:test:v1", releaseVersion: 1, sourceRevision: created.currentRevision, fileName: "AdHoc-Board-lunch.pdf", driveUrl: "https://drive.google.com/file/d/abc/view", signedAt: "2026-10-24T10:00:00.000Z", signers: [{ role: "production_chef" as const, name: "Chef A" }, { role: "head_chef_site_manager" as const, name: "Chef B" }] };
+  assert.equal((await recordAdHocAllergenChecker(report)).applied, true);
+  const signed = (await adHocOrderStatus(requestId))!.allergenChecker!;
+  assert.equal(signed.state, "signed");
+  assert.equal(signed.driveUrl, report.driveUrl);
+  assert.deepEqual(signed.signers, report.signers);
+
+  assert.equal((await recordAdHocAllergenChecker({ ...report })).applied, true, "an idempotent replay is accepted");
+  assert.equal((await recordAdHocAllergenChecker({ ...report, state: "withdrawn", reason: "Edited after signing" })).applied, true);
+  assert.equal((await adHocOrderStatus(requestId))!.allergenChecker!.state, "withdrawn");
+  assert.equal((await recordAdHocAllergenChecker({ ...report })).applied, false, "a late signed report for a release already withdrawn is ignored");
+  assert.equal((await adHocOrderStatus(requestId))!.allergenChecker!.driveUrl, undefined, "a withdrawn checker never carries a link");
+
+  // A later CPU release (v2) signs again; an older v1 report can no longer overwrite it.
+  assert.equal((await recordAdHocAllergenChecker({ ...report, releaseId: "cpu-allergen-release:test:v2", releaseVersion: 2 })).applied, true);
+  assert.equal((await recordAdHocAllergenChecker({ ...report, releaseVersion: 1, state: "withdrawn", reason: "stale" })).applied, false);
+  assert.equal((await adHocOrderStatus(requestId))!.allergenChecker!.state, "signed");
+
+  // An Ad-Hoc amendment bumps the order revision: the signed checker is no longer valid for the order and loses its link.
+  await amendAdHocProductionOrder(actor, created.canonicalId, input(requestId, 3, { lines: [{ sourceLineId: "line:a", itemName: "Sandwich platters", customerQuantity: 9, customerUnit: "platters", productionQuantity: 9, productionUnit: "platters" }] }), `adhoc-send:${requestId}:v3`);
+  const amended = (await adHocOrderStatus(requestId))!.allergenChecker!;
+  assert.equal(amended.state, "withdrawn");
+  assert.equal(amended.driveUrl, undefined, "a withdrawn checker never carries a link");
+  assert.match(amended.reason || "", /amended/);
+});
+
+test("emulator: a cancelled Ad-Hoc order shows its signed checker as withdrawn, and only Ad-Hoc orders accept a checker", { skip: !emulatorEnabled }, async () => {
+  const { recordAdHocAllergenChecker } = await import("../lib/ad-hoc-allergen-checker");
+  const requestId = `adhoc-request:${crypto.randomUUID()}`;
+  const created = (await createCpuProductionOrder(actor, input(requestId, 1, { stableSourceIdentity: true }), `adhoc-send:${requestId}:v1`)).order;
+  await recordAdHocAllergenChecker({ canonicalId: created.canonicalId, state: "signed", releaseId: "r1", releaseVersion: 1, sourceRevision: created.currentRevision, driveUrl: "https://drive.google.com/file/d/abc/view" });
+  await cancelAdHocProductionOrder(actor, requestId, "No longer needed");
+  const status = (await adHocOrderStatus(requestId))!;
+  assert.equal(status.cancelled, true);
+  assert.equal(status.allergenChecker!.state, "withdrawn");
+  assert.equal(status.allergenChecker!.driveUrl, undefined);
+  await assert.rejects(recordAdHocAllergenChecker({ canonicalId: "production-order:v1:cpu:abc", state: "signed", releaseId: "r", releaseVersion: 1, sourceRevision: 1, driveUrl: "https://x.test/f" }), /Only Ad-Hoc/);
 });

@@ -162,6 +162,6 @@ export async function downstreamState(request: AdHocRequest, hub: HubPort) {
   if (!isSent(request)) return null;
   try {
     const order = await hub.status(request.id);
-    return order ? { status: order.orderStatus, cancelled: order.cancelled } : null;
+    return order ? { status: order.orderStatus, cancelled: order.cancelled, allergenChecker: order.allergenChecker ?? { state: "not_signed" as const } } : null;
   } catch { return null; }
 }

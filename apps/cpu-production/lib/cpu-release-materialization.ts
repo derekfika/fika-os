@@ -1,3 +1,4 @@
+import { reportAdHocAllergenChecker } from "./ad-hoc-allergen-checker-report";
 import { isAdHocProductionOrder } from "./ad-hoc-order";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -123,7 +124,7 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
   if (!order) throw Object.assign(new Error("The production order could not be loaded for release materialization."), { status: 503 });
   if (order.origin === "menu_planning" && order.supersededBy) throw Object.assign(new Error("The Menu Planning production order has been superseded; its CPU release cannot be materialized."), { status: 409, code: "CPU_RELEASE_SUPERSEDED_ORDER" });
   if (!allergenReleaseLineageMatchesOrder(pending, order, stored.menuItems)) throw Object.assign(new Error("The committed CPU release no longer matches the canonical source lineage."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
-  if (pending.status === "current" && pending.materializationStatus === "ready") return { plan: stored, alreadyMaterialized: true };
+  if (pending.status === "current" && pending.materializationStatus === "ready") { await reportAdHocAllergenChecker(request, stored); return { plan: stored, alreadyMaterialized: true }; }
   if (pending.status !== "pending" && !(pending.status === "current" && pending.materializationStatus !== "ready")) throw Object.assign(new Error("The CPU allergen release is no longer materializable."), { status: 409 });
   const materializationReceiptId = (phase: "started" | "prepared" | "final") => cpuReleaseMaterializationReceiptId(releaseId, order, phase);
   const preparedCandidate = structuredClone(stored);
@@ -164,6 +165,7 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     // the consumer is unavailable or times out.
     const handoffResults = await Promise.all(deliveries.filter(delivery => delivery.route === "/api/internal/cpu-release-event").map(delivery => deliverCpuPropagation(delivery.eventId)));
     console.info("FIKA CPU allergen release materialization", { app: "cpu-production", serviceDate: release.serviceDate, releaseId: release.releaseId, destinationOplocId: order.destinationOplocId, expectedOplocCount: 1, materializedOplocCount: 1, failedOplocCount: 0, pendingOplocCount: 0, packetManifestKey: dailyBundleManifestKey(release.serviceDate, order.destinationOplocId || ""), handoffStatus: deliveries.length ? "staged" : "not_applicable" });
+    await reportAdHocAllergenChecker(request, finalPlan);
     return { plan: finalPlan, alreadyMaterialized: false, handoffResults };
   } catch (error) {
     const materializationError = error instanceof Error ? error.message : String(error);
