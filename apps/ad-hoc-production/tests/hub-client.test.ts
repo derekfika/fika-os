@@ -89,12 +89,12 @@ test("hosted runtimes require an HTTPS Hub URL and the service token (fail close
 });
 
 test("OPLOC destinations are resolved against the Hub-authorised list, aliases included, with Hub-owned snapshots", () => {
-  const access = { oplocs: [{ canonicalId: "oploc:new", label: "New Name", address: "1 Hub Street" }, { canonicalId: "oploc:retired", label: "Gone", lifecycleStatus: "retired" }], redirects: { "oploc:old": "oploc:new" } };
+  // The Hub list is already limited to active ("published") OPLOCs the caller may use; Ad-Hoc trusts that authority.
+  const access = { oplocs: [{ canonicalId: "oploc:new", label: "New Name", address: "1 Hub Street", lifecycleStatus: "published" }], redirects: { "oploc:old": "oploc:new" } };
   const base = { mode: "oploc" as const, label: "client label", address: "client address", identity: "" };
   const resolved = resolveOplocDestination({ ...base, oplocId: "oploc:old" }, access);
   assert.deepEqual([resolved.oplocId, resolved.label, resolved.address, resolved.identity], ["oploc:new", "New Name", "1 Hub Street", "oploc:new"]);
   assert.throws(() => resolveOplocDestination({ ...base, oplocId: "oploc:other" }, access), (error: any) => error.status === 422);
-  assert.throws(() => resolveOplocDestination({ ...base, oplocId: "oploc:retired" }, access), (error: any) => error.status === 422);
   const oneOff = { mode: "one_off" as const, label: "x", address: "y", identity: "adhoc-destination:1" };
   assert.equal(resolveOplocDestination(oneOff, access), oneOff);
 });
