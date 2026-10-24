@@ -90,3 +90,18 @@ test("emulator: a stable-identity Ad-Hoc order has one canonical id across reque
   await assert.rejects(createCpuProductionOrder(actor, { ...input(requestId, 2), stableSourceIdentity: true }, `adhoc-send:${requestId}:v2`));
   assert.equal((await requirementsFor(created.canonicalId)).length, 1);
 });
+
+test("emulator: Ad-Hoc orders stay outside the signed Delivered-In release chain and quantity-only amendments keep line evidence", { skip: !emulatorEnabled }, async () => {
+  const requestId = `adhoc-request:${crypto.randomUUID()}`;
+  const created = (await createCpuProductionOrder(actor, { ...input(requestId, 1), stableSourceIdentity: true }, `adhoc-send:${requestId}:v1`)).order;
+  // Signed releases, master review and packets only select origin "menu_planning" orders keyed by menu items.
+  assert.equal(created.origin, "cpu_created");
+  assert.ok(created.lines.every(line => !line.sourceMenuItemId && !line.sourceOfferingId));
+  const ref = db.collection("fikaProductionOrdersV1").doc(stableDocumentId(created.canonicalId));
+  await ref.set({ ...created, lines: created.lines.map(line => ({ ...line, dietaries: { gluten: "contains" }, approvedAllergenSnapshot: { allergens: { gluten: "contains" } }, allergenEvidenceStatus: "confirmed" as const })) });
+  const quantityOnly = await amendAdHocProductionOrder(actor, created.canonicalId, input(requestId, 2, { lines: input(requestId, 2).lines.map(line => ({ ...line, customerQuantity: line.customerQuantity + 1, productionQuantity: (line.productionQuantity || 0) + 1 })) }), `adhoc-send:${requestId}:v2`);
+  assert.ok(quantityOnly.order.lines.every(line => line.allergenEvidenceStatus === "confirmed" && line.approvedAllergenSnapshot?.allergens.gluten === "contains"), "an unchanged item keeps its CPU evidence");
+  const renamed = await amendAdHocProductionOrder(actor, created.canonicalId, input(requestId, 3, { lines: input(requestId, 3).lines.map(line => ({ ...line, itemName: `${line.itemName} (new recipe)` })) }), `adhoc-send:${requestId}:v3`);
+  assert.ok(renamed.order.lines.every(line => line.allergenEvidenceStatus === undefined && !line.approvedAllergenSnapshot && Object.keys(line.dietaries).length === 0), "a changed item returns to allergen review with no stale evidence");
+  assert.equal(renamed.order.status, "draft");
+});

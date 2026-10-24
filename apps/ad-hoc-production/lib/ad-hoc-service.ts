@@ -166,3 +166,16 @@ export async function cancelRequest(id: string, expectedVersion: number, reason:
   }
   return mutate(id, expectedVersion, actor, (_current, at) => ({ status: "CANCELLED", cancelledAt: at, cancelReason: reason.trim(), audit: { action: "request-cancelled", at, by: "", version: 0, reason: reason.trim() } }));
 }
+
+/**
+ * Authoritative CPU state of a sent request's Production Order, read on demand
+ * for the single request being opened (one bounded read, no sync job). It is
+ * display-only: the request is not rewritten, so there is no two-way state.
+ */
+export async function downstreamState(request: AdHocRequest) {
+  if (!isSent(request)) return null;
+  try {
+    const order = await productionOrderDetail(request.productionOrderId || adHocProductionOrderId(request.id));
+    return order ? { status: order.status as string, cancelled: order.status === "cancelled" } : null;
+  } catch { return null; }
+}

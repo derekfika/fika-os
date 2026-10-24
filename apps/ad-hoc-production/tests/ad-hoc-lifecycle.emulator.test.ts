@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { db } from "@hub/lib/firebase-admin";
 import { adHocProductionOrderId, createCpuProductionOrder, productionOrderDetail, transitionProductionOrder } from "@hub/lib/production-domain";
-import { cancelRequest, createRequest, getRequest, sendToCpu, updateRequest } from "../lib/ad-hoc-service";
+import { cancelRequest, createRequest, downstreamState, getRequest, sendToCpu, updateRequest } from "../lib/ad-hoc-service";
 import { blankDraft, toProductionInput, type AdHocDraft } from "../lib/ad-hoc-domain";
 
 const emulatorEnabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os" && process.env.FIRESTORE_EMULATOR_HOST === "127.0.0.1:8292" && (process.env.FIKA_RUNTIME_MODE || "local") === "local";
@@ -66,4 +66,18 @@ test("emulator: an amendment refused by CPU leaves the request Needs update and 
   await assert.rejects(sendToCpu(sent.id, edited.version, actor), (error: any) => /Contact CPU/.test(error.message));
   assert.equal((await getRequest(sent.id))!.status, "NEEDS_UPDATE");
   assert.equal((await productionOrderDetail(sent.productionOrderId!))!.version, order.version, "order untouched");
+});
+
+test("emulator: a CPU-originated cancellation is visible on demand without rewriting the request", { skip: !emulatorEnabled }, async () => {
+  const sent = (await sendToCpu((await createRequest(oneOff("CPU cancels"), actor)).id, 1, actor)).request;
+  assert.deepEqual(await downstreamState(sent), { status: "draft", cancelled: false });
+  const order = (await productionOrderDetail(sent.productionOrderId!))!;
+  await transitionProductionOrder(actor, order.canonicalId, order.version, "cancelled", "CPU cancelled.");
+  assert.deepEqual(await downstreamState(sent), { status: "cancelled", cancelled: true });
+  const stored = (await getRequest(sent.id))!;
+  assert.equal(stored.version, sent.version, "reading downstream state writes nothing");
+  assert.equal(stored.status, "SENT_TO_CPU");
+  // Recording the cancellation converges through the normal cancel path.
+  assert.equal((await cancelRequest(sent.id, sent.version, "CPU cancelled", actor)).status, "CANCELLED");
+  assert.equal(await downstreamState((await getRequest(sent.id))!), null, "cancelled requests are not queried");
 });

@@ -20,6 +20,7 @@ async function post(payload: Record<string, unknown>) {
 export function OrderForm({ id }: { id: string }) {
   const isNew = id === "new";
   const [request, setRequest] = useState<AdHocRequest | null>(null);
+  const [cpuCancelled, setCpuCancelled] = useState(false);
   const [draft, setDraft] = useState<AdHocDraft>(() => blankDraft());
   const [loading, setLoading] = useState(!isNew);
   const [oplocs, setOplocs] = useState<OplocOption[]>([]);
@@ -35,7 +36,7 @@ export function OrderForm({ id }: { id: string }) {
     let active = true;
     setLoading(true); setError("");
     void fetch(`/api/requests?id=${encodeURIComponent(id)}`, { cache: "no-store" })
-      .then(async response => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body?.error?.message || "This order could not be loaded."); return body.request as AdHocRequest; })
+      .then(async response => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body?.error?.message || "This order could not be loaded."); setCpuCancelled(Boolean(body.downstream?.cancelled)); return body.request as AdHocRequest; })
       .then(loaded => { if (active) { setRequest(loaded); setDraft(toDraft(loaded)); } })
       .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "This order could not be loaded."); })
       .finally(() => { if (active) setLoading(false); });
@@ -90,7 +91,7 @@ export function OrderForm({ id }: { id: string }) {
   const done = (key: string) => checklist.find(item => item.key === key)?.done ?? false;
   const destination = draft.destination;
   const sendLabel = status === "NEEDS_UPDATE" || (request && isSent(request) && dirty) ? "Send update to CPU" : "Send to CPU";
-  const sendDisabled = Boolean(busy) || readOnly || (status === "SENT_TO_CPU" && !dirty);
+  const sendDisabled = Boolean(busy) || readOnly || cpuCancelled || (status === "SENT_TO_CPU" && !dirty);
 
   return <div className="page order">
     <div className="order-main">
@@ -98,6 +99,7 @@ export function OrderForm({ id }: { id: string }) {
       <div className="title-row"><h1>{isNew ? "New ad-hoc order" : draft.eventName || "Ad-hoc order"}</h1><span className={`chip ${status === "DRAFT" ? "draft" : status === "SENT_TO_CPU" ? "sent" : status === "NEEDS_UPDATE" ? "update" : "cancelled"}`}>{request && isArchived(request) && status === "DRAFT" ? "Archived draft" : STATUS_LABELS[status]}</span>{request && <span className="ref">{request.reference}</span>}</div>
       <p className="lede">Create a bespoke food order to send to CPU Hospitality and Logistics.</p>
       <div aria-live="polite">{notice && <p className="banner ok" role="status">{notice}</p>}{error && <p className="banner error" role="alert">{error}</p>}
+        {cpuCancelled && request && isSent(request) && <p className="banner error" role="status">CPU has cancelled this order, so it is no longer being produced or delivered. Cancel the request from the overview to record that here, or duplicate it to start again.</p>}
         {status === "NEEDS_UPDATE" && <p className="banner warn" role="status">This order changed after it was sent. CPU and Logistics still hold the previous version until you send the update.</p>}
         {readOnly && <p className="banner warn" role="status">{status === "CANCELLED" ? "This order was cancelled and withdrawn from CPU and Logistics." : "This draft is archived."} It is read-only; duplicate it from the overview to start a new order.</p>}</div>
 

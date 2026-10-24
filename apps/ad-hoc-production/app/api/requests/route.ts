@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { setDataTraceOutcome, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { AD_HOC_CATEGORIES, AD_HOC_UNITS, isDate, isTime, londonBusinessDate, weekStart, type AdHocDraft } from "../../../lib/ad-hoc-domain";
-import { archiveRequest, cancelRequest, createRequest, duplicateRequest, getRequest, listRequests, sendToCpu, updateRequest } from "../../../lib/ad-hoc-service";
+import { archiveRequest, cancelRequest, createRequest, downstreamState, duplicateRequest, getRequest, listRequests, sendToCpu, updateRequest } from "../../../lib/ad-hoc-service";
 import { requestActor } from "../../../lib/actor";
 import { resolveOplocDestination } from "../../../lib/hub-oplocs";
 
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
       const who = await actor(req);
       const params = req.nextUrl.searchParams;
       const id = params.get("id");
-      if (id) { const request = await getRequest(id); return request ? NextResponse.json({ request, actor: { name: who.name } }) : NextResponse.json({ error: { message: "Request not found." } }, { status: 404 }); }
+      if (id) { const request = await getRequest(id); return request ? NextResponse.json({ request, downstream: await downstreamState(request), actor: { name: who.name } }) : NextResponse.json({ error: { message: "Request not found." } }, { status: 404 }); }
       const from = params.get("from");
       return NextResponse.json({ requests: await listRequests(isDate(from) ? from : weekStart(londonBusinessDate()), Number(params.get("days")) || 7), actor: { name: who.name } });
     } catch (error) { return fail(error); }
