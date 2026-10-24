@@ -34,3 +34,7 @@ test("Ad Hoc UI never uses native browser dialogs and carries no quote or allerg
     assert.doesNotMatch(source, />\s*(Quotes|Allergen Review)\s*</);
   }
 });
+
+test("Ad-Hoc never re-filters the Hub OPLOC list on lifecycle status (staging uses \"published\", and the Hub already returns only active, permitted OPLOCs)", async () => {
+  for (const file of ["../app/order-form.tsx", "../app/overview.tsx", "../lib/destinations.ts", "../lib/hub-client.ts", "../app/api/oplocs/route.ts"]) assert.doesNotMatch(await read(file), /lifecycleStatus/, file);
+});
