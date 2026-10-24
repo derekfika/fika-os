@@ -1,3 +1,4 @@
+import { isAdHocProductionOrder } from "./ad-hoc-order";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -66,7 +67,7 @@ export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: Pro
   const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
   const signatures = plan.signatures || [];
   if (!signatures.some(signature => signature.role === "production_chef") || !signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures are required for release materialization."), { status: 422 });
-  if (!order.destinationOplocId) throw Object.assign(new Error("The signed CPU allergen checker requires a canonical OPLOC output."), { status: 422 });
+  const adHoc = isAdHocProductionOrder(order);
   const persistPdf = async (kind: "master" | "site", fileName: string, html: string, existing?: MatrixArtifact): Promise<{ kind: "master" | "site"; artifact: MatrixArtifact }> => {
     if (durableArtifact(existing)) return { kind, artifact: existing };
     const pdfPath = isHostedPdfRuntime() ? undefined : path.join(os.tmpdir(), `fika-cpu-matrix-${Date.now()}-${Math.random().toString(36).slice(2)}-${fileName}`);
@@ -79,6 +80,16 @@ export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: Pro
     if (!response.ok || !body?.saved?.fileId) throw Object.assign(new Error(body?.error?.message || "The final allergen checker could not be durably persisted to the configured Drive workspace."), { status: response.status || 503 });
     return { kind, artifact: { id: `allergen-${kind}:${serviceDate}:${contentHash.slice(0, 16)}`, bookingId: order.sourceBookingId, fileName, createdAt: timestamp, createdBy: actor, contentHash, html, ...(pdfPath ? { pdfPath, localUrl: `${(process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400").replace(/\/$/, "")}/api/production-plan?orderId=${encodeURIComponent(order.canonicalId)}&download=pdf` } : {}), pdfStatus: "generated" as const, driveFileId: body.saved.fileId, driveUrl: body.saved.driveUrl, driveStatus: "saved" as const } satisfies MatrixArtifact };
   };
+  if (adHoc) {
+    // Ad-Hoc orders produce ONE signed allergen checker PDF saved to the CPU Drive workspace. They have no Delivered-In site, so no
+    // site bundle, packet or Delivered-In publication is built, even when the order uses an existing OPLOC.
+    const adHocHtml = allergenMatrixHtml({ clientName: order.clientName, destinationLabel: order.destinationLabel || "Ad-Hoc production order", serviceType: order.serviceType, serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems, signatures);
+    const adHocToken = (plan.currentAllergenRelease?.releaseId || "uncommitted").replace(/[^A-Za-z0-9_-]+/g, "-");
+    const pdf = durableArtifact(options.masterArtifact) ? options.masterArtifact : durableArtifact(plan.masterMatrixArtifact) ? plan.masterMatrixArtifact : (await persistPdf("master", `AdHoc-${(order.clientName || "order").replace(/[^A-Za-z0-9._-]+/g, "_")}-${serviceDate}-${adHocToken}-Allergen-Checker.pdf`, adHocHtml, plan.masterMatrixArtifact)).artifact;
+    plan.masterMatrixArtifact = pdf;
+    return { siteArtifact: pdf, masterArtifact: pdf, packetArtifacts: [] as MatrixArtifact[], publish: async () => undefined };
+  }
+  if (!order.destinationOplocId) throw Object.assign(new Error("The signed CPU allergen checker requires a canonical OPLOC output."), { status: 422 });
   const withSource = (item: PlannedMenuItem) => ({ ...item, id: `${order.canonicalId}:${item.id}`, name: order.destinationOplocId ? `${order.destinationOplocId} · ${item.name}` : item.name });
   const masterHtml = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems.map(withSource), signatures);
   const releaseToken = (plan.currentAllergenRelease?.releaseId || "uncommitted").replace(/[^A-Za-z0-9_-]+/g, "-");

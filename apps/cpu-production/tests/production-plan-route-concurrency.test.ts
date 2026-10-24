@@ -830,3 +830,56 @@ test("UAT-HAIKU4 regression: renaming the source order line reopens the reviewed
   assert.equal(after.menuItems[0].subItems[0].evidenceStatus, "not_completed");
   assert.equal(after.menuItems[0].subItems[0].allergenReview, undefined);
 });
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Ad-Hoc Production orders are signed in CPU exactly like Hospitality orders: a lineage bound to the Ad-Hoc request and its
+// amendment revision, two signatures, and a release that any later material edit revokes.
+// ---------------------------------------------------------------------------------------------------------------------------
+test("Ad-Hoc order: mark planned, sign both roles on the Ad-Hoc lineage, then a material edit withdraws signatures and the release", { timeout: 180_000 }, async () => {
+  const requestId = "adhoc-request:route-sign-test";
+  const orderId = `production-order:v1:ad-hoc:${requestId}`;
+  const hub = { status: "accepted", version: 3, materializationCalls: 0 };
+  const current = () => ({ ...orderFor(orderId, "2026-12-17"), origin: "cpu_created", sourceEntityId: requestId, currentRevision: 1, requiresDelivery: true, destinationOplocId: undefined, destinationLabel: "1 Test Street", clientName: "UAT Ad-Hoc", serviceType: "Ad-hoc · Board meeting", status: hub.status, version: hub.version });
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/api/internal/cpu-release-materialize")) { hub.materializationCalls += 1; return new Response(JSON.stringify({ error: { message: "Drive unavailable" } }), { status: 503 }); }
+    if (init?.method === "POST" && url.endsWith("/api/production")) { const body = JSON.parse(String(init.body)) as { status: string }; hub.status = body.status; hub.version += 1; return new Response(JSON.stringify({ order: current() }), { status: 200 }); }
+    if (url.includes("/api/production?canonicalId=")) return new Response(JSON.stringify({ order: current() }), { status: 200 });
+    if (url.includes("/api/production?serviceDate=") || url.includes("/api/production?weekCommencing=")) return new Response(JSON.stringify({ orders: [current()] }), { status: 200 });
+    throw new Error(`Unexpected test fetch: ${url}`);
+  }) as typeof fetch;
+  const route = await importRouteWithTransactionGate();
+  route.open();
+  const { confirmAllergenReviewMap } = await import("../app/lib/allergen-review-state");
+  const confirmed = confirmAllergenReviewMap({ milk: "contains" }).states;
+  const rows = (allergens: Record<string, unknown>, evidenceStatus: string) => [{ id: "menu:1", sourceLineId: `line:${orderId}`, name: "Concurrency dish", note: "", subItems: [{ id: "sub:1", name: "Cheese sandwich", quantity: 4, allergens, note: "", evidenceStatus }] }];
+
+  const created = await post(route.POST, { action: "save-plan", orderId, planningNotes: "", expectedRevision: null, menuItems: rows({ milk: "contains" }, "not_completed") });
+  const createdBody = await created.json();
+  assert.equal(created.status, 200, JSON.stringify(createdBody).slice(0, 300));
+  const planned = await post(route.POST, { action: "mark-planned", orderId, planningNotes: "", expectedRevision: createdBody.revision, menuItems: rows(confirmed, "completed") });
+  const plannedBody = await planned.json();
+  assert.equal(planned.status, 200, JSON.stringify(plannedBody).slice(0, 300));
+  assert.equal(plannedBody.signingLineage?.sourceOrigin, "ad_hoc_production", "Save returns an Ad-Hoc signing lineage");
+  assert.equal(plannedBody.signingLineage?.sourceBookingId, requestId);
+
+  const first = await post(route.POST, signBody(orderId, "production_chef", plannedBody.signingLineage));
+  const firstBody = await first.json();
+  assert.equal(first.status, 200, JSON.stringify(firstBody).slice(0, 300));
+  const second = await post(route.POST, signBody(orderId, "head_chef_site_manager", firstBody.signingLineage ?? plannedBody.signingLineage));
+  const secondBody = await second.json();
+  assert.equal(second.status, 200, JSON.stringify(secondBody).slice(0, 300));
+  const signed = (await storedPlanOf(route.db, orderId))!;
+  assert.equal(signed.signatures.length, 2);
+  assert.equal(signed.currentAllergenRelease.sourceOrigin, "ad_hoc_production");
+  assert.equal(signed.currentAllergenRelease.sourceBookingId, requestId);
+  assert.equal(hub.materializationCalls, 1, "one durable materialisation obligation");
+
+  const edited = await post(route.POST, { action: "save-plan", orderId, planningNotes: "", expectedRevision: signed.updatedAt, menuItems: rows({ milk: "contains", eggs: "contains" }, "not_completed") });
+  assert.equal(edited.status, 200, JSON.stringify(await edited.json()).slice(0, 300));
+  const after = (await storedPlanOf(route.db, orderId))!;
+  assert.equal(after.signatures, undefined);
+  assert.equal(after.currentAllergenRelease, undefined);
+  assert.ok((after.allergenReleaseHistory as Array<{ releaseId: string }>).some(release => release.releaseId === signed.currentAllergenRelease.releaseId), "the withdrawn release is kept as history");
+  assert.ok((after.audit as Array<{ action: string }>).some(entry => entry.action === "allergen-release-revoked"));
+});

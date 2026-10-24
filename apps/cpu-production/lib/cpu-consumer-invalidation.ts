@@ -23,7 +23,7 @@ export type CpuAllergenReleaseEvent = {
   eventType: "published" | "revoked";
   serviceDate: string;
   oplocId: string;
-  sourceOrigin?: "menu_planning" | "hospitality_booking";
+  sourceOrigin?: "menu_planning" | "hospitality_booking" | "ad_hoc_production";
   sourceDayId?: string;
   sourcePublicationDayId?: string;
   sourceBookingId?: string;
