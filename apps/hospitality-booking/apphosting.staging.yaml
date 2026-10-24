@@ -58,7 +58,10 @@ env:
   # The owner is a governed Workspace identity; the DWD credential remains in
   # Secret Manager and is never exposed in repository configuration.
   - variable: GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION
-    value: derek@fikacatering.com
+    value: cpux@fikacatering.com
+    availability: [RUNTIME]
+  - variable: GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID
+    value: 1GUTenN7hFPUnl4_7DK_FsbQLcDbeq5qP
     availability: [RUNTIME]
   - variable: FIKA_PDF_RENDERER_URL
     value: https://fika-pdf-renderer-staging-6tc4airnza-ez.a.run.app
