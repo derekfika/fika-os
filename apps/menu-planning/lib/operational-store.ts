@@ -143,7 +143,7 @@ class SqliteOperationalStore implements MenuPlanningOperationalStore {
       const changedEntries = entryIds.map(id => {
         const entry = rolling.entries.find(candidate => candidate.id === id && candidate.dayId === command.entryDayIds![id]);
         if (!entry) throw Object.assign(new Error("A touched menu entry was not found. Refresh before saving."), { status: 404 });
-        const next = structuredClone(entry); applyRollingEntryPatch(next, command.patch.entries?.[id] || {}); next.audit = [...(entry.audit || []), command.audit];
+        const next = structuredClone(entry); applyRollingEntryPatch(next, command.patch.entries?.[id] || {}, { actor: command.audit.by, at: command.audit.at }); next.audit = [...(entry.audit || []), command.audit];
         rolling.entries[rolling.entries.findIndex(candidate => candidate.id === id)] = next; return next;
       });
       const changedDays = dayIds.map(id => {

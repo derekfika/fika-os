@@ -1,7 +1,7 @@
 import type { RollingDay, RollingEntry, RollingWeek } from "./rolling-menu-types";
-import { normaliseOperationalAllergens } from "./fika-contracts";
+import { confirmRow, confirmationInvalidatedBy, isRowConfirmed, normaliseOperationalAllergens, reopenRow } from "./fika-contracts";
 
-export type RollingEntryPatch = Partial<Pick<RollingEntry, "itemId" | "itemLabel" | "portions" | "slot" | "allocations" | "allergens" | "mayContainNotes" | "allergenReviewInvalidated">>;
+export type RollingEntryPatch = Partial<Pick<RollingEntry, "itemId" | "itemLabel" | "portions" | "slot" | "allocations" | "allergens" | "mayContainNotes" | "allergenReviewInvalidated">> & { confirmAllergenReview?: boolean };
 export type RollingDayPatch = Partial<Pick<RollingDay, "entryIds" | "oneOffDestinations">>;
 export type RollingWeekPatch = Partial<Pick<RollingWeek, "status" | "sourceFiles" | "customSlots" | "removedSlots" | "dayStatuses" | "entryIds">>;
 export type RollingMutationCommand = {
@@ -19,13 +19,37 @@ export type RollingMutationCommand = {
 };
 export type RollingMutationDelta = { week: RollingWeek; days: RollingDay[]; entries: RollingEntry[] };
 
-export function applyRollingEntryPatch(entry: RollingEntry, patch: RollingEntryPatch) {
+export type RollingPatchContext = { actor: string; at: string };
+
+export function applyRollingEntryPatch(entry: RollingEntry, rawPatch: RollingEntryPatch, context?: RollingPatchContext) {
+  // `allergenReview` is server-owned evidence; whatever a client sends under that key is discarded.
+  const { confirmAllergenReview, allergenReview: _clientRecord, ...patch } = rawPatch as RollingEntryPatch & { allergenReview?: unknown };
   const nextItemId = patch.itemId !== undefined ? patch.itemId || "" : entry.itemId || "";
   const nextLabel = patch.itemLabel !== undefined ? String(patch.itemLabel).trim().toLocaleLowerCase() : entry.itemLabel.trim().toLocaleLowerCase();
   const dishChanged = nextItemId !== (entry.itemId || "") || nextLabel !== entry.itemLabel.trim().toLocaleLowerCase();
   const restoringReview = patch.allergenReviewInvalidated === false && patch.allergens !== undefined;
   const normalizedPatch = patch.allergens !== undefined ? { ...patch, allergens: normaliseOperationalAllergens(patch.allergens) } : patch;
   Object.assign(entry, { ...normalizedPatch, ...(patch.itemLabel !== undefined ? { itemLabel: String(patch.itemLabel).trim() } : {}), ...(patch.allergens !== undefined && patch.allergenReviewInvalidated === undefined ? { allergenReviewInvalidated: false } : {}), ...(dishChanged && !restoringReview ? { allergens: {}, mayContainNotes: "", allergenReviewInvalidated: true } : {}) });
+  if (confirmAllergenReview) {
+    // The server stamps the reviewer and time; a client can never supply or forge the confirmation record.
+    if (!context) throw Object.assign(new Error("An authenticated reviewer is required to confirm an allergen review."), { status: 403 });
+    try {
+      const confirmed = confirmRow({ allergens: entry.allergens, identity: entry.itemLabel, mayContainNotes: entry.mayContainNotes, actor: context.actor, now: context.at });
+      Object.assign(entry, { allergens: confirmed.allergens, allergenReview: confirmed.review, allergenReviewInvalidated: false });
+    } catch (error) {
+      throw Object.assign(error instanceof Error ? error : new Error("The allergen review could not be confirmed."), { status: 422 });
+    }
+  } else if (entry.allergenReview) {
+    // A material edit (dish, positives, may-contain note) or an incomplete map ends the confirmation;
+    // derived clears revert to unrecorded so an unchecked row never retains all-clear residue.
+    const stale = dishChanged && !restoringReview
+      ? true
+      : confirmationInvalidatedBy(entry.allergenReview, { identity: entry.itemLabel, allergens: entry.allergens, mayContainNotes: entry.mayContainNotes }) || !isRowConfirmed({ allergens: entry.allergens, review: entry.allergenReview, identity: entry.itemLabel, mayContainNotes: entry.mayContainNotes });
+    if (stale) {
+      delete entry.allergenReview;
+      if (!(dishChanged && !restoringReview)) entry.allergens = reopenRow(entry.allergens);
+    }
+  }
   return dishChanged;
 }
 

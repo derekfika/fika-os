@@ -103,7 +103,7 @@ export class MenuPlanningFirestoreRepository {
         const existing = document.data() as RollingEntry;
         if (existing.dayId !== command.entryDayIds![entryIds[index]]) throw Object.assign(new Error(`A touched menu entry is attached to a different day. Refresh before saving.`), { status: 409 });
         const next = structuredClone(existing);
-        applyRollingEntryPatch(next, command.patch.entries?.[entryIds[index]] || {});
+        applyRollingEntryPatch(next, command.patch.entries?.[entryIds[index]] || {}, { actor: command.audit.by, at: command.audit.at });
         next.audit = [...(existing.audit || []), command.audit];
         transaction.set(entryRefs[index], next);
         changedEntries.push(next);
