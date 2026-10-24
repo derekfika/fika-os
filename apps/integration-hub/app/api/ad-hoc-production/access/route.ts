@@ -8,8 +8,9 @@ import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 // Production access route; read-only.
 async function handleGet(request: NextRequest) {
   try {
-    const { access } = await adHocCaller(request);
-    return NextResponse.json(access, { headers: { "Cache-Control": "no-store" } });
+    const caller = await adHocCaller(request);
+    const scope = request.nextUrl.searchParams.get("oplocs") === "true" ? await caller.loadOplocs() : undefined;
+    return NextResponse.json({ principal: caller.principal, ...(scope ?? {}) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return errorResponse(error, request.headers.get("x-request-id") || undefined); }
 }
 

@@ -6,7 +6,7 @@
 // implementation details, only this wire format.
 
 export const AD_HOC_HUB_API = {
-  /** GET: the caller's identity (from the forwarded session) and authorised OPLOC destinations. */
+  /** GET: the caller's identity (from the forwarded session); add `?oplocs=true` for the authorised OPLOC destinations. */
   access: "/api/ad-hoc-production/access",
   /** GET ?requestId= : authoritative order status. POST: send | cancel. */
   orders: "/api/ad-hoc-production/orders",
@@ -77,7 +77,8 @@ export type AdHocOrderStatus = { canonicalId: string; orderStatus: string; order
 export type AdHocOploc = { canonicalId: string; label: string; address?: string; lifecycleStatus?: string };
 export type AdHocAccess = {
   principal: { id: string; displayName?: string; email?: string };
-  oplocs: AdHocOploc[];
+  /** Present only when requested (`?oplocs=true`). */
+  oplocs?: AdHocOploc[];
   redirects?: Record<string, string>;
 };
 

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse } from "@/lib/api";
-import { adHocCaller, requireAdHocService, type AdHocCaller } from "@/lib/ad-hoc-production-auth";
+import { adHocCaller, authoriseAdHocDestination, requireAdHocService } from "@/lib/ad-hoc-production-auth";
 import { adHocOrderStatus, cancelAdHocProductionOrder, submitAdHocProductionOrder } from "@/lib/production-domain";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
-import { adHocOneOffDestinationId, adHocSendKey, type AdHocOrderInput, type AdHocSendCommand } from "../../../../../shared/ad-hoc-production-contract";
+import type { AdHocOrderInput, AdHocSendCommand } from "../../../../../shared/ad-hoc-production-contract";
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -25,29 +25,6 @@ const Command = z.discriminatedUnion("action", [Send, Cancel]);
 
 const unprocessable = (message: string) => Object.assign(new Error(message), { status: 422, code: "AD_HOC_INVALID_ORDER" });
 
-/**
- * The Hub is the authority for the destination. An OPLOC must be one the caller
- * may use (aliases resolved through Hub redirects) and its label comes from Hub
- * authority, not the caller. A one-off destination must carry exactly the
- * request-scoped identity, so a forged OPLOC-looking id can never pose as one.
- */
-function authoriseDestination(command: AdHocSendCommand, caller: AdHocCaller): { order: AdHocOrderInput; destination: { oplocId?: string; label: string; address?: string } } {
-  const { order, requestId } = command;
-  if (order.sourceEntityId !== requestId) throw unprocessable("The order does not belong to this request.");
-  if (order.sourceVersion !== command.requestVersion) throw unprocessable("The order version does not match the request version.");
-  if (command.idempotencyKey !== adHocSendKey(requestId, command.requestVersion)) throw unprocessable("The idempotency key does not match the request version.");
-  const oneOffId = adHocOneOffDestinationId(requestId);
-  if (order.destinationAddress) {
-    if (order.destinationOplocId !== oneOffId || order.destinationAddress.identity !== oneOffId) throw unprocessable("A one-off destination must use the request-scoped identity.");
-    return { order, destination: { label: order.destinationAddress.label, address: order.destinationAddress.address } };
-  }
-  if (order.destinationOplocId.startsWith("adhoc-destination:")) throw unprocessable("A one-off destination requires an address snapshot.");
-  const canonicalId = caller.access.redirects?.[order.destinationOplocId] || order.destinationOplocId;
-  const oploc = caller.access.oplocs.find(candidate => candidate.canonicalId === canonicalId);
-  if (!oploc) throw Object.assign(new Error("That destination is not an active OPLOC you are authorised to use."), { status: 422, code: "AD_HOC_DESTINATION_NOT_AUTHORISED" });
-  return { order: { ...order, destinationOplocId: oploc.canonicalId, deliveryLocation: oploc.label }, destination: { oplocId: oploc.canonicalId, label: oploc.label, ...(oploc.address ? { address: oploc.address } : {}) } };
-}
-
 async function handleGet(request: NextRequest) {
   try {
     requireAdHocService(request);
@@ -66,7 +43,9 @@ async function handlePost(request: NextRequest) {
     const caller = await adHocCaller(request);
     const command = Command.parse(await request.json().catch(() => { throw unprocessable("A JSON body is required."); }));
     if (command.action === "cancel") return NextResponse.json(await cancelAdHocProductionOrder(caller.actor, command.requestId, command.reason), { headers: { "Cache-Control": "no-store" } });
-    const { order, destination } = authoriseDestination(command, caller);
+    // OPLOC authority is read only for OPLOC destinations; one-off destinations never touch it.
+    const scope = !command.order.destinationAddress ? await caller.loadOplocs() : undefined;
+    const { order, destination } = authoriseAdHocDestination(command, scope);
     const result = await submitAdHocProductionOrder(caller.actor, order, command.idempotencyKey);
     return NextResponse.json({ ...result, destination }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
