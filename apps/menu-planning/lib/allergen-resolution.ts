@@ -1,5 +1,6 @@
 import { CANONICAL_ALLERGEN_KEYS, deriveNoKeyAllergens, normaliseOperationalAllergens, type CanonicalAllergenMap } from "./fika-contracts";
 import type { RollingEntry } from "./rolling-menu-types";
+import { isRowConfirmed } from "./fika-contracts";
 
 type Evidence = { allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown" };
 export type CanonicalDishAllergenSource = { canonicalId: string; displayName: string; allergenEvidence: Evidence[]; mayContainReviewed: boolean; mayContainNotes?: string };
@@ -11,10 +12,12 @@ export type AllergenEvidenceStatus = "confirmed" | "unreviewed" | "missing" | "c
 export type AllergenResolution = { allergens: CanonicalAllergenMap; mayContainNotes?: string; unresolved: string[]; evidenceStatus: AllergenEvidenceStatus; evidenceReason?: string; structuralIssue?: boolean };
 
 /** Resolves the exact operational allergen snapshot used by readiness, preview, hashing and publication. */
-export function resolveAllergenSnapshot(entry: Pick<RollingEntry, "allergens" | "allergenReviewInvalidated" | "itemId" | "itemLabel">, canonicalDish?: CanonicalDishAllergenSource): AllergenResolution {
+export function resolveAllergenSnapshot(entry: Pick<RollingEntry, "allergens" | "allergenReviewInvalidated" | "itemId" | "itemLabel"> & Partial<Pick<RollingEntry, "allergenReview" | "mayContainNotes">>, canonicalDish?: CanonicalDishAllergenSource): AllergenResolution {
   const explicit = normaliseOperationalAllergens(entry.allergens || {});
   if (entry.itemId && (!canonicalDish || canonicalDish.canonicalId !== entry.itemId)) return { allergens: missingMap(), mayContainNotes: undefined, unresolved: ["The referenced canonical dish is not available from the authoritative catalogue."], evidenceStatus: "conflicting", evidenceReason: "authoritative-catalogue-dish-missing", structuralIssue: true };
   const hasExplicitReview = entry.allergenReviewInvalidated === false;
+  // A recorded confirmation that no longer matches the present inputs never counts: the row needs a recheck.
+  if (hasExplicitReview && entry.allergenReview && !isRowConfirmed({ allergens: explicit, review: entry.allergenReview, identity: entry.itemLabel, mayContainNotes: entry.mayContainNotes })) return { allergens: missingMap(), mayContainNotes: undefined, unresolved: ["The allergen confirmation is out of date and must be rechecked."], evidenceStatus: "unreviewed", evidenceReason: "menu-entry-review-stale" };
   if (hasExplicitReview) return { allergens: explicit, mayContainNotes: undefined, unresolved: completeMap(explicit) ? [] : ["The menu-entry allergen review is incomplete."], evidenceStatus: completeMap(explicit) ? "confirmed" : "unreviewed", evidenceReason: completeMap(explicit) ? undefined : "menu-entry-review-incomplete" };
   if (entry.allergenReviewInvalidated === true) return { allergens: missingMap(), mayContainNotes: undefined, unresolved: ["The menu-entry allergen review was invalidated after the dish changed."], evidenceStatus: "unreviewed", evidenceReason: "menu-entry-review-invalidated" };
   if (!canonicalDish) return { allergens: missingMap(), mayContainNotes: undefined, unresolved: ["No governed allergen evidence is available for this dish."], evidenceStatus: "missing", evidenceReason: "no-governed-allergen-evidence" };

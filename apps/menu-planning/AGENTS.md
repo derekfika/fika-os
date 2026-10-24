@@ -10,6 +10,10 @@ Root [AGENTS.md](../../AGENTS.md) applies. Menu Planning owns menu intent, dish 
 - Shared [weekly publication packets](../../packages/server-shared/src/weekly-publication-packet.ts), read packages and canonical production adapters feed CPU/Delivered-In. Validate the producer and directly affected consumers when changing schema, identity, quantities or invalidation.
 - For packages/caches read detailed §§5.1–5.4: distinguish recoverable absence, stale and integrity failure; raw gzip hashes precede decompression. Provide historical/pre-migration compatibility, not only new-write support.
 
+## Allergen review confirmation
+
+- A menu entry's blank allergens are Clear only after the reviewer presses **Mark reviewed** (`confirmAllergenReview`). The server (`applyRollingEntryPatch`) stamps `allergenReview` (reviewer, time, fingerprint) through the shared `apps/shared/allergen-review.ts`; a client-supplied record is discarded. Dish rename, a changed positive or a changed may-contain note reopens the row and reverts derived clears to unrecorded. Legacy fully explicit rows without a record keep their meaning.
+
 ## UI and validation
 
 - Root Style Guide applies to planner grids, publication controls, statuses and empty/blank states. Keep keyboard access, clear version/conflict errors and explicit publish/withdraw actions.

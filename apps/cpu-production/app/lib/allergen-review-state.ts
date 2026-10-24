@@ -70,18 +70,6 @@ export function confirmAllergenReviewMap(
   };
 }
 
-export function allergenReviewCompletionMessage(
-  unresolvedKeys: CanonicalAllergenKey[],
-) {
-  const labels = unresolvedKeys
-    .flatMap((key) => {
-      const column = CANONICAL_ALLERGEN_COLUMNS.find(([candidate]) => candidate === key);
-      return column ? [column[1]] : [];
-    });
-  const noun = unresolvedKeys.length === 1 ? "state" : "states";
-  return `Resolve ${unresolvedKeys.length} Not recorded allergen ${noun} before marking this dish checked.${labels.length ? ` Remaining: ${labels.join(", ")}.` : ""}`;
-}
-
 export function checkpointAllergenReviewRow(
   states: Record<string, Record<string, OperationalAllergenState>>,
   checkedRows: ReadonlySet<string>,

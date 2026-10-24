@@ -5,6 +5,7 @@ import { CANONICAL_ALLERGEN_KEYS, isCompleteOperationalAllergenMap, normaliseOpe
 import { applyHospitalityCellClick, derivedNoKeyState } from "../app/ui/allergen-cell-state";
 import { isSigningAvailable, reviewFingerprint, savedFingerprintAfterSave } from "../app/lib/allergen-review-session";
 import { LEGACY_PLAN_REVISION, planRevisionToken, reviewRevisionConflict } from "../app/lib/production-plan-state";
+import { confirmAllergenReviewMap } from "../app/lib/allergen-review-state";
 import { createProductionPlanRepository } from "../lib/production-plan-repository";
 import type { PlannedMenuItem, ProductionPlan } from "../app/lib/production-plan";
 
@@ -168,4 +169,17 @@ test("amendment and source-lineage changes still revoke signatures and require a
   const component = read("../app/ui/HospitalityAllergenDetail.tsx");
   assert.match(component, /const markMatrixEdited = \(\) => \{[\s\S]*?setSignatures\(\[\]\);[\s\S]*?setCurrentAllergenRelease\(undefined\);[\s\S]*?setPlanStatus\("planning"\);/);
   assert.notEqual(reviewFingerprint(items(complete), ""), reviewFingerprint(items({ ...complete, milk: "may_contain" }), ""), "an amended allergen changes the reviewed content, so the old saved review no longer matches");
+});
+
+test("editing a confirmed row reopens it: earlier derived Clears revert to unrecorded and only positives remain", () => {
+  const confirmed = confirmAllergenReviewMap({ gluten: "contains" }).states;
+  assert.equal(confirmed.eggs, "clear");
+  const edited = applyHospitalityCellClick(confirmed, "milk");
+  assert.equal(edited.gluten, "contains");
+  assert.equal(edited.milk, "contains");
+  assert.equal(edited.eggs, undefined, "a derived Clear never survives an edit of an unchecked row");
+  assert.equal(isCompleteOperationalAllergenMap(edited), false);
+  const emptied = applyHospitalityCellClick(applyHospitalityCellClick(applyHospitalityCellClick({}, "fish"), "fish"), "fish");
+  assert.equal(emptied.fish, undefined);
+  assert.equal(emptied.no_key_allergens, "unrecorded");
 });

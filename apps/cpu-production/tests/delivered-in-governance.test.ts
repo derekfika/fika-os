@@ -31,7 +31,7 @@ test("CPU allergen review is a full-screen editable master-sign workflow", () =>
   assert.match(reviewPage, /ALLERGEN REVIEW/);
   assert.match(reviewPage, /URLSearchParams/);
   assert.match(reviewPage, /SignatureModal/);
-  assert.match(reviewMatrix, /toggleOperationalAllergen/);
+  assert.match(reviewMatrix, /applyHospitalityCellClick/);
   assert.match(reviewMatrix, /action: "save-plan"/);
   assert.match(reviewMatrix, /Mark checked/);
   assert.doesNotMatch(reviewMatrix, /Acknowledge approved data|Save CPU review|Mark ready for signature/);
