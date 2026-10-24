@@ -18,6 +18,7 @@ import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
 import { buildCpuAllergenReleaseEvent, eventTypeForConsumers, notifyCpuConsumerInvalidations, notifyDeliveredInAllergenRelease } from "../../../lib/cpu-consumer-invalidation";
 import { deliverCpuPropagation, replayCpuPropagation, type CpuDurableDeliveryInput } from "../../../lib/cpu-durable-outbox";
+import { stampAllergenReviews } from "../../lib/allergen-review-stamp";
 import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRelease } from "../../../lib/cpu-allergen-release";
 import { releaseMaterializationDelivery, retryCommittedCpuMaterialization } from "../../../lib/cpu-retry-materialization";
 import { cpuMasterReviewId } from "../../../lib/cpu-master-review";
@@ -160,8 +161,9 @@ function strictServerAllergens(raw: Record<string, unknown> | undefined) {
   delete named.no_key_allergens;
   return deriveNoKeyAllergens(named);
 }
-function normalisePlanAllergens(plan: ProductionPlan): ProductionPlan {
-  return { ...plan, menuItems: plan.menuItems.map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, allergens: strictServerAllergens(sub.allergens) })) })) };
+function normalisePlanAllergens(plan: ProductionPlan, previous?: { items: PlannedMenuItem[]; actor: string }): ProductionPlan {
+  const normalised = { ...plan, menuItems: plan.menuItems.map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, allergens: strictServerAllergens(sub.allergens) })) })) };
+  return previous ? { ...normalised, menuItems: stampAllergenReviews(previous.items, normalised.menuItems, previous.actor, now()) } : normalised;
 }
 function assertAllergenMatrixComplete(menuItems: PlannedMenuItem[], context: string) {
   if (!isProductionPlanMatrixComplete(menuItems)) throw Object.assign(new Error(`Record every allergen state, including No key allergens, before ${context}.`), { status: 422, code: "CPU_ALLERGEN_REVIEW_INCOMPLETE" });
@@ -303,7 +305,7 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
     const reviewOperation = reviewByOrderId.get(order.canonicalId)!;
     const expectedLineage = expectedByOrderId.get(order.canonicalId)!;
     if (plan.status !== "planned" && plan.status !== "planning") throw Object.assign(new Error(`The allergen matrix for ${order.destinationLabel || order.canonicalId} is not available for signing.`), { status: 422 });
-    const reviewedPlan = await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: reviewOperation.menuItems }).menuItems }, order.canonicalId, order);
+    const reviewedPlan = await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: reviewOperation.menuItems }, { items: plan.menuItems, actor: auditActor }).menuItems }, order.canonicalId, order);
     if (hasAllergenAuthority(plan) && !allergenAuthorityMatchesOrder(plan, order, reviewedPlan.menuItems)) throw Object.assign(new Error("Reopen the allergen review before changing a signed matrix."), { status: 409, code: "CPU_REVIEW_REOPEN_REQUIRED" });
     const currentMenuContentHash = menuContentHash(plan.menuItems);
     const reviewedMenuContentHash = menuContentHash(reviewedPlan.menuItems);
@@ -454,7 +456,7 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
     if (!event.duplicate && releaseDeliveries[0]) await deliverCpuPropagation(releaseDeliveries[0].eventId);
     return { orderId: operation.orderId, plan, serviceDate: changedOrder.serviceDate, sequence: event.sequence, changed: true };
   }
-  const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: operation.menuItems }).menuItems }, operation.orderId, order)).menuItems;
+  const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: operation.menuItems }, { items: plan.menuItems, actor: auditActor }).menuItems }, operation.orderId, order)).menuItems;
   const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
   const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, order, nextMenuItems);
   const authorityMatches = allergenAuthorityMatchesOrder(plan, order, nextMenuItems);
@@ -659,7 +661,7 @@ async function handlePost(request: NextRequest) {
     if (command.action === "clarify") { plan.status = "needs_clarification"; plan.clarificationNote = command.note; plan.audit.push({ action: "clarification-requested", at: timestamp, by: auditActor, reason: command.note }); updateLocalFixture(command.orderId, order => ({ ...order, status: "needs_clarification", version: order.version + 1 })); }
     if (command.action === "clarify") await syncCanonicalLifecycle(request, command.orderId, "needs_clarification", command.note);
     if (command.action === "save-plan") {
-      const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
+      const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }, { items: plan.menuItems, actor: auditActor }).menuItems }, command.orderId)).menuItems;
       const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
       const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, currentOrder, nextMenuItems);
       const authorityMatches = allergenAuthorityMatchesOrder(plan, currentOrder, nextMenuItems);
@@ -685,7 +687,7 @@ async function handlePost(request: NextRequest) {
       updateLocalFixture(command.orderId, order => ({ ...order, status: "planning", version: order.version + 1 }));
     }
     if (command.action === "mark-planned") {
-      const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
+      const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }, { items: plan.menuItems, actor: auditActor }).menuItems }, command.orderId)).menuItems;
       const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
       const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, currentOrder, nextMenuItems);
       const authorityMatches = allergenAuthorityMatchesOrder(plan, currentOrder, nextMenuItems);
