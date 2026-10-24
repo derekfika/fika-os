@@ -5,6 +5,9 @@
   "scripts": {
     "fika": "node tools/workflow/cli.mjs",
     "test:workflow": "node --test tools/workflow/*.test.mjs",
+    "deploy:dashboard": "node tools/deploy-dashboard/server.mjs",
+    "deploy:agent": "node tools/deploy-dashboard/agent.mjs",
+    "test:dashboard": "node --test tools/deploy-dashboard/dashboard.test.mjs",
     "dev": "node tools/dev/supervisor.mjs",
 
     "dev:hub": "npm --prefix apps/integration-hub run dev",
