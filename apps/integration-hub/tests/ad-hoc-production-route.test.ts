@@ -29,7 +29,7 @@ const requirementsFor = async (orderId: string) => (await db.collection("fikaFul
 test("the synthetic local identity is impossible outside a local, non-production, non-hosted Hub", () => {
   assert.equal(localAdHocServiceAllowed({ NODE_ENV: "development" }), true);
   assert.equal(localAdHocServiceAllowed({ NODE_ENV: "test", FIKA_RUNTIME_MODE: "local" }), true);
-  for (const env of [{ NODE_ENV: "production" }, { NODE_ENV: "production", FIKA_RUNTIME_MODE: "local" }, { NODE_ENV: "development", FIKA_RUNTIME_MODE: "staging" }, { NODE_ENV: "development", FIKA_RUNTIME_MODE: "production" }, { NODE_ENV: "development", K_SERVICE: "hub" }, { NODE_ENV: "test", FIREBASE_CONFIG: "{}" }, { NODE_ENV: "development", GAE_ENV: "standard" }]) {
+  for (const env of [{ NODE_ENV: "production" }, { NODE_ENV: "production", FIKA_RUNTIME_MODE: "local" }, { NODE_ENV: "development", FIKA_RUNTIME_MODE: "staging" }, { NODE_ENV: "development", FIKA_RUNTIME_MODE: "production" }, { NODE_ENV: "development", K_SERVICE: "hub" }, { NODE_ENV: "development", GAE_ENV: "standard" }]) {
     assert.equal(localAdHocServiceAllowed(env), false, JSON.stringify(env));
   }
 });

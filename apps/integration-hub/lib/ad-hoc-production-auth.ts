@@ -18,7 +18,8 @@ const APP_ID = "ad-hoc-production";
 export function localAdHocServiceAllowed(env: Record<string, string | undefined> = process.env) {
   if (env.NODE_ENV === "production") return false;
   if ((env.FIKA_RUNTIME_MODE || "local") !== "local") return false;
-  if (env.K_SERVICE || env.FUNCTION_TARGET || env.FIREBASE_CONFIG || env.GAE_ENV) return false;
+  // K_SERVICE is set on Cloud Run (App Hosting); FIREBASE_CONFIG is deliberately not used: the local emulator tooling sets it too.
+  if (env.K_SERVICE || env.FUNCTION_TARGET || env.GAE_ENV) return false;
   return true;
 }
 
