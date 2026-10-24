@@ -42,7 +42,14 @@ async function handlePost(request: NextRequest) {
     requireAdHocService(request);
     const caller = await adHocCaller(request);
     const command = Command.parse(await request.json().catch(() => { throw unprocessable("A JSON body is required."); }));
-    if (command.action === "cancel") return NextResponse.json(await cancelAdHocProductionOrder(caller.actor, command.requestId, command.reason), { headers: { "Cache-Control": "no-store" } });
+    if (command.action === "cancel") {
+      try { return NextResponse.json(await cancelAdHocProductionOrder(caller.actor, command.requestId, command.reason), { headers: { "Cache-Control": "no-store" } }); }
+      catch (error) {
+        // errorResponse rewrites 404s into booking wording; keep the Ad-Hoc meaning explicit.
+        if ((error as { code?: string }).code === "AD_HOC_ORDER_NOT_FOUND") return NextResponse.json({ error: { code: "AD_HOC_ORDER_NOT_FOUND", message: "No Production Order exists for this request." } }, { status: 404, headers: { "Cache-Control": "no-store" } });
+        throw error;
+      }
+    }
     // OPLOC authority is read only for OPLOC destinations; one-off destinations never touch it.
     const scope = !command.order.destinationAddress ? await caller.loadOplocs() : undefined;
     const { order, destination } = authoriseAdHocDestination(command, scope);
