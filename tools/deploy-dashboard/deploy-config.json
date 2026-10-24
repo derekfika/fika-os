@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "_comment": "Authority for app ids, Firebase project/backend mappings and ADVISORY agent assignments. NOT the authority for deployed versions: those are read live from Firebase App Hosting. Agent assignments never block or trigger a deployment.",
+  "region": "europe-west4",
+  "repository": "derekfika/fika-os",
+  "apps": [
+    { "id": "hub", "name": "Integration Hub", "path": "apps/integration-hub", "agent": "free", "assignment": null,
+      "staging": { "project": "fika-os-dev", "backend": "fika-os-staging" },
+      "production": { "project": "fika-os", "backend": "fika-os-prod-hub" } },
+    { "id": "cpu", "name": "CPU Production", "path": "apps/cpu-production", "agent": "free", "assignment": null,
+      "staging": { "project": "fika-os-dev", "backend": "fika-cpu-production-staging" },
+      "production": { "project": "fika-os", "backend": "fika-os-prod-cpu" } },
+    { "id": "logistics", "name": "Logistics", "path": "apps/logistics", "agent": "free", "assignment": null,
+      "staging": { "project": "fika-os-dev", "backend": "fika-logistics-staging" },
+      "production": { "project": "fika-os", "backend": "fika-os-prod-logistics" } },
+    { "id": "delivered-in", "name": "Delivered-In", "path": "apps/delivered-in", "agent": "free", "assignment": null,
+      "staging": { "project": "fika-os-dev", "backend": "fika-delivered-in-staging" },
+      "production": { "project": "fika-os", "backend": "fika-os-prod-deliveredin" } },
+    { "id": "hospitality", "name": "Hospitality", "path": "apps/hospitality-booking", "agent": "free", "assignment": null,
+      "staging": { "project": "fika-os-dev", "backend": "fika-hospitality-staging" },
+      "production": { "project": "fika-os", "backend": "fika-os-prod-hospitality" } },
+    { "id": "menu", "name": "Menu Planner", "path": "apps/menu-planning", "agent": "free", "assignment": null,
+      "staging": { "project": "fika-os-dev", "backend": "fika-menu-planning-staging" },
+      "production": { "project": "fika-os", "backend": "fika-os-prod-menu" } },
+    { "id": "adhoc", "name": "Ad-Hoc Production", "path": "apps/ad-hoc-production", "agent": "free", "assignment": null,
+      "staging": { "project": "fika-os-dev", "backend": "fika-os-staging-adhoc" },
+      "production": { "project": "fika-os", "backend": "fika-os-prod-adhoc" } }
+  ]
+}

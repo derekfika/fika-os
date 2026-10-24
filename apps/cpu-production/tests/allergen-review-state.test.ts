@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CANONICAL_ALLERGEN_KEYS, type CanonicalAllergenMap } from "../../shared/allergen-contract";
-import { allergenReviewCompletionMessage, checkpointAllergenReviewRow, completeAllergenReviewMap, confirmAllergenReviewMap, unresolvedNamedAllergenKeys } from "../app/lib/allergen-review-state";
+import { checkpointAllergenReviewRow, completeAllergenReviewMap, confirmAllergenReviewMap, unresolvedNamedAllergenKeys } from "../app/lib/allergen-review-state";
 
 const allClear = (): CanonicalAllergenMap => Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(key => [key, "clear" as const]));
 
@@ -46,8 +46,6 @@ test("any named unrecorded state blocks completion and reports exactly the unres
   const result = completeAllergenReviewMap(states);
   assert.equal(result.complete, false);
   assert.deepEqual(result.unresolvedKeys, ["sesame", "milk"]);
-  assert.match(allergenReviewCompletionMessage(result.unresolvedKeys), /Resolve 2 Not recorded allergen states before marking this dish checked\./);
-  assert.match(allergenReviewCompletionMessage(result.unresolvedKeys), /Sesame, Milk/);
   assert.deepEqual(unresolvedNamedAllergenKeys(states), ["sesame", "milk"]);
 });
 

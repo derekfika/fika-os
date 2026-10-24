@@ -351,7 +351,7 @@ async function handlePost(request: NextRequest) {
         String(body.weekId),
         String(body.entryId),
         (body.patch || {}) as never,
-        actor.uid,
+        actor.email || actor.uid,
         liveOplocs,
         Number(body.expectedWeekVersion),
         body.dayId ? String(body.dayId) : undefined,

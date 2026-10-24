@@ -19,7 +19,7 @@ import "./hospitality-allergen-detail.css";
 import { mayContainNotes } from "./allergen-matrix";
 import { isCompleteOperationalAllergenMap, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
 import { matrixColumns } from "./allergen-matrix";
-import { applyHospitalityCellClick, cellLabel, cellState, derivedNoKeyState, emptyAllergens, hydrateSavedAllergens } from "./allergen-cell-state";
+import { applyHospitalityCellClick, rowReviewBadge, cellLabel, cellState, derivedNoKeyState, emptyAllergens, hydrateSavedAllergens } from "./allergen-cell-state";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 import { canonicalAllergenMatrixForHash } from "../../../shared/allergen-matrix-hash";
 const allergenColumns = matrixColumns;
@@ -512,6 +512,7 @@ export default function HospitalityAllergenDetail({
       evidenceStatus: "not_completed",
     });
   };
+  const [locallyChecked, setLocallyChecked] = useState<Set<string>>(() => new Set());
   const completeSubItem = (menuId: string, sub: PlannedSubItem) => {
     if (reviewLockedByAuthority || (sub.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys(sub.allergens).length)) return;
     // Mark checked is the chef's explicit confirmation of the whole displayed row: white cells become confirmed Clear,
@@ -519,6 +520,7 @@ export default function HospitalityAllergenDetail({
     const completion = confirmAllergenReviewMap(sub.allergens);
     markMatrixEdited();
     setRowErrors((current) => { const next = { ...current }; delete next[sub.id]; return next; });
+    setLocallyChecked(current => new Set(current).add(sub.id));
     updateSubItem(menuId, sub.id, { allergens: completion.states, evidenceStatus: "completed" });
   };
   const applySandwich = (menuId: string, sub: PlannedSubItem, id: string) => {
@@ -1090,6 +1092,7 @@ export default function HospitalityAllergenDetail({
                                     ? "Reopen review to amend"
                                     : "Mark checked"}
                               </button>
+                              <span className={`review-badge review-badge--${rowReviewBadge(sub, locallyChecked.has(sub.id)).tone}`} data-testid={`review-badge-${sub.id}`}>{rowReviewBadge(sub, locallyChecked.has(sub.id)).text}</span>
                               {rowErrors[sub.id] && <p className="matrix-row-error" role="alert">{rowErrors[sub.id]}</p>}
                             </td>
                           </tr>

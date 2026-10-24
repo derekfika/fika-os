@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CANONICAL_ALLERGEN_COLUMNS, resolveNoKeyAllergenState, toggleOperationalAllergen, type CanonicalAllergenKey, type OperationalAllergenState } from "../../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_COLUMNS, resolveNoKeyAllergenState, type OperationalAllergenState } from "../../../shared/allergen-contract";
+import { applyHospitalityCellClick } from "./allergen-cell-state";
 import type { ProductionOrder } from "../../lib/production-types";
 import type { AllergenReviewRow } from "../../lib/production-day";
 import { bookingContextEntries } from "./BookingContext";
@@ -432,7 +433,7 @@ export default function AllergenReviewMatrix({
     if (busy || locked) return;
     const nextStates = {
       ...latestStatesRef.current,
-      [rowKey]: toggleOperationalAllergen(latestStatesRef.current[rowKey] || {}, key as CanonicalAllergenKey),
+      [rowKey]: applyHospitalityCellClick(latestStatesRef.current[rowKey] || {}, key),
     };
     latestStatesRef.current = nextStates;
     const nextCheckedRows = new Set(latestCheckedRowsRef.current);
