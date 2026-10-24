@@ -52,7 +52,7 @@ test("destination authority: OPLOCs resolve through authorised scope and Hub red
 
 test("production-shaped runtime: no session means 401 and the service token alone never authenticates a user", async () => {
   // The Hub client module points at the emulator in local mode at import time; hosted modes forbid that.
-  await withEnv({ NODE_ENV: "production", FIKA_RUNTIME_MODE: "staging", FIKA_INTERNAL_API_TOKEN: "secret", FIRESTORE_EMULATOR_HOST: undefined, FIREBASE_PROJECT_ID: "demo-fika-os" }, async () => {
+  await withEnv({ NODE_ENV: "production", FIKA_RUNTIME_MODE: "staging", FIKA_INTERNAL_API_TOKEN: "secret", FIRESTORE_EMULATOR_HOST: undefined, FIREBASE_AUTH_EMULATOR_HOST: undefined, FIREBASE_PROJECT_ID: "demo-fika-os" }, async () => {
     const withToken = { [AD_HOC_SERVICE_TOKEN_HEADER]: "secret" };
     assert.equal((await ordersPost(call("POST", AD_HOC_HUB_API.orders, send("adhoc-request:1"), withToken))).status, 401);
     assert.equal((await ordersGet(call("GET", `${AD_HOC_HUB_API.orders}?requestId=adhoc-request:1`, undefined, withToken))).status, 401);
