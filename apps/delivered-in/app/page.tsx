@@ -16,6 +16,10 @@ import { deliveredInHref, readDeliveredInLocation } from "../lib/navigation";
 import AllergenSafetyNotice from "./allergen-safety-notice";
 import { cpuReviewStatusLabel } from "./lib/cpu-review-status";
 import { publicHubBase } from "../lib/upstream-config";
+import {
+  DELIVERED_IN_DASHBOARD_LOAD_TIMEOUT_MS,
+  withDeliveredInLoadTimeout,
+} from "../lib/dashboard-load-timeout";
 type ProjectionHeadEntry = {
   serviceDate: string;
   projectionVersion: number;
@@ -534,10 +538,13 @@ export default function Page() {
       const headParams = new URLSearchParams("head=1");
       if (oplocId) headParams.set("oplocId", oplocId);
       if (requestedWeek) headParams.set("week", requestedWeek);
-      const headResponse = await fetch(`/api/delivered-in?${headParams}`, {
-        cache: "no-store",
-      });
-      const head = (await headResponse.json()) as ProjectionHead;
+      const { response: headResponse, body: head } =
+        await withDeliveredInLoadTimeout(async () => {
+          const response = await fetch(`/api/delivered-in?${headParams}`, {
+            cache: "no-store",
+          });
+          return { response, body: (await response.json()) as ProjectionHead };
+        });
       if (!current()) return;
       if (!headResponse.ok) {
         if (await redirectForSessionFailure(headResponse, current)) return;
@@ -548,9 +555,8 @@ export default function Page() {
         : "";
       setSelectedSiteId(nextSite);
       const accountScope = head.access.email.toLowerCase();
-      const cachedDays = await readCachedDeliveredInDays(
-        accountScope,
-        nextSite,
+      const cachedDays = await withDeliveredInLoadTimeout(() =>
+        readCachedDeliveredInDays(accountScope, nextSite),
       );
       if (!current()) return;
       const activeEntries = head.entries.filter(
@@ -583,11 +589,15 @@ export default function Page() {
       if (!matches) {
         const responseParams = new URLSearchParams({ oplocId: nextSite });
         if (requestedWeek) responseParams.set("week", requestedWeek);
-        const response = await fetch(
-          `/api/delivered-in?${responseParams}`,
-          { cache: "no-store" },
+        const { response, body } = await withDeliveredInLoadTimeout(
+          async () => {
+            const response = await fetch(
+              `/api/delivered-in?${responseParams}`,
+              { cache: "no-store" },
+            );
+            return { response, body: (await response.json()) as Dashboard };
+          },
         );
-        const body = (await response.json()) as Dashboard;
         if (!current()) return;
         if (!response.ok) {
           setDashboard(undefined);
@@ -607,11 +617,14 @@ export default function Page() {
         head.withdrawnServiceDates || [],
       );
       setError("");
-    } catch {
+    } catch (cause) {
       if (!current()) return;
       setDashboard(undefined);
       setError(
-        "This dashboard is temporarily unavailable. Please check back shortly.",
+        cause instanceof Error &&
+          cause.message === "Delivered-In dashboard loading timed out."
+          ? `This dashboard did not finish loading within ${DELIVERED_IN_DASHBOARD_LOAD_TIMEOUT_MS / 1000} seconds. Please refresh once; if the issue continues, contact Support with the selected site and week.`
+          : "This dashboard is temporarily unavailable. Please refresh once; if the issue continues, contact Support with the selected site and week.",
       );
     }
   };
