@@ -184,10 +184,10 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
   assertAuthorisedOploc(access, selectedOplocId);
   const site = sites.find(candidate => candidate.oplocId === selectedOplocId) || { oplocId: selectedOplocId, label: selectedOplocId };
   if (options.usePackages !== false) {
-    let discovered = await readProjectionWindow(selectedOplocId);
+    let discovered = await readProjectionWindow(selectedOplocId, operationalDateLondon(), options.requestedWeek);
     if (options.requestedWeek) {
       await recoverRequestedWeek(request, selectedOplocId, options.requestedWeek, discovered.unavailableServiceDates);
-      discovered = await readProjectionWindow(selectedOplocId);
+      discovered = await readProjectionWindow(selectedOplocId, operationalDateLondon(), options.requestedWeek);
     }
     const weeks = weeksFromProjectionDays(discovered.days);
     const requested = options.requestedWeek && !weeks.some(week => week.weekCommencing === options.requestedWeek) ? emptyWeek(options.requestedWeek) : undefined;
@@ -251,17 +251,21 @@ export async function projectionHead(request: NextRequest, requestedOplocId?: st
   return { access, sites, selectedOplocId, projectionState: window.state, weeks, entries: window.entries, withdrawnServiceDates: window.withdrawnServiceDates, unavailableServiceDates: window.unavailableServiceDates };
 }
 
-export function projectionWindowBounds(asOf = operationalDateLondon()) {
+export function projectionWindowBounds(asOf = operationalDateLondon(), requestedWeek?: string) {
+  if (requestedWeek) {
+    const from = mondayOf(requestedWeek);
+    return { from, to: addDays(from, 6) };
+  }
   const from = mondayOf(asOf);
   return { from, to: addDays(from, DELIVERED_IN_PROJECTION_HORIZON_DAYS) };
 }
 
-export function boundedProjectionIndexEntries(entries: DeliveredInProjectionIndexEntry[], asOf = operationalDateLondon()) {
-  const { from, to } = projectionWindowBounds(asOf);
+export function boundedProjectionIndexEntries(entries: DeliveredInProjectionIndexEntry[], asOf = operationalDateLondon(), requestedWeek?: string) {
+  const { from, to } = projectionWindowBounds(asOf, requestedWeek);
   return entries
     .filter(entry => entry.serviceDate >= from && entry.serviceDate <= to)
     .sort((a, b) => a.serviceDate.localeCompare(b.serviceDate))
-    .slice(0, DELIVERED_IN_MAX_DAY_PACKAGES);
+    .slice(0, requestedWeek ? 7 : DELIVERED_IN_MAX_DAY_PACKAGES);
 }
 
 export function publishedWeeksFromProjectionIndex(entries: DeliveredInProjectionIndexEntry[]) {
@@ -271,8 +275,8 @@ export function publishedWeeksFromProjectionIndex(entries: DeliveredInProjection
     .values()].sort((a, b) => b.weekCommencing.localeCompare(a.weekCommencing));
 }
 
-async function readProjectionWindow(oplocId: string, asOf = operationalDateLondon()) {
-  const indexWindow = await readProjectionIndexWindow(oplocId, asOf);
+async function readProjectionWindow(oplocId: string, asOf = operationalDateLondon(), requestedWeek?: string) {
+  const indexWindow = await readProjectionIndexWindow(oplocId, asOf, requestedWeek);
   if (indexWindow.state === "unavailable" && !indexWindow.entries.length && !indexWindow.withdrawnServiceDates.length) return { days: [] as DeliveredInDayProjection[], withdrawnServiceDates: [], unavailableServiceDates: [], state: "unavailable" as const };
   const { entries, withdrawnServiceDates } = indexWindow;
   const results = await Promise.all(entries.map(async entry => {
@@ -293,7 +297,7 @@ async function readProjectionWindow(oplocId: string, asOf = operationalDateLondo
 async function readProjectionIndexWindow(oplocId: string, asOf = operationalDateLondon(), requestedWeek?: string) {
   const index = await readDeliveredInProjectionIndex(oplocId, requestedWeek).catch(() => undefined);
   if (!index) return { entries: [], weeks: [], withdrawnServiceDates: [], unavailableServiceDates: [], state: "unavailable" as const };
-  const inWindow = boundedProjectionIndexEntries(index.value.entries, asOf);
+  const inWindow = boundedProjectionIndexEntries(index.value.entries, asOf, requestedWeek);
   const withdrawnServiceDates = inWindow.filter(entry => entry.state === "withdrawn").map(entry => entry.serviceDate);
   // Keep old immutable bodies in storage for audit, but never retrieve or
   // display them while their pointer says stale/partial/missing.

@@ -24,6 +24,34 @@ test("normal discovery reads the OPLOC index with the shared six-week operationa
   assert.deepEqual(projectionWindowBounds("2026-09-01"), { from: "2026-08-31", to: "2026-10-12" });
 });
 
+test("an explicitly selected future week reads only its own bounded projection dates", () => {
+  const dates = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date("2027-01-04T12:00:00Z");
+    date.setUTCDate(date.getUTCDate() + index);
+    return date.toISOString().slice(0, 10);
+  });
+  const entries = [indexEntry("2026-12-07"), ...dates.map(date => indexEntry(date)), indexEntry("2027-01-11")];
+  const selected = boundedProjectionIndexEntries(entries, "2026-10-25", "2027-01-04");
+  assert.deepEqual(selected.map(entry => entry.serviceDate), dates);
+  assert.equal(selected.length, 7);
+  assert.deepEqual(projectionWindowBounds("2026-10-25", "2027-01-04"), { from: "2027-01-04", to: "2027-01-10" });
+});
+
+test("selected week survives cold read and post-recovery index refresh", async () => {
+  const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
+  assert.equal((server.match(/readProjectionWindow\(selectedOplocId, operationalDateLondon\(\), options\.requestedWeek\)/g) || []).length, 2);
+  assert.match(server, /readProjectionIndexWindow\(oplocId, asOf, requestedWeek\)/);
+  assert.match(server, /boundedProjectionIndexEntries\(index\.value\.entries, asOf, requestedWeek\)/);
+});
+
+test("selected-week discovery retains withdrawn dates for downstream status and cache invalidation", () => {
+  const selected = boundedProjectionIndexEntries([
+    { ...indexEntry("2027-01-04"), weekCommencing: "2027-01-04" },
+    { ...indexEntry("2027-01-05", "withdrawn"), weekCommencing: "2027-01-04" },
+  ], "2026-10-25", "2027-01-04");
+  assert.deepEqual(selected.map(entry => [entry.serviceDate, entry.state]), [["2027-01-04", "available"], ["2027-01-05", "withdrawn"]]);
+});
+
 function indexEntry(serviceDate: string, state: "available" | "withdrawn" = "available"): DeliveredInProjectionIndexEntry {
   return { oplocId: "oploc:haleon", serviceDate, projectionVersion: 1, packageVersion: 1, contentHash: serviceDate, freshness: "current", completeness: "complete", sourceVersion: "v1", generatedAt: `${serviceDate}T08:00:00Z`, state };
 }
