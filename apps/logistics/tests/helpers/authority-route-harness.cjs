@@ -51,6 +51,7 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
   const oplocs = [], locationReads = [];
   let locationFailure;
   const authorityRequests = [];
+  let menuAuthorityCheck = async () => {};
   const localFetch = async input => {
     const url = new URL(String(input));
     authorityRequests.push(url.pathname);
@@ -72,7 +73,7 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
     '@fika/server-shared/data-source-meter-server': { recordDataAccess() {}, withDataTrace: (_, callback) => callback() },
     '@fika/server-shared/data-source-meter-client': { recordDataAccess() {}, withDataTrace: (_, callback) => callback() },
     [path.resolve(appRoot, '../../shared/auth-diagnostics.ts')]: { logAuthDiagnostic() {} },
-    '@/lib/upstream': { fetchRequirements: async () => requirements, fetchRequirementsForDateRange: async () => requirements, assertMenuProductionAuthority: async () => {}, fetchProductionContexts: async () => [], fetchOplocs: async cookie => { locationReads.push(cookie); if (locationFailure) throw locationFailure; return oplocs; } },
+    '@/lib/upstream': { fetchRequirements: async () => requirements, fetchRequirementsForDateRange: async () => requirements, assertMenuProductionAuthority: async (...args) => menuAuthorityCheck(...args), fetchProductionContexts: async () => [], fetchOplocs: async cookie => { locationReads.push(cookie); if (locationFailure) throw locationFailure; return oplocs; } },
   };
   mocks[path.join(appRoot, 'lib/upstream.ts')] = mocks['@/lib/upstream'];
   const load = typescriptLoader({ typescript: require('typescript'), appRoot, mocks, fetch: localFetch });
@@ -111,7 +112,7 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
   const route = load(path.join(appRoot, 'app/api/logistics/route.ts'));
   const driversRoute = load(path.join(appRoot, 'app/api/logistics/drivers/route.ts'));
   const vehiclesRoute = load(path.join(appRoot, 'app/api/logistics/vehicles/route.ts'));
-  return { date, queries, authorityRequests, materialisation, load, records, run, principal, seed, rebuild, requirements, oplocs, locationReads, failLocations(error) { locationFailure = error; }, get writes() { return writes; }, deactivateDriver() { driverActive = false; },
+  return { date, queries, authorityRequests, materialisation, load, records, run, principal, seed, rebuild, requirements, oplocs, locationReads, failLocations(error) { locationFailure = error; }, setMenuAuthorityCheck(handler) { menuAuthorityCheck = handler; }, get writes() { return writes; }, deactivateDriver() { driverActive = false; },
     beforeNextTransaction(hook) { beforeTransaction = hook; },
     async get(query = '') { const response = await route.GET(new NextRequest('https://logistics.test/api/logistics?serviceDate=' + date + (query ? '&' + query : ''))); return { response, body: await response.json() }; },
     async drivers() { const response = await driversRoute.GET(new NextRequest('https://logistics.test/api/logistics/drivers')); return { response, body: await response.json() }; },
