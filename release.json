@@ -7,39 +7,11 @@
   "region": "europe-west4",
   "branch": "release/staging/logistics",
   "sourceSha": "4963ec423711671920a38e0fd907e22c0ffad232",
+  "rollout": "build-2026-10-25-004",
+  "state": "SUCCEEDED",
+  "percent": 100,
   "scopeHash": "0bf6f1766780e5a14b48713cf3a0d1581f925f4e4b7ff575f8d977eb765d600e",
-  "inMain": true,
-  "rollback": false,
-  "executing": true,
-  "cosmeticOnly": false,
-  "standard": false,
-  "validation": {
-    "id": 121309105645,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/40239638443/job/121309105645",
-    "sha": "4963ec423711671920a38e0fd907e22c0ffad232"
-  },
-  "approval": {
-    "actor": "derekfika",
-    "method": "authenticated-repository-writer",
-    "app": "logistics",
-    "environment": "staging",
-    "sourceSha": "4963ec423711671920a38e0fd907e22c0ffad232",
-    "action": "deploy",
-    "instruction": "Explicit staging execution",
-    "releaseId": null,
-    "id": "ba01bd243df32a44a1cf0e844980b3630b16b324af56029a480362a1f8fa7c3c",
-    "explicitExecute": true,
-    "authorisedAt": "2026-10-25T22:38:41.186Z"
-  },
-  "provenance": {
-    "number": 56,
-    "url": "https://github.com/derekfika/fika-os/pull/56",
-    "head": "6e67d299b1a165f792f8e9bc038d2ecaff5eab83",
-    "pullRequestRisk": "standard"
-  },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "36cdbae6-e043-4fe2-b720-ef08c13371ec",
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "b44f45130f1af68a73853b915b736d469c74fc80",
     "rollout": "build-2026-10-25-003",
@@ -47,5 +19,33 @@
     "percent": 100
   },
   "previousGoodRecord": "29be880ffab790c1dc2ff59f044b366b24ff9b6d",
-  "createdAt": "2026-10-25T22:38:48.492Z"
+  "releaseId": "36cdbae6-e043-4fe2-b720-ef08c13371ec",
+  "originalIntent": "1227296d6a465f972c0772551627f89914482e0a",
+  "smoke": {
+    "ok": true,
+    "status": 307,
+    "url": "https://fika-logistics-staging--fika-os-dev.europe-west4.hosted.app/",
+    "authGate": "FIKA_SESSION_MISSING"
+  },
+  "recovery": {
+    "resolution": "complete",
+    "reason": "Complete my explicitly authorized Logistics staging deployment after verifying the exact current rollout and its expected protected staging launcher redirect.",
+    "operator": {
+      "actor": "derekfika",
+      "method": "authenticated-repository-writer",
+      "app": "logistics",
+      "environment": "staging",
+      "sourceSha": "4963ec423711671920a38e0fd907e22c0ffad232",
+      "action": "reconcile:complete",
+      "instruction": "Complete my explicitly authorized Logistics staging deployment after verifying the exact current rollout and its expected protected staging launcher redirect.",
+      "releaseId": "36cdbae6-e043-4fe2-b720-ef08c13371ec",
+      "id": "2e1f0e417889a85a1dbb010b32cd0de3faaecd4eef27ef261de5ea0b4af46fc7",
+      "explicitExecute": true,
+      "authorisedAt": "2026-10-25T23:00:24.682Z"
+    },
+    "rollout": "build-2026-10-25-004",
+    "evidenceHash": "c7f45f5db56f35b921a6d5b1c6e4f404512377a235f82b87dec08a3cb0c49bd9",
+    "journalHash": "9a87fc0b7c09d515772863cf03c115b53f2dbf074ee58b7e9dc68cd55574a451",
+    "at": "2026-10-25T23:00:27.799Z"
+  }
 }
