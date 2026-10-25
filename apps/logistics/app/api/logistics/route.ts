@@ -81,6 +81,8 @@ class HttpError extends Error {
   constructor(
     public status: number,
     message: string,
+    public code?: string,
+    public assignmentDiagnostic?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -367,7 +369,7 @@ async function assertProjectionCurrent(serviceDate: string, transaction?: Transa
       ])
     : await Promise.all([getLogisticsProjection(serviceDate), getLogisticsSyncHead(serviceDate).then((head) => head.sequence)]);
   if (!projection || projection.state === "STALE" || projection.state === "PARTIAL" || projection.state === "UNAVAILABLE" || projection.lastChangeSequence < headSequence)
-    throw new HttpError(409, "Logistics changed upstream. Wait for reconciliation, then refresh before continuing.");
+    throw new HttpError(409, "Logistics changed upstream. Wait for reconciliation, then refresh before continuing.", "LOGISTICS_ASSIGN_PROJECTION_STALE");
   return projection;
 }
 
@@ -694,6 +696,7 @@ async function getLogistics(request: NextRequest, principal: LogisticsPrincipal)
 
 async function handlePost(request: NextRequest) {
   let diagnostic: { operation?: string; serviceDate?: string; projectionSequence?: number; entityId?: string } = {};
+  let assignmentEvidence: { requestId: string; checkpoint: string; sourceAuthority: string; jobId: string; requirementId?: string; serviceDate: string; targetRunId?: string; expectedJobVersion?: number; expectedJobVersions?: Record<string, number>; expectedRunVersion?: number; expectedTargetRunVersion?: number; expectedLoadVersion?: number; expectedLoadVersions?: Record<string, number> } | undefined;
   try {
     const principal = await requireLogisticsAccess(request);
     const runTracedTransaction = <T,>(callback: (transaction: Transaction) => Promise<T>) => runAuthorizedTracedTransaction(callback, principal, request.headers.get("cookie") || undefined, ["set-run-driver", "update-run"].includes(body.action));
@@ -846,10 +849,13 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json(saved);
     }
     if (body.action === "assign-job-to-load" && (body.job || body.jobId)) {
+      const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
       if (body.lane === "collection") throw new HttpError(422, "Choose the delivery timeline first; collection is scheduled from the linked collection card.");
       const jobId = body.jobId || body.job!.id;
+      assignmentEvidence = { requestId, checkpoint: "job-read", sourceAuthority: "not-required", jobId, requirementId: undefined, serviceDate: "unknown", targetRunId: body.targetRunId, expectedJobVersion: body.expectedJobVersion, expectedJobVersions: body.expectedJobVersions, expectedRunVersion: body.expectedRunVersion, expectedTargetRunVersion: body.expectedTargetRunVersion, expectedLoadVersion: body.expectedLoadVersion, expectedLoadVersions: body.expectedLoadVersions };
       const job = await getLogisticsJob(jobId);
       if (!job) throw new HttpError(404, "Logistics job not found.");
+      assignmentEvidence = { ...assignmentEvidence, serviceDate: job.serviceDate, requirementId: job.requirementId };
       // This command can be used directly by the planner UI, bypassing the
       // fulfilment-specific assign/assign-group commands below. For Menu
       // Planning demand, rejoin the current upstream requirement and verify
@@ -857,15 +863,18 @@ async function handlePost(request: NextRequest) {
       const menuOriginated = job.sourceType === "menu-planning" ||
         job.sourceType === "cpu-production" && job.workstream === "Delivered-In";
       if (menuOriginated) {
-        if (!job.requirementId) throw new HttpError(503, "Expected fulfilment authority is missing; refresh Logistics before continuing.");
+        assignmentEvidence = { ...assignmentEvidence, sourceAuthority: "checking", checkpoint: "source-authority" };
+        if (!job.requirementId) throw new HttpError(503, "Expected fulfilment authority is missing; refresh Logistics before continuing.", "LOGISTICS_ASSIGN_REQUIREMENT_MISSING");
         const source = await fetchRequirements(job.serviceDate, request.headers.get("cookie") || undefined);
         const requirement = source.find(item => item.canonicalId === job.requirementId);
-        if (!requirement) throw new HttpError(503, "Expected fulfilment authority is missing; refresh Logistics before continuing.");
+        if (!requirement) throw new HttpError(503, "Expected fulfilment authority is missing; refresh Logistics before continuing.", "LOGISTICS_ASSIGN_REQUIREMENT_MISSING");
         await assertMenuProductionAuthority([requirement], request.headers.get("cookie") || undefined, [job.requirementId]);
+        assignmentEvidence = { ...assignmentEvidence, sourceAuthority: "passed", checkpoint: "projection-currentness" };
       }
       const scheduledTime = body.scheduledTime || job.requestedWindow?.startTime;
       if (!scheduledTime) throw new HttpError(422, "A scheduled arrival is required.");
       validatePlannedSchedule(undefined, { startTime: scheduledTime, ...(body.scheduledEnd ? { endTime: body.scheduledEnd } : {}) });
+      assignmentEvidence = { ...assignmentEvidence, checkpoint: "transaction-commit" };
       const result = await runTracedTransaction(async transaction => {
         await assertProjectionCurrent(job.serviceDate, transaction);
         return assignCanonicalJob(transaction, { jobId, targetRunId: body.targetRunId, scheduledTime, scheduledEnd: body.scheduledEnd, resolveSchedule: (loads, currentJob) => resolveCanonicalLoadSchedule(loads, currentJob, body.targetRunId, scheduledTime, body.scheduledEnd), collectionRequired: body.collectionRequired, visit: body.visit, expectedJobVersion: body.expectedJobVersion, expectedLoadVersions: body.expectedLoadVersions }, by, now);
@@ -2733,6 +2742,36 @@ async function handlePost(request: NextRequest) {
     throw new HttpError(400, "Unknown Logistics action.");
   } catch (error) {
     const status = error instanceof HttpError ? error.status : (error as { status?: number }).status || 400;
+    if (assignmentEvidence) {
+      const failure = error as Error & { code?: string; requestId?: string; assignmentDiagnostic?: Record<string, unknown> };
+      const reasonCategory = failure.code || (assignmentEvidence.checkpoint === "source-authority" ? status >= 500 ? "MENU_AUTHORITY_UNAVAILABLE" : "MENU_PUBLICATION_REJECTED" : status === 409 ? assignmentEvidence.checkpoint === "transaction-commit" ? "CONCURRENT_OR_VERSION_CONFLICT" : assignmentEvidence.checkpoint === "projection-currentness" ? "PROJECTION_CURRENTNESS_REJECTED" : "SOURCE_OR_PLACEMENT_CONFLICT" : "ASSIGNMENT_REJECTED");
+      let observed: Record<string, unknown> = { observation: "post-failure bounded read unavailable" };
+      try {
+        const [currentJob, currentRun, dayState, projection, head] = await Promise.all([
+          getLogisticsJob(assignmentEvidence.jobId),
+          assignmentEvidence.targetRunId ? getRun(assignmentEvidence.targetRunId) : Promise.resolve(undefined),
+          assignmentEvidence.serviceDate === "unknown" ? Promise.resolve({ jobs: [], loads: [], assignments: [] }) : listDeliveryLoadState(assignmentEvidence.serviceDate),
+          assignmentEvidence.serviceDate === "unknown" ? Promise.resolve(undefined) : getLogisticsProjection(assignmentEvidence.serviceDate),
+          assignmentEvidence.serviceDate === "unknown" ? Promise.resolve(undefined) : getLogisticsSyncHead(assignmentEvidence.serviceDate),
+        ]);
+        const loads = dayState.loads.filter(load => load.runId === assignmentEvidence?.targetRunId || Object.hasOwn(assignmentEvidence?.expectedLoadVersions || {}, load.id));
+        observed = {
+          observedAt: new Date().toISOString(),
+          job: currentJob ? { id: currentJob.id, version: currentJob.version, sourceStatus: currentJob.sourceStatus, deliveryStatus: currentJob.deliveryStatus, sourceVersion: currentJob.sourceVersion, activeLoadId: currentJob.activeLoadId } : null,
+          run: currentRun ? { id: currentRun.canonicalId, version: currentRun.version, status: currentRun.status, vehicleId: currentRun.vehicleId } : null,
+          loads: loads.map(load => ({ id: load.id, version: load.version, runId: load.runId, status: load.status, loaded: load.loaded })),
+          projection: projection ? { state: projection.state, lastChangeSequence: projection.lastChangeSequence } : { state: "MISSING" },
+          headSequence: head?.sequence,
+        };
+      } catch { /* Keep the original failure and the safe bounded diagnostic. */ }
+      const expectedJobVersions = Object.fromEntries(Object.entries(assignmentEvidence.expectedJobVersions || {}).slice(0, 50));
+      const expectedLoadVersions = Object.fromEntries(Object.entries(assignmentEvidence.expectedLoadVersions || {}).slice(0, 50));
+      const safeEvidence = { requestId: assignmentEvidence.requestId, action: "assign-job-to-load", checkpoint: assignmentEvidence.checkpoint, reasonCategory, status, sourceAuthority: assignmentEvidence.sourceAuthority === "checking" ? "rejected_or_unavailable" : assignmentEvidence.sourceAuthority, serviceDate: assignmentEvidence.serviceDate, jobId: assignmentEvidence.jobId, requirementId: assignmentEvidence.requirementId, targetRunId: assignmentEvidence.targetRunId, expectedVersions: { job: assignmentEvidence.expectedJobVersion, jobs: expectedJobVersions, run: assignmentEvidence.expectedRunVersion, targetRun: assignmentEvidence.expectedTargetRunVersion, load: assignmentEvidence.expectedLoadVersion, loads: expectedLoadVersions }, observed };
+      console.warn("LOGISTICS_ASSIGN_JOB_DIAGNOSTIC", safeEvidence);
+      failure.requestId = assignmentEvidence.requestId;
+      failure.code = failure.code || `LOGISTICS_ASSIGN_${reasonCategory}`;
+      return errorResponse(Object.assign(failure, { status }), assignmentEvidence.requestId, { ...diagnostic, operation: "assign-job-to-load", serviceDate: assignmentEvidence.serviceDate, entityId: assignmentEvidence.jobId });
+    }
     return errorResponse(Object.assign(error instanceof Error ? error : new Error(messageOf(error)), { status }), request.headers.get("x-request-id") || undefined, diagnostic);
   }
 }

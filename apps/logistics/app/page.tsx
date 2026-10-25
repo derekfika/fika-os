@@ -669,7 +669,8 @@ function PlannerContents() {
       if (details.status === 409) {
         const refresh = loadFreshFor(context, true, "passive");
         void loadWeekForContext(summaryContext, "passive");
-        return { ok: false, uncertain: false, conflict: true, message: details.message, refresh };
+        const reference = [details.code && `Code ${details.code}`, details.requestId && `Request ${details.requestId}`].filter(Boolean).join(" · ");
+        return { ok: false, uncertain: false, conflict: true, message: reference ? `${details.message} (${reference})` : details.message, refresh };
       }
       return { ok: false, uncertain: details.status === 0, message: details.message };
     }
@@ -1554,7 +1555,7 @@ function RealPlanner(props: RealPlannerProps) {
           delete nextPending[identity];
           pendingSchedulesRef.current = nextPending;
           setPendingSchedules(nextPending);
-          setPlacementErrors((errors) => ({ ...errors, [identity]: "This placement changed elsewhere. The latest version is loaded; retry your move." }));
+          setPlacementErrors((errors) => ({ ...errors, [identity]: outcome.message || "This placement changed elsewhere. The latest version is loaded; retry your move." }));
         });
         return;
       }
