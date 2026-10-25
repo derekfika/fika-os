@@ -6,57 +6,44 @@
   "backend": "fika-os-staging",
   "region": "europe-west4",
   "branch": "release/staging/hub",
-  "sourceSha": "b397473505e0e3d9343805bf97278f62dd531bce",
-  "scopeHash": "70782d39667d53a0e5c926a8eeaad2e1779e2e9c6d01d89caf4526da8ca85fe9",
-  "inMain": true,
-  "rollback": false,
-  "executing": true,
-  "cosmeticOnly": false,
-  "standard": false,
-  "validation": {
-    "id": 120898721579,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/40102663472/job/120898721579",
-    "sha": "b397473505e0e3d9343805bf97278f62dd531bce"
-  },
-  "resumeOperator": {
-    "actor": "derekfika",
-    "method": "authenticated-repository-writer"
-  },
-  "approval": {
-    "actor": "derekfika",
-    "method": "authenticated-repository-writer",
-    "app": "hub",
-    "environment": "staging",
-    "sourceSha": "b397473505e0e3d9343805bf97278f62dd531bce",
-    "action": "deploy",
-    "instruction": "Explicit staging execution",
-    "releaseId": null,
-    "id": "0445f89fa443ec9e5720dcab2b39e2f7dd73d868b31b4dfc1a4f97bcb5b69572",
-    "explicitExecute": true,
-    "authorisedAt": "2026-10-24T14:33:04.539Z"
-  },
-  "provenance": {
-    "number": 29,
-    "url": "https://github.com/derekfika/fika-os/pull/29",
-    "head": "0b6c0394c349cab141a2f4db55f0729a3fbf74fc",
-    "pullRequestRisk": "standard"
-  },
-  "rollout": "build-2026-10-24-001",
+  "sourceSha": "c4969bd550ecb0be2a429eec1098b6c44c7ccada",
+  "rollout": "build-2026-10-24-003",
   "state": "SUCCEEDED",
   "percent": 100,
-  "kind": "deploy",
+  "kind": "baseline",
+  "scopeHash": "5c67d9fec76f71f6db2d106845eeb10f0eb063fa043573b2a0928a7a1dce99ef",
+  "observedAt": "2026-10-25T14:55:00.609Z",
   "previousGood": {
-    "sourceSha": "c8f20b897306b152cfdeb99f4d6476f3f21d47a7",
-    "rollout": "build-2026-10-22-005",
+    "sourceSha": "b397473505e0e3d9343805bf97278f62dd531bce",
+    "rollout": "build-2026-10-24-001",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "2a7e9d2c48457a3a2ddd10b60ed698dcbd7ea4f1",
-  "releaseId": "92836bf6-67a2-496e-9cef-058fd0259e5a",
-  "completedAt": "2026-10-24T15:23:50.050Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-staging--fika-os-dev.europe-west4.hosted.app/"
+  "previousGoodRecord": "749a3bec8c8a4696b4b9b71d834f3a6d7bee9955",
+  "reconciliation": {
+    "type": "forward-serving-baseline-adoption",
+    "authorizedAt": "2026-10-25T14:55:00.608Z",
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "authorization": "Luna, I authorise a staging-only, forward-looking reconciliation of the Hub release ledger for ISS-007. Adopt the independently verified currently serving c4969bd / build 003 as a newly recorded staging baseline. Record the actual current timestamp and this authorization. Do not backdate approval or claim historical governance; preserve previous ledger and rollback evidence; build 002 is not a verified rollback candidate.",
+    "priorLedgerCommit": "749a3bec8c8a4696b4b9b71d834f3a6d7bee9955",
+    "verifiedAt": "2026-10-25T14:55:00.609Z",
+    "backend": "fika-os-staging",
+    "project": "fika-os-dev",
+    "build": "build-2026-10-24-003",
+    "evidence": {
+      "backend": "projects/fika-os-dev/locations/europe-west4/backends/fika-os-staging",
+      "repository": "projects/fika-os-dev/locations/europe-west4/connections/apphosting-github-conn-wz4o9sx/gitRepositoryLinks/derekfika-fika-os",
+      "rootDirectory": "/apps/integration-hub",
+      "buildState": "READY",
+      "rolloutState": "SUCCEEDED",
+      "trafficPercent": 100,
+      "trafficBuild": "projects/594727519934/locations/europe-west4/backends/fika-os-staging/builds/build-2026-10-24-003",
+      "healthStatus": 200
+    },
+    "historicalGovernance": "Not established for historical rollouts 002/003; this record is prospective and does not assert prior authorization.",
+    "excludedRollbackCandidates": [
+      "build-2026-10-24-002"
+    ]
   }
 }
