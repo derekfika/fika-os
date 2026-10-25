@@ -53,10 +53,15 @@ export async function assertMenuProductionAuthority(requirements:FulfilmentRequi
     if (!publication) throw Object.assign(new Error("Menu Planning publication authority is unavailable; refresh Logistics before continuing."), { status:503 });
     if (publication.publicationId !== publicationId || publication.publicationId !== `menu-publication:${publication.sourceWeekId}` || (publication as AuthoritativePublication & { publicationStatus?:string }).publicationStatus === "withdrawn") throw Object.assign(new Error("Menu Planning publication identity is inconsistent or withdrawn; refresh Logistics before continuing."), { status:409 });
     const day = publication.days.find(candidate => candidate.publicationDayId === publicationDayId);
-    const currentDay = publication.days.filter(candidate => candidate.sourceDayId === requirement.sourceEntityId && candidate.status === "published").sort((left, right) => right.version - left.version)[0];
+    // A Delivered-In requirement's sourceEntityId is the canonical Production
+    // Order ID. The order retains the Menu Planning source-day identity needed
+    // to compare against the publication's current day pointer.
+    const sourceDayId = order.sourceEntityId;
+    if (!sourceDayId) throw Object.assign(new Error("Menu Planning source-day lineage is incomplete; refresh Logistics before continuing."), { status:503 });
+    const currentDay = publication.days.filter(candidate => candidate.sourceDayId === sourceDayId && candidate.status === "published").sort((left, right) => right.version - left.version)[0];
     const siteAllocationExists = day?.entries.some(entry => entry.allocations.some(allocation => allocation.destinationId === requirement.destinationOplocId));
     const menuSourceVersion = directMenuSource ? requirement.sourceVersion : order.sourceVersion;
-    if (!menuSourceVersion || !day || day.sourceDayId !== requirement.sourceEntityId || day.date !== requirement.serviceDate || day.version !== menuSourceVersion || day.contentHash !== order.sourceContentHash || day.status !== "published" || currentDay?.publicationDayId !== publicationDayId || !siteAllocationExists) throw Object.assign(new Error("Menu Planning publication day is withdrawn, superseded or inconsistent with this Logistics requirement."), { status:409 });
+    if (!menuSourceVersion || !day || day.sourceDayId !== sourceDayId || directMenuSource && sourceDayId !== requirement.sourceEntityId || day.date !== requirement.serviceDate || day.version !== menuSourceVersion || day.contentHash !== order.sourceContentHash || day.status !== "published" || currentDay?.publicationDayId !== publicationDayId || !siteAllocationExists) throw Object.assign(new Error("Menu Planning publication day is withdrawn, superseded or inconsistent with this Logistics requirement."), { status:409 });
   }));
 }
 export async function fetchRequirementsForDateRange(fromDate:string, toDateExclusive:string, cookie?:string):Promise<FulfilmentRequirement[]> { const params = new URLSearchParams({ serviceDateFrom: fromDate, serviceDateToExclusive: toDateExclusive }); const response = await fetchUpstream(`${hub}/api/fulfilment-requirements?${params.toString()}`, "Integration Hub fulfilment", cookie); const body = await response.json() as {requirements?:FulfilmentRequirement[]}; return body.requirements || []; }

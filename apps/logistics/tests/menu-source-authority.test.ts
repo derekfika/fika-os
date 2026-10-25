@@ -67,6 +67,21 @@ test("a current active Menu Planning order remains eligible", async () => {
   });
 });
 
+test("a current active Delivered-In requirement resolves publication day through its Production Order lineage", async () => {
+  const productionOrderId = "production-order:v1:menu-planning:source-day:test:oploc:test";
+  const requirement:FulfilmentRequirement = {
+    ...baseRequirement("cpu-production", "Delivered-In"),
+    canonicalId: "fulfilment-requirement:cpu-production:production-order:v1:menu-planning:source-day:test:oploc:test:oploc:test",
+    sourceEntityId: productionOrderId,
+    sourceVersion: 1,
+  };
+  const canonicalOrder = { ...order(requirement, "menu_available", 1), sourceEntityId: "source-day:test" };
+  const publicationWithCurrentDay = { ...publication(), publication: { ...publication().publication, days: [{ ...publication().publication.days[0], version: 1 }] } };
+  await withFetch(url => url.includes("/api/production?") ? Response.json({ order: canonicalOrder }) : Response.json(publicationWithCurrentDay), async () => {
+    await assert.doesNotReject(() => assertMenuProductionAuthority([requirement]));
+  });
+});
+
 test("source version drift blocks stale menu actions", async () => {
   const requirement = baseRequirement();
   await withFetch(url => url.includes("/api/production?") ? Response.json({ order: order(requirement, "menu_available", 5) }) : Response.json(publication()), async () => {
