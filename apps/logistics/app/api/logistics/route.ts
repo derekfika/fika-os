@@ -8,6 +8,7 @@ import { authorizeTransaction } from "@/lib/authorized-transaction";
 import { isLogisticsVehicleId, logisticsVehicleLabel } from "../../../../shared/logistics-authority";
 import { hostedRuntime } from "@/lib/runtime";
 import {
+  assertMenuProductionAuthority,
   fetchOplocs,
   fetchProductionContexts,
   fetchRequirements,
@@ -1041,6 +1042,13 @@ async function handlePost(request: NextRequest) {
       const current = await getDeliveryLoad(body.loadId);
       if (!current?.runId) throw new HttpError(409, "Canonical load/run authority is unavailable.");
       const source = await fetchRequirements(current.serviceDate, request.headers.get("cookie") || undefined);
+      const selectedLoadIds = [...new Set(body.loadIds || [current.id])];
+      const assignmentSnapshots = await Promise.all(selectedLoadIds.map(loadId => logisticsAssignments().where("loadId", "==", loadId).get()));
+      const jobIds = [...new Set(assignmentSnapshots.flatMap(snapshot => snapshot.docs.map(doc => String(doc.data().jobId || ""))).filter(Boolean))];
+      const jobSnapshots = await Promise.all(jobIds.map(jobId => logisticsJobs().doc(jobId).get()));
+      if (jobSnapshots.some(snapshot => !snapshot.exists)) throw new HttpError(503, "Expected Logistics job authority is unavailable for loading.");
+      const requirementIds = new Set(jobSnapshots.flatMap(snapshot => snapshot.exists ? [String((snapshot.data() as { requirementId?: string }).requirementId || "")] : []).filter(Boolean));
+      await assertMenuProductionAuthority(source, request.headers.get("cookie") || undefined, [...requirementIds]);
       const result = await runTracedTransaction(tx => executeProjected(tx, principal, { ...body, action: "mark-stop-loaded", runId: current.runId, stopId: `projection-stop:delivery:${current.id}`, loadIds: body.loadIds || [current.id] }, source, by, now));
       for (const job of result.changedJobs) await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "logisticsJob", entityId: job.id, changeType: "delivery-loaded", revision: job.version, changedAt: now, actorId });
       const event = await appendLogisticsChange({ serviceDate: current.serviceDate, entityType: "deliveryLoad", entityId: current.id, changeType: "load-loaded", revision: result.loads[0].version, changedAt: now, actorId });
@@ -1342,6 +1350,14 @@ async function handlePost(request: NextRequest) {
           "A current run version is required for lifecycle changes.",
         );
       const requirements = ["mark-run-ready", "dispatch-run"].includes(body.action) ? await fetchRequirements(current.serviceDate, request.headers.get("cookie") || undefined) : [];
+      if (body.action === "dispatch-run") {
+        const currentWork = await db.runTransaction(transaction => readRunWork(transaction, current));
+        const requirementIds = new Set([
+          ...currentWork.native.flatMap(stop => stop.requirementRefs.map(ref => ref.requirementId)),
+          ...currentWork.legs.flatMap(leg => leg.jobs.map(job => job.requirementId).filter((id): id is string => Boolean(id))),
+        ]);
+        await assertMenuProductionAuthority(requirements, request.headers.get("cookie") || undefined, [...requirementIds]);
+      }
       const result = await runTracedTransaction(async transaction => {
         const ref = runs().doc(current.canonicalId);
         const snapshot = await transaction.get(ref);
@@ -1463,6 +1479,7 @@ async function handlePost(request: NextRequest) {
       const source = await fetchRequirements(target.serviceDate, request.headers.get("cookie") || undefined);
       const requirements = ids.map(id => source.find(item => item.canonicalId === id));
       if (requirements.some(item => !item)) throw new HttpError(404, "Fulfilment requirement no longer exists upstream.");
+      await assertMenuProductionAuthority(requirements as FulfilmentRequirement[], request.headers.get("cookie") || undefined, ids);
       for (const requirement of requirements as FulfilmentRequirement[]) {
         const expected = body.expectedSourceVersions?.[requirement.canonicalId] ?? body.expectedSourceVersion;
         if (expected !== requirement.sourceVersion) throw new HttpError(409, "Fulfilment source changed. Refresh planning.");
@@ -2011,6 +2028,7 @@ async function handlePost(request: NextRequest) {
             messageOf(error),
           );
         }
+        if (requirement.status === "ready_for_planning") await assertMenuProductionAuthority([requirement], request.headers.get("cookie") || undefined, [requirement.canonicalId]);
       }
       const oplocs = body.movementId
         ? await fetchOplocs(request.headers.get("cookie") || undefined).catch(
@@ -2176,6 +2194,14 @@ async function handlePost(request: NextRequest) {
         throw new HttpError(400, "Unknown execution action.");
       if (body.action === "report-issue" && !body.issueDescription?.trim())
         throw new HttpError(422, "A short issue description is required.");
+      if (["mark-stop-loaded", "mark-subload-loaded"].includes(body.action) && body.loaded !== false) {
+        const [loadingRun, loadingStop] = await Promise.all([getRun(body.runId), stops().doc(body.stopId).get()]);
+        if (!loadingRun || !loadingStop.exists) throw new HttpError(409, "Current run and stop authority is unavailable for loading.");
+        const stop = normalizeStop(loadingStop.data()!);
+        const requirementIds = new Set(body.action === "mark-subload-loaded" ? [body.requirementId].filter((id): id is string => Boolean(id)) : stop.requirementRefs.map(ref => ref.requirementId));
+        const requirements = await fetchRequirements(loadingRun.serviceDate, request.headers.get("cookie") || undefined);
+        await assertMenuProductionAuthority(requirements, request.headers.get("cookie") || undefined, [...requirementIds]);
+      }
       const result = await runTracedTransaction(async (transaction) => {
         const runRef = runs().doc(body.runId!);
         const stopRef = stops().doc(body.stopId!);

@@ -72,7 +72,7 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
     '@fika/server-shared/data-source-meter-server': { recordDataAccess() {}, withDataTrace: (_, callback) => callback() },
     '@fika/server-shared/data-source-meter-client': { recordDataAccess() {}, withDataTrace: (_, callback) => callback() },
     [path.resolve(appRoot, '../../shared/auth-diagnostics.ts')]: { logAuthDiagnostic() {} },
-    '@/lib/upstream': { fetchRequirements: async () => requirements, fetchRequirementsForDateRange: async () => requirements, fetchProductionContexts: async () => [], fetchOplocs: async cookie => { locationReads.push(cookie); if (locationFailure) throw locationFailure; return oplocs; } },
+    '@/lib/upstream': { fetchRequirements: async () => requirements, fetchRequirementsForDateRange: async () => requirements, assertMenuProductionAuthority: async () => {}, fetchProductionContexts: async () => [], fetchOplocs: async cookie => { locationReads.push(cookie); if (locationFailure) throw locationFailure; return oplocs; } },
   };
   mocks[path.join(appRoot, 'lib/upstream.ts')] = mocks['@/lib/upstream'];
   const load = typescriptLoader({ typescript: require('typescript'), appRoot, mocks, fetch: localFetch });
