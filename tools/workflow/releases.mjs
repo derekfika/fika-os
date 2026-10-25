@@ -43,8 +43,26 @@ export function rolloutArguments(plan) {
   // --force skips Firebase's interactive confirmation only, after our exact-SHA approval gates.
   return ['apphosting:rollouts:create', t.backend, '--project', t.project, '--git-commit', exactSha(plan.sourceSha), '--non-interactive', '--force'];
 }
-export async function releaseHealthProbe(app, backendUri, sourceSha, fetchImpl = fetch) {
+export async function releaseHealthProbe(app, backendUri, sourceSha, fetchImpl = fetch, environment) {
   const origin = `https://${String(backendUri).replace(/^https?:\/\//, '').replace(/\/$/, '')}`;
+  if (app === 'logistics' && environment === 'staging') {
+    const url = `${origin}/`;
+    try {
+      const response = await fetchImpl(url, { redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(30000) });
+      const location = response.headers?.get?.('location');
+      if (response.status !== 307 || !location) return { ok: false, status: response.status, url, reason: 'unexpected_logistics_auth_response' };
+      const target = new URL(location, origin);
+      const keys = [...target.searchParams.keys()].sort();
+      const valid = target.protocol === 'https:' && target.origin === 'https://staging-os.fikacatering.com' && target.pathname === '/' &&
+        target.username === '' && target.password === '' && target.hash === '' &&
+        JSON.stringify(keys) === JSON.stringify(['appId', 'launchError', 'returnTo']) &&
+        target.searchParams.get('appId') === 'logistics' && target.searchParams.get('launchError') === 'FIKA_SESSION_MISSING' &&
+        target.searchParams.get('returnTo') === url;
+      return { ok: valid, status: response.status, url, ...(valid ? { authGate: 'FIKA_SESSION_MISSING' } : { reason: 'unexpected_logistics_auth_redirect' }) };
+    } catch {
+      return { ok: false, status: null, url, reason: 'request_failed' };
+    }
+  }
   if (app !== 'menu') {
     const url = `${origin}/`;
     try {
@@ -293,7 +311,7 @@ export async function deploy(app, environment, options) {
       assertServingLineage(plan, before, ancestor(before.sourceSha, plan.sourceSha), scopeHash(app,before.sourceSha) === plan.scopeHash);
       bindProductionDelta(plan, before);
       if (before.sourceSha === plan.sourceSha) {
-        const health = await releaseHealthProbe(app, backend.uri, before.sourceSha);
+        const health = await releaseHealthProbe(app, backend.uri, before.sourceSha, fetch, plan.environment);
         if (!health.ok || digest(before) !== digest(await serving(plan))) throw Error('Cannot verify already-serving release while health/traffic is unstable');
         if (!abandoned) return { alreadyServing: true, before, smoke: health };
         const record = { schema:'fika.release.v1', ...plan, ...before, kind: plan.rollback ? 'rollback' : 'deploy', previousGood:pointer.record.previousGood,
@@ -342,7 +360,7 @@ export async function deploy(app, environment, options) {
       let evidence = ''; try { evidence = describeSubmissionEvidence(await recoverySnapshot(target(plan.app, plan.environment)), journal); } catch { evidence = 'Firebase state could not be read.'; }
       throw Error(`Serving verification incomplete; retain pending intent and ${journalFile}. ${evidence} ${resubmissionNote}`.trim());
     }
-    const health = await releaseHealthProbe(app, backend.uri, verified.sourceSha);
+    const health = await releaseHealthProbe(app, backend.uri, verified.sourceSha, fetch, plan.environment);
     if (!health.ok) throw Error(`Non-destructive release health probe failed (${health.reason || health.status}); preserve journal and stop for rollback decision`);
     git('fetch', 'origin'); const latest = releaseRecord(plan.branch);
     if (latest?.record.releaseId !== journal.releaseId || latest.record.kind !== 'intent') throw Error('Release intent changed unexpectedly; do not overwrite it');
@@ -369,7 +387,7 @@ export async function reconcile(app, environment, options) {
     const backend = await cloud(backendPath(t));
     return reconcileIntent({ pointer, journal, t, operator, rolloutId: options.rollout, resolution: options.resolution, reason: options.reason }, {
       inspect: () => recoverySnapshot(t),
-      smoke: sourceSha => releaseHealthProbe(app, backend.uri, sourceSha),
+      smoke: sourceSha => releaseHealthProbe(app, backend.uri, sourceSha, fetch, environment),
       scopeHash: sha => scopeHash(app, sha),
       latest: () => { git('fetch', 'origin'); return releaseRecord(t.branch); },
       archive: original => {
