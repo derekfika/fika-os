@@ -9,6 +9,7 @@ test("hosted runtime requires explicit HTTPS upstream URLs", () => {
   const env = { FIKA_RUNTIME_MODE: "staging", FIREBASE_PROJECT_ID: "fika-os-dev", FIKA_HUB_BASE_URL: "https://staging-os.example", FIKA_CPU_BASE_URL: "https://cpu.example" };
   assert.equal(requiredUpstreamUrl("FIKA_HUB_BASE_URL", env), "https://staging-os.example");
   assert.equal(requiredUpstreamUrl("FIKA_CPU_BASE_URL", env), "https://cpu.example");
+  assert.equal(requiredUpstreamUrl("MENU_PLANNING_BASE_URL", { ...env, MENU_PLANNING_BASE_URL: "https://menu-planning-staging.fikacatering.com" }), "https://menu-planning-staging.fikacatering.com");
   assert.throws(() => requiredUpstreamUrl("FIKA_HUB_BASE_URL", { ...env, FIKA_HUB_BASE_URL: "http://localhost:3200" }), /must use HTTPS/);
 });
 
@@ -31,4 +32,5 @@ test("hosted upstream URLs must be the approved environment services and never c
   assert.throws(() => requiredUpstreamUrl("FIKA_CPU_BASE_URL", { ...production, FIKA_CPU_BASE_URL: "https://cpu-staging.fikacatering.com" }), /not the approved production service/);
   const staging = { FIKA_RUNTIME_MODE: "staging", FIREBASE_PROJECT_ID: "fika-os-dev" };
   assert.throws(() => requiredUpstreamUrl("FIKA_HUB_BASE_URL", { ...staging, FIKA_HUB_BASE_URL: "https://os.fikacatering.com" }), /resolves to a production service/);
+  assert.throws(() => requiredUpstreamUrl("MENU_PLANNING_BASE_URL", { ...staging, MENU_PLANNING_BASE_URL: "https://menuplanner.fikacatering.com" }), /resolves to a production service/);
 });

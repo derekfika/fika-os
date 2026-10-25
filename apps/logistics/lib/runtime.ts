@@ -10,8 +10,8 @@ export function hostedRuntime(env: RuntimeEnv = process.env) {
   return ["staging", "production"].includes(logisticsRuntime(env).mode);
 }
 
-export function requiredUpstreamUrl(name: "FIKA_HUB_BASE_URL" | "FIKA_CPU_BASE_URL", env: RuntimeEnv = process.env) {
-  const value = env[name]?.trim();
+export function requiredUpstreamUrl(name: "FIKA_HUB_BASE_URL" | "FIKA_CPU_BASE_URL" | "MENU_PLANNING_BASE_URL", env: RuntimeEnv = process.env) {
+  const value = (name === "MENU_PLANNING_BASE_URL" ? env.MENU_PLANNING_BASE_URL || env.MENU_PLANNING_URL : env[name])?.trim();
   if (value) {
     let normalised: string;
     try {
@@ -22,8 +22,9 @@ export function requiredUpstreamUrl(name: "FIKA_HUB_BASE_URL" | "FIKA_CPU_BASE_U
       if (error instanceof Error && error.message.includes("must use HTTPS")) throw error;
       throw new Error(`${name} is not a valid upstream URL.`);
     }
-    return approvedCredentialedUpstream(name === "FIKA_HUB_BASE_URL" ? "hub" : "cpu", normalised, env.FIKA_RUNTIME_MODE);
+    const service = name === "FIKA_HUB_BASE_URL" ? "hub" : name === "FIKA_CPU_BASE_URL" ? "cpu" : "menu";
+    return approvedCredentialedUpstream(service, normalised, env.FIKA_RUNTIME_MODE);
   }
   if (hostedRuntime(env)) throw new Error(`${name} is required in hosted Logistics runtime.`);
-  return name === "FIKA_HUB_BASE_URL" ? "http://localhost:3200" : "http://localhost:3400";
+  return name === "FIKA_HUB_BASE_URL" ? "http://localhost:3200" : name === "FIKA_CPU_BASE_URL" ? "http://localhost:3400" : "http://localhost:3500";
 }

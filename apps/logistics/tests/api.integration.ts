@@ -160,6 +160,7 @@ async function cleanup(id: string) {
   failFulfilment = false;
   failProductionAuthority = false;
   productionOrderOverrides.clear();
+  publicationStatusOverrides.clear();
   principalVehicles = ["van1", "van2"];
 }
 let principalVehicles = ["van1", "van2"];
@@ -167,13 +168,16 @@ let upstreamRequirements: FulfilmentRequirement[] = [];
 let failFulfilment = false;
 let failProductionAuthority = false;
 const productionOrderOverrides = new Map<string, Record<string, unknown> | null>();
+const publicationStatusOverrides = new Map<string, string>();
 function expectedMenuProductionId(item: FulfilmentRequirement) {
   const safe = (value:string) => value.replace(/[^A-Za-z0-9:_-]+/g, "_");
   return `production-order:v1:menu-planning:${safe(item.sourceEntityId)}:${safe(item.destinationOplocId)}`;
 }
 function productionOrderFor(item: FulfilmentRequirement, status = "menu_available") {
   const canonicalId = expectedMenuProductionId(item);
-  return { canonicalId, origin: "menu_planning", status, version: item.sourceVersion, sourceVersion: item.sourceVersion, sourceEntityId: item.sourceEntityId, destinationOplocId: item.destinationOplocId, serviceDate: item.serviceDate };
+  const sourceWeekId = `week:${item.sourceEntityId}`;
+  const sourcePublicationId = `menu-publication:${sourceWeekId}`;
+  return { canonicalId, origin: "menu_planning", status, version: item.sourceVersion, sourceVersion: item.sourceVersion, sourceEntityId: item.sourceEntityId, sourcePublicationId, sourcePublicationDayId: `${sourcePublicationId}:${item.sourceEntityId}:v${item.sourceVersion}`, sourceContentHash: `hash:${item.sourceVersion}`, destinationOplocId: item.destinationOplocId, serviceDate: item.serviceDate };
 }
 const originalFetch = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -202,6 +206,14 @@ globalThis.fetch = (async (input: RequestInfo | URL) => {
     }
     const requirement = upstreamRequirements.find(item => expectedMenuProductionId(item) === canonicalId);
     return Response.json({ ...(requirement ? { order: productionOrderFor(requirement, requirement.status === "withdrawn" ? "cancelled" : "menu_available") } : {}) });
+  }
+  if (url.includes("/api/rolling-menu/publications?")) {
+    const publicationId = new URL(url).searchParams.get("publicationId") || "";
+    const requirement = upstreamRequirements.find(item => productionOrderFor(item).sourcePublicationId === publicationId);
+    if (!requirement) return Response.json({ error: { message: "not found" } }, { status: 404 });
+    const order = productionOrderFor(requirement);
+    const status = publicationStatusOverrides.get(publicationId) || "published";
+    return Response.json({ publication: { publicationId, sourceWeekId: `week:${requirement.sourceEntityId}`, publicationStatus: "published", days: [{ publicationDayId: order.sourcePublicationDayId, sourceDayId: requirement.sourceEntityId, date: requirement.serviceDate, version: requirement.sourceVersion, status, contentHash: order.sourceContentHash, entries: [{ allocations: [{ destinationId: requirement.destinationOplocId }] }] }] } });
   }
   if (url.includes("/api/internal/oplocs"))
     return new Response(
@@ -527,6 +539,20 @@ test("menu assignment fails closed when Hub Production Order authority is unavai
   assert.equal((await logisticsAssignments().where("serviceDate", "==", serviceDate).get()).empty, true);
 });
 
+test("menu assignment fails when Menu Planning withdrew but Hub still reports active", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const runId = `${id}:run`;
+  const item = requirement(`${id}:menu`);
+  upstreamRequirements = [item];
+  publicationStatusOverrides.set(productionOrderFor(item).sourcePublicationId!, "withdrawn");
+  await seed(runs(), run(runId));
+  const result = await responseBody({ action: "assign-group", runId, expectedRunVersion: 1, requirementIds: [item.canonicalId], expectedSourceVersions: { [item.canonicalId]: item.sourceVersion }, plannedArrivalTime: "10:15" });
+  assert.equal(result.response.status, 409, JSON.stringify(result.body));
+  assert.equal((await runs().doc(runId).get()).data()?.version, 1);
+  assert.equal((await logisticsAssignments().where("serviceDate", "==", serviceDate).get()).empty, true);
+});
+
 test("menu delivery loading rejects a stale ready requirement after canonical withdrawal", async (t) => {
   const id = prefix();
   t.after(() => cleanup(id));
@@ -541,6 +567,22 @@ test("menu delivery loading rejects a stale ready requirement after canonical wi
   const job = (await logisticsJobs().where("serviceDate", "==", serviceDate).get()).docs.map(doc => doc.data() as LogisticsJob).find(candidate => candidate.requirementId === item.canonicalId)!;
   const result = await responseBody({ action: "mark-delivery-load-loaded", loadId: load.id, expectedRunVersion: 2, expectedLoadVersion: load.version, expectedJobVersions: { [job.id]: job.version } });
   assert.equal(result.response.status, 409);
+  assert.equal((await deliveryLoads().doc(load.id).get()).data()?.loaded, false);
+});
+
+test("menu delivery loading fails closed when the expected requirement is missing upstream", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const runId = `${id}:run`;
+  const item = requirement(`${id}:menu`);
+  upstreamRequirements = [item];
+  await seed(runs(), run(runId));
+  const assigned = await responseBody({ action: "assign-group", runId, expectedRunVersion: 1, requirementIds: [item.canonicalId], expectedSourceVersions: { [item.canonicalId]: item.sourceVersion }, plannedArrivalTime: "10:15" });
+  assert.equal(assigned.response.status, 200, JSON.stringify(assigned.body));
+  const load = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map(doc => doc.data() as DeliveryLoad).find(candidate => candidate.runId === runId)!;
+  upstreamRequirements = [];
+  const result = await responseBody({ action: "mark-delivery-load-loaded", loadId: load.id, expectedRunVersion: 2, expectedLoadVersion: load.version });
+  assert.equal(result.response.status, 503, JSON.stringify(result.body));
   assert.equal((await deliveryLoads().doc(load.id).get()).data()?.loaded, false);
 });
 
