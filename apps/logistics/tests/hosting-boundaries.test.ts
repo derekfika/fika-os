@@ -10,6 +10,9 @@ test("hosted runtime requires explicit HTTPS upstream URLs", () => {
   assert.equal(requiredUpstreamUrl("FIKA_HUB_BASE_URL", env), "https://staging-os.example");
   assert.equal(requiredUpstreamUrl("FIKA_CPU_BASE_URL", env), "https://cpu.example");
   assert.equal(requiredUpstreamUrl("MENU_PLANNING_BASE_URL", { ...env, MENU_PLANNING_BASE_URL: "https://menu-planning-staging.fikacatering.com" }), "https://menu-planning-staging.fikacatering.com");
+  const production = { FIKA_RUNTIME_MODE: "production", FIREBASE_PROJECT_ID: "fika-os" };
+  assert.equal(requiredUpstreamUrl("MENU_PLANNING_BASE_URL", { ...production, MENU_PLANNING_BASE_URL: "https://menuplanner.fikacatering.com" }), "https://menuplanner.fikacatering.com");
+  assert.throws(() => requiredUpstreamUrl("MENU_PLANNING_BASE_URL", production), /required in hosted Logistics runtime/);
   assert.throws(() => requiredUpstreamUrl("FIKA_HUB_BASE_URL", { ...env, FIKA_HUB_BASE_URL: "http://localhost:3200" }), /must use HTTPS/);
 });
 

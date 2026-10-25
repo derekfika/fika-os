@@ -37,6 +37,9 @@ env:
   - variable: FIKA_CPU_BASE_URL
     value: https://fika-os-prod-cpu--fika-os.europe-west4.hosted.app
     availability: [BUILD, RUNTIME]
+  - variable: MENU_PLANNING_BASE_URL
+    value: https://menuplanner.fikacatering.com
+    availability: [BUILD, RUNTIME]
   - variable: NEXT_PUBLIC_FIKA_CPU_URL
     value: https://cpu.fikacatering.com
     availability: [BUILD, RUNTIME]
