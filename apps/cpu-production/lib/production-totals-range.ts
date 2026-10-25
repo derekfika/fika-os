@@ -1,4 +1,5 @@
 import type { ProductionOrder } from "./production-types";
+import { isCpuWithdrawn } from "./production-presentation";
 import { orderDate } from "./production-day";
 
 export type ProductionTotalsPreset = "today" | "tomorrow" | "this_week" | "next_week" | "custom";
@@ -66,18 +67,19 @@ export function filterProductionTotalsOrders(orders: ProductionOrder[], range: P
   if (!range) return [];
   const unique = new Map<string, ProductionOrder>();
   for (const order of orders) {
-    const date = orderDate(order);
-    if (date < range.from || date > range.to || (site && order.destinationOplocId !== site) || (origin && order.origin !== origin)) continue;
     const prior = unique.get(order.canonicalId);
     if (!prior || order.version > prior.version) unique.set(order.canonicalId, order);
   }
-  return [...unique.values()];
+  return [...unique.values()].filter(order => {
+    const date = orderDate(order);
+    return !isCpuWithdrawn(order) && date >= range.from && date <= range.to && (!site || order.destinationOplocId === site) && (!origin || order.origin === origin);
+  });
 }
 
 /** Apply an already-verified selected-day set after weekly canonical deduplication. */
 export function filterProductionTotalsOrdersToDates(orders: ProductionOrder[], selectedDates: string[]): ProductionOrder[] {
   const dates = new Set(selectedDates.filter(isOperationalDate));
-  return orders.filter(order => dates.has(orderDate(order)));
+  return orders.filter(order => dates.has(orderDate(order)) && !isCpuWithdrawn(order));
 }
 
 export function productionTotalsWeekDates(weekCommencing: string): string[] {

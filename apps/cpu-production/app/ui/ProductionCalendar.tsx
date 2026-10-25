@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
-import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuSourceLabel } from "../../lib/production-presentation";
+import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuSourceLabel, isCpuWithdrawn } from "../../lib/production-presentation";
 import { orderDate, orderSummary, productionJobCount, productionQuantitySummary, sourceHeading } from "../../lib/production-day";
 import "./production-calendar.css";
 import "./production-card-overrides.css";
@@ -64,7 +64,7 @@ export default function ProductionCalendar({ orders, open, onCancelBooking, week
         {days.map(day => (
           <article className={`calendar-day${day.orders.length ? " has-work" : ""}`} key={day.key}>
             <header><strong>{day.name}</strong><span>{shortDate(day.date)}{onDayOpen && <button type="button" className="calendar-day-open" onClick={() => onDayOpen(day.key)}>Day</button>}</span></header>
-            {day.orders.length ? <><div className="calendar-day-summary"><strong>{productionJobCount(day.orders)} production job{productionJobCount(day.orders) === 1 ? "" : "s"}</strong><span>{day.orders.filter(order => order.origin === "menu_planning").reduce((sum, order) => sum + order.lines.reduce((total, line) => total + line.customerQuantity, 0), 0) || "—"} lunch portions ordered</span><span>{day.orders.filter(order => Boolean(cpuAttentionLabel(order))).length} need attention</span>{reviewAllergens && day.orders.some(order => order.origin === "menu_planning") && <button type="button" className="calendar-day-open" onClick={() => reviewAllergens(day.key)}>Delivered-In allergens</button>}</div>{day.orders.map(order => {
+            {day.orders.length ? <><div className="calendar-day-summary"><strong>{productionJobCount(day.orders)} production job{productionJobCount(day.orders) === 1 ? "" : "s"}</strong><span>{day.orders.filter(order => order.origin === "menu_planning" && !isCpuWithdrawn(order)).reduce((sum, order) => sum + order.lines.reduce((total, line) => total + line.customerQuantity, 0), 0) || "—"} lunch portions ordered</span><span>{day.orders.filter(order => Boolean(cpuAttentionLabel(order))).length} need attention</span>{reviewAllergens && day.orders.some(order => order.origin === "menu_planning" && !isCpuWithdrawn(order)) && <button type="button" className="calendar-day-open" onClick={() => reviewAllergens(day.key)}>Delivered-In allergens</button>}</div>{day.orders.map(order => {
               const customerPax = guestCount(order);
               const status = cpuLifecycle(order);
               const statusLabel = order.cancellationNotice ? "Cancelled" : cpuLifecycleLabels[status];

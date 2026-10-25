@@ -39,7 +39,7 @@ test("CPU presentation exposes one common lifecycle while retaining source state
   assert.equal(cpuLifecycle(order({ status: "in_production" })), "in_production");
   assert.equal(cpuLifecycle(order({ status: "needs_review" })), "received");
   assert.equal(cpuAttentionLabel(order({ status: "needs_review" })), "Needs review");
-  assert.deepEqual(Object.values(cpuLifecycleLabels), ["Received", "Accepted", "Planning", "Planned", "Ready", "In production", "Complete"]);
+  assert.deepEqual(Object.values(cpuLifecycleLabels), ["Received", "Accepted", "Planning", "Planned", "Ready", "In production", "Complete", "Cancelled"]);
 });
 
 test("CPU presentation names source, destination timing, and exceptions explicitly", () => {
@@ -52,4 +52,15 @@ test("CPU presentation names source, destination timing, and exceptions explicit
 
 test("CPU presentation tolerates legacy orders without a service window", () => {
   assert.equal(cpuServiceWindow(order({ serviceWindow: undefined as never })), "Time TBC");
+});
+
+test("withdrawn CPU orders never fall through to Received across canonical and workflow status combinations", () => {
+  for (const candidate of [
+    order({ status: "cancelled" }),
+    order({ status: "planned", workflowStatus: "cancelled" }),
+    order({ status: "cancelled", workflowStatus: "planned", cancellationNotice: "Booking cancelled" }),
+    order({ status: "accepted", supersededBy: "production-order:replacement" }),
+  ]) assert.equal(cpuLifecycle(candidate), "cancelled");
+  assert.equal(cpuLifecycle(order({ status: "accepted", workflowStatus: "planned" })), "planned");
+  assert.equal(cpuLifecycle(order({ status: "needs_review", cancellationNotice: "Investigate" })), "received");
 });

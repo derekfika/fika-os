@@ -106,6 +106,12 @@ test("selected-day filtering runs after canonical version selection and preserve
   assert.deepEqual(filterProductionTotalsOrders(selectedWeek, operationalWeekRange("2026-10-19"), "site:other").map(row => row.canonicalId), ["order:site"]);
 });
 
+test("a newer cancellation removes the older active order from production totals", () => {
+  const earlier = order("order:withdrawn", "2026-10-20", "Meal", 12);
+  const withdrawn = { ...earlier, version: 2, status: "cancelled" as const, cancellationNotice: "Synthetic cancellation" };
+  assert.deepEqual(filterProductionTotalsOrders([earlier, withdrawn], operationalWeekRange("2026-10-19")), []);
+});
+
 test("failed projection freshness does not become an empty successful totals result; stale requests are discarded", async () => {
   const projection = weekly("2026-10-19", [{ id: "order:a", date: "2026-10-20", name: "Dish", quantity: 1 }]);
   await assert.rejects(loadProductionTotalsRange({ from: "2026-10-20", to: "2026-10-20" }, "all", async () => response(projection, false)), /Current production totals could not be verified/);

@@ -1,6 +1,6 @@
 import type { ProductionLine, ProductionOrder } from "./production-types";
 import type { OperationalAllergenState } from "../../shared/allergen-contract";
-import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel } from "./production-presentation";
+import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel, isCpuWithdrawn } from "./production-presentation";
 
 export type DeliveredInDishTotal = { key: string; dishName: string; total: number; destinations: Array<{ label: string; quantity: number }> };
 export type DeliveredInDishRow = { key: string; name: string; quantity: number; destinations: Array<{ label: string; quantity: number }>; snapshot?: NonNullable<ProductionLine["approvedAllergenSnapshot"]>; reviewed: boolean; snapshotMismatch?: { sources: string[]; detail: string } };
@@ -40,6 +40,7 @@ export function aggregateProductionTotals(orders: ProductionOrder[]): Production
     if (!prior || order.version > prior.version) uniqueOrders.set(order.canonicalId, order);
   }
   for (const order of uniqueOrders.values()) {
+    if (isCpuWithdrawn(order)) continue;
     const categoriesForOrder = new Set<string>();
     const seenLines = new Set<string>();
     for (const line of order.lines) {
@@ -84,7 +85,7 @@ export function productionJobKey(order: ProductionOrder) {
   if (order.origin === "menu_planning") return `${order.origin}:${order.sourcePublicationDayId || order.sourceEntityId || order.canonicalId}:${orderDate(order)}`;
   return `${order.origin}:${order.sourceEntityId || order.canonicalId}`;
 }
-export function productionJobCount(orders: ProductionOrder[]) { return new Set(orders.map(productionJobKey)).size; }
+export function productionJobCount(orders: ProductionOrder[]) { return new Set(orders.filter(order => !isCpuWithdrawn(order)).map(productionJobKey)).size; }
 export function firstDeliveredInOrder(orders: ProductionOrder[]) { return orders.find(order => order.origin === "menu_planning"); }
 export function relatedDeliveredInOrders(orders: ProductionOrder[], selected: ProductionOrder) {
   const key = productionJobKey(selected);
@@ -148,9 +149,10 @@ export function buildDeliveredInAllergenReview(orders: ProductionOrder[]): Deliv
 export function categorySummary(orders: ProductionOrder[]) {
   const jobs = productionJobCount(orders);
   const parts = [`${jobs} production job${jobs === 1 ? "" : "s"}`];
-  const portions = orders.filter(order => order.origin === "menu_planning").reduce((sum, order) => sum + orderQuantity(order), 0);
-  const items = orders.filter(order => order.origin === "grab_and_go").reduce((sum, order) => sum + orderQuantity(order), 0);
-  const pax = orders.filter(order => order.origin === "hospitality_booking").reduce((sum, order) => sum + (order.guestCount ?? orderQuantity(order)), 0);
+  const active = orders.filter(order => !isCpuWithdrawn(order));
+  const portions = active.filter(order => order.origin === "menu_planning").reduce((sum, order) => sum + orderQuantity(order), 0);
+  const items = active.filter(order => order.origin === "grab_and_go").reduce((sum, order) => sum + orderQuantity(order), 0);
+  const pax = active.filter(order => order.origin === "hospitality_booking").reduce((sum, order) => sum + (order.guestCount ?? orderQuantity(order)), 0);
   if (portions) parts.push(`${portions.toLocaleString()} lunch portion${portions === 1 ? "" : "s"}`);
   if (items) parts.push(`${items.toLocaleString()} Grab & Go item${items === 1 ? "" : "s"}`);
   if (pax) parts.push(`${pax.toLocaleString()} hospitality pax`);

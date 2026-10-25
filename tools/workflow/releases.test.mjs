@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { protection } from './cli.mjs';
 import { APPS, target, validateRecord } from './policy.mjs';
-import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe } from './releases.mjs';
+import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe, validateServingBaselineSnapshot, servingBaselineRecord } from './releases.mjs';
+import { backendPath } from './runtime.mjs';
 test('Menu Planner health probe requires the exact uncached build identity endpoint',async()=>{
  const sha='a'.repeat(40);let request;
  const ok=await releaseHealthProbe('menu','https://menu-backend.hosted.app/',sha,async(url,options)=>{request={url,options};return {status:200,json:async()=>({appId:'menu-planning',buildSha:sha})};});
@@ -30,6 +31,25 @@ test('staging executes with repository-write authority and no approval comment o
  const auth=executionAuthorization(target('cpu','staging'),'a'.repeat(40),{},access);assert.equal(auth.actor,'writer');assert.equal(auth.explicitExecute,true);assert.equal(auth.method,'authenticated-repository-writer');
  assert.throws(()=>executionAuthorization(target('cpu','prod'),'a'.repeat(40),{},access));
  assert.throws(()=>executionAuthorization(target('cpu','staging'),'a'.repeat(40),{},{env:{},github:endpoint=>endpoint==='user'?{login:'reader',type:'User'}:{permissions:{push:false}}}));
+});
+test('Hub serving baseline reconciliation accepts only exact healthy, stable staging evidence and preserves prior rollback evidence',()=>{
+ const t=target('hub','staging'),sha='c'.repeat(40),rolloutId='build-2026-10-24-003',buildName=`${backendPath(t)}/builds/${rolloutId}`,trafficBuild=`projects/594727519934/locations/${t.region}/backends/${t.backend}/builds/${rolloutId}`;
+ const snapshot={backend:{name:backendPath(t),environment:'staging',uri:'fika-os-staging--fika-os-dev.europe-west4.hosted.app',reconciling:false,codebase:{repository:'projects/fika-os-dev/locations/europe-west4/connections/apphosting-github-conn-wz4o9sx/gitRepositoryLinks/derekfika-fika-os',rootDirectory:'/apps/integration-hub'}},traffic:{rolloutPolicy:{disabled:true},reconciling:false,current:{splits:[{build:trafficBuild,percent:100}]}},build:{name:buildName,state:'READY',reconciling:false,source:{codebase:{hash:sha,commit:sha,uri:`https://github.com/derekfika/fika-os/commit/${sha}`}}},rollout:{name:`${backendPath(t)}/rollouts/${rolloutId}`,state:'SUCCEEDED',reconciling:false,build:buildName}};
+ assert.deepEqual(validateServingBaselineSnapshot(t,snapshot,sha,rolloutId),{sourceSha:sha,rollout:rolloutId,state:'SUCCEEDED',percent:100});
+ const previous={commit:'a'.repeat(40),record:{schema:'fika.release.v1',...t,sourceSha:'b'.repeat(40),kind:'baseline',scopeHash:'prior',rollout:'build-001',state:'SUCCEEDED',percent:100}};
+ const authorization={actor:'owner',method:'authenticated-repository-writer',explicitExecute:true,action:'reconcile:serving-baseline',sourceSha:sha,releaseId:previous.commit,instruction:'Owner-authorized forward-looking staging reconciliation',authorisedAt:'2026-10-25T14:00:00.000Z'};
+ const record=servingBaselineRecord(t,{snapshot,expectedSha:sha,expectedRollout:rolloutId,previous,previousCommit:previous.commit,authorization,observedAt:'2026-10-25T14:01:00.000Z',health:{ok:true,status:200},scopeHashValue:'verified-source-tree-hash'});
+ assert.equal(record.kind,'baseline');assert.equal(record.previousGoodRecord,previous.commit);assert.equal(record.reconciliation.priorLedgerCommit,previous.commit);assert.equal(record.reconciliation.historicalGovernance.includes('Not established'),true);assert.deepEqual(record.reconciliation.excludedRollbackCandidates,['build-2026-10-24-002']);
+});
+test('Hub serving baseline reconciliation fails closed on target, SHA, traffic, rollout, source or authorization contradictions',()=>{
+ const t=target('hub','staging'),sha='c'.repeat(40),id='build-2026-10-24-003',bn=`${backendPath(t)}/builds/${id}`;
+ const base={backend:{name:backendPath(t),environment:'staging',uri:'fika-os-staging--fika-os-dev.europe-west4.hosted.app',reconciling:false,codebase:{repository:'projects/fika-os-dev/locations/europe-west4/connections/apphosting-github-conn-wz4o9sx/gitRepositoryLinks/derekfika-fika-os',rootDirectory:'/apps/integration-hub'}},traffic:{rolloutPolicy:{disabled:true},reconciling:false,current:{splits:[{build:`projects/594727519934/locations/${t.region}/backends/${t.backend}/builds/${id}`,percent:100}]}},build:{name:bn,state:'READY',reconciling:false,source:{codebase:{hash:sha,commit:sha,uri:`https://github.com/derekfika/fika-os/commit/${sha}`}}},rollout:{name:`${backendPath(t)}/rollouts/${id}`,state:'SUCCEEDED',reconciling:false,build:bn}};
+ const bad=[s=>s.backend.name='other',s=>s.backend.environment='prod',s=>s.backend.codebase.rootDirectory='/wrong',s=>s.traffic.rolloutPolicy.disabled=false,s=>s.traffic.current.splits[0].percent=90,s=>s.traffic.current.splits.push({build:bn,percent:10}),s=>s.build.state='FAILED',s=>s.build.source.codebase.hash='d'.repeat(40),s=>s.rollout.state='FAILED',s=>s.rollout.build='other'];
+ for(const mutate of bad){const s=structuredClone(base);mutate(s);assert.throws(()=>validateServingBaselineSnapshot(t,s,sha,id));}
+ assert.throws(()=>validateServingBaselineSnapshot(target('hub','prod'),base,sha,id));
+ const prev={commit:'a'.repeat(40),record:{schema:'fika.release.v1',...t,sourceSha:'b'.repeat(40),kind:'baseline',scopeHash:'p',rollout:'old',state:'SUCCEEDED',percent:100}};
+ assert.throws(()=>servingBaselineRecord(t,{snapshot:base,expectedSha:sha,expectedRollout:id,previous:prev,previousCommit:prev.commit,authorization:{},observedAt:'2026-10-25T14:00:00.000Z',health:{ok:true,status:200}}),/authorization/i);
+ assert.throws(()=>servingBaselineRecord(t,{snapshot:base,expectedSha:sha,expectedRollout:id,previous:prev,previousCommit:prev.commit,authorization:{actor:'owner',explicitExecute:true,action:'reconcile:serving-baseline',sourceSha:sha,releaseId:prev.commit,instruction:'ok',authorisedAt:'now'},observedAt:'2026-10-25T14:00:00.000Z',health:{ok:false,status:503}}),/health/i);
 });
 test('production needs explicit owner release instruction bound to resolved scope/action, without review/comment API calls',()=>{
  const access={env:{},github:endpoint=>{assert.ok(endpoint==='user'||endpoint==='repos/derekfika/fika-os');return endpoint==='user'?{login:'owner',type:'User'}:{owner:{login:'owner'},permissions:{push:true}};}};

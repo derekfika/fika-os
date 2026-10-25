@@ -11,6 +11,18 @@ test("account detail uses the shared package/IndexedDB-first options loader", as
   assert.doesNotMatch(source, /fetch\("\/api\/authmod\/options", \{ cache: "no-store" \}\)/);
 });
 
+test("AUTHMOD maintenance rebuild calls only the protected reference-package operation then verifies options", async () => {
+  const source = await readFile(new URL("../app/authmod/AuthmodApp.tsx", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/read-packages/rebuild/route.ts", import.meta.url), "utf8");
+  assert.match(source, /fetch\("\/api\/read-packages\/rebuild\?dataset=authmod-references", \{ method: "POST", cache: "no-store" \}\)/);
+  assert.match(source, /const options = await json<Options>\(await loadAuthmodOptions\(\)\)/);
+  assert.match(route, /requireActor\(request, \["integration-admin"\]\)/);
+  assert.match(route, /assertPermission\(actor, "canonical.edit"\)/);
+  assert.match(route, /rebuildAuthmodReferenceReadPackage/);
+  const maintenance = source.slice(source.indexOf("function ReferencePackageMaintenance"));
+  assert.doesNotMatch(maintenance, /\/api\/authmod\/(accounts|imports|bootstrap)|authmod-access/);
+});
+
 test("shared options loader fetches the full reference package once per package version", async () => {
   const stores = new Map<string, Map<string, unknown>>();
   const store = (name: string) => { let value = stores.get(name); if (!value) { value = new Map(); stores.set(name, value); } return value; };

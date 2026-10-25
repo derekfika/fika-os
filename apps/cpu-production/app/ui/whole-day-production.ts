@@ -1,6 +1,7 @@
 import type { ProductionOrder } from "../../lib/production-types";
 import type { CpuDayProjection } from "../../lib/cpu-projection";
 import { cpuProjectionToOrders } from "../../lib/cpu-dashboard-adapter";
+import { isCpuWithdrawn } from "../../lib/production-presentation";
 /** Deliberate print-time, fresh whole-day read. Never uses viewport/filtered/week cache data. */
 export async function loadWholeDay(
   day: string,
@@ -36,5 +37,5 @@ export async function loadWholeDay(
     throw Error(
       "Production data is incomplete or belongs to another day. Nothing was printed.",
     );
-  return cpuProjectionToOrders(p);
+  return cpuProjectionToOrders(p).filter(order => !isCpuWithdrawn(order));
 }
