@@ -158,11 +158,23 @@ async function cleanup(id: string) {
   await Promise.all([logisticsDayProjections().doc(serviceDate).delete(), logisticsChangeCursor().doc(logisticsDayCursorId(serviceDate)).delete()]);
   upstreamRequirements = [];
   failFulfilment = false;
+  failProductionAuthority = false;
+  productionOrderOverrides.clear();
   principalVehicles = ["van1", "van2"];
 }
 let principalVehicles = ["van1", "van2"];
 let upstreamRequirements: FulfilmentRequirement[] = [];
 let failFulfilment = false;
+let failProductionAuthority = false;
+const productionOrderOverrides = new Map<string, Record<string, unknown> | null>();
+function expectedMenuProductionId(item: FulfilmentRequirement) {
+  const safe = (value:string) => value.replace(/[^A-Za-z0-9:_-]+/g, "_");
+  return `production-order:v1:menu-planning:${safe(item.sourceEntityId)}:${safe(item.destinationOplocId)}`;
+}
+function productionOrderFor(item: FulfilmentRequirement, status = "menu_available") {
+  const canonicalId = expectedMenuProductionId(item);
+  return { canonicalId, origin: "menu_planning", status, version: item.sourceVersion, sourceVersion: item.sourceVersion, sourceEntityId: item.sourceEntityId, destinationOplocId: item.destinationOplocId, serviceDate: item.serviceDate };
+}
 const originalFetch = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL) => {
   const url = String(input);
@@ -181,6 +193,16 @@ globalThis.fetch = (async (input: RequestInfo | URL) => {
           status: 200,
           headers: { "content-type": "application/json" },
         });
+  if (url.includes("/api/production?")) {
+    if (failProductionAuthority) return new Response(JSON.stringify({ error: "upstream unavailable" }), { status: 503 });
+    const canonicalId = new URL(url).searchParams.get("canonicalId") || "";
+    if (productionOrderOverrides.has(canonicalId)) {
+      const order = productionOrderOverrides.get(canonicalId);
+      return Response.json({ ...(order ? { order } : {}) });
+    }
+    const requirement = upstreamRequirements.find(item => expectedMenuProductionId(item) === canonicalId);
+    return Response.json({ ...(requirement ? { order: productionOrderFor(requirement, requirement.status === "withdrawn" ? "cancelled" : "menu_available") } : {}) });
+  }
   if (url.includes("/api/internal/oplocs"))
     return new Response(
       JSON.stringify({
@@ -475,6 +497,84 @@ test("assign-group combines same-destination requirements and updates run atomic
   );
   assert.equal(savedJobs.every((job) => job.activeLoadId === savedLoads[0].id), true);
   assert.deepEqual(projection.deliveryLoads.find((load) => load.id === savedLoads[0].id)?.jobs.map((job) => job.requirementId).sort(), [first.canonicalId, second.canonicalId].sort());
+});
+
+test("menu assignment fails closed while the Hub Production Order is withdrawn but fulfilment is stale", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const runId = `${id}:run`;
+  const item = requirement(`${id}:menu`);
+  upstreamRequirements = [item]; // deliberately still ready during the propagation window
+  productionOrderOverrides.set(expectedMenuProductionId(item), productionOrderFor(item, "cancelled"));
+  await seed(runs(), run(runId));
+  const result = await responseBody({ action: "assign-group", runId, expectedRunVersion: 1, requirementIds: [item.canonicalId], expectedSourceVersions: { [item.canonicalId]: item.sourceVersion }, plannedArrivalTime: "10:15" });
+  assert.equal(result.response.status, 409);
+  assert.equal((await runs().doc(runId).get()).data()?.version, 1);
+  assert.equal((await logisticsAssignments().where("serviceDate", "==", serviceDate).get()).empty, true);
+});
+
+test("menu assignment fails closed when Hub Production Order authority is unavailable", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const runId = `${id}:run`;
+  const item = requirement(`${id}:menu`);
+  upstreamRequirements = [item];
+  failProductionAuthority = true;
+  await seed(runs(), run(runId));
+  const result = await responseBody({ action: "assign-group", runId, expectedRunVersion: 1, requirementIds: [item.canonicalId], expectedSourceVersions: { [item.canonicalId]: item.sourceVersion }, plannedArrivalTime: "10:15" });
+  assert.equal(result.response.status, 503);
+  assert.equal((await runs().doc(runId).get()).data()?.version, 1);
+  assert.equal((await logisticsAssignments().where("serviceDate", "==", serviceDate).get()).empty, true);
+});
+
+test("menu delivery loading rejects a stale ready requirement after canonical withdrawal", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const runId = `${id}:run`;
+  const item = requirement(`${id}:menu`);
+  upstreamRequirements = [item];
+  await seed(runs(), run(runId));
+  const assigned = await responseBody({ action: "assign-group", runId, expectedRunVersion: 1, requirementIds: [item.canonicalId], expectedSourceVersions: { [item.canonicalId]: item.sourceVersion }, plannedArrivalTime: "10:15" });
+  assert.equal(assigned.response.status, 200);
+  const load = (await deliveryLoads().where("serviceDate", "==", serviceDate).get()).docs.map(doc => doc.data() as DeliveryLoad).find(candidate => candidate.runId === runId)!;
+  productionOrderOverrides.set(expectedMenuProductionId(item), productionOrderFor(item, "cancelled"));
+  const job = (await logisticsJobs().where("serviceDate", "==", serviceDate).get()).docs.map(doc => doc.data() as LogisticsJob).find(candidate => candidate.requirementId === item.canonicalId)!;
+  const result = await responseBody({ action: "mark-delivery-load-loaded", loadId: load.id, expectedRunVersion: 2, expectedLoadVersion: load.version, expectedJobVersions: { [job.id]: job.version } });
+  assert.equal(result.response.status, 409);
+  assert.equal((await deliveryLoads().doc(load.id).get()).data()?.loaded, false);
+});
+
+test("menu run dispatch rejects a withdrawal in the source-to-projection propagation window", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const runId = `${id}:run`;
+  const item = requirement(`${id}:menu`);
+  upstreamRequirements = [item];
+  await seed(runs(), { ...run(runId), status: "planned", driverLabel: "Franco", driverId: "franco" });
+  const assigned = await responseBody({ action: "assign-group", runId, expectedRunVersion: 1, requirementIds: [item.canonicalId], expectedSourceVersions: { [item.canonicalId]: item.sourceVersion }, plannedArrivalTime: "10:15" });
+  assert.equal(assigned.response.status, 200);
+  const ready = await responseBody({ action: "mark-run-ready", runId, expectedRunVersion: 1 });
+  assert.equal(ready.response.status, 200, JSON.stringify({ body: ready.body, run: (await runs().doc(runId).get()).data(), assignments: (await logisticsAssignments().where("serviceDate", "==", serviceDate).get()).docs.map(doc => doc.data()).filter(item => String(item.jobId || "").includes(id)) }));
+  const loaded = await markRunLoaded(runId);
+  productionOrderOverrides.set(expectedMenuProductionId(item), productionOrderFor(item, "cancelled"));
+  const result = await responseBody({ action: "dispatch-run", runId, expectedRunVersion: loaded.version });
+  assert.equal(result.response.status, 409);
+  assert.equal((result.body.error as { code?: string })?.code, "INVALID_REQUEST");
+  assert.equal((await runs().doc(runId).get()).data()?.status, "ready");
+});
+
+test("Menu Planning source guard does not block Hospitality or Grab & Go demand", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const runId = `${id}:run`;
+  const hospitality = { ...requirement(`${id}:hospitality`), sourceDomain: "cpu-production" as const, workstream: "Hospitality" as const };
+  const grabAndGo = { ...requirement(`${id}:grab`), sourceDomain: "grab-and-go" as const, workstream: "Grab & Go" as const };
+  upstreamRequirements = [hospitality, grabAndGo];
+  failProductionAuthority = true;
+  await seed(runs(), run(runId));
+  const result = await responseBody({ action: "assign-group", runId, expectedRunVersion: 1, requirementIds: [hospitality.canonicalId, grabAndGo.canonicalId], expectedSourceVersions: { [hospitality.canonicalId]: 1, [grabAndGo.canonicalId]: 1 }, plannedArrivalTime: "10:15" });
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.assigned, 2);
 });
 
 test("partial group assignment adds remaining ready work and skips pending/withdrawn jobs", async (t) => {
