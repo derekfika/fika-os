@@ -110,14 +110,14 @@ export function validateServingBaselineSnapshot(t, snapshot, expectedSha, expect
   return { sourceSha: expectedSha, rollout: expectedRollout, state: 'SUCCEEDED', percent: 100 };
 }
 
-export function servingBaselineRecord(t, { snapshot, expectedSha, expectedRollout, previous, previousCommit, authorization, observedAt, health }) {
+export function servingBaselineRecord(t, { snapshot, expectedSha, expectedRollout, previous, previousCommit, authorization, observedAt, health, scopeHashValue }) {
   const servingState = validateServingBaselineSnapshot(t, snapshot, expectedSha, expectedRollout);
   if (!previous || !previousCommit || previous.record?.sourceSha === expectedSha || previous.record?.kind === 'intent') throw Error('A valid prior ledger baseline is required; pending intent cannot be reconciled');
   validateRecord(previous.record, t);
   if (!authorization?.explicitExecute || authorization.action !== 'reconcile:serving-baseline' || authorization.sourceSha !== expectedSha || authorization.releaseId !== previousCommit || !authorization.actor || !authorization.instruction || !authorization.authorisedAt) throw Error('Explicit authenticated authorization is required for this exact reconciliation');
   if (!health?.ok || health.status !== 200) throw Error('Healthy staging serving probe is required before adopting a baseline');
   if (!observedAt || !Number.isFinite(Date.parse(observedAt))) throw Error('Actual UTC observation timestamp is required');
-  return { schema:'fika.release.v1', ...t, ...servingState, kind:'baseline', scopeHash:scopeHash(t.app, expectedSha), observedAt,
+  return { schema:'fika.release.v1', ...t, ...servingState, kind:'baseline', scopeHash:scopeHashValue || scopeHash(t.app, expectedSha), observedAt,
     previousGood:{ sourceSha:previous.record.sourceSha, rollout:previous.record.rollout, state:previous.record.state, percent:previous.record.percent },
     previousGoodRecord:previousCommit, reconciliation:{ type:'forward-serving-baseline-adoption', authorizedAt:authorization.authorisedAt, actor:authorization.actor, method:authorization.method,
       authorization:authorization.instruction, priorLedgerCommit:previousCommit, verifiedAt:observedAt, backend:t.backend, project:t.project, build:expectedRollout,
