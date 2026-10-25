@@ -56,6 +56,8 @@ Exactly one mapped backend is deployed in region `europe-west4`:
 | delivered-in | fika-delivered-in-staging | fika-os-prod-deliveredin |
 | logistics | fika-logistics-staging | fika-os-prod-logistics |
 
+Logistics staging's unauthenticated root intentionally redirects to the staging Hub sign-in with `FIKA_SESSION_MISSING`; its build-info route is authentication-protected. The governed post-rollout probe accepts only an exact HTTP 307 to `https://staging-os.fikacatering.com/` carrying the `logistics` app ID, `FIKA_SESSION_MISSING`, and the exact backend root as `returnTo`. Firebase serving source, READY/SUCCEEDED rollout and 100% traffic remain independently verified. Other app probes and production Logistics probe behavior are unchanged.
+
 Automatic rollouts remain disabled. The CLI verifies target/provenance, submits an exact SHA, waits for READY/SUCCEEDED and 100% serving, and performs non-destructive HTTP smoke. Report app-specific acceptance separately: an HTTP 200 is not business UAT. Release approval never authorises migrations, real customer bookings, emails or operational test writes.
 
 ## Rollback and interrupted releases
