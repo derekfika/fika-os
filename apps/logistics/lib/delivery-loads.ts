@@ -15,8 +15,8 @@ export function deliveryLoadId(plan: LoadKey) {
 }
 
 export function assertLoadVersion(load: DeliveryLoad, expected?: number) {
-  if (!Number.isInteger(expected)) throw new HttpError(422, "The current delivery load version is required.");
-  if (load.version !== expected) throw new HttpError(409, "Delivery load changed. Refresh Logistics and retry.");
+  if (!Number.isInteger(expected)) throw new HttpError(422, "The current delivery load version is required.", "LOGISTICS_LOAD_VERSION_REQUIRED");
+  if (load.version !== expected) throw new HttpError(409, "Delivery load changed. Refresh Logistics and retry.", "LOGISTICS_LOAD_VERSION_CONFLICT");
 }
 
 /** The production predicates also supply read-only administrative explanations. */
