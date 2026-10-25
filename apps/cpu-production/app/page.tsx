@@ -24,7 +24,7 @@ import HospitalityProductionDetail from "./ui/HospitalityProductionDetail";
 import ProductionOrderDetail from "./ui/ProductionOrderDetail";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
-import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
+import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, isCpuWithdrawn, type CpuLifecycle } from "../lib/production-presentation";
 import { aggregateProductionTotals, orderDate } from "../lib/production-day";
 import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 import { addOperationalDays, filterProductionTotalsOrders, filterProductionTotalsOrdersToDates, formatProductionTotalsDateRange, formatProductionTotalsSelection, operationalWeekRange, productionTotalsWeekDates, resolveProductionTotalsRange } from "../lib/production-totals-range";
@@ -269,6 +269,7 @@ export default function CpuProduction() {
   ] as string[];
   const baseVisible = orders.filter(
     (order) =>
+      (view === "calendar" ? (!isCpuWithdrawn(order) || Boolean(order.cancellationNotice)) : !isCpuWithdrawn(order)) &&
       (!status || cpuLifecycle(order) === status) &&
       (!origin || order.origin === origin) &&
       (!site || order.destinationOplocId === site),
@@ -449,7 +450,7 @@ export default function CpuProduction() {
               onClick={() => setStatus(status === item ? "" : item)}
             >
               <strong>
-                {summaryOrders.filter((order) => cpuLifecycle(order) === item).length}
+                {summaryOrders.filter((order) => !isCpuWithdrawn(order) && cpuLifecycle(order) === item).length}
               </strong>
               <span>{cpuLifecycleLabels[item]}</span>
             </button>

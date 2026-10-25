@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ProductionOrder } from "../lib/production-types";
-import { aggregateDeliveredIn, aggregateProductionTotals, buildAllergenReviewRows, buildDeliveredInAllergenReview, buildDeliveredInDishRows, categorySummary, deliveredInMenuOrdersForServiceDate, deliveredInTotals, firstDeliveredInOrder, groupByRequiredTime, orderSummary } from "../lib/production-day";
+import { aggregateDeliveredIn, aggregateProductionTotals, buildAllergenReviewRows, buildDeliveredInAllergenReview, buildDeliveredInDishRows, categorySummary, deliveredInMenuOrdersForServiceDate, deliveredInTotals, firstDeliveredInOrder, groupByRequiredTime, orderSummary, productionJobCount } from "../lib/production-day";
 import { readFileSync } from "node:fs";
 
 function order(destinationLabel: string, quantity: number, sourceMenuItemId = "dish:leaf"): ProductionOrder {
@@ -18,6 +18,18 @@ test("Day grouping keeps operational times and compact quantities separate from 
   const second = { ...order("FIKA Xchange", 10), canonicalId: "production-order:fika", requiredBy: "2026-08-24T08:00" };
   assert.equal(orderSummary(first), "10 portions ordered · 1 line");
   assert.equal(groupByRequiredTime([first, second])[0].orders.length, 2);
+});
+
+test("cancelled and superseded demand stays inspectable but contributes no active jobs or production totals", () => {
+  const active = order("Angel Court", 10);
+  const cancelled = { ...order("Cancelled Site", 99), status: "cancelled" as const, cancellationNotice: "Synthetic booking withdrawn" };
+  const workflowCancelled = { ...order("Workflow Cancelled", 20), status: "accepted" as const, workflowStatus: "cancelled" as const };
+  const superseded = { ...order("Old Site", 30), supersededBy: "production-order:new" };
+  const all = [active, cancelled, workflowCancelled, superseded];
+  assert.equal(productionJobCount(all), 1);
+  assert.equal(categorySummary(all), "1 production job · 10 lunch portions");
+  assert.equal(aggregateProductionTotals(all).reduce((sum, row) => sum + row.orderCount, 0), 1);
+  assert.equal(all[1].cancellationNotice, "Synthetic booking withdrawn");
 });
 
 test("production Totals count canonical orders and line quantities once by explicit workstream", () => {

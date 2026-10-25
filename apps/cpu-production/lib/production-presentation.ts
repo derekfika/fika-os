@@ -1,6 +1,6 @@
 import type { ProductionOrder, ProductionStatus } from "./production-types";
 
-export type CpuLifecycle = "received" | "accepted" | "planning" | "planned" | "ready" | "in_production" | "complete";
+export type CpuLifecycle = "received" | "accepted" | "planning" | "planned" | "ready" | "in_production" | "complete" | "cancelled";
 
 export const cpuLifecycleLabels: Record<CpuLifecycle, string> = {
   received: "Received",
@@ -10,11 +10,13 @@ export const cpuLifecycleLabels: Record<CpuLifecycle, string> = {
   ready: "Ready",
   in_production: "In production",
   complete: "Complete",
+  cancelled: "Cancelled",
 };
 
 const lifecycleOrder: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
 
 export function cpuLifecycle(order: ProductionOrder): CpuLifecycle {
+  if (isCpuWithdrawn(order)) return "cancelled";
   const status = (order.workflowStatus && order.workflowStatus !== "draft" ? order.workflowStatus : order.status) as ProductionStatus;
   if (status === "accepted") return "accepted";
   if (status === "planned") return "planned";
@@ -24,6 +26,11 @@ export function cpuLifecycle(order: ProductionOrder): CpuLifecycle {
   if (["in_production", "partially_complete"].includes(status)) return "in_production";
   if (status === "complete") return "complete";
   return "received";
+}
+
+/** Withdrawn orders remain available for history/intervention, but are not active demand. */
+export function isCpuWithdrawn(order: Pick<ProductionOrder, "status" | "workflowStatus" | "supersededBy">): boolean {
+  return order.status === "cancelled" || order.workflowStatus === "cancelled" || Boolean(order.supersededBy);
 }
 
 export function cpuLifecycleIndex(order: ProductionOrder) { return lifecycleOrder.indexOf(cpuLifecycle(order)); }
