@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { APPS, REPO, MAIN_CHECK, affected, risk, target, digest } from './policy.mjs';
 import { git, root, command, ghApi, save, stateDir, jsonFile } from './runtime.mjs';
 import { createWorkspace, checkWorkspace, finishWorkspace, retireWorkspace, workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
-import { bootstrap, deploy, reconcile, planRelease } from './releases.mjs';
+import { bootstrap, deploy, reconcile, reconcileServingBaseline, planRelease } from './releases.mjs';
 import { hostedTrust, assertHostedContext } from './hosted.mjs';
 
 export function parse(args) {
@@ -85,6 +85,10 @@ async function main() {
     if (!options.staging && !options.prod) throw Error('Specify --staging or --prod');
     result = await (verb === 'reconcile' ? reconcile : deploy)(arg, options.prod ? 'prod' : 'staging', {...options,rollback:verb === 'rollback'});
     if (options.output) save(options.output, result);
+  } else if (verb === 'reconcile-serving-baseline') {
+    if (!options.staging || options.prod) throw Error('Serving baseline reconciliation is restricted to --staging');
+    result = await reconcileServingBaseline(arg, 'staging', options);
+    if (options.output) save(options.output, result);
   } else if (verb === 'hosted-check' || verb === 'trust') {
     if (!options.staging && !options.prod) throw Error('Specify --staging or --prod');
     const environment = options.prod ? 'prod' : 'staging';
@@ -109,7 +113,7 @@ async function main() {
     }
     if (options.output) save(options.output, { applied: Boolean(options.execute), protections: result });
   } else {
-    result = { usage: ['fika workspace create <task> --owner <agent> --scope apps/cpu-production', 'fika workspace retire <task> --owner <agent> [--preserve-generated] [--archive]', 'fika affected --base origin/main', 'fika validate --base origin/main', 'fika deploy cpu --staging [--execute]', 'fika deploy cpu --prod [--execute --owner-approved --reason <owner release instruction>]', 'fika rollback cpu --prod [--execute --owner-approved --reason <owner rollback instruction>]', 'fika reconcile cpu --staging|--prod [--resolution abandon|complete --rollout <ID> --reason <text> --execute]', 'fika cleanup --output <plan.json>', 'fika cleanup --execute --file <plan.json> --approve-hash <hash>'], safety: 'Owner gives ordinary language instructions; agent pins the source and records explicit production authorisation. CI, staging for operational changes, exact-SHA/backend and recovery gates remain mandatory. Hosted WIF is optional for local operation.' };
+    result = { usage: ['fika workspace create <task> --owner <agent> --scope apps/cpu-production', 'fika workspace retire <task> --owner <agent> [--preserve-generated] [--archive]', 'fika affected --base origin/main', 'fika validate --base origin/main', 'fika deploy cpu --staging [--execute]', 'fika deploy cpu --prod [--execute --owner-approved --reason <owner release instruction>]', 'fika rollback cpu --prod [--execute --owner-approved --reason <owner rollback instruction>]', 'fika reconcile cpu --staging|--prod [--resolution abandon|complete --rollout <ID> --reason <text> --execute]', 'fika reconcile-serving-baseline hub --staging --sha <exact SHA> --rollout <build ID> --reason <owner instruction> [--execute]', 'fika cleanup --output <plan.json>', 'fika cleanup --execute --file <plan.json> --approve-hash <hash>'], safety: 'Owner gives ordinary language instructions; agent pins the exact source, records authorisation and preserves append-only history. CI, staging for operational changes, exact-SHA/backend and recovery gates remain mandatory. Hosted WIF is optional for local operation.' };
   }
   console.log(JSON.stringify(result, null, 2));
 }

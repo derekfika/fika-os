@@ -68,6 +68,10 @@ Twelve append-only `release/staging/<app>` and `release/prod/<app>` ledgers rema
 
 For terminal failures the agent inspects `fika reconcile <app> --prod`, then uses `--resolution abandon|complete --rollout <observed-ID> --execute --owner-approved --reason <owner recovery/rollback instruction>`. The agent resolves attempt IDs internally. Reconciliation requires a returned submitter, positive terminal identity, paginated build/rollout/operation discovery, two stable snapshots and original journal/rollback lineage. Active or unknown outcomes cannot be abandoned. The original journal is archived before a non-force resolution; no deployment is submitted. Healthy successes must be completed. Abandoned unhealthy releases permit only verified rollback and are never themselves known-good targets. There is no force-abandon option.
 
+### Forward adoption of an externally serving staging baseline
+
+Only when the owner explicitly authorises it, `fika reconcile-serving-baseline hub --staging --sha <exact SHA> --rollout <build ID> --reason <owner instruction> --execute` may append a prospective baseline when the release ledger is behind an already-serving staging release. This path is restricted to Hub staging. It requires two identical authoritative App Hosting snapshots, the exact Firebase project/backend and source repository/root, a READY build at the exact commit, a SUCCEEDED matching rollout, one current 100% traffic split, automatic rollouts disabled, no reconciliation in progress, and a non-redirecting HTTP 200 serving probe. It binds the authenticated repository writer, owner instruction, actual UTC authorization/observation times, exact source and rollout, and prior ledger commit. The existing entry remains the first parent; ordinary non-force push provides compare-and-swap protection. It does not assert that an earlier rollout was governed and does not designate unverified intervening builds as rollback candidates. It cannot resolve a pending intent or operate on production. This is a ledger reconciliation only; it does not deploy or alter Firebase state.
+
 
 ### Pre-submission failures (staging)
 
