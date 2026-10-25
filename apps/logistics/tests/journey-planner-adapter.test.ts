@@ -33,6 +33,11 @@ test("rows are ordered by planned departure with untimed drafts last and stable 
   assert.equal(model.runs[2].status, "draft");
 });
 
+test("driver workflow links retain the planner's selected service date", () => {
+  const row = plannerDayToViewModel(day(), context).runs[0];
+  assert.equal(row.driverHref, "/mobile?run=run%3A1&serviceDate=2026-10-28");
+});
+
 test("chips are CPU, then visits in stored order, then CPU; CPU is never a customer stop", () => {
   const row = plannerDayToViewModel(day(), context).runs[0];
   assert.deepEqual(row.chips.map((chip) => chip.kind), ["cpu-departure", "visit", "visit", "cpu-return"]);

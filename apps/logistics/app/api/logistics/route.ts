@@ -850,6 +850,19 @@ async function handlePost(request: NextRequest) {
       const jobId = body.jobId || body.job!.id;
       const job = await getLogisticsJob(jobId);
       if (!job) throw new HttpError(404, "Logistics job not found.");
+      // This command can be used directly by the planner UI, bypassing the
+      // fulfilment-specific assign/assign-group commands below. For Menu
+      // Planning demand, rejoin the current upstream requirement and verify
+      // its publication/day authority before committing the load assignment.
+      const menuOriginated = job.sourceType === "menu-planning" ||
+        job.sourceType === "cpu-production" && job.workstream === "Delivered-In";
+      if (menuOriginated) {
+        if (!job.requirementId) throw new HttpError(503, "Expected fulfilment authority is missing; refresh Logistics before continuing.");
+        const source = await fetchRequirements(job.serviceDate, request.headers.get("cookie") || undefined);
+        const requirement = source.find(item => item.canonicalId === job.requirementId);
+        if (!requirement) throw new HttpError(503, "Expected fulfilment authority is missing; refresh Logistics before continuing.");
+        await assertMenuProductionAuthority([requirement], request.headers.get("cookie") || undefined, [job.requirementId]);
+      }
       const scheduledTime = body.scheduledTime || job.requestedWindow?.startTime;
       if (!scheduledTime) throw new HttpError(422, "A scheduled arrival is required.");
       validatePlannedSchedule(undefined, { startTime: scheduledTime, ...(body.scheduledEnd ? { endTime: body.scheduledEnd } : {}) });
