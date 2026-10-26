@@ -20,6 +20,10 @@ import {
   DELIVERED_IN_DASHBOARD_LOAD_TIMEOUT_MS,
   withDeliveredInLoadTimeout,
 } from "../lib/dashboard-load-timeout";
+import {
+  awaitDeliveredInCacheWithin,
+  selectDeliveredInCachedDays,
+} from "../lib/dashboard-cache-decision";
 type ProjectionHeadEntry = {
   serviceDate: string;
   projectionVersion: number;
@@ -555,27 +559,18 @@ export default function Page() {
         : "";
       setSelectedSiteId(nextSite);
       const accountScope = head.access.email.toLowerCase();
-      const cachedDays = await withDeliveredInLoadTimeout(() =>
+      // The cache is an optional optimisation. Wait briefly for it, then fall
+      // back to the authoritative API if it is slow, rejected or blocked.
+      const cacheRead = await awaitDeliveredInCacheWithin(
         readCachedDeliveredInDays(accountScope, nextSite),
+        [] as ProjectedDay[],
       );
       if (!current()) return;
-      const activeEntries = head.entries.filter(
-        (entry) => entry.state !== "withdrawn",
-      );
-      const cachedByDate = new Map(cachedDays.map((day) => [day.date, day]));
-      const matches =
-        head.projectionState === "current" &&
-        activeEntries.every((entry) => {
-          const cached = cachedByDate.get(entry.serviceDate);
-          return (
-            cached &&
-            cached.projectionVersion === entry.projectionVersion &&
-            cached.contentHash === entry.contentHash
-          );
-        });
-      const visibleCachedDays = cachedDays.filter((day) =>
-        activeEntries.some((entry) => entry.serviceDate === day.date),
-      );
+      const { matches, visibleCachedDays } = selectDeliveredInCachedDays({
+        entries: head.entries,
+        projectionState: head.projectionState,
+        cachedDays: cacheRead.value,
+      });
       if (visibleCachedDays.length || matches)
         setDashboard({
           access: head.access,
