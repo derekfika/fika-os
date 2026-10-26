@@ -4,7 +4,6 @@ import {
   addOneOffDestination,
   batchUpdateEntries,
   cleanDuplicateEntries,
-  copyWeekIntoWeek,
   createEntry,
   createWeekSnapshot,
   defaultWeekForDate,
@@ -50,6 +49,15 @@ import {
   listWeekSummaries,
 } from "@/lib/operational-store";
 import type { RollingEntry, RollingWeek } from "@/lib/rolling-menu-types";
+import {
+  duplicateMenuPlanning,
+  type DuplicateDestinationRequest,
+} from "@/lib/menu-duplicate-command";
+import type {
+  DuplicateContent,
+  DuplicateExisting,
+  DuplicateScope,
+} from "@/lib/menu-duplicate";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 function scopedSnapshot(
@@ -321,21 +329,27 @@ async function handlePost(request: NextRequest) {
         publicationState: await publicationState(snapshot, liveOplocs),
       });
     }
-    if (action === "copy-week-into-current") {
-      const snapshot = await copyWeekIntoWeek(
-        String(body.sourceWeekId),
-        String(body.targetWeekId),
+    if (action === "duplicate-plan") {
+      // One authoritative Duplicate Planning command for Week and Portion Planner. The server
+      // recomputes the plan; the client only states intent and the reviewed versions/hash.
+      const result = await duplicateMenuPlanning(
+        {
+          mode: body.mode === "apply" ? "apply" : "preview",
+          sourceWeekId: String(body.sourceWeekId || ""),
+          scope: body.scope as DuplicateScope,
+          destinations: Array.isArray(body.destinations)
+            ? (body.destinations as DuplicateDestinationRequest[])
+            : [],
+          content: body.content as DuplicateContent,
+          existing: body.existing as DuplicateExisting,
+          operationId: String(body.operationId || ""),
+          expectedVersions: body.expectedVersions as Record<string, number> | undefined,
+          planHash: body.planHash ? String(body.planHash) : undefined,
+        },
         actor.uid,
         liveOplocs,
       );
-      return NextResponse.json({
-        snapshot: await resolvedSnapshot(snapshot, undefined, actor),
-        weeks: await listWeeks(),
-        blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor), {
-          governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
-        }),
-        publicationState: await publicationState(snapshot, liveOplocs),
-      });
+      return NextResponse.json(result);
     }
     if (action === "reset-week") {
       const snapshot = await resetWeek(String(body.weekId), actor.uid);
