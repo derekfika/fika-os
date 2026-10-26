@@ -132,7 +132,8 @@ export function validateAllDay(draft: AllDayDraft, menu: readonly PortalMenuItem
   const shared = composeSharedView(draft);
   const contactErrors = validateRcoaStep(1, shared, menu);
   const dateErrors: Record<string, string> = isValidRcoaLondonWallTime(draft.eventDate, "12:00") ? {} : { eventDate: "Choose a valid event date." };
-  const eventErrors = { ...contactErrors, ...dateErrors };
+  const floorErrors: Record<string, string> = draft.floorLevel.trim() ? {} : { floorLevel: "Enter the floor level." };
+  const eventErrors = { ...contactErrors, ...dateErrors, ...floorErrors };
   if (Object.keys(eventErrors).length) return { step: 1, errors: eventErrors };
   for (const service of draft.services) {
     const row = composeServiceDraft(draft, service.id);
@@ -140,7 +141,8 @@ export function validateAllDay(draft: AllDayDraft, menu: readonly PortalMenuItem
     if (!service.category) errors[`service:${service.id}`] = "Choose a service type.";
     else {
       const timing = validateRcoaStep(2, row, menu);
-      for (const key of ["startTime", "guestCount", "location"] as const) if (timing[key]) errors[`${key}:${service.id}`] = timing[key];
+      for (const key of ["startTime", "guestCount"] as const) if (timing[key]) errors[`${key}:${service.id}`] = timing[key];
+      if (timing.roomOrArea) errors[`location:${service.id}`] = timing.roomOrArea;
       const items = validateRcoaStep(3, row, menu);
       if (Object.keys(items).length) errors[`items:${service.id}`] = Object.values(items)[0];
     }

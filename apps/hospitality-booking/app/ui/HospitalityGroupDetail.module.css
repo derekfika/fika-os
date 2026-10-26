@@ -103,3 +103,14 @@
 .cancelServices { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 4px; font-size: 14px; line-height: 20px; }
 .cancelServices li { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-top: 1px solid var(--fika-border-default); }
 @media (max-width: 600px) { .cancelServices li { flex-direction: column; gap: 2px; } }
+.location { display: grid; gap: 10px; margin-top: 16px; padding: 16px; border: 1px solid var(--fika-border-default); border-left: 4px solid var(--fika-action-primary); border-radius: 8px; background: var(--fika-surface-subtle); }
+.location h3 { margin: 0; font-size: 12px; line-height: 16px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fika-text-secondary); }
+.locationGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 0; }
+.locationGrid div { display: grid; gap: 2px; }
+.locationGrid dt { font-size: 12px; line-height: 16px; color: var(--fika-text-secondary); font-weight: 600; }
+.locationGrid dd { margin: 0; font-size: 18px; line-height: 24px; font-weight: 700; overflow-wrap: anywhere; }
+.locationMissing { font-size: 14px; line-height: 20px; font-weight: 600; color: var(--fika-status-danger); }
+.locationNote { margin: 0; font-size: 14px; line-height: 20px; color: var(--fika-text-primary); }
+.locationRows { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.locationRow { display: grid; gap: 8px; padding: 10px 0 0; border-top: 1px solid var(--fika-border-default); }
+.locationRow .locationGrid dd { font-size: 16px; line-height: 22px; }

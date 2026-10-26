@@ -3,7 +3,7 @@ export type GroupMoneyTotals = { itemsNet: number; chargesNet: number; net: numb
 export type GroupQuoteStatus = "artifact_pending" | "failed" | "integrity_failed" | "complete" | "superseded";
 export type HospitalityGroupService = {
   bookingId: string; sourceReference: string; commercialVersion: number; lifecycleStatus: string;
-  serviceType: string; time: string; endTime?: string; location: string; guests: number;
+  serviceType: string; time: string; endTime?: string; location: string; floorLevel?: string; roomOrArea?: string; deliveryPoint?: string; guests: number;
   lines: Array<{ name: string; description?: string; quantity: number; unitNet: number; net: number; choices?: unknown[]; comments?: string }>;
   charges: Array<{ label: string; net: number; detail?: string }>;
   totals: GroupMoneyTotals;

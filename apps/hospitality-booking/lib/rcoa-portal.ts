@@ -203,7 +203,8 @@ export function validateRcoaStep(step: number, draft: RcoaBookingDraft, menu: re
     else if (!isValidRcoaLondonWallTime(draft.event.eventDate, draft.event.startTime)) errors.startTime = "This time does not occur in Europe/London on the selected date.";
     if (draft.event.endTime && (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(draft.event.endTime) || draft.event.endTime <= draft.event.startTime)) errors.endTime = "End time must be after the start time.";
     if (!Number.isInteger(draft.event.guestCount) || draft.event.guestCount < 1) errors.guestCount = "Enter at least one guest.";
-    if (![draft.event.floorLevel, draft.event.roomOrArea, draft.event.deliveryPoint].some((value) => value.trim())) errors.location = "Add a floor, room or delivery point.";
+    if (!draft.event.floorLevel.trim()) errors.floorLevel = "Enter the floor level.";
+    if (!draft.event.roomOrArea.trim()) errors.roomOrArea = "Enter the room or area.";
   }
   if (step === 3) {
     const event = rcoaEventTypes.find((candidate) => candidate.id === draft.occasion);

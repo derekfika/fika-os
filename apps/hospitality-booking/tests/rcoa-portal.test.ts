@@ -12,6 +12,7 @@ import {
   retainRcoaLinesForOccasion,
   rcoaSuggestedQuantity,
   validateRcoaStep,
+  type RcoaBookingDraft,
 } from "../lib/rcoa-portal";
 import type { PortalMenuItem } from "../lib/mnk-contract";
 
@@ -43,7 +44,7 @@ function requestFor(item?: PortalMenuItem, eventType: "breakfast" | "lunch" = "b
     bookingId: "RCOA-20261005103000-AB12",
     submittedAt: "2026-10-05T10:30:00.000Z",
     client: { name: "Casey Guest", email: "casey@example.test", phone: "020 0000 0000", companyName: "College" },
-    event: { eventDate: "2026-10-20", startTime: "10:00", guestCount: 12, floorLevel: "First floor" },
+    event: { eventDate: "2026-10-20", startTime: "10:00", guestCount: 12, floorLevel: "First floor", roomOrArea: "Boardroom" },
     order: {
       eventType,
       items: item ? [{
@@ -158,7 +159,7 @@ test("request construction uses stable RCoA identity and the server reprices fro
   const draft = createEmptyRcoaDraft();
   draft.occasion = "breakfast";
   draft.contact = { name: "Casey Guest", email: "casey@example.test", phone: "020 0000 0000", companyName: "College", invoiceReference: "" };
-  draft.event = { eventDate: "2026-10-20", guestCount: 12, startTime: "10:00", endTime: "", floorLevel: "First floor", roomOrArea: "", deliveryPoint: "", onsiteContactName: "", onsiteContactPhone: "" };
+  draft.event = { eventDate: "2026-10-20", guestCount: 12, startTime: "10:00", endTime: "", floorLevel: "First floor", roomOrArea: "Boardroom", deliveryPoint: "", onsiteContactName: "", onsiteContactPhone: "" };
   draft.lines = [{ itemId: item.id, quantity: Math.max(1, item.minimumQuantity || 1), choices: Object.fromEntries((item.optionGroups || []).filter((group) => group.required).map((group) => [group.id, group.options[0]?.label || ""])) }];
   draft.acknowledgements = { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true };
   const clientRequest = buildRcoaClientRequest(draft, menu, { bookingId: "RCOA-20261005103000-AB12", submittedAt: "2026-10-05T10:30:00.000Z" });
@@ -225,4 +226,12 @@ test("notice rules compare London wall time across the spring BST transition", (
   invalidWallTimeRequest.event.eventDate = "2026-03-29";
   invalidWallTimeRequest.event.startTime = "01:30";
   assert.throws(() => buildTrustedRcoaHubPayload(invalidWallTimeRequest), /does not occur in Europe\/London/);
+});
+
+test("RCoA Event step requires a floor level and room, trimming whitespace-only values", () => {
+  const withEvent = (overrides: Partial<RcoaBookingDraft["event"]>) => ({ ...createEmptyRcoaDraft(), event: { ...createEmptyRcoaDraft().event, eventDate: "2026-10-20", startTime: "10:00", guestCount: 12, ...overrides } });
+  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "", roomOrArea: "Boardroom" }), menu).floorLevel, "Enter the floor level.");
+  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "7", roomOrArea: "   " }), menu).roomOrArea, "Enter the room or area.");
+  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: " 7 ", roomOrArea: " Boardroom ", deliveryPoint: "" }), menu).floorLevel, undefined);
+  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "7", roomOrArea: "Boardroom", deliveryPoint: "" }), menu).roomOrArea, undefined);
 });
