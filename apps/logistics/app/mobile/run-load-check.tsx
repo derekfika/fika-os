@@ -1,0 +1,46 @@
+"use client";
+
+import type { DeliveryStop } from "../../lib/types";
+import styles from "./run-load-check.module.css";
+
+export function RunLoadCheck({ vehicleLabel, deliveries, blockers, pending, pendingLabel, onOpen, openLabel, siteLabel, onDispatch }: {
+  vehicleLabel: string;
+  deliveries: DeliveryStop[];
+  blockers: string[];
+  pending: boolean;
+  pendingLabel: string;
+  siteLabel: (stop: DeliveryStop) => string;
+  openLabel: (stop: DeliveryStop) => string;
+  onOpen: (trigger: HTMLButtonElement, stop: DeliveryStop) => void;
+  onDispatch: () => void;
+}) {
+  const loaded = deliveries.filter((stop) => stop.loaded).length;
+  const percent = deliveries.length ? Math.round((loaded / deliveries.length) * 100) : 0;
+  const ready = blockers.length === 0;
+
+  return <section className={styles.check} aria-label="Load check">
+    <header className={styles.head}>
+      <p className={styles.kicker}>LOAD CHECK · {vehicleLabel}</p>
+      <h2 className={styles.heading}>{loaded} of {deliveries.length} deliveries loaded</h2>
+      <p className={styles.help}>Open each delivery to confirm its loads are on the vehicle before departure.</p>
+    </header>
+
+    <div className={styles.track} role="progressbar" aria-label="Deliveries loaded" aria-valuemin={0} aria-valuemax={deliveries.length} aria-valuenow={loaded} aria-valuetext={`${loaded} of ${deliveries.length} deliveries loaded`}><i style={{ width: `${percent}%` }} /></div>
+
+    {deliveries.length > 0 && <ul className={styles.list} aria-label="Deliveries to load">
+      {deliveries.map((stop) => <li key={stop.canonicalId}>
+        <button type="button" className={`${styles.row} ${stop.loaded ? styles.rowLoaded : ""}`} aria-label={openLabel(stop)} onClick={(event) => onOpen(event.currentTarget, stop)}>
+          <span className={styles.state}>{stop.loaded ? "Loaded" : "Not loaded"}</span>
+          <span className={styles.site}>{siteLabel(stop)}</span>
+          <span aria-hidden="true">›</span>
+        </button>
+      </li>)}
+    </ul>}
+
+    {!ready && <div className={styles.blockers} role="status"><p>Dispatch is blocked until:</p><ul>{blockers.map((text) => <li key={text}>{text}</li>)}</ul></div>}
+
+    <div className={styles.actions}>
+      <button type="button" className="primary-action" disabled={pending || !ready} onClick={onDispatch}>{pending ? pendingLabel : "Dispatch vehicle"}</button>
+    </div>
+  </section>;
+}
