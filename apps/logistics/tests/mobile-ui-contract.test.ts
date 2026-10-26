@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const workflow = readFileSync(new URL("../app/mobile/MobileWorkflow.tsx", import.meta.url), "utf8");
+const overview = readFileSync(new URL("../app/mobile/run-overview.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../app/styles.css", import.meta.url), "utf8");
 
 test("mobile workflow protects sheets and returns focus", () => {
@@ -23,7 +24,8 @@ test("mobile workflow locks committed writes and exposes progress", () => {
 });
 
 test("mobile controls have names, semantic action classes and touch-safe focus styling", () => {
-  assert.match(workflow, /aria-label=\{`Open details for/);
+  assert.match(workflow, /Open details for/);
+  assert.match(overview, /aria-label=\{openLabel\(stop\)\}/);
   assert.match(workflow, /aria-label=\{label\}/);
   assert.match(workflow, /className="primary-action"/);
   assert.match(workflow, /className="secondary-action/);
