@@ -6,54 +6,46 @@
   "backend": "fika-logistics-staging",
   "region": "europe-west4",
   "branch": "release/staging/logistics",
-  "sourceSha": "ca87f30aea50534d82089b42864fcad01a34547d",
-  "scopeHash": "909ab98ccc814f2073fc25df9dc47a832baae84dea241ada40e720b96f034135",
+  "sourceSha": "0f6a554bb8a4efbf66b2a61ade274c182fd538e8",
+  "scopeHash": "e05223677b4d765c83f5d5d42c227f9c2a9295c1a46da80d0024202f15fc8e19",
   "inMain": true,
   "rollback": false,
   "executing": true,
   "cosmeticOnly": false,
   "standard": false,
   "validation": {
-    "id": 121537059751,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/40312309320/job/121537059751",
-    "sha": "ca87f30aea50534d82089b42864fcad01a34547d"
+    "id": 121548186186,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/40315602163/job/121548186186",
+    "sha": "0f6a554bb8a4efbf66b2a61ade274c182fd538e8"
   },
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "logistics",
     "environment": "staging",
-    "sourceSha": "ca87f30aea50534d82089b42864fcad01a34547d",
+    "sourceSha": "0f6a554bb8a4efbf66b2a61ade274c182fd538e8",
     "action": "deploy",
     "instruction": "Explicit staging execution",
     "releaseId": null,
-    "id": "7b8dd6836b95058e79ed1ddb3e7d06228aa8a51f7a23e552ca766e96e8ee0551",
+    "id": "9c1503e2cc0843be3a8225e7d0c8cbca891efe1c2452b20c5c0d0aeeb67dd413",
     "explicitExecute": true,
-    "authorisedAt": "2026-10-26T11:07:34.618Z"
+    "authorisedAt": "2026-10-26T11:33:04.582Z"
   },
   "provenance": {
-    "number": 58,
-    "url": "https://github.com/derekfika/fika-os/pull/58",
-    "head": "2d88d5f17e1214726c2b093fbe6966ee5837f817",
+    "number": 59,
+    "url": "https://github.com/derekfika/fika-os/pull/59",
+    "head": "9941e75e1b9e23b2aeedc00c5dbd799415f0cfa3",
     "pullRequestRisk": "standard"
   },
-  "rollout": "build-2026-10-26-001",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "94ec8ad6-fd76-4643-9566-2f728628a540",
   "previousGood": {
-    "sourceSha": "34bd4929f23ec9b12c19667aaf83aed7884b36da",
-    "rollout": "build-2026-10-25-005",
+    "sourceSha": "ca87f30aea50534d82089b42864fcad01a34547d",
+    "rollout": "build-2026-10-26-001",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "5ba2296d317bf1de454605cdee76d628376684e4",
-  "releaseId": "36459b59-1750-4a22-b6bd-5782d2e27e3c",
-  "completedAt": "2026-10-26T11:11:34.015Z",
-  "smoke": {
-    "ok": true,
-    "status": 307,
-    "url": "https://fika-logistics-staging--fika-os-dev.europe-west4.hosted.app/",
-    "authGate": "FIKA_SESSION_MISSING"
-  }
+  "previousGoodRecord": "573b8551cc50c446783c5f64d6c1fdc9e7128601",
+  "createdAt": "2026-10-26T11:33:11.577Z"
 }
