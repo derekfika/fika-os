@@ -544,7 +544,7 @@ export default function CpuProduction() {
             </div>
           </> : <label>
             Date
-            <input type="date" value={date} onChange={(event) => { setDate(event.target.value); if (view === "day") setDayDate(event.target.value); }} />
+            <input type="date" value={date} onChange={(event) => { const next = event.target.value; setDate(next); if (view === "day") setDayDate(next); if (view === "calendar" && next) setWeekCommencing(weekCommencingFor(next)); }} />
           </label>}
           <label>
             Site
