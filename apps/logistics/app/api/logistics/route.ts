@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
 import { assertSameOrigin } from "@/lib/csrf";
 import { db } from "@/lib/firebase";
-import { logisticsCacheScope, requireLogisticsAccess, type LogisticsPrincipal } from "@/lib/auth";
+import { assertMobilePinAction, logisticsCacheScope, requireLogisticsAccess, type LogisticsPrincipal } from "@/lib/auth";
 import { authorizeCommand, authorizeLoad, authorizeRun, assertMaintenanceAccess, scopeProjection, vehicleScope } from "@/lib/resource-authority";
 import { authorizeTransaction } from "@/lib/authorized-transaction";
 import { isLogisticsVehicleId, logisticsVehicleLabel } from "../../../../shared/logistics-authority";
@@ -756,6 +756,7 @@ async function handlePost(request: NextRequest) {
       lane?: "delivery" | "collection";
       collectionStatus?: "awaiting" | "collected";
     };
+    if (principal.sessionKind === "mobile-pin") assertMobilePinAction(body.action);
     if (body.resizeEndOnly && !["schedule-stop", "reschedule-delivery-load", "reschedule-delivery-loads"].includes(body.action)) throw new HttpError(422, "End-only resize is supported only for an existing scheduled stop or load.");
     diagnostic = {
       operation: body.action,

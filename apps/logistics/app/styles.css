@@ -2156,6 +2156,23 @@ button:disabled {
 @media (min-width: 560px) { .driver-app { max-width: 430px; margin: 0 auto; box-shadow: 0 0 50px rgba(25, 13, 70, .12); } .driver-bottom-nav { left: 50%; max-width: 430px; transform: translateX(-50%); } }
 
 /* Active driver workflow contract: semantic colours, safe mutation feedback and touch-safe controls. */
+.mobile-pin-shell { display:grid; place-items:center; min-height:100vh; min-height:100svh; padding:24px 16px; box-sizing:border-box; background:var(--fika-surface-page); color:var(--fika-text-primary); }
+.mobile-pin-card { width:min(100%,420px); padding:24px; border:1px solid var(--fika-border-default); border-radius:16px; background:var(--fika-surface-card); box-shadow:var(--shadow-sm); }
+.mobile-pin-card h1 { margin:0; color:var(--fika-text-primary); font-size:28px; line-height:1.2; }
+.mobile-pin-card > p:not(.mobile-pin-eyebrow) { color:var(--fika-text-secondary); line-height:1.5; }
+.mobile-pin-eyebrow { margin:0 0 8px; color:var(--fika-text-muted); font-size:12px; font-weight:800; letter-spacing:.08em; }
+.mobile-pin-card form { display:grid; gap:10px; margin-top:22px; }
+.mobile-pin-card form label { color:var(--fika-text-primary); font-size:14px; font-weight:700; }
+.mobile-pin-card input { width:100%; min-height:48px; box-sizing:border-box; padding:10px 12px; border:1px solid var(--fika-border-default); border-radius:9px; background:var(--fika-surface-card); color:var(--fika-text-primary); font:inherit; letter-spacing:.18em; }
+.mobile-pin-card input:focus-visible, .mobile-pin-card button:focus-visible, .mobile-pin-session button:focus-visible { outline:3px solid var(--fika-focus-ring); outline-offset:2px; }
+.mobile-pin-card small { color:var(--fika-text-secondary); font-size:13px; }
+.mobile-pin-card form > button { min-height:48px; border:0; border-radius:9px; background:var(--fika-action-primary); color:#fff; font:inherit; font-weight:700; }
+.mobile-pin-card button:disabled, .mobile-pin-session button:disabled { cursor:not-allowed; opacity:.65; }
+.mobile-pin-card .mobile-pin-error { margin:2px 0; color:var(--fika-status-danger); font-size:14px; }
+.mobile-pin-retry { min-height:44px; margin-top:8px; border:0; background:transparent; color:var(--fika-action-primary); font:inherit; font-weight:700; }
+.mobile-pin-session { display:flex; align-items:center; justify-content:space-between; gap:12px; max-width:430px; margin:0 auto; padding:8px 16px; color:var(--fika-text-secondary); font-size:13px; }
+.mobile-pin-session button { min-height:44px; padding:8px 12px; border:1px solid var(--fika-border-default); border-radius:8px; background:var(--fika-surface-card); color:var(--fika-text-primary); font:inherit; font-weight:700; }
+
 .driver-app {
   overflow-x: hidden;
   background: var(--fika-surface-page);

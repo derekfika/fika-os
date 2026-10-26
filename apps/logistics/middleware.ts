@@ -6,6 +6,15 @@ import { internalTokenAllowed } from "../shared/internal-auth";
 
 export async function middleware(request: NextRequest) {
   if (!hostedRuntime()) return NextResponse.next();
+  const pathname = request.nextUrl.pathname;
+  // The fixed-vehicle pages are PIN-entry shells. Their data remains behind
+  // the signed vehicle session checked independently at every API boundary.
+  if (["/mobile/van1", "/mobile/van2", "/api/logistics/mobile/session"].includes(pathname)) return NextResponse.next();
+  // This is only an admission shortcut. The route still verifies the signed,
+  // expiring session and derives the single permitted vehicle server-side.
+  if (["/api/logistics", "/api/logistics/vehicles"].includes(pathname)
+    && request.headers.get("x-fika-logistics-mobile-request") === "1"
+    && request.cookies.has("fika_logistics_mobile_session")) return NextResponse.next();
   // Service-to-service projection invalidations are authenticated by the
   // internal token at the route boundary. They must not be redirected through
   // the browser/session admission flow, which has no user cookie and would
