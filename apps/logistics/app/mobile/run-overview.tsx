@@ -5,7 +5,7 @@ import { stopIsCollection } from "../../lib/mobile-driver";
 import { nextRunVisit, visitLaneCounts, visitProgress, type RunVisit, type RunVisitStatus } from "./run-overview-model";
 import styles from "./run-overview.module.css";
 
-const statusText: Record<RunVisitStatus, string> = { planned: "Upcoming", current: "In progress", attention: "Attention", completed: "Completed" };
+export const visitStatusText: Record<RunVisitStatus, string> = { planned: "Upcoming", current: "In progress", attention: "Attention", completed: "Completed" };
 
 export function RunOverview({ title, dateLabel, visits, siteLabel, timeLabel, detailLabel, openLabel, onOpen }: {
   title: string;
@@ -51,7 +51,7 @@ export function RunOverview({ title, dateLabel, visits, siteLabel, timeLabel, de
               <strong>{siteLabel(first)}</strong>
               <small>{timeLabel(first)}</small>
             </div>
-            <span className={styles.status}>{isNext && visit.status !== "attention" ? "Next" : statusText[visit.status]}</span>
+            <span className={styles.status}>{isNext && visit.status !== "attention" ? "Next" : visitStatusText[visit.status]}</span>
           </div>
           <ul className={styles.lanes}>
             {visit.stops.map((stop) => {

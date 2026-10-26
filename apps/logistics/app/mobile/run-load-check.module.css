@@ -1,0 +1,17 @@
+.check { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--fika-border-default); border-radius: 14px; background: var(--fika-surface-card); color: var(--fika-text-primary); }
+.head { display: grid; gap: 4px; }
+.kicker { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--fika-text-secondary); }
+.heading { margin: 0; font-size: 18px; }
+.help { margin: 0; font-size: 14px; color: var(--fika-text-secondary); }
+.track { height: 8px; border-radius: 999px; background: var(--fika-surface-subtle); overflow: hidden; }
+.track i { display: block; height: 100%; background: var(--fika-status-success); border-radius: inherit; }
+.list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--fika-border-default); border-radius: 10px; background: var(--fika-surface-page); color: inherit; text-align: left; }
+.rowLoaded { border-color: var(--fika-status-success); }
+.state { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--fika-surface-subtle); white-space: nowrap; }
+.rowLoaded .state { background: var(--fika-status-success); color: var(--surface); }
+.site { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blockers { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--fika-status-warning); border-radius: 10px; font-size: 14px; }
+.blockers p, .blockers ul { margin: 0; }
+.blockers ul { padding-left: 18px; }
+.actions { display: grid; }

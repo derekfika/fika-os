@@ -12,7 +12,7 @@ export type RunVisit = {
   visitNumber: number;
 };
 
-const hasOpenIssue = (stop: DeliveryStop) => stop.status === "issue" || (stop.issues || []).some((issue) => issue.status === "open");
+export const hasOpenIssue = (stop: DeliveryStop) => stop.status === "issue" || (stop.issues || []).some((issue) => issue.status === "open");
 
 function visitStatus(stops: DeliveryStop[]): RunVisitStatus {
   if (stops.some(hasOpenIssue)) return "attention";
