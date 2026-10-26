@@ -1,4 +1,5 @@
 import type { ProjectedDay } from "../../lib/projection";
+import { selectScopedCachedValues } from "../../lib/dashboard-cache-decision";
 
 type CachedProjection = { accountScope: string; oplocId: string; serviceDate: string; cachedAt: string; projection: ProjectedDay };
 const databaseName = "fika-delivered-in";
@@ -40,7 +41,7 @@ export async function readCachedDeliveredInDays(accountScope: string, oplocId: s
   if (typeof indexedDB === "undefined" || !accountScope || !oplocId) return [] as ProjectedDay[];
   try {
     const database = await openDatabase();
-    const values = await new Promise<CachedProjection[]>((resolve, reject) => { const request = database.transaction(storeName, "readonly").objectStore(storeName).getAll(); request.onsuccess = () => resolve((request.result as CachedProjection[]).filter(value => value.accountScope === accountScope && value.oplocId === oplocId)); request.onerror = () => reject(request.error); });
+    const values = await new Promise<CachedProjection[]>((resolve, reject) => { const request = database.transaction(storeName, "readonly").objectStore(storeName).getAll(); request.onsuccess = () => resolve(selectScopedCachedValues(request.result as CachedProjection[], accountScope, oplocId)); request.onerror = () => reject(request.error); });
     database.close();
     return values.map(value => value.projection);
   } catch { return [] as ProjectedDay[]; }
