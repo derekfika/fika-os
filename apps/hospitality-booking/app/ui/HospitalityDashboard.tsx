@@ -9,6 +9,7 @@ import { MailSearch, RefreshCw, Settings } from "lucide-react";
 import type { BookingAdditionalChargeInput, CanonicalBooking, ProductionOrder, DashboardQuoteSettings, LabourRateSetting } from "@/lib/canonical-types";
 import { dailyRunSheetHtml } from "../../lib/run-sheet";
 import { bookingRequestedItems } from "../../lib/booking-presentation";
+import { bookingLocation } from "../../lib/booking-location";
 import { quoteHtml } from "../../lib/quote-document";
 import { fetchQuoteRequest } from "../../lib/quote-request";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
@@ -1668,11 +1669,7 @@ function BookingDetail({
   onGenerateMenu: (booking: CanonicalBooking) => Promise<void>;
   onOpenMenu: (output: MenuOutput) => void;
 }) {
-  const locationLines = [
-    { label: "Floor level", value: booking.service.floorLevel?.trim() },
-    { label: "Room or area", value: booking.service.roomOrArea?.trim() },
-    { label: "Delivery point", value: booking.service.deliveryPoint?.trim() },
-  ].filter((line): line is { label: string; value: string } => Boolean(line.value));
+  const { floorLevel, roomOrArea, deliveryPoint } = bookingLocation(booking.service);
   const dietaryEntries = Object.entries(booking.dietaries).filter(
     ([, value]) => value !== 0 && value !== "" && value !== false,
   );
@@ -1753,18 +1750,23 @@ function BookingDetail({
       </header>
       <section className="booking-detail__location" aria-labelledby={`booking-location-${booking.canonicalId}`}>
         <p id={`booking-location-${booking.canonicalId}`} className="booking-detail__location-title">Location</p>
-        {locationLines.length ? (
-          <dl className="booking-detail__location-grid">
-            {locationLines.map((line) => (
-              <div key={line.label}>
-                <dt>{line.label}</dt>
-                <dd>{line.value}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : (
-          <p className="booking-detail__location-missing">No delivery location supplied. Confirm the room with the customer before service.</p>
-        )}
+        <dl className="booking-detail__location-grid">
+          <div>
+            <dt>Floor level</dt>
+            <dd>{floorLevel ?? <span className="booking-detail__location-missing">Not recorded</span>}</dd>
+          </div>
+          <div>
+            <dt>Room or area</dt>
+            <dd>{roomOrArea ?? <span className="booking-detail__location-missing">Not recorded</span>}</dd>
+          </div>
+          {deliveryPoint && (
+            <div>
+              <dt>Delivery point</dt>
+              <dd>{deliveryPoint}</dd>
+            </div>
+          )}
+        </dl>
+        {(!floorLevel || !roomOrArea) && <p className="booking-detail__location-note">Floor or room is missing on this booking. Confirm it with the customer before service.</p>}
       </section>
       <div className="booking-detail__facts">
         <Fact

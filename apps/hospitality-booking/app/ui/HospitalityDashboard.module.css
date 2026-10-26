@@ -846,10 +846,10 @@
   :global(.booking-detail__location) {
     margin: 0 0 22px;
     padding: 16px 18px;
-    border: 1px solid #d8d2e6;
-    border-left: 5px solid #4b2d7f;
+    border: 1px solid var(--fika-border-default);
+    border-left: 4px solid var(--fika-action-primary);
     border-radius: 14px;
-    background: #faf9fd;
+    background: var(--fika-surface-subtle);
     display: grid;
     gap: 10px;
   }
@@ -885,9 +885,14 @@
     overflow-wrap: anywhere;
   }
   :global(.booking-detail__location-missing) {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--fika-status-danger);
+  }
+  :global(.booking-detail__location-note) {
     margin: 0;
-    font-weight: 800;
-    color: #8a1c1c;
+    font-size: 0.9rem;
+    line-height: 1.4;
   }
   :global(.booking-detail__section) {
     margin-top: 28px;

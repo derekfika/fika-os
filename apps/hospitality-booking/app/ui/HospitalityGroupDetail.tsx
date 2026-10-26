@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import type { BookingAdditionalChargeInput, CanonicalBooking } from "@/lib/canonical-types";
 import type { HospitalityBookingGroup, HospitalityGroupService } from "../../../shared/hospitality-group-quotes";
 import { groupRequestedItems } from "../../lib/booking-presentation";
+import { groupLocationView } from "../../lib/booking-location";
 import { groupServiceStatusLabel } from "../../lib/cpu-production-plan";
 import { RequestedItemsList } from "./RequestedItemsList";
 import { CancellationStatusPanel } from "./CancellationStatusPanel";
@@ -125,6 +126,7 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
         <strong className={styles.total}>{money(group.totals.gross)}</strong>
       </div>
     </header>
+    <GroupLocation services={group.services} />
     <div className={styles.actions}>
       <button ref={editButton} type="button" disabled={busy || anyCancelled || editing || cancelOpen || Boolean(chargeTarget)} onClick={() => setEditing(true)}>Amend booking</button>
       {!anyCancelled && <button ref={cancelButton} type="button" className={styles.danger} disabled={busy || editing || cancelOpen || Boolean(chargeTarget)} onClick={() => { setCancelError(""); setCancelOpen(true); }}>Cancel booking</button>}
@@ -187,5 +189,38 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
     {chargeTarget && <AdditionalChargesModal booking={chargeTarget.booking} context={`Service ${serviceLabel(chargeTarget.service)}`} busy={busy} onCancel={() => setChargeTarget(undefined)} onSave={saveCharges} />}
     {!editing && production}
     {!editing && <dl className={styles.totals}><div><dt>Items subtotal</dt><dd>{money(group.totals.itemsNet)}</dd></div><div><dt>Additional charges</dt><dd>{money(group.totals.chargesNet)}</dd></div><div><dt>Total net</dt><dd>{money(group.totals.net)}</dd></div><div><dt>VAT as recorded</dt><dd>{money(group.totals.vat)}</dd></div><div className={styles.grand}><dt>Grand total</dt><dd>{money(group.totals.gross)}</dd></div></dl>}
+  </section>;
+}
+
+/** Floor and room for the whole All Day booking: one shared summary when every service matches, otherwise each service's own floor and room. */
+function GroupLocation({ services }: { services: HospitalityGroupService[] }) {
+  const { shared, first, rows: locations } = groupLocationView(services);
+  if (shared) {
+    return <section className={styles.location} aria-labelledby="group-location-heading">
+      <h3 id="group-location-heading">Delivery location</h3>
+      <dl className={styles.locationGrid}>
+        <div><dt>Floor level</dt><dd>{first.floorLevel ?? <span className={styles.locationMissing}>Not recorded</span>}</dd></div>
+        <div><dt>Room or area</dt><dd>{first.roomOrArea ?? <span className={styles.locationMissing}>Not recorded</span>}</dd></div>
+        {first.deliveryPoint && <div><dt>Delivery point</dt><dd>{first.deliveryPoint}</dd></div>}
+      </dl>
+      {(!first.floorLevel || !first.roomOrArea) && <p className={styles.locationNote}>Floor or room is missing on this historical booking. Confirm it with the customer before service.</p>}
+    </section>;
+  }
+  return <section className={styles.location} aria-labelledby="group-location-heading">
+    <h3 id="group-location-heading">Delivery location</h3>
+    <p className={styles.locationNote}>Locations vary by service. Check the floor and room for each service below.</p>
+    <ul className={styles.locationRows}>
+      {services.map((service, index) => {
+        const location = locations[index];
+        return <li key={service.bookingId} className={styles.locationRow}>
+          <strong>{serviceLabel(service)}</strong>
+          <dl className={styles.locationGrid}>
+            <div><dt>Floor level</dt><dd>{location.floorLevel ?? <span className={styles.locationMissing}>Not recorded</span>}</dd></div>
+            <div><dt>Room or area</dt><dd>{location.roomOrArea ?? <span className={styles.locationMissing}>Not recorded</span>}</dd></div>
+            {location.deliveryPoint && <div><dt>Delivery point</dt><dd>{location.deliveryPoint}</dd></div>}
+          </dl>
+        </li>;
+      })}
+    </ul>
   </section>;
 }

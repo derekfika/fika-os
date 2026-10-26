@@ -95,14 +95,14 @@ const issueField = (path: PropertyKey[], siteKey: PortalSiteKey) => {
   if (value === "clientPhone" || value === "requesterPhone") return "requesterPhone";
   if (value === "companyName" || value === "requesterCompany") return siteKey === "angel-court" ? "clientCompany" : "requesterCompany";
   if (value.startsWith("acknowledgements.")) return value;
+  if (value === "floorLevel" || value === "roomOrArea" || value === "deliveryPoint") return "location";
   return value;
 };
 const friendlyIssueMessage = (field: string, message: string) => {
   if (message === "Invalid input") return `Please review this ${field === "eventDate" ? "date" : "field"}.`;
   if (field === "eventDate") return "Please add a valid service date.";
   if (field === "startTime") return "Please add a valid service time.";
-  if (field === "floorLevel") return "Please add the floor level.";
-  if (field === "roomOrArea") return "Please add the room or area.";
+  if (field === "roomOrArea" || field === "floorLevel" || field === "deliveryPoint") return "Please add a floor, room or delivery point.";
   if (field === "guestCount") return "Please enter a valid number of guests.";
   return message;
 };
@@ -366,8 +366,7 @@ export default function BookingPortal({
     details.startTime &&
     details.guestCount >= (gallagher ? GALLAGHER_MINIMUM_GUESTS : 1) &&
     (!gallagher || contact.invoiceReference.trim()) &&
-    details.floorLevel.trim() &&
-    details.roomOrArea.trim();
+    (details.floorLevel || details.roomOrArea || details.deliveryPoint);
   const showValidation = (errors: BookingFieldErrors, message = validationSummary(errors), targetStep?: number) => {
     setFieldErrors(errors);
     setError(message);
@@ -403,8 +402,7 @@ export default function BookingPortal({
       if (!details.startTime) errors.startTime = { field: "startTime", message: "Choose a service time.", step: 1 };
       if (details.guestCount < (gallagher ? GALLAGHER_MINIMUM_GUESTS : 1)) errors.guestCount = { field: "guestCount", message: `Enter at least ${gallagher ? GALLAGHER_MINIMUM_GUESTS : 1} guest${gallagher ? "s" : ""}.`, step: 1 };
       if (gallagher && !contact.invoiceReference.trim()) errors.invoiceReference = { field: "invoiceReference", message: "Add an Invoice / PO reference for Gallagher bookings.", step: 1 };
-      if (!details.floorLevel.trim()) errors.floorLevel = { field: "floorLevel", message: "Enter the floor level.", step: 1 };
-      if (!details.roomOrArea.trim()) errors.roomOrArea = { field: "roomOrArea", message: "Enter the room or area.", step: 1 };
+      if (!details.floorLevel && !details.roomOrArea && !details.deliveryPoint) errors.location = { field: "location", message: "Add a floor, room or delivery point.", step: 1 };
       if (Object.keys(errors).length) return showValidation(errors, "Please review the highlighted fields before continuing.", 1);
     }
     if (step === 2 && !selected.length && occasion !== "bespoke") return showValidation({ menu: { field: "menu", message: "Choose at least one menu item.", step: 2 } }, "Please choose at least one menu item before continuing.", 2);
@@ -1015,25 +1013,13 @@ function Details({
           </label>
           <ValidationMessage field="endTime" errors={errors} />
         </div>
-        <fieldset className="fika-form-cell fika-form-cell--wide">
-          <legend className="fika-form-label">Delivery location</legend>
-          <p>These details help the Hospitality team find the correct room. <span aria-hidden="true">*</span> Required</p>
+        <div className="fika-form-cell fika-form-cell--wide">
           <label className="fika-form-field">
-            <span className="fika-form-label">Floor level <span aria-hidden="true">*</span></span>
-            <input {...fieldA11y("floorLevel", errors)} data-booking-field="floorLevel" aria-required="true" placeholder="e.g. 7" value={details.floorLevel} onChange={(e) => setDetails({ ...details, floorLevel: e.target.value })} />
+            <span className="fika-form-label">Floor, room or delivery point</span>
+            <input {...fieldA11y("location", errors)} data-booking-field="location" value={details.roomOrArea} onChange={(e) => setDetails({ ...details, roomOrArea: e.target.value })} />
           </label>
-          <ValidationMessage field="floorLevel" errors={errors} />
-          <label className="fika-form-field">
-            <span className="fika-form-label">Room or area <span aria-hidden="true">*</span></span>
-            <input {...fieldA11y("roomOrArea", errors)} data-booking-field="roomOrArea" aria-required="true" placeholder="e.g. Boardroom" value={details.roomOrArea} onChange={(e) => setDetails({ ...details, roomOrArea: e.target.value })} />
-          </label>
-          <ValidationMessage field="roomOrArea" errors={errors} />
-          <label className="fika-form-field">
-            <span className="fika-form-label">Delivery point, if different <small>(optional)</small></span>
-            <input {...fieldA11y("deliveryPoint", errors)} data-booking-field="deliveryPoint" value={details.deliveryPoint} onChange={(e) => setDetails({ ...details, deliveryPoint: e.target.value })} />
-          </label>
-          <ValidationMessage field="deliveryPoint" errors={errors} />
-        </fieldset>
+          <ValidationMessage field="location" errors={errors} />
+        </div>
       </div>
     </section>
   );

@@ -41,17 +41,11 @@ export const BookingInput = z
     }),
   })
   .superRefine((value, context) => {
-    if (!value.floorLevel)
-      context.addIssue({
-        code: "custom",
-        path: ["floorLevel"],
-        message: "Enter the floor level.",
-      });
-    if (!value.roomOrArea)
+    if (!value.floorLevel && !value.roomOrArea && !value.deliveryPoint)
       context.addIssue({
         code: "custom",
         path: ["roomOrArea"],
-        message: "Enter the room or area.",
+        message: "Add a floor, room or delivery point.",
       });
     if (value.endTime && value.endTime <= value.startTime)
       context.addIssue({
