@@ -38,13 +38,24 @@ export async function createPinVerifier(pin, salt = randomBytes(SCRYPT_PARAMETER
   }
 }
 
+export function createGcloudInvocation(args, platform = process.platform) {
+  const command = platform === "win32" ? "cmd.exe" : "gcloud";
+  const commandArgs = platform === "win32" ? ["/d", "/c", "gcloud", ...args] : args;
+  return {
+    command,
+    commandArgs,
+    options: {
+      windowsHide: true,
+      shell: false,
+      stdio: ["pipe", "pipe", "ignore"],
+    },
+  };
+}
+
 function runGcloud(args, input, runner = spawn) {
   return new Promise((resolve, reject) => {
-    const child = runner("gcloud", args, {
-      shell: process.platform === "win32",
-      windowsHide: true,
-      stdio: ["pipe", "pipe", "ignore"],
-    });
+    const { command, commandArgs, options } = createGcloudInvocation(args);
+    const child = runner(command, commandArgs, options);
     let stdout = "";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", chunk => { stdout += chunk; });
@@ -102,7 +113,7 @@ export async function updatePinnedStagingVersions(path, versions) {
   return true;
 }
 
-async function privateDigits(prompt, input = process.stdin, output = process.stdout) {
+export async function privateDigits(prompt, input = process.stdin, output = process.stdout) {
   if (!input.isTTY || typeof input.setRawMode !== "function") throw new Error("Run this utility directly in an interactive Windows PowerShell terminal; redirected input is not accepted.");
   const pin = Buffer.alloc(12);
   let length = 0;
@@ -113,6 +124,7 @@ async function privateDigits(prompt, input = process.stdin, output = process.std
     const cleanup = () => {
       input.removeListener("data", onData);
       input.setRawMode(false);
+      input.pause();
       output.write("\r\n");
     };
     const onData = (chunk) => {
