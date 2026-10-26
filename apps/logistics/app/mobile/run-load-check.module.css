@@ -1,17 +1,20 @@
-.check { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--fika-border-default); border-radius: 14px; background: var(--fika-surface-card); color: var(--fika-text-primary); }
-.head { display: grid; gap: 4px; }
-.kicker { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--fika-text-secondary); }
-.heading { margin: 0; font-size: 18px; }
-.help { margin: 0; font-size: 14px; color: var(--fika-text-secondary); }
+.check { display: grid; gap: 12px; margin: 0 16px; padding: 14px; border: 1px solid var(--fika-border-default); border-radius: 14px; background: var(--fika-surface-card); color: var(--fika-text-primary); font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+.head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; }
+.icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--fika-surface-subtle); font-size: 18px; color: var(--purple); }
+.heading { margin: 0; font-size: 18px; font-weight: 800; }
+.help { margin: 2px 0 0; font-size: 14px; color: var(--fika-text-secondary); }
+.progressRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.progressRow strong { font-size: 14px; }
 .track { height: 8px; border-radius: 999px; background: var(--fika-surface-subtle); overflow: hidden; }
 .track i { display: block; height: 100%; background: var(--fika-status-success); border-radius: inherit; }
+.count { margin: -4px 0 0; font-size: 14px; font-weight: 600; }
 .list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--fika-border-default); border-radius: 10px; background: var(--fika-surface-page); color: inherit; text-align: left; }
 .rowLoaded { border-color: var(--fika-status-success); }
 .state { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--fika-surface-subtle); white-space: nowrap; }
-.rowLoaded .state { background: var(--fika-status-success); color: var(--surface); }
+.rowLoaded .state { background: var(--fika-status-success); color: #ffffff; }
 .site { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .blockers { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--fika-status-warning); border-radius: 10px; font-size: 14px; }
 .blockers p, .blockers ul { margin: 0; }
 .blockers ul { padding-left: 18px; }
-.actions { display: grid; }
+.dispatch { width: 100%; min-height: 52px; border-radius: 14px; font-size: 16px; font-weight: 700; }
