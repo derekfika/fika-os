@@ -1,5 +1,6 @@
 import { logAuthDiagnostic } from "../../../shared/auth-diagnostics";
 import { hostedRuntime, requiredUpstreamUrl } from "./runtime";
+import { MOBILE_SESSION_COOKIE, verifyMobilePinSession, type MobileVehicleId } from "./mobile-pin-session";
 
 export type LogisticsPrincipal = {
   type: "interactive";
@@ -12,6 +13,7 @@ export type LogisticsPrincipal = {
   primaryCustodianLegendId?: string;
   permittedVehicleIds?: string[];
   maintenanceAuthorities?: string[];
+  sessionKind?: "hub" | "mobile-pin";
 };
 export type FikaSessionPrincipal = Omit<LogisticsPrincipal, "type" | "id"> & { firebaseUid: string; authmodIdentityId: string };
 
@@ -27,20 +29,32 @@ export function logisticsCacheScope(principal: { id: string; identityKind?: stri
   return `logistics:v2:${principal.id}:${principal.identityKind || "unknown"}:${principal.representedOplocId || "organisation"}:${principal.primaryCustodianLegendId || "none"}:${[...(principal.permittedVehicleIds || [])].sort().join(",")}`;
 }
 
-type LogisticsRequest = { cookies: { get(name: string): { value?: string } | undefined }; headers?: { get(name: string): string | null }; nextUrl?: { searchParams: { get(name: string): string | null } } };
+type LogisticsRequest = { method?: string; url?: string; cookies: { get(name: string): { value?: string } | undefined }; headers?: { get(name: string): string | null }; nextUrl?: { pathname?: string; searchParams: { get(name: string): string | null } } };
 type AuthDependencies = {
   sessionReader?: (request: LogisticsRequest) => Promise<FikaSessionPrincipal>;
   accessChecker?: (principal: LogisticsPrincipal) => Promise<unknown>;
   allowLocalFallback?: boolean;
+  mobileSessionReader?: (request: LogisticsRequest) => Promise<{ vehicleId: MobileVehicleId; sessionId: string } | undefined>;
 };
 
+const MOBILE_DRIVER_ACTIONS = new Set([
+  "arrive-stop", "mark-stop-loaded", "mark-subload-loaded", "mark-subload-delivered",
+  "mark-subload-collected", "complete-stop", "undo-completion", "report-issue",
+  "resolve-issue", "defer-collection", "dispatch-run", "confirm-returned-to-cpu",
+]);
+export function assertMobilePinAction(action: string) {
+  if (!MOBILE_DRIVER_ACTIONS.has(action)) throw Object.assign(new Error("Vehicle PIN sessions cannot perform planner operations."), { status: 403, code: "LOGISTICS_MOBILE_ACTION_DENIED" });
+}
+
 export async function requireLogisticsAccess(request: LogisticsRequest, dependencies: AuthDependencies = {}) {
+  if (request.headers?.get("x-fika-logistics-mobile-request") === "1") return requireMobilePinAccess(request, dependencies);
   try {
     logAuthDiagnostic(request, { authStage: "logistics-route-session-start", status: 200, code: "LOGISTICS_SESSION_CHECK_STARTED" });
     const session = await (dependencies.sessionReader || requireHubLogisticsSession)(request);
     const principal: LogisticsPrincipal = {
       type: "interactive",
       id: session.authmodIdentityId,
+      sessionKind: "hub",
       displayName: session.displayName,
       email: session.email,
       identityKind: session.identityKind,
@@ -61,6 +75,32 @@ export async function requireLogisticsAccess(request: LogisticsRequest, dependen
     if (allowLocalFallback && (error as { status?: number }).status === 401) return localLogisticsPrincipal;
     throw error;
   }
+}
+
+async function requireMobilePinAccess(request: LogisticsRequest, dependencies: AuthDependencies): Promise<LogisticsPrincipal> {
+  const pathname = request.nextUrl?.pathname || new URL(request.url || "https://logistics.invalid").pathname;
+  if (!((request.method || "GET") === "GET" && ["/api/logistics", "/api/logistics/vehicles"].includes(pathname)) && !((request.method || "GET") === "POST" && pathname === "/api/logistics")) {
+    throw Object.assign(new Error("This vehicle session cannot access that Logistics operation."), { status: 403, code: "LOGISTICS_MOBILE_ROUTE_DENIED" });
+  }
+  const session = await (dependencies.mobileSessionReader || (async value => {
+    const verifiers = {
+      van1: process.env.LOGISTICS_MOBILE_VAN1_PIN_VERIFIER,
+      van2: process.env.LOGISTICS_MOBILE_VAN2_PIN_VERIFIER,
+    };
+    return verifyMobilePinSession(value.cookies.get(MOBILE_SESSION_COOKIE)?.value, { secret: process.env.LOGISTICS_MOBILE_SESSION_SECRET, verifiers });
+  }))(request);
+  if (!session) throw Object.assign(new Error("A valid vehicle PIN session is required."), { status: 401, code: "LOGISTICS_MOBILE_SESSION_REQUIRED" });
+  const requestedVehicle = request.nextUrl?.searchParams.get("vehicle");
+  if (requestedVehicle && requestedVehicle !== session.vehicleId) throw Object.assign(new Error("This vehicle session cannot access the requested vehicle."), { status: 403, code: "LOGISTICS_MOBILE_VEHICLE_DENIED" });
+  logAuthDiagnostic(request, { authStage: "logistics-mobile-session", status: 200, code: "LOGISTICS_MOBILE_SESSION_ALLOWED" });
+  return {
+    type: "interactive",
+    id: `mobile:${session.vehicleId}:${session.sessionId}`,
+    displayName: `${session.vehicleId === "van1" ? "Van 1" : "Van 2"} mobile session`,
+    identityKind: "operational",
+    permittedVehicleIds: [session.vehicleId],
+    sessionKind: "mobile-pin",
+  };
 }
 
 async function requireHubLogisticsSession(request: LogisticsRequest): Promise<FikaSessionPrincipal> {

@@ -5,7 +5,7 @@ import { requireSuccessfulResponse } from "../lib/client-errors";
 
 type Catalogue = { vehicles: LogisticsVehicleId[]; loading: boolean; error: string; refresh: () => Promise<void> };
 const Context = createContext<Catalogue>({ vehicles: [], loading: true, error: "", refresh: async () => {} });
-export function VehicleAuthorityProvider({ children }: { children: ReactNode }) {
+export function VehicleAuthorityProvider({ children, mobilePinSession = false }: { children: ReactNode; mobilePinSession?: boolean }) {
   const [vehicles, setVehicles] = useState<LogisticsVehicleId[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -14,7 +14,7 @@ export function VehicleAuthorityProvider({ children }: { children: ReactNode }) 
     if (inFlight.current) return inFlight.current;
     const pending = (async () => {
       try {
-        const body = await requireSuccessfulResponse(await fetch("/api/logistics/vehicles", { cache: "no-store" }), "Vehicle authority could not be loaded.") as { permittedVehicleIds?: unknown };
+        const body = await requireSuccessfulResponse(await fetch("/api/logistics/vehicles", { cache: "no-store", headers: mobilePinSession ? { "x-fika-logistics-mobile-request": "1" } : undefined }), "Vehicle authority could not be loaded.") as { permittedVehicleIds?: unknown };
         if (!Array.isArray(body.permittedVehicleIds) || !body.permittedVehicleIds.every(isLogisticsVehicleId) || !body.permittedVehicleIds.length) throw new Error("Vehicle authority unavailable.");
         setVehicles([...new Set(body.permittedVehicleIds)]); setError("");
       } catch { setVehicles([]); setError("Vehicle authority unavailable. Retry before selecting a vehicle."); }
@@ -23,7 +23,7 @@ export function VehicleAuthorityProvider({ children }: { children: ReactNode }) 
     inFlight.current = pending;
     void pending.finally(() => { inFlight.current = undefined; });
     return pending;
-  }, []);
+  }, [mobilePinSession]);
   useEffect(() => { void refresh(); }, [refresh]);
   return <Context.Provider value={{ vehicles, loading, error, refresh }}>{children}</Context.Provider>;
 }

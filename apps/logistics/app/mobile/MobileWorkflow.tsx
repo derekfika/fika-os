@@ -21,8 +21,8 @@ type View = "deliveries" | "collections" | "messages" | "more";
 type DriverMessage = { id: string; title: string; body: string; meta: string };
 type UndoAction = { run: DeliveryRun; stop: DeliveryStop; label: string };
 
-async function loadMobileProjection(date: string, vehicleQuery: string, _materialiseMissing: boolean) {
-  const recovered = await fetchProjectionWithRecovery({ serviceDate: date, vehicleQuery });
+async function loadMobileProjection(date: string, vehicleQuery: string, headers: HeadersInit) {
+  const recovered = await fetchProjectionWithRecovery({ serviceDate: date, vehicleQuery, headers });
   const { response } = recovered;
   const body = recovered.body as Record<string, unknown> | null;
   if (!response.ok) throw new LogisticsResponseError(responseErrorDetails(body, response.status, "Logistics is temporarily unavailable."));
@@ -30,9 +30,10 @@ async function loadMobileProjection(date: string, vehicleQuery: string, _materia
 }
 
 export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" } = {}) {
-  return <VehicleAuthorityProvider><MobileWorkflowContents fixedVan={fixedVan} /></VehicleAuthorityProvider>;
+  return <VehicleAuthorityProvider mobilePinSession={Boolean(fixedVan)}><MobileWorkflowContents fixedVan={fixedVan} /></VehicleAuthorityProvider>;
 }
 function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) {
+  const mobileHeaders: Record<string, string> = fixedVan ? { "x-fika-logistics-mobile-request": "1" } : {};
   const authority = useVehicleAuthority();
   const [selectedVehicle, setSelectedVehicle] = useState<LogisticsVehicleId | "">(fixedVan === "Van 1" ? "van1" : fixedVan === "Van 2" ? "van2" : "");
   const [selectedRunId, setSelectedRunId] = useState("");
@@ -95,7 +96,7 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
       const vehicle = fixedVan || "organisation";
       const vehicleQuery = fixedVan ? `&vehicle=${encodeURIComponent(fixedVan.toLowerCase().replace(" ", ""))}` : "";
       try {
-        const headResponse = await fetch(`/api/logistics?syncHead=1&serviceDate=${serviceDate}${vehicleQuery}`, { cache: "no-store" });
+        const headResponse = await fetch(`/api/logistics?syncHead=1&serviceDate=${serviceDate}${vehicleQuery}`, { cache: "no-store", headers: mobileHeaders });
         const head = await headResponse.json().catch(() => null);
         const cacheScope = headResponse.headers.get("x-logistics-cache-scope") || "";
         let cached = cacheScope ? await readCachedProjection(cacheScope, serviceDate, vehicle) : undefined;
@@ -121,7 +122,7 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
           });
           return;
         }
-        const body = await loadMobileProjection(serviceDate, vehicleQuery, materialiseMissing);
+        const body = await loadMobileProjection(serviceDate, vehicleQuery, mobileHeaders);
         if (!current()) return;
         if (!body?.projection) {
           if (body?.projectionState === "VALID_EMPTY" || body?.state === "EMPTY") {
@@ -169,7 +170,7 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
     const pending = (async () => {
       const vehicleQuery = fixedVan ? `&vehicle=${encodeURIComponent(fixedVan.toLowerCase().replace(" ", ""))}` : "";
       try {
-        const response = await fetch(`/api/logistics?syncHead=1&serviceDate=${context.scope}${vehicleQuery}`, { cache: "no-store" });
+        const response = await fetch(`/api/logistics?syncHead=1&serviceDate=${context.scope}${vehicleQuery}`, { cache: "no-store", headers: mobileHeaders });
         const body = await response.json().catch(() => null);
         if (!response.ok) throw new LogisticsResponseError(responseErrorDetails(body, response.status, "Logistics sync state could not be checked."));
         if (!requests.isCurrent(context)) return;
@@ -255,7 +256,7 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
     const run = runs.find((item) => item.canonicalId === stop.runId); if (!run) return;
     requests.commit(context, () => setPendingAction(action));
     try {
-      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, runId: run.canonicalId, expectedRunVersion: run.version, stopId: stop.canonicalId, expectedStopVersion: stop.version, loadIds: stop.canonicalLoadIds, expectedJobVersions: stop.canonicalJobVersions, expectedLoadVersions: { ...Object.assign({}, ...(visibleData?.projection?.deliveryLoads || []).map(load => load.loadVersions || {})), ...stop.canonicalLoadVersions }, ...extra }) });
+      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json", ...mobileHeaders }, body: JSON.stringify({ action, runId: run.canonicalId, expectedRunVersion: run.version, stopId: stop.canonicalId, expectedStopVersion: stop.version, loadIds: stop.canonicalLoadIds, expectedJobVersions: stop.canonicalJobVersions, expectedLoadVersions: { ...Object.assign({}, ...(visibleData?.projection?.deliveryLoads || []).map(load => load.loadVersions || {})), ...stop.canonicalLoadVersions }, ...extra }) });
       const body = await response.json().catch(() => null); if (!response.ok) { const details = responseErrorDetails(body, response.status, "The operation could not be completed."); requests.commit(context, () => setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`)); return; }
       requests.commit(context, () => { setError(""); setSelectedStop(undefined); setIssueStop(undefined); setIssueText(""); returnFocusToStop(); }); announceDriverChange(serviceDate); await loadForContext(context);
       if (action === "complete-stop" && body?.run && body?.stop) {
@@ -276,7 +277,7 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
     if (pendingAction) return;
     requests.commit(context, () => setPendingAction("dispatch-run"));
     try {
-      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "dispatch-run", runId: run.canonicalId, expectedRunVersion: run.version }) });
+      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json", ...mobileHeaders }, body: JSON.stringify({ action: "dispatch-run", runId: run.canonicalId, expectedRunVersion: run.version }) });
       const body = await response.json().catch(() => null);
       if (!response.ok) { const details = responseErrorDetails(body, response.status, "The vehicle could not be dispatched."); requests.commit(context, () => { setRetryDispatchRun(run); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); }); return; }
       requests.commit(context, () => { setRetryDispatchRun(undefined); setError(""); });
@@ -299,7 +300,7 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
     const current = undoAction;
     requests.commit(context, () => setPendingAction("undo-completion"));
     try {
-      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "undo-completion", runId: current.run.canonicalId, expectedRunVersion: current.run.version, stopId: current.stop.canonicalId, expectedStopVersion: current.stop.version, loadIds: current.stop.canonicalLoadIds, expectedJobVersions: current.stop.canonicalJobVersions, expectedLoadVersions: current.stop.canonicalLoadVersions }) });
+      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json", ...mobileHeaders }, body: JSON.stringify({ action: "undo-completion", runId: current.run.canonicalId, expectedRunVersion: current.run.version, stopId: current.stop.canonicalId, expectedStopVersion: current.stop.version, loadIds: current.stop.canonicalLoadIds, expectedJobVersions: current.stop.canonicalJobVersions, expectedLoadVersions: current.stop.canonicalLoadVersions }) });
       const body = await response.json().catch(() => null);
       if (!response.ok) { const details = responseErrorDetails(body, response.status, "The completion could not be undone. Refresh and try again."); requests.commit(context, () => setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`)); return; }
       requests.commit(context, () => { setUndoAction(undefined); setError(""); }); announceDriverChange(serviceDate); await loadForContext(context);
@@ -316,7 +317,7 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
     if (pendingAction) return;
     requests.commit(context, () => setPendingAction("confirm-returned-to-cpu"));
     try {
-      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "confirm-returned-to-cpu", runId: run.canonicalId, expectedRunVersion: run.version }) });
+      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json", ...mobileHeaders }, body: JSON.stringify({ action: "confirm-returned-to-cpu", runId: run.canonicalId, expectedRunVersion: run.version }) });
       const body = await response.json().catch(() => null);
       if (!response.ok) { const details = responseErrorDetails(body, response.status, "The return could not be confirmed. Refresh and try again."); requests.commit(context, () => setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`)); return; }
       requests.commit(context, () => setError("")); announceDriverChange(serviceDate); await loadForContext(context);
