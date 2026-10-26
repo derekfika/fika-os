@@ -27,6 +27,7 @@ import { productionScopes, type ProductionScope } from "../lib/production-scope"
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, isCpuWithdrawn, type CpuLifecycle } from "../lib/production-presentation";
 import { aggregateProductionTotals, orderDate } from "../lib/production-day";
 import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
+import { calendarDateInputPatch, calendarWeekChangePatch } from "../lib/cpu-week-date-sync";
 import { addOperationalDays, filterProductionTotalsOrders, filterProductionTotalsOrdersToDates, formatProductionTotalsDateRange, formatProductionTotalsSelection, operationalWeekRange, productionTotalsWeekDates, resolveProductionTotalsRange } from "../lib/production-totals-range";
 import { loadProductionTotalsRange } from "../lib/cpu-totals-loader";
 import { readApiResponse } from "./lib/api-response";
@@ -544,7 +545,7 @@ export default function CpuProduction() {
             </div>
           </> : <label>
             Date
-            <input type="date" value={date} onChange={(event) => { const next = event.target.value; setDate(next); if (view === "day") setDayDate(next); if (view === "calendar" && next) setWeekCommencing(weekCommencingFor(next)); }} />
+            <input type="date" value={date} onChange={(event) => { const patch = calendarDateInputPatch(event.target.value, view); setDate(patch.date); if (patch.dayDate !== undefined) setDayDate(patch.dayDate); if (patch.weekCommencing !== undefined) setWeekCommencing(patch.weekCommencing); }} />
           </label>}
           <label>
             Site
@@ -597,7 +598,7 @@ export default function CpuProduction() {
           />
         )}
         {view === "calendar" && (
-          weekCommencing ? <ProductionCalendar orders={baseVisible} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} weekCommencing={weekCommencing} onWeekChange={(nextWeek) => setWeekCommencing(nextWeek)} onDayOpen={(selectedDate) => { setDate(selectedDate); setDayDate(selectedDate); setWeekCommencing(weekCommencingFor(selectedDate)); setView("day"); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} /> : <p role="status">Loading production calendar…</p>
+          weekCommencing ? <ProductionCalendar orders={baseVisible} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} weekCommencing={weekCommencing} onWeekChange={(nextWeek) => { const patch = calendarWeekChangePatch(nextWeek); setWeekCommencing(patch.weekCommencing); setDate(patch.date); }} onDayOpen={(selectedDate) => { setDate(selectedDate); setDayDate(selectedDate); setWeekCommencing(weekCommencingFor(selectedDate)); setView("day"); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} /> : <p role="status">Loading production calendar…</p>
         )}
         {view === "day" && <ProductionDayView orders={visible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDate(nextDate); setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
