@@ -81,7 +81,7 @@ export async function reconcileCatalogueFromRollingEntries(scope?: { weekId: str
 export function filterCatalogueEntries(entries: CatalogueEntry[], filters: { query?: string; category?: string; usage?: string; status?: string }) {
   const query = filters.query?.trim().toLowerCase() || "";
   return entries.filter((entry) => {
-    const haystack = [entry.name, entry.description, entry.category, entry.subcategory, entry.sourceLabel, entry.sourceEvidence].filter(Boolean).join(" ").toLowerCase();
+    const haystack = [entry.id, entry.name, entry.description, entry.category, entry.subcategory, entry.sourceLabel, entry.sourceEvidence].filter(Boolean).join(" ").toLowerCase();
     return (!query || haystack.includes(query)) && (!filters.category || filters.category === "all" || entry.category === filters.category) && (!filters.usage || filters.usage === "all" || entry.usage.includes(filters.usage as CatalogueUsage)) && (!filters.status || filters.status === "all" || entry.status === filters.status || entry.reviewStatus === filters.status);
   });
 }

@@ -18,6 +18,22 @@ test("catalogue filters only canonical MenuItems", () => {
   assert.equal(filterCatalogueEntries(entries, { category: "Salads" })[0]?.id, "menu-item:salad");
 });
 
+test("catalogue search matches the exact stable ID", () => {
+  assert.deepEqual(filterCatalogueEntries(entries, { query: "menu-item:salad" }).map(entry => entry.id), ["menu-item:salad"]);
+});
+
+test("catalogue search matches a partial stable ID", () => {
+  assert.deepEqual(filterCatalogueEntries(entries, { query: "menu-item:sand" }).map(entry => entry.id), ["menu-item:sandwich"]);
+});
+
+test("catalogue search is case-insensitive for stable IDs", () => {
+  assert.deepEqual(filterCatalogueEntries(entries, { query: "MENU-ITEM:SALAD" }).map(entry => entry.id), ["menu-item:salad"]);
+});
+
+test("catalogue search still matches dish names after stable-ID search is enabled", () => {
+  assert.deepEqual(filterCatalogueEntries(entries, { query: "green" }).map(entry => entry.id), ["menu-item:salad"]);
+});
+
 test("catalogue read model retains every approved replacement category", () => {
   const categories = CANONICAL_DISH_CATEGORIES.map((category, index) => canonicalEntry({
     canonicalId: `dish:taxonomy:${index}`,
