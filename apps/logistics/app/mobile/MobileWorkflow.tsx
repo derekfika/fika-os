@@ -9,7 +9,9 @@ import { movementsForStop, selectMobileVehicleRuns } from "../../lib/planning";
 import { VehicleAuthorityProvider, useVehicleAuthority } from "../vehicle-authority";
 import { logisticsVehicleLabel, type LogisticsVehicleId } from "../../../shared/logistics-authority";
 import { projectionToDashboardData } from "../../lib/projection-dashboard-adapter";
-import { announceDriverChange, driverIssueTypes, showDispatchChecklist, stopCounts, stopIsCollection } from "../../lib/mobile-driver";
+import { announceDriverChange, driverIssueTypes, showDispatchChecklist, stopIsCollection } from "../../lib/mobile-driver";
+import { RunOverview } from "./run-overview";
+import { groupRunVisits } from "./run-overview-model";
 import { responseErrorDetails, LogisticsResponseError } from "../../lib/client-errors";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-client";
 import { readCachedProjection, writeCachedProjection } from "../../lib/logistics-cache";
@@ -17,7 +19,7 @@ import { fetchProjectionWithRecovery } from "../../lib/projection-fetch";
 import { ScopedRequestCoordinator, scopedRequestKey, type ScopedRequestContext } from "../../lib/scoped-request-coordinator";
 
 type Data = { requirements: FulfilmentRequirement[]; runs: DeliveryRun[]; stops: DeliveryStop[]; movements: MovementRequest[]; oplocs: { id: string; label: string; address?: string }[]; serviceDate: string; projection?: Parameters<typeof projectionToDashboardData>[0] };
-type View = "deliveries" | "collections" | "messages" | "more";
+type View = "run" | "messages" | "more";
 type DriverMessage = { id: string; title: string; body: string; meta: string };
 type UndoAction = { run: DeliveryRun; stop: DeliveryStop; label: string };
 
@@ -38,7 +40,7 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
   const [selectedVehicle, setSelectedVehicle] = useState<LogisticsVehicleId | "">(fixedVan === "Van 1" ? "van1" : fixedVan === "Van 2" ? "van2" : "");
   const [selectedRunId, setSelectedRunId] = useState("");
   const [data, setData] = useState<Data>();
-  const [view, setView] = useState<View>("deliveries");
+  const [view, setView] = useState<View>("run");
   const [selectedStop, setSelectedStop] = useState<DeliveryStop>();
   const [issueStop, setIssueStop] = useState<DeliveryStop>();
   const [issueText, setIssueText] = useState("");
@@ -228,19 +230,8 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
   const stops = useMemo(() => runs
     // The dispatcher's saved visiting order (Run.orderedStopIds, already time-ordered for work not yet ordered) is what the driver follows.
     .flatMap((run) => run.orderedStopIds.map((id) => visibleData?.stops.find((stop) => stop.canonicalId === id)).filter(Boolean) as DeliveryStop[]), [runs, visibleData?.stops]);
+  const visits = useMemo(() => groupRunVisits(stops), [stops]);
   // Physical visit numbering: lane stops that share a visit id are ONE visit and show the same number in both tabs.
-  const visitNumbers = (() => { const keys: string[] = []; for (const stop of stops) { const key = stop.visitId || stop.canonicalId; if (!keys.includes(key)) keys.push(key); } return (stop: DeliveryStop) => keys.indexOf(stop.visitId || stop.canonicalId) + 1; })();
-  const visitSibling = (stop: DeliveryStop) => stop.visitId ? stops.find((other) => other.canonicalId !== stop.canonicalId && other.visitId === stop.visitId) : undefined;
-  const deliveries = stops.filter((stop) => !stopIsCollection(stop));
-  const collections = stops.filter((stop) => stopIsCollection(stop));
-  const deliveryCounts = stopCounts(deliveries);
-  const collectionCounts = stopCounts(collections);
-  const completed = stopCounts(stops).completed;
-  const attention = stops.filter((stop) => stop.status === "issue" || (stop.issues || []).some((issue) => issue.status === "open")).length;
-  const visibleStops = view === "collections" ? collections : deliveries;
-  const visibleRemaining = visibleStops.filter((stop) => stop.status !== "completed");
-  const visibleCompleted = visibleStops.filter((stop) => stop.status === "completed");
-  const nextStop = visibleRemaining[0];
   const freshness = !visibleData ? "UNAVAILABLE" : syncUnavailable || visibleData.projection?.state === "STALE" || visibleData.projection?.state === "PARTIAL" ? "STALE" : visibleData.projection?.state === "VALID_EMPTY" ? "NO WORK" : "CURRENT";
 
   const returnFocusToStop = () => window.requestAnimationFrame(() => stopTriggerRef.current?.focus());
@@ -332,24 +323,28 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
   if (!hydrated || !selectedDate) return <main className="driver-app"><section className="driver-empty" aria-busy="true">Loading your day…</section></main>;
 
   return <main className="driver-app">
-    <header className="driver-hero"><div className="driver-topline"><a href="/" aria-label="Back to planner">← Planner</a><span className="driver-bell" aria-label={`${messages.length} notifications`}>♧{messages.length > 0 && <i />}</span></div><p className="driver-eyebrow">FIKA OS · DRIVER</p><div className="driver-title-row"><h1>{view === "collections" ? "Collections" : view === "deliveries" ? "Deliveries" : view === "messages" ? "Messages" : "More"}</h1><span className="driver-live">● {freshness}</span></div><div className="driver-filters"><label><span>▣</span><select aria-label="Service date" disabled={Boolean(pendingAction)} value={selectedDate} onChange={(event) => selectDate(event.target.value)}>{availableDates.map((option) => <option key={option} value={option}>{formatDate(option)}</option>)}</select></label>{!fixedVan && <label><span>Vehicle</span><select aria-label="Vehicle" value={selectedVehicle} disabled={Boolean(pendingAction) || authority.loading || Boolean(authority.error)} onChange={(event) => { setSelectedVehicle(event.target.value as LogisticsVehicleId); setSelectedRunId(""); setSelectedStop(undefined); setIssueStop(undefined); setUndoAction(undefined); setRetryDispatchRun(undefined); }}><option value="">Select vehicle</option>{authority.vehicles.map(id => <option key={id} value={id}>{logisticsVehicleLabel(id)}</option>)}</select></label>}<label><span>Run</span><select aria-label="Run" value={selectedRunId} disabled={Boolean(pendingAction) || !vehicleRuns.length} onChange={event => { setSelectedRunId(event.target.value); setSelectedStop(undefined); setIssueStop(undefined); setUndoAction(undefined); setRetryDispatchRun(undefined); }}><option value="">No run assigned</option>{vehicleRuns.map((run, index) => <option key={run.canonicalId} value={run.canonicalId}>{logisticsVehicleLabel(run.vehicleId!)} · Run {index + 1} · {run.status}</option>)}</select></label></div></header>
+    <header className="driver-hero"><div className="driver-topline"><a href="/" aria-label="Back to planner">← Planner</a><span className="driver-bell" aria-label={`${messages.length} notifications`}>♧{messages.length > 0 && <i />}</span></div><p className="driver-eyebrow">FIKA OS · DRIVER</p><div className="driver-title-row"><h1>{view === "run" ? "Run" : view === "messages" ? "Messages" : "More"}</h1><span className="driver-live">● {freshness}</span></div><div className="driver-filters"><label><span>▣</span><select aria-label="Service date" disabled={Boolean(pendingAction)} value={selectedDate} onChange={(event) => selectDate(event.target.value)}>{availableDates.map((option) => <option key={option} value={option}>{formatDate(option)}</option>)}</select></label>{!fixedVan && <label><span>Vehicle</span><select aria-label="Vehicle" value={selectedVehicle} disabled={Boolean(pendingAction) || authority.loading || Boolean(authority.error)} onChange={(event) => { setSelectedVehicle(event.target.value as LogisticsVehicleId); setSelectedRunId(""); setSelectedStop(undefined); setIssueStop(undefined); setUndoAction(undefined); setRetryDispatchRun(undefined); }}><option value="">Select vehicle</option>{authority.vehicles.map(id => <option key={id} value={id}>{logisticsVehicleLabel(id)}</option>)}</select></label>}<label><span>Run</span><select aria-label="Run" value={selectedRunId} disabled={Boolean(pendingAction) || !vehicleRuns.length} onChange={event => { setSelectedRunId(event.target.value); setSelectedStop(undefined); setIssueStop(undefined); setUndoAction(undefined); setRetryDispatchRun(undefined); }}><option value="">No run assigned</option>{vehicleRuns.map((run, index) => <option key={run.canonicalId} value={run.canonicalId}>{logisticsVehicleLabel(run.vehicleId!)} · Run {index + 1} · {run.status}</option>)}</select></label></div></header>
     {authority.error && <div className="driver-alert" role="alert">{authority.error}<button onClick={() => void authority.refresh()}>Retry vehicles</button></div>}{pendingAction && <div className="driver-operation" role="status" aria-live="polite">{operationLabel(pendingAction)} Keep this page open.</div>}{error && <div className="driver-alert" role="alert">{error}<button disabled={Boolean(pendingAction)} onClick={() => retryDispatchRun ? void dispatchRun(retryDispatchRun) : void load(projectionNeedsMaterialisation)}>{retryDispatchRun ? "Retry dispatch" : projectionNeedsMaterialisation ? "Materialise and retry" : "Retry"}</button></div>}
     {!visibleData ? <section className="driver-empty">Loading your day…</section> : view === "messages" ? <Messages messages={messages} onDismiss={(id) => setMessages((current) => current.filter((message) => message.id !== id))} onClear={() => setMessages([])} /> : view === "more" ? <More driver={driver} runs={runs} /> : <>
       {runs.filter((run) => showDispatchChecklist(run.status)).map((run) => { const runStops = stops.filter((stop) => stop.runId === run.canonicalId && !stopIsCollection(stop)); const loaded = runStops.filter((stop) => stop.loaded).length; return <section className="driver-departure" key={run.canonicalId}><div><p className="driver-section-kicker">LOAD CHECK</p><strong>{run.vehicleLabel || "Your vehicle"} · {loaded} of {runStops.length} deliveries loaded</strong><span>Tap each delivery below to confirm it is on the vehicle before leaving.</span></div><button className="primary-action" disabled={Boolean(pendingAction) || !stops.some(stop => stop.runId === run.canonicalId) || loaded !== runStops.length} onClick={() => void dispatchRun(run)}>{pendingAction === "dispatch-run" ? "Dispatching…" : loaded === runStops.length ? "Dispatch vehicle" : "Load all deliveries"}</button></section>; })}
       {runs.filter((run) => run.returnToCpuPending).map((run) => <section className="driver-departure return-stage" key={`return-${run.canonicalId}`}><div><p className="driver-section-kicker">ALL STOPS COMPLETE</p><strong>Return to CPU</strong><span>All deliveries and collections are complete. Return the vehicle to CPU to finish the run.</span></div><div className="return-actions"><button className="secondary-action" onClick={() => window.open(process.env.NEXT_PUBLIC_FIKA_CPU_URL || "/", "_blank")}>Navigate to CPU</button><button className="primary-action" disabled={Boolean(pendingAction)} onClick={() => void confirmReturned(run)}>{pendingAction === "confirm-returned-to-cpu" ? "Confirming…" : "Confirm returned to CPU"}</button></div></section>)}
-      <section className="driver-summary" aria-label="Daily summary"><Metric icon="↘" value={deliveryCounts.total} label="Total deliveries" tone="purple" /><Metric icon="✓" value={completed} label="Completed stops" tone="mint" /><Metric icon="↗" value={collectionCounts.total} label="Total collections" tone="blue" /><Metric icon="!" value={attention} label="Attention" tone="rose" /></section>
-      <div className="driver-progress"><span>Today’s progress</span><strong>{completed} of {stops.length} total stops completed</strong><div><i style={{ width: `${stops.length ? (completed / stops.length) * 100 : 0}%` }} /></div></div>
-      <nav className="task-switcher" aria-label="Task type"><button className={view === "deliveries" ? "active" : ""} onClick={() => setView("deliveries")}>Deliveries <b>{deliveryCounts.remaining} remaining</b></button><button className={view === "collections" ? "active" : ""} onClick={() => setView("collections")}>Collections <b>{collectionCounts.remaining} remaining</b></button></nav>
-      <section className="driver-list"><div className="list-heading"><div><p className="driver-section-kicker">{view === "collections" ? "RETURN LOAD" : "DELIVERY ROUTE"}</p><h2>{view === "collections" ? "Collection stops" : "Your stops"}</h2></div><span>{visibleStops.length} total · {visibleRemaining.length} remaining · {visibleCompleted.length} completed</span></div>{nextStop && <div className="next-banner"><span>Next up</span><strong>{stopLabel(nextStop, visibleData)}</strong><b>{timeFor(nextStop)}</b></div>}{visibleRemaining.length > 0 && <section className="stop-group" aria-label="Next stops"><p className="driver-section-kicker">NEXT</p>{visibleRemaining.map((stop, index) => <StopRow key={stop.canonicalId} stop={stop} data={visibleData} index={index} visitNumber={stop.visitId ? visitNumbers(stop) : undefined} sibling={visitSibling(stop)} onOpen={(trigger) => { stopTriggerRef.current = trigger; setSelectedStop(stop); }} />)}</section>}{visibleCompleted.length > 0 && <section className="stop-group completed-group" aria-label="Completed stops"><p className="driver-section-kicker">COMPLETED</p>{visibleCompleted.map((stop, index) => <StopRow key={stop.canonicalId} stop={stop} data={visibleData} index={index} visitNumber={stop.visitId ? visitNumbers(stop) : undefined} sibling={visitSibling(stop)} onOpen={(trigger) => { stopTriggerRef.current = trigger; setSelectedStop(stop); }} />)}</section>}{!visibleStops.length && <div className="driver-empty compact">No {view} assigned for this day.</div>}</section>
+      <RunOverview
+        title={driver}
+        dateLabel={formatDate(selectedDate)}
+        visits={visits}
+        siteLabel={(stop) => stopLabel(stop, visibleData)}
+        timeLabel={timeFor}
+        detailLabel={(stop) => laneDetail(stop, visibleData)}
+        openLabel={(stop) => `Open details for ${stopLabel(stop, visibleData)} ${stopIsCollection(stop) ? "collection" : "delivery"}`}
+        onOpen={(trigger, stop) => { stopTriggerRef.current = trigger; setSelectedStop(stop); }}
+      />
     </>}
-    <nav className="driver-bottom-nav" aria-label="Primary"><NavItem active={view === "deliveries"} icon="▦" label="Deliveries" onClick={() => setView("deliveries")} /><NavItem active={view === "collections"} icon="⌁" label="Collections" onClick={() => setView("collections")} /><NavItem active={view === "messages"} icon="□" label="Messages" onClick={() => setView("messages")} badge={messages.length ? String(messages.length) : undefined} /><NavItem active={view === "more"} icon="☰" label="More" onClick={() => setView("more")} /></nav>
+    <nav className="driver-bottom-nav" aria-label="Primary"><NavItem active={view === "run"} icon="▦" label="Run" onClick={() => setView("run")} /><NavItem active={view === "messages"} icon="□" label="Messages" onClick={() => setView("messages")} badge={messages.length ? String(messages.length) : undefined} /><NavItem active={view === "more"} icon="☰" label="More" onClick={() => setView("more")} /></nav>
     {undoAction && <div className="driver-undo-toast" role="status"><span>{undoAction.label}</span><button disabled={Boolean(pendingAction)} onClick={() => void undoCompletion()}>{pendingAction === "undo-completion" ? "Undoing…" : "Undo"}</button></div>}{selectedStop && visibleData && <StopDetail stop={selectedStop} data={visibleData} busy={Boolean(pendingAction)} onClose={closeStopSheet} onAction={execute} onIssue={() => { if (!pendingAction) { setIssueStop(selectedStop); setSelectedStop(undefined); } }} />}{issueStop && <IssueSheet stop={issueStop} type={issueType} setType={setIssueType} text={issueText} setText={setIssueText} busy={Boolean(pendingAction)} onClose={closeIssueSheet} onSubmit={reportIssue} />}
   </main>;
 }
 
-function Metric({ icon, value, label, tone }: { icon: string; value: number; label: string; tone: string }) { return <div className={`driver-metric ${tone}`}><span>{icon}</span><strong>{value}</strong><small>{label}</small></div>; }
 function NavItem({ active, icon, label, badge, onClick }: { active: boolean; icon: string; label: string; badge?: string; onClick: () => void }) { return <button className={active ? "active" : ""} aria-current={active ? "page" : undefined} aria-label={label} onClick={onClick}><span aria-hidden="true">{icon}{badge && <i>{badge}</i>}</span><small>{label}</small></button>; }
-function StopRow({ stop, data, index, visitNumber, sibling, onOpen }: { stop: DeliveryStop; data: Data; index: number; visitNumber?: number; sibling?: DeliveryStop; onOpen: (trigger: HTMLButtonElement) => void }) { const issue = stop.status === "issue" || (stop.issues || []).some((item) => item.status === "open"); return <button className={`stop-row-card ${stop.status} ${issue ? "attention" : ""}`} aria-label={`Open details for ${stopLabel(stop, data)}`} onClick={(event) => onOpen(event.currentTarget)}><span className="stop-number" aria-hidden="true">{stop.status === "completed" ? "✓" : visitNumber ?? index + 1}</span><span className="stop-row-main"><span className="stop-row-meta"><b>{stop.status === "completed" ? "COMPLETED" : stop.status === "arrived" ? "CURRENT" : issue ? "ATTENTION" : index === 0 ? "UP NEXT" : "PLANNED"}</b>{stop.loaded && stop.status !== "completed" && <em className="loaded-tag">LOADED</em>}{stop.notes && <em aria-label="Has note">✎</em>}</span><strong>{stopLabel(stop, data)}</strong><small>{stop.movementType === "collection" ? "Collection" : "Delivery"} · {timeFor(stop)}{itemSummary(stop) ? ` · ${itemSummary(stop)}` : ""}{sibling ? ` · same visit as the ${sibling.movementType === "collection" ? "collection" : "delivery"}` : ""}</small></span><span className="stop-row-arrow" aria-hidden="true">›</span></button>; }
 function StopDetail({ stop, data, busy, onClose, onAction, onIssue }: { stop: DeliveryStop; data: Data; busy: boolean; onClose: () => void; onAction: (action: string, stop: DeliveryStop, extra?: Record<string, unknown>) => void; onIssue: () => void }) {
   const movement = movementsForStop(stop, data.movements)[0];
   const oploc = data.oplocs.find((item) => item.id === stop.locationOplocId);
@@ -377,6 +372,14 @@ function formatDate(date: string) { return new Intl.DateTimeFormat("en-GB", { we
 function addDays(date: string, days: number) { const value = new Date(`${date}T12:00:00`); value.setDate(value.getDate() + days); return value.toISOString().slice(0, 10); }
 function dateOptions(startDate = operationalDate()) { const start = new Date(`${startDate}T12:00:00`); return Array.from({ length: 8 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); return date.toISOString().slice(0, 10); }); }
 function timeFor(stop: DeliveryStop) { const planned = stop.plannedWindow; if (planned) return `${planned.startTime}${planned.endTime ? ` – ${planned.endTime}` : ""}`; if (stop.plannedArrivalTime) return stop.plannedArrivalTime; const required = stop.window; return required ? `${required.startTime}${required.endTime ? ` – ${required.endTime}` : ""}` : stop.requiredTime || "Time to confirm"; }
+/** Real load totals for one lane stop, from its requirements or the projection; never a placeholder. */
+function laneDetail(stop: DeliveryStop, data: Data) {
+  const rows = loadSubloads(stop, data);
+  if (!rows.length) return itemSummary(stop) || "No load detail";
+  const units = new Set(rows.map((row) => row.unit));
+  const total = rows.reduce((sum, row) => sum + row.quantity, 0);
+  return `${rows.length} load${rows.length === 1 ? "" : "s"} · ${total} ${units.size === 1 ? [...units][0] : "items"}`;
+}
 function loadSubloads(stop: DeliveryStop, data: Data, movement?: MovementRequest) {
   const rows = stop.requirementRefs.flatMap((ref) => {
     const requirement = data.requirements.find((item) => item.canonicalId === ref.requirementId);
