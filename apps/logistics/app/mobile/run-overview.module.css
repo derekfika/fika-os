@@ -19,8 +19,8 @@
 .visit.completed { opacity: 0.75; }
 .visitHead { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; }
 .number { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 999px; background: var(--fika-surface-subtle); font-weight: 700; }
-.visit[aria-current="step"] .number { background: var(--purple); color: #fff; }
-.visit.completed .number { background: var(--fika-status-success); color: #fff; }
+.visit[aria-current="step"] .number { background: var(--purple); color: var(--surface); }
+.visit.completed .number { background: var(--fika-status-success); color: var(--surface); }
 .visitTitle { display: grid; min-width: 0; }
 .visitTitle strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .visitTitle small { color: var(--fika-text-secondary); }
