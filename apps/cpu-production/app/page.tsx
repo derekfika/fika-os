@@ -26,7 +26,7 @@ import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperat
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, isCpuWithdrawn, type CpuLifecycle } from "../lib/production-presentation";
 import { aggregateProductionTotals, orderDate } from "../lib/production-day";
-import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
+import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, dashboardInitialDate, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 import { calendarDateInputPatch, calendarWeekChangePatch } from "../lib/cpu-week-date-sync";
 import { addOperationalDays, filterProductionTotalsOrders, filterProductionTotalsOrdersToDates, formatProductionTotalsDateRange, formatProductionTotalsSelection, operationalWeekRange, productionTotalsWeekDates, resolveProductionTotalsRange } from "../lib/production-totals-range";
 import { loadProductionTotalsRange } from "../lib/cpu-totals-loader";
@@ -83,8 +83,10 @@ export default function CpuProduction() {
     const now = new Date();
     setTodayKey(europeLondonDate(now));
     const operationalDate = dashboardOperationalDate(now);
-    setDayDate(operationalDate);
-    setWeekCommencing(weekCommencingFor(operationalDate));
+    const initialDate = dashboardInitialDate(window.location.search, operationalDate);
+    setDate(initialDate);
+    setDayDate(initialDate);
+    setWeekCommencing(weekCommencingFor(initialDate));
   }, []);
   const [productionScope, setProductionScope] = useState<ProductionScope>("all");
   const [view, setView] = useState<View>("calendar");

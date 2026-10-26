@@ -6,6 +6,14 @@ import { europeLondonDate } from "./operational-date";
 export function weekCommencingFor(serviceDate: string) { const date = new Date(`${serviceDate}T00:00:00Z`); const day = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() - day + 1); return date.toISOString().slice(0, 10); }
 export function dashboardOperationalDate(now = new Date()) { const date = new Date(`${europeLondonDate(now)}T12:00:00Z`); const day = date.getUTCDay(); if (day === 0) date.setUTCDate(date.getUTCDate() + 1); else if (day === 6) date.setUTCDate(date.getUTCDate() + 2); return date.toISOString().slice(0, 10); }
 
+/** Uses a valid requested CPU service date on a fresh deep link, otherwise the operational default. */
+export function dashboardInitialDate(search: string, fallback: string) {
+  const requested = new URLSearchParams(search).get("date");
+  if (!requested || !/^\d{4}-\d{2}-\d{2}$/.test(requested)) return fallback;
+  const parsed = new Date(`${requested}T00:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== requested ? fallback : requested;
+}
+
 /** Rehydrates the compact day read model into the shape used by the existing UI. */
 export type CpuProjection = CpuDayProjection | CpuWeekProjection;
 
