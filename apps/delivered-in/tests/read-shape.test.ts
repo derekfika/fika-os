@@ -147,14 +147,17 @@ test("requested-week recovery emits one structured, non-sensitive event", async 
 test("main dashboard reads namespaced IndexedDB before fetching changed package bodies", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const cache = await readFile(new URL("../app/lib/delivered-in-indexeddb.ts", import.meta.url), "utf8");
+  // The cache match decision and account/OPLOC filter live in the shared decision module.
+  const decision = await readFile(new URL("../lib/dashboard-cache-decision.ts", import.meta.url), "utf8");
   assert.match(page, /readCachedDeliveredInDays/);
   assert.match(page, /head=1/);
-  assert.match(page, /cached\.projectionVersion === entry\.projectionVersion/);
+  assert.match(decision, /cached\.projectionVersion === entry\.projectionVersion/);
   assert.match(page, /if \(!matches\)/);
   assert.match(page, /Published — No service \/ no menu items/);
   assert.doesNotMatch(page, /Boolean\(day && day\.entries\.length\)/);
   assert.match(page, /operationalDateLondon/);
-  assert.match(cache, /accountScope === accountScope && value\.oplocId === oplocId/);
+  assert.match(decision, /accountScope === accountScope && value\.oplocId === oplocId/);
+  assert.match(cache, /selectScopedCachedValues\(/);
 });
 
 test("Grab & Go CPU feed requires the service boundary and applies the requested delivery date", async () => {
