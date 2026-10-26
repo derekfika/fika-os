@@ -24,9 +24,21 @@ env:
   - variable: FIKA_CPU_BASE_URL
     value: https://cpu-staging.fikacatering.com
     availability: [BUILD, RUNTIME]
+  - variable: MENU_PLANNING_BASE_URL
+    value: https://menu-planning-staging.fikacatering.com
+    availability: [BUILD, RUNTIME]
   - variable: NEXT_PUBLIC_FIKA_CPU_URL
     value: https://cpu-staging.fikacatering.com
     availability: [BUILD, RUNTIME]
   - variable: FIKA_INTERNAL_API_TOKEN
     secret: FIKA_INTERNAL_API_TOKEN@3
+    availability: [RUNTIME]
+  - variable: LOGISTICS_MOBILE_SESSION_SECRET
+    secret: LOGISTICS_MOBILE_SESSION_SECRET@1
+    availability: [RUNTIME]
+  - variable: LOGISTICS_MOBILE_VAN1_PIN_VERIFIER
+    secret: LOGISTICS_MOBILE_VAN1_PIN_VERIFIER@1
+    availability: [RUNTIME]
+  - variable: LOGISTICS_MOBILE_VAN2_PIN_VERIFIER
+    secret: LOGISTICS_MOBILE_VAN2_PIN_VERIFIER@1
     availability: [RUNTIME]

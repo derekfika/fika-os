@@ -17,6 +17,7 @@ async function readBody(response: Response) {
 export async function fetchProjectionWithRecovery(input: {
   serviceDate: string;
   vehicleQuery?: string;
+  headers?: HeadersInit;
   fetcher?: Fetcher;
   sleep?: (milliseconds: number) => Promise<void>;
   retryDelays?: number[];
@@ -25,7 +26,7 @@ export async function fetchProjectionWithRecovery(input: {
   const sleep = input.sleep || wait;
   const vehicleQuery = input.vehicleQuery || "";
   const url = `/api/logistics?projection=1&serviceDate=${encodeURIComponent(input.serviceDate)}${vehicleQuery}`;
-  let response = await fetcher(url, { cache: "no-store" });
+  let response = await fetcher(url, { cache: "no-store", headers: input.headers });
   let body = await readBody(response);
   const isTransientClassificationFailure = (candidate: ProjectionBody | null, candidateResponse: Response) => !candidateResponse.ok && candidateResponse.status >= 500 && candidate?.error?.code === "LOGISTICS_PROJECTION_STATE_UNAVAILABLE";
   // Classification of a genuinely missing day depends on cold-startable
@@ -34,7 +35,7 @@ export async function fetchProjectionWithRecovery(input: {
   if (isTransientClassificationFailure(body, response)) {
     for (const delay of input.retryDelays || [0, 150, 400]) {
       if (delay) await sleep(delay);
-      response = await fetcher(url, { cache: "no-store" });
+      response = await fetcher(url, { cache: "no-store", headers: input.headers });
       body = await readBody(response);
       if (!isTransientClassificationFailure(body, response)) break;
     }
@@ -45,7 +46,7 @@ export async function fetchProjectionWithRecovery(input: {
 
   const reconcileResponse = await fetcher("/api/logistics", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(input.headers ? Object.fromEntries(new Headers(input.headers).entries()) : {}) },
     body: JSON.stringify({ action: "reconcile-logistics-day", serviceDate: input.serviceDate }),
   });
   const reconcileBody = await readBody(reconcileResponse);
@@ -54,7 +55,7 @@ export async function fetchProjectionWithRecovery(input: {
 
   for (const delay of input.retryDelays || [0, 100, 250, 500]) {
     if (delay) await sleep(delay);
-    response = await fetcher(url, { cache: "no-store" });
+    response = await fetcher(url, { cache: "no-store", headers: input.headers });
     body = await readBody(response);
     const projection = body?.projection;
     const validEmpty = body?.projectionState === "VALID_EMPTY" || body?.state === "EMPTY";

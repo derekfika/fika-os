@@ -36,6 +36,95 @@ test('A6-R planned-to-planned reschedule succeeds and dispatched current owner r
   const result = await f.post({ action: 'reschedule-delivery-load', loadId: current.id, expectedLoadVersion: current.version, scheduledTime: '10:50', targetRunId: 'r1' });
   assert.equal(result.response.status, 422); assert.equal(f.writes, before);
 });
+
+test('planner job assignment rechecks Menu Planning publication authority before committing', async () => {
+  const f = fresh();
+  const source = {
+    ...requirements(f, 'menu-withdrawal'),
+    canonicalId: 'fulfilment-requirement:menu-planning:source-day:site:menu-withdrawal',
+    sourceDomain: 'menu-planning',
+    sourceEntityId: 'source-day:menu-withdrawal',
+    sourceVersion: 4,
+    sourceContentHash: 'menu-content-v4',
+  };
+  f.requirements.push(source);
+  await f.materialisation.reconcileLogisticsDay(f.date, 'Operator');
+  const job = jobs(f).find(item => item.requirementId === source.canonicalId);
+  assert.ok(job);
+  const checked = [];
+  f.setMenuAuthorityCheck(async (_requirements, _cookie, ids) => {
+    checked.push(ids);
+    throw Object.assign(new Error('Menu Planning publication day is withdrawn, superseded or inconsistent.'), { status: 409 });
+  });
+  const before = f.writes;
+  const result = await f.post({ action: 'assign-job-to-load', jobId: job.id, targetRunId: 'r1', scheduledTime: '10:30', expectedJobVersion: job.version });
+  assert.equal(result.response.status, 409, JSON.stringify(result.body));
+  assert.deepEqual(checked, [[source.canonicalId]]);
+  assert.equal(f.writes, before, 'withdrawn source must not create an assignment or load');
+  assert.equal(values(f, 'fikaLogisticsAssignmentsV1').some(item => item.jobId === job.id), false);
+});
+
+test('assignment conflict returns a correlation reference and logs bounded version/authority evidence', async () => {
+  const f = fresh();
+  const source = { ...requirements(f, 'menu-conflict-diagnostic'), canonicalId: 'fulfilment-requirement:menu-planning:source-day:site:menu-conflict-diagnostic', sourceDomain: 'menu-planning', sourceEntityId: 'source-day:menu-conflict-diagnostic', sourceVersion: 4, sourceContentHash: 'menu-content-v4' };
+  f.requirements.push(source);
+  await f.materialisation.reconcileLogisticsDay(f.date, 'Operator');
+  const job = jobs(f).find(item => item.requirementId === source.canonicalId);
+  assert.ok(job);
+  f.setMenuAuthorityCheck(async () => { throw Object.assign(new Error('withdrawn'), { status: 409 }); });
+  const records = [];
+  const originalWarn = console.warn;
+  console.warn = (event, value) => records.push([event, value]);
+  try {
+    const result = await f.post({ action: 'assign-job-to-load', jobId: job.id, targetRunId: 'r1', scheduledTime: '10:30', expectedJobVersion: job.version, expectedRunVersion: 1, expectedLoadVersions: { l1: 1 } });
+    assert.equal(result.response.status, 409);
+    const event = records.find(([name]) => name === 'LOGISTICS_ASSIGN_JOB_DIAGNOSTIC');
+    assert.ok(event, 'failure must emit the structured diagnostic');
+    assert.equal(result.body.error.requestId, event[1].requestId);
+    assert.match(result.body.error.code, /^LOGISTICS_ASSIGN_/);
+    assert.equal(event[1].action, 'assign-job-to-load');
+    assert.equal(event[1].checkpoint, 'source-authority');
+    assert.equal(event[1].sourceAuthority, 'rejected_or_unavailable');
+    assert.equal(event[1].expectedVersions.job, job.version);
+    assert.equal(event[1].expectedVersions.run, 1);
+    assert.equal(event[1].observed.job.version, job.version);
+    assert.equal(event[1].observed.run.version, 1);
+    assert.equal(event[1].observed.projection.state, 'CURRENT');
+    assert.equal(JSON.stringify(event[1]).includes('withdrawn'), false, 'raw authority error must not be logged');
+  } finally { console.warn = originalWarn; }
+});
+
+test('assignment stale job version reports its specific conflict and observed version', async () => {
+  const f = fresh();
+  const job = await canonicalJob(f, 'stale-version');
+  const before = f.writes;
+  const records = [];
+  const originalWarn = console.warn;
+  console.warn = (event, value) => records.push([event, value]);
+  try {
+    const result = await assign(f, job, { expectedJobVersion: job.version + 1 });
+    assert.equal(result.response.status, 409);
+    assert.equal(result.body.error.code, 'LOGISTICS_ASSIGN_JOB_VERSION_CONFLICT');
+    const event = records.find(([name]) => name === 'LOGISTICS_ASSIGN_JOB_DIAGNOSTIC');
+    assert.ok(event);
+    assert.equal(event[1].requestId, result.body.error.requestId);
+    assert.equal(event[1].reasonCategory, 'LOGISTICS_ASSIGN_JOB_VERSION_CONFLICT');
+    assert.equal(event[1].expectedVersions.job, job.version + 1);
+    assert.equal(event[1].observed.job.version, job.version);
+    assert.equal(f.writes, before);
+    assert.equal(values(f, 'fikaLogisticsAssignmentsV1').length, 0);
+  } finally { console.warn = originalWarn; }
+});
+
+test('planner assignment fails closed when a Menu Planning job has no canonical requirement ID', async () => {
+  const f = fresh();
+  const job = { id: 'menu-job:missing-requirement', serviceDate: f.date, sourceType: 'menu-planning', sourceId: 'source-day:missing-requirement', destinationOplocId: 'site:missing-requirement', originOplocId: 'cpu', productionReadiness: 'ready', collectionStatus: 'awaiting', contents: [], version: 1, audit: [], createdAt: 'now', updatedAt: 'now' };
+  f.seed('fikaLogisticsJobsV1', job.id, job);
+  const before = f.writes;
+  const result = await f.post({ action: 'assign-job-to-load', jobId: job.id, targetRunId: 'r1', scheduledTime: '10:30', expectedJobVersion: 1 });
+  assert.equal(result.response.status, 503, JSON.stringify(result.body));
+  assert.equal(f.writes, before);
+});
 test('A6-R reschedule into dispatched proposed owner rejects without writes', async () => {
   const f = await assigned(); const load = loads(f)[0]; const target = structuredClone(f.records.get('fikaLogisticsDeliveryRunsV1/r2')); target.vehicleId = 'van1'; target.status = 'dispatched'; f.seed('fikaLogisticsDeliveryRunsV1', 'r3', { ...target, canonicalId: 'r3', status: 'dispatched' });
   const before = f.writes; const result = await f.post({ action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '10:45', targetRunId: 'r3' });

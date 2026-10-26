@@ -24,6 +24,9 @@ env:
   - variable: FIKA_CPU_BASE_URL
     value: https://cpu-staging.fikacatering.com
     availability: [BUILD, RUNTIME]
+  - variable: MENU_PLANNING_BASE_URL
+    value: https://menu-planning-staging.fikacatering.com
+    availability: [BUILD, RUNTIME]
   - variable: NEXT_PUBLIC_FIKA_CPU_URL
     value: https://cpu-staging.fikacatering.com
     availability: [BUILD, RUNTIME]

@@ -26,6 +26,27 @@ test('other application health probes retain root endpoint smoke semantics',asyn
  let request;const result=await releaseHealthProbe('cpu','cpu-backend.hosted.app','a'.repeat(40),async(url,options)=>{request={url,options};return {ok:true,status:200};});
  assert.deepEqual(result,{ok:true,status:200,url:'https://cpu-backend.hosted.app/'});assert.equal(request.url,'https://cpu-backend.hosted.app/');assert.equal(request.options.redirect,'error');
 });
+test('Logistics staging health accepts only its exact unauthenticated staging Hub gate redirect',async()=>{
+ const backend='https://fika-logistics-staging--fika-os-dev.europe-west4.hosted.app',url=`${backend}/`;
+ const response=(status,location)=>({status,headers:{get:name=>name==='location'?location:null}});
+ const valid='https://staging-os.fikacatering.com/?returnTo='+encodeURIComponent(url)+'&launchError=FIKA_SESSION_MISSING&appId=logistics';
+ let request;const ok=await releaseHealthProbe('logistics',backend,'a'.repeat(40),async(target,options)=>{request={target,options};return response(307,valid);},'staging');
+ assert.deepEqual(ok,{ok:true,status:307,url,authGate:'FIKA_SESSION_MISSING'});
+ assert.equal(request.target,url);assert.equal(request.options.redirect,'manual');assert.equal(request.options.cache,'no-store');
+ for(const location of [
+  valid.replace('staging-os.fikacatering.com','evil.example'),
+  valid.replace('appId=logistics','appId=cpu-production'),
+  valid.replace('launchError=FIKA_SESSION_MISSING','launchError=OTHER'),
+  valid.replace(encodeURIComponent(url),encodeURIComponent(`${backend}/different`)),
+  `${valid}&extra=1`,
+  'https://staging-os.fikacatering.com/',
+ ]) {
+  const result=await releaseHealthProbe('logistics',backend,'a'.repeat(40),async()=>response(307,location),'staging');
+  assert.equal(result.ok,false,location);
+ }
+ const notRedirect=await releaseHealthProbe('logistics',backend,'a'.repeat(40),async()=>response(200,null),'staging');
+ assert.equal(notRedirect.ok,false);assert.equal(notRedirect.reason,'unexpected_logistics_auth_response');
+});
 test('staging executes with repository-write authority and no approval comment or WIF',()=>{
  const access={env:{},github:endpoint=>endpoint==='user'?{login:'writer',type:'User'}:{permissions:{push:true}}};
  const auth=executionAuthorization(target('cpu','staging'),'a'.repeat(40),{},access);assert.equal(auth.actor,'writer');assert.equal(auth.explicitExecute,true);assert.equal(auth.method,'authenticated-repository-writer');

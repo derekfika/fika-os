@@ -13,7 +13,7 @@ export type AssignmentBatch = { loads: Map<string, DeliveryLoad>; plannedRuns?: 
 export async function assertLoadAssignmentsCurrent(tx: Transaction, load: DeliveryLoad) {
   const assignments = await tx.get(logisticsAssignments().where("loadId", "==", load.id));
   const ids = assignments.docs.map(doc => doc.data().jobId as string);
-  const conflict = () => new HttpError(409, "Load assignment integrity requires review. Refresh planning.");
+  const conflict = () => new HttpError(409, "Load assignment integrity requires review. Refresh planning.", "LOGISTICS_ASSIGN_LOAD_INTEGRITY");
   if (!ids.length || ids.some(id => !id) || new Set(ids).size !== ids.length) throw conflict();
   const jobs = await Promise.all(ids.map(async id => {
     const [snapshot, ownership] = await Promise.all([tx.get(logisticsJobs().doc(id)), tx.get(logisticsAssignments().where("jobId", "==", id))]);
@@ -29,7 +29,7 @@ async function assertLoadPlacementPlanningOpen(tx: Transaction, load: DeliveryLo
   for (const id of ownerIds) {
     const snapshot = await tx.get(runs().doc(id));
     const owner = snapshot.exists ? snapshot.data() as DeliveryRun : undefined;
-    if (!owner) throw new HttpError(409, "Canonical load owner is unavailable.");
+    if (!owner) throw new HttpError(409, "Canonical load owner is unavailable.", "LOGISTICS_ASSIGN_LOAD_OWNER_UNAVAILABLE");
     try { assertRunPlanningOpen(owner); } catch (error) { throw new HttpError(422, error instanceof Error ? error.message : "Return the run to planning before changing assignments."); }
   }
 }
@@ -42,7 +42,7 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
   const jobSnap = await tx.get(jobRef);
   if (!jobSnap.exists && !intent.sourceJob) throw new HttpError(404, "Logistics job not found.");
   const current = jobSnap.exists ? jobSnap.data() as LogisticsJob : undefined;
-  if (intent.sourceJob && current && (current.sourceVersion || 0) > (intent.sourceJob.sourceVersion || 0)) throw new HttpError(409, "Source changed. Refresh planning.");
+  if (intent.sourceJob && current && (current.sourceVersion || 0) > (intent.sourceJob.sourceVersion || 0)) throw new HttpError(409, "Source changed. Refresh planning.", "LOGISTICS_ASSIGN_JOB_SOURCE_VERSION_CONFLICT");
   const job = intent.sourceJob ? { ...intent.sourceJob, id: intent.jobId, deliveryStatus: current?.deliveryStatus || "pending", ...(current?.deliveredAt ? { deliveredAt: current.deliveredAt } : {}), collectionStatus: current?.collectionStatus || intent.sourceJob.collectionStatus, activeLoadId: current?.activeLoadId, version: current?.version || 0, audit: current?.audit || [] } : current!;
   if (!job.originOplocId || !job.destinationOplocId || job.sourceStatus === "withdrawn") throw new HttpError(422, "Job has no active canonical delivery authority.");
   if (job.requirementId) {
@@ -53,7 +53,7 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
       nativeIds = new Set(nativeStops.flatMap(snapshot => snapshot.docs.flatMap(doc => (doc.data().requirementRefs || []).map((ref: { requirementId: string }) => ref.requirementId))));
       if (batch) batch.nativeRequirements = nativeIds;
     }
-    if (nativeIds.has(job.requirementId)) throw new HttpError(409, "Return existing native work to planning before canonical reassignment.");
+    if (nativeIds.has(job.requirementId)) throw new HttpError(409, "Return existing native work to planning before canonical reassignment.", "LOGISTICS_ASSIGN_NATIVE_WORK_EXISTS");
   }
   if (intent.collectionRequired === undefined) {
     const nativeKey = `${job.serviceDate}:${job.destinationOplocId}:${job.requestedWindow ? `${job.requestedWindow.startTime}-${job.requestedWindow.endTime || ""}` : "unscheduled"}`;
@@ -65,7 +65,7 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
   if (intent.targetRunId) {
     const runSnap = await tx.get(runs().doc(intent.targetRunId));
     const run = runSnap.data() as DeliveryRun | undefined;
-    if (!run || run.serviceDate !== job.serviceDate || !run.vehicleId) throw new HttpError(409, "Canonical delivery run is unavailable.");
+    if (!run || run.serviceDate !== job.serviceDate || !run.vehicleId) throw new HttpError(409, "Canonical delivery run is unavailable.", "LOGISTICS_ASSIGN_TARGET_RUN_UNAVAILABLE");
     try { assertRunPlanningOpen(run); } catch (error) { throw new HttpError(422, error instanceof Error ? error.message : "Run is not open for planning."); }
     vehicleId = run.vehicleId;
     deliveryRun = run;
@@ -115,27 +115,27 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
   const proposed = createLoad({ deliveryVisitId, serviceDate: job.serviceDate, originOplocId: job.originOplocId, destinationOplocId: job.destinationOplocId, scheduledTime: intent.scheduledTime, scheduledEnd: intent.scheduledEnd, collectionRequired: intent.collectionRequired, runId: intent.targetRunId, vehicleId, destinationLabelSnapshot: job.destinationLabelSnapshot, by, now });
   if (!compatibleLoad(job, proposed)) throw new HttpError(422, "The job and delivery load no longer match the current operational details.");
   const matching = [...available.values()].filter(l => l.status !== "cancelled" && l.originOplocId === proposed.originOplocId && l.destinationOplocId === proposed.destinationOplocId && l.runId === proposed.runId && l.vehicleId === proposed.vehicleId && l.scheduledTime === proposed.scheduledTime && l.scheduledEnd === proposed.scheduledEnd && Boolean(l.collectionRequired) === Boolean(intent.collectionRequired) && l.deliveryVisitId === proposed.deliveryVisitId);
-  if (matching.length > 1 || assigned.size > 1) throw new HttpError(409, "Duplicate canonical load or assignment requires review.");
+  if (matching.length > 1 || assigned.size > 1) throw new HttpError(409, "Duplicate canonical load or assignment requires review.", "LOGISTICS_ASSIGN_DUPLICATE_PLACEMENT");
   const baseId = proposed.id;
   let generation = 0;
   while (!matching.length && available.has(proposed.id)) proposed.id = `${baseId}:generation:${++generation}`;
   const load = matching[0] || { ...proposed, ...(intent.collectionRequired ? { collectionRequired: true } : {}) };
   // A creation ID is immutable even after rescheduling. Never overwrite such a record.
   const idSnap = await tx.get(deliveryLoads().doc(load.id));
-  if (!matching.length && idSnap.exists) throw new HttpError(409, "Original load identity is already in use. Refresh planning.");
+  if (!matching.length && idSnap.exists) throw new HttpError(409, "Original load identity is already in use. Refresh planning.", "LOGISTICS_ASSIGN_LOAD_ID_IN_USE");
   const existing = assigned.docs.map(d => d.data() as LogisticsAssignment);
-  if (job.activeLoadId && job.activeLoadId !== existing[0]?.loadId) throw new HttpError(409, "Job assignment pointer requires integrity review.");
-  if (intent.sourceJob && current?.activeLoadId && (current.sourceVersion !== intent.sourceJob.sourceVersion || current.sourceStatus !== intent.sourceJob.sourceStatus)) throw new HttpError(409, "Reconcile current source truth before assigning this work.");
+  if (job.activeLoadId && job.activeLoadId !== existing[0]?.loadId) throw new HttpError(409, "Job assignment pointer requires integrity review.", "LOGISTICS_ASSIGN_JOB_POINTER_INTEGRITY");
+  if (intent.sourceJob && current?.activeLoadId && (current.sourceVersion !== intent.sourceJob.sourceVersion || current.sourceStatus !== intent.sourceJob.sourceStatus)) throw new HttpError(409, "Reconcile current source truth before assigning this work.", "LOGISTICS_ASSIGN_SOURCE_TRUTH_CONFLICT");
   if (existing[0]?.loadId === load.id && job.activeLoadId === load.id) return { jobId: job.id, load, changed: false };
-  if (intent.sourceJob && existing.length && !Number.isInteger(intent.expectedJobVersion)) throw new HttpError(409, "Job was assigned elsewhere. Refresh planning and use its canonical version.");
+  if (intent.sourceJob && existing.length && !Number.isInteger(intent.expectedJobVersion)) throw new HttpError(409, "Job was assigned elsewhere. Refresh planning and use its canonical version.", "LOGISTICS_ASSIGN_JOB_ALREADY_ASSIGNED");
   if ((!intent.sourceJob || existing.length) && !Number.isInteger(intent.expectedJobVersion)) throw new HttpError(422, "The current job version is required.");
-  if ((!intent.sourceJob || existing.length) && job.version !== intent.expectedJobVersion) throw new HttpError(409, "Job assignment changed. Refresh Logistics and retry.");
+  if ((!intent.sourceJob || existing.length) && job.version !== intent.expectedJobVersion) throw new HttpError(409, "Job assignment changed. Refresh Logistics and retry.", "LOGISTICS_ASSIGN_JOB_VERSION_CONFLICT");
   // The caller observed the load BEFORE any in-transaction visit backfill, so check that version.
   if (matching.length && !batch?.loads.has(load.id)) assertLoadVersion(originals.get(load.id) || load, intent.expectedLoadVersions?.[load.id]);
   const targetJobs = matching.length && !batch?.loads.has(load.id) ? (await assertLoadAssignmentsCurrent(tx, load)).jobs : batch?.members?.get(load.id) || [];
   const oldLoad = existing[0] && existing[0].loadId !== load.id ? (await tx.get(deliveryLoads().doc(existing[0].loadId))).data() as DeliveryLoad | undefined : undefined;
   const oldMembers = oldLoad ? await tx.get(logisticsAssignments().where("loadId", "==", oldLoad.id)) : undefined;
-  if (existing.length && !oldLoad && existing[0].loadId !== load.id) throw new HttpError(409, "Prior load authority is unavailable.");
+  if (existing.length && !oldLoad && existing[0].loadId !== load.id) throw new HttpError(409, "Prior load authority is unavailable.", "LOGISTICS_ASSIGN_PRIOR_LOAD_UNAVAILABLE");
   if (oldLoad) {
     assertLoadVersion(oldLoad, intent.expectedLoadVersions?.[oldLoad.id]);
     await assertLoadPlacementPlanningOpen(tx, oldLoad);

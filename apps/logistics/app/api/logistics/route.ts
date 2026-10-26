@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
 import { assertSameOrigin } from "@/lib/csrf";
 import { db } from "@/lib/firebase";
-import { logisticsCacheScope, requireLogisticsAccess, type LogisticsPrincipal } from "@/lib/auth";
+import { assertMobilePinAction, logisticsCacheScope, requireLogisticsAccess, type LogisticsPrincipal } from "@/lib/auth";
 import { authorizeCommand, authorizeLoad, authorizeRun, assertMaintenanceAccess, scopeProjection, vehicleScope } from "@/lib/resource-authority";
 import { authorizeTransaction } from "@/lib/authorized-transaction";
 import { isLogisticsVehicleId, logisticsVehicleLabel } from "../../../../shared/logistics-authority";
 import { hostedRuntime } from "@/lib/runtime";
 import {
+  assertMenuProductionAuthority,
   fetchOplocs,
   fetchProductionContexts,
   fetchRequirements,
@@ -80,6 +81,8 @@ class HttpError extends Error {
   constructor(
     public status: number,
     message: string,
+    public code?: string,
+    public assignmentDiagnostic?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -366,7 +369,7 @@ async function assertProjectionCurrent(serviceDate: string, transaction?: Transa
       ])
     : await Promise.all([getLogisticsProjection(serviceDate), getLogisticsSyncHead(serviceDate).then((head) => head.sequence)]);
   if (!projection || projection.state === "STALE" || projection.state === "PARTIAL" || projection.state === "UNAVAILABLE" || projection.lastChangeSequence < headSequence)
-    throw new HttpError(409, "Logistics changed upstream. Wait for reconciliation, then refresh before continuing.");
+    throw new HttpError(409, "Logistics changed upstream. Wait for reconciliation, then refresh before continuing.", "LOGISTICS_ASSIGN_PROJECTION_STALE");
   return projection;
 }
 
@@ -693,6 +696,7 @@ async function getLogistics(request: NextRequest, principal: LogisticsPrincipal)
 
 async function handlePost(request: NextRequest) {
   let diagnostic: { operation?: string; serviceDate?: string; projectionSequence?: number; entityId?: string } = {};
+  let assignmentEvidence: { requestId: string; checkpoint: string; sourceAuthority: string; jobId: string; requirementId?: string; serviceDate: string; targetRunId?: string; expectedJobVersion?: number; expectedJobVersions?: Record<string, number>; expectedRunVersion?: number; expectedTargetRunVersion?: number; expectedLoadVersion?: number; expectedLoadVersions?: Record<string, number> } | undefined;
   try {
     const principal = await requireLogisticsAccess(request);
     const runTracedTransaction = <T,>(callback: (transaction: Transaction) => Promise<T>) => runAuthorizedTracedTransaction(callback, principal, request.headers.get("cookie") || undefined, ["set-run-driver", "update-run"].includes(body.action));
@@ -752,6 +756,7 @@ async function handlePost(request: NextRequest) {
       lane?: "delivery" | "collection";
       collectionStatus?: "awaiting" | "collected";
     };
+    if (principal.sessionKind === "mobile-pin") assertMobilePinAction(body.action);
     if (body.resizeEndOnly && !["schedule-stop", "reschedule-delivery-load", "reschedule-delivery-loads"].includes(body.action)) throw new HttpError(422, "End-only resize is supported only for an existing scheduled stop or load.");
     diagnostic = {
       operation: body.action,
@@ -845,13 +850,32 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json(saved);
     }
     if (body.action === "assign-job-to-load" && (body.job || body.jobId)) {
+      const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
       if (body.lane === "collection") throw new HttpError(422, "Choose the delivery timeline first; collection is scheduled from the linked collection card.");
       const jobId = body.jobId || body.job!.id;
+      assignmentEvidence = { requestId, checkpoint: "job-read", sourceAuthority: "not-required", jobId, requirementId: undefined, serviceDate: "unknown", targetRunId: body.targetRunId, expectedJobVersion: body.expectedJobVersion, expectedJobVersions: body.expectedJobVersions, expectedRunVersion: body.expectedRunVersion, expectedTargetRunVersion: body.expectedTargetRunVersion, expectedLoadVersion: body.expectedLoadVersion, expectedLoadVersions: body.expectedLoadVersions };
       const job = await getLogisticsJob(jobId);
       if (!job) throw new HttpError(404, "Logistics job not found.");
+      assignmentEvidence = { ...assignmentEvidence, serviceDate: job.serviceDate, requirementId: job.requirementId };
+      // This command can be used directly by the planner UI, bypassing the
+      // fulfilment-specific assign/assign-group commands below. For Menu
+      // Planning demand, rejoin the current upstream requirement and verify
+      // its publication/day authority before committing the load assignment.
+      const menuOriginated = job.sourceType === "menu-planning" ||
+        job.sourceType === "cpu-production" && job.workstream === "Delivered-In";
+      if (menuOriginated) {
+        assignmentEvidence = { ...assignmentEvidence, sourceAuthority: "checking", checkpoint: "source-authority" };
+        if (!job.requirementId) throw new HttpError(503, "Expected fulfilment authority is missing; refresh Logistics before continuing.", "LOGISTICS_ASSIGN_REQUIREMENT_MISSING");
+        const source = await fetchRequirements(job.serviceDate, request.headers.get("cookie") || undefined);
+        const requirement = source.find(item => item.canonicalId === job.requirementId);
+        if (!requirement) throw new HttpError(503, "Expected fulfilment authority is missing; refresh Logistics before continuing.", "LOGISTICS_ASSIGN_REQUIREMENT_MISSING");
+        await assertMenuProductionAuthority([requirement], request.headers.get("cookie") || undefined, [job.requirementId]);
+        assignmentEvidence = { ...assignmentEvidence, sourceAuthority: "passed", checkpoint: "projection-currentness" };
+      }
       const scheduledTime = body.scheduledTime || job.requestedWindow?.startTime;
       if (!scheduledTime) throw new HttpError(422, "A scheduled arrival is required.");
       validatePlannedSchedule(undefined, { startTime: scheduledTime, ...(body.scheduledEnd ? { endTime: body.scheduledEnd } : {}) });
+      assignmentEvidence = { ...assignmentEvidence, checkpoint: "transaction-commit" };
       const result = await runTracedTransaction(async transaction => {
         await assertProjectionCurrent(job.serviceDate, transaction);
         return assignCanonicalJob(transaction, { jobId, targetRunId: body.targetRunId, scheduledTime, scheduledEnd: body.scheduledEnd, resolveSchedule: (loads, currentJob) => resolveCanonicalLoadSchedule(loads, currentJob, body.targetRunId, scheduledTime, body.scheduledEnd), collectionRequired: body.collectionRequired, visit: body.visit, expectedJobVersion: body.expectedJobVersion, expectedLoadVersions: body.expectedLoadVersions }, by, now);
@@ -1041,6 +1065,13 @@ async function handlePost(request: NextRequest) {
       const current = await getDeliveryLoad(body.loadId);
       if (!current?.runId) throw new HttpError(409, "Canonical load/run authority is unavailable.");
       const source = await fetchRequirements(current.serviceDate, request.headers.get("cookie") || undefined);
+      const selectedLoadIds = [...new Set(body.loadIds || [current.id])];
+      const assignmentSnapshots = await Promise.all(selectedLoadIds.map(loadId => logisticsAssignments().where("loadId", "==", loadId).get()));
+      const jobIds = [...new Set(assignmentSnapshots.flatMap(snapshot => snapshot.docs.map(doc => String(doc.data().jobId || ""))).filter(Boolean))];
+      const jobSnapshots = await Promise.all(jobIds.map(jobId => logisticsJobs().doc(jobId).get()));
+      if (jobSnapshots.some(snapshot => !snapshot.exists)) throw new HttpError(503, "Expected Logistics job authority is unavailable for loading.");
+      const requirementIds = new Set(jobSnapshots.flatMap(snapshot => snapshot.exists ? [String((snapshot.data() as { requirementId?: string }).requirementId || "")] : []).filter(Boolean));
+      await assertMenuProductionAuthority(source, request.headers.get("cookie") || undefined, [...requirementIds]);
       const result = await runTracedTransaction(tx => executeProjected(tx, principal, { ...body, action: "mark-stop-loaded", runId: current.runId, stopId: `projection-stop:delivery:${current.id}`, loadIds: body.loadIds || [current.id] }, source, by, now));
       for (const job of result.changedJobs) await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "logisticsJob", entityId: job.id, changeType: "delivery-loaded", revision: job.version, changedAt: now, actorId });
       const event = await appendLogisticsChange({ serviceDate: current.serviceDate, entityType: "deliveryLoad", entityId: current.id, changeType: "load-loaded", revision: result.loads[0].version, changedAt: now, actorId });
@@ -1342,6 +1373,14 @@ async function handlePost(request: NextRequest) {
           "A current run version is required for lifecycle changes.",
         );
       const requirements = ["mark-run-ready", "dispatch-run"].includes(body.action) ? await fetchRequirements(current.serviceDate, request.headers.get("cookie") || undefined) : [];
+      if (body.action === "dispatch-run") {
+        const currentWork = await db.runTransaction(transaction => readRunWork(transaction, current));
+        const requirementIds = new Set([
+          ...currentWork.native.flatMap(stop => stop.requirementRefs.map(ref => ref.requirementId)),
+          ...currentWork.legs.flatMap(leg => leg.jobs.map(job => job.requirementId).filter((id): id is string => Boolean(id))),
+        ]);
+        await assertMenuProductionAuthority(requirements, request.headers.get("cookie") || undefined, [...requirementIds]);
+      }
       const result = await runTracedTransaction(async transaction => {
         const ref = runs().doc(current.canonicalId);
         const snapshot = await transaction.get(ref);
@@ -1463,6 +1502,7 @@ async function handlePost(request: NextRequest) {
       const source = await fetchRequirements(target.serviceDate, request.headers.get("cookie") || undefined);
       const requirements = ids.map(id => source.find(item => item.canonicalId === id));
       if (requirements.some(item => !item)) throw new HttpError(404, "Fulfilment requirement no longer exists upstream.");
+      await assertMenuProductionAuthority(requirements as FulfilmentRequirement[], request.headers.get("cookie") || undefined, ids);
       for (const requirement of requirements as FulfilmentRequirement[]) {
         const expected = body.expectedSourceVersions?.[requirement.canonicalId] ?? body.expectedSourceVersion;
         if (expected !== requirement.sourceVersion) throw new HttpError(409, "Fulfilment source changed. Refresh planning.");
@@ -2011,6 +2051,7 @@ async function handlePost(request: NextRequest) {
             messageOf(error),
           );
         }
+        if (requirement.status === "ready_for_planning") await assertMenuProductionAuthority([requirement], request.headers.get("cookie") || undefined, [requirement.canonicalId]);
       }
       const oplocs = body.movementId
         ? await fetchOplocs(request.headers.get("cookie") || undefined).catch(
@@ -2176,6 +2217,14 @@ async function handlePost(request: NextRequest) {
         throw new HttpError(400, "Unknown execution action.");
       if (body.action === "report-issue" && !body.issueDescription?.trim())
         throw new HttpError(422, "A short issue description is required.");
+      if (["mark-stop-loaded", "mark-subload-loaded"].includes(body.action) && body.loaded !== false) {
+        const [loadingRun, loadingStop] = await Promise.all([getRun(body.runId), stops().doc(body.stopId).get()]);
+        if (!loadingRun || !loadingStop.exists) throw new HttpError(409, "Current run and stop authority is unavailable for loading.");
+        const stop = normalizeStop(loadingStop.data()!);
+        const requirementIds = new Set(body.action === "mark-subload-loaded" ? [body.requirementId].filter((id): id is string => Boolean(id)) : stop.requirementRefs.map(ref => ref.requirementId));
+        const requirements = await fetchRequirements(loadingRun.serviceDate, request.headers.get("cookie") || undefined);
+        await assertMenuProductionAuthority(requirements, request.headers.get("cookie") || undefined, [...requirementIds]);
+      }
       const result = await runTracedTransaction(async (transaction) => {
         const runRef = runs().doc(body.runId!);
         const stopRef = stops().doc(body.stopId!);
@@ -2694,6 +2743,36 @@ async function handlePost(request: NextRequest) {
     throw new HttpError(400, "Unknown Logistics action.");
   } catch (error) {
     const status = error instanceof HttpError ? error.status : (error as { status?: number }).status || 400;
+    if (assignmentEvidence) {
+      const failure = error as Error & { code?: string; requestId?: string; assignmentDiagnostic?: Record<string, unknown> };
+      const reasonCategory = failure.code || (assignmentEvidence.checkpoint === "source-authority" ? status >= 500 ? "MENU_AUTHORITY_UNAVAILABLE" : "MENU_PUBLICATION_REJECTED" : status === 409 ? assignmentEvidence.checkpoint === "transaction-commit" ? "CONCURRENT_OR_VERSION_CONFLICT" : assignmentEvidence.checkpoint === "projection-currentness" ? "PROJECTION_CURRENTNESS_REJECTED" : "SOURCE_OR_PLACEMENT_CONFLICT" : "ASSIGNMENT_REJECTED");
+      let observed: Record<string, unknown> = { observation: "post-failure bounded read unavailable" };
+      try {
+        const [currentJob, currentRun, dayState, projection, head] = await Promise.all([
+          getLogisticsJob(assignmentEvidence.jobId),
+          assignmentEvidence.targetRunId ? getRun(assignmentEvidence.targetRunId) : Promise.resolve(undefined),
+          assignmentEvidence.serviceDate === "unknown" ? Promise.resolve({ jobs: [], loads: [], assignments: [] }) : listDeliveryLoadState(assignmentEvidence.serviceDate),
+          assignmentEvidence.serviceDate === "unknown" ? Promise.resolve(undefined) : getLogisticsProjection(assignmentEvidence.serviceDate),
+          assignmentEvidence.serviceDate === "unknown" ? Promise.resolve(undefined) : getLogisticsSyncHead(assignmentEvidence.serviceDate),
+        ]);
+        const loads = dayState.loads.filter(load => load.runId === assignmentEvidence?.targetRunId || Object.hasOwn(assignmentEvidence?.expectedLoadVersions || {}, load.id));
+        observed = {
+          observedAt: new Date().toISOString(),
+          job: currentJob ? { id: currentJob.id, version: currentJob.version, sourceStatus: currentJob.sourceStatus, deliveryStatus: currentJob.deliveryStatus, sourceVersion: currentJob.sourceVersion, activeLoadId: currentJob.activeLoadId } : null,
+          run: currentRun ? { id: currentRun.canonicalId, version: currentRun.version, status: currentRun.status, vehicleId: currentRun.vehicleId } : null,
+          loads: loads.map(load => ({ id: load.id, version: load.version, runId: load.runId, status: load.status, loaded: load.loaded })),
+          projection: projection ? { state: projection.state, lastChangeSequence: projection.lastChangeSequence } : { state: "MISSING" },
+          headSequence: head?.sequence,
+        };
+      } catch { /* Keep the original failure and the safe bounded diagnostic. */ }
+      const expectedJobVersions = Object.fromEntries(Object.entries(assignmentEvidence.expectedJobVersions || {}).slice(0, 50));
+      const expectedLoadVersions = Object.fromEntries(Object.entries(assignmentEvidence.expectedLoadVersions || {}).slice(0, 50));
+      const safeEvidence = { requestId: assignmentEvidence.requestId, action: "assign-job-to-load", checkpoint: assignmentEvidence.checkpoint, reasonCategory, status, sourceAuthority: assignmentEvidence.sourceAuthority === "checking" ? "rejected_or_unavailable" : assignmentEvidence.sourceAuthority, serviceDate: assignmentEvidence.serviceDate, jobId: assignmentEvidence.jobId, requirementId: assignmentEvidence.requirementId, targetRunId: assignmentEvidence.targetRunId, expectedVersions: { job: assignmentEvidence.expectedJobVersion, jobs: expectedJobVersions, run: assignmentEvidence.expectedRunVersion, targetRun: assignmentEvidence.expectedTargetRunVersion, load: assignmentEvidence.expectedLoadVersion, loads: expectedLoadVersions }, observed };
+      console.warn("LOGISTICS_ASSIGN_JOB_DIAGNOSTIC", safeEvidence);
+      failure.requestId = assignmentEvidence.requestId;
+      failure.code = failure.code || `LOGISTICS_ASSIGN_${reasonCategory}`;
+      return errorResponse(Object.assign(failure, { status }), assignmentEvidence.requestId, { ...diagnostic, operation: "assign-job-to-load", serviceDate: assignmentEvidence.serviceDate, entityId: assignmentEvidence.jobId });
+    }
     return errorResponse(Object.assign(error instanceof Error ? error : new Error(messageOf(error)), { status }), request.headers.get("x-request-id") || undefined, diagnostic);
   }
 }
