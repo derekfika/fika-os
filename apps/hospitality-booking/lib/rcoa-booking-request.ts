@@ -135,9 +135,8 @@ export function buildTrustedRcoaHubPayload(value: unknown, governedMenu?: readon
   if (request.event.endTime && request.event.endTime <= request.event.startTime) {
     throw new Error("End time must be after the start time.");
   }
-  if (![request.event.floorLevel, request.event.roomOrArea, request.event.deliveryPoint].some((value) => value?.trim())) {
-    throw new Error("Add a floor, room or delivery point.");
-  }
+  if (!request.event.floorLevel?.trim()) throw new Error("Enter the floor level.");
+  if (!request.event.roomOrArea?.trim()) throw new Error("Enter the room or area.");
   const eventType = rcoaEventTypes.find((event) => event.id === request.order.eventType)!;
   if (!request.order.items.length && !rcoaAllowsEmptyOrder(request.order.eventType)) {
     throw new Error("Choose at least one menu item.");

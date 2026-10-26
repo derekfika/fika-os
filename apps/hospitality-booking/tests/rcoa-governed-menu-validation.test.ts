@@ -27,7 +27,7 @@ const displayed = portalMenuFromCatalogue(pkg as never, RCOA_OPLOC, SERVICE_DATE
 const requestFor = (itemId: string, quantity: number, choices: Array<{ id: string; value: string }>, eventType: string, guests = 40) => ({
   bookingId: "RCOA-20261201090000-ABCD", submittedAt: "2026-10-19T09:00:00.000Z",
   client: { name: "T", email: "t@example.invalid", phone: "07000000000", companyName: "T" },
-  event: { eventDate: "2026-12-01", startTime: "10:00", guestCount: guests, floorLevel: "1" },
+  event: { eventDate: "2026-12-01", startTime: "10:00", guestCount: guests, floorLevel: "1", roomOrArea: "Boardroom" },
   order: { eventType, items: [{ itemId, quantity, choices }] },
   dietaries: { hasDietaries: false, vegetarian: 0, vegan: 0, glutenFree: 0, coeliac: 0, dairyFree: 0, halal: 0, otherCount: 0, allergyDetails: "", severeAllergyAcknowledged: false, freeText: "" },
   acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true },

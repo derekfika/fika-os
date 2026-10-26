@@ -52,7 +52,7 @@ test("1+2. the existing offerings are unchanged and All Day Hospitality is a fir
   assert.ok(portal.includes("buildRcoaClientRequest(draft, menu"));
   assert.ok(portal.includes('"/api/bookings/rcoa"'));
   const standard = createEmptyRcoaDraft();
-  const request = buildRcoaClientRequest({ ...standard, occasion: "breakfast", contact: { name: "A", email: "a@example.test", phone: "1", companyName: "C", invoiceReference: "" }, event: { ...standard.event, eventDate: "2026-12-10", startTime: "09:00", guestCount: 10, roomOrArea: "R" }, lines: [{ itemId: "specialty_tea_coffee", quantity: 10, choices: {} }], acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } }, menu, { bookingId: GROUP_ID, submittedAt: AT });
+  const request = buildRcoaClientRequest({ ...standard, occasion: "breakfast", contact: { name: "A", email: "a@example.test", phone: "1", companyName: "C", invoiceReference: "" }, event: { ...standard.event, eventDate: "2026-12-10", startTime: "09:00", guestCount: 10, floorLevel: "1", roomOrArea: "R" }, lines: [{ itemId: "specialty_tea_coffee", quantity: 10, choices: {} }], acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } }, menu, { bookingId: GROUP_ID, submittedAt: AT });
   assert.equal("bookingGroup" in request, false);
   assert.equal("bookingGroup" in buildTrustedRcoaHubPayload(request), false);
 });

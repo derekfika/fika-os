@@ -1668,11 +1668,11 @@ function BookingDetail({
   onGenerateMenu: (booking: CanonicalBooking) => Promise<void>;
   onOpenMenu: (output: MenuOutput) => void;
 }) {
-  const location =
-    booking.service.floorLevel ||
-    booking.service.roomOrArea ||
-    booking.service.deliveryPoint ||
-    "Not supplied";
+  const locationLines = [
+    { label: "Floor level", value: booking.service.floorLevel?.trim() },
+    { label: "Room or area", value: booking.service.roomOrArea?.trim() },
+    { label: "Delivery point", value: booking.service.deliveryPoint?.trim() },
+  ].filter((line): line is { label: string; value: string } => Boolean(line.value));
   const dietaryEntries = Object.entries(booking.dietaries).filter(
     ([, value]) => value !== 0 && value !== "" && value !== false,
   );
@@ -1751,13 +1751,27 @@ function BookingDetail({
           <StatusPill status={booking.lifecycleStatus} label={standaloneStatusLabel(booking, productionOrder)} />
         </div>
       </header>
+      <section className="booking-detail__location" aria-labelledby={`booking-location-${booking.canonicalId}`}>
+        <p id={`booking-location-${booking.canonicalId}`} className="booking-detail__location-title">Location</p>
+        {locationLines.length ? (
+          <dl className="booking-detail__location-grid">
+            {locationLines.map((line) => (
+              <div key={line.label}>
+                <dt>{line.label}</dt>
+                <dd>{line.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="booking-detail__location-missing">No delivery location supplied. Confirm the room with the customer before service.</p>
+        )}
+      </section>
       <div className="booking-detail__facts">
         <Fact
           label="When"
           value={`${formatDate(booking.service.eventDate)} · ${booking.service.startTime}`}
         />
         <Fact label="Guests" value={`${booking.service.guestCount} pax`} />
-        <Fact label="Where" value={location} />
         <Fact label="Request ID" value={booking.source.sourceBookingId} />
         {booking.bookingGroup && <Fact label="Request group" value={`${booking.bookingGroup.id} · service ${booking.bookingGroup.sequence} of ${booking.bookingGroup.size}`} />}
         {booking.client.invoiceReference && (
