@@ -11,6 +11,7 @@
     "test:driver-execution": "node --test tests/driver-execution.test.cjs tests/driver-regression.cjs",
     "test:load-integrity": "node --test tests/load-integrity.test.cjs tests/load-regression.cjs",
     "test:authority": "node --test tests/resource-authority.test.cjs",
+    "test:mobile-pin-provisioning": "tsx --test tests/mobile-pin-provisioning.test.mjs",
     "test:access-regression": "node --test tests/access-regression.cjs",
     "test:integration": "tsx --test tests/api.integration.ts",
     "test:e2e": "playwright test"
