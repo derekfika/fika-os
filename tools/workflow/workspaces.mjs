@@ -1,13 +1,51 @@
 import path from 'node:path';
-import { existsSync, readdirSync, mkdirSync, lstatSync, renameSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { existsSync, readdirSync, mkdirSync, lstatSync, renameSync, readFileSync, writeFileSync, chmodSync, symlinkSync, readlinkSync, realpathSync } from 'node:fs';
+import { randomUUID, createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { git, common, stateDir, save, jsonFile, lock, ancestor, inside, command, ref, ghApi } from './runtime.mjs';
 import { safeScope, partialPathOverlap, digest, REPO, APPS } from './policy.mjs';
 
 const leases = () => { const p = path.join(stateDir(), 'workspaces'); mkdirSync(p, { recursive: true }); return p; };
 const managedRoot = () => path.resolve(common(), '..', '..', 'agent-workspaces', 'fika-os');
 const validateName = name => { if (!/^[a-z][a-z0-9-]{2,60}$/.test(name || '')) throw Error('Use a 3–61 character lowercase workspace name'); return name; };
-export function workspaceRecords() { return readdirSync(leases()).filter(x => x.endsWith('.json')).map(x => jsonFile(path.join(leases(), x))); }
+export function workspaceRecords() {
+  const records = readdirSync(leases()).filter(x => x.endsWith('.json')).map(x => jsonFile(path.join(leases(), x)));
+  for (const journal of committedReconciliationJournals()) {
+    const diskByName = new Map(records.map(x => [x.name, x]));
+    for (const snapshot of [journal.leaseTransition.source, journal.leaseTransition.replacement]) {
+      const disk = diskByName.get(snapshot.name);
+      if (!disk || disk.owner !== snapshot.owner) throw Error(`Committed reconciliation ${journal.id} has a missing or changed lease owner`);
+      if (snapshot.state === 'active' && !['reconciling','active','finished','retired','superseded'].includes(disk.state)) throw Error(`Committed reconciliation ${journal.id} replacement state is contradictory`);
+      if (snapshot.state === 'superseded' && !['active','superseded'].includes(disk.state)) throw Error(`Committed reconciliation ${journal.id} source state is contradictory`);
+      if (snapshot.state === 'active' && ['finished','retired'].includes(disk.state)) continue;
+      const index = records.findIndex(x => x.name === snapshot.name); if (index >= 0) records[index] = snapshot;
+    }
+  }
+  return records;
+}
+function committedReconciliationJournals() {
+  const transitions = path.join(stateDir(), 'reconciliations'); if (!existsSync(transitions)) return [];
+  return readdirSync(transitions, { withFileTypes: true }).filter(x => x.isDirectory()).map(dir => {
+    const file = path.join(transitions, dir.name, 'journal.json'); return existsSync(file) ? jsonFile(file) : undefined;
+  }).filter(x => x?.phase === 'committed' && x.leaseTransition).sort((a,b) => a.completedAt.localeCompare(b.completedAt)).map(journal => {
+    verifyRecoveryArtifact(journal.recoveryFile, journal.recoveryChecksum); return journal;
+  });
+}
+function materializeCommittedTransitions() {
+  for (const journal of committedReconciliationJournals()) {
+    verifyRecoveryArtifact(journal.recoveryFile, journal.recoveryChecksum);
+    const sourceFile = path.join(leases(), `${journal.source}.json`); const replacementFile = path.join(leases(), `${journal.replacement}.json`);
+    const sourceDisk = jsonFile(sourceFile); const replacementDisk = jsonFile(replacementFile);
+    if (sourceDisk.owner !== journal.owner || replacementDisk.owner !== journal.owner) throw Error(`Committed reconciliation ${journal.id} has a lease owner contradiction`);
+    const sourceMatchesBefore = sha256(readFileSync(sourceFile)) === journal.sourceLeaseDigest;
+    const sourceMatchesAfter = sourceDisk.state === 'superseded' && sourceDisk.supersededBy === journal.replacement;
+    if (sourceMatchesBefore) save(sourceFile, journal.leaseTransition.source); else if (!sourceMatchesAfter) throw Error(`Committed reconciliation ${journal.id} source lease changed unexpectedly`);
+    const prepared = journal.preparedReplacement;
+    const replacementMatchesBefore = prepared && replacementDisk.state === 'reconciling' && replacementDisk.directory === prepared.directory && replacementDisk.branch === prepared.branch && replacementDisk.baseline === prepared.baseline;
+    const replacementMatchesAfter = ['active','finished','retired','superseded'].includes(replacementDisk.state) && replacementDisk.reconciles?.source === journal.source;
+    if (replacementMatchesBefore) save(replacementFile, journal.leaseTransition.replacement); else if (!replacementMatchesAfter) throw Error(`Committed reconciliation ${journal.id} replacement lease changed unexpectedly`);
+  }
+}
 export function worktrees() {
   return git('worktree', 'list', '--porcelain').split(/\r?\n\r?\n/).filter(Boolean).map(block => Object.fromEntries(block.split(/\r?\n/).map(line => { const i = line.indexOf(' '); return i < 0 ? [line, true] : [line.slice(0, i), line.slice(i + 1)]; })));
 }
@@ -34,7 +72,7 @@ export function createWorkspace(name, options) {
 export function finishWorkspace(name, options) {
   validateName(name); return lock('workspaces', () => {
     const file = path.join(leases(), `${name}.json`); const record = jsonFile(file);
-    if (record.owner !== options.owner || record.state !== 'active') throw Error('Only the task owner can finish an active workspace');
+    if (record.owner !== options.owner || workspaceRecords().find(x => x.name === name)?.state !== 'active') throw Error('Only the task owner can finish an active workspace');
     if (command('git', ['status', '--porcelain'], { cwd: record.directory })) throw Error('Dirty work must be committed/preserved; finish refuses it');
     record.state = 'finished'; record.finishedAt = new Date().toISOString(); record.finalSha = command('git', ['rev-parse', 'HEAD'], { cwd: record.directory }); save(file, record); return record;
   });
@@ -42,17 +80,151 @@ export function finishWorkspace(name, options) {
 export function checkWorkspace(name, options) {
   validateName(name);
   const record = jsonFile(path.join(leases(), `${name}.json`));
-  if (record.owner !== options.owner || record.state !== 'active') throw Error('Scope check requires the active task owner');
+  if (record.owner !== options.owner || workspaceRecords().find(x => x.name === name)?.state !== 'active') throw Error('Scope check requires the active task owner');
   const run = (...args) => command('git', args, { cwd: record.directory });
   const paths = [...new Set([run('diff', '--name-only', '--no-renames', `${record.baseline}...HEAD`), run('diff', '--name-only', '--no-renames', 'HEAD'), run('ls-files', '--others', '--exclude-standard')].flatMap(s => s.split(/\r?\n/)).filter(Boolean))];
   const outside = paths.filter(p => p !== 'CHANGELOG.md' && !record.scopes.some(s => p === s || p.startsWith(`${s}/`)));
   if (outside.length) throw Error(`Changes exceed owned scope: ${outside.join(', ')}`);
   return { name, baseline: record.baseline, paths, withinScope: true };
 }
+
+const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+export function verifyRecoveryArtifact(file, expectedSha256) {
+  const actual = sha256(readFileSync(file)); if (actual !== expectedSha256) throw Error(`Recovery checksum mismatch: expected ${expectedSha256}, got ${actual}`); return actual;
+}
+const scoped = (file, scopes) => scopes.some(scope => file === scope || file.startsWith(`${scope}/`));
+function nulPaths(run, args) { const out = run(...args); return out ? out.split('\0').filter(Boolean) : []; }
+function repoCommand(cwd, ...args) { return command('git', args, { cwd }); }
+function repoText(cwd, ...args) { return execFileSync('git', args, { cwd, encoding: 'utf8', windowsHide: true }); }
+function fileSnapshot(rootDir, relative) {
+  const absolute = path.resolve(rootDir, relative); const parent = path.dirname(absolute); assertWorkspaceParent(rootDir, parent); const st = lstatSync(absolute);
+  if (st.isSymbolicLink()) {
+    const target = readlinkSync(absolute); const resolvedTarget = path.resolve(parent, target); const rel = path.relative(path.resolve(rootDir), resolvedTarget);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw Error(`Untracked symlink escapes the workspace; source remains untouched: ${relative}`);
+    return { path: relative, kind: 'symlink', mode: st.mode & 0o777, target, sha256: sha256(Buffer.from(target)) };
+  }
+  if (!st.isFile()) throw Error(`Unsupported untracked path type; original remains untouched: ${relative}`);
+  const bytes = readFileSync(absolute); return { path: relative, kind: 'file', mode: st.mode & 0o777, bytes: bytes.toString('base64'), sha256: sha256(bytes) };
+}
+function writeSnapshot(rootDir, item) {
+  const absolute = path.resolve(rootDir, item.path); const parent = path.dirname(absolute); mkdirSync(parent, { recursive: true }); assertWorkspaceParent(rootDir, parent);
+  if (existsSync(absolute) || (() => { try { lstatSync(absolute); return true; } catch { return false; } })()) throw Error(`Replacement already contains ${item.path}; refusing overwrite`);
+  if (item.kind === 'symlink') {
+    if (sha256(Buffer.from(item.target)) !== item.sha256) throw Error(`Recovery checksum mismatch: ${item.path}`);
+    symlinkSync(item.target, absolute);
+  } else {
+    const bytes = Buffer.from(item.bytes, 'base64'); if (sha256(bytes) !== item.sha256) throw Error(`Recovery checksum mismatch: ${item.path}`);
+    writeFileSync(absolute, bytes, { flag: 'wx' }); chmodSync(absolute, item.mode);
+  }
+}
+function assertWorkspaceParent(rootDir, parent) {
+  const rootReal = realpathSync(rootDir); const parentReal = realpathSync(parent); const relative = path.relative(rootReal, parentReal);
+  if (relative && (relative.startsWith('..') || path.isAbsolute(relative))) throw Error('Recovery path escapes the workspace');
+}
+function patch(cwd, args) { return repoText(cwd, ...args); }
+function buildReconcilePlan(record, targetSha) {
+  const cwd = record.directory; const run = (...args) => repoCommand(cwd, ...args);
+  if (!existsSync(cwd) || !existsSync(path.join(cwd, '.git'))) throw Error('Existing workspace checkout is unavailable; no recovery action taken');
+  if (path.resolve(run('rev-parse', '--show-toplevel')) !== path.resolve(cwd) || run('branch', '--show-current') !== record.branch) throw Error('Workspace checkout or branch does not match its lease');
+  const head = run('rev-parse', 'HEAD');
+  if (!ancestor(record.baseline, head)) throw Error('Workspace HEAD does not descend from its recorded baseline');
+  if (!ancestor(head, targetSha)) throw Error('Ancestor-only reconciliation requires the complete source HEAD to already be in origin/main; unmerged feature commits need separately verified recovery support');
+  const committed = nulPaths(run, ['diff', '--no-renames', '--name-only', '-z', `${record.baseline}..${head}`]);
+  const outsideCommits = committed.filter(file => !scoped(file, record.scopes));
+  if (outsideCommits.length) {
+    const different = nulPaths(run, ['diff', '--no-renames', '--name-only', '-z', `${head}..${targetSha}`, '--', ...outsideCommits]);
+    if (different.length) throw Error(`Out-of-scope committed content differs at target: ${different.join(', ')}`);
+  }
+  const stagedPaths = nulPaths(run, ['diff', '--cached', '--no-renames', '--name-only', '-z', 'HEAD']);
+  const unstagedPaths = nulPaths(run, ['diff', '--no-renames', '--name-only', '-z']);
+  const untrackedPaths = nulPaths(run, ['ls-files', '--others', '--exclude-standard', '-z']);
+  const dirty = [...new Set([...stagedPaths, ...unstagedPaths, ...untrackedPaths])];
+  const outside = dirty.filter(file => !scoped(file, record.scopes));
+  if (outside.length) throw Error(`Uncommitted changes outside leased scopes cannot be transferred: ${outside.join(', ')}`);
+  const stagedPatch = patch(cwd, ['diff', '--cached', '--binary', '--full-index', 'HEAD']);
+  const unstagedPatch = patch(cwd, ['diff', '--binary', '--full-index']);
+  const files = untrackedPaths.map(file => fileSnapshot(cwd, file));
+  const manifest = { schema: 'fika.workspace-reconcile.v1', source: record.name, owner: record.owner, sourceBaseline: record.baseline, sourceHead: head, targetSha, scopes: record.scopes,
+    stagedPatchSha256: sha256(Buffer.from(stagedPatch)), unstagedPatchSha256: sha256(Buffer.from(unstagedPatch)), untracked: files.map(({ bytes, ...item }) => item) };
+  return { manifest, stagedPatch, unstagedPatch, files, dirty, committed, outsideCommits };
+}
+
+/** Rebase only explicitly leased local work onto a verified descendant of the recorded baseline.
+ * The old checkout is retained permanently; recovery data is checksummed under the common git dir.
+ */
+export function reconcileWorkspace(name, options) {
+  validateName(name); if (!options.owner) throw Error('--owner is required');
+  const replacementName = validateName(options.replacement || '');
+  return lock('workspaces', () => {
+    materializeCommittedTransitions();
+    const records = workspaceRecords(); const source = records.find(x => x.name === name);
+    if (!source || source.owner !== options.owner || source.state !== 'active') throw Error('Reconcile requires the current owner of an active source lease');
+    const overlapping = records.filter(x => x.state === 'active' && x.name !== name && x.scopes.some(a => source.scopes.some(b => partialPathOverlap(a,b))));
+    if (overlapping.length) throw Error(`Another active lease already overlaps source scope: ${overlapping.map(x=>x.name).join(', ')}`);
+    if (replacementName === name || records.some(x => x.name === replacementName)) throw Error('Replacement name is already used or matches source');
+    const sourceLeaseFile = path.join(leases(), `${name}.json`); const sourceLeaseDigest = sha256(readFileSync(sourceLeaseFile));
+    const cwd = source.directory; repoCommand(cwd, 'fetch', 'origin');
+    const targetSha = repoCommand(cwd, 'rev-parse', 'origin/main');
+    if (!/^[a-f0-9]{40}$/.test(targetSha)) throw Error('Target must resolve to a full commit SHA');
+    const plan = buildReconcilePlan(source, targetSha);
+    const preview = { source: name, owner: source.owner, sourceBaseline: source.baseline, sourceHead: plan.manifest.sourceHead, targetSha,
+      replacement: replacementName, scopes: source.scopes, staged: plan.dirty.filter(file => nulPaths((...args) => repoCommand(cwd, ...args), ['diff', '--cached', '--name-only', '-z', 'HEAD']).includes(file)),
+      unstaged: nulPaths((...args) => repoCommand(cwd, ...args), ['diff', '--name-only', '-z']), untracked: plan.manifest.untracked,
+      outOfScopeCommitsProvenInTarget: plan.outsideCommits, recoveryChecksum: sha256(Buffer.from(JSON.stringify(plan.manifest))) };
+    if (!options.execute) return { dryRun: true, wouldChange: preview, originalRetained: true };
+
+    const id = randomUUID(); const state = path.join(stateDir(), 'reconciliations', id); mkdirSync(state, { recursive: true });
+    const journalFile = path.join(state, 'journal.json'); const recoveryFile = path.join(state, 'recovery.json');
+    const recovery = { manifest: plan.manifest, stagedPatch: plan.stagedPatch, unstagedPatch: plan.unstagedPatch, files: plan.files };
+    save(recoveryFile, recovery);
+    chmodSync(recoveryFile, 0o600);
+    const recoveryChecksum = verifyRecoveryArtifact(recoveryFile, sha256(readFileSync(recoveryFile)));
+    if (sha256(Buffer.from(JSON.stringify(recovery.manifest))) !== preview.recoveryChecksum) throw Error('Recovery manifest checksum mismatch; source workspace remains unchanged');
+    const journal = { schema: 'fika.workspace-reconcile-journal.v1', id, phase: 'preserved', source: name, owner: source.owner, sourceLeaseDigest, sourceLease: source,
+      replacement: replacementName, targetSha, recoveryFile, recoveryChecksum, createdAt: new Date().toISOString() };
+    save(journalFile, journal);
+    const directory = path.join(managedRoot(), replacementName); const branch = `codex/${replacementName}`;
+    if (existsSync(directory) || ref(`refs/heads/${branch}`)) throw Error('Replacement path/branch exists; source and recovery remain intact');
+    const portsBase = 13000 + (records.length + 1) * 10; if (portsBase > 65000) throw Error('Workspace port allocation exhausted');
+    const ports = Object.fromEntries(Object.keys(APPS).map((app,i)=>[app,portsBase+i]));
+    const replacement = { ...source, name: replacementName, directory, branch, ports, baseline: targetSha, state: 'reconciling', createdAt: new Date().toISOString(), reconciles: { source: name, journal: journalFile, recoveryChecksum: journal.recoveryChecksum } };
+    journal.preparedReplacement = replacement; save(journalFile, journal);
+    save(path.join(leases(), `${replacementName}.json`), replacement); journal.phase = 'creating'; save(journalFile, journal);
+    try {
+      mkdirSync(managedRoot(), { recursive: true }); repoCommand(cwd, 'worktree', 'add', '-b', branch, directory, targetSha);
+      const apply = (patchText, staged) => { if (patchText) command('git', ['apply', ...(staged ? ['--index'] : []), '--3way', '-'], { cwd: directory, input: patchText }); };
+      apply(plan.stagedPatch, true); apply(plan.unstagedPatch, false);
+      for (const item of plan.files) writeSnapshot(directory, item);
+      const paths = [...new Set([...nulPaths((...args) => repoCommand(directory, ...args), ['diff', '--no-renames', '--name-only', '-z', `${targetSha}...HEAD`]),
+        ...nulPaths((...args) => repoCommand(directory, ...args), ['diff', '--no-renames', '--name-only', '-z', 'HEAD']),
+        ...nulPaths((...args) => repoCommand(directory, ...args), ['ls-files', '--others', '--exclude-standard', '-z'])])];
+      const bad = paths.filter(file => !scoped(file, source.scopes)); if (bad.length) throw Error(`Replacement diff exceeds leased scope: ${bad.join(', ')}`);
+      journal.phase = 'validated'; journal.resultPaths = paths; save(journalFile, journal);
+      const freshSource = jsonFile(sourceLeaseFile);
+      if (sha256(readFileSync(sourceLeaseFile)) !== sourceLeaseDigest || freshSource.owner !== options.owner || freshSource.state !== 'active') throw Error('Source lease changed during reconciliation; replacement retained for recovery, no ownership transition performed');
+      repoCommand(cwd, 'fetch', 'origin');
+      const freshTarget = repoCommand(cwd, 'rev-parse', 'origin/main'); if (freshTarget !== targetSha) throw Error('Target baseline changed during reconciliation; retry after review');
+      const competing = workspaceRecords().filter(x => x.state === 'active' && x.name !== name && x.scopes.some(a => source.scopes.some(b => partialPathOverlap(a,b))));
+      if (competing.length) throw Error(`Another active lease now overlaps source scope: ${competing.map(x=>x.name).join(', ')}`);
+      const superseded = { ...freshSource, state: 'superseded', supersededAt: new Date().toISOString(), supersededBy: replacementName, reconciliationJournal: journalFile };
+      const activeReplacement = { ...replacement, state: 'active', reconciledAt: new Date().toISOString(), finalDiff: paths };
+      // One atomic journal rename is the CAS point; workspaceRecords overlays both lease states
+      // from this committed transition, so readers cannot observe overlapping active scopes.
+      journal.phase = 'committed'; journal.completedAt = new Date().toISOString();
+      journal.leaseTransition = { source: superseded, replacement: activeReplacement };
+      save(journalFile, journal);
+      return { dryRun: false, source: superseded, replacement: activeReplacement, journal: journalFile, recoveryFile, recoveryChecksum: journal.recoveryChecksum, paths };
+    } catch (error) {
+      journal.phase = 'attention'; journal.error = error.message; journal.interruptedAt = new Date().toISOString(); save(journalFile, journal);
+      const recFile = path.join(leases(), `${replacementName}.json`); if (existsSync(recFile)) { const rec = jsonFile(recFile); rec.state = 'attention'; rec.attention = error.message; save(recFile, rec); }
+      throw Error(`${error.message}. Original lease and checkout remain active; recovery artifacts: ${journalFile}`);
+    }
+  });
+}
 export function retireWorkspace(name, options) {
   validateName(name); return lock('workspaces', () => {
     const file = path.join(leases(), `${name}.json`); const record = jsonFile(file);
-    if (record.owner !== options.owner || record.state !== 'finished') throw Error('Retirement requires the owner and a finished lease');
+    if (record.owner !== options.owner || workspaceRecords().find(x => x.name === name)?.state !== 'finished') throw Error('Retirement requires the owner and a finished lease');
     inside(managedRoot(), record.directory);
     if (path.resolve(record.directory) === path.resolve(git('rev-parse', '--show-toplevel'))) throw Error('Cannot retire the calling workspace');
     if (command('git', ['status', '--porcelain'], { cwd: record.directory })) throw Error('Dirty/untracked files must be preserved before retirement');
