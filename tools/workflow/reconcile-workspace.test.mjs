@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash as cryptoCreateHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -125,6 +125,7 @@ test('lease compare-and-swap rejects ownership changing during replacement creat
   const hook = path.join(f.repo, '.git/hooks/post-checkout'); const prior = process.env.FIKA_RECONCILE_TEST_LEASE;
   try {
     writeFileSync(hook, '#!/bin/sh\nnode -e "const f=require(\'fs\'),p=process.env.FIKA_RECONCILE_TEST_LEASE,j=JSON.parse(f.readFileSync(p));j.owner=\'racing-owner\';f.writeFileSync(p,JSON.stringify(j))"\n');
+    chmodSync(hook, 0o755);
     process.env.FIKA_RECONCILE_TEST_LEASE = lease;
     assert.match(f.run(['workspace', 'reconcile', 'cpu-source', '--owner', 'fixture-owner', '--replacement', 'cpu-owner-race', '--execute'], false), /lease changed during reconciliation/);
     const rows = f.run(['workspace', 'list']); assert.equal(rows.find(x => x.name === 'cpu-source').owner, 'racing-owner'); assert.equal(rows.find(x => x.name === 'cpu-source').state, 'active');
