@@ -909,3 +909,12 @@ button:disabled {
 .allergen-legend-item--clear b,
 .allergen-legend-item--unrecorded b { background: var(--fika-surface-card); color: transparent; }
 .allergen-legend-item--may-contain b { color: var(--fika-action-secondary); }
+
+/* Phone width: the sticky dish column would leave no room for a destination input beside TOTAL, so it scrolls with the matrix instead. Desktop is unchanged. */
+@media (max-width: 600px) {
+  .portion-matrix thead th:first-child,
+  .portion-matrix tbody th {
+    position: static;
+    min-width: 120px;
+  }
+}

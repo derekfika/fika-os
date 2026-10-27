@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import MenuPlanningShell from "./menu-planning-shell";
+import { revealPortionInput } from "./portion-scroll";
 import PublicationHandoffStatus from "./publication-handoff-status";
 import PlanningContextNav from "./planning-context-nav";
 import DuplicatePlanningModal from "./duplicate-planning-modal";
@@ -107,6 +108,7 @@ function handlePortionKeyDown(event: KeyboardEvent<HTMLInputElement>, rowIndex: 
   if (!target) return;
   event.preventDefault();
   target.focus();
+  revealPortionInput(target);
   target.select();
 }
 
