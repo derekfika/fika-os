@@ -1,5 +1,5 @@
 /**
- * Driver notification rules. Pure functions: a run is compared with the last state that was notified for it, so
+ * Driver notification rules. Pure functions: each run is compared with the last state that was notified for it, so
  * notifications come from authoritative before/after state, never from UI interactions or the change feed alone.
  * Only today's operational work (Europe/London service date) creates notifications.
  */
@@ -11,10 +11,16 @@ export type DriverVisit = {
   /** Logistics-owned operational time (HH:MM), never advisory source timing. */
   time?: string;
   jobIds: string[];
+  /** Normalised, driver-visible quantity summary (e.g. "7 items · 85 pieces"). Never version numbers or internal ids. */
+  quantities?: string;
+  /** Normalised, driver-visible access and delivery instructions. */
+  instructions?: string;
 };
 
 export type DriverRunSnapshot = {
   runId: string;
+  /** Authoritative committed run version; identifies the change that produced this state. */
+  version: number;
   vehicleId: "van1" | "van2";
   vehicleLabel: string;
   serviceDate: string;
@@ -37,6 +43,7 @@ export type DriverNotificationKind =
   | "departure-time-changed"
   | "return-time-changed"
   | "load-details-changed"
+  | "delivery-instructions-updated"
   | "run-cancelled";
 
 export type DriverNotification = {
@@ -50,8 +57,13 @@ export type DriverNotification = {
   /** Push body: privacy-safe, no destinations or customer details. */
   pushBody: string;
   priority: "normal" | "high";
-  /** Stable identity for idempotent storage: the same change never creates two inbox rows. */
+  /**
+   * Identity of one committed change: the run version it produced plus the kind and subject. Replaying the same commit gives
+   * the same key (idempotent); a later independent change to the same value gets a new version and therefore a new key.
+   */
   dedupeKey: string;
+  /** Committed run version the notice belongs to. */
+  revision: number;
 };
 
 const DRIVER_VISIBLE: ReadonlyArray<DriverRunSnapshot["status"]> = ["planned", "ready", "dispatched", "completed"];
@@ -62,12 +74,19 @@ export function londonServiceDate(now: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
+/** A notice may be pushed only while its service date is still today in Europe/London. Checked again at send time. */
+export function isEligibleNow(notice: Pick<DriverNotification, "serviceDate">, now: Date) {
+  return notice.serviceDate === londonServiceDate(now);
+}
+
 const dateLabel = (serviceDate: string) =>
   new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short" }).format(new Date(`${serviceDate}T12:00:00Z`));
 
-const pushPrefix = (run: { vehicleLabel: string; serviceDate: string }) => `${run.vehicleLabel} · ${dateLabel(run.serviceDate)}`;
+const pushPrefix = (vehicleLabel: string, serviceDate: string) => `${vehicleLabel} · ${dateLabel(serviceDate)}`;
 
-function note(kind: DriverNotificationKind, run: DriverRunSnapshot, parts: { title: string; inboxText: string; pushTail: string; priority?: "normal" | "high"; key: string }): DriverNotification {
+const normalise = (value: string | undefined) => (value ?? "").replace(/\s+/g, " ").trim();
+
+function note(kind: DriverNotificationKind, run: DriverRunSnapshot, revision: number, parts: { title: string; inboxText: string; pushTail: string; priority?: "normal" | "high"; subject: string; vehicleLabel?: string }): DriverNotification {
   return {
     kind,
     vehicleId: run.vehicleId,
@@ -75,120 +94,149 @@ function note(kind: DriverNotificationKind, run: DriverRunSnapshot, parts: { tit
     serviceDate: run.serviceDate,
     title: parts.title,
     inboxText: parts.inboxText,
-    pushBody: `${pushPrefix(run)} · ${parts.pushTail}`,
+    pushBody: `${pushPrefix(parts.vehicleLabel ?? run.vehicleLabel, run.serviceDate)} · ${parts.pushTail}`,
     priority: parts.priority ?? "normal",
-    dedupeKey: `${run.runId}:${kind}:${parts.key}`,
+    dedupeKey: `${run.runId}:v${revision}:${kind}:${parts.subject}`,
+    revision,
   };
 }
 
-const visitKey = (visit: DriverVisit) => visit.visitId;
-
 /**
- * Notifications for one run changing from `before` to `after`. `movedJobIds` are jobs that also appear on another vehicle's
- * run in the same batch; they are reported once as a reassignment, not as a removal from this run.
+ * Notifications for one run changing from `before` to `after`. `movedJobIds` are jobs that also appear on another run in the
+ * same batch; they are reported once by `diffBatch` as a reassignment, not as a removal from this run.
  */
 export function diffRun(before: DriverRunSnapshot | undefined, after: DriverRunSnapshot | undefined, movedJobIds: ReadonlySet<string> = new Set()): DriverNotification[] {
   const run = after ?? before;
   if (!run) return [];
+  const revision = after?.version ?? before!.version;
   const notices: DriverNotification[] = [];
   const beforeVisible = Boolean(before && isDriverVisible(before));
   const afterVisible = Boolean(after && isDriverVisible(after));
 
   // A run appearing for the first time, populated, is a new assignment. Empty drafts never notify.
   if (!beforeVisible && afterVisible && after!.visits.length > 0) {
-    notices.push(note("run-assigned", after!, { title: "New run assigned", inboxText: `Run for ${dateLabel(after!.serviceDate)} has been added to your schedule with ${after!.visits.length} stop${after!.visits.length === 1 ? "" : "s"}.`, pushTail: "A new run is ready to view.", key: "assigned" }));
+    notices.push(note("run-assigned", after!, revision, { title: "New run assigned", inboxText: `Run for ${dateLabel(after!.serviceDate)} has been added to your schedule with ${after!.visits.length} stop${after!.visits.length === 1 ? "" : "s"}.`, pushTail: "A new run is ready to view.", subject: "assigned" }));
     return notices;
   }
 
   if (beforeVisible && !afterVisible) {
-    // Work that moved to another vehicle is reported as a reassignment, not as a cancelled run.
+    // A run that disappears is cancelled only if its work is not accounted for by a move to another run.
     const remaining = before!.visits.flatMap(visit => visit.jobIds).filter(id => !movedJobIds.has(id));
-    if (remaining.length) notices.push(note("run-cancelled", before!, { title: "Run cancelled", inboxText: `Your run for ${dateLabel(before!.serviceDate)} is no longer scheduled.`, pushTail: "Your assigned run is no longer scheduled.", priority: before!.status === "dispatched" ? "high" : "normal", key: "cancelled" }));
+    if (remaining.length) notices.push(note("run-cancelled", before!, revision, { title: "Run cancelled", inboxText: `Your run for ${dateLabel(before!.serviceDate)} is no longer scheduled.`, pushTail: "Your assigned run is no longer scheduled.", priority: before!.status === "dispatched" ? "high" : "normal", subject: "cancelled" }));
     return notices;
   }
   if (!beforeVisible || !afterVisible) return notices;
 
-  const beforeById = new Map(before!.visits.map(visit => [visitKey(visit), visit]));
-  const afterById = new Map(after!.visits.map(visit => [visitKey(visit), visit]));
+  // Same run id, different vehicle: the old vehicle is told the run was reassigned, the new vehicle receives it as a new run.
+  if (before!.vehicleId !== after!.vehicleId) {
+    notices.push(note("work-reassigned", before!, revision, { title: "Run reassigned", inboxText: `Run for ${dateLabel(after!.serviceDate)} is now assigned to ${after!.vehicleLabel}.`, pushTail: "Your run has been reassigned.", priority: before!.status === "dispatched" ? "high" : "normal", subject: `vehicle:${after!.vehicleId}` }));
+    notices.push(note("run-assigned", after!, revision, { title: "New run assigned", inboxText: `Run for ${dateLabel(after!.serviceDate)} has been added to your schedule with ${after!.visits.length} stop${after!.visits.length === 1 ? "" : "s"}.`, pushTail: "A new run is ready to view.", subject: "vehicle-assigned" }));
+    return notices;
+  }
+
+  const beforeById = new Map(before!.visits.map(visit => [visit.visitId, visit]));
+  const afterById = new Map(after!.visits.map(visit => [visit.visitId, visit]));
   const highPriority = before!.status === "dispatched" || after!.status === "dispatched";
 
   for (const visit of after!.visits) {
-    const previous = beforeById.get(visitKey(visit));
+    const previous = beforeById.get(visit.visitId);
     if (!previous) {
-      const kind = visit.lane === "collection" ? "collection-assigned" : "delivery-assigned";
       const added = visit.jobIds.filter(id => !movedJobIds.has(id));
-      if (added.length) notices.push(note(kind, after!, { title: visit.lane === "collection" ? "New collection assigned" : "New delivery assigned", inboxText: `${visit.lane === "collection" ? "Collection" : "Delivery"} at ${visit.destination}${visit.time ? ` at ${visit.time}` : ""} has been added to your run.`, pushTail: `A ${visit.lane === "collection" ? "collection" : "delivery"} has been added to your run.`, key: `${visit.visitId}:added` }));
+      if (added.length) {
+        const collection = visit.lane === "collection";
+        notices.push(note(collection ? "collection-assigned" : "delivery-assigned", after!, revision, { title: collection ? "New collection assigned" : "New delivery assigned", inboxText: `${collection ? "Collection" : "Delivery"} at ${visit.destination}${visit.time ? ` at ${visit.time}` : ""} has been added to your run.`, pushTail: `A ${collection ? "collection" : "delivery"} has been added to your run.`, subject: `visit:${visit.visitId}` }));
+      }
       continue;
     }
+    // Partial load changes keep the physical stop: only the item-level change is reported.
     const removedJobs = previous.jobIds.filter(id => !visit.jobIds.includes(id) && !movedJobIds.has(id));
     const addedJobs = visit.jobIds.filter(id => !previous.jobIds.includes(id) && !movedJobIds.has(id));
-    // Partial load changes keep the physical stop: only the item-level change is reported.
-    if (removedJobs.length || addedJobs.length) notices.push(note("load-details-changed", after!, { title: "Load details changed", inboxText: `Load at ${visit.destination} changed: ${addedJobs.length} item${addedJobs.length === 1 ? "" : "s"} added, ${removedJobs.length} removed.`, pushTail: "Review your updated load quantities.", priority: highPriority ? "high" : "normal", key: `${visit.visitId}:load:${[...addedJobs, ...removedJobs].sort().join(",")}` }));
+    const quantitiesChanged = normalise(previous.quantities) !== normalise(visit.quantities);
+    if (removedJobs.length || addedJobs.length) {
+      notices.push(note("load-details-changed", after!, revision, { title: "Load details changed", inboxText: `Load at ${visit.destination} changed: ${addedJobs.length} item${addedJobs.length === 1 ? "" : "s"} added, ${removedJobs.length} removed.`, pushTail: "Review your updated load quantities.", priority: highPriority ? "high" : "normal", subject: `load:${visit.visitId}` }));
+    } else if (quantitiesChanged) {
+      notices.push(note("load-details-changed", after!, revision, { title: "Load details changed", inboxText: `Quantities at ${visit.destination} changed from ${normalise(previous.quantities) || "unspecified"} to ${normalise(visit.quantities) || "unspecified"}.`, pushTail: "Review your updated load quantities.", priority: highPriority ? "high" : "normal", subject: `quantities:${visit.visitId}` }));
+    }
+    if (normalise(previous.instructions) !== normalise(visit.instructions) && normalise(visit.instructions)) {
+      notices.push(note("delivery-instructions-updated", after!, revision, { title: "Delivery instructions updated", inboxText: `Instructions for ${visit.destination} have changed. Open the stop to read them.`, pushTail: "Check the updated stop instructions.", priority: highPriority ? "high" : "normal", subject: `instructions:${visit.visitId}` }));
+    }
     if (previous.time !== visit.time && visit.time) {
-      const isCollection = visit.lane === "collection";
-      notices.push(note(isCollection ? "collection-time-changed" : "delivery-time-changed", after!, { title: isCollection ? "Collection time changed" : "Delivery time changed", inboxText: `${visit.destination} ${isCollection ? "collection" : "delivery"} moved from ${previous.time || "unscheduled"} to ${visit.time}.`, pushTail: `${previous.time || "unscheduled"} → ${visit.time}.`, priority: highPriority ? "high" : "normal", key: `${visit.visitId}:time:${visit.time}` }));
+      const collection = visit.lane === "collection";
+      notices.push(note(collection ? "collection-time-changed" : "delivery-time-changed", after!, revision, { title: collection ? "Collection time changed" : "Delivery time changed", inboxText: `${visit.destination} ${collection ? "collection" : "delivery"} moved from ${previous.time || "unscheduled"} to ${visit.time}.`, pushTail: `${previous.time || "unscheduled"} → ${visit.time}.`, priority: highPriority ? "high" : "normal", subject: `time:${visit.visitId}` }));
     }
   }
 
   for (const visit of before!.visits) {
-    if (afterById.has(visitKey(visit))) continue;
+    if (afterById.has(visit.visitId)) continue;
     const remaining = visit.jobIds.filter(id => !movedJobIds.has(id));
     if (!remaining.length) continue;
-    notices.push(note("stop-removed", after!, { title: "Stop removed", inboxText: `${visit.lane === "collection" ? "Collection" : "Delivery"} at ${visit.destination} has been removed from your route.`, pushTail: "A stop has been removed from your route.", priority: highPriority ? "high" : "normal", key: `${visit.visitId}:removed` }));
+    notices.push(note("stop-removed", after!, revision, { title: "Stop removed", inboxText: `${visit.lane === "collection" ? "Collection" : "Delivery"} at ${visit.destination} has been removed from your route.`, pushTail: "A stop has been removed from your route.", priority: highPriority ? "high" : "normal", subject: `removed:${visit.visitId}` }));
   }
 
   // Stop order: only the order of visits present in both snapshots matters.
-  const commonBefore = before!.visits.map(visitKey).filter(key => afterById.has(key));
-  const commonAfter = after!.visits.map(visitKey).filter(key => beforeById.has(key));
+  const commonBefore = before!.visits.map(visit => visit.visitId).filter(id => afterById.has(id));
+  const commonAfter = after!.visits.map(visit => visit.visitId).filter(id => beforeById.has(id));
   if (commonBefore.join("|") !== commonAfter.join("|")) {
-    const first = after!.visits.find(visit => visitKey(visit) === commonAfter[0]);
-    notices.push(note("route-order-updated", after!, { title: "Route order updated", inboxText: first ? `${first.destination} is now your first stop.` : "Your stop order has changed.", pushTail: "Your stop sequence has changed.", priority: highPriority ? "high" : "normal", key: `order:${commonAfter.join("|")}` }));
+    const first = after!.visits.find(visit => visit.visitId === commonAfter[0]);
+    notices.push(note("route-order-updated", after!, revision, { title: "Route order updated", inboxText: first ? `${first.destination} is now your first stop.` : "Your stop order has changed.", pushTail: "Your stop sequence has changed.", priority: highPriority ? "high" : "normal", subject: `order:${commonAfter.join("|")}` }));
   }
 
-  if (before!.departure !== after!.departure && after!.departure) notices.push(note("departure-time-changed", after!, { title: "Departure time changed", inboxText: `Departure moved from ${before!.departure || "unscheduled"} to ${after!.departure}.`, pushTail: `Departure moved from ${before!.departure || "unscheduled"} to ${after!.departure}.`, priority: highPriority ? "high" : "normal", key: `departure:${after!.departure}` }));
-  if (before!.return !== after!.return && after!.return) notices.push(note("return-time-changed", after!, { title: "Return time changed", inboxText: `Return moved from ${before!.return || "unscheduled"} to ${after!.return}.`, pushTail: `Return moved from ${before!.return || "unscheduled"} to ${after!.return}.`, priority: highPriority ? "high" : "normal", key: `return:${after!.return}` }));
+  if (before!.departure !== after!.departure && after!.departure) notices.push(note("departure-time-changed", after!, revision, { title: "Departure time changed", inboxText: `Departure moved from ${before!.departure || "unscheduled"} to ${after!.departure}.`, pushTail: `Departure moved from ${before!.departure || "unscheduled"} to ${after!.departure}.`, priority: highPriority ? "high" : "normal", subject: `departure:${after!.departure}` }));
+  if (before!.return !== after!.return && after!.return) notices.push(note("return-time-changed", after!, revision, { title: "Return time changed", inboxText: `Return moved from ${before!.return || "unscheduled"} to ${after!.return}.`, pushTail: `Return moved from ${before!.return || "unscheduled"} to ${after!.return}.`, priority: highPriority ? "high" : "normal", subject: `return:${after!.return}` }));
   return notices;
 }
 
+export type DiffBatchOptions = {
+  /**
+   * First run of notification tracking: record snapshots for existing runs without notifying anyone about them. Without a
+   * baseline, every pre-existing driver-visible run would look like a new assignment.
+   */
+  baseline?: boolean;
+};
+
 /**
- * Notifications for a batch of runs. Jobs that leave one vehicle's run and appear on another's in the same batch are a
- * reassignment: the losing vehicle gets "Work reassigned", the gaining vehicle gets "New delivery assigned".
- * Only runs for `today` create notifications; future and past service dates are ignored.
+ * Notifications for a batch of runs. A job that leaves one run and appears on another in the same batch is a move:
+ *  - a different vehicle gets "Work reassigned" (the losing vehicle) and "New delivery assigned" (the gaining vehicle);
+ *  - the same vehicle gets one "Load details changed" for its run changes.
+ * Only today's runs create notifications; future and past service dates are ignored.
  */
-export function diffBatch(today: string, before: DriverRunSnapshot[], after: DriverRunSnapshot[]): DriverNotification[] {
+export function diffBatch(today: string, before: DriverRunSnapshot[], after: DriverRunSnapshot[], options: DiffBatchOptions = {}): DriverNotification[] {
+  if (options.baseline) return [];
   const beforeByRun = new Map(before.filter(run => run.serviceDate === today).map(run => [run.runId, run]));
   const afterByRun = new Map(after.filter(run => run.serviceDate === today).map(run => [run.runId, run]));
   const runIds = new Set([...beforeByRun.keys(), ...afterByRun.keys()]);
 
-  const jobOwnerBefore = new Map<string, string>();
-  for (const run of beforeByRun.values()) for (const visit of run.visits) for (const job of visit.jobIds) jobOwnerBefore.set(job, run.runId);
-  const jobOwnerAfter = new Map<string, string>();
-  for (const run of afterByRun.values()) for (const visit of run.visits) for (const job of visit.jobIds) jobOwnerAfter.set(job, run.runId);
+  const ownerBefore = new Map<string, string>();
+  for (const run of beforeByRun.values()) for (const visit of run.visits) for (const job of visit.jobIds) ownerBefore.set(job, run.runId);
+  const ownerAfter = new Map<string, string>();
+  for (const run of afterByRun.values()) for (const visit of run.visits) for (const job of visit.jobIds) ownerAfter.set(job, run.runId);
 
-  // A job leaving one run and arriving on another (any vehicle) is a move, whether or not the vehicles differ.
-  const moved = new Set<string>();
-  for (const [job, from] of jobOwnerBefore) {
-    const to = jobOwnerAfter.get(job);
-    if (to && to !== from) moved.add(job);
+  const moved = new Map<string, { from: string; to: string }>();
+  for (const [job, from] of ownerBefore) {
+    const to = ownerAfter.get(job);
+    if (to && to !== from) moved.set(job, { from, to });
   }
 
   const notices: DriverNotification[] = [];
   for (const runId of runIds) {
     const previous = beforeByRun.get(runId);
     const current = afterByRun.get(runId);
-    const movedHere = new Set([...moved].filter(job => jobOwnerBefore.get(job) === runId || jobOwnerAfter.get(job) === runId));
+    const movedHere = new Set([...moved.entries()].filter(([, move]) => move.from === runId || move.to === runId).map(([job]) => job));
     notices.push(...diffRun(previous, current, movedHere));
   }
 
-  // Reassignment notices, one per affected vehicle, identified by the job that moved.
-  for (const job of moved) {
-    const fromRun = beforeByRun.get(jobOwnerBefore.get(job)!);
-    const toRun = afterByRun.get(jobOwnerAfter.get(job)!);
-    if (fromRun && isDriverVisible(fromRun) && afterByRun.get(fromRun.runId) && fromRun.vehicleId !== toRun?.vehicleId) {
-      notices.push(note("work-reassigned", fromRun, { title: "Work reassigned", inboxText: `A delivery has been removed from your run (${job}).`, pushTail: "A delivery has been removed from your run.", priority: "normal", key: `moved-out:${job}` }));
+  // Reassignment notices are keyed by the destination run's committed version, so one move notifies once per affected vehicle.
+  for (const [job, { from, to }] of moved) {
+    const fromRun = beforeByRun.get(from);
+    const toRun = afterByRun.get(to);
+    if (!toRun || !isDriverVisible(toRun)) continue;
+    if (fromRun && isDriverVisible(fromRun) && fromRun.vehicleId !== toRun.vehicleId) {
+      notices.push(note("work-reassigned", fromRun, toRun.version, { title: "Work reassigned", inboxText: `A delivery has been removed from your run (${job}).`, pushTail: "A delivery has been removed from your run.", subject: `moved-out:${job}` }));
+    } else if (fromRun && isDriverVisible(fromRun)) {
+      notices.push(note("load-details-changed", toRun, toRun.version, { title: "Load details changed", inboxText: `A delivery moved from one of your runs to another (${job}).`, pushTail: "Review your updated load quantities.", subject: `moved-within:${job}` }));
     }
-    if (toRun && isDriverVisible(toRun)) {
-      notices.push(note("delivery-assigned", toRun, { title: "New delivery assigned", inboxText: `A delivery has been added to your run (${job}).`, pushTail: "A delivery has been added to your run.", priority: "normal", key: `moved-in:${job}` }));
+    if (!fromRun || fromRun.vehicleId !== toRun.vehicleId) {
+      notices.push(note("delivery-assigned", toRun, toRun.version, { title: "New delivery assigned", inboxText: `A delivery has been added to your run (${job}).`, pushTail: "A delivery has been added to your run.", subject: `moved-in:${job}` }));
     }
   }
   return notices;
