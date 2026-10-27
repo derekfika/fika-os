@@ -45,6 +45,7 @@ export default function AllergenReviewMatrix({
   onFinalizationChange,
   onLineageChange,
   onHydrationChange,
+  onHydrationError,
   onDirtyChange,
   onPersistenceChange,
   onReviewSyncChange,
@@ -64,6 +65,7 @@ export default function AllergenReviewMatrix({
   onFinalizationChange?: (finalized: boolean) => void;
   onLineageChange?: (lineageByOrderId: Record<string, MatrixLineage>) => void;
   onHydrationChange?: (hydrating: boolean) => void;
+  onHydrationError?: (message: string) => void;
   onDirtyChange?: (dirty: boolean) => void;
   onPersistenceChange?: (pending: boolean) => void;
   onReviewSyncChange?: (status: ReviewSyncStatus) => void;
@@ -112,6 +114,7 @@ export default function AllergenReviewMatrix({
   useEffect(() => {
     let cancelled = false;
     onHydrationChange?.(true);
+    setError("");
 
     const hydrate = async () => {
       hydratedRef.current = false;
@@ -135,6 +138,7 @@ export default function AllergenReviewMatrix({
       }
 
       const response = await fetch(`/api/production-plan?matrixStatus=1&orderIds=${encodeURIComponent(orderIds.join(","))}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("The allergen review matrix could not be loaded. Retry before reviewing or signing.");
       const responseBody = response.ok
         ? await response.json() as {
             matrixStatuses?: Array<{
@@ -164,6 +168,9 @@ export default function AllergenReviewMatrix({
           }> };
 
       const statuses = responseBody.matrixStatuses || [];
+      if (statuses.length !== orderIds.length || orderIds.some(orderId => !statuses.some(status => status.orderId === orderId))) {
+        throw new Error("The allergen review matrix is incomplete. Retry before reviewing or signing.");
+      }
       const saved = new Map<string, { allergens: Record<string, OperationalAllergenState>; completed: boolean }>();
       const lineage = Object.fromEntries(
         statuses.flatMap(status => status.sourceLineage ? [[status.orderId, status.sourceLineage] as const] : []),
@@ -242,7 +249,11 @@ export default function AllergenReviewMatrix({
     };
 
     void hydrate().catch(cause => {
-      if (!cancelled) setError(cause instanceof Error ? cause.message : "The allergen review could not be hydrated.");
+      if (!cancelled) {
+        const message = cause instanceof Error ? cause.message : "The allergen review could not be hydrated.";
+        setError(message);
+        onHydrationError?.(message);
+      }
     }).finally(() => {
       if (!cancelled) onHydrationChange?.(false);
     });

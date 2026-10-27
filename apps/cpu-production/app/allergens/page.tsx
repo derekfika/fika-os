@@ -9,6 +9,7 @@ import { SignatureModal } from "../ui/HospitalityAllergenDetail";
 import { buildAllergenReviewRows, deliveredInMenuOrdersForServiceDate, destination, orderDate } from "../../lib/production-day";
 import { captureSigningLineage, signingLineageUnavailableMessage } from "./signing-lineage";
 import { europeLondonDate } from "../../lib/operational-date";
+import { allergenPageState } from "./allergen-page-state";
 import "./page.css";
 
 type SignatureRole = "production_chef" | "head_chef_site_manager";
@@ -56,7 +57,8 @@ export default function CpuAllergenReviewPage() {
   const [date, setDate] = useState("");
   const [site, setSite] = useState("");
   const [review, setReview] = useState("all");
-  const [error, setError] = useState("");
+  const [projectionError, setProjectionError] = useState("");
+  const [matrixError, setMatrixError] = useState("");
   const [signing, setSigning] = useState<{ role: SignatureRole }>();
   const [checkedCount, setCheckedCount] = useState(0);
   const [signatureRoles, setSignatureRoles] = useState<SignatureRole[]>([]);
@@ -67,7 +69,8 @@ export default function CpuAllergenReviewPage() {
   const [reviewFrozen, setReviewFrozen] = useState(false);
   const [signatureMessage, setSignatureMessage] = useState("");
   const [signatureBusy, setSignatureBusy] = useState(false);
-  const [hydrating, setHydrating] = useState(false);
+  const [projectionLoading, setProjectionLoading] = useState(false);
+  const [matrixLoading, setMatrixLoading] = useState(false);
   const [reviewDirty, setReviewDirty] = useState(false);
   const [reviewPersistencePending, setReviewPersistencePending] = useState(false);
   const checkedCountRef = useRef(0);
@@ -85,8 +88,10 @@ export default function CpuAllergenReviewPage() {
   };
 
   const load = async (selectedDate: string) => {
-    setError("");
-    setHydrating(true);
+    setProjectionError("");
+    setMatrixError("");
+    setProjectionLoading(true);
+    setMatrixLoading(false);
     setOrders([]);
     setCheckedCount(0);
     checkedCountRef.current = 0;
@@ -108,8 +113,9 @@ export default function CpuAllergenReviewPage() {
       const loaded = await loadCpuAllergenProjection(selectedDate, "delivered_in");
       setOrders(cpuProjectionToOrders(loaded.projection).filter(order => order.origin === "menu_planning"));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load allergen review.");
-      setHydrating(false);
+      setProjectionError(cause instanceof Error ? cause.message : "Could not load allergen review.");
+    } finally {
+      setProjectionLoading(false);
     }
   };
 
@@ -158,6 +164,9 @@ export default function CpuAllergenReviewPage() {
   const headChefSigned = signatureRoles.includes("head_chef_site_manager");
   const bothSigned = productionSigned && headChefSigned;
   const fullySigned = finalizationComplete && bothSigned;
+  const pageState = allergenPageState({ date, projectionLoading, matrixLoading, projectionError, matrixError, orderCount: visibleOrders.length });
+  const hydrating = pageState === "loading";
+  const loadError = projectionError || matrixError;
 
   const refreshReviewStatus = async () => {
     const orderIds = masterOrders.map(order => order.canonicalId);
@@ -412,6 +421,10 @@ export default function CpuAllergenReviewPage() {
       setSignatureMessage("The allergen review is still loading. Wait for the current matrix before signing.");
       return;
     }
+    if (pageState === "error") {
+      setSignatureMessage("The current allergen matrix could not be confirmed. Retry loading it before signing.");
+      return;
+    }
     if (!masterOrders.length) {
       setSignatureMessage("There is no Delivered-In master matrix to sign for this service date.");
       return;
@@ -471,7 +484,13 @@ export default function CpuAllergenReviewPage() {
     }
   };
 
-  const signatureSummary = site
+  const signatureSummary = pageState === "loading"
+    ? "Loading the current allergen matrix and review status…"
+    : pageState === "error"
+      ? "The current allergen review status could not be loaded. Retry before review or signing."
+      : pageState === "empty"
+        ? "No published menu production orders for this service date."
+        : site
     ? "Filtered OPLOC view — return to All sites to sign the service-date master matrix."
     : fullySigned
       ? "Both signatures recorded and every OPLOC-scoped release is current."
@@ -489,7 +508,7 @@ export default function CpuAllergenReviewPage() {
           <small>CPU · Delivered-In lunch</small>
           <h1>ALLERGEN REVIEW</h1>
           <h2>{date ? formatDate(date) : "Select a production day"}</h2>
-          <p>{rows.length} dishes · {approved} published · {checkedCount}/{rows.length} checked</p>
+          {pageState === "ready" && <p>{rows.length} dishes · {approved} published · {checkedCount}/{rows.length} checked</p>}
         </div>
         <div className="cpu-allergen-page-actions">
           <a href={`/?date=${date}`}>Back to production</a>
@@ -531,21 +550,28 @@ export default function CpuAllergenReviewPage() {
           </p>
         )}
 
-        <div className="cpu-allergen-page-summary">
+        {pageState === "loading" && <p className="cpu-allergen-load-state" role="status">Loading allergen matrix…</p>}
+        {pageState === "error" && (
+          <div className="cpu-allergen-load-state" role="alert">
+            <p>{loadError || "The allergen matrix could not be loaded."}</p>
+            <button type="button" className="cpu-allergen-retry" disabled={projectionLoading} onClick={() => date && void load(date)}>Retry loading matrix</button>
+          </div>
+        )}
+        {pageState === "empty" && <p className="cpu-allergen-load-state" role="status">No published menu production orders for this service date.</p>}
+
+        {pageState === "ready" && <div className="cpu-allergen-page-summary">
           <span><strong>{rows.length}</strong> Delivered-In dishes</span>
           <span><strong>{approved}</strong> published</span>
           <span className={attention ? "attention" : ""}><strong>{attention}</strong> require attention</span>
           <span><strong>{checkedCount}/{rows.length}</strong> checked</span>
-        </div>
-
-        {error && <p role="alert">{error}</p>}
+        </div>}
 
         <AllergenReviewMatrix
           rows={rows}
           orders={visibleOrders}
           scopeKey={`${date || "unknown"}:${site || "all"}`}
-          busy={signatureBusy || hydrating}
-          locked={hydrating || reviewFrozen || bothSigned || Boolean(signing)}
+          busy={signatureBusy || hydrating || pageState === "error"}
+          locked={hydrating || pageState === "error" || reviewFrozen || bothSigned || Boolean(signing)}
           onCheckedChange={count => { checkedCountRef.current = count; setCheckedCount(count); }}
           onReviewChanged={() => undefined}
           onSignatureRolesChange={roles => setSignatureRoles(roles)}
@@ -553,7 +579,8 @@ export default function CpuAllergenReviewPage() {
           onMatrixStatusChange={setMatrixStatusByOrderId}
           onFinalizationChange={setFinalizationComplete}
           onLineageChange={setLineageByOrderId}
-          onHydrationChange={setHydrating}
+          onHydrationChange={loading => { setMatrixLoading(loading); if (loading) setMatrixError(""); }}
+          onHydrationError={setMatrixError}
           onDirtyChange={setReviewDirty}
           onPersistenceChange={setReviewPersistencePending}
           onRegisterReviewState={get => { signingReviewRef.current = get; }}
@@ -566,7 +593,7 @@ export default function CpuAllergenReviewPage() {
             <h3>Sign the Delivered-In service-date master matrix</h3>
             <p>{signatureSummary}</p>
           </div>
-          {!site && masterOrders.length > 0 && (
+          {!site && masterOrders.length > 0 && pageState === "ready" && (
             <div className="cpu-allergen-signature-row">
               <span>
                 {date ? formatDate(date) : "Published menu day"} · {rows.length} dishes · {sites.length} OPLOC{sites.length === 1 ? "" : "s"}
