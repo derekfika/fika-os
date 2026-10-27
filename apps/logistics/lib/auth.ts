@@ -1,6 +1,6 @@
 import { logAuthDiagnostic } from "../../../shared/auth-diagnostics";
 import { hostedRuntime, requiredUpstreamUrl } from "./runtime";
-import { MOBILE_SESSION_COOKIE, verifyMobilePinSession, type MobileVehicleId } from "./mobile-pin-session";
+import { MOBILE_VEHICLE_HEADER, mobileSessionCookieName, verifyMobilePinSession, type MobileVehicleId } from "./mobile-pin-session";
 
 export type LogisticsPrincipal = {
   type: "interactive";
@@ -82,12 +82,15 @@ async function requireMobilePinAccess(request: LogisticsRequest, dependencies: A
   if (!((request.method || "GET") === "GET" && ["/api/logistics", "/api/logistics/vehicles"].includes(pathname)) && !((request.method || "GET") === "POST" && pathname === "/api/logistics")) {
     throw Object.assign(new Error("This vehicle session cannot access that Logistics operation."), { status: 403, code: "LOGISTICS_MOBILE_ROUTE_DENIED" });
   }
+  // The request names its van. Only that van's cookie is read and only that van's PIN verifier is supplied, so a session for one van can never satisfy the other.
   const session = await (dependencies.mobileSessionReader || (async value => {
+    const vehicle = value.headers?.get(MOBILE_VEHICLE_HEADER);
+    if (vehicle !== "van1" && vehicle !== "van2") return undefined;
     const verifiers = {
-      van1: process.env.LOGISTICS_MOBILE_VAN1_PIN_VERIFIER,
-      van2: process.env.LOGISTICS_MOBILE_VAN2_PIN_VERIFIER,
+      van1: vehicle === "van1" ? process.env.LOGISTICS_MOBILE_VAN1_PIN_VERIFIER : undefined,
+      van2: vehicle === "van2" ? process.env.LOGISTICS_MOBILE_VAN2_PIN_VERIFIER : undefined,
     };
-    return verifyMobilePinSession(value.cookies.get(MOBILE_SESSION_COOKIE)?.value, { secret: process.env.LOGISTICS_MOBILE_SESSION_SECRET, verifiers });
+    return verifyMobilePinSession(value.cookies.get(mobileSessionCookieName(vehicle))?.value, { secret: process.env.LOGISTICS_MOBILE_SESSION_SECRET, verifiers });
   }))(request);
   if (!session) throw Object.assign(new Error("A valid vehicle PIN session is required."), { status: 401, code: "LOGISTICS_MOBILE_SESSION_REQUIRED" });
   const requestedVehicle = request.nextUrl?.searchParams.get("vehicle");
