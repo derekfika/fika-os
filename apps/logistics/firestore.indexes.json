@@ -15,6 +15,22 @@
         { "fieldPath": "serviceDate", "order": "ASCENDING" },
         { "fieldPath": "collectionRequired", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "fikaLogisticsDriverChangeEventsV1",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "committedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fikaLogisticsDriverNotificationsV1",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "vehicleId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
