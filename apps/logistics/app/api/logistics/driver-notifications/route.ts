@@ -1,29 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
 import { assertSameOrigin } from "@/lib/csrf";
-import { requireLogisticsAccess } from "@/lib/auth";
+import { denied, driverVehicle } from "@/lib/driver-vehicle";
 import { hostedRuntime } from "@/lib/runtime";
 import { firestoreDriverNotificationStore } from "@/lib/driver-notification-store";
 import { inboxFor, markAllNotificationsRead, markNotificationRead, type InboxNotification } from "@/lib/driver-change-events";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
-const denied = (message: string, code: string, status = 403) => Object.assign(new Error(message), { status, code });
-
-/**
- * The authenticated driver vehicle. It comes only from the signed vehicle PIN session, never from the URL or request body, so
- * one vehicle can neither read nor change another vehicle's notifications.
- */
-async function driverVehicle(request: NextRequest): Promise<"van1" | "van2"> {
-  const principal = await requireLogisticsAccess(request);
-  if (principal.sessionKind !== "mobile-pin") throw denied("Driver notifications are available to vehicle sessions only.", "LOGISTICS_NOTIFICATIONS_VEHICLE_REQUIRED");
-  const permitted = principal.permittedVehicleIds ?? [];
-  const vehicle = permitted[0];
-  if (permitted.length !== 1 || (vehicle !== "van1" && vehicle !== "van2")) throw denied("This session cannot access notifications.", "LOGISTICS_NOTIFICATIONS_VEHICLE_DENIED");
-  const requested = request.nextUrl.searchParams.get("vehicle");
-  if (requested && requested !== vehicle) throw denied("This session cannot access the requested vehicle.", "LOGISTICS_MOBILE_VEHICLE_DENIED");
-  return vehicle;
-}
-
 /** The fields the driver app needs. Nothing internal (event ids, dedupe keys, push text) leaves the server. */
 const publicItem = (item: InboxNotification) => ({
   id: item.id,

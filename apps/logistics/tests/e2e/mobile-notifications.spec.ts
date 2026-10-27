@@ -18,6 +18,7 @@ async function openDriverApp(page: Page, options: { items: (date: string) => Ite
     const method = route.request().method();
     if (url.pathname === "/api/logistics/mobile/session" && method === "GET") return route.fulfill({ json: { vehicleId: "van1", sessionId: "e2e" } });
     if (url.pathname === "/api/logistics/vehicles") return route.fulfill({ json: { permittedVehicleIds: ["van1", "van2"] } });
+    if (url.pathname === "/api/logistics/driver-notifications/push") return route.fulfill({ json: { enabled: true, publicKey: "B".repeat(87), devices: 0 } });
     if (url.pathname === "/api/logistics/driver-notifications") {
       if (method === "GET") {
         if (failuresLeft > 0) { failuresLeft -= 1; return route.fulfill({ status: 503, json: { error: { message: "Notifications are unavailable right now." } } }); }
@@ -114,6 +115,8 @@ test("history comes from the server: a fresh page load shows the same notificati
   await openDriverApp(page, { items: date => [item("a", date)] });
   await nav(page).getByRole("button", { name: /^Notifications/ }).click();
   await page.getByRole("button", { name: /^Unread\./ }).click();
+  await expect(nav(page).getByRole("button", { name: "Run", exact: true })).toHaveAttribute("aria-current", "page");
+  await page.waitForTimeout(500); // let the back-stack traversal that closes the Notifications layer finish before reloading
   await page.reload();
   await page.getByText("Run 1").first().waitFor({ timeout: 60_000 });
   await nav(page).getByRole("button", { name: /^Notifications/ }).click();
@@ -138,3 +141,67 @@ for (const width of [320, 360, 375, 390, 412, 430, 540, 600, 768, 1024]) {
     expect(await overflow(page)).toBe(true);
   });
 }
+
+const here = (page: Page) => new URL(page.url()).pathname;
+
+test("Android back closes Notifications and More first; only the Run screen leaves the app", async ({ page }) => {
+  await openDriverApp(page, { items: date => [item("a", date)] });
+  await nav(page).getByRole("button", { name: /^Notifications/ }).click();
+  await expect(page.getByRole("button", { name: /^Unread\./ })).toHaveCount(1);
+  await page.goBack();
+  await expect(nav(page).getByRole("button", { name: "Run", exact: true })).toHaveAttribute("aria-current", "page");
+  expect(here(page)).toBe("/mobile/van1");
+
+  await page.getByRole("button", { name: "Open more" }).click();
+  await expect(page.getByText("PUSH NOTIFICATIONS")).toBeVisible();
+  await page.goBack();
+  await expect(nav(page).getByRole("button", { name: "Run", exact: true })).toHaveAttribute("aria-current", "page");
+  expect(here(page)).toBe("/mobile/van1");
+
+  // On the Run screen itself, back leaves the app (the browser goes to the previous page).
+  await page.goBack();
+  await expect.poll(() => page.url()).not.toContain("/mobile/van1");
+});
+
+test("closing a screen with the on-screen navigation leaves no stale back entry behind", async ({ page }) => {
+  await openDriverApp(page, { items: date => [item("a", date)] });
+  await nav(page).getByRole("button", { name: /^Notifications/ }).click();
+  await nav(page).getByRole("button", { name: "Run", exact: true }).click();
+  await expect(nav(page).getByRole("button", { name: "Run", exact: true })).toHaveAttribute("aria-current", "page");
+  await page.goBack();
+  await expect.poll(() => page.url()).not.toContain("/mobile/van1");
+});
+
+test("opening a notification from the push deep link (?notice=) opens it once and removes the parameter", async ({ page }) => {
+  const { posts } = await openDriverApp(page, { items: date => [item("deep", date)] });
+  await page.goto("/mobile/van1?notice=deep");
+  await page.getByText("Run 1").first().waitFor({ timeout: 60_000 });
+  await expect.poll(() => posts.filter(post => post.action === "mark-read" && post.id === "deep").length).toBe(1);
+  await expect.poll(() => new URL(page.url()).searchParams.has("notice")).toBe(false);
+});
+
+test("More offers to turn push on when the phone has not been asked yet", async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(Notification, "permission", { get: () => "default" }));
+  await openDriverApp(page, { items: date => [item("a", date)] });
+  await page.getByRole("button", { name: "Open more" }).click();
+  await expect(page.getByRole("button", { name: "Turn on notifications" })).toBeVisible();
+  await expect(page.getByText("Notifications are off on this phone")).toBeVisible();
+});
+
+test("blocked notifications say how to fix it", async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(Notification, "permission", { get: () => "denied" }));
+  await openDriverApp(page, { items: date => [item("a", date)] });
+  await page.getByRole("button", { name: "Open more" }).click();
+  await expect(page.getByText("Notifications are blocked")).toBeVisible();
+  await expect(page.getByText("Turn notifications on for this app in your phone's settings")).toBeVisible();
+});
+
+test.describe("iPhone in a browser tab", () => {
+  test.use({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1" });
+  test("is told to add the app to the Home Screen before push can work", async ({ page }) => {
+    await openDriverApp(page, { items: date => [item("a", date)] });
+    await page.getByRole("button", { name: "Open more" }).click();
+    await expect(page.getByText("Add to your Home Screen first")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Turn on notifications" })).toHaveCount(0);
+  });
+});

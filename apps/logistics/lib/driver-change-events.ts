@@ -73,7 +73,7 @@ export type DriverNotificationStore = {
    * Atomically: create each notice that does not already exist, and mark the event processed. Any failure leaves the event
    * pending, so the next processing run retries it without duplicating notices.
    */
-  commitProcessedEvent(eventId: string, notices: InboxNotification[], status: "processed" | "expired", processedAt: string): Promise<void>;
+  commitProcessedEvent(eventId: string, notices: InboxNotification[], status: "processed" | "expired", processedAt: string): Promise<boolean | void>;
   /** Records a failed attempt. After MAX_PROCESSING_ATTEMPTS the event is parked as failed and no longer retried. */
   recordFailure(eventId: string, message: string): Promise<void>;
   /** Vehicle-scoped listing, newest first, bounded. */
@@ -91,7 +91,7 @@ export type InboxNotification = DriverNotification & { id: string; createdAt: st
  * processing can be delayed, crash and resume, or run after later edits without losing or inventing changes.
  * Events for a previous service date are marked expired and produce no notices (no retrospective flood).
  */
-export async function processPendingDriverChanges(store: DriverNotificationStore, now: Date, limit = 50): Promise<{ processed: number; created: number; expired: number }> {
+export async function processPendingDriverChanges(store: DriverNotificationStore, now: Date, limit = 50, onCommitted?: (notices: InboxNotification[]) => void): Promise<{ processed: number; created: number; expired: number }> {
   const today = londonServiceDate(now);
   const processedAt = now.toISOString();
   let created = 0;
@@ -105,7 +105,9 @@ export async function processPendingDriverChanges(store: DriverNotificationStore
     }
     const notices = diffBatch(event.serviceDate, event.before, event.after).map(notice => ({ ...notice, id: driverNotificationDocId(event.eventId, notice.dedupeKey), createdAt: processedAt, eventId: event.eventId }));
     try {
-      await store.commitProcessedEvent(event.eventId, notices, "processed", processedAt);
+      // Only the processor that actually committed the event hands its notices on (for push); a concurrent no-op returns false.
+      const committed = await store.commitProcessedEvent(event.eventId, notices, "processed", processedAt);
+      if (committed !== false && notices.length) onCommitted?.(notices);
     } catch (error) {
       await store.recordFailure(event.eventId, error instanceof Error ? error.message : "processing failed").catch(() => undefined);
       throw error;

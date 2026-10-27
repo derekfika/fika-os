@@ -55,3 +55,45 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+// ---- Web Push -------------------------------------------------------------------------------------------------------------
+// The server sends a small JSON payload ({ v: 1, title, body, tag, url, vehicleId }). Every push must show a notification
+// (userVisibleOnly), so an unreadable payload still produces a generic one. Only same-origin /mobile/ links are ever opened.
+const safeUrl = (value) => {
+  try {
+    const url = new URL(value, self.location.origin);
+    return url.origin === self.location.origin && url.pathname.startsWith("/mobile/") ? url.pathname + url.search : "/mobile/";
+  } catch { return "/mobile/"; }
+};
+
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
+  const valid = data && data.v === 1 && typeof data.title === "string";
+  const vehicle = valid && (data.vehicleId === "van1" || data.vehicleId === "van2") ? data.vehicleId : "van1";
+  const title = valid ? String(data.title).slice(0, 120) : "FIKA Logistics";
+  const options = {
+    body: valid && typeof data.body === "string" ? data.body.slice(0, 240) : "You have a new notification.",
+    tag: valid && typeof data.tag === "string" ? data.tag.slice(0, 64) : undefined,
+    icon: `/pwa/${vehicle}-192.png`,
+    badge: `/pwa/${vehicle}-192.png`,
+    data: { url: safeUrl(valid ? data.url : "/mobile/") },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = safeUrl(event.notification.data && event.notification.data.url);
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const open = windows.find((client) => new URL(client.url).pathname.startsWith("/mobile/"));
+    if (open) {
+      // An app window is already open: bring it forward and tell it which notification to open, without reloading it.
+      try { await open.focus(); } catch { /* not focusable */ }
+      open.postMessage({ type: "fika-open-notice", url: target });
+      return;
+    }
+    await self.clients.openWindow(target);
+  })());
+});
