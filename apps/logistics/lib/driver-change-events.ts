@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { diffBatch, isEligibleNow, londonServiceDate, type DriverNotification, type DriverRunSnapshot, type DriverVisit } from "./driver-notifications";
+import { diffBatch, isEligibleNow, londonServiceDate, type DriverNotification, type DriverRunSnapshot } from "./driver-notifications";
 
 /**
  * Durable, immutable record of one committed planner change. It is written inside the same Firestore transaction as the
@@ -41,27 +41,12 @@ export function driverChangeEventId(sourceAction: string, runs: Array<{ runId: s
   return createHash("sha256").update(identity).digest("hex");
 }
 
-/** Stable document id for one notice, so writing the same notice twice cannot create two inbox rows. */
-export const driverNotificationDocId = (dedupeKey: string) => createHash("sha256").update(dedupeKey).digest("hex");
-
-type Leg = { lane: "delivery" | "collection"; load: { id: string; destinationLabelSnapshot?: string; scheduledTime?: string; collectionScheduledTime?: string; notes?: string }; jobs: Array<{ id: string; contents?: Array<{ description?: string; quantity?: number; unit?: string }> }> };
-
-/** Driver-visible visits for a run, built from the authoritative legs already read inside the transaction. */
-export function driverVisitsFromLegs(legs: Leg[]): DriverVisit[] {
-  return legs.map(leg => {
-    const collection = leg.lane === "collection";
-    const contents = leg.jobs.flatMap(job => job.contents ?? []);
-    return {
-      visitId: `${leg.load.id}:${leg.lane}`,
-      lane: leg.lane,
-      destination: leg.load.destinationLabelSnapshot || "Destination",
-      time: collection ? leg.load.collectionScheduledTime : leg.load.scheduledTime,
-      jobIds: leg.jobs.map(job => job.id).sort(),
-      quantities: contents.map(item => `${item.quantity ?? 0} ${item.unit ?? ""}`.trim()).sort().join(" · "),
-      instructions: leg.load.notes ?? "",
-    };
-  }).sort((a, b) => a.visitId.localeCompare(b.visitId));
-}
+/**
+ * Stable document id for one notice: the committed event plus the notice subject. Including the event keeps two independent
+ * committed changes distinct even when they leave the parent run version unchanged, while processing the same event twice
+ * writes the same documents.
+ */
+export const driverNotificationDocId = (eventId: string, dedupeKey: string) => createHash("sha256").update(`${eventId}|${dedupeKey}`).digest("hex");
 
 type StageTransaction = { get(ref: unknown): Promise<{ exists: boolean }>; create(ref: unknown, value: unknown): unknown };
 
@@ -114,7 +99,7 @@ export async function processPendingDriverChanges(store: DriverNotificationStore
       expired += 1;
       continue;
     }
-    const notices = diffBatch(event.serviceDate, event.before, event.after).map(notice => ({ ...notice, id: driverNotificationDocId(notice.dedupeKey), createdAt: processedAt, eventId: event.eventId }));
+    const notices = diffBatch(event.serviceDate, event.before, event.after).map(notice => ({ ...notice, id: driverNotificationDocId(event.eventId, notice.dedupeKey), createdAt: processedAt, eventId: event.eventId }));
     try {
       await store.commitProcessedEvent(event.eventId, notices, "processed", processedAt);
     } catch (error) {

@@ -3,12 +3,13 @@ import type { LogisticsPrincipal } from "./auth";
 import { authorizeLoad, authorizeRun, assertSharedPlannerAccess, authorizeOwnedOrSharedWork } from "./resource-authority";
 import { deliveryLoads, logisticsAssignments, runs, stops } from "./store";
 import { requireGovernedDriver } from "./driver-authority";
+import { stageDriverChangeFromWrites, type CaptureContext } from "./driver-change-capture";
 
 /** Buffer writes until every current AND proposed resource owner is authorized.
  * Authorization reads join the same Firestore transaction, so a concurrent owner
  * change retries the decision. This also covers indirectly changed linked stops.
  */
-export async function authorizeTransaction<T>(transaction: Transaction, principal: LogisticsPrincipal, callback: (transaction: Transaction) => Promise<T>, cookie?: string, revalidateDrivers = false) {
+export async function authorizeTransaction<T>(transaction: Transaction, principal: LogisticsPrincipal, callback: (transaction: Transaction) => Promise<T>, cookie?: string, revalidateDrivers = false, capture?: CaptureContext) {
   const writes: Array<{ method: "set" | "create" | "update" | "delete"; args: any[] }> = [];
   const proxy = new Proxy(transaction, { get(target, name) {
     if (["set", "create", "update", "delete"].includes(String(name))) return (...args: any[]) => { writes.push({ method: name as any, args }); return proxy; };
@@ -115,6 +116,12 @@ export async function authorizeTransaction<T>(transaction: Transaction, principa
         for (const write of writes.filter(item => item.args[0].path === ref.path && item.method !== "delete")) Object.assign(write.args[1], governed);
       }
     }
+  }
+  // Immutable driver change event: derived from the same reads and the buffered writes, staged in THIS transaction so the change
+  // and its notification history commit together. Authorization has already passed. A capture problem never blocks the save.
+  if (capture) {
+    try { await stageDriverChangeFromWrites(transaction, writes, capture); }
+    catch (error) { console.error("[driver-notifications] change capture skipped", error instanceof Error ? error.message : "unknown error"); }
   }
   for (const write of writes) (transaction[write.method] as any)(...write.args);
   return result;

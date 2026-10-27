@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  driverChangeEventId, driverVisitsFromLegs, inboxFor, markAllNotificationsRead, markNotificationRead, processPendingDriverChanges,
+  driverChangeEventId, inboxFor, markAllNotificationsRead, markNotificationRead, processPendingDriverChanges,
   type DriverChangeEvent, type DriverNotificationStore, type InboxNotification,
 } from "../lib/driver-change-events";
 import type { DriverRunSnapshot, DriverVisit } from "../lib/driver-notifications";
@@ -162,14 +162,4 @@ test("the event identity changes with each committed run version, so independent
   const replay = driverChangeEventId("update-run-timing", [{ runId: "r1", beforeVersion: 1, afterVersion: 2 }]);
   assert.notEqual(first, second);
   assert.equal(first, replay);
-});
-
-test("driver visits are built from the authoritative legs, with quantities and instructions", () => {
-  const visits = driverVisitsFromLegs([
-    { lane: "delivery", load: { id: "L1", destinationLabelSnapshot: "Haleon", scheduledTime: "10:00", notes: "Use bay 2" }, jobs: [{ id: "J1", contents: [{ quantity: 7, unit: "items" }, { quantity: 85, unit: "pieces" }] }] },
-    { lane: "collection", load: { id: "L2", destinationLabelSnapshot: "Commerzbank", collectionScheduledTime: "14:00" }, jobs: [{ id: "J2" }] },
-  ]);
-  assert.equal(visits.find(item => item.visitId === "L1:delivery")!.quantities, "7 items · 85 pieces");
-  assert.equal(visits.find(item => item.visitId === "L1:delivery")!.instructions, "Use bay 2");
-  assert.equal(visits.find(item => item.visitId === "L2:collection")!.time, "14:00");
 });

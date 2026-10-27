@@ -1,9 +1,7 @@
 import { db } from "./firebase";
-import type { DeliveryRun } from "./types";
-import { londonServiceDate, type DriverRunSnapshot, type DriverVisit } from "./driver-notifications";
 import {
-  MAX_PROCESSING_ATTEMPTS, driverChangeEventId, processPendingDriverChanges, stageDriverChangeEvent,
-  type ChangeMutation, type DriverChangeEvent, type DriverNotificationStore, type InboxNotification,
+  MAX_PROCESSING_ATTEMPTS, processPendingDriverChanges,
+  type DriverChangeEvent, type DriverNotificationStore, type InboxNotification,
 } from "./driver-change-events";
 
 export const driverChangeEvents = () => db.collection("fikaLogisticsDriverChangeEventsV1");
@@ -105,41 +103,4 @@ export async function processDriverNotificationsSafely(now = new Date()) {
     console.error("[driver-notifications] processing deferred for retry", error instanceof Error ? error.message : "unknown error");
     return undefined;
   }
-}
-
-const vehicleLabelFor = (run: Pick<DeliveryRun, "vehicleId" | "vehicleLabel">) => run.vehicleLabel || (run.vehicleId === "van2" ? "Van 2" : "Van 1");
-
-/** Driver-visible snapshot of a run, or undefined when the run is not a vehicle run the driver app can show. */
-export function driverRunSnapshotFromRun(run: DeliveryRun, visits: DriverVisit[] = []): DriverRunSnapshot | undefined {
-  if (run.vehicleId !== "van1" && run.vehicleId !== "van2") return undefined;
-  return {
-    runId: run.canonicalId,
-    version: run.version,
-    vehicleId: run.vehicleId,
-    vehicleLabel: vehicleLabelFor(run),
-    serviceDate: run.serviceDate,
-    status: run.retiredAt ? "cancelled" : run.status,
-    departure: run.plannedCpuDepartureTime,
-    return: run.plannedCpuReturnTime,
-    visits,
-    stopOrder: run.orderedStopIds,
-  };
-}
-
-type Transaction = Parameters<Parameters<typeof db.runTransaction>[0]>[0];
-
-/**
- * Stage the immutable change event inside the planner transaction that is committing `after`. Must be called after the
- * transaction's reads and before its first write. Only today's driver-relevant runs are recorded; everything else is skipped
- * so storage stays bounded and future-dated edits can never notify later.
- */
-export async function stageDriverRunChange(transaction: Transaction, input: { action: string; actorId: string; now: string; before: DeliveryRun; after: DeliveryRun; beforeVisits?: DriverVisit[]; afterVisits?: DriverVisit[]; mutations?: ChangeMutation[] }) {
-  if (input.after.serviceDate !== londonServiceDate(new Date(input.now))) return "skipped" as const;
-  const before = driverRunSnapshotFromRun(input.before, input.beforeVisits);
-  const after = driverRunSnapshotFromRun(input.after, input.afterVisits);
-  if (!before || !after) return "skipped" as const;
-  const mutations = [{ entityType: "run" as const, entityId: input.after.canonicalId, beforeVersion: input.before.version, afterVersion: input.after.version }, ...(input.mutations ?? [])];
-  const eventId = driverChangeEventId(input.action, [{ runId: after.runId, beforeVersion: before.version, afterVersion: after.version }], mutations);
-  const result = await stageDriverChangeEvent(transaction as never, driverChangeEvents().doc(eventId), { eventId, serviceDate: after.serviceDate, sourceAction: input.action, actorId: input.actorId, committedAt: input.now, before: [before], after: [after], mutations });
-  return result;
 }

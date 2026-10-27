@@ -227,22 +227,31 @@ export function diffBatch(today: string, before: DriverRunSnapshot[], after: Dri
     notices.push(...diffRun(previous, current, movedHere));
   }
 
-  // Reassignment notices are keyed by the destination run committed version, so one move notifies once per affected vehicle.
-  // Wording follows the lane of the work that moved: a collection is never described as a delivery.
+  // Moves are reported once per moved stop (not once per job) and name the destination, never an internal id. Each notice is keyed by
+  // the destination run's committed version, so one move notifies once per affected vehicle. Wording follows the lane that moved.
+  const groups = new Map<string, { from: string; to: string; lane: "delivery" | "collection"; destination: string; visitId: string; jobs: number }>();
   for (const [job, { from, to }] of moved) {
-    const fromRun = beforeByRun.get(from);
     const toRun = afterByRun.get(to);
+    const visit = toRun?.visits.find(candidate => candidate.jobIds.includes(job));
+    const key = `${from}>${to}|${visit?.visitId ?? job}`;
+    const group = groups.get(key);
+    if (group) group.jobs += 1;
+    else groups.set(key, { from, to, lane: visit?.lane ?? "delivery", destination: visit?.destination ?? "your stop", visitId: visit?.visitId ?? job, jobs: 1 });
+  }
+  for (const group of groups.values()) {
+    const fromRun = beforeByRun.get(group.from);
+    const toRun = afterByRun.get(group.to);
     if (!toRun || !isDriverVisible(toRun)) continue;
-    const lane = toRun.visits.find(visit => visit.jobIds.includes(job))?.lane ?? "delivery";
-    const work = lane === "collection" ? "collection" : "delivery";
-    const Work = lane === "collection" ? "Collection" : "Delivery";
+    const work = group.lane === "collection" ? "collection" : "delivery";
+    const Work = group.lane === "collection" ? "Collection" : "Delivery";
+    const where = group.destination === "your stop" ? "" : ` at ${group.destination}`;
     if (fromRun && isDriverVisible(fromRun) && fromRun.vehicleId !== toRun.vehicleId) {
-      notices.push(note("work-reassigned", fromRun, toRun.version, { title: "Work reassigned", inboxText: `A ${work} has been removed from your run (${job}).`, pushTail: `A ${work} has been removed from your run.`, subject: `moved-out:${job}` }));
+      notices.push(note("work-reassigned", fromRun, toRun.version, { title: "Work reassigned", inboxText: `${Work}${where} has been removed from your run.`, pushTail: `A ${work} has been removed from your run.`, subject: `moved-out:${group.visitId}` }));
     } else if (fromRun && isDriverVisible(fromRun)) {
-      notices.push(note("load-details-changed", toRun, toRun.version, { title: "Load details changed", inboxText: `A ${work} moved from one of your runs to another (${job}).`, pushTail: "Review your updated load quantities.", subject: `moved-within:${job}` }));
+      notices.push(note("load-details-changed", toRun, toRun.version, { title: "Load details changed", inboxText: `${Work}${where} moved from one of your runs to another.`, pushTail: "Review your updated load quantities.", subject: `moved-within:${group.visitId}` }));
     }
     if (!fromRun || fromRun.vehicleId !== toRun.vehicleId) {
-      notices.push(note(lane === "collection" ? "collection-assigned" : "delivery-assigned", toRun, toRun.version, { title: `New ${work} assigned`, inboxText: `${Work} (${job}) has been added to your run.`, pushTail: `A ${work} has been added to your run.`, subject: `moved-in:${job}` }));
+      notices.push(note(group.lane === "collection" ? "collection-assigned" : "delivery-assigned", toRun, toRun.version, { title: `New ${work} assigned`, inboxText: `${Work}${where} has been added to your run.`, pushTail: `A ${work} has been added to your run.`, subject: `moved-in:${group.visitId}` }));
     }
   }
   return notices;

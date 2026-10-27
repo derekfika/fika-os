@@ -1,4 +1,5 @@
-import { processDriverNotificationsSafely, stageDriverRunChange } from "@/lib/driver-notification-store";
+import { processDriverNotificationsSafely } from "@/lib/driver-notification-store";
+import { driverCaptureFor, type CaptureContext } from "@/lib/driver-change-capture";
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
 import { assertSameOrigin } from "@/lib/csrf";
@@ -112,6 +113,7 @@ async function runAuthorizedTracedTransaction<T>(
   principal: LogisticsPrincipal,
   cookie?: string,
   revalidateDrivers = false,
+  capture?: CaptureContext,
 ): Promise<T> {
   return db.runTransaction(async (transaction) => {
     const originalGet = transaction.get.bind(transaction) as (reference: any) => Promise<any>;
@@ -132,7 +134,7 @@ async function runAuthorizedTracedTransaction<T>(
       });
       return snapshot;
     };
-    return authorizeTransaction(transaction, principal, callback, cookie, revalidateDrivers);
+    return authorizeTransaction(transaction, principal, callback, cookie, revalidateDrivers, capture);
   });
 }
 function labelFor(oplocs: Awaited<ReturnType<typeof fetchOplocs>>, id: string) {
@@ -700,7 +702,14 @@ async function handlePost(request: NextRequest) {
   let assignmentEvidence: { requestId: string; checkpoint: string; sourceAuthority: string; jobId: string; requirementId?: string; serviceDate: string; targetRunId?: string; expectedJobVersion?: number; expectedJobVersions?: Record<string, number>; expectedRunVersion?: number; expectedTargetRunVersion?: number; expectedLoadVersion?: number; expectedLoadVersions?: Record<string, number> } | undefined;
   try {
     const principal = await requireLogisticsAccess(request);
-    const runTracedTransaction = <T,>(callback: (transaction: Transaction) => Promise<T>) => runAuthorizedTracedTransaction(callback, principal, request.headers.get("cookie") || undefined, ["set-run-driver", "update-run"].includes(body.action));
+    // Every planner write goes through here. Non-driver-visible actions capture nothing; the rest stage an immutable change event inside
+    // the same transaction, then process it best-effort after the save (a processing failure can never fail the save).
+    const runTracedTransaction = async <T,>(callback: (transaction: Transaction) => Promise<T>) => {
+      const capture = driverCaptureFor(body.action, actorId, now);
+      const result = await runAuthorizedTracedTransaction(callback, principal, request.headers.get("cookie") || undefined, ["set-run-driver", "update-run"].includes(body.action), capture);
+      if (capture) await processDriverNotificationsSafely();
+      return result;
+    };
     if (hostedRuntime()) assertSameOrigin(request);
     const body = (await request.json()) as {
       action: string;
@@ -1239,10 +1248,9 @@ async function handlePost(request: NextRequest) {
         if (!["draft", "planned"].includes(run.status)) throw new HttpError(422, "Journey times cannot change after a run is marked ready or departs.");
         const { plannedCpuDepartureTime: _departure, plannedCpuReturnTime: _return, ...withoutTimes } = run;
         const next: DeliveryRun = { ...withoutTimes, ...(departure ? { plannedCpuDepartureTime: departure, plannedCpuReturnTime: returnTime } : {}), version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: departure ? "run-journey-times-updated" : "run-journey-times-cleared", at: now, by, version: run.version + 1 }] };
-        await stageDriverRunChange(transaction, { action: "update-run-timing", actorId, now, before: run, after: next });
         transaction.set(ref, next);
         return next;
-      }, principal, request.headers.get("cookie") || undefined);
+      }, principal, request.headers.get("cookie") || undefined, false, driverCaptureFor(body.action, actorId, now));
       await recordCanonicalLogisticsChange({ serviceDate: saved.serviceDate, entityType: "run", entityId: saved.canonicalId, changeType: departure ? "run-journey-times-updated" : "run-journey-times-cleared", revision: saved.version, actorId, by, changedAt: now });
       await processDriverNotificationsSafely();
       return NextResponse.json(saved);
@@ -1349,7 +1357,6 @@ async function handlePost(request: NextRequest) {
         const orderProblem = transferOrderProblem(nativeInOrder.map((stop, index) => ({ ...stop, sequence: index + 1 })), movementSnapshots.map((item) => item.data() as MovementRequest));
         if (orderProblem) throw new HttpError(orderProblem.includes("incomplete or ambiguous") ? 409 : 422, orderProblem);
         if (JSON.stringify(run.orderedStopIds) === JSON.stringify(submitted)) return run; // idempotent replay
-        await stageDriverRunChange(transaction, { action: "set-run-stop-order", actorId, now, before: run, after: { ...run, orderedStopIds: submitted, version: run.version + 1 } });
         for (const [index, stop] of nativeInOrder.entries()) transaction.set(stops().doc(stop.canonicalId), { ...stop, sequence: index + 1 });
         const next: DeliveryRun = { ...run, orderedStopIds: submitted, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "run-stop-order-saved", at: now, by, version: run.version + 1 }] };
         transaction.set(ref, next);
@@ -1357,7 +1364,6 @@ async function handlePost(request: NextRequest) {
       });
       const event = await appendLogisticsChange({ serviceDate: saved.serviceDate, entityType: "run", entityId: saved.canonicalId, changeType: "run-stop-order-saved", revision: saved.version, changedAt: now, actorId });
       await rebuildLogisticsProjection(saved.serviceDate, by, event.sequence);
-      await processDriverNotificationsSafely();
       return NextResponse.json(saved);
     }
     if (
