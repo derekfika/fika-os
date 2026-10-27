@@ -1,4 +1,4 @@
-.overview { display: grid; gap: 14px; padding: 14px 16px 16px; color: var(--fika-text-primary); font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+.overview { display: grid; gap: 14px; padding: 14px 16px 16px; color: var(--fika-text-primary); font-family: var(--font-body); }
 .progress { display: grid; gap: 8px; }
 .progressText { display: flex; justify-content: space-between; gap: 12px; font-size: 15px; font-weight: 700; }
 .track { height: 10px; border-radius: 999px; background: var(--fika-surface-subtle); overflow: hidden; }

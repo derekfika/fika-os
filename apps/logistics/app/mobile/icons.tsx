@@ -18,6 +18,6 @@ export const ArrowRightIcon = (p: P) => <Icon {...p}><path d="M5 12h14M13 6l6 6-
 export const ArrowLeftIcon = (p: P) => <Icon {...p}><path d="M19 12H5M11 6l-6 6 6 6" /></Icon>;
 export const ChevronRightIcon = (p: P) => <Icon {...p}><path d="M9 6l6 6-6 6" /></Icon>;
 export const MapIcon = (p: P) => <Icon {...p}><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14" /></Icon>;
-export const MessageIcon = (p: P) => <Icon {...p}><path d="M4 5h16v11H9l-5 4z" /></Icon>;
+export const BellIcon = (p: P) => <Icon {...p}><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z" /><path d="M10 20h4" /></Icon>;
 export const MoreIcon = (p: P) => <Icon {...p}><circle cx="6" cy="12" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="18" cy="12" r="1.2" /></Icon>;
 export const NoteIcon = (p: P) => <Icon {...p}><path d="M7 3h8l4 4v14H7z" /><path d="M15 3v4h4M10 12h6M10 16h6" /></Icon>;

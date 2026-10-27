@@ -1,10 +1,10 @@
-.detail { display: grid; gap: 14px; padding: 8px 16px 24px; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: var(--fika-text-primary); }
+.detail { display: grid; gap: 14px; padding: 8px 16px 24px; font-family: var(--font-body); color: var(--fika-text-primary); }
 .back { display: inline-flex; align-items: center; gap: 8px; justify-self: start; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--purple); font-size: 15px; font-weight: 600; }
 .headRow { display: flex; align-items: center; gap: 10px; }
 .number { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 999px; background: var(--purple); color: #ffffff; font-size: 19px; font-weight: 700; }
 .pill { padding: 6px 14px; border-radius: 999px; background: #e4dcfa; color: var(--purple); font-size: 14px; font-weight: 700; }
 .timePill { margin-left: auto; padding: 6px 14px; border-radius: 999px; background: #e4dcfa; color: var(--purple); font-size: 14px; font-weight: 700; }
-.detail h2.title { max-width: none; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: 32px; line-height: 1.1; font-weight: 800; letter-spacing: -0.01em; text-transform: none; }
+.detail h2.title { max-width: none; margin: 0; font-family: var(--font-display); font-size: 32px; line-height: 1.1; font-weight: 800; letter-spacing: -0.01em; text-transform: none; }
 .address { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--fika-text-secondary); font-size: 15px; }
 .siteActions { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; }
 .detail .outline { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 10px; border: 1px solid var(--fika-border-default); border-radius: 12px; background: var(--fika-surface-card); color: var(--fika-text-primary); font-size: 14px; font-weight: 600; }
