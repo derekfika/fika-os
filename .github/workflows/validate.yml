@@ -97,6 +97,9 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix '${{ steps.app.outputs.path }}'
       - run: npm --prefix '${{ steps.app.outputs.path }}' test
+      - name: Shared contract tests (apps/shared/*.test.ts)
+        if: matrix.app == 'cpu'
+        run: find apps/shared -maxdepth 1 -name '*.test.ts' -print0 | sort -z | xargs -0 -r npm --prefix apps/cpu-production exec -- tsx --test
       - name: Ad-Hoc service tests on the Firestore emulator
         if: matrix.app == 'ad-hoc'
         run: firebase emulators:exec --only firestore --project demo-fika-os --config tools/workflow/emulator.json 'npm --prefix apps/ad-hoc-production run test:emulator'
