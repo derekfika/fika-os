@@ -1,5 +1,8 @@
 import { createHmac, createHash, randomUUID, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 export const MOBILE_SESSION_COOKIE = "fika_logistics_mobile_session";
+/** Names the van a mobile request acts for. The server reads only that van's session cookie, so two vans can be signed in at once. */
+export const MOBILE_VEHICLE_HEADER = "x-fika-logistics-vehicle";
+export const mobileSessionCookieName = (vehicle: "van1" | "van2") => `${MOBILE_SESSION_COOKIE}_${vehicle}`;
 export const MOBILE_SESSION_TTL_SECONDS = 8 * 60 * 60;
 export const MOBILE_PIN_ATTEMPT_LIMIT = 5;
 export const MOBILE_PIN_WINDOW_MS = 15 * 60 * 1000;
@@ -64,12 +67,12 @@ export function verifyMobilePinSession(token: string | undefined, input: { secre
   } catch { return undefined; }
 }
 
-export function mobileCookie(token: string, secure: boolean) {
-  return `${MOBILE_SESSION_COOKIE}=${token}; Path=/api/logistics; Max-Age=${MOBILE_SESSION_TTL_SECONDS}; HttpOnly; SameSite=Strict${secure ? "; Secure" : ""}`;
+export function mobileCookie(token: string, secure: boolean, vehicle: "van1" | "van2") {
+  return `${mobileSessionCookieName(vehicle)}=${token}; Path=/api/logistics; Max-Age=${MOBILE_SESSION_TTL_SECONDS}; HttpOnly; SameSite=Strict${secure ? "; Secure" : ""}`;
 }
 
-export function clearMobileCookie(secure: boolean) {
-  return `${MOBILE_SESSION_COOKIE}=; Path=/api/logistics; Max-Age=0; HttpOnly; SameSite=Strict${secure ? "; Secure" : ""}`;
+export function clearMobileCookie(secure: boolean, vehicle: "van1" | "van2") {
+  return `${mobileSessionCookieName(vehicle)}=; Path=/api/logistics; Max-Age=0; HttpOnly; SameSite=Strict${secure ? "; Secure" : ""}`;
 }
 
 export function reserveMobilePinAttempt(state: MobilePinRateState | undefined, now: number): { allowed: boolean; state?: MobilePinRateState } {

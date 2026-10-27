@@ -7,7 +7,7 @@ function request(pathname: string, vehicle?: string) {
     method: "GET",
     url: `https://logistics-staging.fikacatering.com${pathname}`,
     cookies: { get: () => ({ value: "signed-session-cookie" }) },
-    headers: new Headers({ "x-fika-logistics-mobile-request": "1" }),
+    headers: new Headers({ "x-fika-logistics-mobile-request": "1", "x-fika-logistics-vehicle": "van1" }),
     nextUrl: { pathname, searchParams: new URLSearchParams(vehicle ? { vehicle } : {}) },
   };
 }

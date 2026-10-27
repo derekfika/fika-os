@@ -41,7 +41,7 @@ export default function MobilePinGate({ vehicle }: { vehicle: "Van 1" | "Van 2" 
 
   async function signOut() {
     setBusy(true);
-    try { await fetch("/api/logistics/mobile/session", { method: "DELETE" }); }
+    try { await fetch("/api/logistics/mobile/session", { method: "DELETE", headers: { "x-fika-logistics-vehicle": id } }); }
     finally { setBusy(false); setPin(""); setError(""); setState("locked"); }
   }
 

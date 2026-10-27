@@ -37,10 +37,10 @@ async function loadMobileProjection(date: string, vehicleQuery: string, headers:
 }
 
 export default function MobileWorkflow({ fixedVan, onSignOut, signingOut }: { fixedVan?: "Van 1" | "Van 2"; onSignOut?: () => void; signingOut?: boolean } = {}) {
-  return <VehicleAuthorityProvider mobilePinSession={Boolean(fixedVan)}><MobileWorkflowContents fixedVan={fixedVan} onSignOut={onSignOut} signingOut={signingOut} /></VehicleAuthorityProvider>;
+  return <VehicleAuthorityProvider mobileVehicle={fixedVan ? (fixedVan === "Van 2" ? "van2" : "van1") : undefined}><MobileWorkflowContents fixedVan={fixedVan} onSignOut={onSignOut} signingOut={signingOut} /></VehicleAuthorityProvider>;
 }
 function MobileWorkflowContents({ fixedVan, onSignOut, signingOut }: { fixedVan?: "Van 1" | "Van 2"; onSignOut?: () => void; signingOut?: boolean }) {
-  const mobileHeaders: Record<string, string> = fixedVan ? { "x-fika-logistics-mobile-request": "1" } : {};
+  const mobileHeaders: Record<string, string> = fixedVan ? { "x-fika-logistics-mobile-request": "1", "x-fika-logistics-vehicle": fixedVan === "Van 2" ? "van2" : "van1" } : {};
   const authority = useVehicleAuthority();
   const [selectedVehicle, setSelectedVehicle] = useState<LogisticsVehicleId | "">(fixedVan === "Van 1" ? "van1" : fixedVan === "Van 2" ? "van2" : "");
   const [selectedRunId, setSelectedRunId] = useState("");

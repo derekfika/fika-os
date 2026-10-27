@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 import { assertSameOrigin } from "@/lib/csrf";
 import { hostedRuntime } from "@/lib/runtime";
-import { clearMobileCookie, MOBILE_SESSION_COOKIE, mobileCookie, reserveMobilePinAttempt, signMobilePinSession, verifyMobilePin, verifyMobilePinSession, type MobileVehicleId } from "@/lib/mobile-pin-session";
+import { clearMobileCookie, mobileSessionCookieName, MOBILE_VEHICLE_HEADER, mobileCookie, reserveMobilePinAttempt, signMobilePinSession, verifyMobilePin, verifyMobilePinSession, type MobileVehicleId } from "@/lib/mobile-pin-session";
 
 const RATE_LIMIT_COLLECTION = "fikaLogisticsMobilePinRateLimitsV1";
 const pinVerifier = (vehicleId: MobileVehicleId) => process.env[vehicleId === "van1" ? "LOGISTICS_MOBILE_VAN1_PIN_VERIFIER" : "LOGISTICS_MOBILE_VAN2_PIN_VERIFIER"];
@@ -29,11 +29,12 @@ function sameOrigin(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const token = request.cookies.get(MOBILE_SESSION_COOKIE)?.value;
   const expectedVehicle = request.nextUrl.searchParams.get("vehicle");
+  if (!isVehicle(expectedVehicle)) return NextResponse.json({ error: { code: "LOGISTICS_MOBILE_VEHICLE_REQUIRED", message: "A vehicle is required." } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  const token = request.cookies.get(mobileSessionCookieName(expectedVehicle))?.value;
   const session = verifyMobilePinSession(token, {
     secret: process.env.LOGISTICS_MOBILE_SESSION_SECRET,
-    verifiers: { van1: pinVerifier("van1"), van2: pinVerifier("van2") },
+    verifiers: { [expectedVehicle]: pinVerifier(expectedVehicle) },
   });
   if (!session) return NextResponse.json({ error: { code: "LOGISTICS_MOBILE_SESSION_REQUIRED", message: "Enter the vehicle PIN to continue." } }, { status: 401, headers: { "Cache-Control": "no-store" } });
   if (expectedVehicle && expectedVehicle !== session.vehicleId) return NextResponse.json({ error: { code: "LOGISTICS_MOBILE_VEHICLE_DENIED", message: "This session is for a different vehicle." } }, { status: 403, headers: { "Cache-Control": "no-store" } });
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
     const token = signMobilePinSession({ vehicleId, verifier, secret: sessionSecret });
     const session = verifyMobilePinSession(token, { secret: sessionSecret, verifiers: { [vehicleId]: verifier } });
     if (!session) throw new Error("Vehicle session could not be established.");
-    return NextResponse.json({ vehicleId, expiresAt: session.expiresAt }, { headers: { "Cache-Control": "no-store", "Set-Cookie": mobileCookie(token, isSecure()) } });
+    return NextResponse.json({ vehicleId, expiresAt: session.expiresAt }, { headers: { "Cache-Control": "no-store", "Set-Cookie": mobileCookie(token, isSecure(), vehicleId) } });
   } catch (error) {
     const status = (error as { status?: number }).status || 403;
     return NextResponse.json({ error: { code: status === 503 ? "LOGISTICS_MOBILE_AUTH_UNAVAILABLE" : "LOGISTICS_MOBILE_ORIGIN_REQUIRED", message: status === 503 ? "Vehicle sign-in is temporarily unavailable." : "A same-origin sign-in request is required." } }, { status, headers: { "Cache-Control": "no-store" } });
@@ -64,7 +65,10 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  // Signing out clears only the named van; the other van stays signed in on its own device app.
+  const vehicle = request.headers.get(MOBILE_VEHICLE_HEADER);
+  if (!isVehicle(vehicle)) return NextResponse.json({ error: { code: "LOGISTICS_MOBILE_VEHICLE_REQUIRED", message: "A vehicle is required." } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   try { sameOrigin(request); }
-  catch { return NextResponse.json({ error: { code: "LOGISTICS_MOBILE_ORIGIN_REQUIRED", message: "A same-origin request is required." } }, { status: 403, headers: { "Cache-Control": "no-store", "Set-Cookie": clearMobileCookie(isSecure()) } }); }
-  return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store", "Set-Cookie": clearMobileCookie(isSecure()) } });
+  catch { return NextResponse.json({ error: { code: "LOGISTICS_MOBILE_ORIGIN_REQUIRED", message: "A same-origin request is required." } }, { status: 403, headers: { "Cache-Control": "no-store", "Set-Cookie": clearMobileCookie(isSecure(), vehicle) } }); }
+  return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store", "Set-Cookie": clearMobileCookie(isSecure(), vehicle) } });
 }
