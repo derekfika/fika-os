@@ -85,3 +85,35 @@ test('native collection per-subload completion stays independent', async () => {
 test('native exact undo survives Firestore-style omission of undefined snapshot fields', async () => { const f = await setup({ native: true, count: 1 }); await depart(f, true); ok(await nativeExecute(f, 'complete-stop', { confirmDirect: true })); const key = 'fikaLogisticsDeliveryStopsV1/native'; f.records.set(key, JSON.parse(JSON.stringify(f.records.get(key)))); ok(await nativeExecute(f, 'undo-completion')); assert.deepEqual(f.records.get(key).deliveredRequirementIds, []); assert.equal(f.records.get(key).loaded, true); assert.notEqual(f.records.get(key).status, 'completed'); });
 
 test('fresh draft projected-only assignment plans the run once and can become Ready', async () => { const f = await setup({ draft: true }); assert.equal(run(f).status, 'planned'); assert.equal(run(f).version, 3); assert.deepEqual(run(f).orderedStopIds, []); assert.equal([...f.records.keys()].some(key => key.startsWith('fikaLogisticsDeliveryStopsV1/')), false); ok(await lifecycle(f, 'mark-run-ready')); assert.equal(run(f).status, 'ready'); });
+// Reversible loading (logistics-reversible-loading): a loaded delivery can be unloaded only while the run is planned or ready.
+for (const status of ['planned', 'ready']) test(`projected ${status} run: load, unload, reload keeps each state and recomputes the load-check inputs`, async () => {
+  const f = await setup(); if (status === 'ready') ok(await lifecycle(f, 'mark-run-ready'));
+  const [first, second] = jobs(f).map(job => job.id);
+  ok(await execute(f, 'mark-subload-loaded', 'delivery', { jobId: first })); assert.equal(jobs(f)[0].deliveryStatus, 'loaded'); assert.equal(loads(f)[0].loaded, false);
+  ok(await execute(f, 'mark-subload-loaded', 'delivery', { jobId: second })); assert.equal(loads(f)[0].loaded, true);
+  ok(await execute(f, 'mark-subload-loaded', 'delivery', { jobId: second, loaded: false })); assert.equal(jobs(f)[1].deliveryStatus, 'pending'); assert.equal(jobs(f)[0].deliveryStatus, 'loaded'); assert.equal(loads(f)[0].loaded, false);
+  assert.equal(stop(f, 'delivery').loaded, false, 'projected stop reflects the unload after a rebuild');
+  assert.equal((await lifecycle(f, 'dispatch-run')).response.status, 422, 'an unloaded delivery blocks dispatch again');
+  ok(await execute(f, 'mark-subload-loaded', 'delivery', { jobId: second })); ok(await execute(f, 'mark-subload-loaded', 'delivery', { jobId: first, loaded: false })); assert.equal(jobs(f)[0].deliveryStatus, 'pending'); assert.equal(loads(f)[0].loaded, false);
+  assert.ok(loads(f)[0].audit.filter(entry => String(entry.action).startsWith('mark-subload-loaded:delivery')).length >= 5, 'every load and unload stays in the audit trail');
+});
+test('projected unload after dispatch is rejected and leaves records unchanged', async () => {
+  const f = await setup(); await depart(f); const before = structuredClone([...f.records]);
+  const result = await execute(f, 'mark-subload-loaded', 'delivery', { jobId: jobs(f)[0].id, loaded: false }); assert.equal(result.response.status, 422); assert.deepEqual([...f.records], before);
+  assert.equal((await execute(f, 'mark-stop-loaded', 'delivery', { loaded: false })).response.status, 422);
+});
+test('projected unload with a stale job or run version is rejected without changing state', async () => {
+  const f = await setup(); ok(await execute(f, 'mark-subload-loaded', 'delivery', { jobId: jobs(f)[0].id })); const before = structuredClone([...f.records]);
+  const staleJob = await execute(f, 'mark-subload-loaded', 'delivery', { jobId: jobs(f)[0].id, loaded: false, expectedJobVersions: { [jobs(f)[0].id]: jobs(f)[0].version - 1 } }); assert.equal(staleJob.response.status, 409);
+  const staleRun = await execute(f, 'mark-subload-loaded', 'delivery', { jobId: jobs(f)[0].id, loaded: false, expectedRunVersion: run(f).version - 1 }); assert.equal(staleRun.response.status, 409);
+  assert.deepEqual([...f.records], before);
+});
+test('unauthorised vehicle cannot unload a loaded delivery', async () => {
+  const f = await setup(); ok(await execute(f, 'mark-subload-loaded', 'delivery', { jobId: jobs(f)[0].id })); const before = structuredClone([...f.records]);
+  f.principal.permittedVehicleIds = ['van2']; assert.equal((await execute(f, 'mark-subload-loaded', 'delivery', { jobId: jobs(f)[0].id, loaded: false })).response.status, 403); assert.deepEqual([...f.records], before);
+});
+test('native stop: load, unload, reload keeps state; unload after dispatch is rejected', async () => {
+  const f = await setup({ native: true, count: 1 }); ok(await nativeExecute(f, 'mark-stop-loaded')); assert.equal(f.records.get('fikaLogisticsDeliveryStopsV1/native').loaded, true);
+  ok(await nativeExecute(f, 'mark-stop-loaded', { loaded: false })); const unloaded = f.records.get('fikaLogisticsDeliveryStopsV1/native'); assert.equal(unloaded.loaded, false); assert.deepEqual(unloaded.loadedRequirementIds, []); assert.ok(unloaded.audit.some(entry => entry.action === 'stop-unloaded'));
+  ok(await nativeExecute(f, 'mark-stop-loaded')); ok(await lifecycle(f, 'dispatch-run')); const result = await nativeExecute(f, 'mark-stop-loaded', { loaded: false }); assert.equal(result.response.status, 422); assert.equal(f.records.get('fikaLogisticsDeliveryStopsV1/native').loaded, true);
+});

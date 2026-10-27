@@ -37,3 +37,12 @@ test("mobile controls have names, semantic action classes and touch-safe focus s
 test("active logistics production UI does not use native browser dialogs", () => {
   assert.doesNotMatch(workflow, /window\.(alert|confirm|prompt)\s*\(/);
 });
+
+test("a loaded delivery can be unticked before dispatch, collections stay locked, and dispatched stops still advance to delivered", () => {
+  assert.match(workflow, /const unload = !collection && loaded && !dispatched/);
+  assert.match(workflow, /loaded: !unload/);
+  assert.match(workflow, /Tap to unmark loaded/);
+  assert.match(workflow, /Tap to mark delivered/);
+  assert.match(workflow, /const locked = busy \|\| delivered \|\| \(collection && !dispatched\)/);
+  assert.doesNotMatch(workflow, /\(collection \|\| loaded\) && !dispatched/);
+});
