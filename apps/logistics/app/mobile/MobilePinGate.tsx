@@ -46,7 +46,7 @@ export default function MobilePinGate({ vehicle }: { vehicle: "Van 1" | "Van 2" 
   }
 
   if (state === "checking") return <main className="mobile-pin-shell" aria-live="polite"><p>Checking {vehicle} access…</p></main>;
-  if (state === "ready") return <><div className="mobile-pin-session"><span>{vehicle} session</span><button type="button" onClick={() => void signOut()} disabled={busy}>{busy ? "Signing out…" : "Sign out"}</button></div><MobileWorkflow fixedVan={vehicle} /></>;
+  if (state === "ready") return <><MobileWorkflow fixedVan={vehicle} onSignOut={() => void signOut()} signingOut={busy} /></>;
   return <main className="mobile-pin-shell">
     <section className="mobile-pin-card" aria-labelledby="mobile-pin-title">
       <p className="mobile-pin-eyebrow">FIKA OS · LOGISTICS</p>
