@@ -45,3 +45,6 @@
 .report { min-height: 44px; border-radius: 12px; font-size: 14px; }
 .done { font-weight: 700; color: var(--fika-status-success); }
 .hint, .empty { margin: 0; font-size: 13px; color: var(--fika-text-secondary); }
+.detail .secondary { min-height: 48px; border: 1px solid var(--fika-border-default); border-radius: 12px; background: var(--fika-surface-card); color: var(--purple); font-size: 15px; font-weight: 700; }
+.detail .report { border: 1px solid var(--fika-status-danger); background: var(--fika-surface-card); color: var(--fika-status-danger); font-weight: 700; }
+.detail .warning .secondary { min-height: 40px; padding: 0 12px; font-size: 14px; }
