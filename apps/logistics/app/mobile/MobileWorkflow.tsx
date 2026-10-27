@@ -14,6 +14,8 @@ import { RunOverview, visitStatusText } from "./run-overview";
 import { RunLoadCheck } from "./run-load-check";
 import { NOTICE_CHANGED_MESSAGE, fetchInbox, postInboxAction, resolveNoticeTarget, unreadLabel, type DriverInbox, type DriverNoticeItem } from "./driver-notifications-client";
 import { NotificationsPanel } from "./notifications-panel";
+import PushSettings from "./push-settings";
+import { syncPush } from "./driver-push-client";
 import { dispatchBlockers, hasScheduledTime } from "./dispatch-readiness";
 import styles from "./stop-detail.module.css";
 import shell from "./driver-shell.module.css";
@@ -247,6 +249,72 @@ function MobileWorkflowContents({ fixedVan, onSignOut, signingOut }: { fixedVan?
       setInboxBusy(false);
     }
   };
+  // If this phone already allowed notifications, keep its push registration fresh on open. Never prompts.
+  useEffect(() => { if (fixedVan) void syncPush(mobileHeaders); }, [fixedVan]);
+  // A push (or its notification tap) names the notice to open. Handled once the inbox has loaded, then the parameter is removed.
+  const noticeParamHandled = useRef(false);
+  useEffect(() => {
+    if (!inbox || noticeParamHandled.current) return;
+    noticeParamHandled.current = true;
+    const url = new URL(window.location.href);
+    const id = url.searchParams.get("notice");
+    if (!id) return;
+    url.searchParams.delete("notice");
+    window.history.replaceState(null, "", url);
+    const item = inbox.items.find(candidate => candidate.id === id);
+    if (item) void openNotice(item);
+  }, [inbox]);
+  // Tapping a notification while the app is already open: the service worker tells this window which notice to show, no reload.
+  useEffect(() => {
+    if (!fixedVan || typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+    const own = fixedVan === "Van 2" ? "van2" : "van1";
+    const onMessage = async (event: MessageEvent) => {
+      const data = event.data as { type?: string; url?: string } | undefined;
+      if (data?.type !== "fika-open-notice" || typeof data.url !== "string") return;
+      const url = new URL(data.url, window.location.origin);
+      if (!url.pathname.startsWith(`/mobile/${own}`)) { window.location.href = url.pathname + url.search; return; }
+      const id = url.searchParams.get("notice");
+      if (!id) return;
+      const fresh = await fetchInbox(mobileHeaders).catch(() => undefined);
+      if (!fresh) return;
+      setInbox(fresh);
+      const item = fresh.items.find(candidate => candidate.id === id);
+      if (item) await openNotice(item);
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, [fixedVan, selectedDate, inboxBusy]);
+  // Android back: only the Run screen lets the back gesture leave the app. Notifications, More, a stop sheet and the issue dialog
+  // each take one history entry, so back closes just that layer.
+  const layers = (view !== "run" ? 1 : 0) + (selectedStop ? 1 : 0) + (issueStop ? 1 : 0);
+  const pushedLayers = useRef(0);
+  const ignorePop = useRef(0);
+  const layerState = useRef({ view, selectedStop, issueStop });
+  layerState.current = { view, selectedStop, issueStop };
+  useEffect(() => {
+    if (layers > pushedLayers.current) {
+      for (let layer = pushedLayers.current; layer < layers; layer += 1) window.history.pushState({ fikaLayer: layer + 1 }, "", window.location.href);
+      pushedLayers.current = layers;
+    } else if (layers < pushedLayers.current) {
+      const closed = pushedLayers.current - layers;
+      pushedLayers.current = layers;
+      ignorePop.current += 1;
+      window.history.go(-closed);
+    }
+  }, [layers]);
+  useEffect(() => {
+    const onPop = () => {
+      if (ignorePop.current > 0) { ignorePop.current -= 1; return; }
+      if (pushedLayers.current === 0) return;
+      pushedLayers.current -= 1;
+      const current = layerState.current;
+      if (current.issueStop) setIssueStop(undefined);
+      else if (current.selectedStop) setSelectedStop(undefined);
+      else setView("run");
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   useEffect(() => {
     if (!selectedDate) return;
     const liveChannel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("fika-logistics-live");
@@ -401,7 +469,7 @@ function MobileWorkflowContents({ fixedVan, onSignOut, signingOut }: { fixedVan?
       <div className={shell.titleRow}><h1 className={shell.title}>{view === "run" ? `Run ${runNumber}` : view === "notifications" ? "Notifications" : "More"}</h1>{view === "run" && runs[0]?.driverLabel && <span className={shell.subtitle}>{runs[0].driverLabel}</span>}</div>
     </header>
     {authority.error && <div className="driver-alert" role="alert">{authority.error}<button onClick={() => void authority.refresh()}>Retry vehicles</button></div>}{pendingAction && <div className="driver-operation" role="status" aria-live="polite">{operationLabel(pendingAction)} Keep this page open.</div>}{error && <div className="driver-alert" role="alert">{error}<button disabled={Boolean(pendingAction)} onClick={() => retryDispatchRun ? void dispatchRun(retryDispatchRun) : void load(projectionNeedsMaterialisation)}>{retryDispatchRun ? "Retry dispatch" : projectionNeedsMaterialisation ? "Materialise and retry" : "Retry"}</button></div>}
-    {view === "notifications" ? <NotificationsPanel items={inbox?.items ?? []} unreadCount={inbox?.unreadCount ?? 0} loading={inboxLoading} error={inboxError} busy={inboxBusy} onOpen={(item) => void openNotice(item)} onMarkAllRead={() => void markAllRead()} onRetry={() => void refreshInbox()} /> : !visibleData ? <section className="driver-empty">Loading your day…</section> : view === "more" ? <More driver={driver} /> : <>
+    {view === "notifications" ? <NotificationsPanel items={inbox?.items ?? []} unreadCount={inbox?.unreadCount ?? 0} loading={inboxLoading} error={inboxError} busy={inboxBusy} onOpen={(item) => void openNotice(item)} onMarkAllRead={() => void markAllRead()} onRetry={() => void refreshInbox()} /> : !visibleData ? <section className="driver-empty">Loading your day…</section> : view === "more" ? <More driver={driver} pushHeaders={fixedVan ? mobileHeaders : undefined} /> : <>
       {noticeBanner && <div className="driver-alert" role="status"><span>{noticeBanner}</span><button type="button" onClick={() => setNoticeBanner("")}>Dismiss</button></div>}
       {runs.filter((run) => showDispatchChecklist(run.status)).map((run) => { const runStops = stops.filter((stop) => stop.runId === run.canonicalId); const deliveries = runStops.filter((stop) => !stopIsCollection(stop)); const blockers = dispatchBlockers({ hasStops: runStops.length > 0, deliveries, openIssues: runStops.filter(hasOpenIssue).length, unscheduled: runStops.filter((stop) => !hasScheduledTime(stop)).length }); return <RunLoadCheck key={run.canonicalId} deliveries={deliveries} blockers={blockers} pending={Boolean(pendingAction)} pendingLabel={pendingAction === "dispatch-run" ? "Dispatching…" : "Saving update…"} onDispatch={() => void dispatchRun(run)} />; })}
       {runs.filter((run) => run.returnToCpuPending).map((run) => <section className="driver-departure return-stage" key={`return-${run.canonicalId}`}><div><p className="driver-section-kicker">ALL STOPS COMPLETE</p><strong>Return to CPU</strong><span>All deliveries and collections are complete. Return the vehicle to CPU to finish the run.</span></div><div className="return-actions"><button className="secondary-action" onClick={() => window.open(process.env.NEXT_PUBLIC_FIKA_CPU_URL || "/", "_blank")}>Navigate to CPU</button><button className="primary-action" disabled={Boolean(pendingAction)} onClick={() => void confirmReturned(run)}>{pendingAction === "confirm-returned-to-cpu" ? "Confirming…" : "Confirm returned to CPU"}</button></div></section>)}
@@ -492,7 +560,7 @@ const locked = busy || delivered || (collection && !dispatched); return <li key=
 }
 function PostponeCollectionControl({ disabled, onPostpone }: { disabled: boolean; onPostpone: (targetServiceDate: string) => void }) { const [targetDate, setTargetDate] = useState(addDays(operationalDate(), 1)); return <div className="postpone-collection"><label>Postpone collection<select disabled={disabled} value={targetDate} onChange={(event) => setTargetDate(event.target.value)}>{Array.from({ length: 14 }, (_, index) => addDays(operationalDate(), index + 1)).map((date) => <option key={date} value={date}>{formatDate(date)}</option>)}</select></label><button className="secondary-action" disabled={disabled} onClick={() => onPostpone(targetDate)}>Postpone collection</button></div>; }
 function IssueSheet({ stop, type, setType, text, setText, busy, onClose, onSubmit }: { stop: DeliveryStop; type: string; setType: (value: string) => void; text: string; setText: (value: string) => void; busy: boolean; onClose: () => void; onSubmit: () => void }) { const closeRef = useRef<HTMLButtonElement>(null); useEffect(() => { closeRef.current?.focus(); }, []); return <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => { if (!busy && event.target === event.currentTarget) onClose(); }}><section className="stop-detail-sheet issue-sheet" role="dialog" aria-modal="true" aria-labelledby="issue-sheet-title" onKeyDown={(event) => { if (event.key === "Escape" && !busy) { event.preventDefault(); onClose(); } }}><button ref={closeRef} className="sheet-close" aria-label="Close report issue" onClick={onClose}>×</button><p className="driver-section-kicker">REPORT EXCEPTION</p><h2 id="issue-sheet-title">What needs attention?</h2><p className="issue-stop-name">{stop.locationLabelSnapshot}</p><label>Issue type<select disabled={busy} value={type} onChange={(event) => setType(event.target.value)}>{driverIssueTypes.map((item) => <option key={item}>{item}</option>)}</select></label><label>Notes <span className="optional-label">(optional)</span><textarea disabled={busy} value={text} onChange={(event) => setText(event.target.value)} placeholder="Add a short note for the planner…" rows={4} /></label><button className="danger-action submit-issue" disabled={busy} onClick={onSubmit}>{busy ? "Submitting…" : "Submit issue"}</button></section></div>; }
-function More({ driver }: { driver: string }) { return <section className="secondary-screen"><p className="driver-section-kicker">ACCOUNT</p><div className="more-card"><span>♙</span><div><small>Signed in as</small><strong>{driver}</strong></div></div></section>; }
+function More({ driver, pushHeaders }: { driver: string; pushHeaders?: Record<string, string> }) { return <section className="secondary-screen"><p className="driver-section-kicker">ACCOUNT</p><div className="more-card"><span>♙</span><div><small>Signed in as</small><strong>{driver}</strong></div></div>{pushHeaders && <PushSettings headers={pushHeaders} />}</section>; }
 function formatDate(date: string) { return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date(`${date}T12:00:00`)); }
 function addDays(date: string, days: number) { const value = new Date(`${date}T12:00:00`); value.setDate(value.getDate() + days); return value.toISOString().slice(0, 10); }
 function dateOptions(startDate = operationalDate()) { const start = new Date(`${startDate}T12:00:00`); return Array.from({ length: 8 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); return date.toISOString().slice(0, 10); }); }

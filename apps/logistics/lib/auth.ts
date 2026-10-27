@@ -80,7 +80,7 @@ export async function requireLogisticsAccess(request: LogisticsRequest, dependen
 async function requireMobilePinAccess(request: LogisticsRequest, dependencies: AuthDependencies): Promise<LogisticsPrincipal> {
   const pathname = request.nextUrl?.pathname || new URL(request.url || "https://logistics.invalid").pathname;
   // The driver inbox is the only extra path a vehicle session may use; planner and every other route stay denied.
-  if (!((request.method || "GET") === "GET" && ["/api/logistics", "/api/logistics/vehicles", "/api/logistics/driver-notifications"].includes(pathname)) && !((request.method || "GET") === "POST" && ["/api/logistics", "/api/logistics/driver-notifications"].includes(pathname))) {
+  if (!((request.method || "GET") === "GET" && ["/api/logistics", "/api/logistics/vehicles", "/api/logistics/driver-notifications", "/api/logistics/driver-notifications/push"].includes(pathname)) && !((request.method || "GET") === "POST" && ["/api/logistics", "/api/logistics/driver-notifications", "/api/logistics/driver-notifications/push"].includes(pathname))) {
     throw Object.assign(new Error("This vehicle session cannot access that Logistics operation."), { status: 403, code: "LOGISTICS_MOBILE_ROUTE_DENIED" });
   }
   // The request names its van. Only that van's cookie is read and only that van's PIN verifier is supplied, so a session for one van can never satisfy the other.

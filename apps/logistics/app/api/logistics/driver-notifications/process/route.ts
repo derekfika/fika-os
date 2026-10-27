@@ -3,6 +3,7 @@ import { internalTokenAllowed } from "../../../../../../shared/internal-auth";
 import { getFikaRuntimeConfig } from "@fika/server-shared/runtime-config";
 import { schedulerRequestAllowed } from "@/lib/scheduler-auth";
 import { countOpenCaptureGaps, processDriverNotifications } from "@/lib/driver-notification-store";
+import { retryPendingPushes } from "@/lib/driver-push";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
@@ -17,9 +18,11 @@ export async function POST(request: NextRequest) {
   if (!internalTokenAllowed(request) && !await schedulerRequestAllowed(request, getFikaRuntimeConfig().projectId)) return NextResponse.json({ error: { message: "Internal access required." } }, { status: 403, headers: NO_STORE });
   try {
     const result = await processDriverNotifications(new Date(), 50);
+    // Recovery also retries pushes still pending (bounded, expiring after 15 minutes); it never reports content.
+    const pushRetried = await retryPendingPushes().catch(() => -1);
     // openCaptureGaps > 0 means a committed planner change may not have notified drivers (see the coverage doc); it is health output.
     const openCaptureGaps = await countOpenCaptureGaps().catch(() => -1);
-    return NextResponse.json({ ...result, openCaptureGaps }, { headers: NO_STORE });
+    return NextResponse.json({ ...result, openCaptureGaps, pushRetried }, { headers: NO_STORE });
   } catch {
     return NextResponse.json({ error: { message: "Driver notification processing is deferred for retry." } }, { status: 503, headers: NO_STORE });
   }

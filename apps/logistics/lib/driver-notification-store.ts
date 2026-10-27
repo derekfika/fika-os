@@ -1,4 +1,5 @@
 import { db } from "./firebase";
+import { deliverPushes, type PushDeps } from "./driver-push";
 import {
   MAX_PROCESSING_ATTEMPTS, processPendingDriverChanges,
   type DriverChangeEvent, type DriverNotificationStore, type InboxNotification,
@@ -34,18 +35,20 @@ export const firestoreDriverNotificationStore: DriverNotificationStore = {
   },
 
   async commitProcessedEvent(eventId, notices, status, processedAt) {
-    await db.runTransaction(async transaction => {
+    return db.runTransaction(async transaction => {
       const eventRef = driverChangeEvents().doc(eventId);
       const noticeRefs = notices.map(notice => driverNotifications().doc(notice.id));
       // All reads first. A concurrent worker that already processed the event makes this a no-op, so workers are safe to overlap.
       const event = await transaction.get(eventRef);
-      if (!event.exists || (event.data() as DriverChangeEvent).status !== "pending") return;
+      if (!event.exists || (event.data() as DriverChangeEvent).status !== "pending") return false;
       const existing = await Promise.all(noticeRefs.map(ref => transaction.get(ref)));
       notices.forEach((notice, index) => {
         if (existing[index].exists) return;
-        transaction.create(noticeRefs[index], { ...notice, readAt: null, expiresAt: new Date(new Date(notice.createdAt).getTime() + NOTIFICATION_RETENTION_DAYS * 86_400_000) });
+        // pushStatus 'pending' marks the notice as waiting for its Web Push (sent after the commit, never inside this transaction).
+        transaction.create(noticeRefs[index], { ...notice, readAt: null, pushStatus: "pending", expiresAt: new Date(new Date(notice.createdAt).getTime() + NOTIFICATION_RETENTION_DAYS * 86_400_000) });
       });
       transaction.set(eventRef, { status, processedAt }, { merge: true });
+      return true;
     });
   },
 
@@ -101,8 +104,23 @@ export const firestoreDriverNotificationStore: DriverNotificationStore = {
 };
 
 /** Process pending events into inbox notices. Safe to call concurrently and repeatedly. */
-export function processDriverNotifications(now = new Date(), limit = 25) {
-  return processPendingDriverChanges(firestoreDriverNotificationStore, now, limit);
+export async function processDriverNotifications(now = new Date(), limit = 25, options: { push?: "inline" | "after" | "off"; deps?: PushDeps } = {}) {
+  const committed: string[] = [];
+  const result = await processPendingDriverChanges(firestoreDriverNotificationStore, now, limit, notices => committed.push(...notices.map(notice => notice.id)));
+  // Web Push goes out only AFTER the inbox transaction has committed, never inside it, and never blocks the inbox: deliverPushes cannot
+  // throw. After a planner save it runs after the response is sent, so a slow push service cannot slow the planner.
+  const mode = options.push ?? "inline";
+  if (mode !== "off" && committed.length) {
+    const deliver = () => deliverPushes(committed, options.deps);
+    if (mode === "after") await runAfterResponse(deliver); else await deliver();
+  }
+  return result;
+}
+
+/** Run background work once the HTTP response has been sent. Outside a request (tests, scripts) it runs inline so nothing is lost. */
+async function runAfterResponse(work: () => Promise<unknown>) {
+  try { const { after } = await import("next/server"); after(() => work().catch(() => undefined)); }
+  catch { await work().catch(() => undefined); }
 }
 
 /**
@@ -111,7 +129,7 @@ export function processDriverNotifications(now = new Date(), limit = 25) {
  */
 export async function processDriverNotificationsSafely(now = new Date()) {
   try {
-    return await processDriverNotifications(now);
+    return await processDriverNotifications(now, 25, { push: "after" });
   } catch (error) {
     console.error("[driver-notifications] processing deferred for retry", error instanceof Error ? error.message : "unknown error");
     return undefined;

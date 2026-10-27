@@ -1,0 +1,11 @@
+.card { display: grid; gap: 8px; box-sizing: border-box; width: 100%; min-width: 0; padding: 16px; border: 1px solid var(--fika-border-default); border-radius: 16px; background: var(--fika-surface-card); color: var(--fika-text-primary); font-family: var(--font-body); }
+.kicker { margin: 0; font-size: 12px; font-weight: 800; letter-spacing: 0.08em; color: var(--fika-text-secondary); }
+.title { margin: 0; font-size: 18px; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
+.detail { margin: 0; font-size: 15px; line-height: 1.4; color: var(--fika-text-secondary); overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.primary, .secondary { min-height: 48px; padding: 0 18px; border-radius: 12px; font-size: 16px; font-weight: 700; font-family: inherit; }
+.primary { border: 0; background: var(--purple); color: #ffffff; }
+.secondary { border: 1px solid var(--fika-border-default); background: var(--fika-surface-card); color: var(--fika-text-primary); }
+.primary:disabled, .secondary:disabled { opacity: 0.6; }
+.primary:focus-visible, .secondary:focus-visible { outline: 3px solid var(--purple); outline-offset: 2px; }
+.status { margin: 0; min-height: 1.2em; font-size: 14px; color: var(--fika-text-secondary); overflow-wrap: anywhere; }
