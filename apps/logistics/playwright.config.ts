@@ -30,5 +30,6 @@ export default defineConfig({
     { name: "journey-planner-v3-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /journey-planner-v3.*\.spec\.ts/ },
     { name: "stop-visits-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /stop-visits\.spec\.ts/ },
     { name: "mobile-chromium", use: { ...devices["Pixel 7"] }, testMatch: /mobile\.spec\.ts/ },
+    { name: "mobile-notifications-chromium", use: { ...devices["Pixel 7"] }, testMatch: /mobile-notifications\.spec\.ts/ },
   ],
 });
