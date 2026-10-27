@@ -3,7 +3,7 @@ import { z } from "zod";
 import { errorResponse } from "@/lib/api";
 import { requireActor } from "@/lib/auth";
 import { assertPermission } from "@/lib/authmod";
-import { runBulkCatalogueUpdate, runCatalogueCommand, type BulkSpec, type CatalogueCommand } from "@/lib/hospitality-catalogue-admin";
+import { LINKABLE_BROCHURE_PROVIDERS, runBulkCatalogueUpdate, runCatalogueCommand, type BulkSpec, type CatalogueCommand } from "@/lib/hospitality-catalogue-admin";
 import { loadCataloguePayload, loadCatalogueRows } from "@/lib/hospitality-catalogue-loader";
 import { republishAfterMutation } from "@/lib/hospitality-catalogue-package";
 import { SiteConfiguration } from "@/lib/schemas";
@@ -24,6 +24,7 @@ const Command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("adopt-company-default"), itemId: Id, expectedVersion: Version, price: Price, minimumQuantity: z.number().int().positive().nullable().optional(), confirmed: z.boolean() }).strict(),
   z.object({ action: z.literal("merge-items"), survivorItemId: Id, sourceItemIds: z.array(Id).min(1).max(10), expectedVersions: z.record(z.string(), Version), groupId: z.string().max(64).optional() }).strict(),
   z.object({ action: z.literal("record-review-decision"), memberIds: z.array(Id).min(2).max(12), decision: z.enum(["keep_separate", "defer"]) }).strict(),
+  z.object({ action: z.literal("link-provider-item"), itemId: Id, expectedVersion: Version, mappings: z.array(z.object({ provider: z.enum(LINKABLE_BROCHURE_PROVIDERS), sourceItemId: z.string().trim().min(1).max(240) }).strict()).min(1).max(20) }).strict(),
 ]);
 
 const BulkCommand = z.object({
