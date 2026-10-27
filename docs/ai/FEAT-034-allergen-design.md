@@ -69,16 +69,22 @@ Initial matrix load, tap responsiveness on a tablet, save acknowledgement, autho
 Target: row acknowledgement within about two seconds on healthy staging (provisional, not an SLA).
 
 ## 6. Tests
+- Done (part 2): `apps/shared/allergen-row-save.ts` plus 9 tests: revision conflicts, idempotent retry, coalescing, signing gate, review preserved across a row save, and legacy compatibility.
 - Done: `apps/shared/allergen-declaration.test.ts` (14 tests): blank row, explicit declaration and check, named positives, mixed, conflicts, idempotent re-check, invalidation, reopen, legacy semantics 2, sparse and contradictory maps, unattributed confirmation.
 - To add with CPU/Menu leases: server route tests for `save-row`, conflicts, retries, delayed responses and navigation with unsaved edits; matrix UI tests at 375 / 390 / tablet widths; cross-app Menu Planner → Hub → CPU flow; checker and PDF gating against historical signed records.
 
-## 7. Blocked work (other leases, not touched)
-| Path | Owner of the active lease |
-| --- | --- |
-| `apps/cpu-production` | `cpu-deep-link-iss018-fix` (uat-20261025-1150) |
-| `apps/menu-planning` | `menu-duplicate-planning` (claude-menu-duplicate) |
-| `apps/delivered-in` | `iss-001-di-cache-resilience` (haiku-iss-001) |
-| `apps/integration-hub` | `authmod-reference-refresh` (uat-20261025-1150) |
+## 7. Lease inventory and handover (checked 2026-10-27 against origin/main 6fdbe49b; read-only)
+| App | Lease / owner | State found | Handover action | FEAT-034 can proceed |
+| --- | --- | --- | --- | --- |
+| CPU | `cpu-deep-link-iss018-fix`, uat-20261025-1150 (Luna) | Active. Workspace has 8 staged, uncommitted files (ISS-019 loading-state fix), based on 4dc237bf (2 behind main). Its ISS-018 PR #70 is already merged. | Owner recovers the ISS-019 changes into a valid governed workspace (commit, merge origin/main), validates, opens the PR, then `workspace finish`. Do not touch the staged files or the registry. | No |
+| Menu Planner | `menu-duplicate-planning`, claude-menu-duplicate | Active. Clean, 2 commits ahead, 17 behind. PR #66 is OPEN, not merged. | Not complete: wait for PR #66 to be reviewed and merged by its owner, then owner runs `workspace finish`. Do not reclaim. | No |
+| Delivered-In | `iss-001-di-cache-resilience`, haiku-iss-001 | Active but work is done: PR #62 merged, workspace clean, 0 ahead. | Owner runs a normal `workspace finish` (nothing left to preserve). | After release |
+| Hub | `authmod-reference-refresh`, uat-20261025-1150 | Active but work is done: PR #47 merged, workspace clean, 0 ahead, 70 behind. | Owner runs a normal `workspace finish`. | After release |
+| Shared + docs | `feat-034-allergen` (this task) | Active, PR #74. | Mine. | Yes |
+
+No recovery or transfer command exists in the workflow CLI (create, check, finish, retire only). It is not needed for the CPU case: a commit plus merging origin/main in her own workspace followed by `finish` is the supported path. If Luna finds recovery needs a rebaseline command, request that as a separate governance-tooling change; do not edit the lease registry by hand.
+
+Wiring the shared tests into CI needs a package script or workflow change outside this lease (an app `test` script should include `apps/shared/*.test.ts`). Do it with the first app lease (CPU or Menu Planner).
 
 ## 8. Rollout
 Ship the shared module alone (no behaviour change) → adopt in CPU server and UI behind the semantics-3 review → Menu Planner adoption → performance PR (`save-row`) separately → Luna's staging UAT with the latency tab → production. Rollback: each PR reverts independently; stored data is additive.
