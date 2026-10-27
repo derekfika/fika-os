@@ -178,3 +178,16 @@ test("the service date comes from Europe/London, not the device clock", () => {
   assert.equal(londonServiceDate(new Date("2026-10-27T23:30:00Z")), "2026-10-27");
   assert.equal(londonServiceDate(new Date("2026-10-28T00:30:00Z")), "2026-10-28", "after UK midnight the London date has advanced");
 });
+
+test("adding or removing a stop is not also a route reorder (found in staging UAT)", () => {
+  const stopA = visit("a", ["job-a"]), stopB = visit("b", ["job-b"]);
+  const withBoth = run({ visits: [stopA, stopB], stopOrder: ["stop-a", "stop-b"] });
+  const withoutB = run({ version: 2, visits: [stopA], stopOrder: ["stop-a"] });
+  assert.ok(!kinds(diffRun(withBoth, withoutB)).includes("route-order-updated"), "removing a stop");
+  assert.ok(!kinds(diffRun(withoutB, withBoth)).includes("route-order-updated"), "adding a stop");
+  const empty = run({ version: 2, visits: [], stopOrder: [] });
+  assert.ok(!kinds(diffRun(withoutB, empty)).includes("route-order-updated"), "the last stop leaving the run");
+  assert.ok(!kinds(diffRun(empty, withoutB)).includes("route-order-updated"), "a first stop arriving");
+  const swapped = run({ version: 2, visits: [stopA, stopB], stopOrder: ["stop-b", "stop-a"] });
+  assert.deepEqual(kinds(diffRun(withBoth, swapped)), ["route-order-updated"], "a genuine reorder still notifies");
+});

@@ -176,8 +176,10 @@ export function diffRun(before: DriverRunSnapshot | undefined, after: DriverRunS
   }
 
   // Stop order: only the order of visits present in both snapshots matters.
-  const orderBefore = before!.stopOrder ?? before!.visits.map(visit => visit.visitId).filter(id => afterById.has(id));
-  const orderAfter = after!.stopOrder ?? after!.visits.map(visit => visit.visitId).filter(id => beforeById.has(id));
+  // Stops that were added, removed or moved to another vehicle are reported by their own notices; they must not also read as a reorder.
+  const stopOrderBefore = before!.stopOrder, stopOrderAfter = after!.stopOrder;
+  const orderBefore = stopOrderBefore && stopOrderAfter ? stopOrderBefore.filter(id => stopOrderAfter.includes(id)) : before!.visits.map(visit => visit.visitId).filter(id => afterById.has(id));
+  const orderAfter = stopOrderBefore && stopOrderAfter ? stopOrderAfter.filter(id => stopOrderBefore.includes(id)) : after!.visits.map(visit => visit.visitId).filter(id => beforeById.has(id));
   if (orderBefore.join("|") !== orderAfter.join("|")) {
     const first = after!.visits.find(visit => visit.visitId === orderAfter[0]);
     notices.push(note("route-order-updated", after!, revision, { title: "Route order updated", inboxText: first ? `${first.destination} is now your first stop.` : "Your stop order has changed.", pushTail: "Your stop sequence has changed.", priority: highPriority ? "high" : "normal", subject: `order:${orderAfter.join("|")}` }));
