@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { FulfilmentRequirement } from "../../../shared/fulfilment-requirement";
 import { fulfilmentWorkstream } from "../../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "../../lib/types";
@@ -15,7 +15,8 @@ import { RunLoadCheck } from "./run-load-check";
 import { dispatchBlockers, hasScheduledTime } from "./dispatch-readiness";
 import styles from "./stop-detail.module.css";
 import shell from "./driver-shell.module.css";
-import { groupRunVisits, hasOpenIssue } from "./run-overview-model";
+import { AlertIcon, ArrowLeftIcon, ArrowUpRightIcon, BoxIcon, CalendarIcon, CheckIcon, ChevronRightIcon, MapIcon, MenuIcon, MessageIcon, MoreIcon, NoteIcon, PinIcon, TruckIcon } from "./icons";
+import { groupRunVisits, hasOpenIssue, nextRunVisit } from "./run-overview-model";
 import { responseErrorDetails, LogisticsResponseError } from "../../lib/client-errors";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-client";
 import { readCachedProjection, writeCachedProjection } from "../../lib/logistics-cache";
@@ -35,10 +36,10 @@ async function loadMobileProjection(date: string, vehicleQuery: string, headers:
   return body;
 }
 
-export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" } = {}) {
-  return <VehicleAuthorityProvider mobilePinSession={Boolean(fixedVan)}><MobileWorkflowContents fixedVan={fixedVan} /></VehicleAuthorityProvider>;
+export default function MobileWorkflow({ fixedVan, onSignOut, signingOut }: { fixedVan?: "Van 1" | "Van 2"; onSignOut?: () => void; signingOut?: boolean } = {}) {
+  return <VehicleAuthorityProvider mobilePinSession={Boolean(fixedVan)}><MobileWorkflowContents fixedVan={fixedVan} onSignOut={onSignOut} signingOut={signingOut} /></VehicleAuthorityProvider>;
 }
-function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) {
+function MobileWorkflowContents({ fixedVan, onSignOut, signingOut }: { fixedVan?: "Van 1" | "Van 2"; onSignOut?: () => void; signingOut?: boolean }) {
   const mobileHeaders: Record<string, string> = fixedVan ? { "x-fika-logistics-mobile-request": "1" } : {};
   const authority = useVehicleAuthority();
   const [selectedVehicle, setSelectedVehicle] = useState<LogisticsVehicleId | "">(fixedVan === "Van 1" ? "van1" : fixedVan === "Van 2" ? "van2" : "");
@@ -235,6 +236,8 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
     // The dispatcher's saved visiting order (Run.orderedStopIds, already time-ordered for work not yet ordered) is what the driver follows.
     .flatMap((run) => run.orderedStopIds.map((id) => visibleData?.stops.find((stop) => stop.canonicalId === id)).filter(Boolean) as DeliveryStop[]), [runs, visibleData?.stops]);
   const visits = useMemo(() => groupRunVisits(stops), [stops]);
+  const runNumber = Math.max(1, vehicleRuns.findIndex((run) => run.canonicalId === selectedRunId) + 1);
+  const loadingMode = runs.some((run) => showDispatchChecklist(run.status));
   const selectedVisit = visits.find((visit) => selectedStop && visit.stops.some((lane) => lane.canonicalId === selectedStop.canonicalId));
   // Physical visit numbering: lane stops that share a visit id are ONE visit and show the same number in both tabs.
   const freshness = !visibleData ? "UNAVAILABLE" : syncUnavailable || visibleData.projection?.state === "STALE" || visibleData.projection?.state === "PARTIAL" ? "STALE" : visibleData.projection?.state === "VALID_EMPTY" ? "NO WORK" : "CURRENT";
@@ -328,20 +331,21 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
   if (!hydrated || !selectedDate) return <main className="driver-app"><section className="driver-empty" aria-busy="true">Loading your day…</section></main>;
 
   return <main className="driver-app">
-    <div className={shell.topbar}><button type="button" className={shell.iconButton} aria-label="Open more" onClick={() => setView("more")}>☰</button><p className={shell.brand}>FIKA OS · Driver</p><span aria-hidden="true" /></div>
+    <div className={shell.topbar}><button type="button" className={shell.iconButton} aria-label="Open more" onClick={() => setView("more")}><MenuIcon size={24} /></button><p className={shell.brand}>FIKA OS · Driver</p>{onSignOut ? <button type="button" className={shell.signOut} onClick={onSignOut} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button> : <span aria-hidden="true" />}</div>
     <header className={shell.hero} aria-label="Run">
       <div className={shell.vehicleRow}>
-        <span className={shell.vehicleField}>{fixedVan && <span className={shell.vehicle}>▣ {driver}</span>}{!fixedVan && <label><span>Vehicle</span><select aria-label="Vehicle" value={selectedVehicle} disabled={Boolean(pendingAction) || authority.loading || Boolean(authority.error)} onChange={(event) => { setSelectedVehicle(event.target.value as LogisticsVehicleId); setSelectedRunId(""); setSelectedStop(undefined); setIssueStop(undefined); setUndoAction(undefined); setRetryDispatchRun(undefined); }}><option value="">Select vehicle</option>{authority.vehicles.map(id => <option key={id} value={id}>{logisticsVehicleLabel(id)}</option>)}</select></label>}</span>
-        <span className={`${shell.live} ${freshness === "CURRENT" ? "" : freshness === "STALE" ? shell.stale : shell.offline}`}>● {freshness === "CURRENT" ? "Online" : freshness === "NO WORK" ? "No work" : freshness === "STALE" ? "Stale" : "Offline"}</span>
-        <label className={shell.dateField}><span aria-hidden="true">▦</span><select aria-label="Service date" disabled={Boolean(pendingAction)} value={selectedDate} onChange={(event) => selectDate(event.target.value)}>{availableDates.map((option) => <option key={option} value={option}>{formatDate(option)}</option>)}</select></label>
+        <span className={shell.vehicleField}>{fixedVan && <span className={shell.vehicle}><TruckIcon size={22} /> {driver}</span>}{!fixedVan && <label><span>Vehicle</span><select aria-label="Vehicle" value={selectedVehicle} disabled={Boolean(pendingAction) || authority.loading || Boolean(authority.error)} onChange={(event) => { setSelectedVehicle(event.target.value as LogisticsVehicleId); setSelectedRunId(""); setSelectedStop(undefined); setIssueStop(undefined); setUndoAction(undefined); setRetryDispatchRun(undefined); }}><option value="">Select vehicle</option>{authority.vehicles.map(id => <option key={id} value={id}>{logisticsVehicleLabel(id)}</option>)}</select></label>}</span>
+        <span className={`${shell.live} ${freshness === "CURRENT" ? "" : freshness === "STALE" ? shell.stale : shell.offline}`}>{freshness === "CURRENT" ? "Online" : freshness === "NO WORK" ? "No work" : freshness === "STALE" ? "Stale" : "Offline"}</span>
+        <label className={shell.dateField}><CalendarIcon size={20} /><select aria-label="Service date" disabled={Boolean(pendingAction)} value={selectedDate} onChange={(event) => selectDate(event.target.value)}>{availableDates.map((option) => <option key={option} value={option}>{formatDate(option)}</option>)}</select></label>
       </div>
-      <div className={shell.titleRow}><h1 className={shell.title}>{view === "run" ? "Run" : view === "messages" ? "Messages" : "More"}</h1>{view === "run" && runs[0]?.driverLabel && <span className={shell.subtitle}>{runs[0].driverLabel}</span>}</div>
+      <div className={shell.titleRow}><h1 className={shell.title}>{view === "run" ? `Run ${runNumber}` : view === "messages" ? "Messages" : "More"}</h1>{view === "run" && runs[0]?.driverLabel && <span className={shell.subtitle}>{runs[0].driverLabel}</span>}</div>
     </header>
     {authority.error && <div className="driver-alert" role="alert">{authority.error}<button onClick={() => void authority.refresh()}>Retry vehicles</button></div>}{pendingAction && <div className="driver-operation" role="status" aria-live="polite">{operationLabel(pendingAction)} Keep this page open.</div>}{error && <div className="driver-alert" role="alert">{error}<button disabled={Boolean(pendingAction)} onClick={() => retryDispatchRun ? void dispatchRun(retryDispatchRun) : void load(projectionNeedsMaterialisation)}>{retryDispatchRun ? "Retry dispatch" : projectionNeedsMaterialisation ? "Materialise and retry" : "Retry"}</button></div>}
     {!visibleData ? <section className="driver-empty">Loading your day…</section> : view === "messages" ? <Messages messages={messages} onDismiss={(id) => setMessages((current) => current.filter((message) => message.id !== id))} onClear={() => setMessages([])} /> : view === "more" ? <More driver={driver} runs={runs} /> : <>
-      {runs.filter((run) => showDispatchChecklist(run.status)).map((run) => { const runStops = stops.filter((stop) => stop.runId === run.canonicalId); const deliveries = runStops.filter((stop) => !stopIsCollection(stop)); const blockers = dispatchBlockers({ hasStops: runStops.length > 0, deliveries, openIssues: runStops.filter(hasOpenIssue).length, unscheduled: runStops.filter((stop) => !hasScheduledTime(stop)).length }); return <RunLoadCheck key={run.canonicalId} deliveries={deliveries} blockers={blockers} pending={Boolean(pendingAction)} pendingLabel="Dispatching…" siteLabel={(stop) => stopLabel(stop, visibleData)} openLabel={(stop) => `Open details for ${stopLabel(stop, visibleData)} delivery`} onOpen={(trigger, stop) => { stopTriggerRef.current = trigger; setSelectedStop(stop); }} onDispatch={() => void dispatchRun(run)} />; })}
+      {runs.filter((run) => showDispatchChecklist(run.status)).map((run) => { const runStops = stops.filter((stop) => stop.runId === run.canonicalId); const deliveries = runStops.filter((stop) => !stopIsCollection(stop)); const blockers = dispatchBlockers({ hasStops: runStops.length > 0, deliveries, openIssues: runStops.filter(hasOpenIssue).length, unscheduled: runStops.filter((stop) => !hasScheduledTime(stop)).length }); return <RunLoadCheck key={run.canonicalId} deliveries={deliveries} blockers={blockers} pending={Boolean(pendingAction)} pendingLabel="Dispatching…" onDispatch={() => void dispatchRun(run)} />; })}
       {runs.filter((run) => run.returnToCpuPending).map((run) => <section className="driver-departure return-stage" key={`return-${run.canonicalId}`}><div><p className="driver-section-kicker">ALL STOPS COMPLETE</p><strong>Return to CPU</strong><span>All deliveries and collections are complete. Return the vehicle to CPU to finish the run.</span></div><div className="return-actions"><button className="secondary-action" onClick={() => window.open(process.env.NEXT_PUBLIC_FIKA_CPU_URL || "/", "_blank")}>Navigate to CPU</button><button className="primary-action" disabled={Boolean(pendingAction)} onClick={() => void confirmReturned(run)}>{pendingAction === "confirm-returned-to-cpu" ? "Confirming…" : "Confirm returned to CPU"}</button></div></section>)}
       <RunOverview
+        mode={loadingMode ? "loading" : "running"}
         visits={visits}
         siteLabel={(stop) => stopLabel(stop, visibleData)}
         timeLabel={timeFor}
@@ -349,34 +353,43 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
         onOpen={(trigger, stop) => { stopTriggerRef.current = trigger; setSelectedStop(stop); }}
       />
     </>}
-    <nav className={shell.nav} aria-label="Primary"><NavItem active={view === "run"} icon="▦" label="Run" onClick={() => setView("run")} /><NavItem active={view === "messages"} icon="▢" label="Messages" onClick={() => setView("messages")} badge={messages.length ? String(messages.length) : undefined} /><NavItem active={view === "more"} icon="☰" label="More" onClick={() => setView("more")} /></nav>
-    {undoAction && <div className="driver-undo-toast" role="status"><span>{undoAction.label}</span><button disabled={Boolean(pendingAction)} onClick={() => void undoCompletion()}>{pendingAction === "undo-completion" ? "Undoing…" : "Undo"}</button></div>}{selectedStop && visibleData && <StopDetail stop={selectedStop} lanes={selectedVisit?.stops ?? [selectedStop]} visitNumber={selectedVisit?.visitNumber ?? 0} data={visibleData} busy={Boolean(pendingAction)} onClose={closeStopSheet} onAction={execute} onIssue={(lane) => { if (!pendingAction) { setIssueStop(lane); setSelectedStop(undefined); } }} />}{issueStop && <IssueSheet stop={issueStop} type={issueType} setType={setIssueType} text={issueText} setText={setIssueText} busy={Boolean(pendingAction)} onClose={closeIssueSheet} onSubmit={reportIssue} />}
+    <nav className={shell.nav} aria-label="Primary"><NavItem active={view === "run"} icon={<TruckIcon size={24} />} label="Run" onClick={() => setView("run")} /><NavItem active={view === "messages"} icon={<MessageIcon size={24} />} label="Messages" onClick={() => setView("messages")} badge={messages.length ? String(messages.length) : undefined} /><NavItem active={view === "more"} icon={<MoreIcon size={24} />} label="More" onClick={() => setView("more")} /></nav>
+    {undoAction && <div className="driver-undo-toast" role="status"><span>{undoAction.label}</span><button disabled={Boolean(pendingAction)} onClick={() => void undoCompletion()}>{pendingAction === "undo-completion" ? "Undoing…" : "Undo"}</button></div>}{selectedStop && visibleData && <StopDetail stop={selectedStop} lanes={selectedVisit?.stops ?? [selectedStop]} visitNumber={selectedVisit?.visitNumber ?? 0} isNext={Boolean(selectedVisit) && nextRunVisit(visits)?.key === selectedVisit?.key} data={visibleData} busy={Boolean(pendingAction)} onClose={closeStopSheet} onAction={execute} onIssue={(lane) => { if (!pendingAction) { setIssueStop(lane); setSelectedStop(undefined); } }} />}{issueStop && <IssueSheet stop={issueStop} type={issueType} setType={setIssueType} text={issueText} setText={setIssueText} busy={Boolean(pendingAction)} onClose={closeIssueSheet} onSubmit={reportIssue} />}
   </main>;
 }
 
-function NavItem({ active, icon, label, badge, onClick }: { active: boolean; icon: string; label: string; badge?: string; onClick: () => void }) { return <button type="button" className={`${shell.navItem} ${badge ? shell.badge : ""}`} aria-current={active ? "page" : undefined} aria-label={label} onClick={onClick}><span className={shell.navIcon} aria-hidden="true">{icon}</span><span>{label}</span></button>; }
-function StopDetail({ stop, lanes, visitNumber, data, busy, onClose, onAction, onIssue }: { stop: DeliveryStop; lanes: DeliveryStop[]; visitNumber: number; data: Data; busy: boolean; onClose: () => void; onAction: (action: string, stop: DeliveryStop, extra?: Record<string, unknown>) => void; onIssue: (lane: DeliveryStop) => void }) {
+function NavItem({ active, icon, label, badge, onClick }: { active: boolean; icon: ReactNode; label: string; badge?: string; onClick: () => void }) { return <button type="button" className={`${shell.navItem} ${badge ? shell.badge : ""}`} aria-current={active ? "page" : undefined} aria-label={label} onClick={onClick}><span className={shell.navIcon}>{icon}</span><span>{label}</span></button>; }
+function loadCount(lanes: DeliveryStop[], data: Data) { const count = lanes.reduce((total, lane) => total + loadSubloads(lane, data, movementsForStop(lane, data.movements)[0]).length, 0); return `${count} ${count === 1 ? "container" : "containers"}`; }
+function StopDetail({ stop, lanes, visitNumber, isNext, data, busy, onClose, onAction, onIssue }: { stop: DeliveryStop; lanes: DeliveryStop[]; visitNumber: number; isNext: boolean; data: Data; busy: boolean; onClose: () => void; onAction: (action: string, stop: DeliveryStop, extra?: Record<string, unknown>) => void; onIssue: (lane: DeliveryStop) => void }) {
   const oploc = data.oplocs.find((item) => item.id === stop.locationOplocId);
   const address = oploc?.address || oploc?.label || stop.locationLabelSnapshot;
   const runStatus = data.runs.find((run) => run.canonicalId === stop.runId)?.status;
-  const visitState = visitStatusText[groupRunVisits(lanes)[0]?.status ?? "planned"];
+  const visitStatus = groupRunVisits(lanes)[0]?.status ?? "planned";
   const deliveries = lanes.filter((lane) => !stopIsCollection(lane));
   const collections = lanes.filter((lane) => stopIsCollection(lane));
   const closeRef = useRef<HTMLButtonElement>(null);
+  const notesRef = useRef<HTMLElement>(null);
   useEffect(() => { closeRef.current?.focus(); }, []);
   return <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => { if (!busy && event.target === event.currentTarget) onClose(); }}><section className={`stop-detail-sheet ${styles.detail}`} role="dialog" aria-modal="true" aria-labelledby="stop-detail-title" onKeyDown={(event) => { if (event.key === "Escape" && !busy) { event.preventDefault(); onClose(); } }}>
-    <button ref={closeRef} type="button" className={styles.back} aria-label="Close stop details" onClick={onClose}>← Back to run</button>
-    <div className={styles.headRow}><span className={styles.number}>{visitNumber}</span><span className={styles.pill}>{visitState}</span><span className={styles.timePill}>{timeFor(stop)}</span></div>
+    <button ref={closeRef} type="button" className={styles.back} aria-label="Close stop details" onClick={onClose}><ArrowLeftIcon size={18} /> Back to run</button>
+    <div className={styles.headRow}><span className={styles.number}>{visitNumber}</span><span className={styles.pill}>{isNext && visitStatus !== "attention" ? "Next stop" : visitStatusText[visitStatus]}</span><span className={styles.timePill}>{timeFor(stop)}</span></div>
     <h2 id="stop-detail-title" className={styles.title}>{stopLabel(stop, data)}</h2>
-    <p className={styles.address}><span aria-hidden="true">⌖</span> {address}</p>
-    <div className={styles.actions}><button type="button" className={`secondary-action navigate-action ${styles.navigate}`} disabled={busy} onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, "_blank")}>View on map</button></div>
-    <div className={styles.summary}>
-      <div className={styles.summaryCard}><strong>{deliveries.length} {deliveries.length === 1 ? "Delivery" : "Deliveries"}</strong><small>{deliveries.reduce((total, lane) => total + loadSubloads(lane, data, movementsForStop(lane, data.movements)[0]).length, 0)} loads</small></div>
-      <div className={styles.summaryCard}><strong>{collections.length} {collections.length === 1 ? "Collection" : "Collections"}</strong><small>{collections.length ? "Collect at this stop" : "No collections"}</small></div>
+    <p className={styles.address}><PinIcon size={18} /> {address}</p>
+    <div className={styles.siteActions}>
+      <button type="button" className={`secondary-action navigate-action ${styles.outline}`} disabled={busy} onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, "_blank")}><MapIcon size={18} /> View on map</button>
+      {stop.notes && <button type="button" className={`secondary-action ${styles.outline}`} onClick={() => notesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}><NoteIcon size={18} /> Site notes</button>}
     </div>
-    {stop.notes && <div className={styles.notes}><b>Notes</b><p>{stop.notes}</p></div>}
-    {lanes.map((lane) => <LaneSection key={lane.canonicalId} lane={lane} data={data} runStatus={runStatus} busy={busy} onAction={onAction} onIssue={onIssue} />)}
+    <div className={styles.summary}>
+      <div className={`${styles.summaryCard} ${styles.summaryBlue}`}><span className={styles.summaryIcon}><BoxIcon size={26} /></span><span className={styles.summaryText}><b>{deliveries.length}</b><strong>{deliveries.length === 1 ? "Delivery" : "Deliveries"}</strong><small>{deliveries.length ? loadCount(deliveries, data) : "No deliveries"}</small></span></div>
+      <div className={`${styles.summaryCard} ${styles.summaryMint}`}><span className={styles.summaryIcon}><ArrowUpRightIcon size={26} /></span><span className={styles.summaryText}><b>{collections.length}</b><strong>{collections.length === 1 ? "Collection" : "Collections"}</strong><small>{collections.length ? loadCount(collections, data) : "No collections"}</small></span></div>
+    </div>
+    {deliveries.length ? deliveries.map((lane) => <LaneSection key={lane.canonicalId} lane={lane} data={data} runStatus={runStatus} busy={busy} onAction={onAction} onIssue={onIssue} />) : <EmptyLane title="Deliveries" message="No deliveries at this stop" icon={<BoxIcon size={22} />} />}
+    {collections.length ? collections.map((lane) => <LaneSection key={lane.canonicalId} lane={lane} data={data} runStatus={runStatus} busy={busy} onAction={onAction} onIssue={onIssue} />) : <EmptyLane title="Collections" message="No collections at this stop" icon={<ArrowUpRightIcon size={22} />} />}
+    {stop.notes && <section ref={notesRef} className={styles.notesBlock}><h3>Notes</h3><div className={styles.notes}><NoteIcon size={22} /><p>{stop.notes}</p></div></section>}
   </section></div>;
+}
+function EmptyLane({ title, message, icon }: { title: string; message: string; icon: ReactNode }) {
+  return <section className={styles.lane}><div className={styles.laneHead}><h3>{title} (0)</h3></div><div className={styles.emptyCard}><span>{icon}</span><p>{message}</p></div></section>;
 }
 function LaneSection({ lane, data, runStatus, busy, onAction, onIssue }: { lane: DeliveryStop; data: Data; runStatus?: DeliveryRun["status"]; busy: boolean; onAction: (action: string, stop: DeliveryStop, extra?: Record<string, unknown>) => void; onIssue: (lane: DeliveryStop) => void }) {
   const movement = movementsForStop(lane, data.movements)[0];
@@ -394,18 +407,18 @@ function LaneSection({ lane, data, runStatus, busy, onAction, onIssue }: { lane:
     onAction(subload.kind === "requirement" ? action : "mark-stop-loaded", lane, subload.kind === "requirement" ? { requirementId: subload.id, loaded: true } : { loaded: true });
   };
   const openIssues = (lane.issues || []).filter((issue) => issue.status === "open");
-  const heading = collection ? "Collections" : "Deliveries";
+  const canLoadAll = !collection && !completed && !lane.loaded && (runStatus === "planned" || runStatus === "ready");
   return <section className={styles.lane} aria-label={`${collection ? "Collection" : "Delivery"} at this stop`}>
-    <div className={styles.laneHead}><h3>{heading} ({subloads.length})</h3>{!collection && !completed && !lane.loaded && (runStatus === "planned" || runStatus === "ready") && <button type="button" className={styles.linkAction} disabled={busy} onClick={() => onAction("mark-stop-loaded", lane, { loaded: true })}>Mark all loaded</button>}</div>
-    {subloads.length ? <ul className={styles.loads}>{subloads.map((subload) => { const delivered = isDelivered(subload); const loaded = isLoaded(subload); const label = collection ? delivered ? "Collected" : "Mark collected" : delivered ? "Delivered" : loaded ? "Tap to mark delivered" : "Tap to mark loaded"; const locked = busy || delivered || ((collection || loaded) && !dispatched); return <li key={subload.id}><button type="button" disabled={locked} className={`${styles.load} ${delivered ? styles.loadDone : loaded ? styles.loadLoaded : ""}`} aria-label={`${subload.category}: ${label}`} aria-pressed={delivered} onClick={() => toggleSubload(subload)}><span className={styles.check} aria-hidden="true">{delivered || loaded ? "✓" : ""}</span><span className={styles.loadText}><b>{subload.description}</b><small>{subload.category} · {label}</small></span><strong>{subload.quantity} {subload.unit}</strong></button></li>; })}</ul> : <p className={styles.empty}>No load detail is attached to this {collection ? "collection" : "delivery"}.</p>}
-    <p className={styles.loadSummary}>{loadedCount} of {subloads.length} {collection ? "collected" : "loaded"}</p>
-    {openIssues.map((issue) => <div className="detail-issue" key={issue.id}>⚠ {issue.description}<button className="secondary-action" disabled={busy} onClick={() => onAction("resolve-issue", lane, { issueId: issue.id })}>Resolve issue</button></div>)}
+    <div className={styles.laneHead}><h3>{collection ? "Collections" : "Deliveries"} ({subloads.length})</h3>{canLoadAll ? <button type="button" className={styles.linkAction} disabled={busy} onClick={() => onAction("mark-stop-loaded", lane, { loaded: true })}>Mark all loaded</button> : <span className={styles.laneState}>{completed ? (collection ? "Collected" : "Delivered") : `${loadedCount} of ${subloads.length} ${collection ? "collected" : "loaded"}`}</span>}</div>
+    {subloads.length ? <ul className={styles.loads}>{subloads.map((subload) => { const delivered = isDelivered(subload); const loaded = isLoaded(subload); const label = collection ? delivered ? "Collected" : "Mark collected" : delivered ? "Delivered" : loaded ? "Tap to mark delivered" : "Tap to mark loaded"; const locked = busy || delivered || ((collection || loaded) && !dispatched); return <li key={subload.id}><button type="button" disabled={locked} className={`${styles.load} ${delivered ? styles.loadDone : loaded ? styles.loadLoaded : ""}`} aria-label={`${subload.category}: ${label}`} aria-pressed={delivered} onClick={() => toggleSubload(subload)}><span className={styles.check} aria-hidden="true">{delivered || loaded ? <CheckIcon size={16} /> : null}</span><span className={styles.loadText}><b>{subload.description}</b><small>{subload.quantity} {subload.unit}</small></span><ChevronRightIcon size={20} /></button></li>; })}</ul> : <p className={styles.empty}>No load detail is attached to this {collection ? "collection" : "delivery"}.</p>}
+    {openIssues.map((issue) => <div className={styles.warning} role="alert" key={issue.id}><AlertIcon size={20} /><span>{issue.description}</span><button className="secondary-action" disabled={busy} onClick={() => onAction("resolve-issue", lane, { issueId: issue.id })}>Resolve issue</button></div>)}
     <div className={styles.actions}>
       {lane.status === "planned" && dispatched && <button className="secondary-action" disabled={busy} onClick={() => onAction("arrive-stop", lane)}>Mark arrived</button>}
-      {completed && lane.canonicalLoadIds && !lane.canUndoCompletion ? <span className={styles.done}>{collection ? "Collection complete" : "Delivery complete"}</span> : completed ? <button className="secondary-action" disabled={busy} onClick={() => onAction("undo-completion", lane)}>{busy ? "Saving…" : collection ? "Undo collection" : "Undo completion"}</button> : <button className={`primary-action ${styles.complete}`} disabled={busy || !dispatched} onClick={() => onAction("complete-stop", lane, { confirmDirect: true })}>{busy ? "Saving…" : collection ? "Mark collection complete" : "Mark stop complete"}</button>}
-      <button className="danger-action issue-action" disabled={busy || !dispatched} onClick={() => onIssue(lane)}>Report issue</button>
+      {completed && lane.canonicalLoadIds && !lane.canUndoCompletion ? <span className={styles.done}>{collection ? "Collection complete" : "Delivery complete"}</span> : completed ? <button className="secondary-action" disabled={busy} onClick={() => onAction("undo-completion", lane)}>{busy ? "Saving…" : collection ? "Undo collection" : "Undo completion"}</button> : <button className={`primary-action ${styles.complete}`} disabled={busy || !dispatched} onClick={() => onAction("complete-stop", lane, { confirmDirect: true })}><CheckIcon size={18} /><span>{busy ? "Saving…" : collection ? "Mark collection complete" : "Mark stop complete"}</span></button>}
+      {!completed && !dispatched && <p className={styles.hint}>Dispatch the run before completing this stop.</p>}
+      <button className={`danger-action issue-action ${styles.report}`} disabled={busy || !dispatched} onClick={() => onIssue(lane)}>Report issue</button>
       {collection && !completed && !lane.canonicalLoadIds && <PostponeCollectionControl disabled={busy} onPostpone={(targetServiceDate) => onAction("defer-collection", lane, { targetServiceDate })} />}
-      {collection && !completed && lane.canonicalLoadIds && <p className={styles.empty}>Postponing this collection is unavailable until the future-date workflow is ready.</p>}
+      {collection && !completed && lane.canonicalLoadIds && <p className={styles.hint}>Postponing this collection is unavailable until the future-date workflow is ready.</p>}
     </div>
   </section>;
 }
