@@ -4,10 +4,11 @@
 .number { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 999px; background: var(--purple); color: #ffffff; font-weight: 800; }
 .pill { padding: 4px 10px; border-radius: 999px; background: #efeafc; color: var(--purple); font-size: 13px; font-weight: 700; }
 .timePill { margin-left: auto; padding: 4px 10px; border-radius: 999px; background: var(--fika-surface-subtle); font-size: 13px; font-weight: 700; }
-.title { margin: 0; font-size: 26px; line-height: 1.15; font-weight: 800; }
+.detail h2.title { max-width: none; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: 26px; line-height: 1.15; font-weight: 800; letter-spacing: 0; text-transform: none; }
 .address { margin: 0; color: var(--fika-text-secondary); font-size: 14px; }
 .actions { display: grid; gap: 8px; }
-.navigate { width: 100%; min-height: 44px; }
+.detail .navigate { width: 100%; min-height: 44px; border: 1px solid var(--fika-border-default); background: var(--fika-surface-card); color: var(--purple); font-weight: 700; }
+.hint { margin: 0; font-size: 13px; color: var(--fika-text-secondary); }
 .summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .summaryCard { display: grid; gap: 2px; padding: 12px; border-radius: 14px; background: var(--fika-surface-subtle); }
 .summaryCard strong { font-size: 16px; }

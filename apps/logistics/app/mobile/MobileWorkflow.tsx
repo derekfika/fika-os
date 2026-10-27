@@ -371,13 +371,14 @@ function StopDetail({ stop, lanes, visitNumber, data, busy, onClose, onAction, o
     <p className={styles.address}><span aria-hidden="true">⌖</span> {address}</p>
     <div className={styles.actions}><button type="button" className={`secondary-action navigate-action ${styles.navigate}`} disabled={busy} onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, "_blank")}>View on map</button></div>
     <div className={styles.summary}>
-      <div className={styles.summaryCard}><strong>{deliveries.length} {deliveries.length === 1 ? "Delivery" : "Deliveries"}</strong><small>{deliveries.reduce((total, lane) => total + loadSubloads(lane, data, movementsForStop(lane, data.movements)[0]).length, 0)} loads</small></div>
+      <div className={styles.summaryCard}><strong>{deliveries.length} {deliveries.length === 1 ? "Delivery" : "Deliveries"}</strong><small>{loadCount(deliveries, data)}</small></div>
       <div className={styles.summaryCard}><strong>{collections.length} {collections.length === 1 ? "Collection" : "Collections"}</strong><small>{collections.length ? "Collect at this stop" : "No collections"}</small></div>
     </div>
     {stop.notes && <div className={styles.notes}><b>Notes</b><p>{stop.notes}</p></div>}
     {lanes.map((lane) => <LaneSection key={lane.canonicalId} lane={lane} data={data} runStatus={runStatus} busy={busy} onAction={onAction} onIssue={onIssue} />)}
   </section></div>;
 }
+function loadCount(lanes: DeliveryStop[], data: Data) { const count = lanes.reduce((total, lane) => total + loadSubloads(lane, data, movementsForStop(lane, data.movements)[0]).length, 0); return `${count} ${count === 1 ? "load" : "loads"}`; }
 function LaneSection({ lane, data, runStatus, busy, onAction, onIssue }: { lane: DeliveryStop; data: Data; runStatus?: DeliveryRun["status"]; busy: boolean; onAction: (action: string, stop: DeliveryStop, extra?: Record<string, unknown>) => void; onIssue: (lane: DeliveryStop) => void }) {
   const movement = movementsForStop(lane, data.movements)[0];
   const collection = stopIsCollection(lane);
@@ -399,6 +400,7 @@ function LaneSection({ lane, data, runStatus, busy, onAction, onIssue }: { lane:
     <div className={styles.laneHead}><h3>{heading} ({subloads.length})</h3>{!collection && !completed && !lane.loaded && (runStatus === "planned" || runStatus === "ready") && <button type="button" className={styles.linkAction} disabled={busy} onClick={() => onAction("mark-stop-loaded", lane, { loaded: true })}>Mark all loaded</button>}</div>
     {subloads.length ? <ul className={styles.loads}>{subloads.map((subload) => { const delivered = isDelivered(subload); const loaded = isLoaded(subload); const label = collection ? delivered ? "Collected" : "Mark collected" : delivered ? "Delivered" : loaded ? "Tap to mark delivered" : "Tap to mark loaded"; const locked = busy || delivered || ((collection || loaded) && !dispatched); return <li key={subload.id}><button type="button" disabled={locked} className={`${styles.load} ${delivered ? styles.loadDone : loaded ? styles.loadLoaded : ""}`} aria-label={`${subload.category}: ${label}`} aria-pressed={delivered} onClick={() => toggleSubload(subload)}><span className={styles.check} aria-hidden="true">{delivered || loaded ? "✓" : ""}</span><span className={styles.loadText}><b>{subload.description}</b><small>{subload.category} · {label}</small></span><strong>{subload.quantity} {subload.unit}</strong></button></li>; })}</ul> : <p className={styles.empty}>No load detail is attached to this {collection ? "collection" : "delivery"}.</p>}
     <p className={styles.loadSummary}>{loadedCount} of {subloads.length} {collection ? "collected" : "loaded"}</p>
+    {!completed && !dispatched && <p className={styles.hint}>Dispatch the run before completing this stop.</p>}
     {openIssues.map((issue) => <div className="detail-issue" key={issue.id}>⚠ {issue.description}<button className="secondary-action" disabled={busy} onClick={() => onAction("resolve-issue", lane, { issueId: issue.id })}>Resolve issue</button></div>)}
     <div className={styles.actions}>
       {lane.status === "planned" && dispatched && <button className="secondary-action" disabled={busy} onClick={() => onAction("arrive-stop", lane)}>Mark arrived</button>}

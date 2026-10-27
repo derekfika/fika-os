@@ -15,9 +15,12 @@
 .subtitle { font-size: 14px; color: var(--fika-text-secondary); }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; }
 .vehicleField { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border: 1px solid var(--fika-border-default); border-radius: 10px; background: var(--fika-surface-card); font-size: 14px; }
-.nav { position: sticky; bottom: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--fika-border-default); background: var(--fika-surface-card); }
+.nav { position: fixed; z-index: 4; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--fika-border-default); background: var(--fika-surface-card); }
 .navItem { display: grid; justify-items: center; gap: 2px; min-height: 52px; padding: 4px; border: 0; border-radius: 10px; background: transparent; color: var(--fika-text-secondary); font-size: 12px; font-weight: 600; }
 .navItem[aria-current="page"] { color: var(--purple); }
 .navIcon { font-size: 18px; line-height: 1; }
 .badge { position: relative; }
 .badge::after { content: ""; position: absolute; top: 0; right: 4px; width: 8px; height: 8px; border-radius: 999px; background: var(--fika-status-danger); }
+.gateBar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; background: var(--fika-surface-card); border-bottom: 1px solid var(--fika-border-default); }
+@media (min-width: 560px) { .gateBar, .topbar { max-width: 430px; margin-left: auto; margin-right: auto; } }
+@media (min-width: 560px) { .nav { left: 50%; max-width: 430px; transform: translateX(-50%); } }
