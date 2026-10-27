@@ -120,10 +120,15 @@ test("post-sign hydration keeps the committed role locked and semantic no-op sav
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
-  assert.match(page, /const \[hydrating, setHydrating\] = useState\(false\)/);
-  assert.match(page, /locked=\{hydrating \|\| reviewFrozen \|\| bothSigned \|\| Boolean\(signing\)\}/);
+  assert.match(page, /const \[projectionLoading, setProjectionLoading\] = useState\(false\)/);
+  assert.match(page, /const \[matrixLoading, setMatrixLoading\] = useState\(false\)/);
+  assert.match(page, /locked=\{hydrating \|\| pageState === "error" \|\| reviewFrozen \|\| bothSigned \|\| Boolean\(signing\)\}/);
+  assert.match(page, /pageState === "loading" && <p className="cpu-allergen-load-state" role="status">Loading allergen matrix/);
+  assert.match(page, /Retry loading matrix/);
+  assert.match(page, /pageState === "empty" && <p className="cpu-allergen-load-state" role="status">No published menu production orders/);
   assert.match(matrix, /onHydrationChange\?\.\(true\)/);
   assert.match(matrix, /onHydrationChange\?\.\(false\)/);
+  assert.match(matrix, /onHydrationError\?\./);
   assert.match(route, /const noOpSave = Boolean\(storedPlan && operation\.action === "save-plan" && !contentChanged && plan\.planningNotes === operation\.planningNotes && authorityMatches && plan\.status === effectiveNextStatus\)/);
   assert.doesNotMatch(route, /if \(contentChanged \|\| plan\.currentAllergenRelease\) invalidateSignedAllergenAuthority/);
 });

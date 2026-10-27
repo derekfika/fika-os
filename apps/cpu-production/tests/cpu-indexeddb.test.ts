@@ -189,8 +189,8 @@ test("allergen signing freezes once, preserves the first signature, and locks ed
   assert.equal((beginSigning.match(/await saveReviewRef\.current/g) || []).length, 1);
   assert.match(beginSigning, /signingSnapshotRef\.current && !refreshed\.lineageMatchesFrozen[\s\S]*setReviewFrozen\(false\)/);
   assert.match(beginSigning, /signingSnapshotRef\.current = refreshed\.freshLineage;[\s\S]*setReviewFrozen\(true\)/);
-  assert.match(page, /busy=\{signatureBusy \|\| hydrating\}/);
-  assert.match(page, /locked=\{hydrating \|\| reviewFrozen \|\| bothSigned \|\| Boolean\(signing\)\}/);
+  assert.match(page, /busy=\{signatureBusy \|\| hydrating \|\| pageState === "error"\}/);
+  assert.match(page, /locked=\{hydrating \|\| pageState === "error" \|\| reviewFrozen \|\| bothSigned \|\| Boolean\(signing\)\}/);
   assert.match(matrix, /locked = false/);
   assert.match(matrix, /disabled=\{busy \|\| locked \|\| key === "no_key_allergens"\}/);
   assert.match(matrix, /loadLocalChecked/);
