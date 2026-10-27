@@ -19,6 +19,8 @@ test("mobile workflow locks committed writes and exposes progress", () => {
   assert.match(workflow, /setPendingAction\(action\)/);
   assert.match(workflow, /role="status" aria-live="polite"/);
   assert.match(workflow, /Dispatching…/);
+  assert.match(workflow, /pendingLabel=\{pendingAction === "dispatch-run" \? "Dispatching…" : "Saving update…"\}/);
+  assert.doesNotMatch(workflow, /pendingLabel="Dispatching…"/);
   assert.match(workflow, /Submitting…/);
   assert.match(workflow, /disabled=\{busy\}/);
 });
