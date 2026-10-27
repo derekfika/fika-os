@@ -1,4 +1,4 @@
-.topbar { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 60px; padding: 8px 16px; background: var(--fika-surface-card); }
+.topbar { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 60px; padding: calc(8px + env(safe-area-inset-top)) 16px 8px; background: var(--fika-surface-card); }
 .brand { margin: 0; text-align: center; font-size: 16px; font-weight: 600; color: var(--fika-text-primary); }
 .iconButton { display: grid; place-items: center; width: 44px; height: 44px; margin-left: -10px; border: 0; border-radius: 10px; background: transparent; color: var(--fika-text-primary); }
 .signOut { min-height: 40px; padding: 0 14px; border: 1px solid var(--fika-border-default); border-radius: 10px; background: var(--fika-surface-card); color: var(--fika-text-primary); font-size: 14px; font-weight: 600; }

@@ -1,0 +1,17 @@
+{
+  "id": "/mobile/van2",
+  "name": "FIKA Van 2 Driver",
+  "short_name": "Van 2",
+  "description": "Van 2 run, stops and loads for the FIKA Logistics driver.",
+  "start_url": "/mobile/van2",
+  "scope": "/mobile/van2",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#4f34c7",
+  "icons": [
+    { "src": "/pwa/van2-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/pwa/van2-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/pwa/van2-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
