@@ -242,3 +242,28 @@ test("review decisions persist and the catalogue payload reflects them; the full
   assert.equal((await loadCataloguePayload(viewer)).canManage, false);
   void y;
 });
+
+test("link-provider-item attaches CFC and Munich RE brochure rows to an existing Item, refusing stale, duplicate, archived and held rows", { skip: !enabled }, async () => {
+  const key = unique();
+  const sandwich = await seed("Hospitality Menu Item", `hospitality-menu-item:mnk:link-${key}`, { name: `Deli Sandwich ${key}`, category: "Lunch", lifecycleState: "active", dietaryInformation: [], allergenInformation: [], defaultMinimumQuantity: 8, providerMappings: [{ provider: "mnk-booking-platform", sourceItemId: `deli-${key}` }] });
+  const cfcRow = { provider: "cfc-hospitality-brochure", sourceItemId: `deli-cfc-${key}` };
+  const mrRow = { provider: "munich-re-generic-brochure", sourceItemId: `deli-mr-${key}` };
+
+  await rejects(run({ action: "link-provider-item", itemId: sandwich, expectedVersion: 9, mappings: [cfcRow] }), /changed elsewhere/);
+  await run({ action: "link-provider-item", itemId: sandwich, expectedVersion: 1, mappings: [cfcRow, mrRow] });
+  const linked = await get(sandwich);
+  assert.equal(linked?.record.version, 2);
+  assert.deepEqual((linked?.record.providerMappings as Array<{ provider: string }>).map(mapping => mapping.provider).sort(), ["cfc-hospitality-brochure", "mnk-booking-platform", "munich-re-generic-brochure"]);
+  assert.equal((await auditFor(sandwich)).some(entry => entry.action === "Hospitality Catalogue brochure rows linked"), true);
+
+  await rejects(run({ action: "link-provider-item", itemId: sandwich, expectedVersion: 2, mappings: [cfcRow] }), /already linked/);
+  await rejects(run({ action: "link-provider-item", itemId: sandwich, expectedVersion: 2, mappings: [{ provider: "mnk-booking-platform", sourceItemId: "x" }] }), /cannot be linked/);
+
+  const other = await seed("Hospitality Menu Item", `hospitality-menu-item:mnk:other-${key}`, { name: `Other ${key}`, category: "Lunch", lifecycleState: "active", dietaryInformation: [], allergenInformation: [], providerMappings: [{ provider: "cfc-hospitality-brochure", sourceItemId: `taken-${key}` }] });
+  await rejects(run({ action: "link-provider-item", itemId: sandwich, expectedVersion: 2, mappings: [{ provider: "cfc-hospitality-brochure", sourceItemId: `taken-${key}` }] }), /already linked to another active item/);
+
+  const archivedHolder = await seed("Hospitality Menu Item", `hospitality-menu-item:mnk:archived-${key}`, { name: `Retired ${key}`, category: "Lunch", lifecycleState: "archived", dietaryInformation: [], allergenInformation: [], providerMappings: [{ provider: "munich-re-generic-brochure", sourceItemId: `old-${key}` }] });
+  await run({ action: "link-provider-item", itemId: sandwich, expectedVersion: 2, mappings: [{ provider: "munich-re-generic-brochure", sourceItemId: `old-${key}` }] });
+  assert.equal((await get(sandwich))?.record.version, 3, "an archived holder does not block");
+  await canonical().doc(stableDocumentId(other)).delete(); await canonical().doc(stableDocumentId(archivedHolder)).delete();
+});

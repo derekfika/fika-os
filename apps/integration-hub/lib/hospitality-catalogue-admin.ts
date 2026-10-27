@@ -72,7 +72,40 @@ export type CatalogueCommand =
   | SiteSettings & { action: "set-site-override"; itemId: string; expectedVersion: number; oplocId: string; price?: PriceInput | null; minimumQuantity?: number | null; displayName?: string | null; description?: string | null }
   | { action: "adopt-company-default"; itemId: string; expectedVersion: number; price: PriceInput; minimumQuantity?: number | null; confirmed: boolean }
   | { action: "merge-items"; survivorItemId: string; sourceItemIds: string[]; expectedVersions: Record<string, number>; groupId?: string }
-  | { action: "record-review-decision"; memberIds: string[]; decision: "keep_separate" | "defer" };
+  | { action: "record-review-decision"; memberIds: string[]; decision: "keep_separate" | "defer" }
+  /** Links brochure rows of the named site platforms to an EXISTING active company Item, so the Item's price, minimum and routing apply to that site. Creates no Item. */
+  | { action: "link-provider-item"; itemId: string; expectedVersion: number; mappings: Array<{ provider: string; sourceItemId: string }> };
+
+/** Brochure providers a company Item may be linked to from the catalogue. Anything else (including MNK) is refused, so a link can never invent a provider. */
+export const LINKABLE_BROCHURE_PROVIDERS = ["cfc-hospitality-brochure", "munich-re-generic-brochure"] as const;
+
+type ProviderRef = { provider: string; sourceItemId: string; sourceVersion?: string };
+const providerKey = (mapping: ProviderRef) => `${mapping.provider}|${mapping.sourceItemId}`;
+
+/**
+ * Pure rules for a brochure link. Returns only the mappings that are new to the Item. Refuses: an unlinkable provider, a blank source
+ * row, a duplicate row in the request, nothing new to link, and a row already held by another ACTIVE Item (archived holders are ignored).
+ */
+export function planBrochureLink(item: { canonicalId: string; name: string; providerMappings?: ProviderRef[] }, others: Array<{ canonicalId: string; archived: boolean; providerMappings?: ProviderRef[] }>, requested: Array<{ provider: string; sourceItemId: string }>): ProviderRef[] {
+  if (!requested.length) throw problem("Choose at least one brochure row to link.");
+  const seen = new Set<string>();
+  for (const mapping of requested) {
+    if (!(LINKABLE_BROCHURE_PROVIDERS as readonly string[]).includes(mapping.provider)) throw problem(`Provider “${mapping.provider}” cannot be linked from the catalogue.`);
+    if (!mapping.sourceItemId.trim()) throw problem("Every brochure row needs a source item id.");
+    if (seen.has(providerKey(mapping))) throw problem(`Brochure row “${mapping.sourceItemId}” is listed twice.`);
+    seen.add(providerKey(mapping));
+  }
+  const held = new Set((item.providerMappings || []).map(providerKey));
+  const additions = requested.filter(mapping => !held.has(providerKey(mapping))).map(mapping => ({ provider: mapping.provider, sourceItemId: mapping.sourceItemId.trim() }));
+  if (!additions.length) throw problem(`Those brochure rows are already linked to “${item.name}”.`);
+  for (const other of others) {
+    if (other.canonicalId === item.canonicalId || other.archived) continue;
+    const taken = new Set((other.providerMappings || []).map(providerKey));
+    const clash = additions.find(mapping => taken.has(providerKey(mapping)));
+    if (clash) throw problem(`Brochure row “${clash.sourceItemId}” is already linked to another active item.`);
+  }
+  return additions;
+}
 
 export type CatalogueCommandResult = { itemIds: string[]; reload: boolean; message: string };
 
@@ -292,6 +325,22 @@ async function setDefaultPrice(ctx: Ctx, command: Extract<CatalogueCommand, { ac
   stage(ctx, "Hospitality Menu Item", bump(ctx, item.record), item, "Company default price changed (item version touched to refuse stale editors).");
   auditEvent(ctx, "Hospitality Catalogue default price changed", item.canonicalId, `Default price for “${text(item.record.name)}” changed. Sites without an override inherit it.`, { itemId: item.canonicalId, before: previous ? { amount: previous.record.amount, vatRate: previous.record.vatRate } : null, after: input });
   return { itemIds: [item.canonicalId], reload: false, message: "Company default price saved. Sites without an override inherit it." };
+}
+
+async function linkProviderItem(ctx: Ctx, command: Extract<CatalogueCommand, { action: "link-provider-item" }>): Promise<CatalogueCommandResult> {
+  const itemRef = canonical().doc(stableDocumentId(command.itemId));
+  const [snapshot, items] = await Promise.all([readDoc(ctx, itemRef), allItems(ctx)]);
+  const item = requireItem(snapshot); expectVersion(item, command.expectedVersion, "This item");
+  if (isArchived(item)) throw problem("Choose an active catalogue item.");
+  const current = (Array.isArray(item.record.providerMappings) ? item.record.providerMappings : []) as ProviderRef[];
+  const additions = planBrochureLink(
+    { canonicalId: item.canonicalId, name: text(item.record.name), providerMappings: current },
+    items.map(other => ({ canonicalId: other.canonicalId, archived: isArchived(other), providerMappings: (Array.isArray(other.record.providerMappings) ? other.record.providerMappings : []) as ProviderRef[] })),
+    command.mappings,
+  );
+  stage(ctx, "Hospitality Menu Item", { ...bump(ctx, item.record), providerMappings: [...current, ...additions] }, item, "Brochure rows linked to this Item.");
+  auditEvent(ctx, "Hospitality Catalogue brochure rows linked", item.canonicalId, `Linked ${additions.length} brochure row(s) to “${text(item.record.name)}”.`, { itemId: item.canonicalId, added: additions, before: { version: Number(item.record.version) }, after: { version: Number(item.record.version) + 1 } });
+  return { itemIds: [item.canonicalId], reload: false, message: `Linked ${additions.length} brochure row(s) to “${text(item.record.name)}”.` };
 }
 
 async function setRouting(ctx: Ctx, command: Extract<CatalogueCommand, { action: "set-routing" }>): Promise<CatalogueCommandResult> {
@@ -524,6 +573,7 @@ export async function runCatalogueCommand(actor: Actor, command: CatalogueComman
       case "adopt-company-default": return adoptCompanyDefault(ctx, command);
       case "merge-items": return mergeItems(ctx, command);
       case "record-review-decision": return recordReviewDecision(ctx, command);
+      case "link-provider-item": return linkProviderItem(ctx, command);
     }
   });
 }
