@@ -1,3 +1,4 @@
+import { processDriverNotificationsSafely, stageDriverRunChange } from "@/lib/driver-notification-store";
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
 import { assertSameOrigin } from "@/lib/csrf";
@@ -1238,10 +1239,12 @@ async function handlePost(request: NextRequest) {
         if (!["draft", "planned"].includes(run.status)) throw new HttpError(422, "Journey times cannot change after a run is marked ready or departs.");
         const { plannedCpuDepartureTime: _departure, plannedCpuReturnTime: _return, ...withoutTimes } = run;
         const next: DeliveryRun = { ...withoutTimes, ...(departure ? { plannedCpuDepartureTime: departure, plannedCpuReturnTime: returnTime } : {}), version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: departure ? "run-journey-times-updated" : "run-journey-times-cleared", at: now, by, version: run.version + 1 }] };
+        await stageDriverRunChange(transaction, { action: "update-run-timing", actorId, now, before: run, after: next });
         transaction.set(ref, next);
         return next;
       }, principal, request.headers.get("cookie") || undefined);
       await recordCanonicalLogisticsChange({ serviceDate: saved.serviceDate, entityType: "run", entityId: saved.canonicalId, changeType: departure ? "run-journey-times-updated" : "run-journey-times-cleared", revision: saved.version, actorId, by, changedAt: now });
+      await processDriverNotificationsSafely();
       return NextResponse.json(saved);
     }
     if (body.action === "reset-planning-day" && body.serviceDate) {
@@ -1346,6 +1349,7 @@ async function handlePost(request: NextRequest) {
         const orderProblem = transferOrderProblem(nativeInOrder.map((stop, index) => ({ ...stop, sequence: index + 1 })), movementSnapshots.map((item) => item.data() as MovementRequest));
         if (orderProblem) throw new HttpError(orderProblem.includes("incomplete or ambiguous") ? 409 : 422, orderProblem);
         if (JSON.stringify(run.orderedStopIds) === JSON.stringify(submitted)) return run; // idempotent replay
+        await stageDriverRunChange(transaction, { action: "set-run-stop-order", actorId, now, before: run, after: { ...run, orderedStopIds: submitted, version: run.version + 1 } });
         for (const [index, stop] of nativeInOrder.entries()) transaction.set(stops().doc(stop.canonicalId), { ...stop, sequence: index + 1 });
         const next: DeliveryRun = { ...run, orderedStopIds: submitted, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "run-stop-order-saved", at: now, by, version: run.version + 1 }] };
         transaction.set(ref, next);
@@ -1353,6 +1357,7 @@ async function handlePost(request: NextRequest) {
       });
       const event = await appendLogisticsChange({ serviceDate: saved.serviceDate, entityType: "run", entityId: saved.canonicalId, changeType: "run-stop-order-saved", revision: saved.version, changedAt: now, actorId });
       await rebuildLogisticsProjection(saved.serviceDate, by, event.sequence);
+      await processDriverNotificationsSafely();
       return NextResponse.json(saved);
     }
     if (

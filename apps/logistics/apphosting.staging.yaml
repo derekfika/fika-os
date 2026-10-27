@@ -42,3 +42,12 @@ env:
   - variable: LOGISTICS_MOBILE_VAN2_PIN_VERIFIER
     secret: LOGISTICS_MOBILE_VAN2_PIN_VERIFIER@1
     availability: [RUNTIME]
+  - variable: LOGISTICS_VAPID_PRIVATE_KEY
+    secret: LOGISTICS_VAPID_PRIVATE_KEY@1
+    availability: [RUNTIME]
+  - variable: LOGISTICS_VAPID_PUBLIC_KEY
+    value: BFH5eM27YlRy6pHpUc6no1YGD6SMDW1Nv3fGVNsfvUBLamMA1E1tIE1hniGDVcsoLZdB9p4snuo7d-Ks-FmAPoU
+    availability: [BUILD, RUNTIME]
+  - variable: LOGISTICS_VAPID_SUBJECT
+    value: mailto:logistics@fikacatering.com
+    availability: [RUNTIME]
