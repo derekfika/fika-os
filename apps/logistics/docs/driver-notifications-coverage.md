@@ -8,11 +8,21 @@ claimed beyond them.
 
 ## Architecture
 
+0. **Delivery guarantee (read this first).** Once an event is staged, delivery to the inbox is guaranteed to be eventually
+   consistent: the event commits atomically with the planner change, processing is retried and also recovered by the scheduler.
+   *Staging the event itself is best-effort*: if capture throws, the planner save still commits (Franco's planner is never
+   disrupted), but no event exists and the change cannot be rebuilt later. That case is made visible, not silent: a
+   `[driver-notifications] CAPTURE GAP` error log (alert on it), a durable `fikaLogisticsDriverCaptureGapsV1` record with status
+   `open`, and `openCaptureGaps` in the recovery route's response. Only the final transaction attempt counts, so a retried
+   transaction that captures cleanly leaves no gap. Capture is **not** guaranteed under all failures; if both the gap record and
+   the log line were lost, the miss would be undetectable. Operators clear a gap by checking the affected run with the driver.
 1. A write that changes a driver-visible run stages one immutable `DriverChangeEvent` **inside the same Firestore transaction**.
    Planner actions go through `authorizeTransaction`; upstream reconciliation, `save-logistics-job`, `repair-run-vehicle-identity`
-   and `reset-planning-day` go through `runCapturedTransaction` (`lib/driver-change-capture.ts`). Both buffer the writes, read the
-   day's runs, loads, assignments, jobs and stops, build the driver-visible before and after snapshots of every run, and stage the
-   event only when a driver-visible difference exists. Authorization has already passed; a capture problem is logged and never
+   and `reset-planning-day` go through `runCapturedTransaction` (`lib/driver-change-capture.ts`). Both buffer the writes, resolve the
+   runs the write can affect (directly, or through a load, stop, assignment or job, before and after), read only those runs' loads,
+   assignments, jobs and stops, build the driver-visible before and after snapshots, and stage the event only when a
+   driver-visible difference exists. Capture is scoped to the affected runs, not the day: on a 324-document day it reads about 31
+   documents per edit instead of 327, and edits to Van 1 and Van 2 no longer contend. Authorization has already passed; a capture problem is logged and never
    blocks the save.
 2. Event identity is the action plus every entity version the mutation advanced (`driverChangeEventId`). Staging reads first and
    creates only if absent, so a retry or concurrent duplicate cannot overwrite a processed event or reset it to pending.
@@ -63,9 +73,7 @@ driver execution never creates events.
 
 ## Known limits (not claimed as covered)
 
-- **Legacy assignments with no `serviceDate`.** Capture reads a day's assignments by `serviceDate`. Assignments written before that
-  field existed are invisible to capture until `repair-logistics-assignment-dates` has been run. Run it before relying on
-  notifications for old data.
+- **Capture failures** are visible but not recoverable (see the delivery guarantee above).
 - **Writers outside the two capture paths.** Any future write path that does not use `authorizeTransaction` or
   `runCapturedTransaction` will not be captured. There is no such path in `app/api/logistics/route.ts` or the reconciliation code
   today; new paths must adopt one of the two helpers.
@@ -85,15 +93,17 @@ Empty draft run creation (`create-run`, `ensure-vehicle-day-runs`), retirement o
 - Deploy the three composite indexes in `firestore.indexes.json` **before** the code that queries them:
   `fikaLogisticsDriverChangeEventsV1` status + committedAt; `fikaLogisticsDriverNotificationsV1` vehicleId + createdAt desc;
   `fikaLogisticsDriverNotificationsV1` vehicleId + readAt + expiresAt (unread count). Wait for them to finish building.
-- **Server-owned recovery.** `POST /api/logistics/driver-notifications/process` is authenticated by the internal service token
+- **Server-owned recovery** (full runbook: `apps/logistics/docs/driver-notifications-scheduler.md`). `POST /api/logistics/driver-notifications/process` is authenticated by the internal service token
   (`x-fika-internal-token`, `FIKA_INTERNAL_API_TOKEN`) exactly like `/api/logistics/invalidate`, processes at most 50 pending events
   and returns counts only. A Cloud Scheduler job should call it every five minutes (same pattern as
   `docs/deployment/integration-hub-logistics-outbox-scheduler.md`). It is a safety net: the normal path processes immediately after
   each save. The scheduler job is **not created** by this PR.
 - Optional: a Firestore TTL policy on `fikaLogisticsDriverNotificationsV1.expiresAt` (30 days). Expired notices are already hidden
   on read and excluded from the count; TTL only reclaims storage.
-- New recurring reads: on a planner write of a non-excluded action for today's service date, the capture reads that day's runs,
-  loads, assignments, jobs and stops once (skipped entirely when the written documents are not today's). On the driver side, one
+- New recurring reads: on a planner write of a non-excluded action that affects a run for today's service date, capture reads those
+  runs' documents, loads, assignments, jobs and stops once (about 31 documents for a typical single-run edit, measured on a
+  324-document day; skipped entirely when no affected run is today's). Measured with
+  `tests/emulator/driver-capture-load.emulator.test.ts`. On the driver side, one
   vehicle-scoped inbox query (at most 50 documents) plus one aggregate count when the app opens or re-shows and when the
   Notifications tab is opened. No polling loop and no new listener.
 - Real-Firestore tests: `npm run test:emulator` in `apps/logistics` (run under `firebase emulators:exec`). CI wiring needs an edit to

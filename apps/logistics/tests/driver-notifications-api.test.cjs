@@ -122,10 +122,10 @@ test('a vehicle session cannot trigger processing; only the internal-token route
   assert.equal((await processor.POST(internal({ cookie: 'fika_logistics_mobile_session_van1=x', 'x-fika-logistics-vehicle': 'van1' }))).status, 403, 'a vehicle cookie is not enough');
   const recovered = await processor.POST(internal({ 'x-fika-internal-token': 'internal-processor-test-token' }));
   assert.equal(recovered.status, 200);
-  assert.deepEqual(await recovered.json(), { processed: 1, created: 1, expired: 0 }, 'counts only, no content');
+  assert.deepEqual(await recovered.json(), { processed: 1, created: 1, expired: 0, openCaptureGaps: 0 }, 'counts only, no content');
   assert.equal((await call(route.GET, request('van1'))).body.items.length, 1);
   const repeated = await (await processor.POST(internal({ 'x-fika-internal-token': 'internal-processor-test-token' }))).json();
-  assert.deepEqual(repeated, { processed: 0, created: 0, expired: 0 }, 'recovery never duplicates');
+  assert.deepEqual(repeated, { processed: 0, created: 0, expired: 0, openCaptureGaps: 0 }, 'recovery never duplicates');
   assert.equal([...f.records].filter(([key]) => key.startsWith(EVENTS + '/')).length, 1);
 });
 

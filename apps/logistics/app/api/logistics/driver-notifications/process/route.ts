@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { internalTokenAllowed } from "../../../../../../shared/internal-auth";
-import { processDriverNotifications } from "@/lib/driver-notification-store";
+import { countOpenCaptureGaps, processDriverNotifications } from "@/lib/driver-notification-store";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
@@ -13,7 +13,9 @@ export async function POST(request: NextRequest) {
   if (!internalTokenAllowed(request)) return NextResponse.json({ error: { message: "Internal access required." } }, { status: 403, headers: NO_STORE });
   try {
     const result = await processDriverNotifications(new Date(), 50);
-    return NextResponse.json(result, { headers: NO_STORE });
+    // openCaptureGaps > 0 means a committed planner change may not have notified drivers (see the coverage doc); it is health output.
+    const openCaptureGaps = await countOpenCaptureGaps().catch(() => -1);
+    return NextResponse.json({ ...result, openCaptureGaps }, { headers: NO_STORE });
   } catch {
     return NextResponse.json({ error: { message: "Driver notification processing is deferred for retry." } }, { status: 503, headers: NO_STORE });
   }

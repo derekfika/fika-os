@@ -6,6 +6,7 @@ import {
 
 export const driverChangeEvents = () => db.collection("fikaLogisticsDriverChangeEventsV1");
 export const driverNotifications = () => db.collection("fikaLogisticsDriverNotificationsV1");
+export const driverCaptureGaps = () => db.collection("fikaLogisticsDriverCaptureGapsV1");
 
 /** Notices are kept for 30 days. `expiresAt` is a Date so a Firestore TTL policy on the field can also reclaim storage. */
 export const NOTIFICATION_RETENTION_DAYS = 30;
@@ -115,4 +116,23 @@ export async function processDriverNotificationsSafely(now = new Date()) {
     console.error("[driver-notifications] processing deferred for retry", error instanceof Error ? error.message : "unknown error");
     return undefined;
   }
+}
+
+export type CaptureGap = { action: string; actorId: string; at: string; serviceDate: string; error: string; entities: string[] };
+
+/**
+ * A planner write committed but no change event could be staged, so drivers may not have been told. This cannot be replayed (the
+ * before-state is gone), so it is made visible instead: a stable error log line for alerting plus an open gap record that the
+ * processor route reports. Best-effort: if even this write fails, the log line is still emitted.
+ */
+export async function recordCaptureGap(gap: CaptureGap) {
+  console.error("[driver-notifications] CAPTURE GAP: a committed change may not have notified drivers", JSON.stringify({ action: gap.action, serviceDate: gap.serviceDate, error: gap.error.slice(0, 200), entities: gap.entities.length }));
+  try { await driverCaptureGaps().add({ ...gap, error: gap.error.slice(0, 300), status: "open" }); }
+  catch (error) { console.error("[driver-notifications] CAPTURE GAP record failed", error instanceof Error ? error.message : "unknown error"); }
+}
+
+/** Bounded count of open capture gaps, for the recovery route's health output. */
+export async function countOpenCaptureGaps(cap = 100): Promise<number> {
+  const aggregate = await driverCaptureGaps().where("status", "==", "open").limit(cap).count().get();
+  return Math.min(aggregate.data().count, cap);
 }

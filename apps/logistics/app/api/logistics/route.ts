@@ -1,5 +1,5 @@
 import { processDriverNotificationsSafely } from "@/lib/driver-notification-store";
-import { driverCaptureFor, runCapturedTransaction, type CaptureContext } from "@/lib/driver-change-capture";
+import { driverCaptureFor, finishCapture, runCapturedTransaction, type CaptureContext } from "@/lib/driver-change-capture";
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
 import { assertSameOrigin } from "@/lib/csrf";
@@ -707,7 +707,7 @@ async function handlePost(request: NextRequest) {
     const runTracedTransaction = async <T,>(callback: (transaction: Transaction) => Promise<T>) => {
       const capture = driverCaptureFor(body.action, actorId, now);
       const result = await runAuthorizedTracedTransaction(callback, principal, request.headers.get("cookie") || undefined, ["set-run-driver", "update-run"].includes(body.action), capture);
-      if (capture) await processDriverNotificationsSafely();
+      await finishCapture(capture);
       return result;
     };
     if (hostedRuntime()) assertSameOrigin(request);
@@ -1233,6 +1233,7 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json(result);
     }
     if (body.action === "update-run-timing" && typeof body.runId === "string") {
+      const timingCapture = driverCaptureFor(body.action, actorId, now);
       const current = await getRun(body.runId);
       if (!current) throw new HttpError(404, "Run not found.");
       if (body.expectedRunVersion === undefined) throw new HttpError(422, "A current run version is required.");
@@ -1252,9 +1253,9 @@ async function handlePost(request: NextRequest) {
         const next: DeliveryRun = { ...withoutTimes, ...(departure ? { plannedCpuDepartureTime: departure, plannedCpuReturnTime: returnTime } : {}), version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: departure ? "run-journey-times-updated" : "run-journey-times-cleared", at: now, by, version: run.version + 1 }] };
         transaction.set(ref, next);
         return next;
-      }, principal, request.headers.get("cookie") || undefined, false, driverCaptureFor(body.action, actorId, now));
+      }, principal, request.headers.get("cookie") || undefined, false, timingCapture);
       await recordCanonicalLogisticsChange({ serviceDate: saved.serviceDate, entityType: "run", entityId: saved.canonicalId, changeType: departure ? "run-journey-times-updated" : "run-journey-times-cleared", revision: saved.version, actorId, by, changedAt: now });
-      await processDriverNotificationsSafely();
+      await finishCapture(timingCapture);
       return NextResponse.json(saved);
     }
     if (body.action === "reset-planning-day" && body.serviceDate) {

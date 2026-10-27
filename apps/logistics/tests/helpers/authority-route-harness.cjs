@@ -21,6 +21,7 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
     }
     count() { return { get: async () => { const { size } = await this.get(); return { data: () => ({ count: size }) }; } }; }
     doc(id) { return new Ref(this.name + '/' + id); }
+    async add(value) { const ref = new Ref(this.name + '/auto-' + records.size + '-' + Math.random().toString(36).slice(2)); await ref.set(value); return ref; }
   }
   class Ref {
     constructor(key) { this.path = key; this.id = key.split('/').at(-1); this.parent = { id: key.split('/')[0] }; }

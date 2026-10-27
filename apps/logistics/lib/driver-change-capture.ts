@@ -3,12 +3,13 @@ import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsAssignment, Logi
 import { deliveryLoads, logisticsAssignments, logisticsJobs, runs, stops } from "./store";
 import { londonServiceDate, type DriverRunSnapshot, type DriverVisit } from "./driver-notifications";
 import { driverChangeEventId, stageDriverChangeEvent, type ChangeMutation } from "./driver-change-events";
-import { driverChangeEvents, processDriverNotificationsSafely } from "./driver-notification-store";
+import { driverChangeEvents, processDriverNotificationsSafely, recordCaptureGap } from "./driver-notification-store";
 import { db } from "./firebase";
 
 /** A write the authorised transaction has buffered but not yet applied. Same shape `authorizeTransaction` buffers. */
 export type BufferedWrite = { method: "set" | "create" | "update" | "delete"; args: any[] };
-export type CaptureContext = { action: string; actorId: string; now: string };
+/** `failure` is set by the LAST transaction attempt when capture could not stage an event; the caller records it after the commit. */
+export type CaptureContext = { action: string; actorId: string; now: string; failure?: { message: string; entities: string[] } };
 
 const RUNS = "fikaLogisticsDeliveryRunsV1";
 const LOADS = "fikaLogisticsDeliveryLoadsV1";
@@ -35,6 +36,7 @@ export type DayState = { runs: DeliveryRun[]; loads: DeliveryLoad[]; assignments
 const normalise = (value: string | undefined) => (value ?? "").replace(/\s+/g, " ").trim();
 const contentsSummary = (job: LogisticsJob) => (job.contents ?? []).map(item => `${item.quantity} ${item.unit} ${item.description}`.replace(/\s+/g, " ").trim());
 const uniqueSorted = (values: string[]) => [...new Set(values)].sort();
+// Quantity lines are a multiset: two identical lines are two items, so removing one must change the summary. Never deduplicate them.
 
 /**
  * Driver-visible snapshots of every vehicle run for one service date. Only fields a driver can see feed the snapshot, so technical
@@ -82,7 +84,7 @@ export function buildDriverRunSnapshots(date: string, state: DayState): DriverRu
       departure: run.plannedCpuDepartureTime,
       return: run.plannedCpuReturnTime,
       stopOrder: run.orderedStopIds,
-      visits: [...groups.values()].map(group => ({ ...group.visit, quantities: uniqueSorted(group.quantities).join(" · "), instructions: uniqueSorted(group.instructions.map(normalise).filter(Boolean)).join(" | ") })).sort((a, b) => a.visitId.localeCompare(b.visitId)),
+      visits: [...groups.values()].map(group => ({ ...group.visit, quantities: [...group.quantities].sort().join(" · "), instructions: uniqueSorted(group.instructions.map(normalise).filter(Boolean)).join(" | ") })).sort((a, b) => a.visitId.localeCompare(b.visitId)),
     });
   }
   return snapshots;
@@ -111,7 +113,7 @@ export async function stageDriverChangeFromWrites(transaction: Transaction, writ
   const watched = writes.filter(write => WATCHED.has(write.args[0]?.parent?.id));
   if (!watched.length) return "skipped";
   // Field-path updates cannot be applied to a snapshot; they are not used by the planner paths, so skip rather than guess.
-  if (watched.some(write => write.method === "update" && typeof write.args[1] === "string")) return "skipped";
+  if (watched.some(write => write.method === "update" && typeof write.args[1] === "string")) throw new Error("unsupported field-path update on a watched document");
   const today = londonServiceDate(new Date(ctx.now));
 
   const overlay = new Map<string, { collection: string; id: string; next: any | undefined; prior: any | undefined }>();
@@ -127,45 +129,62 @@ export async function stageDriverChangeFromWrites(transaction: Transaction, writ
     else entry.next = write.args[1];
   }
 
-  // Cheap early exit: no document of today's date is involved. Stops and assignments carry no date of their own, so resolve it.
-  const dateOf = async (collection: string, doc: any): Promise<string | undefined> => {
-    if (!doc) return undefined;
-    if (doc.serviceDate) return doc.serviceDate as string;
-    if (collection === STOPS && doc.runId) { const run = await transaction.get(runs().doc(doc.runId)); return run.exists ? (run.data() as DeliveryRun).serviceDate : undefined; }
-    if (collection === ASSIGNMENTS && doc.loadId) { const load = await transaction.get(deliveryLoads().doc(doc.loadId)); return load.exists ? (load.data() as DeliveryLoad).serviceDate : undefined; }
-    return undefined;
+  // Scope: read only the runs this write can affect, never the whole day. A write reaches a run directly (run), through its load
+  // (runId / collectionRunId, before and after, so a move touches both vans), its stop, its assignment (via the load) or its job
+  // (via its assignments). Edits to different vans therefore read, and lock, disjoint documents.
+  const affected = new Set<string>();
+  const loadRunIds = async (loadId: string): Promise<string[]> => {
+    const written = overlay.get(`${LOADS}/${loadId}`);
+    const docs = written ? [written.prior, written.next] : [(await transaction.get(deliveryLoads().doc(loadId))).data()];
+    return docs.flatMap(load => load ? [load.runId, load.collectionRunId].filter(Boolean) as string[] : []);
   };
-  let touchesToday = false;
   for (const entry of overlay.values()) {
-    if ((await dateOf(entry.collection, entry.prior)) === today || (await dateOf(entry.collection, entry.next)) === today) { touchesToday = true; break; }
+    const docs = [entry.prior, entry.next].filter(Boolean);
+    if (!docs.length) continue;
+    if (entry.collection === RUNS) affected.add(entry.id);
+    else if (entry.collection === LOADS) docs.forEach(load => [load.runId, load.collectionRunId].forEach(id => id && affected.add(id)));
+    else if (entry.collection === STOPS) docs.forEach(stop => stop.runId && affected.add(stop.runId));
+    else if (entry.collection === ASSIGNMENTS) for (const loadId of new Set(docs.map(item => item.loadId).filter(Boolean))) (await loadRunIds(loadId)).forEach(id => affected.add(id));
+    else if (entry.collection === JOBS && docs.some(job => job.serviceDate === today)) {
+      const assigned = await transaction.get(logisticsAssignments().where("jobId", "==", entry.id));
+      for (const loadId of new Set(assigned.docs.map(doc => (doc.data() as LogisticsAssignment).loadId))) (await loadRunIds(loadId)).forEach(id => affected.add(id));
+    }
   }
-  if (!touchesToday) return "skipped";
+  if (!affected.size) return "skipped";
 
-  const [runSnap, loadSnap, assignmentSnap, jobSnap] = await Promise.all([
-    transaction.get(runs().where("serviceDate", "==", today)),
-    transaction.get(deliveryLoads().where("serviceDate", "==", today)),
-    transaction.get(logisticsAssignments().where("serviceDate", "==", today)),
-    transaction.get(logisticsJobs().where("serviceDate", "==", today)),
+  const runIds = [...affected].sort();
+  const runSnaps = await Promise.all(runIds.map(id => transaction.get(runs().doc(id))));
+  const baseRuns = runSnaps.filter(snap => snap.exists).map(snap => snap.data() as DeliveryRun).filter(run => run.serviceDate === today);
+  const overlayTodayRun = [...overlay.values()].some(entry => entry.collection === RUNS && (entry.next as DeliveryRun | undefined)?.serviceDate === today);
+  if (!baseRuns.length && !overlayTodayRun) return "skipped"; // none of the affected runs is today's
+  const [loadByRun, loadByCollection, stopSnaps] = await Promise.all([
+    Promise.all(runIds.map(id => transaction.get(deliveryLoads().where("runId", "==", id)))),
+    Promise.all(runIds.map(id => transaction.get(deliveryLoads().where("collectionRunId", "==", id)))),
+    Promise.all(runIds.map(id => transaction.get(stops().where("runId", "==", id)))),
   ]);
-  const baseRuns = runSnap.docs.map(doc => doc.data() as DeliveryRun);
-  const overlayRunIds = [...overlay.values()].filter(entry => entry.collection === RUNS && entry.next && (entry.next as DeliveryRun).serviceDate === today).map(entry => entry.id);
-  const runIds = uniqueSorted([...baseRuns.map(run => run.canonicalId), ...overlayRunIds]);
-  const stopSnaps = await Promise.all(runIds.map(id => transaction.get(stops().where("runId", "==", id))));
+  const baseLoads = [...new Map([...loadByRun, ...loadByCollection].flatMap(snap => snap.docs.map(doc => [doc.id, doc.data() as DeliveryLoad] as const))).values()];
+  const scopedLoadIds = new Set(baseLoads.map(load => load.id));
+  for (const entry of overlay.values()) if (entry.collection === LOADS && entry.next && (affected.has(entry.next.runId) || affected.has(entry.next.collectionRunId))) scopedLoadIds.add(entry.id);
+  const loadIdList = [...scopedLoadIds];
+  const assignmentSnaps = await Promise.all(Array.from({ length: Math.ceil(loadIdList.length / 30) }, (_, index) => transaction.get(logisticsAssignments().where("loadId", "in", loadIdList.slice(index * 30, index * 30 + 30)))));
+  const baseAssignments = assignmentSnaps.flatMap(snap => snap.docs.map(doc => ({ ...(doc.data() as LogisticsAssignment), __id: doc.id } as any)));
+  const jobIds = new Set<string>(baseAssignments.map(item => item.jobId));
+  for (const entry of overlay.values()) if (entry.collection === ASSIGNMENTS && entry.next && scopedLoadIds.has(entry.next.loadId)) jobIds.add(entry.next.jobId);
+  const jobSnaps = await Promise.all([...jobIds].map(id => transaction.get(logisticsJobs().doc(id))));
   const base: DayState = {
     runs: baseRuns,
-    loads: loadSnap.docs.map(doc => doc.data() as DeliveryLoad),
-    assignments: assignmentSnap.docs.map(doc => ({ ...(doc.data() as LogisticsAssignment), __id: doc.id } as any)),
-    jobs: jobSnap.docs.map(doc => doc.data() as LogisticsJob),
+    loads: baseLoads,
+    assignments: baseAssignments,
+    jobs: jobSnaps.filter(snap => snap.exists).map(snap => snap.data() as LogisticsJob),
     stops: stopSnaps.flatMap(snap => snap.docs.map(doc => doc.data() as DeliveryStop)),
   };
 
-  const loadIdsToday = new Set(base.loads.map(load => load.id));
   const after: DayState = {
     runs: applyOverlay(base.runs, run => run.canonicalId, RUNS, overlay, next => next.serviceDate === today),
     loads: applyOverlay(base.loads, load => load.id, LOADS, overlay, next => next.serviceDate === today),
-    assignments: applyOverlay(base.assignments as any[], item => item.__id, ASSIGNMENTS, overlay, next => next.serviceDate === today || loadIdsToday.has(next.loadId)),
+    assignments: applyOverlay(base.assignments as any[], item => item.__id, ASSIGNMENTS, overlay, next => scopedLoadIds.has(next.loadId)),
     jobs: applyOverlay(base.jobs, job => job.id, JOBS, overlay, next => next.serviceDate === today),
-    stops: applyOverlay(base.stops, stop => stop.canonicalId, STOPS, overlay, next => runIds.includes(next.runId)),
+    stops: applyOverlay(base.stops, stop => stop.canonicalId, STOPS, overlay, next => affected.has(next.runId)),
   };
 
   const beforeSnapshots = buildDriverRunSnapshots(today, base);
@@ -205,11 +224,33 @@ export async function runCapturedTransaction<T>(ctx: CaptureContext | undefined,
       return typeof value === "function" ? value.bind(target) : value;
     } });
     const value = await callback(proxy);
-    try { await stageDriverChangeFromWrites(transaction, writes, ctx); }
-    catch (error) { console.error("[driver-notifications] change capture skipped", error instanceof Error ? error.message : "unknown error"); }
+    await captureInTransaction(transaction, writes, ctx);
     for (const write of writes) (transaction[write.method] as any)(...write.args);
     return value;
   });
-  await processDriverNotificationsSafely();
+  await finishCapture(ctx);
   return result;
+}
+
+/**
+ * Stage the change event inside the transaction, never throwing into the planner save. A failure cannot be reconstructed later
+ * (no event exists), so it is remembered on the context for THIS attempt (cleared at the start of every attempt, so a transaction
+ * retry that succeeds leaves no failure) and recorded durably after the commit by `finishCapture`.
+ */
+export async function captureInTransaction(transaction: Transaction, writes: BufferedWrite[], ctx: CaptureContext): Promise<void> {
+  ctx.failure = undefined;
+  try { await stageDriverChangeFromWrites(transaction, writes, ctx); }
+  catch (error) {
+    ctx.failure = { message: error instanceof Error ? error.message : "unknown error", entities: [...new Set(writes.map(write => `${write.args[0]?.parent?.id}/${idOf(write.args[0] ?? {})}`))].slice(0, 25) };
+  }
+}
+
+/**
+ * After a successful commit: if capture failed, make that visible and durable (error log with a stable prefix for alerting, plus an
+ * open capture-gap record that operations can see), then process pending events. Both steps are best-effort and cannot fail the save.
+ */
+export async function finishCapture(ctx: CaptureContext | undefined): Promise<void> {
+  if (!ctx) return;
+  if (ctx.failure) await recordCaptureGap({ action: ctx.action, actorId: ctx.actorId, at: ctx.now, serviceDate: londonServiceDate(new Date(ctx.now)), error: ctx.failure.message, entities: ctx.failure.entities });
+  await processDriverNotificationsSafely();
 }

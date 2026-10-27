@@ -204,3 +204,33 @@ test('native stops are covered too: scheduling a native stop notifies its van on
   assert.match((await text('van1'))[0], /moved from 10:30 to 12:45/);
   assert.deepEqual(await inbox('van2'), []);
 });
+
+test('capture failure: the planner save still commits, and the gap is recorded durably instead of vanishing silently', async t => {
+  const { f, store, docs, clear, inbox } = await world(t, { count: 1 });
+  clear();
+  const original = store.driverChangeEvents;
+  store.driverChangeEvents = () => { throw new Error('event store unavailable'); };
+  const errors = [];
+  t.mock.method(console, 'error', (...args) => { errors.push(args.join(' ')); });
+  const result = await f.post({ action: 'reschedule-delivery-loads', loadIds: loads(f).map(load => load.id), expectedLoadVersions: Object.fromEntries(loads(f).map(load => [load.id, load.version])), scheduledTime: '11:15', targetRunId: 'r1', lane: 'delivery' });
+  store.driverChangeEvents = original;
+  assert.equal(result.response.status, 200, 'the planner is never disrupted');
+  assert.equal(loads(f)[0].scheduledTime, '11:15', 'the planner change committed');
+  assert.equal(docs(EVENTS).length, 0, 'no event exists, so normal recovery could not rebuild this change');
+  assert.deepEqual(await inbox('van1'), []);
+  const gaps = docs('fikaLogisticsDriverCaptureGapsV1');
+  assert.equal(gaps.length, 1, 'the gap is durable');
+  assert.equal(gaps[0].status, 'open');
+  assert.equal(gaps[0].action, 'reschedule-delivery-loads');
+  assert.ok(gaps[0].entities.length > 0);
+  assert.ok(errors.some(line => line.includes('CAPTURE GAP')), 'and visible in the logs for alerting');
+});
+
+test('capture failure on one attempt that succeeds on retry leaves no gap', async t => {
+  const { f, docs, clear, inbox } = await world(t, { count: 1 });
+  clear();
+  const result = await f.post({ action: 'reschedule-delivery-loads', loadIds: loads(f).map(load => load.id), expectedLoadVersions: Object.fromEntries(loads(f).map(load => [load.id, load.version])), scheduledTime: '11:15', targetRunId: 'r1', lane: 'delivery' });
+  assert.equal(result.response.status, 200);
+  assert.equal(docs('fikaLogisticsDriverCaptureGapsV1').length, 0, 'a clean capture records no gap');
+  assert.deepEqual(await inbox('van1'), ['delivery-time-changed']);
+});
