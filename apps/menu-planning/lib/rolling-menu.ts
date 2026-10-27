@@ -327,33 +327,6 @@ export async function batchUpdateEntries(weekId: string, expectedWeekVersion: nu
 }
 export async function publishWeek(weekId: string, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) { const snapshot = normaliseRollingSnapshotDestinations(await getWeek(weekId), liveOplocs); if (snapshot.week.status === "published") throw Object.assign(new Error("This menu week is already published."), { status: 409 }); snapshot.week.status = "published"; snapshot.week.dayStatuses = undefined; snapshot.week.version += 1; snapshot.week.audit.push({ action: "week-published", at: now(), by: actor }); return saveSnapshot(snapshot, snapshot.week.version - 1); }
 export async function duplicateWeek(weekId: string, weekCommencing: string, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) { const source = normaliseRollingSnapshotDestinations(await getWeek(weekId), liveOplocs); const next = await createWeekSnapshot(weekCommencing, actor); const dayMap = new Map(source.days.map((d, i) => [d.id, next.days[i]?.id])); next.entries = source.entries.map(e => ({ ...structuredClone(e), id: `${next.week.id}:entry:${e.id.split(":entry:").pop()}`, dayId: dayMap.get(e.dayId) || next.days[0].id, date: addDays(weekCommencing, source.days.findIndex(d => d.id === e.dayId)), audit: [{ action: "entry-copied", at: now(), by: actor }] })); next.days.forEach(d => d.entryIds = next.entries.filter(e => e.dayId === d.id).map(e => e.id)); next.week.entryIds = next.entries.map(e => e.id); next.week.sourceFiles = source.week.sourceFiles.slice(); next.week.customSlots = source.week.customSlots?.slice() || []; next.week.removedSlots = source.week.removedSlots?.slice() || []; return saveSnapshot(next); }
-export async function copyWeekIntoWeek(sourceWeekId: string, targetWeekId: string, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) {
-  if (sourceWeekId === targetWeekId) throw Object.assign(new Error("Choose a different week to copy from."), { status: 422 });
-  const source = normaliseRollingSnapshotDestinations(await getWeek(sourceWeekId), liveOplocs);
-  const storedTarget = await getWeekSnapshot<RollingSnapshot>(targetWeekId);
-  const target = storedTarget
-    ? normaliseRollingSnapshotDestinations(storedTarget, liveOplocs)
-    : await createWeekSnapshot(planningWeekFromQuery(targetWeekId), actor);
-  if (!storedTarget && target.week.id !== targetWeekId) throw Object.assign(new Error("The target planning week identity is invalid."), { status: 422 });
-  const sourceDayIndex = new Map(source.days.map((day, index) => [day.id, index]));
-  const copyStamp = Date.now();
-  target.days = target.days.map((day, index) => ({ ...day, entryIds: [], oneOffDestinations: structuredClone(source.days[index]?.oneOffDestinations || []) }));
-  target.entries = source.entries.map((entry, index) => {
-    const dayIndex = sourceDayIndex.get(entry.dayId) ?? 0;
-    const targetDay = target.days[dayIndex] || target.days[0];
-    return { ...structuredClone(entry), id: `${target.week.id}:entry:copy-${copyStamp}-${index}`, dayId: targetDay.id, date: targetDay.date, audit: [{ action: `entry-copied-from:${source.week.id}`, at: now(), by: actor }] };
-  });
-  target.days.forEach(day => { day.entryIds = target.entries.filter(entry => entry.dayId === day.id).map(entry => entry.id); });
-  target.week.entryIds = target.entries.map(entry => entry.id);
-  target.week.sourceFiles = source.week.sourceFiles.slice();
-  target.week.customSlots = source.week.customSlots?.slice() || [];
-  target.week.removedSlots = source.week.removedSlots?.slice() || [];
-  target.week.status = "draft";
-  target.week.dayStatuses = Object.fromEntries(target.days.map(day => [day.id, "draft"]));
-  if (storedTarget) target.week.version += 1;
-  target.week.audit.push({ action: `week-plan-copied-from:${source.week.id}`, at: now(), by: actor });
-  return storedTarget ? saveSnapshot(target, target.week.version - 1) : saveSnapshot(target);
-}
 export async function resetWeek(weekId: string, actor = "local-menu-planner") {
   const target = await getWeek(weekId);
   target.entries = [];

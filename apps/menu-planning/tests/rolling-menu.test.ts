@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, copyWeekIntoWeek, createEntry, createWeekSnapshot, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, saveSnapshot, saveSnapshotsCreateOnly, slotsForWeek, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, createEntry, createWeekSnapshot, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, saveSnapshot, saveSnapshotsCreateOnly, slotsForWeek, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, createCanonicalMenuItems, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { buildCompiledPublicationSnapshot, buildPublishedDay, compareWorkingWeekToPublication, contentHash, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
@@ -157,17 +157,6 @@ test("an existing target is never modified by a duplicate create-only attempt", 
   const saved = await getWeek(target.week.id);
   assert.equal(saved.entries[0].itemLabel, "Existing target");
   assert.equal(saved.week.audit[0].by, "existing-target");
-});
-
-test("copying into a missing deterministic target uses create-only initial version", async () => {
-  const source = emptyWeek("2098-04-06", "copy-source");
-  const sourceEntry = { id: `${source.week.id}:entry:source`, dayId: source.days[0].id, date: source.days[0].date, slot: "SOUP", itemLabel: "Copied into new target", portions: 5, allocations: [], allergens: {}, audit: [] };
-  source.entries = [sourceEntry]; source.days[0].entryIds = [sourceEntry.id]; source.week.entryIds = [sourceEntry.id];
-  await saveSnapshot(source);
-  const copied = await copyWeekIntoWeek(source.week.id, "rolling-week:2098-04-14", "copy-actor");
-  assert.equal(copied.week.version, 1);
-  assert.equal(copied.entries[0].itemLabel, "Copied into new target");
-  assert.equal((await getWeek(source.week.id)).week.version, 1);
 });
 
 test("concurrent ordinary entry commands are protected by week-version CAS", async () => {

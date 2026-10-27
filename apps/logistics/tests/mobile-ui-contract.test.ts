@@ -19,6 +19,8 @@ test("mobile workflow locks committed writes and exposes progress", () => {
   assert.match(workflow, /setPendingAction\(action\)/);
   assert.match(workflow, /role="status" aria-live="polite"/);
   assert.match(workflow, /Dispatching…/);
+  assert.match(workflow, /pendingLabel=\{pendingAction === "dispatch-run" \? "Dispatching…" : "Saving update…"\}/);
+  assert.doesNotMatch(workflow, /pendingLabel="Dispatching…"/);
   assert.match(workflow, /Submitting…/);
   assert.match(workflow, /disabled=\{busy\}/);
 });
@@ -36,4 +38,30 @@ test("mobile controls have names, semantic action classes and touch-safe focus s
 
 test("active logistics production UI does not use native browser dialogs", () => {
   assert.doesNotMatch(workflow, /window\.(alert|confirm|prompt)\s*\(/);
+});
+
+test("a loaded delivery can be unticked before dispatch, collections stay locked, and dispatched stops still advance to delivered", () => {
+  assert.match(workflow, /const unload = !collection && loaded && !dispatched/);
+  assert.match(workflow, /loaded: !unload/);
+  assert.match(workflow, /tap to mark delivered/);
+  assert.match(workflow, /const locked = busy \|\| delivered \|\| \(collection && !dispatched\)/);
+  assert.doesNotMatch(workflow, /\(collection \|\| loaded\) && !dispatched/);
+});
+
+test("subload controls expose their real state: a pre-dispatch load is a checkbox whose checked state matches loaded", () => {
+  assert.doesNotMatch(workflow, /aria-pressed=\{delivered\}/);
+  assert.match(workflow, /const isLoadToggle = !collection && !delivered && !dispatched;/);
+  assert.match(workflow, /role=\{isLoadToggle \? "checkbox" : undefined\} aria-checked=\{isLoadToggle \? loaded : undefined\}/);
+});
+
+test("subload accessible names state loaded, delivered and collected without a pressed flag", () => {
+  assert.match(workflow, /const status = collection \? \(delivered \? "Collected" : "Not collected"\) : delivered \? "Delivered" : loaded \? "Loaded" : "Not loaded";/);
+  assert.match(workflow, /const accessibleName = `\$\{subload\.category\}: \$\{status\}\$\{isLoadToggle \? "" : nextStep\}`;/);
+  assert.match(workflow, /aria-label=\{accessibleName\}/);
+  assert.doesNotMatch(workflow, /aria-label=\{`\$\{subload\.category\}: \$\{label\}`\}/);
+});
+
+test("after dispatch a loaded delivery is a plain button that says it moves on to delivered, not a toggle", () => {
+  assert.match(workflow, /const nextStep = delivered \|\| \(collection && !dispatched\) \? "" : collection \? ", tap to mark collected" : loaded \? ", tap to mark delivered" : "";/);
+  assert.doesNotMatch(workflow, /dispatched \? ", tap to mark loaded"/);
 });

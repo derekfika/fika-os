@@ -4,14 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { APPS, REPO, MAIN_CHECK, affected, risk, target, digest } from './policy.mjs';
 import { git, root, command, ghApi, save, stateDir, jsonFile } from './runtime.mjs';
-import { createWorkspace, checkWorkspace, finishWorkspace, retireWorkspace, workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
+import { createWorkspace, checkWorkspace, finishWorkspace, retireWorkspace, reconcileWorkspace, workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
 import { bootstrap, deploy, reconcile, reconcileServingBaseline, planRelease } from './releases.mjs';
 import { hostedTrust, assertHostedContext } from './hosted.mjs';
 
 export function parse(args) {
   const positional = []; const options = {};
-  const flags = new Set(['execute', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'owner-approved', 'cosmetic-only', 'standard']);
-  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason']);
+  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'owner-approved', 'cosmetic-only', 'standard']);
+  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement']);
   for (let i = 0; i < args.length; i++) {
     if (!args[i].startsWith('--')) { positional.push(args[i]); continue; }
     const key = args[i].slice(2); if (Object.hasOwn(options, key)) throw Error(`Duplicate --${key}`);
@@ -20,6 +20,7 @@ export function parse(args) {
     else throw Error(`Unknown or missing value for --${key}`);
   }
   if (options.staging && options.prod) throw Error('Choose exactly one environment');
+  if (options.execute && options['dry-run']) throw Error('Choose either --dry-run or --execute');
   return { positional, options };
 }
 function changePaths(options) {
@@ -53,7 +54,7 @@ async function main() {
     if (options.output) writeFileSync(options.output, JSON.stringify(result));
   } else if (verb === 'validate') {
     const paths = changePaths(options); const scope = changeScope(paths, options);
-    const commands = [{ program: process.execPath, args: ['--test', ...['policy', 'workspaces', 'releases', 'recovery', 'hosted'].map(n => `tools/workflow/${n}.test.mjs`)] }];
+    const commands = [{ program: process.execPath, args: ['--test', ...['policy', 'workspaces', 'reconcile-workspace', 'releases', 'recovery', 'hosted'].map(n => `tools/workflow/${n}.test.mjs`)] }];
     if (!options['tools-only']) for (const app of scope.apps) {
       for (const script of ['test', 'typecheck', 'build']) commands.push({ program: 'npm', args: ['--prefix', APPS[app].path, 'run', script], app });
     }
@@ -66,9 +67,10 @@ async function main() {
     if (arg === 'create') result = createWorkspace(name, options);
     else if (arg === 'check') result = checkWorkspace(name, options);
     else if (arg === 'finish') result = finishWorkspace(name, options);
+    else if (arg === 'reconcile') result = reconcileWorkspace(name, options);
     else if (arg === 'retire') result = retireWorkspace(name, options);
     else if (arg === 'list') result = workspaceRecords();
-    else throw Error('workspace create|check|finish|retire <name> --owner <task>; create also needs --scope <paths>');
+    else throw Error('workspace create|check|reconcile|finish|retire <name> --owner <task>; reconcile needs --replacement <new-name>, defaults to dry run, supports --dry-run, and applies with --execute');
   } else if (verb === 'dev') {
     const lease = workspaceRecords().find(x=>x.name===options.workspace && x.owner===options.owner && x.state==='active');
     if (!lease || !APPS[arg] || !lease.scopes.some(s=>s===APPS[arg].path || s.startsWith(`${APPS[arg].path}/`))) throw Error('dev requires the active workspace owner and app scope');
@@ -113,7 +115,7 @@ async function main() {
     }
     if (options.output) save(options.output, { applied: Boolean(options.execute), protections: result });
   } else {
-    result = { usage: ['fika workspace create <task> --owner <agent> --scope apps/cpu-production', 'fika workspace retire <task> --owner <agent> [--preserve-generated] [--archive]', 'fika affected --base origin/main', 'fika validate --base origin/main', 'fika deploy cpu --staging [--execute]', 'fika deploy cpu --prod [--execute --owner-approved --reason <owner release instruction>]', 'fika rollback cpu --prod [--execute --owner-approved --reason <owner rollback instruction>]', 'fika reconcile cpu --staging|--prod [--resolution abandon|complete --rollout <ID> --reason <text> --execute]', 'fika reconcile-serving-baseline hub --staging --sha <exact SHA> --rollout <build ID> --reason <owner instruction> [--execute]', 'fika cleanup --output <plan.json>', 'fika cleanup --execute --file <plan.json> --approve-hash <hash>'], safety: 'Owner gives ordinary language instructions; agent pins the exact source, records authorisation and preserves append-only history. CI, staging for operational changes, exact-SHA/backend and recovery gates remain mandatory. Hosted WIF is optional for local operation.' };
+    result = { usage: ['fika workspace create <task> --owner <agent> --scope apps/cpu-production', 'fika workspace reconcile <old> --owner <agent> --replacement <new> [--dry-run|--execute]', 'fika workspace retire <task> --owner <agent> [--preserve-generated] [--archive]', 'fika affected --base origin/main', 'fika validate --base origin/main', 'fika deploy cpu --staging [--execute]', 'fika deploy cpu --prod [--execute --owner-approved --reason <owner release instruction>]', 'fika rollback cpu --prod [--execute --owner-approved --reason <owner rollback instruction>]', 'fika reconcile cpu --staging|--prod [--resolution abandon|complete --rollout <ID> --reason <text> --execute]', 'fika reconcile-serving-baseline hub --staging --sha <exact SHA> --rollout <build ID> --reason <owner instruction> [--execute]', 'fika cleanup --output <plan.json>', 'fika cleanup --execute --file <plan.json> --approve-hash <hash>'], safety: 'Workspace reconciliation preserves the original checkout and checksummed recovery journal, transfers only leased dirty changes to current origin/main, and commits the ownership transition under the workspace lock. Dry run is default; --execute applies. Owner gives ordinary language instructions; agent pins exact source, CI and deployment safeguards remain mandatory.' };
   }
   console.log(JSON.stringify(result, null, 2));
 }
