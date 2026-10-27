@@ -122,7 +122,7 @@ test("a collection moved from Van 1 to Van 2 notifies Van 1 of the reassignment 
   const notices = diffBatch(TODAY, [van1Before, van2Before], [van1After, van2After]);
   assert.deepEqual(kinds(notices.filter(n => n.vehicleId === "van1")), ["work-reassigned"]);
   assert.equal(notices.filter(n => n.vehicleId === "van1").length, 1, "Van 1 is not also told its whole stop was removed");
-  assert.ok(notices.some(n => n.vehicleId === "van2" && n.title === "New delivery assigned"));
+  assert.ok(notices.some(n => n.vehicleId === "van2" && n.title === "New collection assigned"));
 });
 
 test("the source run retired after a reassignment still notifies the losing vehicle", () => {

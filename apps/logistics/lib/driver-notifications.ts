@@ -29,6 +29,8 @@ export type DriverRunSnapshot = {
   departure?: string;
   return?: string;
   visits: DriverVisit[];
+  /** Saved stop sequence (run.orderedStopIds). When present on both sides it is the authoritative order. */
+  stopOrder?: string[];
 };
 
 export type DriverNotificationKind =
@@ -174,11 +176,11 @@ export function diffRun(before: DriverRunSnapshot | undefined, after: DriverRunS
   }
 
   // Stop order: only the order of visits present in both snapshots matters.
-  const commonBefore = before!.visits.map(visit => visit.visitId).filter(id => afterById.has(id));
-  const commonAfter = after!.visits.map(visit => visit.visitId).filter(id => beforeById.has(id));
-  if (commonBefore.join("|") !== commonAfter.join("|")) {
-    const first = after!.visits.find(visit => visit.visitId === commonAfter[0]);
-    notices.push(note("route-order-updated", after!, revision, { title: "Route order updated", inboxText: first ? `${first.destination} is now your first stop.` : "Your stop order has changed.", pushTail: "Your stop sequence has changed.", priority: highPriority ? "high" : "normal", subject: `order:${commonAfter.join("|")}` }));
+  const orderBefore = before!.stopOrder ?? before!.visits.map(visit => visit.visitId).filter(id => afterById.has(id));
+  const orderAfter = after!.stopOrder ?? after!.visits.map(visit => visit.visitId).filter(id => beforeById.has(id));
+  if (orderBefore.join("|") !== orderAfter.join("|")) {
+    const first = after!.visits.find(visit => visit.visitId === orderAfter[0]);
+    notices.push(note("route-order-updated", after!, revision, { title: "Route order updated", inboxText: first ? `${first.destination} is now your first stop.` : "Your stop order has changed.", pushTail: "Your stop sequence has changed.", priority: highPriority ? "high" : "normal", subject: `order:${orderAfter.join("|")}` }));
   }
 
   if (before!.departure !== after!.departure && after!.departure) notices.push(note("departure-time-changed", after!, revision, { title: "Departure time changed", inboxText: `Departure moved from ${before!.departure || "unscheduled"} to ${after!.departure}.`, pushTail: `Departure moved from ${before!.departure || "unscheduled"} to ${after!.departure}.`, priority: highPriority ? "high" : "normal", subject: `departure:${after!.departure}` }));
@@ -225,18 +227,22 @@ export function diffBatch(today: string, before: DriverRunSnapshot[], after: Dri
     notices.push(...diffRun(previous, current, movedHere));
   }
 
-  // Reassignment notices are keyed by the destination run's committed version, so one move notifies once per affected vehicle.
+  // Reassignment notices are keyed by the destination run committed version, so one move notifies once per affected vehicle.
+  // Wording follows the lane of the work that moved: a collection is never described as a delivery.
   for (const [job, { from, to }] of moved) {
     const fromRun = beforeByRun.get(from);
     const toRun = afterByRun.get(to);
     if (!toRun || !isDriverVisible(toRun)) continue;
+    const lane = toRun.visits.find(visit => visit.jobIds.includes(job))?.lane ?? "delivery";
+    const work = lane === "collection" ? "collection" : "delivery";
+    const Work = lane === "collection" ? "Collection" : "Delivery";
     if (fromRun && isDriverVisible(fromRun) && fromRun.vehicleId !== toRun.vehicleId) {
-      notices.push(note("work-reassigned", fromRun, toRun.version, { title: "Work reassigned", inboxText: `A delivery has been removed from your run (${job}).`, pushTail: "A delivery has been removed from your run.", subject: `moved-out:${job}` }));
+      notices.push(note("work-reassigned", fromRun, toRun.version, { title: "Work reassigned", inboxText: `A ${work} has been removed from your run (${job}).`, pushTail: `A ${work} has been removed from your run.`, subject: `moved-out:${job}` }));
     } else if (fromRun && isDriverVisible(fromRun)) {
-      notices.push(note("load-details-changed", toRun, toRun.version, { title: "Load details changed", inboxText: `A delivery moved from one of your runs to another (${job}).`, pushTail: "Review your updated load quantities.", subject: `moved-within:${job}` }));
+      notices.push(note("load-details-changed", toRun, toRun.version, { title: "Load details changed", inboxText: `A ${work} moved from one of your runs to another (${job}).`, pushTail: "Review your updated load quantities.", subject: `moved-within:${job}` }));
     }
     if (!fromRun || fromRun.vehicleId !== toRun.vehicleId) {
-      notices.push(note("delivery-assigned", toRun, toRun.version, { title: "New delivery assigned", inboxText: `A delivery has been added to your run (${job}).`, pushTail: "A delivery has been added to your run.", subject: `moved-in:${job}` }));
+      notices.push(note(lane === "collection" ? "collection-assigned" : "delivery-assigned", toRun, toRun.version, { title: `New ${work} assigned`, inboxText: `${Work} (${job}) has been added to your run.`, pushTail: `A ${work} has been added to your run.`, subject: `moved-in:${job}` }));
     }
   }
   return notices;
