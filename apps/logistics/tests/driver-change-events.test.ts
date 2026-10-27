@@ -24,6 +24,7 @@ function memoryStore(options: { failCommits?: number } = {}) {
       const event = events.get(eventId)!;
       events.set(eventId, { ...event, status, processedAt });
     },
+    async recordFailure() {},
     async listNotifications(vehicleId, limit) { return [...notices.values()].filter(n => n.vehicleId === vehicleId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit); },
     async markRead(vehicleId, id, readAt) { const notice = notices.get(id); if (!notice || notice.vehicleId !== vehicleId) return false; notices.set(id, { ...notice, readAt: notice.readAt ?? readAt }); return true; },
     async markAllRead(vehicleId, readAt) { let count = 0; for (const [id, notice] of notices) if (notice.vehicleId === vehicleId && !notice.readAt) { notices.set(id, { ...notice, readAt }); count += 1; } return count; },
@@ -34,7 +35,8 @@ function memoryStore(options: { failCommits?: number } = {}) {
 
 const eventFor = (sourceAction: string, before: DriverRunSnapshot[], after: DriverRunSnapshot[], serviceDate = TODAY) => {
   const runs = after.map(next => ({ runId: next.runId, beforeVersion: before.find(item => item.runId === next.runId)?.version ?? 0, afterVersion: next.version }));
-  return { eventId: driverChangeEventId(sourceAction, runs), serviceDate, sourceAction, actorId: "planner", committedAt: NOON_TODAY.toISOString(), before, after };
+  const mutations = runs.map(item => ({ entityType: "run" as const, entityId: item.runId, beforeVersion: item.beforeVersion, afterVersion: item.afterVersion }));
+  return { eventId: driverChangeEventId(sourceAction, runs, mutations), serviceDate, sourceAction, actorId: "planner", committedAt: NOON_TODAY.toISOString(), before, after, mutations };
 };
 
 test("rapid consecutive edits 11:30 → 12:00 → 11:30 → 12:00 all survive, each as its own notice", async () => {

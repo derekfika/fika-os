@@ -6,6 +6,9 @@ import { diffBatch, isEligibleNow, londonServiceDate, type DriverNotification, t
  * planner write, so the change and its notification history commit together or not at all. Notifications are later derived
  * from the event's own before/after snapshots, so a later edit never hides an intermediate change.
  */
+/** One authoritative entity version change inside the committed mutation (run, load, stop or job). */
+export type ChangeMutation = { entityType: "run" | "load" | "stop" | "job" | "movement"; entityId: string; beforeVersion: number; afterVersion: number };
+
 export type DriverChangeEvent = {
   /** Deterministic identity of the committed change (see `driverChangeEventId`). */
   eventId: string;
@@ -15,13 +18,26 @@ export type DriverChangeEvent = {
   committedAt: string;
   before: DriverRunSnapshot[];
   after: DriverRunSnapshot[];
-  status: "pending" | "processed" | "expired";
+  /** Every entity version this mutation advanced. Part of the event identity. */
+  mutations: ChangeMutation[];
+  status: "pending" | "processed" | "expired" | "failed";
+  /** Bounded processing attempts; an event that keeps failing is parked as failed rather than retried forever. */
+  attempts?: number;
+  lastError?: string;
   processedAt?: string;
 };
 
-/** Parent run versions are unique per commit (optimistic concurrency), so each committed change has a unique identity. */
-export function driverChangeEventId(sourceAction: string, runs: Array<{ runId: string; beforeVersion: number; afterVersion: number }>) {
-  const identity = `${sourceAction}|${runs.map(run => `${run.runId}@${run.beforeVersion}>${run.afterVersion}`).sort().join("|")}`;
+/**
+ * Identity of one committed mutation: the action plus every entity version it advanced. Optimistic concurrency makes each
+ * (entity, beforeVersion) unique per commit, so two stop or load edits that leave the parent run version unchanged still differ
+ * by the stop or load version they advanced.
+ */
+export function driverChangeEventId(sourceAction: string, runs: Array<{ runId: string; beforeVersion: number; afterVersion: number }>, mutations: ChangeMutation[] = []) {
+  const parts = [
+    ...runs.map(run => `run:${run.runId}@${run.beforeVersion}>${run.afterVersion}`),
+    ...mutations.map(item => `${item.entityType}:${item.entityId}@${item.beforeVersion}>${item.afterVersion}`),
+  ];
+  const identity = `${sourceAction}|${[...new Set(parts)].sort().join("|")}`;
   return createHash("sha256").update(identity).digest("hex");
 }
 
@@ -47,10 +63,21 @@ export function driverVisitsFromLegs(legs: Leg[]): DriverVisit[] {
   }).sort((a, b) => a.visitId.localeCompare(b.visitId));
 }
 
-/** Stage the committed change inside the caller's planner transaction. Replaying the same change rewrites identical content. */
-export function stageDriverChangeEvent(transaction: { set(ref: unknown, value: unknown): unknown }, ref: unknown, event: Omit<DriverChangeEvent, "status" | "processedAt">) {
-  transaction.set(ref, { ...event, status: "pending" });
+type StageTransaction = { get(ref: unknown): Promise<{ exists: boolean }>; create(ref: unknown, value: unknown): unknown };
+
+/**
+ * Stage the committed change inside the caller's planner transaction. The event is created only if absent: a retry or replay can
+ * never overwrite an existing event, reset a processed event to pending, or alter its captured before/after state. The read must
+ * happen before the planner transaction's first write, as Firestore requires.
+ */
+export async function stageDriverChangeEvent(transaction: StageTransaction, ref: unknown, event: Omit<DriverChangeEvent, "status" | "processedAt" | "attempts">): Promise<"staged" | "exists"> {
+  const existing = await transaction.get(ref);
+  if (existing.exists) return "exists";
+  transaction.create(ref, { ...event, status: "pending", attempts: 0 });
+  return "staged";
 }
+
+export const MAX_PROCESSING_ATTEMPTS = 8;
 
 export type DriverNotificationStore = {
   /** Pending events, oldest first. Bounded by the caller. */
@@ -60,6 +87,8 @@ export type DriverNotificationStore = {
    * pending, so the next processing run retries it without duplicating notices.
    */
   commitProcessedEvent(eventId: string, notices: InboxNotification[], status: "processed" | "expired", processedAt: string): Promise<void>;
+  /** Records a failed attempt. After MAX_PROCESSING_ATTEMPTS the event is parked as failed and no longer retried. */
+  recordFailure(eventId: string, message: string): Promise<void>;
   /** Vehicle-scoped listing, newest first, bounded. */
   listNotifications(vehicleId: "van1" | "van2", limit: number): Promise<InboxNotification[]>;
   markRead(vehicleId: "van1" | "van2", id: string, readAt: string): Promise<boolean>;
@@ -86,7 +115,12 @@ export async function processPendingDriverChanges(store: DriverNotificationStore
       continue;
     }
     const notices = diffBatch(event.serviceDate, event.before, event.after).map(notice => ({ ...notice, id: driverNotificationDocId(notice.dedupeKey), createdAt: processedAt, eventId: event.eventId }));
-    await store.commitProcessedEvent(event.eventId, notices, "processed", processedAt);
+    try {
+      await store.commitProcessedEvent(event.eventId, notices, "processed", processedAt);
+    } catch (error) {
+      await store.recordFailure(event.eventId, error instanceof Error ? error.message : "processing failed").catch(() => undefined);
+      throw error;
+    }
     created += notices.length;
   }
   return { processed: events.length, created, expired };
