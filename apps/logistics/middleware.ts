@@ -12,9 +12,12 @@ export async function middleware(request: NextRequest) {
   if (["/mobile/van1", "/mobile/van2", "/api/logistics/mobile/session"].includes(pathname)) return NextResponse.next();
   // This is only an admission shortcut. The route still verifies the signed,
   // expiring session and derives the single permitted vehicle server-side.
+  // Each van has its own session cookie (fika_logistics_mobile_session_van1 / _van2), selected by the van the request names.
+  const mobileVehicle = request.headers.get("x-fika-logistics-vehicle");
   if (["/api/logistics", "/api/logistics/vehicles"].includes(pathname)
     && request.headers.get("x-fika-logistics-mobile-request") === "1"
-    && request.cookies.has("fika_logistics_mobile_session")) return NextResponse.next();
+    && (mobileVehicle === "van1" || mobileVehicle === "van2")
+    && request.cookies.has(`fika_logistics_mobile_session_${mobileVehicle}`)) return NextResponse.next();
   // Service-to-service projection invalidations are authenticated by the
   // internal token at the route boundary. They must not be redirected through
   // the browser/session admission flow, which has no user cookie and would
