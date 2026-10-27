@@ -12,6 +12,8 @@ import { projectionToDashboardData } from "../../lib/projection-dashboard-adapte
 import { announceDriverChange, driverIssueTypes, showDispatchChecklist, stopIsCollection } from "../../lib/mobile-driver";
 import { RunOverview, visitStatusText } from "./run-overview";
 import { RunLoadCheck } from "./run-load-check";
+import { NOTICE_CHANGED_MESSAGE, fetchInbox, postInboxAction, resolveNoticeTarget, unreadLabel, type DriverInbox, type DriverNoticeItem } from "./driver-notifications-client";
+import { NotificationsPanel } from "./notifications-panel";
 import { dispatchBlockers, hasScheduledTime } from "./dispatch-readiness";
 import styles from "./stop-detail.module.css";
 import shell from "./driver-shell.module.css";
@@ -24,8 +26,7 @@ import { fetchProjectionWithRecovery } from "../../lib/projection-fetch";
 import { ScopedRequestCoordinator, scopedRequestKey, type ScopedRequestContext } from "../../lib/scoped-request-coordinator";
 
 type Data = { requirements: FulfilmentRequirement[]; runs: DeliveryRun[]; stops: DeliveryStop[]; movements: MovementRequest[]; oplocs: { id: string; label: string; address?: string }[]; serviceDate: string; projection?: Parameters<typeof projectionToDashboardData>[0] };
-type View = "run" | "messages" | "more";
-type DriverMessage = { id: string; title: string; body: string; meta: string };
+type View = "run" | "notifications" | "more";
 type UndoAction = { run: DeliveryRun; stop: DeliveryStop; label: string };
 
 async function loadMobileProjection(date: string, vehicleQuery: string, headers: HeadersInit) {
@@ -65,7 +66,13 @@ function MobileWorkflowContents({ fixedVan, onSignOut, signingOut }: { fixedVan?
   // cannot disagree around midnight or on a DST boundary.
   const [selectedDate, setSelectedDate] = useState("");
   const [hydrated, setHydrated] = useState(false);
-  const [messages, setMessages] = useState<DriverMessage[]>([]);
+  // Notification history is server-side and vehicle-scoped; this is only the last loaded copy for display.
+  const [inbox, setInbox] = useState<DriverInbox>();
+  const [inboxLoading, setInboxLoading] = useState(false);
+  const [inboxError, setInboxError] = useState("");
+  const [inboxBusy, setInboxBusy] = useState(false);
+  const [pendingNotice, setPendingNotice] = useState<DriverNoticeItem>();
+  const [noticeBanner, setNoticeBanner] = useState("");
   const date = selectedDate;
   const visibleData = data?.serviceDate === selectedDate ? data : undefined;
   const availableDates = useMemo(() => selectedDate ? dateOptions(selectedDate) : [], [selectedDate]);
@@ -197,6 +204,49 @@ function MobileWorkflowContents({ fixedVan, onSignOut, signingOut }: { fixedVan?
   };
   useEffect(() => { const nextDate = mobileServiceDate(new URLSearchParams(window.location.search).get("serviceDate")); activeContext.current = requests.activate(nextDate); setSelectedDate(nextDate); setHydrated(true); }, []);
   useEffect(() => { if (selectedDate) void load(); }, [selectedDate]);
+  const refreshInbox = async () => {
+    if (!fixedVan) return;
+    setInboxLoading(true);
+    try {
+      const next = await fetchInbox(mobileHeaders);
+      setInbox(next);
+      setInboxError("");
+    } catch (cause) {
+      setInboxError(cause instanceof Error ? cause.message : "Notifications could not be loaded.");
+    } finally {
+      setInboxLoading(false);
+    }
+  };
+  // No polling: the inbox refreshes when the app opens, when it becomes visible again, and when the tab is opened.
+  useEffect(() => {
+    if (!fixedVan) return;
+    void refreshInbox();
+    const onVisible = () => { if (document.visibilityState === "visible") void refreshInbox(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [fixedVan]);
+  const markAllRead = async () => {
+    if (inboxBusy) return;
+    setInboxBusy(true);
+    try { setInbox(await postInboxAction(mobileHeaders, { action: "mark-all-read" })); setInboxError(""); }
+    catch (cause) { setInboxError(cause instanceof Error ? cause.message : "Could not mark notifications read."); }
+    finally { setInboxBusy(false); }
+  };
+  // Open a notification: mark it read, refresh the authoritative run data, then land on the run if it still exists.
+  const openNotice = async (item: DriverNoticeItem) => {
+    if (inboxBusy) return;
+    setInboxBusy(true);
+    try {
+      if (!item.readAt) setInbox(await postInboxAction(mobileHeaders, { action: "mark-read", id: item.id }));
+      if (item.serviceDate !== selectedDate && isOperationalDate(item.serviceDate)) selectDate(item.serviceDate);
+      else await load();
+      setPendingNotice(item);
+    } catch (cause) {
+      setInboxError(cause instanceof Error ? cause.message : "Could not open that notification.");
+    } finally {
+      setInboxBusy(false);
+    }
+  };
   useEffect(() => {
     if (!selectedDate) return;
     const liveChannel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("fika-logistics-live");
@@ -221,6 +271,16 @@ function MobileWorkflowContents({ fixedVan, onSignOut, signingOut }: { fixedVan?
     const requested = new URLSearchParams(window.location.search).get("run");
     setSelectedRunId(vehicleRuns.find(run => run.canonicalId === requested)?.canonicalId || vehicleRuns[0]?.canonicalId || "");
   }, [vehicleRuns, selectedRunId, authority.loading, visibleData]);
+  // Deep link: decided from the freshly loaded authoritative runs, never from the notification payload.
+  useEffect(() => {
+    if (!pendingNotice || authority.loading || !visibleData || visibleData.serviceDate !== pendingNotice.serviceDate) return;
+    const target = resolveNoticeTarget(pendingNotice, vehicleRuns, visibleData.serviceDate);
+    setView("run");
+    setSelectedStop(undefined);
+    if (target.state === "current") { setSelectedRunId(target.runId); setNoticeBanner(""); }
+    else setNoticeBanner(NOTICE_CHANGED_MESSAGE);
+    setPendingNotice(undefined);
+  }, [pendingNotice, vehicleRuns, visibleData, authority.loading]);
   useEffect(() => {
     if (!selectedDate) return;
     const url = new URL(window.location.href);
@@ -338,10 +398,11 @@ function MobileWorkflowContents({ fixedVan, onSignOut, signingOut }: { fixedVan?
         <span className={`${shell.live} ${freshness === "CURRENT" ? "" : freshness === "STALE" ? shell.stale : shell.offline}`}>{freshness === "CURRENT" ? "Online" : freshness === "NO WORK" ? "No work" : freshness === "STALE" ? "Stale" : "Offline"}</span>
         <label className={shell.dateField}><CalendarIcon size={20} /><select aria-label="Service date" disabled={Boolean(pendingAction)} value={selectedDate} onChange={(event) => selectDate(event.target.value)}>{availableDates.map((option) => <option key={option} value={option}>{formatDate(option)}</option>)}</select></label>
       </div>
-      <div className={shell.titleRow}><h1 className={shell.title}>{view === "run" ? `Run ${runNumber}` : view === "messages" ? "Notifications" : "More"}</h1>{view === "run" && runs[0]?.driverLabel && <span className={shell.subtitle}>{runs[0].driverLabel}</span>}</div>
+      <div className={shell.titleRow}><h1 className={shell.title}>{view === "run" ? `Run ${runNumber}` : view === "notifications" ? "Notifications" : "More"}</h1>{view === "run" && runs[0]?.driverLabel && <span className={shell.subtitle}>{runs[0].driverLabel}</span>}</div>
     </header>
     {authority.error && <div className="driver-alert" role="alert">{authority.error}<button onClick={() => void authority.refresh()}>Retry vehicles</button></div>}{pendingAction && <div className="driver-operation" role="status" aria-live="polite">{operationLabel(pendingAction)} Keep this page open.</div>}{error && <div className="driver-alert" role="alert">{error}<button disabled={Boolean(pendingAction)} onClick={() => retryDispatchRun ? void dispatchRun(retryDispatchRun) : void load(projectionNeedsMaterialisation)}>{retryDispatchRun ? "Retry dispatch" : projectionNeedsMaterialisation ? "Materialise and retry" : "Retry"}</button></div>}
-    {!visibleData ? <section className="driver-empty">Loading your day…</section> : view === "messages" ? <Messages messages={messages} onDismiss={(id) => setMessages((current) => current.filter((message) => message.id !== id))} onClear={() => setMessages([])} /> : view === "more" ? <More driver={driver} /> : <>
+    {view === "notifications" ? <NotificationsPanel items={inbox?.items ?? []} unreadCount={inbox?.unreadCount ?? 0} loading={inboxLoading} error={inboxError} busy={inboxBusy} onOpen={(item) => void openNotice(item)} onMarkAllRead={() => void markAllRead()} onRetry={() => void refreshInbox()} /> : !visibleData ? <section className="driver-empty">Loading your day…</section> : view === "more" ? <More driver={driver} /> : <>
+      {noticeBanner && <div className="driver-alert" role="status"><span>{noticeBanner}</span><button type="button" onClick={() => setNoticeBanner("")}>Dismiss</button></div>}
       {runs.filter((run) => showDispatchChecklist(run.status)).map((run) => { const runStops = stops.filter((stop) => stop.runId === run.canonicalId); const deliveries = runStops.filter((stop) => !stopIsCollection(stop)); const blockers = dispatchBlockers({ hasStops: runStops.length > 0, deliveries, openIssues: runStops.filter(hasOpenIssue).length, unscheduled: runStops.filter((stop) => !hasScheduledTime(stop)).length }); return <RunLoadCheck key={run.canonicalId} deliveries={deliveries} blockers={blockers} pending={Boolean(pendingAction)} pendingLabel={pendingAction === "dispatch-run" ? "Dispatching…" : "Saving update…"} onDispatch={() => void dispatchRun(run)} />; })}
       {runs.filter((run) => run.returnToCpuPending).map((run) => <section className="driver-departure return-stage" key={`return-${run.canonicalId}`}><div><p className="driver-section-kicker">ALL STOPS COMPLETE</p><strong>Return to CPU</strong><span>All deliveries and collections are complete. Return the vehicle to CPU to finish the run.</span></div><div className="return-actions"><button className="secondary-action" onClick={() => window.open(process.env.NEXT_PUBLIC_FIKA_CPU_URL || "/", "_blank")}>Navigate to CPU</button><button className="primary-action" disabled={Boolean(pendingAction)} onClick={() => void confirmReturned(run)}>{pendingAction === "confirm-returned-to-cpu" ? "Confirming…" : "Confirm returned to CPU"}</button></div></section>)}
       <RunOverview
@@ -353,12 +414,12 @@ function MobileWorkflowContents({ fixedVan, onSignOut, signingOut }: { fixedVan?
         onOpen={(trigger, stop) => { stopTriggerRef.current = trigger; setSelectedStop(stop); }}
       />
     </>}
-    <nav className={shell.nav} aria-label="Primary"><NavItem active={view === "run"} icon={<TruckIcon size={24} />} label="Run" onClick={() => setView("run")} /><NavItem active={view === "messages"} icon={<BellIcon size={24} />} label="Notifications" onClick={() => setView("messages")} badge={messages.length ? String(messages.length) : undefined} /><NavItem active={view === "more"} icon={<MoreIcon size={24} />} label="More" onClick={() => setView("more")} /></nav>
+    <nav className={shell.nav} aria-label="Primary"><NavItem active={view === "run"} icon={<TruckIcon size={24} />} label="Run" onClick={() => setView("run")} /><NavItem active={view === "notifications"} icon={<BellIcon size={24} />} label="Notifications" accessibleLabel={inbox?.unreadCount ? `Notifications, ${inbox.unreadCount} unread` : "Notifications"} onClick={() => { setView("notifications"); void refreshInbox(); }} badge={inbox?.unreadCount ? unreadLabel(inbox.unreadCount) : undefined} /><NavItem active={view === "more"} icon={<MoreIcon size={24} />} label="More" onClick={() => setView("more")} /></nav>
     {undoAction && <div className="driver-undo-toast" role="status"><span>{undoAction.label}</span><button disabled={Boolean(pendingAction)} onClick={() => void undoCompletion()}>{pendingAction === "undo-completion" ? "Undoing…" : "Undo"}</button></div>}{selectedStop && visibleData && <StopDetail stop={selectedStop} lanes={selectedVisit?.stops ?? [selectedStop]} visitNumber={selectedVisit?.visitNumber ?? 0} isNext={Boolean(selectedVisit) && nextRunVisit(visits)?.key === selectedVisit?.key} data={visibleData} busy={Boolean(pendingAction)} onClose={closeStopSheet} onAction={execute} onIssue={(lane) => { if (!pendingAction) { setIssueStop(lane); setSelectedStop(undefined); } }} />}{issueStop && <IssueSheet stop={issueStop} type={issueType} setType={setIssueType} text={issueText} setText={setIssueText} busy={Boolean(pendingAction)} onClose={closeIssueSheet} onSubmit={reportIssue} />}
   </main>;
 }
 
-function NavItem({ active, icon, label, badge, onClick }: { active: boolean; icon: ReactNode; label: string; badge?: string; onClick: () => void }) { return <button type="button" className={`${shell.navItem} ${badge ? shell.badge : ""}`} aria-current={active ? "page" : undefined} aria-label={label} onClick={onClick}><span className={shell.navIcon}>{icon}</span><span>{label}</span></button>; }
+function NavItem({ active, icon, label, accessibleLabel, badge, onClick }: { active: boolean; icon: ReactNode; label: string; accessibleLabel?: string; badge?: string; onClick: () => void }) { return <button type="button" className={shell.navItem} aria-current={active ? "page" : undefined} aria-label={accessibleLabel ?? label} onClick={onClick}><span className={shell.navIcon}>{icon}</span><span>{label}</span>{badge && <span className={shell.count} aria-hidden="true">{badge}</span>}</button>; }
 function loadCount(lanes: DeliveryStop[], data: Data) { const count = lanes.reduce((total, lane) => total + loadSubloads(lane, data, movementsForStop(lane, data.movements)[0]).length, 0); return `${count} ${count === 1 ? "container" : "containers"}`; }
 function StopDetail({ stop, lanes, visitNumber, isNext, data, busy, onClose, onAction, onIssue }: { stop: DeliveryStop; lanes: DeliveryStop[]; visitNumber: number; isNext: boolean; data: Data; busy: boolean; onClose: () => void; onAction: (action: string, stop: DeliveryStop, extra?: Record<string, unknown>) => void; onIssue: (lane: DeliveryStop) => void }) {
   const oploc = data.oplocs.find((item) => item.id === stop.locationOplocId);
@@ -431,7 +492,6 @@ const locked = busy || delivered || (collection && !dispatched); return <li key=
 }
 function PostponeCollectionControl({ disabled, onPostpone }: { disabled: boolean; onPostpone: (targetServiceDate: string) => void }) { const [targetDate, setTargetDate] = useState(addDays(operationalDate(), 1)); return <div className="postpone-collection"><label>Postpone collection<select disabled={disabled} value={targetDate} onChange={(event) => setTargetDate(event.target.value)}>{Array.from({ length: 14 }, (_, index) => addDays(operationalDate(), index + 1)).map((date) => <option key={date} value={date}>{formatDate(date)}</option>)}</select></label><button className="secondary-action" disabled={disabled} onClick={() => onPostpone(targetDate)}>Postpone collection</button></div>; }
 function IssueSheet({ stop, type, setType, text, setText, busy, onClose, onSubmit }: { stop: DeliveryStop; type: string; setType: (value: string) => void; text: string; setText: (value: string) => void; busy: boolean; onClose: () => void; onSubmit: () => void }) { const closeRef = useRef<HTMLButtonElement>(null); useEffect(() => { closeRef.current?.focus(); }, []); return <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => { if (!busy && event.target === event.currentTarget) onClose(); }}><section className="stop-detail-sheet issue-sheet" role="dialog" aria-modal="true" aria-labelledby="issue-sheet-title" onKeyDown={(event) => { if (event.key === "Escape" && !busy) { event.preventDefault(); onClose(); } }}><button ref={closeRef} className="sheet-close" aria-label="Close report issue" onClick={onClose}>×</button><p className="driver-section-kicker">REPORT EXCEPTION</p><h2 id="issue-sheet-title">What needs attention?</h2><p className="issue-stop-name">{stop.locationLabelSnapshot}</p><label>Issue type<select disabled={busy} value={type} onChange={(event) => setType(event.target.value)}>{driverIssueTypes.map((item) => <option key={item}>{item}</option>)}</select></label><label>Notes <span className="optional-label">(optional)</span><textarea disabled={busy} value={text} onChange={(event) => setText(event.target.value)} placeholder="Add a short note for the planner…" rows={4} /></label><button className="danger-action submit-issue" disabled={busy} onClick={onSubmit}>{busy ? "Submitting…" : "Submit issue"}</button></section></div>; }
-function Messages({ messages, onDismiss, onClear }: { messages: DriverMessage[]; onDismiss: (id: string) => void; onClear: () => void }) { return <section className="secondary-screen"><div className="messages-heading"><div><p className="driver-section-kicker">INBOX</p></div>{messages.length > 0 && <button className="clear-messages" onClick={onClear}>Clear all</button>}</div>{messages.length ? messages.map((message) => <article className="message-card" key={message.id}><span>●</span><div><strong>{message.title}</strong><p>{message.body}</p><small>{message.meta}</small></div><button className="dismiss-message" aria-label={`Dismiss ${message.title}`} onClick={() => onDismiss(message.id)}>×</button></article>) : <div className="driver-empty compact">You’re all caught up. No new notifications.</div>}</section>; }
 function More({ driver }: { driver: string }) { return <section className="secondary-screen"><p className="driver-section-kicker">ACCOUNT</p><div className="more-card"><span>♙</span><div><small>Signed in as</small><strong>{driver}</strong></div></div></section>; }
 function formatDate(date: string) { return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date(`${date}T12:00:00`)); }
 function addDays(date: string, days: number) { const value = new Date(`${date}T12:00:00`); value.setDate(value.getDate() + days); return value.toISOString().slice(0, 10); }

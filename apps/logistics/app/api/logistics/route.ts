@@ -1,3 +1,5 @@
+import { processDriverNotificationsSafely } from "@/lib/driver-notification-store";
+import { driverCaptureFor, finishCapture, runCapturedTransaction, type CaptureContext } from "@/lib/driver-change-capture";
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
 import { assertSameOrigin } from "@/lib/csrf";
@@ -111,6 +113,7 @@ async function runAuthorizedTracedTransaction<T>(
   principal: LogisticsPrincipal,
   cookie?: string,
   revalidateDrivers = false,
+  capture?: CaptureContext,
 ): Promise<T> {
   return db.runTransaction(async (transaction) => {
     const originalGet = transaction.get.bind(transaction) as (reference: any) => Promise<any>;
@@ -131,7 +134,7 @@ async function runAuthorizedTracedTransaction<T>(
       });
       return snapshot;
     };
-    return authorizeTransaction(transaction, principal, callback, cookie, revalidateDrivers);
+    return authorizeTransaction(transaction, principal, callback, cookie, revalidateDrivers, capture);
   });
 }
 function labelFor(oplocs: Awaited<ReturnType<typeof fetchOplocs>>, id: string) {
@@ -699,7 +702,14 @@ async function handlePost(request: NextRequest) {
   let assignmentEvidence: { requestId: string; checkpoint: string; sourceAuthority: string; jobId: string; requirementId?: string; serviceDate: string; targetRunId?: string; expectedJobVersion?: number; expectedJobVersions?: Record<string, number>; expectedRunVersion?: number; expectedTargetRunVersion?: number; expectedLoadVersion?: number; expectedLoadVersions?: Record<string, number> } | undefined;
   try {
     const principal = await requireLogisticsAccess(request);
-    const runTracedTransaction = <T,>(callback: (transaction: Transaction) => Promise<T>) => runAuthorizedTracedTransaction(callback, principal, request.headers.get("cookie") || undefined, ["set-run-driver", "update-run"].includes(body.action));
+    // Every planner write goes through here. Non-driver-visible actions capture nothing; the rest stage an immutable change event inside
+    // the same transaction, then process it best-effort after the save (a processing failure can never fail the save).
+    const runTracedTransaction = async <T,>(callback: (transaction: Transaction) => Promise<T>) => {
+      const capture = driverCaptureFor(body.action, actorId, now);
+      const result = await runAuthorizedTracedTransaction(callback, principal, request.headers.get("cookie") || undefined, ["set-run-driver", "update-run"].includes(body.action), capture);
+      await finishCapture(capture);
+      return result;
+    };
     if (hostedRuntime()) assertSameOrigin(request);
     const body = (await request.json()) as {
       action: string;
@@ -796,7 +806,7 @@ async function handlePost(request: NextRequest) {
       if (!body.runId || !isLogisticsVehicleId(body.vehicleId) || body.expectedRunVersion === undefined) throw new HttpError(422, "An explicitly reviewed run ID, stable vehicle ID and current version are required.");
       // Dedicated organisation repair authority was checked above. No label-to-ID
       // inference; this reviewed, CAS-protected mapping is never run on page load.
-      const saved = await db.runTransaction(async transaction => {
+      const saved = await runCapturedTransaction(driverCaptureFor(body.action, actorId, now), async transaction => {
         const ref = runs().doc(body.runId!);
         const snapshot = await transaction.get(ref);
         if (!snapshot.exists) throw new HttpError(404, "Logistics resource not found.");
@@ -844,7 +854,9 @@ async function handlePost(request: NextRequest) {
     if (body.action === "save-logistics-job" && body.job) {
       if (!body.job.originOplocId || !body.job.destinationOplocId)
         throw new HttpError(422, "Logistics jobs require canonical origin and destination OPLOC IDs.");
-      const saved = await saveLogisticsJob(body.job);
+      const jobToSave = body.job;
+      // Saved inside a capturing transaction so a quantity, content or instruction edit on assigned work reaches the driver.
+      const saved = await runCapturedTransaction(driverCaptureFor(body.action, actorId, now), async transaction => { transaction.set(logisticsJobs().doc(jobToSave.id), jobToSave); return jobToSave; });
       const event = await appendLogisticsChange({ serviceDate: saved.serviceDate, entityType: "logisticsJob", entityId: saved.id, changeType: "job-created-or-updated", revision: saved.version, changedAt: now, actorId });
       await rebuildLogisticsProjection(saved.serviceDate, by, event.sequence);
       return NextResponse.json(saved);
@@ -1221,6 +1233,7 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json(result);
     }
     if (body.action === "update-run-timing" && typeof body.runId === "string") {
+      const timingCapture = driverCaptureFor(body.action, actorId, now);
       const current = await getRun(body.runId);
       if (!current) throw new HttpError(404, "Run not found.");
       if (body.expectedRunVersion === undefined) throw new HttpError(422, "A current run version is required.");
@@ -1240,22 +1253,24 @@ async function handlePost(request: NextRequest) {
         const next: DeliveryRun = { ...withoutTimes, ...(departure ? { plannedCpuDepartureTime: departure, plannedCpuReturnTime: returnTime } : {}), version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: departure ? "run-journey-times-updated" : "run-journey-times-cleared", at: now, by, version: run.version + 1 }] };
         transaction.set(ref, next);
         return next;
-      }, principal, request.headers.get("cookie") || undefined);
+      }, principal, request.headers.get("cookie") || undefined, false, timingCapture);
       await recordCanonicalLogisticsChange({ serviceDate: saved.serviceDate, entityType: "run", entityId: saved.canonicalId, changeType: departure ? "run-journey-times-updated" : "run-journey-times-cleared", revision: saved.version, actorId, by, changedAt: now });
+      await finishCapture(timingCapture);
       return NextResponse.json(saved);
     }
     if (body.action === "reset-planning-day" && body.serviceDate) {
       const state = await listState(body.serviceDate);
-      const batch = db.batch();
-      state.runs.forEach((run) => batch.delete(runs().doc(run.canonicalId)));
-      state.stops.forEach((stop) => batch.delete(stops().doc(stop.canonicalId)));
-      state.movements.forEach((movement) => batch.update(movements().doc(movement.canonicalId), {
-        status: "open",
-        version: movement.version + 1,
-        updatedAt: now,
-        audit: [...movement.audit, { action: "planning-day-reset", at: now, by, version: movement.version + 1 }],
-      }));
-      await batch.commit();
+      // A reset removes whole runs, so it is captured: a driver whose run disappears is told it was cancelled.
+      await runCapturedTransaction(driverCaptureFor(body.action, actorId, now), async transaction => {
+        state.runs.forEach((run) => transaction.delete(runs().doc(run.canonicalId)));
+        state.stops.forEach((stop) => transaction.delete(stops().doc(stop.canonicalId)));
+        state.movements.forEach((movement) => transaction.update(movements().doc(movement.canonicalId), {
+          status: "open",
+          version: movement.version + 1,
+          updatedAt: now,
+          audit: [...movement.audit, { action: "planning-day-reset", at: now, by, version: movement.version + 1 }],
+        }));
+      });
       await recordCanonicalLogisticsChange({ serviceDate: body.serviceDate, entityType: "run", entityId: `planning-day:${body.serviceDate}`, changeType: "planning-day-reset", revision: 1, actorId, by, changedAt: now });
       return NextResponse.json({ serviceDate: body.serviceDate, resetRuns: state.runs.length, resetStops: state.stops.length, resetMovements: state.movements.length });
     }

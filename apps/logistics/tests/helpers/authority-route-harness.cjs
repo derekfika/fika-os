@@ -19,7 +19,9 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
       const docs = [...records].filter(([key, value]) => key.startsWith(this.name + '/') && this.filters.every(([field, op, input]) => op === '==' ? value[field] === input : op === 'in' ? input.includes(value[field]) : op === 'array-contains' ? value[field]?.includes(input) : op === '>' ? value[field] > input : false)).slice(0, this.cap).map(([key]) => new Ref(key).snapshot());
       return { docs, size: docs.length, empty: !docs.length };
     }
+    count() { return { get: async () => { const { size } = await this.get(); return { data: () => ({ count: size }) }; } }; }
     doc(id) { return new Ref(this.name + '/' + id); }
+    async add(value) { const ref = new Ref(this.name + '/auto-' + records.size + '-' + Math.random().toString(36).slice(2)); await ref.set(value); return ref; }
   }
   class Ref {
     constructor(key) { this.path = key; this.id = key.split('/').at(-1); this.parent = { id: key.split('/')[0] }; }

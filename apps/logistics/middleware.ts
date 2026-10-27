@@ -14,7 +14,7 @@ export async function middleware(request: NextRequest) {
   // expiring session and derives the single permitted vehicle server-side.
   // Each van has its own session cookie (fika_logistics_mobile_session_van1 / _van2), selected by the van the request names.
   const mobileVehicle = request.headers.get("x-fika-logistics-vehicle");
-  if (["/api/logistics", "/api/logistics/vehicles"].includes(pathname)
+  if (["/api/logistics", "/api/logistics/vehicles", "/api/logistics/driver-notifications"].includes(pathname)
     && request.headers.get("x-fika-logistics-mobile-request") === "1"
     && (mobileVehicle === "van1" || mobileVehicle === "van2")
     && request.cookies.has(`fika_logistics_mobile_session_${mobileVehicle}`)) return NextResponse.next();

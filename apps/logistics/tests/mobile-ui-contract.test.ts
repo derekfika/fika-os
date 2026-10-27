@@ -28,7 +28,8 @@ test("mobile workflow locks committed writes and exposes progress", () => {
 test("mobile controls have names, semantic action classes and touch-safe focus styling", () => {
   assert.match(workflow, /Open details for/);
   assert.match(overview, /aria-label=\{openLabel\(stop\)\}/);
-  assert.match(workflow, /aria-label=\{label\}/);
+  assert.match(workflow, /aria-label=\{accessibleLabel \?\? label\}/);
+  assert.match(workflow, /Notifications, \$\{inbox\.unreadCount\} unread/, "the unread count is part of the nav button's accessible name");
   assert.match(workflow, /className="primary-action"/);
   assert.match(workflow, /className="secondary-action/);
   assert.match(workflow, /className="danger-action/);

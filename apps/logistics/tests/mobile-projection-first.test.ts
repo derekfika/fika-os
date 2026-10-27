@@ -47,7 +47,8 @@ test("driver freshness converges without fabricated live state or messages", () 
   assert.match(mobile, /visibilitychange/);
   assert.match(mobile, /BroadcastChannel\("fika-logistics-live"\)/);
   assert.match(mobile, /syncUnavailable \|\| visibleData\.projection\?\.state === "STALE"[\s\S]*\? "STALE"[\s\S]*: "CURRENT"/);
-  assert.match(mobile, /useState<DriverMessage\[]>\(\[\]\)/);
+  assert.doesNotMatch(mobile, /DriverMessage|setMessages|function Messages\(/, "the temporary in-memory Messages state is gone");
+  assert.match(mobile, /useState<DriverInbox>\(\)/, "notification history is a server-backed inbox, not browser-local state");
   assert.doesNotMatch(mobile, /New stop assigned|Roadworks reported/);
 });
 

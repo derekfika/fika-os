@@ -13,6 +13,8 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
   },
+  // CI sets LOGISTICS_E2E_START_SERVER=1 so the suite starts its own local-mode app; locally an already-running server is reused.
+  webServer: process.env.LOGISTICS_E2E_START_SERVER ? { command: "npx next dev -p 3900", url: "http://localhost:3900/mobile/van1", reuseExistingServer: true, timeout: 180_000, env: { FIKA_RUNTIME_MODE: "local" } } : undefined,
   projects: [
     { name: "batch3-driver-execution-chromium", use: { ...devices["Pixel 7"] }, testMatch: /driver-execution\.spec\.ts/ },
     { name: "batch2-load-integrity-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /load-integrity\.spec\.ts/ },
@@ -30,5 +32,6 @@ export default defineConfig({
     { name: "journey-planner-v3-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /journey-planner-v3.*\.spec\.ts/ },
     { name: "stop-visits-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /stop-visits\.spec\.ts/ },
     { name: "mobile-chromium", use: { ...devices["Pixel 7"] }, testMatch: /mobile\.spec\.ts/ },
+    { name: "mobile-notifications-chromium", use: { ...devices["Pixel 7"] }, testMatch: /mobile-notifications\.spec\.ts/ },
   ],
 });
