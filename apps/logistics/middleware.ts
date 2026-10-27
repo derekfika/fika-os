@@ -22,6 +22,8 @@ export async function middleware(request: NextRequest) {
   // internal token at the route boundary. They must not be redirected through
   // the browser/session admission flow, which has no user cookie and would
   // incorrectly return 401 before the route can validate the token.
+  // The recovery route verifies a Cloud Scheduler OIDC token itself (signature, audience, service account); this only admits the call.
+  if (pathname === "/api/logistics/driver-notifications/process" && /^Bearer\s+\S+$/i.test(request.headers.get("authorization") ?? "")) return NextResponse.next();
   if (internalTokenAllowed(request)) return NextResponse.next();
   const requestId = requestIdFor(request);
   logAuthDiagnostic(request, { authStage: "middleware-admission-request", status: 200, code: "AUTH_ADMISSION_REQUESTED", requestId });
