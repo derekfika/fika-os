@@ -42,3 +42,11 @@ test("a mobile request that names no valid van, or carries only the old cookie n
 test("the shortcut is limited to the two driver API paths", () => inHostedRuntime(async () => {
   assert.equal(admitted(await middleware(request("/api/logistics/drivers", mobileHeaders("van1"), "fika_logistics_mobile_session_van1=token"))), false);
 }));
+
+test("the recovery route admits a bearer token only on its own path; the route then verifies it", () => inHostedRuntime(async () => {
+  const bearer = { authorization: "Bearer a.b.c" };
+  assert.ok(admitted(await middleware(request("/api/logistics/driver-notifications/process", bearer))));
+  assert.ok(!admitted(await middleware(request("/api/logistics", bearer))), "a bearer token admits no other path");
+  assert.ok(!admitted(await middleware(request("/api/logistics/driver-notifications", bearer))));
+  assert.ok(!admitted(await middleware(request("/api/logistics/driver-notifications/process", {}))), "no bearer, no admission");
+}));
