@@ -120,3 +120,21 @@ test("history comes from the server: a fresh page load shows the same notificati
   await expect(page.getByRole("button", { name: /^Departure time changed/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Unread\./ })).toHaveCount(0);
 });
+
+for (const width of [320, 360, 375, 390, 412, 430, 540, 600, 768, 1024]) {
+  test(`long real-world notification text fits a ${width}px screen with no sideways scrolling`, async ({ page }) => {
+    await openDriverApp(page, { items: date => [
+      item("long-1", date, { kind: "work-reassigned", title: "Work reassigned", detail: "Delivery at UAT ONLY — NOT FOR SERVICE (Notifications UAT A) has been removed from your run.", createdAt: "2026-10-28T10:30:00.000Z" }),
+      item("long-2", date, { title: "New run assigned", detail: "Run for Tue 27 Oct has been added to your schedule with 1 stop. Averyveryveryveryveryveryveryverylongunbrokenwordwithoutanyspacesatall123456789.", priority: "high", createdAt: "2026-10-28T10:20:00.000Z" }),
+    ] });
+    await page.setViewportSize({ width, height: 812 });
+    await nav(page).getByRole("button", { name: /^Notifications/ }).click();
+    await expect(page.getByRole("button", { name: /^Unread\./ })).toHaveCount(2);
+    const offenders = await page.evaluate(() => {
+      const limit = document.documentElement.clientWidth;
+      return [...document.querySelectorAll("body *")].map(element => ({ element, box: element.getBoundingClientRect() })).filter(({ box }) => box.width > 0 && (box.right > limit + 0.5 || box.left < -0.5)).map(({ element, box }) => `${element.tagName}.${(element as HTMLElement).className.toString().slice(0, 40)} ${Math.round(box.left)}..${Math.round(box.right)}`).slice(0, 8);
+    });
+    expect(offenders, `elements wider than the ${width}px screen`).toEqual([]);
+    expect(await overflow(page)).toBe(true);
+  });
+}

@@ -2131,7 +2131,7 @@ button:disabled {
 }
 
 /* Stop-first driver experience. Kept separate from the legacy mobile prototype styles above. */
-.driver-app { min-height: 100vh; min-height: 100svh; padding-bottom: calc(96px + env(safe-area-inset-bottom)); background: var(--fika-surface-page); color: var(--fika-text-primary); }
+.driver-app { max-width: 100vw; overflow-x: clip; min-height: 100vh; min-height: 100svh; padding-bottom: calc(96px + env(safe-area-inset-bottom)); background: var(--fika-surface-page); color: var(--fika-text-primary); }
 .driver-hero { padding: 22px 20px 24px; color: #fff; background: radial-gradient(circle at 90% 0%, #7452e1 0, transparent 34%), linear-gradient(145deg, #241052, #4521a5 68%, #2c176f); border-radius: 0 0 30px 30px; }
 .driver-topline, .driver-title-row, .driver-filters, .driver-filter label, .driver-summary, .list-heading, .next-banner, .stop-row-card, .detail-type, .detail-time { display: flex; align-items: center; }
 .driver-topline, .driver-title-row, .list-heading, .next-banner, .detail-type, .detail-time { justify-content: space-between; }
