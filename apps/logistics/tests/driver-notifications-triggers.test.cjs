@@ -234,3 +234,13 @@ test('capture failure on one attempt that succeeds on retry leaves no gap', asyn
   assert.equal(docs('fikaLogisticsDriverCaptureGapsV1').length, 0, 'a clean capture records no gap');
   assert.deepEqual(await inbox('van1'), ['delivery-time-changed']);
 });
+
+test('moving a stop between vans reports the move only, never a spurious route reorder', async t => {
+  const { f, clear, inbox } = await world(t, { count: 1, native: true });
+  clear();
+  const stop = f.records.get('fikaLogisticsDeliveryStopsV1/native');
+  const result = await f.post({ action: 'move-stop', runId: 'r1', targetRunId: 'r2', stopId: 'native', expectedRunVersion: run(f).version, expectedTargetRunVersion: run(f, 'r2').version, expectedStopVersion: stop.version });
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.deepEqual(await inbox('van1'), ['work-reassigned']);
+  assert.deepEqual(await inbox('van2'), ['delivery-assigned']);
+});
