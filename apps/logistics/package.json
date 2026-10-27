@@ -14,6 +14,7 @@
     "test:mobile-pin-provisioning": "tsx --test tests/mobile-pin-provisioning.test.mjs",
     "test:access-regression": "node --test tests/access-regression.cjs",
     "test:integration": "tsx --test tests/api.integration.ts",
+    "test:emulator": "tsx --test --test-concurrency=1 tests/emulator/*.emulator.test.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

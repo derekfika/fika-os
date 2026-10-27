@@ -25,7 +25,7 @@ export async function fetchInbox(headers: HeadersInit): Promise<DriverInbox> {
   return parse(await fetch(ENDPOINT, { cache: "no-store", headers }));
 }
 
-export async function postInboxAction(headers: HeadersInit, body: { action: "mark-read"; id: string } | { action: "mark-all-read" } | { action: "process-pending" }): Promise<DriverInbox> {
+export async function postInboxAction(headers: HeadersInit, body: { action: "mark-read"; id: string } | { action: "mark-all-read" }): Promise<DriverInbox> {
   return parse(await fetch(ENDPOINT, { method: "POST", cache: "no-store", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) }));
 }
 

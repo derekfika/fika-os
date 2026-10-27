@@ -204,12 +204,11 @@ function MobileWorkflowContents({ fixedVan, onSignOut, signingOut }: { fixedVan?
   };
   useEffect(() => { const nextDate = mobileServiceDate(new URLSearchParams(window.location.search).get("serviceDate")); activeContext.current = requests.activate(nextDate); setSelectedDate(nextDate); setHydrated(true); }, []);
   useEffect(() => { if (selectedDate) void load(); }, [selectedDate]);
-  const refreshInbox = async (recover = false) => {
+  const refreshInbox = async () => {
     if (!fixedVan) return;
     setInboxLoading(true);
     try {
-      // On open, also run the bounded recovery for any change whose post-save processing was interrupted.
-      const next = recover ? await postInboxAction(mobileHeaders, { action: "process-pending" }) : await fetchInbox(mobileHeaders);
+      const next = await fetchInbox(mobileHeaders);
       setInbox(next);
       setInboxError("");
     } catch (cause) {
@@ -221,7 +220,7 @@ function MobileWorkflowContents({ fixedVan, onSignOut, signingOut }: { fixedVan?
   // No polling: the inbox refreshes when the app opens, when it becomes visible again, and when the tab is opened.
   useEffect(() => {
     if (!fixedVan) return;
-    void refreshInbox(true);
+    void refreshInbox();
     const onVisible = () => { if (document.visibilityState === "visible") void refreshInbox(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);

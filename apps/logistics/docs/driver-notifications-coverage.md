@@ -2,50 +2,77 @@
 
 Status of PR 1 (durable capture, persistent vehicle-scoped inbox, Notifications tab). Web Push is PR 2.
 
-**Reliable coverage is NOT complete.** Only the operations marked Complete record a committed change event today. Every other
-trigger is implemented in the pure rules (`lib/driver-notifications.ts`) and the processor, but its authoritative write path does
-not yet stage an event, so that change will not reach the inbox. Do not describe the feature as fully covering the notification
-specification until the Outstanding rows are closed.
+Every operational trigger below is captured by the same mechanism and proven through the real planner route (or the real
+reconciliation transaction), not by calling the rules directly. Remaining limits are listed explicitly at the end; nothing is
+claimed beyond them.
 
-## Architecture (implemented)
+## Architecture
 
-1. A planner write that changes a driver-visible run stages one immutable `DriverChangeEvent` **inside the same Firestore
-   transaction** (`stageDriverRunChange`, `lib/driver-notification-store.ts`). It captures the exact before and after driver-visible
-   snapshots of each affected run, so later edits cannot hide an intermediate change.
+1. A write that changes a driver-visible run stages one immutable `DriverChangeEvent` **inside the same Firestore transaction**.
+   Planner actions go through `authorizeTransaction`; upstream reconciliation, `save-logistics-job`, `repair-run-vehicle-identity`
+   and `reset-planning-day` go through `runCapturedTransaction` (`lib/driver-change-capture.ts`). Both buffer the writes, read the
+   day's runs, loads, assignments, jobs and stops, build the driver-visible before and after snapshots of every run, and stage the
+   event only when a driver-visible difference exists. Authorization has already passed; a capture problem is logged and never
+   blocks the save.
 2. Event identity is the action plus every entity version the mutation advanced (`driverChangeEventId`). Staging reads first and
-   creates only if absent: a retry cannot overwrite a processed event or reset it to pending.
-3. After the save, `processDriverNotificationsSafely` turns pending events into inbox notices from the event's own snapshots.
-   A processing failure never fails the planner save; the event stays pending, is retried (bounded to 8 attempts, then parked as
-   `failed`), and the app also triggers a bounded `process-pending` recovery when it opens.
-4. Notices are keyed by event + committed version + subject, so replays and duplicate delivery create nothing new while later
-   independent changes stay distinct (11:30 to 12:00 to 11:30 to 12:00 yields two separate 12:00 notices).
+   creates only if absent, so a retry or concurrent duplicate cannot overwrite a processed event or reset it to pending.
+3. After the commit, `processDriverNotificationsSafely` turns pending events into inbox notices from the event's own snapshots. A
+   processing failure never fails the save; the event stays pending, is retried (bounded to 8 attempts, then parked as `failed`)
+   and is also recovered by the **server-owned** processor route (see Release prerequisites). Vehicle sessions cannot trigger
+   processing.
+4. Notices are keyed by event + subject, so replays and duplicate delivery create nothing new while later independent changes stay
+   distinct.
 5. Only today's runs (Europe/London service date from the server clock) are recorded or processed. An event processed after UK
    midnight expires without notices. Existing notices stay in the inbox.
-6. Baseline: the pre-state is read inside the transaction at the first edit, so runs that existed before tracking never look like a
-   new assignment and no retrospective notices are created.
+6. The pre-state is read inside the transaction at the first edit, so runs that existed before tracking never look like a new
+   assignment and no retrospective notices are created.
 7. The inbox API (`/api/logistics/driver-notifications`) takes the vehicle only from the signed vehicle PIN session. Read state is
-   stored per notice, shared by the vehicle; it is not evidence that a named person read an alert.
+   stored per notice, shared by the vehicle; it is not evidence that a named person read an alert. The unread badge comes from a
+   server-side aggregate count (exact up to 100, shown as "99+" above 99), independent of the 50-item list page. Expiry understands
+   real Firestore `Timestamp` values.
 
 ## Coverage matrix
 
-| # | Trigger | Authoritative write path(s) | Event source | Vehicle(s) notified | Notification | Tests | Status |
-|---|---------|-----------------------------|--------------|---------------------|--------------|-------|--------|
-| 6 | Stop order changed | `set-run-stop-order` | Staged in the planner transaction | The run's vehicle | Route order updated | Route-to-inbox flow, idempotent no-op, stale version, rules | **Complete** |
-| 7 | Departure / return time changed | `update-run-timing` | Staged in the planner transaction | The run's vehicle | Departure / Return time changed | Route-to-inbox flow, rapid edits, failure and retry, immutability, rules | **Complete** |
-| 1 | New run assigned (populated) | `assign-job-to-load`, `assign-group`, `assign`, `move-stop` onto a run | None yet | Target vehicle | New run assigned | Rules only | **Outstanding** |
-| 2 | Delivery or collection added | `assign-job-to-load`, `assign-group`, `assign`, `save-movement` | None yet | Target vehicle | New delivery / collection assigned | Rules only | **Outstanding** |
-| 3 | Delivery or collection removed | `unassign-requirement`, `unassign-movement`, `remove-job-from-load`, `return-stop-to-planning` | None yet | Losing vehicle | Stop removed / Load details changed | Rules only | **Outstanding** |
-| 4 | Work moved between vans | `move-stop`, re-assignment through `assign-job-to-load` | None yet | Losing and gaining vehicle only | Work reassigned / New delivery assigned | Rules only (incl. partial load, retired source run) | **Outstanding** |
-| 5 | Scheduled time changed | `schedule-stop`, `clear-stop-schedule`, `reschedule-delivery-loads`, `clear-collection-load-schedule` | None yet | The run's vehicle | Collection / Delivery time changed | Rules only | **Outstanding** |
-| 8 | Load quantity or contents changed | Upstream amendment through `reconcile-logistics-day` / materialisation | None yet | The load's vehicle | Load details changed | Rules only | **Outstanding** |
-| 9 | Delivery instructions changed | Upstream amendment through reconciliation; load notes | None yet | The run's vehicle | Delivery instructions updated | Rules only | **Outstanding** |
-| 10 | Run cancelled or withdrawn | Upstream withdrawal through reconciliation; run retirement of a populated run | None yet | The run's vehicle | Run cancelled | Rules only | **Outstanding** |
-| - | Vehicle assignment changed | `update-run`, `repair-run-vehicle-identity` | None yet | Old and new vehicle | Run reassigned / New run assigned | Rules only | **Outstanding** |
+All rows are proven by `tests/driver-notifications-triggers.test.cjs` (real route, frozen clock), `tests/driver-notifications-flow.test.cjs`
+and `tests/driver-notifications-api.test.cjs`, plus the Firestore emulator suite for the storage behaviour.
 
-Why these remain outstanding: each write path builds its own before and after state in its own way (native stops, projected loads
-and jobs, upstream reconciliation). Capturing the exact after-state transactionally means reading the run's legs before the first
-write and passing the path's computed next state, not re-reading after commit. That is a per-path change to a live planner
-transaction and needs its own regression tests; it has not been done, so it is not claimed.
+| # | Trigger | Authoritative write path(s) | Vehicle(s) notified | Notification | Status |
+|---|---------|-----------------------------|---------------------|--------------|--------|
+| 1 | Delivery or collection added to today's run | `assign-job-to-load`, `assign`, `assign-group`, `save-movement`, `move-stop` | Target vehicle | New delivery / collection assigned; Load details changed when added to an existing stop | **Complete** |
+| 2 | New run assigned (populated) | any of the above onto a run the vehicle did not have | Target vehicle | New run assigned | **Complete** |
+| 3 | Delivery or collection removed | `remove-job-from-load`, `unassign-requirement`, `unassign-movement`, `return-stop-to-planning`, upstream withdrawal | Losing vehicle | Load details changed (item) / Stop removed (last item) | **Complete** |
+| 4 | Work moved between vans, including partial loads | `reschedule-delivery-loads` with a target run, `move-stop`, `assign-job-to-load` onto the other van | Losing and gaining vehicle only, once each | Work reassigned ("Part of the delivery ... moved" when part stays) / New delivery assigned | **Complete** |
+| 5 | Scheduled delivery or collection time changed | `schedule-stop`, `clear-stop-schedule`, `reschedule-delivery-loads`, `clear-collection-load-schedule` | The run's vehicle | Delivery / Collection time changed (old and new times) | **Complete** |
+| 6 | Load quantity or contents changed | Upstream amendment through `reconcile-logistics-day` / materialisation (`reconcileRequirementJob`) | The load's vehicle | Load details changed | **Complete** |
+| 7 | Delivery instructions changed | `save-logistics-job` (notes); an identical re-save is not a change | The run's vehicle | Delivery instructions updated | **Complete** |
+| 8 | Run cancelled or withdrawn | `reset-planning-day`; upstream withdrawal | The run's vehicle | Run cancelled / Stop removed | **Complete** |
+| 9 | Vehicle assignment changed | `update-run`, `repair-run-vehicle-identity` | Old and new vehicle | Work reassigned / Run assigned | **Complete** |
+| 10 | Stop order changed | `set-run-stop-order`, `reorder` | The run's vehicle | Route order updated | **Complete** |
+| 11 | Departure / return time changed | `update-run-timing`, `update-run` | The run's vehicle | Departure / Return time changed | **Complete** |
+
+**What each row rests on.** Paths with their own route-level test: `assign-job-to-load`, `remove-job-from-load`,
+`reschedule-delivery-loads` (same van and to the other van), `schedule-stop` (native stop), `update-run` (vehicle change),
+`update-run-timing`, `set-run-stop-order`, upstream reconciliation (quantity change and withdrawal), `save-logistics-job`,
+`repair-run-vehicle-identity` and `reset-planning-day`. The other actions named in the table (`assign`, `assign-group`,
+`save-movement`, `move-stop`, `unassign-*`, `return-stop-to-planning`, `clear-*-schedule`, `reorder`) pass through the same capture
+hook but have no dedicated route test; they are covered by the mechanism, not individually proven.
+
+Cross-cutting behaviour tested for the triggers: correct destination van (the other van never hears anything), replay with stale
+versions adds no event, two simultaneous identical requests commit one change and one notice, tomorrow's runs record nothing, and
+driver execution never creates events.
+
+## Known limits (not claimed as covered)
+
+- **Legacy assignments with no `serviceDate`.** Capture reads a day's assignments by `serviceDate`. Assignments written before that
+  field existed are invisible to capture until `repair-logistics-assignment-dates` has been run. Run it before relying on
+  notifications for old data.
+- **Writers outside the two capture paths.** Any future write path that does not use `authorizeTransaction` or
+  `runCapturedTransaction` will not be captured. There is no such path in `app/api/logistics/route.ts` or the reconciliation code
+  today; new paths must adopt one of the two helpers.
+- **Hub-driven changes are captured when Logistics reconciles them**, not when the Hub emits them: a change the Hub has not yet
+  pushed or Logistics has not yet reconciled cannot notify.
+- **Instruction changes** are captured from `save-logistics-job` only; upstream sources do not currently carry delivery notes.
+- **Read state is per vehicle**, not per driver.
 
 ## Deliberately not instrumented (no notification by specification)
 
@@ -55,10 +82,21 @@ Empty draft run creation (`create-run`, `ensure-vehicle-day-runs`), retirement o
 
 ## Release prerequisites
 
-- Deploy the two composite indexes in `firestore.indexes.json` **before** the code that queries them
-  (`fikaLogisticsDriverChangeEventsV1`: status + committedAt; `fikaLogisticsDriverNotificationsV1`: vehicleId + createdAt desc).
-- Optional: a Firestore TTL policy on `fikaLogisticsDriverNotificationsV1.expiresAt` (30 days). Expired notices are already
-  hidden on read; TTL only reclaims storage.
-- New recurring reads: one bounded pending-event query plus a vehicle-scoped inbox read (at most 50 documents) when a driver
-  opens or re-shows the app and when the Notifications tab is opened. There is no polling loop and no new listener.
+- Deploy the three composite indexes in `firestore.indexes.json` **before** the code that queries them:
+  `fikaLogisticsDriverChangeEventsV1` status + committedAt; `fikaLogisticsDriverNotificationsV1` vehicleId + createdAt desc;
+  `fikaLogisticsDriverNotificationsV1` vehicleId + readAt + expiresAt (unread count). Wait for them to finish building.
+- **Server-owned recovery.** `POST /api/logistics/driver-notifications/process` is authenticated by the internal service token
+  (`x-fika-internal-token`, `FIKA_INTERNAL_API_TOKEN`) exactly like `/api/logistics/invalidate`, processes at most 50 pending events
+  and returns counts only. A Cloud Scheduler job should call it every five minutes (same pattern as
+  `docs/deployment/integration-hub-logistics-outbox-scheduler.md`). It is a safety net: the normal path processes immediately after
+  each save. The scheduler job is **not created** by this PR.
+- Optional: a Firestore TTL policy on `fikaLogisticsDriverNotificationsV1.expiresAt` (30 days). Expired notices are already hidden
+  on read and excluded from the count; TTL only reclaims storage.
+- New recurring reads: on a planner write of a non-excluded action for today's service date, the capture reads that day's runs,
+  loads, assignments, jobs and stops once (skipped entirely when the written documents are not today's). On the driver side, one
+  vehicle-scoped inbox query (at most 50 documents) plus one aggregate count when the app opens or re-shows and when the
+  Notifications tab is opened. No polling loop and no new listener.
+- Real-Firestore tests: `npm run test:emulator` in `apps/logistics` (run under `firebase emulators:exec`). CI wiring needs an edit to
+  `.github/workflows/validate.yml`, which another workspace holds (`feat-034-shared-ci`); until it lands these run locally and the
+  six phone-width Playwright tests (`mobile-notifications-chromium`) are also local-only.
 - Staging only until reviewed. Nothing in this PR sends a push; PR 2 adds Web Push.

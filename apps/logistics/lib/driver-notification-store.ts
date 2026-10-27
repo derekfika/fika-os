@@ -10,7 +10,13 @@ export const driverNotifications = () => db.collection("fikaLogisticsDriverNotif
 /** Notices are kept for 30 days. `expiresAt` is a Date so a Firestore TTL policy on the field can also reclaim storage. */
 export const NOTIFICATION_RETENTION_DAYS = 30;
 const MARK_ALL_LIMIT = 200;
-const asDate = (value: unknown) => (value instanceof Date ? value : typeof value === "string" ? new Date(value) : undefined);
+/** Firestore returns stored dates as Timestamp objects; tests and legacy rows may carry Date or ISO strings. */
+export function asDate(value: unknown): Date | undefined {
+  if (value instanceof Date) return value;
+  if (typeof value === "string") { const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? undefined : parsed; }
+  if (value && typeof (value as { toDate?: unknown }).toDate === "function") return (value as { toDate: () => Date }).toDate();
+  return undefined;
+}
 
 function toInbox(data: Record<string, unknown>): InboxNotification {
   const { readAt, expiresAt: _expiresAt, ...rest } = data;
@@ -63,6 +69,12 @@ export const firestoreDriverNotificationStore: DriverNotificationStore = {
       .filter(data => { const expiry = asDate(data.expiresAt); return !expiry || expiry.getTime() > now; })
       .map(toInbox)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  async countUnread(vehicleId, now, cap) {
+    // One aggregate read, never a document fetch. Expired-but-unreclaimed rows are excluded exactly as the list excludes them.
+    const aggregate = await driverNotifications().where("vehicleId", "==", vehicleId).where("readAt", "==", null).where("expiresAt", ">", now).limit(cap).count().get();
+    return Math.min(aggregate.data().count, cap);
   },
 
   async markRead(vehicleId, id, readAt) {

@@ -3,7 +3,8 @@ import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsAssignment, Logi
 import { deliveryLoads, logisticsAssignments, logisticsJobs, runs, stops } from "./store";
 import { londonServiceDate, type DriverRunSnapshot, type DriverVisit } from "./driver-notifications";
 import { driverChangeEventId, stageDriverChangeEvent, type ChangeMutation } from "./driver-change-events";
-import { driverChangeEvents } from "./driver-notification-store";
+import { driverChangeEvents, processDriverNotificationsSafely } from "./driver-notification-store";
+import { db } from "./firebase";
 
 /** A write the authorised transaction has buffered but not yet applied. Same shape `authorizeTransaction` buffers. */
 export type BufferedWrite = { method: "set" | "create" | "update" | "delete"; args: any[] };
@@ -186,4 +187,29 @@ export async function stageDriverChangeFromWrites(transaction: Transaction, writ
     after: changedIds.flatMap(id => afterById.get(id) ?? []),
     mutations,
   });
+}
+
+/**
+ * A plain Firestore transaction that also stages an immutable driver change event in the SAME commit, for writers that do not go
+ * through `authorizeTransaction` (upstream reconciliation, job saves, admin repairs). Writes are buffered until every read is done
+ * (Firestore requires reads first anyway), the change is captured from those reads plus the buffered writes, and only then flushed.
+ * Processing into inbox notices happens after the commit and can never fail the write. Without a context it is a plain transaction.
+ */
+export async function runCapturedTransaction<T>(ctx: CaptureContext | undefined, callback: (transaction: Transaction) => Promise<T>): Promise<T> {
+  if (!ctx) return db.runTransaction(callback);
+  const result = await db.runTransaction(async transaction => {
+    const writes: BufferedWrite[] = [];
+    const proxy: Transaction = new Proxy(transaction, { get(target, name) {
+      if (["set", "create", "update", "delete"].includes(String(name))) return (...args: any[]) => { writes.push({ method: name as BufferedWrite["method"], args }); return proxy; };
+      const value = Reflect.get(target, name);
+      return typeof value === "function" ? value.bind(target) : value;
+    } });
+    const value = await callback(proxy);
+    try { await stageDriverChangeFromWrites(transaction, writes, ctx); }
+    catch (error) { console.error("[driver-notifications] change capture skipped", error instanceof Error ? error.message : "unknown error"); }
+    for (const write of writes) (transaction[write.method] as any)(...write.args);
+    return value;
+  });
+  await processDriverNotificationsSafely();
+  return result;
 }

@@ -1,5 +1,5 @@
 import { processDriverNotificationsSafely } from "@/lib/driver-notification-store";
-import { driverCaptureFor, type CaptureContext } from "@/lib/driver-change-capture";
+import { driverCaptureFor, runCapturedTransaction, type CaptureContext } from "@/lib/driver-change-capture";
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
 import { assertSameOrigin } from "@/lib/csrf";
@@ -806,7 +806,7 @@ async function handlePost(request: NextRequest) {
       if (!body.runId || !isLogisticsVehicleId(body.vehicleId) || body.expectedRunVersion === undefined) throw new HttpError(422, "An explicitly reviewed run ID, stable vehicle ID and current version are required.");
       // Dedicated organisation repair authority was checked above. No label-to-ID
       // inference; this reviewed, CAS-protected mapping is never run on page load.
-      const saved = await db.runTransaction(async transaction => {
+      const saved = await runCapturedTransaction(driverCaptureFor(body.action, actorId, now), async transaction => {
         const ref = runs().doc(body.runId!);
         const snapshot = await transaction.get(ref);
         if (!snapshot.exists) throw new HttpError(404, "Logistics resource not found.");
@@ -854,7 +854,9 @@ async function handlePost(request: NextRequest) {
     if (body.action === "save-logistics-job" && body.job) {
       if (!body.job.originOplocId || !body.job.destinationOplocId)
         throw new HttpError(422, "Logistics jobs require canonical origin and destination OPLOC IDs.");
-      const saved = await saveLogisticsJob(body.job);
+      const jobToSave = body.job;
+      // Saved inside a capturing transaction so a quantity, content or instruction edit on assigned work reaches the driver.
+      const saved = await runCapturedTransaction(driverCaptureFor(body.action, actorId, now), async transaction => { transaction.set(logisticsJobs().doc(jobToSave.id), jobToSave); return jobToSave; });
       const event = await appendLogisticsChange({ serviceDate: saved.serviceDate, entityType: "logisticsJob", entityId: saved.id, changeType: "job-created-or-updated", revision: saved.version, changedAt: now, actorId });
       await rebuildLogisticsProjection(saved.serviceDate, by, event.sequence);
       return NextResponse.json(saved);
@@ -1257,16 +1259,17 @@ async function handlePost(request: NextRequest) {
     }
     if (body.action === "reset-planning-day" && body.serviceDate) {
       const state = await listState(body.serviceDate);
-      const batch = db.batch();
-      state.runs.forEach((run) => batch.delete(runs().doc(run.canonicalId)));
-      state.stops.forEach((stop) => batch.delete(stops().doc(stop.canonicalId)));
-      state.movements.forEach((movement) => batch.update(movements().doc(movement.canonicalId), {
-        status: "open",
-        version: movement.version + 1,
-        updatedAt: now,
-        audit: [...movement.audit, { action: "planning-day-reset", at: now, by, version: movement.version + 1 }],
-      }));
-      await batch.commit();
+      // A reset removes whole runs, so it is captured: a driver whose run disappears is told it was cancelled.
+      await runCapturedTransaction(driverCaptureFor(body.action, actorId, now), async transaction => {
+        state.runs.forEach((run) => transaction.delete(runs().doc(run.canonicalId)));
+        state.stops.forEach((stop) => transaction.delete(stops().doc(stop.canonicalId)));
+        state.movements.forEach((movement) => transaction.update(movements().doc(movement.canonicalId), {
+          status: "open",
+          version: movement.version + 1,
+          updatedAt: now,
+          audit: [...movement.audit, { action: "planning-day-reset", at: now, by, version: movement.version + 1 }],
+        }));
+      });
       await recordCanonicalLogisticsChange({ serviceDate: body.serviceDate, entityType: "run", entityId: `planning-day:${body.serviceDate}`, changeType: "planning-day-reset", revision: 1, actorId, by, changedAt: now });
       return NextResponse.json({ serviceDate: body.serviceDate, resetRuns: state.runs.length, resetStops: state.stops.length, resetMovements: state.movements.length });
     }

@@ -18,6 +18,7 @@ import {
 } from "./store";
 import { fetchOplocs, fetchRequirements } from "./upstream";
 import { db } from "./firebase";
+import { runCapturedTransaction } from "./driver-change-capture";
 import { movementDisplaySnapshots } from "./movement-labels";
 import type { GovernedOploc } from "./upstream";
 import { aggregateDelivery, compatibleAssignedLoad, compatibleLoad } from "./delivery-loads";
@@ -186,7 +187,8 @@ export async function reconcileLogisticsDay(serviceDate: string, by: string, act
  * Operator CAS tokens do not apply here; older source revisions never overwrite newer truth.
  */
 export async function reconcileRequirementJob(id: string, requirement: FulfilmentRequirement | undefined, by: string, now: string, nativeState?: { stops: DeliveryStop[]; runs: DeliveryRun[] }) {
-  return db.runTransaction(async tx => {
+  // Upstream amendments (quantity, contents, instructions, withdrawal) reach drivers through this transaction, so it captures too.
+  return runCapturedTransaction({ action: "reconcile-requirement-job", actorId: by, now }, async tx => {
     const ref = logisticsJobs().doc(id);
     const snapshot = await tx.get(ref);
     const prior = snapshot.exists ? snapshot.data() as LogisticsJob : undefined;

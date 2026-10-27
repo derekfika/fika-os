@@ -13,7 +13,7 @@ const VERIFIER = { van1: 'van1-verifier-fixture', van2: 'van2-verifier-fixture' 
 const URL = 'https://logistics.test/api/logistics/driver-notifications';
 
 function setup() {
-  Object.assign(process.env, { LOGISTICS_MOBILE_SESSION_SECRET: SECRET, LOGISTICS_MOBILE_VAN1_PIN_VERIFIER: VERIFIER.van1, LOGISTICS_MOBILE_VAN2_PIN_VERIFIER: VERIFIER.van2 });
+  Object.assign(process.env, { LOGISTICS_MOBILE_SESSION_SECRET: SECRET, LOGISTICS_MOBILE_VAN1_PIN_VERIFIER: VERIFIER.van1, LOGISTICS_MOBILE_VAN2_PIN_VERIFIER: VERIFIER.van2, FIKA_INTERNAL_API_TOKEN: 'internal-processor-test-token' });
   const f = fixture(['van1', 'van2'], [], true);
   const today = londonToday();
   for (const id of ['r1', 'r2']) Object.assign(f.records.get(`${RUNS}/${id}`), { serviceDate: today, plannedCpuDepartureTime: '10:00', plannedCpuReturnTime: '16:00' });
@@ -106,7 +106,7 @@ test('mark all read clears only the caller\'s unread notices and keeps history',
   assert.equal((await call(route.GET, request('van2'))).body.unreadCount, 1, 'the other vehicle is untouched');
 });
 
-test('process-pending recovers an event whose post-save processing was interrupted', async () => {
+test('a vehicle session cannot trigger processing; only the internal-token route recovers interrupted events', async () => {
   const { f, route, store, request, call, timing } = setup();
   const original = store.firestoreDriverNotificationStore.commitProcessedEvent;
   store.firestoreDriverNotificationStore.commitProcessedEvent = async () => { throw new Error('transient'); };
@@ -114,10 +114,18 @@ test('process-pending recovers an event whose post-save processing was interrupt
   assert.equal(saved.response.status, 200, 'the planner save is unaffected');
   store.firestoreDriverNotificationStore.commitProcessedEvent = original;
   assert.equal((await call(route.GET, request('van1'))).body.items.length, 0, 'nothing in the inbox yet');
-  const recovered = await call(route.POST, request('van1', { method: 'POST', body: { action: 'process-pending' } }));
-  assert.equal(recovered.body.items.length, 1);
-  const repeated = await call(route.POST, request('van1', { method: 'POST', body: { action: 'process-pending' } }));
-  assert.equal(repeated.body.items.length, 1, 'recovery never duplicates');
+  assert.equal((await call(route.POST, request('van1', { method: 'POST', body: { action: 'process-pending' } }))).response.status, 422, 'vehicles have no processing action');
+  assert.equal((await call(route.GET, request('van1'))).body.items.length, 0, 'still nothing: a vehicle cannot recover for any van');
+  const processor = f.load(path.join(__dirname, '..', 'app/api/logistics/driver-notifications/process/route.ts'));
+  const internal = headers => new NextRequest('https://logistics.example.test/api/logistics/driver-notifications/process', { method: 'POST', headers });
+  assert.equal((await processor.POST(internal({}))).status, 403, 'no token, no processing');
+  assert.equal((await processor.POST(internal({ cookie: 'fika_logistics_mobile_session_van1=x', 'x-fika-logistics-vehicle': 'van1' }))).status, 403, 'a vehicle cookie is not enough');
+  const recovered = await processor.POST(internal({ 'x-fika-internal-token': 'internal-processor-test-token' }));
+  assert.equal(recovered.status, 200);
+  assert.deepEqual(await recovered.json(), { processed: 1, created: 1, expired: 0 }, 'counts only, no content');
+  assert.equal((await call(route.GET, request('van1'))).body.items.length, 1);
+  const repeated = await (await processor.POST(internal({ 'x-fika-internal-token': 'internal-processor-test-token' }))).json();
+  assert.deepEqual(repeated, { processed: 0, created: 0, expired: 0 }, 'recovery never duplicates');
   assert.equal([...f.records].filter(([key]) => key.startsWith(EVENTS + '/')).length, 1);
 });
 

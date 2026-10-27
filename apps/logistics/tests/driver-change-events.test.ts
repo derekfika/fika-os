@@ -25,6 +25,7 @@ function memoryStore(options: { failCommits?: number } = {}) {
       events.set(eventId, { ...event, status, processedAt });
     },
     async recordFailure() {},
+    async countUnread(vehicleId, _now, cap) { return Math.min(cap, [...notices.values()].filter(n => n.vehicleId === vehicleId && !n.readAt).length); },
     async listNotifications(vehicleId, limit) { return [...notices.values()].filter(n => n.vehicleId === vehicleId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit); },
     async markRead(vehicleId, id, readAt) { const notice = notices.get(id); if (!notice || notice.vehicleId !== vehicleId) return false; notices.set(id, { ...notice, readAt: notice.readAt ?? readAt }); return true; },
     async markAllRead(vehicleId, readAt) { let count = 0; for (const [id, notice] of notices) if (notice.vehicleId === vehicleId && !notice.readAt) { notices.set(id, { ...notice, readAt }); count += 1; } return count; },

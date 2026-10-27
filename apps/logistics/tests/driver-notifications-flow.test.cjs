@@ -182,3 +182,24 @@ test('a stale expected version is rejected and records no event', async () => {
   assert.equal(result.response.status, 409);
   assert.equal(docs(EVENTS).length, 0, 'a rejected mutation leaves no event behind');
 });
+
+test('expiry honours Firestore Timestamp values, and the unread count stays exact beyond the first 50 notices', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2099-01-05T10:00:00Z') });
+  const f = fixture(['van1', 'van2'], [], true);
+  const store = f.load(path.join(__dirname, '..', 'lib/driver-notification-store.ts'));
+  const api = store.firestoreDriverNotificationStore;
+  const stamp = ms => ({ toDate: () => new Date(ms) });
+  const now = Date.now();
+  const row = (id, vehicleId, expiresAt, readAt = null) => f.records.set(`fikaLogisticsDriverNotificationsV1/${id}`, { id, vehicleId, kind: 'run-assigned', title: 't', inboxText: 'x', serviceDate: '2099-01-05', runId: 'r1', createdAt: new Date(now - Number(id.replace(/\D/g, '') || 0)).toISOString(), readAt, expiresAt });
+  row('expired', 'van1', new Date(now - 1000));
+  row('live', 'van1', new Date(now + 86_400_000));
+  for (let i = 0; i < 120; i++) row(`bulk${i}`, 'van1', new Date(now + 86_400_000));
+  row('other', 'van2', new Date(now + 86_400_000));
+  const items = await api.listNotifications('van1', 200);
+  assert.equal(items.some(item => item.id === 'expired'), false, 'an expired notice is hidden');
+  assert.equal(items.some(item => item.id === 'live'), true);
+  assert.equal(store.asDate(stamp(5)).getTime(), 5, 'Firestore Timestamp objects are understood (real-Firestore coverage is in tests/emulator)');
+  assert.equal(store.asDate('not a date'), undefined);
+  assert.equal(await api.countUnread('van1', new Date(), 100), 100, 'capped at the documented cap');
+  assert.equal(await api.countUnread('van2', new Date(), 100), 1);
+});

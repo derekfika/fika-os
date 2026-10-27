@@ -246,7 +246,11 @@ export function diffBatch(today: string, before: DriverRunSnapshot[], after: Dri
     const Work = group.lane === "collection" ? "Collection" : "Delivery";
     const where = group.destination === "your stop" ? "" : ` at ${group.destination}`;
     if (fromRun && isDriverVisible(fromRun) && fromRun.vehicleId !== toRun.vehicleId) {
-      notices.push(note("work-reassigned", fromRun, toRun.version, { title: "Work reassigned", inboxText: `${Work}${where} has been removed from your run.`, pushTail: `A ${work} has been removed from your run.`, subject: `moved-out:${group.visitId}` }));
+      // A partial move leaves the stop on this vehicle with fewer items: say part of it moved rather than that the stop was removed.
+      const stillHere = afterByRun.get(group.from)?.visits.some(visit => visit.lane === group.lane && visit.destination === group.destination);
+      notices.push(note("work-reassigned", fromRun, toRun.version, stillHere
+        ? { title: "Work reassigned", inboxText: `Part of the ${work}${where} has been moved to another vehicle.`, pushTail: `Part of a ${work} has been moved to another vehicle.`, subject: `moved-out:${group.visitId}` }
+        : { title: "Work reassigned", inboxText: `${Work}${where} has been removed from your run.`, pushTail: `A ${work} has been removed from your run.`, subject: `moved-out:${group.visitId}` }));
     } else if (fromRun && isDriverVisible(fromRun)) {
       notices.push(note("load-details-changed", toRun, toRun.version, { title: "Load details changed", inboxText: `${Work}${where} moved from one of your runs to another.`, pushTail: "Review your updated load quantities.", subject: `moved-within:${group.visitId}` }));
     }

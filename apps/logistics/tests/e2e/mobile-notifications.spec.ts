@@ -38,7 +38,7 @@ async function openDriverApp(page: Page, options: { items: (date: string) => Ite
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/mobile/van1");
   await page.getByText("Run 1").first().waitFor({ timeout: 60_000 });
-  return { f, posts, setItems: (next: Item[]) => { items = next; } };
+  return { f, posts, setItems: (next: Item[]) => { items = next; }, failNextInboxGets: (count: number) => { failuresLeft = count; } };
 }
 
 const item = (id: string, date: string, extra: Partial<Item> = {}): Item => ({ id, kind: "departure-time-changed", title: "Departure time changed", detail: "Departure moved from 11:30 to 12:00.", priority: "normal", serviceDate: date, runId: "r1", createdAt: "2026-10-28T10:00:00.000Z", ...extra });
@@ -100,7 +100,8 @@ test("empty inbox shows a calm empty state", async ({ page }) => {
 });
 
 test("a failed load shows an error with Retry, and Retry recovers without losing the app", async ({ page }) => {
-  await openDriverApp(page, { items: date => [item("a", date)], failInboxGets: 1 });
+  const app = await openDriverApp(page, { items: date => [item("a", date)] });
+  app.failNextInboxGets(1);
   await nav(page).getByRole("button", { name: /^Notifications/ }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Notifications are unavailable right now." })).toBeVisible();
   await page.getByRole("button", { name: "Retry" }).click();

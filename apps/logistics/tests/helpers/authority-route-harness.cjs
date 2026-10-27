@@ -19,6 +19,7 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
       const docs = [...records].filter(([key, value]) => key.startsWith(this.name + '/') && this.filters.every(([field, op, input]) => op === '==' ? value[field] === input : op === 'in' ? input.includes(value[field]) : op === 'array-contains' ? value[field]?.includes(input) : op === '>' ? value[field] > input : false)).slice(0, this.cap).map(([key]) => new Ref(key).snapshot());
       return { docs, size: docs.length, empty: !docs.length };
     }
+    count() { return { get: async () => { const { size } = await this.get(); return { data: () => ({ count: size }) }; } }; }
     doc(id) { return new Ref(this.name + '/' + id); }
   }
   class Ref {

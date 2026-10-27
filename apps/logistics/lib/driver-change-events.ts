@@ -62,6 +62,8 @@ export async function stageDriverChangeEvent(transaction: StageTransaction, ref:
   return "staged";
 }
 
+/** Documented display cap: the app shows "99+" above 99 unread notices; the count is exact up to this cap. */
+export const UNREAD_COUNT_CAP = 100;
 export const MAX_PROCESSING_ATTEMPTS = 8;
 
 export type DriverNotificationStore = {
@@ -76,6 +78,8 @@ export type DriverNotificationStore = {
   recordFailure(eventId: string, message: string): Promise<void>;
   /** Vehicle-scoped listing, newest first, bounded. */
   listNotifications(vehicleId: "van1" | "van2", limit: number): Promise<InboxNotification[]>;
+  /** Unread, unexpired notices for the vehicle, counted server-side and capped (one aggregate read), independent of the list page size. */
+  countUnread(vehicleId: "van1" | "van2", now: Date, cap: number): Promise<number>;
   markRead(vehicleId: "van1" | "van2", id: string, readAt: string): Promise<boolean>;
   markAllRead(vehicleId: "van1" | "van2", readAt: string): Promise<number>;
 };
@@ -112,9 +116,9 @@ export async function processPendingDriverChanges(store: DriverNotificationStore
 }
 
 /** Inbox read model. Only ever returns the authenticated vehicle's own notices. */
-export async function inboxFor(store: DriverNotificationStore, vehicleId: "van1" | "van2", limit = 50) {
-  const items = await store.listNotifications(vehicleId, limit);
-  return { vehicleId, unreadCount: items.filter(item => !item.readAt).length, items: items.filter(item => item.vehicleId === vehicleId) };
+export async function inboxFor(store: DriverNotificationStore, vehicleId: "van1" | "van2", limit = 50, now = new Date()) {
+  const [items, unreadCount] = await Promise.all([store.listNotifications(vehicleId, limit), store.countUnread(vehicleId, now, UNREAD_COUNT_CAP)]);
+  return { vehicleId, unreadCount, items: items.filter(item => item.vehicleId === vehicleId) };
 }
 
 /** Mark one notice read. A notice belonging to another vehicle is treated as not found, never as a successful write. */

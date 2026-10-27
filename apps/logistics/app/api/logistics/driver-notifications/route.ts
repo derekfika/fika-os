@@ -3,7 +3,7 @@ import { errorResponse } from "@/lib/api";
 import { assertSameOrigin } from "@/lib/csrf";
 import { requireLogisticsAccess } from "@/lib/auth";
 import { hostedRuntime } from "@/lib/runtime";
-import { firestoreDriverNotificationStore, processDriverNotifications } from "@/lib/driver-notification-store";
+import { firestoreDriverNotificationStore } from "@/lib/driver-notification-store";
 import { inboxFor, markAllNotificationsRead, markNotificationRead, type InboxNotification } from "@/lib/driver-change-events";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
@@ -59,9 +59,6 @@ export async function POST(request: NextRequest) {
       if (!await markNotificationRead(firestoreDriverNotificationStore, vehicleId, body.id, now)) throw denied("We could not find that notification.", "LOGISTICS_NOTIFICATION_NOT_FOUND", 404);
     } else if (body?.action === "mark-all-read") {
       await markAllNotificationsRead(firestoreDriverNotificationStore, vehicleId, now);
-    } else if (body?.action === "process-pending") {
-      // Bounded, idempotent recovery for events whose post-save processing was interrupted. Notices stay vehicle-tagged.
-      await processDriverNotifications(now, 25);
     } else {
       throw denied("That notification action is not available.", "LOGISTICS_NOTIFICATION_ACTION_UNKNOWN", 422);
     }
