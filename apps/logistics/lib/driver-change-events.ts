@@ -59,7 +59,7 @@ export type DriverNotificationStore = {
    * Atomically: create each notice that does not already exist, and mark the event processed. Any failure leaves the event
    * pending, so the next processing run retries it without duplicating notices.
    */
-  commitProcessedEvent(eventId: string, notices: Array<DriverNotification & { id: string; createdAt: string }>, status: "processed" | "expired", processedAt: string): Promise<void>;
+  commitProcessedEvent(eventId: string, notices: InboxNotification[], status: "processed" | "expired", processedAt: string): Promise<void>;
   /** Vehicle-scoped listing, newest first, bounded. */
   listNotifications(vehicleId: "van1" | "van2", limit: number): Promise<InboxNotification[]>;
   markRead(vehicleId: "van1" | "van2", id: string, readAt: string): Promise<boolean>;
