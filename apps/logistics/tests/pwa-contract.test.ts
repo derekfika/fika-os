@@ -47,9 +47,10 @@ test("service worker caches only static shell prefixes", () => {
   assert.match(sw, /const STATIC_PREFIXES = \["\/_next\/static\/", "\/pwa\/", "\/brand-assets\/"\];/);
 });
 
-test("service worker registration is scoped to /mobile/ and requests no notification permission", () => {
+test("service worker registration is scoped to each van's own app (/mobile/van1, /mobile/van2), never the shared /mobile/", () => {
   const register = read("app/mobile/PwaRegister.tsx");
-  assert.match(register, /register\("\/pwa-sw\.js", \{ scope: "\/mobile\/" \}\)/);
+  assert.match(register, /register\("\/pwa-sw\.js", \{ scope: `\/mobile\/\$\{van\}` \}\)/);
+  assert.doesNotMatch(register, /scope: "\/mobile\/"/);
   assert.doesNotMatch(register, /Notification\.requestPermission|pushManager/);
 });
 

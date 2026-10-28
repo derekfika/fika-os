@@ -205,3 +205,12 @@ test.describe("iPhone in a browser tab", () => {
     await expect(page.getByRole("button", { name: "Turn on notifications" })).toHaveCount(0);
   });
 });
+
+// Android attributes a notification to an installed app only when its worker's scope sits inside that app's manifest scope, so each
+// van registers its own worker at /mobile/vanN, never the shared /mobile/ scope.
+test("the Van 1 page registers its own worker scope, /mobile/van1, not the shared /mobile/", async ({ page }) => {
+  await openDriverApp(page, { items: date => [item("a", date)] });
+  await expect.poll(() => page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).map(registration => new URL(registration.scope).pathname))).toContain("/mobile/van1");
+  const scopes = await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).map(registration => new URL(registration.scope).pathname));
+  expect(scopes).not.toContain("/mobile/");
+});

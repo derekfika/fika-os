@@ -35,12 +35,34 @@ async function sendOne(subscription: StoredSubscription, payload: PushPayload, d
   }
 }
 
+export type VerifyOutcome = "delivered" | "gone" | "failed";
+
+/**
+ * Prove one endpoint can receive a push before its replacement takes over. Sent only to that endpoint. The notification says what it
+ * is, so a driver who sees it knows notifications are on for their van.
+ */
+export async function sendVerification(vehicleId: PushVehicle, subscription: { endpoint: string; p256dh: string; auth: string }, deps: PushDeps = {}): Promise<VerifyOutcome> {
+  const vapid = deps.vapid ?? vapidConfig();
+  if (!vapid) return "failed";
+  const send = deps.send ?? defaultSend;
+  const label = vehicleId === "van2" ? "Van 2" : "Van 1";
+  const payload: PushPayload = { v: 1, title: "Notifications are on", body: `${label} will be alerted when its run changes today.`, tag: "verify", url: `/mobile/${vehicleId}`, vehicleId, priority: "normal" };
+  try {
+    await send({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, JSON.stringify(payload), { TTL: TTL_SECONDS, urgency: "normal", timeout: SEND_TIMEOUT_MS, vapidDetails: vapid });
+    return "delivered";
+  } catch (error) {
+    const status = (error as { statusCode?: number }).statusCode;
+    return status === 404 || status === 410 ? "gone" : "failed";
+  }
+}
+
 /** Send one payload to every device bound to a van. Never throws. */
 export async function sendToVehicle(vehicleId: PushVehicle, payload: PushPayload, deps: PushDeps = {}): Promise<PushOutcome & { devices: number }> {
   const outcome: PushOutcome = { sent: 0, removed: 0, failed: 0, transient: 0 };
   const vapid = deps.vapid ?? vapidConfig();
   if (!vapid) return { ...outcome, devices: 0 };
   const resolved: Required<PushDeps> = { vapid, send: deps.send ?? defaultSend, now: deps.now ?? (() => new Date()) };
+  // Only sendable subscriptions: superseded legacy and unverified replacements are excluded (see isSendable).
   const devices = await subscriptionsFor(vehicleId);
   await Promise.all(devices.map(device => sendOne(device, payload, resolved, outcome)));
   return { ...outcome, devices: devices.length };

@@ -57,39 +57,53 @@ self.addEventListener("fetch", (event) => {
 });
 
 // ---- Web Push -------------------------------------------------------------------------------------------------------------
-// The server sends a small JSON payload ({ v: 1, title, body, tag, url, vehicleId }). Every push must show a notification
-// (userVisibleOnly), so an unreadable payload still produces a generic one. Only same-origin /mobile/ links are ever opened.
-const safeUrl = (value) => {
+// Each van registers this worker at its own scope (/mobile/van1 or /mobile/van2), inside that van's installed-app scope, so Android
+// attributes its notifications to that app. The van is taken from this worker's own registration scope, never from the payload: a
+// payload for the other van is shown generically and never opens into this app. A legacy worker at /mobile/ (before per-van scopes)
+// still delivers until its subscription is migrated; for that worker alone the payload's van is used, and opening is still limited
+// to that van's own windows.
+const scopeVehicle = () => {
+  const match = /\/mobile\/(van[12])\/?$/.exec(new URL(self.registration.scope).pathname);
+  return match ? match[1] : undefined;
+};
+const validVan = (value) => (value === "van1" || value === "van2" ? value : undefined);
+const targetFor = (data) => {
+  const own = scopeVehicle();
+  if (own) return { vehicle: own, trusted: data.vehicleId === own };
+  return { vehicle: validVan(data.vehicleId) || "van1", trusted: true };
+};
+const ownUrl = (vehicle, value) => {
   try {
     const url = new URL(value, self.location.origin);
-    return url.origin === self.location.origin && url.pathname.startsWith("/mobile/") ? url.pathname + url.search : "/mobile/";
-  } catch { return "/mobile/"; }
+    return url.origin === self.location.origin && url.pathname.startsWith(`/mobile/${vehicle}`) ? url.pathname + url.search : `/mobile/${vehicle}`;
+  } catch { return `/mobile/${vehicle}`; }
 };
 
 self.addEventListener("push", (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
-  const valid = data && data.v === 1 && typeof data.title === "string";
-  const vehicle = valid && (data.vehicleId === "van1" || data.vehicleId === "van2") ? data.vehicleId : "van1";
-  const title = valid ? String(data.title).slice(0, 120) : "FIKA Logistics";
+  const valid = Boolean(data && data.v === 1 && typeof data.title === "string");
+  const { vehicle, trusted } = targetFor(valid ? data : {});
+  const show = valid && trusted;
   const options = {
-    body: valid && typeof data.body === "string" ? data.body.slice(0, 240) : "You have a new notification.",
-    tag: valid && typeof data.tag === "string" ? data.tag.slice(0, 64) : undefined,
+    body: show && typeof data.body === "string" ? data.body.slice(0, 240) : "You have a new notification.",
+    tag: show && typeof data.tag === "string" ? data.tag.slice(0, 64) : undefined,
     icon: `/pwa/${vehicle}-192.png`,
     badge: `/pwa/${vehicle}-192.png`,
-    data: { url: safeUrl(valid ? data.url : "/mobile/") },
+    data: { url: ownUrl(vehicle, show ? data.url : `/mobile/${vehicle}`), vehicle },
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(self.registration.showNotification(show ? String(data.title).slice(0, 120) : "FIKA Logistics", options));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = safeUrl(event.notification.data && event.notification.data.url);
+  const vehicle = validVan(event.notification.data && event.notification.data.vehicle) || scopeVehicle() || "van1";
+  const target = ownUrl(vehicle, event.notification.data && event.notification.data.url);
   event.waitUntil((async () => {
-    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    const open = windows.find((client) => new URL(client.url).pathname.startsWith("/mobile/"));
+    // Only this van's own windows: never focus or message another van's app window.
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: false });
+    const open = windows.find((client) => new URL(client.url).pathname.startsWith(`/mobile/${vehicle}`));
     if (open) {
-      // An app window is already open: bring it forward and tell it which notification to open, without reloading it.
       try { await open.focus(); } catch { /* not focusable */ }
       open.postMessage({ type: "fika-open-notice", url: target });
       return;

@@ -22,6 +22,8 @@ const TEST_PRIVATE_KEY = ecdh.getPrivateKey().toString('base64url');
 
 function setup() {
   Object.assign(process.env, { LOGISTICS_MOBILE_SESSION_SECRET: SECRET, LOGISTICS_MOBILE_VAN1_PIN_VERIFIER: VERIFIER.van1, LOGISTICS_MOBILE_VAN2_PIN_VERIFIER: VERIFIER.van2, LOGISTICS_VAPID_PRIVATE_KEY: TEST_PRIVATE_KEY });
+  // Subscribing now proves the endpoint with a real push first; these tests use a push service that accepts everything.
+  require('web-push').sendNotification = async () => ({});
   const f = fixture(['van1', 'van2'], [], true);
   const today = londonToday();
   for (const id of ['r1', 'r2']) Object.assign(f.records.get(`${RUNS}/${id}`), { serviceDate: today, plannedCpuDepartureTime: '10:00', plannedCpuReturnTime: '16:00' });
@@ -35,7 +37,7 @@ function setup() {
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const call = async (handler, req) => { const response = await handler(req); return { response, body: await response.json() }; };
-  const subscribe = (vehicle, id) => call(route.POST, request(vehicle, { method: 'POST', body: { action: 'subscribe', subscription: { endpoint: ENDPOINT(id), keys: KEYS } } }));
+  const subscribe = (vehicle, id) => call(route.POST, request(vehicle, { method: 'POST', body: { action: 'subscribe', scope: vehicle, subscription: { endpoint: ENDPOINT(id), keys: KEYS } } }));
   const subs = () => [...f.records].filter(([key]) => key.startsWith(SUBS + '/') && !key.includes('_test')).map(([, value]) => structuredClone(value));
   const seedNotice = (id, vehicleId, extra = {}) => f.records.set(`${NOTICES}/${id}`, { id, vehicleId, kind: 'delivery-time-changed', title: 'Delivery time changed', inboxText: 'x', pushBody: 'Van 1 · Tue 27 Oct · A delivery time changed.', priority: 'normal', serviceDate: today, runId: 'r1', createdAt: new Date().toISOString(), readAt: null, pushStatus: 'pending', ...extra });
   const sender = () => { const calls = []; const send = async (subscription, payload, options) => { calls.push({ endpoint: subscription.endpoint, payload: JSON.parse(payload), options }); }; return { calls, send }; };
@@ -52,14 +54,14 @@ test('only a signed vehicle session can register, and the vehicle comes from the
   assert.equal(JSON.stringify(info.body).includes(TEST_PRIVATE_KEY), false, 'the private key never leaves the server');
   assert.equal((await subscribe('van1', 'a')).response.status, 200);
   assert.deepEqual(subs().map(item => item.vehicleId), ['van1']);
-  const forged = await call(route.POST, request('van1', { method: 'POST', body: { action: 'subscribe', vehicleId: 'van2', subscription: { endpoint: ENDPOINT('b'), keys: KEYS } } }));
+  const forged = await call(route.POST, request('van1', { method: 'POST', body: { action: 'subscribe', scope: 'van1', vehicleId: 'van2', subscription: { endpoint: ENDPOINT('b'), keys: KEYS } } }));
   assert.equal(forged.response.status, 200);
   assert.deepEqual(subs().map(item => item.vehicleId).sort(), ['van1', 'van1'], 'a vehicle field in the body is ignored');
 });
 
 test('subscription input is validated: only real push-service HTTPS endpoints and well-formed keys', async () => {
   const { route, request, call } = setup();
-  const attempt = subscription => call(route.POST, request('van1', { method: 'POST', body: { action: 'subscribe', subscription } }));
+  const attempt = subscription => call(route.POST, request('van1', { method: 'POST', body: { action: 'subscribe', scope: 'van1', subscription } }));
   for (const endpoint of ['http://fcm.googleapis.com/x', 'https://evil.example.com/x', 'https://fcm.googleapis.com.evil.com/x', 'https://user:pw@fcm.googleapis.com/x', 'https://169.254.169.254/latest', 'not a url', 42]) {
     assert.equal((await attempt({ endpoint, keys: KEYS })).response.status, 422, String(endpoint));
   }
