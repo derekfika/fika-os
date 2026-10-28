@@ -23,8 +23,11 @@ test("staging config uses the Logistics API base and shared internal token secre
   assert.match(config, /variable:\s*CPU_PRODUCTION_BASE_URL[\s\S]*?value:\s*https:\/\/cpu-staging\.fikacatering\.com/);
   assert.match(config, /variable:\s*FIKA_LOGISTICS_BASE_URL[\s\S]*?value:\s*https:\/\/logistics-staging\.fikacatering\.com/);
   assert.match(config, /variable:\s*FIKA_APP_DELIVERED_IN_URL[\s\S]*?value:\s*https:\/\/delivered-in-staging\.fikacatering\.com/);
-  assert.match(config, /FIKA_ALLOWED_APP_ORIGINS[\s\S]*https:\/\/logistics-staging\.fikacatering\.com[\s\S]*https:\/\/delivered-in-staging\.fikacatering\.com/);
+  assert.match(config, /variable:\s*FIKA_APP_AD_HOC_URL\s*\n\s*value:\s*https:\/\/adhoc-staging\.fikacatering\.com\s*\n\s*availability:\s*\n\s*- BUILD\s*\n\s*- RUNTIME/);
+  assert.match(config, /FIKA_ALLOWED_APP_ORIGINS[\s\S]*https:\/\/cpu-staging\.fikacatering\.com[\s\S]*https:\/\/logistics-staging\.fikacatering\.com[\s\S]*https:\/\/menu-planning-staging\.fikacatering\.com[\s\S]*https:\/\/hospitality-staging\.fikacatering\.com[\s\S]*https:\/\/delivered-in-staging\.fikacatering\.com[\s\S]*https:\/\/adhoc-staging\.fikacatering\.com[\s\S]*https:\/\/fika-hospitality-staging--fika-os-dev\.europe-west4\.hosted\.app[\s\S]*https:\/\/fika-cpu-production-staging--fika-os-dev\.europe-west4\.hosted\.app[\s\S]*https:\/\/fika-delivered-in-staging--fika-os-dev\.europe-west4\.hosted\.app/);
   assert.match(config, /variable:\s*FIKA_INTERNAL_API_TOKEN[\s\S]*?secret:\s*FIKA_INTERNAL_API_TOKEN@3/);
+  const productionConfig = readFileSync(new URL("../apphosting.production.yaml", import.meta.url), "utf8");
+  assert.doesNotMatch(productionConfig, /FIKA_APP_AD_HOC_URL|https:\/\/adhoc-staging\.fikacatering\.com/);
 });
 
 test("Integration Hub Firebase config does not claim the Hospitality App Hosting backend", () => {
