@@ -11,6 +11,8 @@ import { runDeployment, checkConfirmation } from './runner.mjs';
 import { createDashboard } from './server.mjs';
 import { main as agentMain } from './agent.mjs';
 import { APPS } from '../workflow/policy.mjs';
+import { fixture } from '../workflow/lifecycle-fixture.mjs';
+import { createWorkspace, workspaceRecords } from '../workflow/workspaces.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const starter = path.join(here, 'deploy-config.json');
@@ -226,7 +228,7 @@ test('local server binds to loopback, rejects foreign hosts and tokenless writes
   // Every backend answers the same simulator shape: enough for the page to load.
   const read = async resource => fb.read(resource.replace(/backends\/[^/]+/, `backends/${t.backend}`).replace(/projects\/[^/]+/, `projects/${t.project}`));
   let runs = 0;
-  const dash = createDashboard({ port: 0, config: file, history: path.join(dir, 'h.jsonl'), root: path.resolve(here, '..', '..'), read, runner: async () => { runs++; return { outcome: 'verified' }; } });
+  const dash = createDashboard({ port: 0, config: file, history: path.join(dir, 'h.jsonl'), root: path.resolve(here, '..', '..'), read, runner: async () => { runs++; return { outcome: 'verified' }; }, deps: { operation: async (_kind, fn) => fn() } });
   const port = await dash.listen();
   try {
     assert.equal(dash.server.address().address, '127.0.0.1');
@@ -265,9 +267,34 @@ test('history is append-only JSON lines and never read as a gate', () => {
   assert.ok(!existsSync(`${file}.lock`));
 });
 
-test('deployment path source contains no lock, lease or pending-intent mechanisms', () => {
-  for (const f of ['config.mjs', 'history.mjs', 'firebase.mjs', 'runner.mjs', 'server.mjs', 'agent.mjs']) {
+test('deployment adapters have no separate lock, lease or pending-intent mechanisms', () => {
+  for (const f of ['config.mjs', 'history.mjs', 'firebase.mjs', 'runner.mjs', 'agent.mjs']) {
     const code = readFileSync(path.join(here, f), 'utf8').replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, '');
     assert.ok(!/openSync\([^)]*['"]wx['"]|\.lock\b|flag:\s*['"]wx['"]|lease|mutex|pendingIntent/i.test(code), `${f} must not create locks or leases`);
   }
+  const server=readFileSync(path.join(here,'server.mjs'),'utf8');
+  assert.match(server,/workspace-admin\.mjs/);assert.match(server,/workspace-state\.mjs/);
+  assert.ok(!/openSync|mkdirSync|workspaces\.json|\.lock'/.test(server),'server delegates registry/concurrency to the governed implementation');
+});
+
+test('workspace dashboard uses admin identity, token, origin, exact confirmation, fresh preview and shared audit',async()=>{
+  const f=fixture();const {file,dir}=copyConfig();
+  f.within(()=>createWorkspace('dashboard-task',{owner:'fixture-owner',scope:'src'}));
+  let isAdmin=false;
+  const dash=createDashboard({port:0,root:f.repo,config:file,history:path.join(dir,'history.jsonl'),read:async()=>{throw Error('Cloud is not used for workspace management');},deps:{workspaces:{authorize:()=>({login:'fixture-owner',administrator:isAdmin})}}});
+  const port=await dash.listen();const base=`http://127.0.0.1:${port}`;
+  const post=(suffix,body={},extra={})=>fetch(`${base}/api/workspaces/${suffix}`,{method:'POST',headers:{'content-type':'application/json','x-dashboard-token':dash.token,origin:base,...extra},body:JSON.stringify(body)});
+  try{
+    assert.equal((await fetch(`${base}/api/workspaces`)).status,403);
+    assert.equal((await post('release-all/preview')).status,400,'non-administrator cannot preview');isAdmin=true;
+    assert.equal((await post('release-all/preview',{}, {'x-dashboard-token':'wrong'})).status,403);
+    assert.equal((await post('release-all/preview',{}, {origin:'https://evil.example'})).status,403);
+    assert.equal((await post('release-all/preview',{}, {'sec-fetch-site':'cross-site'})).status,403);
+    assert.equal((await post('release-all/preview',{}, {origin:''})).status,403);
+    const plan=await (await post('release-all/preview')).json();assert.equal(plan.eligibleCount,1);
+    assert.equal((await post('release-all/execute',{'approve-hash':plan.planHash,confirm:'yes',reason:'Owner recovery'})).status,400);
+    const result=await (await post('release-all/execute',{'approve-hash':plan.planHash,confirm:'RELEASE ALL LEASES',reason:'Owner approved fixture recovery'})).json();assert.equal(result.released.length,1);
+    assert.equal(f.within(()=>workspaceRecords()[0].state),'revoked');
+    const page=await(await fetch(base)).text();assert.match(page,/<dialog[^>]+workspace-dialog/);assert.match(page,/Type RELEASE ALL LEASES/);assert.match(page,/workspace-reason/);assert.ok(page.includes('Preview safe cleanup'));
+  }finally{await dash.close();f.dispose();}
 });

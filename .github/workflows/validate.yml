@@ -33,7 +33,7 @@ jobs:
           # It joins the matrix on its own (non-doc) paths and, like every app, on shared/package changes.
           node --input-type=module -e 'import fs from "node:fs"; const v=JSON.parse(fs.readFileSync("/tmp/fika-scope.json")); const adHoc=v.shared||v.paths.some(p=>p.startsWith("apps/ad-hoc-production/")&&!/\/(docs\/|[^/]+\.md$)/.test(p)); const apps=adHoc?[...v.apps,"ad-hoc"].sort():v.apps; fs.appendFileSync(process.env.GITHUB_OUTPUT,`apps=${JSON.stringify(apps)}\nhub=${v.apps.includes("hub")}\n`);'
           git diff --check "$BASE" "$HEAD"
-          if ! git diff --name-only "$BASE" "$HEAD" | grep -qx 'CHANGELOG.md'; then echo 'Every implementation PR must update CHANGELOG.md'; exit 1; fi
+          node tools/workflow/cli.mjs changelog check --base "$BASE" --head "$HEAD"
   tooling:
     runs-on: ubuntu-latest
     steps:
@@ -45,6 +45,7 @@ jobs:
           node-version: '22'
       - run: git config --global user.name 'FIKA workflow tests' && git config --global user.email 'workflow-tests@example.invalid'
       - run: node --test tools/workflow/*.test.mjs
+      - run: node --test tools/deploy-dashboard/dashboard.test.mjs
   applications:
     needs: scope
     if: needs.scope.outputs.apps != '[]'

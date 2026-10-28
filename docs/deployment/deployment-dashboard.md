@@ -1,5 +1,7 @@
 # Deployment Dashboard — status and migration criteria
 
+**28 October 2026 workflow update:** `tools/deploy-dashboard` now exists, and Workspace Management uses the governed local registry/lock through the same backend as the CLI. See [workspace management](workspace-management.md). This adds no application deployment and does not certify the dashboard's separate deployment runner as meeting the migration criteria below; keep using governed `fika deploy`. The historical evidence below describes the earlier 24 October checkout.
+
 **Status checked against `origin/main` at `540b565b8f0cc1d58e8e768d85e4e66aa0cb2596` on 24 October 2026:** the proposed local HTML Deployment Dashboard is **not verified as an operational deployment interface**. Keep the governed deployment CLI and its release safeguards as the routine interface until the conditions in this note are met.
 
 This note records current repository evidence and the eventual dashboard requirements. It does not authorize or perform a deployment.
