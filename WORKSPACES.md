@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-28T20:51:46.270Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-28T21:06:15.156Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -106,6 +106,7 @@ Snapshot: 2026-10-28T20:51:46.270Z. The local governed registry remains authorit
 | menu-release-recovery | codex-menu-release-recovery | tools/workflow | codex/menu-release-recovery | — | finished | 2026-10-23T09:22:36.941Z |
 | menu-spellcheck-continue | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-continue | — | finished | 2026-10-28T19:46:22.840Z |
 | menu-spellcheck-week-planner | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-week-planner | [#98](https://github.com/derekfika/fika-os/pull/98) | finished | 2026-10-28T09:15:41.758Z |
+| menu-worker-activation | codex-menu-worker-111 | tools/incidents/menu-worker-activation, docs/incidents/2026-10-28-menu-worker-activation.md | codex/menu-worker-activation | — | retired | 2026-10-28T21:06:13.186Z |
 | pr-backlog-audit | codex-pr-reconciliation | docs/audits/2026-10-28/pr-backlog-reconciliation.md | codex/pr-backlog-audit | — | active | 2026-10-28T18:58:43.948Z |
 | release-probe-authmod | claude-release-probe | tools/workflow, docs/deployment | codex/release-probe-authmod | [#22](https://github.com/derekfika/fika-os/pull/22) | finished | 2026-10-24T15:02:50.771Z |
 | release-resume-resubmit | claude-ad-hoc | tools/workflow/recovery.mjs, tools/workflow/releases.mjs, tools/workflow/resubmit.test.mjs, docs/deployment/workflow.md | codex/release-resume-resubmit | [#31](https://github.com/derekfika/fika-os/pull/31) | finished | 2026-10-25T13:13:28.932Z |
