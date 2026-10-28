@@ -226,3 +226,19 @@ h1, h2, h3, h4, p { text-wrap: pretty; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* Week Planner category headers: subtle FIKA tint with a line icon; copy is an icon-only control. */
+.week-matrix .week-matrix-group { background-image: none; background: var(--fika-status-info-surface); color: var(--fika-action-secondary); }
+.week-matrix-group-title { display: inline-flex; align-items: center; gap: 6px; }
+.week-matrix-group-icon { width: 16px; height: 16px; flex: none; }
+.week-menu-cell-actions .week-menu-copy-action { width: 28px; min-height: 28px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.week-menu-copy-glyph { width: 14px; height: 14px; }
+
+/* Menu spellcheck: subtle dotted underline, compact count, and a non-modal suggestions panel. */
+.spell-flag { text-decoration: underline dotted var(--fika-status-warning, #b45309); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+.spell-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-left: 6px; padding: 0 5px; border-radius: 9px; background: #d92d20; color: #fff; font-size: 11px; font-weight: 700; }
+.spell-panel { position: fixed; top: 96px; right: 24px; width: min(360px, calc(100vw - 32px)); max-height: 70vh; overflow: auto; z-index: 60; padding: 14px; border: 1px solid var(--fika-border, #d9d6e3); border-radius: var(--radius-md, 12px); background: var(--fika-surface, #fff); box-shadow: 0 12px 32px rgba(0, 0, 0, .18); }
+.spell-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.spell-panel-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.spell-panel-row { display: flex; gap: 8px; align-items: center; }
+.spell-panel-actions { display: flex; gap: 8px; margin-top: 6px; }
