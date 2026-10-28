@@ -629,6 +629,8 @@ The root README.md may describe older repository structure and must not be treat
 
 A coding task is not complete merely because the page renders or TypeScript compiles.
 
+All normal terminal returns must run `fika workspace complete <task> --owner <agent-task>` from the canonical checkout after final validation and push, or explicitly preserve unfinished work with `--preserve --reason`. Report lease release, branch/PR/final SHA, retirement/protection, recovery and status-publication results. Interrupted/ongoing work keeps its lease. Follow root AGENTS.md and [workspace management](../deployment/workspace-management.md); use the current canonical tooling after revocation fencing is installed. Application entries belong in the app changelog or unique `.changes/<app>/` fragments; platform changes use the root log or `.changes/platform/`. Read-only work needs no entry.
+
 A strong completion report states:
 - what changed;
 - why that is the correct domain boundary;

@@ -8,6 +8,9 @@ import { AGENTS, ENVIRONMENTS, canonicalRoot, configPath, historyPath, readConfi
 import { appendEvent, latestVerified, readEvents } from './history.mjs';
 import { createReader, readBackendStatus } from './firebase.mjs';
 import { gitChecker, runDeployment, smokeProbe } from './runner.mjs';
+import { withRepository } from '../workflow/runtime.mjs';
+import { governedOperation } from '../workflow/workspace-state.mjs';
+import { workspaceStatus, previewReleaseAll, releaseAllWorkspaces, previewSweep, sweepWorkspaces } from '../workflow/workspace-admin.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const STATUS_TTL_MS = 15000;
@@ -16,6 +19,8 @@ export function createDashboard({ port = 4180, enableProduction = false, config 
   const deployments = new Map();
   const inFlight = new Map(); // process memory only: stops a double click in this server, vanishes on restart, Firebase stays the real arbiter
   let statusCache = { at: 0, value: null };
+  const workspaceCall = fn => withRepository(root, fn);
+  const workspaceDeps = deps.workspaces || {};
 
   const json = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)); };
   const body = req => new Promise((resolve, reject) => {
@@ -47,9 +52,9 @@ export function createDashboard({ port = 4180, enableProduction = false, config 
     const record = { id, app: t.app, environment: t.environment, events: [], listeners: new Set(), done: false };
     deployments.set(id, record); inFlight.set(t.backend, id);
     const emit = event => { const e = { ...event, at: new Date().toISOString() }; record.events.push(e); record.listeners.forEach(fn => fn(e)); };
-    Promise.resolve().then(() => runner({ appId: payload.app, environment: payload.environment, sha: payload.sha, confirm: payload.confirm, dryRun: payload.dryRun === true, actor: 'dashboard' }, {
+    Promise.resolve().then(() => workspaceCall(() => (deps.operation || governedOperation)('dashboard-deployment', () => runner({ appId: payload.app, environment: payload.environment, sha: payload.sha, confirm: payload.confirm, dryRun: payload.dryRun === true, actor: 'dashboard' }, {
       config: cfg, read, emit, git: deps.git || gitChecker(root), history: event => appendEvent(history, event), smoke: smokeProbe, ...deps.runner,
-    })).then(result => emit({ type: 'result', ...result }), error => emit({ type: 'result', outcome: 'error', message: error.message }))
+    })))).then(result => emit({ type: 'result', ...result }), error => emit({ type: 'result', outcome: 'error', message: error.message }))
       .finally(() => { record.done = true; inFlight.delete(t.backend); statusCache.at = 0; record.listeners.forEach(fn => fn(null)); });
     return id;
   }
@@ -68,6 +73,10 @@ export function createDashboard({ port = 4180, enableProduction = false, config 
         const events = readEvents(history);
         return json(res, 200, { agents: AGENTS, productionEnabled: enableProduction, configFile: config, apps: cfg.apps, statuses: await statuses(url.searchParams.has('refresh')), localRecords: latestVerified(events), recent: events.slice(-15).reverse(), refs: refs(), now: new Date().toISOString() });
       }
+      if (url.pathname.startsWith('/api/workspaces')) {
+        if (req.headers['x-dashboard-token'] !== token) return json(res, 403, { error: 'Dashboard authentication token required' });
+        if (req.method === 'GET' && url.pathname === '/api/workspaces') return json(res, 200, workspaceCall(() => workspaceStatus()));
+      }
       const sse = /^\/api\/deploy\/([0-9a-f-]{36})\/events$/.exec(url.pathname);
       if (req.method === 'GET' && sse) {
         const record = deployments.get(sse[1]);
@@ -83,6 +92,13 @@ export function createDashboard({ port = 4180, enableProduction = false, config 
         if (req.headers['x-dashboard-token'] !== token) return json(res, 403, { error: 'Missing or wrong dashboard token; reload the page' });
         if (req.headers.origin && ![`http://127.0.0.1:${server.address().port}`, `http://localhost:${server.address().port}`].includes(req.headers.origin)) return json(res, 403, { error: 'Origin not allowed' });
         const payload = await body(req);
+        if (url.pathname.startsWith('/api/workspaces/')) {
+          if (![`http://127.0.0.1:${server.address().port}`, `http://localhost:${server.address().port}`].includes(req.headers.origin) || req.headers['sec-fetch-site'] === 'cross-site' || !String(req.headers['content-type']).startsWith('application/json')) return json(res, 403, { error: 'Workspace mutations require a same-origin JSON request' });
+          if (url.pathname === '/api/workspaces/release-all/preview') return json(res, 200, workspaceCall(() => previewReleaseAll(workspaceDeps)));
+          if (url.pathname === '/api/workspaces/release-all/execute') return json(res, 200, workspaceCall(() => releaseAllWorkspaces(payload, workspaceDeps)));
+          if (url.pathname === '/api/workspaces/sweep/preview') return json(res, 200, workspaceCall(() => { (workspaceDeps.authorize || (() => previewReleaseAll()))(); return previewSweep(); }));
+          if (url.pathname === '/api/workspaces/sweep/execute') return json(res, 200, workspaceCall(() => sweepWorkspaces(payload, workspaceDeps)));
+        }
         if (url.pathname === '/api/agent') {
           const app = setAssignment(payload.app, { agent: payload.agent, branch: payload.branch, task: payload.task, source: 'dashboard' }, config);
           return json(res, 200, { app });

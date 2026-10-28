@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { APPS, REPO, MAIN_CHECK, affected, risk, target, digest } from './policy.mjs';
 import { git, root, command, ghApi, save, stateDir, jsonFile } from './runtime.mjs';
 import { createWorkspace, checkWorkspace, finishWorkspace, retireWorkspace, reconcileWorkspace, workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
-import { bootstrap, deploy, reconcile, reconcileServingBaseline, planRelease } from './releases.mjs';
+import { bootstrap, deploy, reconcile, reconcileServingBaseline, planRelease, successfulValidation } from './releases.mjs';
 import { hostedTrust, assertHostedContext } from './hosted.mjs';
+import { assertChangelogs, assertChangelogContent } from './changelog.mjs';
+import { governedOperation } from './workspace-state.mjs';
+import { completeWorkspace, previewReleaseAll, releaseAllWorkspaces, previewSweep, sweepWorkspaces, workspaceStatus, publishWorkspaceStatus, recoverValidationOperation } from './workspace-admin.mjs';
+import { installWorkspaceFences } from './workspace-fencing.mjs';
 
 export function parse(args) {
   const positional = []; const options = {};
-  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'owner-approved', 'cosmetic-only', 'standard']);
-  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement']);
+  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'owner-approved', 'cosmetic-only', 'standard', 'preserve']);
+  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement', 'confirm', 'pr']);
   for (let i = 0; i < args.length; i++) {
     if (!args[i].startsWith('--')) { positional.push(args[i]); continue; }
     const key = args[i].slice(2); if (Object.hasOwn(options, key)) throw Error(`Duplicate --${key}`);
@@ -41,6 +45,11 @@ function changeScope(paths, options) {
   }
   return affected(paths, { rootRuntimeChanged });
 }
+function checkChangelogEntries(paths, options) {
+  const result = assertChangelogs(paths);
+  assertChangelogContent(paths, p => options.head ? git('show', `${options.head}:${p}`) : readFileSync(p, 'utf8'));
+  return result;
+}
 export function protection(t) {
   return { required_status_checks: t ? null : { strict: true, contexts: [MAIN_CHECK] }, enforce_admins: true,
     required_pull_request_reviews: t ? null : { dismiss_stale_reviews: false, require_code_owner_reviews: false, require_last_push_approval:false, required_approving_review_count: 0 },
@@ -54,7 +63,9 @@ async function main() {
     if (options.output) writeFileSync(options.output, JSON.stringify(result));
   } else if (verb === 'validate') {
     const paths = changePaths(options); const scope = changeScope(paths, options);
-    const commands = [{ program: process.execPath, args: ['--test', ...['policy', 'workspaces', 'reconcile-workspace', 'releases', 'recovery', 'hosted'].map(n => `tools/workflow/${n}.test.mjs`)] }];
+    checkChangelogEntries(paths, options);
+    const commands = [{ program: process.execPath, args: ['--test', ...readdirSync('tools/workflow').filter(n => n.endsWith('.test.mjs')).map(n => `tools/workflow/${n}`)] }];
+    if (paths.some(p => p.startsWith('tools/deploy-dashboard/'))) commands.push({ program: process.execPath, args: ['--test', 'tools/deploy-dashboard/dashboard.test.mjs'] });
     if (!options['tools-only']) for (const app of scope.apps) {
       for (const script of ['test', 'typecheck', 'build']) commands.push({ program: 'npm', args: ['--prefix', APPS[app].path, 'run', script], app });
     }
@@ -63,14 +74,38 @@ async function main() {
       for (const item of commands) command(item.program, item.args, { env: { ...process.env, NODE_ENV: item.args.at(-1) === 'build' ? 'production' : 'test', FIREBASE_PROJECT_ID: 'demo-fika-os', FIKA_CPU_PLAN_STORE: 'memory' }, stdio: ['ignore', 'inherit', 'inherit'] });
       result = { scope, executed: true, commands: commands.length };
     }
+  } else if (verb === 'changelog' && arg === 'check') {
+    result = checkChangelogEntries(changePaths(options), options);
   } else if (verb === 'workspace') {
     if (arg === 'create') result = createWorkspace(name, options);
     else if (arg === 'check') result = checkWorkspace(name, options);
     else if (arg === 'finish') result = finishWorkspace(name, options);
     else if (arg === 'reconcile') result = reconcileWorkspace(name, options);
     else if (arg === 'retire') result = retireWorkspace(name, options);
+    else if (arg === 'complete') {
+      result = completeWorkspace(name, options);
+      try { result.publication = publishWorkspaceStatus({ execute: true }); }
+      catch (error) { result.publication = { outcome: 'pending', reason: error.message.split('\n')[0], retry: 'fika workspace publish --execute' }; }
+    }
+    else if (arg === 'release-all') result = options.execute ? releaseAllWorkspaces(options) : previewReleaseAll();
+    else if (arg === 'sweep') result = options.execute ? sweepWorkspaces(options) : previewSweep();
+    else if (arg === 'status') result = workspaceStatus();
+    else if (arg === 'publish') result = publishWorkspaceStatus(options);
+    else if (arg === 'install-fences') result = installWorkspaceFences();
+    else if (arg === 'recover-validation') result = recoverValidationOperation(name,options);
     else if (arg === 'list') result = workspaceRecords();
-    else throw Error('workspace create|check|reconcile|finish|retire <name> --owner <task>; reconcile needs --replacement <new-name>, defaults to dry run, supports --dry-run, and applies with --execute');
+    else throw Error('workspace create|check|reconcile|finish|retire|complete <name> --owner <task>; status|publish|release-all|sweep. Bulk execution requires a fresh preview hash; release-all also requires exact --confirm and --reason.');
+  } else if (verb === 'integrate') {
+    const lease = workspaceRecords().find(r => r.name === options.workspace && r.owner === options.owner && r.state === 'active');
+    if (!lease || !/^\d+$/.test(options.pr || '')) throw Error('Integration requires an active --workspace, --owner and --pr');
+    checkWorkspace(lease.name, options);
+    const sha = command('git', ['rev-parse', 'HEAD'], { cwd: lease.directory });
+    const pr = ghApi(`repos/${REPO}/pulls/${options.pr}`);
+    if (pr.head.sha !== sha || pr.head.ref !== lease.branch || pr.base.ref !== 'main' || pr.state !== 'open') throw Error('PR does not match the active workspace branch and exact final SHA');
+    const validation=successfulValidation(sha);
+    if (command('git', ['status', '--porcelain'], { cwd: lease.directory }) || command('git', ['rev-parse','HEAD'], {cwd:lease.directory})!==sha) throw Error('Workspace changed during integration checks');
+    command('gh', ['pr', 'merge', options.pr, '--repo', REPO, '--merge', '--match-head-commit', sha]);
+    result = { pr: pr.html_url, sourceSha: sha, validation, merged: true, branchPreserved: true };
   } else if (verb === 'dev') {
     const lease = workspaceRecords().find(x=>x.name===options.workspace && x.owner===options.owner && x.state==='active');
     if (!lease || !APPS[arg] || !lease.scopes.some(s=>s===APPS[arg].path || s.startsWith(`${APPS[arg].path}/`))) throw Error('dev requires the active workspace owner and app scope');
@@ -119,4 +154,9 @@ async function main() {
   }
   console.log(JSON.stringify(result, null, 2));
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => { console.error(`FIKA HOLD: ${error.message}`); process.exitCode = 1; });
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const verb = process.argv[2];
+  const { options } = parse(process.argv.slice(2));
+  const action = ['validate','integrate','dev','deploy','rollback','reconcile','reconcile-serving-baseline','bootstrap'].includes(verb) ? () => governedOperation(verb, main, options) : main;
+  action().catch(error => { console.error(`FIKA HOLD: ${error.message}`); process.exitCode = 1; });
+}

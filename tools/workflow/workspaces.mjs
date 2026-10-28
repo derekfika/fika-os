@@ -4,12 +4,14 @@ import { randomUUID, createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { git, common, stateDir, save, jsonFile, lock, ancestor, inside, command, ref, ghApi } from './runtime.mjs';
 import { safeScope, partialPathOverlap, digest, REPO, APPS } from './policy.mjs';
+import { changelogPath } from './changelog.mjs';
+import { applyRevocations, diskRecords } from './workspace-state.mjs';
 
 const leases = () => { const p = path.join(stateDir(), 'workspaces'); mkdirSync(p, { recursive: true }); return p; };
 const managedRoot = () => path.resolve(common(), '..', '..', 'agent-workspaces', 'fika-os');
 const validateName = name => { if (!/^[a-z][a-z0-9-]{2,60}$/.test(name || '')) throw Error('Use a 3–61 character lowercase workspace name'); return name; };
 export function workspaceRecords() {
-  const records = readdirSync(leases()).filter(x => x.endsWith('.json')).map(x => jsonFile(path.join(leases(), x)));
+  leases(); const records = diskRecords();
   for (const journal of committedReconciliationJournals()) {
     const diskByName = new Map(records.map(x => [x.name, x]));
     for (const snapshot of [journal.leaseTransition.source, journal.leaseTransition.replacement]) {
@@ -21,7 +23,8 @@ export function workspaceRecords() {
       const index = records.findIndex(x => x.name === snapshot.name); if (index >= 0) records[index] = snapshot;
     }
   }
-  return records;
+  if (new Set(records.map(r => path.resolve(r.directory))).size !== records.length || new Set(records.map(r => r.branch)).size !== records.length) throw Error('Workspace registry has duplicated directories or branches');
+  return applyRevocations(records);
 }
 function committedReconciliationJournals() {
   const transitions = path.join(stateDir(), 'reconciliations'); if (!existsSync(transitions)) return [];
@@ -62,7 +65,7 @@ export function createWorkspace(name, options) {
     const portBase = 13000 + workspaceRecords().length * 10;
     if (portBase > 65000) throw Error('Workspace port allocation exhausted');
     const ports = Object.fromEntries(Object.keys(APPS).map((app,i)=>[app,portBase+i]));
-    const record = { schema: 'fika.workspace.v1', name, owner: options.owner, scopes, baseline, directory, branch, ports, state: 'creating', createdAt: new Date().toISOString() };
+    const record = { schema: 'fika.workspace.v1', leaseId: randomUUID(), name, owner: options.owner, scopes, baseline, directory, branch, ports, state: 'creating', createdAt: new Date().toISOString() };
     save(path.join(leases(), `${name}.json`), record);
     try { git('worktree', 'add', '-b', branch, directory, baseline); record.state = 'active'; save(path.join(leases(), `${name}.json`), record); }
     catch (error) { record.state = 'attention'; save(path.join(leases(), `${name}.json`), record); throw error; }
@@ -73,8 +76,19 @@ export function finishWorkspace(name, options) {
   validateName(name); return lock('workspaces', () => {
     const file = path.join(leases(), `${name}.json`); const record = jsonFile(file);
     if (record.owner !== options.owner || workspaceRecords().find(x => x.name === name)?.state !== 'active') throw Error('Only the task owner can finish an active workspace');
-    if (command('git', ['status', '--porcelain'], { cwd: record.directory })) throw Error('Dirty work must be committed/preserved; finish refuses it');
-    record.state = 'finished'; record.finishedAt = new Date().toISOString(); record.finalSha = command('git', ['rev-parse', 'HEAD'], { cwd: record.directory }); save(file, record); return record;
+    const operations=path.join(stateDir(),'workspace-operations');
+    if(existsSync(operations)&&readdirSync(operations).filter(f=>f.endsWith('.json')).some(f=>jsonFile(path.join(operations,f)).name===name))throw Error('Workspace has an in-flight or interrupted operation; reconcile it before completion');
+    if (command('git', ['branch', '--show-current'], { cwd: record.directory }) !== record.branch) throw Error('Workspace branch differs from its lease');
+    if (options.expectedHead && command('git', ['rev-parse', 'HEAD'], { cwd: record.directory }) !== options.expectedHead) throw Error('HEAD changed during completion; validate the final state again');
+    const dirty = command('git', ['status', '--porcelain'], { cwd: record.directory });
+    if (dirty && !options.preserve) throw Error('Dirty work must be committed/preserved; finish refuses it');
+    if (options.preserve) {
+      if (!options.reason?.trim()) throw Error('Preserving unfinished work requires --reason');
+      record.preservedWork = preserveWorkspace(record, options.reason);
+    }
+    record.state = 'finished'; record.finishedAt = new Date().toISOString(); record.lastActivityAt = record.finishedAt; record.finalSha = command('git', ['rev-parse', 'HEAD'], { cwd: record.directory });
+    if (options.completion) record.completion = options.completion;
+    save(file, record); return record;
   });
 }
 export function checkWorkspace(name, options) {
@@ -82,10 +96,31 @@ export function checkWorkspace(name, options) {
   const record = jsonFile(path.join(leases(), `${name}.json`));
   if (record.owner !== options.owner || workspaceRecords().find(x => x.name === name)?.state !== 'active') throw Error('Scope check requires the active task owner');
   const run = (...args) => command('git', args, { cwd: record.directory });
-  const paths = [...new Set([run('diff', '--name-only', '--no-renames', `${record.baseline}...HEAD`), run('diff', '--name-only', '--no-renames', 'HEAD'), run('ls-files', '--others', '--exclude-standard')].flatMap(s => s.split(/\r?\n/)).filter(Boolean))];
-  const outside = paths.filter(p => p !== 'CHANGELOG.md' && !record.scopes.some(s => p === s || p.startsWith(`${s}/`)));
+  const dirty = [...new Set([run('diff', '--name-only', '--no-renames', 'HEAD'), run('ls-files', '--others', '--exclude-standard')].flatMap(s=>s.split(/\r?\n/)).filter(Boolean))];
+  const paths = [...new Set([run('diff', '--name-only', '--no-renames', `${record.baseline}...HEAD`).split(/\r?\n/),dirty].flat().filter(Boolean))];
+  const outsideCandidates = paths.filter(p => !changelogPath(p) && !record.scopes.some(s => p === s || p.startsWith(`${s}/`)));
+  // Concurrent integration may bring other apps from main into this task. Only exact committed
+  // content already in the fetched authority is exempt; dirty or divergent content stays blocked.
+  const inheritedFromMain = outsideCandidates.filter(p=>!dirty.includes(p)&&!run('diff','--name-only','HEAD','origin/main','--',p));
+  const outside = outsideCandidates.filter(p=>!inheritedFromMain.includes(p));
   if (outside.length) throw Error(`Changes exceed owned scope: ${outside.join(', ')}`);
-  return { name, baseline: record.baseline, paths, withinScope: true };
+  return { name, baseline: record.baseline, paths, inheritedFromMain, withinScope: true };
+}
+
+/** Preserve unfinished content without changing source, index, branch, ignored files or stashes. */
+export function preserveWorkspace(record, reason) {
+  const cwd = record.directory; const id = randomUUID();
+  const archive = path.join(stateDir(), 'archives', `${record.name}-unfinished-${id}`); mkdirSync(archive, { recursive: true });
+  const head = repoCommand(cwd, 'rev-parse', 'HEAD');
+  const preservationRef = `refs/preserve/workspace/${record.name}/${id}`;
+  repoCommand(cwd, 'update-ref', preservationRef, head, '0'.repeat(40));
+  const bundle = path.join(archive, 'commits.bundle'); repoCommand(cwd, 'bundle', 'create', bundle, preservationRef); repoCommand(cwd, 'bundle', 'verify', bundle);
+  const payload = { schema: 'fika.workspace-preservation.v1', name: record.name, owner: record.owner, reason, head, branch: record.branch,
+    stagedPatch: patch(cwd, ['diff', '--cached', '--binary', '--full-index', 'HEAD']), unstagedPatch: patch(cwd, ['diff', '--binary', '--full-index']),
+    files: nulPaths((...args) => repoCommand(cwd, ...args), ['ls-files', '--others', '--exclude-standard', '-z']).map(p => fileSnapshot(cwd, p)),
+    ignoredRetained: nulPaths((...args) => repoCommand(cwd, ...args), ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z']), at: new Date().toISOString() };
+  const recoveryFile = path.join(archive, 'recovery.json'); save(recoveryFile, payload); chmodSync(recoveryFile, 0o600);
+  return { preservationRef, bundle, recoveryFile, recoveryChecksum: verifyRecoveryArtifact(recoveryFile, sha256(readFileSync(recoveryFile))), sourceRetained: true };
 }
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -222,10 +257,15 @@ export function reconcileWorkspace(name, options) {
   });
 }
 export function retireWorkspace(name, options) {
-  validateName(name); return lock('workspaces', () => {
+  validateName(name); return lock('workspaces', () => retireWorkspaceUnderLock(name, options));
+}
+export function retireWorkspaceUnderLock(name, options) {
     const file = path.join(leases(), `${name}.json`); const record = jsonFile(file);
     if (record.owner !== options.owner || workspaceRecords().find(x => x.name === name)?.state !== 'finished') throw Error('Retirement requires the owner and a finished lease');
     inside(managedRoot(), record.directory);
+    if (command('git', ['branch', '--show-current'], { cwd: record.directory }) !== record.branch) throw Error('Workspace branch differs from its lease');
+    const tree = worktrees().find(t => path.resolve(t.worktree) === path.resolve(record.directory));
+    if (!tree || tree.locked || tree.prunable) throw Error('Worktree registration is missing, locked or prunable; inspect before cleanup');
     if (path.resolve(record.directory) === path.resolve(git('rev-parse', '--show-toplevel'))) throw Error('Cannot retire the calling workspace');
     if (command('git', ['status', '--porcelain'], { cwd: record.directory })) throw Error('Dirty/untracked files must be preserved before retirement');
     const head = command('git', ['rev-parse', 'HEAD'], { cwd: record.directory });
@@ -236,9 +276,12 @@ export function retireWorkspace(name, options) {
     const generated = generatedPlan(record, options);
     if (unique) {
       const archive = path.join(stateDir(), 'archives'); mkdirSync(archive, { recursive: true });
-      record.preservationRef = `refs/preserve/workspace/${name}`;
-      git('update-ref', record.preservationRef, head, '0000000000000000000000000000000000000000');
-      record.bundle = path.join(archive, `${name}.bundle`); git('bundle', 'create', record.bundle, record.preservationRef); git('bundle', 'verify', record.bundle);
+      record.preservationRef ||= `refs/preserve/workspace/${name}/${randomUUID()}`;
+      if (!ref(record.preservationRef)) git('update-ref', record.preservationRef, head, '0000000000000000000000000000000000000000');
+      if (ref(record.preservationRef) !== head) throw Error('Preservation ref does not match final HEAD');
+      record.bundle ||= path.join(archive, `${name}-${randomUUID()}.bundle`);
+      if (!existsSync(record.bundle)) git('bundle', 'create', record.bundle, record.preservationRef);
+      git('bundle', 'verify', record.bundle); save(file, record);
     }
     if (generated.length) {
       const archive = path.join(stateDir(), 'archives', `${name}-generated-${randomUUID()}`);
@@ -253,9 +296,8 @@ export function retireWorkspace(name, options) {
     }
     if (command('git', ['status', '--porcelain', '--ignored'], { cwd: record.directory })) throw Error('Workspace changed or ignored files remain; preserve it and inspect generated archive manifest');
     git('worktree', 'remove', record.directory); // no --force and no recursive shell deletion
-    if (ancestor(head, 'origin/main')) git('branch', '-d', record.branch);
+    // Branches (including open PR heads) are retained. Worktree retirement never deletes them.
     record.state = 'retired'; record.retiredAt = new Date().toISOString(); save(file, record); return record;
-  });
 }
 function generatedPlan(record, options) {
   const ignored = command('git', ['status', '--porcelain', '-z', '--ignored'], { cwd: record.directory }).split('\0').filter(Boolean);

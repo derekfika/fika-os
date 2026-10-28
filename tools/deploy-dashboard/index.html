@@ -64,6 +64,12 @@ select{min-width:104px}
 #log .error{color:var(--fika-status-danger);font-weight:700}#log .success{color:var(--fika-status-success);font-weight:700}#log .warning{color:var(--fika-status-warning)}#log .phase{color:var(--color-brand-primary);font-weight:700}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row label{margin:0}
 .history td{font-size:12px}
+.workspace-section{margin-top:32px}.workspace-section h2{margin-bottom:8px}.workspace-section .danger-action{background:var(--fika-status-danger);color:var(--fika-surface-card);border:2px solid var(--fika-status-danger);font-weight:800;min-height:48px}
+.workspace-dialog{width:min(760px,calc(100vw - 32px));max-height:90vh;overflow:auto;border:1px solid var(--fika-border-default);border-radius:14px;padding:24px;background:var(--fika-surface-card);color:var(--fika-text-primary)}
+.workspace-dialog::backdrop{background:var(--fika-text-primary);opacity:.5}.workspace-dialog label{display:block;margin-top:16px;font-weight:700}.workspace-dialog input,.workspace-dialog textarea{width:100%;margin-top:6px}.workspace-dialog textarea{min-height:80px}
+.workspace-section button:focus-visible,.workspace-dialog button:focus-visible,.workspace-dialog input:focus-visible,.workspace-dialog textarea:focus-visible{outline:3px solid var(--fika-focus-ring);outline-offset:3px}
+#workspace-result{white-space:pre-wrap}#workspace-plan{max-height:260px;overflow:auto}.workspace-dialog button{min-height:44px}
+.workspace-dialog input{min-height:44px;border:1px solid var(--fika-border-default);border-radius:8px;padding:8px;background:var(--fika-surface-card);color:var(--fika-text-primary)}.workspace-dialog button:disabled{opacity:1;background:var(--fika-surface-subtle);color:var(--fika-text-secondary);border-color:var(--fika-border-default)}
 @media(max-width:900px){.stats{grid-template-columns:1fr 1fr}}
 </style>
 </head>
@@ -89,7 +95,21 @@ select{min-width:104px}
     <tbody id="rows"><tr><td colspan="6">Loading live status…</td></tr></tbody>
   </table></div></div>
   <div class="card"><h3>Recent dashboard activity (local record)</h3><div class="scroll"><table class="history"><thead><tr><th>When</th><th>App</th><th>Env</th><th>Event</th><th>SHA</th><th>Detail</th></tr></thead><tbody id="recent"></tbody></table></div></div>
+  <section class="workspace-section" id="workspace-management" aria-labelledby="workspace-title">
+    <div class="head"><div><h2 id="workspace-title">Workspace Management</h2><p>Local repository ownership and cleanup. Release All Leases preserves every checkout and branch. Cleanup is a separate operation.</p></div></div>
+    <div class="tools"><button id="workspace-refresh">Load workspace register</button><button id="workspace-sweep">Preview safe cleanup</button><button id="workspace-release" class="danger-action">RELEASE ALL LEASES</button></div>
+    <p id="workspace-result" role="status" aria-live="polite"></p>
+    <div class="card scroll"><table><thead><tr><th>Workspace / owner</th><th>Leased paths</th><th>Branch / PR</th><th>State</th><th>Last activity</th><th>Cleanup eligibility</th></tr></thead><tbody id="workspace-rows"><tr><td colspan="6">Load the register to inspect workspaces.</td></tr></tbody></table></div>
+  </section>
 </main>
+
+<dialog class="workspace-dialog" id="workspace-dialog" aria-labelledby="workspace-dialog-title">
+  <h2 id="workspace-dialog-title">Review workspace operation</h2>
+  <p id="workspace-explanation"></p><div id="workspace-plan"></div>
+  <div id="workspace-confirmation"><label for="workspace-reason">Reason for releasing ownership</label><textarea id="workspace-reason" maxlength="2000"></textarea><label for="workspace-phrase">Type RELEASE ALL LEASES</label><input type="text" id="workspace-phrase" autocomplete="off" spellcheck="false"></div>
+  <p id="workspace-error" role="alert"></p>
+  <div class="actions"><button id="workspace-cancel">Cancel</button><button id="workspace-execute" class="prod" disabled>Apply reviewed operation</button></div>
+</dialog>
 
 <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="dTitle">
   <div class="dialog">
@@ -220,6 +240,45 @@ function follow(id){
   };
   stream.onerror=()=>{stream.close();};
 }
+let workspacePlan=null,workspaceAction=null,workspaceBusy=false;
+async function loadWorkspaces(){
+  $('workspace-refresh').disabled=true;$('workspace-result').textContent='Inspecting workspace ownership and cleanup eligibility…';
+  try{
+    const value=await api('/api/workspaces');
+    $('workspace-rows').innerHTML=value.entries.map(r=>`<tr><td><strong>${esc(r.name)}</strong><small>${esc(r.owner)}</small></td><td>${r.scopes.map(esc).join('<br>')}</td><td class="mono">${esc(r.branch)}${r.pr?`<br><a href="${esc(r.pr.url)}">PR #${esc(r.pr.number)}</a>`:''}</td><td>${esc(r.state)}</td><td>${esc(when(r.lastActivity))}</td><td>${r.eligible?'Eligible':esc(r.reasons.join('; '))}</td></tr>`).join('');
+    $('workspace-result').textContent=`${value.entries.length} workspaces · read ${when(value.observedAt)}. Local registry is authoritative.`;
+  }catch(e){$('workspace-result').textContent=e.message;}
+  $('workspace-refresh').disabled=false;
+}
+async function previewWorkspace(action){
+  workspaceAction=action;workspacePlan=null;$('workspace-result').textContent='Preparing an administrator preview…';
+  try{
+    workspacePlan=await api(`/api/workspaces/${action}/preview`,{method:'POST',body:'{}'});
+    $('workspace-dialog-title').textContent=action==='release-all'?'RELEASE ALL LEASES — administrator review':'Review safe worktree cleanup';
+    $('workspace-explanation').textContent=action==='release-all'?`${workspacePlan.eligibleCount} leases can be revoked; ${workspacePlan.protectedCount} are protected. Revoked agents lose governed ownership. Every worktree, branch, commit, stash and file is retained.`:`${workspacePlan.eligibleCount} worktrees are eligible; ${workspacePlan.protectedCount} are protected. Candidate size: at least ${Math.round(workspacePlan.candidateBytes/1024/1024)} MiB. Local branches and recovery archives are retained.`;
+    $('workspace-plan').innerHTML=workspacePlan.entries.filter(r=>r.state!=='retired').map(r=>`<p><b>${esc(r.name)}</b> · ${esc(r.owner)} · ${r.eligible?'Eligible':esc(r.reasons.join('; '))}</p>`).join('') || '<p>No active leases.</p>';
+    if(workspacePlan.integrityError)$('workspace-plan').textContent=workspacePlan.integrityError;
+    $('workspace-confirmation').hidden=action!=='release-all';$('workspace-reason').value='';$('workspace-phrase').value='';$('workspace-error').textContent='';
+    $('workspace-execute').disabled=action==='release-all'||!workspacePlan.eligibleCount||Boolean(workspacePlan.integrityError);
+    $('workspace-dialog').showModal();$('workspace-cancel').focus();$('workspace-result').textContent='Preview ready. Review the affected workspaces before applying.';
+  }catch(e){$('workspace-result').textContent=e.message;}
+}
+function confirmWorkspace(){ $('workspace-execute').disabled=workspaceBusy||!workspacePlan?.eligibleCount||Boolean(workspacePlan?.integrityError)||workspaceAction==='release-all'&&($('workspace-phrase').value!=='RELEASE ALL LEASES'||$('workspace-reason').value.trim().length<8); }
+$('workspace-phrase').oninput=confirmWorkspace;$('workspace-reason').oninput=confirmWorkspace;
+$('workspace-refresh').onclick=loadWorkspaces;$('workspace-release').onclick=()=>previewWorkspace('release-all');$('workspace-sweep').onclick=()=>previewWorkspace('sweep');
+$('workspace-cancel').onclick=()=>{if(!workspaceBusy)$('workspace-dialog').close();};
+$('workspace-dialog').addEventListener('cancel',e=>{if(workspaceBusy)e.preventDefault();});
+$('workspace-dialog').addEventListener('close',()=>$(workspaceAction==='release-all'?'workspace-release':'workspace-sweep').focus());
+$('workspace-execute').onclick=async()=>{
+  if(workspaceBusy)return;workspaceBusy=true;confirmWorkspace();$('workspace-cancel').disabled=true;$('workspace-error').textContent='Applying the reviewed operation… Keep this page open.';
+  try{
+    const r=await api(`/api/workspaces/${workspaceAction}/execute`,{method:'POST',body:JSON.stringify({'approve-hash':workspacePlan.planHash,confirm:$('workspace-phrase').value,reason:$('workspace-reason').value.trim()})});
+    $('workspace-dialog').close();await loadWorkspaces();
+    $('workspace-result').textContent=workspaceAction==='release-all'?`Released ${r.released.length} leases. Protected ${r.protected.length}. All source and worktrees preserved. Audit ${r.planHash}.`:`Retired ${r.retired.length} worktrees. ${r.failed.length} failed; ${r.protected.length} protected. ${r.failed.map(f=>f.name+': '+f.reason).join('; ')}`;
+  }catch(e){$('workspace-error').textContent=e.message+' Close this dialog and obtain a fresh preview before retrying.';workspacePlan=null;}
+  finally{workspaceBusy=false;$('workspace-cancel').disabled=false;confirmWorkspace();}
+};
+if(location.hash==='#workspace-management')loadWorkspaces();
 load(false);setInterval(()=>{if(!$('modal').classList.contains('show')&&!document.hidden)load(false);},60000);
 </script>
 </body>

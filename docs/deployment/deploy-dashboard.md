@@ -1,6 +1,8 @@
 # Deploy Control dashboard
 
-One local page that shows who is assigned to each app, what Firebase is actually serving in staging and production, and deploys an approved commit. It adds **no locks, leases, expiries, pending intents or persistent mutexes**, and it does not touch the governed development workflow (`fika workspace …`) or the legacy `fika deploy` release wrapper.
+One local page shows app assignments and live Firebase status. Its Workspace Management section now calls the existing governed workspace registry for administrator revocation and separate cleanup; it has no second registry or dashboard-specific lease locks. Deployment adapters retain their existing behavior. The governed `fika deploy` CLI remains the supported release interface under the [deployment migration criteria](deployment-dashboard.md).
+
+Workspace Management: <http://127.0.0.1:4180/#workspace-management>. See [confirmation, cleanup, fencing and recovery](workspace-management.md).
 
 ## Start it (Windows)
 

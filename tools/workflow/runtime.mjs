@@ -1,9 +1,13 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, openSync, closeSync, unlinkSync, realpathSync } from 'node:fs';
 import path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { APPS, digest, exactSha } from './policy.mjs';
 
+const repositoryContext = new AsyncLocalStorage();
+export const withRepository = (cwd, fn) => repositoryContext.run({ cwd: path.resolve(cwd) }, fn);
 export function command(program, args, options = {}) {
+  options = { ...(repositoryContext.getStore() || {}), ...options };
   // .cmd wrappers need cmd.exe on Windows. quote every argument; no arbitrary shell input is accepted.
   if (process.platform === 'win32' && ['gcloud', 'firebase', 'npm', 'npx'].includes(program)) {
     const quote = text => { if (/["\r\n%&|<>^!]/.test(text)) throw Error('Unsafe Windows command argument'); return `"${text}"`; };
@@ -16,8 +20,8 @@ export const git = (...args) => command('git', args);
 export const root = () => git('rev-parse', '--show-toplevel');
 export const common = () => git('rev-parse', '--path-format=absolute', '--git-common-dir');
 export const stateDir = () => { const dir = path.join(common(), 'fika-workflow'); mkdirSync(dir, { recursive: true }); return dir; };
-export function ancestor(a, b) { return spawnSync('git', ['merge-base', '--is-ancestor', a, b], { windowsHide: true }).status === 0; }
-export function ref(name) { const r = spawnSync('git', ['rev-parse', '--verify', name], { encoding: 'utf8', windowsHide: true }); return r.status === 0 ? r.stdout.trim() : undefined; }
+export function ancestor(a, b) { return spawnSync('git', ['merge-base', '--is-ancestor', a, b], { windowsHide: true, ...(repositoryContext.getStore() || {}) }).status === 0; }
+export function ref(name) { const r = spawnSync('git', ['rev-parse', '--verify', name], { encoding: 'utf8', windowsHide: true, ...(repositoryContext.getStore() || {}) }); return r.status === 0 ? r.stdout.trim() : undefined; }
 export function jsonFile(file) { return JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); }
 export function save(file, value) { mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.${process.pid}.tmp`; writeFileSync(tmp, JSON.stringify(value, null, 2)); renameSync(tmp, file); }
 export function lock(name, fn) {
