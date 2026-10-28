@@ -10,6 +10,9 @@ export async function middleware(request: NextRequest) {
   // The fixed-vehicle pages are PIN-entry shells. Their data remains behind
   // the signed vehicle session checked independently at every API boundary.
   if (["/mobile/van1", "/mobile/van2", "/api/logistics/mobile/session"].includes(pathname)) return NextResponse.next();
+  // Install metadata and icons are public static files. Chrome fetches the manifest without a session; a sign-in redirect there makes the
+  // app uninstallable on a fresh browser (the Install action is disabled). Never gate them.
+  if (pathname.startsWith("/pwa/") || pathname === "/pwa-sw.js" || pathname.endsWith(".webmanifest")) return NextResponse.next();
   // This is only an admission shortcut. The route still verifies the signed,
   // expiring session and derives the single permitted vehicle server-side.
   // Each van has its own session cookie (fika_logistics_mobile_session_van1 / _van2), selected by the van the request names.
@@ -52,4 +55,4 @@ export async function middleware(request: NextRequest) {
 
 function renderFailure(request: NextRequest, failure: ReturnType<typeof admissionFailure>, requestId: string) { const target = new URL("/admission-error", request.url); target.searchParams.set("code", failure.code); target.searchParams.set("message", failure.message); if (failure.supportingText) target.searchParams.set("supportingText", failure.supportingText); target.searchParams.set("requestId", requestId); return NextResponse.rewrite(target); }
 
-export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|css|js|map|otf|ttf)$).*)"] };
+export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|pwa/|.*\\.(?:png|jpg|jpeg|gif|svg|ico|css|js|map|otf|ttf|webmanifest)$).*)"] };
