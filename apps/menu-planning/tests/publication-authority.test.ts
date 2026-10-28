@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { buildCompiledPublicationSnapshot, buildPublishedDay, publishedDayMatrixHtml } from "../lib/menu-publication";
+import { buildCompiledPublicationSnapshot, buildPublishedDay, publicationDayBlockers, publishedDayMatrixHtml, referencedCanonicalDishIds } from "../lib/menu-publication";
 import { decodeWeeklyPublicationPacket, encodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 import type { MenuItem } from "../lib/domain";
 import type { RollingDay, RollingSnapshot } from "../lib/rolling-menu-types";
@@ -16,6 +16,24 @@ const dish = (overrides: Partial<MenuItem> = {}): MenuItem => ({
   canonicalId: "dish:authority", sourceName: "Authoritative source", displayName: "Authority dish", category: "soup", weekId: "catalogue", dayId: "", sourceReference: { workbook: "authoritative", sheet: "catalogue" }, revision: 1, reviewStatus: "approved", allergenEvidence: [{ allergen: "sesame", value: "contains", source: "governed review" }], mayContainReviewed: true, audit: [], ...overrides,
 });
 const strict = { requireAuthoritativeCatalogue: true } as const;
+
+test("publication resolves zero-allocation dish identities without generating production entries", () => {
+  const snapshot = baseSnapshot({ portions: 0, allocations: [] });
+  const ids = referencedCanonicalDishIds(snapshot);
+  assert.deepEqual(ids, ["dish:authority"]);
+  assert.deepEqual(publicationDayBlockers(snapshot, day.id, new Set(["oploc:1"]), new Set(ids)), []);
+  assert.deepEqual(buildPublishedDay(snapshot, day, [dish()], strict).entries, []);
+  assert.match(publicationDayBlockers(snapshot, day.id, new Set(["oploc:1"]), new Set()).join(" "), /does not exist or is archived/);
+  assert.equal(snapshot.entries[0].portions, 0);
+  assert.deepEqual(snapshot.entries[0].allocations, []);
+});
+
+test("canonical publication lookup is bounded by named rows, stable IDs and optional day scope", () => {
+  const snapshot = baseSnapshot({ portions: 0, allocations: [] });
+  snapshot.entries.push({ ...snapshot.entries[0], id: "duplicate" }, { ...snapshot.entries[0], id: "blank", itemLabel: " ", itemId: "dish:blank" }, { ...snapshot.entries[0], id: "other-day", dayId: "other-day", itemId: "dish:other" });
+  assert.deepEqual(referencedCanonicalDishIds(snapshot), ["dish:authority", "dish:other"]);
+  assert.deepEqual(referencedCanonicalDishIds(snapshot, day.id), ["dish:authority"]);
+});
 
 test("publication binds to the supplied authoritative dish instead of bundled catalogue data", () => {
   const source = readFileSync(new URL("../lib/menu-publication.ts", import.meta.url), "utf8");
