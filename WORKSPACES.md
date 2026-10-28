@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-28T19:40:32.024Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-28T19:46:27.891Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -99,9 +99,10 @@ Snapshot: 2026-10-28T19:40:32.024Z. The local governed registry remains authorit
 | menu-planner-brian-feedback | codex-menu-planner-brian-feedback | apps/menu-planning | codex/menu-planner-brian-feedback | [#25](https://github.com/derekfika/fika-os/pull/25) | finished | 2026-10-23T16:25:33.332Z |
 | menu-planner-responsive | agent-task | apps/menu-planning | codex/menu-planner-responsive | [#7](https://github.com/derekfika/fika-os/pull/7) | retired | 2026-10-23T08:30:33.685Z |
 | menu-portion-planner-keyboard-scroll | menu-issue-93 | apps/menu-planning, CHANGELOG.md | codex/menu-portion-planner-keyboard-scroll | [#94](https://github.com/derekfika/fika-os/pull/94) | finished | 2026-10-28T06:40:44.057Z |
+| menu-publish-p0 | codex-menu-p0-111 | tools/incidents/menu-publish-p0, docs/incidents/2026-10-28-menu-publish-111.md | codex/menu-publish-p0 | — | active | 2026-10-28T19:42:20.902Z |
 | menu-release-recovery-scoped | codex-menu-release-recovery | tools/workflow, CHANGELOG.md | codex/menu-release-recovery-scoped | [#12](https://github.com/derekfika/fika-os/pull/12) | finished | 2026-10-23T09:40:03.932Z |
 | menu-release-recovery | codex-menu-release-recovery | tools/workflow | codex/menu-release-recovery | — | finished | 2026-10-23T09:22:36.941Z |
-| menu-spellcheck-continue | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-continue | — | active | 2026-10-28T09:16:18.226Z |
+| menu-spellcheck-continue | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-continue | — | finished | 2026-10-28T19:46:22.840Z |
 | menu-spellcheck-week-planner | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-week-planner | [#98](https://github.com/derekfika/fika-os/pull/98) | finished | 2026-10-28T09:15:41.758Z |
 | pr-backlog-audit | codex-pr-reconciliation | docs/audits/2026-10-28/pr-backlog-reconciliation.md | codex/pr-backlog-audit | — | active | 2026-10-28T18:58:43.948Z |
 | release-probe-authmod | claude-release-probe | tools/workflow, docs/deployment | codex/release-probe-authmod | [#22](https://github.com/derekfika/fika-os/pull/22) | finished | 2026-10-24T15:02:50.771Z |
