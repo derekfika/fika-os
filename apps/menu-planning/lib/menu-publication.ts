@@ -224,7 +224,9 @@ const populatedWeekdays = (snapshot: RollingSnapshot) =>
 export type PublicationBuildOptions = { requireAuthoritativeCatalogue?: boolean; allowExplicitReviewWithoutCatalogue?: boolean };
 const hostedPublication = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
 const canonicalDishFor = (canonicalDishes: readonly MenuItem[], itemId?: string) => itemId ? canonicalDishes.find(item => item.canonicalId === itemId) : undefined;
-const referencedCanonicalDishIds = (snapshot: RollingSnapshot, dayId?: string) => [...new Set(snapshot.entries.filter(entry => (!dayId || entry.dayId === dayId) && entry.itemLabel.trim() && entry.allocations.some(allocation => Number.isFinite(allocation.quantity) && allocation.quantity > 0)).map(entry => entry.itemId?.trim()).filter((id): id is string => Boolean(id)))];
+// Canonical validation covers every named working row, including zero-allocation dishes.
+// Production/packet entries remain separately limited to positive allocations below.
+export const referencedCanonicalDishIds = (snapshot: RollingSnapshot, dayId?: string) => [...new Set(snapshot.entries.filter(entry => (!dayId || entry.dayId === dayId) && entry.itemLabel.trim()).map(entry => entry.itemId?.trim()).filter((id): id is string => Boolean(id)))];
 async function authoritativeDishesFor(snapshot: RollingSnapshot, dayId?: string) {
   // Local/test mode has an explicit entry-review fixture path. Hosted
   // publication is always bound to the Firestore targeted lookup below.
