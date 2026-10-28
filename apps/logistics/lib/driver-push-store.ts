@@ -11,7 +11,14 @@ export const MAX_PUSH_ATTEMPTS = 3;
 const TEST_MIN_INTERVAL_MS = 20_000;
 
 export type PushVehicle = "van1" | "van2";
-export type StoredSubscription = { id: string; vehicleId: PushVehicle; endpoint: string; p256dh: string; auth: string };
+/**
+ * scope: the worker registration this subscription belongs to. 'van1' / 'van2' are per-van registrations (the Android-attributed
+ * path). Subscriptions created before per-van scopes have no scope and are treated as 'shared' (the legacy /mobile/ worker).
+ * replaces: the legacy subscription this one takes over from. verified: a verification push was accepted for this endpoint.
+ * supersededBy: a verified replacement now delivers instead, so this legacy subscription must never be sent to again.
+ */
+export type PushScope = PushVehicle | "shared";
+export type StoredSubscription = { id: string; vehicleId: PushVehicle; endpoint: string; p256dh: string; auth: string; scope?: PushScope; replaces?: string; verified?: boolean; supersededBy?: string };
 export type NoticeForPush = { id: string; vehicleId: PushVehicle; kind: string; title: string; pushBody: string; priority: "normal" | "high"; serviceDate: string; runId: string; createdAt: string };
 
 const subscriptions = () => db.collection(PUSH_SUBSCRIPTIONS);
@@ -22,15 +29,55 @@ export const subscriptionId = (endpoint: string) => createHash("sha256").update(
  * Bind a browser push subscription to ONE vehicle. The vehicle comes from the signed PIN session, never the request. If the same
  * browser later signs in as the other van, the subscription moves to that van (latest wins), so it can never receive both.
  */
-export async function upsertSubscription(vehicleId: PushVehicle, subscription: { endpoint: string; p256dh: string; auth: string }, userAgent: string, now: Date) {
+export async function upsertSubscription(vehicleId: PushVehicle, subscription: { endpoint: string; p256dh: string; auth: string }, userAgent: string, now: Date, scope: PushVehicle, replacesEndpoint?: string) {
   const id = subscriptionId(subscription.endpoint);
-  await subscriptions().doc(id).set({ vehicleId, endpoint: subscription.endpoint, p256dh: subscription.p256dh, auth: subscription.auth, userAgent: userAgent.slice(0, 160), updatedAt: now.toISOString(), failureCount: 0 }, { merge: true });
+  const ref = subscriptions().doc(id);
+  const replacesId = replacesEndpoint ? subscriptionId(replacesEndpoint) : undefined;
+  // A re-registration keeps an existing verification; it only resets when the endpoint changes hands or scope.
+  const { created, verified } = await db.runTransaction(async transaction => {
+    const snapshot = await transaction.get(ref);
+    const existing = snapshot.exists ? snapshot.data() as StoredSubscription : undefined;
+    const kept = Boolean(existing && existing.vehicleId === vehicleId && existing.scope === scope && existing.verified === true);
+    transaction.set(ref, { vehicleId, scope, endpoint: subscription.endpoint, p256dh: subscription.p256dh, auth: subscription.auth, userAgent: userAgent.slice(0, 160), updatedAt: now.toISOString(), failureCount: 0, verified: kept, ...(replacesId ? { replaces: replacesId } : {}) }, { merge: true });
+    return { created: !snapshot.exists, verified: kept };
+  });
   // Bound the number of devices per van: drop the least recently updated beyond the cap.
   const all = await subscriptions().where("vehicleId", "==", vehicleId).get();
   const overflow = all.docs.map(doc => ({ id: doc.id, at: String(doc.data().updatedAt ?? "") })).sort((a, b) => b.at.localeCompare(a.at)).slice(MAX_SUBSCRIPTIONS_PER_VEHICLE);
   await Promise.all(overflow.map(item => subscriptions().doc(item.id).delete()));
-  return { id, devices: Math.min(all.size, MAX_SUBSCRIPTIONS_PER_VEHICLE) };
+  return { id, created, verified, devices: Math.min(all.size, MAX_SUBSCRIPTIONS_PER_VEHICLE) };
 }
+
+/**
+ * A verification push was accepted for this endpoint. Only now does a van-scoped replacement take over from the legacy subscription
+ * it names, and only if that legacy subscription belongs to the same van and has not already been superseded.
+ */
+export async function markVerified(id: string, now: Date): Promise<{ legacySuperseded: boolean }> {
+  const ref = subscriptions().doc(id);
+  return db.runTransaction(async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) return { legacySuperseded: false };
+    const current = snapshot.data() as StoredSubscription;
+    let legacyRef: FirebaseFirestore.DocumentReference | undefined;
+    let legacy: StoredSubscription | undefined;
+    if (current.replaces) {
+      legacyRef = subscriptions().doc(current.replaces);
+      const legacySnapshot = await transaction.get(legacyRef);
+      legacy = legacySnapshot.exists ? legacySnapshot.data() as StoredSubscription : undefined;
+    }
+    transaction.set(ref, { verified: true, verifiedAt: now.toISOString() }, { merge: true });
+    const retire = Boolean(legacyRef && legacy && legacy.vehicleId === current.vehicleId && (!legacy.scope || legacy.scope === "shared") && !legacy.supersededBy);
+    if (retire && legacyRef) transaction.set(legacyRef, { supersededBy: id, supersededAt: now.toISOString() }, { merge: true });
+    return { legacySuperseded: retire };
+  });
+}
+
+/**
+ * Subscriptions that may receive a push right now. A superseded legacy subscription never does. A van-scoped replacement that has not
+ * yet been verified does not either, so during migration a device receives exactly one copy: the legacy one until the replacement is
+ * proven, then the replacement alone.
+ */
+export const isSendable = (item: StoredSubscription) => !item.supersededBy && !(item.scope && item.scope !== "shared" && item.replaces && item.verified !== true);
 
 /** Remove one subscription, only if it belongs to the calling vehicle. */
 export async function removeSubscription(vehicleId: PushVehicle, endpoint: string): Promise<boolean> {
@@ -45,7 +92,7 @@ export async function removeSubscription(vehicleId: PushVehicle, endpoint: strin
 
 export async function subscriptionsFor(vehicleId: PushVehicle): Promise<StoredSubscription[]> {
   const snapshot = await subscriptions().where("vehicleId", "==", vehicleId).get();
-  return snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<StoredSubscription, "id">) })).filter(item => item.vehicleId === vehicleId);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<StoredSubscription, "id">) })).filter(item => item.vehicleId === vehicleId && isSendable(item));
 }
 
 export async function countSubscriptions(vehicleId: PushVehicle): Promise<number> {

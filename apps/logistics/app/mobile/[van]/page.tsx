@@ -26,7 +26,7 @@ export default async function FixedVanMobile({ params }: { params: Promise<{ van
   if (van !== "van1" && van !== "van2") notFound();
   return (
     <>
-      <PwaRegister />
+      <PwaRegister van={van} />
       <MobilePinGate vehicle={van === "van1" ? "Van 1" : "Van 2"} />
     </>
   );

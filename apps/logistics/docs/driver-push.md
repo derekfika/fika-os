@@ -61,3 +61,49 @@ history entry, so back closes just that layer.
 - Push delivery is best-effort: the push service may delay or drop a message (the inbox is the record).
 - iOS needs the Home Screen app and iOS 16.4 or later.
 - Capture failures (no event) cannot be pushed; see `driver-notifications-coverage.md`.
+
+## Why each van has its own worker (Android attribution)
+
+Installed apps on Android only own their notifications when the service worker that shows them sits **inside that app's manifest
+scope**. Van 1's manifest scope is `/mobile/van1` and Van 2's is `/mobile/van2`, but the shared worker was registered at `/mobile/`,
+which contains neither. Chromium then attributes the notification to Chrome (its settings open under Sites, not the app). Chromium's
+source rule for this is from a 2016 code review and was not re-checked against current Chrome; the Pixel test is the confirmation.
+
+Each van now registers `/pwa-sw.js` at its own scope (`/mobile/van1`, `/mobile/van2`) from its own page. Each registration has its
+own push subscription, so a phone's Van 1 and Van 2 endpoints are different and cannot be mixed up. The server still decides the van
+from the signed PIN session: a browser may only register the scope that matches its session (`LOGISTICS_PUSH_SCOPE_MISMATCH`, 403).
+
+## Migration from the shared subscription
+
+The old shared subscription (no `scope`, treated as `shared`) is never deleted up front. The rules, in `driver-push-store.ts`:
+
+1. A new van-scoped subscription is created with `replaces` naming the legacy endpoint (when the phone has one).
+2. The server **proves the new endpoint with a real verification push** before doing anything else. That notification reads
+   "Notifications are on" for that van.
+3. Only if the push is accepted does the new subscription become `verified`, and only then is the legacy subscription marked
+   `supersededBy`. A legacy subscription is only retired by a replacement for the same van.
+4. Sending skips a superseded legacy subscription, and skips a van-scoped replacement that has not been verified yet. So a device
+   receives exactly one copy at every step: the legacy one until the replacement is proven, then the replacement alone.
+5. If the replacement's endpoint is rejected (410/404) it is removed and the legacy subscription is left alone. If the push service
+   is only temporarily failing, the replacement stays unverified and the legacy one keeps delivering; the next app open retries.
+
+Nothing unsubscribes a device or unregisters `/mobile/` up front. Superseded legacy endpoints are simply never sent to.
+
+## Notification click
+
+Each worker derives its van from its **own registration scope**, not from the payload. A payload for the other van is shown as a
+generic "FIKA Logistics" notice that opens the worker's own van. A tap focuses only a window of that same van, never the other van's
+window, and falls back to opening the van's app at the notice.
+
+## Pixel test (Van 1)
+
+1. Open **FIKA Van 1** from the app drawer (the installed app, not a Chrome tab).
+2. Sign in with the Van 1 PIN, then More, and tap **Turn on notifications** and allow the prompt.
+3. Tap **Send a test notification**. A notification should arrive titled "Test notification" and show the FIKA Van 1 icon.
+4. Long-press the notification: the header should name **FIKA Van 1** (or "Van 1"), not Chrome.
+5. Android Settings → Apps → FIKA Van 1 → Notifications should show that it has posted notifications.
+6. Tap the notification: it should open FIKA Van 1 at the notice, not the Van 2 app or a Chrome tab.
+7. Van 2 must stay isolated: a Van 1 notice must not appear on a Van 2 phone and the reverse, and Van 2's app must not be focused by a
+   Van 1 tap.
+
+If step 4 still shows Chrome, report the notification header text and the Settings path you see.
