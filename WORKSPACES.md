@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-28T20:10:39.041Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-28T20:51:46.270Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -96,6 +96,7 @@ Snapshot: 2026-10-28T20:10:39.041Z. The local governed registry remains authorit
 | logistics-withdrawal-uat | uat-20261025-1150 | apps/logistics | codex/logistics-withdrawal-uat | — | finished | 2026-10-25T20:08:09.257Z |
 | menu-copy-dish-between-days | codex-menu-copy-dish-between-days | apps/menu-planning | codex/menu-copy-dish-between-days | [#9](https://github.com/derekfika/fika-os/pull/9) | finished | 2026-10-23T15:37:09.723Z |
 | menu-duplicate-planning | claude-menu-duplicate | apps/menu-planning | codex/menu-duplicate-planning | [#66](https://github.com/derekfika/fika-os/pull/66) | finished | 2026-10-27T21:09:33.928Z |
+| menu-handoff-recovery | codex-menu-handoff-111 | tools/incidents/menu-handoff-recovery, docs/incidents/2026-10-28-menu-handoff-111.md | codex/menu-handoff-recovery | — | retired | 2026-10-28T20:51:43.152Z |
 | menu-planner-brian-feedback | codex-menu-planner-brian-feedback | apps/menu-planning | codex/menu-planner-brian-feedback | [#25](https://github.com/derekfika/fika-os/pull/25) | finished | 2026-10-23T16:25:33.332Z |
 | menu-planner-responsive | agent-task | apps/menu-planning | codex/menu-planner-responsive | [#7](https://github.com/derekfika/fika-os/pull/7) | retired | 2026-10-23T08:30:33.685Z |
 | menu-portion-planner-keyboard-scroll | menu-issue-93 | apps/menu-planning, CHANGELOG.md | codex/menu-portion-planner-keyboard-scroll | [#94](https://github.com/derekfika/fika-os/pull/94) | finished | 2026-10-28T06:40:44.057Z |
