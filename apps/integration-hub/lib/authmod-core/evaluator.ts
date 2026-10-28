@@ -32,7 +32,7 @@ export class AuthModEvaluationContext {
 export async function resolvePermittedVehicleIds(repository: AuthModRepository, input: { principal: AuthPrincipal; vehicleIds?: readonly string[] }, context = createAuthModEvaluationContext(repository, input.principal)) {
   const vehicleIds = input.vehicleIds || LOGISTICS_VEHICLE_IDS;
   const decisions = await Promise.all(vehicleIds.map(vehicleId => evaluateAuthority(repository, { principal: input.principal, appId: "logistics", resource: "logistics.vehicle", action: "View", scope: { kind: "resource", ids: [vehicleId] } }, context)));
-  return { permittedVehicleIds: decisions.filter(decision => decision.allowed).map((_, index) => vehicleIds[index]), resolutionFailed: decisions.some(decision => decision.reasonCode === "store-unavailable") };
+  return { permittedVehicleIds: vehicleIds.filter((_, index) => decisions[index].allowed), resolutionFailed: decisions.some(decision => decision.reasonCode === "store-unavailable") };
 }
 
 export function createAuthModEvaluationContext(repository: AuthModRepository, principal: AuthPrincipal, activeOplocs?: OplocReference[]) { return new AuthModEvaluationContext(repository, principal, activeOplocs); }
