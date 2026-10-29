@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-29T10:42:21.303Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-29T10:42:46.822Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -108,7 +108,7 @@ Snapshot: 2026-10-29T10:42:21.303Z. The local governed registry remains authorit
 | menu-portion-planner-keyboard-scroll | menu-issue-93 | apps/menu-planning, CHANGELOG.md | codex/menu-portion-planner-keyboard-scroll | [#94](https://github.com/derekfika/fika-os/pull/94) | finished | 2026-10-28T06:40:44.057Z |
 | menu-publish-hotfix | codex-menu-p0-111 | apps/menu-planning/lib/menu-publication.ts, apps/menu-planning/tests/publication-authority.test.ts, apps/menu-planning/tests/publication-canonical-lookup.emulator.test.ts | codex/menu-publish-hotfix | [#112](https://github.com/derekfika/fika-os/pull/112) | finished | 2026-10-28T20:02:47.799Z |
 | menu-publish-p0 | codex-menu-p0-111 | tools/incidents/menu-publish-p0, docs/incidents/2026-10-28-menu-publish-111.md | codex/menu-publish-p0 | — | finished | 2026-10-28T20:10:36.178Z |
-| menu-release-provenance | codex-menu-spellcheck-delivery | tools/workflow, docs/deployment/workflow.md | codex/menu-release-provenance | [#130](https://github.com/derekfika/fika-os/pull/130) | active | 2026-10-29T10:20:30.661Z |
+| menu-release-provenance | codex-menu-spellcheck-delivery | tools/workflow, docs/deployment/workflow.md | codex/menu-release-provenance | [#130](https://github.com/derekfika/fika-os/pull/130) | retired | 2026-10-29T10:42:45.251Z |
 | menu-release-recovery-scoped | codex-menu-release-recovery | tools/workflow, CHANGELOG.md | codex/menu-release-recovery-scoped | [#12](https://github.com/derekfika/fika-os/pull/12) | finished | 2026-10-23T09:40:03.932Z |
 | menu-release-recovery | codex-menu-release-recovery | tools/workflow | codex/menu-release-recovery | — | finished | 2026-10-23T09:22:36.941Z |
 | menu-spellcheck-continue | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-continue | — | finished | 2026-10-28T19:46:22.840Z |
