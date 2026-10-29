@@ -102,7 +102,7 @@ test.describe("Journey Planner V3 · mutation states · 1536x960", () => {
     const { server } = await boot(page, assignedSeed());
     const empty = `run:${DATE}:b`;
     const from = await centre(queueItem(page, "North Kitchen"));
-    const to = await centre(runRow(page, empty).locator("h3"));
+    const to = await centre(page.locator(`[data-vehicle-row="van2"] [data-drop-run-id="${empty}"]`));
     await drag(page, from, to);
     await expect.poll(() => commandsOf(server, "assign-job-to-load").length).toBeGreaterThanOrEqual(1);
     await page.waitForTimeout(500);

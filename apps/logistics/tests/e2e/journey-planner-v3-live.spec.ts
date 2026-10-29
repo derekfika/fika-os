@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { expectClean } from "./layout-audit";
-import { assignedSeed, boot, centre, commandsOf, createRunViaDialog, DATE, drag, pxPerMinute, queueItem, runRow, timeToX, v3Seed } from "./v3-helpers";
+import { assignedSeed, boot, centre, commandsOf, createRunViaDialog, DATE, drag, pxPerMinute, queueItem, runRow, selectRun, timeToX, v3Seed } from "./v3-helpers";
 
 /**
  * Journey Planner V3 mounted in the REAL planner page (not the preview route), driven with real pointer input
@@ -26,14 +26,15 @@ test.describe("Journey Planner V3 · mounted real planner · 1536x960", () => {
     await expect(page.locator("[data-journey-planner]")).toHaveCount(0);
   });
 
-  test("create a Run with the Van selector: it appears as its own row and is persisted", async ({ page }) => {
+  test("create a Run with the Van selector: it joins its van lane and is persisted", async ({ page }) => {
     const { server, issues } = await boot(page);
     const run = await createRunViaDialog(page, server, "Van 2", { departure: "09:00", return: "12:00" });
     expect(commandsOf(server, "create-run").at(-1)?.run).toMatchObject({ vehicleId: "van2", plannedCpuDepartureTime: "09:00", plannedCpuReturnTime: "12:00", status: "draft" });
     await expect(runRow(page, run.id)).toBeVisible();
     await expect(runRow(page, run.id)).toContainText("09:00 – 12:00");
-    await expect(page.locator("[data-run-row]")).toHaveCount(3);
+    await expect(page.locator("[data-vehicle-row]")).toHaveCount(2);
     await page.reload();
+    await selectRun(page, run.id);
     await expect(runRow(page, run.id)).toContainText("09:00 – 12:00");
     expectClean(issues, "create");
   });
@@ -110,6 +111,7 @@ test.describe("Journey Planner V3 · mounted real planner · 1536x960", () => {
     const queued = queueItem(page, "Standalone collection crates");
     await expect(queued).toBeVisible();
     const targetRunId = server.state.runs[1].id;
+    await selectRun(page, targetRunId);
     const targetRun = runRow(page, targetRunId);
     await drag(page, await centre(queued), await centre(targetRun.locator("h3")));
     const chooseTime = page.getByRole("dialog", { name: "Choose a collection time" });
@@ -122,6 +124,7 @@ test.describe("Journey Planner V3 · mounted real planner · 1536x960", () => {
     await expect.poll(() => server.state.movements.find((item) => item.id === movement.canonicalId)?.runId).toBe(targetRunId);
     expect(server.state.movements.filter((item) => item.id === movement.canonicalId)).toHaveLength(1);
     await page.reload();
+    await selectRun(page, targetRunId);
     await expect(runRow(page, targetRunId).getByRole("button", { name: /Market Hall/ })).toBeVisible();
     expect(server.state.movements.filter((item) => item.id === movement.canonicalId)).toHaveLength(1);
   });
@@ -198,10 +201,11 @@ test.describe("Journey Planner V3 · mounted real planner · 1536x960", () => {
     const { server } = await boot(page);
     const run = server.state.runs[0];
     const from = await centre(runRow(page, run.id).locator("[data-draft-slot] span").first());
-    await drag(page, from, { x: await timeToX(page, 9 * 60), y: from.y });
+    const lane = (await page.locator('[data-vehicle-row="van1"]').boundingBox())!;
+    await drag(page, from, { x: await timeToX(page, 9 * 60), y: lane.y + 30 });
     await expect.poll(() => commandsOf(server, "update-run-timing").length).toBe(1);
     expect(commandsOf(server, "update-run-timing")[0]).toMatchObject({ runId: run.id, plannedCpuDepartureTime: "09:00", plannedCpuReturnTime: "12:00" });
-    await expect(runRow(page, run.id).locator("[data-run-bar]")).toContainText("09:00 – 12:00");
+    await expect(page.locator(`[data-run-bar="${run.id}"]`)).toContainText("09:00 – 12:00");
   });
 
   test("exact times in the inspector: validated client-side, saved through update-run-timing, overlap is a warning not a block", async ({ page }) => {
@@ -220,7 +224,7 @@ test.describe("Journey Planner V3 · mounted real planner · 1536x960", () => {
     await inspector.getByRole("button", { name: "Save times" }).click();
     await expect.poll(() => commandsOf(server, "update-run-timing").length).toBe(1);
     expect(commandsOf(server, "update-run-timing")[0]).toMatchObject({ runId: b.id, plannedCpuDepartureTime: "11:00", plannedCpuReturnTime: "14:00" });
-    await expect(runRow(page, a.id).locator("[data-overlap-warning]")).toBeVisible();
+    await expect(page.locator(`[data-run-bar="${a.id}"]`)).toHaveAttribute("data-overlap", "true");
     await expect(runRow(page, b.id).locator("[data-overlap-warning]")).toBeVisible();
     await expect(page.locator(`[data-run-bar="${b.id}"]`)).toContainText("11:00 – 14:00");
   });

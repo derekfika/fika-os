@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { createRequire } from "node:module";
 import { projectionToDashboardData } from "../../lib/projection-dashboard-adapter";
 import type { LogisticsDayProjection } from "../../lib/types";
-import { centre, drag } from "./v3-helpers";
+import { centre, drag, selectRun } from "./v3-helpers";
 
 /**
  * Journey Planner V3 mounted in the real planner page against the ACTUAL route/domain code on an isolated
@@ -32,6 +32,12 @@ async function mount(page: Page, f: any) {
   const commands: Record<string, any>[] = [];
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
+    // This isolated route-ordering fixture models an already authenticated Van 1
+    // session. Actual PIN/session denial and isolation have separate server tests.
+    if (url.pathname === "/api/logistics/mobile/session") {
+      const vehicle = url.searchParams.get("vehicle");
+      return route.fulfill({ status: vehicle === "van1" ? 200 : 401, json: vehicle === "van1" ? { vehicleId: "van1" } : { error: { message: "No fixture session for this van." } } });
+    }
     if (url.pathname === "/api/logistics/vehicles") return route.fulfill({ json: { permittedVehicleIds: ["van1", "van2"] } });
     if (url.pathname === "/api/logistics/locations") return route.fulfill({ json: { oplocs: f.oplocs } });
     if (url.pathname === "/api/logistics/drivers") return route.fulfill({ json: (await f.drivers()).body });
@@ -46,6 +52,7 @@ async function mount(page: Page, f: any) {
   await expect(page.getByRole("region", { name: "Vehicle journey timeline" })).toBeVisible({ timeout: 20_000 });
   await page.evaluate(() => document.fonts.ready);
   await page.waitForLoadState("networkidle");
+  await selectRun(page, "r1");
   return commands;
 }
 
@@ -53,7 +60,7 @@ const row = (page: Page, runId: string) => page.locator(`[data-run-id="${runId}"
 const card = (page: Page, req: string) => page.locator(`[data-logistics-planning-queue] [data-timeline-queue-id="projection-job:logistics-job:req:${req}"]`);
 const chips = (page: Page, runId: string) => row(page, runId).locator("ol[aria-label^='Visiting sequence'] li button").evaluateAll((buttons) => buttons.map((button) => (button.getAttribute("aria-label") || "").replace(/^Stop \d+, /, "").replace(/\. Open stop$/, "")));
 const inspector = (page: Page) => page.getByRole("complementary", { name: "Run inspector" });
-async function dropOnRun(page: Page, req: string, runId: string) { await drag(page, await centre(card(page, req)), await centre(row(page, runId).locator("h3"))); }
+async function dropOnRun(page: Page, req: string, runId: string) { await selectRun(page, runId); await drag(page, await centre(card(page, req)), await centre(row(page, runId).locator("h3"))); }
 
 test.describe("Journey Planner V3 · real route/domain code · 1536x960", () => {
   test.use({ viewport: { width: 1536, height: 960 } });
@@ -72,7 +79,7 @@ test.describe("Journey Planner V3 · real route/domain code · 1536x960", () => 
     await dialog.getByLabel("Planned CPU return").fill("16:00");
     await dialog.getByRole("button", { name: "Create Run" }).click();
     await expect.poll(() => records(f, "fikaLogisticsDeliveryRunsV1").filter((run: any) => run.vehicleId === "van2" && run.plannedCpuDepartureTime === "13:00").length).toBe(1);
-    await expect(page.locator("[data-run-row]")).toHaveCount(3);
+    await expect(page.locator("[data-vehicle-row]")).toHaveCount(2);
 
     // 2. Drag unassigned work onto Run 1 (r1). The requested time is used; the second MNK job joins the same visit.
     await expect(page.locator("[data-logistics-planning-queue] [data-timeline-queue-id]")).toHaveCount(3);
@@ -128,15 +135,16 @@ test.describe("Journey Planner V3 · real route/domain code · 1536x960", () => 
 
     // 6. Everything confirmed survives a refresh.
     await page.reload();
+    await selectRun(page, "r1");
     await expect(row(page, "r1")).toContainText("08:00 – 15:00");
     await expect.poll(() => chips(page, "r1")).toEqual(["Angel Court: 1 delivery, 0 collections", "MNK: 2 deliveries, 1 collection"]);
-    await expect(row(page, "r1").locator("[data-run-bar]")).toBeVisible();
+    await expect(page.locator('[data-run-bar="r1"]')).toBeVisible();
 
     // 7. The driver app shows the SAME confirmed route order.
     await page.clock.install({ time: new Date(f.date + "T12:00:00Z") });
     await page.goto("/mobile/van1?serviceDate=" + f.date);
     await expect(page.getByRole("button", { name: /^Open details for / }).first()).toBeVisible({ timeout: 20_000 });
-    const names = await page.getByRole("button", { name: /^Open details for / }).evaluateAll((buttons) => buttons.map((button) => (button.getAttribute("aria-label") || "").replace("Open details for ", "")));
+    const names = await page.getByRole("button", { name: /^Open details for / }).evaluateAll((buttons) => buttons.map((button) => (button.getAttribute("aria-label") || "").replace("Open details for ", "").replace(/\s+(delivery|collection)$/, "")));
     expect(names[0]).toBe("Angel Court");
     expect(names.slice(1).every((name) => name === "MNK")).toBe(true);
 
@@ -145,12 +153,14 @@ test.describe("Journey Planner V3 · real route/domain code · 1536x960", () => 
     await expect(page.getByRole("region", { name: "Vehicle journey timeline" })).toBeVisible({ timeout: 20_000 });
     const emptyRuns = records(f, "fikaLogisticsDeliveryRunsV1").filter((run: any) => run.canonicalId === "r2");
     expect(emptyRuns).toHaveLength(1);
+    await selectRun(page, "r2");
     await row(page, "r2").getByRole("button", { name: /actions$/ }).click();
     await page.getByRole("menuitem", { name: "Delete empty run" }).click();
     await inspector(page).getByRole("alertdialog", { name: "Delete empty run" }).getByRole("button", { name: "Delete empty run" }).click();
     await expect.poll(() => f.records.get("fikaLogisticsDeliveryRunsV1/r2").retiredAt).toBeTruthy();
     await page.reload();
     await expect(row(page, "r2")).toHaveCount(0);
+    await selectRun(page, "r1");
     await expect(row(page, "r1")).toBeVisible();
     // r1 is populated: no UI path and no command may retire it
     const refused = await f.post({ action: "retire-empty-run", runId: "r1", expectedRunVersion: f.records.get("fikaLogisticsDeliveryRunsV1/r1").version });
@@ -238,6 +248,8 @@ test.describe("Journey Planner V3 · real route/domain code · 1536x960", () => 
     await panel.getByLabel("Schedule time").fill("10:00");
     await panel.getByRole("button", { name: "Assign eligible" }).click();
     await expect.poll(() => loadsOf(f).length).toBe(1);
+    await expect(panel).toHaveCount(0);
+    await selectRun(page, "r1");
     await expect.poll(() => chips(page, "r1")).toEqual(["Angel Court: 1 delivery, 0 collections"]);
   });
 });

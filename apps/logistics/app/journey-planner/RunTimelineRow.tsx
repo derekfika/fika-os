@@ -14,9 +14,11 @@ export const formatMinute = (minute: number) => `${pad(Math.floor(minute / 60))}
 const minutesOf = (time: string) => { const [hour, minute] = time.split(":").map(Number); return hour * 60 + minute; };
 
 /** Planned CPU departure -> return as a bar. Width is proportional to the planned duration; nothing else is inferred from it. */
-export function RunTimeBar({ run, pxPerHour, preview, onSelect, onPointerDown, onResizeKey }: {
+export function RunTimeBar({ run, pxPerHour, preview, onSelect, onPointerDown, onResizeKey, top, drop }: {
   run: RunRowView; pxPerHour: number; preview?: BarPreview; onSelect: () => void;
   onPointerDown?: (event: ReactPointerEvent, mode: BarMode) => void; onResizeKey?: (delta: number) => void;
+  top?: number;
+  drop?: "valid" | "invalid";
 }) {
   const start = preview ? preview.start : run.departure ? minutesOf(run.departure) : undefined;
   const end = preview ? preview.end : run.return ? minutesOf(run.return) : undefined;
@@ -30,21 +32,23 @@ export function RunTimeBar({ run, pxPerHour, preview, onSelect, onPointerDown, o
     role="button"
     tabIndex={0}
     data-run-bar={run.id}
+    data-drop-run-id={run.id}
+    data-drop={drop}
     data-status={run.status}
     data-pending={run.pending ? "true" : undefined}
     data-dragging={preview ? "true" : undefined}
     data-invalid={preview && !preview.valid ? "true" : undefined}
     data-overlap={run.overlapWarning ? "true" : undefined}
     data-editable={draggable ? "true" : "false"}
-    style={{ left, width }}
-    title={`${run.title} · ${run.vehicleLabel} · ${text}${draggable ? " · drag to move, drag the right edge to resize" : ""}`}
-    aria-label={`${run.title}, ${run.vehicleLabel}, planned CPU departure ${formatMinute(start)}, return ${formatMinute(end)}${run.pending ? ", saving" : ""}. Select run`}
+    style={{ left, width, top }}
+    title={`${run.title} · ${run.vehicleLabel} · ${text}${run.overlapWarning ? " · Overlaps another run" : ""}${draggable ? " · drag to move, drag the right edge to resize" : ""}`}
+    aria-label={`${run.title}, ${run.vehicleLabel}, ${statusLabel(run.status)}, planned CPU departure ${formatMinute(start)}, return ${formatMinute(end)}${run.pending ? ", saving" : ""}${run.overlapWarning ? ", overlaps another run on this vehicle" : ""}. Select run`}
     onClick={onSelect}
     onPointerDown={draggable ? (event) => onPointerDown?.(event, "move") : undefined}
     onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onSelect(); } }}
   >
     {draggable && <span className={styles.barGripStart} aria-hidden="true"><GripIcon size={9} /></span>}
-    <span className={styles.barText}>{text}</span>
+    <span className={styles.barText}>{run.title} · {text}{run.status !== "planned" ? ` · ${statusLabel(run.status)}` : ""}</span>
     {draggable && <span
       className={styles.barGripEnd}
       data-resize-handle
@@ -62,7 +66,7 @@ export function RunTimeBar({ run, pxPerHour, preview, onSelect, onPointerDown, o
   </div>;
 }
 
-export function RunTimelineRow({ run, pxPerHour, selected, collapsed, drop, dropReason, preview, overlapping, activeStopKey, onToggleCollapsed, onSelect, onSelectStop, onSetTimes, onRetire, onBarPointerDown, onResizeKey }: {
+export function RunTimelineRow({ run, pxPerHour, selected, collapsed, drop, dropReason, preview, overlapping, activeStopKey, onToggleCollapsed, onSelect, onSelectStop, onSetTimes, onRetire, onBarPointerDown, onResizeKey, detailsOnly = false }: {
   run: RunRowView;
   pxPerHour: number;
   selected: boolean;
@@ -80,6 +84,7 @@ export function RunTimelineRow({ run, pxPerHour, selected, collapsed, drop, drop
   onRetire?: () => void;
   onBarPointerDown?: (event: ReactPointerEvent, mode: BarMode) => void;
   onResizeKey?: (delta: number) => void;
+  detailsOnly?: boolean;
 }) {
   const [menu, setMenu] = useState<{ top: number; left: number } | undefined>();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -89,10 +94,15 @@ export function RunTimelineRow({ run, pxPerHour, selected, collapsed, drop, drop
     if (!menu) return;
     const close = (event: MouseEvent | KeyboardEvent) => { if (event instanceof KeyboardEvent ? event.key === "Escape" : !menuRef.current?.contains(event.target as Node) && !popupRef.current?.contains(event.target as Node)) { setMenu(undefined); if (event instanceof KeyboardEvent) triggerRef.current?.focus(); } };
     const dismiss = () => setMenu(undefined);
+    const dismissIfAnchorMoved = () => {
+      const box = triggerRef.current?.getBoundingClientRect();
+      if (!box || Math.abs(box.bottom + 6 - menu.top) > 1 || Math.abs(Math.max(8, box.right - 220) - menu.left) > 1) dismiss();
+    };
     document.addEventListener("mousedown", close); document.addEventListener("keydown", close);
-    window.addEventListener("resize", dismiss); document.addEventListener("scroll", dismiss, true);
-    popupRef.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
-    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", close); window.removeEventListener("resize", dismiss); document.removeEventListener("scroll", dismiss, true); };
+    window.addEventListener("resize", dismiss); document.addEventListener("scroll", dismissIfAnchorMoved, true);
+    // Focusing a fixed portal must not scroll the timeline and dismiss its own menu.
+    popupRef.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus({ preventScroll: true });
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", close); window.removeEventListener("resize", dismiss); document.removeEventListener("scroll", dismissIfAnchorMoved, true); };
   }, [menu]);
   const timed = Boolean(run.departure && run.return);
   const barStart = preview ? preview.start : timed ? minutesOf(run.departure!) : 0;
@@ -101,7 +111,7 @@ export function RunTimelineRow({ run, pxPerHour, selected, collapsed, drop, drop
   const warn = run.overlapWarning || overlapping ? run.overlapWarning || "Overlaps another run on this vehicle. You can still save." : undefined;
   return <article
     className={styles.row}
-    data-run-row
+    data-run-row={detailsOnly ? undefined : ""}
     data-run-id={run.id}
     data-drop-run-id={run.id}
     data-vehicle={run.vehicleId}
@@ -124,10 +134,10 @@ export function RunTimelineRow({ run, pxPerHour, selected, collapsed, drop, drop
       {warn && <div className={styles.warn} title={warn} data-overlap-warning>⚠ Overlaps another run</div>}
       {run.attention && <div className={styles.warn}>⚠ {run.attention}</div>}
     </div>
-    <div className={styles.track}>
-      {timed || preview
+    <div className={detailsOnly ? `${styles.track} ${styles.detailsTrack}` : styles.track}>
+      {!detailsOnly && (timed || preview)
         ? <RunTimeBar run={run} pxPerHour={pxPerHour} preview={preview} onSelect={onSelect} onPointerDown={onBarPointerDown} onResizeKey={onResizeKey} />
-        : <div className={styles.draftSlot} data-draft-slot data-editable={run.editable && !run.pending ? "true" : "false"} onPointerDown={run.editable && !run.pending ? (event) => { if ((event.target as HTMLElement).closest("button")) return; onBarPointerDown?.(event, "place"); } : undefined} title={run.editable ? "Drag onto the timeline to place this run, or set exact times" : undefined}><span>Draft · set CPU departure and return</span><button type="button" onClick={onSetTimes ?? onSelect} disabled={!run.editable || run.pending}>Set times</button></div>}
+        : !timed && <div className={styles.draftSlot} data-draft-slot data-editable={run.editable && !run.pending ? "true" : "false"} onPointerDown={run.editable && !run.pending ? (event) => { if ((event.target as HTMLElement).closest("button")) return; onBarPointerDown?.(event, "place"); } : undefined} title={run.editable ? "Drag onto the timeline to place this run, or set exact times" : undefined}><span>Draft · set CPU departure and return</span><button type="button" onClick={onSetTimes ?? onSelect} disabled={!run.editable || run.pending}>Set times</button></div>}
       {drop && <div className={styles.dropLabel} role="status" data-drop-label>{drop === "valid" ? `Drop to add to ${run.title}` : dropReason || "Can’t add work to this run"}</div>}
       <div className={styles.actionsWrap}>
         <div className={styles.actions}>
@@ -142,7 +152,7 @@ export function RunTimelineRow({ run, pxPerHour, selected, collapsed, drop, drop
           </div>
         </div>
       </div>
-      {!collapsed && <RunStopSequence runTitle={run.title} chips={run.chips} onSelectStop={onSelectStop} activeKey={activeStopKey} offset={timed || preview ? barLeft : 0} />}
+      {!collapsed && <RunStopSequence runTitle={run.title} chips={run.chips} onSelectStop={onSelectStop} activeKey={activeStopKey} offset={!detailsOnly && (timed || preview) ? barLeft : 0} />}
     </div>
   </article>;
 }

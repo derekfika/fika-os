@@ -80,7 +80,9 @@ export function runRows(planner: PlannerDay, context: AdapterContext): RunRowVie
       ...(overlaps.has(run.runId) ? { overlapWarning: "Overlaps another run on this vehicle. You can still save; review before dispatch." } : {}),
       ...(run.openIssueCount ? { attention: `${run.openIssueCount} open issue${run.openIssueCount === 1 ? "" : "s"}` } : {}),
       canRetire: retire,
-      driverHref: `/mobile?run=${encodeURIComponent(run.runId)}&serviceDate=${encodeURIComponent(run.serviceDate)}`,
+      ...(run.vehicleId === "van1" || run.vehicleId === "van2" ? {
+        driverHref: `/mobile/${run.vehicleId}?run=${encodeURIComponent(run.runId)}&serviceDate=${encodeURIComponent(run.serviceDate)}`,
+      } : {}),
       ...(retire ? {} : { retireBlocker: !planning ? "Only a draft or planned run can be deleted." : "A run with work can’t be deleted. Return its work to the queue first." }),
       editable: planning,
     };

@@ -198,7 +198,7 @@ export function JourneyPlannerShell({ model, status = "ready", actions = {}, sav
               {peek && <UnassignedWorkQueue {...queueProps} collapsed={false} peek onToggleCollapsed={() => setPeek(false)} onDock={() => { setPeek(false); setQueueOverride("open"); }} />}
             </>
             : <UnassignedWorkQueue {...queueProps} collapsed={false} onToggleCollapsed={() => { setQueueOverride("rail"); setPeek(false); }} />}
-          <JourneyTimeline runs={runs} status={status} zoom={zoom} selectedRunId={model.selectedRunId} activeStopKey={expandedKey} collapsedRunIds={collapsed} nowMinute={model.nowMinute}
+          <JourneyTimeline runs={runs} vehicleIds={model.vehicles.filter(item => (vehicle === "all" || item.id === vehicle) && (!needle || runs.some(run => run.vehicleId === item.id))).map(item => item.id)} status={status} zoom={zoom} selectedRunId={model.selectedRunId} activeStopKey={expandedKey} collapsedRunIds={collapsed} nowMinute={model.nowMinute}
             dropTargets={dropTargets} dropReasons={dropReasons}
             onToggleCollapsed={toggleCollapsed}
             onSelectRun={(runId) => { setTimesOpen(false); setRetireConfirm(false); actions.onSelectRun?.(runId); }}

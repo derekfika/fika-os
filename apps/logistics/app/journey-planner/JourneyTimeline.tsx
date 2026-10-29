@@ -2,8 +2,9 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { PlusIcon } from "./icons";
-import type { PlannerStatus, RunRowView } from "./model";
-import { formatMinute, RunTimelineRow, type BarMode, type BarPreview } from "./RunTimelineRow";
+import type { PlannerStatus, RunRowView, VehicleId } from "./model";
+import { formatMinute, RunTimelineRow, RunTimeBar, type BarMode, type BarPreview } from "./RunTimelineRow";
+import { vehicleTimelineRows } from "./vehicle-timeline";
 import styles from "./timeline.module.css";
 
 export const LABEL_WIDTH = 140;
@@ -23,7 +24,7 @@ const minutesOf = (time: string) => { const [hour, minute] = time.split(":").map
 const snap = (value: number) => Math.round(value / SLOT) * SLOT;
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 
-type Drag = { runId: string; mode: BarMode; pointerId: number; startX: number; startScroll: number; start: number; end: number; started: boolean; x: number; y: number; startY: number };
+type Drag = { runId: string; vehicleId: VehicleId; mode: BarMode; pointerId: number; startX: number; startScroll: number; start: number; end: number; started: boolean; x: number; y: number; startY: number };
 type Preview = BarPreview & { runId: string };
 
 /** Same-vehicle windows that overlap. A warning only; never blocks a save. */
@@ -40,13 +41,14 @@ function overlapSet(runs: RunRowView[], preview?: Preview) {
 }
 
 /**
- * Shared time ruler + one independent row per Run. The label column is sticky; the ruler, bars and
+ * Shared time ruler + one lane per van, with independent run bars. The label column is sticky; the ruler, bars and
  * "now" marker scroll together in a single horizontal scroll owner so they can never drift apart.
  * Run bars move/resize with the pointer (15-minute snap, edge auto-scroll); the caller receives only the
  * proposed times and decides when a change is saved.
  */
-export function JourneyTimeline({ runs, status = "ready", zoom = 1, selectedRunId, activeStopKey, collapsedRunIds, nowMinute, dropTargets, dropReasons, onToggleCollapsed, onSelectRun, onSelectStop, onNewRun, onSetTimes, onRetire, onRunTiming, onRetryLoad }: {
+export function JourneyTimeline({ runs, vehicleIds, status = "ready", zoom = 1, selectedRunId, activeStopKey, collapsedRunIds, nowMinute, dropTargets, dropReasons, onToggleCollapsed, onSelectRun, onSelectStop, onNewRun, onSetTimes, onRetire, onRunTiming, onRetryLoad }: {
   runs: RunRowView[];
+  vehicleIds?: readonly VehicleId[];
   status?: PlannerStatus;
   /** Multiplier on the fit-to-window scale (1 = 06:00–18:00 fills the viewport). */
   zoom?: number;
@@ -97,9 +99,9 @@ export function JourneyTimeline({ runs, status = "ready", zoom = 1, selectedRunI
     const ppm = ppmRef.current;
     if (drag.mode === "place") {
       const rect = node.getBoundingClientRect();
-      const row = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-run-id]");
+      const row = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-vehicle-row]");
       const start = clamp(snap((clientX - (rect.left + LABEL_WIDTH - node.scrollLeft)) / ppm), 0, LAST_MINUTE - SLOT);
-      return { runId: drag.runId, start, end: Math.min(LAST_MINUTE, start + PLACE_MINUTES), valid: row?.dataset.runId === drag.runId && clientX > rect.left + LABEL_WIDTH };
+      return { runId: drag.runId, start, end: Math.min(LAST_MINUTE, start + PLACE_MINUTES), valid: row?.dataset.vehicleRow === drag.vehicleId && clientX > rect.left + LABEL_WIDTH };
     }
     const delta = snap((clientX - drag.startX + (node.scrollLeft - drag.startScroll)) / ppm);
     if (drag.mode === "move") {
@@ -176,7 +178,7 @@ export function JourneyTimeline({ runs, status = "ready", zoom = 1, selectedRunI
     if (mode !== "place" && !(run.departure && run.return)) return;
     const start = run.departure ? minutesOf(run.departure) : 0;
     const end = run.return ? minutesOf(run.return) : start + PLACE_MINUTES;
-    dragRef.current = { runId: run.id, mode, pointerId: event.pointerId, startX: event.clientX, startScroll: scroller.current?.scrollLeft ?? 0, start, end, started: false, x: event.clientX, y: event.clientY, startY: event.clientY };
+    dragRef.current = { runId: run.id, vehicleId: run.vehicleId, mode, pointerId: event.pointerId, startX: event.clientX, startScroll: scroller.current?.scrollLeft ?? 0, start, end, started: false, x: event.clientX, y: event.clientY, startY: event.clientY };
   };
   const nudgeReturn = (run: RunRowView, delta: number) => {
     if (!run.departure || !run.return || !run.editable || run.pending) return;
@@ -184,6 +186,8 @@ export function JourneyTimeline({ runs, status = "ready", zoom = 1, selectedRunI
     if (end !== minutesOf(run.return)) onRunTiming?.(run.id, run.departure, formatMinute(end));
   };
   const overlaps = useMemo(() => overlapSet(runs, preview), [runs, preview]);
+  const vehicleRows = vehicleTimelineRows(runs.map(run => preview?.runId === run.id ? { ...run, departure: formatMinute(preview.start), return: formatMinute(preview.end) } : run), vehicleIds);
+  const selectedRun = runs.find(run => run.id === selectedRunId);
 
   const labelEvery = pxPerHour >= 90 ? 1 : 2;
   const hours = Array.from({ length: 25 }, (_, hour) => hour);
@@ -204,25 +208,47 @@ export function JourneyTimeline({ runs, status = "ready", zoom = 1, selectedRunI
         {status === "ready" && runs.length === 0 && <div className={styles.empty} style={{ position: "sticky", left: 0, width: "calc(100cqw - 2px)" }}><strong>No runs for this day yet</strong><span>Create a run, then drag work onto it from the queue.</span></div>}
         {status === "ready" && <div className={styles.rows}>
           {showNow && <span className={styles.nowLine} style={{ left: LABEL_WIDTH + (nowMinute! / 60) * pxPerHour }} aria-hidden="true" />}
-          {runs.map((run) => <RunTimelineRow
-            key={run.id}
-            run={run}
+          {vehicleRows.map(vehicle => <article key={vehicle.vehicleId} className={styles.row} data-run-row data-vehicle-row={vehicle.vehicleId} data-vehicle={vehicle.vehicleId} data-drop-run-id={selectedRun?.vehicleId === vehicle.vehicleId ? selectedRun.id : undefined} aria-label={`${vehicle.vehicleLabel} timeline`}>
+            <div className={styles.frame} aria-hidden="true" />
+            <div className={styles.label}>
+              <h3 className={styles.title}>{vehicle.vehicleLabel}</h3>
+              <span className={styles.counts}>{vehicle.runs.length} {vehicle.runs.length === 1 ? "run" : "runs"}</span>
+              {vehicle.runs.some(run => overlaps.has(run.id)) && <span className={styles.warn}>Overlapping runs</span>}
+              <label className={styles.runSelector}>Run on {vehicle.vehicleLabel}
+                <select aria-label={`Run on ${vehicle.vehicleLabel}`} value={selectedRun?.vehicleId === vehicle.vehicleId ? selectedRun.id : ""} onChange={event => { if (event.target.value) onSelectRun(event.target.value); }}>
+                  <option value="">Select a run</option>
+                  {vehicle.runs.map(run => <option key={run.id} value={run.id}>{run.title} · {run.departure && run.return ? `${run.departure}–${run.return}` : "Times to set"}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className={styles.track} style={{ minHeight: 32 + vehicle.trackCount * 44 }}>
+              {vehicle.runs.filter(run => run.departure && run.return).map(run => <RunTimeBar key={run.id} run={overlaps.has(run.id) ? { ...run, overlapWarning: "Overlaps another run on this vehicle" } : run} pxPerHour={pxPerHour} preview={preview?.runId === run.id ? preview : undefined} top={13 + (vehicle.tracks.get(run.id) || 0) * 44} drop={dropTargets?.[run.id]} onSelect={() => { if (!suppressClick.current) onSelectRun(run.id); }} onPointerDown={(event, mode) => beginDrag(event, run, mode)} onResizeKey={delta => nudgeReturn(run, delta)} />)}
+              {vehicle.runs.some(run => !run.departure || !run.return) && <div className={styles.unscheduledRuns} style={{ marginTop: vehicle.trackCount * 44 + 8 }}>
+                {vehicle.runs.filter(run => !run.departure || !run.return).map(run => <button type="button" key={run.id} data-drop-run-id={run.id} onClick={() => onSelectRun(run.id)}>{run.title} · Times to set</button>)}
+              </div>}
+              {vehicle.runs.length === 0 && <p className={styles.laneEmpty}>No runs assigned</p>}
+            </div>
+          </article>)}
+          {selectedRun && <div className={styles.selectedDetails} aria-label="Selected run details"><h2 className={styles.selectedDetailsTitle}>Selected run</h2><RunTimelineRow
+            key={selectedRun.id}
+            detailsOnly
+            run={selectedRun}
             pxPerHour={pxPerHour}
-            selected={run.id === selectedRunId}
-            collapsed={collapsedRunIds.has(run.id)}
-            drop={dropTargets?.[run.id]}
-            dropReason={dropReasons?.[run.id]}
-            preview={preview?.runId === run.id ? preview : undefined}
-            overlapping={overlaps.has(run.id)}
-            activeStopKey={run.id === selectedRunId ? activeStopKey : undefined}
-            onToggleCollapsed={() => onToggleCollapsed(run.id)}
-            onSelect={() => { if (!suppressClick.current) onSelectRun(run.id); }}
-            onSelectStop={onSelectStop ? (stopKey) => onSelectStop(run.id, stopKey) : undefined}
-            onSetTimes={onSetTimes ? () => onSetTimes(run.id) : undefined}
-            onRetire={onRetire ? () => onRetire(run.id) : undefined}
-            onBarPointerDown={(event, mode) => beginDrag(event, run, mode)}
-            onResizeKey={(delta) => nudgeReturn(run, delta)}
-          />)}
+            selected
+            collapsed={collapsedRunIds.has(selectedRun.id)}
+            drop={dropTargets?.[selectedRun.id]}
+            dropReason={dropReasons?.[selectedRun.id]}
+            preview={preview?.runId === selectedRun.id ? preview : undefined}
+            overlapping={overlaps.has(selectedRun.id)}
+            activeStopKey={activeStopKey}
+            onToggleCollapsed={() => onToggleCollapsed(selectedRun.id)}
+            onSelect={() => { if (!suppressClick.current) onSelectRun(selectedRun.id); }}
+            onSelectStop={onSelectStop ? stopKey => onSelectStop(selectedRun.id, stopKey) : undefined}
+            onSetTimes={onSetTimes ? () => onSetTimes(selectedRun.id) : undefined}
+            onRetire={onRetire ? () => onRetire(selectedRun.id) : undefined}
+            onBarPointerDown={(event, mode) => beginDrag(event, selectedRun, mode)}
+            onResizeKey={delta => nudgeReturn(selectedRun, delta)}
+          /></div>}
         </div>}
         {status === "ready" && <button type="button" className={styles.create} onClick={onNewRun}><strong><span className={styles.createCircle}><PlusIcon size={16} /></span>Create another Run</strong><span>Click to add a new run or use the button above</span></button>}
       </div>

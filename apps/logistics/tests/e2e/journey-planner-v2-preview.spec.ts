@@ -60,25 +60,21 @@ test("queue collapses to a rail below 1440px only while the inspector is open", 
   await expect(page.locator("[data-logistics-planning-queue]")).toBeVisible();
 });
 
-test("timeline: one scroll owner, bars sit left of the action buttons, chips keep visiting order", async ({ page }) => {
+test("timeline: one scroll owner, both van lanes retain every run and selected chips keep visiting order", async ({ page }) => {
   await page.setViewportSize({ width: 1536, height: 960 });
-  await open(page, "full-day");
+  await open(page, "full-day", "&run=fx-run-1");
   const rows = page.locator("[data-run-row]");
-  await expect(rows).toHaveCount(4);
+  await expect(rows).toHaveCount(2);
+  await expect(page.locator("[data-run-bar]")).toHaveCount(4);
   const scrollers = await page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>("[data-journey-planner] *")).filter((el) => { const o = getComputedStyle(el).overflowX; return (o === "auto" || o === "scroll") && el.scrollWidth > el.clientWidth + 1; }).map((el) => el.getAttribute("data-testid") || el.className));
   expect(scrollers).toEqual(["journey-timeline-scroller"]);
-  for (let index = 0; index < 4; index += 1) {
-    const row = rows.nth(index);
-    const bar = await row.locator("[data-run-bar]").boundingBox();
-    const actions = await row.getByRole("button", { name: /stop sequence$/ }).boundingBox();
-    expect(bar && actions && bar.x + bar.width <= actions.x).toBeTruthy();
-  }
-  const labels = await rows.first().locator("ol[aria-label^='Visiting sequence'] li").allInnerTexts();
+  const selected = page.locator('[data-run-id="fx-run-1"]');
+  const labels = await selected.locator("ol[aria-label^='Visiting sequence'] li").allInnerTexts();
   expect(labels[0]).toContain("CPU");
   expect(labels[labels.length - 1]).toContain("CPU");
   expect(labels.join(" ")).toMatch(/Harbourside[\s\S]*Quay Street[\s\S]*Millbrook/);
   // CPU chips are fixed endpoints, not interactive stops; visit chips are.
-  await expect(rows.first().locator("ol li button")).toHaveCount(3);
+  await expect(selected.locator("ol li button")).toHaveCount(3);
 });
 
 test("Delete empty run is only offered where the run is eligible", async ({ page }) => {
@@ -88,6 +84,8 @@ test("Delete empty run is only offered where the run is eligible", async ({ page
   await page.getByRole("button", { name: "Run 1 actions" }).click();
   await expect(page.getByRole("menuitem", { name: "Delete empty run" })).toBeDisabled();
   await page.keyboard.press("Escape");
+  await page.locator('select[aria-label="Run on Van 2"]').selectOption("fx-run-4");
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await page.getByRole("button", { name: "Run 4 actions" }).click();
   await expect(page.getByRole("menuitem", { name: "Delete empty run" })).toBeEnabled();
   await page.keyboard.press("Escape");
@@ -151,10 +149,11 @@ test("loading state shows skeletons and no run rows", async ({ page }) => {
   await expect(page.locator("[data-run-row]")).toHaveCount(0);
 });
 
-test("busy day (9 runs) renders every row and keeps the page free of horizontal overflow", async ({ page }) => {
+test("busy day (9 runs) retains every run on two van lanes without horizontal page overflow", async ({ page }) => {
   await page.setViewportSize({ width: 1536, height: 960 });
   await open(page, "busy");
-  await expect(page.locator("[data-run-row]")).toHaveCount(9);
+  await expect(page.locator("[data-run-row]")).toHaveCount(2);
+  await expect(page.locator("[data-run-bar]")).toHaveCount(9);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 });
 
