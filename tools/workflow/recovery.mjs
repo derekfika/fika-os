@@ -91,8 +91,14 @@ export function assertNeverSubmitted({ intent, journal, first, second, audit, no
   const attempts = submissionAttempts(journal);
   if (attempts.length !== 1) throw Error('A resubmission was already recorded for this intent; submission state is uncertain, do not resubmit');
   const started = Date.parse(attempts[0].startedAt); const finished = Date.parse(attempts[0].finishedAt); const created = Date.parse(journal.createdAt);
-  if (![started, finished, created].every(Number.isFinite)) throw Error('Submission outcome is unknown: original submitter must have returned');
-  const waitMs = finished + quietMs - now;
+  // appendRecord can push an intent, then fail on its readback fetch before returning.
+  // Submission is write-ahead marked only after that call returns. Recover this narrow
+  // pre-submission gap without inventing a completed CLI attempt or its timestamps.
+  const beforeSubmission = journal.state === 'pending' && !journal.intentCommit &&
+    !journal.submissionStartedAt && !journal.submissionFinishedAt && !journal.submissionFailure &&
+    !journal.submissionAttempts && intent.createdAt === journal.createdAt;
+  if (!Number.isFinite(created) || (!beforeSubmission && ![started, finished].every(Number.isFinite))) throw Error('Submission outcome is unknown: original submitter must have returned');
+  const waitMs = (beforeSubmission ? created : finished) + quietMs - now;
   if (waitMs > 0) throw Error(`Quiet period not elapsed; evidence is not yet conclusive (retry in ${Math.ceil(waitMs / 60000)} minute(s))`);
   if (digest(first) !== digest(second)) throw Error('Deployment evidence changed between snapshots; not resubmitting');
   const since = created - CLOCK_SKEW_MS;
@@ -107,7 +113,7 @@ export function assertNeverSubmitted({ intent, journal, first, second, audit, no
   if (current.state !== 'SUCCEEDED' || current.percent !== 100 || current.sourceSha !== before.sourceSha || current.rollout !== before.rollout || traffic.current[0].build !== `${intent.backend}/builds/${current.rollout}`) throw Error('Serving state differs from the state recorded before the submission; not resubmitting');
   if (!audit?.readable) throw Error('Cloud Audit Logs could not be read; non-submission cannot be proven');
   if (audit.events.length) throw Error(`Cloud Audit Logs show ${audit.events.length} App Hosting create call(s) after the intent; the submission may have reached Firebase`);
-  return attempts;
+  return beforeSubmission ? [{ n: 1, phase: 'not-started-before-intent-readback' }] : attempts;
 }
 
 /** io: inspect, audit(sinceMs), claim(expectedAttempts, nextJournal), submit, finish(n, patch), now. Exactly one invocation can claim. */
