@@ -7,39 +7,11 @@
   "region": "europe-west4",
   "branch": "release/staging/logistics",
   "sourceSha": "8f0047c7a554669237f4a3fe84642095718af5e5",
+  "rollout": "build-2026-10-29-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
   "scopeHash": "66061c05f072d13c68440096faeb0af8acef9902be53a62c5613db2151e30b89",
-  "inMain": true,
-  "rollback": false,
-  "executing": true,
-  "cosmeticOnly": false,
-  "standard": false,
-  "validation": {
-    "id": 123326059095,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/40837339738/job/123326059095",
-    "sha": "8f0047c7a554669237f4a3fe84642095718af5e5"
-  },
-  "approval": {
-    "actor": "derekfika",
-    "method": "authenticated-repository-writer",
-    "app": "logistics",
-    "environment": "staging",
-    "sourceSha": "8f0047c7a554669237f4a3fe84642095718af5e5",
-    "action": "deploy",
-    "instruction": "Owner approved Deploy Logistics staging for validated PR 124, source 8f0047c7; staging application only, no production or operational data/PIN changes",
-    "releaseId": null,
-    "id": "621c94db2a0e92fa4cfa8c11b47ff331237b0811d54f570a55bae1133cef4726",
-    "explicitExecute": true,
-    "authorisedAt": "2026-10-29T07:50:37.080Z"
-  },
-  "provenance": {
-    "number": 124,
-    "url": "https://github.com/derekfika/fika-os/pull/124",
-    "head": "8f0047c7a554669237f4a3fe84642095718af5e5",
-    "pullRequestRisk": "standard"
-  },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "82bd4a8d-d42e-48ff-9848-2cd8284c5752",
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "361e07c8570e887d3adf3668b69afb45917b46a9",
     "rollout": "build-2026-10-28-002",
@@ -47,5 +19,33 @@
     "percent": 100
   },
   "previousGoodRecord": "6b77a7b432c30083e640e3c1b741a28e23938b24",
-  "createdAt": "2026-10-29T07:50:47.134Z"
+  "releaseId": "82bd4a8d-d42e-48ff-9848-2cd8284c5752",
+  "originalIntent": "de19510b5c93a1092550af9a0ae1919ac0388441",
+  "smoke": {
+    "ok": true,
+    "status": 307,
+    "url": "https://fika-logistics-staging--fika-os-dev.europe-west4.hosted.app/",
+    "authGate": "FIKA_SESSION_MISSING"
+  },
+  "recovery": {
+    "resolution": "complete",
+    "reason": "Complete original owner-approved Logistics staging deployment after transient TLS probe failure: original rollout now SUCCEEDED at 100 percent with exact source 8f0047c7 and exact governed desktop AUTHMOD smoke passing; no resubmission",
+    "operator": {
+      "actor": "derekfika",
+      "method": "authenticated-repository-writer",
+      "app": "logistics",
+      "environment": "staging",
+      "sourceSha": "8f0047c7a554669237f4a3fe84642095718af5e5",
+      "action": "reconcile:complete",
+      "instruction": "Complete original owner-approved Logistics staging deployment after transient TLS probe failure: original rollout now SUCCEEDED at 100 percent with exact source 8f0047c7 and exact governed desktop AUTHMOD smoke passing; no resubmission",
+      "releaseId": "82bd4a8d-d42e-48ff-9848-2cd8284c5752",
+      "id": "de0c87d51272f53af450214a671a13f9e93c3267bf9ed39f76cac5704c37b4ad",
+      "explicitExecute": true,
+      "authorisedAt": "2026-10-29T08:14:08.857Z"
+    },
+    "rollout": "build-2026-10-29-001",
+    "evidenceHash": "d46b191afa4a273c4ebb9aacb3c521198584d9e9df649b205c35d52377490997",
+    "journalHash": "287f953e8ffcb791f59f72b4f949971058188cfb97140e00a8caa2385c19a640",
+    "at": "2026-10-29T08:14:13.962Z"
+  }
 }
