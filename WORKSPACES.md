@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-29T06:28:36.743Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-29T06:31:00.430Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -52,7 +52,7 @@ Snapshot: 2026-10-29T06:28:36.743Z. The local governed registry remains authorit
 | hospitality-link-command | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-link-command | — | finished | 2026-10-28T06:40:38.357Z |
 | hospitality-rotations-core | codex-hospitality-rotations-core | apps/shared/hospitality-rotations.ts, apps/integration-hub/lib/hospitality-rotations, apps/integration-hub/app/api/hospitality-rotations, apps/integration-hub/tests/hospitality-rotations.test.ts, apps/integration-hub/tests/hospitality-rotations.emulator.test.ts, docs/architecture/hospitality-rotations.md | codex/hospitality-rotations-core | [#105](https://github.com/derekfika/fika-os/pull/105) | retired | 2026-10-28T14:10:25.430Z |
 | hospitality-rotations-dashboard-ui | codex-hospitality-rotations-ui | apps/hospitality-booking | codex/hospitality-rotations-dashboard-ui | [#106](https://github.com/derekfika/fika-os/pull/106) | active | 2026-10-28T13:33:41.936Z |
-| hospitality-rotations-hub-buildfix | codex-hospitality-rotations-buildfix | apps/integration-hub/lib/hospitality-rotations/store.ts | codex/hospitality-rotations-hub-buildfix | — | active | 2026-10-29T06:26:10.294Z |
+| hospitality-rotations-hub-buildfix | codex-hospitality-rotations-buildfix | apps/integration-hub/lib/hospitality-rotations/store.ts | codex/hospitality-rotations-hub-buildfix | — | retired | 2026-10-29T06:30:59.177Z |
 | hub-ci-recovery | codex-hub-ci-recovery | apps/integration-hub, .github/workflows | codex/hub-ci-recovery | [#17](https://github.com/derekfika/fika-os/pull/17) | finished | 2026-10-23T11:34:33.508Z |
 | hub-historical-release-reconciliation | uat-20261025-1150 | tools/workflow, docs/deployment, CHANGELOG.md | codex/hub-historical-release-reconciliation | — | finished | 2026-10-25T14:44:58.862Z |
 | hub-ledger-reconciliation | uat-20261025-1150 | tools/workflow, docs/deployment, CHANGELOG.md | codex/hub-ledger-reconciliation | [#49](https://github.com/derekfika/fika-os/pull/49) | finished | 2026-10-25T17:42:30.830Z |
