@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-29T16:10:36.923Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-29T16:11:11.178Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -124,7 +124,7 @@ Snapshot: 2026-10-29T16:10:36.923Z. The local governed registry remains authorit
 | release-probe-authmod | claude-release-probe | tools/workflow, docs/deployment | codex/release-probe-authmod | [#22](https://github.com/derekfika/fika-os/pull/22) | finished | 2026-10-24T15:02:50.771Z |
 | release-resume-resubmit | claude-ad-hoc | tools/workflow/recovery.mjs, tools/workflow/releases.mjs, tools/workflow/resubmit.test.mjs, docs/deployment/workflow.md | codex/release-resume-resubmit | [#31](https://github.com/derekfika/fika-os/pull/31) | finished | 2026-10-25T13:13:28.932Z |
 | rotations-hub-build-delivery | codex-rotations-staging-delivery | apps/integration-hub/tsconfig.json, apps/integration-hub/lib/hospitality-rotations/store.ts, apps/integration-hub/tests/rotations-build-resolution.test.cjs | codex/rotations-hub-build-delivery | [#136](https://github.com/derekfika/fika-os/pull/136) | finished | 2026-10-29T16:10:32.743Z |
-| rotations-staging-access | codex-rotations-staging-delivery | apps/integration-hub/scripts/rotations-staging-access.ts, docs/deployment/rotations-staging-delivery-continued.md | codex/rotations-staging-access | — | active | 2026-10-29T16:01:24.202Z |
+| rotations-staging-access | codex-rotations-staging-delivery | apps/integration-hub/scripts/rotations-staging-access.ts, docs/deployment/rotations-staging-delivery-continued.md | codex/rotations-staging-access | — | retired | 2026-10-29T16:11:09.792Z |
 | rotations-staging-delivery | codex-rotations-staging-delivery | docs/deployment/rotations-staging-delivery.md | codex/rotations-staging-delivery | [#135](https://github.com/derekfika/fika-os/pull/135) | retired | 2026-10-29T15:56:53.225Z |
 | standing-orders-pr14-sync | codex-standing-orders-pr14-sync | apps/delivered-in, apps/integration-hub, docs/deployment, CHANGELOG.md | codex/standing-orders-pr14-sync | — | finished | 2026-10-23T12:09:58.445Z |
 | uat-blocker-checkpoint | uat-20261025-1150 | CHANGELOG.md | codex/uat-blocker-checkpoint | [#45](https://github.com/derekfika/fika-os/pull/45) | retired | 2026-10-25T12:49:14.064Z |
