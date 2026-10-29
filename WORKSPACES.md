@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-29T16:11:11.178Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-29T16:20:27.098Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -55,6 +55,7 @@ Snapshot: 2026-10-29T16:11:11.178Z. The local governed registry remains authorit
 | hospitality-rotations-dashboard-ui | codex-hospitality-rotations-ui | apps/hospitality-booking | codex/hospitality-rotations-dashboard-ui | [#106](https://github.com/derekfika/fika-os/pull/106) | retired | 2026-10-29T08:12:49.922Z |
 | hospitality-rotations-hub-buildfix | codex-hospitality-rotations-buildfix | apps/integration-hub/lib/hospitality-rotations/store.ts | codex/hospitality-rotations-hub-buildfix | — | retired | 2026-10-29T06:30:59.177Z |
 | hospitality-rotations-hub-tsconfig | codex-hospitality-rotations-buildfix | apps/integration-hub/tsconfig.json, apps/integration-hub/lib/hospitality-rotations/store.ts | codex/hospitality-rotations-hub-tsconfig | — | retired | 2026-10-29T16:02:30.532Z |
+| hospitality-rotations-integration | codex-hospitality-rotations-integration | apps/hospitality-booking/app/rotations-preview, apps/hospitality-booking/app/rotations, apps/hospitality-booking/app/api/hospitality-rotations, apps/hospitality-booking/lib/rotations-ui-types.ts, apps/hospitality-booking/lib/rotations-ui-model.ts, apps/hospitality-booking/lib/rotations-ui-access.ts, apps/hospitality-booking/lib/hospitality-rotations-hub-proxy.ts, apps/hospitality-booking/tests/rotations-ui.test.ts, apps/hospitality-booking/docs/hospitality-rotations-ui-integration.md | codex/hospitality-rotations-integration | — | finished | 2026-10-29T16:20:24.110Z |
 | hospitality-staging-health | codex-rotations-staging-delivery | tools/workflow/releases.mjs, tools/workflow/releases.test.mjs, docs/deployment/hospitality-staging-health.md | codex/hospitality-staging-health | [#134](https://github.com/derekfika/fika-os/pull/134) | retired | 2026-10-29T15:54:24.273Z |
 | hub-ci-recovery | codex-hub-ci-recovery | apps/integration-hub, .github/workflows | codex/hub-ci-recovery | [#17](https://github.com/derekfika/fika-os/pull/17) | finished | 2026-10-23T11:34:33.508Z |
 | hub-historical-release-reconciliation | uat-20261025-1150 | tools/workflow, docs/deployment, CHANGELOG.md | codex/hub-historical-release-reconciliation | — | finished | 2026-10-25T14:44:58.862Z |
@@ -124,6 +125,7 @@ Snapshot: 2026-10-29T16:11:11.178Z. The local governed registry remains authorit
 | release-probe-authmod | claude-release-probe | tools/workflow, docs/deployment | codex/release-probe-authmod | [#22](https://github.com/derekfika/fika-os/pull/22) | finished | 2026-10-24T15:02:50.771Z |
 | release-resume-resubmit | claude-ad-hoc | tools/workflow/recovery.mjs, tools/workflow/releases.mjs, tools/workflow/resubmit.test.mjs, docs/deployment/workflow.md | codex/release-resume-resubmit | [#31](https://github.com/derekfika/fika-os/pull/31) | finished | 2026-10-25T13:13:28.932Z |
 | rotations-hub-build-delivery | codex-rotations-staging-delivery | apps/integration-hub/tsconfig.json, apps/integration-hub/lib/hospitality-rotations/store.ts, apps/integration-hub/tests/rotations-build-resolution.test.cjs | codex/rotations-hub-build-delivery | [#136](https://github.com/derekfika/fika-os/pull/136) | finished | 2026-10-29T16:10:32.743Z |
+| rotations-hub-fix-integration | codex-hospitality-rotations-integration | apps/integration-hub/tsconfig.json, apps/integration-hub/lib/hospitality-rotations/store.ts, apps/integration-hub/tests/rotations-build-resolution.test.cjs | codex/rotations-hub-fix-integration | [#137](https://github.com/derekfika/fika-os/pull/137) | active | 2026-10-29T16:14:57.613Z |
 | rotations-staging-access | codex-rotations-staging-delivery | apps/integration-hub/scripts/rotations-staging-access.ts, docs/deployment/rotations-staging-delivery-continued.md | codex/rotations-staging-access | — | retired | 2026-10-29T16:11:09.792Z |
 | rotations-staging-delivery | codex-rotations-staging-delivery | docs/deployment/rotations-staging-delivery.md | codex/rotations-staging-delivery | [#135](https://github.com/derekfika/fika-os/pull/135) | retired | 2026-10-29T15:56:53.225Z |
 | standing-orders-pr14-sync | codex-standing-orders-pr14-sync | apps/delivered-in, apps/integration-hub, docs/deployment, CHANGELOG.md | codex/standing-orders-pr14-sync | — | finished | 2026-10-23T12:09:58.445Z |
