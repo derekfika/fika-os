@@ -10,6 +10,7 @@ import { getAuthmodReferenceReadPackage, type AuthmodReferenceReadPackage } from
 import { bumpCacheDatasets } from "../integration-cache-server";
 import { getOplocReadPackage } from "../oploc-read-package";
 import { bootstrapAuthmodAccessPackage, bumpAuthmodAccessHead, getAuthmodAccessReadPackage } from "../authmod-access-read-package";
+import { publishAfterCommit } from "./commit-publication";
 const collections = { identities: "authmodIdentities", custodians: "authmodCustodianAssignments", applications: "authmodApplications", sites: "authmodSiteAssignments", apps: "authmodAppAssignments", grants: "authmodAuthorityGrants", delegations: "authmodDelegations", services: "authmodServicePrincipals", imports: "authmodImports", resolutions: "authmodImportResolutions", audits: "authmodAccessAudit" } as const;
 const REFERENCE_CACHE_SCOPE = "global";
 const firestoreResource = (collection: string) => `Firestore database (default), collection ${collection}`;
@@ -50,7 +51,7 @@ export class FirestoreAuthModRepository implements AuthModRepository {
     if (snapshot.size > 200) throw new AuthModStoreUnavailable("Driver catalogue exceeds its bounded capacity.", "AUTHMOD_DRIVER_CATALOGUE_LIMIT");
     return snapshot.docs.map(document => document.data() as AuthorityGrant);
   }
-  constructor(private readonly cacheScope = "unscoped") {}
+  constructor(private readonly cacheScope = "unscoped", private readonly publishApplicationAccess: (identityId: string) => Promise<unknown> = bootstrapAuthmodAccessPackage) {}
   async getRuntimeAccessPackage(identityId: string) { return getAuthmodAccessReadPackage(identityId); }
   async getIdentity(id: string) { const snapshot = await firestoreRead("getIdentity", collections.identities, () => db.collection(collections.identities).doc(id).get()); return snapshot.exists ? snapshot.data() as AuthIdentity : undefined; }
   async listIdentities() { return readAll<AuthIdentity>(collections.identities); }
@@ -103,9 +104,9 @@ export class FirestoreAuthModRepository implements AuthModRepository {
       bumpAuthmodAccessHead(transaction, input.assignment.identityId);
       if (input.audit) transaction.create(db.collection(collections.audits).doc(input.audit.id), input.audit as unknown as DocumentData);
     });
-    await bootstrapAuthmodAccessPackage(input.assignment.identityId);
     invalidateAuthmodReferenceCaches();
     invalidateAuthmodAdmissionCache();
+    await publishAfterCommit(input.assignment.identityId, this.publishApplicationAccess);
   }
   async revokeStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }) {
     await db.runTransaction(async transaction => {
@@ -116,9 +117,9 @@ export class FirestoreAuthModRepository implements AuthModRepository {
       bumpAuthmodAccessHead(transaction, input.assignment.identityId);
       if (input.audit) transaction.create(db.collection(collections.audits).doc(input.audit.id), input.audit as unknown as DocumentData);
     });
-    await bootstrapAuthmodAccessPackage(input.assignment.identityId);
     invalidateAuthmodReferenceCaches();
     invalidateAuthmodAdmissionCache();
+    await publishAfterCommit(input.assignment.identityId, this.publishApplicationAccess);
   }
   async getServicePrincipal(id: string) { const snapshot = await firestoreRead("getServicePrincipal", collections.services, () => db.collection(collections.services).doc(id).get()); return snapshot.exists ? snapshot.data() as ServicePrincipal : undefined; }
   async listServicePrincipals() { return readAll<ServicePrincipal>(collections.services); }

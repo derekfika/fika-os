@@ -1,0 +1,110 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { NextRequest } from "next/server";
+import type { AuthIdentity, AuthPrincipal, ApplicationRegistryEntry } from "../lib/authmod-core/model";
+
+const enabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os"
+  && /^127\.0\.0\.1:\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || "")
+  && (process.env.FIKA_RUNTIME_MODE || "local") === "local";
+
+test("emulator: app-access HTTP save/revoke commits atomically, fences caches and reports package failure truthfully", { skip: !enabled }, async t => {
+  const root = await mkdtemp(path.join(tmpdir(), "authmod-app-access-"));
+  const previousRoot = process.env.FIKA_SNAPSHOT_DIR;
+  process.env.FIKA_SNAPSHOT_DIR = root;
+  t.after(async () => {
+    if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot;
+    assert.equal(path.dirname(path.resolve(root)), path.resolve(tmpdir()));
+    assert.ok(path.basename(root).startsWith("authmod-app-access-"));
+    await rm(root, { recursive: true, force: true });
+  });
+  const { db } = await import("../lib/firebase-admin");
+  const { FirestoreAuthModRepository } = await import("../lib/authmod-core/firestore-repository");
+  const { handleAccountAction } = await import("../app/api/authmod/accounts/[id]/actions/handler");
+  const { POST } = await import("../app/api/authmod/accounts/[id]/actions/route");
+  const { bootstrapAuthmodAccessPackage, getAuthmodAccessReadPackage, readAuthmodAccessHead } = await import("../lib/authmod-access-read-package");
+  const { rebuildAuthmodReferenceReadPackage } = await import("../lib/authmod-reference-read-package");
+  const { cachedAuthmodReference } = await import("../lib/authmod-reference-cache");
+  const { cachedAuthmodAdmission, authmodAdmissionCacheConfigForTests } = await import("../lib/authmod-admission-cache");
+  const { evaluateAuthority } = await import("../lib/authmod-core/evaluator");
+  const id = `identity:app-access:${randomUUID()}`;
+  const appId = `app-access-test-${randomUUID()}`;
+  const timestamp = new Date().toISOString();
+  const identity: AuthIdentity = { id, displayName: "Synthetic app-access account", identityKind: "person", identityLinkStatus: "matched", status: "active", fullAccess: false, provenance: "system", version: 1, createdAt: timestamp, updatedAt: timestamp };
+  const app: ApplicationRegistryEntry = { appId, displayName: "Synthetic application", enabled: true, launchVisible: false, scopeModel: "none", standardBundleId: `bundle:${appId}`, standardResource: appId, standardActions: ["View", "Manage"], version: 1, provenance: "system", createdAt: timestamp, updatedAt: timestamp };
+  const principal: AuthPrincipal = { type: "interactive", id: "synthetic-admin", displayName: "Synthetic test administrator", identityKind: "person" };
+  await db.collection("authmodIdentities").doc(id).set(identity);
+  await db.collection("authmodApplications").doc(appId).set(app);
+  await rebuildAuthmodReferenceReadPackage();
+  await bootstrapAuthmodAccessPackage(id);
+  const headBefore = await readAuthmodAccessHead(id);
+  let publicationCalls = 0;
+  const repository = new FirestoreAuthModRepository(`test:${id}`, async () => { publicationCalls++; throw Error("synthetic package storage outage"); });
+  const request = (body: object) => new NextRequest(`http://localhost/api/authmod/accounts/${id}/actions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const params = { params: Promise.resolve({ id }) };
+  const invoke = (body: object, repo = repository) => handleAccountAction(request(body), params, async () => ({ principal, repository: repo }));
+  const command = { action: "app", appId, enabled: true, expectedVersion: 1, reasonCode: "role_requirement" };
+  const cached = { identityId: id, appId, load: async () => ({ allowed: true }) };
+  await cachedAuthmodAdmission(cached);
+  let referenceLoads = 0;
+  const reference = () => cachedAuthmodReference({ scope: id, name: "test", documents: () => 1, load: async () => ++referenceLoads });
+  await reference();
+  const generationBefore = authmodAdmissionCacheConfigForTests().generation;
+
+  const granted = await invoke(command);
+  assert.equal(granted.status, 200);
+  assert.equal(granted.headers.get("cache-control"), "no-store");
+  const grantedBody = await granted.json();
+  assert.equal(grantedBody.committed, true);
+  assert.match(grantedBody.warning, /saved.*Do not repeat/);
+  assert.ok(grantedBody.account.apps.some((app: { id: string }) => app.id === appId));
+  assert.equal(publicationCalls, 1);
+  assert.ok(await readAuthmodAccessHead(id) > headBefore);
+  assert.ok(authmodAdmissionCacheConfigForTests().generation > generationBefore);
+  assert.equal(await reference(), 2);
+  assert.equal((await cachedAuthmodAdmission({ ...cached, load: async () => ({ allowed: false }) })).allowed, false);
+  const assignments = await repository.listAppAssignments(id);
+  const grants = await repository.listAuthorityGrants(id, "interactive");
+  assert.equal(assignments.length, 1);
+  assert.equal(assignments[0].status, "active");
+  assert.equal(grants.length, 2);
+  assert.equal((await db.collection("authmodAccessAudit").where("targetId", "==", assignments[0].id).get()).size, 1);
+  await assert.rejects(getAuthmodAccessReadPackage(id), { code: "AUTHMOD_ACCESS_PACKAGE_STALE" });
+  assert.equal((await evaluateAuthority(repository, { principal: { ...principal, id }, appId, resource: appId, action: "View", scope: { kind: "organisation", ids: [] } })).allowed, false);
+
+  const rejected = await invoke({ ...command, expectedVersion: 99 });
+  assert.equal(rejected.status, 409);
+  assert.equal(publicationCalls, 1);
+  await assert.rejects(repository.saveStandardApplicationBundle({ assignment: assignments[0], grants, expectedAssignmentVersion: 0 }), /changed/i);
+  assert.equal(publicationCalls, 1);
+  assert.equal((await repository.listAppAssignments(id))[0].version, 1);
+  assert.equal((await POST(request(command), params)).status, 401);
+
+  await bootstrapAuthmodAccessPackage(id);
+  assert.equal((await getAuthmodAccessReadPackage(id)).appAssignments[0].status, "active");
+  const revoked = await invoke({ ...command, enabled: false });
+  assert.equal(revoked.status, 200);
+  const revokedBody = await revoked.json();
+  assert.equal(revokedBody.committed, true);
+  assert.ok(!revokedBody.account.apps.some((app: { id: string }) => app.id === appId));
+  assert.equal((await repository.listAppAssignments(id))[0].status, "revoked");
+  assert.ok((await repository.listAuthorityGrants(id, "interactive")).every(grant => grant.status === "revoked"));
+  await assert.rejects(getAuthmodAccessReadPackage(id), { code: "AUTHMOD_ACCESS_PACKAGE_STALE" });
+  assert.equal((await db.collection("authmodAccessAudit").where("targetId", "==", assignments[0].id).get()).size, 2);
+  await bootstrapAuthmodAccessPackage(id);
+  const working = new FirestoreAuthModRepository(`success:${id}`);
+  const saved = await invoke(command, working);
+  assert.equal(saved.status, 200);
+  assert.equal((await saved.json()).warning, undefined);
+  assert.equal((await getAuthmodAccessReadPackage(id)).appAssignments[0].status, "active");
+
+  await db.collection("authmodIdentities").doc(id).update({ status: "inactive" });
+  const inactive = await invoke({ ...command, enabled: false }, working);
+  assert.equal(inactive.status, 200);
+  assert.equal((await inactive.json()).warning, undefined);
+  assert.equal((await working.listAppAssignments(id))[0].status, "revoked");
+  assert.equal((await evaluateAuthority(working, { principal: { ...principal, id }, appId, resource: appId, action: "View", scope: { kind: "organisation", ids: [] } })).allowed, false);
+});
