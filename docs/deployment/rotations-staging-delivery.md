@@ -22,6 +22,10 @@ Hospitality staging serves `c8f81e72550ff346a4f73eb79a2d0dd931174324`, build and
 
 An isolated release-tooling fix verifies the literal same-backend redirect and HTTP 200 workspace with no additional redirects. Production probe behaviour and independent Firebase exact-source checks remain unchanged.
 
+PR #134 merged this correction as `4f909e51ebffb81ac886671bf9e2c9abcc8f2bc3`, exact validated source `b6d30d1ad0afa35341655c25aae4139be61c2b48`. All 16 focused release tests and all 83 workflow tests passed, as did governed validation and exact-source CI run `40905989848` (merge-gate job `123560918091`). The corrected probe passed against the live staging backend. No application source changed, so app tests, typechecks and builds were not required for this tooling change.
+
+Governed reconciliation then completed the original healthy Hospitality intent at 15:53 UTC, appending release-ledger commit `8970ef6f7f0b98d09d6fa4ad0ff905dd8f14caa2`. Both stable snapshots and the exact entry/workspace smoke passed. The original journal was archived, previous-good source `c8f20b89` retained, and no new rollout submitted. The earlier description of a pending intent records the initial finding; it is now resolved. This removes the release bookkeeping blocker, not the remaining connected-planner work.
+
 ## Operational limits
 
 No production deployment, AUTHMOD assignment, menu/booking/dish data change, email, scheduler activation or operational UAT write occurred. The working Menu publication delivery integration is untouched. Current staging is not declared ready for Rotations workflow UAT.
