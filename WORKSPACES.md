@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-29T07:39:28.636Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-29T07:44:35.281Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -94,7 +94,7 @@ Snapshot: 2026-10-29T07:39:28.636Z. The local governed registry remains authorit
 | logistics-stop-list-spacing | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-stop-list-spacing | [#85](https://github.com/derekfika/fika-os/pull/85) | finished | 2026-10-27T15:08:31.895Z |
 | logistics-v3-density | claude-logistics-v3 | apps/logistics | codex/logistics-v3-density | [#20](https://github.com/derekfika/fika-os/pull/20) | finished | 2026-10-23T15:27:01.114Z |
 | logistics-v3-integration | claude-logistics-v3 | apps/logistics | codex/logistics-v3-integration | [#19](https://github.com/derekfika/fika-os/pull/19) | finished | 2026-10-23T14:40:19.934Z |
-| logistics-van-timeline | codex-pr-reconciliation | apps/logistics/app/journey-planner, apps/logistics/tests | codex/logistics-van-timeline | — | active | 2026-10-29T06:35:15.145Z |
+| logistics-van-timeline | codex-pr-reconciliation | apps/logistics/app/journey-planner, apps/logistics/tests | codex/logistics-van-timeline | [#124](https://github.com/derekfika/fika-os/pull/124) | active | 2026-10-29T06:35:15.145Z |
 | logistics-web-push | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-web-push | [#92](https://github.com/derekfika/fika-os/pull/92) | finished | 2026-10-27T20:01:07.582Z |
 | logistics-withdrawal-uat-fix | uat-20261025-1150 | apps/logistics | codex/logistics-withdrawal-uat-fix | — | finished | 2026-10-25T20:08:46.072Z |
 | logistics-withdrawal-uat-iss010 | uat-20261025-1150 | apps/logistics, CHANGELOG.md | codex/logistics-withdrawal-uat-iss010 | [#57](https://github.com/derekfika/fika-os/pull/57) | finished | 2026-10-25T22:58:46.128Z |
@@ -112,6 +112,7 @@ Snapshot: 2026-10-29T07:39:28.636Z. The local governed registry remains authorit
 | menu-spellcheck-continue | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-continue | — | finished | 2026-10-28T19:46:22.840Z |
 | menu-spellcheck-week-planner | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-week-planner | [#98](https://github.com/derekfika/fika-os/pull/98) | finished | 2026-10-28T09:15:41.758Z |
 | menu-worker-activation | codex-menu-worker-111 | tools/incidents/menu-worker-activation, docs/incidents/2026-10-28-menu-worker-activation.md | codex/menu-worker-activation | — | retired | 2026-10-28T21:06:13.186Z |
+| munich-re-catalogue-minimums | claude-munich-re-onboarding | packages/server-shared/src/hospitality-catalogue-rules.ts, packages/server-shared/src/hospitality-site-minimums.ts, packages/server-shared/src/hospitality-catalogue, apps/integration-hub/lib/hospitality-booking-service.ts, apps/integration-hub/lib/hospitality-price-trust.ts, apps/integration-hub/tests/munich-re-minimums.test.ts, apps/integration-hub/tests/munich-re-onboarding.test.ts, apps/integration-hub/tests/hospitality-brochure-company-mapping.test.ts, docs/architecture/munich-re-hospitality-onboarding.md | codex/munich-re-catalogue-minimums | [#125](https://github.com/derekfika/fika-os/pull/125) | retired | 2026-10-29T07:44:33.894Z |
 | munich-re-mapping | claude-munich-re-onboarding | packages/server-shared/src/hospitality-catalogue-rules.ts, packages/server-shared/src/hospitality-site-minimums.ts, packages/server-shared/src/hospitality-catalogue, packages/server-shared/tests, apps/integration-hub/lib/hospitality-booking-service.ts, apps/integration-hub/lib/hospitality-price-trust.ts, apps/integration-hub/tests/munich-re-minimums.test.ts, docs/architecture/munich-re-hospitality-onboarding.md | codex/munich-re-mapping | — | retired | 2026-10-29T07:39:27.032Z |
 | munich-re-onboarding | claude-munich-re-onboarding | packages/server-shared/src/hospitality-catalogue-rules.ts | codex/munich-re-onboarding | — | retired | 2026-10-29T07:31:22.863Z |
 | pr-backlog-audit | codex-pr-reconciliation | docs/audits/2026-10-28/pr-backlog-reconciliation.md | codex/pr-backlog-audit | — | active | 2026-10-28T18:58:43.948Z |
