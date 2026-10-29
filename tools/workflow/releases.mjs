@@ -112,20 +112,38 @@ export function executionAuthorization(t, sha, options = {}, access = {}) {
 }
 
 /** Validate authoritative, read-only App Hosting evidence before adopting an unledgered staging baseline. */
+function assertServingBaselineTarget(t) {
+  if (!['hub','menu'].includes(t.app) || t.environment !== 'staging' || t.project !== 'fika-os-dev' || t.backend !== APPS[t.app].staging || t.region !== 'europe-west4') throw Error('Serving baseline reconciliation is restricted to Hub or Menu staging');
+}
 export function validateServingBaselineSnapshot(t, snapshot, expectedSha, expectedRollout) {
   exactSha(expectedSha);
   const backendName = backendPath(t);
   const b = snapshot?.backend, traffic = snapshot?.traffic, build = snapshot?.build, rollout = snapshot?.rollout;
-  if (t.app !== 'hub' || t.environment !== 'staging' || t.project !== 'fika-os-dev' || t.backend !== 'fika-os-staging') throw Error('Serving baseline reconciliation is restricted to Hub staging');
-  if (b?.name !== backendName || b.environment !== 'staging' || b.reconciling !== false || b.uri !== 'fika-os-staging--fika-os-dev.europe-west4.hosted.app') throw Error('Firebase backend identity or health is not verified');
-  if (!String(b.codebase?.repository || '').endsWith('/gitRepositoryLinks/derekfika-fika-os') || b.codebase?.rootDirectory !== '/apps/integration-hub') throw Error('Firebase backend source repository/root does not match FIKA Hub');
-  const expectedBuild = `${backendName}/builds/${expectedRollout}`;
+  assertServingBaselineTarget(t);
+  if (!/^[\w-]+$/.test(expectedRollout || '')) throw Error('An exact rollout identifier is required');
+  if (b?.name !== backendName || b.environment !== 'staging' || b.reconciling !== false || b.uri !== `${t.backend}--${t.project}.${t.region}.hosted.app`) throw Error('Firebase backend identity or health is not verified');
+  if (!String(b.codebase?.repository || '').endsWith('/gitRepositoryLinks/derekfika-fika-os') || ![APPS[t.app].path,`/${APPS[t.app].path}`].includes(b.codebase?.rootDirectory)) throw Error('Firebase backend source repository/root does not match the selected FIKA application');
+  const buildId = String(rollout?.build || '').split('/').at(-1);
+  if (!/^[\w-]+$/.test(buildId || '')) throw Error('Rollout build identity is invalid');
+  const expectedBuild = `${backendName}/builds/${buildId}`;
   const trafficBuild = traffic?.current?.splits?.[0]?.build;
-  const expectedTrafficSuffix = `/locations/${t.region}/backends/${t.backend}/builds/${expectedRollout}`;
+  const expectedTrafficSuffix = `/locations/${t.region}/backends/${t.backend}/builds/${buildId}`;
   if (traffic?.rolloutPolicy?.disabled !== true || traffic.reconciling !== false || traffic.current?.splits?.length !== 1 || traffic.current.splits[0].percent !== 100 || !new RegExp(`^projects/[0-9]+${expectedTrafficSuffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`).test(trafficBuild || '')) throw Error('Firebase traffic is not stable at the expected single 100% staging build');
   if (build?.name !== expectedBuild || build.state !== 'READY' || build.reconciling !== false || build.source?.codebase?.hash !== expectedSha || build.source?.codebase?.commit !== expectedSha || build.source?.codebase?.uri !== `https://github.com/${REPO}/commit/${expectedSha}`) throw Error('Firebase build source or READY state differs from the exact expected source');
   if (rollout?.name !== `${backendName}/rollouts/${expectedRollout}` || rollout.state !== 'SUCCEEDED' || rollout.reconciling !== false || rollout.build !== expectedBuild) throw Error('Firebase rollout is not the expected successful staging rollout');
   return { sourceSha: expectedSha, rollout: expectedRollout, state: 'SUCCEEDED', percent: 100 };
+}
+
+export async function observeServingBaseline(t, sha, rolloutId, read = cloud) {
+  assertServingBaselineTarget(t);
+  if (!/^[\w-]+$/.test(rolloutId || '')) throw Error('Pin the exact observed rollout with --rollout');
+  const base = backendPath(t);
+  const [backend, traffic, rollout] = await Promise.all([read(base), read(`${base}/traffic`), read(`${base}/rollouts/${rolloutId}`)]);
+  const buildId = String(rollout?.build || '').slice(`${base}/builds/`.length);
+  if (rollout?.build !== `${base}/builds/${buildId}` || !/^[\w-]+$/.test(buildId)) throw Error('Observed rollout build is outside the selected backend');
+  const build = await read(`${base}/builds/${buildId}`);
+  const snapshot = { backend, traffic, build, rollout };
+  return { snapshot, serving:validateServingBaselineSnapshot(t, snapshot, sha, rolloutId) };
 }
 
 export function servingBaselineRecord(t, { snapshot, expectedSha, expectedRollout, previous, previousCommit, authorization, observedAt, health, scopeHashValue }) {
@@ -134,40 +152,37 @@ export function servingBaselineRecord(t, { snapshot, expectedSha, expectedRollou
   validateRecord(previous.record, t);
   if (!authorization?.explicitExecute || authorization.action !== 'reconcile:serving-baseline' || authorization.sourceSha !== expectedSha || authorization.releaseId !== previousCommit || !authorization.actor || !authorization.instruction || !authorization.authorisedAt) throw Error('Explicit authenticated authorization is required for this exact reconciliation');
   if (!health?.ok || health.status !== 200) throw Error('Healthy staging serving probe is required before adopting a baseline');
+  if (t.app === 'menu' && (health.appId !== 'menu-planning' || health.buildSha !== expectedSha)) throw Error('Menu staging health does not prove the exact expected build identity');
   if (!observedAt || !Number.isFinite(Date.parse(observedAt))) throw Error('Actual UTC observation timestamp is required');
   return { schema:'fika.release.v1', ...t, ...servingState, kind:'baseline', scopeHash:scopeHashValue || scopeHash(t.app, expectedSha), observedAt,
     previousGood:{ sourceSha:previous.record.sourceSha, rollout:previous.record.rollout, state:previous.record.state, percent:previous.record.percent },
     previousGoodRecord:previousCommit, reconciliation:{ type:'forward-serving-baseline-adoption', authorizedAt:authorization.authorisedAt, actor:authorization.actor, method:authorization.method,
-      authorization:authorization.instruction, priorLedgerCommit:previousCommit, verifiedAt:observedAt, backend:t.backend, project:t.project, build:expectedRollout,
+      authorization:authorization.instruction, priorLedgerCommit:previousCommit, verifiedAt:observedAt, backend:t.backend, project:t.project, build:snapshot.build.name.split('/').at(-1), rollout:expectedRollout,
       evidence:{ backend:snapshot.backend.name, repository:snapshot.backend.codebase.repository, rootDirectory:snapshot.backend.codebase.rootDirectory,
         buildState:snapshot.build.state, rolloutState:snapshot.rollout.state, trafficPercent:100, trafficBuild:snapshot.traffic.current.splits[0].build, healthStatus:health.status },
-      historicalGovernance:'Not established for historical rollouts 002/003; this record is prospective and does not assert prior authorization.',
-      excludedRollbackCandidates:['build-2026-10-24-002'] } };
+      historicalGovernance:t.app === 'hub' ? 'Not established for historical rollouts 002/003; this record is prospective and does not assert prior authorization.' : 'Not established for historical external releases; this record is prospective and does not assert prior authorization.',
+      excludedRollbackCandidates:t.app === 'hub' ? ['build-2026-10-24-002'] : [] } };
 }
 
 export async function reconcileServingBaseline(app, environment, options, access = {}) {
-  if (app !== 'hub' || environment !== 'staging') throw Error('Serving baseline reconciliation is restricted to Hub staging');
-  return asyncLock('release-hub-staging', async () => {
+  assertServingBaselineTarget(target(app, environment));
+  if (options.execute && !options.reason?.trim()) throw Error('Explicit owner baseline-reconciliation instruction is required in --reason');
+  return asyncLock(`release-${app}-staging`, async () => {
     const t = target(app, environment); assertClean(git('status', '--porcelain')); git('fetch', 'origin');
-    const prior = releaseRecord(t.branch); if (!prior || prior.record.kind === 'intent') throw Error('A non-pending prior Hub staging ledger record is required');
+    const prior = releaseRecord(t.branch); if (!prior || prior.record.kind === 'intent') throw Error('A non-pending prior staging ledger record is required');
     validateRecord(prior.record, t);
     const sha = exactSha(options.sha); const rolloutId = options.rollout;
     if (!rolloutId) throw Error('Pin the exact observed rollout with --rollout');
-    const observe = async () => {
-      const backend = await cloud(backendPath(t)); const traffic = await cloud(`${backendPath(t)}/traffic`);
-      const id = rolloutId; const build = await cloud(`${backendPath(t)}/builds/${id}`); const rollout = await cloud(`${backendPath(t)}/rollouts/${id}`);
-      const snapshot = { backend, traffic, build, rollout };
-      return { snapshot, serving:validateServingBaselineSnapshot(t, snapshot, sha, id) };
-    };
+    const observe = () => observeServingBaseline(t, sha, rolloutId);
     const first = await observe(), second = await observe();
     if (digest(first.snapshot) !== digest(second.snapshot)) throw Error('Firebase serving evidence changed between the two required snapshots');
-    const health = await releaseHealthProbe(app, first.snapshot.backend.uri, sha);
-    if (!health.ok || health.status !== 200) throw Error('Hub staging serving health probe did not return HTTP 200');
+    const health = await releaseHealthProbe(app, first.snapshot.backend.uri, sha, fetch, environment);
+    if (!health.ok || health.status !== 200) throw Error('Staging serving health probe did not return HTTP 200');
     if (!options.execute) return { dryRun:true, sourceSha:sha, rollout:rolloutId, priorLedgerCommit:prior.commit, snapshotsStable:true, health };
     const authorization = executionAuthorization(t, sha, { ...options, action:'reconcile:serving-baseline', 'release-id':prior.commit }, access);
     const observedAt = new Date().toISOString();
     git('fetch', 'origin'); const latest = releaseRecord(t.branch);
-    if (latest?.commit !== prior.commit) throw Error('Hub staging release ledger changed during reconciliation; retry from the new pointer');
+    if (latest?.commit !== prior.commit) throw Error('Staging release ledger changed during reconciliation; retry from the new pointer');
     const record = servingBaselineRecord(t, { snapshot:second.snapshot, expectedSha:sha, expectedRollout:rolloutId, previous:prior, previousCommit:prior.commit, authorization, observedAt, health });
     const commit = appendRecord(t, record, prior.commit);
     const written = releaseRecord(t.branch);
