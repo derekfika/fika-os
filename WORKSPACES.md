@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-29T08:40:00.374Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-29T10:42:21.303Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -108,14 +108,17 @@ Snapshot: 2026-10-29T08:40:00.374Z. The local governed registry remains authorit
 | menu-portion-planner-keyboard-scroll | menu-issue-93 | apps/menu-planning, CHANGELOG.md | codex/menu-portion-planner-keyboard-scroll | [#94](https://github.com/derekfika/fika-os/pull/94) | finished | 2026-10-28T06:40:44.057Z |
 | menu-publish-hotfix | codex-menu-p0-111 | apps/menu-planning/lib/menu-publication.ts, apps/menu-planning/tests/publication-authority.test.ts, apps/menu-planning/tests/publication-canonical-lookup.emulator.test.ts | codex/menu-publish-hotfix | [#112](https://github.com/derekfika/fika-os/pull/112) | finished | 2026-10-28T20:02:47.799Z |
 | menu-publish-p0 | codex-menu-p0-111 | tools/incidents/menu-publish-p0, docs/incidents/2026-10-28-menu-publish-111.md | codex/menu-publish-p0 | — | finished | 2026-10-28T20:10:36.178Z |
+| menu-release-provenance | codex-menu-spellcheck-delivery | tools/workflow, docs/deployment/workflow.md | codex/menu-release-provenance | [#130](https://github.com/derekfika/fika-os/pull/130) | active | 2026-10-29T10:20:30.661Z |
 | menu-release-recovery-scoped | codex-menu-release-recovery | tools/workflow, CHANGELOG.md | codex/menu-release-recovery-scoped | [#12](https://github.com/derekfika/fika-os/pull/12) | finished | 2026-10-23T09:40:03.932Z |
 | menu-release-recovery | codex-menu-release-recovery | tools/workflow | codex/menu-release-recovery | — | finished | 2026-10-23T09:22:36.941Z |
 | menu-spellcheck-continue | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-continue | — | finished | 2026-10-28T19:46:22.840Z |
+| menu-spellcheck-delivery | codex-menu-spellcheck-delivery | apps/menu-planning | codex/menu-spellcheck-delivery | [#129](https://github.com/derekfika/fika-os/pull/129) | finished | 2026-10-29T10:42:15.014Z |
 | menu-spellcheck-week-planner | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-week-planner | [#98](https://github.com/derekfika/fika-os/pull/98) | finished | 2026-10-28T09:15:41.758Z |
 | menu-worker-activation | codex-menu-worker-111 | tools/incidents/menu-worker-activation, docs/incidents/2026-10-28-menu-worker-activation.md | codex/menu-worker-activation | — | retired | 2026-10-28T21:06:13.186Z |
 | munich-re-catalogue-minimums | claude-munich-re-onboarding | packages/server-shared/src/hospitality-catalogue-rules.ts, packages/server-shared/src/hospitality-site-minimums.ts, packages/server-shared/src/hospitality-catalogue, apps/integration-hub/lib/hospitality-booking-service.ts, apps/integration-hub/lib/hospitality-price-trust.ts, apps/integration-hub/tests/munich-re-minimums.test.ts, apps/integration-hub/tests/munich-re-onboarding.test.ts, apps/integration-hub/tests/hospitality-brochure-company-mapping.test.ts, docs/architecture/munich-re-hospitality-onboarding.md | codex/munich-re-catalogue-minimums | [#125](https://github.com/derekfika/fika-os/pull/125) | retired | 2026-10-29T07:44:33.894Z |
 | munich-re-mapping | claude-munich-re-onboarding | packages/server-shared/src/hospitality-catalogue-rules.ts, packages/server-shared/src/hospitality-site-minimums.ts, packages/server-shared/src/hospitality-catalogue, packages/server-shared/tests, apps/integration-hub/lib/hospitality-booking-service.ts, apps/integration-hub/lib/hospitality-price-trust.ts, apps/integration-hub/tests/munich-re-minimums.test.ts, docs/architecture/munich-re-hospitality-onboarding.md | codex/munich-re-mapping | — | retired | 2026-10-29T07:39:27.032Z |
 | munich-re-onboarding | claude-munich-re-onboarding | packages/server-shared/src/hospitality-catalogue-rules.ts | codex/munich-re-onboarding | — | retired | 2026-10-29T07:31:22.863Z |
+| munich-re-portal | claude-munich-re-onboarding | apps/hospitality-booking/app/ui/BookingPortal.tsx, apps/hospitality-booking/lib/munich-re-locations.ts, apps/hospitality-booking/tests/munich-re-portal.test.ts, apps/hospitality-booking/tests/mnk-contract.test.ts | codex/munich-re-portal | [#128](https://github.com/derekfika/fika-os/pull/128) | active | 2026-10-29T08:41:13.208Z |
 | pr-backlog-audit | codex-pr-reconciliation | docs/audits/2026-10-28/pr-backlog-reconciliation.md | codex/pr-backlog-audit | [#126](https://github.com/derekfika/fika-os/pull/126) | retired | 2026-10-29T08:26:48.018Z |
 | release-probe-authmod | claude-release-probe | tools/workflow, docs/deployment | codex/release-probe-authmod | [#22](https://github.com/derekfika/fika-os/pull/22) | finished | 2026-10-24T15:02:50.771Z |
 | release-resume-resubmit | claude-ad-hoc | tools/workflow/recovery.mjs, tools/workflow/releases.mjs, tools/workflow/resubmit.test.mjs, docs/deployment/workflow.md | codex/release-resume-resubmit | [#31](https://github.com/derekfika/fika-os/pull/31) | finished | 2026-10-25T13:13:28.932Z |
