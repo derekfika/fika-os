@@ -39,7 +39,7 @@ test("public build-info middleware bypass does not call the access service", asy
   }
 });
 
-test("ordinary rolling-menu APIs still require normal Menu Planning access", async () => {
+test("rolling-menu and spelling dictionary APIs still require normal Menu Planning access", async () => {
   const originalMode = process.env.FIKA_RUNTIME_MODE;
   const originalHub = process.env.FIKA_HUB_BASE_URL;
   const originalFetch = globalThis.fetch;
@@ -48,9 +48,11 @@ test("ordinary rolling-menu APIs still require normal Menu Planning access", asy
   let calledUrl = "";
   globalThis.fetch = (async input => { calledUrl = String(input); return new Response(null, { status: 401 }); }) as typeof fetch;
   try {
-    const response = await middleware(requestFor("/api/rolling-menu"));
-    assert.equal(response.status, 401);
-    assert.equal(calledUrl, "https://hub.example/api/menu-planning/access?mode=admission");
+    for (const pathname of ["/api/rolling-menu", "/api/spellcheck/dictionary?version=en-GB-3.0.0-culinary-1"]) {
+      const response = await middleware(requestFor(pathname));
+      assert.equal(response.status, 401);
+      assert.equal(calledUrl, "https://hub.example/api/menu-planning/access?mode=admission");
+    }
   } finally {
     globalThis.fetch = originalFetch;
     if (originalMode === undefined) delete process.env.FIKA_RUNTIME_MODE;
