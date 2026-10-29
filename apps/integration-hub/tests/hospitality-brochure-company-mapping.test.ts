@@ -50,12 +50,12 @@ const payloadFor = (site: "cfc" | "munich-re", itemId: string, quantity: number,
 } as unknown as MnkBookingPayload);
 
 for (const site of ["cfc", "munich-re"] as const) {
-  test(`${siteLabel[site]}: a governed sandwich mapping prices at the company £9 and applies the company minimum of 8`, () => {
+  test(`${siteLabel[site]}: a governed sandwich mapping prices at the company £9 and applies the site minimum (CFC 8, Munich RE 5 via the contextual override)`, () => {
     const records = [company([brochure(site)])];
     const order = trustedPublicOrder(payloadFor(site, "deli-sandwich-lunch", 8), records, site);
     assert.equal(order.items[0].unitPrice, 9);
     assert.equal(order.netTotal, 72);
-    assert.throws(() => buildMnkCanonicalBooking(payloadFor(site, "deli-sandwich-lunch", 1), records, "2026-10-27T10:00:00.000Z"), /requires at least 8/);
+    assert.throws(() => buildMnkCanonicalBooking(payloadFor(site, "deli-sandwich-lunch", 1), records, "2026-10-27T10:00:00.000Z"), site === "munich-re" ? /requires at least 5/ : /requires at least 8/);
   });
 
   test(`${siteLabel[site]}: the mapped sandwich routes to CPU Sandwiches through the company routing record`, () => {

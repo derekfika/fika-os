@@ -10,3 +10,5 @@ import { localAngelCourtMenuCatalogue } from "./local-angel-court-menu";
 import { localCfcMenuCatalogue } from "./local-cfc-menu";
 import { localMunichReMenuCatalogue } from "./local-munich-re-menu";
 export const hospitalityCatalogues = { mnk: localMnkMenuCatalogue, rcoa: localRcoaMenuCatalogue, "angel-court": localAngelCourtMenuCatalogue, cfc: localCfcMenuCatalogue, "munich-re": localMunichReMenuCatalogue };
+export * from "./munich-re-locations";
+export { munichReFormItems, munichReFormMapping, MUNICH_RE_FORM_UNPRICED, type MunichReMappingClassification } from "./munich-re-form-catalogue";
