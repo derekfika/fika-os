@@ -1,0 +1,17 @@
+{
+  "version": "en-GB-3.0.0-culinary-1",
+  "format": "fika.en-gb-hunspell.v1",
+  "encoding": "gzip",
+  "sha256": "e986b847061d62bcaef2501fdcfce9a0fecc7db558d30b27529339b8fa17ee60",
+  "byteLength": 204736,
+  "uncompressedByteLength": 623363,
+  "culinaryWordCount": 231,
+  "source": {
+    "package": "dictionary-en-gb",
+    "version": "3.0.0",
+    "licence": "(MIT AND BSD)",
+    "origin": "SCOWL (Spell Checker Oriented Word Lists) via wordlist.aspell.net, packaged by wooorm/dictionaries",
+    "licenceFile": "licence text is embedded in the payload and must ship with it"
+  },
+  "updateProcess": "Bump dictionary-en-gb in apps/menu-planning/package.json, re-run this script, then review sha256 and size before upload."
+}
