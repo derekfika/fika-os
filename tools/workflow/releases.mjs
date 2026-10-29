@@ -45,6 +45,18 @@ export function rolloutArguments(plan) {
 }
 export async function releaseHealthProbe(app, backendUri, sourceSha, fetchImpl = fetch, environment) {
   const origin = `https://${String(backendUri).replace(/^https?:\/\//, '').replace(/\/$/, '')}`;
+  if (app === 'hospitality' && environment === 'staging') {
+    const url = `${origin}/`;
+    try {
+      const options = { redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(30000) };
+      const response = await fetchImpl(url, options);
+      if (response.status !== 307 || response.headers?.get?.('location') !== '/workspace') return { ok: false, status: response.status, url, reason: 'unexpected_hospitality_entry_redirect' };
+      const workspace = await fetchImpl(`${origin}/workspace`, { ...options, signal: AbortSignal.timeout(30000) });
+      return { ok: workspace.status === 200, status: workspace.status, url, entryRedirect: '/workspace', ...(workspace.status === 200 ? {} : { reason: 'hospitality_workspace_unavailable' }) };
+    } catch {
+      return { ok: false, status: null, url, reason: 'request_failed' };
+    }
+  }
   if (app === 'logistics' && environment === 'staging') {
     const url = `${origin}/`;
     try {
