@@ -6,12 +6,40 @@
   "backend": "fika-os-staging",
   "region": "europe-west4",
   "branch": "release/staging/hub",
-  "sourceSha": "652f3014088aad4b23eccf8349e7ff485d8a9998",
-  "rollout": "build-2026-10-28-002",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "scopeHash": "e9412eef66f29e75cb2d56dc094d31000b54199e140c3068b2d09461116d22b6",
-  "kind": "abandoned",
+  "sourceSha": "1baed096258b6921cb606ef5e112c9a120765ddc",
+  "scopeHash": "8c6762b6c4ebf4596391c9694ad691bc3b6bfbdece93c3511565da1732eabde9",
+  "inMain": false,
+  "rollback": false,
+  "executing": true,
+  "cosmeticOnly": false,
+  "standard": false,
+  "validation": {
+    "id": 123401230067,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/40859674143/job/123401230067",
+    "sha": "1baed096258b6921cb606ef5e112c9a120765ddc"
+  },
+  "approval": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "app": "hub",
+    "environment": "staging",
+    "sourceSha": "1baed096258b6921cb606ef5e112c9a120765ddc",
+    "action": "deploy",
+    "instruction": "Explicit staging execution",
+    "releaseId": null,
+    "id": "7f8f23f0b6aa32c0ad4e88207bcbc6b3f3133b7467f2293f667ae53a8b79d26e",
+    "explicitExecute": true,
+    "authorisedAt": "2026-10-29T10:49:57.999Z"
+  },
+  "provenance": {
+    "number": 128,
+    "url": "https://github.com/derekfika/fika-os/pull/128",
+    "head": "1baed096258b6921cb606ef5e112c9a120765ddc",
+    "pullRequestRisk": "standard"
+  },
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "0a37e58c-0a61-43cf-85dc-c0d606961cbb",
   "previousGood": {
     "sourceSha": "652f3014088aad4b23eccf8349e7ff485d8a9998",
     "rollout": "build-2026-10-28-002",
@@ -19,32 +47,5 @@
     "percent": 100
   },
   "previousGoodRecord": "89cd68557dfb4864a8814e7d2bc0ea0e5a14808f",
-  "releaseId": "97c8e7e1-79e7-4968-9818-6cf507ecf880",
-  "originalIntent": "b7a7423fc46a8115fa9b4d06bfed568a0526f01d",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-staging--fika-os-dev.europe-west4.hosted.app/"
-  },
-  "recovery": {
-    "resolution": "abandon",
-    "reason": "Verified terminal: build and rollout build-2026-10-29-001 (source f4af81dd, PR 106) FAILED 2026-10-29T06:24Z, no operations in flight, traffic 100% on 652f3014. Clearing the pending intent so the Munich RE PR 128 staging deploy can proceed.",
-    "operator": {
-      "actor": "derekfika",
-      "method": "authenticated-repository-writer",
-      "app": "hub",
-      "environment": "staging",
-      "sourceSha": "f4af81dddf0aa212c15379dddb9e68c598f05ee2",
-      "action": "reconcile:abandon",
-      "instruction": "Verified terminal: build and rollout build-2026-10-29-001 (source f4af81dd, PR 106) FAILED 2026-10-29T06:24Z, no operations in flight, traffic 100% on 652f3014. Clearing the pending intent so the Munich RE PR 128 staging deploy can proceed.",
-      "releaseId": "97c8e7e1-79e7-4968-9818-6cf507ecf880",
-      "id": "726147f1a56050ca23f4944441d7d5650b4a6d3357c92ca8acf82e23a088f263",
-      "explicitExecute": true,
-      "authorisedAt": "2026-10-29T10:49:42.883Z"
-    },
-    "rollout": "build-2026-10-29-001",
-    "evidenceHash": "7f435b92eb808845c80284198a9708a30275a89bd649a5b4847289d9502f7256",
-    "journalHash": "eb1de612a9d17c0dd056d3c1b7dc0f9272b641bd46982a85877c9771caf023ee",
-    "at": "2026-10-29T10:49:46.268Z"
-  }
+  "createdAt": "2026-10-29T10:50:09.857Z"
 }
