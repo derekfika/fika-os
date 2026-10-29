@@ -14,6 +14,9 @@ const config: NextConfig = {
   experimental: { externalDir: true },
   transpilePackages: ["@fika/server-shared"],
   outputFileTracingRoot: appRoot,
+  outputFileTracingIncludes: {
+    "/api/spellcheck/dictionary": ["./dictionary/en-GB-3.0.0-culinary-1.json.gz"],
+  },
   webpack: (webpackConfig, { isServer }) => {
     if (!isServer) {
       webpackConfig.resolve.alias = {
