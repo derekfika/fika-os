@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-29T08:38:45.561Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-29T08:40:00.374Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -40,7 +40,7 @@ Snapshot: 2026-10-29T08:38:45.561Z. The local governed registry remains authorit
 | deploy-dashboard-agent-guidance | codex-deploy-dashboard-guidance | AGENTS.md | codex/deploy-dashboard-agent-guidance | — | finished | 2026-10-24T19:06:00.112Z |
 | deployment-dashboard-changelog | codex-deployment-dashboard-changelog | AGENTS.md, docs/deployment/deployment-dashboard.md, CHANGELOG.md | codex/deployment-dashboard-changelog | — | finished | 2026-10-24T19:32:00.684Z |
 | deployment-dashboard-instructions | codex-deployment-dashboard-instructions | AGENTS.md, docs/deployment/deployment-dashboard.md | codex/deployment-dashboard-instructions | [#35](https://github.com/derekfika/fika-os/pull/35) | finished | 2026-10-24T19:09:31.421Z |
-| dev-operation-recovery | codex-pr-reconciliation | tools/workflow, docs/deployment/workspace-management.md | codex/dev-operation-recovery | [#127](https://github.com/derekfika/fika-os/pull/127) | active | 2026-10-29T08:28:35.290Z |
+| dev-operation-recovery | codex-pr-reconciliation | tools/workflow, docs/deployment/workspace-management.md | codex/dev-operation-recovery | [#127](https://github.com/derekfika/fika-os/pull/127) | retired | 2026-10-29T08:39:58.789Z |
 | developer-workflow-upgrade | luna-workflow-upgrade | tools/workflow, tools/deploy-dashboard, .github, AGENTS.md, docs/deployment, docs/ai/agent-reference.md, LOCAL-WORKSPACE.md, .changes | codex/developer-workflow-upgrade | [#99](https://github.com/derekfika/fika-os/pull/99) | retired | 2026-10-28T08:48:50.371Z |
 | feat-033-design-system-audit | codex-feat-033-design-system | docs/design-system | codex/feat-033-design-system-audit | [#27](https://github.com/derekfika/fika-os/pull/27) | finished | 2026-10-24T12:27:50.923Z |
 | feat-033-visual-showcase-brief | codex-feat-033-visual-showcase-brief | docs/design-system | codex/feat-033-visual-showcase-brief | [#28](https://github.com/derekfika/fika-os/pull/28) | finished | 2026-10-24T12:56:42.648Z |
