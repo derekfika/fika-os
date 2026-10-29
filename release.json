@@ -6,12 +6,40 @@
   "backend": "fika-os-staging",
   "region": "europe-west4",
   "branch": "release/staging/hub",
-  "sourceSha": "652f3014088aad4b23eccf8349e7ff485d8a9998",
-  "rollout": "build-2026-10-28-002",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "scopeHash": "e9412eef66f29e75cb2d56dc094d31000b54199e140c3068b2d09461116d22b6",
-  "kind": "abandoned",
+  "sourceSha": "6fe91d6ca0f199bd6e4898d6231efc559f843275",
+  "scopeHash": "22937b2da09bc2952b6072af9d5c608e99f38b8013c5f0d3c1967e72af633ddb",
+  "inMain": true,
+  "rollback": false,
+  "executing": true,
+  "cosmeticOnly": false,
+  "standard": false,
+  "validation": {
+    "id": 123579652932,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/40910737458/job/123579652932",
+    "sha": "6fe91d6ca0f199bd6e4898d6231efc559f843275"
+  },
+  "approval": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "app": "hub",
+    "environment": "staging",
+    "sourceSha": "6fe91d6ca0f199bd6e4898d6231efc559f843275",
+    "action": "deploy",
+    "instruction": "Owner requested deployment now of the merged Rotations foundation to staging; connected planner integration remains separate and unfinished",
+    "releaseId": null,
+    "id": "101b4bebdec7a6648675ce29d2c4a90598af64340d1cc8b625e4ea0f5fed65b9",
+    "explicitExecute": true,
+    "authorisedAt": "2026-10-29T17:26:15.648Z"
+  },
+  "provenance": {
+    "number": 137,
+    "url": "https://github.com/derekfika/fika-os/pull/137",
+    "head": "fc37d7c65af992f82f13f60a4ae910dafd31dbab",
+    "pullRequestRisk": "standard"
+  },
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "455604f6-3168-45b8-a575-94eb7104ea2c",
   "previousGood": {
     "sourceSha": "652f3014088aad4b23eccf8349e7ff485d8a9998",
     "rollout": "build-2026-10-28-002",
@@ -19,32 +47,5 @@
     "percent": 100
   },
   "previousGoodRecord": "89cd68557dfb4864a8814e7d2bc0ea0e5a14808f",
-  "releaseId": "0a37e58c-0a61-43cf-85dc-c0d606961cbb",
-  "originalIntent": "8dad2ec195352209ffb7b923aa260b5c8b3cfb21",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-staging--fika-os-dev.europe-west4.hosted.app/"
-  },
-  "recovery": {
-    "resolution": "abandon",
-    "reason": "Verified terminal: build and rollout build-2026-10-29-002 (source 1baed096, PR 128) FAILED in Cloud Build on a pre-existing main type error in hospitality-rotations (implicit any 'group'); traffic unchanged on 652f3014.",
-    "operator": {
-      "actor": "derekfika",
-      "method": "authenticated-repository-writer",
-      "app": "hub",
-      "environment": "staging",
-      "sourceSha": "1baed096258b6921cb606ef5e112c9a120765ddc",
-      "action": "reconcile:abandon",
-      "instruction": "Verified terminal: build and rollout build-2026-10-29-002 (source 1baed096, PR 128) FAILED in Cloud Build on a pre-existing main type error in hospitality-rotations (implicit any 'group'); traffic unchanged on 652f3014.",
-      "releaseId": "0a37e58c-0a61-43cf-85dc-c0d606961cbb",
-      "id": "5da0e5ca699e61775bb286d6234f0a55d586eaeb3b37b3583d86bf6e793b006f",
-      "explicitExecute": true,
-      "authorisedAt": "2026-10-29T10:54:26.709Z"
-    },
-    "rollout": "build-2026-10-29-002",
-    "evidenceHash": "356aa18ce6463aa69db94a63057b94e6ec9e403b99a55a1fefdfd4bfa4094a9a",
-    "journalHash": "dbd676fc8bb3e7fda8a7118555377ce00fd4745fbfca7ed2590fbe7e34fdf2a4",
-    "at": "2026-10-29T10:54:30.044Z"
-  }
+  "createdAt": "2026-10-29T17:26:26.041Z"
 }
