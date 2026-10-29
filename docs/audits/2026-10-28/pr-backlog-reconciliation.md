@@ -147,7 +147,7 @@ The application release ledger correctly records the #112 application release; S
 | Issue | Verified source/dependency evidence | Remaining delivery step |
 |---|---|---|
 | #107 | Unchanged #98 spelling/header/theme-day work | Brian's clarified planner/keyboard/ordering/Full Menu acceptance and deployed UAT; no new import or taxonomy assumption |
-| #108 | #20 UI proposal; merged #81 provider-item linking mechanism | Compatible inspector/terminology work; explicit CFC/Munich matched/missing/ambiguous data reconciliation and approved mapping |
+| #108 | #20 UI proposal; merged #81 provider-item linking mechanism; new owner PR #125 proposes Munich form catalogue/classification | Compatible inspector/terminology work; preserve #125 ownership, verify its catalogue evidence and outstanding CFC mapping before any new implementation/data repair |
 | #109 | Production/staging public-link difference reproduced above | Compatible release, clean/device PIN and cross-van/server-guard checks; keep desktop AUTHMOD |
 | #113 | Merged #15 Totals redesign; merged #110 regression | Distinct CPU interface/classification/Run Sheet/tablet acceptance and live verification |
 | #114 | #112 plus owner-confirmed production publish and worker verification | Only the amendment/withdrawal/Logistics criteria noted above |
@@ -155,7 +155,7 @@ The application release ledger correctly records the #112 application release; S
 | #116 | Merged #29 simplified Ad-Hoc workspace | #42 -> #43 safety/checker chain, active staging launcher work, operational lifecycle UAT |
 | #117 | Merged #21; current day-copy, paste preview, cross-week and week-copy controls | Site/cutoff/index/502 and live acceptance; active Delivered-In lease respected |
 | #118 | #123 current-main AUTHMOD rebuild | Deploy/verify that slice; printer/network and visual consistency remain separate work |
-| #119 | Merged #81 mechanism and newly merged #106 consumer foundation; #105 provider | Authorised room directories/manual fields, supplied Munich form, real rotation-owner assignments/UAT and deployment |
+| #119 | Merged #81 mechanism and #106 consumer foundation; #105 provider; new owner PR #125 supplies proposed Munich form/minimum/location model | #125 portal wiring and CPU/Logistics end-to-end checks, supplied form/room evidence, real rotation-owner assignments/UAT and deployment |
 | #120 | #20 retained; source has later mobile improvements | Preserve two van rows/multiple runs, redesign inspector, reproduce specific stale mobile status and verify provenance/device UX |
 | #121 | P0 canonical lookup defect proved all 87 referenced dishes existed; not a migration | Reconcile actual catalogue and staged rehearsal, then fresh approval before destructive live migration |
 | #122 | Historical legacy cutover HOLD evidence | Refresh actual import/trigger/calendar/catalogue/recovery evidence; explicit cutover approval; never disable legacy prematurely |
@@ -171,7 +171,7 @@ These are freshly fetched ledger records. The owner refreshed the existing Cloud
 | Hub | **PENDING** source `f4af81dd`, prior verified `652f3014` | `c8f20b89`, build-2026-10-22-002, SUCCEEDED |
 | Menu | `39f642d1`, build-2026-10-28-002; previousGood #98 `85199dcf` / build-2026-10-28-001 | `39f642d1`, build-2026-10-28-001, SUCCEEDED |
 | CPU | `f9e51942`, build-2026-10-26-001, SUCCEEDED | `29e19f4e`, build-2026-10-23-002, SUCCEEDED |
-| Logistics | `361e07c8`, build-2026-10-28-002, SUCCEEDED; anonymous PIN page HTTP 200 | `5348f500`, build-2026-10-19-001, SUCCEEDED ledger; actual public links HTTP 307 to AUTHMOD |
+| Logistics | Owner-approved `8f0047c7`, build-2026-10-29-001, SUCCEEDED; exact served SHA and desktop AUTHMOD smoke verified; see TLS/UAT limit below | `5348f500`, build-2026-10-19-001, unchanged; actual public links previously reproduced HTTP 307 to AUTHMOD |
 | Hospitality | **PENDING** source `c8f81e72` | `c8f20b89`, build-2026-10-22-001, SUCCEEDED |
 | Delivered-In | `32e25120`, build-2026-10-26-001, SUCCEEDED | `a4339e74` (includes #21), build-2026-10-23-002, SUCCEEDED ledger; scoped menu projections previously verified |
 
@@ -212,3 +212,13 @@ Governed local validation passed all 80 workflow tests, 686 Logistics tests, typ
 5. Preserve #98/#106 owner development and staging checkpoints. Broader #121 Dish Library and #122 legacy cutovers require their own evidence and explicit migration/cutover approval. They do not block code-only reconciliation of unrelated features.
 
 No source integration decision is needed for the safe completed slices; governance permits green merge-commit PR integration. Decisions still needed are scoped deployment instructions and actual operational sender/mapping/room inputs or data-change approval. Active owner leases and the pending Hub/Hospitality releases are coordination constraints, not reasons to overwrite or abandon their work.
+
+Final owner-work refresh: [PR #125](https://github.com/derekfika/fika-os/pull/125), head `24cfb9bae7a06bb59dc53c44ad64b7db0f7b1904`, is open for Munich RE form catalogue, contextual site minimums and location modelling. Its body explicitly leaves portal UI, CPU/Logistics end-to-end and staging/UAT unfinished; Hospitality CI/merge gate fail while other affected app/emulator checks pass. These are branch implementation claims, not production verification. Preserve that provider/shared-package work and its owners; do not create duplicate catalogue/minimum/location work from this report's older queue description. No code, data or merge operation on #125 was performed by reconciliation.
+
+### Owner-approved Logistics staging release and final workspace direction
+
+The owner explicitly approved **Deploy Logistics staging** for #124. The governed deployment pinned `8f0047c7a554669237f4a3fe84642095718af5e5`; Cloud serving verification confirmed `build-2026-10-29-001`, SUCCEEDED at 100%. Original release `82bd4a8d-d42e-48ff-9848-2cd8284c5752` initially held on a TLS/request health failure. The journal was preserved; after the exact governed desktop AUTHMOD probe passed (307 with the required staging Hub redirect), governed reconciliation completed that same terminal rollout. No resubmission or replacement deployment occurred. The appended staging ledger is now a completed deploy record. Rollback remains `361e07c8570e887d3adf3668b69afb45917b46a9`, `build-2026-10-28-002`.
+
+Read-only checks observed Van 1 HEAD HTTP 200 and Van 2 GET HTTP 200 with PIN content. Subsequent Windows/Node requests intermittently failed certificate issuer trust (`SEC_E_UNTRUSTED_ROOT` / `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`), preventing a reliable full anonymous-session/device acceptance pass. Certificate verification was never bypassed. The successful source/desktop smoke is recorded separately from this unresolved client/network observation. No PIN was entered or changed and no operational fixture writes were made. #109/#120 remain open for trusted-device/PIN, cross-van and operational UAT, followed by separately approved production release. Production remains unchanged.
+
+The owner then explicitly requested `workspace complete hospitality-rotations-dashboard-ui`. That lease belonged to `codex-hospitality-rotations-ui`, not Sol. Governed completion with preservation released it and retired the checkout at `dc14cb6db378a3e5b662bce4533cf1d540fbef75`; branch, verified Git bundle, recovery evidence and generated archive were retained. Workspace-status snapshot published as `d925500866e45bc767f46a9f2df5005782dfb5aa`. No Hospitality source, release or data was changed by that administrative completion. Its formerly active app scope is now free; the separate Hub build-repair lease remains owned work.
