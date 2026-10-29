@@ -6,40 +6,12 @@
   "backend": "fika-os-staging",
   "region": "europe-west4",
   "branch": "release/staging/hub",
-  "sourceSha": "f4af81dddf0aa212c15379dddb9e68c598f05ee2",
-  "scopeHash": "a85debf45302e547e8a87ca35b4e11c48f83f983924b7ca7853eb887eedcb19e",
-  "inMain": true,
-  "rollback": false,
-  "executing": true,
-  "cosmeticOnly": false,
-  "standard": false,
-  "validation": {
-    "id": 123121806096,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/40774781073/job/123121806096",
-    "sha": "f4af81dddf0aa212c15379dddb9e68c598f05ee2"
-  },
-  "approval": {
-    "actor": "derekfika",
-    "method": "authenticated-repository-writer",
-    "app": "hub",
-    "environment": "staging",
-    "sourceSha": "f4af81dddf0aa212c15379dddb9e68c598f05ee2",
-    "action": "deploy",
-    "instruction": "Explicit staging execution",
-    "releaseId": null,
-    "id": "326491d1f0aaca2cc8fad3b15fc0aa8c9677e53226b2e1cdd9348f2b6a483003",
-    "explicitExecute": true,
-    "authorisedAt": "2026-10-29T06:21:14.400Z"
-  },
-  "provenance": {
-    "number": 106,
-    "url": "https://github.com/derekfika/fika-os/pull/106",
-    "head": "9750c74c740d598953c23abefdac73a20b1fb6f5",
-    "pullRequestRisk": "standard"
-  },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "97c8e7e1-79e7-4968-9818-6cf507ecf880",
+  "sourceSha": "652f3014088aad4b23eccf8349e7ff485d8a9998",
+  "rollout": "build-2026-10-28-002",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "scopeHash": "e9412eef66f29e75cb2d56dc094d31000b54199e140c3068b2d09461116d22b6",
+  "kind": "abandoned",
   "previousGood": {
     "sourceSha": "652f3014088aad4b23eccf8349e7ff485d8a9998",
     "rollout": "build-2026-10-28-002",
@@ -47,5 +19,32 @@
     "percent": 100
   },
   "previousGoodRecord": "89cd68557dfb4864a8814e7d2bc0ea0e5a14808f",
-  "createdAt": "2026-10-29T06:21:21.055Z"
+  "releaseId": "97c8e7e1-79e7-4968-9818-6cf507ecf880",
+  "originalIntent": "b7a7423fc46a8115fa9b4d06bfed568a0526f01d",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-os-staging--fika-os-dev.europe-west4.hosted.app/"
+  },
+  "recovery": {
+    "resolution": "abandon",
+    "reason": "Verified terminal: build and rollout build-2026-10-29-001 (source f4af81dd, PR 106) FAILED 2026-10-29T06:24Z, no operations in flight, traffic 100% on 652f3014. Clearing the pending intent so the Munich RE PR 128 staging deploy can proceed.",
+    "operator": {
+      "actor": "derekfika",
+      "method": "authenticated-repository-writer",
+      "app": "hub",
+      "environment": "staging",
+      "sourceSha": "f4af81dddf0aa212c15379dddb9e68c598f05ee2",
+      "action": "reconcile:abandon",
+      "instruction": "Verified terminal: build and rollout build-2026-10-29-001 (source f4af81dd, PR 106) FAILED 2026-10-29T06:24Z, no operations in flight, traffic 100% on 652f3014. Clearing the pending intent so the Munich RE PR 128 staging deploy can proceed.",
+      "releaseId": "97c8e7e1-79e7-4968-9818-6cf507ecf880",
+      "id": "726147f1a56050ca23f4944441d7d5650b4a6d3357c92ca8acf82e23a088f263",
+      "explicitExecute": true,
+      "authorisedAt": "2026-10-29T10:49:42.883Z"
+    },
+    "rollout": "build-2026-10-29-001",
+    "evidenceHash": "7f435b92eb808845c80284198a9708a30275a89bd649a5b4847289d9502f7256",
+    "journalHash": "eb1de612a9d17c0dd056d3c1b7dc0f9272b641bd46982a85877c9771caf023ee",
+    "at": "2026-10-29T10:49:46.268Z"
+  }
 }
