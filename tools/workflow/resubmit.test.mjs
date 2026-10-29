@@ -68,6 +68,32 @@ function harness(overrides) {
   return { f, io, submits, get journal() { return journal; }, set gate(value) { claimGate = value; } };
 }
 
+test('intent push readback failure recovers once with external proof and no invented submission timestamps', async () => {
+ const h=harness({journal:{state:'pending',submissionStartedAt:undefined,submissionFinishedAt:undefined,submissionFailure:undefined}});
+ h.f.intent.createdAt=h.journal.createdAt;
+ const {attempt}=await resubmitNeverSubmitted({intent:h.f.intent,journal:h.journal},h.io);
+ assert.equal(attempt.n,2);assert.equal(h.submits.length,1);
+ assert.deepEqual(h.journal.submissionAttempts[0],{n:1,phase:'not-started-before-intent-readback'});
+ await assert.rejects(resubmitNeverSubmitted({intent:h.f.intent,journal:h.journal},h.io),/already recorded|may have reached Firebase/);
+});
+
+test('pre-submission gap preserves quiet period, journal binding and all independent Firebase proof', () => {
+ const f=ready({journal:{state:'pending',submissionStartedAt:undefined,submissionFinishedAt:undefined,submissionFailure:undefined}});
+ f.intent.createdAt=f.journal.createdAt;
+ assert.equal(assertNeverSubmitted(f.args)[0].phase,'not-started-before-intent-readback');
+ assert.throws(()=>assertNeverSubmitted({...f.args,now:INTENT_AT+60_000}),/Quiet period/);
+ for(const journal of [{...f.journal,intentCommit:'a'.repeat(40)},{...f.journal,submissionStartedAt:'2026-10-24T14:33:15Z'},{...f.journal,state:'completed'},{...f.journal,createdAt:'2026-10-24T14:33:11Z'}]) {
+  assert.throws(()=>assertNeverSubmitted({...f.args,journal}),/outcome is unknown/);
+ }
+ assert.throws(()=>assertNeverSubmitted({...f.args,audit:{readable:false,events:[]}}),/could not be read/);
+ assert.throws(()=>assertNeverSubmitted({...f.args,audit:{readable:true,events:[{method:'CreateRollout'}]}}),/App Hosting create/);
+ const changed={...f.snapshot,operations:[{name:'active'}]};
+ assert.throws(()=>assertNeverSubmitted({...f.args,first:changed,second:structuredClone(changed)}),/in flight/);
+ const newBuild={...f.snapshot,builds:[...f.snapshot.builds,{name:'new',createTime:'2026-10-24T14:34:00Z'}]};
+ assert.throws(()=>assertNeverSubmitted({...f.args,first:newBuild,second:structuredClone(newBuild)}),/may have reached Firebase/);
+ assert.throws(()=>assertNeverSubmitted({...f.args,second:{...f.snapshot,builds:[]}}),/changed between snapshots/);
+});
+
 test('resume resubmits exactly once for the same intent, durably recording the attempt before and after', async () => {
   const h = harness();
   const { attempt } = await resubmitNeverSubmitted({ intent: h.f.intent, journal: h.journal }, h.io);
