@@ -7,39 +7,11 @@
   "region": "europe-west4",
   "branch": "release/staging/hospitality",
   "sourceSha": "c8f81e72550ff346a4f73eb79a2d0dd931174324",
+  "rollout": "build-2026-10-26-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
   "scopeHash": "05ee16926891db88c66efc06e1ac42940a84acebf4d1aa277574c60e5856f2de",
-  "inMain": true,
-  "rollback": false,
-  "executing": true,
-  "cosmeticOnly": false,
-  "standard": false,
-  "validation": {
-    "id": 121760648852,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/40376008739/job/121760648852",
-    "sha": "c8f81e72550ff346a4f73eb79a2d0dd931174324"
-  },
-  "approval": {
-    "actor": "derekfika",
-    "method": "authenticated-repository-writer",
-    "app": "hospitality",
-    "environment": "staging",
-    "sourceSha": "c8f81e72550ff346a4f73eb79a2d0dd931174324",
-    "action": "deploy",
-    "instruction": "Explicit staging execution",
-    "releaseId": null,
-    "id": "c8639ae6171760c0f95e550bdf0eb7f489681a91eb61fd5b5cd5fe08247b3f97",
-    "explicitExecute": true,
-    "authorisedAt": "2026-10-26T18:34:44.159Z"
-  },
-  "provenance": {
-    "number": 65,
-    "url": "https://github.com/derekfika/fika-os/pull/65",
-    "head": "0e9ad9024ca98d5d9707544db2d68b92933dc2b6",
-    "pullRequestRisk": "standard"
-  },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "e107a933-aa0b-4020-8a45-9e55c7b1b8ae",
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "c8f20b897306b152cfdeb99f4d6476f3f21d47a7",
     "rollout": "build-2026-10-22-004",
@@ -47,5 +19,33 @@
     "percent": 100
   },
   "previousGoodRecord": "1452b8bea3166927ea6acde569af2165d4661950",
-  "createdAt": "2026-10-26T18:34:52.875Z"
+  "releaseId": "e107a933-aa0b-4020-8a45-9e55c7b1b8ae",
+  "originalIntent": "0f8eb464daa5f39f67a511b11f805413000a1712",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-hospitality-staging--fika-os-dev.europe-west4.hosted.app/",
+    "entryRedirect": "/workspace"
+  },
+  "recovery": {
+    "resolution": "complete",
+    "reason": "Owner requested Rotations staging delivery; verify and complete the prior healthy Hospitality release with the exact staging entry health probe from PR 134",
+    "operator": {
+      "actor": "derekfika",
+      "method": "authenticated-repository-writer",
+      "app": "hospitality",
+      "environment": "staging",
+      "sourceSha": "c8f81e72550ff346a4f73eb79a2d0dd931174324",
+      "action": "reconcile:complete",
+      "instruction": "Owner requested Rotations staging delivery; verify and complete the prior healthy Hospitality release with the exact staging entry health probe from PR 134",
+      "releaseId": "e107a933-aa0b-4020-8a45-9e55c7b1b8ae",
+      "id": "a5c05f08a5e4c18eaec72afcdb81869a2b5dda17dc0c57059cc967cc45bfee7b",
+      "explicitExecute": true,
+      "authorisedAt": "2026-10-29T15:53:42.004Z"
+    },
+    "rollout": "build-2026-10-26-001",
+    "evidenceHash": "752824b7e3b4a24154beeaeed46519aa219d3ecae3bf643b11ffd1642c5cf29e",
+    "journalHash": "d04edf5ef496e6835819b19c6e4533598706ca6b1f8b609cb95bd419914067ef",
+    "at": "2026-10-29T15:53:45.159Z"
+  }
 }
