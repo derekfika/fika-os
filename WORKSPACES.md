@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-29T17:53:06.586Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-29T18:01:09.390Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -125,7 +125,7 @@ Snapshot: 2026-10-29T17:53:06.586Z. The local governed registry remains authorit
 | munich-re-onboarding | claude-munich-re-onboarding | packages/server-shared/src/hospitality-catalogue-rules.ts | codex/munich-re-onboarding | — | retired | 2026-10-29T07:31:22.863Z |
 | munich-re-portal | claude-munich-re-onboarding | apps/hospitality-booking/app/ui/BookingPortal.tsx, apps/hospitality-booking/lib/munich-re-locations.ts, apps/hospitality-booking/tests/munich-re-portal.test.ts, apps/hospitality-booking/tests/mnk-contract.test.ts | codex/munich-re-portal | [#128](https://github.com/derekfika/fika-os/pull/128) | active | 2026-10-29T08:41:13.208Z |
 | pr-backlog-audit | codex-pr-reconciliation | docs/audits/2026-10-28/pr-backlog-reconciliation.md | codex/pr-backlog-audit | [#126](https://github.com/derekfika/fika-os/pull/126) | retired | 2026-10-29T08:26:48.018Z |
-| release-audit-windows-read | codex-rotations-foundation-release | tools/workflow/releases.mjs, tools/workflow/audit.mjs, tools/workflow/audit.test.mjs | codex/release-audit-windows-read | [#143](https://github.com/derekfika/fika-os/pull/143) | active | 2026-10-29T17:41:01.295Z |
+| release-audit-windows-read | codex-rotations-foundation-release | tools/workflow/releases.mjs, tools/workflow/audit.mjs, tools/workflow/audit.test.mjs | codex/release-audit-windows-read | [#143](https://github.com/derekfika/fika-os/pull/143) | retired | 2026-10-29T18:00:56.877Z |
 | release-intent-before-submit-recovery | codex-rotations-foundation-release | tools/workflow/recovery.mjs, tools/workflow/resubmit.test.mjs, docs/deployment/release-intent-before-submit-recovery.md | codex/release-intent-before-submit-recovery | [#141](https://github.com/derekfika/fika-os/pull/141) | retired | 2026-10-29T17:53:01.333Z |
 | release-probe-authmod | claude-release-probe | tools/workflow, docs/deployment | codex/release-probe-authmod | [#22](https://github.com/derekfika/fika-os/pull/22) | finished | 2026-10-24T15:02:50.771Z |
 | release-resume-resubmit | claude-ad-hoc | tools/workflow/recovery.mjs, tools/workflow/releases.mjs, tools/workflow/resubmit.test.mjs, docs/deployment/workflow.md | codex/release-resume-resubmit | [#31](https://github.com/derekfika/fika-os/pull/31) | finished | 2026-10-25T13:13:28.932Z |
