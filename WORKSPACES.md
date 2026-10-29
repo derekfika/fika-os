@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-29T08:26:49.637Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-29T08:38:45.561Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -40,6 +40,7 @@ Snapshot: 2026-10-29T08:26:49.637Z. The local governed registry remains authorit
 | deploy-dashboard-agent-guidance | codex-deploy-dashboard-guidance | AGENTS.md | codex/deploy-dashboard-agent-guidance | — | finished | 2026-10-24T19:06:00.112Z |
 | deployment-dashboard-changelog | codex-deployment-dashboard-changelog | AGENTS.md, docs/deployment/deployment-dashboard.md, CHANGELOG.md | codex/deployment-dashboard-changelog | — | finished | 2026-10-24T19:32:00.684Z |
 | deployment-dashboard-instructions | codex-deployment-dashboard-instructions | AGENTS.md, docs/deployment/deployment-dashboard.md | codex/deployment-dashboard-instructions | [#35](https://github.com/derekfika/fika-os/pull/35) | finished | 2026-10-24T19:09:31.421Z |
+| dev-operation-recovery | codex-pr-reconciliation | tools/workflow, docs/deployment/workspace-management.md | codex/dev-operation-recovery | [#127](https://github.com/derekfika/fika-os/pull/127) | active | 2026-10-29T08:28:35.290Z |
 | developer-workflow-upgrade | luna-workflow-upgrade | tools/workflow, tools/deploy-dashboard, .github, AGENTS.md, docs/deployment, docs/ai/agent-reference.md, LOCAL-WORKSPACE.md, .changes | codex/developer-workflow-upgrade | [#99](https://github.com/derekfika/fika-os/pull/99) | retired | 2026-10-28T08:48:50.371Z |
 | feat-033-design-system-audit | codex-feat-033-design-system | docs/design-system | codex/feat-033-design-system-audit | [#27](https://github.com/derekfika/fika-os/pull/27) | finished | 2026-10-24T12:27:50.923Z |
 | feat-033-visual-showcase-brief | codex-feat-033-visual-showcase-brief | docs/design-system | codex/feat-033-visual-showcase-brief | [#28](https://github.com/derekfika/fika-os/pull/28) | finished | 2026-10-24T12:56:42.648Z |
@@ -94,7 +95,7 @@ Snapshot: 2026-10-29T08:26:49.637Z. The local governed registry remains authorit
 | logistics-stop-list-spacing | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-stop-list-spacing | [#85](https://github.com/derekfika/fika-os/pull/85) | finished | 2026-10-27T15:08:31.895Z |
 | logistics-v3-density | claude-logistics-v3 | apps/logistics | codex/logistics-v3-density | [#20](https://github.com/derekfika/fika-os/pull/20) | finished | 2026-10-23T15:27:01.114Z |
 | logistics-v3-integration | claude-logistics-v3 | apps/logistics | codex/logistics-v3-integration | [#19](https://github.com/derekfika/fika-os/pull/19) | finished | 2026-10-23T14:40:19.934Z |
-| logistics-van-timeline | codex-pr-reconciliation | apps/logistics/app/journey-planner, apps/logistics/tests | codex/logistics-van-timeline | [#124](https://github.com/derekfika/fika-os/pull/124) | active | 2026-10-29T06:35:15.145Z |
+| logistics-van-timeline | codex-pr-reconciliation | apps/logistics/app/journey-planner, apps/logistics/tests | codex/logistics-van-timeline | [#124](https://github.com/derekfika/fika-os/pull/124) | retired | 2026-10-29T08:38:31.289Z |
 | logistics-web-push | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-web-push | [#92](https://github.com/derekfika/fika-os/pull/92) | finished | 2026-10-27T20:01:07.582Z |
 | logistics-withdrawal-uat-fix | uat-20261025-1150 | apps/logistics | codex/logistics-withdrawal-uat-fix | — | finished | 2026-10-25T20:08:46.072Z |
 | logistics-withdrawal-uat-iss010 | uat-20261025-1150 | apps/logistics, CHANGELOG.md | codex/logistics-withdrawal-uat-iss010 | [#57](https://github.com/derekfika/fika-os/pull/57) | finished | 2026-10-25T22:58:46.128Z |
