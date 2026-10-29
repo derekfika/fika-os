@@ -5,6 +5,7 @@ import { APPS, REPO, MAIN_CHECK, target, exactSha, assertClean, validateRecord, 
 import { git, command, ancestor, ref, ghApi, scopeHash, asyncLock, save, stateDir, jsonFile, serving, cloud, backendPath } from './runtime.mjs';
 import { assertHostedContext } from './hosted.mjs';
 import { recoverySnapshot, reconcileIntent, resubmitNeverSubmitted, submissionAttempts, describeSubmissionEvidence } from './recovery.mjs';
+import { readCreateAuditEvents } from './audit.mjs';
 
 export function releaseRecord(branch) {
   const sha = ref(`refs/remotes/origin/${branch}`);
@@ -252,6 +253,7 @@ export function firebaseAuthPreflight(t, run = command) {
 }
 /** Cloud Audit Log evidence of App Hosting create calls for this backend since a time. Unreadable logs are reported, never assumed empty. */
 export function auditCreateEvents(t, sinceMs, run = command) {
+  if (process.platform === 'win32' && run === command) return readCreateAuditEvents(t, sinceMs);
   try {
     const filter = `protoPayload.serviceName="firebaseapphosting.googleapis.com" AND protoPayload.methodName=~"(CreateRollout|CreateBuild)" AND timestamp>="${new Date(sinceMs).toISOString()}"`;
     const rows = JSON.parse(run('gcloud', ['logging', 'read', filter, '--project', t.project, '--limit', '50', '--format', 'json']) || '[]');
