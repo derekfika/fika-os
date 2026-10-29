@@ -101,6 +101,21 @@ test("emulator: app-access HTTP save/revoke commits atomically, fences caches an
   assert.equal((await saved.json()).warning, undefined);
   assert.equal((await getAuthmodAccessReadPackage(id)).appAssignments[0].status, "active");
 
+  const refreshFailure = new FirestoreAuthModRepository(`refresh-failure:${id}`, async () => { throw Error("synthetic package outage"); });
+  refreshFailure.listApplications = async () => { throw Error("synthetic reference-package outage"); };
+  const savedWithoutRefresh = await invoke({ ...command, enabled: false }, refreshFailure);
+  assert.equal(savedWithoutRefresh.status, 200);
+  const withoutRefresh = await savedWithoutRefresh.json();
+  assert.equal(withoutRefresh.committed, true);
+  assert.equal(withoutRefresh.account, undefined);
+  assert.match(withoutRefresh.warning, /saved.*Do not repeat/);
+  assert.equal((await repository.listAppAssignments(id))[0].status, "revoked");
+  const successfulRefreshFailure = new FirestoreAuthModRepository(`refresh-only:${id}`);
+  successfulRefreshFailure.listApplications = refreshFailure.listApplications;
+  const savedWithOnlyRefreshFailure = await invoke(command, successfulRefreshFailure);
+  assert.equal(savedWithOnlyRefreshFailure.status, 200);
+  assert.match((await savedWithOnlyRefreshFailure.json()).warning, /saved.*account display.*Do not repeat/);
+
   await db.collection("authmodIdentities").doc(id).update({ status: "inactive" });
   const inactive = await invoke({ ...command, enabled: false }, working);
   assert.equal(inactive.status, 200);

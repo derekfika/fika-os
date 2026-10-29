@@ -39,6 +39,14 @@ export async function handleAccountAction(request: NextRequest, { params }: { pa
     else if (command.action === "authority-revoke") await revokeAuthority(context.repository, { grantId: command.grantId, actor: context.principal, reason });
     else if (command.action === "delegation") await createDelegation(context.repository, { delegatorId: command.delegatorId, delegateId: id, sourceGrantId: command.sourceGrantId, action: command.authorityAction, scope: command.scope, effectiveFrom: command.effectiveFrom, effectiveTo: command.effectiveTo, actor: context.principal, reason });
     });
-    return NextResponse.json({ account: await buildAuthmodAccount(context.repository, id), ...(warning ? { committed: true, warning } : {}) }, { headers: { "Cache-Control": "no-store" } });
+    // The command has completed (or explicitly reported its committed write).
+    // A subsequent read-model outage must not turn that into a failed save.
+    try {
+      return NextResponse.json({ account: await buildAuthmodAccount(context.repository, id), ...(warning ? { committed: true, warning } : {}) }, { headers: { "Cache-Control": "no-store" } });
+    } catch {
+      console.error("AUTHMOD saved account could not be refreshed", { code: "AUTHMOD_ACCOUNT_REFRESH_FAILED", identityId: id });
+      const refreshWarning = "The account display could not be refreshed. Refresh the account when the service is available.";
+      return NextResponse.json({ committed: true, warning: warning ? `${warning} ${refreshWarning}` : "The change was saved, but the account display could not be refreshed. Do not repeat the change. Refresh the account when the service is available." }, { headers: { "Cache-Control": "no-store" } });
+    }
   } catch (error) { return errorResponse(error); }
 }

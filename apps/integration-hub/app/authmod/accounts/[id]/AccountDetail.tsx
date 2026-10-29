@@ -49,7 +49,7 @@ export default function AccountDetail({ id }: { id: string }) {
     if (!command.reason && !command.reasonCode) { const period = command.action === "site" || command.action === "app"; const reasonSelector = period || command.action === "legend"; setPendingCommand(command); setPendingTitle(String(command.action || "Confirm AUTHMOD change").replaceAll("-", " ")); setPendingReasonCode(reasonSelector ? (command.action === "legend" ? "access_correction" : "role_requirement") : "other"); setPendingReasonNote(""); setPendingPeriod(period && command.enabled === true); setPendingAccessType("permanent"); setPendingFrom(""); setPendingTo(""); return; }
     try {
       const result = await readAccountActionResponse<Account>(await fetch(`/api/authmod/accounts/${id}/actions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...command, expectedVersion: account?.identity.version }) }));
-      setAccount(result.account);
+      if (result.account) setAccount(result.account);
       setError("");
       setWarning(result.warning || "");
     } catch (e) { setError((e as Error).message); }

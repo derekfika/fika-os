@@ -27,3 +27,10 @@ test("inactive identities intentionally do not publish an access package", async
 test("successful commands remain warning-free", async () => {
   assert.deepEqual(await runCommittedCommand(() => publishAfterCommit("identity:active", async () => undefined)), {});
 });
+
+test("a committed save survives account-refresh failure without inventing account state", async () => {
+  const result = await readAccountActionResponse(Response.json({ committed: true, warning: "Saved; refresh unavailable. Do not repeat." }));
+  assert.equal(result.account, undefined);
+  assert.equal(result.committed, true);
+  await assert.rejects(readAccountActionResponse(Response.json({})), /no account or committed-change confirmation/);
+});
