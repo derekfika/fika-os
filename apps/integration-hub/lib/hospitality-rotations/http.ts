@@ -3,9 +3,10 @@ import { z } from "zod";
 import { RotationCommand } from "../../../shared/hospitality-rotations";
 import { rotationCaller, type RotationAction } from "./auth";
 import { RotationStore, rotationProblem } from "./store";
+import { getRotationResources } from "./resources";
 const noStore = { headers: { "Cache-Control": "private, no-store" } };
 const RevisionNumber = z.coerce.number().int().positive();
-export function rotationHandlers(store: RotationStore, caller = rotationCaller) {
+export function rotationHandlers(store: RotationStore, caller = rotationCaller, resources = getRotationResources) {
   const respond = async (run: () => Promise<unknown>) => {
     try { return NextResponse.json(await run(), noStore); }
     catch (error) {
@@ -25,7 +26,11 @@ export function rotationHandlers(store: RotationStore, caller = rotationCaller) 
         }
         return { permissions };
       }
-      if (!["published", "manage", "revision"].includes(mode)) throw rotationProblem("Unknown read mode");
+      if (!["published", "manage", "revision", "resources"].includes(mode)) throw rotationProblem("Unknown read mode");
+      if (mode === "resources") {
+        await caller(request, "Manage");
+        return resources();
+      }
       await caller(request, mode === "manage" ? "Manage" : "View");
       if (mode === "manage") {
         const head = await store.head();
