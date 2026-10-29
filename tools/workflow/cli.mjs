@@ -9,7 +9,7 @@ import { bootstrap, deploy, reconcile, reconcileServingBaseline, planRelease, su
 import { hostedTrust, assertHostedContext } from './hosted.mjs';
 import { assertChangelogs, assertChangelogContent } from './changelog.mjs';
 import { governedOperation } from './workspace-state.mjs';
-import { completeWorkspace, previewReleaseAll, releaseAllWorkspaces, previewSweep, sweepWorkspaces, workspaceStatus, publishWorkspaceStatus, recoverValidationOperation } from './workspace-admin.mjs';
+import { completeWorkspace, previewReleaseAll, releaseAllWorkspaces, previewSweep, sweepWorkspaces, workspaceStatus, publishWorkspaceStatus, recoverValidationOperation, recoverDevOperation } from './workspace-admin.mjs';
 import { installWorkspaceFences } from './workspace-fencing.mjs';
 
 export function parse(args) {
@@ -93,6 +93,7 @@ async function main() {
     else if (arg === 'publish') result = publishWorkspaceStatus(options);
     else if (arg === 'install-fences') result = installWorkspaceFences();
     else if (arg === 'recover-validation') result = recoverValidationOperation(name,options);
+    else if (arg === 'recover-dev') result = await recoverDevOperation(name,options);
     else if (arg === 'list') result = workspaceRecords();
     else throw Error('workspace create|check|reconcile|finish|retire|complete <name> --owner <task>; status|publish|release-all|sweep. Bulk execution requires a fresh preview hash; release-all also requires exact --confirm and --reason.');
   } else if (verb === 'integrate') {

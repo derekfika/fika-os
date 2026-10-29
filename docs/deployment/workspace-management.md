@@ -66,6 +66,15 @@ recorded process is absent, audits recovery and removes its marker under the reg
 lock. It refuses live processes and every release/integration operation; those retain
 their existing recovery procedures.
 
+For an exited dev process, an administrator may run `fika workspace recover-dev
+<operation-id> --reason "<verified shutdown evidence>"` from the canonical checkout.
+It requires the matching workspace lease, an absent recorded process and all allocated
+workspace ports to be available, preventing recovery over an orphan dev listener.
+It preserves the original operation in an audit event before removing only that marker
+under the registry lock. It does not release the lease: use normal `workspace complete`
+after recovery. Live processes, integration and releases remain protected. No manual
+marker deletion, process termination or release-journal changes are performed.
+
 ## Fencing and supported tooling
 
 After upgrading the canonical checkout, run `fika workspace install-fences`. It preserves

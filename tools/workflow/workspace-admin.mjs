@@ -1,6 +1,7 @@
 import path from 'node:path';
+import { createServer } from 'node:net';
 import { existsSync, readdirSync, readFileSync, lstatSync, unlinkSync } from 'node:fs';
-import { git, command, common, root, stateDir, jsonFile, save, lock, ancestor, ref, ghApi } from './runtime.mjs';
+import { git, command, common, root, stateDir, jsonFile, save, lock, asyncLock, ancestor, ref, ghApi } from './runtime.mjs';
 import { REPO, digest, safeScope } from './policy.mjs';
 import { workspaceRecords, worktrees, checkWorkspace, finishWorkspace, retireWorkspace, retireWorkspaceUnderLock } from './workspaces.mjs';
 import { leaseIdentity, registryFingerprint } from './workspace-state.mjs';
@@ -17,6 +18,35 @@ export function recoverValidationOperation(id, options, { authorize=repositoryAd
     if(op.id!==id||op.kind!=='validate'||!Number.isInteger(op.pid)||processAlive(op.pid))throw Error('Only a confirmed exited validation process may be recovered; releases and live processes remain protected');
     const event={schema:'fika.workspace-operation-recovery.v1',at:now(),actor,reason:options.reason,operation:op};
     save(path.join(stateDir(),'workspace-audit',`validation-recovery-${id}.json`),event);unlinkSync(file);return event;
+  });
+}
+
+export async function assertDevPortsIdle(ports) {
+  if (!ports.length || ports.some(port => !Number.isInteger(port) || port < 1 || port > 65535)) throw Error('Workspace dev ports are missing or invalid');
+  for (const port of new Set(ports)) await new Promise((resolve, reject) => {
+    const server = createServer(socket => socket.destroy());
+    server.once('error', error => reject(Error(`Workspace dev port ${port} is unavailable (${error.code})`)));
+    server.listen({ port, exclusive: true }, () => server.close(error => error ? reject(error) : resolve()));
+  });
+}
+
+/** A dead dev parent can leave an orphan listener; both must be absent before recovery. */
+export async function recoverDevOperation(id, options, { authorize=repositoryAdministrator, processAlive=pid=>{try{process.kill(pid,0);return true;}catch(error){return error.code!=='ESRCH';}}, portsIdle=assertDevPortsIdle }={}) {
+  const actor = administrator(authorize);
+  if (!/^[a-f0-9-]{36}$/.test(id || '') || !options.reason?.trim()) throw Error('A dev operation id and explicit recovery reason are required');
+  return asyncLock('workspaces', async () => {
+    const file = path.join(stateDir(), 'workspace-operations', `${id}.json`);
+    const op = jsonFile(file);
+    if (op.id !== id || op.kind !== 'dev' || !Number.isInteger(op.pid) || op.pid < 1 || processAlive(op.pid)) throw Error('Only a confirmed exited dev process may be recovered; releases, integration and live processes remain protected');
+    const record = workspaceRecords().find(record => record.name === op.name);
+    if (!record || record.owner !== op.owner || leaseIdentity(record) !== op.leaseId) throw Error('Dev operation does not match the recorded workspace lease');
+    const ports = Object.values(record.ports || {});
+    await portsIdle(ports);
+    if (processAlive(op.pid)) throw Error('Dev process is live; preserve its operation marker');
+    const event = { schema: 'fika.workspace-operation-recovery.v1', at: now(), actor, reason: options.reason, operation: op, verifiedIdlePorts: ports };
+    save(path.join(stateDir(), 'workspace-audit', `dev-recovery-${id}.json`), event);
+    unlinkSync(file);
+    return event;
   });
 }
 
