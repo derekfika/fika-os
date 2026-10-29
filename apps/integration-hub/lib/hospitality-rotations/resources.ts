@@ -1,81 +1,67 @@
-import { getApps, initializeApp } from "firebase-admin/app";
-import { getStorage } from "firebase-admin/storage";
-import { retrieveReadPackage, type ReadPackageManifest, type ReadPackageStore } from "@fika/server-shared/read-package";
+import type { Firestore } from "firebase-admin/firestore";
+import { HOSPITALITY_DISH_CLASSES, ROTATION_PICKER_SCOPES, type DishLink, type DishOperationalScope } from "../../../shared/hospitality-rotations";
 import { db } from "../firebase-admin";
 import { getCataloguePackage } from "../hospitality-catalogue-package";
 import { oplocPackageStore } from "../oploc-read-package";
-import { rotationProblem } from "./store";
+import { rotationProblem, type RotationStore } from "./store";
 
-const dishManifestCollection = "fikaMenuPlanningCatalogueManifests";
-const dishManifestDocument = "catalogue";
-const dishPackageKey = "menu-planning/catalogue";
-const dishDataset = "snapshots/menu-planning/catalogue";
+const DISH_COLLECTION = "fikaMenuPlanningCatalogue";
 
-type DishCatalogueEntry = { id?: unknown; kind?: unknown; name?: unknown; category?: unknown; status?: unknown; reviewStatus?: unknown; item?: { revision?: unknown; [key: string]: unknown } };
-type DishPackage = { entries?: DishCatalogueEntry[] };
-type DishManifest = { sourceRevision?: number; sourceHash?: string; packageState?: { status?: string; sourceRevision?: number; sourceHash?: string; packageHash?: string }; };
-export type RotationResources = { dishes: Array<{ id: string; name: string; category: string; revision: number }>; items: Array<{ id: string; name: string; category: string }> };
+export type RotationDish = { id: string; name: string; category: string; revision: number; scope: DishOperationalScope; hospitalityClass?: string; itemId?: string };
+export type RotationItem = { id: string; name: string; category: string; dishId?: string; classification?: string };
+export type RotationResources = { dishes: RotationDish[]; items: RotationItem[]; classifications: Array<{ id: string; label: string }> };
 
-export function menuPackageMatchesSource(source: DishManifest, manifest: ReadPackageManifest) {
-  const sourceRevision = source.sourceRevision;
-  const sourceHash = source.sourceHash;
-  const state = source.packageState;
-  return Number.isInteger(sourceRevision) && Boolean(sourceHash) && state?.status === "current"
-    && state.sourceRevision === sourceRevision && state.sourceHash === sourceHash && state.packageHash === manifest.contentHash
-    && manifest.dataset === dishDataset && manifest.packageVersion === sourceRevision && manifest.sourceHash === sourceHash
-    && manifest.sourceVersion === `catalogue-r${sourceRevision}-${sourceHash}`;
-}
+type StoredDish = { kind?: unknown; record?: Record<string, unknown> } & Record<string, unknown>;
 
-function menuPlanningPackageStore(): ReadPackageStore {
-  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;
-  const bucketName = process.env.FIKA_SNAPSHOT_BUCKET || process.env.FIREBASE_STORAGE_BUCKET;
-  if (!projectId || !bucketName) throw rotationProblem("Dish Library snapshot storage is not configured", 503);
-  const app = getApps()[0] || initializeApp({ projectId, storageBucket: bucketName });
-  const bucket = getStorage(app).bucket(bucketName);
-  return {
-    async putImmutable() { throw new Error("Dish Library snapshot store is read-only"); },
-    async get(name) {
-      try { const [bytes] = await bucket.file(name).download({ decompress: false }); return bytes; }
-      catch (error) { if ((error as { code?: number }).code === 404) return undefined; throw error; }
-    },
-    async has(name) { const [exists] = await bucket.file(name).exists(); return exists; },
-    async getManifest(key) {
-      try { const [bytes] = await bucket.file(`manifests/${key}.json`).download(); return JSON.parse(bytes.toString("utf8")) as ReadPackageManifest; }
-      catch (error) { if ((error as { code?: number }).code === 404) return undefined; throw error; }
-    },
-    async putManifest() { throw new Error("Dish Library snapshot store is read-only"); },
-  };
-}
-
-export function checkedDishes(pkg: DishPackage): RotationResources["dishes"] {
-  if (!Array.isArray(pkg.entries)) throw rotationProblem("Dish Library catalogue has an invalid shape", 503);
-  return pkg.entries.flatMap(entry => {
-    const id = typeof entry.id === "string" ? entry.id : "";
-    const name = typeof entry.name === "string" ? entry.name.trim() : "";
-    const category = typeof entry.category === "string" ? entry.category : "";
-    const revision = entry.item?.revision;
-    if (entry.kind !== "canonical" || !id || !name || !Number.isInteger(revision) || (entry.status === "archived" || entry.reviewStatus === "archived")) return [];
-    return [{ id, name, category, revision: revision as number }];
+/**
+ * The Rotations picker offers only dishes explicitly scoped to Hospitality Rotations (or shared on purpose).
+ * Menu Planning dishes are never offered, so Brian's Dish Library cannot populate the manager.
+ */
+export function checkedDishes(rows: StoredDish[], links: readonly DishLink[] = []): RotationDish[] {
+  const itemByDish = new Map(links.map(link => [link.dishId, link.itemId]));
+  return rows.flatMap(row => {
+    const record = (row.record || row) as Record<string, unknown>;
+    const id = typeof record.canonicalId === "string" ? record.canonicalId : "";
+    const name = typeof record.displayName === "string" ? record.displayName.trim() : "";
+    const revision = record.revision;
+    const scope = record.operationalScope as DishOperationalScope;
+    if (row.kind !== "dish" || !id || !name || !Number.isInteger(revision) || record.reviewStatus === "archived" || !(ROTATION_PICKER_SCOPES as readonly string[]).includes(scope)) return [];
+    const hospitalityClass = typeof record.hospitalityClass === "string" ? record.hospitalityClass : undefined;
+    const label = HOSPITALITY_DISH_CLASSES.find(value => value.id === hospitalityClass)?.label;
+    return [{ id, name, category: label || "Hospitality dish", revision: revision as number, scope, ...(hospitalityClass ? { hospitalityClass } : {}), ...(itemByDish.has(id) ? { itemId: itemByDish.get(id) } : {}) }];
   }).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 }
 
-/** Reads one current Dish Library manifest and integrity-verifies its immutable package. Never rebuilds on a GET. */
-export async function getRotationResources(store: ReadPackageStore = menuPlanningPackageStore()): Promise<RotationResources> {
-  const snapshot = await db.collection(dishManifestCollection).doc(dishManifestDocument).get();
-  if (!snapshot.exists) throw rotationProblem("Dish Library catalogue is unavailable", 503);
-  const source = snapshot.data() as DishManifest;
-  const sourceRevision = source.sourceRevision;
-  const sourceHash = source.sourceHash;
-  const state = source.packageState;
-  if (!Number.isInteger(sourceRevision) || !sourceHash || state?.status !== "current" || state.sourceRevision !== sourceRevision || state.sourceHash !== sourceHash) {
-    throw rotationProblem("Dish Library catalogue package is stale or unavailable", 503);
+export async function readHospitalityDishes(firestore: Firestore): Promise<StoredDish[]> {
+  try {
+    // Indexed equality/in filter on the explicit scope: never a whole Dish Library read.
+    const snapshot = await firestore.collection(DISH_COLLECTION).where("kind", "==", "dish").where("record.operationalScope", "in", [...ROTATION_PICKER_SCOPES]).get();
+    return snapshot.docs.map(document => document.data() as StoredDish);
+  } catch (error) {
+    console.error("[ROTATIONS_RESOURCES] hospitality dish query failed", error);
+    throw rotationProblem("Hospitality dish records could not be read from the canonical Dish Library", 503);
   }
-  const loaded = await retrieveReadPackage<DishPackage>(store, dishPackageKey);
-  if (!loaded || !menuPackageMatchesSource(source, loaded.manifest)) {
-    throw rotationProblem("Dish Library catalogue package failed freshness validation", 503);
+}
+
+async function readCatalogueItems(): Promise<Array<{ id: string; name: string; category: string }>> {
+  let catalogue;
+  try { catalogue = await getCataloguePackage(oplocPackageStore()); }
+  catch (error) {
+    console.error("[ROTATIONS_RESOURCES] hospitality catalogue package read failed", error);
+    throw rotationProblem("Hospitality catalogue package could not be read", 503);
   }
-  const catalogue = await getCataloguePackage(oplocPackageStore());
   if (!catalogue) throw rotationProblem("Hospitality catalogue package is unavailable", 503);
-  const items = catalogue.value.items.map(item => ({ id: item.id, name: item.name, category: item.category })).filter(item => item.id && item.name).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
-  return { dishes: checkedDishes(loaded.value), items };
+  return catalogue.value.items.map(item => ({ id: item.id, name: item.name, category: item.category })).filter(item => item.id && item.name).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+}
+
+/** Failures name the failed dependency; nothing is masked as an empty successful response. */
+export async function getRotationResources(store: RotationStore, firestore: Firestore = db): Promise<RotationResources> {
+  const links = await store.links();
+  const [rows, items] = await Promise.all([readHospitalityDishes(firestore), readCatalogueItems()]);
+  const linkByItem = new Map(links.map(link => [link.itemId, link]));
+  return {
+    dishes: checkedDishes(rows, links),
+    items: items.map(item => ({ ...item, ...(linkByItem.has(item.id) ? { dishId: linkByItem.get(item.id)!.dishId, classification: linkByItem.get(item.id)!.classification } : {}) })),
+    classifications: HOSPITALITY_DISH_CLASSES.map(value => ({ ...value })),
+  };
 }
