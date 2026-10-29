@@ -26,16 +26,26 @@ export function assignedSeed(): FakeOptions {
   return seed;
 }
 
-export async function boot(page: Page, seed: FakeOptions = v3Seed(), query = "") {
+export async function boot(page: Page, seed: FakeOptions = v3Seed(), query = "", selectFirstRun = true) {
   const issues = trackIssues(page);
   const server = new FakeLogisticsServer(seed);
   await installStatefulApi(page, server, issues);
   await page.goto(`/?serviceDate=${DATE}${query}`);
-  await expect(page.getByRole("region", { name: "Vehicle journey timeline" })).toBeVisible({ timeout: 20_000 });
+  const classic = query.includes("ui=classic");
+  await expect(classic ? page.locator("[data-testid=mounted-react-timeline]") : page.getByRole("region", { name: "Vehicle journey timeline" })).toBeVisible({ timeout: 20_000 });
   await page.evaluate(() => document.fonts.ready);
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(400);
+  // Lane overview is separate from run details; select the fixture's first run
+  // explicitly before the legacy command scenarios exercise those controls.
+  if (!classic && selectFirstRun && server.state.runs[0]) await selectRun(page, server.state.runs[0].id);
   return { server, issues };
+}
+
+export async function selectRun(page: Page, runId: string) {
+  await page.locator(`select[aria-label^="Run on "]:has(option[value="${runId}"])`).selectOption(runId);
+  await expect(page.locator(`[data-run-id="${runId}"]`)).toBeVisible();
+  await settle(page);
 }
 
 export const settle = (page: Page) => page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
@@ -74,5 +84,7 @@ export async function createRunViaDialog(page: Page, server: FakeLogisticsServer
   if (times) { await dialog.getByLabel("Planned CPU departure").fill(times.departure); await dialog.getByLabel("Planned CPU return").fill(times.return); }
   await dialog.getByRole("button", { name: "Create Run" }).click();
   await expect.poll(() => server.state.runs.length).toBe(before + 1);
-  return server.state.runs.at(-1)!;
+  const created = server.state.runs.at(-1)!;
+  await selectRun(page, created.id);
+  return created;
 }

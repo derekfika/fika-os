@@ -100,3 +100,16 @@ button.chip:hover { border-color: var(--jp-primary); }
 .chip[data-active="true"] { border-color: var(--jp-primary); box-shadow: 0 0 0 2px var(--jp-lilac); }
 .chip[data-kind="visit"] { max-width: min(170px, 30cqw); }
 .arrow { margin-left: -2px; }
+
+/* A van owns one time lane. Its runs remain independent bars and command targets. */
+.runSelector{display:grid;gap:4px;min-width:0;color:var(--fika-text-secondary);font-size:12px}
+.runSelector select{width:100%;min-width:0;min-height:44px;padding:6px;border:1px solid var(--fika-border-default);border-radius:8px;background:var(--fika-surface-card);color:var(--fika-text-primary);font:inherit}
+.runSelector select:focus-visible,.unscheduledRuns button:focus-visible{outline:2px solid var(--fika-focus-ring);outline-offset:2px}
+.unscheduledRuns{position:sticky;left:calc(var(--label-w) + 14px);display:flex;flex-wrap:wrap;gap:8px;width:max-content;max-width:calc(100cqw - var(--label-w) - 28px);margin-left:14px;padding-bottom:12px}
+.unscheduledRuns button{min-height:44px;padding:6px 10px;border:1px dashed var(--fika-border-default);border-radius:8px;background:var(--fika-surface-subtle);color:var(--fika-text-primary);cursor:pointer}
+.laneEmpty{position:sticky;left:calc(var(--label-w) + 14px);width:max-content;margin:20px 14px;color:var(--fika-text-secondary)}
+.selectedDetails{margin-top:16px}
+.detailsTrack{background-image:none}
+.bar[data-drop="valid"]{outline:2px solid var(--fika-status-success);outline-offset:2px}
+.bar[data-drop="invalid"]{outline:2px solid var(--fika-status-danger);outline-offset:2px}
+.selectedDetailsTitle{margin:0 0 8px;color:var(--fika-text-primary);font-size:14px;font-weight:600}

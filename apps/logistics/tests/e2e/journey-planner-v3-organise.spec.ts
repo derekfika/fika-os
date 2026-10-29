@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectClean } from "./layout-audit";
-import { assignedSeed, boot, centre, commandsOf, DATE, drag, queueItem, runRow } from "./v3-helpers";
+import { assignedSeed, boot, centre, commandsOf, DATE, drag, queueItem, runRow, selectRun } from "./v3-helpers";
 
 /**
  * Organise Run, retirement, collections and rejected / stale / uncertain mutations through the mounted V3 planner.
@@ -50,6 +50,7 @@ test.describe("Journey Planner V3 · Organise Run and rejected mutations · 1536
     await expect(inspector.getByTestId("order-unsaved")).toHaveCount(0);
     await expect(inspector.getByRole("button", { name: "Save order" })).toBeDisabled();
     await page.reload();
+    await selectRun(page, RUN);
     await expect.poll(() => chipNames(page)).toEqual(["Studio Café", "Market Hall", "Harbour House"]);
     await openRun(page);
     expect(await stopNames(page)).toEqual(["CPU", "Studio Café", "Market Hall", "Harbour House", "CPU"]);
@@ -124,6 +125,7 @@ test.describe("Journey Planner V3 · Organise Run and rejected mutations · 1536
     await runRow(page, RUN).getByRole("button", { name: "Run 1 actions" }).click();
     await expect(page.getByRole("menuitem", { name: "Delete empty run" })).toBeDisabled();
     await page.keyboard.press("Escape");
+    await selectRun(page, EMPTY);
     await runRow(page, EMPTY).getByRole("button", { name: "Run 2 actions" }).click();
     await expect(page.getByRole("menuitem", { name: "Delete empty run" })).toBeEnabled();
     await page.getByRole("menuitem", { name: "Delete empty run" }).click();
@@ -136,12 +138,14 @@ test.describe("Journey Planner V3 · Organise Run and rejected mutations · 1536
     await expect(runRow(page, EMPTY)).toHaveCount(0);
     await page.reload();
     await expect(runRow(page, EMPTY)).toHaveCount(0);
+    await selectRun(page, RUN);
     await expect(runRow(page, RUN)).toBeVisible();
     expectClean(issues, "retire");
   });
 
   test("retirement eligibility is decided by the server: work arriving after the screen loaded blocks the delete and nothing is lost", async ({ page }) => {
     const { server } = await boot(page, assignedSeed());
+    await selectRun(page, EMPTY);
     await runRow(page, EMPTY).getByRole("button", { name: "Run 2 actions" }).click();
     await page.getByRole("menuitem", { name: "Delete empty run" }).click();
     // Another operator places work on the run without the UI knowing (version unchanged).
@@ -171,8 +175,9 @@ test.describe("Journey Planner V3 · Organise Run and rejected mutations · 1536
     await inspector.getByRole("button", { name: "Return Studio Café to the queue" }).click();
     await expect.poll(() => commandsOf(server, "remove-job-from-load").length).toBe(1);
     expect(commandsOf(server, "remove-job-from-load")[0]).toMatchObject({ jobId: "job:2" });
-    await expect.poll(() => chipNames(page)).toEqual(["Market Hall", "Harbour House"]);
     await expect(queueItem(page, "Studio Café")).toBeVisible();
+    await selectRun(page, RUN);
+    await expect.poll(() => chipNames(page)).toEqual(["Market Hall", "Harbour House"]);
     expect(server.state.jobs.find((job) => job.id === "job:2")!.runId).toBeUndefined();
   });
 
@@ -246,7 +251,7 @@ test.describe("Journey Planner V3 · Organise Run and rejected mutations · 1536
   test("queue-to-run drag onto the second run while the first is selected keeps the inspector and selection", async ({ page }) => {
     const { server } = await boot(page, assignedSeed());
     await openRun(page);
-    await drag(page, await centre(queueItem(page, "North Kitchen")), await centre(runRow(page, EMPTY).locator("h3")));
+    await drag(page, await centre(queueItem(page, "North Kitchen")), await centre(page.locator(`[data-vehicle-row="van2"] [data-drop-run-id="${EMPTY}"]`)));
     await expect.poll(() => commandsOf(server, "assign-job-to-load").length).toBe(1);
     expect(commandsOf(server, "assign-job-to-load")[0]).toMatchObject({ jobId: "job:4", targetRunId: EMPTY, scheduledTime: "13:00" });
     await expect(inspectorOf(page)).toBeVisible();

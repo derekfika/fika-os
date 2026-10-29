@@ -33,9 +33,13 @@ test("rows are ordered by planned departure with untimed drafts last and stable 
   assert.equal(model.runs[2].status, "draft");
 });
 
-test("driver workflow links retain the planner's selected service date", () => {
-  const row = plannerDayToViewModel(day(), context).runs[0];
-  assert.equal(row.driverHref, "/mobile?run=run%3A1&serviceDate=2026-10-28");
+test("driver workflow links use the canonical van PIN route and retain run identity and service date", () => {
+  const rows = plannerDayToViewModel(day(), context).runs;
+  assert.equal(rows[0].driverHref, "/mobile/van1?run=run%3A1&serviceDate=2026-10-28");
+  assert.equal(rows[1].driverHref, "/mobile/van2?run=run%3A2&serviceDate=2026-10-28");
+  const missingVehicle = day();
+  missingVehicle.runs[0].vehicleId = undefined;
+  assert.equal(plannerDayToViewModel(missingVehicle, context).runs[0].driverHref, undefined);
 });
 
 test("chips are CPU, then visits in stored order, then CPU; CPU is never a customer stop", () => {
