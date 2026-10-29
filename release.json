@@ -6,46 +6,46 @@
   "backend": "fika-hospitality-staging",
   "region": "europe-west4",
   "branch": "release/staging/hospitality",
-  "sourceSha": "c8f81e72550ff346a4f73eb79a2d0dd931174324",
-  "rollout": "build-2026-10-26-001",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "scopeHash": "05ee16926891db88c66efc06e1ac42940a84acebf4d1aa277574c60e5856f2de",
-  "kind": "deploy",
+  "sourceSha": "6fe91d6ca0f199bd6e4898d6231efc559f843275",
+  "scopeHash": "e076e9b8ef8e7b4179eb8b7df0c428c0b53bba438813be7e6a3543eea2ef2859",
+  "inMain": true,
+  "rollback": false,
+  "executing": true,
+  "cosmeticOnly": false,
+  "standard": false,
+  "validation": {
+    "id": 123579652932,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/40910737458/job/123579652932",
+    "sha": "6fe91d6ca0f199bd6e4898d6231efc559f843275"
+  },
+  "approval": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "app": "hospitality",
+    "environment": "staging",
+    "sourceSha": "6fe91d6ca0f199bd6e4898d6231efc559f843275",
+    "action": "deploy",
+    "instruction": "Owner requested deployment now of merged Rotations foundation to Hospitality staging; unfinished connected planner remains with its active owner",
+    "releaseId": null,
+    "id": "f81f74177aeb85beb1797de50cabc612581dc6f4fd8a7904c24a060c07fa572f",
+    "explicitExecute": true,
+    "authorisedAt": "2026-10-29T17:33:18.853Z"
+  },
+  "provenance": {
+    "number": 137,
+    "url": "https://github.com/derekfika/fika-os/pull/137",
+    "head": "fc37d7c65af992f82f13f60a4ae910dafd31dbab",
+    "pullRequestRisk": "standard"
+  },
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "8173c4c7-e1c0-4769-a9a1-527fe78cce67",
   "previousGood": {
-    "sourceSha": "c8f20b897306b152cfdeb99f4d6476f3f21d47a7",
-    "rollout": "build-2026-10-22-004",
+    "sourceSha": "c8f81e72550ff346a4f73eb79a2d0dd931174324",
+    "rollout": "build-2026-10-26-001",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "1452b8bea3166927ea6acde569af2165d4661950",
-  "releaseId": "e107a933-aa0b-4020-8a45-9e55c7b1b8ae",
-  "originalIntent": "0f8eb464daa5f39f67a511b11f805413000a1712",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-hospitality-staging--fika-os-dev.europe-west4.hosted.app/",
-    "entryRedirect": "/workspace"
-  },
-  "recovery": {
-    "resolution": "complete",
-    "reason": "Owner requested Rotations staging delivery; verify and complete the prior healthy Hospitality release with the exact staging entry health probe from PR 134",
-    "operator": {
-      "actor": "derekfika",
-      "method": "authenticated-repository-writer",
-      "app": "hospitality",
-      "environment": "staging",
-      "sourceSha": "c8f81e72550ff346a4f73eb79a2d0dd931174324",
-      "action": "reconcile:complete",
-      "instruction": "Owner requested Rotations staging delivery; verify and complete the prior healthy Hospitality release with the exact staging entry health probe from PR 134",
-      "releaseId": "e107a933-aa0b-4020-8a45-9e55c7b1b8ae",
-      "id": "a5c05f08a5e4c18eaec72afcdb81869a2b5dda17dc0c57059cc967cc45bfee7b",
-      "explicitExecute": true,
-      "authorisedAt": "2026-10-29T15:53:42.004Z"
-    },
-    "rollout": "build-2026-10-26-001",
-    "evidenceHash": "752824b7e3b4a24154beeaeed46519aa219d3ecae3bf643b11ffd1642c5cf29e",
-    "journalHash": "d04edf5ef496e6835819b19c6e4533598706ca6b1f8b609cb95bd419914067ef",
-    "at": "2026-10-29T15:53:45.159Z"
-  }
+  "previousGoodRecord": "8970ef6f7f0b98d09d6fa4ad0ff905dd8f14caa2",
+  "createdAt": "2026-10-29T17:33:49.142Z"
 }
