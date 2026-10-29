@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-29T07:44:35.281Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-29T08:12:53.482Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -51,7 +51,7 @@ Snapshot: 2026-10-29T07:44:35.281Z. The local governed registry remains authorit
 | hospitality-cfc-mr-tests | hospitality-cfc-mr | apps/integration-hub, CHANGELOG.md | codex/hospitality-cfc-mr-tests | [#81](https://github.com/derekfika/fika-os/pull/81) | finished | 2026-10-27T12:49:31.981Z |
 | hospitality-link-command | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-link-command | — | finished | 2026-10-28T06:40:38.357Z |
 | hospitality-rotations-core | codex-hospitality-rotations-core | apps/shared/hospitality-rotations.ts, apps/integration-hub/lib/hospitality-rotations, apps/integration-hub/app/api/hospitality-rotations, apps/integration-hub/tests/hospitality-rotations.test.ts, apps/integration-hub/tests/hospitality-rotations.emulator.test.ts, docs/architecture/hospitality-rotations.md | codex/hospitality-rotations-core | [#105](https://github.com/derekfika/fika-os/pull/105) | retired | 2026-10-28T14:10:25.430Z |
-| hospitality-rotations-dashboard-ui | codex-hospitality-rotations-ui | apps/hospitality-booking | codex/hospitality-rotations-dashboard-ui | [#106](https://github.com/derekfika/fika-os/pull/106) | active | 2026-10-28T13:33:41.936Z |
+| hospitality-rotations-dashboard-ui | codex-hospitality-rotations-ui | apps/hospitality-booking | codex/hospitality-rotations-dashboard-ui | [#106](https://github.com/derekfika/fika-os/pull/106) | retired | 2026-10-29T08:12:49.922Z |
 | hospitality-rotations-hub-buildfix | codex-hospitality-rotations-buildfix | apps/integration-hub/lib/hospitality-rotations/store.ts | codex/hospitality-rotations-hub-buildfix | — | retired | 2026-10-29T06:30:59.177Z |
 | hospitality-rotations-hub-tsconfig | codex-hospitality-rotations-buildfix | apps/integration-hub/tsconfig.json, apps/integration-hub/lib/hospitality-rotations/store.ts | codex/hospitality-rotations-hub-tsconfig | — | active | 2026-10-29T06:31:12.605Z |
 | hub-ci-recovery | codex-hub-ci-recovery | apps/integration-hub, .github/workflows | codex/hub-ci-recovery | [#17](https://github.com/derekfika/fika-os/pull/17) | finished | 2026-10-23T11:34:33.508Z |
@@ -115,7 +115,7 @@ Snapshot: 2026-10-29T07:44:35.281Z. The local governed registry remains authorit
 | munich-re-catalogue-minimums | claude-munich-re-onboarding | packages/server-shared/src/hospitality-catalogue-rules.ts, packages/server-shared/src/hospitality-site-minimums.ts, packages/server-shared/src/hospitality-catalogue, apps/integration-hub/lib/hospitality-booking-service.ts, apps/integration-hub/lib/hospitality-price-trust.ts, apps/integration-hub/tests/munich-re-minimums.test.ts, apps/integration-hub/tests/munich-re-onboarding.test.ts, apps/integration-hub/tests/hospitality-brochure-company-mapping.test.ts, docs/architecture/munich-re-hospitality-onboarding.md | codex/munich-re-catalogue-minimums | [#125](https://github.com/derekfika/fika-os/pull/125) | retired | 2026-10-29T07:44:33.894Z |
 | munich-re-mapping | claude-munich-re-onboarding | packages/server-shared/src/hospitality-catalogue-rules.ts, packages/server-shared/src/hospitality-site-minimums.ts, packages/server-shared/src/hospitality-catalogue, packages/server-shared/tests, apps/integration-hub/lib/hospitality-booking-service.ts, apps/integration-hub/lib/hospitality-price-trust.ts, apps/integration-hub/tests/munich-re-minimums.test.ts, docs/architecture/munich-re-hospitality-onboarding.md | codex/munich-re-mapping | — | retired | 2026-10-29T07:39:27.032Z |
 | munich-re-onboarding | claude-munich-re-onboarding | packages/server-shared/src/hospitality-catalogue-rules.ts | codex/munich-re-onboarding | — | retired | 2026-10-29T07:31:22.863Z |
-| pr-backlog-audit | codex-pr-reconciliation | docs/audits/2026-10-28/pr-backlog-reconciliation.md | codex/pr-backlog-audit | — | active | 2026-10-28T18:58:43.948Z |
+| pr-backlog-audit | codex-pr-reconciliation | docs/audits/2026-10-28/pr-backlog-reconciliation.md | codex/pr-backlog-audit | [#126](https://github.com/derekfika/fika-os/pull/126) | active | 2026-10-28T18:58:43.948Z |
 | release-probe-authmod | claude-release-probe | tools/workflow, docs/deployment | codex/release-probe-authmod | [#22](https://github.com/derekfika/fika-os/pull/22) | finished | 2026-10-24T15:02:50.771Z |
 | release-resume-resubmit | claude-ad-hoc | tools/workflow/recovery.mjs, tools/workflow/releases.mjs, tools/workflow/resubmit.test.mjs, docs/deployment/workflow.md | codex/release-resume-resubmit | [#31](https://github.com/derekfika/fika-os/pull/31) | finished | 2026-10-25T13:13:28.932Z |
 | standing-orders-pr14-sync | codex-standing-orders-pr14-sync | apps/delivered-in, apps/integration-hub, docs/deployment, CHANGELOG.md | codex/standing-orders-pr14-sync | — | finished | 2026-10-23T12:09:58.445Z |
