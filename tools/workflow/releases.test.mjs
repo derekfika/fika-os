@@ -8,6 +8,25 @@ import { protection } from './cli.mjs';
 import { APPS, target, validateRecord } from './policy.mjs';
 import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe, validateServingBaselineSnapshot, servingBaselineRecord } from './releases.mjs';
 import { backendPath } from './runtime.mjs';
+
+test('Hospitality staging health requires the exact local entry redirect and a healthy workspace', async () => {
+ const backend='https://hospitality.hosted.app'; const calls=[];
+ const ok=await releaseHealthProbe('hospitality',backend,'a'.repeat(40),async(url,options)=>{
+  calls.push({url,options}); return {status:calls.length===1?307:200,headers:new Headers({location:'/workspace'})};
+ },'staging');
+ assert.equal(ok.ok,true); assert.deepEqual(calls.map(c=>c.url),[`${backend}/`,`${backend}/workspace`]);
+ assert.ok(calls.every(c=>c.options.redirect==='manual'&&c.options.cache==='no-store'));
+ for(const location of ['/workspace?x=1','https://external.test/workspace','//external.test/workspace','/','/workspace/']) {
+  let count=0; const result=await releaseHealthProbe('hospitality',backend,'a'.repeat(40),async()=>{count++;return {status:307,headers:new Headers({location})};},'staging');
+  assert.equal(result.ok,false);assert.equal(count,1);
+ }
+ for(const status of [307,401,403,404,500]) {
+  let count=0;const result=await releaseHealthProbe('hospitality',backend,'a'.repeat(40),async()=>({status:++count===1?307:status,headers:new Headers({location:'/workspace'})}),'staging');
+  assert.equal(result.ok,false);
+ }
+ const failed=await releaseHealthProbe('hospitality',backend,'a'.repeat(40),async()=>{throw Error('transport');},'staging');assert.equal(failed.ok,false);
+ const prod=await releaseHealthProbe('hospitality',backend,'a'.repeat(40),async()=>({ok:false,status:307}),'prod');assert.equal(prod.ok,false);
+});
 test('Menu Planner health probe requires the exact uncached build identity endpoint',async()=>{
  const sha='a'.repeat(40);let request;
  const ok=await releaseHealthProbe('menu','https://menu-backend.hosted.app/',sha,async(url,options)=>{request={url,options};return {status:200,json:async()=>({appId:'menu-planning',buildSha:sha})};});
