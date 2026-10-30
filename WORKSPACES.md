@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-30T09:20:59.829Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-30T09:48:54.598Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -34,6 +34,7 @@ Snapshot: 2026-10-30T09:20:59.829Z. The local governed registry remains authorit
 | cpu-pr2-reconciliation | codex-cpu-pr2-reconciliation | apps/cpu-production, docs/deployment/workflow.md, .github/workflows/validate.yml | codex/cpu-pr2-reconciliation | [#5](https://github.com/derekfika/fika-os/pull/5) | finished | 2026-10-22T20:16:51.141Z |
 | cpu-range-reconcile | codex-pr-reconciliation | apps/cpu-production/app/page.tsx, apps/cpu-production/tests/production-totals-range.test.ts, apps/cpu-production/tests/production-totals-input.browser.test.ts | codex/cpu-range-reconcile | [#110](https://github.com/derekfika/fika-os/pull/110) | retired | 2026-10-28T19:40:30.347Z |
 | cpu-release-record | agent-task | CHANGELOG.md | codex/cpu-release-record | [#16](https://github.com/derekfika/fika-os/pull/16) | retired | 2026-10-23T10:31:39.362Z |
+| cpu-site-filters | claude-cpu-site-filters | apps/cpu-production/lib/production-view-filters.ts, apps/cpu-production/lib/production-totals-range.ts, apps/cpu-production/app/page.tsx, apps/cpu-production/app/calendar/page.tsx, apps/cpu-production/app/ui/ProductionSiteFilter.tsx, apps/cpu-production/app/ui/ProductionSiteFilter.module.css, apps/cpu-production/app/ui/ProductionCalendar.tsx, apps/cpu-production/tests/production-view-filters.test.ts | codex/cpu-site-filters | — | active | 2026-10-30T09:28:17.636Z |
 | cpu-staging-500 | codex-cpu-staging-500 | apps/cpu-production, CHANGELOG.md | codex/cpu-staging-500 | — | retired | 2026-10-22T21:25:43.206Z |
 | cpu-totals-custom-range | codex-cpu-totals-custom-range | apps/cpu-production | codex/cpu-totals-custom-range | [#8](https://github.com/derekfika/fika-os/pull/8) | finished | 2026-10-23T08:30:24.517Z |
 | cpu-totals-range | codex-cpu-totals-range | apps/cpu-production, CHANGELOG.md | codex/cpu-totals-range | [#6](https://github.com/derekfika/fika-os/pull/6) | retired | 2026-10-22T21:00:43.866Z |
@@ -100,6 +101,7 @@ Snapshot: 2026-10-30T09:20:59.829Z. The local governed registry remains authorit
 | logistics-source-provenance | logistics-inspector | apps/logistics, CHANGELOG.md | codex/logistics-source-provenance | — | finished | 2026-10-27T13:35:39.610Z |
 | logistics-staging-menu-url | uat-20261025-1150 | apps/logistics/apphosting.yaml, CHANGELOG.md | codex/logistics-staging-menu-url | [#52](https://github.com/derekfika/fika-os/pull/52) | finished | 2026-10-25T18:29:13.049Z |
 | logistics-stop-list-spacing | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-stop-list-spacing | [#85](https://github.com/derekfika/fika-os/pull/85) | finished | 2026-10-27T15:08:31.895Z |
+| logistics-tablet-regression | luna-logistics-tablet | apps/logistics/tests/e2e/journey-planner-v3-van-lanes.spec.ts | codex/logistics-tablet-regression | [#168](https://github.com/derekfika/fika-os/pull/168) | finished | 2026-10-30T09:41:06.461Z |
 | logistics-v3-density | claude-logistics-v3 | apps/logistics | codex/logistics-v3-density | [#20](https://github.com/derekfika/fika-os/pull/20) | finished | 2026-10-23T15:27:01.114Z |
 | logistics-v3-integration | claude-logistics-v3 | apps/logistics | codex/logistics-v3-integration | [#19](https://github.com/derekfika/fika-os/pull/19) | finished | 2026-10-23T14:40:19.934Z |
 | logistics-van-timeline | codex-pr-reconciliation | apps/logistics/app/journey-planner, apps/logistics/tests | codex/logistics-van-timeline | [#124](https://github.com/derekfika/fika-os/pull/124) | retired | 2026-10-29T08:38:31.289Z |
@@ -148,4 +150,5 @@ Snapshot: 2026-10-30T09:20:59.829Z. The local governed registry remains authorit
 | uat-iss010-logistics-guard | uat-20261025-1150 | apps/logistics | codex/uat-iss010-logistics-guard | [#50](https://github.com/derekfika/fika-os/pull/50) | finished | 2026-10-25T18:21:29.989Z |
 | workflow-proof | codex-workflow-modernisation | apps/hospitality-booking/docs | codex/workflow-proof | — | retired | 2026-10-22T17:27:37.642Z |
 | workspace-reconcile-tooling | uat-workspace-reconcile | tools/workflow | codex/workspace-reconcile-tooling | [#76](https://github.com/derekfika/fika-os/pull/76) | finished | 2026-10-28T06:56:42.242Z |
+| workspace-recovery-compat | claude-workspace-recovery-compat | tools/workflow/workspace-lease-recovery.mjs, tools/workflow/workspace-lease-recovery.test.mjs, tools/workflow/workspaces.mjs, docs/deployment/workspace-management.md | codex/workspace-recovery-compat | [#169](https://github.com/derekfika/fika-os/pull/169) | retired | 2026-10-30T09:48:53.322Z |
 | worktree-adoption | codex-worktree-adoption | tools/workflow, docs/deployment/workflow.md | codex/worktree-adoption | — | finished | 2026-10-23T12:48:53.195Z |
