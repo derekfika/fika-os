@@ -135,7 +135,8 @@ test("source contracts: the tag API validates, is idempotent and the dish API pa
   assert.match(route, /result\.outcome === "created" \? 201 : 200/);
   assert.match(route, /expectedVersion/);
   const catalogue = readFileSync(new URL("../app/api/catalogue/route.ts", import.meta.url), "utf8");
-  assert.match(catalogue, /tagIds: body\.tagIds/);
+  assert.match(catalogue, /action === "update-dish-with-tags"/);
+  assert.match(catalogue, /methodSteps: body\.methodSteps, tagIds: body\.tagIds \}, actor\.uid\)/);
   const repository = readFileSync(new URL("../lib/canonical-menu-repository.ts", import.meta.url), "utf8");
   assert.match(repository, /validateDishTagIds\(await readDishTagRegistry\(\), input\.tagIds\)/);
   const store = readFileSync(new URL("../lib/dish-tag-store.ts", import.meta.url), "utf8");

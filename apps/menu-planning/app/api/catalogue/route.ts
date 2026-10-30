@@ -48,6 +48,13 @@ async function handlePost(request: import("next/server").NextRequest) {
     }
     if (action === "update-dish") {
       if (!body.id?.trim() || !body.displayName?.trim() || !body.category) return NextResponse.json({ error: { message: "A dish ID, name and governed category are required." } }, { status: 422 });
+      const item = await updateCanonicalMenuItem(body.id, { displayName: body.displayName, category: body.category, subcategory: body.subcategory, description: body.description, preparationNotes: body.preparationNotes, mayContainNotes: body.mayContainNotes, ingredients: body.ingredients, methodSteps: body.methodSteps }, actor.uid);
+      return NextResponse.json({ item, catalogue: await getCatalogueManifest() });
+    }
+    // Same update, plus the dish's tag IDs in one write: unknown tags reject the whole save (422).
+    if (action === "update-dish-with-tags") {
+      if (!body.id?.trim() || !body.displayName?.trim() || !body.category) return NextResponse.json({ error: { message: "A dish ID, name and governed category are required." } }, { status: 422 });
+      if (!Array.isArray(body.tagIds)) return NextResponse.json({ error: { message: "tagIds must be a list of tag IDs." } }, { status: 422 });
       const item = await updateCanonicalMenuItem(body.id, { displayName: body.displayName, category: body.category, subcategory: body.subcategory, description: body.description, preparationNotes: body.preparationNotes, mayContainNotes: body.mayContainNotes, ingredients: body.ingredients, methodSteps: body.methodSteps, tagIds: body.tagIds }, actor.uid);
       return NextResponse.json({ item, catalogue: await getCatalogueManifest() });
     }
