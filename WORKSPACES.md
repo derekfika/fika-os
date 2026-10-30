@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-30T07:15:11.686Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-30T07:15:27.036Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -111,7 +111,7 @@ Snapshot: 2026-10-30T07:15:11.686Z. The local governed registry remains authorit
 | menu-handoff-recovery | codex-menu-handoff-111 | tools/incidents/menu-handoff-recovery, docs/incidents/2026-10-28-menu-handoff-111.md | codex/menu-handoff-recovery | — | retired | 2026-10-28T20:51:43.152Z |
 | menu-planner-brian-feedback | codex-menu-planner-brian-feedback | apps/menu-planning | codex/menu-planner-brian-feedback | [#25](https://github.com/derekfika/fika-os/pull/25) | finished | 2026-10-23T16:25:33.332Z |
 | menu-planner-responsive | agent-task | apps/menu-planning | codex/menu-planner-responsive | [#7](https://github.com/derekfika/fika-os/pull/7) | retired | 2026-10-23T08:30:33.685Z |
-| menu-planning-hospitality-rotations | claude-rotations-architecture | apps/menu-planning, apps/integration-hub/lib, apps/integration-hub/app, apps/integration-hub/tests/hospitality-rotations.test.ts, apps/integration-hub/tests/hospitality-rotations-route.test.ts, apps/integration-hub/tests/hospitality-rotations.emulator.test.ts, apps/integration-hub/tests/hospitality-rotation-dishes.test.ts, apps/hospitality-booking/app/rotations, apps/hospitality-booking/tests/rotations-ui.test.ts, apps/shared | codex/menu-planning-hospitality-rotations | [#150](https://github.com/derekfika/fika-os/pull/150) | active | 2026-10-29T20:34:55.991Z |
+| menu-planning-hospitality-rotations | claude-rotations-architecture | apps/menu-planning, apps/integration-hub/lib, apps/integration-hub/app, apps/integration-hub/tests/hospitality-rotations.test.ts, apps/integration-hub/tests/hospitality-rotations-route.test.ts, apps/integration-hub/tests/hospitality-rotations.emulator.test.ts, apps/integration-hub/tests/hospitality-rotation-dishes.test.ts, apps/hospitality-booking/app/rotations, apps/hospitality-booking/tests/rotations-ui.test.ts, apps/shared | codex/menu-planning-hospitality-rotations | [#150](https://github.com/derekfika/fika-os/pull/150) | finished | 2026-10-30T07:15:18.506Z |
 | menu-portion-planner-keyboard-scroll | menu-issue-93 | apps/menu-planning, CHANGELOG.md | codex/menu-portion-planner-keyboard-scroll | [#94](https://github.com/derekfika/fika-os/pull/94) | finished | 2026-10-28T06:40:44.057Z |
 | menu-publish-hotfix | codex-menu-p0-111 | apps/menu-planning/lib/menu-publication.ts, apps/menu-planning/tests/publication-authority.test.ts, apps/menu-planning/tests/publication-canonical-lookup.emulator.test.ts | codex/menu-publish-hotfix | [#112](https://github.com/derekfika/fika-os/pull/112) | finished | 2026-10-28T20:02:47.799Z |
 | menu-publish-p0 | codex-menu-p0-111 | tools/incidents/menu-publish-p0, docs/incidents/2026-10-28-menu-publish-111.md | codex/menu-publish-p0 | — | finished | 2026-10-28T20:10:36.178Z |
