@@ -6,7 +6,12 @@ import {
   buildCreatePayload,
   buildUpdatePayload,
   cleanDishName,
+  dishFitsSaladSlot,
+  normaliseSaladSubtype,
   resolveEnter,
+  saladNeedsSlot,
+  saladSubtypeForSlot,
+  SALAD_SLOT_SUBTYPES,
   savedOutcomeIsExisting,
   similarDishWarnings,
   suggestTags,
@@ -146,4 +151,72 @@ test("the modal is a labelled, keyboard-operable dialog with tag search, inline 
   assert.match(css, /min-height: 44px/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /@media \(max-width: 640px\)/);
+});
+
+test("the six salad slots map to the six governed subtypes, in slot order", () => {
+  assert.deepEqual(SALAD_SLOT_SUBTYPES.map((entry) => `${entry.slot}=${entry.subtype}`), ["SALAD 1=Leaf", "SALAD 2=Slaw", "SALAD 3=Starch", "SALAD 4=Veg", "SALAD 5=Grain/Pulse", "SALAD 6=FIKA Seasonal"]);
+  assert.equal(saladSubtypeForSlot("SALAD 1"), "Leaf");
+  assert.equal(saladSubtypeForSlot(" salad 5 "), "Grain/Pulse");
+  assert.equal(saladSubtypeForSlot("SALAD 7"), undefined);
+  assert.equal(saladSubtypeForSlot("SOUP"), undefined);
+  assert.equal(saladSubtypeForSlot("COLD PROTEIN"), undefined);
+});
+
+test("stored subtypes normalise, including spelling variants and the legacy Salad N names", () => {
+  assert.equal(normaliseSaladSubtype("leaf"), "Leaf");
+  assert.equal(normaliseSaladSubtype("Grain / Pulse"), "Grain/Pulse");
+  assert.equal(normaliseSaladSubtype("grain"), "Grain/Pulse");
+  assert.equal(normaliseSaladSubtype("Salad 4"), "Veg");
+  assert.equal(normaliseSaladSubtype("SALAD 6"), "FIKA Seasonal");
+  assert.equal(normaliseSaladSubtype("FIKA seasonal"), "FIKA Seasonal");
+  assert.equal(normaliseSaladSubtype("Cold"), undefined);
+  assert.equal(normaliseSaladSubtype(undefined), undefined);
+  assert.equal(normaliseSaladSubtype(""), undefined);
+});
+
+test("a classified salad appears only in its own salad slot; leaf salads only in the leaf slot", () => {
+  const leaf = { category: "Salad", subcategory: "Leaf" };
+  for (const entry of SALAD_SLOT_SUBTYPES) assert.equal(dishFitsSaladSlot(leaf, entry.slot), entry.subtype === "Leaf", entry.slot);
+  const legacy = { category: "Salad", subcategory: "Salad 2" };
+  assert.equal(dishFitsSaladSlot(legacy, "SALAD 2"), true);
+  assert.equal(dishFitsSaladSlot(legacy, "SALAD 1"), false);
+});
+
+test("unclassified salads stay offered in the five regular salad slots but never in FIKA Seasonal", () => {
+  const unassigned = { category: "Salad" };
+  for (const slot of ["SALAD 1", "SALAD 2", "SALAD 3", "SALAD 4", "SALAD 5"]) assert.equal(dishFitsSaladSlot(unassigned, slot), true, slot);
+  assert.equal(dishFitsSaladSlot(unassigned, "SALAD 6"), false);
+  assert.equal(dishFitsSaladSlot({ category: "Salad", subcategory: "FIKA Seasonal" }, "SALAD 6"), true);
+  assert.equal(dishFitsSaladSlot({ category: "Salad", subcategory: "FIKA Seasonal" }, "SALAD 1"), false);
+  assert.equal(saladNeedsSlot(unassigned), true);
+  assert.equal(saladNeedsSlot({ category: "Salad", subcategory: "Veg" }), false);
+  assert.equal(saladNeedsSlot({ category: "Soup" }), false);
+});
+
+test("non-salad slots are never affected by the salad rule", () => {
+  for (const slot of ["SOUP", "HOT MAIN", "STARCH/SIDE", "DESSERT", "GARNISH"]) {
+    assert.equal(dishFitsSaladSlot({ category: "Soup", subcategory: "Leaf" }, slot), true, slot);
+    assert.equal(dishFitsSaladSlot({ category: "Salad" }, slot), true, slot);
+  }
+});
+
+test("the salad slot is saved only for Salad dishes and other dishes keep their existing subcategory", () => {
+  const create = buildCreatePayload({ name: "Baby leaves", category: "Salad", tagIds: [], subcategory: "leaf" });
+  assert.equal(create.subcategory, "Leaf");
+  assert.equal("subcategory" in buildCreatePayload({ name: "Baby leaves", category: "Salad", tagIds: [] }), false, "unassigned stays unassigned");
+  assert.equal("subcategory" in buildCreatePayload({ name: "Soup", category: "Soup", tagIds: [], subcategory: "Leaf" }), false);
+  const edit = buildUpdatePayload("d", { name: "Baby leaves", category: "Salad", tagIds: [], subcategory: "Veg" }, { subcategory: "Leaf" });
+  assert.equal(edit.subcategory, "Veg");
+  const cleared = buildUpdatePayload("d", { name: "Baby leaves", category: "Salad", tagIds: [], subcategory: "" }, { subcategory: "Leaf" });
+  assert.equal(cleared.subcategory, undefined);
+  const other = buildUpdatePayload("d", { name: "Soup", category: "Soup", tagIds: [] }, { subcategory: "House" });
+  assert.equal(other.subcategory, "House");
+});
+
+test("the planner picker and modal apply and expose the salad slot rule", () => {
+  assert.match(planner, /dishFitsSaladSlot\(dish, slot\)/);
+  assert.match(planner, /needs a salad slot/);
+  assert.match(modal, /Salad slot/);
+  assert.match(modal, /Not assigned yet/);
+  assert.match(modal, /FIKA Seasonal is an explicit choice only/);
 });

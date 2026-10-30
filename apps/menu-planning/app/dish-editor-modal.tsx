@@ -11,6 +11,8 @@ import {
   buildCreatePayload,
   buildUpdatePayload,
   cleanDishName,
+  normaliseSaladSubtype,
+  SALAD_SLOT_SUBTYPES,
   savedOutcomeIsExisting,
   similarDishWarnings,
   suggestTags,
@@ -48,6 +50,9 @@ export default function DishEditorModal({ mode, initialName, initialCategory, di
   const formId = useId();
   const [name, setName] = useState(mode === "create" ? cleanDishName(initialName) : "");
   const [category, setCategory] = useState(initialCategory);
+  // `undefined` = the salad slot was not touched, so an edit leaves whatever is stored exactly as it is.
+  const [subcategory, setSubcategory] = useState<string | undefined>(undefined);
+  const [storedSubtype, setStoredSubtype] = useState("");
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [preserved, setPreserved] = useState<PreservedDishFields>({});
   const [loading, setLoading] = useState(mode === "edit");
@@ -90,6 +95,7 @@ export default function DishEditorModal({ mode, initialName, initialCategory, di
         setName(item.displayName || "");
         setCategory(CANONICAL_DISH_CATEGORIES.includes(item.category) ? item.category : initialCategory);
         setTagIds(Array.isArray(item.tagIds) ? item.tagIds : []);
+        setStoredSubtype(normaliseSaladSubtype(item.subcategory) || "");
         setPreserved({ subcategory: item.subcategory, description: item.description, preparationNotes: item.preparationNotes, mayContainNotes: item.mayContainNotes, ingredients: item.ingredients, methodSteps: item.methodSteps });
         setLoading(false);
       })
@@ -136,7 +142,7 @@ export default function DishEditorModal({ mode, initialName, initialCategory, di
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     if (savingRef.current || loading) return;
-    const state = { name, category, tagIds };
+    const state = { name, category, tagIds, subcategory };
     const problem = validateDishForm(state, CANONICAL_DISH_CATEGORIES);
     if (problem) { setError(problem); return; }
     savingRef.current = true; setSaving(true); setError("");
@@ -185,6 +191,16 @@ export default function DishEditorModal({ mode, initialName, initialCategory, di
                 {CANONICAL_DISH_CATEGORIES.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
               </select>
             </label>
+
+            {category === "Salad" && (
+              <label className="dish-editor-field">Salad slot
+                <select value={subcategory ?? storedSubtype} disabled={loading} onChange={(event) => setSubcategory(event.target.value)}>
+                  <option value="">Not assigned yet</option>
+                  {SALAD_SLOT_SUBTYPES.map((entry) => <option key={entry.slot} value={entry.subtype}>{entry.subtype} ({entry.slot.replace("SALAD", "Salad")})</option>)}
+                </select>
+                <small>The salad slot decides which planner slot offers this dish. FIKA Seasonal is an explicit choice only.</small>
+              </label>
+            )}
 
             <fieldset className="dish-editor-tags">
               <legend>Tags <small>(optional, as many as you like)</small></legend>

@@ -56,7 +56,59 @@ export function suggestTags(tags: readonly DishTag[], name: string, selectedIds:
     .slice(0, limit);
 }
 
-export type DishFormState = { name: string; category: string; tagIds: readonly string[] };
+/**
+ * Salad slots. A salad's subtype (stored in `subcategory`) decides which planner salad slot offers it:
+ * a Leaf salad appears only in SALAD 1, a Slaw only in SALAD 2, and so on. Descriptive tags are not
+ * used for this; they are not reliable proxies. SALAD 6 ("FIKA Seasonal") is an explicit choice only and
+ * is never inferred from a dish name.
+ */
+export const SALAD_SLOT_SUBTYPES = [
+  { slot: "SALAD 1", subtype: "Leaf" },
+  { slot: "SALAD 2", subtype: "Slaw" },
+  { slot: "SALAD 3", subtype: "Starch" },
+  { slot: "SALAD 4", subtype: "Veg" },
+  { slot: "SALAD 5", subtype: "Grain/Pulse" },
+  { slot: "SALAD 6", subtype: "FIKA Seasonal" },
+] as const;
+export type SaladSubtype = typeof SALAD_SLOT_SUBTYPES[number]["subtype"];
+export const SALAD_SUBTYPES = SALAD_SLOT_SUBTYPES.map((entry) => entry.subtype) as readonly SaladSubtype[];
+
+const subtypeKey = (value: string) => value.toLocaleLowerCase("en-GB").replace(/[^a-z0-9]+/g, "");
+
+/** A stored subtype (including the legacy "Salad N" slot names) as one of the six governed subtypes, if it is one. */
+export function normaliseSaladSubtype(value: string | undefined): SaladSubtype | undefined {
+  const key = subtypeKey(value || "");
+  if (!key) return undefined;
+  const direct = SALAD_SUBTYPES.find((subtype) => subtypeKey(subtype) === key);
+  if (direct) return direct;
+  if (key === "grainpulse" || key === "grain" || key === "pulse") return "Grain/Pulse";
+  if (key === "seasonal") return "FIKA Seasonal";
+  const numbered = /^salad([1-6])$/.exec(key);
+  return numbered ? SALAD_SLOT_SUBTYPES[Number(numbered[1]) - 1].subtype : undefined;
+}
+
+export function saladSubtypeForSlot(slot: string): SaladSubtype | undefined {
+  const match = /^SALAD\s*([1-6])$/i.exec(slot.trim());
+  return match ? SALAD_SLOT_SUBTYPES[Number(match[1]) - 1].subtype : undefined;
+}
+
+/**
+ * Whether the picker for `slot` should offer this dish. Outside the six salad slots nothing changes.
+ * In a salad slot a classified salad appears only in its own subtype's slot; a salad with no subtype yet
+ * is still offered (so no dish vanishes before it is classified) and is flagged as needing a slot. A slot
+ * for FIKA Seasonal offers only dishes explicitly classified that way.
+ */
+export function dishFitsSaladSlot(dish: { category?: string; subcategory?: string }, slot: string): boolean {
+  const slotSubtype = saladSubtypeForSlot(slot);
+  if (!slotSubtype) return true;
+  const dishSubtype = normaliseSaladSubtype(dish.subcategory);
+  if (dishSubtype) return dishSubtype === slotSubtype;
+  return slotSubtype !== "FIKA Seasonal";
+}
+
+export const saladNeedsSlot = (dish: { category?: string; subcategory?: string }) => dish.category === "Salad" && !normaliseSaladSubtype(dish.subcategory);
+
+export type DishFormState = { name: string; category: string; tagIds: readonly string[]; subcategory?: string };
 
 export function validateDishForm(state: DishFormState, categories: readonly string[]): string | undefined {
   if (!cleanDishName(state.name)) return "A dish name is required.";
@@ -65,7 +117,8 @@ export function validateDishForm(state: DishFormState, categories: readonly stri
 }
 
 export function buildCreatePayload(state: DishFormState) {
-  return { action: "create-dish", displayName: cleanDishName(state.name), category: state.category, tagIds: [...new Set(state.tagIds)] };
+  const subtype = state.category === "Salad" ? normaliseSaladSubtype(state.subcategory) : undefined;
+  return { action: "create-dish", displayName: cleanDishName(state.name), category: state.category, ...(subtype ? { subcategory: subtype } : {}), tagIds: [...new Set(state.tagIds)] };
 }
 
 /** Everything the existing record already holds that an update would otherwise blank out. */
@@ -88,7 +141,9 @@ export function buildUpdatePayload(id: string, state: DishFormState, preserved: 
     id,
     displayName: cleanDishName(state.name),
     category: state.category,
-    subcategory: preserved.subcategory,
+    // Only a Salad's subtype is editable here; any other dish keeps the value it already had.
+    // undefined = the user did not touch the salad slot, so whatever is stored (even a legacy value) stays.
+    subcategory: state.category === "Salad" && state.subcategory !== undefined ? normaliseSaladSubtype(state.subcategory) : preserved.subcategory,
     description: preserved.description,
     preparationNotes: preserved.preparationNotes,
     mayContainNotes: preserved.mayContainNotes,

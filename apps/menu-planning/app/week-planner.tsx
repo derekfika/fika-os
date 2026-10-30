@@ -15,7 +15,7 @@ import { SpellUnderlinedText, SpellcheckPanel, useSpellcheckLists, useSpellingDi
 import { findSpellingIssues } from "@/lib/menu-spellcheck";
 import { CANONICAL_DISH_CATEGORIES } from "@/lib/dish-categories";
 import DishEditorModal from "./dish-editor-modal";
-import { resolveEnter } from "@/lib/dish-editor";
+import { dishFitsSaladSlot, normaliseSaladSubtype, resolveEnter, saladNeedsSlot } from "@/lib/dish-editor";
 
 function WeekMatrixScroller({ children }: { children: ReactNode }) {
   const topScrollbar = useRef<HTMLDivElement>(null);
@@ -237,7 +237,8 @@ function ResetWeekDialog({ currentWeek, entryCount, command, onClose }: { curren
 }
 
 function DishPicker({ dishes, query, setQuery, slot, onChoose, onCreate, onEdit, onClose }: { dishes: Dish[]; query: string; setQuery: (value: string) => void; slot: string; onChoose: (dish: Dish) => void; onCreate: (name: string) => void; onEdit: (dish: Dish) => void; onClose: () => void }) {
-  const filtered = rankDishPickerItems(dishes, query, slot);
+  // A classified salad is offered only in its own subtype's salad slot; unclassified salads stay available.
+  const filtered = rankDishPickerItems(dishes.filter(dish => dishFitsSaladSlot(dish, slot)), query, slot);
   const typed = query.trim();
   const canCreate = Boolean(typed) && resolveEnter(dishes.map(dish => ({ id: dish.id, name: dish.name, aliases: dish.aliases })), typed).kind === "create";
   // Enter on a typed name selects an exact existing dish/alias, otherwise opens the prefilled Create dish modal.
@@ -246,5 +247,5 @@ function DishPicker({ dishes, query, setQuery, slot, onChoose, onCreate, onEdit,
     if (result.kind === "existing") { const dish = dishes.find(entry => entry.id === result.dish.id); if (dish) onChoose(dish); }
     else if (result.kind === "create") onCreate(result.name);
   };
-  return <PlannerModal title="Select dish" onClose={onClose}><aside className="dish-picker"><header><div><small>{slotLabel(slot)}</small><h3>Select dish</h3></div><button type="button" className="modal-close" onClick={onClose} aria-label="Close dish picker">Close</button></header><p className="dish-picker-category">Showing {slotLabel(slot).toLocaleLowerCase()} dishes only</p><input data-modal-autofocus value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); onEnter(); } }} placeholder={`Search ${slotLabel(slot).toLocaleLowerCase()} dishes, or type a new name and press Enter`} aria-label={`Search ${slotLabel(slot).toLocaleLowerCase()} dishes`} /><div className="dish-picker-list">{filtered.map(dish => <div className="dish-picker-row" key={dish.id}><button type="button" onClick={() => onChoose(dish)}><strong>{dish.name}</strong><small>{dish.category || "Uncategorised"}{dish.usage?.length ? ` · used for ${dish.usage.join(", ")}` : ""}</small></button><button type="button" className="dish-picker-edit" onClick={() => onEdit(dish)} aria-label={`Edit ${dish.name}`}>Edit</button></div>)}{!filtered.length && <p className="dish-picker-empty">No {slotLabel(slot).toLocaleLowerCase()} dishes match your search.</p>}</div>{canCreate && <button type="button" className="dish-picker-create" onClick={() => onCreate(typed)}>＋ Create “{typed}” as a new dish (or press Enter)</button>}</aside></PlannerModal>;
+  return <PlannerModal title="Select dish" onClose={onClose}><aside className="dish-picker"><header><div><small>{slotLabel(slot)}</small><h3>Select dish</h3></div><button type="button" className="modal-close" onClick={onClose} aria-label="Close dish picker">Close</button></header><p className="dish-picker-category">Showing {slotLabel(slot).toLocaleLowerCase()} dishes only</p><input data-modal-autofocus value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); onEnter(); } }} placeholder={`Search ${slotLabel(slot).toLocaleLowerCase()} dishes, or type a new name and press Enter`} aria-label={`Search ${slotLabel(slot).toLocaleLowerCase()} dishes`} /><div className="dish-picker-list">{filtered.map(dish => <div className="dish-picker-row" key={dish.id}><button type="button" onClick={() => onChoose(dish)}><strong>{dish.name}</strong><small>{dish.category || "Uncategorised"}{normaliseSaladSubtype(dish.subcategory) ? ` · ${normaliseSaladSubtype(dish.subcategory)}` : saladNeedsSlot(dish) ? " · needs a salad slot" : ""}{dish.usage?.length ? ` · used for ${dish.usage.join(", ")}` : ""}</small></button><button type="button" className="dish-picker-edit" onClick={() => onEdit(dish)} aria-label={`Edit ${dish.name}`}>Edit</button></div>)}{!filtered.length && <p className="dish-picker-empty">No {slotLabel(slot).toLocaleLowerCase()} dishes match your search.</p>}</div>{canCreate && <button type="button" className="dish-picker-create" onClick={() => onCreate(typed)}>＋ Create “{typed}” as a new dish (or press Enter)</button>}</aside></PlannerModal>;
 }
