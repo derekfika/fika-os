@@ -81,13 +81,11 @@ Nothing is applied by analysis; `adopt-company-default` is an explicit, confirme
 
 None required: routing is per Item and no site-level routing override was added or found. (`HOSPITALITY_GOVERNED_ROUTING_PLATFORMS`, which gates hand-off enforcement per platform, is unchanged and orthogonal.)
 
-## 7a. Permitted sites (governed scope)
+## 7a. One on/off switch per site
 
-An Item created as site-restricted carries `allowedOplocIds`. This is catalogue scope, not availability: availability exceptions can only hide an Item at a site that is already permitted, and `set-site-availability` / bulk site edits refuse to broaden a restricted Item.
-`set-permitted-sites` (`itemId`, `expectedVersion`, `allowedOplocIds`, `reason`, `confirmRemoval?`) replaces the allowlist of an Item that already has one. It needs `hospitality.catalogue.manage`, refuses stale versions, archived or unrestricted Items, an empty list, non-active sites and a no-op, and requires `confirmRemoval` before any site is removed. Inactive legacy entries are preserved. It is one transaction that writes the Item (version + 1), its revision and an audit event (actor, before/after, added/removed, reason). Prices, routing, configuration, minimums, Offerings and the Item identity are untouched, and the package is republished by the route. The UI exposes it as **Permitted sites → Edit permitted sites**, separate from **Available at**.
+Any Item can be switched on or off for any active site, from the Item panel (**Available at**), the bulk editor, or `set-site-availability`. Items created for specific sites carry a site list (`allowedOplocIds`); switching a site ON outside that list extends the list in the same transaction (Item version + 1, revision, and an audit event recording `siteListExtendedWith`). Switching OFF records the normal reversible exception and keeps the list. Switching OFF at a site the Item was never permitted at is a no-op and stores nothing. Prices, routing, minimums and configuration are never touched.
 
-`scripts/rcoa-oac-wines.ts` is a read-only planner for permitting the 11 One Angel Court wines at RCoA: it derives the canonical IDs from the approved OAC catalogue, verifies them against the live records and emits the exact commands. It never writes.
-
+`scripts/rcoa-oac-wines.ts` is a read-only planner for enabling the 11 One Angel Court wines at RCoA: it derives the canonical IDs from the approved OAC catalogue, verifies them against live records and emits one bulk "add RCoA" operation. It never writes. Which booking section an Item appears in is driven by its category and is a separate, portal-side mapping.
 
 ## 8. Known limitations
 

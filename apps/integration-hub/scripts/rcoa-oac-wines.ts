@@ -7,7 +7,7 @@
  *
  * Identities are derived from the operator-approved OAC catalogue (lib/oac-approved-catalogue.ts), then verified against the canonical
  * records (bounded document gets and per-Item queries only). The output is the exact list of canonical IDs, versions, current scope,
- * prices and routing, plus the `set-permitted-sites` commands to apply through the governed Hub API/UI by an authorised administrator.
+ * prices and routing, plus the one governed bulk "switch on at RCoA" operation to apply through the Hub API/UI by an authorised administrator.
  * It refuses to produce commands unless every Item is active, restricted to exactly the OAC OPLOC, and RCoA is an active OPLOC.
  */
 import fs from "node:fs/promises";
@@ -56,7 +56,7 @@ async function main() {
   const ready = problems.length === 0;
   const plan = {
     schema: "fika.rcoa-oac-wines-plan.v1", readOnly: true, readAt: new Date().toISOString(), project: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || null, oacOplocId: OAC_OPLOC_ID, rcoaOplocId: rcoa, problems, ready, items: rows,
-    commands: ready ? rows.map(row => ({ action: "set-permitted-sites", itemId: row.itemId, expectedVersion: row.version, allowedOplocIds: [OAC_OPLOC_ID, rcoa].sort(), reason: "RCoA requested access to the existing Hospitality wine list; OAC eligibility retained." })) : [],
+    commands: ready ? [{ action: "bulk-update", operationId: `rcoa-oac-wines-${new Date().toISOString().slice(0, 10)}`, itemIds: rows.map(row => row.itemId), expectedVersions: Object.fromEntries(rows.map(row => [row.itemId, row.version])), sites: { mode: "add", oplocIds: [rcoa] } }] : [],
     commercialDecisions: ["RCoA inherits each wine's company default price and minimum; no RCoA-specific price, VAT, minimum, notice or wording override is created.", "Wines route in-house as at OAC; confirm that is correct for RCoA service.", "Confirm RCoA is content for OAC-brochure wine names, descriptions and 'per bottle' serving wording."],
   };
   const text = JSON.stringify(plan, null, 2);

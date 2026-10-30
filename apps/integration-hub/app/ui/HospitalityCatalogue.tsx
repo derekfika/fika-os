@@ -328,28 +328,6 @@ function AdoptDefault({ row, send, oplocs }: { row: CatalogueRow; send: Send; op
   </section>;
 }
 
-/** Governed site scope (Item.allowedOplocIds). Distinct from "Available at", which can only hide an item at sites that are already permitted. */
-function PermittedSitesEditor({ row, oplocs, send }: { row: CatalogueRow; oplocs: CataloguePayload["oplocs"]; send: Send }) {
-  const sites = selectableSites(oplocs); const permitted = row.permittedSites || [];
-  const [value, setValue] = useSyncedState<string[]>(permitted.filter(id => sites.some(site => site.oplocId === id)), `${row.itemId}:${row.version}`);
-  const [reason, setReason] = useSyncedState("", `${row.itemId}:${row.version}`);
-  const [confirmRemoval, setConfirmRemoval] = useState(false);
-  const { busy, error, run } = useAction(send);
-  const added = value.filter(id => !permitted.includes(id)), removed = permitted.filter(id => sites.some(site => site.oplocId === id) && !value.includes(id));
-  const labels = (ids: string[]) => ids.map(id => oplocLabel(oplocs, id)).join(", ");
-  const ready = (added.length > 0 || removed.length > 0) && value.length > 0 && reason.trim().length >= 8 && (removed.length === 0 || confirmRemoval);
-  return <section className="hc-section" aria-labelledby="hc-permitted-title"><h3 id="hc-permitted-title">Permitted sites</h3>
-    <p className="hc-hint">This item has a governed site restriction: it can only ever be offered at the sites below. This is a catalogue scope decision, separate from &quot;Available at&quot;. Prices, production route and minimums do not change.</p>
-    <p className="hc-hint">Currently permitted: {labels(permitted) || "none"}.</p>
-    <SitePicker legend="Edit permitted sites" sites={sites} value={value} onChange={setValue} disabled={busy} />
-    <Field label="Reason for the change" hint="Recorded in the audit history (at least 8 characters)."><input value={reason} onChange={event => setReason(event.target.value)} maxLength={500} disabled={busy} /></Field>
-    {added.length > 0 && <p className="hc-hint">Will add: {labels(added)}.</p>}
-    {removed.length > 0 && <label className="hc-check"><input type="checkbox" checked={confirmRemoval} onChange={event => setConfirmRemoval(event.target.checked)} disabled={busy} /> Also remove {labels(removed)} from this item&apos;s permitted sites.</label>}
-    <button type="button" className="hc-btn" disabled={busy || !ready} onClick={() => void run({ action: "set-permitted-sites", itemId: row.itemId, expectedVersion: row.version, allowedOplocIds: value, reason: reason.trim(), ...(removed.length ? { confirmRemoval: true } : {}) })}>{busy ? "Saving…" : "Save permitted sites"}</button>
-    {error && <p role="alert" className="hc-error">{error}</p>}
-  </section>;
-}
-
 function ItemPanel({ row, payload, canManage, send, onClose }: { row: CatalogueRow; payload: CataloguePayload; canManage: boolean; send: Send; onClose: () => void }) {
   const [form, setForm] = useSyncedState({ name: row.name, category: row.category, description: row.description, price: row.defaultPrice ? String(row.defaultPrice.amount) : "", minimum: row.defaultMinimumQuantity !== undefined ? String(row.defaultMinimumQuantity) : "" }, `${row.itemId}:${row.version}:${row.defaultPrice?.priceId}`);
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -391,8 +369,6 @@ function ItemPanel({ row, payload, canManage, send, onClose }: { row: CatalogueR
 
         {!inactive && <RoutingEditor row={row} canManage={canManage} send={send} />}
         {!inactive && canManage && <AdoptDefault row={row} send={send} oplocs={payload.oplocs} />}
-
-        {!inactive && canManage && row.permittedSites && <PermittedSitesEditor row={row} oplocs={payload.oplocs} send={send} />}
 
         <section className="hc-section" aria-labelledby="hc-sites-title"><h3 id="hc-sites-title">Available at</h3>
           <p className="hc-hint">{inactive ? "Archived items are not available anywhere." : row.unavailableAt.length === 0 ? `Available at all ${selectableSites(payload.oplocs).length} sites by default. Only exceptions are stored.` : `Available at ${row.availableAt.length} of ${selectableSites(payload.oplocs).length} sites. Not available at: ${row.unavailableAt.map(id => oplocLabel(payload.oplocs, id)).join(", ")}.`}</p>

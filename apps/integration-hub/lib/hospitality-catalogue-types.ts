@@ -66,8 +66,6 @@ export type CatalogueRow = {
   /** Active OPLOC ids where the Item is available: every active OPLOC except sparse `available:false` exceptions (empty if the Item is archived). */
   availableAt: string[];
   unavailableAt: string[];
-  /** Governed site restriction (Item.allowedOplocIds). Absent = unrestricted. Distinct from availability exceptions. */
-  permittedSites?: string[];
   overrideCount: number;
   /** Reasons this row needs an operator; empty when nothing is outstanding. */
   needsReview: Array<"routing_required" | "routing_conflict" | "price_missing" | "duplicate_candidate">;
