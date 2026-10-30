@@ -27,6 +27,8 @@ import { cancellationView, propagationOutcome, type PropagationOutcome } from ".
 import type { HospitalityBookingGroup } from "../../../shared/hospitality-group-quotes";
 import { hospitalitySiteThemeStyle, portalSite, type PortalSiteKey } from "@/lib/portal-sites";
 import { hospitalityWorkspacePath } from "@/lib/hospitality-workspace";
+import { DashboardQueueFilters } from "./DashboardQueueFilters";
+import { availableStatuses, emptyQueueFilters, filterQueue, hasActiveFilters, type QueueFilters } from "../../lib/dashboard-queue-filters";
 
 const statuses = [
   "New",
@@ -121,7 +123,7 @@ export default function HospitalityDashboard({
     Record<string, ProductionOrder | undefined>
   >({});
   const [selected, setSelected] = useState<CanonicalBooking | null>(null);
-  const [filter, setFilter] = useState("");
+  const [queueFilters, setQueueFilters] = useState<QueueFilters>(emptyQueueFilters);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState<WorkflowAction | null>(null);
@@ -394,11 +396,13 @@ export default function HospitalityDashboard({
     await load();
   };
 
-  const visible = useMemo(
-    () => bookings.filter((item) => standaloneIds.has(item.canonicalId) && (!filter || item.lifecycleStatus === filter)),
-    [bookings, standaloneIds, filter],
+  const queue = useMemo(
+    () => filterQueue({ bookings, groups, standaloneIds, filters: queueFilters }),
+    [bookings, groups, standaloneIds, queueFilters],
   );
-  const visibleGroups = groups.filter(group => !filter || group.status === filter);
+  const queueStatuses = useMemo(() => availableStatuses({ bookings, groups, standaloneIds }), [bookings, groups, standaloneIds]);
+  const visible = queue.bookings as CanonicalBooking[];
+  const visibleGroups = queue.groups as HospitalityBookingGroup[];
   const newCount = groups.filter(group => group.status === "New").length + bookings.filter(
     (item) => standaloneIds.has(item.canonicalId) && item.lifecycleStatus === "New",
   ).length;
@@ -1174,20 +1178,6 @@ export default function HospitalityDashboard({
               >
                 Run sheet
               </button>
-              <label>
-                Show
-                <select
-                  value={filter}
-                  onChange={(event) => setFilter(event.target.value)}
-                >
-                  <option value="">All statuses</option>
-                  {Array.from(new Set([...statuses, "Awaiting routing", "Awaiting quote", "Ready for CPU", "Quote preparing", "Partially processed", "Needs attention"])).map((status) => (
-                    <option key={status}>{status}</option>
-                  ))}
-                  <option>Quote preparing</option>
-                  <option>Partially processed</option>
-                </select>
-              </label>
             </div>
           </div>
           {notice && <div className="hospitality-dashboard__notice" role="status">{notice}</div>}
@@ -1203,6 +1193,14 @@ export default function HospitalityDashboard({
               )}
             </div>
           )}
+          <DashboardQueueFilters
+            filters={queueFilters}
+            onChange={setQueueFilters}
+            statuses={queueStatuses}
+            shown={queue.shown}
+            total={queue.total}
+            loading={loading}
+          />
           <div className="hospitality-dashboard__grid">
             <aside
               className="hospitality-dashboard__queue"
@@ -1244,9 +1242,11 @@ export default function HospitalityDashboard({
                     <StatusPill status={booking.lifecycleStatus} label={standaloneStatusLabel(booking, productionOrders[booking.canonicalId])} />
                   </button>
                 ))}
-              {!loading && !visible.length && !visibleGroups.length && (
+              {!loading && !queue.rows.length && (
                 <p className="hospitality-dashboard__empty">
-                  No canonical Bookings match this view.
+                  {hasActiveFilters(queueFilters) && queue.total
+                    ? `No bookings match these filters (${queue.total} hidden). Reset the filters to see them all.`
+                    : "No canonical Bookings match this view."}
                 </p>
               )}
             </aside>
