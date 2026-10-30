@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-30T09:48:54.598Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-30T10:18:55.527Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -101,6 +101,7 @@ Snapshot: 2026-10-30T09:48:54.598Z. The local governed registry remains authorit
 | logistics-source-provenance | logistics-inspector | apps/logistics, CHANGELOG.md | codex/logistics-source-provenance | — | finished | 2026-10-27T13:35:39.610Z |
 | logistics-staging-menu-url | uat-20261025-1150 | apps/logistics/apphosting.yaml, CHANGELOG.md | codex/logistics-staging-menu-url | [#52](https://github.com/derekfika/fika-os/pull/52) | finished | 2026-10-25T18:29:13.049Z |
 | logistics-stop-list-spacing | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-stop-list-spacing | [#85](https://github.com/derekfika/fika-os/pull/85) | finished | 2026-10-27T15:08:31.895Z |
+| logistics-tablet-overflow-fix | luna-logistics-tablet-fix | apps/logistics/app/journey-planner/shell.module.css, apps/logistics/app/journey-planner/timeline.module.css, apps/logistics/tests/e2e/journey-planner-v3-van-lanes.spec.ts | codex/logistics-tablet-overflow-fix | [#170](https://github.com/derekfika/fika-os/pull/170) | retired | 2026-10-30T10:18:53.548Z |
 | logistics-tablet-regression | luna-logistics-tablet | apps/logistics/tests/e2e/journey-planner-v3-van-lanes.spec.ts | codex/logistics-tablet-regression | [#168](https://github.com/derekfika/fika-os/pull/168) | finished | 2026-10-30T09:41:06.461Z |
 | logistics-v3-density | claude-logistics-v3 | apps/logistics | codex/logistics-v3-density | [#20](https://github.com/derekfika/fika-os/pull/20) | finished | 2026-10-23T15:27:01.114Z |
 | logistics-v3-integration | claude-logistics-v3 | apps/logistics | codex/logistics-v3-integration | [#19](https://github.com/derekfika/fika-os/pull/19) | finished | 2026-10-23T14:40:19.934Z |
