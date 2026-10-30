@@ -137,7 +137,7 @@ test("Munich Re has a separate portal, dashboard and generic brochure menu fixtu
   assert.equal(fs.existsSync(new URL("../public/brand/munich-re/munich-re-logo.svg", import.meta.url)), true);
   assert.ok(localMunichReMenuCatalogue.items.length >= 30);
   assert.ok(localMunichReMenuCatalogue.items.some((item) => item.name === "Deli Style Sandwich Lunch"));
-  assert.equal(localMunichReMenuCatalogue.source.path, "Fika Hospitality Brochure_2026.pptx");
+  assert.match(localMunichReMenuCatalogue.source.path, /Munich Re Hospitality Booking Form/);
   assert.ok(localMunichReMenuCatalogue.items.every((item) => item.dietaryInformation.length === 0 && item.allergenInformation.length === 0));
 });
 
@@ -194,7 +194,7 @@ test("shared booking portal validates summer rolls against the governed minimum"
   const portal = fs.readFileSync(new URL("../app/ui/BookingPortal.tsx", import.meta.url), "utf8");
   assert.match(portal, /quantityMinimumMessage/);
   assert.match(portal, /requires at least \$\{minimum\}/);
-  assert.match(portal, /minimumQuantityFor\(item, gallagher\)/);
+  assert.match(portal, /minimumQuantityFor\(item, minimumContext\)/);
 });
 
 test("canonical Hospitality routes use the shared workspace and public portal", () => {

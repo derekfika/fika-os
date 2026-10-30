@@ -10,10 +10,11 @@ import {
   portalBookingId,
 } from "@/lib/mnk-contract";
 import { hospitalitySiteThemeStyle, portalSite, type PortalSiteConfig, type PortalSiteKey } from "@/lib/portal-sites";
-import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "@/lib/gallagher-rules";
+import { GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "@/lib/gallagher-rules";
+import { MUNICH_RE_LOCATIONS, munichReLocationDisplay, munichReLocationFields, munichReLocationIdFor } from "@/lib/munich-re-locations";
 import { quantityFromInput, quantityMinimumMessage, stepQuantityDown, stepQuantityUp } from "@/lib/quantity-entry";
 import { loadHospitalityPortalMenu } from "@/lib/hospitality-portal-catalogue";
-import { catalogueMinimums, validateCatalogueRules } from "@fika/server-shared/hospitality-effective-offering";
+import { catalogueMinimums, effectiveProductMinimum, validateCatalogueRules, type MinimumContext } from "@fika/server-shared/hospitality-effective-offering";
 import StartAgainButton from "./StartAgainButton";
 
 type ChoiceValue = string | string[] | Record<string, number>;
@@ -129,14 +130,14 @@ function validationSummary(errors: BookingFieldErrors) {
   const count = Object.keys(errors).length;
   return count ? `Please review ${count === 1 ? "the highlighted field" : "the highlighted fields"} before continuing.` : "";
 }
-function minimumQuantityFor(item: PortalMenuItem, gallagher = false) {
-  if (item.governedConstraintsResolved) return catalogueMinimums(item, gallagher).quantity;
-  return capGallagherMinimum(Math.max(
+function minimumQuantityFor(item: PortalMenuItem, context: MinimumContext = { gallagher: false }) {
+  if (item.governedConstraintsResolved) return catalogueMinimums(item, context).quantity;
+  return effectiveProductMinimum(Math.max(
     1,
     item.minimumQuantity || 1,
     Number(item.servingInfo?.match(/minimum\s+(\d+)/i)?.[1] || 1),
     /rice paper rolls?/i.test(item.name) ? 3 : 1,
-  ), gallagher);
+  ), context);
 }
 function minimumGuestsFor(items: PortalMenuItem[], gallagher = false) {
   return Math.max(1, ...items.map((item) => catalogueMinimums(item, gallagher).guests));
@@ -316,6 +317,7 @@ export default function BookingPortal({
     companyName: site.key === "angel-court" ? contact.clientCompany : contact.requesterCompany,
     email: contact.requesterEmail,
   });
+  const minimumContext = { gallagher, siteId: site.key };
   const selected = lines
     .map((line) => ({
       ...line,
@@ -408,10 +410,10 @@ export default function BookingPortal({
     if (step === 2 && !selected.length && occasion !== "bespoke") return showValidation({ menu: { field: "menu", message: "Choose at least one menu item.", step: 2 } }, "Please choose at least one menu item before continuing.", 2);
     if (step === 2) {
       const belowMinimum = selected.find(
-        (value) => value.quantity < minimumQuantityFor(value.item, gallagher),
+        (value) => value.quantity < minimumQuantityFor(value.item, minimumContext),
       );
       if (belowMinimum) {
-        const minimum = minimumQuantityFor(belowMinimum.item, gallagher);
+        const minimum = minimumQuantityFor(belowMinimum.item, minimumContext);
         return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
       }
       const minimumGuests = minimumGuestsFor(selected.map((value) => value.item), gallagher);
@@ -429,7 +431,7 @@ export default function BookingPortal({
   const checkGovernedRules = () => {
     try {
       assertBookingDate(selected.map(x => x.item), details.eventDate, new Date().toISOString(), { site: site.key, occasion, startTime: details.startTime });
-      validateCatalogueRules(selected.map(x => x.item), selected.map(x => ({ itemId: x.item.id, quantity: x.quantity, choices: Object.entries(x.choices).map(([id, value]) => typeof value === "object" && !Array.isArray(value) ? { id, quantities: value } : { id, value }) })), { gallagher, guestCount: details.guestCount, eventDate: details.eventDate, startTime: details.startTime, now: new Date().toISOString() });
+      validateCatalogueRules(selected.map(x => x.item), selected.map(x => ({ itemId: x.item.id, quantity: x.quantity, choices: Object.entries(x.choices).map(([id, value]) => typeof value === "object" && !Array.isArray(value) ? { id, quantities: value } : { id, value }) })), { gallagher, siteId: site.key, guestCount: details.guestCount, eventDate: details.eventDate, startTime: details.startTime, now: new Date().toISOString() });
       return true;
     } catch (error) { showValidation({ menu: { field: "menu", step: 2, message: (error as Error).message } }, (error as Error).message, 2); return false; }
   };
@@ -441,10 +443,10 @@ export default function BookingPortal({
     if (sendingRef.current) return;
     setFieldErrors({});
     const belowMinimum = selected.find(
-      (value) => value.quantity < minimumQuantityFor(value.item, gallagher),
+      (value) => value.quantity < minimumQuantityFor(value.item, minimumContext),
     );
     if (belowMinimum) {
-      const minimum = minimumQuantityFor(belowMinimum.item, gallagher);
+      const minimum = minimumQuantityFor(belowMinimum.item, minimumContext);
       changeStep(2);
       return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
     }
@@ -746,6 +748,7 @@ export default function BookingPortal({
               setChoice={setChoice}
               details={details}
               gallagher={gallagher}
+              minimumContext={minimumContext}
               errors={fieldErrors}
             />
           )}
@@ -1015,8 +1018,16 @@ function Details({
         </div>
         <div className="fika-form-cell fika-form-cell--wide">
           <label className="fika-form-field">
-            <span className="fika-form-label">Floor, room or delivery point</span>
-            <input {...fieldA11y("location", errors)} data-booking-field="location" value={details.roomOrArea} onChange={(e) => setDetails({ ...details, roomOrArea: e.target.value })} />
+            <span className="fika-form-label">{siteKey === "munich-re" ? "Meeting room or collection point" : "Floor, room or delivery point"}</span>
+            {siteKey === "munich-re" ? (
+              <select {...fieldA11y("location", errors)} data-booking-field="location" value={munichReLocationIdFor(details)} onChange={(e) => setDetails({ ...details, floorLevel: "", ...munichReLocationFields(e.target.value) })}>
+                <option value="">Choose a room or collection point</option>
+                <optgroup label="Meeting rooms">{MUNICH_RE_LOCATIONS.filter((l) => l.kind === "meeting-room").map((l) => <option key={l.id} value={l.id}>{munichReLocationDisplay(l)}</option>)}</optgroup>
+                <optgroup label="Collection points">{MUNICH_RE_LOCATIONS.filter((l) => l.kind === "collection-point").map((l) => <option key={l.id} value={l.id}>{munichReLocationDisplay(l)}</option>)}</optgroup>
+              </select>
+            ) : (
+              <input {...fieldA11y("location", errors)} data-booking-field="location" value={details.roomOrArea} onChange={(e) => setDetails({ ...details, roomOrArea: e.target.value })} />
+            )}
           </label>
           <ValidationMessage field="location" errors={errors} />
         </div>
@@ -1033,6 +1044,7 @@ function Plan({
   setQuantity,
   setChoice,
   gallagher,
+  minimumContext,
   errors,
 }: any) {
   const [touched, setTouched] = useState<string[]>([]);
@@ -1125,7 +1137,7 @@ function Plan({
                 );
               })}
               {(() => {
-                const minimum = minimumQuantityFor(item, gallagher);
+                const minimum = minimumQuantityFor(item, minimumContext);
                 const minimumMessage = quantityMinimumMessage(line?.quantity || 0, minimum);
                 const showMinimum = Boolean(minimumMessage) && (touched.includes(item.id) || Boolean(errors[`quantity:${item.id}`]));
                 const touch = () => setTouched((current: string[]) => current.includes(item.id) ? current : [...current, item.id]);
@@ -1152,9 +1164,9 @@ function Plan({
                   </>
                 );
               })()}
-              {minimumQuantityFor(item, gallagher) > 1 && (
+              {minimumQuantityFor(item, minimumContext) > 1 && (
                 <p className="minimum-quantity-note">
-                  Minimum {minimumQuantityFor(item, gallagher)} boxes
+                  Minimum {minimumQuantityFor(item, minimumContext)} boxes
                 </p>
               )}
             </article>

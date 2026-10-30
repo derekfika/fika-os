@@ -51,8 +51,8 @@ import {
 import { notifyCpuProjection } from "./cpu-projection-client";
 import { deliverLogisticsProjectionForProductionOrder } from "./logistics-projection-outbox";
 import { localBookingFixtures } from "./local-booking-fixtures";
-import { catalogueMinimums, bookingPolicyFor, type RuleItem } from "@fika/server-shared/hospitality-effective-offering";
-import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
+import { catalogueMinimums, effectiveProductMinimum, bookingPolicyFor, type RuleItem } from "@fika/server-shared/hospitality-effective-offering";
+import { GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { Transaction } from "firebase-admin/firestore";
 import { createDomainEvent } from "../../shared/domain-events";
@@ -604,11 +604,11 @@ export function buildMnkCanonicalBooking(
         email: payload.client.email || payload.client.requester?.email,
       });
       const governedConstraintsResolved = menuItem?.record.governedConstraintsResolved === true;
-      const minimumQuantity = capGallagherMinimum(Math.max(
+      const minimumQuantity = effectiveProductMinimum(Math.max(
         Number(menuItem?.record.minimumQuantity || 1),
         governedConstraintsResolved ? 1 : Number(String(item.servingInfo || "").match(/minimum\s+(\d+)/i)?.[1] || 1),
         governedConstraintsResolved ? 1 : (/rice paper rolls?/i.test(String(item.itemName || menuItem?.record.name)) ? 3 : 1),
-      ), gallagher);
+      ), { gallagher, siteId: portalSiteId });
       if (
         Number.isFinite(minimumQuantity) &&
         minimumQuantity > 1 &&
@@ -617,7 +617,7 @@ export function buildMnkCanonicalBooking(
         throw conflict(
           `${item.itemName || item.itemId} requires at least ${minimumQuantity} boxes.`,
         );
-      const minimumGuests = catalogueMinimums({ id: item.itemId, name: item.itemName || item.itemId, minimumGuests: numberOrUndefined(menuItem?.record.minimumGuests), configuration: menuItem?.record.configuration as RuleItem["configuration"] }, gallagher).guests;
+      const minimumGuests = catalogueMinimums({ id: item.itemId, name: item.itemName || item.itemId, minimumGuests: numberOrUndefined(menuItem?.record.minimumGuests), configuration: menuItem?.record.configuration as RuleItem["configuration"] }, { gallagher, siteId: portalSiteId }).guests;
       if (minimumGuests !== undefined && payload.event.guestCount < minimumGuests)
         throw conflict(
           `${item.itemName || item.itemId} requires at least ${minimumGuests} guests.`,
