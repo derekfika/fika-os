@@ -21,6 +21,7 @@ import { sha256 } from "./profiler";
 import { parseCanonical, SiteConfiguration } from "./schemas";
 import type { z } from "zod";
 import type { CanonicalRecord } from "./types";
+import { planProviderItemLink, type ProviderItemLink } from "./hospitality-provider-mapping";
 import { existingCandidatesForNewItem, normaliseName, sourceIdentities } from "./hospitality-catalogue-canonicalisation";
 import { currentPrice, reviewGroupId, routingStateOf, ukBusinessDate } from "./hospitality-catalogue-read-model";
 import { isActiveOplocRecord } from "./hospitality-catalogue-oploc";
@@ -61,6 +62,7 @@ type CreationSettings = { restrictToSelectedOplocs?: boolean; configuration?: Co
 type SiteSettings = { configuration?: Configuration | null; minimumGuests?: number | null; noticeRequiredDays?: number | null; offeringMode?: "standard" | "quote_only" };
 export type PriceInput = { amount: number; vatRate?: number };
 export type CatalogueCommand =
+  | ProviderItemLink & { action: "link-provider-item" }
   | CreationSettings & { action: "create-item"; requestId: string; name: string; category: string; description?: string; routing: RoutingChoice; defaultPrice?: PriceInput; defaultMinimumQuantity?: number; oplocIds: string[]; providerMappings?: Array<{ provider: string; sourceItemId: string; sourceVersion?: string }> }
   | { action: "update-item"; itemId: string; expectedVersion: number; name: string; category: string; description?: string; defaultMinimumQuantity: number | null; defaultPrice?: PriceInput }
   | { action: "set-default-price"; itemId: string; expectedVersion: number; price: PriceInput }
@@ -514,6 +516,17 @@ export async function runCatalogueCommand(actor: Actor, command: CatalogueComman
   return db.runTransaction(async tx => {
     const ctx: Ctx = { tx, actor, now: new Date().toISOString() };
     switch (command.action) {
+      case "link-provider-item": {
+        // Deliberate bounded catalogue-administration query: transactionally checks
+        // every competing holder so two concurrent links cannot claim one source row.
+        const snapshot = await tx.get(canonical().where("entityType", "==", "Hospitality Menu Item").limit(501));
+        if (snapshot.size > 500) throw problem("Catalogue mapping review exceeds the bounded 500-Item limit.");
+        const plan = planProviderItemLink(snapshot.docs.map(doc => doc.data() as CanonicalRecord), command);
+        if (plan.unchanged) return { itemIds: [command.itemId], reload: false, message: "This source item is already linked to the selected canonical Item." };
+        stage(ctx, "Hospitality Menu Item", { ...bump(ctx, plan.item.record), providerMappings: plan.providerMappings }, plan.item, "Explicit provider source item association.");
+        auditEvent(ctx, "Hospitality Catalogue provider item linked", command.itemId, "Linked an existing provider row to the selected canonical Item; price, rules, routing and recipes unchanged.", { provider: command.provider, sourceItemId: command.sourceItemId, sourceVersion: command.sourceVersion, before: plan.item.record.providerMappings || [], after: plan.providerMappings });
+        return { itemIds: [command.itemId], reload: true, message: "Provider source item linked to the existing canonical Item." };
+      }
       case "create-item": return createItem(ctx, command);
       case "update-item": return updateItem(ctx, command);
       case "set-default-price": return setDefaultPrice(ctx, command);
