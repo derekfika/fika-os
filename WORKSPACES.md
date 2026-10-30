@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-30T14:05:45.319Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-30T16:54:48.387Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -11,6 +11,7 @@ Snapshot: 2026-10-30T14:05:45.319Z. The local governed registry remains authorit
 | ad-hoc-oploc-scope-fix | claude-ad-hoc | apps/integration-hub/lib/ad-hoc-production-auth.ts, apps/integration-hub/tests/ad-hoc-production-route.test.ts | codex/ad-hoc-oploc-scope-fix | [#33](https://github.com/derekfika/fika-os/pull/33) | finished | 2026-10-24T18:17:27.517Z |
 | ad-hoc-production | claude-ad-hoc | apps/ad-hoc-production, apps/integration-hub/lib/production-domain.ts, apps/integration-hub/tests/ad-hoc-production-order.test.ts, apps/integration-hub/package.json, apps/integration-hub/tests/booking-email-firestore.test.ts | codex/ad-hoc-production | [#29](https://github.com/derekfika/fika-os/pull/29) | finished | 2026-10-24T15:31:28.989Z |
 | adhoc-checker-link | claude-adhoc-sign | apps/cpu-production, apps/integration-hub, apps/ad-hoc-production, apps/shared/ad-hoc-production-contract.ts | codex/adhoc-checker-link | [#43](https://github.com/derekfika/fika-os/pull/43) | finished | 2026-10-25T13:13:27.294Z |
+| adhoc-cpu-dashboard-classification | luna-adhoc-cpu-dashboard-classification | apps/cpu-production/lib/production-scope.ts, apps/cpu-production/lib/cpu-dashboard-adapter.ts, apps/cpu-production/lib/production-presentation.ts, apps/cpu-production/lib/production-day.ts, apps/cpu-production/tests/production-item-scope.test.ts, apps/cpu-production/tests/cpu-dashboard-adapter.test.ts, apps/cpu-production/tests/production-presentation.test.ts, apps/cpu-production/tests/production-day.test.ts | codex/adhoc-cpu-dashboard-classification | — | retired | 2026-10-30T16:54:45.667Z |
 | adhoc-launcher-config | luna-adhoc-launcher | apps/integration-hub/apphosting.staging.yaml, apps/integration-hub/tests/apphosting-build-config.test.ts | codex/adhoc-launcher-config | [#97](https://github.com/derekfika/fika-os/pull/97) | active | 2026-10-28T07:41:15.720Z |
 | adhoc-operational-uat | uat-20261025-1150 | apps/ad-hoc-production | codex/adhoc-operational-uat | — | finished | 2026-10-28T06:41:05.515Z |
 | adhoc-signing-pdf | claude-adhoc-sign | apps/cpu-production, apps/hospitality-booking/apphosting.staging.yaml | codex/adhoc-signing-pdf | [#42](https://github.com/derekfika/fika-os/pull/42) | finished | 2026-10-24T21:59:07.602Z |
@@ -48,6 +49,7 @@ Snapshot: 2026-10-30T14:05:45.319Z. The local governed registry remains authorit
 | feat-033-visual-showcase-brief | codex-feat-033-visual-showcase-brief | docs/design-system | codex/feat-033-visual-showcase-brief | [#28](https://github.com/derekfika/fika-os/pull/28) | finished | 2026-10-24T12:56:42.648Z |
 | feat-034-allergen | feat-034-allergen | apps/shared, docs/ai | codex/feat-034-allergen | [#74](https://github.com/derekfika/fika-os/pull/74) | finished | 2026-10-28T06:40:27.771Z |
 | feat-034-shared-ci | feat-034-allergen | .github/workflows/validate.yml | codex/feat-034-shared-ci | [#75](https://github.com/derekfika/fika-os/pull/75) | finished | 2026-10-28T06:40:33.292Z |
+| gate0-monday-readonly | sol-gate0-readiness | docs/audits/2026-10-30/gate0-monday-readiness.md | codex/gate0-monday-readonly | — | active | 2026-10-30T16:37:47.770Z |
 | grab-go-standing-ux | codex-grab-go-standing-ux | apps/delivered-in, CHANGELOG.md | codex/grab-go-standing-ux | [#21](https://github.com/derekfika/fika-os/pull/21) | finished | 2026-10-24T19:27:36.155Z |
 | hierarchical-agent-instructions | codex-hierarchical-agent-instructions | AGENTS.md, CLAUDE.md, README.md, docs/ai/agent-reference.md, apps/integration-hub/AGENTS.md, apps/integration-hub/CLAUDE.md, apps/hospitality-booking/AGENTS.md, apps/hospitality-booking/CLAUDE.md, apps/menu-planning/AGENTS.md, apps/menu-planning/CLAUDE.md, apps/cpu-production/AGENTS.md, apps/cpu-production/CLAUDE.md, apps/delivered-in/AGENTS.md, apps/delivered-in/CLAUDE.md, apps/logistics/AGENTS.md, apps/logistics/CLAUDE.md | codex/hierarchical-agent-instructions | [#4](https://github.com/derekfika/fika-os/pull/4) | finished | 2026-10-22T19:47:37.742Z |
 | hospitality-catalogue-mapping | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-catalogue-mapping | — | finished | 2026-10-27T12:03:58.367Z |
