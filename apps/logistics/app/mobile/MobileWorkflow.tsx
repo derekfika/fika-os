@@ -545,7 +545,8 @@ function LaneSection({ lane, data, runStatus, busy, onAction, onIssue }: { lane:
 const isLoadToggle = !collection && !delivered && !dispatched;
 const status = collection ? (delivered ? "Collected" : "Not collected") : delivered ? "Delivered" : loaded ? "Loaded" : "Not loaded";
 const nextStep = delivered || (collection && !dispatched) ? "" : collection ? ", tap to mark collected" : loaded ? ", tap to mark delivered" : "";
-const accessibleName = `${subload.category}: ${status}${isLoadToggle ? "" : nextStep}`;
+const toggleAction = isLoadToggle ? (loaded ? ", activate to unload" : ", activate to mark loaded") : nextStep;
+const accessibleName = `${subload.category}: ${status}${toggleAction}`;
 const locked = busy || delivered || (collection && !dispatched); return <li key={subload.id}><button type="button" disabled={locked} className={`${styles.load} ${delivered ? styles.loadDone : loaded ? styles.loadLoaded : ""}`} role={isLoadToggle ? "checkbox" : undefined} aria-checked={isLoadToggle ? loaded : undefined} aria-label={accessibleName} onClick={() => toggleSubload(subload)}><span className={styles.check} aria-hidden="true">{delivered || loaded ? <CheckIcon size={16} /> : null}</span><span className={styles.loadText}><b>{subload.description}</b><small>{subload.quantity} {subload.unit}</small></span><ChevronRightIcon size={20} /></button></li>; })}</ul> : <p className={styles.empty}>No load detail is attached to this {collection ? "collection" : "delivery"}.</p>}
     {openIssues.map((issue) => <div className={styles.warning} role="alert" key={issue.id}><AlertIcon size={20} /><span>{issue.description}</span><button className={`secondary-action ${styles.secondary}`} disabled={busy} onClick={() => onAction("resolve-issue", lane, { issueId: issue.id })}>Resolve issue</button></div>)}
     <div className={styles.actions}>

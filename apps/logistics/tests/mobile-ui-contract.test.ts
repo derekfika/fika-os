@@ -57,7 +57,8 @@ test("subload controls expose their real state: a pre-dispatch load is a checkbo
 
 test("subload accessible names state loaded, delivered and collected without a pressed flag", () => {
   assert.match(workflow, /const status = collection \? \(delivered \? "Collected" : "Not collected"\) : delivered \? "Delivered" : loaded \? "Loaded" : "Not loaded";/);
-  assert.match(workflow, /const accessibleName = `\$\{subload\.category\}: \$\{status\}\$\{isLoadToggle \? "" : nextStep\}`;/);
+  assert.match(workflow, /const toggleAction = isLoadToggle \? \(loaded \? ", activate to unload" : ", activate to mark loaded"\) : nextStep;/);
+  assert.match(workflow, /const accessibleName = `\$\{subload\.category\}: \$\{status\}\$\{toggleAction\}`;/);
   assert.match(workflow, /aria-label=\{accessibleName\}/);
   assert.doesNotMatch(workflow, /aria-label=\{`\$\{subload\.category\}: \$\{label\}`\}/);
 });
