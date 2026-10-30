@@ -19,7 +19,7 @@ export function applyRevocations(records) {
   const byName = new Map(records.map(r => [r.name, r]));
   for (const e of revocationEvents()) for (const item of e.released) {
     const record = byName.get(item.name);
-    if (!record || leaseIdentity(record) !== item.leaseId) throw Error(`Revoked lease identity changed: ${item.name}`);
+    if (!record || leaseIdentity(record) !== item.leaseId || (e.kind === 'stacked-single-lease-recovery' && (record.owner !== item.owner || record.branch !== item.branch))) throw Error(`Revoked lease identity changed: ${item.name}`);
     byName.set(record.name, { ...record, state: 'revoked', revokedAt: e.at, revokedBy: e.actor.login, revocation: e.planHash, lastActivityAt: e.at });
   }
   return [...byName.values()];
