@@ -14,6 +14,8 @@ import { getCatalogueManifest } from "./catalogue-manifest";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { catalogueSourceHash, CATALOGUE_SOURCE_HASH_VERSION } from "./catalogue-source";
 import { markCataloguePackageFailed, type CataloguePackageState } from "./catalogue-manifest";
+import { readDishTagRegistry } from "./dish-tag-store";
+import { validateDishTagIds } from "./dish-tags";
 
 const filePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json");
 const HOSTED_CATALOGUE_TTL_MS = 60_000;
@@ -211,7 +213,7 @@ export async function recordDishSourceAliases(aliasesById: Record<string, string
 
 export type CanonicalMenuItemCreateOutcome = "created_new" | "matched_active" | "matched_merged_alias";
 export type CanonicalMenuItemCreateResult = MenuItem & { outcome: CanonicalMenuItemCreateOutcome };
-export type CanonicalMenuItemCreateInput = { displayName: string; category?: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[]; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"] };
+export type CanonicalMenuItemCreateInput = { displayName: string; category?: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[]; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"]; tagIds?: string[] };
 
 function validateRecipeFields(input: Pick<CanonicalMenuItemCreateInput, "ingredients" | "methodSteps">) {
   if (input.ingredients !== undefined && (!Array.isArray(input.ingredients) || input.ingredients.length > 100)) throw Object.assign(new Error("Provide no more than 100 recipe ingredients."), { status: 422 });
@@ -225,6 +227,8 @@ export async function createCanonicalMenuItem(input: CanonicalMenuItemCreateInpu
   if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
   const category = dishCategoryForWrite(input.category);
   validateRecipeFields(input);
+  // Unknown or malformed tag IDs reject the whole write; an omitted list leaves the dish untagged.
+  const tagIds = input.tagIds === undefined ? undefined : validateDishTagIds(await readDishTagRegistry(), input.tagIds);
   const items = await readItems();
   const baseline = structuredClone(items);
   const displayName = normaliseDishName(input.displayName);
@@ -255,6 +259,7 @@ export async function createCanonicalMenuItem(input: CanonicalMenuItemCreateInpu
     reviewStatus: "unreviewed",
     allergenEvidence: input.allergenEvidence || [],
     mayContainReviewed: Boolean(input.allergenEvidence?.length),
+    ...(tagIds?.length ? { tagIds } : {}),
     audit: [{ action: "locally-created-in-menu-planning", at, by: actor }],
   };
   items.push(item);
@@ -293,7 +298,7 @@ export async function createHospitalityDish(input: HospitalityDishInput, actor: 
   return { item, outcome: "created_new" };
 }
 
-export function amendCanonicalMenuItemRecord(item: MenuItem | undefined, items: readonly MenuItem[], input: { displayName: string; category: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[] }, actor: string, at = new Date().toISOString()) {
+export function amendCanonicalMenuItemRecord(item: MenuItem | undefined, items: readonly MenuItem[], input: { displayName: string; category: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[]; tagIds?: string[] }, actor: string, at = new Date().toISOString()) {
   if (!input.displayName?.trim()) throw Object.assign(new Error("A dish name is required."), { status: 422 });
   const category = dishCategoryForWrite(input.category);
   validateRecipeFields(input);
@@ -313,6 +318,8 @@ export function amendCanonicalMenuItemRecord(item: MenuItem | undefined, items: 
   if (input.mayContainNotes !== undefined) amended.mayContainNotes = input.mayContainNotes.trim() || undefined;
   if (input.ingredients !== undefined) amended.ingredients = input.ingredients.filter(ingredient => ingredient.name.trim()).map(ingredient => ({ ...ingredient, name: ingredient.name.trim(), unit: ingredient.unit?.trim() || undefined }));
   if (input.methodSteps !== undefined) amended.methodSteps = input.methodSteps.map(step => step.trim()).filter(Boolean);
+  // Callers pass tag IDs already validated against the registry; undefined leaves the dish's tags untouched.
+  if (input.tagIds !== undefined) { if (input.tagIds.length) amended.tagIds = [...new Set(input.tagIds)]; else delete amended.tagIds; }
   amended.revision += 1;
   amended.reviewStatus = "unreviewed";
   amended.audit.push({ action: "canonical-dish-amended", at, by: actor });
@@ -320,14 +327,15 @@ export function amendCanonicalMenuItemRecord(item: MenuItem | undefined, items: 
 }
 
 /** Update the editable identity/classification fields while preserving the stable catalogue ID and safety evidence. */
-export async function updateCanonicalMenuItem(id: string, input: { displayName: string; category: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[] }, actor: string) {
+export async function updateCanonicalMenuItem(id: string, input: { displayName: string; category: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[]; tagIds?: string[] }, actor: string) {
   if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
   const cleanId = id.trim();
+  const tagIds = input.tagIds === undefined ? undefined : validateDishTagIds(await readDishTagRegistry(), input.tagIds);
   if (!cleanId) throw Object.assign(new Error("A stable dish ID is required."), { status: 422 });
   const items = await readItems();
   const baseline = structuredClone(items);
   const index = items.findIndex(candidate => candidate.canonicalId === cleanId);
-  const amended = amendCanonicalMenuItemRecord(items[index], items, input, actor);
+  const amended = amendCanonicalMenuItemRecord(items[index], items, { ...input, tagIds }, actor);
   items[index] = amended;
   await writeItems(items, { currentItems: baseline, actor });
   return amended;
