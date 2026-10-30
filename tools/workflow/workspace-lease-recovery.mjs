@@ -2,7 +2,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { command, git, common, stateDir, lock, save, ancestor, ref, ghApi } from './runtime.mjs';
 import { REPO, digest, safeScope, exactSha } from './policy.mjs';
-import { workspaceRecords, worktrees, preserveWorkspace } from './workspaces.mjs';
+import { workspaceRecords, worktrees, preserveWorkspace, assertLeaseIdentitiesUnique } from './workspaces.mjs';
 import { leaseIdentity, registryFingerprint } from './workspace-state.mjs';
 import { criticalConditions, repositoryAdministrator } from './workspace-admin.mjs';
 import { changelogPath } from './changelog.mjs';
@@ -32,7 +32,7 @@ function identity(name, options, records) {
 function inspect(name, options, readPr) {
   const registry = registryFingerprint();
   const records = workspaceRecords();
-  if (new Set(records.map(leaseIdentity)).size !== records.length) throw Error('Registry contains duplicated lease identities');
+  assertLeaseIdentitiesUnique(records);
   if (records.some(r => ['creating', 'attention', 'reconciling'].includes(r.state))) throw Error('Registry contains an unresolved workspace transition');
   const { record, predecessor, scopes } = identity(name, options, records);
   const conditions = criticalConditions();

@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { git, common, stateDir, save, jsonFile, lock, ancestor, inside, command, ref, ghApi } from './runtime.mjs';
 import { safeScope, partialPathOverlap, digest, REPO, APPS } from './policy.mjs';
 import { changelogPath } from './changelog.mjs';
-import { applyRevocations, diskRecords } from './workspace-state.mjs';
+import { applyRevocations, diskRecords, leaseIdentity } from './workspace-state.mjs';
 
 const leases = () => { const p = path.join(stateDir(), 'workspaces'); mkdirSync(p, { recursive: true }); return p; };
 const managedRoot = () => path.resolve(common(), '..', '..', 'agent-workspaces', 'fika-os');
@@ -33,6 +33,33 @@ function committedReconciliationJournals() {
   }).filter(x => x?.phase === 'committed' && x.leaseTransition).sort((a,b) => a.completedAt.localeCompare(b.completedAt)).map(journal => {
     verifyRecoveryArtifact(journal.recoveryFile, journal.recoveryChecksum); return journal;
   });
+}
+/**
+ * Lease IDs are unique, with one historical exception: reconcileWorkspace once copied the source
+ * lease (including leaseId) into its replacement. A shared ID is therefore accepted only for exactly
+ * one source/replacement pair linked by a committed, checksum-verified reconciliation journal, whose
+ * on-disk leases cross-reference that journal and share its owner, and whose states are terminal
+ * (superseded source; finished/retired/superseded replacement). Anything else fails closed.
+ */
+export function assertLeaseIdentitiesUnique(records) {
+  const groups = new Map();
+  for (const r of records) { const id = leaseIdentity(r); groups.set(id, [...(groups.get(id) || []), r]); }
+  const journals = [...groups.values()].some(g => g.length > 1) ? committedReconciliationJournals() : [];
+  for (const [id, group] of groups) {
+    if (group.length === 1) continue;
+    const fail = why => { throw Error(`Registry contains duplicated lease identities: ${why}`); };
+    if (group.length !== 2) fail('more than two records share one lease ID');
+    const matching = journals.filter(j => group.every(r => [j.source, j.replacement].includes(r.name)));
+    if (matching.length !== 1) fail('no single committed reconciliation links them');
+    const [journal] = matching; const transition = journal.leaseTransition;
+    const source = group.find(r => r.name === journal.source); const replacement = group.find(r => r.name === journal.replacement);
+    const journalFile = path.join(stateDir(), 'reconciliations', String(journal.id), 'journal.json');
+    if (!source || !replacement) fail('reconciliation does not name both records');
+    if (!source.leaseId || id !== source.leaseId || transition.source.leaseId !== id || transition.replacement.leaseId !== id || journal.sourceLease?.leaseId !== id) fail('reconciliation evidence does not carry this lease ID');
+    if (source.owner !== journal.owner || replacement.owner !== journal.owner || transition.source.owner !== journal.owner || transition.replacement.owner !== journal.owner) fail('owners differ from the reconciliation');
+    if (source.state !== 'superseded' || source.supersededBy !== replacement.name || !source.reconciliationJournal || path.resolve(source.reconciliationJournal) !== journalFile) fail('source is not the superseded side of this reconciliation');
+    if (!['finished', 'retired', 'superseded'].includes(replacement.state) || replacement.reconciles?.source !== source.name || !replacement.reconciles.journal || path.resolve(replacement.reconciles.journal) !== journalFile || replacement.reconciles.recoveryChecksum !== journal.recoveryChecksum) fail('replacement is not a terminal successor of this reconciliation');
+  }
 }
 function materializeCommittedTransitions() {
   for (const journal of committedReconciliationJournals()) {

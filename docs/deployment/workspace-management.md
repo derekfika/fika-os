@@ -37,6 +37,18 @@ revocation journal/reader overlay. It never retires the checkout, edits its scop
 transfers files, closes a PR, or changes existing branches. Normal scope checks remain
 unchanged. The former owner is fenced; a successor needs a new governed workspace.
 
+Lease IDs must be unique across the registry, with one historical exception. Before
+the fix, `workspace reconcile` copied the source lease (including its ID) into the
+replacement, so reconciled pairs such as `hospitality-rotations-integration-v2`/`-v3` share
+an ID. Recovery tolerates that only when exactly two records share the ID and a single
+committed, recovery-checksum-verified reconciliation journal names them as source and
+replacement; both leases and the journal agree on the owner and ID; the on-disk leases
+cross-reference that journal and its checksum; and the source is `superseded` while the
+replacement is `finished`, `retired` or `superseded`. Active duplicates, a third record,
+unrelated or owner-mismatched records, and a missing or tampered journal still refuse the
+preview. Historical leases and journals are never edited.
+
+
 Run the **current canonical CLI from the canonical checkout** after this tooling PR is
 integrated. Authentication requires the local GitHub repository owner with administrator
 permission. Both preview and execution require the exact task/owner/lease ID, pinned HEAD,
