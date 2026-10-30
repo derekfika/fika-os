@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { assignedSeed, boot, centre, commandsOf, DATE, drag, queueItem, selectRun } from "./v3-helpers";
-import { expectClean } from "./layout-audit";
+import { auditLayout, expectClean } from "./layout-audit";
 
 const firstId = `run:${DATE}:a`;
 const secondId = `run:${DATE}:second-van1`;
@@ -86,3 +86,39 @@ test("van lanes and selected run controls stay inside a narrow desktop viewport"
   await page.screenshot({ path: info.outputPath("van-lanes-narrow.png"), fullPage: true });
   expectClean(issues, "narrow van lanes");
 });
+
+for (const width of [820, 1024]) {
+  test(`tablet ${width}px: van lanes, overlapping runs and keyboard selection remain usable`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { issues } = await boot(page, multipleRuns(true));
+    expect(page.viewportSize()?.width).toBe(width);
+
+    const lanes = page.locator("[data-vehicle-row]");
+    await expect(lanes).toHaveCount(2);
+    const van1 = page.locator('[data-vehicle-row="van1"]');
+    const van2 = page.locator('[data-vehicle-row="van2"]');
+    await expect(van1.locator("[data-run-bar]")).toHaveCount(2);
+    await expect(van1.locator(`[data-run-bar="${firstId}"]`)).toBeVisible();
+    const secondRun = van1.locator(`[data-run-bar="${secondId}"]`);
+    await expect(secondRun).toBeVisible();
+    await expect(van2.getByRole("button", { name: /Times to set/ })).toBeVisible();
+    await expect(van1.getByText("Overlapping runs", { exact: true })).toBeVisible();
+    await expect(secondRun).toHaveAttribute("data-overlap", "true");
+
+    // Select the second canonical run from its keyboard-operable timeline bar.
+    await secondRun.focus();
+    await secondRun.press("Enter");
+    await expect(page.locator(`[data-run-id="${secondId}"]`)).toBeVisible();
+    await expect(page.getByLabel("Run on Van 1")).toHaveValue(secondId);
+
+    // Exercise a core action and audit that controls remain reachable. Timeline
+    // track scrolling is intentional and must stay distinct from page overflow.
+    await expect(page.getByRole("button", { name: "New Run", exact: true })).toBeVisible();
+    await expect(van2.getByRole("button", { name: /Times to set/ })).toBeVisible();
+    await page.getByRole("button", { name: "New Run", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "New Run" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    expect(await auditLayout(page, "[data-journey-planner]", ["[data-testid=journey-timeline-scroller]"]), `tablet ${width}px layout`).toEqual([]);
+    expectClean(issues, `tablet ${width}px van lanes`);
+  });
+}
