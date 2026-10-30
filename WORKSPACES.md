@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-30T07:45:01.153Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-30T09:20:59.829Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -51,6 +51,7 @@ Snapshot: 2026-10-30T07:45:01.153Z. The local governed registry remains authorit
 | hierarchical-agent-instructions | codex-hierarchical-agent-instructions | AGENTS.md, CLAUDE.md, README.md, docs/ai/agent-reference.md, apps/integration-hub/AGENTS.md, apps/integration-hub/CLAUDE.md, apps/hospitality-booking/AGENTS.md, apps/hospitality-booking/CLAUDE.md, apps/menu-planning/AGENTS.md, apps/menu-planning/CLAUDE.md, apps/cpu-production/AGENTS.md, apps/cpu-production/CLAUDE.md, apps/delivered-in/AGENTS.md, apps/delivered-in/CLAUDE.md, apps/logistics/AGENTS.md, apps/logistics/CLAUDE.md | codex/hierarchical-agent-instructions | [#4](https://github.com/derekfika/fika-os/pull/4) | finished | 2026-10-22T19:47:37.742Z |
 | hospitality-catalogue-mapping | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-catalogue-mapping | — | finished | 2026-10-27T12:03:58.367Z |
 | hospitality-cfc-mr-tests | hospitality-cfc-mr | apps/integration-hub, CHANGELOG.md | codex/hospitality-cfc-mr-tests | [#81](https://github.com/derekfika/fika-os/pull/81) | finished | 2026-10-27T12:49:31.981Z |
+| hospitality-dashboard-filters | claude-hospitality-filters | apps/hospitality-booking/lib/dashboard-queue-filters.ts, apps/hospitality-booking/app/ui/DashboardQueueFilters.tsx, apps/hospitality-booking/app/ui/DashboardQueueFilters.module.css, apps/hospitality-booking/app/ui/HospitalityDashboard.tsx, apps/hospitality-booking/tests/dashboard-queue-filters.test.ts, apps/hospitality-booking/tests/calendar-layout.test.ts | codex/hospitality-dashboard-filters | [#166](https://github.com/derekfika/fika-os/pull/166) | retired | 2026-10-30T08:21:01.813Z |
 | hospitality-link-command | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-link-command | — | finished | 2026-10-28T06:40:38.357Z |
 | hospitality-rotations-core | codex-hospitality-rotations-core | apps/shared/hospitality-rotations.ts, apps/integration-hub/lib/hospitality-rotations, apps/integration-hub/app/api/hospitality-rotations, apps/integration-hub/tests/hospitality-rotations.test.ts, apps/integration-hub/tests/hospitality-rotations.emulator.test.ts, docs/architecture/hospitality-rotations.md | codex/hospitality-rotations-core | [#105](https://github.com/derekfika/fika-os/pull/105) | retired | 2026-10-28T14:10:25.430Z |
 | hospitality-rotations-dashboard-ui | codex-hospitality-rotations-ui | apps/hospitality-booking | codex/hospitality-rotations-dashboard-ui | [#106](https://github.com/derekfika/fika-os/pull/106) | retired | 2026-10-29T08:12:49.922Z |
@@ -139,6 +140,7 @@ Snapshot: 2026-10-30T07:45:01.153Z. The local governed registry remains authorit
 | rotations-staging-access | codex-rotations-staging-delivery | apps/integration-hub/scripts/rotations-staging-access.ts, docs/deployment/rotations-staging-delivery-continued.md | codex/rotations-staging-access | — | retired | 2026-10-29T16:11:09.792Z |
 | rotations-staging-delivery | codex-rotations-staging-delivery | docs/deployment/rotations-staging-delivery.md | codex/rotations-staging-delivery | [#135](https://github.com/derekfika/fika-os/pull/135) | retired | 2026-10-29T15:56:53.225Z |
 | rotations-staging-record | codex-hospitality-rotations-integration | .changes/hospitality-booking/2026-10-29-rotations-live-manager.md, .changes/integration-hub/2026-10-29-rotations-picker-resources.md | codex/rotations-staging-record | [#148](https://github.com/derekfika/fika-os/pull/148) | retired | 2026-10-29T19:01:14.536Z |
+| stacked-lease-integration | sol-workspace-integration | tools/workflow, docs/deployment/workspace-management.md, docs/deployment/workflow.md | codex/stacked-lease-integration | [#167](https://github.com/derekfika/fika-os/pull/167) | retired | 2026-10-30T09:20:57.232Z |
 | stacked-lease-recovery | sol-workspace-governance | tools/workflow, docs/deployment/workspace-management.md, docs/deployment/workflow.md | codex/stacked-lease-recovery | [#165](https://github.com/derekfika/fika-os/pull/165) | retired | 2026-10-30T07:44:59.666Z |
 | standing-orders-pr14-sync | codex-standing-orders-pr14-sync | apps/delivered-in, apps/integration-hub, docs/deployment, CHANGELOG.md | codex/standing-orders-pr14-sync | — | finished | 2026-10-23T12:09:58.445Z |
 | uat-blocker-checkpoint | uat-20261025-1150 | CHANGELOG.md | codex/uat-blocker-checkpoint | [#45](https://github.com/derekfika/fika-os/pull/45) | retired | 2026-10-25T12:49:14.064Z |
