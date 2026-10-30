@@ -37,9 +37,10 @@
     "head": "f69ed87020d718ebf06f0057a69401ba3e6317b0",
     "pullRequestRisk": "standard"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "50cec0d6-b081-4cf6-a738-10be8e9951fe",
+  "rollout": "build-2026-10-30-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "f9e519428d14fc90dec94f34a5f2e1f38ff0d1d5",
     "rollout": "build-2026-10-26-001",
@@ -47,5 +48,11 @@
     "percent": 100
   },
   "previousGoodRecord": "f55c1be11172ad0853a4f307053e087fcf3d76f7",
-  "createdAt": "2026-10-30T18:00:12.363Z"
+  "releaseId": "50cec0d6-b081-4cf6-a738-10be8e9951fe",
+  "completedAt": "2026-10-30T18:03:22.353Z",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-cpu-production-staging--fika-os-dev.europe-west4.hosted.app/"
+  }
 }
