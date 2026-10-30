@@ -44,3 +44,22 @@ test("an explicit Hub Sandwiches workstream wins over a Hospitality booking orig
   assert.equal(filterProductionOrdersForScope([sandwich], "hospitality", routing).length, 0);
   assert.equal(filterProductionOrdersForScope([sandwich], "all", routing).length, 1);
 });
+
+test("Ad-Hoc canonical orders appear whole in Hospitality only, regardless of category or line workstreams", () => {
+  const adHoc = { canonicalId: "production-order:v1:ad-hoc:request:1", origin: "cpu_created", productionCategory: "grab_and_go", status: "cancelled", workflowStatus: "cancelled", cancellationNotice: "Cancelled by requester", lines: [
+    { canonicalId: "line:sandwich", sourceMenuItemId: "menu:sandwich", workstream: "sandwiches" },
+    { canonicalId: "line:delivered", sourceMenuItemId: "menu:delivered", workstream: "delivered_in" },
+    { canonicalId: "line:grab-and-go", sourceMenuItemId: "menu:grab-and-go", workstream: "grab_and_go" },
+  ] } as never;
+  const routing: ProductionRouting = {};
+
+  assert.deepEqual(filterProductionOrdersForScope([adHoc], "all", routing), [adHoc]);
+  assert.deepEqual(filterProductionOrdersForScope([adHoc], "hospitality", routing), [adHoc]);
+  assert.deepEqual(filterProductionOrdersForScope([adHoc], "sandwiches", routing), []);
+  assert.deepEqual(filterProductionOrdersForScope([adHoc], "delivered_in", routing), []);
+  assert.deepEqual(filterProductionOrdersForScope([adHoc], "grab_and_go", routing), []);
+
+  const ordinaryCpu = { ...(adHoc as Record<string, unknown>), canonicalId: "production-order:v1:cpu:ordinary", status: "accepted", workflowStatus: undefined, cancellationNotice: undefined, lines: [{ canonicalId: "line:ordinary" }] } as never;
+  assert.deepEqual(filterProductionOrdersForScope([ordinaryCpu], "hospitality", routing), []);
+  assert.deepEqual(filterProductionOrdersForScope([ordinaryCpu], "delivered_in", routing).map((order) => order.canonicalId), ["production-order:v1:cpu:ordinary"]);
+});

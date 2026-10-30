@@ -2,6 +2,7 @@ import type { ProductionOrder, ProductionLine } from "./production-types";
 import type { CpuDayProjection, CpuWeekProjection } from "./cpu-projection";
 import type { ProductionScope } from "./production-scope";
 import { europeLondonDate } from "./operational-date";
+import { isAdHocProductionOrderId } from "./production-presentation";
 
 export function weekCommencingFor(serviceDate: string) { const date = new Date(`${serviceDate}T00:00:00Z`); const day = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() - day + 1); return date.toISOString().slice(0, 10); }
 export function dashboardOperationalDate(now = new Date()) { const date = new Date(`${europeLondonDate(now)}T12:00:00Z`); const day = date.getUTCDay(); if (day === 0) date.setUTCDate(date.getUTCDate() + 1); else if (day === 6) date.setUTCDate(date.getUTCDate() + 2); return date.toISOString().slice(0, 10); }
@@ -96,6 +97,8 @@ export function filterCpuProjectionForScope<T extends CpuProjection>(projection:
     return ["cpu_created", "menu_planning", "legacy_import"].includes(row.origin || "") || ["delivered_in", "fine_dining", "other"].includes(row.productionCategory || "");
   };
   const orders = projection.orders.flatMap((row) => {
+    if (isAdHocProductionOrderId(row.id)) return scope === "hospitality" ? [{ ...row }] : [];
+
     const workstreams = (row.productionScope || "").split(",").filter(Boolean);
     const aligned = workstreams.length === row.quantities.length;
     if (aligned) {

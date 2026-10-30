@@ -1,6 +1,6 @@
 import type { ProductionLine, ProductionOrder } from "./production-types";
 import type { OperationalAllergenState } from "../../shared/allergen-contract";
-import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel, isCpuWithdrawn } from "./production-presentation";
+import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel, isAdHocProductionOrder, isCpuWithdrawn } from "./production-presentation";
 
 export type DeliveredInDishTotal = { key: string; dishName: string; total: number; destinations: Array<{ label: string; quantity: number }> };
 export type DeliveredInDishRow = { key: string; name: string; quantity: number; destinations: Array<{ label: string; quantity: number }>; snapshot?: NonNullable<ProductionLine["approvedAllergenSnapshot"]>; reviewed: boolean; snapshotMismatch?: { sources: string[]; detail: string } };
@@ -10,11 +10,15 @@ export function allergenReviewKey(order: ProductionOrder, line: ProductionLine) 
 
 export function orderDate(order: ProductionOrder) { return order.serviceDate || order.requiredBy.slice(0, 10); }
 export function orderQuantity(order: ProductionOrder) { return order.lines.reduce((sum, line) => sum + line.customerQuantity, 0); }
+export function isHospitalityDayOrder(order: Pick<ProductionOrder, "canonicalId" | "origin">) {
+  return order.origin === "hospitality_booking" || isAdHocProductionOrder(order);
+}
 export type ProductionTotalProgress = "not_started" | "in_progress" | "produced";
 export type ProductionTotalItem = { key: string; name: string; unit: string; quantity: number; progress: ProductionTotalProgress };
 export type ProductionTotalsCategory = { category: string; orderCount: number; items: ProductionTotalItem[] };
 
 function productionLineCategory(order: ProductionOrder, line: ProductionLine) {
+  if (isAdHocProductionOrder(order)) return "Hospitality";
   if (line.workstream === "sandwiches") return "Sandwiches";
   if (line.workstream === "hospitality") return "Hospitality";
   if (line.workstream === "delivered_in") return "Delivered-In";
