@@ -4,7 +4,7 @@ import path from 'node:path';
 import { writeFileSync, readFileSync, mkdirSync, readdirSync, existsSync, unlinkSync } from 'node:fs';
 import { fixture } from './lifecycle-fixture.mjs';
 import { stateDir, save, jsonFile, withRepository } from './runtime.mjs';
-import { createWorkspace } from './workspaces.mjs';
+import { createWorkspace, reconcileWorkspace } from './workspaces.mjs';
 import { workspaceRecords, checkWorkspace } from './workspaces.mjs';
 import { completeWorkspace, repositoryAdministrator } from './workspace-admin.mjs';
 import { recoverStackedLease } from './workspace-lease-recovery.mjs';
@@ -117,4 +117,55 @@ test('changes during preservation leave additive recovery evidence but never rel
 test('recovery CLI accepts exact selectors and rejects conflicting execution modes', () => {
   assert.equal(parse(['workspace', 'recover-stacked', 'portal-task', '--lease-id', 'exact', '--predecessor', 'prior-task', '--predecessor-lease-id', 'prior', '--dry-run']).options['lease-id'], 'exact');
   assert.throws(() => parse(['workspace', 'recover-stacked', 'portal-task', '--execute', '--dry-run']), /either/);
+});
+
+// Historical shape (hospitality-rotations-integration-v2 -> v3): reconcileWorkspace copied the source leaseId into its replacement.
+function historicalPair(f, s) {
+  const result = reconcileWorkspace(s.unrelated.name, { owner: s.unrelated.owner, replacement: 'rotations-task-v3', execute: true });
+  assert.equal(result.source.leaseId, result.replacement.leaseId);
+  completeWorkspace('rotations-task-v3', { owner: s.unrelated.owner }, { evidenceFor: () => ({ pushed: true, inMain: true, pr: { number: 2 } }) });
+  const registry = path.join(stateDir(), 'workspaces'); const file = name => path.join(registry, `${name}.json`);
+  const journal = jsonFile(result.journal);
+  return { result, journal, journalFile: result.journal, file, mutate: (name, change) => { const original = readFileSync(file(name), 'utf8'); save(file(name), { ...jsonFile(file(name)), ...change }); return () => writeFileSync(file(name), original); } };
+}
+
+test('a committed reconciliation pair sharing one historical lease ID no longer blocks single-lease recovery preview or execution', () => {
+  const f = fixture(); try { f.within(() => {
+    const s = stack(f); const h = historicalPair(f, s);
+    assert.equal(workspaceRecords().find(r => r.name === 'rotations-task').state, 'superseded');
+    assert.equal(['finished', 'retired'].includes(workspaceRecords().find(r => r.name === 'rotations-task-v3').state), true);
+    const registry = path.join(stateDir(), 'workspaces'); const before = new Map(readdirSync(registry).map(n => [n, readFileSync(path.join(registry, n), 'utf8')]));
+    const journalBytes = readFileSync(h.journalFile, 'utf8');
+    const plan = s.recover(); assert.equal(plan.dryRun, true); assert.equal(plan.leaseReleased, false); assert.equal(plan.leaseId, s.target.leaseId);
+    const result = s.recover({ execute: true, 'approve-hash': plan.planHash });
+    assert.equal(result.leaseReleased, true);
+    const states = Object.fromEntries(workspaceRecords().map(r => [r.name, r.state]));
+    assert.equal(states[s.target.name], 'revoked'); assert.equal(states['rotations-task'], 'superseded'); assert.notEqual(states['rotations-task-v3'], 'revoked');
+    for (const [n, bytes] of before) assert.equal(readFileSync(path.join(registry, n), 'utf8'), bytes);
+    assert.equal(readFileSync(h.journalFile, 'utf8'), journalBytes);
+  }); } finally { f.dispose(); }
+});
+
+test('shared lease IDs outside verified, terminal, same-owner reconciliation evidence still fail closed', () => {
+  const f = fixture(); try { f.within(() => {
+    const s = stack(f); const h = historicalPair(f, s); const id = h.result.source.leaseId;
+    const refused = (restore, pattern = /duplicated lease identities/) => { try { assert.throws(() => s.recover(), pattern); assert.equal(jsonFile(h.file(s.target.name)).state, 'active'); } finally { restore(); } };
+    // Active duplicate of a reconciled lease (replacement still live) and a live record borrowing the ID.
+    refused(h.mutate('rotations-task-v3', { state: 'active' }));
+    refused(h.mutate(s.target.name, { leaseId: id }));
+    // Unrelated third and unrelated second record.
+    refused(h.mutate(s.prior.name, { leaseId: id }));
+    // Missing journal, tampered recovery checksum evidence, changed cross-references and states.
+    const journalBytes = readFileSync(h.journalFile, 'utf8'); unlinkSync(h.journalFile); try { assert.throws(() => s.recover(), /duplicated lease identities|inconsistent|owner/); } finally { writeFileSync(h.journalFile, journalBytes); }
+    const recoveryFile = h.journal.recoveryFile; const recoveryBytes = readFileSync(recoveryFile, 'utf8'); writeFileSync(recoveryFile, recoveryBytes.replace(/\s*\}\s*$/, ',"tampered":true}')); try { assert.throws(() => s.recover()); } finally { writeFileSync(recoveryFile, recoveryBytes); }
+    refused(h.mutate('rotations-task-v3', { reconciles: { ...jsonFile(h.file('rotations-task-v3')).reconciles, recoveryChecksum: '0'.repeat(64) } }));
+    refused(h.mutate('rotations-task-v3', { reconciles: { ...jsonFile(h.file('rotations-task-v3')).reconciles, journal: path.join(stateDir(), 'reconciliations', 'other', 'journal.json') } }));
+    refused(h.mutate('rotations-task-v3', { owner: 'someone-else' }), /owner|duplicated/);
+    refused(h.mutate('rotations-task', { owner: 'someone-else' }), /owner|duplicated/);
+    // Source and replacement with the same ID but no reconciliation are unrelated records.
+    const unlinked = createWorkspace('unlinked-task', { owner: 'other-owner', scope: 'unlinked' }); completeWorkspace(unlinked.name, { owner: unlinked.owner }, { evidenceFor: () => ({ pushed: true, inMain: true, pr: { number: 3 } }) });
+    refused(h.mutate(unlinked.name, { leaseId: s.prior.leaseId }));
+    // Control: untouched registry still previews.
+    assert.equal(s.recover().dryRun, true);
+  }); } finally { f.dispose(); }
 });
