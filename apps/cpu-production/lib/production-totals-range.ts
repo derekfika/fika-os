@@ -63,7 +63,8 @@ export function productionWeeksInRange(range: ProductionTotalsDateRange): string
   return weeks;
 }
 
-export function filterProductionTotalsOrders(orders: ProductionOrder[], range: ProductionTotalsDateRange | undefined, site = "", origin = ""): ProductionOrder[] {
+export function filterProductionTotalsOrders(orders: ProductionOrder[], range: ProductionTotalsDateRange | undefined, site: string | readonly string[] = "", origin = ""): ProductionOrder[] {
+  const sites = typeof site === "string" ? (site ? [site] : []) : site;
   if (!range) return [];
   const unique = new Map<string, ProductionOrder>();
   for (const order of orders) {
@@ -72,7 +73,7 @@ export function filterProductionTotalsOrders(orders: ProductionOrder[], range: P
   }
   return [...unique.values()].filter(order => {
     const date = orderDate(order);
-    return !isCpuWithdrawn(order) && date >= range.from && date <= range.to && (!site || order.destinationOplocId === site) && (!origin || order.origin === origin);
+    return !isCpuWithdrawn(order) && date >= range.from && date <= range.to && (!sites.length || (Boolean(order.destinationOplocId) && sites.includes(order.destinationOplocId as string))) && (!origin || order.origin === origin);
   });
 }
 
