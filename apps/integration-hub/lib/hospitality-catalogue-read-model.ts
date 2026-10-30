@@ -130,7 +130,7 @@ export function buildCatalogueRows(input: CatalogueReadInput): { rows: Catalogue
     return {
       itemId: item.canonicalId, version: Number(item.record.version || 1), name: text(item.record.name), category: text(item.record.category), description: text(item.record.description), status,
       routing: route, ...(suggestion && suggestedChoice ? { routingSuggestion: { choice: suggestedChoice, reason: suggestion.reason } } : {}), ...(defaultPrice ? { defaultPrice } : {}), ...(defaultMinimumQuantity !== undefined ? { defaultMinimumQuantity } : {}),
-      offerings, availableAt: status === "active" ? activeSites.filter(id => !unavailableAt.includes(id)).sort() : [], unavailableAt,
+      ...(restricted ? { permittedSites: [...new Set(restricted)].sort() } : {}), offerings, availableAt: status === "active" ? activeSites.filter(id => !unavailableAt.includes(id)).sort() : [], unavailableAt,
       overrideCount: active.filter(offering => !offering.noEffect).reduce((sum, offering) => sum + Number(!offering.available) + Number(offering.price.source === "overrides") + Number(offering.minimum.source === "overrides") + Number(Boolean(offering.displayName)) + Number(Boolean(offering.description)), 0),
       needsReview, ...(site !== "unknown" ? { siteCopyOf: site } : {}), sourceIds: sourceIdentities(item),
       providerMappings: (Array.isArray(item.record.providerMappings) ? item.record.providerMappings : []) as CatalogueRow["providerMappings"],

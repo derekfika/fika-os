@@ -69,6 +69,8 @@ export type CatalogueCommand =
   | { action: "set-routing"; itemId: string; routing: RoutingChoice; expectedRoutingVersion: number }
   | { action: "set-item-status"; itemId: string; expectedVersion: number; status: "active" | "archived" }
   /** Availability is the default everywhere; this records or clears a sparse `available:false` exception for one OPLOC. */
+  /** Governed scope, NOT availability: replaces the permitted-site allowlist of an Item that already has one. Removing a permitted site needs `confirmRemoval`. */
+  | { action: "set-permitted-sites"; itemId: string; expectedVersion: number; allowedOplocIds: string[]; reason: string; confirmRemoval?: boolean }
   | { action: "set-site-availability"; itemId: string; expectedVersion: number; oplocId: string; available: boolean }
   /** Sparse site override (price / minimum / wording). The exception record is created on demand and retired again once it states nothing beyond the defaults. */
   | SiteSettings & { action: "set-site-override"; itemId: string; expectedVersion: number; oplocId: string; price?: PriceInput | null; minimumQuantity?: number | null; displayName?: string | null; description?: string | null }
@@ -342,6 +344,34 @@ async function setSiteAvailability(ctx: Ctx, command: Extract<CatalogueCommand, 
   return { itemIds: [item.canonicalId], reload: false, message: command.available ? "Available at the site again. It inherits the company price and minimum." : "Marked unavailable at the site. History and overrides are kept." };
 }
 
+/**
+ * Changes the governed site allowlist (Item.allowedOplocIds) of an Item that is already site-restricted. This is deliberately separate from
+ * availability exceptions (which can only narrow a permitted scope). One transaction: version-checked, schema-validated, revisioned and audited.
+ * Prices, routing, configuration, minimums, Offerings and the Item's identity are untouched. Inactive sites already on the list are preserved.
+ */
+async function setPermittedSites(ctx: Ctx, command: Extract<CatalogueCommand, { action: "set-permitted-sites" }>): Promise<CatalogueCommandResult> {
+  const itemRef = canonical().doc(stableDocumentId(command.itemId));
+  const [itemSnapshot, activeIds] = await Promise.all([readDoc(ctx, itemRef), activeOplocIds(ctx)]);
+  const item = requireItem(itemSnapshot); expectVersion(item, command.expectedVersion, "This item");
+  if (isArchived(item)) throw problem("Restore the item before changing its permitted sites.");
+  const current = item.record.allowedOplocIds;
+  if (!Array.isArray(current)) throw problem("This item has no governed site restriction; use site availability instead.");
+  const reason = text(command.reason).trim();
+  if (reason.length < 8) throw problem("Record a reason of at least eight characters.");
+  const requested = [...new Set(command.allowedOplocIds.map(text))].filter(Boolean).sort();
+  if (!requested.length) throw problem("Choose at least one permitted site.");
+  const unknown = requested.filter(id => !activeIds.includes(id));
+  if (unknown.length) throw problem(`${unknown.length} selected site${unknown.length === 1 ? " is" : "s are"} not active locations.`);
+  const before = [...new Set((current as unknown[]).map(text))].sort();
+  const after = [...new Set([...requested, ...before.filter(id => !activeIds.includes(id))])].sort(); // never silently drop an inactive legacy entry
+  const added = after.filter(id => !before.includes(id)), removed = before.filter(id => !after.includes(id));
+  if (!added.length && !removed.length) throw problem("Those are already the permitted sites.", 409);
+  if (removed.length && command.confirmRemoval !== true) throw problem("Removing a permitted site needs explicit confirmation.");
+  stage(ctx, "Hospitality Menu Item", { ...bump(ctx, item.record), allowedOplocIds: after }, item, `Permitted sites changed: ${reason}`);
+  auditEvent(ctx, "Hospitality Catalogue permitted sites changed", item.canonicalId, `“${text(item.record.name)}” permitted sites changed. ${reason}`, { itemId: item.canonicalId, before: { allowedOplocIds: before }, after: { allowedOplocIds: after }, added, removed, reason });
+  return { itemIds: [item.canonicalId], reload: false, message: `Permitted sites updated (${added.length} added, ${removed.length} removed). Prices, routing and minimums are unchanged.` };
+}
+
 async function setSiteOverride(ctx: Ctx, command: Extract<CatalogueCommand, { action: "set-site-override" }>): Promise<CatalogueCommandResult> {
   const itemRef = canonical().doc(stableDocumentId(command.itemId));
   const [itemSnapshot, children, activeIds] = await Promise.all([readDoc(ctx, itemRef), itemChildren(ctx, command.itemId), activeOplocIds(ctx)]);
@@ -532,6 +562,7 @@ export async function runCatalogueCommand(actor: Actor, command: CatalogueComman
       case "set-default-price": return setDefaultPrice(ctx, command);
       case "set-routing": return setRouting(ctx, command);
       case "set-item-status": return setItemStatus(ctx, command);
+      case "set-permitted-sites": return setPermittedSites(ctx, command);
       case "set-site-availability": return setSiteAvailability(ctx, command);
       case "set-site-override": return setSiteOverride(ctx, command);
       case "adopt-company-default": return adoptCompanyDefault(ctx, command);

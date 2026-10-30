@@ -81,6 +81,14 @@ Nothing is applied by analysis; `adopt-company-default` is an explicit, confirme
 
 None required: routing is per Item and no site-level routing override was added or found. (`HOSPITALITY_GOVERNED_ROUTING_PLATFORMS`, which gates hand-off enforcement per platform, is unchanged and orthogonal.)
 
+## 7a. Permitted sites (governed scope)
+
+An Item created as site-restricted carries `allowedOplocIds`. This is catalogue scope, not availability: availability exceptions can only hide an Item at a site that is already permitted, and `set-site-availability` / bulk site edits refuse to broaden a restricted Item.
+`set-permitted-sites` (`itemId`, `expectedVersion`, `allowedOplocIds`, `reason`, `confirmRemoval?`) replaces the allowlist of an Item that already has one. It needs `hospitality.catalogue.manage`, refuses stale versions, archived or unrestricted Items, an empty list, non-active sites and a no-op, and requires `confirmRemoval` before any site is removed. Inactive legacy entries are preserved. It is one transaction that writes the Item (version + 1), its revision and an audit event (actor, before/after, added/removed, reason). Prices, routing, configuration, minimums, Offerings and the Item identity are untouched, and the package is republished by the route. The UI exposes it as **Permitted sites → Edit permitted sites**, separate from **Available at**.
+
+`scripts/rcoa-oac-wines.ts` is a read-only planner for permitting the 11 One Angel Court wines at RCoA: it derives the canonical IDs from the approved OAC catalogue, verifies them against the live records and emits the exact commands. It never writes.
+
+
 ## 8. Known limitations
 
 * Allergen/dietary data is read-only here and blocks merges when it differs; editing it stays with the existing governed path.
