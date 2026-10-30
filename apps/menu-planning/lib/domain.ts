@@ -1,3 +1,4 @@
+import type { DishOperationalScope, HospitalityDishClassId } from "../../shared/hospitality-rotations";
 export type MenuWeekStatus = "draft" | "imported" | "needs_review" | "in_review" | "approved" | "published" | "superseded" | "archived";
 export type ReviewStatus = "unreviewed" | "ready" | "approved" | "ignored" | "blocked" | "archived";
 export type RecipeStatus = "draft" | "active" | "under_review" | "archived";
@@ -5,7 +6,13 @@ export type MenuExceptionSeverity = "warning" | "blocking";
 export type Audit = { action: string; at: string; by: string; reason?: string };
 export type AllergenEvidence = { allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown"; source: string; reviewedBy?: string; reviewedAt?: string; notes?: string };
 export type RecipeIngredient = { name: string; quantity?: number; unit?: string; rawText?: string };
-export type MenuItem = { canonicalId: string; sourceName: string; displayName: string; sourceAliases?: string[]; description?: string; preparationDescription?: string; category: string; subcategory?: string; recipeStatus?: RecipeStatus; ingredients?: RecipeIngredient[]; yield?: number; yieldUnit?: string; yieldDescription?: string; portionSize?: number; servingGuidance?: string; preparationNotes?: string; holdingStorageNotes?: string; methodSteps?: string[]; mayContainNotes?: string; sourceEvidence?: { document: string; excerpt?: string; importedAt: string }; weekId: string; dayId: string; sourceReference: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; revision: number; reviewStatus: ReviewStatus; duplicateWarning?: string; allergenEvidence: AllergenEvidence[]; mayContainReviewed: boolean; audit: Audit[] };
+export type MenuItem = { canonicalId: string; sourceName: string; displayName: string; sourceAliases?: string[]; description?: string; preparationDescription?: string; category: string; subcategory?: string; recipeStatus?: RecipeStatus; ingredients?: RecipeIngredient[]; yield?: number; yieldUnit?: string; yieldDescription?: string; portionSize?: number; servingGuidance?: string; preparationNotes?: string; holdingStorageNotes?: string; methodSteps?: string[]; mayContainNotes?: string; sourceEvidence?: { document: string; excerpt?: string; importedAt: string }; weekId: string; dayId: string; sourceReference: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; revision: number; reviewStatus: ReviewStatus; duplicateWarning?: string; allergenEvidence: AllergenEvidence[]; mayContainReviewed: boolean; audit: Audit[];
+  /** Explicit operational scope. Missing means MENU_PLANNING, so every pre-existing record keeps Brian's behaviour. */
+  operationalScope?: DishOperationalScope;
+  /** Hospitality classification (Finger Food, Canapés…); independent of the governed Menu Planning category. */
+  hospitalityClass?: HospitalityDishClassId };
+/** Records authored for Hospitality Rotations must never reach Brian's planner, Dish Library, publication or package. */
+export const isMenuPlanningVisible = (item: Pick<MenuItem, "operationalScope">) => item.operationalScope !== "HOSPITALITY_ROTATIONS";
 export type SiteAllocation = { canonicalId: string; menuItemId: string; weekId: string; dayId: string; siteId?: string; sourceSiteName: string; normalisedSiteName?: string; plannedQuantity?: number; quantityUnit?: string; notes?: string; reviewStatus: ReviewStatus; audit: Audit[] };
 export type MenuDay = { canonicalId: string; weekId: string; date: string; dayName: string; position: number; itemIds: string[]; notes?: string; audit: Audit[] };
 export type MenuWeek = { canonicalId: string; weekCommencing: string; weekEnding: string; status: MenuWeekStatus; version: number; dayIds: string[]; itemIds: string[]; allocationIds: string[]; sourceImportId?: string; reviewer?: string; publishedBy?: string; publishedAt?: string; exceptions: MenuException[]; audit: Audit[] };
