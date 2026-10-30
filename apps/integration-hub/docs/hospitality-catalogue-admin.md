@@ -81,6 +81,12 @@ Nothing is applied by analysis; `adopt-company-default` is an explicit, confirme
 
 None required: routing is per Item and no site-level routing override was added or found. (`HOSPITALITY_GOVERNED_ROUTING_PLATFORMS`, which gates hand-off enforcement per platform, is unchanged and orthogonal.)
 
+## 7a. One on/off switch per site
+
+Any Item can be switched on or off for any active site, from the Item panel (**Available at**), the bulk editor, or `set-site-availability`. Items created for specific sites carry a site list (`allowedOplocIds`); switching a site ON outside that list extends the list in the same transaction (Item version + 1, revision, and an audit event recording `siteListExtendedWith`). Switching OFF records the normal reversible exception and keeps the list. Switching OFF at a site the Item was never permitted at is a no-op and stores nothing. Prices, routing, minimums and configuration are never touched.
+
+`scripts/rcoa-oac-wines.ts` is a read-only planner for enabling the 11 One Angel Court wines at RCoA: it derives the canonical IDs from the approved OAC catalogue, verifies them against live records and emits one bulk "add RCoA" operation. It never writes. Which booking section an Item appears in is driven by its category and is a separate, portal-side mapping.
+
 ## 8. Known limitations
 
 * Allergen/dietary data is read-only here and blocks merges when it differs; editing it stays with the existing governed path.

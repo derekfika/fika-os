@@ -172,10 +172,13 @@ function noEffect(record: Record<string, unknown>, ownPrices: CanonicalRecord[],
 const retire = (ctx: Ctx, offering: CanonicalRecord, reason: "item-archived" | "redundant-default", note: string, record: Record<string, unknown> = offering.record) => stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, record), lifecycleState: "archived", retiredReason: reason }, offering, note);
 
 /** Applies availability edits as SPARSE exceptions. Returns "+oploc" (made available / exception cleared) and "-oploc" (exception recorded). */
-function applySiteEdits(ctx: Ctx, item: CanonicalRecord, children: ItemChildren, ownPrices: CanonicalRecord[], edits: Array<{ oplocId: string; available: boolean }>, today: string) {
+/** An Item created for specific sites carries an allowlist (`allowedOplocIds`). Switching a site ON outside it extends the allowlist (reported through `scopeAdded`); switching OFF there is already the effective state. */
+function applySiteEdits(ctx: Ctx, item: CanonicalRecord, children: ItemChildren, ownPrices: CanonicalRecord[], edits: Array<{ oplocId: string; available: boolean }>, today: string, scopeAdded: string[] = []) {
   const touched: string[] = [];
   for (const edit of edits) {
-    if (edit.available && Array.isArray(item.record.allowedOplocIds) && !item.record.allowedOplocIds.includes(edit.oplocId)) throw problem("This item has a governed site restriction; availability cannot broaden its scope.");
+    const outside = Array.isArray(item.record.allowedOplocIds) && !item.record.allowedOplocIds.includes(edit.oplocId);
+    if (outside && !edit.available) continue; // not permitted there: already unavailable, no exception record needed
+    if (outside) { scopeAdded.push(edit.oplocId); touched.push(`+${edit.oplocId}`); }
     const records = siteWide(children, edit.oplocId); const active = records.find(offering => offering.record.lifecycleState !== "archived"); const retired = records.find(offering => offering.record.lifecycleState === "archived");
     if (!edit.available) {
       if (active) { if (active.record.available === false) continue; stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, active.record), available: false }, active, "Site availability exception recorded."); }
@@ -187,7 +190,7 @@ function applySiteEdits(ctx: Ctx, item: CanonicalRecord, children: ItemChildren,
       const cleared = without(bump(ctx, active.record), "available");
       if (noEffect(cleared, ownPrices, item, children.itemPrices, today)) retire(ctx, active, "redundant-default", "Availability exception cleared; the record stated nothing else, so it is retired.");
       else stage(ctx, "Hospitality Menu Offering", cleared, active, "Availability exception cleared.");
-      touched.push(`+${edit.oplocId}`);
+      if (!outside) touched.push(`+${edit.oplocId}`);
     }
   }
   return touched;
@@ -335,11 +338,12 @@ async function setSiteAvailability(ctx: Ctx, command: Extract<CatalogueCommand, 
   if (isArchived(item)) throw problem("Restore the item before changing where it is available.");
   if (!activeIds.includes(command.oplocId)) throw problem("Choose an active location.");
   const ownPrices = await offeringPrices(ctx, children.offerings.map(offering => offering.canonicalId));
-  const touched = applySiteEdits(ctx, item, children, ownPrices, [{ oplocId: command.oplocId, available: command.available }], ukBusinessDate());
+  const scopeAdded: string[] = [];
+  const touched = applySiteEdits(ctx, item, children, ownPrices, [{ oplocId: command.oplocId, available: command.available }], ukBusinessDate(), scopeAdded);
   if (!touched.length) throw problem(command.available ? "This item is already available at that site." : "This item is already unavailable at that site.", 409);
-  stage(ctx, "Hospitality Menu Item", bump(ctx, item.record), item, "Site availability changed (item version touched).");
-  auditEvent(ctx, command.available ? "Hospitality Catalogue offering enabled" : "Hospitality Catalogue offering disabled", item.canonicalId, `“${text(item.record.name)}” ${command.available ? "made available again" : "made unavailable"} at a site.`, { itemId: item.canonicalId, oplocId: command.oplocId, before: { available: !command.available }, after: { available: command.available } });
-  return { itemIds: [item.canonicalId], reload: false, message: command.available ? "Available at the site again. It inherits the company price and minimum." : "Marked unavailable at the site. History and overrides are kept." };
+  stage(ctx, "Hospitality Menu Item", scopeAdded.length ? { ...bump(ctx, item.record), allowedOplocIds: [...new Set([...(item.record.allowedOplocIds as string[]), ...scopeAdded])].sort() } : bump(ctx, item.record), item, scopeAdded.length ? "Site switched on; the item's site list was extended." : "Site availability changed (item version touched).");
+  auditEvent(ctx, command.available ? "Hospitality Catalogue offering enabled" : "Hospitality Catalogue offering disabled", item.canonicalId, `“${text(item.record.name)}” ${command.available ? "made available again" : "made unavailable"} at a site.`, { itemId: item.canonicalId, oplocId: command.oplocId, before: { available: !command.available }, after: { available: command.available }, ...(scopeAdded.length ? { siteListExtendedWith: scopeAdded } : {}) });
+  return { itemIds: [item.canonicalId], reload: false, message: command.available ? (scopeAdded.length ? "Switched on at the site. It uses the company price and minimum." : "Available at the site again. It inherits the company price and minimum.") : "Marked unavailable at the site. History and overrides are kept." };
 }
 
 async function setSiteOverride(ctx: Ctx, command: Extract<CatalogueCommand, { action: "set-site-override" }>): Promise<CatalogueCommandResult> {
@@ -620,7 +624,9 @@ async function bulkOne(ctx: Ctx, itemId: string, spec: BulkSpec, activeIds: stri
       const unknown = siteIds.filter(id => !activeIds.includes(id)); if (unknown.length) throw problem(`${unknown.length} selected site${unknown.length === 1 ? " is" : "s are"} not active locations.`);
       const wanted = new Set(siteIds);
       const edits = spec.sites.mode === "add" ? siteIds.map(oplocId => ({ oplocId, available: true })) : spec.sites.mode === "remove" ? siteIds.map(oplocId => ({ oplocId, available: false })) : activeIds.map(oplocId => ({ oplocId, available: wanted.has(oplocId) }));
-      touchedSites.push(...applySiteEdits(ctx, item, children, ownPrices, edits, today));
+      const scopeAdded: string[] = [];
+      touchedSites.push(...applySiteEdits(ctx, item, children, ownPrices, edits, today, scopeAdded));
+      if (scopeAdded.length) { before.allowedOplocIds = item.record.allowedOplocIds; record = { ...record, allowedOplocIds: [...new Set([...(item.record.allowedOplocIds as string[]), ...scopeAdded])].sort() }; after.allowedOplocIds = record.allowedOplocIds; }
       if (touchedSites.length) { before.sites = "see sites"; after.sites = touchedSites; changed = true; }
     }
     if (changed) stage(ctx, "Hospitality Menu Item", bump(ctx, record), item, "Hospitality Catalogue bulk update (item version touched).");
