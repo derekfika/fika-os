@@ -136,7 +136,7 @@ test("the planner keeps filters with the search so Cancel from the modal returns
   assert.match(planner, /setQuery\(""\); setPickerFilters\(emptyPickerFilters\); setPicker\(/);
   assert.match(planner, /filters=\{pickerFilters\} setFilters=\{setPickerFilters\}/);
   assert.match(planner, /<DishPickerFilters /);
-  assert.match(planner, /filterPickerDishes\(dishes, slot, query, filters\)/);
+  assert.match(planner, /filterPickerDishes\(dishes\.filter\(dish => dishFitsSaladSlot\(dish, slot\)\), slot, query, filters\)/);
 });
 
 test("existing planner behaviour remains: Enter-to-create, choose, drag/copy, clear and publish commands", () => {

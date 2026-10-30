@@ -15,7 +15,7 @@ import { SpellUnderlinedText, SpellcheckPanel, useSpellcheckLists, useSpellingDi
 import { findSpellingIssues } from "@/lib/menu-spellcheck";
 import { CANONICAL_DISH_CATEGORIES } from "@/lib/dish-categories";
 import DishEditorModal from "./dish-editor-modal";
-import { normaliseSaladSubtype, resolveEnter, saladNeedsSlot } from "@/lib/dish-editor";
+import { dishFitsSaladSlot, normaliseSaladSubtype, resolveEnter, saladNeedsSlot } from "@/lib/dish-editor";
 import DishPickerFilters from "./dish-picker-filters";
 import { dishesForSlot, emptyPickerFilters, emptyPickerMessage, filterOptions, filterPickerDishes, type PickerFilters } from "@/lib/dish-picker-filters";
 import type { DishTag } from "@/lib/dish-tags";
@@ -245,7 +245,8 @@ function DishPicker({ dishes, query, setQuery, filters, setFilters, slot, onChoo
   // The slot's category and salad-slot rules apply first; search (name and aliases) and the tag/category/salad-slot filters only narrow that.
   const [tags, setTags] = useState<DishTag[]>([]); const [tagsUnavailable, setTagsUnavailable] = useState(false);
   useEffect(() => { let active = true; void fetch("/api/dish-tags", { cache: "no-store" }).then(async response => { const body = await response.json().catch(() => ({})); if (!active) return; if (!response.ok) setTagsUnavailable(true); else setTags(body.tags || []); }).catch(() => { if (active) setTagsUnavailable(true); }); return () => { active = false; }; }, []);
-  const result = filterPickerDishes(dishes, slot, query, filters);
+  // The salad-slot rule is applied here explicitly as well (pinned by the #154 contract test); filterPickerDishes applies it again idempotently.
+  const result = filterPickerDishes(dishes.filter(dish => dishFitsSaladSlot(dish, slot)), slot, query, filters);
   const ranked = rankDishPickerItems(result.dishes, query, slot);
   const filtered = [...ranked, ...result.dishes.filter(dish => !ranked.some(entry => entry.id === dish.id))];
   const options = filterOptions(dishesForSlot(dishes, slot), tags);
