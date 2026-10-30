@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-30T13:43:47.962Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-30T14:05:45.319Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -132,6 +132,7 @@ Snapshot: 2026-10-30T13:43:47.962Z. The local governed registry remains authorit
 | munich-re-mapping | claude-munich-re-onboarding | packages/server-shared/src/hospitality-catalogue-rules.ts, packages/server-shared/src/hospitality-site-minimums.ts, packages/server-shared/src/hospitality-catalogue, packages/server-shared/tests, apps/integration-hub/lib/hospitality-booking-service.ts, apps/integration-hub/lib/hospitality-price-trust.ts, apps/integration-hub/tests/munich-re-minimums.test.ts, docs/architecture/munich-re-hospitality-onboarding.md | codex/munich-re-mapping | — | retired | 2026-10-29T07:39:27.032Z |
 | munich-re-onboarding | claude-munich-re-onboarding | packages/server-shared/src/hospitality-catalogue-rules.ts | codex/munich-re-onboarding | — | retired | 2026-10-29T07:31:22.863Z |
 | munich-re-portal | claude-munich-re-onboarding | apps/hospitality-booking/app/ui/BookingPortal.tsx, apps/hospitality-booking/lib/munich-re-locations.ts, apps/hospitality-booking/tests/munich-re-portal.test.ts, apps/hospitality-booking/tests/mnk-contract.test.ts | codex/munich-re-portal | [#128](https://github.com/derekfika/fika-os/pull/128) | revoked | 2026-10-30T13:18:28.912Z |
+| munich-re-uat-verification | sol-munich-re-verification | docs/audits/2026-10-30/munich-re-postmerge-verification.md | codex/munich-re-uat-verification | — | finished | 2026-10-30T14:05:32.138Z |
 | ops-95-driver-checkbox-label | luna-iss95 | apps/logistics | codex/ops-95-driver-checkbox-label | [#163](https://github.com/derekfika/fika-os/pull/163) | retired | 2026-10-30T07:15:10.006Z |
 | pr-backlog-audit | codex-pr-reconciliation | docs/audits/2026-10-28/pr-backlog-reconciliation.md | codex/pr-backlog-audit | [#126](https://github.com/derekfika/fika-os/pull/126) | retired | 2026-10-29T08:26:48.018Z |
 | rcoa-oac-wines | claude-rcoa-wines | apps/integration-hub/lib/hospitality-catalogue-admin.ts, apps/integration-hub/lib/hospitality-catalogue-read-model.ts, apps/integration-hub/lib/hospitality-catalogue-types.ts, apps/integration-hub/app/api/hospitality-catalogue/route.ts, apps/integration-hub/app/ui/HospitalityCatalogue.tsx, apps/integration-hub/app/ui/HospitalityCatalogue.css, apps/integration-hub/tests/hospitality-catalogue-admin-model.test.ts, apps/integration-hub/tests/hospitality-catalogue-admin.emulator.test.ts, apps/integration-hub/tests/hospitality-catalogue-package.test.ts, apps/integration-hub/tests/hospitality-catalogue-permitted-sites.test.ts, apps/integration-hub/tests/hospitality-catalogue-permitted-sites.emulator.test.ts, apps/integration-hub/docs/hospitality-catalogue-admin.md, apps/integration-hub/scripts/rcoa-oac-wines.ts | codex/rcoa-oac-wines | [#173](https://github.com/derekfika/fika-os/pull/173) | active | 2026-10-30T11:24:11.733Z |
