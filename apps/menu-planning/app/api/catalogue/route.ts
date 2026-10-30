@@ -38,7 +38,7 @@ export async function GET(request: Request) { return withDataTrace({ app: "menu-
 async function handlePost(request: import("next/server").NextRequest) {
   let action = "";
   try {
-    const body = await request.json() as { action?: string; id?: string; displayName?: string; category?: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[]; canonicalIds?: string[]; items?: Array<{ displayName: string; category?: string; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; sourceEvidence?: { document: string; excerpt?: string; importedAt: string } }>; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; sourceEvidence?: { document: string; excerpt?: string; importedAt: string }; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown"; source: string; reviewedBy?: string; reviewedAt?: string; notes?: string }> };
+    const body = await request.json() as { action?: string; id?: string; displayName?: string; category?: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[]; tagIds?: string[]; canonicalIds?: string[]; items?: Array<{ displayName: string; category?: string; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; sourceEvidence?: { document: string; excerpt?: string; importedAt: string } }>; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; sourceEvidence?: { document: string; excerpt?: string; importedAt: string }; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown"; source: string; reviewedBy?: string; reviewedAt?: string; notes?: string }> };
     action = String(body.action || "");
     const actor = requireCatalogueMutationActor(await resolveMenuActor(request));
     if (action === "create-dish") {
@@ -48,7 +48,7 @@ async function handlePost(request: import("next/server").NextRequest) {
     }
     if (action === "update-dish") {
       if (!body.id?.trim() || !body.displayName?.trim() || !body.category) return NextResponse.json({ error: { message: "A dish ID, name and governed category are required." } }, { status: 422 });
-      const item = await updateCanonicalMenuItem(body.id, { displayName: body.displayName, category: body.category, subcategory: body.subcategory, description: body.description, preparationNotes: body.preparationNotes, mayContainNotes: body.mayContainNotes, ingredients: body.ingredients, methodSteps: body.methodSteps }, actor.uid);
+      const item = await updateCanonicalMenuItem(body.id, { displayName: body.displayName, category: body.category, subcategory: body.subcategory, description: body.description, preparationNotes: body.preparationNotes, mayContainNotes: body.mayContainNotes, ingredients: body.ingredients, methodSteps: body.methodSteps, tagIds: body.tagIds }, actor.uid);
       return NextResponse.json({ item, catalogue: await getCatalogueManifest() });
     }
     if (action === "archive-dish") {
