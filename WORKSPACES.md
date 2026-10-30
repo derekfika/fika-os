@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-30T07:15:40.741Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-30T07:45:01.153Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -132,12 +132,14 @@ Snapshot: 2026-10-30T07:15:40.741Z. The local governed registry remains authorit
 | release-intent-before-submit-recovery | codex-rotations-foundation-release | tools/workflow/recovery.mjs, tools/workflow/resubmit.test.mjs, docs/deployment/release-intent-before-submit-recovery.md | codex/release-intent-before-submit-recovery | [#141](https://github.com/derekfika/fika-os/pull/141) | retired | 2026-10-29T17:53:01.333Z |
 | release-probe-authmod | claude-release-probe | tools/workflow, docs/deployment | codex/release-probe-authmod | [#22](https://github.com/derekfika/fika-os/pull/22) | finished | 2026-10-24T15:02:50.771Z |
 | release-resume-resubmit | claude-ad-hoc | tools/workflow/recovery.mjs, tools/workflow/releases.mjs, tools/workflow/resubmit.test.mjs, docs/deployment/workflow.md | codex/release-resume-resubmit | [#31](https://github.com/derekfika/fika-os/pull/31) | finished | 2026-10-25T13:13:28.932Z |
+| rotations-150-integration | claude-integration-lead | apps/menu-planning, apps/integration-hub/lib, apps/integration-hub/app, apps/integration-hub/tests/hospitality-rotations.test.ts, apps/integration-hub/tests/hospitality-rotations-route.test.ts, apps/integration-hub/tests/hospitality-rotations.emulator.test.ts, apps/integration-hub/tests/hospitality-rotation-dishes.test.ts, apps/hospitality-booking/app/rotations, apps/hospitality-booking/tests/rotations-ui.test.ts, apps/shared | codex/rotations-150-integration | [#164](https://github.com/derekfika/fika-os/pull/164) | finished | 2026-10-30T07:43:28.209Z |
 | rotations-foundation-staging-release | codex-rotations-foundation-release | docs/deployment/2026-10-29-rotations-foundation-staging.md | codex/rotations-foundation-staging-release | [#147](https://github.com/derekfika/fika-os/pull/147) | retired | 2026-10-29T18:34:01.944Z |
 | rotations-hub-build-delivery | codex-rotations-staging-delivery | apps/integration-hub/tsconfig.json, apps/integration-hub/lib/hospitality-rotations/store.ts, apps/integration-hub/tests/rotations-build-resolution.test.cjs | codex/rotations-hub-build-delivery | [#136](https://github.com/derekfika/fika-os/pull/136) | finished | 2026-10-29T16:10:32.743Z |
 | rotations-hub-fix-integration | codex-hospitality-rotations-integration | apps/integration-hub/tsconfig.json, apps/integration-hub/lib/hospitality-rotations/store.ts, apps/integration-hub/tests/rotations-build-resolution.test.cjs | codex/rotations-hub-fix-integration | [#137](https://github.com/derekfika/fika-os/pull/137) | retired | 2026-10-29T16:21:39.085Z |
 | rotations-staging-access | codex-rotations-staging-delivery | apps/integration-hub/scripts/rotations-staging-access.ts, docs/deployment/rotations-staging-delivery-continued.md | codex/rotations-staging-access | — | retired | 2026-10-29T16:11:09.792Z |
 | rotations-staging-delivery | codex-rotations-staging-delivery | docs/deployment/rotations-staging-delivery.md | codex/rotations-staging-delivery | [#135](https://github.com/derekfika/fika-os/pull/135) | retired | 2026-10-29T15:56:53.225Z |
 | rotations-staging-record | codex-hospitality-rotations-integration | .changes/hospitality-booking/2026-10-29-rotations-live-manager.md, .changes/integration-hub/2026-10-29-rotations-picker-resources.md | codex/rotations-staging-record | [#148](https://github.com/derekfika/fika-os/pull/148) | retired | 2026-10-29T19:01:14.536Z |
+| stacked-lease-recovery | sol-workspace-governance | tools/workflow, docs/deployment/workspace-management.md, docs/deployment/workflow.md | codex/stacked-lease-recovery | [#165](https://github.com/derekfika/fika-os/pull/165) | retired | 2026-10-30T07:44:59.666Z |
 | standing-orders-pr14-sync | codex-standing-orders-pr14-sync | apps/delivered-in, apps/integration-hub, docs/deployment, CHANGELOG.md | codex/standing-orders-pr14-sync | — | finished | 2026-10-23T12:09:58.445Z |
 | uat-blocker-checkpoint | uat-20261025-1150 | CHANGELOG.md | codex/uat-blocker-checkpoint | [#45](https://github.com/derekfika/fika-os/pull/45) | retired | 2026-10-25T12:49:14.064Z |
 | uat-iss008-log | uat-20261025-1150 | CHANGELOG.md | codex/uat-iss008-log | [#54](https://github.com/derekfika/fika-os/pull/54) | finished | 2026-10-25T18:46:19.839Z |
