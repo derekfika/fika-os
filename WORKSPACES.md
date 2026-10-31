@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T12:11:59.791Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T12:57:20.847Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -33,7 +33,7 @@ Snapshot: 2026-10-31T12:11:59.791Z. The local governed registry remains authorit
 | cpu-cancelled-demand | uat-20261025-1150 | apps/cpu-production | codex/cpu-cancelled-demand | [#46](https://github.com/derekfika/fika-os/pull/46) | finished | 2026-10-26T15:25:59.075Z |
 | cpu-deep-link-iss018-fix | uat-20261025-1150 | apps/cpu-production, CHANGELOG.md | codex/cpu-deep-link-iss018-fix | [#80](https://github.com/derekfika/fika-os/pull/80) | finished | 2026-10-27T12:02:56.344Z |
 | cpu-deep-link-iss018 | uat-20261025-1150 | apps/cpu-production | codex/cpu-deep-link-iss018 | — | finished | 2026-10-26T23:15:02.390Z |
-| cpu-fast-reauth | sol-cpu-fast-reauth | apps/cpu-production | codex/cpu-fast-reauth | — | active | 2026-10-31T08:06:54.126Z |
+| cpu-fast-reauth | sol-cpu-fast-reauth | apps/cpu-production | codex/cpu-fast-reauth | [#207](https://github.com/derekfika/fika-os/pull/207) | retired | 2026-10-31T12:57:16.022Z |
 | cpu-nav-totals | agent-task | apps/cpu-production | codex/cpu-nav-totals | [#15](https://github.com/derekfika/fika-os/pull/15) | finished | 2026-10-23T10:31:45.451Z |
 | cpu-ordered-pax-display | luna-cpu-ordered-pax-display | apps/cpu-production | codex/cpu-ordered-pax-display | [#197](https://github.com/derekfika/fika-os/pull/197) | retired | 2026-10-31T07:15:33.025Z |
 | cpu-packing-day-print | codex-cpu-packing-day-print | apps/cpu-production | codex/cpu-packing-day-print | [#26](https://github.com/derekfika/fika-os/pull/26) | finished | 2026-10-23T17:59:26.606Z |
@@ -98,6 +98,7 @@ Snapshot: 2026-10-31T12:11:59.791Z. The local governed registry remains authorit
 | logistics-android-push | logistics-pwa-notifications | apps/logistics | codex/logistics-android-push | [#96](https://github.com/derekfika/fika-os/pull/96) | finished | 2026-10-28T09:00:58.054Z |
 | logistics-auth-health-probe | uat-20261025-1150 | tools/workflow, docs/deployment, CHANGELOG.md | codex/logistics-auth-health-probe | — | finished | 2026-10-25T23:07:20.367Z |
 | logistics-desktop-app-permission-split | sol-logistics-desktop-app-permission-split | apps/logistics, apps/integration-hub/app/api/logistics/access/route.ts, apps/integration-hub/tests/logistics-operational-access.test.ts, apps/integration-hub/tests/logistics-admission-trace.test.ts, apps/integration-hub/tests/logistics-access-regression.cjs, apps/integration-hub/tests/authmod-vehicle-entitlement.test.ts, apps/shared/logistics-authority.ts | codex/logistics-desktop-app-permission-split | [#200](https://github.com/derekfika/fika-os/pull/200) | retired | 2026-10-31T07:35:51.825Z |
+| logistics-desktop-contract-proof | sol-logistics-authz-split | apps/logistics/docs/batch1-authority-drivers.md, apps/logistics/tests/helpers/authority-route-harness.cjs, apps/logistics/tests/desktop-admission-contract.test.ts, apps/integration-hub/tests/logistics-operational-access.test.ts | codex/logistics-desktop-contract-proof | — | active | 2026-10-31T12:25:17.160Z |
 | logistics-driver-phase1 | logistics-pwa-notifications | apps/logistics | codex/logistics-driver-phase1 | [#82](https://github.com/derekfika/fika-os/pull/82) | finished | 2026-10-27T12:59:56.553Z |
 | logistics-dual-van-sessions | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-dual-van-sessions | [#84](https://github.com/derekfika/fika-os/pull/84) | finished | 2026-10-27T15:00:13.245Z |
 | logistics-iss-021-a11y | logistics-mobile-redesign | apps/logistics | codex/logistics-iss-021-a11y | [#79](https://github.com/derekfika/fika-os/pull/79) | finished | 2026-10-27T10:33:21.341Z |
@@ -153,7 +154,7 @@ Snapshot: 2026-10-31T12:11:59.791Z. The local governed registry remains authorit
 | menu-release-provenance | codex-menu-spellcheck-delivery | tools/workflow, docs/deployment/workflow.md | codex/menu-release-provenance | [#130](https://github.com/derekfika/fika-os/pull/130) | retired | 2026-10-29T10:42:45.251Z |
 | menu-release-recovery-scoped | codex-menu-release-recovery | tools/workflow, CHANGELOG.md | codex/menu-release-recovery-scoped | [#12](https://github.com/derekfika/fika-os/pull/12) | finished | 2026-10-23T09:40:03.932Z |
 | menu-release-recovery | codex-menu-release-recovery | tools/workflow | codex/menu-release-recovery | — | finished | 2026-10-23T09:22:36.941Z |
-| menu-slot-aware-picker | luna-menu-slot-picker | apps/menu-planning | codex/menu-slot-aware-picker | — | active | 2026-10-31T08:02:41.587Z |
+| menu-slot-aware-picker | luna-menu-slot-picker | apps/menu-planning | codex/menu-slot-aware-picker | [#206](https://github.com/derekfika/fika-os/pull/206) | active | 2026-10-31T08:02:41.587Z |
 | menu-spellcheck-continue | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-continue | — | finished | 2026-10-28T19:46:22.840Z |
 | menu-spellcheck-delivery | codex-menu-spellcheck-delivery | apps/menu-planning | codex/menu-spellcheck-delivery | [#129](https://github.com/derekfika/fika-os/pull/129) | finished | 2026-10-29T10:42:15.014Z |
 | menu-spellcheck-week-planner | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-week-planner | [#98](https://github.com/derekfika/fika-os/pull/98) | finished | 2026-10-28T09:15:41.758Z |
