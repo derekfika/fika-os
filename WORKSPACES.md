@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T01:27:15.744Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T01:35:01.317Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -17,6 +17,7 @@ Snapshot: 2026-10-31T01:27:15.744Z. The local governed registry remains authorit
 | adhoc-launcher-config | luna-adhoc-launcher | apps/integration-hub/apphosting.staging.yaml, apps/integration-hub/tests/apphosting-build-config.test.ts | codex/adhoc-launcher-config | [#97](https://github.com/derekfika/fika-os/pull/97) | active | 2026-10-28T07:41:15.720Z |
 | adhoc-operational-uat | uat-20261025-1150 | apps/ad-hoc-production | codex/adhoc-operational-uat | — | finished | 2026-10-28T06:41:05.515Z |
 | adhoc-signing-pdf | claude-adhoc-sign | apps/cpu-production, apps/hospitality-booking/apphosting.staging.yaml | codex/adhoc-signing-pdf | [#42](https://github.com/derekfika/fika-os/pull/42) | finished | 2026-10-24T21:59:07.602Z |
+| agent-routing-policy-docs | luna-agent-routing-policy-docs | AGENTS.md, .github/ISSUE_TEMPLATE | codex/agent-routing-policy-docs | — | active | 2026-10-31T01:31:40.457Z |
 | allergen-confirm-cpu-server | claude-allergen | apps/cpu-production | codex/allergen-confirm-cpu-server | [#39](https://github.com/derekfika/fika-os/pull/39) | finished | 2026-10-24T20:27:21.764Z |
 | allergen-confirm-cpu-ui | claude-allergen | apps/cpu-production | codex/allergen-confirm-cpu-ui | [#40](https://github.com/derekfika/fika-os/pull/40) | finished | 2026-10-24T21:38:46.175Z |
 | allergen-confirm-cpu | claude-allergen | apps/cpu-production | codex/allergen-confirm-cpu | [#38](https://github.com/derekfika/fika-os/pull/38) | finished | 2026-10-24T20:15:13.508Z |
@@ -33,6 +34,7 @@ Snapshot: 2026-10-31T01:27:15.744Z. The local governed registry remains authorit
 | cpu-deep-link-iss018-fix | uat-20261025-1150 | apps/cpu-production, CHANGELOG.md | codex/cpu-deep-link-iss018-fix | [#80](https://github.com/derekfika/fika-os/pull/80) | finished | 2026-10-27T12:02:56.344Z |
 | cpu-deep-link-iss018 | uat-20261025-1150 | apps/cpu-production | codex/cpu-deep-link-iss018 | — | finished | 2026-10-26T23:15:02.390Z |
 | cpu-nav-totals | agent-task | apps/cpu-production | codex/cpu-nav-totals | [#15](https://github.com/derekfika/fika-os/pull/15) | finished | 2026-10-23T10:31:45.451Z |
+| cpu-ordered-pax-display | luna-cpu-ordered-pax-display | apps/cpu-production | codex/cpu-ordered-pax-display | — | active | 2026-10-31T01:29:37.561Z |
 | cpu-packing-day-print | codex-cpu-packing-day-print | apps/cpu-production | codex/cpu-packing-day-print | [#26](https://github.com/derekfika/fika-os/pull/26) | finished | 2026-10-23T17:59:26.606Z |
 | cpu-packing-print | codex-cpu-packing-print | apps/cpu-production | codex/cpu-packing-print | [#23](https://github.com/derekfika/fika-os/pull/23) | finished | 2026-10-23T16:09:11.348Z |
 | cpu-pr2-reconciliation | codex-cpu-pr2-reconciliation | apps/cpu-production, docs/deployment/workflow.md, .github/workflows/validate.yml | codex/cpu-pr2-reconciliation | [#5](https://github.com/derekfika/fika-os/pull/5) | finished | 2026-10-22T20:16:51.141Z |
@@ -59,7 +61,7 @@ Snapshot: 2026-10-31T01:27:15.744Z. The local governed registry remains authorit
 | hierarchical-agent-instructions | codex-hierarchical-agent-instructions | AGENTS.md, CLAUDE.md, README.md, docs/ai/agent-reference.md, apps/integration-hub/AGENTS.md, apps/integration-hub/CLAUDE.md, apps/hospitality-booking/AGENTS.md, apps/hospitality-booking/CLAUDE.md, apps/menu-planning/AGENTS.md, apps/menu-planning/CLAUDE.md, apps/cpu-production/AGENTS.md, apps/cpu-production/CLAUDE.md, apps/delivered-in/AGENTS.md, apps/delivered-in/CLAUDE.md, apps/logistics/AGENTS.md, apps/logistics/CLAUDE.md | codex/hierarchical-agent-instructions | [#4](https://github.com/derekfika/fika-os/pull/4) | finished | 2026-10-22T19:47:37.742Z |
 | hospitality-catalogue-mapping | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-catalogue-mapping | — | finished | 2026-10-27T12:03:58.367Z |
 | hospitality-cfc-mr-tests | hospitality-cfc-mr | apps/integration-hub, CHANGELOG.md | codex/hospitality-cfc-mr-tests | [#81](https://github.com/derekfika/fika-os/pull/81) | finished | 2026-10-27T12:49:31.981Z |
-| hospitality-dashboard-filtering-overnight | sonnet-hospitality-dashboard-filtering-overnight | apps/hospitality-booking | codex/hospitality-dashboard-filtering-overnight | — | active | 2026-10-31T01:14:58.441Z |
+| hospitality-dashboard-filtering-overnight | sonnet-hospitality-dashboard-filtering-overnight | apps/hospitality-booking | codex/hospitality-dashboard-filtering-overnight | [#194](https://github.com/derekfika/fika-os/pull/194) | retired | 2026-10-31T01:34:54.385Z |
 | hospitality-dashboard-filters | claude-hospitality-filters | apps/hospitality-booking/lib/dashboard-queue-filters.ts, apps/hospitality-booking/app/ui/DashboardQueueFilters.tsx, apps/hospitality-booking/app/ui/DashboardQueueFilters.module.css, apps/hospitality-booking/app/ui/HospitalityDashboard.tsx, apps/hospitality-booking/tests/dashboard-queue-filters.test.ts, apps/hospitality-booking/tests/calendar-layout.test.ts | codex/hospitality-dashboard-filters | [#166](https://github.com/derekfika/fika-os/pull/166) | retired | 2026-10-30T08:21:01.813Z |
 | hospitality-dashboard-ordering | luna-hospitality-queue-ordering | apps/hospitality-booking | codex/hospitality-dashboard-ordering | — | retired | 2026-10-31T00:50:45.137Z |
 | hospitality-link-command | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-link-command | — | finished | 2026-10-28T06:40:38.357Z |
