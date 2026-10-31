@@ -11,6 +11,8 @@ import type { Actor } from "../lib/auth";
 import { runCatalogueCommand, type CatalogueCommand } from "../lib/hospitality-catalogue-admin";
 import { buildCataloguePackage } from "../lib/hospitality-catalogue-package";
 import { COMPANY_LAYOUT_ID, layoutCollection, layoutDocId, layoutRevisions, readStoredServiceLayouts, type StoredServiceLayout } from "../lib/hospitality-service-layout";
+import { attachServiceLayout, loadStoredServiceLayoutView } from "../lib/hospitality-service-layout";
+import type { CataloguePayload, CatalogueRow } from "../lib/hospitality-catalogue-types";
 import { categoryAllowedForService, resolveServiceCategories, SERVICE_IDS, SERVICE_LAYOUT_SEED } from "@fika/server-shared/hospitality-service-layout";
 
 const enabled = process.env.FIKA_CATALOGUE_EMULATOR_TEST === "true" && /^(127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || "");
@@ -75,4 +77,22 @@ test("site override: sparse, replaces one service at one site, refuses a no-op a
   const after = buildCataloguePackage({ items: [], offerings: [], prices: [], oplocs: [], routing: [], serviceLayout: await readStoredServiceLayouts() }, "2026-10-30").serviceLayout!;
   assert.deepEqual(after.sites, {}); assert.ok(!categoryAllowedForService(after, rcoa, "dining", "Wine"));
   assert.equal((await audits(`service-layout:${rcoa}:dining`)).length, 2);
+});
+
+test("editor read model: versions are 0 until stored, then the per-document versions; the read writes nothing", { skip: !enabled }, async () => {
+  await reset(); const rcoa = await seedOploc("rcoa");
+  const payload = { rows: [{ status: "active", category: "Wine" }, { status: "active", category: "Drinks" }, { status: "archived", category: "Gone" }] as CatalogueRow[] } as CataloguePayload;
+  const before = (await attachServiceLayout(payload)).serviceLayout!;
+  assert.equal(before.company.version, 0); assert.deepEqual(before.sites, {});
+  assert.deepEqual(before.vocabulary.catalogueCategories, ["Drinks", "Wine"], "archived Items do not contribute categories");
+  assert.equal((await layoutCollection().get()).size, 0, "a read stores nothing");
+  await run({ action: "set-service-categories", serviceId: "dining", categories: ["Dining", "Drinks", "Wine"], expectedVersion: 0, reason: REASON });
+  await run({ action: "set-service-categories", serviceId: "dining", categories: ["Dining", "Wine"], oplocId: rcoa, expectedVersion: 0, reason: REASON });
+  await run({ action: "set-service-categories", serviceId: "lunch", categories: ["Lunch"], oplocId: rcoa, expectedVersion: 1, reason: REASON });
+  const after = (await attachServiceLayout(payload)).serviceLayout!;
+  assert.equal(after.company.version, 1); assert.equal(after.sites[rcoa].version, 2); assert.deepEqual(Object.keys(after.sites[rcoa].services).sort(), ["dining", "lunch"]);
+  await run({ action: "clear-service-override", serviceId: "dining", oplocId: rcoa, expectedVersion: after.sites[rcoa].version, reason: "Back to company default" });
+  const stored = await loadStoredServiceLayoutView();
+  assert.equal(stored.sites[rcoa].version, 3); assert.deepEqual(Object.keys(stored.sites[rcoa].services), ["lunch"]);
+  await rejects(run({ action: "set-service-categories", serviceId: "lunch", categories: ["Lunch", "Drinks"], oplocId: rcoa, expectedVersion: 2, reason: REASON }), /changed elsewhere/);
 });

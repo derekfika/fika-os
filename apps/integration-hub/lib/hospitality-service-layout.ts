@@ -9,6 +9,7 @@ import { db } from "./firebase-admin";
 import { stableDocumentId } from "./canonical-editor";
 import { sha256 } from "./profiler";
 import { effectiveServiceLayout, SERVICE_IDS, type ServiceLayoutPackage, type ServiceRule, type ServiceRules } from "@fika/server-shared/hospitality-service-layout";
+import { buildServiceLayoutView, storedServiceLayoutView, type CataloguePayload, type CatalogueRow, type ServiceLayoutStoredView, type ServiceLayoutView } from "./hospitality-catalogue-types";
 
 export const SERVICE_LAYOUT_COLLECTION = "integrationHubHospitalityServiceLayout";
 export const SERVICE_LAYOUT_REVISIONS = "integrationHubHospitalityServiceLayoutRevisions";
@@ -45,4 +46,19 @@ export function completeRules(rules: ServiceRules | undefined, scope: "company" 
   const base = effectiveServiceLayout({ company: rules }).company;
   for (const id of SERVICE_IDS) result[id] = base[id] as ServiceRule;
   return result;
+}
+
+/**
+ * Admin editor read model: the stored layout documents (versions are the `expectedVersion` for the layout commands) plus the
+ * vocabulary of category names. A plain bounded read of the layout collection (<= 101 documents) and the Items already loaded
+ * by the catalogue read; it never publishes or rebuilds the catalogue package.
+ */
+export async function loadStoredServiceLayoutView(): Promise<ServiceLayoutStoredView> {
+  return storedServiceLayoutView(await readStoredServiceLayouts());
+}
+export async function loadServiceLayoutView(rows: ReadonlyArray<Pick<CatalogueRow, "status" | "category">>): Promise<ServiceLayoutView> {
+  return buildServiceLayoutView(await readStoredServiceLayouts(), rows.filter(row => row.status === "active").map(row => row.category));
+}
+export async function attachServiceLayout(payload: CataloguePayload): Promise<CataloguePayload> {
+  return { ...payload, serviceLayout: await loadServiceLayoutView(payload.rows) };
 }
