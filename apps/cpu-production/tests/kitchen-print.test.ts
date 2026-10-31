@@ -9,6 +9,7 @@ import {
   collectionQuantity,
   collectionTime,
 } from "../app/ui/kitchen-print";
+import { eventGuestCountLabel, orderedQuantityLabel } from "../lib/ordered-quantity";
 
 import { aggregateProductionTotals } from "../lib/production-day";
 
@@ -80,7 +81,7 @@ test("collection print has every long-list row, empty physical boxes, signatures
   assert.doesNotMatch(html, /checked=|<script/);
 });
 
-test("print escapes labels and uses only explicit production quantities without unit conversion", () => {
+test("print escapes labels and omits internal recipe multipliers", () => {
   const o = order("a", [
     { ...line("x"), itemName: "<script>alert(1)</script>" },
   ]);
@@ -93,7 +94,7 @@ test("print escapes labels and uses only explicit production quantities without 
       productionQuantity: 12,
       productionUnit: "pieces",
     }),
-    "12 pieces",
+    "4 portions",
   );
   assert.equal(
     collectionTime({
@@ -103,6 +104,32 @@ test("print escapes labels and uses only explicit production quantities without 
     } as unknown as ProductionOrder),
     "11:00",
   );
+});
+
+test("customer ordered evidence stays primary across pax, event guests, mixed units and individual pieces", () => {
+  const paxLine = { ...line("pax", 15, "pax"), productionQuantity: 45, productionUnit: "pieces" };
+  const hospitalityOrder = { ...order("hospitality", [paxLine]), guestCount: 100 };
+  const html = collectionPrintHtml(hospitalityOrder);
+  assert.equal(collectionQuantity(paxLine), "15 pax");
+  assert.equal(eventGuestCountLabel(hospitalityOrder.guestCount), "100");
+  assert.match(html, /<strong>15 pax<\/strong>/);
+  assert.doesNotMatch(html, /45 pieces|Prep:/);
+  assert.doesNotMatch(html, />100</);
+
+  assert.deepEqual(
+    [line("person", 15, "Per person"), line("box", 2, "boxes"), line("tray", 3, "trays"), line("piece", 7, "pieces")]
+      .map(orderedQuantityLabel),
+    ["15 pax", "2 boxes", "3 trays", "7 pieces"],
+  );
+});
+
+test("legacy lines without valid ordered quantity and unit require verification", () => {
+  assert.equal(orderedQuantityLabel({ customerQuantity: undefined, customerUnit: "pax" } as unknown as ProductionLine), "Needs verification");
+  assert.equal(orderedQuantityLabel({ customerQuantity: 15, customerUnit: " " } as ProductionLine), "Needs verification");
+  assert.equal(collectionQuantity({ ...line("legacy"), customerQuantity: Number.NaN } as ProductionLine), "Needs verification");
+  const html = collectionPrintHtml(order("legacy", [{ ...line("legacy"), customerUnit: "" } as ProductionLine]));
+  assert.match(html, /Needs verification/);
+  assert.doesNotMatch(html, /Prep: 45 pieces/);
 });
 
 test("daily and selected multi-day totals print reuse verified aggregation and never combine incompatible units", () => {

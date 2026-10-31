@@ -3,6 +3,7 @@
 import { createSerialQueue } from "../lib/serial-command-queue";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
+import { eventGuestCountLabel } from "../../lib/ordered-quantity";
 import { cpuServiceWindow } from "../../lib/production-presentation";
 import type {
   AllergenCellState,
@@ -412,9 +413,7 @@ export default function HospitalityAllergenDetail({
   const completeCount = subItems.filter(
     (item) => item.evidenceStatus === "completed",
   ).length;
-  const guestCount =
-    order.guestCount ||
-    order.lines.reduce((sum, line) => sum + (line.customerQuantity || 0), 0);
+  const guestCount = eventGuestCountLabel(order.guestCount);
 
   const markMatrixEdited = () => {
     const hadSignedAuthority = signatures.length > 0 || Boolean(matrixArtifact || currentAllergenRelease);
@@ -830,7 +829,7 @@ export default function HospitalityAllergenDetail({
             </strong>
           </div>
           <div>
-            <span>Guests</span>
+            <span>Event guests</span>
             <strong>{guestCount}</strong>
           </div>
           <div>
@@ -909,7 +908,7 @@ export default function HospitalityAllergenDetail({
             </div>
             <span>
               {subItems.length} row{subItems.length === 1 ? "" : "s"} ·{" "}
-              {guestCount} guests
+              Event guests: {guestCount}
             </span>
           </div>
           <div className="menu-items">

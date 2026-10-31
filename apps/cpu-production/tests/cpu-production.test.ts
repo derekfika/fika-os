@@ -24,6 +24,10 @@ const calendar = readFileSync(
   new URL("../app/ui/ProductionCalendar.tsx", import.meta.url),
   "utf8",
 );
+const dayView = readFileSync(new URL("../app/ui/ProductionDayView.tsx", import.meta.url), "utf8");
+const hospitalityDetail = readFileSync(new URL("../app/ui/HospitalityProductionDetail.tsx", import.meta.url), "utf8");
+const packingChecklist = readFileSync(new URL("../app/ui/KitchenRunSheet.tsx", import.meta.url), "utf8");
+const printedRunSheet = readFileSync(new URL("../app/ui/day-production-print.ts", import.meta.url), "utf8");
 const cardCss = readFileSync(
   new URL("../app/ui/production-card-overrides.css", import.meta.url),
   "utf8",
@@ -387,7 +391,8 @@ test("Liana production view captures nested menu items and sub-item allergen evi
   assert.doesNotMatch(liana, /Optional source \/ review note/);
   assert.match(planRoute, /menuItems/);
   assert.match(liana, /order\.guestCount/);
-  assert.match(liana, /order\.lines\.reduce/);
+  assert.match(liana, /eventGuestCountLabel\(order\.guestCount\)/);
+  assert.doesNotMatch(liana, /order\.lines\.reduce/);
   assert.match(liana, /sourceLineId/);
   assert.match(liana, /matrixColumns/);
   assert.match(liana, /Saved menu item/);
@@ -476,12 +481,17 @@ test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
   assert.doesNotMatch(calendar, /<small>Destination/);
   assert.doesNotMatch(page, /Choose an OPLOC/);
   assert.match(calendar, /line\.itemName/);
-  assert.match(calendar, /x\{line\.customerQuantity\.toLocaleString\(\)\}/);
+  assert.match(calendar, /orderedQuantityLabel\(line\)/);
+  assert.match(calendar, /Event guests: \{eventGuestCountLabel\(customerPax\)\}/);
   assert.match(cardCss, /font-family:inherit/);
   assert.match(cardCss, /white-space:nowrap/);
   assert.doesNotMatch(calendar, /cpuRequiredTime\(order\)/);
-  assert.match(calendar, /productionQuantitySummary\(order\)/);
-  assert.match(calendar, /Production:/);
+  assert.doesNotMatch(calendar, /productionQuantitySummary\(order\)|Production:/);
+  const routineChefSources = [calendar, dayView, hospitalityDetail, packingChecklist, printedRunSheet];
+  assert.ok(routineChefSources.every(source => /orderedQuantityLabel|collectionQuantity/.test(source)));
+  for (const source of routineChefSources) assert.doesNotMatch(source, /productionQuantity|productionUnit|productionPrepLabel|Prep:/);
+  assert.match(page, /Customer ordered: \{orderedQuantityLabel\(line\)\}/);
+  assert.doesNotMatch(page, /productionPrepLabel|Internal prep quantity|productionQuantity/);
 });
 
 test("weekly production cards use scoped fluid layout and safe truncation", () => {
