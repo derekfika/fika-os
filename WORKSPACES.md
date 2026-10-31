@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T17:32:35.934Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T19:03:07.638Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -147,6 +147,7 @@ Snapshot: 2026-10-31T17:32:35.934Z. The local governed registry remains authorit
 | menu-dish-library-upgrade | claude-menu-upgrade | apps/menu-planning/lib/dish-library-upgrade.ts, apps/menu-planning/scripts/replace-dish-library.ts, apps/menu-planning/lib/canonical-menu-repository.ts, apps/menu-planning/tests/dish-library-upgrade.test.ts, docs/deployment/dish-library-upgrade-runbook.md | codex/menu-dish-library-upgrade | [#189](https://github.com/derekfika/fika-os/pull/189) | finished | 2026-10-30T22:19:50.118Z |
 | menu-dish-tag-registry | claude-menu-tags | apps/menu-planning/lib/dish-tags.ts, apps/menu-planning/lib/dish-tag-store.ts, apps/menu-planning/app/api/dish-tags, apps/menu-planning/lib/canonical-menu-repository.ts, apps/menu-planning/lib/domain.ts, apps/menu-planning/lib/catalogue.ts, apps/menu-planning/app/api/catalogue/route.ts, apps/menu-planning/tests/dish-tags.test.ts | codex/menu-dish-tag-registry | [#182](https://github.com/derekfika/fika-os/pull/182) | finished | 2026-10-30T18:50:45.696Z |
 | menu-dish-tag-seed | claude-menu-tags | apps/menu-planning/lib/dish-tag-seed.ts, apps/menu-planning/lib/dish-tag-store.ts, apps/menu-planning/scripts/seed-dish-tags.ts, apps/menu-planning/tests/dish-tag-seed.test.ts | codex/menu-dish-tag-seed | [#184](https://github.com/derekfika/fika-os/pull/184) | finished | 2026-10-30T19:22:52.509Z |
+| menu-draft-spelling-corrections | codex-luna-menu-draft-spelling-corrections | apps/menu-planning/app/week-planner.tsx, apps/menu-planning/app/spellcheck-panel.tsx, apps/menu-planning/app/visual-system.css, apps/menu-planning/lib/menu-spellcheck.ts, apps/menu-planning/tests/menu-spellcheck.test.ts, apps/menu-planning/tests/spellcheck-ui.test.ts | codex/menu-draft-spelling-corrections | [#217](https://github.com/derekfika/fika-os/pull/217) | finished | 2026-10-31T19:02:59.671Z |
 | menu-duplicate-planning | claude-menu-duplicate | apps/menu-planning | codex/menu-duplicate-planning | [#66](https://github.com/derekfika/fika-os/pull/66) | finished | 2026-10-27T21:09:33.928Z |
 | menu-handoff-recovery | codex-menu-handoff-111 | tools/incidents/menu-handoff-recovery, docs/incidents/2026-10-28-menu-handoff-111.md | codex/menu-handoff-recovery | — | retired | 2026-10-28T20:51:43.152Z |
 | menu-picker-filters | claude-menu-filters | apps/menu-planning/lib/dish-picker-filters.ts, apps/menu-planning/app/dish-picker-filters.tsx, apps/menu-planning/app/dish-picker-filters.css, apps/menu-planning/app/week-planner.tsx, apps/menu-planning/tests/dish-picker-filters.test.ts | codex/menu-picker-filters | [#187](https://github.com/derekfika/fika-os/pull/187) | finished | 2026-10-30T21:38:08.149Z |
