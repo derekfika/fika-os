@@ -387,7 +387,8 @@ test("Liana production view captures nested menu items and sub-item allergen evi
   assert.doesNotMatch(liana, /Optional source \/ review note/);
   assert.match(planRoute, /menuItems/);
   assert.match(liana, /order\.guestCount/);
-  assert.match(liana, /order\.lines\.reduce/);
+  assert.match(liana, /eventGuestCountLabel\(order\.guestCount\)/);
+  assert.doesNotMatch(liana, /order\.lines\.reduce/);
   assert.match(liana, /sourceLineId/);
   assert.match(liana, /matrixColumns/);
   assert.match(liana, /Saved menu item/);
@@ -476,7 +477,8 @@ test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
   assert.doesNotMatch(calendar, /<small>Destination/);
   assert.doesNotMatch(page, /Choose an OPLOC/);
   assert.match(calendar, /line\.itemName/);
-  assert.match(calendar, /x\{line\.customerQuantity\.toLocaleString\(\)\}/);
+  assert.match(calendar, /orderedQuantityLabel\(line\)/);
+  assert.match(calendar, /Event guests: \{eventGuestCountLabel\(customerPax\)\}/);
   assert.match(cardCss, /font-family:inherit/);
   assert.match(cardCss, /white-space:nowrap/);
   assert.doesNotMatch(calendar, /cpuRequiredTime\(order\)/);
