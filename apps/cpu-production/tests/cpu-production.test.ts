@@ -327,7 +327,7 @@ test("legacy delivered-in lunch creator remains isolated from the four-workspace
 });
 
 test("delivered-in lunch creator supports governed OPLOCs, one-off locations and CPU-style allergen cells", () => {
-  assert.match(page, /fetch\("\/api\/oplocs"/);
+  assert.match(page, /fetchCpuApi\("\/api\/oplocs"/);
   assert.match(page, /OTHER_OPLOC/);
   assert.match(page, /Other — one-off delivery/);
   assert.match(page, /productionLocationId/);
