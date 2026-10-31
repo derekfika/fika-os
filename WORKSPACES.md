@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T07:11:45.208Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T07:15:34.817Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -34,7 +34,7 @@ Snapshot: 2026-10-31T07:11:45.208Z. The local governed registry remains authorit
 | cpu-deep-link-iss018-fix | uat-20261025-1150 | apps/cpu-production, CHANGELOG.md | codex/cpu-deep-link-iss018-fix | [#80](https://github.com/derekfika/fika-os/pull/80) | finished | 2026-10-27T12:02:56.344Z |
 | cpu-deep-link-iss018 | uat-20261025-1150 | apps/cpu-production | codex/cpu-deep-link-iss018 | — | finished | 2026-10-26T23:15:02.390Z |
 | cpu-nav-totals | agent-task | apps/cpu-production | codex/cpu-nav-totals | [#15](https://github.com/derekfika/fika-os/pull/15) | finished | 2026-10-23T10:31:45.451Z |
-| cpu-ordered-pax-display | luna-cpu-ordered-pax-display | apps/cpu-production | codex/cpu-ordered-pax-display | [#197](https://github.com/derekfika/fika-os/pull/197) | active | 2026-10-31T01:29:37.561Z |
+| cpu-ordered-pax-display | luna-cpu-ordered-pax-display | apps/cpu-production | codex/cpu-ordered-pax-display | [#197](https://github.com/derekfika/fika-os/pull/197) | retired | 2026-10-31T07:15:33.025Z |
 | cpu-packing-day-print | codex-cpu-packing-day-print | apps/cpu-production | codex/cpu-packing-day-print | [#26](https://github.com/derekfika/fika-os/pull/26) | finished | 2026-10-23T17:59:26.606Z |
 | cpu-packing-print | codex-cpu-packing-print | apps/cpu-production | codex/cpu-packing-print | [#23](https://github.com/derekfika/fika-os/pull/23) | finished | 2026-10-23T16:09:11.348Z |
 | cpu-pr2-reconciliation | codex-cpu-pr2-reconciliation | apps/cpu-production, docs/deployment/workflow.md, .github/workflows/validate.yml | codex/cpu-pr2-reconciliation | [#5](https://github.com/derekfika/fika-os/pull/5) | finished | 2026-10-22T20:16:51.141Z |
@@ -89,6 +89,7 @@ Snapshot: 2026-10-31T07:11:45.208Z. The local governed registry remains authorit
 | logistics-android-changelog | logistics-pwa-notifications | CHANGELOG.md | codex/logistics-android-changelog | — | finished | 2026-10-28T09:04:01.241Z |
 | logistics-android-push | logistics-pwa-notifications | apps/logistics | codex/logistics-android-push | [#96](https://github.com/derekfika/fika-os/pull/96) | finished | 2026-10-28T09:00:58.054Z |
 | logistics-auth-health-probe | uat-20261025-1150 | tools/workflow, docs/deployment, CHANGELOG.md | codex/logistics-auth-health-probe | — | finished | 2026-10-25T23:07:20.367Z |
+| logistics-desktop-app-permission-split | sol-logistics-desktop-app-permission-split | apps/logistics, apps/integration-hub/app/api/logistics/access/route.ts, apps/integration-hub/tests/logistics-operational-access.test.ts, apps/integration-hub/tests/logistics-admission-trace.test.ts, apps/integration-hub/tests/logistics-access-regression.cjs, apps/integration-hub/tests/authmod-vehicle-entitlement.test.ts, apps/shared/logistics-authority.ts | codex/logistics-desktop-app-permission-split | — | active | 2026-10-31T07:12:10.593Z |
 | logistics-driver-phase1 | logistics-pwa-notifications | apps/logistics | codex/logistics-driver-phase1 | [#82](https://github.com/derekfika/fika-os/pull/82) | finished | 2026-10-27T12:59:56.553Z |
 | logistics-dual-van-sessions | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-dual-van-sessions | [#84](https://github.com/derekfika/fika-os/pull/84) | finished | 2026-10-27T15:00:13.245Z |
 | logistics-iss-021-a11y | logistics-mobile-redesign | apps/logistics | codex/logistics-iss-021-a11y | [#79](https://github.com/derekfika/fika-os/pull/79) | finished | 2026-10-27T10:33:21.341Z |
