@@ -28,6 +28,12 @@ Every normally completed task runs `fika workspace complete <task> --owner <agen
 
 PRs are agent-managed CI/integration tools. Main requires strict `Workflow / merge-gate`, with zero mandatory human approvals and admin-enforced force-push/deletion protection. After CI passes and integration is authorised, the agent can use a merge-commit PR merge pinned to its verified head. GitHub rechecks protected-branch requirements. Do not merge when the owner explicitly said to stop before merging. Squash/rebase merging and automatic branch deletion remain disabled to preserve staged ancestry and unfinished work.
 
+For a clean, pushed unmerged stack blocked by inherited committed scope, an administrator
+can separately preview `workspace recover-stacked` for exactly one lease. This retains
+the original checkout/history and requires a new governed successor lease; it does not
+relax normal completion or scope checks. See the exact-ID, owner-approved procedure in
+[workspace management](workspace-management.md#recover-exactly-one-clean-pushed-stacked-lease).
+
 ## Releases
 
 Use the existing authorised local GitHub/gcloud/Firebase login. Hosted GCP workload identity is optional, never a prerequisite for local deployment.

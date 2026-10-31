@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Firestore, Transaction } from "firebase-admin/firestore";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
-import { BusinessDate, ROTATIONS_SCHEMA, RotationCommand, RotationConfiguration, londonDate, publishedRevisionFor, type RotationHead, type RotationRevision } from "../../../shared/hospitality-rotations";
+import { BusinessDate, DishLinkCommand, ROTATION_PICKER_SCOPES, ROTATIONS_SCHEMA, RotationCommand, RotationConfiguration, londonDate, publishedRevisionFor, type DishLink, type RotationHead, type RotationRevision } from "../../../shared/hospitality-rotations";
 
 export const ROTATION_COLLECTION = "integrationHubHospitalityRotationsV1";
 export const rotationProblem = (message: string, status = 422) => Object.assign(new Error(message), { status, code: `ROTATIONS_${status}` });
@@ -18,6 +18,18 @@ function checkedRevision(value: Record<string, unknown>, revision: number): Rota
   return record as RotationRevision;
 }
 
+type ProviderData = Record<string, any> | undefined;
+export function assertActiveItem(item: ProviderData, itemId: string) {
+  if (!item || item.canonicalId !== itemId || item.entityType !== "Hospitality Menu Item" || item.lifecycleStatus === "archived" || item.record?.lifecycleState === "archived" || item.publicationStatus === "withdrawn") throw rotationProblem(`Canonical Item ${itemId} is unavailable`, 409);
+}
+/** A rotation dish must be an active canonical dish in a scope the Rotations manager is allowed to use. */
+export function assertRotationDish(source: ProviderData, dishId: string) {
+  const record = (source?.record || source) as Record<string, any> | undefined;
+  if (!record || source?.kind !== "dish" || record.canonicalId !== dishId || record.reviewStatus === "archived") throw rotationProblem(`Canonical dish ${dishId} is missing or archived`, 409);
+  if (!(ROTATION_PICKER_SCOPES as readonly string[]).includes(record.operationalScope)) throw rotationProblem(`Dish ${dishId} is not authorised for Hospitality Rotations`, 422);
+  return record;
+}
+
 /** Read only canonical provider records by ID; snapshots are historical publication evidence. */
 async function freezeProviders(db: Firestore, tx: Transaction, configuration: RotationConfiguration) {
   const dishes = [...new Map(configuration.groups.flatMap(group => group.dishBank).map(dish => [dish.dishId, dish])).values()];
@@ -31,7 +43,7 @@ async function freezeProviders(db: Firestore, tx: Transaction, configuration: Ro
   });
   configuration.groups.forEach((group, index) => {
     const item = snapshots[dishes.length + index].data();
-    if (!item || item.canonicalId !== group.itemId || item.entityType !== "Hospitality Menu Item" || item.lifecycleStatus === "archived" || item.record?.lifecycleState === "archived" || item.publicationStatus === "withdrawn") throw rotationProblem(`Canonical Item ${group.itemId} is unavailable`, 409);
+    assertActiveItem(item, group.itemId);
   });
   return recipes;
 }
@@ -44,6 +56,34 @@ export class RotationStore {
     const value = (await this.revisionRef(revision).get()).data();
     if (!value) throw rotationProblem("Rotation revision not found", 404);
     return checkedRevision(value, revision);
+  }
+  private linkRef(itemId: string) { return this.root().collection("dishLinks").doc(stableDocumentId(itemId)); }
+  private reverseLinkRef(dishId: string) { return this.root().collection("dishLinkByDish").doc(stableDocumentId(dishId)); }
+  /** Bounded: one small document per mapped catalogue Item. */
+  async links(): Promise<DishLink[]> {
+    const snapshot = await this.root().collection("dishLinks").limit(1000).get();
+    return snapshot.docs.map(document => document.data() as DishLink).sort((a, b) => a.itemId.localeCompare(b.itemId));
+  }
+  /** Persist the stable Item-to-dish mapping once. Replays are idempotent; a different dish for the same Item, or the same dish for a different Item, is a conflict. */
+  async linkDish(actorId: string, raw: unknown) {
+    const command = DishLinkCommand.parse(raw);
+    const at = this.now().toISOString();
+    return this.db.runTransaction(async tx => {
+      const [existing, reverse, dish, item] = await tx.getAll(this.linkRef(command.itemId), this.reverseLinkRef(command.dishId), this.db.collection("fikaMenuPlanningCatalogue").doc(command.dishId), this.db.collection("integrationHubCanonical").doc(stableDocumentId(command.itemId)));
+      if (existing.exists) {
+        const link = existing.data() as DishLink;
+        if (link.dishId === command.dishId && link.classification === command.classification) return { link, replayed: true };
+        throw rotationProblem(`Item ${command.itemId} is already linked to dish ${link.dishId}`, 409);
+      }
+      if (reverse.exists) throw rotationProblem(`Dish ${command.dishId} is already linked to Item ${(reverse.data() as DishLink).itemId}`, 409);
+      assertActiveItem(item.data(), command.itemId);
+      const record = assertRotationDish(dish.data(), command.dishId);
+      if (record.hospitalityClass && record.hospitalityClass !== command.classification) throw rotationProblem("Classification does not match the dish's recorded hospitality class");
+      const link: DishLink = { schema: "hospitality-rotation-dish-link.v1", itemId: command.itemId, dishId: command.dishId, classification: command.classification, actorId, recordedAt: at, requestId: command.requestId };
+      tx.create(this.linkRef(command.itemId), link);
+      tx.create(this.reverseLinkRef(command.dishId), link);
+      return { link, replayed: false };
+    });
   }
   async published(date: string) {
     BusinessDate.parse(date);

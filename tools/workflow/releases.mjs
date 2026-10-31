@@ -5,6 +5,7 @@ import { APPS, REPO, MAIN_CHECK, target, exactSha, assertClean, validateRecord, 
 import { git, command, ancestor, ref, ghApi, scopeHash, asyncLock, save, stateDir, jsonFile, serving, cloud, backendPath } from './runtime.mjs';
 import { assertHostedContext } from './hosted.mjs';
 import { recoverySnapshot, reconcileIntent, resubmitNeverSubmitted, submissionAttempts, describeSubmissionEvidence } from './recovery.mjs';
+import { readCreateAuditEvents } from './audit.mjs';
 
 export function releaseRecord(branch) {
   const sha = ref(`refs/remotes/origin/${branch}`);
@@ -45,6 +46,18 @@ export function rolloutArguments(plan) {
 }
 export async function releaseHealthProbe(app, backendUri, sourceSha, fetchImpl = fetch, environment) {
   const origin = `https://${String(backendUri).replace(/^https?:\/\//, '').replace(/\/$/, '')}`;
+  if (app === 'hospitality' && environment === 'staging') {
+    const url = `${origin}/`;
+    try {
+      const options = { redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(30000) };
+      const response = await fetchImpl(url, options);
+      if (response.status !== 307 || response.headers?.get?.('location') !== '/workspace') return { ok: false, status: response.status, url, reason: 'unexpected_hospitality_entry_redirect' };
+      const workspace = await fetchImpl(`${origin}/workspace`, { ...options, signal: AbortSignal.timeout(30000) });
+      return { ok: workspace.status === 200, status: workspace.status, url, entryRedirect: '/workspace', ...(workspace.status === 200 ? {} : { reason: 'hospitality_workspace_unavailable' }) };
+    } catch {
+      return { ok: false, status: null, url, reason: 'request_failed' };
+    }
+  }
   if (app === 'logistics' && environment === 'staging') {
     const url = `${origin}/`;
     try {
@@ -255,6 +268,7 @@ export function firebaseAuthPreflight(t, run = command) {
 }
 /** Cloud Audit Log evidence of App Hosting create calls for this backend since a time. Unreadable logs are reported, never assumed empty. */
 export function auditCreateEvents(t, sinceMs, run = command) {
+  if (process.platform === 'win32' && run === command) return readCreateAuditEvents(t, sinceMs);
   try {
     const filter = `protoPayload.serviceName="firebaseapphosting.googleapis.com" AND protoPayload.methodName=~"(CreateRollout|CreateBuild)" AND timestamp>="${new Date(sinceMs).toISOString()}"`;
     const rows = JSON.parse(run('gcloud', ['logging', 'read', filter, '--project', t.project, '--limit', '50', '--format', 'json']) || '[]');

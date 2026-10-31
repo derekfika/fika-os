@@ -7,6 +7,7 @@ import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { RotationStore, ROTATION_COLLECTION } from "../lib/hospitality-rotations/store";
 import { rotationHandlers } from "../lib/hospitality-rotations/http";
 import { rotationFixture } from "./hospitality-rotations.test";
+import { getRotationResources, readHospitalityDishes } from "../lib/hospitality-rotations/resources";
 import { authoriseRotation } from "../lib/hospitality-rotations/auth";
 import { MemoryAuthModRepository } from "../lib/authmod-core/memory-repository";
 import { V1_APPLICATIONS, type AuthPrincipal } from "../lib/authmod-core/model";
@@ -41,7 +42,7 @@ test("emulator: rotation API commits evidence atomically, rejects stale writers 
   const publish = { action: "publish", requestId: "publish-one", expectedVersion: 1, draftRevision: 1, effectiveFrom: "2026-10-28", reason: "Synthetic autumn" };
   assert.equal((await post(publish)).status, 409, "missing canonical providers fail closed");
   assert.equal((await store.head()).version, 1);
-  for (const n of [1, 2, 3]) await db.collection("fikaMenuPlanningCatalogue").doc(`dish:${n}`).set({ kind: "dish", record: { canonicalId: `dish:${n}`, revision: 1, reviewStatus: "unreviewed", methodSteps: ["Original recipe"], allergenEvidence: [] } });
+  for (const n of [1, 2, 3]) await db.collection("fikaMenuPlanningCatalogue").doc(`dish:${n}`).set({ kind: "dish", record: { canonicalId: `dish:${n}`, revision: 1, reviewStatus: "unreviewed", operationalScope: "HOSPITALITY_ROTATIONS", methodSteps: ["Original recipe"], allergenEvidence: [] } });
   await db.collection("integrationHubCanonical").doc(stableDocumentId("item:rotation")).set({ canonicalId: "item:rotation", entityType: "Hospitality Menu Item", lifecycleStatus: "active", record: { lifecycleState: "active" } });
   const published = await post(publish); assert.equal(published.status, 200);
   assert.equal((await post(publish)).status, 200);
@@ -79,4 +80,40 @@ test("emulator: rotation API commits evidence atomically, rejects stale writers 
   await root.collection("revisions").doc("4").update({ "configuration.label": "Tampered draft" });
   assert.equal((await post({ ...publish, requestId: "corrupt-draft", expectedVersion: 5, draftRevision: 4, effectiveFrom: "2027-01-01" })).status, 503, "Publication also verifies immutable draft evidence");
   assert.equal((await store.head()).version, 5);
+});
+
+test("emulator: stable Item-to-dish mapping is exclusive, idempotent and scope-checked; picker reads only hospitality scope", { skip: !enabled }, async () => {
+  assert.equal(process.env.FIREBASE_PROJECT_ID, "demo-fika-os");
+  const app = getApps().find(value => value.name === "rotation-test") || initializeApp({ projectId: "demo-fika-os" }, "rotation-test");
+  const db = getFirestore(app);
+  const store = new RotationStore(db, () => new Date("2026-10-29T12:00:00Z"));
+  const item = (id: string, extra: Record<string, unknown> = {}) => db.collection("integrationHubCanonical").doc(stableDocumentId(id)).set({ canonicalId: id, entityType: "Hospitality Menu Item", lifecycleStatus: "active", record: { lifecycleState: "active" }, ...extra });
+  const dish = (id: string, scope: string | undefined, extra: Record<string, unknown> = {}) => db.collection("fikaMenuPlanningCatalogue").doc(id).set({ kind: "dish", record: { canonicalId: id, displayName: id, revision: 1, reviewStatus: "unreviewed", ...(scope ? { operationalScope: scope } : {}), ...extra } });
+  await Promise.all([item("item:a"), item("item:b"), item("item:retired", { lifecycleStatus: "archived" })]);
+  await Promise.all([dish("hospitality-dish:a", "HOSPITALITY_ROTATIONS", { hospitalityClass: "finger-food" }), dish("hospitality-dish:b", "HOSPITALITY_ROTATIONS"), dish("dish:planner", "MENU_PLANNING"), dish("dish:legacy", undefined), dish("hospitality-dish:old", "HOSPITALITY_ROTATIONS", { reviewStatus: "archived" })]);
+  const command = (extra: Record<string, unknown> = {}) => ({ action: "link-dish", requestId: crypto.randomUUID(), itemId: "item:a", dishId: "hospitality-dish:a", classification: "finger-food", ...extra });
+
+  const first = await store.linkDish("sam", command());
+  assert.equal(first.replayed, false);
+  assert.equal((await store.linkDish("sam", command())).replayed, true, "an exact retry is idempotent");
+  await assert.rejects(store.linkDish("sam", command({ dishId: "hospitality-dish:b" })), error => (error as { status?: number }).status === 409, "one Item never gets a second dish");
+  await assert.rejects(store.linkDish("sam", command({ itemId: "item:b" })), error => (error as { status?: number }).status === 409, "one dish never serves two Items");
+  await assert.rejects(store.linkDish("sam", command({ itemId: "item:b", dishId: "dish:planner" })), error => (error as { status?: number }).status === 422, "planner dishes are not authorised");
+  await assert.rejects(store.linkDish("sam", command({ itemId: "item:b", dishId: "dish:legacy" })), error => (error as { status?: number }).status === 422, "legacy dishes default to Menu Planning");
+  await assert.rejects(store.linkDish("sam", command({ itemId: "item:b", dishId: "hospitality-dish:old" })), error => (error as { status?: number }).status === 409, "archived dishes");
+  await assert.rejects(store.linkDish("sam", command({ itemId: "item:retired", dishId: "hospitality-dish:b" })), error => (error as { status?: number }).status === 409, "retired catalogue Items");
+  await assert.rejects(store.linkDish("sam", command({ itemId: "item:b", dishId: "hospitality-dish:b", classification: "main-course" })));
+  await assert.rejects(store.linkDish("sam", command({ itemId: "item:b", dishId: "hospitality-dish:a", classification: "canapes" })), error => (error as { status?: number }).status === 409);
+
+  const racing = await Promise.allSettled([store.linkDish("sam", command({ itemId: "item:b", dishId: "hospitality-dish:b", classification: "canapes" })), store.linkDish("sam", command({ itemId: "item:b", dishId: "hospitality-dish:b", classification: "canapes" }))]);
+  assert.deepEqual(racing.map(result => result.status), ["fulfilled", "fulfilled"]);
+  assert.deepEqual((await store.links()).map(link => link.itemId), ["item:a", "item:b"]);
+
+  const offered = await readHospitalityDishes(db);
+  const ids = offered.map(row => (row.record as { canonicalId: string }).canonicalId).sort();
+  // dish:1-3 are hospitality-scoped records seeded by the publication test above.
+  assert.deepEqual(ids, ["dish:1", "dish:2", "dish:3", "hospitality-dish:a", "hospitality-dish:b", "hospitality-dish:old"], "only hospitality-scoped records are read; planner and legacy dishes are never fetched");
+  assert.equal(ids.includes("dish:planner") || ids.includes("dish:legacy"), false);
+  // The catalogue package is not configured in the emulator: the failure names its dependency instead of returning an empty list.
+  await assert.rejects(getRotationResources(store, db), error => (error as { status?: number }).status === 503 && /Hospitality catalogue package/.test((error as Error).message));
 });
