@@ -30,7 +30,8 @@ const guestItem = { ...product, id: "item:event", canonicalId: "item:event", nam
 const selected = (item: PortalMenuItem = guestItem) => [{ itemId: item.id, quantity: 8, choices: {} }];
 const contact = { requesterName: "Test", requesterEmail: "test@example.invalid", requesterPhone: "1", requesterCompany: "Test", clientName: "Test", clientCompany: "Test", invoiceReference: "PO1", specialInstructions: "" };
 const acks = { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true };
-const future = new Date(); future.setUTCDate(future.getUTCDate() + 60);
+// Synthetic noon keeps UTC and Europe/London on the same business date around midnight/BST.
+const future = new Date(); future.setUTCHours(12, 0, 0, 0); future.setUTCDate(future.getUTCDate() + 60);
 while ([0, 6].includes(future.getUTCDay())) future.setUTCDate(future.getUTCDate() + 1);
 const serviceDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(future);
 const details = { eventDate: serviceDate, startTime: "09:00", endTime: "10:00", guestCount: 11, floorLevel: "1", roomOrArea: "Room", deliveryPoint: "" };
