@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T12:57:20.847Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T13:18:19.641Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -154,7 +154,7 @@ Snapshot: 2026-10-31T12:57:20.847Z. The local governed registry remains authorit
 | menu-release-provenance | codex-menu-spellcheck-delivery | tools/workflow, docs/deployment/workflow.md | codex/menu-release-provenance | [#130](https://github.com/derekfika/fika-os/pull/130) | retired | 2026-10-29T10:42:45.251Z |
 | menu-release-recovery-scoped | codex-menu-release-recovery | tools/workflow, CHANGELOG.md | codex/menu-release-recovery-scoped | [#12](https://github.com/derekfika/fika-os/pull/12) | finished | 2026-10-23T09:40:03.932Z |
 | menu-release-recovery | codex-menu-release-recovery | tools/workflow | codex/menu-release-recovery | — | finished | 2026-10-23T09:22:36.941Z |
-| menu-slot-aware-picker | luna-menu-slot-picker | apps/menu-planning | codex/menu-slot-aware-picker | [#206](https://github.com/derekfika/fika-os/pull/206) | active | 2026-10-31T08:02:41.587Z |
+| menu-slot-aware-picker | luna-menu-slot-picker | apps/menu-planning | codex/menu-slot-aware-picker | [#206](https://github.com/derekfika/fika-os/pull/206) | finished | 2026-10-31T13:18:15.995Z |
 | menu-spellcheck-continue | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-continue | — | finished | 2026-10-28T19:46:22.840Z |
 | menu-spellcheck-delivery | codex-menu-spellcheck-delivery | apps/menu-planning | codex/menu-spellcheck-delivery | [#129](https://github.com/derekfika/fika-os/pull/129) | finished | 2026-10-29T10:42:15.014Z |
 | menu-spellcheck-week-planner | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-week-planner | [#98](https://github.com/derekfika/fika-os/pull/98) | finished | 2026-10-28T09:15:41.758Z |
