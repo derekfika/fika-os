@@ -13,6 +13,7 @@ export type QueueBooking = {
   canonicalId: string;
   lifecycleStatus: string;
   updatedAt?: string;
+  createdAt?: string;
   source?: { sourceBookingId?: string };
   client?: {
     name?: string;
@@ -21,7 +22,7 @@ export type QueueBooking = {
     clientCompany?: string;
     requester?: { name?: string; companyName?: string };
   };
-  service?: { eventDate?: string; startTime?: string };
+  service?: { eventDate?: string; startTime?: string; portalSiteId?: string; portalSiteLabel?: string; oplocId?: string };
 };
 
 export type QueueGroup = {
@@ -34,12 +35,14 @@ export type QueueGroup = {
   services?: Array<{ bookingId: string; sourceReference?: string }>;
 };
 
-export type QueueSort = "service-asc" | "service-desc" | "updated-desc";
+export type QueueSort = "service-asc" | "service-desc" | "updated-desc" | "created-desc" | "status-asc";
 
 export const queueSortOptions: ReadonlyArray<{ value: QueueSort; label: string }> = [
   { value: "service-asc", label: "Service date, earliest first" },
   { value: "service-desc", label: "Service date, latest first" },
   { value: "updated-desc", label: "Recently updated" },
+  { value: "created-desc", label: "Recently created" },
+  { value: "status-asc", label: "Status" },
 ];
 
 export type QueueFilters = {
@@ -94,26 +97,30 @@ function rowTime(row: QueueRow) {
 }
 
 /** Text a search term is matched against: who booked, and every reference we hold for the row. */
-function searchHaystack(row: QueueRow) {
+function searchHaystack(row: QueueRow, bookingById: ReadonlyMap<string, QueueBooking>): Array<string | undefined> {
   if (row.kind === "booking") {
     const { booking } = row;
     return [
       booking.client?.name, booking.client?.companyName, booking.client?.clientName, booking.client?.clientCompany,
       booking.client?.requester?.name, booking.client?.requester?.companyName,
       booking.canonicalId, booking.source?.sourceBookingId,
+      booking.service?.portalSiteId, booking.service?.portalSiteLabel, booking.service?.oplocId,
     ];
   }
   const { group } = row;
   return [
     group.client?.name, group.client?.companyName, group.reference, group.id,
-    ...(group.services || []).flatMap((service) => [service.bookingId, service.sourceReference]),
+    ...(group.services || []).flatMap((service) => {
+      const child = bookingById.get(service.bookingId);
+      return [service.bookingId, service.sourceReference, child?.service?.portalSiteId, child?.service?.portalSiteLabel, child?.service?.oplocId];
+    }),
   ];
 }
 
-export function rowMatches(row: QueueRow, filters: QueueFilters) {
+export function rowMatches(row: QueueRow, filters: QueueFilters, bookingById: ReadonlyMap<string, QueueBooking> = new Map()) {
   const terms = normalise(filters.search).split(" ").filter(Boolean);
   if (terms.length) {
-    const haystack = normalise(searchHaystack(row).filter(Boolean).join(" "));
+    const haystack = normalise(searchHaystack(row, bookingById).filter(Boolean).join(" "));
     if (!terms.every((term) => haystack.includes(term))) return false;
   }
   if (filters.statuses.length && !filters.statuses.includes(rowStatus(row))) return false;
@@ -124,11 +131,11 @@ export function rowMatches(row: QueueRow, filters: QueueFilters) {
   return true;
 }
 
-/** Latest `updatedAt` of a row; groups use their member bookings, which hold the audit time. */
-function updatedTime(row: QueueRow, updatedByBooking: ReadonlyMap<string, string>) {
-  if (row.kind === "booking") return row.booking.updatedAt || "";
+/** Latest recorded audit time of a row; groups use their loaded member bookings. */
+function auditTime(row: QueueRow, timeByBooking: ReadonlyMap<string, string>, field: "updatedAt" | "createdAt") {
+  if (row.kind === "booking") return row.booking[field] || "";
   return (row.group.services || []).reduce((latest, service) => {
-    const value = updatedByBooking.get(service.bookingId) || "";
+    const value = timeByBooking.get(service.bookingId) || "";
     return value > latest ? value : latest;
   }, "");
 }
@@ -141,7 +148,7 @@ function compareService(left: QueueRow, right: QueueRow) {
   return leftDate.localeCompare(rightDate) || rowTime(left).localeCompare(rowTime(right)) || left.id.localeCompare(right.id);
 }
 
-export function sortRows(rows: readonly QueueRow[], sort: QueueSort, updatedByBooking: ReadonlyMap<string, string> = new Map()) {
+export function sortRows(rows: readonly QueueRow[], sort: QueueSort, updatedByBooking: ReadonlyMap<string, string> = new Map(), createdByBooking: ReadonlyMap<string, string> = new Map()) {
   const sorted = [...rows];
   if (sort === "service-asc") return sorted.sort(compareService);
   if (sort === "service-desc") {
@@ -150,9 +157,14 @@ export function sortRows(rows: readonly QueueRow[], sort: QueueSort, updatedByBo
       return compareService(right, left);
     });
   }
+  if (sort === "status-asc") {
+    return sorted.sort((left, right) => rowStatus(left).localeCompare(rowStatus(right)) || compareService(left, right));
+  }
+  const field = sort === "created-desc" ? "createdAt" : "updatedAt";
+  const times = sort === "created-desc" ? createdByBooking : updatedByBooking;
   return sorted.sort((left, right) => {
-    const leftUpdated = updatedTime(left, updatedByBooking);
-    const rightUpdated = updatedTime(right, updatedByBooking);
+    const leftUpdated = auditTime(left, times, field);
+    const rightUpdated = auditTime(right, times, field);
     if (!leftUpdated !== !rightUpdated) return leftUpdated ? -1 : 1;
     return rightUpdated.localeCompare(leftUpdated) || compareService(left, right);
   });
@@ -177,13 +189,14 @@ export function filterQueue(input: {
   standaloneIds: ReadonlySet<string>;
   filters: QueueFilters;
 }): QueueResult {
-  const bookingById = new Map(input.bookings.map((booking) => [booking.canonicalId, booking]));
+  const bookingById = new Map(input.bookings.map(booking => [booking.canonicalId, booking]));
+  const createdByBooking = new Map(input.bookings.flatMap((booking) => (booking.createdAt ? [[booking.canonicalId, booking.createdAt] as const] : [])));
   const updatedByBooking = new Map(input.bookings.flatMap((booking) => (booking.updatedAt ? [[booking.canonicalId, booking.updatedAt] as const] : [])));
   const all: QueueRow[] = [
     ...input.groups.map((group): QueueRow => ({ kind: "group", id: group.id, group })),
     ...input.bookings.filter((booking) => input.standaloneIds.has(booking.canonicalId)).map((booking): QueueRow => ({ kind: "booking", id: booking.canonicalId, booking })),
   ];
-  const rows = sortRows(all.filter((row) => rowMatches(row, input.filters)), input.filters.sort, updatedByBooking);
+  const rows = sortRows(all.filter((row) => rowMatches(row, input.filters, bookingById)), input.filters.sort, updatedByBooking, createdByBooking);
   return {
     rows,
     bookings: rows.flatMap((row) => (row.kind === "booking" ? [row.booking] : [])),
