@@ -9,7 +9,7 @@ import { buildTrustedRcoaHubPayload } from "../lib/rcoa-booking-request";
 import { buildRcoaGroupHubPayloads } from "../lib/rcoa-booking-group";
 import {
   addAllDayService, applyAllDayDefaults, applyServiceItems, changeAllDayServiceCategory, composeServiceDraft, composeSharedView, createEmptyAllDay,
-  duplicateAllDayService, RCOA_ALL_DAY, removeAllDayService, sortedAllDayServices, summarizeAllDay, updateAllDayService, validateAllDay, type AllDayDraft,
+  createAllDayDraftForSite, duplicateAllDayService, RCOA_ALL_DAY, removeAllDayService, sortedAllDayServices, summarizeAllDay, updateAllDayService, validateAllDay, type AllDayDraft,
 } from "../lib/rcoa-all-day";
 import { createEmptyRcoaDraft, filterRcoaMenu, rcoaAllowedCategories, rcoaChildReference, rcoaEventTypes } from "../lib/rcoa-portal";
 import type { PortalMenuItem } from "../lib/mnk-contract";
@@ -40,6 +40,15 @@ function threeServiceDay(): AllDayDraft {
 }
 // The route validates against the governed catalogue (stable Item IDs); the client logic under test builds from the legacy snapshot menu and is remapped at the route boundary.
 const submissionFor = (day: AllDayDraft) => buildAllDayClientRequests(day, menu, { groupId: GROUP_ID, submittedAt: AT });
+
+test("site-parameterised All Day draft preserves the existing RCoA request bytes", () => {
+  const legacy = threeServiceDay();
+  const siteId = createAllDayDraftForSite("rcoa").siteId;
+  const siteDraft = { ...legacy, siteId };
+  assert.equal(siteDraft.siteId, "rcoa");
+  assert.equal(JSON.stringify(submissionFor(siteDraft)), JSON.stringify(submissionFor(legacy)));
+  assert.throws(() => createAllDayDraftForSite(" "), /canonical site id/);
+});
 
 test("1+2. the existing offerings are unchanged and All Day Hospitality is a first-class offering on the first page", () => {
   assert.deepEqual(rcoaEventTypes.map((event) => event.id), ["breakfast", "lunch", "afternoon", "meeting_hospitality", "finger_food", "event_catering", "dining", "bespoke"]);

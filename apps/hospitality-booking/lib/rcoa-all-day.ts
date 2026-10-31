@@ -22,6 +22,8 @@ export const RCOA_ALL_DAY = { id: "all_day", label: "All Day Hospitality", descr
 
 export type AllDayService = { id: string; category: RcoaEventType | ""; startTime: string; guestCount: number; location: string; lines: RcoaLine[]; notes: string };
 export type AllDayDraft = {
+  /** Optional canonical site identity for future site-configured All Day flows. It is not part of an RCoA booking payload. */
+  siteId?: string;
   contact: RcoaBookingDraft["contact"];
   eventName: string;
   eventDate: string;
@@ -49,6 +51,12 @@ export function createEmptyAllDay(): AllDayDraft {
     specialInstructions: "", dietaries: base.dietaries, acknowledgements: base.acknowledgements, services: [],
   };
   return { ...draft, services: [blankService(draft)] };
+}
+
+/** Creates the same pure draft shape with an explicit site identity for a site-configured All Day flow. */
+export function createAllDayDraftForSite(siteId: string): AllDayDraft {
+  if (!siteId || siteId !== siteId.trim()) throw new Error("All Day drafts require a non-empty canonical site id.");
+  return { ...createEmptyAllDay(), siteId };
 }
 
 /** Event-level defaults fill the BLANKS of existing rows (never overriding a row the customer already set) and seed new rows. */
