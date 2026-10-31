@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
-import { eventGuestCountLabel, orderedQuantityLabel, productionPrepLabel } from "../../lib/ordered-quantity";
-import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuSourceLabel, isCpuWithdrawn } from "../../lib/production-presentation";
-import { orderDate, orderSummary, productionJobCount, productionQuantitySummary, sourceHeading } from "../../lib/production-day";
+import { eventGuestCountLabel, orderedQuantityLabel } from "../../lib/ordered-quantity";
+import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, isCpuWithdrawn } from "../../lib/production-presentation";
+import { orderDate, productionJobCount, sourceHeading } from "../../lib/production-day";
 import "./production-calendar.css";
 import "./production-card-overrides.css";
 
@@ -79,10 +79,9 @@ export default function ProductionCalendar({ orders, open, onCancelBooking, week
                   {isDeliveredIn ? <div className="production-card-delivered-in"><h3>{siteName}</h3><span>{portions.toLocaleString()} portions</span></div> : <>
                     <div className="production-card-top"><strong>{sourceHeading(order)}</strong><span className={`calendar-status calendar-status--${order.cancellationNotice ? "cancelled" : status}`}>{statusLabel}</span></div>
                     <div className="production-card-destination"><h3>{cardOploc(order)}</h3></div>
-                    <div className="production-card-quantities" aria-label="Customer ordered dishes and quantities">{order.lines.map((line) => <span key={line.canonicalId}><b>{line.itemName}</b><em>{orderedQuantityLabel(line)}</em>{productionPrepLabel(line) ? <small>Prep: {productionPrepLabel(line)}</small> : null}</span>)}</div>
-                    <p className="production-card-client"><b>{cpuSourceLabel(order)}:</b> {orderSummary(order)}</p>
+                    <div className="production-card-quantities" aria-label="Customer ordered dishes and quantities">{order.lines.map((line) => <span key={line.canonicalId}><b>{line.itemName}</b><em>{orderedQuantityLabel(line)}</em></span>)}</div>
                     {dietaries && <p className="production-card-dietaries"><b>Dietary:</b> {dietaries}</p>}
-                    <div className="production-card-meta"><span>Event guests: {eventGuestCountLabel(customerPax)}</span><span>Production: {productionQuantitySummary(order)}</span></div>
+                    <div className="production-card-meta"><span>Event guests: {eventGuestCountLabel(customerPax)}</span></div>
                     {order.exceptions.length > 0 && <div className="calendar-exceptions"><small className="calendar-exception">{order.exceptions.length} exception{order.exceptions.length === 1 ? "" : "s"} needs attention</small><small className="calendar-exception-detail">{order.exceptions[0].description}</small></div>}
                   </>}
                   {order.cancellationNotice && <span className="production-card-cancel-overlay" aria-hidden="true"><span>×</span></span>}

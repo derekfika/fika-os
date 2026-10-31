@@ -1,7 +1,7 @@
 "use client";
 
 import type { ProductionOrder } from "../../lib/production-types";
-import { eventGuestCountLabel, orderedQuantityLabel, productionPrepLabel } from "../../lib/ordered-quantity";
+import { eventGuestCountLabel, orderedQuantityLabel } from "../../lib/ordered-quantity";
 import { aggregateDeliveredIn, categorySummary, destination, firstDeliveredInOrder, groupByRequiredTime, isHospitalityDayOrder, lifecycle, orderDate, sourceHeading } from "../../lib/production-day";
 import { cpuAttentionLabel, cpuRequiredTime, cpuSourceLabel, isAdHocProductionOrder } from "../../lib/production-presentation";
 import { europeLondonDate } from "../../lib/operational-date";
@@ -10,7 +10,7 @@ import "./production-day-navigation.css";
 
 function formatDate(date: string) { return new Date(`${date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }); }
 function lineQuantitySummary(order: ProductionOrder) {
-  return order.lines.map(line => `${line.itemName}: ${orderedQuantityLabel(line)}${productionPrepLabel(line) ? ` · Prep ${productionPrepLabel(line)}` : ""}`).join(" · ") || "No line items recorded";
+  return order.lines.map(line => `${line.itemName}: ${orderedQuantityLabel(line)}`).join(" · ") || "No line items recorded";
 }
 
 export default function ProductionDayView({ orders, date, open, onChangeDate, reviewAllergens }: { orders: ProductionOrder[]; date: string; open: (order: ProductionOrder) => void; onChangeDate: (date: string) => void; reviewAllergens: (date: string) => void }) {

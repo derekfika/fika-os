@@ -9,7 +9,8 @@ function formatQuantity(quantity: number) {
 /** Returns only recorded customer evidence. It never derives pax from guests or recipes. */
 export function orderedQuantityLabel(line: OrderedLine) {
   const quantity = line.customerQuantity;
-  const unit = line.customerUnit?.trim();
+  const recordedUnit = line.customerUnit?.trim();
+  const unit = recordedUnit && /^(?:per[\s-]+)?persons?$/i.test(recordedUnit) ? "pax" : recordedUnit;
   return typeof quantity === "number" &&
     Number.isFinite(quantity) &&
     quantity > 0 &&

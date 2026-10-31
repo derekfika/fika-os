@@ -3,7 +3,7 @@ import { formatCatalogueChoices } from "@fika/server-shared/hospitality-effectiv
 
 import { useEffect, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
-import { eventGuestCountLabel, orderedQuantityLabel, productionPrepLabel } from "../../lib/ordered-quantity";
+import { eventGuestCountLabel, orderedQuantityLabel } from "../../lib/ordered-quantity";
 import "./hospitality-production-detail.css";
 import BookingContext from "./BookingContext";
 
@@ -70,12 +70,12 @@ export default function HospitalityProductionDetail({
       </div>
       <section>
         <h3>What to produce</h3>
-        <p className="hospitality-production-detail__muted">Production quantities for this hospitality booking.</p>
+        <p className="hospitality-production-detail__muted">Customer-ordered quantities for this hospitality booking.</p>
         <div className="hospitality-production-detail__lines">
           {order.lines.map((line) => (
             <div key={line.canonicalId}>
               <strong>{orderedQuantityLabel(line)}</strong>
-              <span>{line.itemName}<small>Customer ordered</small>{productionPrepLabel(line) ? <small>Prep: {productionPrepLabel(line)}</small> : null}{line.choices?.length ? <small>{formatCatalogueChoices(line.choices).join(" · ")}</small> : null}</span>
+              <span>{line.itemName}<small>Customer ordered</small>{line.choices?.length ? <small>{formatCatalogueChoices(line.choices).join(" · ")}</small> : null}</span>
             </div>
           ))}
         </div>

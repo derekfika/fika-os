@@ -89,7 +89,8 @@ test("printed HTML keeps separate site identities and contains the paper handove
   const html = runSheetProductionPrintHtml(map, [day], ["oploc:oploc:first", "oploc:oploc:second"], new Date("2026-10-30T09:00:00Z"));
   assert.match(html, /Same site · oploc:first/);
   assert.match(html, /Same site · oploc:second/);
-  assert.match(html, /<strong>4 portions<\/strong><small>Prep: 12 pieces<\/small>/);
+  assert.match(html, /4 portions/);
+  assert.doesNotMatch(html, /12 pieces|Prep:/);
   assert.match(html, /Ordered quantity/);
   assert.match(html, /data-site-key="oploc:oploc:first"/);
   assert.match(html, /data-site-key="oploc:oploc:second"/);

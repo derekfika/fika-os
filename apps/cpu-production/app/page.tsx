@@ -891,7 +891,7 @@ function Detail({
         <article key={line.canonicalId}>
           <strong>{line.itemName}</strong>
           <p>Customer ordered: {orderedQuantityLabel(line)}</p>
-          <p>Prep: {productionPrepLabel(line) || "Not configured"}</p>
+          <p>Internal prep quantity: {productionPrepLabel(line) || "Not configured"}</p>
           <small>
             {Object.entries(line.dietaries || {})
               .filter(([, value]) => value && value !== 0)

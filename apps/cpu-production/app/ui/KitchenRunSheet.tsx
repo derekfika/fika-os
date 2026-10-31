@@ -13,7 +13,7 @@ import {
   CANONICAL_ALLERGEN_COLUMNS,
   normaliseOperationalAllergens,
 } from "../../../shared/allergen-contract";
-import { collectionOrders, collectionQuantity, collectionPrepQuantity, collectionDate, collectionTime } from "./kitchen-print";
+import { collectionOrders, collectionQuantity, collectionDate, collectionTime } from "./kitchen-print";
 import { RunSheetPrintDialog } from "./RunSheetPrintDialog";
 export type PackingView = {
   revision: number;
@@ -153,7 +153,6 @@ export function CollectionCard({
               </div>
               <strong className="kitchen-quantity">
                 {collectionQuantity(line)}
-                {collectionPrepQuantity(line) ? <small>Prep: {collectionPrepQuantity(line)}</small> : null}
               </strong>
             </li>
           );
@@ -183,7 +182,6 @@ export function CollectionCard({
             <p>
               <strong>{collectionQuantity(selected)}</strong>
             </p>
-            {collectionPrepQuantity(selected) ? <p>Prep: {collectionPrepQuantity(selected)}</p> : null}
             <h3>Description / preparation</h3>
             <p>{selected.description || "No description recorded."}</p>
             <p>

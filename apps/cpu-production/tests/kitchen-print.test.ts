@@ -7,7 +7,6 @@ import {
   collectionPrintHtml,
   totalsPrintHtml,
   collectionQuantity,
-  collectionPrepQuantity,
   collectionTime,
 } from "../app/ui/kitchen-print";
 import { eventGuestCountLabel, orderedQuantityLabel } from "../lib/ordered-quantity";
@@ -82,7 +81,7 @@ test("collection print has every long-list row, empty physical boxes, signatures
   assert.doesNotMatch(html, /checked=|<script/);
 });
 
-test("print escapes labels and keeps customer quantities above optional prep guidance", () => {
+test("print escapes labels and omits internal recipe multipliers", () => {
   const o = order("a", [
     { ...line("x"), itemName: "<script>alert(1)</script>" },
   ]);
@@ -97,7 +96,6 @@ test("print escapes labels and keeps customer quantities above optional prep gui
     }),
     "4 portions",
   );
-  assert.equal(collectionPrepQuantity({ ...line("x"), productionQuantity: 12, productionUnit: "pieces" }), "12 pieces");
   assert.equal(
     collectionTime({
       ...o,
@@ -113,15 +111,15 @@ test("customer ordered evidence stays primary across pax, event guests, mixed un
   const hospitalityOrder = { ...order("hospitality", [paxLine]), guestCount: 100 };
   const html = collectionPrintHtml(hospitalityOrder);
   assert.equal(collectionQuantity(paxLine), "15 pax");
-  assert.equal(collectionPrepQuantity(paxLine), "45 pieces");
   assert.equal(eventGuestCountLabel(hospitalityOrder.guestCount), "100");
-  assert.match(html, /<strong>15 pax<\/strong><small>Prep: 45 pieces<\/small>/);
+  assert.match(html, /<strong>15 pax<\/strong>/);
+  assert.doesNotMatch(html, /45 pieces|Prep:/);
   assert.doesNotMatch(html, />100</);
 
   assert.deepEqual(
-    [line("person", 15, "person"), line("box", 2, "boxes"), line("tray", 3, "trays"), line("piece", 7, "pieces")]
+    [line("person", 15, "Per person"), line("box", 2, "boxes"), line("tray", 3, "trays"), line("piece", 7, "pieces")]
       .map(orderedQuantityLabel),
-    ["15 person", "2 boxes", "3 trays", "7 pieces"],
+    ["15 pax", "2 boxes", "3 trays", "7 pieces"],
   );
 });
 
