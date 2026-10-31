@@ -6,53 +6,46 @@
   "backend": "fika-cpu-production-staging",
   "region": "europe-west4",
   "branch": "release/staging/cpu",
-  "sourceSha": "c038fbce4e198bc671c8ee9b752ba4c8473893e2",
-  "scopeHash": "992b372305f0ad3a7432632a776d24fe5a303bdafc2fca128a78c284ac388d74",
+  "sourceSha": "3399cf848f326db84f5668942ed2053f8f439207",
+  "scopeHash": "9266f2257078c8ee0fffd67d04a227cbdfee5316c06bf8fd93265b01d53e26ab",
   "inMain": true,
   "rollback": false,
   "executing": true,
   "cosmeticOnly": false,
   "standard": false,
   "validation": {
-    "id": 124479653372,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/41181189750/job/124479653372",
-    "sha": "c038fbce4e198bc671c8ee9b752ba4c8473893e2"
+    "id": 124551167539,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/41205881829/job/124551167539",
+    "sha": "3399cf848f326db84f5668942ed2053f8f439207"
   },
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "cpu",
     "environment": "staging",
-    "sourceSha": "c038fbce4e198bc671c8ee9b752ba4c8473893e2",
+    "sourceSha": "3399cf848f326db84f5668942ed2053f8f439207",
     "action": "deploy",
     "instruction": "Explicit staging execution",
     "releaseId": null,
-    "id": "62d7106890804b6a72f273bc4fdea48740c258135455d1ef707bbf3d56a0143e",
+    "id": "b28b3dc9925273aa403b4901326e548ab0fb661d03e1a57bbb4b035374c7321a",
     "explicitExecute": true,
-    "authorisedAt": "2026-10-31T07:52:20.428Z"
+    "authorisedAt": "2026-10-31T13:47:49.659Z"
   },
   "provenance": {
-    "number": 200,
-    "url": "https://github.com/derekfika/fika-os/pull/200",
-    "head": "a8d5e296aa45d0a02659d26e011acd3e524d69c4",
+    "number": 208,
+    "url": "https://github.com/derekfika/fika-os/pull/208",
+    "head": "4cbf55f46e74cf1d01eb67aca97b485019bae3d5",
     "pullRequestRisk": "standard"
   },
-  "rollout": "build-2026-10-31-001",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "ca21a25f-364c-41b7-87ed-1185d9d772d9",
   "previousGood": {
-    "sourceSha": "8512119ea697d7de797b51c99b84d31cce71635c",
-    "rollout": "build-2026-10-30-001",
+    "sourceSha": "c038fbce4e198bc671c8ee9b752ba4c8473893e2",
+    "rollout": "build-2026-10-31-001",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "b56efc9cc098ea1cefd0b79f24fec4379f8904ac",
-  "releaseId": "e4132d1e-bb37-488c-91ec-ea5da2af0c79",
-  "completedAt": "2026-10-31T07:55:46.975Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-cpu-production-staging--fika-os-dev.europe-west4.hosted.app/"
-  }
+  "previousGoodRecord": "a351449c7b1a23f2d9ab40db03897f2ba5ca8ecf",
+  "createdAt": "2026-10-31T13:47:56.482Z"
 }
