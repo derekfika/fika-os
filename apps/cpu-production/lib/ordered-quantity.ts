@@ -25,16 +25,3 @@ export function eventGuestCountLabel(guestCount: number | undefined) {
     ? formatQuantity(guestCount)
     : "Needs verification";
 }
-
-export function productionPrepLabel(
-  line: Pick<ProductionLine, "productionQuantity" | "productionUnit">,
-) {
-  const quantity = line.productionQuantity;
-  const unit = line.productionUnit?.trim();
-  return typeof quantity === "number" &&
-    Number.isFinite(quantity) &&
-    quantity > 0 &&
-    unit
-    ? `${formatQuantity(quantity)} ${unit}`
-    : undefined;
-}

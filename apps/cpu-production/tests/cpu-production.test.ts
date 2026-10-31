@@ -491,7 +491,7 @@ test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
   assert.ok(routineChefSources.every(source => /orderedQuantityLabel|collectionQuantity/.test(source)));
   for (const source of routineChefSources) assert.doesNotMatch(source, /productionQuantity|productionUnit|productionPrepLabel|Prep:/);
   assert.match(page, /Customer ordered: \{orderedQuantityLabel\(line\)\}/);
-  assert.match(page, /Internal prep quantity: \{productionPrepLabel\(line\) \|\| "Not configured"\}/);
+  assert.doesNotMatch(page, /productionPrepLabel|Internal prep quantity|productionQuantity/);
 });
 
 test("weekly production cards use scoped fluid layout and safe truncation", () => {

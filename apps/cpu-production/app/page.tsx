@@ -6,7 +6,7 @@ import type {
   ProductionOrder,
   ProductionStatus,
 } from "../lib/production-types";
-import { orderedQuantityLabel, productionPrepLabel } from "../lib/ordered-quantity";
+import { orderedQuantityLabel } from "../lib/ordered-quantity";
 import type { AllergenCellState } from "./lib/production-plan";
 import { matrixColumns } from "./ui/allergen-matrix";
 import HospitalityAllergenDetail from "./ui/HospitalityAllergenDetail";
@@ -891,7 +891,6 @@ function Detail({
         <article key={line.canonicalId}>
           <strong>{line.itemName}</strong>
           <p>Customer ordered: {orderedQuantityLabel(line)}</p>
-          <p>Internal prep quantity: {productionPrepLabel(line) || "Not configured"}</p>
           <small>
             {Object.entries(line.dietaries || {})
               .filter(([, value]) => value && value !== 0)
