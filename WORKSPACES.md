@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T07:15:34.817Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T07:18:36.648Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -75,6 +75,7 @@ Snapshot: 2026-10-31T07:15:34.817Z. The local governed registry remains authorit
 | hospitality-rotations-integration | codex-hospitality-rotations-integration | apps/hospitality-booking/app/rotations-preview, apps/hospitality-booking/app/rotations, apps/hospitality-booking/app/api/hospitality-rotations, apps/hospitality-booking/lib/rotations-ui-types.ts, apps/hospitality-booking/lib/rotations-ui-model.ts, apps/hospitality-booking/lib/rotations-ui-access.ts, apps/hospitality-booking/lib/hospitality-rotations-hub-proxy.ts, apps/hospitality-booking/tests/rotations-ui.test.ts, apps/hospitality-booking/docs/hospitality-rotations-ui-integration.md | codex/hospitality-rotations-integration | — | finished | 2026-10-29T16:20:24.110Z |
 | hospitality-rotations-resources | codex-hospitality-rotations-integration | apps/integration-hub/lib/hospitality-rotations/http.ts, apps/integration-hub/app/api/hospitality-rotations/route.ts, apps/integration-hub/tests/hospitality-rotations-route.test.ts, apps/integration-hub/lib/hospitality-rotations/resources.ts | codex/hospitality-rotations-resources | [#145](https://github.com/derekfika/fika-os/pull/145) | retired | 2026-10-29T18:33:19.681Z |
 | hospitality-staging-health | codex-rotations-staging-delivery | tools/workflow/releases.mjs, tools/workflow/releases.test.mjs, docs/deployment/hospitality-staging-health.md | codex/hospitality-staging-health | [#134](https://github.com/derekfika/fika-os/pull/134) | retired | 2026-10-29T15:54:24.273Z |
+| hub-bulk-item-category | luna-hub-bulk-item-category | apps/integration-hub/lib/hospitality-catalogue-admin.ts, apps/integration-hub/lib/hospitality-catalogue-view.ts, apps/integration-hub/app/ui/HospitalityCatalogue.tsx, apps/integration-hub/tests/hospitality-catalogue-bulk.test.ts, apps/integration-hub/tests/hospitality-catalogue-bulk.emulator.test.ts | codex/hub-bulk-item-category | — | retired | 2026-10-31T07:18:34.919Z |
 | hub-ci-recovery | codex-hub-ci-recovery | apps/integration-hub, .github/workflows | codex/hub-ci-recovery | [#17](https://github.com/derekfika/fika-os/pull/17) | finished | 2026-10-23T11:34:33.508Z |
 | hub-historical-release-reconciliation | uat-20261025-1150 | tools/workflow, docs/deployment, CHANGELOG.md | codex/hub-historical-release-reconciliation | — | finished | 2026-10-25T14:44:58.862Z |
 | hub-ledger-reconciliation | uat-20261025-1150 | tools/workflow, docs/deployment, CHANGELOG.md | codex/hub-ledger-reconciliation | [#49](https://github.com/derekfika/fika-os/pull/49) | finished | 2026-10-25T17:42:30.830Z |
