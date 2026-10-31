@@ -8,7 +8,7 @@ test("dashboard consumes the Hub projection, suppresses grouped children and off
   assert.match(dashboard, /setGroups\(body.bookingGroups/);
   assert.match(dashboard, /body.dashboardBookings \|\| body.bookings/);
   assert.match(dashboard, /standaloneIds.has\(item.canonicalId\)/);
-  assert.match(dashboard, /visibleGroups.map\(group/);
+  assert.match(dashboard, /queue\.rows\.map\(row/);
   assert.match(dashboard, /groups.filter\(group => group.eventDate === key\)/);
   const action = dashboard.slice(dashboard.indexOf("const generateGroupQuote"), dashboard.indexOf("const persistQuotePdf"));
   assert.equal((action.match(/fetchQuoteRequest\(/g) || []).length, 1);
