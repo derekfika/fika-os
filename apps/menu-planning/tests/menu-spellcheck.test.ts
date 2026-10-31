@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { findSpellingIssues, spellKey } from "../lib/menu-spellcheck";
+import { findSpellingIssues, replaceSpellingFinding, spellKey } from "../lib/menu-spellcheck";
 
 test("flags the misspellings from the mockup with their UK suggestions and offsets", () => {
   const text = "Heritage Tabbouleh With Sicilion Lemon Oil, Heritage Tomatos";
@@ -39,4 +39,17 @@ test("curly apostrophes match the same dictionary key", () => {
 test("empty and punctuation-only text produce no findings", () => {
   assert.deepEqual(findSpellingIssues(""), []);
   assert.deepEqual(findSpellingIssues("  ,.; 123 -- "), []);
+});
+
+test("protects FIKA and removes duplicate or self suggestions", () => {
+  const speller = { correct: () => false, suggest: () => ["Zika", "Fika"] };
+  assert.deepEqual(findSpellingIssues("Fika FIKA fika", { speller }), []);
+  assert.deepEqual(findSpellingIssues("Yogurt"), [{ start: 0, end: 6, word: "Yogurt", kind: "us-spelling", suggestions: ["Yoghurt"] }]);
+});
+
+test("replacement changes only the selected occurrence and rejects stale offsets", () => {
+  const text = "Tomatos with tomatos";
+  const finding = findSpellingIssues(text)[0];
+  assert.equal(replaceSpellingFinding(text, finding, "Tomatoes"), "Tomatoes with tomatos");
+  assert.equal(replaceSpellingFinding("Changed after review", finding, "Tomatoes"), undefined);
 });
