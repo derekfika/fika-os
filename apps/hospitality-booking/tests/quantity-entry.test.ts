@@ -1,3 +1,4 @@
+import { seedVisibility } from "./support/rcoa-service-visibility";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -59,10 +60,10 @@ test("5. a below-minimum quantity blocks continuing; the corrected value clears 
   draft.occasion = "breakfast";
   draft.event = { ...draft.event, eventDate: "2026-12-10", guestCount: 20, startTime: "09:00" };
   draft.lines = [{ itemId: item.id, quantity: 5, choices: {} }];
-  const blocked = validateRcoaStep(3, draft, [item]);
+  const blocked = validateRcoaStep(3, draft, [item], seedVisibility);
   assert.ok(blocked[`quantity:${item.id}`], "step validation reports the quantity");
   draft.lines = [{ itemId: item.id, quantity: 10, choices: {} }];
-  assert.equal(validateRcoaStep(3, draft, [item])[`quantity:${item.id}`], undefined);
+  assert.equal(validateRcoaStep(3, draft, [item], seedVisibility)[`quantity:${item.id}`], undefined);
 });
 
 test("10. every portal uses the shared quantity rules and no portal clamps while typing", () => {

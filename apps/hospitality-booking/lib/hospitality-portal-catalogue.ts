@@ -2,6 +2,7 @@ import { browserCatalogueDeps, loadHospitalityCatalogue, type CatalogueLoadResul
 import { resolveSiteCatalogue, type EffectiveOffering } from "@fika/server-shared/hospitality-effective-offering";
 import type { PortalMenuItem } from "./mnk-contract";
 import type { PortalSiteKey } from "./portal-sites";
+import { rcoaVisibilityFromCatalogue, RCOA_SERVICE_SETTINGS_UNAVAILABLE, type RcoaServiceVisibility } from "./rcoa-service-visibility";
 
 const UK_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" });
 export function hospitalityCatalogueServiceDate(now = new Date()) { return UK_DATE.format(now); }
@@ -39,7 +40,7 @@ function portalMenuItem(offering: EffectiveOffering): PortalMenuItem | undefined
   };
 }
 
-export async function loadHospitalityPortalMenu(site: PortalSiteKey, requestedOplocId?: string, init: RequestInit = {}): Promise<{ menu: PortalMenuItem[]; catalogue: CatalogueLoadResult }> {
+export async function loadHospitalityPortalMenu(site: PortalSiteKey, requestedOplocId?: string, init: RequestInit = {}): Promise<{ menu: PortalMenuItem[]; catalogue: CatalogueLoadResult; visibility?: RcoaServiceVisibility }> {
   let oplocId = requestedOplocId?.trim();
   if (!oplocId) {
     const siteResponse = await fetch(`/api/hospitality-catalogue/site?site=${encodeURIComponent(site)}`, { cache: "no-cache", ...init });
@@ -60,7 +61,9 @@ export async function loadHospitalityPortalMenu(site: PortalSiteKey, requestedOp
     oplocId = body.oplocId;
   }
   const catalogue = await loadHospitalityCatalogue(browserCatalogueDeps("/api/hospitality-catalogue/package", init));
-  return { menu: portalMenuFromCatalogue(catalogue.catalogue, oplocId, hospitalityCatalogueServiceDate(), site === "angel-court"), catalogue };
+  if (site === "rcoa" && catalogue.source === "cache-unverified") throw new Error(RCOA_SERVICE_SETTINGS_UNAVAILABLE);
+  const visibility = site === "rcoa" ? rcoaVisibilityFromCatalogue(catalogue.catalogue, oplocId) : undefined;
+  return { menu: portalMenuFromCatalogue(catalogue.catalogue, oplocId, hospitalityCatalogueServiceDate(), site === "angel-court"), catalogue, ...(visibility ? { visibility } : {}) };
 }
 
 export function portalMenuFromCatalogue(pkg: Parameters<typeof resolveSiteCatalogue>[0], oplocId: string, serviceDate: string, includeQuoteEnquiries = false): PortalMenuItem[] {

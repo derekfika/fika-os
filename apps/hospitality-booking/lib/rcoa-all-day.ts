@@ -1,5 +1,6 @@
 import type { PortalMenuItem } from "./mnk-contract";
 import { guestCountMessage } from "./guest-count";
+import { rcoaServiceIsOffered, type RcoaServiceVisibility } from "./rcoa-service-visibility";
 import {
   createEmptyRcoaDraft,
   isValidRcoaLondonWallTime,
@@ -91,12 +92,12 @@ export function updateAllDayService(draft: AllDayDraft, serviceId: string, patch
   return { ...draft, services: draft.services.map((service) => service.id === serviceId ? { ...service, ...patch } : service) };
 }
 
-/** Changing a row's service type keeps only the items that exist for the new type (same rule as the single-offering flow). */
-export function changeAllDayServiceCategory(draft: AllDayDraft, serviceId: string, category: RcoaEventType | "", menu: readonly PortalMenuItem[]) {
+/** Keep saved selections visible when the type changes; the customer explicitly resolves incompatible lines. */
+export function changeAllDayServiceCategory(draft: AllDayDraft, serviceId: string, category: RcoaEventType | "", menu: readonly PortalMenuItem[], visibility: RcoaServiceVisibility | undefined) {
   const service = draft.services.find((candidate) => candidate.id === serviceId);
   if (!service) return { draft, removed: 0 };
-  const lines = category ? retainRcoaLinesForOccasion(service.lines, category, menu) : [];
-  return { draft: updateAllDayService(draft, serviceId, { category, lines }), removed: service.lines.length - lines.length };
+  const compatible = category ? retainRcoaLinesForOccasion(service.lines, category, menu, visibility) : [];
+  return { draft: updateAllDayService(draft, serviceId, { category }), removed: 0, reviewRequired: service.lines.length - compatible.length };
 }
 
 const joinNotes = (draft: AllDayDraft, service?: AllDayService) => [
@@ -137,9 +138,9 @@ export function applyServiceItems(draft: AllDayDraft, serviceId: string, view: R
 export type AllDayFailure = { step: 1 | 2 | 3 | 4; serviceId?: string; errors: Record<string, string> };
 
 /** Validates the whole request (event, EVERY row, dietaries, acknowledgements) before anything is created. Returns the first failure. */
-export function validateAllDay(draft: AllDayDraft, menu: readonly PortalMenuItem[]): AllDayFailure | undefined {
+export function validateAllDay(draft: AllDayDraft, menu: readonly PortalMenuItem[], visibility: RcoaServiceVisibility | undefined): AllDayFailure | undefined {
   const shared = composeSharedView(draft);
-  const contactErrors = validateRcoaStep(1, shared, menu);
+  const contactErrors = validateRcoaStep(1, shared, menu, visibility);
   const dateErrors: Record<string, string> = isValidRcoaLondonWallTime(draft.eventDate, "12:00") ? {} : { eventDate: "Choose a valid event date." };
   const defaultGuestMessage = guestCountMessage(draft.defaultGuests, 1);
   const defaultGuestErrors: Record<string, string> = defaultGuestMessage ? { defaultGuests: defaultGuestMessage } : {};
@@ -150,20 +151,21 @@ export function validateAllDay(draft: AllDayDraft, menu: readonly PortalMenuItem
     const row = composeServiceDraft(draft, service.id);
     const errors: Record<string, string> = {};
     if (!service.category) errors[`service:${service.id}`] = "Choose a service type.";
+    else if (!rcoaServiceIsOffered(visibility, service.category)) errors[`service:${service.id}`] = "This service is no longer offered. Refresh the menu or choose another service type.";
     else {
-      const timing = validateRcoaStep(2, row, menu);
+      const timing = validateRcoaStep(2, row, menu, visibility);
       for (const key of ["startTime", "guestCount"] as const) if (timing[key]) errors[`${key}:${service.id}`] = timing[key];
       if (timing.roomOrArea) errors[`location:${service.id}`] = timing.roomOrArea;
-      const items = validateRcoaStep(3, row, menu);
+      const items = validateRcoaStep(3, row, menu, visibility);
       if (Object.keys(items).length) errors[`items:${service.id}`] = Object.values(items)[0];
     }
     if (Object.keys(errors).length) return { step: 2, serviceId: service.id, errors };
   }
   // Dietary counts are entered once for the event, so they must fit the smallest service.
   const smallest = Math.min(...draft.services.map((service) => service.guestCount));
-  const dietaryErrors = validateRcoaStep(4, { ...shared, event: { ...shared.event, guestCount: smallest } }, menu);
+  const dietaryErrors = validateRcoaStep(4, { ...shared, event: { ...shared.event, guestCount: smallest } }, menu, visibility);
   if (Object.keys(dietaryErrors).length) return { step: 3, errors: dietaryErrors };
-  const acknowledgementErrors = validateRcoaStep(5, shared, menu);
+  const acknowledgementErrors = validateRcoaStep(5, shared, menu, visibility);
   return Object.keys(acknowledgementErrors).length ? { step: 4, errors: acknowledgementErrors } : undefined;
 }
 

@@ -10,6 +10,8 @@ import { stableDocumentId } from "./canonical-editor";
 import { sha256 } from "./profiler";
 import { effectiveServiceLayout, SERVICE_IDS, type ServiceLayoutPackage, type ServiceRule, type ServiceRules } from "@fika/server-shared/hospitality-service-layout";
 import { buildServiceLayoutView, storedServiceLayoutView, type CataloguePayload, type CatalogueRow, type ServiceLayoutStoredView, type ServiceLayoutView } from "./hospitality-catalogue-types";
+import type { Transaction } from "firebase-admin/firestore";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 export const SERVICE_LAYOUT_COLLECTION = "integrationHubHospitalityServiceLayout";
 export const SERVICE_LAYOUT_REVISIONS = "integrationHubHospitalityServiceLayoutRevisions";
@@ -22,6 +24,28 @@ export type StoredServiceLayout = {
   schema: 1; scope: "company" | "site"; oplocId?: string; version: number; services: ServiceRules;
   createdAt: string; createdBy: string; updatedAt: string; updatedBy: string;
 };
+
+/** Booking commands need just the company and selected site's authority, inside their existing transaction. */
+export async function readBookingServiceLayout(transaction: Pick<Transaction, "getAll">, oplocId: string): Promise<ServiceLayoutPackage> {
+  if (!oplocId) throw Object.assign(new Error("A canonical site is required to verify service settings."), { status: 503 });
+  const snapshots = await transaction.getAll(layoutCollection().doc(COMPANY_LAYOUT_ID), layoutCollection().doc(layoutDocId(oplocId)));
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.booking.service-layout", source: "FIRESTORE", dataset: SERVICE_LAYOUT_COLLECTION, documents: snapshots.filter(snapshot => snapshot.exists).length, estimatedBillableReads: 2, firestoreReadKind: "transaction" });
+  const documents = snapshots.flatMap((snapshot, index) => {
+    if (!snapshot.exists) return [];
+    const document = snapshot.data() as StoredServiceLayout;
+    const validRule = (rule: unknown) => {
+      if (!rule || typeof rule !== "object" || Array.isArray(rule)) return false;
+      const value = rule as ServiceRule;
+      return Array.isArray(value.categories) && value.categories.length <= 40 && value.categories.every(category => typeof category === "string" && category.length > 0 && category.length <= 120 && category === category.trim()) && new Set(value.categories).size === value.categories.length && (value.hidden === undefined || typeof value.hidden === "boolean");
+    };
+    if (!document || document.schema !== 1 || document.scope !== (index ? "site" : "company") || (index && document.oplocId !== oplocId) || !Number.isInteger(document.version) || document.version < 1 || !document.services || typeof document.services !== "object" || Array.isArray(document.services) || Object.entries(document.services).some(([id, rule]) => !(SERVICE_IDS as readonly string[]).includes(id) || !validRule(rule)) || (!index && !SERVICE_IDS.every(id => validRule(document.services[id])))) {
+      throw Object.assign(new Error("The site's Hospitality service settings are invalid. Resolve the governed configuration before booking."), { status: 503 });
+    }
+    return [document];
+  });
+  // No stored override means the provider's governed seed, exactly as in the published package.
+  return layoutPackageFromDocuments(documents);
+}
 
 /** Pure: stored documents -> the package section. A hash of the documents (not of "now") is the version, so republishing is deterministic. */
 export function layoutPackageFromDocuments(documents: StoredServiceLayout[]): ServiceLayoutPackage {

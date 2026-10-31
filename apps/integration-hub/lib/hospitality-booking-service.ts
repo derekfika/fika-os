@@ -59,6 +59,9 @@ import { createDomainEvent } from "../../shared/domain-events";
 import { stageDomainEvent } from "./domain-event-outbox";
 import { prepareFulfilmentEvent } from "./fulfilment-projection";
 import { cancellationDeliveryStatus, deliverHospitalityCancellation, ensureHospitalityCancellationEvent, hospitalityCancellationEventId, stageHospitalityCancellation } from "./hospitality-cancellation-outbox";
+import { readBookingServiceLayout } from "./hospitality-service-layout";
+import { resolveServiceCategories } from "@fika/server-shared/hospitality-service-layout";
+import { hospitalityCatalogues } from "@fika/server-shared/hospitality-catalogue";
 
 export const MNK_BOOKING_INGESTION_CONTRACT_VERSION =
   "fika.booking-ingestion.mnk.v1";
@@ -725,9 +728,11 @@ export function ingestMnkBookingFromExisting(
 export async function ingestMnkBooking(
   payload: MnkBookingPayload,
   expectedRcoaOplocId?: string,
+  existingOnly = false,
 ): Promise<IngestionResult> {
   const portalSiteId = portalSiteKeyForPayload(payload);
   const isRcoa = portalSiteId === "rcoa";
+  if (existingOnly && !isRcoa) throw conflict("Existing-service replay requires the RCoA site context.");
   if (isRcoa && !String(expectedRcoaOplocId || "").trim())
     assertExpectedRcoaOploc(undefined, undefined);
   const bookingId = canonicalBookingId(payload.bookingId, portalSiteId);
@@ -738,6 +743,7 @@ export async function ingestMnkBooking(
       recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.transaction-reads", source: "FIRESTORE", dataset: "hospitality-ingest", documents: 1, estimatedBillableReads: 1, firestoreReadKind: "transaction" });
       return ingestMnkBookingFromExisting(existingSnapshot.data() as CanonicalBooking, payload, []);
     }
+    if (existingOnly) throw conflict("The existing RCoA service could not be found. No booking was created; refresh and retry the original request.");
     const mappingIdentifiers = portalSourceIdentifiers(payload);
     if (!mappingIdentifiers.length) mappingIdentifiers.push("__missing__");
     const [menusSnapshot, mappingsSnapshot] = await Promise.all([
@@ -803,6 +809,7 @@ export async function ingestMnkBooking(
       destinationOplocId,
     );
     if (!result.created) return result;
+    if (isRcoa) await assertRcoaBookingServiceVisibility(transaction, result.booking, canonicalRecords);
     await assertHospitalityBookingDate(transaction, result.booking, now, canonicalRecords);
     // Grouped services are ingested one by one: the customer gets ONE request-received email, created in the same
     // transaction that commits the last service. Single-service bookings keep their per-booking notification.
@@ -1189,12 +1196,55 @@ export async function bookingWorkspace(siteId?: string, authorisedOplocId?: stri
   };
 }
 
+/** Contact/notes/location edits and reductions retain historical lines. New demand or changed service context uses current rules. */
+export function rcoaVisibilityAmendmentLines(current: CanonicalBooking, next: CanonicalBooking) {
+  const contextChanged = current.order.eventType !== next.order.eventType || current.service.oplocId !== next.service.oplocId;
+  if (contextChanged) return next.order.items;
+  return next.order.items.filter(line => {
+    const prior = current.order.items.find(item => item.itemId === line.itemId);
+    return !prior || line.quantity > prior.quantity || line.category !== prior.category ||
+      groupHash(line.choices || []) !== groupHash(prior.choices || []);
+  });
+}
+
+/** Authority is read before writes; category text supplied by a client is never eligibility evidence. */
+export async function assertRcoaBookingServiceVisibility(transaction: Transaction, booking: CanonicalBooking, records: CanonicalRecord[] = [], current?: CanonicalBooking) {
+  if (booking.service.portalSiteId !== "rcoa") return;
+  const lines = current ? rcoaVisibilityAmendmentLines(current, booking) : booking.order.items;
+  if (current && !lines.length && current.order.eventType === booking.order.eventType && current.service.oplocId === booking.service.oplocId) return;
+  const oplocId = booking.service.oplocId;
+  if (!oplocId) throw conflict("RCoA service settings require a canonical destination OPLOC.");
+  const layout = await readBookingServiceLayout(transaction, oplocId);
+  const categories = resolveServiceCategories(layout, oplocId, booking.order.eventType || "");
+  if (!categories) throw conflict("This RCoA service is no longer offered. Refresh the menu and choose another service.");
+  const missingIds = [...new Set(lines.flatMap(line => {
+    const id = line.menuItemId || line.itemId;
+    return id.startsWith("hospitality-menu-item:") && !records.some(record => record.canonicalId === id) ? [id] : [];
+  }))];
+  if (missingIds.length > 100) throw conflict("Too many menu items to verify safely.");
+  const snapshots = missingIds.length ? await transaction.getAll(...missingIds.map(id => canonical().doc(stableDocumentId(id)))) : [];
+  if (missingIds.length) recordDataAccess({ app: "integration-hub", operation: "hospitality.booking.service-category-items", source: "FIRESTORE", dataset: "hospitality-ingest", documents: snapshots.filter(snapshot => snapshot.exists).length, estimatedBillableReads: missingIds.length, firestoreReadKind: "transaction" });
+  const authority = [...records, ...snapshots.filter(snapshot => snapshot.exists).map(snapshot => snapshot.data() as CanonicalRecord)];
+  const verifiedCategories = new Map<string, string>();
+  for (const line of lines) {
+    const item = authority.find(record => record.entityType === "Hospitality Menu Item" && (record.canonicalId === (line.menuItemId || line.itemId) || (Array.isArray(record.record.providerMappings) && record.record.providerMappings.some(raw => (raw as { provider?: string; sourceItemId?: string }).provider === "rcoa-hospitality-brochure" && (raw as { sourceItemId?: string }).sourceItemId === line.itemId))));
+    const legacy = !line.itemId.startsWith("hospitality-menu-item:") ? hospitalityCatalogues.rcoa.items.find(item => item.source.sourceItemId === line.itemId || item.canonicalId === line.itemId) : undefined;
+    if (item && (item.lifecycleStatus === "archived" || item.publicationStatus === "withdrawn" || item.record.lifecycleState !== "active")) throw conflict("This RCoA menu item is no longer available.");
+    const category = item ? item.record.category : legacy?.lifecycleState === "active" ? legacy.category : undefined;
+    if (typeof category !== "string" || !categories.includes(category)) throw conflict("A selected menu item is not offered for this RCoA service. Review the saved selections before continuing.");
+    verifiedCategories.set(line.itemId, category);
+  }
+  return verifiedCategories;
+}
+
 /** Prepare all affected reads before applying writes; shared by single and atomic group amendments. */
 async function prepareBookingAmendment(transaction: Transaction, actor: Actor, canonicalId: string, current: CanonicalBooking, next: CanonicalBooking, command: Extract<WorkflowCommand, { action: "amend" }>, now: string, projectionChanges: ProductionProjectionChange[], grouped = false) {
   const patch = command.patch;
   const items = patch.order.items
     .filter((item) => item.quantity > 0)
     .map((item) => ({
+      // RCoA historical line evidence survives omitted optional fields in a non-line amendment.
+      ...(current.service.portalSiteId === "rcoa" ? current.order.items.find(prior => prior.itemId === item.itemId) : undefined),
       ...structuredClone(item),
       lineTotal:
         Math.round(
@@ -1223,6 +1273,8 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
     vatTotal: 0,
     grossTotal: items.reduce((total, item) => total + item.lineTotal, 0),
   };
+  const verifiedCategories = await assertRcoaBookingServiceVisibility(transaction, next, [], current);
+  if (verifiedCategories) next.order.items = next.order.items.map(item => verifiedCategories.has(item.itemId) ? { ...item, category: verifiedCategories.get(item.itemId) } : item);
   const cutoffChanged = current.order.eventType !== next.order.eventType ||
     (["eventDate", "startTime", "endTime", "guestCount", "oplocId", "floorLevel", "roomOrArea", "deliveryPoint"] as const).some(key => (current.service[key] ?? "") !== (next.service[key] ?? "")) ||
     groupHash(current.order.items.map(i => [i.itemId, i.quantity, i.choices])) !== groupHash(items.map(i => [i.itemId, i.quantity, i.choices]));

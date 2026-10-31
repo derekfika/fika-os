@@ -1,3 +1,4 @@
+import { seedVisibility } from "./support/rcoa-service-visibility";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { effectiveGuestMinimum, guestCountMessage } from "../lib/guest-count";
@@ -45,10 +46,10 @@ const validDraft = () => ({ ...createEmptyRcoaDraft(), occasion: "breakfast" as 
 
 test("RCoA event, menu, dietary/review and direct server request enforce the selected guest minimum", () => {
   const draft = validDraft();
-  for (const step of [2, 3, 4, 5]) assert.match(validateRcoaStep(step, draft, [guestItem]).guestCount, /12/);
+  for (const step of [2, 3, 4, 5]) assert.match(validateRcoaStep(step, draft, [guestItem], seedVisibility).guestCount, /12/);
   const request = buildRcoaClientRequest({ ...draft, event: { ...draft.event, guestCount: 12 } }, [guestItem], { bookingId: "RCOA-20991201090000-ABCD", submittedAt: "2099-12-01T09:00:00Z" });
-  assert.throws(() => buildTrustedRcoaHubPayload({ ...request, event: { ...request.event, guestCount: 11 } }, [guestItem]), /at least 12 guests/);
-  assert.equal(buildTrustedRcoaHubPayload(request, [guestItem]).event.guestCount, 12);
+  assert.throws(() => buildTrustedRcoaHubPayload({ ...request, event: { ...request.event, guestCount: 11 } }, [guestItem], seedVisibility), /at least 12 guests/);
+  assert.equal(buildTrustedRcoaHubPayload(request, [guestItem], seedVisibility).event.guestCount, 12);
 });
 
 test("All Day requirements use only that service's selected items and own count, never the event default or another service", () => {
@@ -59,11 +60,11 @@ test("All Day requirements use only that service's selected items and own count,
       { id: "second", category: "breakfast" as const, startTime: "12:00", guestCount: 11, location: "Room B", lines: [line(guestItem.id)], notes: "" },
     ] };
   assert.equal(composeServiceDraft(day, "first").event.guestCount, 1);
-  const failure = validateAllDay(day, [product, guestItem]);
+  const failure = validateAllDay(day, [product, guestItem], seedVisibility);
   assert.equal(failure?.serviceId, "second");
   assert.match(failure?.errors["guestCount:second"] || "", /12/);
   day.services[1].guestCount = 12;
-  assert.equal(validateAllDay(day, [product, guestItem]), undefined);
+  assert.equal(validateAllDay(day, [product, guestItem], seedVisibility), undefined);
   assert.deepEqual(day.services.map(service => service.guestCount), [1, 12]);
 });
 
@@ -74,13 +75,13 @@ test("All Day requires a positive event default independently of valid service c
       { id: "one", category: "breakfast" as const, startTime: "09:00", guestCount: 1, location: "Room A", lines: [line(product.id)], notes: "" },
       { id: "two", category: "breakfast" as const, startTime: "12:00", guestCount: 12, location: "Room B", lines: [line(guestItem.id)], notes: "" },
     ] };
-  const failure = validateAllDay(day, [product, guestItem]);
+  const failure = validateAllDay(day, [product, guestItem], seedVisibility);
   assert.equal(failure?.step, 1);
   assert.match(failure?.errors.defaultGuests || "", /at least 1 guest/);
   assert.deepEqual(day.services.map(service => service.guestCount), [1, 12]);
 
   day.defaultGuests = 50;
-  assert.equal(validateAllDay(day, [product, guestItem]), undefined);
+  assert.equal(validateAllDay(day, [product, guestItem], seedVisibility), undefined);
   assert.deepEqual(day.services.map(service => service.guestCount), [1, 12], "the event default does not replace per-service counts");
 });
 
@@ -88,17 +89,17 @@ test("All Day requires a positive event default independently of valid service c
 test("RCoA applies Hub's explicit Gallagher floor while retaining its trusted adapter's raw item guest minima", () => {
   const draft = { ...validDraft(), lines: [line(product.id)], event: { ...validDraft().event, guestCount: 1 } };
   assert.equal(rcoaGuestMinimum(draft, [product]), 1);
-  assert.equal(validateRcoaStep(2, draft, [product]).guestCount, undefined);
+  assert.equal(validateRcoaStep(2, draft, [product], seedVisibility).guestCount, undefined);
   for (const contact of [{ ...draft.contact, companyName: "Gallagher" }, { ...draft.contact, email: "test@redington.co.uk" }]) {
     const contextual = { ...draft, contact };
     assert.equal(rcoaGuestMinimum(contextual, [product]), 5);
-    for (const step of [2, 3, 4, 5]) assert.match(validateRcoaStep(step, contextual, [product]).guestCount, /5/);
+    for (const step of [2, 3, 4, 5]) assert.match(validateRcoaStep(step, contextual, [product], seedVisibility).guestCount, /5/);
   }
   const derived = { ...guestItem, rules: { guestMinimumKind: "product" as const } };
   assert.equal(rcoaGuestMinimum({ ...draft, contact: { ...draft.contact, companyName: "Gallagher" }, lines: [line(derived.id)] }, [derived]), 12, "the RCoA trusted adapter independently enforces the raw item floor");
   const day = { ...createEmptyAllDay(), contact: { ...draft.contact, companyName: "Gallagher" }, eventDate: draft.event.eventDate, floorLevel: "1", defaultGuests: 100, acknowledgements: draft.acknowledgements,
     services: [{ id: "one", category: "breakfast" as const, startTime: "09:00", guestCount: 5, location: "Room A", lines: [line(product.id)], notes: "" },
       { id: "two", category: "breakfast" as const, startTime: "12:00", guestCount: 1, location: "Room B", lines: [line(product.id)], notes: "" }] };
-  assert.equal(validateAllDay(day, [product])?.serviceId, "two");
-  assert.match(validateAllDay(day, [product])?.errors["guestCount:two"] || "", /5/);
+  assert.equal(validateAllDay(day, [product], seedVisibility)?.serviceId, "two");
+  assert.match(validateAllDay(day, [product], seedVisibility)?.errors["guestCount:two"] || "", /5/);
 });

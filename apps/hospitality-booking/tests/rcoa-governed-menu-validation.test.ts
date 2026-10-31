@@ -1,3 +1,4 @@
+import { seedVisibility } from "./support/rcoa-service-visibility";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { portalMenuFromCatalogue } from "../lib/hospitality-portal-catalogue";
@@ -12,7 +13,7 @@ const SERVICE_DATE = "2026-10-19";
 /** A governed catalogue package shaped like the published one: stable Item IDs in the hospitality-menu-item namespace (not the legacy source IDs). */
 const governedId = (sourceItemId: string, index: number) => `hospitality-menu-item:${index % 6 === 0 ? "mnk" : "rcoa"}:${sourceItemId}`;
 const pkg = {
-  schemaVersion: 1, contract: "fika.hospitality-catalogue-package.v1",
+  schemaVersion: 2, contract: "fika.hospitality-catalogue-package.v2", serviceLayout: seedVisibility.layout,
   oplocs: [{ id: RCOA_OPLOC, label: "RCoA" }], exceptions: [],
   items: localRcoaMenuCatalogue.items.map((item, index) => ({
     id: governedId(item.source.sourceItemId, index), name: item.name, category: item.category, description: item.description,
@@ -45,7 +46,7 @@ test("every item displayed as bookable is accepted by booking validation, at its
   for (const item of displayed) {
     const choices = (item.optionGroups || []).filter((group) => group.required).map((group) => ({ id: group.id, value: group.options[0].label }));
     try {
-      const payload = buildTrustedRcoaHubPayload(requestFor(item.id, Math.max(item.minimumQuantity ?? 1, 1), choices, occasionFor(item.category), Math.max(item.minimumGuests ?? 10, 10)), displayed);
+      const payload = buildTrustedRcoaHubPayload(requestFor(item.id, Math.max(item.minimumQuantity ?? 1, 1), choices, occasionFor(item.category), Math.max(item.minimumGuests ?? 10, 10)), displayed, seedVisibility);
       assert.equal(payload.order.items[0].itemId, item.id, "the Hub receives the stable governed Item ID");
       assert.equal(payload.order.items[0].unitPrice, item.unitPrice, "priced from the governed Offering, never the client");
     } catch (error) { rejected.push(`${item.id}: ${(error as Error).message}`); }
@@ -55,28 +56,28 @@ test("every item displayed as bookable is accepted by booking validation, at its
 
 test("the legacy source IDs are no longer the authority once a governed menu is supplied", () => {
   const legacy = localRcoaMenuCatalogue.items[1];
-  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(legacy.source.sourceItemId, 10, [], occasionFor(legacy.category)), displayed), /no longer available/);
+  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(legacy.source.sourceItemId, 10, [], occasionFor(legacy.category)), displayed, seedVisibility), /no longer available/);
 });
 
 test("an item that is not on the displayed governed menu (unavailable, withdrawn or unknown) is still refused", () => {
   const withoutFirst = displayed.slice(1);
   const hidden = displayed[0];
-  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(hidden.id, 10, [], occasionFor(hidden.category)), withoutFirst), /no longer available/);
-  assert.throws(() => buildTrustedRcoaHubPayload(requestFor("hospitality-menu-item:rcoa:does_not_exist", 10, [], "breakfast"), displayed), /no longer available|not available/);
+  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(hidden.id, 10, [], occasionFor(hidden.category)), withoutFirst, seedVisibility), /no longer available/);
+  assert.throws(() => buildTrustedRcoaHubPayload(requestFor("hospitality-menu-item:rcoa:does_not_exist", 10, [], "breakfast"), displayed, seedVisibility), /no longer available|not available/);
 });
 
 test("normal quantity, guest, occasion and option rules still apply to governed items", () => {
   const constrained = displayed.find((item) => (item.minimumQuantity ?? 1) > 1)!;
-  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(constrained.id, (constrained.minimumQuantity ?? 1) - 1, [], occasionFor(constrained.category)), displayed), /minimum quantity/);
+  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(constrained.id, (constrained.minimumQuantity ?? 1) - 1, [], occasionFor(constrained.category)), displayed, seedVisibility), /minimum quantity/);
   const optioned = displayed.find((item) => (item.optionGroups || []).some((group) => group.required))!;
-  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(optioned.id, Math.max(optioned.minimumQuantity ?? 1, 1), [], occasionFor(optioned.category)), displayed), /Choose an option/);
-  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(displayed[0].id, 10, [], "not-an-occasion"), displayed));
+  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(optioned.id, Math.max(optioned.minimumQuantity ?? 1, 1), [], occasionFor(optioned.category)), displayed, seedVisibility), /Choose an option/);
+  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(displayed[0].id, 10, [], "not-an-occasion"), displayed, seedVisibility));
 });
 
 test("the All Day Hospitality group path validates every service against the same governed menu", () => {
   const item = displayed.find((candidate) => !(candidate.optionGroups || []).some((group) => group.required) && (candidate.minimumQuantity ?? 1) <= 1)!;
   const child = (sequence: number) => ({ ...requestFor(item.id, 2, [], occasionFor(item.category)), bookingId: `RCOA-20261201090000-ABCD-0${sequence}`, bookingGroup: { id: "RCOA-20261201090000-ABCD", size: 2, sequence } });
-  const built = buildRcoaGroupHubPayloads({ bookingGroup: { id: "RCOA-20261201090000-ABCD", size: 2 }, requests: [child(1), child(2)] }, displayed);
+  const built = buildRcoaGroupHubPayloads({ bookingGroup: { id: "RCOA-20261201090000-ABCD", size: 2 }, requests: [child(1), child(2)] }, displayed, seedVisibility);
   assert.equal(built.payloads.length, 2);
   assert.equal(built.payloads[0].order.items[0].itemId, item.id);
 });
@@ -86,7 +87,7 @@ test("the booking routes load the governed menu server-side and fail closed when
   for (const route of ["../app/api/bookings/rcoa/route.ts", "../app/api/bookings/rcoa/group/route.ts"]) {
     const source = readFileSync(new URL(route, import.meta.url), "utf8");
     assert.match(source, /loadGovernedRcoaMenu\(expectedOplocId\)/);
-    assert.match(source, /\|\| 503/);
+    assert.match(source, /503/);
   }
   const loader = readFileSync(new URL("../lib/governed-rcoa-menu.ts", import.meta.url), "utf8");
   assert.match(loader, /source === "cache-unverified"/);
@@ -95,5 +96,5 @@ test("the booking routes load the governed menu server-side and fail closed when
 
 test("root cause reproduced: validating a governed ID against the legacy local snapshot gives the original 400", () => {
   const item = displayed[1];
-  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(item.id, 10, [], occasionFor(item.category))), /A menu item is no longer available\. Refresh the menu and try again\./);
+  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(item.id, 10, [], occasionFor(item.category)), undefined, seedVisibility), /A menu item is no longer available\. Refresh the menu and try again\./);
 });

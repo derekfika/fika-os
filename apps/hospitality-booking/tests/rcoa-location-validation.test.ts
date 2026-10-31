@@ -1,3 +1,4 @@
+import { seedVisibility } from "./support/rcoa-service-visibility";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildTrustedRcoaHubPayload } from "../lib/rcoa-booking-request";
@@ -22,34 +23,34 @@ const eventRequest = (event: Record<string, string>) => ({
 test("standard RCoA Event step: missing floor, missing room and whitespace-only values are rejected field by field", () => {
   const draft = createEmptyRcoaDraft();
   const withEvent = (overrides: Partial<typeof draft.event>) => ({ ...draft, event: { ...draft.event, eventDate: "2026-10-20", startTime: "10:00", guestCount: 12, ...overrides } });
-  const missingFloor = validateRcoaStep(2, withEvent({ floorLevel: "", roomOrArea: "Boardroom" }), noMenu);
+  const missingFloor = validateRcoaStep(2, withEvent({ floorLevel: "", roomOrArea: "Boardroom" }), noMenu, seedVisibility);
   assert.equal(missingFloor.floorLevel, "Enter the floor level.");
   assert.equal(missingFloor.roomOrArea, undefined);
-  const missingRoom = validateRcoaStep(2, withEvent({ floorLevel: "7", roomOrArea: "" }), noMenu);
+  const missingRoom = validateRcoaStep(2, withEvent({ floorLevel: "7", roomOrArea: "" }), noMenu, seedVisibility);
   assert.equal(missingRoom.roomOrArea, "Enter the room or area.");
-  const whitespace = validateRcoaStep(2, withEvent({ floorLevel: "   ", roomOrArea: "\t" }), noMenu);
+  const whitespace = validateRcoaStep(2, withEvent({ floorLevel: "   ", roomOrArea: "\t" }), noMenu, seedVisibility);
   assert.equal(whitespace.floorLevel, "Enter the floor level.");
   assert.equal(whitespace.roomOrArea, "Enter the room or area.");
 });
 
 test("optional delivery point never blocks progression, and trimmed floor and room pass", () => {
   const draft = createEmptyRcoaDraft();
-  const errors = validateRcoaStep(2, { ...draft, event: { ...draft.event, eventDate: "2026-10-20", startTime: "10:00", guestCount: 12, floorLevel: " 7 ", roomOrArea: " Boardroom ", deliveryPoint: "" } }, noMenu);
+  const errors = validateRcoaStep(2, { ...draft, event: { ...draft.event, eventDate: "2026-10-20", startTime: "10:00", guestCount: 12, floorLevel: " 7 ", roomOrArea: " Boardroom ", deliveryPoint: "" } }, noMenu, seedVisibility);
   assert.equal(errors.floorLevel, undefined);
   assert.equal(errors.roomOrArea, undefined);
   assert.equal(errors.deliveryPoint, undefined);
 });
 
 test("server rejects incomplete new RCoA requests and accepts a blank optional delivery point", () => {
-  assert.throws(() => buildTrustedRcoaHubPayload(eventRequest({ floorLevel: "", roomOrArea: "Boardroom" })), /Enter the floor level\./);
-  assert.throws(() => buildTrustedRcoaHubPayload(eventRequest({ floorLevel: "7", roomOrArea: "   " })), /Enter the room or area\./);
-  assert.throws(() => buildTrustedRcoaHubPayload(eventRequest({ floorLevel: "  ", roomOrArea: "  " })), /Enter the floor level\./);
-  assert.doesNotThrow(() => buildTrustedRcoaHubPayload(eventRequest({ floorLevel: "7", roomOrArea: "Boardroom", deliveryPoint: "" })));
+  assert.throws(() => buildTrustedRcoaHubPayload(eventRequest({ floorLevel: "", roomOrArea: "Boardroom" }), undefined, seedVisibility), /Enter the floor level\./);
+  assert.throws(() => buildTrustedRcoaHubPayload(eventRequest({ floorLevel: "7", roomOrArea: "   " }), undefined, seedVisibility), /Enter the room or area\./);
+  assert.throws(() => buildTrustedRcoaHubPayload(eventRequest({ floorLevel: "  ", roomOrArea: "  " }), undefined, seedVisibility), /Enter the floor level\./);
+  assert.doesNotThrow(() => buildTrustedRcoaHubPayload(eventRequest({ floorLevel: "7", roomOrArea: "Boardroom", deliveryPoint: "" }), undefined, seedVisibility));
 });
 
 test("All Day: a missing shared floor is reported on the event step", () => {
   const day = { ...createEmptyAllDay(), floorLevel: "  ", defaultLocation: "Lecture Hall" };
-  const failure = validateAllDay(applyAllDayDefaults(day), noMenu);
+  const failure = validateAllDay(applyAllDayDefaults(day), noMenu, seedVisibility);
   assert.ok(failure, "an incomplete All Day request must fail validation");
   assert.equal(failure.step, 1);
   assert.equal(failure.errors.floorLevel, "Enter the floor level.");
@@ -61,7 +62,7 @@ test("All Day: each service must have its own room, while a shared floor is ente
   day = addAllDayService(day, "s2");
   const [first, second] = day.services;
   day = { ...day, services: [{ ...first, category: "breakfast", startTime: "09:00", location: "" }, { ...second, category: "lunch", startTime: "13:00", location: "Dining Room" }] };
-  const failure = validateAllDay(day, noMenu);
+  const failure = validateAllDay(day, noMenu, seedVisibility);
   assert.ok(failure, "a service with no room must not pass");
   assert.equal(failure.errors.floorLevel, undefined, "the shared floor is not repeated per service");
   assert.ok(Object.keys(failure.errors).some(key => key.startsWith("location:") || key.startsWith("service:")));
