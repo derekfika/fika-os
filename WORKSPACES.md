@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T01:25:59.856Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T01:27:15.744Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -28,7 +28,7 @@ Snapshot: 2026-10-31T01:25:59.856Z. The local governed registry remains authorit
 | booking-email-multisite-v3 | agent-task | apps/integration-hub/lib/booking-email-site-identities.ts, apps/integration-hub/lib/booking-email-delivery.ts, apps/integration-hub/lib/workspace-gmail-dwd.ts, apps/integration-hub/lib/booking-email-rollout-guard.ts, apps/integration-hub/tests/booking-email-multisite-auth.test.ts, apps/integration-hub/tests/booking-email-rollout-guard.test.ts, apps/integration-hub/tests/gmail-dwd-verification.test.ts, apps/integration-hub/tests/hospitality-launch-hardening.test.ts, apps/integration-hub/apphosting.production.yaml | codex/booking-email-multisite-v3 | [#30](https://github.com/derekfika/fika-os/pull/30) | finished | 2026-10-24T13:58:17.653Z |
 | booking-email-multisite | agent-task | apps/integration-hub/lib/booking-email-delivery.ts, apps/integration-hub/lib/workspace-gmail-dwd.ts, apps/integration-hub/tests/booking-email-multisite-auth.test.ts, apps/integration-hub/tests/gmail-dwd-verification.test.ts, apps/integration-hub/apphosting.production.yaml | codex/booking-email-multisite | — | finished | 2026-10-24T13:37:54.541Z |
 | cfc-mre-catalogue-delivery | codex-cfc-mre-p0 | apps/integration-hub/lib/hospitality-catalogue-admin.ts, apps/integration-hub/lib/hospitality-provider-mapping.ts, apps/integration-hub/lib/hospitality-price-trust.ts, apps/integration-hub/lib/hospitality-booking-service.ts, apps/integration-hub/app/api/hospitality-catalogue/route.ts, apps/integration-hub/tests/hospitality-provider-mapping.test.ts, apps/integration-hub/tests/hospitality-provider-mapping.emulator.test.ts, apps/integration-hub/scripts/cfc-mre-catalogue-reconcile.ts, apps/hospitality-booking/app/api/reference-data/route.ts, apps/hospitality-booking/lib/site-catalogue-read.ts, apps/hospitality-booking/tests/site-catalogue-read.test.ts, docs/deployment/cfc-mre-catalogue-p0.md | codex/cfc-mre-catalogue-delivery | [#149](https://github.com/derekfika/fika-os/pull/149) | finished | 2026-10-29T19:51:12.919Z |
-| cpu-a4-runsheet-print | codex-cpu-a4-runsheet-print | apps/cpu-production | codex/cpu-a4-runsheet-print | [#193](https://github.com/derekfika/fika-os/pull/193) | active | 2026-10-31T00:51:15.223Z |
+| cpu-a4-runsheet-print | codex-cpu-a4-runsheet-print | apps/cpu-production | codex/cpu-a4-runsheet-print | [#193](https://github.com/derekfika/fika-os/pull/193) | retired | 2026-10-31T01:27:13.515Z |
 | cpu-cancelled-demand | uat-20261025-1150 | apps/cpu-production | codex/cpu-cancelled-demand | [#46](https://github.com/derekfika/fika-os/pull/46) | finished | 2026-10-26T15:25:59.075Z |
 | cpu-deep-link-iss018-fix | uat-20261025-1150 | apps/cpu-production, CHANGELOG.md | codex/cpu-deep-link-iss018-fix | [#80](https://github.com/derekfika/fika-os/pull/80) | finished | 2026-10-27T12:02:56.344Z |
 | cpu-deep-link-iss018 | uat-20261025-1150 | apps/cpu-production | codex/cpu-deep-link-iss018 | — | finished | 2026-10-26T23:15:02.390Z |
