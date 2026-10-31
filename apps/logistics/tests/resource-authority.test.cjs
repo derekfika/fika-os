@@ -1,6 +1,47 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { fixture } = require('./helpers/authority-route-harness.cjs');
+test('desktop View grants both planner vans without individual vehicle grants; Manage controls writes', async () => {
+  const f = fixture([]);
+  f.principal.desktopPermissions.view = true;
+  f.principal.desktopPermissions.manage = false;
+  await f.rebuild();
+  assert.deepEqual((await f.vehicles()).body.permittedVehicleIds, ['van1', 'van2']);
+  assert.equal((await f.get('syncHead=1')).response.status, 200);
+  assert.equal((await f.get('planningAttention=1')).response.status, 200);
+  const projection = await f.get('projection=1');
+  assert.equal(projection.response.status, 200);
+  assert.equal(projection.body.projection.runs.length, 2);
+  const before = f.writes;
+  const command = { action: 'create-run', run: f.run('desktop-new', 'van1') };
+  assert.equal((await f.post(command)).response.status, 403);
+  assert.equal(f.writes, before);
+  f.principal.desktopPermissions.manage = true;
+  assert.equal((await f.post(command)).response.status, 200);
+});
+test('actual mobile POST permits a valid van1 load action and denies planner or cross-van commands', async () => {
+  const f = fixture([]);
+  const before = f.writes;
+  assert.equal((await f.postMobile({ action: 'create-run', run: f.run('forged-mobile', 'van1') })).response.status, 403);
+  assert.equal(f.writes, before);
+  const loaded = await f.postMobile({ action: 'mark-stop-loaded', runId: 'r1', stopId: 's1', expectedRunVersion: 1, expectedStopVersion: 1, loaded: true });
+  assert.equal(loaded.response.status, 200, JSON.stringify(loaded.body));
+  assert.equal(f.records.get('fikaLogisticsDeliveryStopsV1/s1').loaded, true);
+  const after = f.writes;
+  assert.equal((await f.postMobile({ action: 'mark-stop-loaded', runId: 'r2', stopId: 's2', expectedRunVersion: 1, expectedStopVersion: 1, loaded: true })).response.status, 403);
+  assert.equal(f.writes, after);
+});
+test('explicit vehicle View stays scoped while desktop Manage is independently required', async () => {
+  const f = fixture(['van1']);
+  f.principal.desktopPermissions.manage = false;
+  assert.deepEqual((await f.vehicles()).body.permittedVehicleIds, ['van1']);
+  const before = f.writes;
+  assert.equal((await f.post({ action: 'create-run', run: f.run('denied', 'van1') })).response.status, 403);
+  assert.equal(f.writes, before);
+  f.principal.desktopPermissions.manage = true;
+  assert.equal((await f.post({ action: 'create-run', run: f.run('allowed', 'van1') })).response.status, 200);
+  assert.equal((await f.post({ action: 'create-run', run: f.run('cross-van', 'van2') })).response.status, 403);
+});
 for (const both of [false, true]) {
   test('R1 shared job assignment ' + (both ? 'allowed for both vehicles' : 'denied for van1 only'), async () => {
     const f = fixture(both ? ['van1', 'van2'] : ['van1']);

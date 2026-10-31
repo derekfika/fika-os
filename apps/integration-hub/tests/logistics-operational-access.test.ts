@@ -5,6 +5,7 @@ import { MemoryAuthModRepository } from "../lib/authmod-core/memory-repository";
 import { V1_APPLICATIONS, type AuthIdentity, type InteractivePrincipal } from "../lib/authmod-core/model";
 import { evaluateAuthority, resolvePermittedVehicleIds, resolveUserAccess } from "../lib/authmod-core/evaluator";
 import { grantAuthority } from "../lib/authmod-core/authority";
+import { grantStandardApplicationAccess } from "../lib/authmod-core/grants";
 import { LOGISTICS_MAINTENANCE_AUTHORITIES } from "../../shared/logistics-authority";
 
 const at = "2026-01-01T00:00:00Z";
@@ -19,6 +20,41 @@ function fixture(kind: "person" | "operational" = "operational", fullAccess = fa
 async function permit(f: ReturnType<typeof fixture>, ids: string[]) {
   return grantAuthority(f.repo, { subjectId: f.identity.id, subjectType: "interactive", actor: f.principal, appId: "logistics", resource: "logistics.vehicle", action: "View", scope: { kind: "resource", ids }, reason: "Isolated test vehicle permissions" });
 }
+
+for (const kind of ["person", "operational"] as const) test(`${kind} standard Logistics View/Manage grants do not alter explicit vehicle resolution`, async () => {
+  const f = fixture(kind);
+  f.repo.appAssignments.clear();
+  const bundle = await grantStandardApplicationAccess(f.repo, { identityId: f.identity.id, appId: "logistics", actor: f.principal, reason: "Isolated standard app bundle" });
+  const authority = (action: "View" | "Manage") => evaluateAuthority(f.repo, { principal: f.principal, appId: "logistics", resource: "logistics.normal", action, scope: { kind: "organisation", ids: [] } });
+  assert.equal((await resolveUserAccess(f.repo, { principal: f.principal, appId: "logistics" })).allowed, true);
+  assert.equal((await authority("View")).allowed, true);
+  assert.equal((await authority("Manage")).allowed, true);
+  assert.deepEqual((await resolvePermittedVehicleIds(f.repo, { principal: f.principal })).permittedVehicleIds, []);
+  const manage = bundle.grants.find(grant => grant.action === "Manage")!;
+  f.repo.grants.set(manage.id, { ...manage, status: "revoked" });
+  assert.equal((await authority("View")).allowed, true);
+  assert.equal((await authority("Manage")).allowed, false);
+  f.repo.grants.set(manage.id, { ...manage, effectiveTo: "2000-01-01T00:00:00Z" });
+  assert.equal((await authority("Manage")).allowed, false);
+  f.repo.appAssignments.set(bundle.assignment.id, { ...bundle.assignment, status: "revoked" });
+  assert.equal((await authority("View")).allowed, false);
+  assert.equal((await authority("Manage")).allowed, false);
+});
+
+test("disabled Logistics app and unavailable policy store fail closed", async () => {
+  const f = fixture("operational");
+  f.repo.appAssignments.clear();
+  await grantStandardApplicationAccess(f.repo, { identityId: f.identity.id, appId: "logistics", actor: f.principal, reason: "Isolated standard app bundle" });
+  const app = await f.repo.getApplication("logistics");
+  assert.ok(app);
+  f.repo.applications.set("logistics", { ...app, enabled: false });
+  assert.equal((await evaluateAuthority(f.repo, { principal: f.principal, appId: "logistics", resource: "logistics.normal", action: "View", scope: { kind: "organisation", ids: [] } })).allowed, false);
+  f.repo.applications.set("logistics", app);
+  f.repo.getIdentity = async () => { throw new Error("isolated policy-store outage"); };
+  const unavailable = await evaluateAuthority(f.repo, { principal: f.principal, appId: "logistics", resource: "logistics.normal", action: "View", scope: { kind: "organisation", ids: [] } });
+  assert.equal(unavailable.allowed, false);
+  assert.equal(unavailable.reasonCode, "store-unavailable");
+});
 
 test("operational planner account needs explicit grants and can access both vans without Full Access", async () => {
   const f = fixture();

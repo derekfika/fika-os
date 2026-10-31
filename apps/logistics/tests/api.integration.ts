@@ -182,7 +182,7 @@ function productionOrderFor(item: FulfilmentRequirement, status = "menu_availabl
 const originalFetch = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL) => {
   const url = String(input);
-  if (url.includes("/api/logistics/access")) return Response.json({ principal: { authmodIdentityId: "identity:integration-operator", displayName: "Integration operator", identityKind: "person", permittedVehicleIds: principalVehicles, maintenanceAuthorities: ["logistics.repair", "logistics.reconcile", "logistics.reset"] } });
+  if (url.includes("/api/logistics/access")) return Response.json({ principal: { authmodIdentityId: "identity:integration-operator", displayName: "Integration operator", identityKind: "person", desktopPermissions: { view: false, manage: true }, permittedVehicleIds: principalVehicles, maintenanceAuthorities: ["logistics.repair", "logistics.reconcile", "logistics.reset"] } });
   if (url.includes("/api/logistics/drivers")) {
     const requested = new URL(url).searchParams.get("driverId");
     const drivers = ["identity:integration-franco", "franco", "dee"].map(driverId => ({ driverId, displayName: driverId === "dee" ? "Dee" : "Franco", permittedDriverVehicleIds: ["van1", "van2"] }));

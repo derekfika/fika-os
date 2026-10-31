@@ -127,6 +127,11 @@ test("IndexedDB cache keys persist across sessions but isolate auth contexts", (
   assert.deepEqual(logisticsCacheKey(franco, "2026-08-31"), logisticsCacheKey(laterSession, "2026-08-31"));
   assert.notDeepEqual(logisticsCacheKey(franco, "2026-08-31"), logisticsCacheKey(otherUser, "2026-08-31"));
   assert.notDeepEqual(logisticsCacheKey(franco, "2026-08-31"), logisticsCacheKey(otherScope, "2026-08-31"));
+  const viewer = logisticsCacheScope({ id: "authid:franco", identityKind: "person", sessionKind: "hub", desktopPermissions: { view: true, manage: false }, permittedVehicleIds: [] });
+  const manager = logisticsCacheScope({ id: "authid:franco", identityKind: "person", sessionKind: "hub", desktopPermissions: { view: true, manage: true }, permittedVehicleIds: [] });
+  const restricted = logisticsCacheScope({ id: "authid:franco", identityKind: "person", sessionKind: "hub", desktopPermissions: { view: false, manage: true }, permittedVehicleIds: [] });
+  assert.notEqual(viewer, manager);
+  assert.notEqual(viewer, restricted);
 });
 
 test("incremental reads validate cursors and classify Firestore failures as infrastructure errors", () => {

@@ -1,6 +1,8 @@
 /** AUTHMOD stable resource IDs. Labels are presentation, never authority. */
 export const LOGISTICS_VEHICLE_IDS = ["van1", "van2"] as const;
 export type LogisticsVehicleId = (typeof LOGISTICS_VEHICLE_IDS)[number];
+/** Hub-evaluated standard application capabilities for the desktop planner. */
+export type LogisticsDesktopPermissions = { view: boolean; manage: boolean };
 export const logisticsVehicleLabel = (id: LogisticsVehicleId) => id === "van1" ? "Van 1" : "Van 2";
 export const isLogisticsVehicleId = (id: unknown): id is LogisticsVehicleId =>
   typeof id === "string" && (LOGISTICS_VEHICLE_IDS as readonly string[]).includes(id);
