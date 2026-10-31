@@ -21,7 +21,7 @@ const order = (id: string, day: string, siteId: string, label: string, version =
   serviceWindow: { startTime: "12:00" },
   destinationOplocId: siteId,
   destinationLabel: label,
-  lines: [{ canonicalId: id + ":line", itemName: "Soup", customerQuantity: 4, customerUnit: "portions" }],
+  lines: [{ canonicalId: id + ":line", itemName: "Soup", customerQuantity: 4, customerUnit: "portions", productionQuantity: 12, productionUnit: "pieces" }],
 } as unknown as ProductionOrder);
 
 test("print date presets use Europe/London across the autumn DST transition and year boundaries", () => {
@@ -89,6 +89,9 @@ test("printed HTML keeps separate site identities and contains the paper handove
   const html = runSheetProductionPrintHtml(map, [day], ["oploc:oploc:first", "oploc:oploc:second"], new Date("2026-10-30T09:00:00Z"));
   assert.match(html, /Same site · oploc:first/);
   assert.match(html, /Same site · oploc:second/);
+  assert.match(html, /4 portions/);
+  assert.doesNotMatch(html, /12 pieces|Prep:/);
+  assert.match(html, /Ordered quantity/);
   assert.match(html, /data-site-key="oploc:oploc:first"/);
   assert.match(html, /data-site-key="oploc:oploc:second"/);
   for (const field of ["Packed by", "Checked by", "Driver / collected by", "Departure time", "Delivered time", "Received by / signature", "Notes / issues"]) {

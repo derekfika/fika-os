@@ -3,6 +3,7 @@ import { formatCatalogueChoices } from "@fika/server-shared/hospitality-effectiv
 
 import { useEffect, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
+import { eventGuestCountLabel, orderedQuantityLabel } from "../../lib/ordered-quantity";
 import "./hospitality-production-detail.css";
 import BookingContext from "./BookingContext";
 
@@ -15,10 +16,6 @@ function dateLabel(order: ProductionOrder) {
     year: "numeric",
     timeZone: "UTC",
   });
-}
-
-function quantity(order: ProductionOrder) {
-  return order.lines.reduce((total, line) => total + line.customerQuantity, 0);
 }
 
 type SignedPdf = { state: "loading" | "ready" | "pending" | "failed" | "unsigned" | "unavailable"; url?: string; message: string };
@@ -63,7 +60,7 @@ export default function HospitalityProductionDetail({
         <div>
           <small>Hospitality production</small>
           <h2>{order.destinationLabel || order.destinationOplocId || "Destination not assigned"}</h2>
-          <p>{dateLabel(order)} · {order.guestCount || quantity(order)} guests</p>
+          <p>{dateLabel(order)} · Event guests: {eventGuestCountLabel(order.guestCount)}</p>
         </div>
         <button type="button" onClick={close} aria-label="Close hospitality production detail">×</button>
       </header>
@@ -73,12 +70,12 @@ export default function HospitalityProductionDetail({
       </div>
       <section>
         <h3>What to produce</h3>
-        <p className="hospitality-production-detail__muted">Production quantities for this hospitality booking.</p>
+        <p className="hospitality-production-detail__muted">Customer-ordered quantities for this hospitality booking.</p>
         <div className="hospitality-production-detail__lines">
           {order.lines.map((line) => (
             <div key={line.canonicalId}>
-              <strong>{(line.productionQuantity ?? line.customerQuantity).toLocaleString()}</strong>
-              <span>{line.itemName}<small>{line.productionQuantity !== undefined ? `${line.productionUnit || line.customerUnit} to produce · ` : ""}{line.customerQuantity} {line.customerUnit} ordered</small>{line.choices?.length ? <small>{formatCatalogueChoices(line.choices).join(" · ")}</small> : null}</span>
+              <strong>{orderedQuantityLabel(line)}</strong>
+              <span>{line.itemName}<small>Customer ordered</small>{line.choices?.length ? <small>{formatCatalogueChoices(line.choices).join(" · ")}</small> : null}</span>
             </div>
           ))}
         </div>

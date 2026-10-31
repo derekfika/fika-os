@@ -1,0 +1,6 @@
+# 2026-10-31 — Customer ordered quantities lead CPU chef displays
+
+CPU calendar, day board, hospitality details, generic order details, packing checklists and collection/run sheet prints show each recorded customer ordered quantity and unit only. Internal recipe multipliers are omitted from routine CPU screens and prints. `Per person`/`person` line units display as `pax`, while boxes, trays, and individually ordered pieces keep their recorded units. Event guest counts stay separate and are never inferred from product lines; missing ordered quantity/unit or guest count shows “Needs verification”. No contracts, production data, workflow, packing fingerprints, fulfilment or Logistics state changed.
+
+Validation: focused print/presentation/source-contract tests 61/61 passed; CPU typecheck and production build passed; workspace scope, affected and changelog checks passed. The local full suite and isolated notification test require an unavailable Firestore emulator (`127.0.0.1:8085`, gRPC 14 UNAVAILABLE / ECONNREFUSED). Exact-head CI for prior heads caught stale assertions for the old fallback/markup; those assertions are updated. CI for the refreshed head is pending. Style Guide compliance: PASS.
+Deployment: none.
