@@ -79,8 +79,8 @@
 .librarySearch ul { max-height: 260px; overflow: auto; }
 .empty { margin: 8px 0; color: var(--fika-text-secondary); font-size: 13px; }
 
-.weekGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.weekCard { min-width: 0; min-height: 165px; padding: 10px; border: 1px solid var(--fika-border-default); border-radius: 10px; background: var(--fika-surface-page); }
+.weekGrid { display: grid; grid-template-columns: repeat(6, minmax(220px, 1fr)); gap: 10px; overflow-x: auto; overscroll-behavior-inline: contain; padding: 2px 2px 10px; }
+.weekCard { display: grid; align-content: start; min-width: 0; min-height: 220px; padding: 12px; border: 1px solid var(--fika-border-default); border-radius: 10px; background: var(--fika-surface-page); }
 .weekHeading { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--fika-border-default); }
 .weekHeading h3 { margin: 0; font-size: 14px; }
 .weekHeading span { font-size: 11px; }
@@ -121,7 +121,7 @@
 @media (max-width: 1050px) {
   .layout { grid-template-columns: 190px minmax(0, 1fr); }
   .ruleGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .weekGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .weekGrid { grid-template-columns: repeat(6, minmax(210px, 1fr)); }
 }
 @media (max-width: 720px) {
   .page { padding: 16px 12px 24px; }
@@ -137,7 +137,7 @@
   .groupButton { align-items: flex-start; flex-direction: column; }
   .settingsGrid, .libraryGrid, .previewResult { grid-template-columns: 1fr; }
   .ruleGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .weekGrid { grid-template-columns: 1fr; }
+  .weekGrid { grid-template-columns: repeat(6, minmax(220px, 1fr)); }
   .panel { padding: 12px; }
   .panelHeading { align-items: flex-start; }
   .previewResult li { grid-template-columns: 1fr; gap: 3px; }
