@@ -126,4 +126,10 @@
   .header { padding: 0 24px; gap: 14px; }
   .brand span, .context span { display: none; }
 }
+@media (max-width: 860px) {
+  .header { gap: 10px; padding-inline: 16px; }
+  .datePill { gap: 8px; padding-left: 8px; }
+  .thisWeek { padding-inline: 14px; }
+  .user { gap: 8px; margin-left: 0; }
+}
 @media (prefers-reduced-motion: reduce) { .shell * { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }

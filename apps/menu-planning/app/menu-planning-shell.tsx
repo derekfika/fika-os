@@ -12,6 +12,7 @@ const primary = [
   { href: "/catalogue", label: "Dish Library", icon: "▧" },
   { href: "/history", label: "History & Imports", icon: "◌" },
   { href: "/import-menu-week", label: "Import Menu Week", icon: "↑" },
+  { href: "/rotations", label: "Hospitality Rotations", icon: "↻" },
 ];
 
 export default function MenuPlanningShell({ children, section, actions }: { children: ReactNode; section?: string; actions?: ReactNode }) {

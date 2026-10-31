@@ -1,4 +1,6 @@
 import { bookingPolicyFor, bookingServiceInstant } from "./hospitality-booking-cutoffs";
+import { effectiveProductMinimum, normaliseMinimumContext, type MinimumContext } from "./hospitality-site-minimums";
+export * from "./hospitality-site-minimums";
 /** Shared browser/Hub catalogue rules. Pure: no I/O or side effects. */
 export type CatalogueRules = {
   guestMinimumKind?: "event" | "product";
@@ -12,21 +14,22 @@ export type CatalogueRules = {
 export type CatalogueChoice = { id: string; label: string; controlType?: string; selectionType?: string; required?: boolean; minimumQuantity?: number; options: Array<{ id: string; label: string }> };
 export type RuleItem = { bookingPolicy?: import("./hospitality-booking-cutoffs").BookingPolicy; quoteRequired?: boolean; id: string; name: string; minimumQuantity?: number; minimumGuests?: number; configuration?: { rules?: CatalogueRules; choices?: CatalogueChoice[] }; rules?: CatalogueRules; optionGroups?: CatalogueChoice[] };
 export type RuleLine = { itemId: string; quantity: number; choices?: Array<{ id?: unknown; value?: unknown; values?: unknown; quantities?: unknown }> };
-export function catalogueMinimums(item: RuleItem, gallagher: boolean) {
+export function catalogueMinimums(item: RuleItem, context: boolean | MinimumContext) {
+  const { gallagher } = normaliseMinimumContext(context);
   const rules = item.rules || item.configuration?.rules;
-  return { quantity: gallagher ? Math.min(item.minimumQuantity ?? 1, 5) : item.minimumQuantity ?? 1,
+  return { quantity: effectiveProductMinimum(item.minimumQuantity, context),
     guests: gallagher && rules?.guestMinimumKind === "product" ? Math.min(item.minimumGuests ?? 1, 5) : item.minimumGuests ?? 1 };
 }
 /** Converts a UK wall-clock date/time to UTC; rejects nonexistent BST times rather than silently shifting them. */
 export const ukServiceInstant = bookingServiceInstant;
-export function validateCatalogueRules(items: RuleItem[], lines: RuleLine[], context: { gallagher: boolean; guestCount: number; eventDate: string; startTime: string; now: string }): void {
+export function validateCatalogueRules(items: RuleItem[], lines: RuleLine[], context: { gallagher: boolean; siteId?: string | null; guestCount: number; eventDate: string; startTime: string; now: string }): void {
   const byId = new Map(items.map(x => [x.id, x]));
   if (new Set(lines.map(x => x.itemId)).size !== lines.length) throw new Error("Each menu item can appear only once.");
   for (const line of lines) {
     const item = byId.get(line.itemId); if (!item) throw new Error("A selected menu item is no longer available. Refresh the catalogue.");
     const rules = item.rules || item.configuration?.rules;
     if (!Number.isSafeInteger(line.quantity) || line.quantity < 1) throw new Error(`${item.name}: enter a positive whole quantity.`);
-    const minimum = catalogueMinimums(item, context.gallagher);
+    const minimum = catalogueMinimums(item, { gallagher: context.gallagher, siteId: context.siteId });
     if (line.quantity < minimum.quantity) throw new Error(`${item.name} requires at least ${minimum.quantity} ordered units.`);
     if (context.guestCount < minimum.guests) throw new Error(`${item.name} requires at least ${minimum.guests} guests.`);
     if (item.quoteRequired || rules?.indicativeFrom !== undefined) throw new Error(`${item.name} requires an agreed quote; its starting price is not a purchase price.`);

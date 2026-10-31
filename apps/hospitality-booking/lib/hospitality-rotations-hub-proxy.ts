@@ -1,12 +1,16 @@
 import { hubUserFetch } from "./hub";
 
 const HUB_PATH = "/api/hospitality-rotations";
-const QUERY_KEYS = ["mode", "date", "revision"] as const;
+const QUERY_KEYS = ["mode", "date", "revision", "resource"] as const;
 
 export function hospitalityRotationsHubPath(url: URL) {
   const query = new URLSearchParams();
   for (const key of QUERY_KEYS) {
     for (const value of url.searchParams.getAll(key)) query.append(key, value);
+  }
+  for (const key of ["dishIds", "itemIds"] as const) {
+    const value = url.searchParams.get(key);
+    if (value) query.set(key, value.slice(0, 32_000));
   }
   const suffix = query.toString();
   return suffix ? `${HUB_PATH}?${suffix}` : HUB_PATH;

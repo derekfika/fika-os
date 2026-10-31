@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { MenuItem } from "./domain";
-import { deterministicId } from "./domain";
+import { deterministicId, isMenuPlanningVisible } from "./domain";
+import type { HospitalityDishClassId } from "../../shared/hospitality-rotations";
 import { canonicalDishCategoryForSlot, dishCategoryForWrite, normaliseDishCategory } from "./dish-categories";
 import { normaliseDishName } from "./text";
 import type { RollingEntry } from "./rolling-menu-types";
@@ -13,6 +14,8 @@ import { getCatalogueManifest } from "./catalogue-manifest";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { catalogueSourceHash, CATALOGUE_SOURCE_HASH_VERSION } from "./catalogue-source";
 import { markCataloguePackageFailed, type CataloguePackageState } from "./catalogue-manifest";
+import { readDishTagRegistry } from "./dish-tag-store";
+import { validateDishTagIds } from "./dish-tags";
 
 const filePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json");
 const HOSTED_CATALOGUE_TTL_MS = 60_000;
@@ -106,7 +109,7 @@ async function writeItems(items: MenuItem[], options: { currentItems?: MenuItem[
       if (!changed.length) return;
       for (const item of changed.filter(candidate => candidate.reviewStatus !== "archived")) {
         const key = item.displayName.trim().toLocaleLowerCase("en-GB");
-        if ([...nextById.values()].some(candidate => candidate.canonicalId !== item.canonicalId && candidate.reviewStatus !== "archived" && candidate.displayName.trim().toLocaleLowerCase("en-GB") === key)) {
+        if ([...nextById.values()].some(candidate => candidate.canonicalId !== item.canonicalId && isMenuPlanningVisible(candidate) === isMenuPlanningVisible(item) && candidate.reviewStatus !== "archived" && candidate.displayName.trim().toLocaleLowerCase("en-GB") === key)) {
           throw Object.assign(new Error("An active dish with this name already exists."), { status: 409 });
         }
       }
@@ -140,7 +143,10 @@ async function writeItems(items: MenuItem[], options: { currentItems?: MenuItem[
 
 export { getCatalogueManifest };
 
-export async function listCanonicalMenuItems(options: { fresh?: boolean } = {}) { return readItems(options); }
+/** Which records a read may return. Everything except an explicit "all" excludes Hospitality Rotations dishes. */
+export type CatalogueReadScope = "menu-planning" | "all";
+const inReadScope = (scope: CatalogueReadScope | undefined) => (item: MenuItem) => scope === "all" || isMenuPlanningVisible(item);
+export async function listCanonicalMenuItems(options: { fresh?: boolean; scope?: CatalogueReadScope } = {}) { return (await readItems(options)).filter(inReadScope(options.scope)); }
 
 export type CatalogueDocumentLike = { exists: boolean; data(): unknown };
 
@@ -158,7 +164,10 @@ export async function readCatalogueDocumentsByIds(
   return batches.flat().filter((document): document is CatalogueDocumentLike => Boolean(document));
 }
 
-export async function listCanonicalMenuItemsByIds(ids: string[]) {
+export async function listCanonicalMenuItemsByIds(ids: string[], options: { scope?: CatalogueReadScope } = {}) {
+  return (await listCanonicalMenuItemsByIdsUnscoped(ids)).filter(inReadScope(options.scope));
+}
+async function listCanonicalMenuItemsByIdsUnscoped(ids: string[]) {
   const wanted = [...new Set(ids.filter(Boolean))];
   if (!wanted.length) return [];
   if (["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "")) {
@@ -172,7 +181,11 @@ export async function listCanonicalMenuItemsByIds(ids: string[]) {
   return items.filter(item => wanted.includes(item.canonicalId));
 }
 
-export async function getCanonicalMenuItemById(id: string) {
+export async function getCanonicalMenuItemById(id: string, options: { scope?: CatalogueReadScope } = {}) {
+  const item = await getCanonicalMenuItemByIdUnscoped(id);
+  return item && inReadScope(options.scope)(item) ? item : undefined;
+}
+async function getCanonicalMenuItemByIdUnscoped(id: string) {
   const cleanId = id.trim();
   if (!cleanId) return undefined;
   if (hosted()) {
@@ -200,7 +213,7 @@ export async function recordDishSourceAliases(aliasesById: Record<string, string
 
 export type CanonicalMenuItemCreateOutcome = "created_new" | "matched_active" | "matched_merged_alias";
 export type CanonicalMenuItemCreateResult = MenuItem & { outcome: CanonicalMenuItemCreateOutcome };
-export type CanonicalMenuItemCreateInput = { displayName: string; category?: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[]; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"] };
+export type CanonicalMenuItemCreateInput = { displayName: string; category?: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[]; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"]; tagIds?: string[] };
 
 function validateRecipeFields(input: Pick<CanonicalMenuItemCreateInput, "ingredients" | "methodSteps">) {
   if (input.ingredients !== undefined && (!Array.isArray(input.ingredients) || input.ingredients.length > 100)) throw Object.assign(new Error("Provide no more than 100 recipe ingredients."), { status: 422 });
@@ -214,11 +227,13 @@ export async function createCanonicalMenuItem(input: CanonicalMenuItemCreateInpu
   if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
   const category = dishCategoryForWrite(input.category);
   validateRecipeFields(input);
+  // Unknown or malformed tag IDs reject the whole write; an omitted list leaves the dish untagged.
+  const tagIds = input.tagIds === undefined ? undefined : validateDishTagIds(await readDishTagRegistry(), input.tagIds);
   const items = await readItems();
   const baseline = structuredClone(items);
   const displayName = normaliseDishName(input.displayName);
   const key = displayName.toLocaleLowerCase("en-GB");
-  const active = items.filter(item => item.reviewStatus !== "archived");
+  const active = items.filter(item => item.reviewStatus !== "archived" && isMenuPlanningVisible(item));
   const existing = active.find(item => item.displayName.trim().toLocaleLowerCase("en-GB") === key);
   if (existing) { if (existing.displayName !== displayName) { existing.displayName = displayName; existing.audit.push({ action: "canonical-dish-name-normalised", at: new Date().toISOString(), by: actor }); await writeItems(items, { currentItems: baseline, actor }); } return { ...existing, outcome: "matched_active" }; }
   const mergedAlias = active.find(item => (item.sourceAliases || []).some(alias => alias.trim().toLocaleLowerCase("en-GB") === key));
@@ -244,6 +259,7 @@ export async function createCanonicalMenuItem(input: CanonicalMenuItemCreateInpu
     reviewStatus: "unreviewed",
     allergenEvidence: input.allergenEvidence || [],
     mayContainReviewed: Boolean(input.allergenEvidence?.length),
+    ...(tagIds?.length ? { tagIds } : {}),
     audit: [{ action: "locally-created-in-menu-planning", at, by: actor }],
   };
   items.push(item);
@@ -251,7 +267,38 @@ export async function createCanonicalMenuItem(input: CanonicalMenuItemCreateInpu
   return { ...item, outcome: "created_new" };
 }
 
-export function amendCanonicalMenuItemRecord(item: MenuItem | undefined, items: readonly MenuItem[], input: { displayName: string; category: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[] }, actor: string, at = new Date().toISOString()) {
+export type HospitalityDishInput = { dishId: string; displayName: string; classification: HospitalityDishClassId; description?: string };
+/**
+ * Create the Hospitality-scoped dish for one catalogue Item. The ID is supplied by the caller (derived from the Item),
+ * so a retry returns the same record instead of a duplicate. Allergen state starts unrecorded, never Clear.
+ */
+export async function createHospitalityDish(input: HospitalityDishInput, actor: string): Promise<{ item: MenuItem; outcome: "created_new" | "matched_existing" }> {
+  if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
+  const displayName = normaliseDishName(input.displayName);
+  if (!displayName) throw Object.assign(new Error("A dish name is required."), { status: 422 });
+  const items = await readItems({ fresh: true });
+  const baseline = structuredClone(items);
+  const existing = items.find(item => item.canonicalId === input.dishId);
+  if (existing) {
+    if (existing.operationalScope !== "HOSPITALITY_ROTATIONS") throw Object.assign(new Error("That dish ID belongs to the Menu Planning Dish Library."), { status: 409 });
+    return { item: existing, outcome: "matched_existing" };
+  }
+  const key = displayName.toLocaleLowerCase("en-GB");
+  if (items.some(item => !isMenuPlanningVisible(item) && item.reviewStatus !== "archived" && item.displayName.trim().toLocaleLowerCase("en-GB") === key)) throw Object.assign(new Error("An active hospitality dish with this name already exists."), { status: 409 });
+  const item: MenuItem = {
+    canonicalId: input.dishId, sourceName: displayName, displayName, description: input.description?.trim() || undefined,
+    category: "Other", recipeStatus: "draft", weekId: "menu-week:hospitality-rotations", dayId: "",
+    sourceReference: { workbook: "Hospitality Rotations", sheet: "Hospitality dish" },
+    revision: 1, reviewStatus: "unreviewed", allergenEvidence: [], mayContainReviewed: false,
+    operationalScope: "HOSPITALITY_ROTATIONS", hospitalityClass: input.classification,
+    audit: [{ action: "hospitality-dish-created", at: new Date().toISOString(), by: actor }],
+  };
+  items.push(item);
+  await writeItems(items, { currentItems: baseline, actor });
+  return { item, outcome: "created_new" };
+}
+
+export function amendCanonicalMenuItemRecord(item: MenuItem | undefined, items: readonly MenuItem[], input: { displayName: string; category: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[]; tagIds?: string[] }, actor: string, at = new Date().toISOString()) {
   if (!input.displayName?.trim()) throw Object.assign(new Error("A dish name is required."), { status: 422 });
   const category = dishCategoryForWrite(input.category);
   validateRecipeFields(input);
@@ -271,6 +318,8 @@ export function amendCanonicalMenuItemRecord(item: MenuItem | undefined, items: 
   if (input.mayContainNotes !== undefined) amended.mayContainNotes = input.mayContainNotes.trim() || undefined;
   if (input.ingredients !== undefined) amended.ingredients = input.ingredients.filter(ingredient => ingredient.name.trim()).map(ingredient => ({ ...ingredient, name: ingredient.name.trim(), unit: ingredient.unit?.trim() || undefined }));
   if (input.methodSteps !== undefined) amended.methodSteps = input.methodSteps.map(step => step.trim()).filter(Boolean);
+  // Callers pass tag IDs already validated against the registry; undefined leaves the dish's tags untouched.
+  if (input.tagIds !== undefined) { if (input.tagIds.length) amended.tagIds = [...new Set(input.tagIds)]; else delete amended.tagIds; }
   amended.revision += 1;
   amended.reviewStatus = "unreviewed";
   amended.audit.push({ action: "canonical-dish-amended", at, by: actor });
@@ -278,14 +327,15 @@ export function amendCanonicalMenuItemRecord(item: MenuItem | undefined, items: 
 }
 
 /** Update the editable identity/classification fields while preserving the stable catalogue ID and safety evidence. */
-export async function updateCanonicalMenuItem(id: string, input: { displayName: string; category: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[] }, actor: string) {
+export async function updateCanonicalMenuItem(id: string, input: { displayName: string; category: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[]; tagIds?: string[] }, actor: string) {
   if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
   const cleanId = id.trim();
+  const tagIds = input.tagIds === undefined ? undefined : validateDishTagIds(await readDishTagRegistry(), input.tagIds);
   if (!cleanId) throw Object.assign(new Error("A stable dish ID is required."), { status: 422 });
   const items = await readItems();
   const baseline = structuredClone(items);
   const index = items.findIndex(candidate => candidate.canonicalId === cleanId);
-  const amended = amendCanonicalMenuItemRecord(items[index], items, input, actor);
+  const amended = amendCanonicalMenuItemRecord(items[index], items, { ...input, tagIds }, actor);
   items[index] = amended;
   await writeItems(items, { currentItems: baseline, actor });
   return amended;
@@ -317,7 +367,7 @@ export async function createCanonicalMenuItems(inputs: CanonicalMenuItemCreateIn
     const category = categories[index];
     const displayName = normaliseDishName(input.displayName);
     const key = displayName.toLocaleLowerCase("en-GB");
-    const active = currentItems.filter(item => item.reviewStatus !== "archived");
+    const active = currentItems.filter(item => item.reviewStatus !== "archived" && isMenuPlanningVisible(item));
     const existing = active.find(item => item.displayName.trim().toLocaleLowerCase("en-GB") === key);
     if (existing) { results.push({ ...existing, outcome: "matched_active" }); continue; }
     const mergedAlias = active.find(item => (item.sourceAliases || []).some(alias => alias.trim().toLocaleLowerCase("en-GB") === key));
@@ -345,7 +395,7 @@ export async function syncRollingEntries(entries: RollingEntry[], actor = "rolli
   for (const entry of entries) {
     const name = normaliseDishName(entry.itemLabel);
     if (!name) continue;
-    const existing = items.find(item => item.canonicalId === entry.itemId || item.displayName.toLowerCase() === name.toLowerCase());
+    const existing = items.find(item => isMenuPlanningVisible(item) && (item.canonicalId === entry.itemId || item.displayName.toLowerCase() === name.toLowerCase()));
     const at = new Date().toISOString();
     const allergenEvidence = Object.entries(entry.allergens || {})
       .filter(([, value]) => value !== "clear")
@@ -455,7 +505,7 @@ const mergeAllergenEvidence = (items: MenuItem[]) => [...new Map(items.flatMap(i
 
 /** Returns fuzzy groups for deliberate review without changing the catalogue. */
 export async function previewSimilarCanonicalItems() {
-  const active = (await readItems()).filter(item => item.reviewStatus !== "archived"); const groups: MenuItem[][] = [];
+  const active = (await readItems()).filter(item => item.reviewStatus !== "archived" && isMenuPlanningVisible(item)); const groups: MenuItem[][] = [];
   for (const item of active) { const category = normaliseDishCategory(item.category); const matching = groups.find(group => normaliseDishCategory(group[0].category) === category && group.some(candidate => similarDishNames(candidate.displayName, item.displayName))); if (matching) matching.push(item); else groups.push([item]); }
   return groups.filter(group => group.length > 1).map(group => { const ordered = group.slice().sort((a, b) => richness(b) - richness(a) || a.displayName.length - b.displayName.length); return { category: normaliseDishCategory(ordered[0].category), survivor: { id: ordered[0].canonicalId, name: ordered[0].displayName }, candidates: ordered.map(item => ({ id: item.canonicalId, name: item.displayName, allergenCount: item.allergenEvidence.length, hasRecipe: Boolean(item.ingredients?.length || item.methodSteps?.length || item.preparationDescription) })) }; });
 }
@@ -464,7 +514,7 @@ export async function mergeSimilarCanonicalItems(actor = "automatic-dish-normali
   const items = await readItems();
   const baseline = structuredClone(items);
   const inScope = (item: MenuItem) => !selectedIds || selectedIds.has(item.canonicalId);
-  const active = items.filter(item => item.reviewStatus !== "archived" && inScope(item));
+  const active = items.filter(item => item.reviewStatus !== "archived" && isMenuPlanningVisible(item) && inScope(item));
   const groups: MenuItem[][] = [];
   for (const item of active) {
     const category = normaliseDishCategory(item.category);

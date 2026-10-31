@@ -39,7 +39,7 @@ export function dayCollections(orders: ProductionOrder[], day: string) {
         a.canonicalId.localeCompare(b.canonicalId),
     );
 }
-export function dayProductionPrintHtml(orders: ProductionOrder[], day: string) {
+export function dayProductionPrintHtml(orders: ProductionOrder[], day: string, siteFilterLabel = "All sites") {
   const selected = dayCollections(orders, day);
   if (!selected.length)
     throw Error("No eligible collections were found for this production day.");
@@ -52,7 +52,7 @@ export function dayProductionPrintHtml(orders: ProductionOrder[], day: string) {
 #collection-source{position:absolute;left:-10000px;top:0;width:190mm;visibility:hidden}#measure-card{position:absolute;left:-10000px;top:0;visibility:hidden}
 @media screen{body{background:#ddd}.print-page{background:white;margin:0 auto 5mm;box-shadow:0 0 2px #777}}
 @media print{#collection-source,#measure-card{display:none!important}.print-page{margin:0;box-shadow:none}}
-</style></head><body><div id="day-pages" data-day="${escape(day)}" data-count="${selected.length}"></div><div id="collection-source">${selected.map((order) => `<article class="collection" data-collection-id="${escape(order.canonicalId)}" data-collection-start="true"><header><h2>${escape(cpuDestinationLabel(order))}</h2><p><b>${escape(collectionDate(order))} · Ready / collection ${escape(collectionTime(order))}</b></p><p class="source">${escape([cpuSourceLabel(order), order.serviceType, order.sourcePublicationDayId || order.sourcePublicationId || order.sourceEntityId || order.sourceBookingId, order.sourceVersion === undefined ? "" : "v" + order.sourceVersion].filter(Boolean).join(" · "))}</p></header><table><thead><tr><th class="check">Tick</th><th>Dish</th><th class="quantity">Quantity</th></tr></thead><tbody>${order.lines.map((line) => `<tr data-line-id="${escape(line.canonicalId)}"><td class="check"><i class="box"></i></td><td>${escape(line.itemName)}</td><td class="quantity">${escape(collectionQuantity(line))}</td></tr>`).join("")}</tbody></table><footer><span>Packed by: __________</span><span>Checked by: __________</span></footer></article>`).join("")}</div></body></html>`;
+</style></head><body><div id="day-pages" data-day="${escape(day)}" data-count="${selected.length}" data-scope="${escape(siteFilterLabel)}"></div><div id="collection-source">${selected.map((order) => `<article class="collection" data-collection-id="${escape(order.canonicalId)}" data-collection-start="true"><header><h2>${escape(cpuDestinationLabel(order))}</h2><p><b>${escape(collectionDate(order))} · Ready / collection ${escape(collectionTime(order))}</b></p><p class="source">${escape([cpuSourceLabel(order), order.serviceType, order.sourcePublicationDayId || order.sourcePublicationId || order.sourceEntityId || order.sourceBookingId, order.sourceVersion === undefined ? "" : "v" + order.sourceVersion].filter(Boolean).join(" · "))}</p></header><table><thead><tr><th class="check">Tick</th><th>Dish</th><th class="quantity">Quantity</th></tr></thead><tbody>${order.lines.map((line) => `<tr data-line-id="${escape(line.canonicalId)}"><td class="check"><i class="box"></i></td><td>${escape(line.itemName)}</td><td class="quantity">${escape(collectionQuantity(line))}</td></tr>`).join("")}</tbody></table><footer><span>Packed by: __________</span><span>Checked by: __________</span></footer></article>`).join("")}</div></body></html>`;
 }
 
 /** Runs in the print document after fonts settle. No estimated character/row limits:
@@ -74,7 +74,7 @@ export function paginateDayProduction(doc: Document = document) {
     title.textContent = "Production · " + output.dataset.day;
     const scope = doc.createElement("p");
     scope.textContent =
-      "Whole day · All sites / origins / production scopes · " +
+      "Whole day · " + output.dataset.scope + " / all origins / production scopes · " +
       output.dataset.count +
       " collections · cancelled / superseded excluded";
     header.append(title, scope);

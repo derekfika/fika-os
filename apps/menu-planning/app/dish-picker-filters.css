@@ -1,0 +1,166 @@
+/* Week Planner dish-picker filters (#155). Reuses the planner's FIKA tokens. */
+.picker-filters {
+  display: grid;
+  gap: 10px;
+  margin: 0 26px 12px;
+}
+
+.picker-filters__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.picker-filters__toggle,
+.picker-filters__reset {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--purple);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.picker-filters__count {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.picker-filters__reset {
+  margin-left: auto;
+}
+
+.picker-filters__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.picker-filters__chip {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--purple);
+  border-radius: 999px;
+  background: var(--info-bg);
+  color: var(--purple);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.picker-filters__panel {
+  display: grid;
+  gap: 14px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.picker-filters__group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.picker-filters__group legend {
+  margin-bottom: 6px;
+  padding: 0;
+  color: var(--deep);
+  font-weight: 800;
+}
+
+.picker-filters__checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.picker-filters__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--deep);
+  font-size: 0.88rem;
+}
+
+.picker-filters__check:has(input:checked) {
+  border-color: var(--purple);
+  background: var(--info-bg);
+}
+
+.picker-filters__check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--purple);
+}
+
+.picker-filters__check small {
+  color: var(--muted);
+}
+
+.picker-filters__search {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.picker-filters__search input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--deep);
+  font: inherit;
+  font-weight: 400;
+}
+
+.picker-filters__note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.picker-filters__toggle:focus-visible,
+.picker-filters__reset:focus-visible,
+.picker-filters__chip:focus-visible,
+.picker-filters__check input:focus-visible,
+.picker-filters__search input:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .picker-filters {
+    margin: 0 16px 12px;
+  }
+
+  .picker-filters__reset {
+    width: 100%;
+    margin-left: 0;
+  }
+}

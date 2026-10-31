@@ -24,6 +24,7 @@ import {
   collectionDate,
   collectionTime,
 } from "./kitchen-print";
+import { filterOrdersBySites } from "../../lib/production-view-filters";
 export function collectionOrders(orders: ProductionOrder[]) {
   const unique = new Map<string, ProductionOrder>();
   for (const o of orders)
@@ -366,10 +367,14 @@ function SavedCollection({ order }: { order: ProductionOrder }) {
 export default function KitchenRunSheet({
   orders,
   productionDate = "",
+  selectedSiteIds = [],
+  siteFilterLabel = "All sites",
   onProductionDateChange,
 }: {
   orders: ProductionOrder[];
   productionDate?: string;
+  selectedSiteIds?: readonly string[];
+  siteFilterLabel?: string;
   onProductionDateChange?: (date: string) => void;
 }) {
   const [printing, setPrinting] = useState(false);
@@ -379,9 +384,9 @@ export default function KitchenRunSheet({
     setPrinting(true);
     setPrintError("");
     try {
-      const allOrders = await loadWholeDay(productionDate);
+      const allOrders = filterOrdersBySites(await loadWholeDay(productionDate), selectedSiteIds);
       await printKitchenDocument(
-        dayProductionPrintHtml(allOrders, productionDate),
+        dayProductionPrintHtml(allOrders, productionDate, siteFilterLabel),
         paginateDayProduction,
       );
     } catch (error) {
@@ -415,7 +420,7 @@ export default function KitchenRunSheet({
         </button>
         <p>
           {productionDate
-            ? "Prints the complete selected day across all sites, origins and production scopes. Screen filters do not limit printing; cancelled and superseded orders are excluded."
+            ? `Prints the complete selected day for ${siteFilterLabel}, across origins and production scopes. Cancelled and superseded orders are excluded.`
             : "Select a production date before printing. Only that day will be printed."}
         </p>
         {printError && (

@@ -81,6 +81,18 @@ Nothing is applied by analysis; `adopt-company-default` is an explicit, confirme
 
 None required: routing is per Item and no site-level routing override was added or found. (`HOSPITALITY_GOVERNED_ROUTING_PLATFORMS`, which gates hand-off enforcement per platform, is unchanged and orthogonal.)
 
+## 7a. One on/off switch per site
+
+Any Item can be switched on or off for any active site, from the Item panel (**Available at**), the bulk editor, or `set-site-availability`. Items created for specific sites carry a site list (`allowedOplocIds`); switching a site ON outside that list extends the list in the same transaction (Item version + 1, revision, and an audit event recording `siteListExtendedWith`). Switching OFF records the normal reversible exception and keeps the list. Switching OFF at a site the Item was never permitted at is a no-op and stores nothing. Prices, routing, minimums and configuration are never touched.
+
+`scripts/rcoa-oac-wines.ts` is a read-only planner for enabling the 11 One Angel Court wines at RCoA: it derives the canonical IDs from the approved OAC catalogue, verifies them against live records and emits one bulk "add RCoA" operation. It never writes. Which booking section an Item appears in is driven by its category and is a separate, portal-side mapping.
+
+## 7b. Booking-service category layout (issue #175, slice 1: provider)
+
+Which Item categories each booking service offers is governed Hub configuration: a **company default** with sparse **per-site overrides** that replace one service's category list at that site. It never grants site permission or changes prices, minimums, availability or existing bookings; those remain independent, conjunctive checks.
+Commands (`hospitality.catalogue.manage`): `set-service-categories` (`serviceId`, `categories`, `hidden?`, `oplocId?`, `expectedVersion`, `reason`) and `clear-service-override`. Each is one transaction with an optimistic document version (0 = nothing stored yet), a revision (`integrationHubHospitalityServiceLayoutRevisions`) and an audit event with before/after. The first company save materialises the seed with the one change applied. A site override that equals the company default is refused.
+`SERVICE_LAYOUT_SEED` (`@fika/server-shared/hospitality-service-layout`) is today's hard-coded portal behaviour exactly, so nothing changes until someone saves; Hospitality tests prove the seed equals `rcoaEventTypes` and the shared BookingPortal map. The catalogue package carries an additive optional `serviceLayout`; the shared resolver `resolveServiceCategories` / `categoryAllowedForService` is the only code that should interpret it. Portals and server enforcement still use their own lists until slices 3 and 4.
+
 ## 8. Known limitations
 
 * Allergen/dietary data is read-only here and blocks merges when it differs; editing it stays with the existing governed path.

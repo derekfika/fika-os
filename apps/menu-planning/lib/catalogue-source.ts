@@ -1,4 +1,4 @@
-import type { MenuItem } from "./domain";
+import { isMenuPlanningVisible, type MenuItem } from "./domain";
 import { stableHash } from "./fika-contracts";
 
 export const CATALOGUE_SOURCE_SCHEMA_VERSION = 1 as const;
@@ -12,13 +12,14 @@ function orderedJson(value: unknown): unknown {
 
 /**
  * The source hash is over the authoritative canonical records, ordered by
- * stable identity. It deliberately excludes package metadata so a package can
+ * stable identity. Hospitality-only records are excluded because the Menu Planning
+ * package never contains them; existing records are unaffected. It deliberately excludes package metadata so a package can
  * prove exactly which source state it materialises.
  */
 export function catalogueSourceHash(items: readonly MenuItem[]) {
   return stableHash(orderedJson(JSON.parse(JSON.stringify({
     schemaVersion: CATALOGUE_SOURCE_SCHEMA_VERSION,
-    items: items.slice().sort((left, right) => left.canonicalId.localeCompare(right.canonicalId)),
+    items: items.filter(isMenuPlanningVisible).sort((left, right) => left.canonicalId.localeCompare(right.canonicalId)),
   }))));
 }
 

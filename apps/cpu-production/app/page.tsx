@@ -25,7 +25,7 @@ import ProductionOrderDetail from "./ui/ProductionOrderDetail";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, isCpuWithdrawn, type CpuLifecycle } from "../lib/production-presentation";
-import { aggregateProductionTotals, orderDate } from "../lib/production-day";
+import { aggregateProductionTotals, orderDate, productionJobCount } from "../lib/production-day";
 import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, dashboardInitialDate, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 import { calendarDateInputPatch, calendarWeekChangePatch } from "../lib/cpu-week-date-sync";
 import { addOperationalDays, filterProductionTotalsOrders, filterProductionTotalsOrdersToDates, formatProductionTotalsDateRange, formatProductionTotalsSelection, operationalWeekRange, productionTotalsWeekDates, resolveProductionTotalsRange } from "../lib/production-totals-range";
@@ -33,6 +33,9 @@ import { loadProductionTotalsRange } from "../lib/cpu-totals-loader";
 import { readApiResponse } from "./lib/api-response";
 import { readCpuProjection, writeCpuProjection } from "./lib/cpu-indexeddb";
 import { europeLondonDate } from "../lib/operational-date";
+import { ProductionFilterSummary, ProductionSiteFilter } from "./ui/ProductionSiteFilter";
+import { ProductionWeekDays, ProductionWeekNavigation, ProductionWeekShortcuts } from "./ui/ProductionWeekControls";
+import { activeFilterChips, buildSiteOptions, eligibleOrders, filterOrdersBySites, resolveViewState, unscopedOrderCount, type FilterChip } from "../lib/production-view-filters";
 
 const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
 const terminalStatuses = new Set<ProductionStatus>([
@@ -69,7 +72,12 @@ export default function CpuProduction() {
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [status, setStatus] = useState("");
   const [origin, setOrigin] = useState("");
-  const [site, setSite] = useState("");
+  // Canonical OPLOC IDs; empty means every site. Safe UI state: it persists across view and date changes.
+  const [sites, setSites] = useState<string[]>([]);
+  // Clears (or, for a deep link, sets) the whole site selection; the filter control edits it directly.
+  const setSite = (id: string) => setSites(id ? [id] : []);
+  const [settled, setSettled] = useState(false);
+  const siteLabels = useRef(new Map<string, string>());
   const [date, setDate] = useState("");
   // Static App Hosting HTML and the first client render must share a clock-free state.
   const [todayKey, setTodayKey] = useState("");
@@ -160,6 +168,7 @@ export default function CpuProduction() {
     const requestId = ++loadGeneration.current;
     const isCurrentRequest = () => requestId === loadGeneration.current;
     if (showFeedback) setRefreshing(true);
+    setSettled(false);
     if (view === "totals") {
       const resolution = totalsCustomRange
         ? resolveProductionTotalsRange("custom", todayKey, customFrom, customTo)
@@ -194,6 +203,7 @@ export default function CpuProduction() {
         if (isCurrentRequest()) {
           setTotalsLoading(false);
           setRefreshing(false);
+          setSettled(true);
         }
       }
     }
@@ -259,24 +269,22 @@ export default function CpuProduction() {
       setError("");
       return projectedOrders;
     } finally {
-      if (isCurrentRequest()) setRefreshing(false);
+      if (isCurrentRequest()) { setRefreshing(false); setSettled(true); }
     }
   };
   useEffect(() => {
     void load();
   }, [view, date, dayDate, weekCommencing, productionScope, todayKey, totalsCustomRange, customFrom, customTo]);
-  const sites = [
-    ...new Set(
-      orders.map((order) => order.destinationOplocId).filter(Boolean),
-    ),
-  ] as string[];
-  const baseVisible = orders.filter(
+  const siteOptions = useMemo(() => buildSiteOptions(orders), [orders]);
+  for (const option of siteOptions) siteLabels.current.set(option.id, option.label);
+  // Everything the current view would show for the chosen status/origin, before any site selection.
+  const allSitesBase = orders.filter(
     (order) =>
       (view === "calendar" ? (!isCpuWithdrawn(order) || Boolean(order.cancellationNotice)) : !isCpuWithdrawn(order)) &&
       (!status || cpuLifecycle(order) === status) &&
-      (!origin || order.origin === origin) &&
-      (!site || order.destinationOplocId === site),
+      (!origin || order.origin === origin),
   );
+  const baseVisible = filterOrdersBySites(allSitesBase, sites);
   const visible = baseVisible.filter(
     (order) => !date || orderDate(order) === date,
   );
@@ -287,9 +295,33 @@ export default function CpuProduction() {
   const totalsRange = totalsRangeResolution.range;
   const totalsWeekDates = productionTotalsWeekDates(weekCommencing);
   const selectedTotalsDates = totalsWeekDates.filter((_, index) => totalsSelectedDays.includes(index));
-  const totalsSelectedOrders = totalsCustomRange
-    ? filterProductionTotalsOrders(orders, totalsRange, site, origin)
-    : filterProductionTotalsOrdersToDates(filterProductionTotalsOrders(orders, totalsRange, site, origin), selectedTotalsDates);
+  const totalsFor = (siteIds: readonly string[]) => totalsCustomRange
+    ? filterProductionTotalsOrders(orders, totalsRange, siteIds, origin)
+    : filterProductionTotalsOrdersToDates(filterProductionTotalsOrders(orders, totalsRange, siteIds, origin), selectedTotalsDates);
+  const totalsSelectedOrders = totalsFor(sites);
+  const totalsAllSitesOrders = sites.length ? totalsFor([]) : totalsSelectedOrders;
+  // Counts for the shared filter summary. "Eligible" ignores status, origin and site filters.
+  const distinct = (list: readonly ProductionOrder[]) => new Set(list.map((order) => order.canonicalId)).size;
+  const dayScoped = (list: ProductionOrder[]) => (view === "calendar" || !date ? list : list.filter((order) => orderDate(order) === date));
+  const eligibleList = view === "totals"
+    ? (totalsCustomRange ? filterProductionTotalsOrders(orders, totalsRange, [], "") : filterProductionTotalsOrdersToDates(filterProductionTotalsOrders(orders, totalsRange, [], ""), selectedTotalsDates))
+    : dayScoped(eligibleOrders(orders, { keepCancellationNotices: view === "calendar" }));
+  const shownList = view === "totals" ? totalsSelectedOrders : view === "calendar" ? baseVisible : visible;
+  const allSitesList = view === "totals" ? totalsAllSitesOrders : dayScoped(allSitesBase);
+  const viewState = resolveViewState({ loading: view === "totals" ? totalsLoading : !settled, error: error, eligibleCount: distinct(eligibleList), shownCount: distinct(shownList) });
+  const filterChips = activeFilterChips({
+    sites,
+    siteLabels: siteLabels.current,
+    status: view === "totals" ? "" : status,
+    statusLabel: status ? (cpuLifecycleLabels as Record<string, string>)[status] : undefined,
+    origin,
+  });
+  const removeFilterChip = (chip: FilterChip) => {
+    if (chip.kind === "site") setSites((current) => current.filter((id) => `site:${id}` !== chip.key));
+    else if (chip.kind === "status") setStatus("");
+    else setOrigin("");
+  };
+  const resetViewFilters = () => { setStatus(""); setOrigin(""); setSites([]); };
   const attentionCount = orders.filter((order) => Boolean(cpuAttentionLabel(order))).length;
   const chooseView = (target: View) => {
     if (target === "totals") {
@@ -343,6 +375,17 @@ export default function CpuProduction() {
     setOrders([]);
     setTotalsLoading(true);
     setError("");
+  };
+  const chooseRunSheetWeek = (nextWeek: string) => {
+    setWeekCommencing(nextWeek);
+    setDate(nextWeek);
+    setDayDate(nextWeek);
+  };
+  const chooseRunSheetDay = (days: number[]) => {
+    const selectedDate = productionTotalsWeekDates(weekCommencing)[days[0] ?? 0];
+    if (!selectedDate) return;
+    setDate(selectedDate);
+    setDayDate(selectedDate);
   };
   const selectTotalsDays = (days: number[]) => setTotalsSelectedDays([...new Set(days)].filter(day => day >= 0 && day < 7).sort((a, b) => a - b));
   const openAttentionQueue = () => {
@@ -504,29 +547,14 @@ export default function CpuProduction() {
         </div>
         {view !== "menu-planning" && view !== "published-menus" && view !== "grab-and-go" && <div className={`cpu-filters${view === "totals" ? " cpu-totals-filters" : ""}`}>
           {view === "totals" ? <>
-            <div className="cpu-totals-week-navigation" aria-label="Select production week">
-              <button type="button" aria-label="Previous week" onClick={() => { if (weekCommencing) chooseTotalsWeek(addOperationalDays(weekCommencing, -7)); }}>‹ Previous week</button>
-              <strong>{weekCommencing ? formatProductionTotalsDateRange(operationalWeekRange(weekCommencing)) : "Loading week…"}</strong>
-              <button type="button" aria-label="Next week" onClick={() => { if (weekCommencing) chooseTotalsWeek(addOperationalDays(weekCommencing, 7)); }}>Next week ›</button>
-            </div>
+            <ProductionWeekNavigation weekCommencing={weekCommencing} onWeekChange={chooseTotalsWeek} />
             <div className="cpu-totals-shortcuts" role="group" aria-label="Week shortcuts">
               <button type="button" aria-pressed={!totalsCustomRange && weekCommencing === (todayKey ? weekCommencingFor(todayKey) : "")} onClick={() => { if (todayKey) chooseTotalsWeek(weekCommencingFor(todayKey)); }}>This week</button>
               <button type="button" aria-pressed={!totalsCustomRange && weekCommencing === (todayKey ? addOperationalDays(weekCommencingFor(todayKey), 7) : "")} onClick={() => { if (todayKey) chooseTotalsWeek(addOperationalDays(weekCommencingFor(todayKey), 7)); }}>Next week</button>
             </div>
             {!totalsCustomRange && <>
-              <div className="cpu-totals-day-picker" role="group" aria-label="Production days">
-                {totalsWeekDates.map((day, index) => {
-                  const date = new Date(`${day}T12:00:00Z`);
-                  const weekday = new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" }).format(date);
-                  const label = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(date);
-                  const pressed = totalsSelectedDays.includes(index);
-                  return <button type="button" key={day} className={`${index < 5 ? "cpu-totals-weekday" : "cpu-totals-weekend"}${pressed ? " selected" : ""}`} aria-label={`${label}${index >= 5 ? ", weekend" : ""}`} aria-pressed={pressed} onClick={() => selectTotalsDays(pressed ? totalsSelectedDays.filter(value => value !== index) : [...totalsSelectedDays, index])}><span>{weekday}</span><strong>{date.getUTCDate()}</strong></button>;
-                })}
-              </div>
-              <div className="cpu-totals-day-shortcuts" role="group" aria-label="Day selection shortcuts">
-                <button type="button" aria-pressed={totalsSelectedDays.length === 5 && totalsSelectedDays.every((day, index) => day === index)} onClick={() => selectTotalsDays([0, 1, 2, 3, 4])}>Weekdays</button>
-                <button type="button" aria-pressed={totalsSelectedDays.length === 7} onClick={() => selectTotalsDays([0, 1, 2, 3, 4, 5, 6])}>All days</button>
-              </div>
+              <ProductionWeekDays weekCommencing={weekCommencing} selectedDays={totalsSelectedDays} onSelect={selectTotalsDays} />
+              <ProductionWeekShortcuts selectedDays={totalsSelectedDays} onSelect={selectTotalsDays} />
             </>}
             <div className="cpu-totals-custom">
               <button type="button" aria-expanded={totalsCustomRange} onClick={() => {
@@ -545,23 +573,14 @@ export default function CpuProduction() {
                 <label>To<input aria-label="To date" type="date" min={customFrom || undefined} value={customTo} onChange={(event) => { setCustomTo(event.target.value); setTotalsLoading(true); setOrders([]); setError(""); }} /></label>
               </div>}
             </div>
+          </> : view === "run-sheet" ? <>
+            <ProductionWeekNavigation weekCommencing={weekCommencing} onWeekChange={chooseRunSheetWeek} />
+            <ProductionWeekDays weekCommencing={weekCommencing} selectedDays={[Math.max(0, totalsWeekDates.indexOf(date))]} singleSelect onSelect={chooseRunSheetDay} />
           </> : <label>
             Date
             <input type="date" value={date} onChange={(event) => { const patch = calendarDateInputPatch(event.target.value, view); setDate(patch.date); if (patch.dayDate !== undefined) setDayDate(patch.dayDate); if (patch.weekCommencing !== undefined) setWeekCommencing(patch.weekCommencing); }} />
           </label>}
-          <label>
-            Site
-            <select
-              value={site}
-              onChange={(event) => setSite(event.target.value)}
-            >
-              <option value="">All sites</option>
-              {sites.map((item) => {
-                const order = orders.find(candidate => candidate.destinationOplocId === item);
-                return <option value={item} key={item}>{order ? cpuDestinationOptionLabel(order) : item}</option>;
-              })}
-            </select>
-          </label>
+          <ProductionSiteFilter options={siteOptions} selected={sites} onChange={setSites} />
           <label>
             Origin
             <select
@@ -579,7 +598,7 @@ export default function CpuProduction() {
             onClick={() => {
               setStatus("");
               setOrigin("");
-              setSite("");
+              setSites([]);
               setDate("");
               setTotalsCustomRange(false);
               setTotalsSelectedDays([0, 1, 2, 3, 4]);
@@ -590,6 +609,17 @@ export default function CpuProduction() {
             Reset filters
           </button>
         </div>}
+        {["calendar", "day", "queue", "run-sheet", "totals"].includes(view) && <ProductionFilterSummary
+          chips={filterChips}
+          onRemove={removeFilterChip}
+          onReset={resetViewFilters}
+          state={viewState}
+          shownCount={distinct(shownList)}
+          eligibleCount={distinct(eligibleList)}
+          allSitesCount={distinct(allSitesList)}
+          unscopedCount={unscopedOrderCount(allSitesList)}
+          siteFiltered={sites.length > 0}
+        />}
         {error && view !== "totals" && <p role="alert">{error}</p>}
         {view === "published-menus" ? <PublishedMenuView /> : view === "grab-and-go" ? <GrabAndGoProductionView /> : view === "menu-planning" ? <DeliveredMenuPlanner /> : showCreate && (
           <CpuCreate
@@ -600,12 +630,12 @@ export default function CpuProduction() {
           />
         )}
         {view === "calendar" && (
-          weekCommencing ? <ProductionCalendar orders={baseVisible} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} weekCommencing={weekCommencing} onWeekChange={(nextWeek) => { const patch = calendarWeekChangePatch(nextWeek); setWeekCommencing(patch.weekCommencing); setDate(patch.date); }} onDayOpen={(selectedDate) => { setDate(selectedDate); setDayDate(selectedDate); setWeekCommencing(weekCommencingFor(selectedDate)); setView("day"); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} /> : <p role="status">Loading production calendar…</p>
+          weekCommencing ? <ProductionCalendar orders={baseVisible} scopeNote={sites.length ? `Selected sites only · ${productionJobCount(allSitesList.filter(order => { const key = orderDate(order); return key >= weekCommencing && key <= addOperationalDays(weekCommencing, 4); }))} across all sites` : undefined} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} weekCommencing={weekCommencing} onWeekChange={(nextWeek) => { const patch = calendarWeekChangePatch(nextWeek); setWeekCommencing(patch.weekCommencing); setDate(patch.date); }} onDayOpen={(selectedDate) => { setDate(selectedDate); setDayDate(selectedDate); setWeekCommencing(weekCommencingFor(selectedDate)); setView("day"); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} /> : <p role="status">Loading production calendar…</p>
         )}
         {view === "day" && <ProductionDayView orders={visible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDate(nextDate); setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
-        {view === "run-sheet" && <KitchenRunSheet orders={visible} productionDate={date} onProductionDateChange={nextDate => { setDate(nextDate); if (nextDate) { setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); } }} />}
-        {view === "totals" && <Totals filters={[site === "all" ? "All sites" : (totalsSelectedOrders.find(o=>o.destinationOplocId===site)?.destinationLabel || site), origin === "all" ? "All origins" : origin, productionScope === "all" ? "All production scopes" : productionScope].join(" · ")} orders={totalsSelectedOrders} range={totalsRange} selectedPeriod={totalsCustomRange ? "Custom date range" : formatProductionTotalsSelection(weekCommencing, totalsSelectedDays)} hasSelection={totalsCustomRange || selectedTotalsDates.length > 0} rangeError={totalsRangeResolution.error} loadError={error} loading={totalsLoading} />}
+        {view === "run-sheet" && <KitchenRunSheet orders={visible} productionDate={date} selectedSiteIds={sites} siteFilterLabel={sites.length ? sites.map(id => siteLabels.current.get(id) || "selected site").join(", ") : "All sites"} onProductionDateChange={nextDate => { setDate(nextDate); if (nextDate) { setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); } }} />}
+        {view === "totals" && <Totals allSitesOrderCount={sites.length ? distinct(totalsAllSitesOrders) : undefined} filters={[sites.length ? `${sites.length} selected site${sites.length === 1 ? "" : "s"}` : "All sites", origin === "all" ? "All origins" : origin, productionScope === "all" ? "All production scopes" : productionScope].join(" · ")} orders={totalsSelectedOrders} range={totalsRange} selectedPeriod={totalsCustomRange ? "Custom date range" : formatProductionTotalsSelection(weekCommencing, totalsSelectedDays)} hasSelection={totalsCustomRange || selectedTotalsDates.length > 0} rangeError={totalsRangeResolution.error} loadError={error} loading={totalsLoading} />}
         </section>
         {view !== "totals" && <OperationsRail orders={visible} date={date || todayKey} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} />}
         </div>
@@ -744,6 +774,7 @@ function Queue({
 }
 
 function Totals({
+  allSitesOrderCount,
   filters,
   orders,
   range,
@@ -753,6 +784,7 @@ function Totals({
   loadError,
   loading,
 }: {
+  allSitesOrderCount?: number;
   filters: string;
   orders: ProductionOrder[];
   range?: { from: string; to: string };
@@ -770,7 +802,7 @@ function Totals({
         <button type="button" className="kitchen-button kitchen-totals-print" disabled={loading || !!rangeError || !!loadError || !hasSelection || !categoryTotals.length} onClick={()=>printKitchenDocument(totalsPrintHtml(categoryTotals, selectedPeriod + (range ? " · " + formatProductionTotalsDateRange(range) : ""), filters))}>Print Totals</button>
         <h2>{selectedPeriod === "No days selected" ? "Select production days" : selectedPeriod}</h2>
         {range && <p className="cpu-totals-range-label">{formatProductionTotalsDateRange(range)}</p>}
-        {range && !loading && !rangeError && !loadError && <p>{orders.length} production order{orders.length === 1 ? "" : "s"} included · units remain grouped separately</p>}
+        {range && !loading && !rangeError && !loadError && <p>{orders.length} production order{orders.length === 1 ? "" : "s"} included{allSitesOrderCount !== undefined ? ` for the selected sites (all sites: ${allSitesOrderCount} order${allSitesOrderCount === 1 ? "" : "s"})` : ""} · units remain grouped separately</p>}
       </header>
       {loading ? <p className="cpu-totals-state" role="status">Loading and verifying production totals…</p> : rangeError || loadError ? <><p className="cpu-totals-state" role="alert">{rangeError || loadError}</p>{!hasSelection && <div className="cpu-empty cpu-totals-empty-selection"><h3>No production days selected</h3><p>Select one or more days above to see production quantities and order counts.</p></div>}</> : !hasSelection ? <div className="cpu-empty cpu-totals-empty-selection"><h3>No production days selected</h3><p>Select one or more days above to see production quantities and order counts.</p></div> : categoryTotals.length ? categoryTotals.map(({ category, items }) => <section className="cpu-total-category" key={category}>
         <h3>{category}</h3>
