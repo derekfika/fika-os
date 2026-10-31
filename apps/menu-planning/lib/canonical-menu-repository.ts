@@ -141,6 +141,27 @@ async function writeItems(items: MenuItem[], options: { currentItems?: MenuItem[
   return await publishItemsBestEffort({ sourceRevision, sourceHash });
 }
 
+/**
+ * Write many catalogue items through the same transactional writer as every other catalogue change
+ * (so the manifest revision, source hash and read package stay consistent), in chunks that fit a
+ * Firestore transaction. Used only by the governed Dish Library upgrade script. Unchanged items are skipped.
+ */
+export async function upsertCatalogueItemsInChunks(items: MenuItem[], options: { currentItems: MenuItem[]; actor: string; chunkSize?: number }) {
+  const size = Math.min(Math.max(options.chunkSize || 150, 1), 200);
+  const baseline = new Map(options.currentItems.map(item => [item.canonicalId, item]));
+  const changed = items.filter(item => !recordsEqual(baseline.get(item.canonicalId), sanitiseFirestoreValue(item)));
+  let written = 0;
+  for (let start = 0; start < changed.length; start += size) {
+    const chunk = changed.slice(start, start + size);
+    await writeItems(chunk, { currentItems: options.currentItems, actor: options.actor });
+    written += chunk.length;
+    // Later chunks compare against what the earlier chunks wrote, so the baseline advances with them.
+    for (const item of chunk) baseline.set(item.canonicalId, sanitiseFirestoreValue(item));
+    options = { ...options, currentItems: [...baseline.values()] };
+  }
+  return { requested: items.length, changed: changed.length, written };
+}
+
 export { getCatalogueManifest };
 
 /** Which records a read may return. Everything except an explicit "all" excludes Hospitality Rotations dishes. */

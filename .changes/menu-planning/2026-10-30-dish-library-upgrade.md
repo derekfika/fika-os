@@ -1,0 +1,8 @@
+# 2026-10-30 — Governed Dish Library upgrade script and staging rehearsal
+
+Adds `scripts/replace-dish-library.ts` (staging-only, dry-run by default) and its planning module `lib/dish-library-upgrade.ts`: it replaces an environment's dish library with a reviewed export, applies approved tags (shared registry only) and Salad slots, archives every current dish document first (raw archive collection + local backup), writes through the app's own catalogue writer in chunks (`upsertCatalogueItemsInChunks`), and verifies the result against Firestore. Dish IDs, names, categories, aliases and allergen evidence are never changed, no dishes are merged and nothing is deleted: old dishes not in the new library are archived. It blocks if any currently published dish on or after `--from-date` would be missing, archived or merged, if active names would collide, or if any unexpected field would change; an old-only dish that a published menu uses is kept active. `docs/deployment/dish-library-upgrade-runbook.md` records the workflow for the later production upgrade, including the next-week published-dish check.
+
+Staging action taken (owner-instructed, 30 Oct): the script was run once with `--execute` against `fika-os-dev`: 402 → 545 documents, 272 dishes tagged, 91 salads with a slot, catalogue manifest revision 13 → 17, original documents archived as `upgrade-2026-10-30`. Production was not touched.
+
+Validation: Menu Planning typecheck and 9 new tests; dry run and execute reports verified against Firestore (0 missing, 0 tag or archive mismatches); see the PR for the full suite and governed validation. The PR is intentionally left unmerged.
+Deployment: none (the Menu app was not redeployed by this change).
