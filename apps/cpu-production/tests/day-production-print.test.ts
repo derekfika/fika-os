@@ -6,6 +6,7 @@ import {
 } from "../app/ui/day-production-print";
 import { collectionTime } from "../app/ui/kitchen-print";
 import { loadWholeDay } from "../app/ui/whole-day-production";
+import { filterOrdersBySites } from "../lib/production-view-filters";
 import { readFileSync } from "node:fs";
 import type { ProductionOrder } from "../lib/production-types";
 const day = "2026-10-23";
@@ -69,6 +70,16 @@ test("print HTML preserves every line and empty checkbox and has no interactive 
   );
   assert.equal(source.split("Print day's production").length - 1, 1);
   assert.doesNotMatch(source, /Print collection sheet/);
+});
+
+test("run-sheet print can use the canonical selected-site subset and identifies its scope", () => {
+  const siteA = { ...order("site-a"), destinationOplocId: "oploc:a", destinationLabel: "Site A" };
+  const siteB = { ...order("site-b"), destinationOplocId: "oploc:b", destinationLabel: "Site B" };
+  const selected = filterOrdersBySites([siteA, siteB], ["oploc:a"]);
+  const html = dayProductionPrintHtml(selected, day, "Site A");
+  assert.match(html, /data-scope="Site A"/);
+  assert.match(html, /Site A/);
+  assert.doesNotMatch(html, /Site B|data-collection-id="site-b"/);
 });
 test("whole-day reader ignores filters, requests exact date/all scopes afresh and rejects incomplete or wrong-day results", async () => {
   const projection = {
