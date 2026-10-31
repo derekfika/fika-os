@@ -1,0 +1,54 @@
+name: Implementation issue
+description: Define implementation scope, routing guidance, safety controls, and acceptance criteria.
+title: "[App/area] "
+body:
+  - type: textarea
+    id: task
+    attributes:
+      label: Task and context
+      description: Describe the problem, intended outcome, and relevant app or domain.
+    validations:
+      required: true
+  - type: dropdown
+    id: complexity
+    attributes:
+      label: Complexity
+      description: Reassess this advisory classification if scope changes; complexity does not replace priority or severity.
+      options:
+        - Low
+        - Medium
+        - High
+    validations:
+      required: true
+  - type: dropdown
+    id: recommended-model
+    attributes:
+      label: Recommended model
+      description: Advisory default — owner direction takes precedence; this does not enforce assignment or bypass required controls.
+      options:
+        - Luna / Haiku
+        - Sonnet
+        - Sol
+    validations:
+      required: true
+  - type: textarea
+    id: routing-reason
+    attributes:
+      label: Reason
+      description: Briefly explain the complexity and model recommendation. Defaults are Low → Luna/Haiku, Medium → Sonnet, High → Sol. Split mixed-complexity scopes into independently verifiable issues.
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety, data, and operational controls
+      description: State relevant authorization, data, migration, deployment, and upstream/downstream constraints; write “None identified” if none apply.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List observable outcomes and required validation.
+    validations:
+      required: true

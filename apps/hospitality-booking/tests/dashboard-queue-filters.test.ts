@@ -17,6 +17,7 @@ const booking = (id: string, over: Partial<QueueBooking> & { date?: string; time
   canonicalId: id,
   lifecycleStatus: over.lifecycleStatus || "New",
   updatedAt: over.updatedAt,
+  createdAt: over.createdAt,
   source: { sourceBookingId: over.source?.sourceBookingId || `SRC-${id}` },
   client: over.client || { name: over.name || "Ada Lovelace", companyName: over.company || "Analytical Ltd" },
   service: { eventDate: over.date, startTime: over.time },
@@ -195,7 +196,7 @@ test("the dashboard feeds the same filtered rows to the calendar and the queue, 
   assert.match(dashboard, /bookings=\{visible\}/);
   assert.match(dashboard, /groups=\{visibleGroups\}/);
   assert.match(dashboard, /<DashboardQueueFilters/);
-  assert.match(dashboard, /visibleGroups\.map\(group/);
+  assert.match(dashboard, /queue\.rows\.map\(row/);
   assert.doesNotMatch(dashboard, /availableSites|onSiteChange|Hospitality site/, "the dashboard stays site-locked");
   assert.doesNotMatch(dashboard, /setFilter\(/);
   assert.match(dashboard, /No bookings match these filters/);
@@ -221,4 +222,40 @@ test("filtering is read-only: no booking write, fetch or storage access in the f
   for (const source of [model, filterBar]) {
     assert.doesNotMatch(source, /fetch\(|localStorage|sessionStorage|method:\s*"(POST|PUT|PATCH|DELETE)"/);
   }
+});
+
+
+test("site searches use only loaded canonical site fields and loaded authorized group children", () => {
+  const child = { ...booking("child"), service: { eventDate: "2026-11-02", portalSiteId: "site-123", portalSiteLabel: "Example House", oplocId: "oploc-456" } };
+  const solo = { ...booking("solo"), service: { eventDate: "2026-11-03", portalSiteId: "site-123", portalSiteLabel: "Example House", oplocId: "oploc-456" } };
+  const parent = group("parent", { services: [{ bookingId: "child" }] });
+  for (const search of ["site-123", "example house", "oploc-456"]) {
+    assert.deepEqual(ids(run([child, solo], [parent], { search }, ["solo"])), ["solo", "parent"]);
+  }
+  // A reference to an unloaded child grants no additional searchable fields.
+  assert.deepEqual(ids(run([], [parent], { search: "example house" })), []);
+  assert.deepEqual(ids(run([solo], [], { search: "other-site" })), []);
+});
+
+test("status sorting interleaves groups and standalone records without changing canonical statuses", () => {
+  const parent = group("parent", { status: "Quoted" });
+  const rows = [booking("cancelled", { lifecycleStatus: "Cancelled" }), booking("approved", { lifecycleStatus: "Approved" }), booking("new", { lifecycleStatus: "New" })];
+  assert.deepEqual(ids(run(rows, [parent], { sort: "status-asc" })), ["cancelled", "new", "parent", "approved"]);
+  assert.equal(rows[1].lifecycleStatus, "Approved");
+});
+
+test("creation sorting uses recorded creation time, latest loaded group member, and missing timestamps last", () => {
+  const rows = [booking("solo", { createdAt: "2026-10-30T10:00:00Z" }), booking("child", { createdAt: "2026-10-31T10:00:00Z" }), booking("missing")];
+  const parent = group("parent", { services: [{ bookingId: "child" }] });
+  assert.deepEqual(ids(run(rows, [parent], { sort: "created-desc" }, ["solo", "missing"])), ["parent", "solo", "missing"]);
+});
+
+test("summary metrics are calculated from the same filtered standalone and group subsets as the calendar", () => {
+  const metrics = dashboard.slice(dashboard.indexOf("  const newCount ="), dashboard.indexOf("  const scanStepIndex"));
+  assert.match(metrics, /visibleGroups\.filter/);
+  assert.match(metrics, /visible\.filter/);
+  assert.doesNotMatch(metrics, /\bgroups\.filter|\bbookings\.filter/);
+  assert.match(dashboard, /aria-label="Filtered booking summary"/);
+  assert.match(dashboard, /queue\.rows\.map\(row/);
+  assert.doesNotMatch(dashboard, /!loading && visibleGroups\.map|visible\.map\(\(booking/);
 });

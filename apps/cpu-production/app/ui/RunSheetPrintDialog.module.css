@@ -1,0 +1,256 @@
+.dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: min(88vh, 920px);
+  padding: 0;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 16px;
+  background: var(--fika-surface-card);
+  color: var(--fika-text-primary);
+  box-shadow: 0 18px 56px rgb(20 16 42 / 24%);
+}
+
+.dialog::backdrop {
+  background: rgb(18 16 30 / 48%);
+}
+
+.header,
+.footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+}
+
+.header {
+  border-bottom: 1px solid var(--fika-border-default);
+}
+
+.header h2 {
+  margin: 0 0 6px;
+  font-size: 1.35rem;
+}
+
+.header p {
+  margin: 0;
+  color: var(--fika-text-secondary);
+}
+
+.header .eyebrow {
+  margin-bottom: 4px;
+  color: var(--fika-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.body {
+  max-height: calc(88vh - 168px);
+  overflow: auto;
+  padding: 20px 24px;
+}
+
+.dateModes,
+.sites {
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 12px;
+  background: var(--fika-surface-subtle);
+}
+
+.dateModes legend,
+.sites legend {
+  padding: 0 6px;
+  font-weight: 700;
+}
+
+.dateModes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+
+.dateModes label,
+.siteList label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  color: var(--fika-text-primary);
+}
+
+.dateModes input,
+.siteList input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--fika-action-primary);
+}
+
+.customDates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.customDates label {
+  display: grid;
+  gap: 6px;
+  color: var(--fika-text-primary);
+  font-weight: 600;
+}
+
+.customDates input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 8px;
+  background: var(--fika-surface-card);
+  color: var(--fika-text-primary);
+  font: inherit;
+}
+
+.customDates input:focus-visible,
+.dateModes input:focus-visible,
+.siteList input:focus-visible,
+.footer button:focus-visible,
+.header button:focus-visible,
+.siteActions button:focus-visible {
+  outline: 3px solid var(--fika-focus-ring);
+  outline-offset: 3px;
+}
+
+.range,
+.progress,
+.announcement {
+  margin: 12px 0;
+  color: var(--fika-text-secondary);
+}
+
+.progress,
+.announcement {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--fika-status-info-surface);
+  color: var(--fika-text-primary);
+}
+
+.siteActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.siteActions span {
+  margin-left: auto;
+  color: var(--fika-text-secondary);
+  font-size: 0.9rem;
+}
+
+.siteList {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.siteList li + li {
+  border-top: 1px solid var(--fika-border-default);
+}
+
+.siteList label {
+  min-height: 44px;
+  padding: 5px 2px;
+}
+
+.siteList span {
+  overflow-wrap: anywhere;
+}
+
+.siteList small {
+  margin-left: auto;
+  color: var(--fika-text-secondary);
+  white-space: nowrap;
+}
+
+.empty,
+.paperNote {
+  color: var(--fika-text-secondary);
+}
+
+.preview {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 12px;
+  background: var(--fika-surface-subtle);
+}
+
+.preview h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.preview p {
+  margin: 5px 0;
+}
+
+.preview .paperNote {
+  margin-top: 10px;
+  font-size: 0.88rem;
+}
+
+.error {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--fika-status-danger-surface);
+  color: var(--fika-status-danger);
+}
+
+.footer {
+  align-items: center;
+  justify-content: flex-end;
+  border-top: 1px solid var(--fika-border-default);
+  background: var(--fika-surface-card);
+}
+
+.footer button {
+  min-height: 44px;
+}
+
+@media (max-width: 600px) {
+  .dialog {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    max-height: 92vh;
+    border-radius: 12px;
+  }
+
+  .header,
+  .body,
+  .footer {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .customDates {
+    grid-template-columns: 1fr;
+  }
+
+  .footer {
+    flex-wrap: wrap;
+  }
+
+  .footer button:last-child {
+    flex: 1 1 auto;
+  }
+}

@@ -58,7 +58,7 @@ test("duplicate warnings list similar dishes, exclude the dish being edited and 
   assert.ok(similarDishWarnings(Array.from({ length: 20 }, (_, i) => ({ id: `d${i}`, name: `Beetroot ${i}` })), "Beetroot").length <= 5);
 });
 
-test("tag suggestions match whole words and synonyms, skip chosen tags and are bounded", () => {
+test("tag suggestions rank whole phrases and synonyms with reasons, skip chosen tags and cap at five", () => {
   let registry = emptyDishTagRegistry();
   for (const input of [
     { label: "Chicken", group: "type" },
@@ -67,12 +67,45 @@ test("tag suggestions match whole words and synonyms, skip chosen tags and are b
     { label: "Fried", group: "style" },
     { label: "Beef", group: "type" },
   ]) registry = addTag(registry, input, "t", AT).registry;
-  const ids = (name: string, chosen: string[] = []) => suggestTags(registry.tags, name, chosen).map((tag) => tag.label);
+  const ids = (name: string, chosen: string[] = []) => suggestTags(registry.tags, name, chosen).map(({ tag }) => tag.label);
   assert.deepEqual(ids("Chicken Tikka Masala"), ["Chicken", "Indian"]);
   assert.deepEqual(ids("Chicken Tikka Masala", ["dish-tag:type:chicken"]), ["Indian"]);
   assert.deepEqual(ids("Seafood chowder"), ["Fish / Seafood"]);
   assert.deepEqual(ids("Beefy stew"), [], "a tag only matches a whole word");
   assert.deepEqual(ids(""), []);
+  assert.match(suggestTags(registry.tags, "Chicken Tikka Masala", [])[0].reason, /“Chicken”/);
+  let manyRegistry = registry;
+  for (let index = 0; index < 8; index++) manyRegistry = addTag(manyRegistry, { label: `Special ${index}`, group: "style" }, "t", AT).registry;
+  assert.ok(suggestTags(manyRegistry.tags, "Special 1 Special 2 Special 3 Special 4 Special 5 Special 6 Special 7 Special 8", []).length <= 5);
+});
+
+test("UK spelling and culinary synonyms match phrases without fish-sauce or substring false positives", () => {
+  let registry = emptyDishTagRegistry();
+  for (const input of [
+    { label: "Aubergine", group: "ingredient" },
+    { label: "Coriander", group: "ingredient" },
+    { label: "Fish / Seafood", group: "type", synonyms: ["Fish main", "Seafood"] },
+    { label: "Ham", group: "ingredient" },
+  ]) registry = addTag(registry, input, "t", AT).registry;
+  const labels = (name: string) => suggestTags(registry.tags, name, []).map(({ tag }) => tag.label);
+  assert.deepEqual(labels("Eggplant coriander salad"), ["Aubergine", "Coriander"]);
+  assert.deepEqual(labels("Fish sauce noodles"), []);
+  assert.deepEqual(labels("Chamomile tea"), []);
+  assert.deepEqual(labels("Roast ham"), ["Ham"]);
+});
+
+test("similarity hints can only come from already-tagged dishes and explain their source", () => {
+  let registry = emptyDishTagRegistry();
+  registry = addTag(registry, { label: "Roasted", group: "style" }, "t", AT).registry;
+  const tag = registry.tags[0];
+  const similarDishes = [
+    { id: "tagged", name: "Roasted Beetroot", tagIds: [tag.id] },
+    { id: "untagged", name: "Roasted Carrots", tagIds: [] },
+  ];
+  const suggestions = suggestTags(registry.tags, "Roasted Carrot Salad", [], { similarDishes });
+  assert.equal(suggestions[0]?.tag.id, tag.id);
+  assert.match(suggestions[0].reason, /Roasted Beetroot/);
+  assert.doesNotMatch(suggestTags(registry.tags, "Roasted Carrot Salad", [], { similarDishes: similarDishes.slice(1) })[0].reason, /similar tagged dish/i);
 });
 
 test("the form needs a name and one of the governed categories", () => {
@@ -145,6 +178,10 @@ test("the modal is a labelled, keyboard-operable dialog with tag search, inline 
   assert.match(modal, /type="search"/);
   assert.match(modal, /action: "create-tag"/);
   assert.match(modal, /Add suggested tag/);
+  assert.match(modal, /Save accepted or dismissed suggestions on this device/);
+  assert.match(modal, /fika-menu-tag-suggestion-feedback-v1/);
+  assert.match(modal, /reason\}/);
+  assert.match(modal, /type="button"/);
   assert.match(modal, /Similar dishes already exist/);
   assert.match(modal, /Check the spelling/);
   assert.match(modal, /event\.key === "Enter"\) \{ event\.preventDefault\(\); void addTag\(\)/);

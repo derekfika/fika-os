@@ -42,18 +42,74 @@ export function similarDishWarnings(dishes: readonly EditorDishRef[], name: stri
   return similarDishNames(candidates, clean).slice(0, limit);
 }
 
-/** Registry tags whose name or synonym appears as whole words in the dish name; never one already chosen. */
-export function suggestTags(tags: readonly DishTag[], name: string, selectedIds: readonly string[], limit = 6): DishTag[] {
-  const words = ` ${tagKey(name)} `;
-  if (words.trim() === "") return [];
+export type TaggedDishRef = EditorDishRef & { tagIds: readonly string[] };
+export type TagSuggestion = { tag: DishTag; score: number; reason: string };
+
+const UK_SPELLING: Record<string, string> = {
+  aubergine: "eggplant", courgette: "zucchini", coriander: "cilantro", chilli: "chili",
+  flavour: "flavor", flavours: "flavors", yoghurt: "yogurt",
+};
+const CULINARY_SYNONYMS: Record<string, string> = {
+  aubergine: "eggplant", courgette: "zucchini", coriander: "cilantro", chilli: "chili",
+  "spring onion": "scallion", "sweetcorn": "corn", prawns: "shrimp", "caster sugar": "sugar",
+};
+const SUGGESTION_WEIGHTS = { exactLabelPhrase: 120, labelPhrase: 100, synonymPhrase: 88, labelTokens: 68, synonymTokens: 58, similarDish: 35 } as const;
+const tokens = (value: string) => tagKey(value).split(" ").filter(Boolean);
+function variants(value: string): string[] {
+  const normalized = tagKey(value);
+  const result = new Set([normalized]);
+  for (const [uk, us] of Object.entries(UK_SPELLING)) {
+    if (normalized.split(" ").includes(uk)) result.add(normalized.split(" ").map((word) => word === uk ? us : word).join(" "));
+    if (normalized.split(" ").includes(us)) result.add(normalized.split(" ").map((word) => word === us ? uk : word).join(" "));
+  }
+  for (const [source, target] of Object.entries(CULINARY_SYNONYMS)) {
+    if (normalized === source) result.add(target);
+    if (normalized === target) result.add(source);
+  }
+  return [...result];
+}
+function containsPhrase(haystack: readonly string[], phrase: readonly string[]) {
+  if (!phrase.length || phrase.length > haystack.length) return false;
+  return haystack.some((_, index) => phrase.every((word, offset) => haystack[index + offset] === word));
+}
+
+/** Bounded, explainable tag ranking. It reads names only and never changes selectedIds. */
+export function suggestTags(
+  tags: readonly DishTag[], name: string, selectedIds: readonly string[], options: { limit?: number; similarDishes?: readonly TaggedDishRef[] } = {},
+): TagSuggestion[] {
+  const nameWords = tokens(name);
+  if (!nameWords.length) return [];
   const chosen = new Set(selectedIds);
-  return tags
-    .filter((tag) => !chosen.has(tag.id))
-    .filter((tag) => [tag.label, ...tag.synonyms].some((text) => {
-      const key = tagKey(text);
-      return key.length >= 3 && words.includes(` ${key} `);
-    }))
-    .slice(0, limit);
+  const text = nameWords.join(" ");
+  const fishSauce = containsPhrase(nameWords, ["fish", "sauce"]);
+  const ranked: TagSuggestion[] = [];
+  for (const tag of tags) {
+    if (chosen.has(tag.id)) continue;
+    const labelVariants = variants(tag.label).map(tokens);
+    const synonymVariants = tag.synonyms.flatMap(variants).map(tokens);
+    // Fish sauce names a condiment; do not infer the Fish main/seafood type from that phrase.
+    if (fishSauce && tag.group === "type" && labelVariants.some((phrase) => phrase.includes("fish"))) continue;
+    let score = 0;
+    let reason = "";
+    const exact = labelVariants.some((phrase) => phrase.join(" ") === text);
+    if (exact) { score = SUGGESTION_WEIGHTS.exactLabelPhrase; reason = `Dish name matches “${tag.label}”.`; }
+    else if (labelVariants.some((phrase) => containsPhrase(nameWords, phrase))) { score = SUGGESTION_WEIGHTS.labelPhrase; reason = `Dish name contains “${tag.label}”.`; }
+    else if (synonymVariants.some((phrase) => phrase.length >= 1 && containsPhrase(nameWords, phrase))) { score = SUGGESTION_WEIGHTS.synonymPhrase; reason = `Dish name contains a recognised synonym for “${tag.label}”.`; }
+    else if (labelVariants.some((phrase) => phrase.length > 1 && phrase.every((word) => nameWords.includes(word)))) { score = SUGGESTION_WEIGHTS.labelTokens; reason = `Dish name includes all words in “${tag.label}”.`; }
+    else if (synonymVariants.some((phrase) => phrase.length > 1 && phrase.every((word) => nameWords.includes(word))) || synonymVariants.some((phrase) => phrase.length === 1 && phrase[0].length >= 4 && nameWords.includes(phrase[0]))) { score = SUGGESTION_WEIGHTS.synonymTokens; reason = `Dish name matches a recognised synonym for “${tag.label}”.`; }
+    const knownTagged = (options.similarDishes || []).filter((dish) => dish.tagIds.includes(tag.id));
+    const similar = knownTagged.find((dish) => {
+      const candidate = tokens(dish.name);
+      const shared = candidate.filter((word) => nameWords.includes(word));
+      return shared.length > 0 && shared.length / Math.max(nameWords.length, candidate.length) >= 0.3;
+    });
+    if (similar && score < SUGGESTION_WEIGHTS.similarDish) {
+      score = SUGGESTION_WEIGHTS.similarDish;
+      reason = `Similar tagged dish “${similar.name}” uses “${tag.label}”.`;
+    } else if (similar) reason += ` Similar tagged dish “${similar.name}” also uses it.`;
+    if (score) ranked.push({ tag, score, reason });
+  }
+  return ranked.sort((a, b) => b.score - a.score || a.tag.label.localeCompare(b.tag.label, "en-GB") || a.tag.id.localeCompare(b.tag.id)).slice(0, Math.max(0, Math.min(5, options.limit ?? 5)));
 }
 
 /**

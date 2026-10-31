@@ -41,7 +41,7 @@ export function DashboardQueueFilters({ filters, onChange, statuses, shown, tota
             id={`${id}-search`}
             type="search"
             value={filters.search}
-            placeholder="Booker, company or booking reference"
+            placeholder="Booker, company, site or booking reference"
             autoComplete="off"
             onChange={(event) => set({ search: event.target.value })}
           />
