@@ -4,7 +4,7 @@ import { Firestore } from "@google-cloud/firestore";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { appDataPath } from "./fika-contracts";
 import { assertOperationalStoreAvailable } from "./hosted-runtime";
-import { addTag, emptyDishTagRegistry, type AddTagOutcome, type DishTag, type DishTagInput, type DishTagRegistry } from "./dish-tags";
+import { addTag, emptyDishTagRegistry, mergeSeedTags, type AddTagOutcome, type DishTag, type DishTagInput, type DishTagRegistry } from "./dish-tags";
 
 /**
  * One small versioned document holds the whole registry (a few hundred short tags), so a read is
@@ -88,4 +88,36 @@ export async function createDishTag(input: DishTagInput, actor: string, expected
   await writeFile(temporary, JSON.stringify(registry, null, 2));
   await rename(temporary, localPath);
   return { tag: result.tag, outcome: result.outcome, registry };
+}
+
+/**
+ * Additive seed in one transaction (or one atomic file write). Adds only tags that do not already
+ * exist; never edits or removes one. Re-running it is a no-op that writes nothing.
+ */
+export async function seedDishTags(seeds: readonly DishTagInput[], actor: string, options: { dryRun?: boolean } = {}): Promise<{ added: DishTag[]; registry: DishTagRegistry; wrote: boolean }> {
+  const at = new Date().toISOString();
+  if (hosted()) {
+    const db = hostedDb();
+    const ref = db.collection(COLLECTION).doc(REGISTRY_ID);
+    return db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      const current = snapshot.exists ? coerce(snapshot.data()?.registry) : emptyDishTagRegistry();
+      const merged = mergeSeedTags(current, seeds, actor, at);
+      if (!merged.added.length || options.dryRun) return { added: merged.added, registry: current, wrote: false };
+      const registry: DishTagRegistry = { ...merged.registry, version: current.version + 1 };
+      transaction.set(ref, { id: REGISTRY_ID, kind: "dish-tag-registry", schemaVersion: "1.0.0", registry, updatedAt: at, updatedBy: actor });
+      recordDataAccess({ app: "menu-planning", operation: "dish-tags.seed", source: "FIRESTORE", documents: 1 });
+      return { added: merged.added, registry, wrote: true };
+    });
+  }
+  assertOperationalStoreAvailable();
+  const current = await readDishTagRegistry();
+  const merged = mergeSeedTags(current, seeds, actor, at);
+  if (!merged.added.length || options.dryRun) return { added: merged.added, registry: current, wrote: false };
+  const registry: DishTagRegistry = { ...merged.registry, version: current.version + 1 };
+  await mkdir(path.dirname(localPath), { recursive: true });
+  const temporary = `${localPath}.${process.pid}.tmp`;
+  await writeFile(temporary, JSON.stringify(registry, null, 2));
+  await rename(temporary, localPath);
+  return { added: merged.added, registry, wrote: true };
 }
