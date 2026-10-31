@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T19:38:34.723Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T21:25:22.012Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -97,6 +97,8 @@ Snapshot: 2026-10-31T19:38:34.723Z. The local governed registry remains authorit
 | iss-017-cpu-week-date-nav-2 | haiku-iss-017 | apps/cpu-production, CHANGELOG.md | codex/iss-017-cpu-week-date-nav-2 | — | finished | 2026-10-26T16:25:54.912Z |
 | iss-017-cpu-week-date-nav | haiku-iss-017 | apps/cpu-production | codex/iss-017-cpu-week-date-nav | [#63](https://github.com/derekfika/fika-os/pull/63) | finished | 2026-10-26T16:01:27.547Z |
 | iss-017-week-date-sync | haiku-iss-017-followup | apps/cpu-production, CHANGELOG.md | codex/iss-017-week-date-sync | [#64](https://github.com/derekfika/fika-os/pull/64) | finished | 2026-10-26T17:13:29.381Z |
+| issue-175-rcoa-visibility | codex-sol-175-rcoa | apps/hospitality-booking, apps/integration-hub/app/api/bookings/mnk/route.ts, apps/integration-hub/lib/hospitality-booking-service.ts, apps/integration-hub/lib/hospitality-service-layout.ts, apps/integration-hub/tests/rcoa-booking-ingestion.test.ts | codex/issue-175-rcoa-visibility | [#223](https://github.com/derekfika/fika-os/pull/223) | finished | 2026-10-31T21:25:04.401Z |
+| issue-221-rotations-ui | codex-issue-221 | apps/menu-planning/app/rotations | codex/issue-221-rotations-ui | [#222](https://github.com/derekfika/fika-os/pull/222) | active | 2026-10-31T20:03:12.022Z |
 | kafoodle-food-data-lib | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/api/food-data, apps/integration-hub/app/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/docs/food-data-library.md | codex/kafoodle-food-data-lib | — | finished | 2026-10-31T16:21:54.029Z |
 | kafoodle-food-data-v2 | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/api/food-data, apps/integration-hub/app/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/tests/food-data.test.ts, apps/integration-hub/docs/food-data-library.md | codex/kafoodle-food-data-v2 | [#212](https://github.com/derekfika/fika-os/pull/212) | retired | 2026-10-31T17:08:24.835Z |
 | kafoodle-food-data | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data | codex/kafoodle-food-data | — | retired | 2026-10-31T16:00:02.411Z |
