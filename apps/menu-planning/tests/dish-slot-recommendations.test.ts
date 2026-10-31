@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dishSlotRecommendation, saladSlotMatches } from "../lib/dish-slot-recommendations";
+import { dishSlotRecommendation, saladRecommendationOptions, saladSlotMatches } from "../lib/dish-slot-recommendations";
 import { dishTagId, type DishTag } from "../lib/dish-tags";
 import { rankDishPickerItems } from "../lib/dish-picker";
 import { buildCreatePayload } from "../lib/dish-editor";
@@ -44,6 +44,18 @@ test("category is the hard eligibility gate, with subcategory above a contradict
   assert.equal(saladSlotMatches({ category: "Hot Main", tagIds: [slaw.id] }, "SALAD 2", registry), false);
   assert.equal(dishSlotRecommendation(salad("Leaf", [slaw.id]), "SALAD 1", registry).score, 100);
   assert.equal(dishSlotRecommendation(salad("Leaf", [slaw.id]), "SALAD 2", registry).score, 80);
+});
+
+test("zero slot recommendations fall back to eligible catalogue dishes, including untagged salads", () => {
+  const eligible = [
+    { id: "untagged", category: "Salad" },
+    { id: "other-category", category: "Hot Main" },
+  ];
+  const compatible = eligible.filter(dish => dish.category === "Salad");
+  const options = saladRecommendationOptions(compatible, new Set());
+  assert.deepEqual(options, { items: compatible, usingFallback: true });
+  assert.equal(options.items.some(dish => dish.id === "untagged"), true);
+  assert.equal(options.items.some(dish => dish.id === "other-category"), false, "fallback stays within the primary category gate");
 });
 
 test("slot-aware ranking boosts explicit slot matches and searches canonical aliases", () => {

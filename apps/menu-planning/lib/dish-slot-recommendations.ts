@@ -83,3 +83,12 @@ export function saladSlotMatches(
 ) {
   return dishSlotRecommendation(dish, slot, registry).recommended;
 }
+
+/** If no compatible dish has slot metadata, keep the default picker useful by showing all eligible dishes. */
+export function saladRecommendationOptions<T extends { id: string }>(
+  compatible: readonly T[],
+  recommendedIds: ReadonlySet<string>,
+) {
+  if (recommendedIds.size === 0) return { items: [...compatible], usingFallback: true };
+  return { items: compatible.filter(dish => recommendedIds.has(dish.id)), usingFallback: false };
+}

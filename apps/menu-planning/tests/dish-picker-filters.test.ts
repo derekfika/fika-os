@@ -42,6 +42,7 @@ test("a slot's primary category is the eligibility gate and all compatible salad
   assert.deepEqual(ids(dishesForSlot(dishes, "SALAD 2")), ["leaf1", "leaf2", "none1", "seasonal1", "slaw1", "veg1"]);
   assert.deepEqual(ids(dishesForSlot(dishes, "SALAD 4")), ["leaf1", "leaf2", "none1", "seasonal1", "slaw1", "veg1"]);
   assert.deepEqual(ids(dishesForSlot(dishes, "SALAD 6")), ["leaf1", "leaf2", "none1", "seasonal1", "slaw1", "veg1"], "Seasonal recommendation remains explicit, but other compatible salads remain available in All compatible");
+  assert.ok(dishesForSlot(dishes, "SALAD 1").some(entry => entry.id === "none1"), "Monday's eligible untagged salad remains discoverable through All compatible");
   assert.deepEqual(ids(dishesForSlot(dishes, "SOUP")), ["soup1"]);
   assert.deepEqual(ids(dishesForSlot(dishes, "HOT MAIN")), ["fish1", "hot1", "hot2"]);
 });
