@@ -23,7 +23,7 @@ Codex uses root and scoped AGENTS.md. Claude's CLAUDE.md files import those same
 
 | Task | Required context beyond this root |
 | --- | --- |
-| UI, including a one-button change | Affected app guide + [Style Guide](docs/STYLE-GUIDE.md); relevant UI/API/test path |
+| UI, including a one-button change, new page or app | Affected app guide + [Style Guide](docs/STYLE-GUIDE.md) + [FIKA OS Component Atlas](docs/design-system/FIKA-OS-COMPONENT-ATLAS.md) + [shared component CSS reference](shared/fika/component-atlas.css); relevant UI/API/test path |
 | Domain, persistence, quantities, auth, dates or shared contracts | App/provider and consumer guides + [detailed rules §§3–6, 8–9](docs/ai/agent-reference.md); follow applicable safety/testing requirements |
 | Packages, projections or caches | [Detailed rules §§5.1–5.4, 6.1, 8.1](docs/ai/agent-reference.md) before changing a store/consumer |
 | Meaningful business mutations | [Logging/audit strategy](docs/ai/LOGGING-AUDIT-STRATEGY.md) and applicable detailed persistence rules |
@@ -37,6 +37,7 @@ App guides: [Hub](apps/integration-hub/AGENTS.md), [Hospitality](apps/hospitalit
 
 - Inspect the relevant UI, API, service, persistence, contracts and tests before editing. Use the smallest coherent change; avoid unrelated refactoring or accepted-workflow redesigns. Classify dirty files before staging.
 - Read actual package scripts; run narrow relevant tests first, then affected tests/typechecks/builds and integration/E2E checks for changed boundaries. Use isolated stores/emulators. Documentation-only changes need consistency/CI checks, not application builds. Never report tests not successfully run; distinguish verified baseline failures from new regressions.
+- For every new page/app and directly touched component, follow the owner-selected **Direction B / FIKA Tactile** Component Atlas. Reuse its semantic variants and canonical tokens; do not invent colours, typefaces or app-local substitutes. Novel tactile treatments and unapproved dimensions remain pending Karol review. The reference stylesheet is opt-in and does not authorise opportunistic mass restyling, framework coupling or deployment.
 - For UI creation, changes or review, read the Style Guide first. Reuse semantic tokens/components, light operational surfaces, accessible text/status labels, contrast, keyboard focus and controls. No dark islands or alert/prompt shortcuts. Document justified domain/brand deviations; UI returns must state `Style Guide compliance: PASS` or `DEVIATION` with reason/surface. Backend/data/docs-only tasks are exempt unless a UI surface changes.
 - Prefer shared packages or app-local HTTP adapters over sibling-app production imports. Do not hide domain failures with UI fallback data or swallow downstream errors. Preserve friendly runtime URLs. No surprising GET writes.
 
