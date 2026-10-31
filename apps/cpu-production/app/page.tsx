@@ -34,6 +34,7 @@ import { readApiResponse } from "./lib/api-response";
 import { readCpuProjection, writeCpuProjection } from "./lib/cpu-indexeddb";
 import { europeLondonDate } from "../lib/operational-date";
 import { ProductionFilterSummary, ProductionSiteFilter } from "./ui/ProductionSiteFilter";
+import { ProductionWeekDays, ProductionWeekNavigation, ProductionWeekShortcuts } from "./ui/ProductionWeekControls";
 import { activeFilterChips, buildSiteOptions, eligibleOrders, filterOrdersBySites, resolveViewState, unscopedOrderCount, type FilterChip } from "../lib/production-view-filters";
 
 const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
@@ -375,6 +376,17 @@ export default function CpuProduction() {
     setTotalsLoading(true);
     setError("");
   };
+  const chooseRunSheetWeek = (nextWeek: string) => {
+    setWeekCommencing(nextWeek);
+    setDate(nextWeek);
+    setDayDate(nextWeek);
+  };
+  const chooseRunSheetDay = (days: number[]) => {
+    const selectedDate = productionTotalsWeekDates(weekCommencing)[days[0] ?? 0];
+    if (!selectedDate) return;
+    setDate(selectedDate);
+    setDayDate(selectedDate);
+  };
   const selectTotalsDays = (days: number[]) => setTotalsSelectedDays([...new Set(days)].filter(day => day >= 0 && day < 7).sort((a, b) => a - b));
   const openAttentionQueue = () => {
     setStatus("");
@@ -535,29 +547,14 @@ export default function CpuProduction() {
         </div>
         {view !== "menu-planning" && view !== "published-menus" && view !== "grab-and-go" && <div className={`cpu-filters${view === "totals" ? " cpu-totals-filters" : ""}`}>
           {view === "totals" ? <>
-            <div className="cpu-totals-week-navigation" aria-label="Select production week">
-              <button type="button" aria-label="Previous week" onClick={() => { if (weekCommencing) chooseTotalsWeek(addOperationalDays(weekCommencing, -7)); }}>‹ Previous week</button>
-              <strong>{weekCommencing ? formatProductionTotalsDateRange(operationalWeekRange(weekCommencing)) : "Loading week…"}</strong>
-              <button type="button" aria-label="Next week" onClick={() => { if (weekCommencing) chooseTotalsWeek(addOperationalDays(weekCommencing, 7)); }}>Next week ›</button>
-            </div>
+            <ProductionWeekNavigation weekCommencing={weekCommencing} onWeekChange={chooseTotalsWeek} />
             <div className="cpu-totals-shortcuts" role="group" aria-label="Week shortcuts">
               <button type="button" aria-pressed={!totalsCustomRange && weekCommencing === (todayKey ? weekCommencingFor(todayKey) : "")} onClick={() => { if (todayKey) chooseTotalsWeek(weekCommencingFor(todayKey)); }}>This week</button>
               <button type="button" aria-pressed={!totalsCustomRange && weekCommencing === (todayKey ? addOperationalDays(weekCommencingFor(todayKey), 7) : "")} onClick={() => { if (todayKey) chooseTotalsWeek(addOperationalDays(weekCommencingFor(todayKey), 7)); }}>Next week</button>
             </div>
             {!totalsCustomRange && <>
-              <div className="cpu-totals-day-picker" role="group" aria-label="Production days">
-                {totalsWeekDates.map((day, index) => {
-                  const date = new Date(`${day}T12:00:00Z`);
-                  const weekday = new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" }).format(date);
-                  const label = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(date);
-                  const pressed = totalsSelectedDays.includes(index);
-                  return <button type="button" key={day} className={`${index < 5 ? "cpu-totals-weekday" : "cpu-totals-weekend"}${pressed ? " selected" : ""}`} aria-label={`${label}${index >= 5 ? ", weekend" : ""}`} aria-pressed={pressed} onClick={() => selectTotalsDays(pressed ? totalsSelectedDays.filter(value => value !== index) : [...totalsSelectedDays, index])}><span>{weekday}</span><strong>{date.getUTCDate()}</strong></button>;
-                })}
-              </div>
-              <div className="cpu-totals-day-shortcuts" role="group" aria-label="Day selection shortcuts">
-                <button type="button" aria-pressed={totalsSelectedDays.length === 5 && totalsSelectedDays.every((day, index) => day === index)} onClick={() => selectTotalsDays([0, 1, 2, 3, 4])}>Weekdays</button>
-                <button type="button" aria-pressed={totalsSelectedDays.length === 7} onClick={() => selectTotalsDays([0, 1, 2, 3, 4, 5, 6])}>All days</button>
-              </div>
+              <ProductionWeekDays weekCommencing={weekCommencing} selectedDays={totalsSelectedDays} onSelect={selectTotalsDays} />
+              <ProductionWeekShortcuts selectedDays={totalsSelectedDays} onSelect={selectTotalsDays} />
             </>}
             <div className="cpu-totals-custom">
               <button type="button" aria-expanded={totalsCustomRange} onClick={() => {
@@ -576,6 +573,9 @@ export default function CpuProduction() {
                 <label>To<input aria-label="To date" type="date" min={customFrom || undefined} value={customTo} onChange={(event) => { setCustomTo(event.target.value); setTotalsLoading(true); setOrders([]); setError(""); }} /></label>
               </div>}
             </div>
+          </> : view === "run-sheet" ? <>
+            <ProductionWeekNavigation weekCommencing={weekCommencing} onWeekChange={chooseRunSheetWeek} />
+            <ProductionWeekDays weekCommencing={weekCommencing} selectedDays={[Math.max(0, totalsWeekDates.indexOf(date))]} singleSelect onSelect={chooseRunSheetDay} />
           </> : <label>
             Date
             <input type="date" value={date} onChange={(event) => { const patch = calendarDateInputPatch(event.target.value, view); setDate(patch.date); if (patch.dayDate !== undefined) setDayDate(patch.dayDate); if (patch.weekCommencing !== undefined) setWeekCommencing(patch.weekCommencing); }} />
@@ -634,7 +634,7 @@ export default function CpuProduction() {
         )}
         {view === "day" && <ProductionDayView orders={visible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDate(nextDate); setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
-        {view === "run-sheet" && <KitchenRunSheet orders={visible} productionDate={date} onProductionDateChange={nextDate => { setDate(nextDate); if (nextDate) { setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); } }} />}
+        {view === "run-sheet" && <KitchenRunSheet orders={visible} productionDate={date} selectedSiteIds={sites} siteFilterLabel={sites.length ? sites.map(id => siteLabels.current.get(id) || "selected site").join(", ") : "All sites"} onProductionDateChange={nextDate => { setDate(nextDate); if (nextDate) { setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); } }} />}
         {view === "totals" && <Totals allSitesOrderCount={sites.length ? distinct(totalsAllSitesOrders) : undefined} filters={[sites.length ? `${sites.length} selected site${sites.length === 1 ? "" : "s"}` : "All sites", origin === "all" ? "All origins" : origin, productionScope === "all" ? "All production scopes" : productionScope].join(" · ")} orders={totalsSelectedOrders} range={totalsRange} selectedPeriod={totalsCustomRange ? "Custom date range" : formatProductionTotalsSelection(weekCommencing, totalsSelectedDays)} hasSelection={totalsCustomRange || selectedTotalsDates.length > 0} rangeError={totalsRangeResolution.error} loadError={error} loading={totalsLoading} />}
         </section>
         {view !== "totals" && <OperationsRail orders={visible} date={date || todayKey} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} />}

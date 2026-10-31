@@ -131,15 +131,20 @@ test("a valid projection with no work for an empty week returns a verified empty
   assert.deepEqual(result, { status: "current", orders: [] });
 });
 
-test("Totals uses a semantic responsive read-only table and exposes loading/failure states", async () => {
+test("Totals and Run Sheet share week navigation and accessible day controls", async () => {
   const page = await import("node:fs/promises").then(fs => fs.readFile(new URL("../app/page.tsx", import.meta.url), "utf8"));
   const css = await import("node:fs/promises").then(fs => fs.readFile(new URL("../app/totals.css", import.meta.url), "utf8"));
+  const controls = await import("node:fs/promises").then(fs => fs.readFile(new URL("../app/ui/ProductionWeekControls.tsx", import.meta.url), "utf8"));
   assert.match(page, /<table className="cpu-total-list">/);
   assert.match(page, /Loading and verifying production totals/);
   assert.match(page, /role="alert">\{rangeError \|\| loadError\}/);
   assert.match(page, /Production view/);
-  assert.match(page, /Previous week/);
-  assert.match(page, /All days/);
+  assert.match(controls, /aria-label="Previous week"/);
+  assert.match(controls, /All days/);
+  assert.match(page, /ProductionWeekNavigation weekCommencing=\{weekCommencing\} onWeekChange=\{chooseTotalsWeek\}/);
+  assert.match(page, /view === "run-sheet" \? <>[\s\S]*?ProductionWeekNavigation weekCommencing=\{weekCommencing\} onWeekChange=\{chooseRunSheetWeek\}/);
+  assert.match(page, /ProductionWeekDays weekCommencing=\{weekCommencing\} selectedDays=\{totalsSelectedDays\}/);
+  assert.match(page, /selectedSiteIds=\{sites\}/);
   assert.match(page, /filterProductionTotalsOrdersToDates\(filterProductionTotalsOrders/);
   assert.match(page, /No production days selected[\s\S]*?Select one or more days above/);
   assert.doesNotMatch(page, /\[view, date, dayDate, weekCommencing, productionScope, todayKey, totalsCustomRange, customFrom, customTo, totalsSelectedDays\]/);
