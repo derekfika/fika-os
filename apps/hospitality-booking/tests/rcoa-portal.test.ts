@@ -1,3 +1,4 @@
+import { seedVisibility } from "./support/rcoa-service-visibility";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { localRcoaMenuCatalogue } from "../lib/local-rcoa-menu";
@@ -126,21 +127,21 @@ test("Propper Salads preserves all four named menu pairs and validates totals at
   request.event.guestCount = 25;
   request.order.items[0].quantity = 25;
   request.order.items[0].choices = [{ id: "bowl", value: "Menu 1 — Cajun Chicken & Avo Mex Bowl" }];
-  const minimum = buildTrustedRcoaHubPayload(request);
+  const minimum = buildTrustedRcoaHubPayload(request, undefined, seedVisibility);
   assert.equal(minimum.order.items[0].unitPrice, 12.5);
   assert.equal(minimum.order.items[0].lineTotal, 312.5);
   request.order.items[0].quantity = 26;
-  const aboveMinimum = buildTrustedRcoaHubPayload(request);
+  const aboveMinimum = buildTrustedRcoaHubPayload(request, undefined, seedVisibility);
   assert.equal(aboveMinimum.order.items[0].lineTotal, 325);
   request.order.items[0].quantity = 24;
-  assert.throws(() => buildTrustedRcoaHubPayload(request), /requires a minimum quantity of 25/);
+  assert.throws(() => buildTrustedRcoaHubPayload(request, undefined, seedVisibility), /requires a minimum quantity of 25/);
 });
 
 test("RCoA occasion categories and menu search filter the shared compatibility menu", () => {
-  const breakfast = filterRcoaMenu(menu, "breakfast", "all", "coffee");
+  const breakfast = filterRcoaMenu(menu, "breakfast", "all", "coffee", seedVisibility);
   assert.ok(breakfast.length > 0);
   assert.ok(breakfast.every((item) => item.category === "Drinks" || item.category === "Breakfast" || item.category === "Sweet treats"));
-  assert.deepEqual(filterRcoaMenu(menu, "breakfast", "Dining", ""), []);
+  assert.deepEqual(filterRcoaMenu(menu, "breakfast", "Dining", "", seedVisibility), []);
 });
 
 test("changing occasions retains compatible menu lines and does not erase drafts before menu load", () => {
@@ -150,8 +151,8 @@ test("changing occasions retains compatible menu lines and does not erase drafts
     { itemId: breakfast.id, quantity: 2, choices: {} },
     { itemId: dining.id, quantity: 1, choices: {} },
   ];
-  assert.deepEqual(retainRcoaLinesForOccasion(lines, "breakfast", menu).map((line) => line.itemId), [breakfast.id]);
-  assert.deepEqual(retainRcoaLinesForOccasion(lines, "dining", []), lines);
+  assert.deepEqual(retainRcoaLinesForOccasion(lines, "breakfast", menu, seedVisibility).map((line) => line.itemId), [breakfast.id]);
+  assert.deepEqual(retainRcoaLinesForOccasion(lines, "dining", [], seedVisibility), lines);
 });
 
 test("request construction uses stable RCoA identity and the server reprices from its menu snapshot", () => {
@@ -166,33 +167,33 @@ test("request construction uses stable RCoA identity and the server reprices fro
   assert.equal("siteId" in clientRequest, false);
   assert.equal("unitPrice" in clientRequest.order.items[0], false);
   assert.equal(calculateRcoaTotal(draft.lines, menu), item.unitPrice * draft.lines[0].quantity);
-  const trusted = buildTrustedRcoaHubPayload(clientRequest);
+  const trusted = buildTrustedRcoaHubPayload(clientRequest, undefined, seedVisibility);
   assert.equal(trusted.siteId, "rcoa");
   assert.equal(trusted.site, "RCoA Hospitality");
   assert.equal(trusted.order.items[0].unitPrice, item.unitPrice);
   assert.equal(trusted.order.items[0].lineTotal, item.unitPrice * draft.lines[0].quantity);
-  assert.throws(() => buildTrustedRcoaHubPayload({ ...clientRequest, siteId: "mnk" }));
+  assert.throws(() => buildTrustedRcoaHubPayload({ ...clientRequest, siteId: "mnk" }, undefined, seedVisibility));
 });
 
 test("server rejects unavailable categories and quantities below source minimums", () => {
   const dining = menu.find((item) => item.category === "Dining")!;
-  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(dining)), /not available for this occasion/);
+  assert.throws(() => buildTrustedRcoaHubPayload(requestFor(dining), undefined, seedVisibility), /not available for this occasion/);
 
   const minimumItem = menu.find((item) => (item.minimumQuantity || 1) > 1)!;
   const invalidQuantity = requestFor(minimumItem);
   invalidQuantity.order.items[0].quantity = minimumItem.minimumQuantity! - 1;
-  assert.throws(() => buildTrustedRcoaHubPayload(invalidQuantity), /requires a minimum quantity/);
+  assert.throws(() => buildTrustedRcoaHubPayload(invalidQuantity, undefined, seedVisibility), /requires a minimum quantity/);
 });
 
 test("server requires listed menu choices and the severe-allergy acknowledgement", () => {
   const choiceItem = menu.find((item) => item.category === "Breakfast" && item.optionGroups?.some((group) => group.required))!;
   const missingChoice = requestFor(choiceItem);
   missingChoice.order.items[0].choices = [];
-  assert.throws(() => buildTrustedRcoaHubPayload(missingChoice), /Choose an option/);
+  assert.throws(() => buildTrustedRcoaHubPayload(missingChoice, undefined, seedVisibility), /Choose an option/);
 
   const allergyRequest = requestFor(menu.find((item) => item.category === "Breakfast")!);
   allergyRequest.dietaries.allergyDetails = "Peanut allergy reported";
-  assert.throws(() => buildTrustedRcoaHubPayload(allergyRequest), /severe allergy and cross-contamination/);
+  assert.throws(() => buildTrustedRcoaHubPayload(allergyRequest, undefined, seedVisibility), /severe allergy and cross-contamination/);
 });
 
 test("bespoke may submit without itemised selections while other occasions require a menu", () => {
@@ -200,8 +201,8 @@ test("bespoke may submit without itemised selections while other occasions requi
   assert.equal(rcoaAllowsEmptyOrder("breakfast"), false);
   const draft = createEmptyRcoaDraft();
   draft.occasion = "breakfast";
-  assert.equal(validateRcoaStep(3, draft, menu).items, "Choose at least one menu item.");
-  assert.doesNotThrow(() => buildTrustedRcoaHubPayload({ ...requestFor(), order: { ...requestFor().order, eventType: "bespoke" } }));
+  assert.equal(validateRcoaStep(3, draft, menu, seedVisibility).items, "Choose at least one menu item.");
+  assert.doesNotThrow(() => buildTrustedRcoaHubPayload({ ...requestFor(), order: { ...requestFor().order, eventType: "bespoke" } }, undefined, seedVisibility));
 });
 
 test("quantity suggestions use source serve counts and booking totals round to pence", () => {
@@ -221,17 +222,17 @@ test("notice rules compare London wall time across the spring BST transition", (
 
   draft.event.startTime = "01:30";
   assert.ok(rcoaNoticeWarnings(draft, [], new Date("2026-03-26T12:00:00.000Z")).some((warning) => warning.includes("does not occur in Europe/London")));
-  assert.match(validateRcoaStep(2, draft, menu).startTime || "", /does not occur in Europe\/London/);
+  assert.match(validateRcoaStep(2, draft, menu, seedVisibility).startTime || "", /does not occur in Europe\/London/);
   const invalidWallTimeRequest = requestFor(menu.find((item) => item.category === "Breakfast")!);
   invalidWallTimeRequest.event.eventDate = "2026-03-29";
   invalidWallTimeRequest.event.startTime = "01:30";
-  assert.throws(() => buildTrustedRcoaHubPayload(invalidWallTimeRequest), /does not occur in Europe\/London/);
+  assert.throws(() => buildTrustedRcoaHubPayload(invalidWallTimeRequest, undefined, seedVisibility), /does not occur in Europe\/London/);
 });
 
 test("RCoA Event step requires a floor level and room, trimming whitespace-only values", () => {
   const withEvent = (overrides: Partial<RcoaBookingDraft["event"]>) => ({ ...createEmptyRcoaDraft(), event: { ...createEmptyRcoaDraft().event, eventDate: "2026-10-20", startTime: "10:00", guestCount: 12, ...overrides } });
-  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "", roomOrArea: "Boardroom" }), menu).floorLevel, "Enter the floor level.");
-  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "7", roomOrArea: "   " }), menu).roomOrArea, "Enter the room or area.");
-  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: " 7 ", roomOrArea: " Boardroom ", deliveryPoint: "" }), menu).floorLevel, undefined);
-  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "7", roomOrArea: "Boardroom", deliveryPoint: "" }), menu).roomOrArea, undefined);
+  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "", roomOrArea: "Boardroom" }), menu, seedVisibility).floorLevel, "Enter the floor level.");
+  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "7", roomOrArea: "   " }), menu, seedVisibility).roomOrArea, "Enter the room or area.");
+  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: " 7 ", roomOrArea: " Boardroom ", deliveryPoint: "" }), menu, seedVisibility).floorLevel, undefined);
+  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "7", roomOrArea: "Boardroom", deliveryPoint: "" }), menu, seedVisibility).roomOrArea, undefined);
 });

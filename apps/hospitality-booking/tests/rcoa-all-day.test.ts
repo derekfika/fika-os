@@ -1,3 +1,4 @@
+import { seedVisibility } from "./support/rcoa-service-visibility";
 import { governedCatalogueResponse, legacyToGovernedId, withGovernedIds } from "./support/governed-rcoa-catalogue";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -63,7 +64,7 @@ test("1+2. the existing offerings are unchanged and All Day Hospitality is a fir
   const standard = createEmptyRcoaDraft();
   const request = buildRcoaClientRequest({ ...standard, occasion: "breakfast", contact: { name: "A", email: "a@example.test", phone: "1", companyName: "C", invoiceReference: "" }, event: { ...standard.event, eventDate: "2026-12-10", startTime: "09:00", guestCount: 10, floorLevel: "1", roomOrArea: "R" }, lines: [{ itemId: "specialty_tea_coffee", quantity: 10, choices: {} }], acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } }, menu, { bookingId: GROUP_ID, submittedAt: AT });
   assert.equal("bookingGroup" in request, false);
-  assert.equal("bookingGroup" in buildTrustedRcoaHubPayload(request), false);
+  assert.equal("bookingGroup" in buildTrustedRcoaHubPayload(request, undefined, seedVisibility), false);
 });
 
 test("20. the old 'Does this booking have multiple services?' experience no longer exists", () => {
@@ -110,9 +111,9 @@ test("8. Add items uses the existing category-specific catalogue: the row is an 
   const lunch = composeServiceDraft(day, "s2");
   assert.equal(lunch.occasion, "lunch");
   assert.equal(lunch.event.guestCount, 35);
-  const allowed = rcoaAllowedCategories("lunch", menu);
-  assert.deepEqual(allowed, rcoaAllowedCategories(lunch.occasion, menu));
-  const shown = filterRcoaMenu(menu, lunch.occasion, "all", "");
+  const allowed = rcoaAllowedCategories("lunch", menu, seedVisibility);
+  assert.deepEqual(allowed, rcoaAllowedCategories(lunch.occasion, menu, seedVisibility));
+  const shown = filterRcoaMenu(menu, lunch.occasion, "all", "", seedVisibility);
   assert.ok(shown.length > 0 && shown.every((item) => (allowed as readonly string[]).includes(item.category)));
   assert.equal(shown.some((item) => item.id === "specialty_tea_coffee"), false, "a lunch row does not show the tea/coffee catalogue");
 });
@@ -128,11 +129,13 @@ test("9+10. items chosen on a row return to that row only; nothing bleeds into o
   assert.deepEqual(requests.map((r) => r.order.items.map((i) => i.itemId)), [["specialty_tea_coffee"], ["deli_sandwich_lunch", "salad_protein_lunch_platter"], ["canned_drinks"]]);
 });
 
-test("changing a row's service type keeps only items valid for the new type", () => {
+test("changing a row's service type retains selections for explicit review instead of silently removing them", () => {
   const day = threeServiceDay();
-  const { draft, removed } = changeAllDayServiceCategory(day, "s2", "breakfast", menu);
-  assert.equal(removed, 1);
-  assert.deepEqual(draft.services.find((s) => s.id === "s2")!.lines, []);
+  const { draft, removed, reviewRequired } = changeAllDayServiceCategory(day, "s2", "breakfast", menu, seedVisibility);
+  assert.equal(removed, 0);
+  assert.equal(reviewRequired, 1);
+  assert.deepEqual(draft.services.find((s) => s.id === "s2")!.lines, day.services[1].lines);
+  assert.match(validateAllDay(draft, menu, seedVisibility)?.errors["items:s2"] || "", /no longer offered/);
 });
 
 test("11. duplicate copies service type, guests, location and items (deep) and clears the time", () => {
@@ -164,16 +167,16 @@ test("summary: count, time span and guest range", () => {
 
 test("validation covers the event, EVERY row and the shared dietaries before anything is created", () => {
   const day = threeServiceDay();
-  assert.equal(validateAllDay(day, menu), undefined);
-  assert.equal(validateAllDay({ ...day, eventDate: "" }, menu)?.step, 1);
-  const noTime = validateAllDay(updateAllDayService(day, "s3", { startTime: "" }), menu);
+  assert.equal(validateAllDay(day, menu, seedVisibility), undefined);
+  assert.equal(validateAllDay({ ...day, eventDate: "" }, menu, seedVisibility)?.step, 1);
+  const noTime = validateAllDay(updateAllDayService(day, "s3", { startTime: "" }), menu, seedVisibility);
   assert.deepEqual([noTime?.step, noTime?.serviceId], [2, "s3"]);
-  const noItems = validateAllDay(updateAllDayService(day, "s2", { lines: [] }), menu);
+  const noItems = validateAllDay(updateAllDayService(day, "s2", { lines: [] }), menu, seedVisibility);
   assert.deepEqual([noItems?.step, noItems?.serviceId], [2, "s2"]);
   assert.ok(noItems && Object.keys(noItems.errors).some((key) => key.startsWith("items:")));
-  const tooMany = validateAllDay({ ...day, dietaries: { ...day.dietaries, vegetarian: 40 } }, menu);
+  const tooMany = validateAllDay({ ...day, dietaries: { ...day.dietaries, vegetarian: 40 } }, menu, seedVisibility);
   assert.equal(tooMany?.step, 3, "dietary counts must fit the smallest service (35)");
-  assert.equal(validateAllDay({ ...day, acknowledgements: { ...day.acknowledgements, noticePolicyAccepted: false } }, menu)?.step, 4);
+  assert.equal(validateAllDay({ ...day, acknowledgements: { ...day.acknowledgements, noticePolicyAccepted: false } }, menu, seedVisibility)?.step, 4);
 });
 
 test("15. child identities are deterministic from the one group id and carry structured group metadata, in time order", () => {
@@ -191,7 +194,7 @@ test("15. child identities are deterministic from the one group id and carry str
 
 test("event name and notes are carried: general notes plus the service's own note; shared dietaries on every child", () => {
   const day = updateAllDayService({ ...threeServiceDay(), dietaries: { ...createEmptyRcoaDraft().dietaries, vegan: 5, hasDietaries: true } }, "s2", { notes: "Serve at the long table" });
-  const { payloads } = buildRcoaGroupHubPayloads(submissionFor(day));
+  const { payloads } = buildRcoaGroupHubPayloads(submissionFor(day), undefined, seedVisibility);
   assert.match(payloads[0].specialInstructions, /^Event: Annual Lecture\n\nSet up from 08:30\.\n\nAll Day Hospitality request RCOA-20261201090000-AB12: service 1 of 3\.$/);
   assert.match(payloads[1].specialInstructions, /Service note: Serve at the long table/);
   assert.doesNotMatch(payloads[0].specialInstructions, /long table/, "a service note belongs to its own booking only");
@@ -204,14 +207,14 @@ test("a single service is still one linked booking (group of one) through the sa
   const { requests, bookingGroup } = submissionFor(day);
   assert.equal(requests.length, 1);
   assert.deepEqual(bookingGroup, { id: GROUP_ID, size: 1 });
-  assert.equal(buildRcoaGroupHubPayloads({ bookingGroup, requests }).payloads[0].bookingId, rcoaChildReference(GROUP_ID, 1));
+  assert.equal(buildRcoaGroupHubPayloads({ bookingGroup, requests }, undefined, seedVisibility).payloads[0].bookingId, rcoaChildReference(GROUP_ID, 1));
 });
 
 test("a tampered request is refused: wrong child reference, different date or different customer", () => {
   const good = submissionFor(threeServiceDay());
-  assert.throws(() => buildRcoaGroupHubPayloads({ ...good, requests: [good.requests[0], { ...good.requests[1], bookingId: "RCOA-20261201090000-AB12-09" }, good.requests[2]] }), /unexpected reference|does not match/);
-  assert.throws(() => buildRcoaGroupHubPayloads({ ...good, requests: [good.requests[0], { ...good.requests[1], event: { ...good.requests[1].event, eventDate: "2026-12-11" } }, good.requests[2]] }), /same date/);
-  assert.throws(() => buildRcoaGroupHubPayloads({ ...good, requests: [good.requests[0], { ...good.requests[1], client: { ...good.requests[1].client, email: "other@example.test" } }, good.requests[2]] }), /Customer details must be the same/);
+  assert.throws(() => buildRcoaGroupHubPayloads({ ...good, requests: [good.requests[0], { ...good.requests[1], bookingId: "RCOA-20261201090000-AB12-09" }, good.requests[2]] }, undefined, seedVisibility), /unexpected reference|does not match/);
+  assert.throws(() => buildRcoaGroupHubPayloads({ ...good, requests: [good.requests[0], { ...good.requests[1], event: { ...good.requests[1].event, eventDate: "2026-12-11" } }, good.requests[2]] }, undefined, seedVisibility), /same date/);
+  assert.throws(() => buildRcoaGroupHubPayloads({ ...good, requests: [good.requests[0], { ...good.requests[1], client: { ...good.requests[1].client, email: "other@example.test" } }, good.requests[2]] }, undefined, seedVisibility), /Customer details must be the same/);
 });
 
 // --- the real route handler against a stub Hub that is idempotent by booking reference, like the canonical Hub ------------------

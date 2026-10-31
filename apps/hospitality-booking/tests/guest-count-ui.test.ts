@@ -1,3 +1,4 @@
+import { seedVisibility } from "./support/rcoa-service-visibility";
 import assert from "node:assert/strict";
 import { after, afterEach, beforeEach, test } from "node:test";
 import { register } from "node:module";
@@ -8,7 +9,7 @@ import { createEmptyAllDay } from "../lib/rcoa-all-day";
 
 register("data:text/javascript," + encodeURIComponent(`export async function load(url, context, next) {
   if (url.endsWith('.css')) return { format: 'module', source: 'export default new Proxy({}, { get: (_, key) => String(key) })', shortCircuit: true };
-  if (url.endsWith('/lib/hospitality-portal-catalogue.ts')) return { format: 'module', source: 'export async function loadHospitalityPortalMenu() { return { menu: globalThis.__guestTestMenu, catalogue: { source: "network" } }; }', shortCircuit: true };
+  if (url.endsWith('/lib/hospitality-portal-catalogue.ts')) return { format: 'module', source: 'export async function loadHospitalityPortalMenu() { return { menu: globalThis.__guestTestMenu, catalogue: { source: "network" }, visibility: globalThis.__guestTestVisibility }; }', shortCircuit: true };
   return next(url, context);
 }`));
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/" });
@@ -41,9 +42,34 @@ const guest = (surface = "booking", field = "guestCount") => document.querySelec
 const errorText = (input: HTMLInputElement) => (input.getAttribute("aria-describedby") || "").split(" ").map(id => document.getElementById(id)?.textContent).join(" ");
 const restoreShared = (step = 1, guests = 11, lines = selected(), siteKey = "mnk") => dom.window.localStorage.setItem(`fika-hospitality-booking-draft:${siteKey}`, JSON.stringify(sharedDraft(step, guests, lines)));
 const restoreRcoa = (step: number) => dom.window.localStorage.setItem("fika-rcoa-booking-draft:v1", JSON.stringify(rcoaDraft(step)));
-beforeEach(() => { dom.window.localStorage.clear(); dom.window.history.replaceState({}, "", "/"); requests = 0; Object.assign(globalThis, { __guestTestMenu: [product, guestItem] }); });
+beforeEach(() => { dom.window.localStorage.clear(); dom.window.history.replaceState({}, "", "/"); requests = 0; Object.assign(globalThis, { __guestTestMenu: [product, guestItem], __guestTestVisibility: seedVisibility }); });
 afterEach(() => { cleanup(); assert.equal(requests, 0, "no booking request or operational network write"); });
 after(() => { globalThis.fetch = originalFetch; dom.window.close(); });
+
+test("RCoA applies service visibility to tabs, retains a hidden saved line, and supports explicit keyboard removal", async () => {
+  const wine = { ...product, id: "item:wine", canonicalId: "item:wine", name: "Wine", category: "Wine", minimumQuantity: 1 };
+  Object.assign(globalThis, { __guestTestMenu: [{ ...product, category: "Drinks" }, wine], __guestTestVisibility: { ...seedVisibility, layout: { ...seedVisibility.layout, sites: { [seedVisibility.oplocId]: { breakfast: { categories: ["Drinks"] }, dining: { categories: ["Wine"] } } } } } });
+  dom.window.localStorage.setItem("fika-rcoa-booking-draft:v1", JSON.stringify({ ...rcoaDraft(3, 12), lines: [{ itemId: wine.id, quantity: 2, choices: {} }] }));
+  render(React.createElement(RcoaBookingPortal, { configured: true }));
+  const remove = await screen.findByRole("button", { name: "Remove Wine" });
+  await waitFor(() => assert.equal((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled, false));
+  assert.ok(screen.queryByRole("button", { name: "Drinks" }));
+  assert.equal(screen.queryByRole("button", { name: "Wine" }), null);
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  assert.ok(screen.getByRole("heading", { name: "Choose what feels right." }));
+  assert.equal(JSON.parse(dom.window.localStorage.getItem("fika-rcoa-booking-draft:v1")!).lines.length, 1);
+  await waitFor(() => assert.ok(document.activeElement === remove, `focus target: ${document.activeElement?.outerHTML.slice(0, 250)}`));
+  await userEvent.setup({ document: dom.window.document }).keyboard("{Enter}");
+  await waitFor(() => assert.equal(JSON.parse(dom.window.localStorage.getItem("fika-rcoa-booking-draft:v1")!).lines.length, 0));
+});
+
+test("RCoA missing service settings presents an accessible refresh action and prevents progression", async () => {
+  Object.assign(globalThis, { __guestTestVisibility: undefined });
+  render(React.createElement(RcoaBookingPortal, { configured: true }));
+  await screen.findByRole("button", { name: "Refresh menu" });
+  assert.ok(screen.getAllByRole("alert").some(alert => /settings could not be verified/.test(alert.textContent || "")));
+  assert.equal((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled, true);
+});
 
 test("guest input allows blank edits, reports zero/decimal/blur errors, and supports keyboard correction without clamping", async () => {
   function Harness() { const [value, setValue] = React.useState(11); return React.createElement("label", {}, "Guests", React.createElement(GuestCountInput, { value, minimum: 12, field: "guestCount", surface: "booking", onChange: setValue })); }
@@ -117,6 +143,7 @@ test("RCoA All Day: blank event default shows a linked error, blocks progression
   dom.window.localStorage.setItem("fika-rcoa-booking-draft:v1", JSON.stringify({ flow: "all-day", allDay: day, step: 1 })); render(React.createElement(RcoaBookingPortal, { configured: true }));
   const input = guest("rcoa", "defaultGuests");
   assert.equal(input.value, ""); assert.equal(input.getAttribute("aria-invalid"), null);
+  await waitFor(() => assert.equal((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled, false));
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await waitFor(() => assert.ok(document.activeElement === input));
   assert.equal(input.getAttribute("aria-invalid"), "true"); assert.match(errorText(input), /Enter at least 1 guest/);

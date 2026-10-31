@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { recordDataAccess, setDataTraceOutcome, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { hubFetch } from "@/lib/hub";
-import { buildTrustedRcoaHubPayload } from "@/lib/rcoa-booking-request";
+import { buildRcoaReplayHubPayload, buildTrustedRcoaHubPayload, RcoaBookingRequestSchema } from "@/lib/rcoa-booking-request";
 import { loadGovernedRcoaMenu } from "@/lib/governed-rcoa-menu";
+import { existingRcoaBookingIds } from "@/lib/rcoa-booking-replay";
 
 export async function POST(request: NextRequest) {
   return withDataTrace({ app: "hospitality-booking", action: "booking.create.rcoa", path: "/api/bookings/rcoa", outcome: "SUCCESS" }, async () => {
@@ -11,18 +12,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: { message: "RCoA booking is unavailable until its governed OPLOC mapping is configured." } }, { status: 503 });
     }
     let payload: ReturnType<typeof buildTrustedRcoaHubPayload>;
-    let governedMenu: Awaited<ReturnType<typeof loadGovernedRcoaMenu>>;
+    let value: unknown;
+    try { value = RcoaBookingRequestSchema.parse(await request.json()); }
+    catch { return NextResponse.json({ error: { message: "The RCoA request is invalid." } }, { status: 400 }); }
+    let existingOnly = false;
+    let menuVerified = false;
     try {
       // Validate against the same governed catalogue the portal displays; unverifiable => fail closed.
-      governedMenu = await loadGovernedRcoaMenu(expectedOplocId);
+      const governedMenu = await loadGovernedRcoaMenu(expectedOplocId);
+      menuVerified = true;
+      payload = buildTrustedRcoaHubPayload(value, governedMenu.menu, governedMenu.visibility);
     } catch (error) {
-      return NextResponse.json({ error: { message: (error as Error).message || "The menu could not be verified." } }, { status: (error as { status?: number }).status || 503 });
-    }
-    try {
-      payload = buildTrustedRcoaHubPayload(await request.json(), governedMenu);
-    } catch (error) {
-      const message = (error as Error).message || "The RCoA request is invalid.";
-      return NextResponse.json({ error: { message } }, { status: 400 });
+      // A historical retry must not create or amend anything when current availability changed.
+      try {
+        const parsed = RcoaBookingRequestSchema.parse(value);
+        if (!(await existingRcoaBookingIds([parsed.bookingId])).has(parsed.bookingId)) return NextResponse.json({ error: { message: (error as Error).message || "The RCoA request is invalid." } }, { status: (error as { status?: number }).status || (menuVerified ? 400 : 503) });
+        payload = buildRcoaReplayHubPayload(parsed); existingOnly = true;
+      } catch (lookupError) { return NextResponse.json({ error: { message: (lookupError as Error).message } }, { status: 503 }); }
     }
     try {
       const response = await hubFetch("/api/bookings/mnk", {
@@ -30,6 +36,7 @@ export async function POST(request: NextRequest) {
         headers: {
           "content-type": "application/json",
           "x-fika-expected-rcoa-oploc-id": expectedOplocId,
+          ...(existingOnly ? { "x-fika-rcoa-existing-only": "true" } : {}),
         },
         body: JSON.stringify(payload),
       });

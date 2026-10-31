@@ -2,6 +2,7 @@ import { bookingDateIssue, bookingPolicyFor } from "@fika/server-shared/hospital
 import type { PortalMenuItem } from "./mnk-contract";
 import { effectiveGuestMinimum, guestCountMessage } from "./guest-count";
 import { GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
+import { rcoaServiceCategories, rcoaServiceIsOffered, RCOA_SERVICE_SETTINGS_UNAVAILABLE, type RcoaServiceVisibility } from "./rcoa-service-visibility";
 
 /**
  * Text shown in a whole-number input while the user edits it: digits only, no leading zeroes ("01" -> "1"), and an empty string is
@@ -72,24 +73,23 @@ export function createEmptyRcoaDraft(): RcoaBookingDraft {
   };
 }
 
-export function rcoaAllowedCategories(occasion: string, menu: readonly PortalMenuItem[]) {
-  const event = rcoaEventTypes.find((candidate) => candidate.id === occasion);
-  return event?.categories.filter((category) => menu.some((item) => item.category === category)) || [];
+export function rcoaAllowedCategories(occasion: string, menu: readonly PortalMenuItem[], visibility: RcoaServiceVisibility | undefined) {
+  return rcoaServiceCategories(visibility, occasion)?.filter(category => menu.some(item => item.category === category)) || [];
 }
 
-export function retainRcoaLinesForOccasion(lines: readonly RcoaLine[], occasion: string, menu: readonly PortalMenuItem[]) {
+export function retainRcoaLinesForOccasion(lines: readonly RcoaLine[], occasion: string, menu: readonly PortalMenuItem[], visibility: RcoaServiceVisibility | undefined) {
   if (!menu.length) return [...lines];
-  const event = rcoaEventTypes.find((candidate) => candidate.id === occasion);
-  if (!event) return [];
+  const categories = rcoaServiceCategories(visibility, occasion);
+  if (!categories) return [];
   const menuById = new Map(menu.map((item) => [item.id, item]));
   return lines.filter((line) => {
     const item = menuById.get(line.itemId);
-    return Boolean(item && event.categories.some((category) => category === item.category));
+    return Boolean(item && categories.includes(item.category));
   });
 }
 
-export function filterRcoaMenu(menu: readonly PortalMenuItem[], occasion: string, category: string, search: string) {
-  const available = new Set<string>(rcoaAllowedCategories(occasion, menu));
+export function filterRcoaMenu(menu: readonly PortalMenuItem[], occasion: string, category: string, search: string, visibility: RcoaServiceVisibility | undefined) {
+  const available = new Set<string>(rcoaAllowedCategories(occasion, menu, visibility));
   const query = search.trim().toLocaleLowerCase("en-GB");
   return menu.filter((item) => {
     if (!available.has(item.category)) return false;
@@ -197,9 +197,10 @@ export function rcoaGuestMinimum(draft: Pick<RcoaBookingDraft, "contact" | "line
   return Math.max(minimum, gallagher ? GALLAGHER_MINIMUM_GUESTS : 1);
 }
 
-export function validateRcoaStep(step: number, draft: RcoaBookingDraft, menu: readonly PortalMenuItem[]) {
+export function validateRcoaStep(step: number, draft: RcoaBookingDraft, menu: readonly PortalMenuItem[], visibility: RcoaServiceVisibility | undefined) {
   const errors: Record<string, string> = {};
   if (step === 0 && !draft.occasion) errors.occasion = "Choose an occasion.";
+  if (draft.occasion && (step === 0 || step >= 3) && !rcoaServiceIsOffered(visibility, draft.occasion)) errors.occasion = visibility ? "This service is no longer offered. Choose another occasion." : RCOA_SERVICE_SETTINGS_UNAVAILABLE;
   if (step === 1) {
     const contact = draft.contact;
     if (!contact.name.trim()) errors.name = "Enter your name.";
@@ -219,15 +220,15 @@ export function validateRcoaStep(step: number, draft: RcoaBookingDraft, menu: re
     const message = guestCountMessage(draft.event.guestCount, rcoaGuestMinimum(draft, menu));
     if (message) errors.guestCount = message;
   }
-  if (step === 3) {
-    const event = rcoaEventTypes.find((candidate) => candidate.id === draft.occasion);
+  if (step === 3 || (step > 3 && draft.occasion)) {
+    const categories = rcoaServiceCategories(visibility, draft.occasion);
     const selected = draft.lines.filter((line) => line.quantity > 0);
     if (!selected.length && !rcoaAllowsEmptyOrder(draft.occasion)) errors.items = "Choose at least one menu item.";
     const menuById = new Map(menu.map((item) => [item.id, item]));
     for (const line of selected) {
       const item = menuById.get(line.itemId);
       if (!item) { errors.items = "A selected menu item is no longer available. Refresh the menu and try again."; continue; }
-      if (!event?.categories.some((category) => category === item.category)) errors.items = `${item.name} is not available for this occasion.`;
+      if (!categories?.includes(item.category)) errors.items = `${item.name} is no longer offered for this occasion. Remove it or choose another occasion.`;
       if (!Number.isInteger(line.quantity) || line.quantity < rcoaMinimumQuantity(item)) errors[`quantity:${line.itemId}`] = `${item.name} needs at least ${rcoaMinimumQuantity(item)} ${rcoaMinimumQuantity(item) === 1 ? "item" : "items"}.`;
       for (const group of item.optionGroups || []) {
         const value = line.choices[group.id];

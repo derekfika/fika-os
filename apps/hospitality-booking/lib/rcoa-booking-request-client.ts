@@ -6,7 +6,6 @@ export function buildRcoaClientRequest(
   menu: readonly PortalMenuItem[],
   identity: { bookingId: string; submittedAt: string },
 ) {
-  const availableIds = new Set(menu.map((item) => item.id));
   return {
     ...identity,
     client: {
@@ -29,7 +28,8 @@ export function buildRcoaClientRequest(
     },
     order: {
       eventType: draft.occasion,
-      items: draft.lines.filter((line) => line.quantity > 0 && availableIds.has(line.itemId)).map((line) => ({
+      // Preserve every selected ID: a removed/hidden item must be resolved explicitly, never silently dropped from the request.
+      items: draft.lines.filter((line) => line.quantity > 0).map((line) => ({
         itemId: line.itemId,
         quantity: line.quantity,
         choices: Object.entries(line.choices).map(([id, value]) => ({ id, value })),
