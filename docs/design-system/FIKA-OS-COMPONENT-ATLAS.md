@@ -1,6 +1,6 @@
 # FIKA OS Component Atlas — Direction B / FIKA Tactile
 
-**Status:** Product owner-selected direction for **new** FIKA OS UI; incremental adoption only. **Marketing/Brand review:** new tactile treatments and exact proposed dimensions are pending Karol's approval. **Production migration:** not authorised by this document.  
+**Status:** Product owner-selected direction for **new** FIKA OS UI; incremental adoption only. **Marketing/Brand review:** new tactile treatments and exact proposed dimensions are pending Karol's approval. **Production migration:** not authorised by this document.
 **Date:** 2026-10-31. **Scope:** FIKA OS internal operational UI; site/customer co-branding remains governed by its existing approvals.
 
 ## Source of truth (in precedence order)
