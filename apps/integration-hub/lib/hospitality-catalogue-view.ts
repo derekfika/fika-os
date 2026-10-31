@@ -1,5 +1,6 @@
 /** Client-safe filtering, sorting and formatting for the Hospitality Catalogue table. Pure; no server imports. */
-import { ROUTING_CHOICE_LABELS, ROUTING_STATE_LABELS, type CataloguePayload, type CatalogueRow, type RoutingChoice } from "./hospitality-catalogue-types";
+import { SERVICE_IDS } from "@fika/server-shared/hospitality-service-layout";
+import { ROUTING_CHOICE_LABELS, ROUTING_STATE_LABELS, SERVICE_LABELS, serviceRuleAt, type CataloguePayload, type CatalogueRow, type RoutingChoice, type ServiceLayoutView } from "./hospitality-catalogue-types";
 
 export type CatalogueFilters = {
   query: string; category: string; route: "all" | CatalogueRow["routing"]["state"]; oplocId: string;
@@ -84,9 +85,36 @@ export function toggleSelection(selected: ReadonlySet<string>, itemId: string) {
 // ----- bulk impact preview -------------------------------------------------------------------------------------
 export type BulkDraft = {
   production?: RoutingChoice; price?: { amount: number }; minimum?: { mode: "set"; value: number } | { mode: "clear" };
-  sites?: { mode: "add" | "remove" | "replace"; oplocIds: string[] }; archive?: boolean;
+  sites?: { mode: "add" | "remove" | "replace"; oplocIds: string[] }; category?: string; categoryVisibilityConfirmed?: boolean; archive?: boolean;
 };
 export type ImpactLine = { label: string; value: string; tone?: "warning" | "danger" };
+
+/** #175 is a stored-layout preview only; current booking portals do not consume this layout. */
+export function categoryVisibilityCheck(layout: Pick<ServiceLayoutView, "company" | "sites"> | undefined, rows: Array<Pick<CatalogueRow, "name" | "category" | "availableAt">>, target: string, oplocs: CataloguePayload["oplocs"] = []) {
+  if (!layout) return { safe: false, requiresConfirmation: false, reason: "Stored service visibility is unavailable; category change is held.", changes: [] as string[], effects: [] as Array<{ itemName: string; oplocId: string; before: string[]; after: string[] }> };
+  const changes: string[] = []; const effects: Array<{ itemName: string; oplocId: string; before: string[]; after: string[] }> = []; let changesVisibility = false; let unmappedSite: string | undefined;
+  const siteName = (id: string) => oplocs.some(oploc => oploc.oplocId === id) ? oplocLabel(oplocs, id) : "active site";
+  for (const row of rows) {
+    if (row.category === target) continue;
+    for (const oplocId of row.availableAt) {
+      const before = SERVICE_IDS.filter(id => { const { rule } = serviceRuleAt(layout, oplocId, id); return !rule.hidden && rule.categories.includes(row.category); });
+      const after = SERVICE_IDS.filter(id => { const { rule } = serviceRuleAt(layout, oplocId, id); return !rule.hidden && rule.categories.includes(target); });
+      if (!after.length) {
+        unmappedSite ||= siteName(oplocId);
+        changes.push(`${row.name} · ${siteName(oplocId)}: ${before.map(id => SERVICE_LABELS[id]).join(", ") || "no mapped service"} → no visible service mapping (held)`);
+        effects.push({ itemName: row.name, oplocId, before: before.map(id => SERVICE_LABELS[id]), after: [] });
+        continue;
+      }
+      if (before.join("|") !== after.join("|")) {
+        changesVisibility = true;
+        changes.push(`${row.name} · ${siteName(oplocId)}: ${before.map(id => SERVICE_LABELS[id]).join(", ") || "no mapped service"} → ${after.map(id => SERVICE_LABELS[id]).join(", ")}`);
+        effects.push({ itemName: row.name, oplocId, before: before.map(id => SERVICE_LABELS[id]), after: after.map(id => SERVICE_LABELS[id]) });
+      }
+    }
+  }
+  if (unmappedSite) return { safe: false, requiresConfirmation: false, reason: `“${target}” has no visible service mapping at ${unmappedSite} in the stored layout; category change is held.`, changes, effects };
+  return changesVisibility ? { safe: true, requiresConfirmation: true, reason: "The target category changes stored service visibility. Review each listed item and site before applying.", changes, effects } : { safe: true, requiresConfirmation: false, reason: "Stored service visibility mapping is unchanged.", changes, effects };
+}
 
 export function bulkImpact(draft: BulkDraft, selected: CatalogueRow[], oplocs: CataloguePayload["oplocs"]): ImpactLine[] {
   const n = selected.length; const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
@@ -98,6 +126,15 @@ export function bulkImpact(draft: BulkDraft, selected: CatalogueRow[], oplocs: C
     lines.push({ label: "Production", value: `${plural(changing, "item")} → ${ROUTING_CHOICE_LABELS[draft.production]}${changing < n ? ` (${n - changing} already set)` : ""}` });
     if (current.size > 1) lines.push({ label: "Mixed current routes", value: [...current].map(([label, count]) => `${count} ${label}`).join(" · "), tone: "warning" });
   } else lines.push({ label: "Production", value: "Unchanged" });
+  if (draft.category !== undefined) {
+    const changing = selected.filter(row => row.category !== draft.category);
+    if (!changing.length) lines.push({ label: "Category", value: `Already matches on all ${plural(n, "selected item")}` });
+    else {
+      const groups = new Map<string, number>();
+      for (const row of changing) { const effect = `${row.category} → ${draft.category}`; groups.set(effect, (groups.get(effect) || 0) + 1); }
+      lines.push({ label: "Category", value: `${plural(changing.length, "item")}: ${[...groups].map(([effect, count]) => `${count} ${effect}`).join(" · ")}${changing.length < n ? `; ${n - changing.length} already match` : ""}` });
+    }
+  } else lines.push({ label: "Category", value: "Unchanged" });
   lines.push({ label: "Price", value: draft.price ? `Set company default to ${formatMoney(draft.price.amount)} on ${plural(n, "item")}` : "Unchanged" });
   lines.push({ label: "Minimum", value: draft.minimum ? (draft.minimum.mode === "set" ? `Set company default to ${draft.minimum.value} on ${plural(n, "item")}` : `Clear the company default on ${plural(n, "item")}; sites inheriting it will have no minimum`) : "Unchanged" });
   if (draft.sites) {
