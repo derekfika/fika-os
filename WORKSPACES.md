@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T08:00:16.570Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T08:03:15.302Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -40,6 +40,7 @@ Snapshot: 2026-10-31T08:00:16.570Z. The local governed registry remains authorit
 | cpu-pr2-reconciliation | codex-cpu-pr2-reconciliation | apps/cpu-production, docs/deployment/workflow.md, .github/workflows/validate.yml | codex/cpu-pr2-reconciliation | [#5](https://github.com/derekfika/fika-os/pull/5) | finished | 2026-10-22T20:16:51.141Z |
 | cpu-range-reconcile | codex-pr-reconciliation | apps/cpu-production/app/page.tsx, apps/cpu-production/tests/production-totals-range.test.ts, apps/cpu-production/tests/production-totals-input.browser.test.ts | codex/cpu-range-reconcile | [#110](https://github.com/derekfika/fika-os/pull/110) | retired | 2026-10-28T19:40:30.347Z |
 | cpu-release-record | agent-task | CHANGELOG.md | codex/cpu-release-record | [#16](https://github.com/derekfika/fika-os/pull/16) | retired | 2026-10-23T10:31:39.362Z |
+| cpu-site-filtering | luna-cpu-site-filtering | apps/cpu-production | codex/cpu-site-filtering | — | retired | 2026-10-31T08:03:13.521Z |
 | cpu-site-filters | claude-cpu-site-filters | apps/cpu-production/lib/production-view-filters.ts, apps/cpu-production/lib/production-totals-range.ts, apps/cpu-production/app/page.tsx, apps/cpu-production/app/calendar/page.tsx, apps/cpu-production/app/ui/ProductionSiteFilter.tsx, apps/cpu-production/app/ui/ProductionSiteFilter.module.css, apps/cpu-production/app/ui/ProductionCalendar.tsx, apps/cpu-production/tests/production-view-filters.test.ts | codex/cpu-site-filters | [#171](https://github.com/derekfika/fika-os/pull/171) | retired | 2026-10-30T11:15:55.002Z |
 | cpu-staging-500 | codex-cpu-staging-500 | apps/cpu-production, CHANGELOG.md | codex/cpu-staging-500 | — | retired | 2026-10-22T21:25:43.206Z |
 | cpu-totals-custom-range | codex-cpu-totals-custom-range | apps/cpu-production | codex/cpu-totals-custom-range | [#8](https://github.com/derekfika/fika-os/pull/8) | finished | 2026-10-23T08:30:24.517Z |
@@ -151,6 +152,7 @@ Snapshot: 2026-10-31T08:00:16.570Z. The local governed registry remains authorit
 | menu-release-provenance | codex-menu-spellcheck-delivery | tools/workflow, docs/deployment/workflow.md | codex/menu-release-provenance | [#130](https://github.com/derekfika/fika-os/pull/130) | retired | 2026-10-29T10:42:45.251Z |
 | menu-release-recovery-scoped | codex-menu-release-recovery | tools/workflow, CHANGELOG.md | codex/menu-release-recovery-scoped | [#12](https://github.com/derekfika/fika-os/pull/12) | finished | 2026-10-23T09:40:03.932Z |
 | menu-release-recovery | codex-menu-release-recovery | tools/workflow | codex/menu-release-recovery | — | finished | 2026-10-23T09:22:36.941Z |
+| menu-slot-aware-picker | luna-menu-slot-picker | apps/menu-planning | codex/menu-slot-aware-picker | — | active | 2026-10-31T08:02:41.587Z |
 | menu-spellcheck-continue | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-continue | — | finished | 2026-10-28T19:46:22.840Z |
 | menu-spellcheck-delivery | codex-menu-spellcheck-delivery | apps/menu-planning | codex/menu-spellcheck-delivery | [#129](https://github.com/derekfika/fika-os/pull/129) | finished | 2026-10-29T10:42:15.014Z |
 | menu-spellcheck-week-planner | claude-menu-spellcheck | apps/menu-planning | codex/menu-spellcheck-week-planner | [#98](https://github.com/derekfika/fika-os/pull/98) | finished | 2026-10-28T09:15:41.758Z |
