@@ -29,6 +29,7 @@
     ,"./pdf-renderer": "./src/pdf-renderer.ts"
     ,"./hospitality-catalogue": "./src/hospitality-catalogue/index.ts"
     ,"./hospitality-effective-offering": "./src/hospitality-effective-offering.ts"
+    ,"./hospitality-service-layout": "./src/hospitality-service-layout.ts"
     ,"./hospitality-catalogue-client": "./src/hospitality-catalogue-client.ts"
     ,"./credentialed-upstream": "./src/credentialed-upstream.ts"
   }

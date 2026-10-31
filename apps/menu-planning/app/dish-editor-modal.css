@@ -1,0 +1,205 @@
+/* Create / Edit Dish modal (#154). Reuses the planner modal shell and FIKA purple tokens. */
+.dish-picker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.dish-picker-row > button:first-child {
+  min-width: 0;
+}
+
+.dish-picker .dish-picker-edit {
+  min-width: 64px;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--purple);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dish-picker .dish-picker-edit:focus-visible,
+.dish-editor input:focus-visible,
+.dish-editor select:focus-visible,
+.dish-editor button:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: 2px;
+}
+
+.dish-editor {
+  max-width: min(640px, 100%);
+}
+
+.dish-editor-body {
+  display: grid;
+  gap: 16px;
+  padding: 0 26px 24px;
+}
+
+.dish-editor-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.dish-editor-field input,
+.dish-editor-field select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--deep);
+  font: inherit;
+  font-weight: 400;
+}
+
+.dish-editor-warn {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 4px solid var(--warning);
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 0.85rem;
+}
+
+.dish-editor-warn ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.dish-editor-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.dish-editor-tags {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.dish-editor-tags legend {
+  padding: 0 6px;
+  color: var(--deep);
+  font-weight: 800;
+}
+
+.dish-editor-tags legend small {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.dish-editor-chips,
+.dish-editor-suggest,
+.dish-editor-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dish-editor-suggest {
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.dish-editor-chip {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--purple);
+  border-radius: 999px;
+  background: var(--info-bg);
+  color: var(--purple);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dish-editor-chip--suggest {
+  background: var(--surface);
+}
+
+.dish-editor-taglist {
+  display: grid;
+  gap: 12px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.dish-editor-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--deep);
+  font-size: 0.88rem;
+}
+
+.dish-editor-check:has(input:checked) {
+  border-color: var(--purple);
+  background: var(--info-bg);
+}
+
+.dish-editor-check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--purple);
+}
+
+.dish-editor-newtag {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(110px, 160px) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.dish-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.dish-editor-actions .button {
+  min-height: 44px;
+}
+
+@media (max-width: 640px) {
+  .dish-editor-body {
+    padding: 0 16px 20px;
+  }
+
+  .dish-editor-newtag {
+    grid-template-columns: 1fr;
+  }
+
+  .dish-editor-actions {
+    flex-direction: column-reverse;
+  }
+
+  .dish-editor-actions .button {
+    width: 100%;
+  }
+}

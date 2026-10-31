@@ -9,6 +9,8 @@ export type RecipeIngredient = { name: string; quantity?: number; unit?: string;
 export type MenuItem = { canonicalId: string; sourceName: string; displayName: string; sourceAliases?: string[]; description?: string; preparationDescription?: string; category: string; subcategory?: string; recipeStatus?: RecipeStatus; ingredients?: RecipeIngredient[]; yield?: number; yieldUnit?: string; yieldDescription?: string; portionSize?: number; servingGuidance?: string; preparationNotes?: string; holdingStorageNotes?: string; methodSteps?: string[]; mayContainNotes?: string; sourceEvidence?: { document: string; excerpt?: string; importedAt: string }; weekId: string; dayId: string; sourceReference: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; revision: number; reviewStatus: ReviewStatus; duplicateWarning?: string; allergenEvidence: AllergenEvidence[]; mayContainReviewed: boolean; audit: Audit[];
   /** Explicit operational scope. Missing means MENU_PLANNING, so every pre-existing record keeps Brian's behaviour. */
   operationalScope?: DishOperationalScope;
+  /** Stable IDs from the shared dish-tag registry (#152). Missing means untagged, so every legacy record stays valid. */
+  tagIds?: string[];
   /** Hospitality classification (Finger Food, Canapés…); independent of the governed Menu Planning category. */
   hospitalityClass?: HospitalityDishClassId };
 /** Records authored for Hospitality Rotations must never reach Brian's planner, Dish Library, publication or package. */

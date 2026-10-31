@@ -1,0 +1,85 @@
+/* Week Planner cell context menu (#186): only this floating menu is styled here. */
+.planner-cell-menu {
+  position: fixed;
+  z-index: 90;
+  box-sizing: border-box;
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--deep);
+  box-shadow: 0 8px 24px rgba(36, 17, 92, 0.16);
+}
+
+.planner-cell-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.planner-cell-menu__item svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
+.planner-cell-menu__item:hover,
+.planner-cell-menu__item:focus-visible {
+  background: var(--info-bg);
+}
+
+.planner-cell-menu__item:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: -3px;
+}
+
+.planner-cell-menu__item--danger {
+  color: var(--danger, #b3261e);
+}
+
+.planner-cell-menu__item--danger:hover,
+.planner-cell-menu__item--danger:focus-visible {
+  background: var(--danger-bg, #fde8e6);
+}
+
+.planner-cell-menu__item--disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.planner-cell-menu__item--disabled:hover {
+  background: transparent;
+}
+
+.planner-cell-menu__divider {
+  height: 1px;
+  margin: 6px 4px;
+  border: 0;
+  background: var(--line);
+}
+
+.planner-cell-menu__reason {
+  display: block;
+  padding: 0 12px 6px 42px;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+/* Touch: keep the long-press native callout and text selection from fighting the menu. */
+.week-menu-cell-button {
+  -webkit-touch-callout: none;
+}
