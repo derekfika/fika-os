@@ -1,9 +1,4 @@
 "use client";
-import {
-  dayProductionPrintHtml,
-  paginateDayProduction,
-} from "./day-production-print";
-import { loadWholeDay } from "./whole-day-production";
 import { useEffect, useId, useRef, useState } from "react";
 import type {
   ProductionLine,
@@ -18,27 +13,8 @@ import {
   CANONICAL_ALLERGEN_COLUMNS,
   normaliseOperationalAllergens,
 } from "../../../shared/allergen-contract";
-import {
-  printKitchenDocument,
-  collectionQuantity,
-  collectionDate,
-  collectionTime,
-} from "./kitchen-print";
-import { filterOrdersBySites } from "../../lib/production-view-filters";
-export function collectionOrders(orders: ProductionOrder[]) {
-  const unique = new Map<string, ProductionOrder>();
-  for (const o of orders)
-    if (
-      !unique.has(o.canonicalId) ||
-      unique.get(o.canonicalId)!.version < o.version
-    )
-      unique.set(o.canonicalId, o);
-  return [...unique.values()].sort(
-    (a, b) =>
-      a.requiredBy.localeCompare(b.requiredBy) ||
-      a.canonicalId.localeCompare(b.canonicalId),
-  );
-}
+import { collectionOrders, collectionQuantity, collectionDate, collectionTime } from "./kitchen-print";
+import { RunSheetPrintDialog } from "./RunSheetPrintDialog";
 export type PackingView = {
   revision: number;
   orderVersion: number;
@@ -369,65 +345,17 @@ export default function KitchenRunSheet({
   productionDate = "",
   selectedSiteIds = [],
   siteFilterLabel = "All sites",
-  onProductionDateChange,
 }: {
   orders: ProductionOrder[];
   productionDate?: string;
   selectedSiteIds?: readonly string[];
   siteFilterLabel?: string;
-  onProductionDateChange?: (date: string) => void;
 }) {
-  const [printing, setPrinting] = useState(false);
-  const [printError, setPrintError] = useState("");
-  const printDay = async () => {
-    if (printing || !productionDate) return;
-    setPrinting(true);
-    setPrintError("");
-    try {
-      const allOrders = filterOrdersBySites(await loadWholeDay(productionDate), selectedSiteIds);
-      await printKitchenDocument(
-        dayProductionPrintHtml(allOrders, productionDate, siteFilterLabel),
-        paginateDayProduction,
-      );
-    } catch (error) {
-      setPrintError(
-        error instanceof Error
-          ? error.message
-          : "The complete day's production could not be printed. Refresh and retry.",
-      );
-    } finally {
-      setPrinting(false);
-    }
-  };
   return (
     <>
       <div className="kitchen-print-toolbar">
-        <label>
-          Production date for printing
-          <input
-            type="date"
-            value={productionDate}
-            onChange={(e) => onProductionDateChange?.(e.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          className="kitchen-button kitchen-print-primary"
-          disabled={!productionDate || printing}
-          onClick={() => void printDay()}
-        >
-          {printing ? "Preparing complete day…" : "Print day's production"}
-        </button>
-        <p>
-          {productionDate
-            ? `Prints the complete selected day for ${siteFilterLabel}, across origins and production scopes. Cancelled and superseded orders are excluded.`
-            : "Select a production date before printing. Only that day will be printed."}
-        </p>
-        {printError && (
-          <p className="kitchen-error" role="alert">
-            {printError}
-          </p>
-        )}
+        <RunSheetPrintDialog productionDate={productionDate} selectedSiteIds={selectedSiteIds} />
+        <p>Choose today, tomorrow, or a custom date range; select destinations for separate A4 paper handover sheets. Current screen filter: {siteFilterLabel}.</p>
       </div>
       <section
         className="kitchen-run-sheet"

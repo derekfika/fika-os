@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   dayCollections,
   dayProductionPrintHtml,
+  paginateDayProduction,
 } from "../app/ui/day-production-print";
 import { collectionTime } from "../app/ui/kitchen-print";
 import { loadWholeDay } from "../app/ui/whole-day-production";
@@ -62,13 +63,15 @@ test("print HTML preserves every line and empty checkbox and has no interactive 
   assert.equal((html.match(/data-line-id=/g) || []).length, 100);
   assert.match(html, /Dish 99/);
   assert.match(html, /dashed/);
-  assert.match(html, /Packed by/);
+  assert.match(paginateDayProduction.toString(), /Packed by/);
   assert.doesNotMatch(html, /<button|<script/);
+  assert.match(html, /data-site-key="order:long"/);
+  assert.match(paginateDayProduction.toString(), /Paper-only checkboxes/);
   const source = readFileSync(
     new URL("../app/ui/KitchenRunSheet.tsx", import.meta.url),
     "utf8",
   );
-  assert.equal(source.split("Print day's production").length - 1, 1);
+  assert.match(source, /RunSheetPrintDialog/);
   assert.doesNotMatch(source, /Print collection sheet/);
 });
 
