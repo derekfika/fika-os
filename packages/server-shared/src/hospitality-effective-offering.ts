@@ -10,6 +10,7 @@
  */
 export * from "./hospitality-catalogue-rules";
 export * from "./hospitality-booking-cutoffs";
+import type { ServiceLayoutPackage } from "./hospitality-service-layout";
 import { bookingPolicyFor, type BookingPolicy } from "./hospitality-booking-cutoffs";
 export const CATALOGUE_PACKAGE_SCHEMA_VERSION = 2;
 export const CATALOGUE_PACKAGE_CONTRACT = "fika.hospitality-catalogue-package.v2";
@@ -32,7 +33,8 @@ export type PackageException = {
   displayName?: string; description?: string; configuration?: Record<string, unknown>;
 };
 export type PackageOploc = { id: string; label: string };
-export type CataloguePackage = { schemaVersion: number; contract: string; items: PackageItem[]; exceptions: PackageException[]; oplocs: PackageOploc[] };
+/** `serviceLayout` is additive and optional: older packages and clients ignore it (issue #175). */
+export type CataloguePackage = { schemaVersion: number; contract: string; items: PackageItem[]; exceptions: PackageException[]; oplocs: PackageOploc[]; serviceLayout?: ServiceLayoutPackage };
 
 export type EffectiveOffering = {
   bookingPolicy?: BookingPolicy;
