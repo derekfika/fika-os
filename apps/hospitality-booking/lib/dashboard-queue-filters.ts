@@ -12,6 +12,8 @@
 export type QueueBooking = {
   canonicalId: string;
   lifecycleStatus: string;
+  /** Optional dashboard presentation label, derived from the current CPU handoff when available. */
+  statusLabel?: string;
   updatedAt?: string;
   createdAt?: string;
   source?: { sourceBookingId?: string };
@@ -85,7 +87,9 @@ export function hasActiveFilters(filters: QueueFilters) {
 const normalise = (value: string | undefined) => (value || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
 function rowStatus(row: QueueRow) {
-  return queueStatusLabel(row.kind === "booking" ? row.booking.lifecycleStatus : row.group.status);
+  return row.kind === "booking"
+    ? row.booking.statusLabel || queueStatusLabel(row.booking.lifecycleStatus)
+    : queueStatusLabel(row.group.status);
 }
 
 function rowDate(row: QueueRow) {
@@ -210,7 +214,7 @@ export function filterQueue(input: {
 export function availableStatuses(input: { bookings: readonly QueueBooking[]; groups: readonly QueueGroup[]; standaloneIds: ReadonlySet<string> }) {
   const present = new Set<string>([
     ...input.groups.map((group) => queueStatusLabel(group.status)),
-    ...input.bookings.filter((booking) => input.standaloneIds.has(booking.canonicalId)).map((booking) => queueStatusLabel(booking.lifecycleStatus)),
+    ...input.bookings.filter((booking) => input.standaloneIds.has(booking.canonicalId)).map((booking) => booking.statusLabel || queueStatusLabel(booking.lifecycleStatus)),
   ]);
   const known = STATUS_ORDER.filter((status) => present.has(status));
   const other = [...present].filter((status) => !STATUS_ORDER.includes(status)).sort();

@@ -396,11 +396,18 @@ export default function HospitalityDashboard({
     await load();
   };
 
-  const queue = useMemo(
-    () => filterQueue({ bookings, groups, standaloneIds, filters: queueFilters }),
-    [bookings, groups, standaloneIds, queueFilters],
+  const queueBookings = useMemo(
+    () => bookings.map((booking) => ({
+      ...booking,
+      statusLabel: standaloneStatusLabel(booking, productionOrders[booking.canonicalId]),
+    })),
+    [bookings, productionOrders],
   );
-  const queueStatuses = useMemo(() => availableStatuses({ bookings, groups, standaloneIds }), [bookings, groups, standaloneIds]);
+  const queue = useMemo(
+    () => filterQueue({ bookings: queueBookings, groups, standaloneIds, filters: queueFilters }),
+    [queueBookings, groups, standaloneIds, queueFilters],
+  );
+  const queueStatuses = useMemo(() => availableStatuses({ bookings: queueBookings, groups, standaloneIds }), [queueBookings, groups, standaloneIds]);
   const visible = queue.bookings as CanonicalBooking[];
   const visibleGroups = queue.groups as HospitalityBookingGroup[];
   const newCount = visibleGroups.filter(group => group.status === "New").length + visible.filter(

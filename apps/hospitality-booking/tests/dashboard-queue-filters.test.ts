@@ -16,6 +16,7 @@ import {
 const booking = (id: string, over: Partial<QueueBooking> & { date?: string; time?: string; company?: string; name?: string } = {}): QueueBooking => ({
   canonicalId: id,
   lifecycleStatus: over.lifecycleStatus || "New",
+  statusLabel: over.statusLabel,
   updatedAt: over.updatedAt,
   createdAt: over.createdAt,
   source: { sourceBookingId: over.source?.sourceBookingId || `SRC-${id}` },
@@ -179,6 +180,15 @@ test("only statuses present in the loaded data are offered", () => {
   assert.deepEqual(availableStatuses({ bookings: [], groups: [], standaloneIds: new Set() }), []);
 });
 
+test("Sent to CPU uses the same derived display label for status choices and filtering", () => {
+  const handedOff = booking("sent-to-cpu", { lifecycleStatus: "Completed", statusLabel: "Sent to CPU" });
+  const standaloneIds = new Set([handedOff.canonicalId]);
+  const input = { bookings: [handedOff], groups: [], standaloneIds };
+  assert.deepEqual(availableStatuses(input), ["Sent to CPU"]);
+  assert.deepEqual(ids(filterQueue({ ...input, filters: filters({ statuses: ["Sent to CPU"] }) })), ["sent-to-cpu"]);
+  assert.deepEqual(ids(filterQueue({ ...input, filters: filters({ statuses: ["Completed"] }) })), []);
+});
+
 test("chips describe every active filter and can be reset", () => {
   const active = filters({ search: "ada", statuses: ["New"], dateFrom: "2026-11-02" });
   assert.equal(hasActiveFilters(active), true);
@@ -192,7 +202,9 @@ const filterBar = readFileSync(new URL("../app/ui/DashboardQueueFilters.tsx", im
 const filterCss = readFileSync(new URL("../app/ui/DashboardQueueFilters.module.css", import.meta.url), "utf8");
 
 test("the dashboard feeds the same filtered rows to the calendar and the queue, with one reset-able filter bar", () => {
-  assert.match(dashboard, /filterQueue\(\{ bookings, groups, standaloneIds, filters: queueFilters \}\)/);
+  assert.match(dashboard, /statusLabel: standaloneStatusLabel\(booking, productionOrders\[booking\.canonicalId\]\)/);
+  assert.match(dashboard, /filterQueue\(\{ bookings: queueBookings, groups, standaloneIds, filters: queueFilters \}\)/);
+  assert.match(dashboard, /availableStatuses\(\{ bookings: queueBookings, groups, standaloneIds \}\)/);
   assert.match(dashboard, /bookings=\{visible\}/);
   assert.match(dashboard, /groups=\{visibleGroups\}/);
   assert.match(dashboard, /<DashboardQueueFilters/);
@@ -210,6 +222,7 @@ test("the filter bar is labelled, keyboard operable, announces counts and offers
   assert.match(filterBar, /Reset filters/);
   assert.match(filterBar, /aria-label=\{`Remove filter/);
   assert.match(filterBar, /role="alert"/);
+  assert.match(filterBar, /The end date is before the start date, so no bookings can match/);
   assert.doesNotMatch(filterBar, /window\.(alert|confirm|prompt)/);
   assert.match(filterCss, /:focus-visible/);
   assert.match(filterCss, /min-height: 44px/);
