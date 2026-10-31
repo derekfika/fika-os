@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T19:32:08.302Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T19:38:34.723Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -193,6 +193,7 @@ Snapshot: 2026-10-31T19:32:08.302Z. The local governed registry remains authorit
 | rotations-staging-access | codex-rotations-staging-delivery | apps/integration-hub/scripts/rotations-staging-access.ts, docs/deployment/rotations-staging-delivery-continued.md | codex/rotations-staging-access | — | retired | 2026-10-29T16:11:09.792Z |
 | rotations-staging-delivery | codex-rotations-staging-delivery | docs/deployment/rotations-staging-delivery.md | codex/rotations-staging-delivery | [#135](https://github.com/derekfika/fika-os/pull/135) | retired | 2026-10-29T15:56:53.225Z |
 | rotations-staging-record | codex-hospitality-rotations-integration | .changes/hospitality-booking/2026-10-29-rotations-live-manager.md, .changes/integration-hub/2026-10-29-rotations-picker-resources.md | codex/rotations-staging-record | [#148](https://github.com/derekfika/fika-os/pull/148) | retired | 2026-10-29T19:01:14.536Z |
+| salad-slot-display-labels | codex-luna-107-salad-labels | apps/menu-planning/lib/week-planner-slot-label.ts, apps/menu-planning/tests/week-planner-layout.test.ts | codex/salad-slot-display-labels | [#220](https://github.com/derekfika/fika-os/pull/220) | retired | 2026-10-31T19:38:31.983Z |
 | service-layout-provider | claude-service-layout | packages/server-shared/src/hospitality-service-layout.ts, packages/server-shared/src/hospitality-effective-offering.ts, packages/server-shared/package.json, apps/integration-hub/lib/hospitality-service-layout.ts, apps/integration-hub/lib/hospitality-catalogue-package.ts, apps/integration-hub/lib/hospitality-catalogue-admin.ts, apps/integration-hub/lib/hospitality-catalogue-service.ts, apps/integration-hub/app/api/hospitality-catalogue/route.ts, apps/integration-hub/tests/hospitality-service-layout.test.ts, apps/integration-hub/tests/hospitality-service-layout.emulator.test.ts, apps/hospitality-booking/tests/service-layout-seed.test.ts, apps/integration-hub/docs/hospitality-catalogue-admin.md | codex/service-layout-provider | [#183](https://github.com/derekfika/fika-os/pull/183) | finished | 2026-10-31T00:11:17.580Z |
 | stacked-lease-integration | sol-workspace-integration | tools/workflow, docs/deployment/workspace-management.md, docs/deployment/workflow.md | codex/stacked-lease-integration | [#167](https://github.com/derekfika/fika-os/pull/167) | retired | 2026-10-30T09:20:57.232Z |
 | stacked-lease-recovery | sol-workspace-governance | tools/workflow, docs/deployment/workspace-management.md, docs/deployment/workflow.md | codex/stacked-lease-recovery | [#165](https://github.com/derekfika/fika-os/pull/165) | retired | 2026-10-30T07:44:59.666Z |
