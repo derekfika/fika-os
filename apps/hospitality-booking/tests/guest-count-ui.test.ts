@@ -110,6 +110,27 @@ test("RCoA All Day: service minima/counts stay independent; default 100 cannot m
   const stored = JSON.parse(dom.window.localStorage.getItem("fika-rcoa-booking-draft:v1")!); assert.deepEqual(stored.allDay.services.map((service: { guestCount: number }) => service.guestCount), [1, 12]);
 });
 
+test("RCoA All Day: blank event default shows a linked error, blocks progression, then preserves service counts", async () => {
+  const day = { ...createEmptyAllDay(), contact: rcoaDraft().contact, eventDate: details.eventDate, floorLevel: "1", defaultGuests: 0, acknowledgements: acks,
+    services: [{ id: "one", category: "breakfast", startTime: "09:00", guestCount: 1, location: "Room A", lines: selected(product), notes: "" },
+      { id: "two", category: "breakfast", startTime: "12:00", guestCount: 12, location: "Room B", lines: selected(guestItem), notes: "" }] };
+  dom.window.localStorage.setItem("fika-rcoa-booking-draft:v1", JSON.stringify({ flow: "all-day", allDay: day, step: 1 })); render(React.createElement(RcoaBookingPortal, { configured: true }));
+  const input = guest("rcoa", "defaultGuests");
+  assert.equal(input.value, ""); assert.equal(input.getAttribute("aria-invalid"), null);
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await waitFor(() => assert.ok(document.activeElement === input));
+  assert.equal(input.getAttribute("aria-invalid"), "true"); assert.match(errorText(input), /Enter at least 1 guest/);
+
+  fireEvent.change(input, { target: { value: "50" } });
+  assert.equal(input.getAttribute("aria-invalid"), null);
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "Build your day" });
+  await waitFor(() => {
+    const stored = JSON.parse(dom.window.localStorage.getItem("fika-rcoa-booking-draft:v1")!);
+    assert.deepEqual(stored.allDay.services.map((service: { guestCount: number }) => service.guestCount), [1, 12]);
+  });
+});
+
 
 test("shared menu selections recompute the requirement immediately and removal clears it without changing the guest count", async () => {
   restoreShared(2, 1, selected(product)); render(React.createElement(BookingPortal, { siteKey: "mnk" }));
