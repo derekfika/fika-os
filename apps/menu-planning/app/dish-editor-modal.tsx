@@ -29,6 +29,8 @@ type Props = {
   /** Create: the typed name. Edit: ignored (the saved record is loaded). */
   initialName: string;
   initialCategory: string;
+  /** New salad dishes created from a numbered slot start with that explicit subtype selected. */
+  initialSubcategory?: string;
   dishId?: string;
   dishes: readonly EditorDishRef[];
   onSaved: (dish: SavedDish) => Promise<void> | void;
@@ -46,12 +48,12 @@ async function readJson(response: Response) {
  * Cancel and Escape change nothing. Provisional allergens are not authored here: a new dish starts
  * with no allergen evidence, so it is never treated as Clear or signed.
  */
-export default function DishEditorModal({ mode, initialName, initialCategory, dishId, dishes, onSaved, onCancel }: Props) {
+export default function DishEditorModal({ mode, initialName, initialCategory, initialSubcategory, dishId, dishes, onSaved, onCancel }: Props) {
   const formId = useId();
   const [name, setName] = useState(mode === "create" ? cleanDishName(initialName) : "");
   const [category, setCategory] = useState(initialCategory);
   // `undefined` = the salad slot was not touched, so an edit leaves whatever is stored exactly as it is.
-  const [subcategory, setSubcategory] = useState<string | undefined>(undefined);
+  const [subcategory, setSubcategory] = useState<string | undefined>(mode === "create" ? initialSubcategory : undefined);
   const [storedSubtype, setStoredSubtype] = useState("");
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [preserved, setPreserved] = useState<PreservedDishFields>({});

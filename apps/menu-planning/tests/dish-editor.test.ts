@@ -251,9 +251,11 @@ test("the salad slot is saved only for Salad dishes and other dishes keep their 
 });
 
 test("the planner picker and modal apply and expose the salad slot rule", () => {
-  assert.match(planner, /dishFitsSaladSlot\(dish, slot\)/);
+  assert.match(planner, /subcategory: saladSubtypeForSlot\(slot\)/);
+  assert.match(planner, /initialSubcategory=\{editor\.subcategory\}/);
   assert.match(planner, /needs a salad slot/);
   assert.match(modal, /Salad slot/);
+  assert.match(modal, /mode === "create" \? initialSubcategory : undefined/);
   assert.match(modal, /Not assigned yet/);
   assert.match(modal, /FIKA Seasonal is an explicit choice only/);
 });

@@ -37,11 +37,11 @@ const dishes: PickerFilterDish[] = [
 ];
 const ids = (list: PickerFilterDish[]) => list.map((entry) => entry.id).sort();
 
-test("a slot offers only its categories, and a classified salad only its own salad slot", () => {
-  assert.deepEqual(ids(dishesForSlot(dishes, "SALAD 1")), ["leaf1", "leaf2", "none1"]);
-  assert.deepEqual(ids(dishesForSlot(dishes, "SALAD 2")), ["none1", "slaw1"]);
-  assert.deepEqual(ids(dishesForSlot(dishes, "SALAD 4")), ["none1", "veg1"]);
-  assert.deepEqual(ids(dishesForSlot(dishes, "SALAD 6")), ["seasonal1"], "FIKA Seasonal is explicit only");
+test("a slot's primary category is the eligibility gate and all compatible salads remain browsable", () => {
+  assert.deepEqual(ids(dishesForSlot(dishes, "SALAD 1")), ["leaf1", "leaf2", "none1", "seasonal1", "slaw1", "veg1"]);
+  assert.deepEqual(ids(dishesForSlot(dishes, "SALAD 2")), ["leaf1", "leaf2", "none1", "seasonal1", "slaw1", "veg1"]);
+  assert.deepEqual(ids(dishesForSlot(dishes, "SALAD 4")), ["leaf1", "leaf2", "none1", "seasonal1", "slaw1", "veg1"]);
+  assert.deepEqual(ids(dishesForSlot(dishes, "SALAD 6")), ["leaf1", "leaf2", "none1", "seasonal1", "slaw1", "veg1"], "Seasonal recommendation remains explicit, but other compatible salads remain available in All compatible");
   assert.deepEqual(ids(dishesForSlot(dishes, "SOUP")), ["soup1"]);
   assert.deepEqual(ids(dishesForSlot(dishes, "HOT MAIN")), ["fish1", "hot1", "hot2"]);
 });
@@ -67,14 +67,15 @@ test("tag filter matches any selected tag; categories and salad slots likewise",
   assert.deepEqual(ids(salad1.filter((entry) => dishMatchesFilters(entry, { ...emptyPickerFilters, subtypes: [UNASSIGNED_SUBTYPE] }))), ["none1"]);
 });
 
-test("groups combine with AND, and filters can only narrow the slot, never widen it", () => {
+test("groups combine with AND and category filters cannot widen the slot's eligible categories", () => {
   const filters = { tagIds: ["t:spiced"], categories: ["Hot Main"], subtypes: [] };
   const result = filterPickerDishes(dishes, "HOT MAIN", "", filters);
   assert.deepEqual(ids(result.dishes), ["hot1", "hot2"]);
   assert.equal(result.offered, 3);
   assert.equal(result.shown, 2);
   const leafOnly = filterPickerDishes(dishes, "SALAD 2", "", { tagIds: ["t:slaw"], categories: [], subtypes: ["Leaf"] });
-  assert.deepEqual(leafOnly.dishes, [], "a Leaf filter cannot pull a leaf salad into the slaw slot");
+  assert.deepEqual(ids(leafOnly.dishes), ["leaf1"], "All compatible can deliberately override the default subtype recommendation");
+  assert.equal(filterPickerDishes(dishes, "HOT MAIN", "", { tagIds: [], categories: ["Salad"], subtypes: [] }).shown, 0, "a category filter cannot pull another primary category into a slot");
   assert.equal(filterPickerDishes(dishes, "SOUP", "", { tagIds: ["t:slaw"], categories: [], subtypes: [] }).shown, 0);
 });
 
@@ -87,9 +88,9 @@ test("search and filters combine; counts report offered versus shown", () => {
 
 test("options list only what the slot offers, with counts, in a stable order", () => {
   const salad = filterOptions(dishesForSlot(dishes, "SALAD 1"), TAGS);
-  assert.deepEqual(salad.tagOptions, [{ value: "t:slaw", label: "Slaw", count: 1 }]);
-  assert.deepEqual(salad.categoryOptions, [{ value: "Salad", label: "Salad", count: 3 }]);
-  assert.deepEqual(salad.subtypeOptions, [{ value: "Leaf", label: "Leaf", count: 2 }, { value: UNASSIGNED_SUBTYPE, label: "Not assigned yet", count: 1 }]);
+  assert.deepEqual(salad.tagOptions, [{ value: "t:slaw", label: "Slaw", count: 2 }, { value: "t:spiced", label: "Spiced", count: 2 }]);
+  assert.deepEqual(salad.categoryOptions, [{ value: "Salad", label: "Salad", count: 6 }]);
+  assert.deepEqual(salad.subtypeOptions, [{ value: "Leaf", label: "Leaf", count: 2 }, { value: "Slaw", label: "Slaw", count: 1 }, { value: "Veg", label: "Veg", count: 1 }, { value: "FIKA Seasonal", label: "FIKA Seasonal", count: 1 }, { value: UNASSIGNED_SUBTYPE, label: "Not assigned yet", count: 1 }]);
   const hot = filterOptions(dishesForSlot(dishes, "HOT MAIN"), TAGS);
   assert.deepEqual(hot.tagOptions.map((option) => [option.label, option.count]), [["Chicken", 1], ["Indian", 1], ["Spiced", 2]]);
   assert.deepEqual(hot.categoryOptions.map((option) => option.value), ["Fish", "Hot Main"]);
@@ -131,12 +132,15 @@ const planner = readFileSync(new URL("../app/week-planner.tsx", import.meta.url)
 const panel = readFileSync(new URL("../app/dish-picker-filters.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/dish-picker-filters.css", import.meta.url), "utf8");
 
-test("the planner keeps filters with the search so Cancel from the modal returns to the same filtered picker, and resets them on open", () => {
+test("the planner keeps filters and recommendation mode with the search so Cancel restores the picker and a new cell resets it", () => {
   assert.match(planner, /const \[pickerFilters, setPickerFilters\] = useState<PickerFilters>\(emptyPickerFilters\)/);
-  assert.match(planner, /setQuery\(""\); setPickerFilters\(emptyPickerFilters\); setPicker\(/);
+  assert.match(planner, /setQuery\(""\); setPickerFilters\(emptyPickerFilters\); setPickerMode\("recommended"\); setPicker\(/);
   assert.match(planner, /filters=\{pickerFilters\} setFilters=\{setPickerFilters\}/);
   assert.match(planner, /<DishPickerFilters /);
-  assert.match(planner, /filterPickerDishes\(dishes\.filter\(dish => dishFitsSaladSlot\(dish, slot\)\), slot, query, filters\)/);
+  assert.match(planner, /const \[pickerMode, setPickerMode\] = useState<"recommended" \| "all">\("recommended"\)/);
+  assert.match(planner, /All compatible dishes/);
+  assert.match(planner, /saladSlotMatches\(dish, slot, tags\)/);
+  assert.match(planner, /setPickerMode\("recommended"\)/);
 });
 
 test("existing planner behaviour remains: Enter-to-create, choose, drag/copy, clear and publish commands", () => {

@@ -149,10 +149,9 @@ export function saladSubtypeForSlot(slot: string): SaladSubtype | undefined {
 }
 
 /**
- * Whether the picker for `slot` should offer this dish. Outside the six salad slots nothing changes.
- * In a salad slot a classified salad appears only in its own subtype's slot; a salad with no subtype yet
- * is still offered (so no dish vanishes before it is classified) and is flagged as needing a slot. A slot
- * for FIKA Seasonal offers only dishes explicitly classified that way.
+ * Strict compatibility check used by copy/placement operations. The Week Planner picker separately
+ * uses subtype and registry tags to recommend dishes while retaining its explicit All compatible view.
+ * Unclassified salads remain compatible with SALAD 1–5; FIKA Seasonal still requires an explicit value.
  */
 export function dishFitsSaladSlot(dish: { category?: string; subcategory?: string }, slot: string): boolean {
   const slotSubtype = saladSubtypeForSlot(slot);
