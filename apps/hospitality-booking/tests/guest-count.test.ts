@@ -67,6 +67,23 @@ test("All Day requirements use only that service's selected items and own count,
   assert.deepEqual(day.services.map(service => service.guestCount), [1, 12]);
 });
 
+test("All Day requires a positive event default independently of valid service counts and item quantities", () => {
+  const shared = validDraft();
+  const day = { ...createEmptyAllDay(), contact: shared.contact, eventDate: shared.event.eventDate, floorLevel: "1", defaultGuests: 0,
+    acknowledgements: shared.acknowledgements, services: [
+      { id: "one", category: "breakfast" as const, startTime: "09:00", guestCount: 1, location: "Room A", lines: [line(product.id)], notes: "" },
+      { id: "two", category: "breakfast" as const, startTime: "12:00", guestCount: 12, location: "Room B", lines: [line(guestItem.id)], notes: "" },
+    ] };
+  const failure = validateAllDay(day, [product, guestItem]);
+  assert.equal(failure?.step, 1);
+  assert.match(failure?.errors.defaultGuests || "", /at least 1 guest/);
+  assert.deepEqual(day.services.map(service => service.guestCount), [1, 12]);
+
+  day.defaultGuests = 50;
+  assert.equal(validateAllDay(day, [product, guestItem]), undefined);
+  assert.deepEqual(day.services.map(service => service.guestCount), [1, 12], "the event default does not replace per-service counts");
+});
+
 
 test("RCoA applies Hub's explicit Gallagher floor while retaining its trusted adapter's raw item guest minima", () => {
   const draft = { ...validDraft(), lines: [line(product.id)], event: { ...validDraft().event, guestCount: 1 } };
