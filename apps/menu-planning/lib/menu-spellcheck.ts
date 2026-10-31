@@ -66,6 +66,7 @@ const KNOWN_CORRECTIONS: Record<string, { kind: SpellFindingKind; suggestions: s
 
 // Letters (including accents) with apostrophes inside a word, so "chef's" and "crème" are single tokens.
 const WORD = /\p{L}[\p{L}\p{M}]*(?:['’]\p{L}[\p{L}\p{M}]*)*/gu;
+const PROTECTED_BRANDS = new Set(["fika"]);
 
 /** Words a user has chosen to keep, plus any words added to the dictionary. */
 export type SpellcheckOptions = { ignored?: ReadonlySet<string>; addedWords?: ReadonlySet<string>; speller?: SpellerLike | null };
@@ -114,11 +115,16 @@ export function findSpellingIssues(text: string, options: SpellcheckOptions = {}
   for (const match of text.matchAll(WORD)) {
     const word = match[0];
     const key = spellKey(word);
+    // FIKA is a protected brand name. Do not let either the built-in list or a
+    // dictionary suggestion turn it into an unrelated word (for example, “Zika”).
+    if (PROTECTED_BRANDS.has(key)) continue;
     if (options.ignored?.has(key) || options.addedWords?.has(key)) continue;
     const start = match.index ?? 0;
     const known = KNOWN_CORRECTIONS[key];
     if (known) {
-      findings.push({ start, end: start + word.length, word, kind: known.kind, suggestions: known.suggestions.map(suggestion => matchCase(word, suggestion)) });
+      const suggestions = [...new Map(known.suggestions.map(suggestion => [spellKey(suggestion), matchCase(word, suggestion)])).values()]
+        .filter(suggestion => spellKey(suggestion) !== key);
+      if (suggestions.length) findings.push({ start, end: start + word.length, word, kind: known.kind, suggestions });
       continue;
     }
     const speller = options.speller;
@@ -128,4 +134,10 @@ export function findSpellingIssues(text: string, options: SpellcheckOptions = {}
     if (suggestions.length) findings.push({ start, end: start + word.length, word, kind: "misspelling", suggestions });
   }
   return findings;
+}
+
+/** Replace exactly one previously reviewed occurrence, leaving repeated words untouched. */
+export function replaceSpellingFinding(text: string, finding: Pick<SpellFinding, "start" | "end" | "word">, replacement: string) {
+  if (!replacement.trim() || text.slice(finding.start, finding.end) !== finding.word) return undefined;
+  return `${text.slice(0, finding.start)}${replacement}${text.slice(finding.end)}`;
 }

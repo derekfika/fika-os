@@ -78,22 +78,26 @@ export function SpellUnderlinedText({ text, ignored, added, speller }: { text: s
     : <span key={index} className="spell-flag" title={`Possible spelling: ${part.finding.suggestions.join(" or ")}`}>{part.finding.word}</span>)}</>;
 }
 
-export type SpellPanelItem = { dishLabel: string; dayName: string; slot: string };
+export type SpellPanelItem = { entryId: string; dayId: string; dishLabel: string; dayName: string; slot: string; replaceable: boolean };
 
 /**
- * Compact list of flagged dish names with suggestions. Dish text is changed through the
- * Dish Library, so the panel offers Ignore and Add to dictionary only.
+ * Compact list of flagged dish names with suggestions. Replacement is explicit and
+ * limited to the selected editable draft occurrence through the caller's versioned command.
  */
-export function SpellcheckPanel({ items, ignored, added, dictionary, onIgnore, onAddWord, onClose }: {
+export function SpellcheckPanel({ items, ignored, added, dictionary, onIgnore, onAddWord, onReplace, onClose }: {
   items: SpellPanelItem[];
   ignored: ReadonlySet<string>;
   added: ReadonlySet<string>;
   dictionary: SpellingDictionary;
   onIgnore: (word: string) => void;
   onAddWord: (word: string) => void;
+  onReplace: (item: SpellPanelItem, finding: SpellFinding, replacement: string) => Promise<boolean>;
   onClose: () => void;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
+  const [pending, setPending] = useState<{ item: SpellPanelItem; finding: SpellFinding; replacement: string }>();
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState("");
   const rows = useMemo(() => items.flatMap(item => findSpellingIssues(item.dishLabel, { ignored, addedWords: added, speller: dictionary.speller }).map(finding => ({ item, finding }))), [items, ignored, added, dictionary.speller]);
   return <PlannerModal title="Spelling suggestions" className="spell-panel" onClose={onClose}>
     <header className="spell-panel-header">
@@ -104,7 +108,7 @@ export function SpellcheckPanel({ items, ignored, added, dictionary, onIgnore, o
     {dictionary.status === "unavailable" && <div role="alert"><p>The UK spelling dictionary is unavailable. Only common corrections are checked.</p><button type="button" className="button button-soft" onClick={dictionary.retry}>Retry dictionary</button></div>}
     {rows.length === 0 && <p className="form-help">{dictionary.status === "ready" ? "No spelling suggestions for this week." : "No common spelling suggestions for this week."}</p>}
     <ul className="spell-panel-list">
-      {rows.map(({ item, finding }, index) => <li key={`${item.dishLabel}-${finding.start}-${index}`}>
+      {rows.map(({ item, finding }, index) => <li key={`${item.entryId}-${finding.start}-${index}`}>
         <div className="spell-panel-row">
           <span className="spell-flag">{finding.word}</span>
           <span aria-hidden="true">→</span>
@@ -112,12 +116,55 @@ export function SpellcheckPanel({ items, ignored, added, dictionary, onIgnore, o
         </div>
         {finding.suggestions.length > 1 && <p className="form-help">Also: {finding.suggestions.slice(1).join(" · ")}</p>}
         <small>{item.dayName} · {item.slot} · {item.dishLabel}</small>
+        {item.replaceable && <div className="spell-panel-actions">
+          {finding.suggestions.map(suggestion => <button key={suggestion} type="button" className="button button-soft" disabled={saving} onClick={() => { setFeedback(""); setPending({ item, finding, replacement: suggestion }); }}>{`Replace with ${suggestion}`}</button>)}
+        </div>}
+        {pending?.item.entryId === item.entryId && pending.finding.start === finding.start && <div className="spell-replace-confirm" role="group" aria-label="Confirm draft spelling replacement">
+          <p>Replace this word in this draft menu row only? The Dish Library and published history stay unchanged. Changing the dish name may invalidate this row’s allergen review, which must then be completed again.</p>
+          <div className="spell-panel-actions"><button type="button" className="button button-soft" disabled={saving} onClick={() => { setPending(undefined); closeButton.current?.focus(); }}>Cancel</button><button type="button" className="button button-primary" disabled={saving} onClick={async () => { setSaving(true); setFeedback(""); try { if (await onReplace(pending.item, pending.finding, pending.replacement)) { setPending(undefined); setFeedback(`Updated this draft row to “${pending.replacement}”.`); closeButton.current?.focus(); } } finally { setSaving(false); } }}>{saving ? "Replacing…" : `Confirm replacement`}</button></div>
+        </div>}
         <div className="spell-panel-actions">
           <button type="button" className="button button-soft" aria-label={`Ignore ${finding.word} in spelling checks`} onClick={() => { onIgnore(finding.word); closeButton.current?.focus(); }}>Ignore</button>
           <button type="button" className="button button-soft" aria-label={`Add ${finding.word} to this browser's dictionary`} onClick={() => { onAddWord(finding.word); closeButton.current?.focus(); }}>Add to dictionary</button>
         </div>
       </li>)}
     </ul>
-    <p className="form-help">Suggestions do not change dish names. Change a name in the Dish Library, which keeps IDs, allergen evidence and published history. Ignore and dictionary choices apply only in this browser.</p>
+    {feedback && <p role="status" className="form-help">{feedback}</p>}
+    <p className="form-help">Replace changes only the selected editable draft row through the versioned menu update. The canonical dish ID, portions and allocations stay in place. Published or locked rows cannot be replaced here. Ignore and dictionary choices apply only in this browser.</p>
   </PlannerModal>;
+}
+
+/** Small touch/hover/focus entry point; actions remain outside the dish-selection button. */
+export function InlineSpellPopover({ item, ignored, added, dictionary, onReplace, onIgnore, onAddWord }: {
+  item: SpellPanelItem;
+  ignored: ReadonlySet<string>;
+  added: ReadonlySet<string>;
+  dictionary?: SpellerLike;
+  onReplace: (item: SpellPanelItem, finding: SpellFinding, replacement: string) => Promise<boolean>;
+  onIgnore: (word: string) => void;
+  onAddWord: (word: string) => void;
+}) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const findings = useMemo(() => findSpellingIssues(item.dishLabel, { ignored, addedWords: added, speller: dictionary }), [item.dishLabel, ignored, added, dictionary]);
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState<{ finding: SpellFinding; replacement: string }>();
+  const [saving, setSaving] = useState(false);
+  const finding = findings[0];
+  if (!finding) return null;
+  const returnFocusToCell = () => window.setTimeout(() => trigger.current?.closest(".week-menu-cell")?.querySelector<HTMLButtonElement>(".week-menu-cell-button")?.focus(), 0);
+  const replace = async () => {
+    if (!pending) return;
+    setSaving(true);
+    try { if (await onReplace(item, pending.finding, pending.replacement)) { setPending(undefined); setOpen(false); returnFocusToCell(); } }
+    finally { setSaving(false); }
+  };
+  return <div className="spell-inline" onMouseEnter={() => setOpen(true)} onMouseLeave={() => { if (!pending) setOpen(false); }} onFocusCapture={() => setOpen(true)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null) && !pending) setOpen(false); }}>
+    <button ref={trigger} type="button" className="spell-inline-trigger" aria-expanded={open} aria-label={`Spelling suggestions for ${item.dishLabel}`} onClick={() => setOpen(value => !value)}><span aria-hidden="true">Aa</span><span className="sr-only">Spelling suggestions</span></button>
+    {open && <div className="spell-inline-popover" role="region" aria-label={`Spelling suggestions for ${item.dishLabel}`}>
+      <strong>{finding.word}</strong><span aria-hidden="true"> → </span>{finding.suggestions.map(suggestion => <button key={suggestion} type="button" className="spell-inline-option" disabled={!item.replaceable} onClick={() => setPending({ finding, replacement: suggestion })}>{suggestion}</button>)}
+      {pending && <div className="spell-inline-confirm"><p>Replace in this draft row only? Allergen review may need to be completed again.</p><button type="button" className="spell-inline-option" disabled={saving} onClick={() => setPending(undefined)}>Cancel</button><button type="button" className="spell-inline-option" disabled={saving} onClick={() => void replace()}>{saving ? "Replacing…" : "Confirm Replace"}</button></div>}
+      <div className="spell-inline-actions"><button type="button" className="spell-inline-option" onClick={() => { onIgnore(finding.word); setOpen(false); returnFocusToCell(); }}>Ignore</button><button type="button" className="spell-inline-option" onClick={() => { onAddWord(finding.word); setOpen(false); returnFocusToCell(); }}>Add to dictionary</button></div>
+      {!item.replaceable && <p className="form-help">This row is published or locked. Use Dish Library to edit canonical names.</p>}
+    </div>}
+  </div>;
 }
