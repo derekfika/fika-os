@@ -8,6 +8,15 @@ import {
   cpuServiceWindow,
   cpuSourceLabel,
 } from "../../lib/production-presentation";
+export function collectionOrders(orders: ProductionOrder[]) {
+  const unique = new Map<string, ProductionOrder>();
+  for (const order of orders)
+    if (!unique.has(order.canonicalId) || unique.get(order.canonicalId)!.version < order.version)
+      unique.set(order.canonicalId, order);
+  return [...unique.values()].sort(
+    (a, b) => a.requiredBy.localeCompare(b.requiredBy) || a.canonicalId.localeCompare(b.canonicalId),
+  );
+}
 export function collectionQuantity(line: ProductionLine) {
   return line.productionQuantity !== undefined &&
     Number.isFinite(line.productionQuantity) &&

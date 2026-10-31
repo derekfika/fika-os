@@ -64,6 +64,8 @@ export default function DishEditorModal({ mode, initialName, initialCategory, di
   const [newTagGroup, setNewTagGroup] = useState<DishTagGroup>("type");
   const [tagBusy, setTagBusy] = useState(false);
   const [tagMessage, setTagMessage] = useState("");
+  const [feedbackEnabled, setFeedbackEnabled] = useState(false);
+  const [rejectedSuggestions, setRejectedSuggestions] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -105,12 +107,26 @@ export default function DishEditorModal({ mode, initialName, initialCategory, di
 
   const registry: DishTagRegistry = useMemo(() => ({ schemaVersion: 1, version: tags.version, tags: tags.tags }), [tags]);
   const visibleTags = useMemo(() => searchTags(registry, tagQuery), [registry, tagQuery]);
-  const suggestions = useMemo(() => suggestTags(tags.tags, name, tagIds), [tags.tags, name, tagIds]);
+  const taggedDishes = useMemo(() => dishes.filter((dish): dish is EditorDishRef & { tagIds: string[] } => Array.isArray((dish as EditorDishRef & { tagIds?: string[] }).tagIds) && (dish as EditorDishRef & { tagIds: string[] }).tagIds.length > 0), [dishes]);
+  const suggestions = useMemo(() => suggestTags(tags.tags, name, tagIds, { similarDishes: taggedDishes }), [tags.tags, name, tagIds, taggedDishes]);
   const similar = useMemo(() => similarDishWarnings(dishes, name, dishId), [dishes, name, dishId]);
   const spellingIssues = useMemo(() => (dictionary.status === "ready" ? findSpellingIssues(name, { ignored: spell.ignored, addedWords: spell.added, speller: dictionary.speller }) : []), [name, spell.ignored, spell.added, dictionary]);
   const selectedTags = tagIds.map((id) => tags.tags.find((tag) => tag.id === id) || { id, label: id, group: "type" as DishTagGroup, synonyms: [], createdAt: "", createdBy: "" });
 
   const toggle = (id: string) => setTagIds((current) => (current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]));
+
+  const saveFeedback = (tagId: string, outcome: "accepted" | "rejected") => {
+    if (!feedbackEnabled) return;
+    try {
+      const key = "fika-menu-tag-suggestion-feedback-v1";
+      const current = JSON.parse(window.localStorage.getItem(key) || "[]") as Array<{ dish: string; tagId: string; outcome: string; at: string }>;
+      current.push({ dish: cleanDishName(name).toLocaleLowerCase("en-GB"), tagId, outcome, at: new Date().toISOString() });
+      window.localStorage.setItem(key, JSON.stringify(current.slice(-200)));
+    } catch { /* Local feedback is optional and never blocks editing. */ }
+  };
+
+  const acceptSuggestion = (tagId: string) => { saveFeedback(tagId, "accepted"); toggle(tagId); };
+  const rejectSuggestion = (tagId: string) => { saveFeedback(tagId, "rejected"); setRejectedSuggestions((current) => current.includes(tagId) ? current : [...current, tagId]); };
 
   const addTag = async () => {
     const label = cleanDishName(newTagLabel);
@@ -174,7 +190,7 @@ export default function DishEditorModal({ mode, initialName, initialCategory, di
           <form className="dish-editor-body" id={formId} onSubmit={(event) => void submit(event)} aria-busy={saving || loading}>
             {loading && <p role="status" className="dish-editor-note">Loading the dish…</p>}
             <label className="dish-editor-field">Dish name
-              <input data-modal-autofocus value={name} disabled={loading} onChange={(event) => setName(event.target.value)} placeholder="Type a dish title" autoComplete="off" required />
+              <input data-modal-autofocus value={name} disabled={loading} onChange={(event) => { setName(event.target.value); setRejectedSuggestions([]); }} placeholder="Type a dish title" autoComplete="off" required />
             </label>
             {spellingIssues.length > 0 && (
               <p className="dish-editor-warn" role="status">Check the spelling: <SpellUnderlinedText text={name} ignored={spell.ignored} added={spell.added} speller={dictionary.speller} />. Saving is still allowed.</p>
@@ -209,9 +225,10 @@ export default function DishEditorModal({ mode, initialName, initialCategory, di
                   {selectedTags.map((tag) => <li key={tag.id}><button type="button" className="dish-editor-chip" onClick={() => toggle(tag.id)} aria-label={`Remove tag ${tag.label}`}>{tag.label} <span aria-hidden="true">×</span></button></li>)}
                 </ul>
               )}
-              {suggestions.length > 0 && (
-                <div className="dish-editor-suggest"><span>Suggested:</span>{suggestions.map((tag) => <button type="button" key={tag.id} className="dish-editor-chip dish-editor-chip--suggest" onClick={() => toggle(tag.id)} aria-label={`Add suggested tag ${tag.label}`}>＋ {tag.label}</button>)}</div>
+              {suggestions.some((suggestion) => !rejectedSuggestions.includes(suggestion.tag.id)) && (
+                <div className="dish-editor-suggest"><span>Suggested (choose to add):</span>{suggestions.filter((suggestion) => !rejectedSuggestions.includes(suggestion.tag.id)).map(({ tag, reason }) => <span className="dish-editor-suggestion" key={tag.id}><button type="button" className="dish-editor-chip dish-editor-chip--suggest" onClick={() => acceptSuggestion(tag.id)} aria-label={`Add suggested tag ${tag.label}`}>＋ {tag.label}</button><small>{reason}</small><button type="button" className="dish-editor-reject" onClick={() => rejectSuggestion(tag.id)} aria-label={`Dismiss suggestion ${tag.label}`}>Dismiss</button></span>)}</div>
               )}
+              <label className="dish-editor-feedback"><input type="checkbox" checked={feedbackEnabled} onChange={(event) => setFeedbackEnabled(event.target.checked)} /> Save accepted or dismissed suggestions on this device</label>
               <label className="dish-editor-field">Search tags
                 <input type="search" value={tagQuery} onChange={(event) => setTagQuery(event.target.value)} placeholder="Search by name or synonym" autoComplete="off" />
               </label>
