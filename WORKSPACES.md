@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T08:03:15.302Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T11:20:47.406Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -33,6 +33,7 @@ Snapshot: 2026-10-31T08:03:15.302Z. The local governed registry remains authorit
 | cpu-cancelled-demand | uat-20261025-1150 | apps/cpu-production | codex/cpu-cancelled-demand | [#46](https://github.com/derekfika/fika-os/pull/46) | finished | 2026-10-26T15:25:59.075Z |
 | cpu-deep-link-iss018-fix | uat-20261025-1150 | apps/cpu-production, CHANGELOG.md | codex/cpu-deep-link-iss018-fix | [#80](https://github.com/derekfika/fika-os/pull/80) | finished | 2026-10-27T12:02:56.344Z |
 | cpu-deep-link-iss018 | uat-20261025-1150 | apps/cpu-production | codex/cpu-deep-link-iss018 | — | finished | 2026-10-26T23:15:02.390Z |
+| cpu-fast-reauth | sol-cpu-fast-reauth | apps/cpu-production | codex/cpu-fast-reauth | — | active | 2026-10-31T08:06:54.126Z |
 | cpu-nav-totals | agent-task | apps/cpu-production | codex/cpu-nav-totals | [#15](https://github.com/derekfika/fika-os/pull/15) | finished | 2026-10-23T10:31:45.451Z |
 | cpu-ordered-pax-display | luna-cpu-ordered-pax-display | apps/cpu-production | codex/cpu-ordered-pax-display | [#197](https://github.com/derekfika/fika-os/pull/197) | retired | 2026-10-31T07:15:33.025Z |
 | cpu-packing-day-print | codex-cpu-packing-day-print | apps/cpu-production | codex/cpu-packing-day-print | [#26](https://github.com/derekfika/fika-os/pull/26) | finished | 2026-10-23T17:59:26.606Z |
@@ -183,10 +184,12 @@ Snapshot: 2026-10-31T08:03:15.302Z. The local governed registry remains authorit
 | service-layout-provider | claude-service-layout | packages/server-shared/src/hospitality-service-layout.ts, packages/server-shared/src/hospitality-effective-offering.ts, packages/server-shared/package.json, apps/integration-hub/lib/hospitality-service-layout.ts, apps/integration-hub/lib/hospitality-catalogue-package.ts, apps/integration-hub/lib/hospitality-catalogue-admin.ts, apps/integration-hub/lib/hospitality-catalogue-service.ts, apps/integration-hub/app/api/hospitality-catalogue/route.ts, apps/integration-hub/tests/hospitality-service-layout.test.ts, apps/integration-hub/tests/hospitality-service-layout.emulator.test.ts, apps/hospitality-booking/tests/service-layout-seed.test.ts, apps/integration-hub/docs/hospitality-catalogue-admin.md | codex/service-layout-provider | [#183](https://github.com/derekfika/fika-os/pull/183) | finished | 2026-10-31T00:11:17.580Z |
 | stacked-lease-integration | sol-workspace-integration | tools/workflow, docs/deployment/workspace-management.md, docs/deployment/workflow.md | codex/stacked-lease-integration | [#167](https://github.com/derekfika/fika-os/pull/167) | retired | 2026-10-30T09:20:57.232Z |
 | stacked-lease-recovery | sol-workspace-governance | tools/workflow, docs/deployment/workspace-management.md, docs/deployment/workflow.md | codex/stacked-lease-recovery | [#165](https://github.com/derekfika/fika-os/pull/165) | retired | 2026-10-30T07:44:59.666Z |
-| staging-release-manager-2 | claude-staging-release | docs/deployment/staging-release-scoreboard.md | codex/staging-release-manager-2 | — | active | 2026-10-31T07:45:57.272Z |
+| staging-release-manager-2 | claude-staging-release | docs/deployment/staging-release-scoreboard.md | codex/staging-release-manager-2 | — | retired | 2026-10-31T08:04:08.933Z |
+| staging-release-manager-3 | claude-staging-release | docs/deployment/staging-release-scoreboard.md | codex/staging-release-manager-3 | — | active | 2026-10-31T08:12:28.113Z |
 | staging-release-manager | claude-staging-release | docs/deployment/staging-release-scoreboard.md | codex/staging-release-manager | — | finished | 2026-10-31T07:45:44.895Z |
 | standing-orders-pr14-sync | codex-standing-orders-pr14-sync | apps/delivered-in, apps/integration-hub, docs/deployment, CHANGELOG.md | codex/standing-orders-pr14-sync | — | finished | 2026-10-23T12:09:58.445Z |
 | uat-blocker-checkpoint | uat-20261025-1150 | CHANGELOG.md | codex/uat-blocker-checkpoint | [#45](https://github.com/derekfika/fika-os/pull/45) | retired | 2026-10-25T12:49:14.064Z |
+| uat-handback-2026-10-31 | claude-uat-handback | docs/agent-handbacks | codex/uat-handback-2026-10-31 | [#203](https://github.com/derekfika/fika-os/pull/203) | retired | 2026-10-31T11:20:46.034Z |
 | uat-iss008-log | uat-20261025-1150 | CHANGELOG.md | codex/uat-iss008-log | [#54](https://github.com/derekfika/fika-os/pull/54) | finished | 2026-10-25T18:46:19.839Z |
 | uat-iss010-logistics-guard | uat-20261025-1150 | apps/logistics | codex/uat-iss010-logistics-guard | [#50](https://github.com/derekfika/fika-os/pull/50) | finished | 2026-10-25T18:21:29.989Z |
 | workflow-proof | codex-workflow-modernisation | apps/hospitality-booking/docs | codex/workflow-proof | — | retired | 2026-10-22T17:27:37.642Z |
