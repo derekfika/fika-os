@@ -11,11 +11,12 @@ import { assertChangelogs, assertChangelogContent } from './changelog.mjs';
 import { governedOperation } from './workspace-state.mjs';
 import { completeWorkspace, previewReleaseAll, releaseAllWorkspaces, previewSweep, sweepWorkspaces, workspaceStatus, publishWorkspaceStatus, recoverValidationOperation, recoverDevOperation } from './workspace-admin.mjs';
 import { installWorkspaceFences } from './workspace-fencing.mjs';
+import { recoverStackedLease } from './workspace-lease-recovery.mjs';
 
 export function parse(args) {
   const positional = []; const options = {};
   const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'owner-approved', 'cosmetic-only', 'standard', 'preserve']);
-  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement', 'confirm', 'pr']);
+  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement', 'confirm', 'pr', 'lease-id', 'predecessor', 'predecessor-lease-id']);
   for (let i = 0; i < args.length; i++) {
     if (!args[i].startsWith('--')) { positional.push(args[i]); continue; }
     const key = args[i].slice(2); if (Object.hasOwn(options, key)) throw Error(`Duplicate --${key}`);
@@ -94,8 +95,9 @@ async function main() {
     else if (arg === 'install-fences') result = installWorkspaceFences();
     else if (arg === 'recover-validation') result = recoverValidationOperation(name,options);
     else if (arg === 'recover-dev') result = await recoverDevOperation(name,options);
+    else if (arg === 'recover-stacked') result = recoverStackedLease(name, options);
     else if (arg === 'list') result = workspaceRecords();
-    else throw Error('workspace create|check|reconcile|finish|retire|complete <name> --owner <task>; status|publish|release-all|sweep. Bulk execution requires a fresh preview hash; release-all also requires exact --confirm and --reason.');
+    else throw Error('workspace create|check|reconcile|finish|retire|complete <name> --owner <task>; recover-stacked <name> --owner <owner> --lease-id <id> --predecessor <retired-task> --predecessor-lease-id <id> --head <sha> --pr <number> --scope <paths> --reason <reason> [--execute --approve-hash <hash>]; status|publish|release-all|sweep.');
   } else if (verb === 'integrate') {
     const lease = workspaceRecords().find(r => r.name === options.workspace && r.owner === options.owner && r.state === 'active');
     if (!lease || !/^\d+$/.test(options.pr || '')) throw Error('Integration requires an active --workspace, --owner and --pr');

@@ -57,7 +57,7 @@ export function repositoryAdministrator() {
   if (repo.full_name !== REPO || repo.permissions?.admin !== true || user.login !== repo.owner.login) throw Error('Authenticated local repository owner with administrator permission is required');
   return { login: user.login, repository: repo.full_name, administrator: true };
 }
-function criticalConditions() {
+export function criticalConditions() {
   const conditions = [];
   for (const file of readdirSync(stateDir()).filter(f => /^(release-|cleanup).*\.lock$/.test(f))) conditions.push({ name: null, reason: `Critical lock ${file}; inspect its existing release/recovery process. Never break this lock.` });
   const ops = path.join(stateDir(), 'workspace-operations');

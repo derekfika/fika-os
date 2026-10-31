@@ -3,6 +3,7 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, openSyn
 import path from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { APPS, digest, exactSha } from './policy.mjs';
+import { discover } from './discovery.mjs';
 
 const repositoryContext = new AsyncLocalStorage();
 export const withRepository = (cwd, fn) => repositoryContext.run({ cwd: path.resolve(cwd) }, fn);
@@ -56,7 +57,7 @@ export async function cloud(resource) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const response = await fetch(`https://firebaseapphosting.googleapis.com/v1beta/${resource}`, { headers: { Authorization: `Bearer ${tokenCache.value}` }, signal: AbortSignal.timeout(45000) });
-      if (!response.ok) { const error = Error(`App Hosting inspection failed: HTTP ${response.status}`); error.retryable = response.status === 429 || response.status >= 500; throw error; }
+      if (!response.ok) { const error = Error(`App Hosting inspection failed: HTTP ${response.status}`); error.status = response.status; error.retryable = response.status === 429 || response.status >= 500; throw error; }
       return response.json();
     } catch (error) {
       if (attempt === 2 || error.retryable === false) throw error;
@@ -65,13 +66,40 @@ export async function cloud(resource) {
   }
 }
 export const backendPath = t => `projects/${t.project}/locations/${t.region}/backends/${t.backend}`;
-export async function serving(t) {
-  const traffic = await cloud(`${backendPath(t)}/traffic`);
+const servingRolloutNames = new WeakMap();
+export async function serving(t, read = cloud) {
+  const base = backendPath(t);
+  const traffic = await read(`${base}/traffic`);
   if (traffic.rolloutPolicy?.disabled !== true) throw Error(`Automatic rollouts must remain disabled for ${t.backend}`);
   const splits = traffic.current?.splits || [];
   if (splits.length !== 1 || splits[0].percent !== 100 || traffic.reconciling) throw Error('Backend is not quiescent at a single 100% revision');
-  const build = await cloud(splits[0].build); const id = splits[0].build.split('/').at(-1);
-  const rollout = await cloud(`${backendPath(t)}/rollouts/${id}`);
-  if (build.state !== 'READY' || rollout.state !== 'SUCCEEDED') throw Error('Serving build/rollout is not READY/SUCCEEDED');
-  return { sourceSha: exactSha(build.source?.codebase?.hash), rollout: id, state: rollout.state, percent: 100 };
+  const parts = String(splits[0].build).split('/');
+  if (parts.length !== 8 || parts[0] !== 'projects' || !(parts[1] === t.project || /^\d+$/.test(parts[1])) || parts.slice(2,7).join('/') !== `locations/${t.region}/backends/${t.backend}/builds` || !/^[\w-]+$/.test(parts[7])) throw Error('Traffic build is outside the selected backend');
+  const projects = new Set([t.project, parts[1]]);
+  const matchesBuild = name => {
+    const ref = String(name).split('/');
+    return ref.length === 8 && ref[0] === 'projects' && projects.has(ref[1]) && ref.slice(2).join('/') === parts.slice(2).join('/');
+  };
+  const build = await read(splits[0].build);
+  if (!matchesBuild(build.name) || build.state !== 'READY' || build.reconciling) throw Error('Serving build is not the selected READY build');
+  const names = servingRolloutNames.get(read) || new Map();
+  servingRolloutNames.set(read, names);
+  const key = `${base}:${splits[0].build}`;
+  let rollout;
+  try { rollout = await read(names.get(key) || `${base}/rollouts/${parts[7]}`); }
+  catch (error) {
+    if (error.status !== 404) throw error;
+    // Firebase-generated rollout IDs can differ from build IDs. Resolve by the
+    // authoritative build link, never by recency or a convenient successful row.
+    const rollouts = await discover(`${base}/rollouts`, 'rollouts', r => ({ name:r.name, build:r.build, state:r.state, reconciling:r.reconciling }), read);
+    const matching = rollouts.filter(r => matchesBuild(r.build));
+    if (matching.length !== 1) throw Error('Serving rollout is missing or ambiguous for the current traffic build');
+    rollout = matching[0];
+  }
+  const rolloutParts = String(rollout.name).split('/');
+  if (rolloutParts.length !== 8 || rolloutParts[0] !== 'projects' || !projects.has(rolloutParts[1]) || rolloutParts.slice(2,7).join('/') !== `locations/${t.region}/backends/${t.backend}/rollouts` || !/^[\w-]+$/.test(rolloutParts[7]) || !matchesBuild(rollout.build) || rollout.state !== 'SUCCEEDED' || rollout.reconciling) throw Error('Serving rollout does not verify the current traffic build');
+  // Cache only its verified resource name; traffic, build and rollout state are
+  // still reread on every check. Avoid repeated historical discovery while polling.
+  names.set(key, rollout.name);
+  return { sourceSha: exactSha(build.source?.codebase?.hash), rollout: rolloutParts[7], state: rollout.state, percent: 100 };
 }

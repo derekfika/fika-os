@@ -10,6 +10,32 @@ export const INITIAL_ROTATION_CATEGORIES = [
   { id: "salad-proteins", label: "Salad Proteins" },
   { id: "salad-boxes", label: "Salad Boxes" },
 ] as const;
+/** Hospitality-specific Dish Library classifications; deliberately separate from Menu Planning's governed dish categories. */
+export const HOSPITALITY_DISH_CLASSES = [
+  { id: "finger-food", label: "Finger Food" },
+  { id: "canapes", label: "Canapés" },
+  { id: "sweet-finger-food", label: "Sweet Finger Food" },
+  { id: "sandwiches-wraps", label: "Sandwiches / Wraps" },
+  { id: "breakfast-hospitality", label: "Breakfast Hospitality" },
+  { id: "bowl-food", label: "Bowl Food" },
+  { id: "salad-proteins", label: "Salad Proteins" },
+  { id: "salad-boxes", label: "Salad Boxes" },
+  { id: "other-hospitality", label: "Other Hospitality" },
+] as const;
+export type HospitalityDishClassId = typeof HOSPITALITY_DISH_CLASSES[number]["id"];
+export const HOSPITALITY_DISH_CLASS_IDS = HOSPITALITY_DISH_CLASSES.map(value => value.id) as [HospitalityDishClassId, ...HospitalityDishClassId[]];
+/** Explicit operational scope on a canonical Dish Library record. A missing value means MENU_PLANNING. */
+export const DISH_OPERATIONAL_SCOPES = ["MENU_PLANNING", "HOSPITALITY_ROTATIONS", "SHARED"] as const;
+export type DishOperationalScope = typeof DISH_OPERATIONAL_SCOPES[number];
+/** Scopes the Rotations manager may offer; Brian's MENU_PLANNING dishes are never offered. */
+export const ROTATION_PICKER_SCOPES = ["HOSPITALITY_ROTATIONS", "SHARED"] as const;
+export const HOSPITALITY_DISH_RECORD_SOURCE = "hospitality-rotations" as const;
+/** Stable, deterministic dish ID so one catalogue Item can never create a second hospitality dish. */
+export function hospitalityDishIdForItem(itemId: string): string {
+  const id = `hospitality-dish:${itemId}`;
+  if (id.length > 160 || !/^[A-Za-z0-9:_-]+$/.test(id)) throw new Error("Catalogue Item ID cannot form a stable hospitality dish ID");
+  return id;
+}
 export const ROTATIONS_AUTHORITY = { appId: "hospitality-booking", resource: "hospitality.rotations" } as const;
 const Id = z.string().min(1).max(160).regex(/^[A-Za-z0-9:_-]+$/);
 const Positive = z.number().finite().positive();
@@ -76,6 +102,10 @@ export const RotationCommand = z.discriminatedUnion("action", [
   z.object({ action: z.literal("publish"), requestId: Id, expectedVersion: z.number().int().positive(), draftRevision: z.number().int().positive(), effectiveFrom: BusinessDate, reason: z.string().trim().min(1).max(500) }).strict(),
 ]);
 export type RotationCommand = z.infer<typeof RotationCommand>;
+/** Persists the stable catalogue-Item-to-dish mapping. The dish itself is authored in Menu Planning; Hub owns the mapping. */
+export const DishLinkCommand = z.object({ action: z.literal("link-dish"), requestId: Id, itemId: Id, dishId: Id, classification: z.enum(HOSPITALITY_DISH_CLASS_IDS) }).strict();
+export type DishLinkCommand = z.infer<typeof DishLinkCommand>;
+export type DishLink = { schema: "hospitality-rotation-dish-link.v1"; itemId: string; dishId: string; classification: HospitalityDishClassId; actorId: string; recordedAt: string; requestId: string };
 export type RotationRevision = {
   schema: typeof ROTATIONS_SCHEMA; revision: number; status: "draft" | "published";
   configuration: RotationConfiguration; actorId: string; recordedAt: string; requestId: string;

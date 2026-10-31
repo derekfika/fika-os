@@ -33,7 +33,7 @@ function dietarySummary(order: ProductionOrder) {
   return [...values.entries()].map(([key, value]) => `${key.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ")}: ${value}`).join(" · ");
 }
 
-export default function ProductionCalendar({ orders, open, onCancelBooking, weekCommencing, onWeekChange, onDayOpen, reviewAllergens }: { orders: ProductionOrder[]; open: (order: ProductionOrder) => void; onCancelBooking?: (order: ProductionOrder) => void; weekCommencing?: string; onWeekChange?: (weekCommencing: string) => void; onDayOpen?: (date: string) => void; reviewAllergens?: (date: string) => void }) {
+export default function ProductionCalendar({ orders, open, onCancelBooking, weekCommencing, onWeekChange, onDayOpen, reviewAllergens, scopeNote }: { scopeNote?: string; orders: ProductionOrder[]; open: (order: ProductionOrder) => void; onCancelBooking?: (order: ProductionOrder) => void; weekCommencing?: string; onWeekChange?: (weekCommencing: string) => void; onDayOpen?: (date: string) => void; reviewAllergens?: (date: string) => void }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const weekStart = useMemo(() => weekCommencing ? new Date(`${weekCommencing}T00:00:00`) : (() => { const date = mondayOf(new Date()); date.setDate(date.getDate() + weekOffset * 7); return date; })(), [weekCommencing, weekOffset]);
   const shiftWeek = (delta: number) => { const next = new Date(weekStart); next.setDate(next.getDate() + delta * 7); setWeekOffset(value => value + delta); onWeekChange?.(dateKey(next)); };
@@ -52,7 +52,7 @@ export default function ProductionCalendar({ orders, open, onCancelBooking, week
         <div>
           <small>Weekly production heads-up</small>
           <h2>{longDate(weekStart)} - {longDate(days[4].date)}</h2>
-          <p>{productionJobCount(weekOrders)} production job{productionJobCount(weekOrders) === 1 ? "" : "s"} in this week's view.</p>
+          <p>{productionJobCount(weekOrders)} production job{productionJobCount(weekOrders) === 1 ? "" : "s"} in this week's view.{scopeNote ? ` ${scopeNote}.` : ""}</p>
         </div>
         <nav className="calendar-nav" aria-label="Calendar week navigation">
               <button type="button" onClick={() => shiftWeek(-1)} aria-label="Previous week">←</button>

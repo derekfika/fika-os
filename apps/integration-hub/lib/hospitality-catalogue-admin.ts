@@ -25,6 +25,8 @@ import { planProviderItemLink, type ProviderItemLink } from "./hospitality-provi
 import { existingCandidatesForNewItem, normaliseName, sourceIdentities } from "./hospitality-catalogue-canonicalisation";
 import { currentPrice, reviewGroupId, routingStateOf, ukBusinessDate } from "./hospitality-catalogue-read-model";
 import { isActiveOplocRecord } from "./hospitality-catalogue-oploc";
+import { COMPANY_LAYOUT_ID, completeRules, layoutCollection, layoutDocId, layoutRevisions, type StoredServiceLayout } from "./hospitality-service-layout";
+import { effectiveServiceLayout, isServiceId, normaliseCategories, sameServiceRule, type ServiceRule } from "@fika/server-shared/hospitality-service-layout";
 import { isRedundantException, type PackageException, type PricePeriod } from "./hospitality-effective-offering";
 import { ROUTING_CHOICES, ROUTING_CHOICE_LABELS, ROUTING_CHOICE_WORKSTREAMS, type RoutingChoice } from "./hospitality-catalogue-types";
 
@@ -69,6 +71,9 @@ export type CatalogueCommand =
   | { action: "set-routing"; itemId: string; routing: RoutingChoice; expectedRoutingVersion: number }
   | { action: "set-item-status"; itemId: string; expectedVersion: number; status: "active" | "archived" }
   /** Availability is the default everywhere; this records or clears a sparse `available:false` exception for one OPLOC. */
+  /** Governed booking-service category layout (company default, or one site's override). `expectedVersion` 0 = nothing stored yet. */
+  | { action: "set-service-categories"; serviceId: string; categories: string[]; hidden?: boolean; oplocId?: string; expectedVersion: number; reason: string }
+  | { action: "clear-service-override"; serviceId: string; oplocId: string; expectedVersion: number; reason: string }
   | { action: "set-site-availability"; itemId: string; expectedVersion: number; oplocId: string; available: boolean }
   /** Sparse site override (price / minimum / wording). The exception record is created on demand and retired again once it states nothing beyond the defaults. */
   | SiteSettings & { action: "set-site-override"; itemId: string; expectedVersion: number; oplocId: string; price?: PriceInput | null; minimumQuantity?: number | null; displayName?: string | null; description?: string | null }
@@ -172,10 +177,13 @@ function noEffect(record: Record<string, unknown>, ownPrices: CanonicalRecord[],
 const retire = (ctx: Ctx, offering: CanonicalRecord, reason: "item-archived" | "redundant-default", note: string, record: Record<string, unknown> = offering.record) => stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, record), lifecycleState: "archived", retiredReason: reason }, offering, note);
 
 /** Applies availability edits as SPARSE exceptions. Returns "+oploc" (made available / exception cleared) and "-oploc" (exception recorded). */
-function applySiteEdits(ctx: Ctx, item: CanonicalRecord, children: ItemChildren, ownPrices: CanonicalRecord[], edits: Array<{ oplocId: string; available: boolean }>, today: string) {
+/** An Item created for specific sites carries an allowlist (`allowedOplocIds`). Switching a site ON outside it extends the allowlist (reported through `scopeAdded`); switching OFF there is already the effective state. */
+function applySiteEdits(ctx: Ctx, item: CanonicalRecord, children: ItemChildren, ownPrices: CanonicalRecord[], edits: Array<{ oplocId: string; available: boolean }>, today: string, scopeAdded: string[] = []) {
   const touched: string[] = [];
   for (const edit of edits) {
-    if (edit.available && Array.isArray(item.record.allowedOplocIds) && !item.record.allowedOplocIds.includes(edit.oplocId)) throw problem("This item has a governed site restriction; availability cannot broaden its scope.");
+    const outside = Array.isArray(item.record.allowedOplocIds) && !item.record.allowedOplocIds.includes(edit.oplocId);
+    if (outside && !edit.available) continue; // not permitted there: already unavailable, no exception record needed
+    if (outside) { scopeAdded.push(edit.oplocId); touched.push(`+${edit.oplocId}`); }
     const records = siteWide(children, edit.oplocId); const active = records.find(offering => offering.record.lifecycleState !== "archived"); const retired = records.find(offering => offering.record.lifecycleState === "archived");
     if (!edit.available) {
       if (active) { if (active.record.available === false) continue; stage(ctx, "Hospitality Menu Offering", { ...bump(ctx, active.record), available: false }, active, "Site availability exception recorded."); }
@@ -187,7 +195,7 @@ function applySiteEdits(ctx: Ctx, item: CanonicalRecord, children: ItemChildren,
       const cleared = without(bump(ctx, active.record), "available");
       if (noEffect(cleared, ownPrices, item, children.itemPrices, today)) retire(ctx, active, "redundant-default", "Availability exception cleared; the record stated nothing else, so it is retired.");
       else stage(ctx, "Hospitality Menu Offering", cleared, active, "Availability exception cleared.");
-      touched.push(`+${edit.oplocId}`);
+      if (!outside) touched.push(`+${edit.oplocId}`);
     }
   }
   return touched;
@@ -335,11 +343,12 @@ async function setSiteAvailability(ctx: Ctx, command: Extract<CatalogueCommand, 
   if (isArchived(item)) throw problem("Restore the item before changing where it is available.");
   if (!activeIds.includes(command.oplocId)) throw problem("Choose an active location.");
   const ownPrices = await offeringPrices(ctx, children.offerings.map(offering => offering.canonicalId));
-  const touched = applySiteEdits(ctx, item, children, ownPrices, [{ oplocId: command.oplocId, available: command.available }], ukBusinessDate());
+  const scopeAdded: string[] = [];
+  const touched = applySiteEdits(ctx, item, children, ownPrices, [{ oplocId: command.oplocId, available: command.available }], ukBusinessDate(), scopeAdded);
   if (!touched.length) throw problem(command.available ? "This item is already available at that site." : "This item is already unavailable at that site.", 409);
-  stage(ctx, "Hospitality Menu Item", bump(ctx, item.record), item, "Site availability changed (item version touched).");
-  auditEvent(ctx, command.available ? "Hospitality Catalogue offering enabled" : "Hospitality Catalogue offering disabled", item.canonicalId, `“${text(item.record.name)}” ${command.available ? "made available again" : "made unavailable"} at a site.`, { itemId: item.canonicalId, oplocId: command.oplocId, before: { available: !command.available }, after: { available: command.available } });
-  return { itemIds: [item.canonicalId], reload: false, message: command.available ? "Available at the site again. It inherits the company price and minimum." : "Marked unavailable at the site. History and overrides are kept." };
+  stage(ctx, "Hospitality Menu Item", scopeAdded.length ? { ...bump(ctx, item.record), allowedOplocIds: [...new Set([...(item.record.allowedOplocIds as string[]), ...scopeAdded])].sort() } : bump(ctx, item.record), item, scopeAdded.length ? "Site switched on; the item's site list was extended." : "Site availability changed (item version touched).");
+  auditEvent(ctx, command.available ? "Hospitality Catalogue offering enabled" : "Hospitality Catalogue offering disabled", item.canonicalId, `“${text(item.record.name)}” ${command.available ? "made available again" : "made unavailable"} at a site.`, { itemId: item.canonicalId, oplocId: command.oplocId, before: { available: !command.available }, after: { available: command.available }, ...(scopeAdded.length ? { siteListExtendedWith: scopeAdded } : {}) });
+  return { itemIds: [item.canonicalId], reload: false, message: command.available ? (scopeAdded.length ? "Switched on at the site. It uses the company price and minimum." : "Available at the site again. It inherits the company price and minimum.") : "Marked unavailable at the site. History and overrides are kept." };
 }
 
 async function setSiteOverride(ctx: Ctx, command: Extract<CatalogueCommand, { action: "set-site-override" }>): Promise<CatalogueCommandResult> {
@@ -511,6 +520,51 @@ async function recordReviewDecision(ctx: Ctx, command: Extract<CatalogueCommand,
   return { itemIds: memberIds, reload: true, message: command.decision === "keep_separate" ? "Kept separate." : "Deferred." };
 }
 
+/**
+ * Booking-service category layout (issue #175): which Item categories a service offers, company-wide or for one site.
+ * One transaction: optimistic version (0 = nothing stored yet), revision, audit. It never touches Items, prices, minimums,
+ * routing, site permission or availability, and existing bookings keep their own snapshots.
+ */
+async function setServiceCategories(ctx: Ctx, command: Extract<CatalogueCommand, { action: "set-service-categories" | "clear-service-override" }>): Promise<CatalogueCommandResult> {
+  if (!isServiceId(command.serviceId)) throw problem("Choose a known service.");
+  const serviceId = command.serviceId;
+  const reason = text(command.reason).trim();
+  if (reason.length < 8) throw problem("Record a reason of at least eight characters.");
+  const clearing = command.action === "clear-service-override";
+  if (clearing && !command.oplocId) throw problem("Only a site override can be cleared; edit the company default instead.");
+  let rule: ServiceRule | undefined;
+  if (!clearing) {
+    let categories: string[];
+    try { categories = normaliseCategories((command as { categories: unknown }).categories); } catch (error) { throw problem((error as Error).message); }
+    const hidden = (command as { hidden?: boolean }).hidden === true;
+    if (!hidden && !categories.length) throw problem("Choose at least one category, or hide the service.");
+    rule = { categories, ...(hidden ? { hidden: true } : {}) };
+  }
+  const scope = command.oplocId ? "site" as const : "company" as const;
+  const ref = layoutCollection().doc(layoutDocId(command.oplocId)), companyRef = layoutCollection().doc(COMPANY_LAYOUT_ID);
+  const [snapshot, companySnapshot, activeIds] = await Promise.all([readDoc(ctx, ref), scope === "site" ? readDoc(ctx, companyRef) : Promise.resolve(undefined), command.oplocId ? activeOplocIds(ctx) : Promise.resolve([] as string[])]);
+  if (command.oplocId && !activeIds.includes(command.oplocId)) throw problem("Choose an active location.");
+  const current = snapshot.exists ? snapshot.data() as StoredServiceLayout : undefined;
+  if (Number(command.expectedVersion) !== (current?.version ?? 0)) throw stale("This service layout");
+  const companyRules = effectiveServiceLayout({ company: companySnapshot?.exists ? (companySnapshot.data() as StoredServiceLayout).services : undefined }).company;
+  const priorRule: ServiceRule | undefined = scope === "site" ? current?.services[serviceId] : completeRules(current?.services, "company")[serviceId];
+  let services = completeRules(current?.services, scope);
+  if (clearing) {
+    if (!priorRule) throw problem("That service has no override at this site.", 409);
+    const { [serviceId]: removed, ...rest } = services; void removed; services = rest;
+  } else {
+    if (sameServiceRule(priorRule, rule)) throw problem("Nothing to change.", 409);
+    if (scope === "site" && sameServiceRule(companyRules[serviceId], rule)) throw problem("That matches the company default; clear the site override instead.");
+    services = { ...services, [serviceId]: rule as ServiceRule };
+  }
+  const next: StoredServiceLayout = { schema: 1, scope, ...(command.oplocId ? { oplocId: command.oplocId } : {}), version: (current?.version ?? 0) + 1, services, createdAt: current?.createdAt ?? ctx.now, createdBy: current?.createdBy ?? ctx.actor.uid, updatedAt: ctx.now, updatedBy: ctx.actor.uid };
+  const docId = layoutDocId(command.oplocId);
+  ctx.tx.set(ref, next);
+  ctx.tx.set(layoutRevisions().doc(`${docId}:${next.version}`), { docId, scope, ...(command.oplocId ? { oplocId: command.oplocId } : {}), serviceId, version: next.version, previous: current ?? null, current: next, actorId: ctx.actor.uid, recordedAt: ctx.now, reason });
+  auditEvent(ctx, clearing ? "Hospitality Catalogue service override cleared" : "Hospitality Catalogue service categories changed", `service-layout:${command.oplocId ?? "company"}:${serviceId}`, reason, { serviceId, oplocId: command.oplocId ?? null, before: priorRule ?? null, after: rule ?? null, version: next.version });
+  return { itemIds: [], reload: false, message: clearing ? "Site override cleared; the company default applies." : `Categories saved for ${serviceId.replace(/_/g, " ")}.` };
+}
+
 export async function runCatalogueCommand(actor: Actor, command: CatalogueCommand): Promise<CatalogueCommandResult> {
   assertPermission(actor, "hospitality.catalogue.manage");
   return db.runTransaction(async tx => {
@@ -532,6 +586,7 @@ export async function runCatalogueCommand(actor: Actor, command: CatalogueComman
       case "set-default-price": return setDefaultPrice(ctx, command);
       case "set-routing": return setRouting(ctx, command);
       case "set-item-status": return setItemStatus(ctx, command);
+      case "set-service-categories": case "clear-service-override": return setServiceCategories(ctx, command);
       case "set-site-availability": return setSiteAvailability(ctx, command);
       case "set-site-override": return setSiteOverride(ctx, command);
       case "adopt-company-default": return adoptCompanyDefault(ctx, command);
@@ -620,7 +675,9 @@ async function bulkOne(ctx: Ctx, itemId: string, spec: BulkSpec, activeIds: stri
       const unknown = siteIds.filter(id => !activeIds.includes(id)); if (unknown.length) throw problem(`${unknown.length} selected site${unknown.length === 1 ? " is" : "s are"} not active locations.`);
       const wanted = new Set(siteIds);
       const edits = spec.sites.mode === "add" ? siteIds.map(oplocId => ({ oplocId, available: true })) : spec.sites.mode === "remove" ? siteIds.map(oplocId => ({ oplocId, available: false })) : activeIds.map(oplocId => ({ oplocId, available: wanted.has(oplocId) }));
-      touchedSites.push(...applySiteEdits(ctx, item, children, ownPrices, edits, today));
+      const scopeAdded: string[] = [];
+      touchedSites.push(...applySiteEdits(ctx, item, children, ownPrices, edits, today, scopeAdded));
+      if (scopeAdded.length) { before.allowedOplocIds = item.record.allowedOplocIds; record = { ...record, allowedOplocIds: [...new Set([...(item.record.allowedOplocIds as string[]), ...scopeAdded])].sort() }; after.allowedOplocIds = record.allowedOplocIds; }
       if (touchedSites.length) { before.sites = "see sites"; after.sites = touchedSites; changed = true; }
     }
     if (changed) stage(ctx, "Hospitality Menu Item", bump(ctx, record), item, "Hospitality Catalogue bulk update (item version touched).");

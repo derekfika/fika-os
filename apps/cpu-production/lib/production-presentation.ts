@@ -35,7 +35,19 @@ export function isCpuWithdrawn(order: Pick<ProductionOrder, "status" | "workflow
 
 export function cpuLifecycleIndex(order: ProductionOrder) { return lifecycleOrder.indexOf(cpuLifecycle(order)); }
 
+const AD_HOC_PRODUCTION_ORDER_PREFIX = "production-order:v1:ad-hoc:";
+
+/** The canonical Ad-Hoc order namespace is authoritative app provenance. */
+export function isAdHocProductionOrderId(canonicalId: string | undefined): boolean {
+  return Boolean(canonicalId?.startsWith(AD_HOC_PRODUCTION_ORDER_PREFIX));
+}
+
+export function isAdHocProductionOrder(order: Pick<ProductionOrder, "canonicalId">): boolean {
+  return isAdHocProductionOrderId(order.canonicalId);
+}
+
 export function cpuSourceLabel(order: ProductionOrder) {
+  if (isAdHocProductionOrder(order)) return "Ad-Hoc";
   switch (order.origin) {
     case "hospitality_booking": return "Hospitality booking";
     case "grab_and_go": return "Grab & Go order";

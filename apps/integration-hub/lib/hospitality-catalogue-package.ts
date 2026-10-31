@@ -1,3 +1,4 @@
+import { layoutPackageFromDocuments, readStoredServiceLayouts, type StoredServiceLayout } from "./hospitality-service-layout";
 import { bookingPolicyFor } from "@fika/server-shared/hospitality-effective-offering";
 /**
  * Published Hospitality catalogue package.
@@ -41,7 +42,7 @@ function allowedScope(value: unknown) {
   return [...new Set(value as string[])].sort();
 }
 
-export type PackageSource = { items: CanonicalRecord[]; offerings: CanonicalRecord[]; prices: CanonicalRecord[]; oplocs: CanonicalRecord[]; routing: RoutingDoc[] };
+export type PackageSource = { items: CanonicalRecord[]; offerings: CanonicalRecord[]; prices: CanonicalRecord[]; oplocs: CanonicalRecord[]; routing: RoutingDoc[]; /** Stored service layout documents; when present the package carries the effective layout (seed when none are stored). */ serviceLayout?: StoredServiceLayout[] };
 
 /** Pure: canonical records -> compact package. Redundant legacy Offerings (no effect beyond the defaults) are omitted: they are not exceptions. */
 export function buildCataloguePackage(source: PackageSource, today: string): CataloguePackage {
@@ -81,7 +82,7 @@ export function buildCataloguePackage(source: PackageSource, today: string): Cat
   }
   exceptions.sort((a, b) => a.id.localeCompare(b.id));
   const oplocs = source.oplocs.filter(isActiveOplocRecord).map(oploc => ({ id: oploc.canonicalId, label: text(oploc.record.approvedName) || "Unnamed location" })).sort((a, b) => a.id.localeCompare(b.id));
-  return { schemaVersion: CATALOGUE_PACKAGE_SCHEMA_VERSION, contract: CATALOGUE_PACKAGE_CONTRACT, items, exceptions, oplocs };
+  return { schemaVersion: CATALOGUE_PACKAGE_SCHEMA_VERSION, contract: CATALOGUE_PACKAGE_CONTRACT, items, exceptions, oplocs, ...(source.serviceLayout ? { serviceLayout: layoutPackageFromDocuments(source.serviceLayout) } : {}) };
 }
 
 export type PublishOutcome = { status: "published" | "unchanged"; manifest: ReadPackageManifest };
@@ -110,13 +111,14 @@ export async function publishPublicCataloguePackage(pkg: CataloguePackage, store
 export async function rebuildCataloguePackage(store?: ReadPackageStore): Promise<PublishOutcome> {
   if (inflight.current) return inflight.current;
   inflight.current = (async () => {
-    const [records, routing] = await Promise.all([
+    const [records, routing, layouts] = await Promise.all([
       listCanonicalRecordsByTypes(["Hospitality Menu Item", "Hospitality Menu Offering", "Hospitality Menu Price", "OPLOC"], 1000) as Promise<CanonicalRecord[]>,
       db.collection("integrationHubHospitalityMenuProductionRouting").limit(2001).get(),
+      readStoredServiceLayouts(),
     ]);
-    recordDataAccess({ app: "integration-hub", operation: "hospitality-catalogue.package.rebuild", source: "FIRESTORE", documents: records.length + routing.size });
+    recordDataAccess({ app: "integration-hub", operation: "hospitality-catalogue.package.rebuild", source: "FIRESTORE", documents: records.length + routing.size + layouts.length });
     const of = (type: string) => records.filter(record => record.entityType === type);
-    const pkg = buildCataloguePackage({ items: of("Hospitality Menu Item"), offerings: of("Hospitality Menu Offering"), prices: of("Hospitality Menu Price"), oplocs: of("OPLOC"), routing: routing.docs.map(doc => doc.data() as RoutingDoc) }, new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()));
+    const pkg = buildCataloguePackage({ items: of("Hospitality Menu Item"), offerings: of("Hospitality Menu Offering"), prices: of("Hospitality Menu Price"), oplocs: of("OPLOC"), routing: routing.docs.map(doc => doc.data() as RoutingDoc), serviceLayout: layouts }, new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()));
     const internal = await publishCataloguePackage(pkg, store);
     await publishPublicCataloguePackage(pkg, store);
     return internal;

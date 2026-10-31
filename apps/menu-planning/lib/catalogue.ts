@@ -23,6 +23,8 @@ export type CatalogueEntry = {
   allergenCount: number;
   parentMenuItemKey?: string;
   canonicalItemId?: string;
+  /** Tag IDs from the shared registry; absent on untagged and legacy dishes. */
+  tagIds?: string[];
   item?: MenuItem;
   sandwich?: never;
 };
@@ -46,6 +48,7 @@ export function canonicalEntry(item: MenuItem): CatalogueEntry {
     sourceEvidence: `${item.sourceReference.workbook} · ${item.sourceReference.sheet}${item.sourceReference.range ? ` · ${item.sourceReference.range}` : ""}`,
     recipeAvailable: Boolean(item.ingredients?.length || item.methodSteps?.length || item.preparationDescription),
     allergenCount: item.allergenEvidence.filter((evidence) => evidence.value !== "unknown").length,
+    tagIds: item.tagIds?.length ? item.tagIds : undefined,
     item,
   };
 }
