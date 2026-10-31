@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T14:34:37.899Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T14:47:46.561Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -173,6 +173,7 @@ Snapshot: 2026-10-31T14:34:37.899Z. The local governed registry remains authorit
 | munich-re-uat-verification | sol-munich-re-verification | docs/audits/2026-10-30/munich-re-postmerge-verification.md | codex/munich-re-uat-verification | — | finished | 2026-10-30T14:05:32.138Z |
 | ops-95-driver-checkbox-label | luna-iss95 | apps/logistics | codex/ops-95-driver-checkbox-label | [#163](https://github.com/derekfika/fika-os/pull/163) | retired | 2026-10-30T07:15:10.006Z |
 | pr-backlog-audit | codex-pr-reconciliation | docs/audits/2026-10-28/pr-backlog-reconciliation.md | codex/pr-backlog-audit | [#126](https://github.com/derekfika/fika-os/pull/126) | retired | 2026-10-29T08:26:48.018Z |
+| rcoa-allday-default-guest-validation | codex-luna-rcoa-allday-default-guest-validation | apps/hospitality-booking/app/ui/RcoaBookingPortal.tsx, apps/hospitality-booking/lib/rcoa-all-day.ts, apps/hospitality-booking/tests/guest-count.test.ts, apps/hospitality-booking/tests/guest-count-ui.test.ts | codex/rcoa-allday-default-guest-validation | [#211](https://github.com/derekfika/fika-os/pull/211) | retired | 2026-10-31T14:47:44.143Z |
 | rcoa-oac-wines | claude-rcoa-wines | apps/integration-hub/lib/hospitality-catalogue-admin.ts, apps/integration-hub/lib/hospitality-catalogue-read-model.ts, apps/integration-hub/lib/hospitality-catalogue-types.ts, apps/integration-hub/app/api/hospitality-catalogue/route.ts, apps/integration-hub/app/ui/HospitalityCatalogue.tsx, apps/integration-hub/app/ui/HospitalityCatalogue.css, apps/integration-hub/tests/hospitality-catalogue-admin-model.test.ts, apps/integration-hub/tests/hospitality-catalogue-admin.emulator.test.ts, apps/integration-hub/tests/hospitality-catalogue-package.test.ts, apps/integration-hub/tests/hospitality-catalogue-permitted-sites.test.ts, apps/integration-hub/tests/hospitality-catalogue-permitted-sites.emulator.test.ts, apps/integration-hub/docs/hospitality-catalogue-admin.md, apps/integration-hub/scripts/rcoa-oac-wines.ts | codex/rcoa-oac-wines | [#173](https://github.com/derekfika/fika-os/pull/173) | finished | 2026-10-30T18:36:39.587Z |
 | release-audit-windows-read | codex-rotations-foundation-release | tools/workflow/releases.mjs, tools/workflow/audit.mjs, tools/workflow/audit.test.mjs | codex/release-audit-windows-read | [#143](https://github.com/derekfika/fika-os/pull/143) | retired | 2026-10-29T18:00:56.877Z |
 | release-intent-before-submit-recovery | codex-rotations-foundation-release | tools/workflow/recovery.mjs, tools/workflow/resubmit.test.mjs, docs/deployment/release-intent-before-submit-recovery.md | codex/release-intent-before-submit-recovery | [#141](https://github.com/derekfika/fika-os/pull/141) | retired | 2026-10-29T17:53:01.333Z |
@@ -191,6 +192,7 @@ Snapshot: 2026-10-31T14:34:37.899Z. The local governed registry remains authorit
 | staging-release-manager-2 | claude-staging-release | docs/deployment/staging-release-scoreboard.md | codex/staging-release-manager-2 | — | retired | 2026-10-31T08:04:08.933Z |
 | staging-release-manager-3 | claude-staging-release | docs/deployment/staging-release-scoreboard.md | codex/staging-release-manager-3 | — | active | 2026-10-31T08:12:28.113Z |
 | staging-release-manager-4 | claude-staging-release | docs/deployment/staging-release-scoreboard-2.md | codex/staging-release-manager-4 | — | retired | 2026-10-31T13:51:35.530Z |
+| staging-release-manager-5 | claude-staging-release | docs/deployment/staging-release-scoreboard-3.md | codex/staging-release-manager-5 | — | retired | 2026-10-31T14:42:52.344Z |
 | staging-release-manager | claude-staging-release | docs/deployment/staging-release-scoreboard.md | codex/staging-release-manager | — | finished | 2026-10-31T07:45:44.895Z |
 | standing-orders-pr14-sync | codex-standing-orders-pr14-sync | apps/delivered-in, apps/integration-hub, docs/deployment, CHANGELOG.md | codex/standing-orders-pr14-sync | — | finished | 2026-10-23T12:09:58.445Z |
 | uat-blocker-checkpoint | uat-20261025-1150 | CHANGELOG.md | codex/uat-blocker-checkpoint | [#45](https://github.com/derekfika/fika-os/pull/45) | retired | 2026-10-25T12:49:14.064Z |
