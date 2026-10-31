@@ -6,53 +6,46 @@
   "backend": "fika-os-staging",
   "region": "europe-west4",
   "branch": "release/staging/hub",
-  "sourceSha": "3ba54f6dbaf12f7077074a25b853a5c5d61a16da",
-  "scopeHash": "9dc74cdb6133b1b66ba71834a332c1561c9f3e6921e361c8518f6271af304901",
+  "sourceSha": "44da157001e96a6c6dc9e4f8bd25fcdf6683e78b",
+  "scopeHash": "b7bfff9544bcb5b96074505c04e787c361d2bdba79f5e7ab7c41be4bb713ea23",
   "inMain": true,
   "rollback": false,
   "executing": true,
   "cosmeticOnly": false,
   "standard": false,
   "validation": {
-    "id": 124599141163,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/41221975096/job/124599141163",
-    "sha": "3ba54f6dbaf12f7077074a25b853a5c5d61a16da"
+    "id": 124605762015,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/41224253172/job/124605762015",
+    "sha": "44da157001e96a6c6dc9e4f8bd25fcdf6683e78b"
   },
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "hub",
     "environment": "staging",
-    "sourceSha": "3ba54f6dbaf12f7077074a25b853a5c5d61a16da",
+    "sourceSha": "44da157001e96a6c6dc9e4f8bd25fcdf6683e78b",
     "action": "deploy",
     "instruction": "Explicit staging execution",
     "releaseId": null,
-    "id": "9e1bbe039c03d9923db0653e063477721b5e544e93071e3a34fc99cf4ac827d4",
+    "id": "4346eb794d96a237e6a13dd8b500e47f10763e90b41fca91965626ecdd319020",
     "explicitExecute": true,
-    "authorisedAt": "2026-10-31T17:02:42.910Z"
+    "authorisedAt": "2026-10-31T17:26:52.599Z"
   },
   "provenance": {
-    "number": 212,
-    "url": "https://github.com/derekfika/fika-os/pull/212",
-    "head": "f50c399c6115971ad15ca7acc34db8ae5c1a5b34",
+    "number": 214,
+    "url": "https://github.com/derekfika/fika-os/pull/214",
+    "head": "045fb6fb0e037c10c25486472cf6c5d389b92274",
     "pullRequestRisk": "standard"
   },
-  "rollout": "build-2026-10-31-003",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "2b5ebb7c-f0d7-496b-a855-e49c82d9d28f",
   "previousGood": {
-    "sourceSha": "f2afded5e6e5229daf373a62d3a0e974f9ea6ff3",
-    "rollout": "build-2026-10-31-002",
+    "sourceSha": "3ba54f6dbaf12f7077074a25b853a5c5d61a16da",
+    "rollout": "build-2026-10-31-003",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "21464f097f5b4f77277e4597f1be9f7c2fe1d70b",
-  "releaseId": "ec800df4-b9e0-459b-ad82-029880016679",
-  "completedAt": "2026-10-31T17:07:55.340Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-staging--fika-os-dev.europe-west4.hosted.app/"
-  }
+  "previousGoodRecord": "f1b72361eb375aed9a5997a9dbff5037ef774b92",
+  "createdAt": "2026-10-31T17:27:00.250Z"
 }
