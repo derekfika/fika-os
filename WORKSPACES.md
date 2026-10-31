@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T13:18:19.641Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T13:18:44.796Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -98,7 +98,7 @@ Snapshot: 2026-10-31T13:18:19.641Z. The local governed registry remains authorit
 | logistics-android-push | logistics-pwa-notifications | apps/logistics | codex/logistics-android-push | [#96](https://github.com/derekfika/fika-os/pull/96) | finished | 2026-10-28T09:00:58.054Z |
 | logistics-auth-health-probe | uat-20261025-1150 | tools/workflow, docs/deployment, CHANGELOG.md | codex/logistics-auth-health-probe | — | finished | 2026-10-25T23:07:20.367Z |
 | logistics-desktop-app-permission-split | sol-logistics-desktop-app-permission-split | apps/logistics, apps/integration-hub/app/api/logistics/access/route.ts, apps/integration-hub/tests/logistics-operational-access.test.ts, apps/integration-hub/tests/logistics-admission-trace.test.ts, apps/integration-hub/tests/logistics-access-regression.cjs, apps/integration-hub/tests/authmod-vehicle-entitlement.test.ts, apps/shared/logistics-authority.ts | codex/logistics-desktop-app-permission-split | [#200](https://github.com/derekfika/fika-os/pull/200) | retired | 2026-10-31T07:35:51.825Z |
-| logistics-desktop-contract-proof | sol-logistics-authz-split | apps/logistics/docs/batch1-authority-drivers.md, apps/logistics/tests/helpers/authority-route-harness.cjs, apps/logistics/tests/desktop-admission-contract.test.ts, apps/integration-hub/tests/logistics-operational-access.test.ts | codex/logistics-desktop-contract-proof | — | active | 2026-10-31T12:25:17.160Z |
+| logistics-desktop-contract-proof | sol-logistics-authz-split | apps/logistics/docs/batch1-authority-drivers.md, apps/logistics/tests/helpers/authority-route-harness.cjs, apps/logistics/tests/desktop-admission-contract.test.ts, apps/integration-hub/tests/logistics-operational-access.test.ts | codex/logistics-desktop-contract-proof | — | finished | 2026-10-31T13:18:40.752Z |
 | logistics-driver-phase1 | logistics-pwa-notifications | apps/logistics | codex/logistics-driver-phase1 | [#82](https://github.com/derekfika/fika-os/pull/82) | finished | 2026-10-27T12:59:56.553Z |
 | logistics-dual-van-sessions | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-dual-van-sessions | [#84](https://github.com/derekfika/fika-os/pull/84) | finished | 2026-10-27T15:00:13.245Z |
 | logistics-iss-021-a11y | logistics-mobile-redesign | apps/logistics | codex/logistics-iss-021-a11y | [#79](https://github.com/derekfika/fika-os/pull/79) | finished | 2026-10-27T10:33:21.341Z |
