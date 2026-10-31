@@ -6,12 +6,13 @@ import { assertMenuSlotCanBeRemoved } from "../lib/rolling-menu-types";
 import { groupedSlots } from "../lib/week-planner-layout";
 import { weekPlannerSlotLabel } from "../lib/week-planner-slot-label";
 
-test("Week Planner keeps each salad slot label distinct and preserves generic labels elsewhere", () => {
-  const labels = ["Leaf", "Slaw", "Starch", "Veg", "Grain/Pulse", "FIKA Seasonal"];
-  labels.forEach((subtype, index) => {
-    assert.equal(weekPlannerSlotLabel(`SALAD ${index + 1}`, "Salad"), `SALAD ${index + 1} · ${subtype}`);
+test("Week Planner shows owner-approved salad display names without changing generic slot labels", () => {
+  const labels = ["Leaf Salad", "Slaw", "Starch", "Veg", "Grain/Pulse", "FIKA Seasonal"];
+  labels.forEach((label, index) => {
+    assert.equal(weekPlannerSlotLabel(`SALAD ${index + 1}`, "Salad"), label);
   });
   assert.equal(weekPlannerSlotLabel("HOT MAIN", "Hot Main"), "Hot Main");
+  assert.equal(weekPlannerSlotLabel("CUSTOM SLOT", "Custom display"), "Custom display");
   const component = readFileSync(new URL("../app/week-planner.tsx", import.meta.url), "utf8");
   assert.match(component, /<strong>\{plannerSlotLabel\(slot\)\}<\/strong>/, "slot row headings show the explicit subtype");
   assert.match(component, /<small>\{plannerSlotLabel\(slot\)\}<\/small>/, "picker headings show the explicit subtype");
