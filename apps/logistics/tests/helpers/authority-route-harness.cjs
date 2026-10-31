@@ -45,7 +45,7 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
     return value;
   }
   const db = { collection: name => new Query(name), batch: transaction, runTransaction: async callback => { if (beforeTransaction) { const hook = beforeTransaction; beforeTransaction = undefined; hook(); } for (let attempt=0; attempt<8; attempt++) { const tx = transaction(); try { const result = await callback(tx); await tx.commit(); return result; } catch(error) { if (!error.retryTransaction || attempt === 7) throw error; } } } };
-  const principal = { type: 'interactive', id: 'operator', displayName: 'Operator', identityKind: 'person', permittedVehicleIds, maintenanceAuthorities };
+  const principal = { type: 'interactive', id: 'operator', displayName: 'Operator', identityKind: 'person', sessionKind: 'hub', desktopPermissions: { view: false, manage: true }, permittedVehicleIds, maintenanceAuthorities };
   const driver = { driverId: 'person:driver', displayName: 'Governed Driver', permittedDriverVehicleIds: ['van1'] };
   let driverActive = true;
   const alternateDriver = { driverId: 'person:replacement', displayName: 'Replacement Driver', permittedDriverVehicleIds: ['van1'] };
@@ -112,6 +112,7 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
   mocks['@/lib/logistics-materialisation'] = { logisticsJobForRequirement: materialisation.logisticsJobForRequirement, rebuildLogisticsProjection: rebuild, reconcileLogisticsDay: async serviceDate => ({ projection: await rebuild(serviceDate), requirements: [] }) };
   if (realReconciliation) mocks['@/lib/logistics-materialisation'] = materialisation;
   const route = load(path.join(appRoot, 'app/api/logistics/route.ts'));
+  const mobileSessions = load(path.join(appRoot, 'lib/mobile-pin-session.ts'));
   const driversRoute = load(path.join(appRoot, 'app/api/logistics/drivers/route.ts'));
   const vehiclesRoute = load(path.join(appRoot, 'app/api/logistics/vehicles/route.ts'));
   return { date, queries, authorityRequests, materialisation, load, records, run, principal, seed, rebuild, requirements, oplocs, locationReads, failLocations(error) { locationFailure = error; }, setMenuAuthorityCheck(handler) { menuAuthorityCheck = handler; }, get writes() { return writes; }, deactivateDriver() { driverActive = false; },
@@ -120,5 +121,21 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
     async drivers() { const response = await driversRoute.GET(new NextRequest('https://logistics.test/api/logistics/drivers')); return { response, body: await response.json() }; },
     async vehicles(query = '') { const response = await vehiclesRoute.GET(new NextRequest('https://logistics.test/api/logistics/vehicles' + query)); return { response, body: await response.json() }; },
     async post(body, query = '') { const response = await route.POST(new NextRequest('https://logistics.test/api/logistics' + query, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })); return { response, body: await response.json() }; },
+    async postMobile(body, vehicle = 'van1') {
+      const priorSecret = process.env.LOGISTICS_MOBILE_SESSION_SECRET;
+      const priorVerifier = process.env.LOGISTICS_MOBILE_VAN1_PIN_VERIFIER;
+      const secret = 'isolated-mobile-session-secret-for-tests-123456';
+      const verifier = 'isolated-van1-pin-verifier';
+      process.env.LOGISTICS_MOBILE_SESSION_SECRET = secret;
+      process.env.LOGISTICS_MOBILE_VAN1_PIN_VERIFIER = verifier;
+      try {
+        const token = mobileSessions.signMobilePinSession({ vehicleId: 'van1', verifier, secret });
+        const response = await route.POST(new NextRequest('https://logistics.test/api/logistics?vehicle=' + vehicle, { method: 'POST', headers: { 'content-type': 'application/json', cookie: mobileSessions.mobileSessionCookieName('van1') + '=' + token, 'x-fika-logistics-mobile-request': '1', 'x-fika-logistics-vehicle': 'van1' }, body: JSON.stringify(body) }));
+        return { response, body: await response.json() };
+      } finally {
+        if (priorSecret === undefined) delete process.env.LOGISTICS_MOBILE_SESSION_SECRET; else process.env.LOGISTICS_MOBILE_SESSION_SECRET = priorSecret;
+        if (priorVerifier === undefined) delete process.env.LOGISTICS_MOBILE_VAN1_PIN_VERIFIER; else process.env.LOGISTICS_MOBILE_VAN1_PIN_VERIFIER = priorVerifier;
+      }
+    },
   };
 };

@@ -9,10 +9,14 @@ const denied = () => new LogisticsAuthorityError(403, "LOGISTICS_RESOURCE_DENIED
 const integrity = () => new LogisticsAuthorityError(409, "LOGISTICS_VEHICLE_IDENTITY_REQUIRED", "Vehicle identity needs administrator review before this resource can be used.");
 
 export function vehicleScope(principal: LogisticsPrincipal, requestedVehicle?: string | null) {
-  const ids = principal.permittedVehicleIds;
-  if (!Array.isArray(ids) || !ids.length || !ids.every(isLogisticsVehicleId)) throw denied();
-  if (requestedVehicle && (!isLogisticsVehicleId(requestedVehicle) || !ids.includes(requestedVehicle))) throw denied();
+  const explicitIds = principal.permittedVehicleIds;
+  if (!Array.isArray(explicitIds) || !explicitIds.every(isLogisticsVehicleId)) throw denied();
+  const ids: readonly string[] = principal.sessionKind === "hub" && principal.desktopPermissions?.view === true ? LOGISTICS_VEHICLE_IDS : explicitIds;
+  if (!ids.length || requestedVehicle && (!isLogisticsVehicleId(requestedVehicle) || !ids.includes(requestedVehicle))) throw denied();
   return requestedVehicle ? [requestedVehicle] : [...new Set(ids)];
+}
+export function assertPlannerManageAccess(principal: LogisticsPrincipal) {
+  if (principal.sessionKind !== "mobile-pin" && (principal.sessionKind !== "hub" || principal.desktopPermissions?.manage !== true)) throw denied();
 }
 export function assertSharedPlannerAccess(principal: LogisticsPrincipal) {
   if (!LOGISTICS_VEHICLE_IDS.every(id => vehicleScope(principal).includes(id))) throw denied();
@@ -85,6 +89,7 @@ export type ResourceReader = {
 export async function authorizeCommand(principal: LogisticsPrincipal, body: Record<string, any>, reader: ResourceReader) {
   const maintenance: Record<string, LogisticsMaintenanceAuthority> = { "reset-planning-day": "logistics.reset", "repair-logistics-assignment-dates": "logistics.repair", "repair-run-vehicle-identity": "logistics.repair", "rebuild-logistics-projection": "logistics.reconcile", "reconcile-logistics-day": "logistics.reconcile", "save-logistics-job": "logistics.reconcile" };
   if (maintenance[body.action]) { assertMaintenanceAccess(principal, maintenance[body.action]); return; }
+  assertPlannerManageAccess(principal);
   vehicleScope(principal);
   const missing = () => new LogisticsAuthorityError(404, "LOGISTICS_RESOURCE_NOT_FOUND", "Logistics resource not found.");
   const checkRun = async (id: string) => { const run = await reader.run(id); if (!run) throw missing(); authorizeRun(principal, run); };

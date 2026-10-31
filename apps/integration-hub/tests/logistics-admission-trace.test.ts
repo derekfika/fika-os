@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
+import { NextRequest } from "next/server";
+import { MemoryAuthModRepository } from "../lib/authmod-core/memory-repository";
+import { V1_APPLICATIONS, type AuthIdentity, type InteractivePrincipal } from "../lib/authmod-core/model";
+import { grantStandardApplicationAccess } from "../lib/authmod-core/grants";
+import * as evaluator from "../lib/authmod-core/evaluator";
 import test from "node:test";
 import * as ts from "typescript";
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
@@ -78,4 +84,44 @@ test("denied admission still emits one total and disabled tracing remains a no-o
     });
   } finally { console.info = originalInfo; }
   assert.equal(totals.length, 0);
+});
+
+
+test("Hub Logistics admission sends standard desktop permissions without widening explicit vehicle grants", async () => {
+  const repository = new MemoryAuthModRepository({ applications: [...V1_APPLICATIONS] });
+  const at = "2026-01-01T00:00:00Z";
+  const identity: AuthIdentity = { id: "test:desktop-admission", displayName: "Test desktop operator", identityKind: "operational", fullAccess: false, identityLinkStatus: "unmatched", status: "active", provenance: "import", version: 1, createdAt: at, updatedAt: at };
+  repository.identities.set(identity.id, identity);
+  const actor: InteractivePrincipal = { type: "interactive", id: identity.id, displayName: identity.displayName, identityKind: "operational" };
+  const bundle = await grantStandardApplicationAccess(repository, { identityId: identity.id, appId: "logistics", actor, reason: "Isolated admission test" });
+  const require = createRequire(import.meta.url);
+  const { typescriptLoader } = require("../../../scripts/testing/load-typescript.cjs") as { typescriptLoader: (options: Record<string, unknown>) => (file: string) => { GET(request: NextRequest): Promise<Response> } };
+  const load = typescriptLoader({ typescript: ts, appRoot: path.resolve("."), mocks: {
+    "@/lib/api": { errorResponse: (error: { status?: number; message?: string }) => Response.json({ error: { message: error.message } }, { status: error.status || 500 }) },
+    "@/lib/authmod-core": { FirestoreAuthModRepository: function Repository() { return repository; } },
+    "@/lib/authmod-core/evaluator": evaluator,
+    "@/lib/fika-session": { requireFikaSession: async () => ({ authmodIdentityId: identity.id, displayName: identity.displayName, identityKind: "operational" }) },
+    "@/lib/authmod-admission-cache": { cachedAuthmodAdmission: (input: { load(): Promise<unknown> }) => input.load(), withAuthmodRequestContext: (callback: () => Promise<unknown>) => callback() },
+    "@fika/server-shared/data-source-meter-server": { withDataTrace: (_: unknown, callback: () => Promise<unknown>) => callback() },
+    "../../../../../../shared/auth-diagnostics": { logAuthDiagnostic() {} },
+  } });
+  const route = load(path.resolve("app/api/logistics/access/route.ts"));
+  const call = async (vehicle = "") => {
+    const response = await route.GET(new NextRequest(`https://hub.test/api/logistics/access?mode=admission${vehicle ? `&vehicle=${vehicle}` : ""}`));
+    return { response, body: await response.json() as { principal?: { permittedVehicleIds: string[]; desktopPermissions: { view: boolean; manage: boolean } } } };
+  };
+  const granted = await call("van2");
+  assert.equal(granted.response.status, 200);
+  assert.deepEqual(granted.body.principal?.permittedVehicleIds, []);
+  assert.deepEqual(granted.body.principal?.desktopPermissions, { view: true, manage: true });
+  const manage = bundle.grants.find(grant => grant.action === "Manage")!;
+  repository.grants.set(manage.id, { ...manage, status: "revoked" });
+  const viewer = await call("van1");
+  assert.equal(viewer.response.status, 200);
+  assert.deepEqual(viewer.body.principal?.desktopPermissions, { view: true, manage: false });
+  const view = bundle.grants.find(grant => grant.action === "View")!;
+  repository.grants.set(view.id, { ...view, status: "revoked" });
+  assert.equal((await call("van2")).response.status, 403);
+  repository.appAssignments.set(bundle.assignment.id, { ...bundle.assignment, status: "revoked" });
+  assert.equal((await call()).response.status, 403);
 });
