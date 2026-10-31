@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, filterCpuProjectionForScope } from "../lib/cpu-dashboard-adapter";
 import type { CpuDayProjection } from "../lib/cpu-projection";
+import { aggregateProductionTotals } from "../lib/production-day";
 
 const projection = {
   serviceDate: "2026-10-26",
@@ -68,4 +69,48 @@ test("mixed legacy Sandwiches and Hospitality projection is withheld for authori
   assert.deepEqual(hospitality.orders, []);
   assert.equal(sandwiches.summary.totalUnits, 0);
   assert.equal(hospitality.summary.totalUnits, 0);
+});
+
+test("Ad-Hoc day/week projections stay whole in Hospitality, preserve cancellations, and contribute totals once", () => {
+  const source = structuredClone(projection);
+  source.orders = [
+    { ...source.orders[0], id: "production-order:v1:ad-hoc:request:1", origin: "cpu_created", productionCategory: "grab_and_go", productionScope: "sandwiches,delivered_in,grab_and_go", quantities: [
+      { sourceLineId: "adhoc:line:1", name: "Sandwich", quantity: 2, unit: "pieces", dietaries: {} },
+      { sourceLineId: "adhoc:line:2", name: "Lunch", quantity: 3, unit: "portions", dietaries: {} },
+      { sourceLineId: "adhoc:line:3", name: "Fruit", quantity: 2, unit: "items", dietaries: {} },
+    ] },
+    { ...source.orders[0], id: "production-order:v1:ad-hoc:request:cancelled", origin: "cpu_created", productionCategory: "delivered_in", status: "cancelled", workflowStatus: "cancelled", cancellationNotice: "Cancelled by requester", productionScope: "delivered_in", quantities: [{ sourceLineId: "adhoc:cancelled:line", name: "Historical line", quantity: 99, unit: "portions", dietaries: {} }] },
+  ];
+  source.summary = { orders: 2, ready: 1, attention: 0, planned: 0, totalUnits: 106 };
+
+  const hospitality = filterCpuProjectionForScope(source, "hospitality");
+  assert.equal(hospitality.orders.length, 2);
+  assert.equal(hospitality.summary.orders, 2);
+  assert.equal(hospitality.summary.totalUnits, 106);
+  assert.deepEqual(hospitality.orders[0].quantities.map(line => [line.sourceLineId, line.quantity]), [["adhoc:line:1", 2], ["adhoc:line:2", 3], ["adhoc:line:3", 2]]);
+  assert.equal(hospitality.orders[1].status, "cancelled");
+  assert.equal(hospitality.orders[1].workflowStatus, "cancelled");
+  assert.equal(hospitality.orders[1].cancellationNotice, "Cancelled by requester");
+
+  for (const scope of ["sandwiches", "delivered_in", "grab_and_go"] as const) {
+    const filtered = filterCpuProjectionForScope(source, scope);
+    assert.deepEqual(filtered.orders, []);
+    assert.equal(filtered.summary.orders, 0);
+    assert.equal(filtered.summary.totalUnits, 0);
+  }
+
+  const totals = aggregateProductionTotals(cpuProjectionToOrders(hospitality));
+  assert.deepEqual(totals.map(({ category, orderCount, items }) => [category, orderCount, items.reduce((sum, item) => sum + item.quantity, 0)]), [["Hospitality", 1, 7]]);
+  assert.equal(filterCpuProjectionForScope(source, "all"), source);
+});
+
+test("ordinary cpu_created projection is not treated as Ad-Hoc", () => {
+  const ordinary = structuredClone(projection);
+  ordinary.orders[0].id = "production-order:v1:cpu:ordinary";
+  ordinary.orders[0].origin = "cpu_created";
+  ordinary.orders[0].productionCategory = "other";
+  ordinary.orders[0].productionScope = "unassigned,unassigned";
+
+  assert.deepEqual(filterCpuProjectionForScope(ordinary, "hospitality").orders, []);
+  assert.equal(filterCpuProjectionForScope(ordinary, "delivered_in").orders.length, 1);
 });

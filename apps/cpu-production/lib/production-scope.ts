@@ -1,5 +1,6 @@
 import type { ProductionOrder } from "./production-types";
 import { adaptCpuProductionWorkstreams, type CpuProductionWorkstream } from "../../shared/production-workstreams";
+import { isAdHocProductionOrder } from "./production-presentation";
 
 export type ProductionScope = "all" | "sandwiches" | "hospitality" | "delivered_in" | "grab_and_go";
 export type ProductionRouting = Record<string, readonly unknown[]>;
@@ -50,6 +51,9 @@ export function filterProductionOrdersForScope(
 ): ProductionOrder[] {
   if (scope === "all") return orders;
   return orders
-    .map((order) => ({ ...order, lines: order.lines.filter((line) => lineTypes(order, line, routing).has(scope)) }))
-    .filter((order) => order.lines.length > 0);
+    .map((order) => isAdHocProductionOrder(order)
+      ? (scope === "hospitality" ? order : undefined)
+      : ({ ...order, lines: order.lines.filter((line) => lineTypes(order, line, routing).has(scope)) }))
+    .filter((order): order is ProductionOrder => Boolean(order))
+    .filter((order) => isAdHocProductionOrder(order) || order.lines.length > 0);
 }
