@@ -3,8 +3,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { validateBulkSpec, MAX_BULK_ITEMS, type BulkSpec } from "../lib/hospitality-catalogue-admin";
 import { buildCataloguePayload } from "../lib/hospitality-catalogue-read-model";
-import { EMPTY_FILTERS, bulkImpact, pruneSelection, rowMatches, selectAllShown, selectableSites, sitesSummary, toggleSelection } from "../lib/hospitality-catalogue-view";
-import type { CataloguePayload, CatalogueRow } from "../lib/hospitality-catalogue-types";
+import { EMPTY_FILTERS, bulkImpact, categoryVisibilityCheck, pruneSelection, rowMatches, selectAllShown, selectableSites, sitesSummary, toggleSelection } from "../lib/hospitality-catalogue-view";
+import { buildServiceLayoutView, type CataloguePayload, type CatalogueRow } from "../lib/hospitality-catalogue-types";
+import { SERVICE_IDS } from "@fika/server-shared/hospitality-service-layout";
 import type { CanonicalRecord } from "../lib/types";
 
 const wrap = (entityType: string, canonicalId: string, record: Record<string, unknown>) => ({ canonicalId, entityType, record: { version: 1, canonicalId, ...record }, dataHash: "x", lifecycleStatus: "published", publicationStatus: "published" }) as unknown as CanonicalRecord;
@@ -58,6 +59,23 @@ test("impact preview states exactly what will change, flags mixed routes, and al
   assert.match(bulkImpact({ minimum: { mode: "clear" } }, rows, sites).find(line => line.label === "Minimum")!.value, /Clear the company default/);
 });
 
+test("category review shows distinct old-to-target effects, confirms assessed changes and holds unknown mappings", () => {
+  const selected = [row("A", { availableAt: ["oploc:a"] }), row("B", { category: "Food", availableAt: ["oploc:b"] })];
+  const impact = bulkImpact({ category: "Drinks" }, selected, sites);
+  assert.match(impact.find(line => line.label === "Category")!.value, /1 item: 1 Food → Drinks; 1 already match/);
+  const layout = buildServiceLayoutView([], ["Drinks", "Food", "Breakfast"]);
+  assert.equal(categoryVisibilityCheck(layout, [selected[0]], "Drinks", sites).safe, true, "same category is a no-op for visibility");
+  const changing = categoryVisibilityCheck(layout, [selected[0]], "Breakfast", sites);
+  assert.equal(changing.safe, true); assert.equal(changing.requiresConfirmation, true); assert.match(changing.changes[0], /: .* → Breakfast, Meeting hospitality/);
+  const unknown = categoryVisibilityCheck(layout, [selected[0]], "Unmapped new category", sites);
+  assert.equal(unknown.safe, false); assert.match(unknown.reason, /no visible service mapping/);
+  const [first, second] = SERVICE_IDS;
+  const additive = buildServiceLayoutView([{ scope: "company", version: 1, services: Object.fromEntries(SERVICE_IDS.map(id => [id, { categories: id === first ? ["Drinks", "New drinks"] : id === second ? ["New drinks"] : [] }])) }], ["Drinks", "New drinks"]);
+  const reviewed = categoryVisibilityCheck(additive, [selected[0]], "New drinks", sites);
+  assert.equal(reviewed.safe, true); assert.equal(reviewed.requiresConfirmation, true); assert.match(reviewed.changes[0], /Breakfast → Breakfast, Lunch/);
+  assert.equal(categoryVisibilityCheck(undefined, [selected[0]], "Drinks", sites).safe, false, "missing #175 stored layout fails closed");
+});
+
 test("bulk spec validation: every field opt-in, bounded, archive exclusive, no empty site list", () => {
   const spec = (extra: Partial<BulkSpec>): BulkSpec => ({ operationId: "operation-12345", itemIds: ["hospitality-menu-item:a"], expectedVersions: { "hospitality-menu-item:a": 1 }, ...extra });
   assert.throws(() => validateBulkSpec(spec({})), /Choose at least one change/);
@@ -70,6 +88,8 @@ test("bulk spec validation: every field opt-in, bounded, archive exclusive, no e
   assert.throws(() => validateBulkSpec(spec({ production: "nonsense" as never })), /four production routes/);
   assert.deepEqual(validateBulkSpec(spec({ itemIds: ["hospitality-menu-item:b", "hospitality-menu-item:a", "hospitality-menu-item:a"], production: "in_house" })), ["hospitality-menu-item:a", "hospitality-menu-item:b"], "de-duplicated, deterministic order");
   assert.doesNotThrow(() => validateBulkSpec(spec({ minimum: { mode: "clear" } })));
+  assert.doesNotThrow(() => validateBulkSpec(spec({ category: " New category " })), "category-only is a valid operation");
+  assert.throws(() => validateBulkSpec(spec({ category: "   " })), /Category must be text/);
 });
 
 test("post-canonicalisation counts and copy: 47 active, 42 archived, no stale per-site-copy message", () => {

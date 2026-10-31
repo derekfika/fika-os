@@ -9,7 +9,7 @@ import {
   ROUTING_CHOICES, ROUTING_CHOICE_LABELS, ROUTING_STATE_LABELS,
   type CatalogueOfferingView, type CataloguePayload, type CatalogueRow, type ReviewGroupView, type RoutingChoice, type ServiceLayoutView,
 } from "../../lib/hospitality-catalogue-types";
-import { EMPTY_FILTERS, bulkImpact, categoriesOf, formatMoney, oplocLabel, pruneSelection, rowMatches, selectAllShown, selectableRows, selectableSites, sitesSummary, sortRows, summariseCounts, toggleSelection, withDuplicateFlag, type BulkDraft, type CatalogueFilters, type Sort, type SortKey } from "../../lib/hospitality-catalogue-view";
+import { EMPTY_FILTERS, bulkImpact, categoriesOf, categoryVisibilityCheck, formatMoney, oplocLabel, pruneSelection, rowMatches, selectAllShown, selectableRows, selectableSites, sitesSummary, sortRows, summariseCounts, toggleSelection, withDuplicateFlag, type BulkDraft, type CatalogueFilters, type Sort, type SortKey } from "../../lib/hospitality-catalogue-view";
 
 type Command = Record<string, unknown> & { action: string };
 type ApiBody = { error?: { message?: string }; message?: string; rows?: CatalogueRow[]; payload?: CataloguePayload; bulk?: BulkResultView; serviceLayoutStored?: Pick<ServiceLayoutView, "company" | "sites"> } & Partial<CataloguePayload>;
@@ -518,6 +518,7 @@ function BulkModal({ mode, rows: selectedRows, payload, send, onClose, onFinishe
   const [priceMode, setPriceMode] = useState<"keep" | "set">("keep"); const [priceValue, setPriceValue] = useState("");
   const [minimumMode, setMinimumMode] = useState<"keep" | "set" | "clear">("keep"); const [minimumValue, setMinimumValue] = useState("");
   const [siteMode, setSiteMode] = useState<"keep" | "add" | "remove" | "replace">("keep"); const [siteIds, setSiteIds] = useState<string[]>([]);
+  const [categoryMode, setCategoryMode] = useState<"keep" | "set">("keep"); const [categoryValue, setCategoryValue] = useState(""); const [confirmNewCategory, setConfirmNewCategory] = useState(false);
   const [step, setStep] = useState<"edit" | "review">(mode === "archive" ? "review" : "edit");
   const [report, setReport] = useState<BulkResultView | null>(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
@@ -532,6 +533,12 @@ function BulkModal({ mode, rows: selectedRows, payload, send, onClose, onFinishe
     if (minimumMode === "set") { const value = numberOrUndefined(minimumValue); if (value === undefined || !Number.isInteger(value) || value < 1) { setError("Enter the minimum as a whole number of 1 or more."); return null; } draft.minimum = { mode: "set", value }; }
     if (minimumMode === "clear") draft.minimum = { mode: "clear" };
     if (siteMode !== "keep") { if (!siteIds.length) { setError("Choose at least one site, or set Sites to Leave unchanged."); return null; } draft.sites = { mode: siteMode, oplocIds: siteIds }; }
+    if (categoryMode === "set") {
+      const category = categoryValue.trim();
+      if (!category || category.length > 160) { setError("Enter a category of 1 to 160 characters."); return null; }
+      if (!categoriesOf(payload.rows).includes(category) && !confirmNewCategory) { setError("Confirm that this is a new category name. It will not be enabled for any service automatically."); return null; }
+      draft.category = category;
+    }
     if (!Object.keys(draft).length) { setError("Nothing to change yet. Every field is left unchanged until you choose a value."); return null; }
     return draft;
   }
@@ -551,6 +558,7 @@ function BulkModal({ mode, rows: selectedRows, payload, send, onClose, onFinishe
     } catch (caught) { setError((caught as Error).message); return null; } finally { setBusy(false); }
   }
   const lines = draft ? bulkImpact(draft, rows, payload.oplocs) : [];
+  const categoryCheck = draft?.category === undefined ? undefined : categoryVisibilityCheck(payload.serviceLayout, rows, draft.category, payload.oplocs);
   const archive = Boolean(draft?.archive);
   return <div className="hc-modal-backdrop" role="presentation">
     <section className="hc-modal hc-modal--wide" role="dialog" aria-modal="true" aria-labelledby="hc-bulk-title" ref={dialog}>
@@ -573,8 +581,17 @@ function BulkModal({ mode, rows: selectedRows, payload, send, onClose, onFinishe
           </div>
           <Field label="Site availability"><select value={siteMode} onChange={event => setSiteMode(event.target.value as typeof siteMode)}><option value="keep">Leave unchanged</option><option value="add">Add selected sites</option><option value="remove">Remove selected sites</option><option value="replace">Replace availability with selected sites</option></select></Field>
           {siteMode !== "keep" && <SitePicker legend={siteMode === "add" ? "Sites to add" : siteMode === "remove" ? "Sites to remove" : "Available at exactly these sites"} sites={sites} value={siteIds} onChange={setSiteIds} />}
+          <Field label="Category"><select value={categoryMode} onChange={event => setCategoryMode(event.target.value as "keep" | "set")}><option value="keep">Leave unchanged</option><option value="set">Set category</option></select></Field>
+          {categoryMode === "set" && <>
+            <Field label="Target category"><input value={categoryValue} maxLength={160} list="hc-bulk-categories" onChange={event => { setCategoryValue(event.target.value); setConfirmNewCategory(false); }} /><datalist id="hc-bulk-categories">{categoriesOf(payload.rows).map(category => <option key={category} value={category} />)}</datalist></Field>
+            {categoryValue.trim() && !categoriesOf(payload.rows).includes(categoryValue.trim()) && <label className="hc-check"><input type="checkbox" checked={confirmNewCategory} onChange={event => setConfirmNewCategory(event.target.checked)} /><span>Create the new category name; I understand it will not be enabled for any service automatically.</span></label>}
+          </>}
         </> : <>
           <dl className="hc-impact">{lines.map(line => <div key={line.label} className={line.tone ? `is-${line.tone}` : ""}><dt>{line.label}</dt><dd>{line.value}</dd></div>)}</dl>
+          {categoryCheck && <p className={categoryCheck.safe ? categoryCheck.requiresConfirmation ? "hc-warning" : "hc-hint" : "hc-warning"} role="status"><AlertTriangle size={15} aria-hidden="true" /> {categoryCheck.reason}</p>}
+          {categoryCheck?.changes.length ? <details className="hc-hint"><summary>Review all {categoryCheck.changes.length} site visibility effect{categoryCheck.changes.length === 1 ? "" : "s"}</summary><ul>{categoryCheck.changes.map((change, index) => <li key={`${index}-${change}`}>{change}</li>)}</ul></details> : null}
+          {categoryCheck?.requiresConfirmation && <label className="hc-check"><input type="checkbox" checked={draft?.categoryVisibilityConfirmed === true} onChange={event => setDraft(current => current ? { ...current, categoryVisibilityConfirmed: event.target.checked } : current)} /><span>I reviewed these stored service visibility changes for the selected items and sites.</span></label>}
+          {draft?.category !== undefined && <p className="hc-hint">Production controls CPU routing. Sites control OPLOC offering availability. Service and occasion visibility is separate in the stored #175 layout. This category edit does not enable a service (including Breakfast). Current booking portals do not consume that layout, so this is a stored-config preview, not a runtime visibility guarantee.</p>}
           <p className="hc-hint">Each item is changed in its own safe step. If any item cannot be changed (for example it was edited elsewhere), you will see exactly which ones; nothing fails silently.</p>
         </>}
         {error && <p role="alert" className="hc-error">{error}</p>}
@@ -584,7 +601,7 @@ function BulkModal({ mode, rows: selectedRows, payload, send, onClose, onFinishe
           <button type="button" className="hc-btn" onClick={onClose} disabled={busy}>Cancel</button>
           {step === "review" && mode === "edit" && <button type="button" className="hc-btn" onClick={() => { setStep("edit"); setError(""); }} disabled={busy}>Back</button>}
           {step === "edit" ? <button type="button" className="hc-btn hc-btn--primary" onClick={review}>Review changes</button>
-            : <button type="button" className={`hc-btn ${archive ? "hc-btn--danger-solid" : "hc-btn--primary"}`} disabled={busy} onClick={() => void applyAndReport()}>{busy ? "Applying…" : archive ? `Archive ${rows.length} item${rows.length === 1 ? "" : "s"}` : `Apply to ${rows.length} item${rows.length === 1 ? "" : "s"}`}</button>}
+            : <button type="button" className={`hc-btn ${archive ? "hc-btn--danger-solid" : "hc-btn--primary"}`} disabled={busy || categoryCheck?.safe === false || (categoryCheck?.requiresConfirmation === true && draft?.categoryVisibilityConfirmed !== true)} onClick={() => void applyAndReport()}>{busy ? "Applying…" : archive ? `Archive ${rows.length} item${rows.length === 1 ? "" : "s"}` : `Apply to ${rows.length} item${rows.length === 1 ? "" : "s"}`}</button>}
         </>}
       </footer>
     </section>

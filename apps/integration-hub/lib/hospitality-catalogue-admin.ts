@@ -28,7 +28,8 @@ import { isActiveOplocRecord } from "./hospitality-catalogue-oploc";
 import { COMPANY_LAYOUT_ID, completeRules, layoutCollection, layoutDocId, layoutRevisions, type StoredServiceLayout } from "./hospitality-service-layout";
 import { effectiveServiceLayout, isServiceId, normaliseCategories, sameServiceRule, type ServiceRule } from "@fika/server-shared/hospitality-service-layout";
 import { isRedundantException, type PackageException, type PricePeriod } from "./hospitality-effective-offering";
-import { ROUTING_CHOICES, ROUTING_CHOICE_LABELS, ROUTING_CHOICE_WORKSTREAMS, type RoutingChoice } from "./hospitality-catalogue-types";
+import { ROUTING_CHOICES, ROUTING_CHOICE_LABELS, ROUTING_CHOICE_WORKSTREAMS, storedServiceLayoutView, type RoutingChoice } from "./hospitality-catalogue-types";
+import { categoryVisibilityCheck } from "./hospitality-catalogue-view";
 
 const canonical = () => db.collection("integrationHubCanonical");
 const revisions = () => db.collection("integrationHubCanonicalRevisions");
@@ -605,7 +606,7 @@ export const MAX_BULK_ITEMS = 50;
 export type BulkSpec = {
   operationId: string; itemIds: string[]; expectedVersions: Record<string, number>; expectedRoutingVersions?: Record<string, number>;
   production?: RoutingChoice; price?: PriceInput; minimum?: { mode: "set"; value: number } | { mode: "clear" };
-  sites?: { mode: "add" | "remove" | "replace"; oplocIds: string[] }; archive?: boolean;
+  sites?: { mode: "add" | "remove" | "replace"; oplocIds: string[] }; category?: string; categoryVisibilityConfirmed?: boolean; archive?: boolean;
 };
 export type BulkItemResult = { itemId: string; status: "applied" | "unchanged" | "already_applied" | "failed"; message: string };
 export type BulkResult = { operationId: string; results: BulkItemResult[]; succeeded: number; failed: number; message: string };
@@ -615,12 +616,13 @@ export function validateBulkSpec(spec: BulkSpec) {
   if (!spec.operationId || spec.operationId.length < 8) throw problem("A bulk operation needs an operation id.");
   if (!ids.length) throw problem("Select at least one item.");
   if (ids.length > MAX_BULK_ITEMS) throw problem(`Bulk changes are limited to ${MAX_BULK_ITEMS} items at a time. Narrow the selection.`);
-  const changes = [spec.production, spec.price, spec.minimum, spec.sites, spec.archive].filter(value => value !== undefined && value !== false);
+  const changes = [spec.production, spec.price, spec.minimum, spec.sites, spec.category, spec.archive].filter(value => value !== undefined && value !== false);
   if (!changes.length) throw problem("Choose at least one change; every field is left unchanged by default.");
   if (spec.archive && changes.length > 1) throw problem("Archive is a separate action: it cannot be combined with other changes.");
   if (spec.production && !ROUTING_CHOICES.includes(spec.production)) throw problem("Choose one of the four production routes.");
   if (spec.price) money(spec.price.amount, "Default price");
   if (spec.minimum?.mode === "set") quantity(spec.minimum.value, "Default minimum");
+  if (spec.category !== undefined && (!spec.category.trim() || spec.category.trim().length > 160)) throw problem("Category must be text of 1 to 160 characters.");
   if (spec.sites && ![...new Set(spec.sites.oplocIds)].length) throw problem("Choose at least one site. To remove an item from every site, use Remove sites with all sites selected.");
   return ids.sort();
 }
@@ -631,14 +633,14 @@ async function bulkOne(ctx: Ctx, itemId: string, spec: BulkSpec, activeIds: stri
   const siteIds = spec.sites ? [...new Set(spec.sites.oplocIds)] : [];
   const [receipt, itemSnapshot, routeSnapshot, children] = await Promise.all([
     readDoc(ctx, receiptRef), readDoc(ctx, itemRef), spec.production ? readDoc(ctx, routeRef) : Promise.resolve(undefined),
-    spec.price || spec.sites || spec.archive ? itemChildren(ctx, itemId) : Promise.resolve({ offerings: [] as CanonicalRecord[], itemPrices: [] as CanonicalRecord[] }),
+    spec.price || spec.sites || spec.category || spec.archive ? itemChildren(ctx, itemId) : Promise.resolve({ offerings: [] as CanonicalRecord[], itemPrices: [] as CanonicalRecord[] }),
   ]);
   const ownPrices = spec.sites ? await offeringPrices(ctx, children.offerings.map(offering => offering.canonicalId)) : [];
   if (receipt.exists) return { itemId, status: "already_applied", message: "Already applied by an earlier attempt of this operation." };
   const item = requireItem(itemSnapshot); const name = text(item.record.name);
   expectVersion(item, spec.expectedVersions[itemId], `“${name}”`);
   const archived = item.record.lifecycleState === "archived";
-  const before: Record<string, unknown> = {}, after: Record<string, unknown> = {}; const touchedSites: string[] = []; let changed = false;
+  const before: Record<string, unknown> = {}, after: Record<string, unknown> = {}; const touchedSites: string[] = []; let changed = false; let categoryVisibilityReview: Record<string, unknown> | undefined;
   if (spec.archive) {
     if (archived) return { itemId, status: "failed", message: `“${name}” is already archived.` };
     stage(ctx, "Hospitality Menu Item", { ...bump(ctx, item.record), lifecycleState: "archived" }, item, "Archived by bulk operation.");
@@ -647,6 +649,30 @@ async function bulkOne(ctx: Ctx, itemId: string, spec: BulkSpec, activeIds: stri
   } else {
     if (archived) return { itemId, status: "failed", message: `“${name}” is archived. Restore it before editing.` };
     let record: Record<string, unknown> = item.record; const today = ukBusinessDate();
+    if (spec.category !== undefined && item.record.category !== spec.category.trim()) {
+      const [layoutSnapshot, oplocSnapshot] = await Promise.all([
+        readQuery(ctx, layoutCollection().limit(101)),
+        readQuery(ctx, canonical().where("entityType", "==", "OPLOC").limit(101)),
+      ]);
+      if (layoutSnapshot.size > 100) throw problem("Stored service visibility exceeds its bounded limit; category change is held.");
+      if (oplocSnapshot.size > 100) throw problem("Active-site visibility exceeds its bounded limit; category change is held.");
+      const layout = storedServiceLayoutView(layoutSnapshot.docs.map(doc => doc.data() as StoredServiceLayout));
+      const categoryActiveIds = oplocSnapshot.docs.map(doc => doc.data() as CanonicalRecord).filter(isActiveOploc).map(record => record.canonicalId);
+      const restricted = Array.isArray(item.record.allowedOplocIds) ? item.record.allowedOplocIds as string[] : undefined;
+      const unavailable = new Set(children.offerings.filter(offering => offering.record.lifecycleState !== "archived" && offering.record.available === false && !offering.record.operationalAreaId).map(offering => text(offering.record.oplocId)));
+      const availableAt = categoryActiveIds.filter(oplocId => (!restricted || restricted.includes(oplocId)) && !unavailable.has(oplocId));
+      const visibility = categoryVisibilityCheck(layout, [{ name, category: text(item.record.category), availableAt }], spec.category.trim());
+      if (!visibility.safe) throw problem(visibility.reason);
+      if (visibility.requiresConfirmation && spec.categoryVisibilityConfirmed !== true) throw problem(`${visibility.reason} Confirm the reviewed visibility effects before applying.`);
+      const effects = visibility.effects.slice(0, 100);
+      categoryVisibilityReview = {
+        source: "stored-service-layout-preview", companyVersion: layout.company.version,
+        siteVersions: Object.fromEntries([...new Set(effects.map(effect => effect.oplocId))].map(oplocId => [oplocId, layout.sites[oplocId]?.version ?? 0])),
+        confirmationRequired: visibility.requiresConfirmation, confirmed: spec.categoryVisibilityConfirmed === true,
+        effects, omittedEffects: Math.max(0, visibility.effects.length - effects.length),
+      };
+      before.category = item.record.category; after.category = spec.category.trim(); record = { ...record, category: spec.category.trim() }; changed = true;
+    }
     if (spec.production) {
       const current = routeSnapshot!.exists ? routeSnapshot!.data() as { workstreams?: string[]; version?: number; supersededBy?: string } : undefined;
       const currentVersion = current ? Number(current.version || 1) : 0;
@@ -683,7 +709,7 @@ async function bulkOne(ctx: Ctx, itemId: string, spec: BulkSpec, activeIds: stri
     if (changed) stage(ctx, "Hospitality Menu Item", bump(ctx, record), item, "Hospitality Catalogue bulk update (item version touched).");
   }
   if (!changed) return { itemId, status: "unchanged", message: "Already matches; nothing to change." };
-  ctx.tx.create(receiptRef, { action: "Hospitality Catalogue bulk update", entityReference: itemId, actorId: ctx.actor.uid, actorName: ctx.actor.name, timestamp: ctx.now, reason: `Bulk operation ${spec.operationId}: “${name}”.`, details: JSON.parse(JSON.stringify({ bulkOperationId: spec.operationId, itemId, before, after, oplocIds: [...new Set(touchedSites.map(entry => entry.slice(1)))] })) });
+  ctx.tx.create(receiptRef, { action: "Hospitality Catalogue bulk update", entityReference: itemId, actorId: ctx.actor.uid, actorName: ctx.actor.name, timestamp: ctx.now, reason: `Bulk operation ${spec.operationId}: “${name}”.`, details: JSON.parse(JSON.stringify({ bulkOperationId: spec.operationId, itemId, before, after, ...(categoryVisibilityReview ? { categoryVisibilityReview } : {}), oplocIds: [...new Set(touchedSites.map(entry => entry.slice(1)))] })) });
   return { itemId, status: "applied", message: "Applied." };
 }
 
@@ -698,7 +724,7 @@ export async function runBulkCatalogueUpdate(actor: Actor, spec: BulkSpec): Prom
     catch (error) { results.push({ itemId, status: "failed", message: (error as Error).message }); }
   }
   const succeeded = results.filter(result => result.status !== "failed").length, failed = results.length - succeeded;
-  const kinds = [spec.production && "production", spec.price && "default price", spec.minimum && "default minimum", spec.sites && `sites:${spec.sites.mode}`, spec.archive && "archive"].filter(Boolean);
+  const kinds = [spec.production && "production", spec.price && "default price", spec.minimum && "default minimum", spec.sites && `sites:${spec.sites.mode}`, spec.category !== undefined && "category", spec.archive && "archive"].filter(Boolean);
   await audit().doc(`bulk-${spec.operationId}`).set({ action: "Hospitality Catalogue bulk operation", entityReference: spec.operationId, actorId: actor.uid, actorName: actor.name, timestamp: new Date().toISOString(), reason: `${kinds.join(", ")} on ${ids.length} item${ids.length === 1 ? "" : "s"}: ${succeeded} succeeded, ${failed} failed.`, details: JSON.parse(JSON.stringify({ bulkOperationId: spec.operationId, operations: kinds, itemIds: ids, oplocIds: spec.sites?.oplocIds ?? [], succeeded, failed, results })) }, { merge: true });
   return { operationId: spec.operationId, results, succeeded, failed, message: failed ? `${succeeded} of ${results.length} items updated; ${failed} could not be changed.` : `${succeeded} item${succeeded === 1 ? "" : "s"} updated.` };
 }

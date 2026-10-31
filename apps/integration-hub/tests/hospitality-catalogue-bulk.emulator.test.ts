@@ -11,6 +11,7 @@ import type { Actor } from "../lib/auth";
 import { runBulkCatalogueUpdate, runCatalogueCommand, type BulkSpec } from "../lib/hospitality-catalogue-admin";
 import { loadCataloguePayload, loadCatalogueRows } from "../lib/hospitality-catalogue-loader";
 import type { CatalogueRow } from "../lib/hospitality-catalogue-types";
+import { SERVICE_IDS } from "@fika/server-shared/hospitality-service-layout";
 import type { CanonicalRecord } from "../lib/types";
 
 const enabled = process.env.FIKA_CATALOGUE_EMULATOR_TEST === "true" && /^(127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || "");
@@ -160,4 +161,55 @@ test("bulk operations write per-item audit events and a summary with actor, oper
   const events = (await audit().where("details.bulkOperationId", "==", spec.operationId).get()).docs.map(doc => doc.data()).filter(event => event.action === "Hospitality Catalogue bulk update");
   assert.equal(events.length, 2); const event = events.find(candidate => candidate.entityReference === x)!;
   assert.equal(event.actorId, admin.uid); assert.equal(event.details.after.production, "cpu_sandwiches"); assert.equal(event.details.before.production, "cpu_hospitality"); assert.deepEqual(event.details.oplocIds, [w.oplocs[1]]); assert.ok(result.succeeded === 2);
+});
+
+test("category-only bulk update preserves every other field, scopes to selected IDs, audits before/after and replays safely", { skip: !enabled }, async () => {
+  const w = await world(); const [x, y, z] = w.items; const layout = db.collection("integrationHubHospitalityServiceLayout").doc("company");
+  const previous = await layout.get();
+  await layout.set({ schema: 1, scope: "company", version: 1, services: Object.fromEntries(SERVICE_IDS.map(id => [id, { categories: id === "breakfast" ? ["Food", "Food — category test", "Food — breakfast only"] : ["Food", "Food — category test"] }])), createdAt: stamp, createdBy: admin.uid, updatedAt: stamp, updatedBy: admin.uid });
+  try {
+    const before = await get(x); const childrenBefore = await canonical().where("record.hospitalityMenuItemId", "==", x).get();
+    const spec = w.spec({ category: "Food — category test" }, [x, y]);
+    const result = await runBulkCatalogueUpdate(admin, spec);
+    assert.equal(result.failed, 0); assert.deepEqual(result.results.map(entry => entry.status), ["applied", "applied"]);
+    const after = await get(x); assert.equal(after?.record.category, "Food — category test");
+    for (const field of ["name", "description", "defaultMinimumQuantity", "allowedOplocIds", "configuration", "lifecycleState"]) assert.deepEqual(after?.record[field], before?.record[field], `${field} preserved`);
+    assert.equal(after?.record.version, Number(before?.record.version) + 1);
+    const childrenAfter = await canonical().where("record.hospitalityMenuItemId", "==", x).get(); assert.equal(childrenAfter.size, childrenBefore.size, "prices, offerings, sparse exceptions and history untouched");
+    assert.equal((await get(z))?.record.category, "Food", "unselected item stays unchanged");
+    const event = (await audit().where("details.bulkOperationId", "==", spec.operationId).get()).docs.map(doc => doc.data()).find(doc => doc.entityReference === x)!;
+    assert.equal(event.details.before.category, "Food"); assert.equal(event.details.after.category, "Food — category test");
+    assert.equal(event.details.categoryVisibilityReview.source, "stored-service-layout-preview"); assert.equal(event.details.categoryVisibilityReview.confirmed, false); assert.equal(event.details.categoryVisibilityReview.companyVersion, 1);
+    assert.equal((await runBulkCatalogueUpdate(admin, spec)).results[0].status, "already_applied", "operation receipt prevents duplicate application");
+    const current = await w.row(x); const noOpSpec = await w.fresh([x], { category: "Food — category test" });
+    const noop = await runBulkCatalogueUpdate(admin, noOpSpec);
+    assert.equal(noop.results[0].status, "unchanged"); assert.equal((await w.row(x)).version, current.version, "no-op does not bump version");
+    const noOpAudit = (await audit().where("details.bulkOperationId", "==", noOpSpec.operationId).get()).docs.map(doc => doc.data());
+    assert.equal(noOpAudit.filter(entry => entry.action === "Hospitality Catalogue bulk update").length, 0, "no-op creates no per-item audit receipt");
+    const staleSpec = w.spec({ category: "Food — category test" }, [z]);
+    await runCatalogueCommand(admin, { action: "update-item", itemId: z, expectedVersion: w.byId[z].version, name: w.byId[z].name, category: "Food", defaultMinimumQuantity: 5 });
+    const stale = await runBulkCatalogueUpdate(admin, staleSpec); assert.equal(stale.results[0].status, "failed"); assert.match(stale.results[0].message, /changed elsewhere/);
+    const unconfirmed = await runBulkCatalogueUpdate(admin, await w.fresh([z], { category: "Food — breakfast only" }));
+    assert.equal(unconfirmed.results[0].status, "failed"); assert.match(unconfirmed.results[0].message, /Review each listed item and site/);
+    const confirmedSpec = await w.fresh([z], { category: "Food — breakfast only", categoryVisibilityConfirmed: true });
+    const confirmed = await runBulkCatalogueUpdate(admin, confirmedSpec);
+    assert.equal(confirmed.results[0].status, "applied", "assessed service visibility change is allowed only after explicit review confirmation");
+    assert.equal((await get(z))?.record.category, "Food — breakfast only");
+    const confirmedEvent = (await audit().where("details.bulkOperationId", "==", confirmedSpec.operationId).get()).docs.map(doc => doc.data()).find(doc => doc.entityReference === z)!;
+    assert.equal(confirmedEvent.details.categoryVisibilityReview.confirmed, true);
+    assert.equal(confirmedEvent.details.categoryVisibilityReview.effects[0].before.length, SERVICE_IDS.length);
+    assert.deepEqual(confirmedEvent.details.categoryVisibilityReview.effects[0].after, ["Breakfast"]);
+    const archived = await runBulkCatalogueUpdate(admin, await w.fresh([y], { archive: true })); assert.equal(archived.failed, 0);
+    const archivedEdit = await runBulkCatalogueUpdate(admin, await w.fresh([y], { category: "Food — category test" })); assert.match(archivedEdit.results[0].message, /archived/);
+  } finally {
+    if (previous.exists) await layout.set(previous.data()!); else await layout.delete();
+  }
+});
+
+test("category bulk update holds when target visibility is unmapped in the stored service layout", { skip: !enabled }, async () => {
+  const w = await world(); const [x] = w.items;
+  const before = await get(x);
+  const result = await runBulkCatalogueUpdate(admin, w.spec({ category: "Unmapped category" }, [x]));
+  assert.equal(result.results[0].status, "failed"); assert.match(result.results[0].message, /no visible service mapping/);
+  assert.equal((await get(x))?.record.category, before?.record.category, "visibility hold leaves canonical item untouched");
 });

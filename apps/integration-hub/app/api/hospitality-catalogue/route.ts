@@ -35,7 +35,8 @@ const BulkCommand = z.object({
   expectedVersions: z.record(z.string(), Version), expectedRoutingVersions: z.record(z.string(), z.number().int().nonnegative()).optional(),
   production: Routing.optional(), price: Price.optional(),
   minimum: z.discriminatedUnion("mode", [z.object({ mode: z.literal("set"), value: z.number().int().positive() }).strict(), z.object({ mode: z.literal("clear") }).strict()]).optional(),
-  sites: z.object({ mode: z.enum(["add", "remove", "replace"]), oplocIds: z.array(Id).min(1).max(100) }).strict().optional(), archive: z.boolean().optional(),
+  sites: z.object({ mode: z.enum(["add", "remove", "replace"]), oplocIds: z.array(Id).min(1).max(100) }).strict().optional(),
+  category: z.string().trim().min(1).max(160).optional(), categoryVisibilityConfirmed: z.boolean().optional(), archive: z.boolean().optional(),
 }).strict();
 
 const noStore = { headers: { "Cache-Control": "no-store, max-age=0" } };
