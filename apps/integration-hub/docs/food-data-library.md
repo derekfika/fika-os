@@ -32,8 +32,7 @@ leave the origin and no browser credential exists.
 
 - Session: the existing Hub Firebase session cookie, resolved through AUTHMOD to an **active person** identity.
 - Authority: an explicit, effective, organisation-scoped AUTHMOD authority grant
-  `appId: integration-hub`, `resource: food-data.catalogue`, `action: View`. It is granted from the existing AUTHMOD
-  account administration (authority grant). AUTHMOD Administrators have **no** implicit access.
+  `appId: integration-hub`, `resource: food-data.catalogue`, `action: View`. It is granted from AUTHMOD account administration → Special Authority → “Food Data (Kafoodle)”. AUTHMOD Administrators have **no** implicit access.
 - The grant covers the whole bundle, including VAT-inclusive pack prices; there is no separate unpriced view.
 - Per request: one session verification, one identity read, one targeted grant read (existing AUTHMOD reads). **Zero
   catalogue Firestore reads or listeners.** Authorisation happens before any bucket read; refused callers cause none.
