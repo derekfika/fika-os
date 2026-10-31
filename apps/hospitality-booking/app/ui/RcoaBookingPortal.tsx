@@ -9,7 +9,7 @@ import { bookingPolicyFor } from "@fika/server-shared/hospitality-effective-offe
 import { BOOKING_NOTICE_SHORT } from "../../lib/booking-notice";
 import StartAgainButton from "./StartAgainButton";
 import GuestCountInput, { GuestCountNotice } from "./GuestCountInput";
-import { effectiveGuestMinimum, guestCountMessage } from "../../lib/guest-count";
+import { guestCountMessage } from "../../lib/guest-count";
 import {
   addAllDayService,
   applyAllDayDefaults,
@@ -39,6 +39,7 @@ import {
   rcoaAllowedCategories,
   rcoaEventTypes,
   rcoaMinimumQuantity,
+  rcoaGuestMinimum,
   rcoaNoticeWarnings,
   retainRcoaLinesForOccasion,
   rcoaSuggestedQuantity,
@@ -282,9 +283,9 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
     const item = menu.find((candidate) => candidate.id === line.itemId);
     return item && line.quantity > 0 ? [{ line, item }] : [];
   });
-  const guestMinimum = effectiveGuestMinimum(draft.lines, menu);
+  const guestMinimum = rcoaGuestMinimum(draft, menu);
   const guestIssue = guestCountMessage(draft.event.guestCount, guestMinimum);
-  const invalidService = allDay.services.find(service => guestCountMessage(service.guestCount, effectiveGuestMinimum(service.lines, menu)));
+  const invalidService = allDay.services.find(service => guestCountMessage(service.guestCount, rcoaGuestMinimum({ contact: allDay.contact, lines: service.lines }, menu)));
   const warnings = rcoaNoticeWarnings(draft, menu);
   const currentEvent = rcoaEventTypes.find((event) => event.id === draft.occasion);
   const rcoaConfigured = configured;
@@ -679,7 +680,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                                 <option value="">Choose a service</option>
                                 {rcoaEventTypes.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
                               </select><ErrorMessage field={`service:${service.id}`} errors={errors} /></label>
-                            <label className={styles.dayCell}><span className={styles.cellLabel}>Guests</span><GuestCountInput value={service.guestCount} minimum={effectiveGuestMinimum(service.lines, menu)} field={`guestCount:${service.id}`} surface="rcoa" submittedError={errors[`guestCount:${service.id}`]} onChange={guestCount => setAllDay(current => updateAllDayService(current, service.id, { guestCount }))} /></label>
+                            <label className={styles.dayCell}><span className={styles.cellLabel}>Guests</span><GuestCountInput value={service.guestCount} minimum={rcoaGuestMinimum({ contact: allDay.contact, lines: service.lines }, menu)} field={`guestCount:${service.id}`} surface="rcoa" submittedError={errors[`guestCount:${service.id}`]} onChange={guestCount => setAllDay(current => updateAllDayService(current, service.id, { guestCount }))} /></label>
                             <label className={styles.dayCell}><span className={styles.cellLabel}>Location</span><input {...fieldProps(`location:${service.id}`, errors)} data-rcoa-field={`location:${service.id}`} value={service.location} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { location: event.target.value }))} placeholder="e.g. Lecture Hall" /><ErrorMessage field={`location:${service.id}`} errors={errors} /></label>
                           </div>
                         </div>
@@ -737,7 +738,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
             )}
 
             {view === "menu" && guestIssue && <GuestCountNotice message={guestIssue} label={editingServiceId ? "Edit service guest count" : "Edit guest count"} onEdit={() => { if (editingServiceId) { const serviceId = editingServiceId; setEditingServiceId(null); setStep(2); focusField(`guestCount:${serviceId}`); } else { setStep(2); focusField("guestCount"); } }} />}
-            {flow === "all-day" && step > 2 && !editingServiceId && invalidService && <GuestCountNotice message={guestCountMessage(invalidService.guestCount, effectiveGuestMinimum(invalidService.lines, menu))} label="Edit service guest count" onEdit={() => { setStep(2); focusField(`guestCount:${invalidService.id}`); }} />}
+            {flow === "all-day" && step > 2 && !editingServiceId && invalidService && <GuestCountNotice message={guestCountMessage(invalidService.guestCount, rcoaGuestMinimum({ contact: allDay.contact, lines: invalidService.lines }, menu))} label="Edit service guest count" onEdit={() => { setStep(2); focusField(`guestCount:${invalidService.id}`); }} />}
             {flow === "standard" && step > 3 && guestIssue && <GuestCountNotice message={guestIssue} onEdit={() => { setStep(2); focusField("guestCount"); }} />}
             {view === "menu" && (
               <section aria-labelledby="rcoa-menu-title">

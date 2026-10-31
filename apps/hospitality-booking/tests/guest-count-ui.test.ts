@@ -141,3 +141,30 @@ test("RCoA menu selections raise and remove their requirement immediately, allow
   fireEvent.change(quantity, { target: { value: "" } }); assert.equal(screen.queryByRole("button", { name: "Edit guest count" }), null);
   fireEvent.click(screen.getByRole("button", { name: "Continue" })); await screen.findByRole("heading", { name: "Help us look after everyone." });
 });
+
+
+test("RCoA standard recomputes Gallagher's guest policy from company/email and permits one guest when that context is removed", async () => {
+  const draft = rcoaDraft(2, 1); draft.lines = selected(product);
+  draft.contact.companyName = "Gallagher";
+  dom.window.localStorage.setItem("fika-rcoa-booking-draft:v1", JSON.stringify(draft)); render(React.createElement(RcoaBookingPortal, { configured: true }));
+  await waitFor(() => assert.equal(guest("rcoa")?.min, "5")); assert.equal(guest("rcoa").value, "1");
+  fireEvent.click(screen.getByRole("button", { name: "Continue" })); assert.equal(guest("rcoa").getAttribute("aria-invalid"), "true");
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.change(document.querySelector('[data-rcoa-field="companyName"]')!, { target: { value: "Test" } });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" })); assert.equal(guest("rcoa").min, "1"); assert.equal(guest("rcoa").value, "1"); assert.equal(guest("rcoa").getAttribute("aria-invalid"), null);
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.change(document.querySelector('[data-rcoa-field="email"]')!, { target: { value: "test@redington.co.uk" } });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" })); assert.equal(guest("rcoa").min, "5");
+});
+
+test("RCoA All Day applies the current shared Gallagher identity to each row without using the event count", async () => {
+  const day = { ...createEmptyAllDay(), contact: { ...rcoaDraft().contact, companyName: "Gallagher" }, eventDate: details.eventDate, floorLevel: "1", defaultGuests: 100, acknowledgements: acks,
+    services: [{ id: "one", category: "breakfast", startTime: "09:00", guestCount: 5, location: "Room A", lines: selected(product), notes: "" },
+      { id: "two", category: "breakfast", startTime: "12:00", guestCount: 1, location: "Room B", lines: selected(product), notes: "" }] };
+  dom.window.localStorage.setItem("fika-rcoa-booking-draft:v1", JSON.stringify({ flow: "all-day", allDay: day, step: 2 })); render(React.createElement(RcoaBookingPortal, { configured: true }));
+  await waitFor(() => assert.equal(guest("rcoa", "guestCount:two")?.min, "5")); assert.equal(guest("rcoa", "guestCount:one").getAttribute("aria-invalid"), null);
+  assert.equal(guest("rcoa", "guestCount:two").getAttribute("aria-invalid"), "true"); assert.equal(guest("rcoa", "guestCount:two").value, "1");
+  fireEvent.click(screen.getByRole("button", { name: "Continue" })); await waitFor(() => assert.ok(document.activeElement === guest("rcoa", "guestCount:two")));
+  fireEvent.change(guest("rcoa", "guestCount:two"), { target: { value: "5" } }); fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "Help us look after everyone." });
+});

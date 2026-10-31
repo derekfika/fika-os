@@ -1,6 +1,7 @@
 import { bookingDateIssue, bookingPolicyFor } from "@fika/server-shared/hospitality-effective-offering";
 import type { PortalMenuItem } from "./mnk-contract";
 import { effectiveGuestMinimum, guestCountMessage } from "./guest-count";
+import { GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 
 /**
  * Text shown in a whole-number input while the user edits it: digits only, no leading zeroes ("01" -> "1"), and an empty string is
@@ -188,6 +189,14 @@ export function rcoaNoticeWarnings(draft: RcoaBookingDraft, menu: readonly Porta
   return [...new Set(warnings)];
 }
 
+/** Hub's explicit customer guest policy applies to RCoA too; its trusted adapter retains raw item guest floors. */
+export function rcoaGuestMinimum(draft: Pick<RcoaBookingDraft, "contact" | "lines">, menu: readonly PortalMenuItem[]) {
+  const minimum = effectiveGuestMinimum(draft.lines, menu);
+  if (minimum === null) return null;
+  const gallagher = isGallagherBooking({ companyName: draft.contact.companyName, email: draft.contact.email });
+  return Math.max(minimum, gallagher ? GALLAGHER_MINIMUM_GUESTS : 1);
+}
+
 export function validateRcoaStep(step: number, draft: RcoaBookingDraft, menu: readonly PortalMenuItem[]) {
   const errors: Record<string, string> = {};
   if (step === 0 && !draft.occasion) errors.occasion = "Choose an occasion.";
@@ -207,7 +216,7 @@ export function validateRcoaStep(step: number, draft: RcoaBookingDraft, menu: re
     if (!draft.event.roomOrArea.trim()) errors.roomOrArea = "Enter the room or area.";
   }
   if (step >= 2) {
-    const message = guestCountMessage(draft.event.guestCount, effectiveGuestMinimum(draft.lines, menu));
+    const message = guestCountMessage(draft.event.guestCount, rcoaGuestMinimum(draft, menu));
     if (message) errors.guestCount = message;
   }
   if (step === 3) {

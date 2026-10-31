@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { effectiveGuestMinimum, guestCountMessage } from "../lib/guest-count";
-import { createEmptyRcoaDraft, validateRcoaStep } from "../lib/rcoa-portal";
+import { createEmptyRcoaDraft, rcoaGuestMinimum, validateRcoaStep } from "../lib/rcoa-portal";
 import { composeServiceDraft, createEmptyAllDay, validateAllDay } from "../lib/rcoa-all-day";
 import { buildTrustedRcoaHubPayload } from "../lib/rcoa-booking-request";
 import { buildRcoaClientRequest } from "../lib/rcoa-booking-request-client";
@@ -65,4 +65,23 @@ test("All Day requirements use only that service's selected items and own count,
   day.services[1].guestCount = 12;
   assert.equal(validateAllDay(day, [product, guestItem]), undefined);
   assert.deepEqual(day.services.map(service => service.guestCount), [1, 12]);
+});
+
+
+test("RCoA applies Hub's explicit Gallagher floor while retaining its trusted adapter's raw item guest minima", () => {
+  const draft = { ...validDraft(), lines: [line(product.id)], event: { ...validDraft().event, guestCount: 1 } };
+  assert.equal(rcoaGuestMinimum(draft, [product]), 1);
+  assert.equal(validateRcoaStep(2, draft, [product]).guestCount, undefined);
+  for (const contact of [{ ...draft.contact, companyName: "Gallagher" }, { ...draft.contact, email: "test@redington.co.uk" }]) {
+    const contextual = { ...draft, contact };
+    assert.equal(rcoaGuestMinimum(contextual, [product]), 5);
+    for (const step of [2, 3, 4, 5]) assert.match(validateRcoaStep(step, contextual, [product]).guestCount, /5/);
+  }
+  const derived = { ...guestItem, rules: { guestMinimumKind: "product" as const } };
+  assert.equal(rcoaGuestMinimum({ ...draft, contact: { ...draft.contact, companyName: "Gallagher" }, lines: [line(derived.id)] }, [derived]), 12, "the RCoA trusted adapter independently enforces the raw item floor");
+  const day = { ...createEmptyAllDay(), contact: { ...draft.contact, companyName: "Gallagher" }, eventDate: draft.event.eventDate, floorLevel: "1", defaultGuests: 100, acknowledgements: draft.acknowledgements,
+    services: [{ id: "one", category: "breakfast" as const, startTime: "09:00", guestCount: 5, location: "Room A", lines: [line(product.id)], notes: "" },
+      { id: "two", category: "breakfast" as const, startTime: "12:00", guestCount: 1, location: "Room B", lines: [line(product.id)], notes: "" }] };
+  assert.equal(validateAllDay(day, [product])?.serviceId, "two");
+  assert.match(validateAllDay(day, [product])?.errors["guestCount:two"] || "", /5/);
 });
