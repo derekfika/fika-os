@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
+import { eventGuestCountLabel, orderedQuantityLabel, productionPrepLabel } from "../../lib/ordered-quantity";
 import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuSourceLabel, isCpuWithdrawn } from "../../lib/production-presentation";
 import { orderDate, orderSummary, productionJobCount, productionQuantitySummary, sourceHeading } from "../../lib/production-day";
 import "./production-calendar.css";
@@ -22,7 +23,7 @@ function mondayOf(date: Date) {
 export function dateKey(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
 function shortDate(date: Date) { return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); }
 function longDate(date: Date) { return date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" }); }
-function guestCount(order: ProductionOrder) { return order.guestCount || order.lines.reduce((sum, line) => sum + (line.customerQuantity || 0), 0); }
+function guestCount(order: ProductionOrder) { return order.guestCount; }
 function cardOploc(order: ProductionOrder) { return cpuDestinationLabel(order).replace(/\s·\s\d+$/, ""); }
 function dietarySummary(order: ProductionOrder) {
   const values = new Map<string, number>();
@@ -78,10 +79,10 @@ export default function ProductionCalendar({ orders, open, onCancelBooking, week
                   {isDeliveredIn ? <div className="production-card-delivered-in"><h3>{siteName}</h3><span>{portions.toLocaleString()} portions</span></div> : <>
                     <div className="production-card-top"><strong>{sourceHeading(order)}</strong><span className={`calendar-status calendar-status--${order.cancellationNotice ? "cancelled" : status}`}>{statusLabel}</span></div>
                     <div className="production-card-destination"><h3>{cardOploc(order)}</h3></div>
-                    <div className="production-card-quantities" aria-label="Order dishes and quantities">{order.lines.map((line) => <span key={line.canonicalId}><b>{line.itemName}</b><em>x{line.customerQuantity.toLocaleString()}</em></span>)}</div>
+                    <div className="production-card-quantities" aria-label="Customer ordered dishes and quantities">{order.lines.map((line) => <span key={line.canonicalId}><b>{line.itemName}</b><em>{orderedQuantityLabel(line)}</em>{productionPrepLabel(line) ? <small>Prep: {productionPrepLabel(line)}</small> : null}</span>)}</div>
                     <p className="production-card-client"><b>{cpuSourceLabel(order)}:</b> {orderSummary(order)}</p>
                     {dietaries && <p className="production-card-dietaries"><b>Dietary:</b> {dietaries}</p>}
-                    <div className="production-card-meta"><span>{customerPax} pax</span><span>Production: {productionQuantitySummary(order)}</span></div>
+                    <div className="production-card-meta"><span>Event guests: {eventGuestCountLabel(customerPax)}</span><span>Production: {productionQuantitySummary(order)}</span></div>
                     {order.exceptions.length > 0 && <div className="calendar-exceptions"><small className="calendar-exception">{order.exceptions.length} exception{order.exceptions.length === 1 ? "" : "s"} needs attention</small><small className="calendar-exception-detail">{order.exceptions[0].description}</small></div>}
                   </>}
                   {order.cancellationNotice && <span className="production-card-cancel-overlay" aria-hidden="true"><span>×</span></span>}
