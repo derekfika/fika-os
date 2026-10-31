@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T17:08:26.527Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T17:32:35.934Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -58,6 +58,8 @@ Snapshot: 2026-10-31T17:08:26.527Z. The local governed registry remains authorit
 | feat-033-visual-showcase-brief | codex-feat-033-visual-showcase-brief | docs/design-system | codex/feat-033-visual-showcase-brief | [#28](https://github.com/derekfika/fika-os/pull/28) | finished | 2026-10-24T12:56:42.648Z |
 | feat-034-allergen | feat-034-allergen | apps/shared, docs/ai | codex/feat-034-allergen | [#74](https://github.com/derekfika/fika-os/pull/74) | finished | 2026-10-28T06:40:27.771Z |
 | feat-034-shared-ci | feat-034-allergen | .github/workflows/validate.yml | codex/feat-034-shared-ci | [#75](https://github.com/derekfika/fika-os/pull/75) | finished | 2026-10-28T06:40:33.292Z |
+| food-data-grant-ui | kafoodle-food-data-sonnet | apps/integration-hub/app/authmod/accounts, apps/integration-hub/tests/food-data-grant-ui.test.ts, apps/integration-hub/docs/food-data-library.md | codex/food-data-grant-ui | [#213](https://github.com/derekfika/fika-os/pull/213) | retired | 2026-10-31T17:15:20.642Z |
+| food-data-open-access | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/tests/food-data.test.ts, apps/integration-hub/docs/food-data-library.md | codex/food-data-open-access | [#214](https://github.com/derekfika/fika-os/pull/214) | retired | 2026-10-31T17:32:34.354Z |
 | gate0-monday-readonly | sol-gate0-readiness | docs/audits/2026-10-30/gate0-monday-readiness.md | codex/gate0-monday-readonly | [#177](https://github.com/derekfika/fika-os/pull/177) | retired | 2026-10-30T17:04:31.456Z |
 | grab-go-standing-ux | codex-grab-go-standing-ux | apps/delivered-in, CHANGELOG.md | codex/grab-go-standing-ux | [#21](https://github.com/derekfika/fika-os/pull/21) | finished | 2026-10-24T19:27:36.155Z |
 | hierarchical-agent-instructions | codex-hierarchical-agent-instructions | AGENTS.md, CLAUDE.md, README.md, docs/ai/agent-reference.md, apps/integration-hub/AGENTS.md, apps/integration-hub/CLAUDE.md, apps/hospitality-booking/AGENTS.md, apps/hospitality-booking/CLAUDE.md, apps/menu-planning/AGENTS.md, apps/menu-planning/CLAUDE.md, apps/cpu-production/AGENTS.md, apps/cpu-production/CLAUDE.md, apps/delivered-in/AGENTS.md, apps/delivered-in/CLAUDE.md, apps/logistics/AGENTS.md, apps/logistics/CLAUDE.md | codex/hierarchical-agent-instructions | [#4](https://github.com/derekfika/fika-os/pull/4) | finished | 2026-10-22T19:47:37.742Z |
