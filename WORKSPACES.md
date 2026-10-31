@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T00:50:35.974Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T00:50:47.042Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -59,7 +59,7 @@ Snapshot: 2026-10-31T00:50:35.974Z. The local governed registry remains authorit
 | hospitality-catalogue-mapping | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-catalogue-mapping | — | finished | 2026-10-27T12:03:58.367Z |
 | hospitality-cfc-mr-tests | hospitality-cfc-mr | apps/integration-hub, CHANGELOG.md | codex/hospitality-cfc-mr-tests | [#81](https://github.com/derekfika/fika-os/pull/81) | finished | 2026-10-27T12:49:31.981Z |
 | hospitality-dashboard-filters | claude-hospitality-filters | apps/hospitality-booking/lib/dashboard-queue-filters.ts, apps/hospitality-booking/app/ui/DashboardQueueFilters.tsx, apps/hospitality-booking/app/ui/DashboardQueueFilters.module.css, apps/hospitality-booking/app/ui/HospitalityDashboard.tsx, apps/hospitality-booking/tests/dashboard-queue-filters.test.ts, apps/hospitality-booking/tests/calendar-layout.test.ts | codex/hospitality-dashboard-filters | [#166](https://github.com/derekfika/fika-os/pull/166) | retired | 2026-10-30T08:21:01.813Z |
-| hospitality-dashboard-ordering | luna-hospitality-queue-ordering | apps/hospitality-booking | codex/hospitality-dashboard-ordering | — | active | 2026-10-31T00:25:10.086Z |
+| hospitality-dashboard-ordering | luna-hospitality-queue-ordering | apps/hospitality-booking | codex/hospitality-dashboard-ordering | — | retired | 2026-10-31T00:50:45.137Z |
 | hospitality-link-command | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-link-command | — | finished | 2026-10-28T06:40:38.357Z |
 | hospitality-rotations-core | codex-hospitality-rotations-core | apps/shared/hospitality-rotations.ts, apps/integration-hub/lib/hospitality-rotations, apps/integration-hub/app/api/hospitality-rotations, apps/integration-hub/tests/hospitality-rotations.test.ts, apps/integration-hub/tests/hospitality-rotations.emulator.test.ts, docs/architecture/hospitality-rotations.md | codex/hospitality-rotations-core | [#105](https://github.com/derekfika/fika-os/pull/105) | retired | 2026-10-28T14:10:25.430Z |
 | hospitality-rotations-dashboard-ui | codex-hospitality-rotations-ui | apps/hospitality-booking | codex/hospitality-rotations-dashboard-ui | [#106](https://github.com/derekfika/fika-os/pull/106) | retired | 2026-10-29T08:12:49.922Z |
