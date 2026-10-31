@@ -403,11 +403,11 @@ export default function HospitalityDashboard({
   const queueStatuses = useMemo(() => availableStatuses({ bookings, groups, standaloneIds }), [bookings, groups, standaloneIds]);
   const visible = queue.bookings as CanonicalBooking[];
   const visibleGroups = queue.groups as HospitalityBookingGroup[];
-  const newCount = groups.filter(group => group.status === "New").length + bookings.filter(
+  const newCount = visibleGroups.filter(group => group.status === "New").length + visible.filter(
     (item) => standaloneIds.has(item.canonicalId) && item.lifecycleStatus === "New",
   ).length;
-  const readyForCpuCount = groups.filter(g => g.status === "Ready for CPU").length + bookings.filter((item) => standaloneIds.has(item.canonicalId) && item.deliveryChargeRequired !== false && quoteReadyForCpu(item)).length;
-  const attentionCount = groups.filter(group => ["New", "Quote preparing", "Awaiting routing", "Awaiting quote", "Partially processed", "Needs attention"].includes(group.status)).length + bookings.filter(
+  const readyForCpuCount = visibleGroups.filter(g => g.status === "Ready for CPU").length + visible.filter((item) => standaloneIds.has(item.canonicalId) && item.deliveryChargeRequired !== false && quoteReadyForCpu(item)).length;
+  const attentionCount = visibleGroups.filter(group => ["New", "Quote preparing", "Awaiting routing", "Awaiting quote", "Partially processed", "Needs attention"].includes(group.status)).length + visible.filter(
     (item) =>
       standaloneIds.has(item.canonicalId) && (item.lifecycleStatus === "New" || item.lifecycleStatus === "Reviewed"),
   ).length;
@@ -1146,7 +1146,7 @@ export default function HospitalityDashboard({
           </div>
           <div
             className="hospitality-dashboard__metrics"
-            aria-label="Booking summary"
+            aria-label="Filtered booking summary"
           >
             <Metric value={newCount} label="New requests" tone="mint" />
             <Metric value={attentionCount} label="Need review" tone="violet" />
@@ -1211,15 +1211,21 @@ export default function HospitalityDashboard({
                   Refreshing canonical Bookings…
                 </p>
               )}
-              {!loading && visibleGroups.map(group => <button key={group.id} className={`booking-card ${selectedGroupId === group.id ? "booking-card--selected" : ""}`} disabled={actionBusy} onClick={() => selectGroup(group)}>
-                <span className="booking-card__date">{formatDate(group.eventDate)}<small>{group.firstTime}–{group.lastTime}</small></span>
-                <span className="booking-card__content"><strong>{group.client.companyName}</strong><small>All Day Hospitality · {group.services.length} services</small><span>{group.services.every(s => s.guests === group.services[0].guests) ? group.services[0].guests + " pax" : "Guests vary by service"} · £{group.totals.gross.toFixed(2)}</span></span>
-                <span className="booking-status">{group.status}</span>
-              </button>)}
-              {!loading &&
-                visible.map((booking) => (
+              {!loading && queue.rows.map(row => {
+                if (row.kind === "group") {
+                  const group = row.group as HospitalityBookingGroup;
+                  return (
+                    <button key={`group:${group.id}`} className={`booking-card ${selectedGroupId === group.id ? "booking-card--selected" : ""}`} disabled={actionBusy} onClick={() => selectGroup(group)}>
+                      <span className="booking-card__date">{formatDate(group.eventDate)}<small>{group.firstTime}–{group.lastTime}</small></span>
+                      <span className="booking-card__content"><strong>{group.client.companyName}</strong><small>All Day Hospitality · {group.services.length} services</small><span>{group.services.every(s => s.guests === group.services[0].guests) ? group.services[0].guests + " pax" : "Guests vary by service"} · £{group.totals.gross.toFixed(2)}</span></span>
+                      <span className="booking-status">{group.status}</span>
+                    </button>
+                  );
+                }
+                const booking = row.booking as CanonicalBooking;
+                return (
                   <button
-                    key={booking.canonicalId}
+                    key={`booking:${booking.canonicalId}`}
                     className={`booking-card ${selected?.canonicalId === booking.canonicalId ? "booking-card--selected" : ""}`}
                     disabled={actionBusy}
                     onClick={() => selectBooking(booking)}
@@ -1241,7 +1247,8 @@ export default function HospitalityDashboard({
                     </span>
                     <StatusPill status={booking.lifecycleStatus} label={standaloneStatusLabel(booking, productionOrders[booking.canonicalId])} />
                   </button>
-                ))}
+                );
+              })}
               {!loading && !queue.rows.length && (
                 <p className="hospitality-dashboard__empty">
                   {hasActiveFilters(queueFilters) && queue.total
