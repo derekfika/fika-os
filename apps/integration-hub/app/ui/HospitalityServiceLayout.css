@@ -1,0 +1,46 @@
+/* Booking service category layout editor. Light operational surface; semantic tokens only (docs/STYLE-GUIDE.md). */
+.hsl { display: grid; gap: var(--space-4); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text-primary); min-width: 0; }
+.hsl h2, .hsl h3 { margin: 0; }
+.hsl-head h2 { font-size: var(--text-lg); color: var(--color-brand-dark); }
+.hsl-head p { margin: var(--space-1) 0 0; max-width: 72ch; font-size: var(--text-sm); color: var(--color-text-secondary); }
+.hsl-scope { display: grid; gap: var(--space-2); max-width: 420px; }
+.hsl-body { display: grid; gap: var(--space-4); min-width: 0; }
+.hsl-flags { display: grid; gap: var(--space-3); }
+.hsl-flags .hc-warning { margin: 0; }
+.hsl-flags p { margin: var(--space-1) 0; }
+.hsl-names { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.hsl-names code { padding: 2px var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); white-space: pre-wrap; }
+.hsl-live:empty { display: none; }
+
+.hsl-matrix-wrap { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.hsl-matrix-wrap:focus-visible, .hsl button:focus-visible, .hsl input:focus-visible, .hsl select:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+.hsl-matrix { width: 100%; min-width: 860px; border-collapse: separate; border-spacing: 0; font-size: var(--text-sm); }
+.hsl-matrix th, .hsl-matrix td { padding: 8px var(--space-3); border-bottom: 1px solid var(--color-border); text-align: center; vertical-align: middle; }
+.hsl-matrix thead th { background: var(--color-surface-muted); font-size: var(--text-xs); color: var(--color-text-primary); }
+.hsl-matrix thead th small { display: block; margin-top: 2px; font-weight: 400; color: var(--color-text-secondary); }
+.hsl-matrix .hsl-sticky { position: sticky; left: 0; z-index: 1; min-width: 200px; text-align: left; background: var(--color-surface); border-right: 1px solid var(--color-border); }
+.hsl-matrix thead .hsl-sticky { background: var(--color-surface-muted); z-index: 2; }
+.hsl-matrix tbody th .hc-badge { margin-left: var(--space-2); }
+.hsl-matrix input[type="checkbox"], .hsl-cards input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--color-brand-primary); }
+.hsl-cat { white-space: pre-wrap; overflow-wrap: anywhere; font-weight: 600; }
+
+.hsl-reason { max-width: 560px; }
+.hsl-reason .hc-field input { padding: 0 var(--space-3); min-height: 42px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-text-primary); font: inherit; width: 100%; }
+
+.hsl-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-3); }
+.hsl-card { display: grid; gap: var(--space-2); align-content: start; padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.hsl-card.is-hidden { background: var(--color-surface-muted); }
+.hsl-card__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
+.hsl-card__head h3 { font-size: var(--text-md); }
+.hsl-tags { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); }
+.hsl-order { list-style: decimal inside; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.hsl-order li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 2px 0 2px var(--space-2); border-bottom: 1px solid var(--color-border); font-size: var(--text-sm); }
+.hsl-card.is-hidden .hsl-order { color: var(--color-text-secondary); }
+.hsl-move { display: inline-flex; gap: 2px; flex: none; }
+.hsl-iconbtn { min-width: 44px; min-height: 44px; padding: 0; }
+.hsl-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+@media (max-width: 760px) {
+  .hsl { padding: var(--space-3); }
+  .hsl-cards { grid-template-columns: 1fr; }
+  .hsl-actions .hc-btn { flex: 1 1 100%; }
+}

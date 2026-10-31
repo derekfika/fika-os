@@ -3,15 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Plus, Search, X } from "lucide-react";
 import ConfirmationModal from "./ConfirmationModal";
+import HospitalityServiceLayout from "./HospitalityServiceLayout";
 import "./HospitalityCatalogue.css";
 import {
   ROUTING_CHOICES, ROUTING_CHOICE_LABELS, ROUTING_STATE_LABELS,
-  type CatalogueOfferingView, type CataloguePayload, type CatalogueRow, type ReviewGroupView, type RoutingChoice,
+  type CatalogueOfferingView, type CataloguePayload, type CatalogueRow, type ReviewGroupView, type RoutingChoice, type ServiceLayoutView,
 } from "../../lib/hospitality-catalogue-types";
 import { EMPTY_FILTERS, bulkImpact, categoriesOf, formatMoney, oplocLabel, pruneSelection, rowMatches, selectAllShown, selectableRows, selectableSites, sitesSummary, sortRows, summariseCounts, toggleSelection, withDuplicateFlag, type BulkDraft, type CatalogueFilters, type Sort, type SortKey } from "../../lib/hospitality-catalogue-view";
 
 type Command = Record<string, unknown> & { action: string };
-type ApiBody = { error?: { message?: string }; message?: string; rows?: CatalogueRow[]; payload?: CataloguePayload; bulk?: BulkResultView } & Partial<CataloguePayload>;
+type ApiBody = { error?: { message?: string }; message?: string; rows?: CatalogueRow[]; payload?: CataloguePayload; bulk?: BulkResultView; serviceLayoutStored?: Pick<ServiceLayoutView, "company" | "sites"> } & Partial<CataloguePayload>;
 type BulkResultView = { operationId: string; results: Array<{ itemId: string; status: "applied" | "unchanged" | "already_applied" | "failed"; message: string }>; succeeded: number; failed: number; message: string };
 type Send = (command: Command) => Promise<{ message: string; bulk?: BulkResultView }>;
 
@@ -47,6 +48,7 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [bulk, setBulk] = useState<null | "edit" | "archive">(null);
   const [bulkReport, setBulkReport] = useState<BulkResultView | null>(null);
+  const [layoutOpen, setLayoutOpen] = useState(false);
 
   const request = useCallback(async (init?: RequestInit) => {
     const send = () => fetch("/api/hospitality-catalogue", { cache: "no-store", ...init });
@@ -73,6 +75,7 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
     setPayload(current => {
       if (body.payload) return body.payload as CataloguePayload;
       if (!current) return current;
+      if (body.serviceLayoutStored) return current.serviceLayout ? { ...current, serviceLayout: { ...current.serviceLayout, ...body.serviceLayoutStored } } : current; // layout commands touch no Item
       const fresh = new Map<string, CatalogueRow>((body.rows as CatalogueRow[]).map(row => [row.itemId, withDuplicateFlag(row, current.reviewGroups)]));
       const existing = new Set(current.rows.map(row => row.itemId));
       const rows = [...current.rows.map(row => fresh.get(row.itemId) || row), ...[...fresh.values()].filter(row => !existing.has(row.itemId))];
@@ -115,6 +118,11 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
       <button type="button" className={`hc-chip ${filters.route === "routing_required" ? "is-on" : ""}`} aria-pressed={filters.route === "routing_required"} onClick={() => update({ route: filters.route === "routing_required" ? "all" : "routing_required" })}>Routing required <strong>{payload.counts.routingRequired}</strong></button>
       {payload.counts.archived > 0 && <button type="button" className={`hc-chip ${filters.status === "archived" ? "is-on" : ""}`} aria-pressed={filters.status === "archived"} onClick={() => update({ status: filters.status === "archived" ? "active" : "archived" })}>Archived <strong>{payload.counts.archived}</strong></button>}
       {!canManage && <span className="hc-viewonly">View only</span>}
+    </div>
+
+    <div className="hc-duplicates">
+      <button type="button" className="hc-disclosure" aria-expanded={layoutOpen} aria-controls="hsl-panel" onClick={() => setLayoutOpen(open => !open)}>Booking service categories {layoutOpen ? "(hide)" : "(show)"}</button>
+      {layoutOpen && <div id="hsl-panel"><HospitalityServiceLayout payload={payload} canManage={canManage} send={send} reload={load} /></div>}
     </div>
 
     {payload.canonicalisation.itemsAwaitingConsolidation > 0 ? <p className="hc-note" role="note">{payload.canonicalisation.itemsAwaitingConsolidation} items are duplicates of the same products and are waiting to be consolidated by the approved catalogue migration. You can keep working in the meantime.</p>

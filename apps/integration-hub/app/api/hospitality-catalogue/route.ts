@@ -8,6 +8,7 @@ import { loadCataloguePayload, loadCatalogueRows } from "@/lib/hospitality-catal
 import { republishAfterMutation } from "@/lib/hospitality-catalogue-package";
 import { SiteConfiguration } from "@/lib/schemas";
 import { ROUTING_CHOICES } from "@/lib/hospitality-catalogue-types";
+import { attachServiceLayout, loadStoredServiceLayoutView } from "@/lib/hospitality-service-layout";
 
 const Id = z.string().min(8).max(160);
 const Version = z.number().int().positive();
@@ -43,7 +44,8 @@ export async function GET(request: NextRequest) {
   try {
     const actor = await requireActor(request);
     assertPermission(actor, "canonical.view");
-    return NextResponse.json(await loadCataloguePayload(actor), noStore);
+    // Admin read of the stored layout documents (versions + vocabulary). It never publishes or rebuilds the catalogue package.
+    return NextResponse.json(await attachServiceLayout(await loadCataloguePayload(actor)), noStore);
   } catch (error) { return errorResponse(error); }
 }
 
@@ -58,11 +60,14 @@ export async function POST(request: NextRequest) {
       const pkg = touched.length ? await republishAfterMutation() : "unchanged";
       return NextResponse.json({ message: outcome.message, bulk: outcome, package: pkg, rows: touched.length ? await loadCatalogueRows(touched) : [] }, noStore);
     }
-    const result = await runCatalogueCommand(actor, Command.parse(body) as CatalogueCommand);
+    const command = Command.parse(body) as CatalogueCommand;
+    const result = await runCatalogueCommand(actor, command);
     // Merges and review decisions change group structure: return a full reload. Everything else refreshes only the touched items.
     // Every governed catalogue mutation deterministically republishes the compact catalogue package (unchanged content => same identity, nothing new stored).
     const pkg = await republishAfterMutation();
-    if (result.reload) return NextResponse.json({ message: result.message, package: pkg, payload: await loadCataloguePayload(actor) }, noStore);
+    if (result.reload) return NextResponse.json({ message: result.message, package: pkg, payload: await attachServiceLayout(await loadCataloguePayload(actor)) }, noStore);
+    // A layout command touches no Item: return the refreshed stored documents (new per-scope versions) instead of a catalogue reload.
+    if (command.action === "set-service-categories" || command.action === "clear-service-override") return NextResponse.json({ message: result.message, package: pkg, rows: [], serviceLayoutStored: await loadStoredServiceLayoutView() }, noStore);
     return NextResponse.json({ message: result.message, package: pkg, rows: await loadCatalogueRows(result.itemIds) }, noStore);
   } catch (error) { return errorResponse(error); }
 }
