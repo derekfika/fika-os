@@ -3,22 +3,18 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { MemoryAuthModRepository, V1_APPLICATIONS, createAuthIdentity, grantAuthority, revokeAuthority } from "../../lib/authmod-core";
-import type { AuthPrincipal } from "../../lib/authmod-core";
-import { hasFoodDataAccess } from "../../lib/food-data/access";
-import { foodDataConfig, FOOD_DATA_GRANT } from "../../lib/food-data/config";
+import { foodDataConfig } from "../../lib/food-data/config";
 import { FoodDataError, datasetVersion } from "../../lib/food-data/manifest";
 import { handleFoodDataBundle, handleFoodDataManifest, type FoodDataServerDeps } from "../../lib/food-data/service";
 import { defaultFiles, makeManifest } from "./fixtures";
 
 const files = defaultFiles(); const manifest = makeManifest(files);
-function harness(overrides: Partial<{ enabled: boolean; allowed: boolean; authenticated: boolean; objects: Record<string, Uint8Array> }> = {}) {
-  const reads: string[] = []; const counts = { authenticate: 0, access: 0 };
+function harness(overrides: Partial<{ enabled: boolean; authenticated: boolean; objects: Record<string, Uint8Array> }> = {}) {
+  const reads: string[] = []; const counts = { authenticate: 0 };
   const objects: Record<string, Uint8Array> = overrides.objects ?? { "manifest.json": Buffer.from(JSON.stringify(manifest)), "ingredients.json.gz": files.ingredients.gzip, "recipes.json.gz": files.recipes.gzip };
   const deps: FoodDataServerDeps = {
     config: { enabled: overrides.enabled ?? true, bucket: "b", prefix: "p/" },
     async authenticate() { counts.authenticate++; if (overrides.authenticated === false) throw new FoodDataError("Sign in", "FOOD_DATA_UNAUTHENTICATED", 401); return { identityId: "identity:a" }; },
-    async hasAccess() { counts.access++; return overrides.allowed ?? true; },
     store: () => ({ async read(name) { reads.push(name); const bytes = objects[name]; if (!bytes) throw new FoodDataError("missing", "FOOD_DATA_OBJECT_MISSING", 404); return bytes; } }),
   };
   return { deps, reads, counts };
@@ -36,7 +32,7 @@ test("food data server: authorised manifest request is one small object read and
 });
 
 test("food data server: refused callers cause zero storage reads", async () => {
-  for (const [label, options, status] of [["signed out", { authenticated: false }, 401], ["no grant", { allowed: false }, 403], ["disabled", { enabled: false }, 404]] as const) {
+  for (const [label, options, status] of [["signed out", { authenticated: false }, 401], ["disabled", { enabled: false }, 404]] as const) {
     for (const call of [(deps: FoodDataServerDeps) => handleFoodDataManifest(get("/m"), deps), (deps: FoodDataServerDeps) => handleFoodDataBundle(get(`/b?version=${version("recipes")}`), "recipes", deps)]) {
       const h = harness(options); const response = await call(h.deps);
       assert.equal(response.status, status, label); assert.deepEqual(h.reads, [], `${label}: nothing read from the bucket`);
@@ -78,21 +74,21 @@ test("food data server: a manifest pointing outside the prefix is rejected", asy
   assert.deepEqual(h.reads, ["manifest.json"]);
 });
 
-test("food data access: only an active person with an effective explicit grant is authorised", async () => {
-  const repository = new MemoryAuthModRepository({ applications: [...V1_APPLICATIONS] });
-  const actor: AuthPrincipal = { type: "interactive", id: "actor:admin", displayName: "Admin" };
-  const person = await createAuthIdentity(repository, { actor, displayName: "Sam", email: "sam@example.test", externalProvider: "firebase", externalUid: "uid:sam", provenance: "migration" });
-  assert.equal(await hasFoodDataAccess(repository, person.id), false, "no grant, no access");
-  // A different authority, even Administer on authmod, is not Food Data access.
-  await grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor, appId: "integration-hub", resource: "authmod", action: "Administer", scope: { kind: "organisation", ids: [] }, reason: "admin" });
-  assert.equal(await hasFoodDataAccess(repository, person.id), false, "AUTHMOD admin is not implicit Food Data access");
-  const grant = await grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor, ...FOOD_DATA_GRANT, scope: { kind: "organisation", ids: [] }, reason: "Food costing" });
-  assert.equal(await hasFoodDataAccess(repository, person.id), true);
-  assert.equal(await hasFoodDataAccess(repository, "identity:unknown"), false);
-  await revokeAuthority(repository, { grantId: grant.id, actor, reason: "No longer needed" });
-  assert.equal(await hasFoodDataAccess(repository, person.id), false, "revocation takes effect on the next request");
-  const timed = await grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor, ...FOOD_DATA_GRANT, scope: { kind: "organisation", ids: [] }, effectivePeriod: { effectiveFrom: "2020-01-01T00:00:00.000Z", effectiveTo: "2020-02-01T00:00:00.000Z" }, reason: "Expired" });
-  assert.ok(timed); assert.equal(await hasFoodDataAccess(repository, person.id), false, "expired grants do not count");
+test("food data access: any authenticated active staff session is enough, with no grant or Firestore lookup", async () => {
+  const h = harness();
+  assert.equal("hasAccess" in h.deps, false, "the server dependencies expose no grant lookup");
+  assert.equal((await handleFoodDataManifest(get("/m"), h.deps)).status, 200);
+  assert.equal((await handleFoodDataBundle(get(`/b?version=${version("recipes")}`), "recipes", h.deps)).status, 200);
+  assert.equal(h.counts.authenticate, 2, "one session authentication per request, nothing else");
+});
+
+test("food data access: non-staff sessions (operational/site accounts, inactive or unenrolled) are refused before any bucket read", async () => {
+  const refusals: [string, FoodDataError][] = [["operational account", new FoodDataError("A person account is required.", "FOOD_DATA_FORBIDDEN", 403)], ["inactive identity", new FoodDataError("inactive", "FOOD_DATA_FORBIDDEN", 403)]];
+  for (const [label, error] of refusals) {
+    const h = harness(); h.deps.authenticate = async () => { throw error; };
+    const response = await handleFoodDataManifest(get("/m"), h.deps);
+    assert.equal(response.status, 403, label); assert.deepEqual(h.reads, []);
+  }
 });
 
 test("food data config: staging and local only, pinned prefix, kill switch", () => {
@@ -109,6 +105,7 @@ test("food data isolation: the feature has no Firestore catalogue access and tou
   const allowedLocal = new Set(["../authmod-core", "../firebase-admin", "../fika-session"]);
   for (const file of readdirSync(dir)) {
     const source = readFileSync(path.join(dir, file), "utf8");
+    assert.doesNotMatch(source, /listAuthorityGrants|hasFoodDataAccess|food-data.catalogue|FOOD_DATA_GRANT/, `${file} must not look up or require a Food Data grant`);
     assert.doesNotMatch(source, /firebase-admin\/firestore|firebase\/firestore|\bdb\.collection|\.collection\(|onSnapshot|runTransaction/, `${file} must not query Firestore`);
     assert.doesNotMatch(source, /\.(save|setMetadata|copy|move)\(|createWriteStream|getSignedUrl|makePublic|setIamPolicy/, `${file} must not write, sign or publish storage objects`);
     for (const match of source.matchAll(/from "(\.\.\/[^"]+)"/g)) assert.ok(allowedLocal.has(match[1]), `${file} imports ${match[1]}: Food Data may only depend on AUTHMOD identity, session and admin init`);

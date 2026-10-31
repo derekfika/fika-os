@@ -3,9 +3,6 @@ import { FOOD_DATASETS, type FoodDataset } from "./manifest";
 /** Pinned import snapshot. Changing it is a deliberate configuration change, never an automatic "latest" lookup. */
 export const DEFAULT_FOOD_DATA_BUCKET = "fika-os-dev-kafoodle-catalogue-europe-west4";
 export const DEFAULT_FOOD_DATA_PREFIX = "kafoodle/v1/2026-10-31/";
-/** AUTHMOD authority required to read any Food Data. Pack prices are inside the bundle, so this grant covers them. */
-export const FOOD_DATA_GRANT = { appId: "integration-hub", resource: "food-data.catalogue", action: "View" } as const;
-
 export type FoodDataConfig = { enabled: boolean; bucket: string; prefix: string };
 
 /**

@@ -30,13 +30,13 @@ leave the origin and no browser credential exists.
 
 ## Access model
 
-- Session: the existing Hub Firebase session cookie, resolved through AUTHMOD to an **active person** identity.
-- Authority: an explicit, effective, organisation-scoped AUTHMOD authority grant
-  `appId: integration-hub`, `resource: food-data.catalogue`, `action: View`. It is granted from the existing AUTHMOD
-  account administration (authority grant). AUTHMOD Administrators have **no** implicit access.
-- The grant covers the whole bundle, including VAT-inclusive pack prices; there is no separate unpriced view.
-- Per request: one session verification, one identity read, one targeted grant read (existing AUTHMOD reads). **Zero
-  catalogue Firestore reads or listeners.** Authorisation happens before any bucket read; refused callers cause none.
+- Who: any signed-in, **active person** (staff) account. The existing Hub Firebase session cookie is verified and resolved
+  through AUTHMOD to an active person identity; there is **no Food Data–specific grant or permission**. Shared
+  operational/site accounts, inactive or unenrolled identities and signed-out callers are refused (403/401).
+- Food Data access does not widen anything else: it grants no Hub administration, AUTHMOD, canonical-record or other app access.
+- The bundle includes VAT-inclusive pack prices; there is no separate unpriced view.
+- Per request: the normal session verification and identity read only (existing AUTHMOD reads). **No grant lookups and zero
+  catalogue Firestore reads or listeners.** Authentication happens before any bucket read; refused callers cause none.
 - Environment: enabled only when `FIKA_RUNTIME_MODE` is `staging` or `local`, and never in production.
   `FIKA_FOOD_DATA_ENABLED=false` is a kill switch. Cross-site fetches (`Sec-Fetch-Site`) are refused.
 - Local development can read a copy of the export from `FIKA_FOOD_DATA_LOCAL_DIR` (local mode only) instead of GCS.
@@ -69,8 +69,8 @@ Light, token-based page with two tabs (Product & Supplier Library, Recipe Librar
 for 14,007 records), keyboard navigation and text status badges. Prices are labelled VAT-inclusive as exported;
 ex-VAT and per-kg/per-litre costs are labelled calculated and only produced for g/kg/ml/l units with a numeric
 quantity. Blank allergen blocks are “not recorded”, never “clear”. Recipes are labelled metadata only; exact-name
-groups, exact duplicate rows and differing fields are shown, never merged. The launcher tile is shown to AUTHMOD
-administrators only (the launcher payload carries no Food Data grant); other authorised users use `/food-data`.
+groups, exact duplicate rows and differing fields are shown, never merged. The launcher shows a Food Data tile to every
+signed-in person account (not to shared operational accounts); the tile only links to `/food-data`.
 
 ## Deliberately not included
 
