@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T01:35:01.317Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T01:42:01.220Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -17,7 +17,7 @@ Snapshot: 2026-10-31T01:35:01.317Z. The local governed registry remains authorit
 | adhoc-launcher-config | luna-adhoc-launcher | apps/integration-hub/apphosting.staging.yaml, apps/integration-hub/tests/apphosting-build-config.test.ts | codex/adhoc-launcher-config | [#97](https://github.com/derekfika/fika-os/pull/97) | active | 2026-10-28T07:41:15.720Z |
 | adhoc-operational-uat | uat-20261025-1150 | apps/ad-hoc-production | codex/adhoc-operational-uat | — | finished | 2026-10-28T06:41:05.515Z |
 | adhoc-signing-pdf | claude-adhoc-sign | apps/cpu-production, apps/hospitality-booking/apphosting.staging.yaml | codex/adhoc-signing-pdf | [#42](https://github.com/derekfika/fika-os/pull/42) | finished | 2026-10-24T21:59:07.602Z |
-| agent-routing-policy-docs | luna-agent-routing-policy-docs | AGENTS.md, .github/ISSUE_TEMPLATE | codex/agent-routing-policy-docs | — | active | 2026-10-31T01:31:40.457Z |
+| agent-routing-policy-docs | luna-agent-routing-policy-docs | AGENTS.md, .github/ISSUE_TEMPLATE | codex/agent-routing-policy-docs | [#195](https://github.com/derekfika/fika-os/pull/195) | retired | 2026-10-31T01:41:58.110Z |
 | allergen-confirm-cpu-server | claude-allergen | apps/cpu-production | codex/allergen-confirm-cpu-server | [#39](https://github.com/derekfika/fika-os/pull/39) | finished | 2026-10-24T20:27:21.764Z |
 | allergen-confirm-cpu-ui | claude-allergen | apps/cpu-production | codex/allergen-confirm-cpu-ui | [#40](https://github.com/derekfika/fika-os/pull/40) | finished | 2026-10-24T21:38:46.175Z |
 | allergen-confirm-cpu | claude-allergen | apps/cpu-production | codex/allergen-confirm-cpu | [#38](https://github.com/derekfika/fika-os/pull/38) | finished | 2026-10-24T20:15:13.508Z |
@@ -64,6 +64,7 @@ Snapshot: 2026-10-31T01:35:01.317Z. The local governed registry remains authorit
 | hospitality-dashboard-filtering-overnight | sonnet-hospitality-dashboard-filtering-overnight | apps/hospitality-booking | codex/hospitality-dashboard-filtering-overnight | [#194](https://github.com/derekfika/fika-os/pull/194) | retired | 2026-10-31T01:34:54.385Z |
 | hospitality-dashboard-filters | claude-hospitality-filters | apps/hospitality-booking/lib/dashboard-queue-filters.ts, apps/hospitality-booking/app/ui/DashboardQueueFilters.tsx, apps/hospitality-booking/app/ui/DashboardQueueFilters.module.css, apps/hospitality-booking/app/ui/HospitalityDashboard.tsx, apps/hospitality-booking/tests/dashboard-queue-filters.test.ts, apps/hospitality-booking/tests/calendar-layout.test.ts | codex/hospitality-dashboard-filters | [#166](https://github.com/derekfika/fika-os/pull/166) | retired | 2026-10-30T08:21:01.813Z |
 | hospitality-dashboard-ordering | luna-hospitality-queue-ordering | apps/hospitality-booking | codex/hospitality-dashboard-ordering | — | retired | 2026-10-31T00:50:45.137Z |
+| hospitality-guest-minimum-validation | sol-hospitality-guest-minimum-validation | apps/hospitality-booking | codex/hospitality-guest-minimum-validation | — | active | 2026-10-31T01:36:29.809Z |
 | hospitality-link-command | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-link-command | — | finished | 2026-10-28T06:40:38.357Z |
 | hospitality-rotations-core | codex-hospitality-rotations-core | apps/shared/hospitality-rotations.ts, apps/integration-hub/lib/hospitality-rotations, apps/integration-hub/app/api/hospitality-rotations, apps/integration-hub/tests/hospitality-rotations.test.ts, apps/integration-hub/tests/hospitality-rotations.emulator.test.ts, docs/architecture/hospitality-rotations.md | codex/hospitality-rotations-core | [#105](https://github.com/derekfika/fika-os/pull/105) | retired | 2026-10-28T14:10:25.430Z |
 | hospitality-rotations-dashboard-ui | codex-hospitality-rotations-ui | apps/hospitality-booking | codex/hospitality-rotations-dashboard-ui | [#106](https://github.com/derekfika/fika-os/pull/106) | retired | 2026-10-29T08:12:49.922Z |
