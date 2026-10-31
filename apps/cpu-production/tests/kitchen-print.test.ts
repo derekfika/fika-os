@@ -2,9 +2,8 @@ import test from "node:test";
 
 import assert from "node:assert/strict";
 
-import { collectionOrders } from "../app/ui/KitchenRunSheet";
-
 import {
+  collectionOrders,
   collectionPrintHtml,
   totalsPrintHtml,
   collectionQuantity,
