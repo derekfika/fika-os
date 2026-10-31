@@ -1,0 +1,9 @@
+# 2026-10-31 — Immediate guest minimum validation
+
+Shared MNK, One Angel Court, CFC and Munich RE portals, plus RCoA standard and each All Day service, show accessible inline guest minimum feedback and block Continue/Review/Submit for blank, noninteger or below-minimum counts. Selected-item and company context changes recalculate the requirement; later selections offer a focused route back to edit the count. Unresolved restored selections fail closed. Entered counts, quantities, prices, identities and draft/amendment contracts are preserved.
+
+Guest minima come from explicit effective catalogue rules, independently of ordered-unit/pack minima. The existing, separately authorised Gallagher five-guest policy applies to both shared and RCoA flows using current company/email identity (see `docs/deployment/oac-catalogue-engineering-2026-10-20.md`). RCoA retains its trusted adapter's raw item guest floors; no OAC/Munich RE blanket guest floors were added. No persistence/provider changes, migrations, new reads/writes, polling or audit traffic.
+
+Validation: focused pure-rule/server and React interaction tests 28/28; full Hospitality suite 420/420; typecheck and production build passed; governed scope/changelog checks passed. The optional local unified workflow-fixture run was stopped at the coordinator's request before app checks, and its exited marker was recovered through the governed command; those app checks then passed directly. Existing Hub rejection paths/tests were inspected read-only; RCoA server request guest rejection is exercised directly. Style Guide compliance: PASS. Current Next routes use React portals; independent legacy Apps Script serving/cutover remains unverified and unchanged.
+
+Deployment: none. Authenticated staging browser checks and owner UAT not performed (gcloud cannot reauthenticate non-interactively). No real bookings or emails sent.

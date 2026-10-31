@@ -49,7 +49,8 @@ test("form layout cannot stretch: items sit in an align-start grid, one per cell
   const portal = read("../app/ui/BookingPortal.tsx");
   const section = portal.slice(portal.indexOf("When and where?"), portal.indexOf("function Plan("));
   assert.match(section, /fika-form-grid/); assert.doesNotMatch(section, /className="fields"/);
-  for (const field of ["eventDate", "guestCount", "startTime", "endTime", "location"]) assert.match(section, new RegExp(`ValidationMessage field="${field}"`));
+  for (const field of ["eventDate", "startTime", "endTime", "location"]) assert.match(section, new RegExp(`ValidationMessage field="${field}"`));
+  assert.match(section, /<GuestCountInput[^>]*field="guestCount"/);
   assert.doesNotMatch(css, /line-through/, "unavailable dates use muted colour, not strikethrough");
   const picker = read("../app/ui/BookingDatePicker.tsx");
   assert.match(picker, /fika-date-close/); assert.match(picker, />Close</); assert.match(picker, /aria-modal/);
