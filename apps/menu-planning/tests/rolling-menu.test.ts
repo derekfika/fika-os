@@ -259,13 +259,13 @@ test("Menu Planning persistence failure is not presented as an empty publication
   }
 });
 
-test("blank rolling week has seven days and the ten-category standard template rows", () => {
+test("blank rolling week has seven days and all six standard salad template rows", () => {
   const week = emptyWeek("2026-08-17");
   assert.equal(week.days.length, 7);
   assert.deepEqual(week.week.templateSlots, [...ROLLING_SLOTS]);
   assert.deepEqual(week.week.templateSlots.slice(-3), ["DESSERT 1", "DESSERT 2", "DESSERT 3"]);
-  assert.ok(!ROLLING_SLOTS.includes("SALAD 5" as typeof ROLLING_SLOTS[number]));
-  assert.ok(!ROLLING_SLOTS.includes("SALAD 6" as typeof ROLLING_SLOTS[number]));
+  assert.ok(ROLLING_SLOTS.includes("SALAD 5" as typeof ROLLING_SLOTS[number]));
+  assert.ok(ROLLING_SLOTS.includes("SALAD 6" as typeof ROLLING_SLOTS[number]));
   assert.equal(ROLLING_SLOTS.filter(slot => slot.startsWith("STARCH/SIDE ")).length, 4);
   assert.equal(ROLLING_SLOTS.filter(slot => slot.startsWith("GARNISH ")).length, 4);
   assert.equal(ROLLING_SLOTS.filter(slot => slot.startsWith("SAUCE ")).length, 4);
@@ -485,8 +485,8 @@ test("menu days publish independently and revisions supersede only that day", as
     assert.equal((await replayMenuPublicationOutbox(() => { throw new Error("duplicate delivery"); })).delivered, 0);
     assert.equal((await getWeek(week.week.id)).week.status, "partially_published");
     const added = await addMenuSlot(week.week.id, "Salad", "week", "test");
-    assert.equal(added.slot, "SALAD 5");
-    await removeMenuSlot(week.week.id, "SALAD 5");
+    assert.equal(added.slot, "SALAD 7");
+    await removeMenuSlot(week.week.id, "SALAD 7");
     const permanentRow = await addMenuSlot(week.week.id, "Fish", "template", "test");
     assert.equal(permanentRow.slot, "FISH 1");
     const publishedMonday = (await getMenuPublication(mondayPublication.publicationId))?.days.find(day => day.sourceDayId === week.days[0].id);

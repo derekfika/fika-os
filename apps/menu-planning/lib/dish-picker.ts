@@ -3,6 +3,8 @@ export type DishPickerItem = {
   name: string;
   category?: string;
   subcategory?: string;
+  aliases?: string[];
+  tagIds?: string[];
   description?: string;
   usage?: string[];
   usageCount?: number;
@@ -12,12 +14,14 @@ export type DishPickerItem = {
 };
 
 import { categoriesForMenuSlot, normaliseDishCategory } from "./dish-categories";
+import { dishSlotRecommendation } from "./dish-slot-recommendations";
+import type { DishTag } from "./dish-tags";
 
 export function normaliseDishName(value: string) {
   return value.trim().toLocaleLowerCase().replace(/\s+/g, " ");
 }
 
-export function rankDishPickerItems(items: DishPickerItem[], query: string, slot: string) {
+export function rankDishPickerItems(items: DishPickerItem[], query: string, slot: string, registry: readonly DishTag[] = []) {
   const q = normaliseDishName(query);
   const slotWords = slot.toLocaleLowerCase().replace(/\d+/g, "").trim().split(/\s+/).filter(Boolean);
   const slotCategories = new Set(categoriesForMenuSlot(slot));
@@ -25,7 +29,7 @@ export function rankDishPickerItems(items: DishPickerItem[], query: string, slot
   const vegWords = "veg vegan vegetarian plant tofu bean chickpea lentil aubergine mushroom cauliflower";
   return items
     .filter(item => slotCategories.has(normaliseDishCategory(item.category)))
-    .filter(item => !q || normaliseDishName(`${item.name} ${item.category || ""} ${item.subcategory || ""} ${item.description || ""}`).includes(q))
+    .filter(item => !q || normaliseDishName(`${item.name} ${(item.aliases || []).join(" ")} ${item.category || ""} ${item.subcategory || ""} ${item.description || ""}`).includes(q))
     .map(item => {
       const text = `${item.name} ${item.category || ""} ${item.subcategory || ""} ${item.description || ""}`.toLocaleLowerCase();
       const context = slotWords.reduce((score, word) => score + (text.includes(word) ? 1 : 0), 0)
@@ -34,7 +38,8 @@ export function rankDishPickerItems(items: DishPickerItem[], query: string, slot
         + (slotCategories.has("Hot Main") && slot.toLocaleLowerCase().includes("meat") && meatWords.split(" ").some(word => text.includes(word)) ? 5 : 0)
         + (slotCategories.has("Vegan/Veggie Main") && slot.toLocaleLowerCase().includes("veg") && vegWords.split(" ").some(word => text.includes(word)) ? 5 : 0);
       const nameScore = normaliseDishName(item.name) === q && q ? 100 : normaliseDishName(item.name).startsWith(q) && q ? 20 : 0;
-      return { item, score: context * 5 + nameScore };
+      const recommendation = dishSlotRecommendation(item, slot, registry);
+      return { item, score: context * 5 + nameScore + recommendation.score };
     })
     .sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name))
     .map(value => value.item);

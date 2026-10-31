@@ -5,6 +5,36 @@
   margin: 0 26px 12px;
 }
 
+.dish-picker-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 26px 10px;
+}
+
+.dish-picker-mode button {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--purple);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dish-picker-mode button[aria-pressed="true"] {
+  border-color: var(--purple);
+  background: var(--info-bg);
+  color: var(--deep);
+}
+
+.dish-picker-mode button:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: 2px;
+}
+
 .picker-filters__bar {
   display: flex;
   flex-wrap: wrap;
@@ -157,6 +187,15 @@
 @media (max-width: 640px) {
   .picker-filters {
     margin: 0 16px 12px;
+  }
+
+  .dish-picker-mode {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+
+  .dish-picker-mode button {
+    flex: 1 1 170px;
   }
 
   .picker-filters__reset {

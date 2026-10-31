@@ -1,12 +1,13 @@
 import { categoriesForMenuSlot, normaliseDishCategory } from "./dish-categories";
-import { dishFitsSaladSlot, normaliseSaladSubtype, SALAD_SUBTYPES } from "./dish-editor";
+import { normaliseSaladSubtype, SALAD_SUBTYPES } from "./dish-editor";
 import { normaliseDishName } from "./dish-picker";
 import { tagKey, type DishTag } from "./dish-tags";
 
 /**
- * Week Planner dish-picker filters (#155). Filters narrow what the slot already offers; they never
- * widen it, so the slot's category rule and the salad-slot rule always apply first. Selections within
- * one filter group match ANY chosen value; separate groups combine with AND.
+ * Week Planner dish-picker filters (#155). Filters narrow category-eligible dishes. Salad subtype
+ * and resolved registry tags control recommendations; they do not hide compatible dishes from the
+ * explicit All compatible view. Selections within one filter group match ANY chosen value; separate
+ * groups combine with AND.
  */
 
 export type PickerFilterDish = {
@@ -37,10 +38,10 @@ export function hasPickerFilters(filters: PickerFilters) {
   return Boolean(filters.tagIds.length || filters.categories.length || filters.subtypes.length);
 }
 
-/** The dishes a slot offers before any filter: its categories and, for salads, its own subtype slot. */
+/** Category is the hard eligibility boundary; subtype and registry tags are relevance signals. */
 export function dishesForSlot<T extends PickerFilterDish>(dishes: readonly T[], slot: string): T[] {
   const categories = new Set(categoriesForMenuSlot(slot));
-  return dishes.filter((dish) => categories.has(normaliseDishCategory(dish.category)) && dishFitsSaladSlot(dish, slot));
+  return dishes.filter((dish) => categories.has(normaliseDishCategory(dish.category)));
 }
 
 function subtypeOf(dish: PickerFilterDish) {
