@@ -136,6 +136,71 @@ test("Edit dish opens the existing edit modal for the canonical dish without the
   expect(fixture.writes).toEqual([]);
 });
 
+test("Edit Dish locks the planner scroll, keeps a stable viewport box, and restores focus and scroll on close", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 700 });
+  const fixture = await mount(page);
+  const originalScrollStyles = await page.evaluate(() => ({
+    htmlOverflow: document.documentElement.style.overflow,
+    htmlScrollbarGutter: document.documentElement.style.scrollbarGutter,
+    bodyPosition: document.body.style.position,
+    bodyTop: document.body.style.top,
+    bodyLeft: document.body.style.left,
+    bodyWidth: document.body.style.width,
+    bodyOverflow: document.body.style.overflow,
+  }));
+  await page.evaluate(() => window.scrollTo(0, 240));
+  const pageScrollBefore = await page.evaluate(() => window.scrollY);
+  await cell(page).click({ button: "right" });
+  await menu(page).getByRole("menuitem", { name: "Edit dish" }).click();
+  const dialog = page.getByRole("dialog", { name: "Edit dish" });
+  await expect(dialog).toBeVisible();
+  const positionBefore = await dialog.boundingBox();
+  expect(positionBefore).not.toBeNull();
+  await dialog.getByLabel("Dish name").click();
+  const positionAfterFocus = await dialog.boundingBox();
+  expect(Math.abs(positionAfterFocus!.x - positionBefore!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(positionAfterFocus!.y - positionBefore!.y)).toBeLessThanOrEqual(1);
+  await page.mouse.move(4, 4);
+  await page.mouse.wheel(0, 400);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect.poll(() => page.evaluate(() => document.body.style.top)).toBe(`${-pageScrollBefore}px`);
+  await expect.poll(() => dialog.evaluate(element => (element.parentElement as HTMLElement).scrollTop)).toBe(0);
+  const afterBackgroundWheel = await dialog.boundingBox();
+  expect(Math.abs(afterBackgroundWheel!.x - positionBefore!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(afterBackgroundWheel!.y - positionBefore!.y)).toBeLessThanOrEqual(1);
+
+  await page.setViewportSize({ width: 390, height: 600 });
+  const narrowPosition = await dialog.boundingBox();
+  expect(narrowPosition).not.toBeNull();
+  expect(narrowPosition!.x).toBeGreaterThanOrEqual(0);
+  expect(narrowPosition!.x + narrowPosition!.width).toBeLessThanOrEqual(390);
+  const editorBody = dialog.locator(".dish-editor");
+  const editorSize = await editorBody.evaluate(element => ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight }));
+  expect(editorSize.scrollHeight).toBeGreaterThan(editorSize.clientHeight);
+  await editorBody.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await expect.poll(() => editorBody.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  await dialog.getByLabel("Primary category").focus();
+  await page.keyboard.press("ArrowDown");
+  const positionAfter = await dialog.boundingBox();
+  expect(Math.abs(positionAfter!.x - narrowPosition!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(positionAfter!.y - narrowPosition!.y)).toBeLessThanOrEqual(1);
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(cell(page)).toBeFocused();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(pageScrollBefore);
+  expect(await page.evaluate(() => ({
+    htmlOverflow: document.documentElement.style.overflow,
+    htmlScrollbarGutter: document.documentElement.style.scrollbarGutter,
+    bodyPosition: document.body.style.position,
+    bodyTop: document.body.style.top,
+    bodyLeft: document.body.style.left,
+    bodyWidth: document.body.style.width,
+    bodyOverflow: document.body.style.overflow,
+  }))).toEqual(originalScrollStyles);
+  expect(fixture.writes).toEqual([]);
+});
+
 test("an entry whose dish is no longer in the library shows Edit as unavailable with the reason and writes nothing", async ({ page }) => {
   const fixture = await mount(page);
   await page.getByRole("button", { name: "Select Retired salad; drag or use Copy to day", exact: true }).click({ button: "right" });

@@ -13,6 +13,9 @@ test("targeted Menu Planning dialogs use the shared modal contract", async () =>
   assert.match(primitive, /aria-modal="true"/);
   assert.match(primitive, /onCloseRef\.current\(\)/);
   assert.match(primitive, /event\.key !== "Tab"/);
+  assert.match(primitive, /modalLockCount/);
+  assert.match(primitive, /releasePageScroll\(\)/);
+  assert.match(primitive, /focus\(\{ preventScroll: true \}\)/);
   assert.match(week + rolling, /dismissible=\{false\}/);
   assert.match(duplicate, /button-danger/);
   assert.match(duplicate, /Replace and copy as draft/);
