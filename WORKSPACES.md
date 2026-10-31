@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T07:35:53.892Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T07:36:56.870Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -59,6 +59,7 @@ Snapshot: 2026-10-31T07:35:53.892Z. The local governed registry remains authorit
 | gate0-monday-readonly | sol-gate0-readiness | docs/audits/2026-10-30/gate0-monday-readiness.md | codex/gate0-monday-readonly | [#177](https://github.com/derekfika/fika-os/pull/177) | retired | 2026-10-30T17:04:31.456Z |
 | grab-go-standing-ux | codex-grab-go-standing-ux | apps/delivered-in, CHANGELOG.md | codex/grab-go-standing-ux | [#21](https://github.com/derekfika/fika-os/pull/21) | finished | 2026-10-24T19:27:36.155Z |
 | hierarchical-agent-instructions | codex-hierarchical-agent-instructions | AGENTS.md, CLAUDE.md, README.md, docs/ai/agent-reference.md, apps/integration-hub/AGENTS.md, apps/integration-hub/CLAUDE.md, apps/hospitality-booking/AGENTS.md, apps/hospitality-booking/CLAUDE.md, apps/menu-planning/AGENTS.md, apps/menu-planning/CLAUDE.md, apps/cpu-production/AGENTS.md, apps/cpu-production/CLAUDE.md, apps/delivered-in/AGENTS.md, apps/delivered-in/CLAUDE.md, apps/logistics/AGENTS.md, apps/logistics/CLAUDE.md | codex/hierarchical-agent-instructions | [#4](https://github.com/derekfika/fika-os/pull/4) | finished | 2026-10-22T19:47:37.742Z |
+| hospitality-all-day-s0 | haiku-hospitality-all-day-s0 | apps/hospitality-booking/lib/rcoa-all-day.ts | codex/hospitality-all-day-s0 | — | retired | 2026-10-31T07:36:55.003Z |
 | hospitality-catalogue-mapping | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-catalogue-mapping | — | finished | 2026-10-27T12:03:58.367Z |
 | hospitality-cfc-mr-tests | hospitality-cfc-mr | apps/integration-hub, CHANGELOG.md | codex/hospitality-cfc-mr-tests | [#81](https://github.com/derekfika/fika-os/pull/81) | finished | 2026-10-27T12:49:31.981Z |
 | hospitality-dashboard-filtering-overnight | sonnet-hospitality-dashboard-filtering-overnight | apps/hospitality-booking | codex/hospitality-dashboard-filtering-overnight | [#194](https://github.com/derekfika/fika-os/pull/194) | retired | 2026-10-31T01:34:54.385Z |
