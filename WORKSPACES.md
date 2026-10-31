@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T14:47:46.561Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T17:08:26.527Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -95,6 +95,9 @@ Snapshot: 2026-10-31T14:47:46.561Z. The local governed registry remains authorit
 | iss-017-cpu-week-date-nav-2 | haiku-iss-017 | apps/cpu-production, CHANGELOG.md | codex/iss-017-cpu-week-date-nav-2 | — | finished | 2026-10-26T16:25:54.912Z |
 | iss-017-cpu-week-date-nav | haiku-iss-017 | apps/cpu-production | codex/iss-017-cpu-week-date-nav | [#63](https://github.com/derekfika/fika-os/pull/63) | finished | 2026-10-26T16:01:27.547Z |
 | iss-017-week-date-sync | haiku-iss-017-followup | apps/cpu-production, CHANGELOG.md | codex/iss-017-week-date-sync | [#64](https://github.com/derekfika/fika-os/pull/64) | finished | 2026-10-26T17:13:29.381Z |
+| kafoodle-food-data-lib | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/api/food-data, apps/integration-hub/app/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/docs/food-data-library.md | codex/kafoodle-food-data-lib | — | finished | 2026-10-31T16:21:54.029Z |
+| kafoodle-food-data-v2 | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/api/food-data, apps/integration-hub/app/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/tests/food-data.test.ts, apps/integration-hub/docs/food-data-library.md | codex/kafoodle-food-data-v2 | [#212](https://github.com/derekfika/fika-os/pull/212) | retired | 2026-10-31T17:08:24.835Z |
+| kafoodle-food-data | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data | codex/kafoodle-food-data | — | retired | 2026-10-31T16:00:02.411Z |
 | logistics-android-changelog | logistics-pwa-notifications | CHANGELOG.md | codex/logistics-android-changelog | — | finished | 2026-10-28T09:04:01.241Z |
 | logistics-android-push | logistics-pwa-notifications | apps/logistics | codex/logistics-android-push | [#96](https://github.com/derekfika/fika-os/pull/96) | finished | 2026-10-28T09:00:58.054Z |
 | logistics-auth-health-probe | uat-20261025-1150 | tools/workflow, docs/deployment, CHANGELOG.md | codex/logistics-auth-health-probe | — | finished | 2026-10-25T23:07:20.367Z |
@@ -193,6 +196,7 @@ Snapshot: 2026-10-31T14:47:46.561Z. The local governed registry remains authorit
 | staging-release-manager-3 | claude-staging-release | docs/deployment/staging-release-scoreboard.md | codex/staging-release-manager-3 | — | active | 2026-10-31T08:12:28.113Z |
 | staging-release-manager-4 | claude-staging-release | docs/deployment/staging-release-scoreboard-2.md | codex/staging-release-manager-4 | — | retired | 2026-10-31T13:51:35.530Z |
 | staging-release-manager-5 | claude-staging-release | docs/deployment/staging-release-scoreboard-3.md | codex/staging-release-manager-5 | — | retired | 2026-10-31T14:42:52.344Z |
+| staging-release-manager-6 | claude-staging-release | docs/deployment/staging-release-scoreboard-4.md | codex/staging-release-manager-6 | — | retired | 2026-10-31T14:54:49.933Z |
 | staging-release-manager | claude-staging-release | docs/deployment/staging-release-scoreboard.md | codex/staging-release-manager | — | finished | 2026-10-31T07:45:44.895Z |
 | standing-orders-pr14-sync | codex-standing-orders-pr14-sync | apps/delivered-in, apps/integration-hub, docs/deployment, CHANGELOG.md | codex/standing-orders-pr14-sync | — | finished | 2026-10-23T12:09:58.445Z |
 | uat-blocker-checkpoint | uat-20261025-1150 | CHANGELOG.md | codex/uat-blocker-checkpoint | [#45](https://github.com/derekfika/fika-os/pull/45) | retired | 2026-10-25T12:49:14.064Z |
