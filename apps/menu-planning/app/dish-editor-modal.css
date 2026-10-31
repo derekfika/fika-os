@@ -1,4 +1,4 @@
-/* Create / Edit Dish modal (#154). Reuses the planner modal shell and FIKA purple tokens. */
+/* Create / Edit Dish modal (#154). Uses shared FIKA semantic tokens. */
 .dish-picker-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -13,10 +13,10 @@
 .dish-picker .dish-picker-edit {
   min-width: 64px;
   min-height: 44px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--fika-border-default);
   border-radius: 8px;
-  background: var(--surface);
-  color: var(--purple);
+  background: var(--fika-surface-card);
+  color: var(--fika-action-primary);
   font: inherit;
   font-weight: 700;
   cursor: pointer;
@@ -26,7 +26,7 @@
 .dish-editor input:focus-visible,
 .dish-editor select:focus-visible,
 .dish-editor button:focus-visible {
-  outline: 3px solid var(--mint);
+  outline: 3px solid var(--fika-focus-ring);
   outline-offset: 2px;
 }
 
@@ -43,7 +43,7 @@
 .dish-editor-field {
   display: grid;
   gap: 6px;
-  color: var(--muted);
+  color: var(--fika-text-secondary);
   font-size: 0.8rem;
   font-weight: 700;
 }
@@ -54,10 +54,10 @@
   width: 100%;
   min-height: 44px;
   padding: 8px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--fika-border-default);
   border-radius: 8px;
-  background: var(--surface);
-  color: var(--deep);
+  background: var(--fika-surface-card);
+  color: var(--fika-text-primary);
   font: inherit;
   font-weight: 400;
 }
@@ -67,9 +67,9 @@
   gap: 4px;
   margin: 0;
   padding: 10px 12px;
-  border-left: 4px solid var(--warning);
-  background: var(--warning-bg);
-  color: var(--warning);
+  border-left: 4px solid var(--fika-status-warning);
+  background: var(--fika-status-warning-surface);
+  color: var(--fika-status-warning);
   font-size: 0.85rem;
 }
 
@@ -80,7 +80,7 @@
 
 .dish-editor-note {
   margin: 0;
-  color: var(--muted);
+  color: var(--fika-text-muted);
   font-size: 0.82rem;
 }
 
@@ -89,18 +89,18 @@
   gap: 12px;
   margin: 0;
   padding: 14px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--fika-border-default);
   border-radius: 12px;
 }
 
 .dish-editor-tags legend {
   padding: 0 6px;
-  color: var(--deep);
+  color: var(--fika-text-primary);
   font-weight: 800;
 }
 
 .dish-editor-tags legend small {
-  color: var(--muted);
+  color: var(--fika-text-muted);
   font-weight: 400;
 }
 
@@ -116,18 +116,46 @@
 }
 
 .dish-editor-suggest {
+  align-items: flex-start;
+  color: var(--fika-text-secondary);
+  font-size: 0.82rem;
+}
+
+.dish-editor-suggestion {
+  display: inline-grid;
+  justify-items: start;
+  gap: 3px;
+  max-width: 100%;
+}
+
+.dish-editor-suggestion small { color: var(--fika-text-secondary); }
+
+.dish-editor-reject {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fika-text-secondary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.dish-editor-feedback {
+  display: flex;
   align-items: center;
-  color: var(--muted);
+  gap: 8px;
+  color: var(--fika-text-secondary);
   font-size: 0.82rem;
 }
 
 .dish-editor-chip {
   min-height: 36px;
   padding: 0 12px;
-  border: 1px solid var(--purple);
+  border: 1px solid var(--fika-action-primary);
   border-radius: 999px;
-  background: var(--info-bg);
-  color: var(--purple);
+  background: var(--fika-status-info-surface);
+  color: var(--fika-action-primary);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 700;
@@ -135,7 +163,7 @@
 }
 
 .dish-editor-chip--suggest {
-  background: var(--surface);
+  background: var(--fika-surface-card);
 }
 
 .dish-editor-taglist {
@@ -151,22 +179,22 @@
   gap: 8px;
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--fika-border-default);
   border-radius: 8px;
-  background: var(--surface);
-  color: var(--deep);
+  background: var(--fika-surface-card);
+  color: var(--fika-text-primary);
   font-size: 0.88rem;
 }
 
 .dish-editor-check:has(input:checked) {
-  border-color: var(--purple);
-  background: var(--info-bg);
+  border-color: var(--fika-action-primary);
+  background: var(--fika-status-info-surface);
 }
 
 .dish-editor-check input {
   width: 18px;
   height: 18px;
-  accent-color: var(--purple);
+  accent-color: var(--fika-action-primary);
 }
 
 .dish-editor-newtag {
