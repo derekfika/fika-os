@@ -32,6 +32,8 @@ import { calendarDateInputPatch, calendarWeekChangePatch } from "../lib/cpu-week
 import { addOperationalDays, filterProductionTotalsOrders, filterProductionTotalsOrdersToDates, formatProductionTotalsDateRange, formatProductionTotalsSelection, operationalWeekRange, productionTotalsWeekDates, resolveProductionTotalsRange } from "../lib/production-totals-range";
 import { loadProductionTotalsRange } from "../lib/cpu-totals-loader";
 import { readApiResponse } from "./lib/api-response";
+import { fetchCpuApi } from "./lib/session-recovery";
+import CpuSessionRecovery from "./ui/CpuSessionRecovery";
 import { readCpuProjection, writeCpuProjection } from "./lib/cpu-indexeddb";
 import { europeLondonDate } from "../lib/operational-date";
 import { ProductionFilterSummary, ProductionSiteFilter } from "./ui/ProductionSiteFilter";
@@ -188,7 +190,7 @@ export default function CpuProduction() {
         const result = await loadProductionTotalsRange(
           resolution.range,
           productionScope,
-          async (week, scope) => fetch(`/api/production?projection=1&weekCommencing=${encodeURIComponent(week)}&scope=${encodeURIComponent(scope)}`, { cache: "no-store" }),
+          async (week, scope) => fetchCpuApi(`/api/production?projection=1&weekCommencing=${encodeURIComponent(week)}&scope=${encodeURIComponent(scope)}`, { cache: "no-store" }),
           isCurrentRequest,
         );
         if (!isCurrentRequest() || result.status === "stale") return [];
@@ -217,7 +219,7 @@ export default function CpuProduction() {
     }
     try {
       // Compatibility marker for existing dashboard contract checks: /api/production?scope=${productionScope}
-      const scopeResponse = await fetch("/api/production?cacheScope=1", { cache: "no-store" });
+      const scopeResponse = await fetchCpuApi("/api/production?cacheScope=1", { cache: "no-store" });
       const scopeBody = await readApiResponse<{ cacheScope?: string; error?: { message?: string } }>(scopeResponse);
       if (!isCurrentRequest()) return [];
       if (!scopeResponse.ok || !scopeBody.cacheScope) { setError(scopeBody.error?.message || "CPU cache scope could not be established."); setOrders([]); return []; }
@@ -233,12 +235,12 @@ export default function CpuProduction() {
           setError("");
         }
         try {
-          const head = await fetch(`/api/production?projectionHead=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}`, { cache: "no-store" });
+          const head = await fetchCpuApi(`/api/production?projectionHead=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}`, { cache: "no-store" });
           const headBody = await head.json() as { lastChangeSequence?: number; packageVersion?: number; contentHash?: string; sourceVersion?: string };
           if (!isCurrentRequest()) return [];
           if (!head.ok) { setOrders([]); setError("Production freshness could not be verified. Refresh to try again."); return []; }
           if (!cachedNeedsRecovery && Number(headBody.lastChangeSequence || 0) === cached.lastChangeSequence && Number(headBody.packageVersion || 0) === Number(cached.packageVersion || 0) && headBody.contentHash === cached.contentHash && headBody.sourceVersion === cached.sourceVersion) return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope));
-          const response = await fetch(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, { cache: "no-store" });
+          const response = await fetchCpuApi(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, { cache: "no-store" });
           const refreshedBody = await readApiResponse<{ projection?: any; package?: { packageVersion?: number; contentHash?: string; sourceVersion?: string } }>(response);
           if (!isCurrentRequest()) return [];
           const newer = refreshedBody.projection;
@@ -258,7 +260,7 @@ export default function CpuProduction() {
           return [];
         }
       }
-      const response = await fetch(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, { cache: "no-store" });
+      const response = await fetchCpuApi(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, { cache: "no-store" });
       const body = await readApiResponse<{ projection?: any; package?: { packageVersion?: number; contentHash?: string; sourceVersion?: string }; error?: { message?: string } }>(response);
       if (!isCurrentRequest()) return [];
       if (!response.ok) { setOrders([]); setError(body.error?.message || "Could not load production."); return []; }
@@ -269,6 +271,12 @@ export default function CpuProduction() {
       setOrders(projectedOrders);
       setError("");
       return projectedOrders;
+    } catch (cause) {
+      if (isCurrentRequest()) {
+        setOrders([]);
+        setError(cause instanceof TypeError ? "CPU could not connect. Check your connection and refresh to try again." : cause instanceof Error ? cause.message : "Current production data could not be loaded. Check your connection and refresh to try again.");
+      }
+      return [];
     } finally {
       if (isCurrentRequest()) { setRefreshing(false); setSettled(true); }
     }
@@ -404,7 +412,7 @@ export default function CpuProduction() {
     setDetailError("");
     setDetailLoading(true);
     try {
-      const response = await fetch(`/api/production?canonicalId=${encodeURIComponent(order.canonicalId)}`, { cache: "no-store" });
+      const response = await fetchCpuApi(`/api/production?canonicalId=${encodeURIComponent(order.canonicalId)}`, { cache: "no-store" });
       const body = await readApiResponse<{ order?: ProductionOrder; error?: { message?: string } }>(response);
       if (!response.ok || !body.order) throw new Error(body.error?.message || "Could not load the canonical Production Order.");
       if (requestId === detailRequest.current) setSelected(body.order as ProductionOrder);
@@ -416,7 +424,7 @@ export default function CpuProduction() {
   };
   const acknowledgeCancelledBooking = async (order: ProductionOrder) => {
     setError("");
-    const response = await fetch("/api/production", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "acknowledge-cancellation", canonicalId: order.canonicalId, expectedVersion: order.version }) });
+    const response = await fetchCpuApi("/api/production", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "acknowledge-cancellation", canonicalId: order.canonicalId, expectedVersion: order.version }) });
     const body = await readApiResponse<{ order?: ProductionOrder; error?: { message?: string } }>(response);
     if (!response.ok) { setError(body.error?.message || "The cancelled booking could not be acknowledged."); return; }
     await load(true);
@@ -481,6 +489,7 @@ export default function CpuProduction() {
           <small>Operational application&nbsp; · &nbsp;governed Production domain</small>
         </header>
         <div className="cpu-main">
+        <CpuSessionRecovery onRecovered={() => { void load(true); }} />
         <nav className="cpu-production-scope" aria-label="Production type scope">
           <span>Scope</span>
           {productionScopes.map((scope) => (
@@ -841,7 +850,7 @@ function Detail({
             : [];
   const transition = async (next: ProductionStatus) => {
     setBusy(true);
-    const response = await fetch("/api/production", {
+    const response = await fetchCpuApi("/api/production", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -956,11 +965,11 @@ function CpuCreate({ onSaved }: { onSaved: () => Promise<void> }) {
   const [lines, setLines] = useState<CreateLine[]>([{ id: "line-1", itemId: "", newItemTitle: "", quantity: 1, note: "", allergens: emptyCreatorAllergens(), mayContainNotes: "" }]);
   const [error, setError] = useState("");
   useEffect(() => {
-    void fetch("/api/sandwiches?parentMenuItemKey=delivered-in-lunch", { cache: "no-store" })
+    void fetchCpuApi("/api/sandwiches?parentMenuItemKey=delivered-in-lunch", { cache: "no-store" })
       .then((response) => response.json())
       .then((body: { productionItems?: DeliveredItem[] }) => setItems(body.productionItems || []))
       .catch(() => setError("The Delivered-in Lunch catalogue could not be loaded."));
-    void fetch("/api/oplocs", { cache: "no-store" })
+    void fetchCpuApi("/api/oplocs", { cache: "no-store" })
       .then((response) => response.json())
       .then((body: { oplocs?: OplocOption[] }) => setOplocs(body.oplocs || []))
       .catch(() => setOplocs([]));
@@ -975,7 +984,7 @@ function CpuCreate({ onSaved }: { onSaved: () => Promise<void> }) {
     if (!title) { setError("Enter a title before saving the new menu item."); return; }
     setError("");
     try {
-      const response = await fetch("/api/sandwiches", {
+      const response = await fetchCpuApi("/api/sandwiches", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -1010,7 +1019,7 @@ function CpuCreate({ onSaved }: { onSaved: () => Promise<void> }) {
       // Persist the current checker values as library records before creating
       // the order, so a new or amended hospitality item is available next time.
       const saves = await Promise.all(selectedLines.map(async (line) => {
-        const response = await fetch("/api/sandwiches", {
+        const response = await fetchCpuApi("/api/sandwiches", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -1031,7 +1040,7 @@ function CpuCreate({ onSaved }: { onSaved: () => Promise<void> }) {
       return;
     }
     const key = `delivered-in:${date}:${(oplocId || otherSite).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-")}:${lines.map((line) => `${line.itemId}:${line.quantity}`).join("|")}`;
-    const response = await fetch("/api/production", {
+    const response = await fetchCpuApi("/api/production", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
