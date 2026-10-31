@@ -426,6 +426,7 @@ button:disabled {
 .modal-backdrop {
   overflow: auto;
   padding: 16px;
+  overscroll-behavior: contain;
 }
 
 .item-detail,
