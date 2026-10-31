@@ -18,6 +18,10 @@
     "url": "https://github.com/derekfika/fika-os/actions/runs/41182762735/job/124483880549",
     "sha": "f2afded5e6e5229daf373a62d3a0e974f9ea6ff3"
   },
+  "resumeOperator": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer"
+  },
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
@@ -37,9 +41,10 @@
     "head": "99832bbc9aebe740e1c7f3661244ec27369ea272",
     "pullRequestRisk": "standard"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "87bbc0f5-f180-4709-8872-f20bc6649ca5",
+  "rollout": "build-2026-10-31-002",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "c038fbce4e198bc671c8ee9b752ba4c8473893e2",
     "rollout": "build-2026-10-31-001",
@@ -47,5 +52,11 @@
     "percent": 100
   },
   "previousGoodRecord": "35cb01ffefd6f5d23802a2e9b16bf3d6a75bb01e",
-  "createdAt": "2026-10-31T08:12:57.505Z"
+  "releaseId": "87bbc0f5-f180-4709-8872-f20bc6649ca5",
+  "completedAt": "2026-10-31T17:02:02.807Z",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-os-staging--fika-os-dev.europe-west4.hosted.app/"
+  }
 }
