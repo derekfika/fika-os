@@ -1,4 +1,5 @@
 import { logAuthDiagnostic } from "../../../shared/auth-diagnostics";
+import { isLogisticsVehicleId, type LogisticsDesktopPermissions } from "../../shared/logistics-authority";
 import { hostedRuntime, requiredUpstreamUrl } from "./runtime";
 import { MOBILE_VEHICLE_HEADER, mobileSessionCookieName, verifyMobilePinSession, type MobileVehicleId } from "./mobile-pin-session";
 
@@ -12,6 +13,7 @@ export type LogisticsPrincipal = {
   representedOplocId?: string;
   primaryCustodianLegendId?: string;
   permittedVehicleIds?: string[];
+  desktopPermissions?: LogisticsDesktopPermissions;
   maintenanceAuthorities?: string[];
   sessionKind?: "hub" | "mobile-pin";
 };
@@ -24,9 +26,12 @@ export const localLogisticsPrincipal: LogisticsPrincipal = {
   email: "logistics@local.fika",
   identityKind: "person",
   permittedVehicleIds: ["van1", "van2"], // Explicit development-only principal.
+  desktopPermissions: { view: true, manage: true },
+  sessionKind: "hub",
 };
-export function logisticsCacheScope(principal: { id: string; identityKind?: string; representedOplocId?: string; primaryCustodianLegendId?: string; permittedVehicleIds?: string[] }) {
-  return `logistics:v2:${principal.id}:${principal.identityKind || "unknown"}:${principal.representedOplocId || "organisation"}:${principal.primaryCustodianLegendId || "none"}:${[...(principal.permittedVehicleIds || [])].sort().join(",")}`;
+export function logisticsCacheScope(principal: { id: string; identityKind?: string; representedOplocId?: string; primaryCustodianLegendId?: string; permittedVehicleIds?: string[]; desktopPermissions?: LogisticsDesktopPermissions; sessionKind?: LogisticsPrincipal["sessionKind"] }) {
+  const desktop = principal.desktopPermissions;
+  return `logistics:v3:${principal.id}:${principal.identityKind || "unknown"}:${principal.representedOplocId || "organisation"}:${principal.primaryCustodianLegendId || "none"}:${principal.sessionKind || "unknown"}:${desktop?.view === true ? 1 : 0}:${desktop?.manage === true ? 1 : 0}:${[...(principal.permittedVehicleIds || [])].sort().join(",")}`;
 }
 
 type LogisticsRequest = { method?: string; url?: string; cookies: { get(name: string): { value?: string } | undefined }; headers?: { get(name: string): string | null }; nextUrl?: { pathname?: string; searchParams: { get(name: string): string | null } } };
@@ -61,11 +66,12 @@ export async function requireLogisticsAccess(request: LogisticsRequest, dependen
       ...(session.representedOplocId ? { representedOplocId: session.representedOplocId } : {}),
       ...(session.primaryCustodianLegendId ? { primaryCustodianLegendId: session.primaryCustodianLegendId } : {}),
       ...(session.permittedVehicleIds ? { permittedVehicleIds: session.permittedVehicleIds } : {}),
+      desktopPermissions: { view: session.desktopPermissions?.view === true, manage: session.desktopPermissions?.manage === true },
       ...(session.maintenanceAuthorities ? { maintenanceAuthorities: session.maintenanceAuthorities } : {}),
     };
     await (dependencies.accessChecker || (async () => undefined))(principal);
     const requestedVehicle = request.nextUrl?.searchParams.get("vehicle");
-    if (requestedVehicle && !principal.permittedVehicleIds?.includes(requestedVehicle)) throw Object.assign(new Error("This account is not entitled to the requested Logistics vehicle."), { status: 403, code: "AUTHMOD_VEHICLE_DENIED" });
+    if (requestedVehicle && (!isLogisticsVehicleId(requestedVehicle) || !(principal.desktopPermissions?.view || principal.permittedVehicleIds?.includes(requestedVehicle)))) throw Object.assign(new Error("This account is not entitled to the requested Logistics vehicle."), { status: 403, code: "AUTHMOD_VEHICLE_DENIED" });
     logAuthDiagnostic(request, { authStage: "logistics-route-app-access", status: 200, code: "LOGISTICS_ACCESS_ALLOWED" });
     return principal;
   } catch (error) {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assertMobilePinAction, requireLogisticsAccess } from "../lib/auth";
+import { vehicleScope } from "../lib/resource-authority";
 
 function request(pathname: string, vehicle?: string) {
   return {
@@ -17,6 +18,7 @@ test("mobile PIN access is vehicle-scoped and does not consult Hub identity gran
   assert.equal(principal.sessionKind, "mobile-pin");
   assert.deepEqual(principal.permittedVehicleIds, ["van1"]);
   assert.equal(principal.authmodIdentityId, undefined);
+  assert.deepEqual(vehicleScope({ ...principal, desktopPermissions: { view: true, manage: true } }), ["van1"]);
 });
 
 test("mobile PIN access denies URL vehicle switching and unrelated planner routes", async () => {
