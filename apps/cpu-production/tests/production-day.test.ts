@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ProductionOrder } from "../lib/production-types";
-import { aggregateDeliveredIn, aggregateProductionTotals, buildAllergenReviewRows, buildDeliveredInAllergenReview, buildDeliveredInDishRows, categorySummary, deliveredInMenuOrdersForServiceDate, deliveredInTotals, firstDeliveredInOrder, groupByRequiredTime, orderSummary, productionJobCount } from "../lib/production-day";
+import { aggregateDeliveredIn, aggregateProductionTotals, buildAllergenReviewRows, buildDeliveredInAllergenReview, buildDeliveredInDishRows, categorySummary, deliveredInMenuOrdersForServiceDate, deliveredInTotals, firstDeliveredInOrder, groupByRequiredTime, isHospitalityDayOrder, orderSummary, productionJobCount } from "../lib/production-day";
 import { readFileSync } from "node:fs";
 
 function order(destinationLabel: string, quantity: number, sourceMenuItemId = "dish:leaf"): ProductionOrder {
@@ -45,6 +45,21 @@ test("production Totals count canonical orders and line quantities once by expli
     ["Hospitality", 1, [["Buffet Lunch", 8, "portion"]]],
     ["Delivered-In", 1, [["Mixed Baby Leaf", 15, "portion"]]],
   ]);
+});
+
+test("Ad-Hoc Totals use the Hospitality dashboard classification without mutating line routing", () => {
+  const adHoc = { ...order("Ad-Hoc site", 0), canonicalId: "production-order:v1:ad-hoc:request:totals", origin: "cpu_created" as const, productionCategory: "grab_and_go" as const, lines: [
+    { ...order("Ad-Hoc site", 0).lines[0], canonicalId: "adhoc:sandwich", itemName: "Sandwich", customerQuantity: 2, customerUnit: "pieces", workstream: "sandwiches" as const },
+    { ...order("Ad-Hoc site", 0).lines[0], canonicalId: "adhoc:meal", itemName: "Meal", customerQuantity: 3, customerUnit: "portions", workstream: "grab_and_go" as const },
+  ] };
+  const totals = aggregateProductionTotals([adHoc]);
+
+  assert.equal(isHospitalityDayOrder(adHoc), true);
+  assert.deepEqual(totals.map(({ category, orderCount, items }) => [category, orderCount, items.map(item => [item.name, item.quantity, item.unit])]), [
+    ["Hospitality", 1, [["Meal", 3, "portions"], ["Sandwich", 2, "pieces"]]],
+  ]);
+  assert.deepEqual(adHoc.lines.map(line => line.workstream), ["sandwiches", "grab_and_go"]);
+  assert.equal(isHospitalityDayOrder(order("Ordinary CPU", 1)), false);
 });
 
 test("production Totals keep ready orders not started until production begins", () => {
