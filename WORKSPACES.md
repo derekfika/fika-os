@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-10-31T12:01:10.196Z. The local governed registry remains authoritative.
+Snapshot: 2026-10-31T12:11:59.791Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -192,6 +192,7 @@ Snapshot: 2026-10-31T12:01:10.196Z. The local governed registry remains authorit
 | uat-handback-2026-10-31 | claude-uat-handback | docs/agent-handbacks | codex/uat-handback-2026-10-31 | [#203](https://github.com/derekfika/fika-os/pull/203) | retired | 2026-10-31T11:20:46.034Z |
 | uat-iss008-log | uat-20261025-1150 | CHANGELOG.md | codex/uat-iss008-log | [#54](https://github.com/derekfika/fika-os/pull/54) | finished | 2026-10-25T18:46:19.839Z |
 | uat-iss010-logistics-guard | uat-20261025-1150 | apps/logistics | codex/uat-iss010-logistics-guard | [#50](https://github.com/derekfika/fika-os/pull/50) | finished | 2026-10-25T18:21:29.989Z |
+| uat-report-2026-10-31-pass3 | claude-uat-qa | docs/agent-handbacks | codex/uat-report-2026-10-31-pass3 | [#205](https://github.com/derekfika/fika-os/pull/205) | retired | 2026-10-31T12:11:58.505Z |
 | uat-report-2026-10-31-queue | claude-uat-report | docs/agent-handbacks | codex/uat-report-2026-10-31-queue | [#204](https://github.com/derekfika/fika-os/pull/204) | retired | 2026-10-31T12:01:08.652Z |
 | workflow-proof | codex-workflow-modernisation | apps/hospitality-booking/docs | codex/workflow-proof | — | retired | 2026-10-22T17:27:37.642Z |
 | workspace-reconcile-tooling | uat-workspace-reconcile | tools/workflow | codex/workspace-reconcile-tooling | [#76](https://github.com/derekfika/fika-os/pull/76) | finished | 2026-10-28T06:56:42.242Z |
