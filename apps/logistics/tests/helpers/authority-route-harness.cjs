@@ -53,11 +53,12 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
   const oplocs = [], locationReads = [];
   let locationFailure;
   const authorityRequests = [];
+  let admissionHandler;
   let menuAuthorityCheck = async () => {};
-  const localFetch = async input => {
+  const localFetch = async (input, options) => {
     const url = new URL(String(input));
     authorityRequests.push(url.pathname);
-    if (url.pathname.endsWith('/api/logistics/access')) return Response.json({ principal: { ...principal, authmodIdentityId: principal.id } });
+    if (url.pathname.endsWith('/api/logistics/access')) return admissionHandler ? admissionHandler(input, options) : Response.json({ principal: { ...principal, authmodIdentityId: principal.id } });
     if (url.pathname.endsWith('/api/logistics/drivers')) {
       const eligible = driverActive ? [driver, alternateDriver] : [alternateDriver];
       if (url.searchParams.has('driverId') && (!eligible.some(item => item.driverId === url.searchParams.get('driverId')) || url.searchParams.get('vehicle') !== 'van1')) return Response.json({}, { status: 422 });
@@ -115,7 +116,7 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
   const mobileSessions = load(path.join(appRoot, 'lib/mobile-pin-session.ts'));
   const driversRoute = load(path.join(appRoot, 'app/api/logistics/drivers/route.ts'));
   const vehiclesRoute = load(path.join(appRoot, 'app/api/logistics/vehicles/route.ts'));
-  return { date, queries, authorityRequests, materialisation, load, records, run, principal, seed, rebuild, requirements, oplocs, locationReads, failLocations(error) { locationFailure = error; }, setMenuAuthorityCheck(handler) { menuAuthorityCheck = handler; }, get writes() { return writes; }, deactivateDriver() { driverActive = false; },
+  return { date, queries, authorityRequests, materialisation, load, records, run, principal, seed, rebuild, requirements, oplocs, locationReads, failLocations(error) { locationFailure = error; }, setMenuAuthorityCheck(handler) { menuAuthorityCheck = handler; }, setAdmissionHandler(handler) { admissionHandler = handler; }, get writes() { return writes; }, deactivateDriver() { driverActive = false; },
     beforeNextTransaction(hook) { beforeTransaction = hook; },
     async get(query = '') { const response = await route.GET(new NextRequest('https://logistics.test/api/logistics?serviceDate=' + date + (query ? '&' + query : ''))); return { response, body: await response.json() }; },
     async drivers() { const response = await driversRoute.GET(new NextRequest('https://logistics.test/api/logistics/drivers')); return { response, body: await response.json() }; },

@@ -1,5 +1,17 @@
 # Batch 1: vehicle access and governed drivers
 
+## Current desktop and PIN policy — 2026-10-31 (#103)
+
+This section supersedes the older execution/admission rules below. The provider/consumer implementation merged in PR #200 separates three authorities:
+
+- An active authenticated desktop identity with standard AUTHMOD Logistics **View** can read the shared planner and both vans with **zero** `logistics.vehicle` grants. Standard **Manage** gates ordinary planner writes; View alone cannot write. Canonical ownership, readiness, version and transaction guards still apply.
+- A mobile driver uses a signed, expiring **van PIN session**, without a Google/FIKA OS account or AUTHMOD app grant. It is confined to its named van, the allowed mobile routes and driver actions. A PIN session cannot become a desktop principal.
+- Repair, reconciliation, reset and AUTHMOD administration retain separate explicit authority. Legacy explicit vehicle grants still resolve only their named vehicles for callers that use that resource contract; they are not a prerequisite for standard desktop View.
+
+Hub `/api/logistics/access` returns `desktopPermissions` separately from `permittedVehicleIds`; Logistics `vehicleScope` applies the desktop capability only to a Hub session. The current cache scope is v3 and includes session kind, desktop View/Manage and explicit vehicle IDs. Older statements below that app admission cannot grant desktop vehicle access describe the historical resource-only model, not the current desktop policy.
+
+The regression `tests/desktop-admission-contract.test.ts` chains the actual Hub admission handler, AUTHMOD evaluator and Logistics HTTP adapter/GET/POST handlers using a non-admin in-memory identity with no vehicle grants. It covers both identity kinds, View/Manage, revoked/expired/disabled policy, separate maintenance denial and PIN independence. These isolated checks do not replace authenticated staging acceptance; #103 stays open until that evidence is recorded. No real identities, grants, PINs or operational data are changed by the test.
+
 ## Current policy correction — 2026-10-07
 
 Derek confirmed that driver phones authenticate with one shared authorised Logistics account. Physical drivers do not require individual FIKA OS accounts or `logistics.driver` person grants. Authentication/session authority and operational vehicle/run identity are separate. The person-driver policy documented below is historical and superseded for execution.

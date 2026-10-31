@@ -56,7 +56,7 @@ test("disabled Logistics app and unavailable policy store fail closed", async ()
   assert.equal(unavailable.reasonCode, "store-unavailable");
 });
 
-test("operational planner account needs explicit grants and can access both vans without Full Access", async () => {
+test("explicit vehicle resolver stays resource-scoped independently of desktop application authority", async () => {
   const f = fixture();
   assert.equal((await resolveUserAccess(f.repo, { principal: f.principal, appId: "logistics" })).allowed, true);
   assert.deepEqual((await resolvePermittedVehicleIds(f.repo, { principal: f.principal })).permittedVehicleIds, []);
