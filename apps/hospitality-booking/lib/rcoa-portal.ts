@@ -1,5 +1,7 @@
 import { bookingDateIssue, bookingPolicyFor } from "@fika/server-shared/hospitality-effective-offering";
 import type { PortalMenuItem } from "./mnk-contract";
+import { effectiveGuestMinimum, guestCountMessage } from "./guest-count";
+import { GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 
 /**
  * Text shown in a whole-number input while the user edits it: digits only, no leading zeroes ("01" -> "1"), and an empty string is
@@ -187,6 +189,14 @@ export function rcoaNoticeWarnings(draft: RcoaBookingDraft, menu: readonly Porta
   return [...new Set(warnings)];
 }
 
+/** Hub's explicit customer guest policy applies to RCoA too; its trusted adapter retains raw item guest floors. */
+export function rcoaGuestMinimum(draft: Pick<RcoaBookingDraft, "contact" | "lines">, menu: readonly PortalMenuItem[]) {
+  const minimum = effectiveGuestMinimum(draft.lines, menu);
+  if (minimum === null) return null;
+  const gallagher = isGallagherBooking({ companyName: draft.contact.companyName, email: draft.contact.email });
+  return Math.max(minimum, gallagher ? GALLAGHER_MINIMUM_GUESTS : 1);
+}
+
 export function validateRcoaStep(step: number, draft: RcoaBookingDraft, menu: readonly PortalMenuItem[]) {
   const errors: Record<string, string> = {};
   if (step === 0 && !draft.occasion) errors.occasion = "Choose an occasion.";
@@ -202,9 +212,12 @@ export function validateRcoaStep(step: number, draft: RcoaBookingDraft, menu: re
     if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(draft.event.startTime)) errors.startTime = "Choose a valid start time.";
     else if (!isValidRcoaLondonWallTime(draft.event.eventDate, draft.event.startTime)) errors.startTime = "This time does not occur in Europe/London on the selected date.";
     if (draft.event.endTime && (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(draft.event.endTime) || draft.event.endTime <= draft.event.startTime)) errors.endTime = "End time must be after the start time.";
-    if (!Number.isInteger(draft.event.guestCount) || draft.event.guestCount < 1) errors.guestCount = "Enter at least one guest.";
     if (!draft.event.floorLevel.trim()) errors.floorLevel = "Enter the floor level.";
     if (!draft.event.roomOrArea.trim()) errors.roomOrArea = "Enter the room or area.";
+  }
+  if (step >= 2) {
+    const message = guestCountMessage(draft.event.guestCount, rcoaGuestMinimum(draft, menu));
+    if (message) errors.guestCount = message;
   }
   if (step === 3) {
     const event = rcoaEventTypes.find((candidate) => candidate.id === draft.occasion);
@@ -216,7 +229,6 @@ export function validateRcoaStep(step: number, draft: RcoaBookingDraft, menu: re
       if (!item) { errors.items = "A selected menu item is no longer available. Refresh the menu and try again."; continue; }
       if (!event?.categories.some((category) => category === item.category)) errors.items = `${item.name} is not available for this occasion.`;
       if (!Number.isInteger(line.quantity) || line.quantity < rcoaMinimumQuantity(item)) errors[`quantity:${line.itemId}`] = `${item.name} needs at least ${rcoaMinimumQuantity(item)} ${rcoaMinimumQuantity(item) === 1 ? "item" : "items"}.`;
-      if (item.minimumGuests && draft.event.guestCount < item.minimumGuests) errors[`guests:${line.itemId}`] = `${item.name} needs at least ${item.minimumGuests} guests.`;
       for (const group of item.optionGroups || []) {
         const value = line.choices[group.id];
         const values = Array.isArray(value) ? value : typeof value === "string" && value ? [value] : [];

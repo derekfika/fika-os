@@ -1,0 +1,6 @@
+.hint { color: var(--fika-text-secondary); font-size: 0.8125rem; font-weight: 400; }
+.error { color: var(--fika-status-danger); font-size: 0.8125rem; font-weight: 600; }
+.input[aria-invalid="true"] { border-color: var(--fika-status-danger); }
+.input:focus-visible, .notice button:focus-visible { outline: 2px solid var(--fika-focus-ring); outline-offset: 2px; }
+.notice { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 16px; margin-bottom: 16px; color: var(--fika-status-danger); background: var(--fika-status-danger-surface); border: 1px solid var(--fika-status-danger); border-radius: 8px; }
+.notice button { min-height: 44px; padding: 8px 12px; color: var(--fika-text-primary); background: var(--fika-surface-card); border: 1px solid var(--fika-border-default); border-radius: 8px; font: inherit; cursor: pointer; }

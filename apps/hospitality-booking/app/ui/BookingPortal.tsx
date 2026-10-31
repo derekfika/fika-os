@@ -10,12 +10,14 @@ import {
   portalBookingId,
 } from "@/lib/mnk-contract";
 import { hospitalitySiteThemeStyle, portalSite, type PortalSiteConfig, type PortalSiteKey } from "@/lib/portal-sites";
-import { GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "@/lib/gallagher-rules";
+import { isGallagherBooking } from "@/lib/gallagher-rules";
 import { MUNICH_RE_LOCATIONS, munichReLocationDisplay, munichReLocationFields, munichReLocationIdFor } from "@/lib/munich-re-locations";
 import { quantityFromInput, quantityMinimumMessage, stepQuantityDown, stepQuantityUp } from "@/lib/quantity-entry";
 import { loadHospitalityPortalMenu } from "@/lib/hospitality-portal-catalogue";
 import { catalogueMinimums, effectiveProductMinimum, validateCatalogueRules, type MinimumContext } from "@fika/server-shared/hospitality-effective-offering";
 import StartAgainButton from "./StartAgainButton";
+import GuestCountInput, { GuestCountNotice } from "./GuestCountInput";
+import { effectiveGuestMinimum, guestCountMessage } from "../../lib/guest-count";
 
 type ChoiceValue = string | string[] | Record<string, number>;
 type Line = {
@@ -138,9 +140,6 @@ function minimumQuantityFor(item: PortalMenuItem, context: MinimumContext = { ga
     Number(item.servingInfo?.match(/minimum\s+(\d+)/i)?.[1] || 1),
     /rice paper rolls?/i.test(item.name) ? 3 : 1,
   ), context);
-}
-function minimumGuestsFor(items: PortalMenuItem[], gallagher = false) {
-  return Math.max(1, ...items.map((item) => catalogueMinimums(item, gallagher).guests));
 }
 
 export default function BookingPortal({
@@ -324,6 +323,8 @@ export default function BookingPortal({
       item: menu.find((item) => item.id === line.itemId)!,
     }))
     .filter((value) => value.item && value.quantity > 0);
+  const guestMinimum = effectiveGuestMinimum(lines, menu, minimumContext);
+  const guestIssue = guestCountMessage(details.guestCount, guestMinimum);
   const total = selected.reduce(
     (sum, value) => sum + value.item.unitPrice * value.quantity,
     0,
@@ -366,7 +367,7 @@ export default function BookingPortal({
     (site.key === "angel-court" ? contact.clientName && contact.clientCompany : true) &&
     details.eventDate &&
     details.startTime &&
-    details.guestCount >= (gallagher ? GALLAGHER_MINIMUM_GUESTS : 1) &&
+    !guestIssue &&
     (!gallagher || contact.invoiceReference.trim()) &&
     (details.floorLevel || details.roomOrArea || details.deliveryPoint);
   const showValidation = (errors: BookingFieldErrors, message = validationSummary(errors), targetStep?: number) => {
@@ -402,11 +403,12 @@ export default function BookingPortal({
       if (site.key === "angel-court" && !contact.clientCompany) errors.clientCompany = { field: "clientCompany", message: "Enter the client company.", step: 1 };
       if (!details.eventDate) errors.eventDate = { field: "eventDate", message: "Choose a service date.", step: 1 };
       if (!details.startTime) errors.startTime = { field: "startTime", message: "Choose a service time.", step: 1 };
-      if (details.guestCount < (gallagher ? GALLAGHER_MINIMUM_GUESTS : 1)) errors.guestCount = { field: "guestCount", message: `Enter at least ${gallagher ? GALLAGHER_MINIMUM_GUESTS : 1} guest${gallagher ? "s" : ""}.`, step: 1 };
+      if (guestIssue) errors.guestCount = { field: "guestCount", message: guestIssue, step: 1 };
       if (gallagher && !contact.invoiceReference.trim()) errors.invoiceReference = { field: "invoiceReference", message: "Add an Invoice / PO reference for Gallagher bookings.", step: 1 };
       if (!details.floorLevel && !details.roomOrArea && !details.deliveryPoint) errors.location = { field: "location", message: "Add a floor, room or delivery point.", step: 1 };
       if (Object.keys(errors).length) return showValidation(errors, "Please review the highlighted fields before continuing.", 1);
     }
+    if (step >= 2 && guestIssue) return showValidation({ guestCount: { field: "guestCount", message: guestIssue, step: 1 } }, "Please review the guest count before continuing.", 1);
     if (step === 2 && !selected.length && occasion !== "bespoke") return showValidation({ menu: { field: "menu", message: "Choose at least one menu item.", step: 2 } }, "Please choose at least one menu item before continuing.", 2);
     if (step === 2) {
       const belowMinimum = selected.find(
@@ -415,10 +417,6 @@ export default function BookingPortal({
       if (belowMinimum) {
         const minimum = minimumQuantityFor(belowMinimum.item, minimumContext);
         return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
-      }
-      const minimumGuests = minimumGuestsFor(selected.map((value) => value.item), gallagher);
-      if (details.guestCount < minimumGuests) {
-        return showValidation({ guestCount: { field: "guestCount", message: `Selected items require at least ${minimumGuests} guests.`, step: 1 } }, "Please review the guest count for your selected items.", 1);
       }
     }
     if (step === 3 && !Object.values(acks).every(Boolean)) {
@@ -450,11 +448,7 @@ export default function BookingPortal({
       changeStep(2);
       return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
     }
-    const minimumGuests = minimumGuestsFor(selected.map((value) => value.item), gallagher);
-    if (details.guestCount < minimumGuests) {
-      changeStep(1);
-      return showValidation({ guestCount: { field: "guestCount", message: `Selected items require at least ${minimumGuests} guests.`, step: 1 } }, "Please review the guest count for your selected items.", 1);
-    }
+    if (guestIssue) return showValidation({ guestCount: { field: "guestCount", message: guestIssue, step: 1 } }, "Please review the guest count before sending.", 1);
     const dietaryTotal = [
       dietaries.vegetarian,
       dietaries.vegan,
@@ -468,10 +462,6 @@ export default function BookingPortal({
       return showValidation({ dietaryTotal: { field: "dietaryTotal", message: "Dietary counts cannot exceed the number of guests.", step: 3 } }, "Please review the highlighted dietary information.", 3);
     if (dietaries.allergyDetails && !dietaries.severeAllergyAcknowledged)
       return showValidation({ severeAllergyAcknowledged: { field: "severeAllergyAcknowledged", message: "Please acknowledge the severe allergy notice.", step: 3 } }, "Please review the highlighted dietary information.", 3);
-    if (gallagher && details.guestCount < GALLAGHER_MINIMUM_GUESTS) {
-      changeStep(1);
-      return showValidation({ guestCount: { field: "guestCount", message: `Gallagher bookings require at least ${GALLAGHER_MINIMUM_GUESTS} guests.`, step: 1 } }, "Please review the highlighted booking detail.", 1);
-    }
     if (gallagher && !contact.invoiceReference.trim()) {
       changeStep(1);
       return showValidation({ invoiceReference: { field: "invoiceReference", message: "Gallagher bookings require an Invoice / PO reference.", step: 1 } }, "Please review the highlighted booking detail.", 1);
@@ -715,6 +705,7 @@ export default function BookingPortal({
           {details.eventDate && bookingDateIssue(selected.map(x => x.item), details.eventDate, now, { site: site.key, occasion, startTime: details.startTime }) && <p className="error" role="status">{bookingDateIssue(selected.map(x => x.item), details.eventDate, now, { site: site.key, occasion, startTime: details.startTime })!.message}</p>}
           {selected.filter(x => fridayBlocked(x.item)).map(x => <p className="error" key={x.item.id}>Summer Roll Platters are unavailable on Friday. <button type="button" onClick={() => setLines(current => current.filter(line => line.itemId !== x.item.id))}>Remove {x.item.name}</button></p>)}
           {error && <p className="error" role="alert" aria-live="polite">{error}</p>}
+          {step >= 2 && guestIssue && <GuestCountNotice message={guestIssue} onEdit={() => showValidation({ guestCount: { field: "guestCount", message: guestIssue, step: 1 } }, "", 1)} />}
           {step === 0 && (
             <Choose
               occasion={occasion}
@@ -731,6 +722,7 @@ export default function BookingPortal({
               details={details}
               setDetails={setDetails}
               gallagher={gallagher}
+              guestMinimum={guestMinimum}
               errors={fieldErrors}
               cutoffItems={selected.map(x => x.item)}
               cutoffContext={{ site: site.key, occasion, startTime: details.startTime }}
@@ -898,6 +890,7 @@ function Details({
   details,
   setDetails,
   gallagher,
+  guestMinimum,
   errors,
 }: {
   cutoffItems: CutoffItem[]; cutoffContext: { site: string; occasion: string; startTime?: string }; now: string;
@@ -907,6 +900,7 @@ function Details({
   details: Record<string, string | number>;
   setDetails: (value: any) => void;
   gallagher: boolean;
+  guestMinimum: number | null;
   errors: BookingFieldErrors;
 }) {
   return (
@@ -998,9 +992,8 @@ function Details({
         <div className="fika-form-cell">
           <label className="fika-form-field">
             <span className="fika-form-label">Guests</span>
-            <input {...fieldA11y("guestCount", errors)} data-booking-field="guestCount" min="1" type="number" inputMode="numeric" value={details.guestCount || ""} onChange={(e) => setDetails({ ...details, guestCount: Number(e.target.value) })} />
+            <GuestCountInput value={Number(details.guestCount)} minimum={guestMinimum} field="guestCount" surface="booking" submittedError={errors.guestCount?.message} onChange={guestCount => setDetails({ ...details, guestCount })} />
           </label>
-          <ValidationMessage field="guestCount" errors={errors} />
         </div>
         <div className="fika-form-cell">
           <label className="fika-form-field">

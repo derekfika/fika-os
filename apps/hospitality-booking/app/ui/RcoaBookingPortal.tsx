@@ -8,6 +8,8 @@ import { BookingDatePicker, useBookingClock } from "./BookingDatePicker";
 import { bookingPolicyFor } from "@fika/server-shared/hospitality-effective-offering";
 import { BOOKING_NOTICE_SHORT } from "../../lib/booking-notice";
 import StartAgainButton from "./StartAgainButton";
+import GuestCountInput, { GuestCountNotice } from "./GuestCountInput";
+import { guestCountMessage } from "../../lib/guest-count";
 import {
   addAllDayService,
   applyAllDayDefaults,
@@ -37,6 +39,7 @@ import {
   rcoaAllowedCategories,
   rcoaEventTypes,
   rcoaMinimumQuantity,
+  rcoaGuestMinimum,
   rcoaNoticeWarnings,
   retainRcoaLinesForOccasion,
   rcoaSuggestedQuantity,
@@ -280,6 +283,9 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
     const item = menu.find((candidate) => candidate.id === line.itemId);
     return item && line.quantity > 0 ? [{ line, item }] : [];
   });
+  const guestMinimum = rcoaGuestMinimum(draft, menu);
+  const guestIssue = guestCountMessage(draft.event.guestCount, guestMinimum);
+  const invalidService = allDay.services.find(service => guestCountMessage(service.guestCount, rcoaGuestMinimum({ contact: allDay.contact, lines: service.lines }, menu)));
   const warnings = rcoaNoticeWarnings(draft, menu);
   const currentEvent = rcoaEventTypes.find((event) => event.id === draft.occasion);
   const rcoaConfigured = configured;
@@ -332,6 +338,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
     if (nextStep > step) {
       const failure = validateAllDay(allDay, menu);
       if (failure && failure.step <= step) {
+        setStep(failure.step);
         setErrors(failure.errors);
         setMessage("Please review the highlighted information before continuing.");
         focusField(Object.keys(failure.errors)[0]);
@@ -354,8 +361,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
     if (validate) {
       const itemErrors = validateRcoaStep(3, draft, menu);
       if (Object.keys(itemErrors).length) {
-        const guestError = Object.entries(itemErrors).find(([key]) => key.startsWith("guests:"));
-        setErrors(guestError ? { items: `${guestError[1]} Change the guest count for this service on your day.` } : itemErrors);
+        const guestError = itemErrors.guestCount;
+        setErrors(guestError ? { items: `${guestError} Change the guest count for this service on your day.` } : itemErrors);
         setMessage("Please review the highlighted information before saving.");
         return;
       }
@@ -386,9 +393,9 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
       setErrors(validation);
       setMessage("Please review the highlighted information before continuing.");
       const firstField = Object.keys(validation)[0];
-      const guestMinimumError = Object.entries(validation).find(([key]) => key.startsWith("guests:"));
-      if (step === 3 && guestMinimumError) {
-        setErrors({ guestCount: guestMinimumError[1] });
+      const guestMinimumError = validation.guestCount;
+      if (step >= 3 && guestMinimumError) {
+        setErrors({ guestCount: guestMinimumError });
         setMessage("Please update the guest count for the selected menu items.");
         setStep(2);
         window.setTimeout(() => document.querySelector<HTMLElement>('[data-rcoa-field="guestCount"]')?.focus(), 0);
@@ -468,7 +475,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
     const validation = validateRcoaStep(5, draft, menu);
     if (Object.keys(validation).length) {
       setErrors(validation);
-      setMessage("Please confirm each acknowledgement before sending your request.");
+      if (validation.guestCount) { setStep(2); focusField("guestCount"); }
+      setMessage(validation.guestCount ? "Please update the guest count before sending your request." : "Please confirm each acknowledgement before sending your request.");
       return;
     }
     if (!rcoaConfigured) {
@@ -672,7 +680,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                                 <option value="">Choose a service</option>
                                 {rcoaEventTypes.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
                               </select><ErrorMessage field={`service:${service.id}`} errors={errors} /></label>
-                            <label className={styles.dayCell}><span className={styles.cellLabel}>Guests</span><input {...fieldProps(`guestCount:${service.id}`, errors)} data-rcoa-field={`guestCount:${service.id}`} type="number" min="1" step="1" value={service.guestCount || ""} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { guestCount: Number(event.target.value || 0) }))} /><ErrorMessage field={`guestCount:${service.id}`} errors={errors} /></label>
+                            <label className={styles.dayCell}><span className={styles.cellLabel}>Guests</span><GuestCountInput value={service.guestCount} minimum={rcoaGuestMinimum({ contact: allDay.contact, lines: service.lines }, menu)} field={`guestCount:${service.id}`} surface="rcoa" submittedError={errors[`guestCount:${service.id}`]} onChange={guestCount => setAllDay(current => updateAllDayService(current, service.id, { guestCount }))} /></label>
                             <label className={styles.dayCell}><span className={styles.cellLabel}>Location</span><input {...fieldProps(`location:${service.id}`, errors)} data-rcoa-field={`location:${service.id}`} value={service.location} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { location: event.target.value }))} placeholder="e.g. Lecture Hall" /><ErrorMessage field={`location:${service.id}`} errors={errors} /></label>
                           </div>
                         </div>
@@ -712,7 +720,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                 <div className={styles.sectionHeading}><p className={styles.eyebrow}>Event details</p><h2 id="rcoa-event-title">When and where?</h2></div>
                 <div className={styles.fieldGrid}>
                   <div className={styles.field}><BookingDatePicker value={draft.event.eventDate} onChange={eventDate => { updateEvent("eventDate", eventDate); clearEventDateError(); }} items={draft.lines.flatMap(line => menu.filter(item => item.id === line.itemId && line.quantity > 0))} context={{ site: "rcoa", occasion: draft.occasion, startTime: draft.event.startTime || undefined }} now={now} /><ErrorMessage field="eventDate" errors={errors} /></div>
-                  <label className={styles.field}><span>Number of guests *</span><input {...fieldProps("guestCount", errors)} data-rcoa-field="guestCount" type="number" min="1" step="1" value={draft.event.guestCount || ""} onChange={(event) => updateEvent("guestCount", Number(event.target.value || 0))} /><ErrorMessage field="guestCount" errors={errors} /></label>
+                  <label className={styles.field}><span>Number of guests *</span><GuestCountInput value={draft.event.guestCount} minimum={guestMinimum} field="guestCount" surface="rcoa" submittedError={errors.guestCount} onChange={guestCount => updateEvent("guestCount", guestCount)} /></label>
                   <label className={styles.field}><span>Start / service time *</span><input {...fieldProps("startTime", errors)} data-rcoa-field="startTime" type="time" value={draft.event.startTime} onChange={(event) => updateEvent("startTime", event.target.value)} /><ErrorMessage field="startTime" errors={errors} /></label>
                   <label className={styles.field}><span>End time</span><input {...fieldProps("endTime", errors)} data-rcoa-field="endTime" type="time" value={draft.event.endTime} onChange={(event) => updateEvent("endTime", event.target.value)} /><ErrorMessage field="endTime" errors={errors} /></label>
                   <fieldset className={`${styles.field} ${styles.fieldWide}`}>
@@ -729,6 +737,9 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
               </section>
             )}
 
+            {view === "menu" && guestIssue && <GuestCountNotice message={guestIssue} label={editingServiceId ? "Edit service guest count" : "Edit guest count"} onEdit={() => { if (editingServiceId) { const serviceId = editingServiceId; setEditingServiceId(null); setStep(2); focusField(`guestCount:${serviceId}`); } else { setStep(2); focusField("guestCount"); } }} />}
+            {flow === "all-day" && step > 2 && !editingServiceId && invalidService && <GuestCountNotice message={guestCountMessage(invalidService.guestCount, rcoaGuestMinimum({ contact: allDay.contact, lines: invalidService.lines }, menu))} label="Edit service guest count" onEdit={() => { setStep(2); focusField(`guestCount:${invalidService.id}`); }} />}
+            {flow === "standard" && step > 3 && guestIssue && <GuestCountNotice message={guestIssue} onEdit={() => { setStep(2); focusField("guestCount"); }} />}
             {view === "menu" && (
               <section aria-labelledby="rcoa-menu-title">
                 {editingService && <div className={styles.pickerBanner} role="status"><strong>Choosing items for {editingService.startTime || "this service"} · {rcoaEventTypes.find((type) => type.id === editingService.category)?.label} · {editingService.guestCount} guests</strong>{warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}

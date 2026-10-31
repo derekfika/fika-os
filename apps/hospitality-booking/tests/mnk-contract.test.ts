@@ -8,7 +8,9 @@ import { localCfcMenuCatalogue } from "../lib/local-cfc-menu";
 import { localMnkMenuCatalogue } from "../lib/local-mnk-menu";
 import { localMunichReMenuCatalogue } from "../lib/local-munich-re-menu";
 import { filterPricedMenu } from "../lib/reference-data-validation";
-import { mapBookingIssues } from "../app/ui/BookingPortal";
+import { register } from "node:module";
+register("data:text/javascript," + encodeURIComponent("export async function load(url, context, next) { if (url.endsWith('.css')) return { format: 'module', source: 'export default new Proxy({}, { get: (_, key) => String(key) })', shortCircuit: true }; return next(url, context); }"));
+const { mapBookingIssues } = await import("../app/ui/BookingPortal");
 test("MNK journey retains the required contact, service and acknowledgement validation", () => { const value = BookingInput.safeParse({ clientName: "Host", clientEmail: "host@example.com", clientPhone: "1", companyName: "Client", eventDate: "2026-08-01", startTime: "12:00", guestCount: 5, roomOrArea: "Boardroom", eventType: "lunch", acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } }); assert.equal(value.success, true); });
 test("MNK journey rejects a request without service location context", () => { const value = BookingInput.safeParse({ clientName: "Host", clientEmail: "host@example.com", clientPhone: "1", companyName: "Client", eventDate: "2026-08-01", startTime: "12:00", guestCount: 5, eventType: "lunch", acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } }); assert.equal(value.success, false); });
 test("portal validation maps every schema issue to the relevant section", () => {
