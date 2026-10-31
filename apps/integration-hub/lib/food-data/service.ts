@@ -6,9 +6,8 @@ import type { FoodDataObjectStore } from "./storage";
 
 export type FoodDataServerDeps = {
   config: FoodDataConfig;
-  /** Resolves the verified Hub session to an AUTHMOD identity id, or throws FoodDataError 401/403. */
+  /** Resolves the verified Hub session of an active staff (person) account to its AUTHMOD identity id, or throws FoodDataError 401/403. No further grant is required. */
   authenticate(request: Request): Promise<{ identityId: string }>;
-  hasAccess(identityId: string): Promise<boolean>;
   store(): FoodDataObjectStore;
 };
 
@@ -21,13 +20,12 @@ export function foodDataErrorResponse(error: unknown) {
   return json({ error: "Food Data is unavailable.", code: "FOOD_DATA_UNAVAILABLE" }, 500);
 }
 
-/** Authorisation happens before ANY storage access; a refused caller causes zero object reads. */
+/** Session authentication happens before ANY storage access; a refused caller causes zero object reads. */
 async function authorise(request: Request, deps: FoodDataServerDeps) {
   if (!deps.config.enabled) throw new FoodDataError("Food Data is not enabled in this environment.", "FOOD_DATA_DISABLED", 404);
   const site = request.headers.get("sec-fetch-site");
   if (site && site !== "same-origin" && site !== "none") throw new FoodDataError("Food Data is only served to this application.", "FOOD_DATA_FORBIDDEN", 403);
   const { identityId } = await deps.authenticate(request);
-  if (!(await deps.hasAccess(identityId))) throw new FoodDataError("You have not been granted Food Data access.", "FOOD_DATA_FORBIDDEN", 403);
   return identityId;
 }
 
@@ -83,10 +81,6 @@ export function liveFoodDataDeps(): FoodDataServerDeps {
         const status = (error as { status?: number }).status;
         throw new FoodDataError("Sign in to view Food Data.", status === 403 ? "FOOD_DATA_FORBIDDEN" : "FOOD_DATA_UNAUTHENTICATED", status === 403 ? 403 : 401);
       }
-    },
-    async hasAccess(identityId) {
-      const [{ FirestoreAuthModRepository }, { hasFoodDataAccess }] = await Promise.all([import("../authmod-core"), import("./access")]);
-      return hasFoodDataAccess(new FirestoreAuthModRepository(`food-data:${identityId}`), identityId);
     },
     // The GCS client is only imported on first read, which only happens after authorisation has succeeded.
     store: () => ({ async read(name) { const storage = await import("./storage"); const localDirectory = process.env.FIKA_RUNTIME_MODE === "local" || !process.env.FIKA_RUNTIME_MODE ? process.env.FIKA_FOOD_DATA_LOCAL_DIR : undefined; return (localDirectory ? storage.localDirFoodDataStore(localDirectory) : storage.gcsFoodDataStore(config.bucket, config.prefix)).read(name); } }),

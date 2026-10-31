@@ -36,7 +36,7 @@ export function createFoodDataLoader(deps: FoodDataLoaderDeps) {
       // Access revoked, session ended or feature off: drop the local copy rather than keep sensitive data around.
       await safe(() => deps.store.clearAll());
       const code = response.status === 404 ? "FOOD_DATA_DISABLED" : response.status === 401 ? "FOOD_DATA_UNAUTHENTICATED" : "FOOD_DATA_FORBIDDEN";
-      throw new FoodDataError(response.status === 404 ? "Food Data is not enabled in this environment." : response.status === 401 ? "Sign in to view Food Data." : "You have not been granted Food Data access.", code, response.status);
+      throw new FoodDataError(response.status === 404 ? "Food Data is not enabled in this environment." : response.status === 401 ? "Sign in to view Food Data." : "Food Data isn’t available to this account.", code, response.status);
     }
     if (!response.ok) throw new FoodDataError("Food Data is temporarily unavailable.", "FOOD_DATA_UNAVAILABLE", response.status);
     const body = await response.json() as { identityScope?: unknown; manifest?: unknown };

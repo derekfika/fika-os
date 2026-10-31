@@ -51,10 +51,10 @@ export default function FoodDataWorkspace() {
 
 function ErrorState({ code, message }: { code: string; message: string }) {
   const body = code === "FOOD_DATA_UNAUTHENTICATED" ? <p>Sign in to FIKA OS, then return to this page. <a className={styles.link} href={`/?returnTo=${encodeURIComponent("/food-data")}`}>Sign in</a></p>
-    : code === "FOOD_DATA_FORBIDDEN" ? <p>Food Data contains commercially sensitive supplier pricing, so it needs an explicit grant. Ask an AUTHMOD administrator for “Food Data catalogue — View” (application Integration Hub, resource <code>food-data.catalogue</code>). Nothing has been loaded or kept in this browser.</p>
+    : code === "FOOD_DATA_FORBIDDEN" ? <p>Food Data is available to FIKA OS staff accounts. This account can’t use it (for example a shared site account, or one needing administrator review). Nothing has been loaded or kept in this browser.</p>
     : code === "FOOD_DATA_DISABLED" ? <p>Food Data is not enabled in this environment.</p>
     : <p>{message} Nothing is shown until access can be confirmed. <button type="button" className={styles.button} onClick={() => window.location.reload()}>Try again</button></p>;
-  return <div className={styles.state} role="alert"><h2>{code === "FOOD_DATA_FORBIDDEN" ? "You don’t have access to Food Data" : code === "FOOD_DATA_UNAUTHENTICATED" ? "Sign in required" : code === "FOOD_DATA_DISABLED" ? "Food Data is switched off" : "Food Data is unavailable"}</h2>{body}</div>;
+  return <div className={styles.state} role="alert"><h2>{code === "FOOD_DATA_FORBIDDEN" ? "Food Data isn’t available to this account" : code === "FOOD_DATA_UNAUTHENTICATED" ? "Sign in required" : code === "FOOD_DATA_DISABLED" ? "Food Data is switched off" : "Food Data is unavailable"}</h2>{body}</div>;
 }
 
 function Ready({ session, view, choose, persistent, loader }: { session: FoodDataSession; view: View; choose: (view: View) => void; persistent: boolean; loader?: FoodDataLoader }) {
