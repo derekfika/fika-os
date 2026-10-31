@@ -5,27 +5,28 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { NextRequest, NextResponse } from "next/server";
 import * as ts from "typescript";
-import { MemoryAuthModRepository } from "../../integration-hub/lib/authmod-core/memory-repository";
-import { V1_APPLICATIONS, type AuthIdentity, type InteractivePrincipal } from "../../integration-hub/lib/authmod-core/model";
-import { grantStandardApplicationAccess } from "../../integration-hub/lib/authmod-core/grants";
-import * as evaluator from "../../integration-hub/lib/authmod-core/evaluator";
 
 const require = createRequire(import.meta.url);
 const { typescriptLoader } = require("../../../scripts/testing/load-typescript.cjs");
 const { fixture } = require("./helpers/authority-route-harness.cjs");
 const hubRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../integration-hub");
+const loadHubModule = typescriptLoader({ typescript: ts, appRoot: hubRoot, mocks: {} });
+const { MemoryAuthModRepository } = loadHubModule(path.join(hubRoot, "lib/authmod-core/memory-repository.ts"));
+const { V1_APPLICATIONS } = loadHubModule(path.join(hubRoot, "lib/authmod-core/model.ts"));
+const { grantStandardApplicationAccess } = loadHubModule(path.join(hubRoot, "lib/authmod-core/grants.ts"));
+const evaluator = loadHubModule(path.join(hubRoot, "lib/authmod-core/evaluator.ts"));
 
 async function contractFixture(kind: "person" | "operational" = "operational") {
   const repository = new MemoryAuthModRepository({ applications: structuredClone([...V1_APPLICATIONS]) });
   const at = "2026-01-01T00:00:00Z";
-  const identity: AuthIdentity = { id: `test:desktop-contract:${kind}`, displayName: "Isolated desktop operator", identityKind: kind, fullAccess: false, identityLinkStatus: "unmatched", status: "active", provenance: "import", version: 1, createdAt: at, updatedAt: at };
+  const identity = { id: `test:desktop-contract:${kind}`, displayName: "Isolated desktop operator", identityKind: kind, fullAccess: false, identityLinkStatus: "unmatched", status: "active", provenance: "import", version: 1, createdAt: at, updatedAt: at };
   repository.identities.set(identity.id, identity);
-  const actor: InteractivePrincipal = { type: "interactive", id: identity.id, displayName: identity.displayName, identityKind: kind };
+  const actor = { type: "interactive" as const, id: identity.id, displayName: identity.displayName, identityKind: kind };
   const bundle = await grantStandardApplicationAccess(repository, { identityId: identity.id, appId: "logistics", actor, reason: "Isolated desktop admission contract" });
   assert.equal(identity.fullAccess, false);
-  assert.ok([...repository.grants.values()].every(grant => grant.resource !== "logistics.vehicle" && grant.resource !== "authmod" && grant.action !== "Administer"));
+  assert.ok([...repository.grants.values()].every((grant: { resource: string; action: string }) => grant.resource !== "logistics.vehicle" && grant.resource !== "authmod" && grant.action !== "Administer"));
 
-  const load = typescriptLoader({ typescript: ts, appRoot: hubRoot, mocks: {
+  const loadRoute = typescriptLoader({ typescript: ts, appRoot: hubRoot, mocks: {
     "next/server": { NextRequest, NextResponse },
     "@/lib/api": { errorResponse: (error: { status?: number; message?: string }) => Response.json({ error: { message: error.message } }, { status: error.status || 500 }) },
     "@/lib/authmod-core": { FirestoreAuthModRepository: function Repository() { return repository; } },
@@ -35,7 +36,7 @@ async function contractFixture(kind: "person" | "operational" = "operational") {
     "@fika/server-shared/data-source-meter-server": { withDataTrace: (_: unknown, callback: () => Promise<unknown>) => callback() },
     "../../../../../../shared/auth-diagnostics": { logAuthDiagnostic() {} },
   } });
-  const provider = load(path.join(hubRoot, "app/api/logistics/access/route.ts"));
+  const provider = loadRoute(path.join(hubRoot, "app/api/logistics/access/route.ts"));
   const logistics = fixture([]);
   logistics.setAdmissionHandler((input: string, options?: RequestInit) => provider.GET(new NextRequest(String(input), { headers: options?.headers })));
   return { repository, identity, bundle, logistics, provider };
@@ -43,7 +44,7 @@ async function contractFixture(kind: "person" | "operational" = "operational") {
 
 for (const kind of ["person", "operational"] as const) test(`${kind}: actual Hub desktop View/Manage reaches both Logistics vans with zero vehicle grants`, async () => {
   const f = await contractFixture(kind);
-  const manage = f.bundle.grants.find(grant => grant.action === "Manage")!;
+  const manage = f.bundle.grants.find((grant: { action: string; id: string; status: string; effectiveTo?: string }) => grant.action === "Manage")!;
   f.repository.grants.set(manage.id, { ...manage, status: "revoked" });
   const admission = await f.provider.GET(new NextRequest("https://hub.test/api/logistics/access?mode=admission&vehicle=van2"));
   assert.equal(admission.status, 200);
@@ -76,7 +77,7 @@ test("actual Hub policy denials remain closed at Logistics reads and writes", as
   for (const reason of ["missing-assignment", "revoked-assignment", "expired-assignment", "inactive-identity", "disabled-app", "revoked-view", "expired-view", "unavailable-store"] as const) await t.test(reason, async () => {
     const f = await contractFixture();
     const assignment = f.bundle.assignment;
-    const view = f.bundle.grants.find(grant => grant.action === "View")!;
+    const view = f.bundle.grants.find((grant: { action: string; id: string; status: string; effectiveTo?: string }) => grant.action === "View")!;
     if (reason === "missing-assignment") f.repository.appAssignments.clear();
     if (reason === "revoked-assignment") f.repository.appAssignments.set(assignment.id, { ...assignment, status: "revoked" });
     if (reason === "expired-assignment") f.repository.appAssignments.set(assignment.id, { ...assignment, effectiveTo: "2000-01-01T00:00:00Z" });
