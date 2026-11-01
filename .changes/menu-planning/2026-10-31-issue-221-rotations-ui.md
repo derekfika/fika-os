@@ -1,4 +1,4 @@
-# Issue #221: Six-week rotations UI foundation
+# 2026-10-31 Issue #221: Six-week rotations UI foundation
 
 Date: 2026-10-31
 
