@@ -138,8 +138,9 @@ test("keyboard, touch and a visible fallback exist, so the menu never depends on
 
 test("actions reuse the existing planner operations with the cell's own day, slot and canonical ID", () => {
   assert.match(planner, /entry = snapshot\.entries\.find\(item => item\.dayId === target\.dayId && item\.slot === target\.slot\)/);
-  assert.match(planner, /dishes\.find\(item => item\.id === entry\.itemId\)/);
+  assert.match(planner, /if \(id === "edit"\) \{ const dish = selectableDishes\.find\(item => item\.id === entry\.itemId\); if \(dish\) openEditDish\(dish, target\.slot\); return; \}/, "Edit stays bound to this cell's exact saved dish ID while respecting archive filtering");
   assert.match(planner, /setCopyDialogSourceId\(entry\.id\)/);
+  assert.match(planner, /assessDishCopyTarget\(snapshot, selectableDishes, sourceEntryId/);
   assert.match(planner, /const clearEntry = \(entry: \{ id: string \}\) => command\("update-entry"/);
   assert.match(planner, /onClick=\{\(\) => void clearEntry\(entry\)\}/);
 });

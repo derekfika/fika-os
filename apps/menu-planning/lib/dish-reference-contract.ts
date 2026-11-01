@@ -33,7 +33,12 @@ export type HistoricalDishReferenceDescriptor = {
   mappingDigest: string;
 };
 
-/** Stored as `referenceManifest` on the immutable CatalogueArchives/{archiveId} root. */
+/**
+ * Stored as `referenceManifest` on the immutable CatalogueArchives/{archiveId} root.
+ * `catalogueRevision`/`catalogueSourceHash` are the cutover revision the archive was sealed at. They are a monotonic lower bound,
+ * not an equality requirement: the live manifest may legitimately advance after cutover (routine catalogue edits) while the
+ * descriptor is retained. Binding to the archive is by the digests; a live revision below this one fails closed.
+ */
 export type HistoricalDishReferenceManifest = HistoricalDishReferenceDescriptor & {
   schemaVersion: 1;
   catalogueRevision: number;

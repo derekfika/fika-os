@@ -30,7 +30,12 @@ function verifiedManifest(value: unknown, source: Source): HistoricalDishReferen
   const manifest = value as HistoricalDishReferenceManifest | undefined;
   const expected = source.historical;
   if (!manifest || !expected || !documentId(expected.archiveId) || !hashPattern.test(expected.archiveDigest || "") || !hashPattern.test(expected.mappingDigest || "") || !Number.isInteger(expected.mappingVersion) || expected.mappingVersion < 1) return;
-  if (manifest.schemaVersion !== 1 || manifest.archiveId !== expected.archiveId || manifest.catalogueRevision !== source.revision || manifest.catalogueSourceHash !== source.hash || manifest.archiveDigest !== expected.archiveDigest || manifest.mappingVersion !== expected.mappingVersion || manifest.mappingDigest !== expected.mappingDigest) return;
+  if (manifest.schemaVersion !== 1 || manifest.archiveId !== expected.archiveId || manifest.archiveDigest !== expected.archiveDigest || manifest.mappingVersion !== expected.mappingVersion || manifest.mappingDigest !== expected.mappingDigest) return;
+  // The archive is bound by digests, not by the live revision: routine catalogue edits legitimately advance sourceRevision/sourceHash after
+  // the cutover while the descriptor persists. Require the live revision to be monotonic from the archive-bound cutover revision; a lower
+  // revision is a rollback/odd state and fails closed, and the same revision must carry the same hash.
+  if (!Number.isInteger(manifest.catalogueRevision) || manifest.catalogueRevision < 1 || typeof manifest.catalogueSourceHash !== "string" || !hashPattern.test(manifest.catalogueSourceHash)) return;
+  if (!identityValid(source) || Number(source.revision) < manifest.catalogueRevision || (source.revision === manifest.catalogueRevision && source.hash !== manifest.catalogueSourceHash)) return;
   if (!indexValid(manifest.dishHashes) || !indexValid(manifest.mappingHashes) || dishReferenceDigest(manifest.dishHashes) !== expected.archiveDigest || dishReferenceDigest(manifest.mappingHashes) !== expected.mappingDigest) return;
   return manifest;
 }
