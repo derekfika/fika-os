@@ -1,3 +1,4 @@
+import { AD_HOC_ORDER_ID_PREFIX, isAdHocProductionOrder } from "../../lib/ad-hoc-order";
 import type { OperationalAllergenState } from "../../../shared/allergen-contract";
 import { allergenMatrixContentHash } from "../../lib/cpu-allergen-release";
 import { isProductionPlanMatrixComplete } from "./production-plan-state";
@@ -26,7 +27,7 @@ export type PlannedMenuItem = {
 export type MatrixSignatureScope = {
   productionOrderId: string;
   serviceDate: string;
-  sourceOrigin?: "menu_planning" | "hospitality_booking";
+  sourceOrigin?: "menu_planning" | "hospitality_booking" | "ad_hoc_production";
   sourceDayId?: string;
   sourcePublicationId?: string;
   sourcePublicationDayId?: string;
@@ -47,7 +48,7 @@ export type ProductionPlan = { id: string; orderId: string; status: PlanStatus; 
 
 export { effectiveProductionPlanStatus, hasAllergenAuthority, planRevisionToken, reviewRevisionConflict, nextPlanRevisionStamp, isProductionPlanMatrixComplete, mergeMissingProductionOrderLines } from "./production-plan-state";
 
-export type SigningLineageOrder = { canonicalId: string; serviceDate?: string; requiredBy: string; origin?: string; version?: number; currentRevision?: number; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string };
+export type SigningLineageOrder = { canonicalId: string; serviceDate?: string; requiredBy: string; origin?: string; status?: string; version?: number; currentRevision?: number; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string };
 
 const sourceHash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
@@ -56,9 +57,22 @@ const sourceHash = (value: unknown) => createHash("sha256").update(JSON.stringif
  * Menu Planning retains its historical publication-day shape. Hospitality
  * has no Menu publication, so its Booking/Quote source identity is explicit.
  */
+export { AD_HOC_ORDER_ID_PREFIX, isAdHocProductionOrder };
+
 export function signingLineageForOrder(order: SigningLineageOrder, matrixContentHash: string): MatrixSignatureScope | undefined {
   const serviceDate = order.serviceDate || order.requiredBy?.slice(0, 10);
   if (!serviceDate) return undefined;
+  if (isAdHocProductionOrder(order)) {
+    // An Ad-Hoc order has no booking or Menu publication. Its source identity is the Ad-Hoc request id (carried in the
+    // booking-shaped scope field, discriminated by sourceOrigin) and the order's amendment revision, so any amendment
+    // changes the lineage exactly as a Hospitality quote revision does.
+    const requestId = order.canonicalId.slice(AD_HOC_ORDER_ID_PREFIX.length);
+    const sourceRevision = order.currentRevision ?? order.sourceVersion;
+    if (order.status === "cancelled" || (order.sourceEntityId && order.sourceEntityId !== requestId) || typeof sourceRevision !== "number" || !Number.isInteger(sourceRevision) || sourceRevision < 1 || (order.sourceVersion !== undefined && (!Number.isInteger(order.sourceVersion) || order.sourceVersion < 1))) return undefined;
+    // Hub lifecycle transitions increment version without amending demand. Bind to the canonical amendment and requester revision instead.
+    const sourceContentHash = sourceHash({ origin: "ad_hoc_production", productionOrderId: order.canonicalId, serviceDate, adHocRequestId: requestId, sourceRevision, requestVersion: order.sourceVersion || sourceRevision });
+    return { productionOrderId: order.canonicalId, serviceDate, sourceOrigin: "ad_hoc_production", sourceBookingId: requestId, sourceQuoteRevisionId: `ad-hoc-revision:${sourceRevision}`, sourceRevision, sourceVersion: sourceRevision, sourceContentHash, matrixContentHash };
+  }
   if (order.origin === "hospitality_booking") {
     const sourceRevision = order.currentRevision || order.sourceVersion || order.version;
     if (!order.sourceBookingId || !order.sourceQuoteRevisionId || !sourceRevision) return undefined;
