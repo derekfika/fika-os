@@ -118,6 +118,20 @@ export async function executeCutover(store: CutoverStore, inputs: CutoverInputs,
     return result("already-complete", mat.batches.length, counts);
   }
 
+  if (journalDoc && rootDoc) {
+    // Resume guard: the live manifest must still be exactly where the journal left it (or at the plan's pre-state). Otherwise stop; never loop or force.
+    const resumeDone = Number((journalDoc.progress as { batchesDone?: number } | undefined)?.batchesDone ?? 0);
+    const last = resumeDone === 0 ? undefined : mat.batches[Math.min(resumeDone, mat.batches.length) - 1];
+    const wantRevision = last ? last.revisionAfter : preRevision;
+    const wantHash = last ? last.hashAfter : plan.preState.sourceHash;
+    const liveManifest = await store.get(MANIFEST_PATH);
+    if (!liveManifest || liveManifest.sourceRevision !== wantRevision || liveManifest.sourceHash !== wantHash) {
+      const message = `Refusing to resume ${cutoverId}: live catalogue manifest is at revision ${String(liveManifest?.sourceRevision)} (${String(liveManifest?.sourceHash).slice(0, 12)}…), but the journal's last state is revision ${wantRevision} (${String(wantHash).slice(0, 12)}…). The catalogue changed after the cutover started. Aborted => run restore --archive-id ${cutoverId} or re-plan with a new --attempt; this tool will not retry.`;
+      await store.writeBatch([{ op: "set", path: journalPath(cutoverId), data: { ...journalDoc, status: "aborted", abortReason: message, updatedAt: (options.now ?? (() => new Date().toISOString()))() } }]).catch(() => undefined);
+      throw new ConcurrentCatalogueChangeError(message);
+    }
+  }
+
   const journalBase: Data = { cutoverId, kind: "dish-library-v2-cutover-journal", planHash: plan.planHash, at, actor, approvedBy, environment: { ...(store.project ? { project: store.project } : {}), kind: environment }, preRevision, preHash: plan.preState.sourceHash, batchSize: plan.batchSize, attempt: attempt ?? 1, totalBatches: mat.batches.length, finalRevision: mat.seal.revisionAfter, finalHash: mat.seal.hashAfter };
   const writeJournal = async (extra: Data) => store.writeBatch([{ op: "set", path: journalPath(cutoverId), data: { ...journalBase, ...extra, updatedAt: (options.now ?? (() => new Date().toISOString()))() } }]);
 
@@ -130,6 +144,7 @@ export async function executeCutover(store: CutoverStore, inputs: CutoverInputs,
   if (!rootDoc) {
     await verifiedArchiveWrite(store, [...mat.archiveDocs].map(([id, data]) => ({ path: `${archivePath(cutoverId)}/dishes/${id}`, data })), "archive dishes");
     await verifiedArchiveWrite(store, [...mat.successorDocs].map(([id, data]) => ({ path: `${archivePath(cutoverId)}/successors/${id}`, data })), "archive successors");
+    await verifiedArchiveWrite(store, [...mat.changes].map(([id, change]) => ({ path: `${archivePath(cutoverId)}/postCutover/${id}`, data: { id, data: change.target } })), "archive post-cutover state");
     for (const [id, wrapper] of mat.archiveDocs) if (digest(wrapper.data) !== plan.archive.rawDigests[id]) throw new CutoverIntegrityError(`Archive raw digest mismatch for ${id}.`);
     await store.writeBatch([
       { op: "create", path: archivePath(cutoverId), data: mat.root },

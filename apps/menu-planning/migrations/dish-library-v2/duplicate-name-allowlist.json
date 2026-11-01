@@ -1,0 +1,4 @@
+{
+  "note": "Explicit allow-list of normalised (trim, en-GB lower-case) display names that may appear more than once among ACTIVE survivors. Empty: any collision is a plan blocker. Adding an entry requires an owner/chef ruling recorded on #151 and changes the plan hash.",
+  "allowedNormalisedNames": []
+}

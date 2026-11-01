@@ -10,7 +10,7 @@ export const PRE_REVISION = 160;
 
 export function makeItem(id: string, name: string, extra: Partial<MenuItem> = {}): MenuItem {
   return {
-    canonicalId: id, sourceName: name, displayName: name, category: "Salad", weekId: "menu-week:rolling-import", dayId: "", revision: 2, reviewStatus: "approved",
+    canonicalId: id, sourceName: name, displayName: name, category: "Salad", yield: 2, portionSize: 1.5, weekId: "menu-week:rolling-import", dayId: "", revision: 2, reviewStatus: "approved",
     sourceReference: { workbook: "rolling menu", sheet: "SALAD 1" }, mayContainReviewed: true,
     allergenEvidence: [{ allergen: "gluten", value: "free_from", source: "Imported", reviewedBy: "chef", reviewedAt: "2026-08-25T15:31:23.599Z" }],
     audit: [{ action: "imported", at: "2026-08-25T15:31:23.599Z", by: "rolling-menu-migration" }],
@@ -59,7 +59,7 @@ export function makeWorld(options: { project?: string } = {}): World {
     { oldId: "menu-item:staging:only", action: "archive", cluster: null },
   ];
   const references = [{ label: "published-week", sha256: "0".repeat(64), ids: [...rolling, keep[0], keep[3], mergeFrom].sort() }];
-  const inputs: CutoverInputs = { survivorIds: [...keep], mappings, nineRollingIds: rolling, v2Records, references, hashes: { survivors: digest(keep), mappings: digest(mappings), v2Source: digest([...v2Records.keys()]) } };
+  const inputs: CutoverInputs = { survivorIds: [...keep], mappings, nineRollingIds: rolling, v2Records, references, allowedDuplicateNames: [], hashes: { survivors: digest(keep), mappings: digest(mappings), v2Source: digest([...v2Records.keys()]), allowlist: digest([]) } };
   return { store, inputs, v1, ids: { keep, tags, tests, mergeFrom, mergeTo, archived, rolling, sandwich } };
 }
 

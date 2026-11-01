@@ -10,6 +10,7 @@ Nothing in the application imports them. They carry **no approval**: the owner d
 | `v2-survivors-proposed.json` (353 active survivors, ids + tags) | `ad62f7f369e78e2eda5976ee62d18b3f1dd32a437709531c05d7f567af860599` |
 | `identity-mappings-proposed.json` (546 ids: 353 keep / 192 archive / 1 merge; nine rolling IDs) | `81e998f7d1b29ee0f01a0f53d6fee988d61ea4b6ffca849d0e7b0cce717e2563` |
 | `dry-run-replacement-manifest.json` (counts, assumptions, blockers; `executionAllowed: false`) | `bcdee0ef8b24099e784923115112823ecd37b1fdc72fdd1ec86d6617f72768b0` |
+| `duplicate-name-allowlist.json` (empty allow-list of normalised names that may collide among active survivors; part of the plan hash) | n/a (new; not part of the frozen proposal) |
 | `references-published-v4-2026-11-02.json` (derived: the 82 distinct dish ids of the 2–6 Nov v4 publication; 101 entries, 6570 portions) | derived from `v4days.json`; regenerate and re-hash before use |
 
 The first three hashes equal the `SHA256SUMS` recorded when the proposal was frozen. The tool records the sha256 of the

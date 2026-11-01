@@ -120,6 +120,8 @@ export function materialise(snapshot: Snapshot, plan: PlanReport, ops: Op[], opt
     rawRecordDigest: plan.archive.rootRawDigest,
     backup: { kind: "firestore-subcollection", dishesPath: `${opts.cutoverId}/dishes`, successorsPath: `${opts.cutoverId}/successors` },
     rollback: { command: "restore", archiveId: opts.cutoverId, note: "Restores every archived raw document and the pre-cutover manifest content; the manifest revision stays monotonic." },
+    /** Digest of every dish document as it must look when the cutover is complete (restore compares live state with this). */
+    postCutoverDigests: Object.fromEntries([...dishDocs].sort(([a], [b]) => a.localeCompare(b)).map(([id, data]) => [id, digest(changes.get(id)?.target ?? data)])),
     referenceManifest: referenceManifest as unknown as Data,
   };
 

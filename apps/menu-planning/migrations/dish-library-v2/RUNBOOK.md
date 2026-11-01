@@ -42,6 +42,17 @@ touched, so no gzip roundtrip is involved), Hub/CPU/Delivered-In changes, emails
 * Issue #181 isolation proven before any **staging** write rehearsal. The emulator needs none of this.
 * A tested restore: run `rehearse` and the emulator test (below) from the exact commit to be used.
 
+## Write freeze (required)
+
+The cutover assumes **no other writer touches the catalogue while it runs**. Run it in an out-of-hours window with
+Menu Planning catalogue writes paused for planners (no Dish Library edits, imports, tag assignments, rotations/dish
+creation, or other migrations) from before step 6 until step 7 passes. The tool detects a concurrent write (manifest
+revision/hash, per-document digest) and aborts, but detection is not a substitute for the freeze: an abort mid-run
+means a restore. Mid-run guarantee: updates to survivors are applied before any archive, so the active set is never
+smaller than the target (353) at any commit boundary (tested); it can briefly contain the not-yet-archived retired
+dishes (up to 358). Readers may see the intermediate batches; the historical-reference descriptor is attached only at
+the final seal.
+
 ## Command sequence
 
 All commands run from `apps/menu-planning`. `$V2` = reviewed staging export `catalogue-dishes.json`; `$REFS` = one
@@ -66,6 +77,11 @@ plus the fresh 9 Nov+ set).
    `FIKA_CUTOVER_ALLOW_REAL_FIRESTORE=1 ... cutover.ts execute --project fika-os --allow-production --execute --approval-hash <planHash> --approved-by "<name>" --v2-records $V2 $REFS`
    `execute` re-reads the live store, recomputes the plan and refuses unless it equals the approved hash.
 7. **Verify:** `... cutover.ts verify --project fika-os --allow-production --cutover-id <id> --v2-records $V2 $REFS --expect-active 353`
+   Verify asserts exact seal-revision equality and exact-revision resolver binding **only while the manifest is still at the
+   sealed revision/hash**. After any later catalogue edit it skips those two assertions, prints a note, and keeps the
+   archive-digest, descriptor-to-archive, count and active-set checks. (The #256 resolver currently pins archive provenance
+   to the exact catalogue revision; that is fixed separately, so resolver states after later edits are informational.)
+   Run verify before releasing the write freeze.
 8. **Smoke** (not automated here): open the 2–6 Nov week and a draft week in Week Planner (original names/slots/portions
    visible), publish-preview, Dish Library active list = 353, picker excludes archived, Hub/CPU/Delivered-In lineage and
    the 6570 portions unchanged.
@@ -89,21 +105,35 @@ Staging uses the same commands with `--project fika-os-dev --allow-staging`.
 
 Immediate rollback target is the sealed archive, not a re-import.
 
-`... cutover.ts restore --project fika-os --allow-production --archive-id <cutoverId>` prints a refusal that includes the
-computed `restoreHash` (as does `execute` without `--execute`, for the plan hash); re-run with `--execute --approval-hash <restoreHash> --approved-by "<name>"`.
+`... cutover.ts restore --project fika-os --allow-production --archive-id <cutoverId>` first **prints a report of
+post-cutover changes**, then refuses without `--execute` and shows the computed `restoreHash` (as does `execute`
+without `--execute`, for the plan hash). The restore hash is bound to the archive **and to the live manifest
+revision + hash**: any catalogue write after the hash was issued invalidates the approval and a new one is needed.
+Re-run with `--execute --approval-hash <restoreHash> --approved-by "<name>"`.
 
 * Reproduces every archived raw document and the pre-cutover manifest content; verifies the restored documents hash to
   the archived `sourceHash` before and after; manifest `sourceRevision` stays monotonic (never reused); `packageState`
   is set to pending; `restoredFrom` is recorded; the cutover journal becomes `restored`.
-* Refuses if live dish documents exist that are not in the archive (they would survive the restore) or any archive
-  digest fails. Edits made to the catalogue after cutover are overwritten by design: that is the cost of a rollback.
-* Idempotent; resumable if interrupted. A rolled-back cutover cannot be re-run with the same approval; plan again with
-  `--attempt 2` (a new plan hash and cutover id).
-* The archive and journals are never deleted.
+* **Post-cutover changes.** The archive root stores the digest of every document as sealed (`postCutoverDigests`) and the
+  sealed V2 documents are kept under `postCutover/`. Restore compares the live catalogue with them and reports:
+  documents edited since (with the differing top-level fields), dishes created since, dishes deleted since, and manifest
+  drift. If there is any, restore **refuses unless `--accept-post-cutover-changes` is given.**
+  With the flag: every edited document is copied to `.../postCutoverChanges/{id}` (`kind: edited`, the overwritten live
+  document) before it is overwritten with the archived V1 document; every dish created after the cutover is copied to
+  `postCutoverChanges/{id}` (`kind: created`) and then **archived in place** (never deleted, never left in the active
+  picker, readable by id). Chosen as the safest option: leaving them active would put unreviewed dishes into the restored
+  V1 library, and refusing outright would block an emergency rollback. When such dishes exist the restored `sourceHash`
+  is the hash of V1 plus those archived dishes, not the original hash; without them it equals the original exactly.
+* Refuses if any archive digest fails. Idempotent; resumable if interrupted (side records are never overwritten). A
+  rolled-back cutover cannot be re-run with the same approval; plan again with `--attempt 2` (a new plan hash and id).
+* The archive, side records and journals are never deleted.
 
-An aborted or crashed `execute` is resumed by running the identical command again (same approval hash); it continues
-from the journal after confirming the catalogue still matches. If the abort reason is a foreign catalogue write, an
-operator decides: restore, or re-plan.
+### Interrupted or aborted `execute`
+
+Re-running the identical command (same approval hash) resumes **only if** the live manifest revision/hash still equals
+the journal last written state (or the plan pre-state when no batch ran). If it does not, execute stops, marks the
+journal `aborted` and says: *Aborted => run restore --archive-id <id> or re-plan with a new --attempt.* It never loops or
+forces. A foreign catalogue write is an operator decision: restore, or re-plan.
 
 ## Needs Derek's explicit approval (cannot be implied by "build" or "test")
 
@@ -126,7 +156,14 @@ operator decides: restore, or re-plan.
    reports them archived/unresolved; names never create a mapping). Adding verified successors needs a reviewed list.
 6. Firestore rules/indexes for the new collections are not needed (server-side Admin access only); the app does not yet
    read `cutover` or `restoredFrom` manifest fields (informational).
-7. The cutover writes Firestore documents directly (the app's writer cannot do an atomic archive+activate). It bypasses
-   the app's duplicate-active-name check; plan warnings list collisions to resolve beforehand.
+7. The cutover writes Firestore documents directly (the app writer cannot do an atomic archive+activate). Because the
+   app writer rejects edits to dishes whose name collides with another active dish, duplicate active survivor names are a
+   **plan blocker** unless listed in `duplicate-name-allowlist.json` (empty; part of the plan hash). The current proposal
+   has no collisions (checked on the survivors file and on the V2 records).
 8. `npm test` in `apps/menu-planning` runs `tests/*.test.ts` only; these tests are colocated and run with the command
    at the top of this file (CI wiring needs a package.json change outside this lease).
+9. **Numeric type fidelity.** Documents are archived and restored through the Node Firestore client. Integers and
+   fractional doubles keep their Firestore types (asserted on the emulator via REST integerValue/doubleValue). A
+   whole-number value stored as a Firestore *double* is indistinguishable from an integer in the client and is rewritten
+   as an integer (verified on the emulator); the digest cannot see this. Dish records are JSON-like and should not depend
+   on it; confirm with a typed scan of the fresh read-only export before the run.

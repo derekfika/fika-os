@@ -5,7 +5,7 @@ import { digest } from "./digest";
 import { CutoverIntegrityError, executeCutover, readSnapshot, snapshotFromArchive, type ExecuteOptions } from "./execute";
 import { assertCanWrite } from "./guards";
 import { buildPlan, isDishDoc, recordOf } from "./plan";
-import { restoreCutover, RESTORE_VOLATILE_MANIFEST_FIELDS, restoreIntentHash } from "./restore";
+import { PostCutoverChangesError, restoreCutover, RESTORE_VOLATILE_MANIFEST_FIELDS, restoreIntentHash } from "./restore";
 import { archivePath, COLLECTIONS, ConcurrentCatalogueChangeError, journalPath, MANIFEST_PATH } from "./store";
 import { fixedNow, makeItem, makeWorld, doc, PRE_REVISION, type World } from "./test-fixtures";
 import { verifyCutover } from "./verify";
@@ -313,7 +313,7 @@ describe("restore (rollback)", () => {
     world.store.crashAfterCommits = undefined;
     assert.notEqual(JSON.stringify(catalogueDocs(world)), preDocs);
     const cutoverId = (await planCutoverId(world, opts));
-    world.store.crashAfterCommits = world.store.commits + 3; // journal + one restore batch + crash
+    world.store.crashAfterCommits = world.store.commits + 1; // restore journal written, crash before the first restore batch
     await assert.rejects(restoreCutover(world.store, restoreOptions(cutoverId)), /simulated crash/);
     world.store.crashAfterCommits = undefined;
     const done = await restoreCutover(world.store, restoreOptions(cutoverId));
@@ -328,7 +328,7 @@ describe("restore (rollback)", () => {
 
     const extra = makeItem("menu-item:local:added-later", "Added later");
     world.store.seed(`${COLLECTIONS.catalogue}/${extra.canonicalId}`, doc(extra));
-    await assert.rejects(restoreCutover(world.store, restoreOptions(result.cutoverId)), /not in the archive/);
+    await assert.rejects(restoreCutover(world.store, restoreOptions(result.cutoverId)), PostCutoverChangesError);
 
     const tampered = makeWorld();
     const tamperedResult = await executeCutover(tampered.store, tampered.inputs, await options(tampered));
@@ -336,7 +336,7 @@ describe("restore (rollback)", () => {
     const wrapper = tampered.store.peek(path)!;
     tampered.store.seed(path, { ...wrapper, archivedAt: "1999-01-01" });
     await assert.rejects(restoreCutover(tampered.store, restoreOptions(tamperedResult.cutoverId)), CutoverIntegrityError);
-    assert.equal(restoreIntentHash(tampered.store.peek(archivePath(tamperedResult.cutoverId))!).length, 64);
+    assert.equal(restoreIntentHash(tampered.store.peek(archivePath(tamperedResult.cutoverId))!, { revision: 1, hash: "h" }).length, 64);
   });
 
   it("a concurrent manifest change aborts the restore", async () => {

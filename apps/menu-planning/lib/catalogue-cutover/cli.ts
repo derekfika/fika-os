@@ -6,7 +6,7 @@ import { assertCanConnect, assertCanWrite, GuardError, type EnvironmentClass } f
 import { loadInputs, loadSnapshotDir } from "./inputs";
 import { MemoryStore } from "./memory-store";
 import { buildPlan } from "./plan";
-import { restoreCutover } from "./restore";
+import { PostCutoverChangesError, restoreCutover } from "./restore";
 import { COLLECTIONS, MANIFEST_PATH, type CutoverStore } from "./store";
 import { digest, sha256 } from "./digest";
 import { verifyCutover } from "./verify";
@@ -17,13 +17,13 @@ const USAGE = `Dish Library V2 archive-and-cutover tool (issue #151). Read-only 
   npx tsx scripts/dish-library-v2/cutover.ts execute --project <id> --v2-records <file> --references <file>... --execute --approval-hash <planHash> --approved-by <name> [--allow-production|--allow-staging]
   npx tsx scripts/dish-library-v2/cutover.ts rehearse --snapshot-dir <dir> --v2-records <file> --references <file>...   (in-memory plan -> execute -> verify -> restore drill; no network)
   npx tsx scripts/dish-library-v2/cutover.ts verify  --project <id> --cutover-id <id> --v2-records <file> --references <file>... [--expect-active 353]
-  npx tsx scripts/dish-library-v2/cutover.ts restore --project <id> --archive-id <id> --execute --approval-hash <restoreHash> --approved-by <name>
+  npx tsx scripts/dish-library-v2/cutover.ts restore --project <id> --archive-id <id> [--accept-post-cutover-changes] --execute --approval-hash <restoreHash> --approved-by <name>
 
 Defaults: --survivors / --mappings point at apps/menu-planning/migrations/dish-library-v2/. Real Firestore also needs ${"FIKA_CUTOVER_ALLOW_REAL_FIRESTORE=1"}.
 Emulator: FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 with --project demo-<name>.`;
 
 type Args = { command?: string; flags: Map<string, string[]>; bools: Set<string> };
-const BOOLEAN_FLAGS = new Set(["execute", "allow-production", "allow-staging", "summary", "help"]);
+const BOOLEAN_FLAGS = new Set(["execute", "allow-production", "allow-staging", "summary", "help", "accept-post-cutover-changes"]);
 export function parseArgs(argv: string[]): Args {
   const [command, ...rest] = argv;
   const flags = new Map<string, string[]>();
@@ -64,7 +64,7 @@ export async function main(argv: string[], io: CliIo): Promise<number> {
     const loadAll = () => {
       const v2Records = one("v2-records");
       if (!v2Records) throw new Error("--v2-records <reviewed V2 export> is required.");
-      const files = { ...defaults(io.cwd), ...(one("survivors") ? { survivors: one("survivors")! } : {}), ...(one("mappings") ? { mappings: one("mappings")! } : {}) };
+      const files = { ...defaults(io.cwd), allowlist: one("duplicate-allowlist") ?? path.join(io.cwd, "migrations/dish-library-v2/duplicate-name-allowlist.json"), ...(one("survivors") ? { survivors: one("survivors")! } : {}), ...(one("mappings") ? { mappings: one("mappings")! } : {}) };
       return loadInputs({ ...files, v2Records, references: args.flags.get("references") || [] });
     };
 
@@ -110,7 +110,7 @@ export async function main(argv: string[], io: CliIo): Promise<number> {
     if (args.command === "restore") {
       const archiveId = one("archive-id");
       if (!archiveId) throw new Error("--archive-id is required.");
-      const result = await restoreCutover(store, { archiveId, actor: one("actor") ?? `cutover-tool:${one("approved-by") ?? "local"}`, approvedBy: one("approved-by") ?? "local-rehearsal", authorise: hash => writeGuard(hash), batchSize, log: message => io.err(message) });
+      const result = await restoreCutover(store, { archiveId, actor: one("actor") ?? `cutover-tool:${one("approved-by") ?? "local"}`, approvedBy: one("approved-by") ?? "local-rehearsal", authorise: hash => writeGuard(hash), acceptPostCutoverChanges: args.bools.has("accept-post-cutover-changes"), batchSize, log: message => io.err(message) });
       io.out(JSON.stringify(result, null, 2));
       return 0;
     }
@@ -120,6 +120,7 @@ export async function main(argv: string[], io: CliIo): Promise<number> {
     io.out(JSON.stringify(report, null, 2));
     return report.ok ? 0 : 4;
   } catch (error) {
+    if (error instanceof PostCutoverChangesError) { io.err(error.message); io.out(JSON.stringify(error.report, null, 2)); return 5; }
     if (error instanceof GuardError) { io.err(`${error.message}`); return 2; }
     io.err(`Error: ${(error as Error).message}`);
     return 1;

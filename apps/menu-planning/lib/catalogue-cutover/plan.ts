@@ -147,7 +147,11 @@ export function buildPlan(snapshot: Snapshot, inputs: CutoverInputs, options: { 
   for (const op of ops) if (op.action === "keep" && op.v2Record) finalActive.set(op.id, op.v2Record);
   const byName = new Map<string, string[]>();
   for (const [id, item] of finalActive) byName.set(normName(item), [...(byName.get(normName(item)) || []), id]);
-  for (const [name, ids] of byName) if (ids.length > 1) warnings.push(`active name collision "${name}": ${ids.join(", ")}`);
+  const allowedNames = new Set(inputs.allowedDuplicateNames);
+  for (const [name, ids] of byName) if (ids.length > 1) {
+    if (allowedNames.has(name)) warnings.push(`active name collision "${name}" is explicitly allow-listed: ${ids.join(", ")}`);
+    else blockers.push(`active name collision "${name}": ${ids.join(", ")} (the app writer rejects edits to colliding active names; resolve or add an explicit allow-list entry)`);
+  }
   if (unresolvedArchived.length) warnings.push(`${unresolvedArchived.length} archived ids have no verified successor and stay UNRESOLVED (resolver reports archived/unresolved, never a guessed target)`);
 
   // Reference integrity: every referenced id must be ACTIVE after cutover or have a verified active successor.
@@ -176,7 +180,7 @@ export function buildPlan(snapshot: Snapshot, inputs: CutoverInputs, options: { 
   const hashBasis = {
     schema: PLAN_SCHEMA,
     preState: { revision: manifestRevision, sourceHash: manifestHash, dishCount: manifest?.dishCount ?? null, manifestDigest: manifest ? digest(manifest) : null, rootRawDigest },
-    inputs: { survivorsSha256: inputs.hashes.survivors, mappingsSha256: inputs.hashes.mappings, v2RecordsDigest },
+    inputs: { survivorsSha256: inputs.hashes.survivors, mappingsSha256: inputs.hashes.mappings, v2RecordsDigest, allowedDuplicateNames: inputs.allowedDuplicateNames },
     batchSize,
     ...(attempt > 1 ? { attempt } : {}),
     ops: ops.map(op => ({ id: op.id, action: op.action, change: op.change, preDigest: op.preDigest, toId: op.toId ?? null, v2: op.v2Record ? digest(op.v2Record) : null })),

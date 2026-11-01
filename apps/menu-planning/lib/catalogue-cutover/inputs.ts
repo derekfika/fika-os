@@ -14,7 +14,9 @@ export type CutoverInputs = {
   /** Full V2 records for survivors (from a reviewed export). Only survivor ids are kept. */
   v2Records: Map<string, MenuItem>;
   references: ReferenceSet[];
-  hashes: { survivors: string; mappings: string; v2Source: string };
+  /** Normalised (trim + en-GB lower-case) display names explicitly allowed to collide among active survivors. Empty by default. */
+  allowedDuplicateNames: string[];
+  hashes: { survivors: string; mappings: string; v2Source: string; allowlist: string };
 };
 
 const readText = (file: string) => readFileSync(file, "utf8");
@@ -60,7 +62,13 @@ export function parseReferences(value: unknown, label: string, fileHash: string)
   return { label: (value as { label?: string })?.label || label, sha256: fileHash, ids: [...new Set(clean)].sort() };
 }
 
-export function loadInputs(files: { survivors: string; mappings: string; v2Records: string; references: string[] }): CutoverInputs {
+export function parseAllowlist(value: unknown): string[] {
+  const names = (value as { allowedNormalisedNames?: unknown })?.allowedNormalisedNames;
+  if (!Array.isArray(names) || names.some(name => typeof name !== "string")) throw new Error("Duplicate-name allow-list needs allowedNormalisedNames: string[].");
+  return (names as string[]).map(name => name.trim().toLocaleLowerCase("en-GB")).sort();
+}
+
+export function loadInputs(files: { survivors: string; mappings: string; v2Records: string; references: string[]; allowlist?: string }): CutoverInputs {
   const survivorsText = readText(files.survivors);
   const mappingsText = readText(files.mappings);
   const v2Text = readText(files.v2Records);
@@ -70,7 +78,9 @@ export function loadInputs(files: { survivors: string; mappings: string; v2Recor
   const v2Records = new Map<string, MenuItem>();
   for (const record of parseV2Records(JSON.parse(v2Text))) if (wanted.has(record.canonicalId)) v2Records.set(record.canonicalId, record);
   const references = files.references.map(file => { const text = readText(file); return parseReferences(JSON.parse(text), path.basename(file), sha256(text)); });
-  return { survivorIds, mappings, nineRollingIds, v2Records, references, hashes: { survivors: sha256(survivorsText), mappings: sha256(mappingsText), v2Source: sha256(v2Text) } };
+  const allowText = files.allowlist ? readText(files.allowlist) : "";
+  const allowedDuplicateNames = allowText ? parseAllowlist(JSON.parse(allowText)) : [];
+  return { survivorIds, mappings, nineRollingIds, v2Records, references, allowedDuplicateNames, hashes: { survivors: sha256(survivorsText), mappings: sha256(mappingsText), v2Source: sha256(v2Text), allowlist: sha256(allowText) } };
 }
 
 /** Reads the exported snapshot format used by the read-only staging/production exports. */

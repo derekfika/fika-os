@@ -29,6 +29,13 @@ describe("Firestore emulator (real adapter)", { skip: host ? false : "FIRESTORE_
     const paths = Object.keys(seeded);
     for (let start = 0; start < paths.length; start += 200) await store.writeBatch(paths.slice(start, start + 200).map(path => ({ op: "create" as const, path, data: seeded[path] })));
 
+    const rest = async (path: string, init?: RequestInit) => (await fetch(`http://${host}/v1/projects/${project}/databases/(default)/documents/${path}`, { ...init, headers: { Authorization: "Bearer owner", "content-type": "application/json" } })).json() as Promise<{ fields?: unknown }>;
+    const typedFields = async (path: string) => JSON.stringify((await rest(path)).fields);
+    const probeIds = [world.ids.keep[1], world.ids.tags[0], world.ids.archived[0]];
+    const typedBefore = await Promise.all(probeIds.map(id => typedFields(`fikaMenuPlanningCatalogue/${id}`)));
+    assert.match(typedBefore[0], /"yield":\{"integerValue":"2"\}/);
+    assert.match(typedBefore[0], /"portionSize":\{"doubleValue":1\.5\}/);
+
     const memoryPlan = buildPlan(await readSnapshot(world.store), world.inputs, { batchSize: 4 }).plan;
     const emulatorPlan = buildPlan(await readSnapshot(store), world.inputs, { batchSize: 4 }).plan;
     assert.equal(emulatorPlan.planHash, memoryPlan.planHash, "same pre-state, same plan hash across stores");
@@ -55,6 +62,13 @@ describe("Firestore emulator (real adapter)", { skip: host ? false : "FIRESTORE_
     const after = await readSnapshot(store);
     for (const item of after.docs) assert.equal(digest(item.data), digest(seeded[`fikaMenuPlanningCatalogue/${item.id}`]), item.id);
     assert.equal(after.manifest?.sourceHash, manifest.sourceHash);
+    // Numeric type fidelity at the Firestore level: integerValue / doubleValue tags are identical after archive + restore.
+    const typedAfter = await Promise.all(probeIds.map(id => typedFields(`fikaMenuPlanningCatalogue/${id}`)));
+    assert.deepEqual(typedAfter, typedBefore);
+    // Documented limitation: a whole-number value stored as a Firestore double cannot be told apart from an integer by the Node client, so it is rewritten as an integer.
+    await rest("limitationProbe/p", { method: "PATCH", body: JSON.stringify({ fields: { whole: { doubleValue: 3 } } }) });
+    await store.writeBatch([{ op: "set", path: "limitationProbe/p", data: (await store.get("limitationProbe/p"))! }]);
+    assert.deepEqual((await rest("limitationProbe/p")).fields, { whole: { integerValue: "3" } });
     void ConcurrentCatalogueChangeError;
   });
 });
