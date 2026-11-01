@@ -23,6 +23,8 @@ export type CellMenuInput = {
   dishResolved: boolean;
   /** Where Copy to another day can currently go. */
   copyAvailable: boolean;
+  /** Specific current-rule explanation when no compatible destination is available. */
+  copyDisabledReason?: string;
   copyPending: boolean;
 };
 
@@ -44,7 +46,7 @@ export function cellMenuActions(input: CellMenuInput): CellMenuAction[] {
   actions.push({
     id: "copy",
     label: "Copy to another day",
-    ...(input.copyPending ? { disabledReason: "A copy is already in progress." } : !input.copyAvailable ? { disabledReason: "There is no day this dish can be copied to." } : {}),
+    ...(input.copyPending ? { disabledReason: "A copy is already in progress." } : !input.copyAvailable ? { disabledReason: input.copyDisabledReason || "There is no empty compatible menu cell on an editable weekday." } : {}),
   });
   actions.push({ id: "clear", label: "Clear from planner", destructive: true, dividerBefore: true });
   return actions;
