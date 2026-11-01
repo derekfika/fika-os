@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assessDishCopyTarget, compatibleDishCopyTargets, copyableDishForSource } from "../lib/dish-copy";
+import { assessDishCopyTarget, compatibleDishCopyTargets, copyableDishForSource, dishCopyUnavailableReason } from "../lib/dish-copy";
 import type { RollingSnapshot } from "../lib/rolling-menu-types";
 
 function fixture(): RollingSnapshot {
@@ -52,6 +52,52 @@ test("keyboard targets include only compatible empty destinations", () => {
   const snapshot = fixture();
   const targets = compatibleDishCopyTargets(snapshot, dishes, "source", ["COLD PROTEIN", "SOUP"]);
   assert.deepEqual(targets.map(target => target.key), ["tuesday|COLD PROTEIN", "wednesday|COLD PROTEIN", "thursday|COLD PROTEIN", "friday|COLD PROTEIN"]);
+});
+
+test("Friday Starch/Side copies expose Monday and all earlier and later weekdays", () => {
+  const snapshot = fixture();
+  snapshot.entries[0].dayId = "friday";
+  snapshot.entries[0].date = snapshot.days[4].date;
+  snapshot.entries[0].slot = "STARCH/SIDE 1";
+  const starch = { id: "dish:side", name: "Roast potatoes", category: "Starch/Side" };
+  snapshot.entries[0].itemId = starch.id;
+  snapshot.entries[0].itemLabel = starch.name;
+  const slots = ["STARCH/SIDE 1", "STARCH/SIDE 2", "EXTRAS 1"];
+  const targets = compatibleDishCopyTargets(snapshot, [starch], "source", slots);
+  assert.deepEqual([...new Set(targets.map(target => target.dayId))], ["monday", "tuesday", "wednesday", "thursday"]);
+  assert.equal(targets[0].slot, "STARCH/SIDE 1");
+  assert.equal(assessDishCopyTarget(snapshot, [starch], "source", { dayId: "monday", slot: "STARCH/SIDE 2" }).allowed, true);
+  assert.equal(assessDishCopyTarget(snapshot, [starch], "source", { dayId: "thursday", slot: "EXTRAS 1" }).allowed, true);
+});
+
+test("copy target feedback distinguishes category mismatch, occupied cells and locked days", () => {
+  const snapshot = fixture();
+  snapshot.entries[0].slot = "STARCH/SIDE 1";
+  const starch = { id: "dish:side", name: "Roast potatoes", category: "Starch/Side" };
+  snapshot.entries[0].itemId = starch.id;
+  snapshot.entries[0].itemLabel = starch.name;
+  snapshot.entries[0].dayId = "friday";
+  snapshot.entries[0].date = snapshot.days[4].date;
+  snapshot.days.slice(1).forEach(day => snapshot.entries.push({ id: `occupied-${day.id}`, dayId: day.id, date: day.date, slot: "STARCH/SIDE 1", itemId: "dish:side", itemLabel: "Roast potatoes", portions: 0, allocations: [], allergens: {}, audit: [] }));
+  assert.match(dishCopyUnavailableReason(snapshot, [starch], "source", ["STARCH/SIDE 1"]), /already occupied/);
+  snapshot.entries = snapshot.entries.filter(entry => entry.id === "source");
+  snapshot.week.dayStatuses = Object.fromEntries(snapshot.days.map(day => [day.id, day.id === "monday" ? "published" : "draft"]));
+  const result = assessDishCopyTarget(snapshot, [starch], "source", { dayId: "monday", slot: "STARCH/SIDE 1" });
+  assert.equal(result.allowed, false);
+  if (!result.allowed) assert.match(result.reason, /immutable/);
+  snapshot.entries[0].slot = "SAUCE 1";
+  assert.match(dishCopyUnavailableReason(snapshot, [starch], "source", ["STARCH/SIDE 1"]), /not compatible/);
+});
+
+test("fully occupied compatible weekday targets produce a clear disabled explanation", () => {
+  const snapshot = fixture();
+  snapshot.entries[0].slot = "STARCH/SIDE 1";
+  const starch = { id: "dish:side", name: "Roast potatoes", category: "Starch/Side" };
+  snapshot.entries[0].itemId = starch.id;
+  snapshot.entries[0].itemLabel = starch.name;
+  for (const day of snapshot.days.slice(1)) snapshot.entries.push({ id: `occupied-${day.id}`, dayId: day.id, date: day.date, slot: "STARCH/SIDE 1", itemLabel: "Other", portions: 1, allocations: [], allergens: {}, audit: [] });
+  assert.equal(compatibleDishCopyTargets(snapshot, [starch], "source", ["STARCH/SIDE 1"]).length, 0);
+  assert.equal(dishCopyUnavailableReason(snapshot, [starch], "source", ["STARCH/SIDE 1"]), "All compatible Starch/Side cells on editable weekdays are already occupied.");
 });
 
 test("Dessert-category dishes can be selected and copied between the three Dessert slots", () => {

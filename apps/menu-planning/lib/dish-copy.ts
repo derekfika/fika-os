@@ -32,6 +32,9 @@ export function assessDishCopyTarget(
   if (!sourceDay || !targetDay) return { allowed: false, reason: "Choose a day in this menu week." };
   if (source.dayId === target.dayId && source.slot === target.slot) return { allowed: false, reason: "Choose a different menu cell." };
   if (source.dayId === target.dayId) return { allowed: false, reason: "Copy the dish to a different day." };
+  if (snapshot.week.status === "published" || snapshot.week.dayStatuses?.[target.dayId] === "published") {
+    return { allowed: false, reason: "Published menu days are immutable. Choose an editable day." };
+  }
 
   const dish = dishes.find(candidate => candidate.id === source.itemId);
   if (!dish?.name.trim()) return { allowed: false, reason: "The canonical Dish Library item could not be verified." };
@@ -53,8 +56,43 @@ export function compatibleDishCopyTargets(
   sourceEntryId: string,
   slots: readonly string[],
 ): Array<DishCopyTarget & { key: string; label: string }> {
-  return snapshot.days.flatMap(day => slots.flatMap(slot => {
+  const orderedDays = snapshot.days.slice(0, 5);
+  const orderedSlots = [...new Set(slots)];
+  return orderedDays.flatMap(day => orderedSlots.flatMap(slot => {
     const result = assessDishCopyTarget(snapshot, dishes, sourceEntryId, { dayId: day.id, slot });
     return result.allowed ? [{ dayId: day.id, slot, key: `${day.id}|${slot}`, label: `${day.dayName} · ${slot}` }] : [];
   }));
+}
+
+/** Explain why the copy action has no destination using the same current rules as target assessment. */
+export function dishCopyUnavailableReason(
+  snapshot: RollingSnapshot,
+  dishes: readonly CopyableDish[],
+  sourceEntryId: string,
+  slots: readonly string[],
+): string {
+  const source = snapshot.entries.find(entry => entry.id === sourceEntryId);
+  if (!source?.itemId?.trim() || !source.itemLabel.trim()) return "The source dish is no longer available to copy.";
+  const dish = dishes.find(candidate => candidate.id === source.itemId);
+  if (!dish?.name.trim()) return "The canonical Dish Library item could not be verified.";
+  const category = normaliseDishCategory(dish.category);
+  if (!isCanonicalDishCategory(category)) return "This dish has no verified current menu category, so it cannot be copied.";
+  if (!categoriesForMenuSlot(source.slot).includes(category)) {
+    return `The Dish Library lists this dish as ${category}, which is not compatible with its current ${source.slot} menu slot.`;
+  }
+  const days = snapshot.days.slice(0, 5).filter(day => day.id !== source.dayId && snapshot.week.dayIds.includes(day.id));
+  if (snapshot.week.status === "published" || days.every(day => snapshot.week.dayStatuses?.[day.id] === "published")) {
+    return "There are no editable weekdays available in this menu week.";
+  }
+  const compatibleSlots = [...new Set(slots)].filter(slot => categoriesForMenuSlot(slot).includes(category));
+  if (!compatibleSlots.length) return `There is no menu row compatible with this ${category} dish.`;
+  const assessments = days.flatMap(day => compatibleSlots.map(slot => assessDishCopyTarget(snapshot, dishes, sourceEntryId, { dayId: day.id, slot })));
+  const eligibleDay = days.some(day => snapshot.week.dayStatuses?.[day.id] !== "published");
+  if (eligibleDay && assessments.some(result => !result.allowed && result.reason === "The target cell is already occupied.")) {
+    return `All compatible ${category} cells on editable weekdays are already occupied.`;
+  }
+  if (eligibleDay && assessments.some(result => !result.allowed && result.reason.includes("conflicting menu entries"))) {
+    return "Compatible target cells have conflicting menu entries. Refresh the week before copying.";
+  }
+  return "There is no empty compatible menu cell on an editable weekday.";
 }
