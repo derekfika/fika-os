@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { expectClean } from "./layout-audit";
-import { assignedSeed, boot, centre, commandsOf, createRunViaDialog, DATE, drag, pxPerMinute, queueItem, runRow, selectRun, timeToX, v3Seed } from "./v3-helpers";
+import { assignedSeed, boot, centre, commandsOf, createRunViaDialog, DATE, drag, pxPerMinute, queueItem, runRow, runStops, selectRun, timeToX, v3Seed } from "./v3-helpers";
 
 /**
  * Journey Planner V3 mounted in the REAL planner page (not the preview route), driven with real pointer input
@@ -63,7 +63,7 @@ test.describe("Journey Planner V3 · mounted real planner · 1536x960", () => {
     });
     await expect.poll(() => commandsOf(server, "assign-job-to-load").length).toBe(1);
     expect(commandsOf(server, "assign-job-to-load")[0]).toMatchObject({ jobId: "job:2", targetRunId: run.id, scheduledTime: "10:00", lane: "delivery" });
-    await expect(row.getByRole("button", { name: /Studio Café/ })).toBeVisible();
+    await expect(runStops(page, run.id).getByRole("button", { name: /Studio Café/ })).toBeVisible();
     await expect(queueItem(page, "Studio Café")).toHaveCount(0);
     await expect(row).not.toHaveAttribute("data-drop", /.+/);
     expectClean(issues, "queue drop");
@@ -85,7 +85,7 @@ test.describe("Journey Planner V3 · mounted real planner · 1536x960", () => {
     await page.getByRole("button", { name: "Add to Run 1" }).click();
     await expect.poll(() => commandsOf(server, "assign-job-to-load").length).toBe(1);
     expect(commandsOf(server, "assign-job-to-load")[0]).toMatchObject({ jobId: "job:1", targetRunId: run.id, scheduledTime: "11:15" });
-    await expect(runRow(page, run.id).getByRole("button", { name: /Market Hall/ })).toBeVisible();
+    await expect(runStops(page, run.id).getByRole("button", { name: /Market Hall/ })).toBeVisible();
   });
 
   test("a standalone collection starts without a guessed time and needs an explicit time before it joins a Run", async ({ page }) => {
@@ -125,7 +125,7 @@ test.describe("Journey Planner V3 · mounted real planner · 1536x960", () => {
     expect(server.state.movements.filter((item) => item.id === movement.canonicalId)).toHaveLength(1);
     await page.reload();
     await selectRun(page, targetRunId);
-    await expect(runRow(page, targetRunId).getByRole("button", { name: /Market Hall/ })).toBeVisible();
+    await expect(runStops(page, targetRunId).getByRole("button", { name: /Market Hall/ })).toBeVisible();
     expect(server.state.movements.filter((item) => item.id === movement.canonicalId)).toHaveLength(1);
   });
 
@@ -232,10 +232,11 @@ test.describe("Journey Planner V3 · mounted real planner · 1536x960", () => {
   test("assigned work shows compact chips in the saved visiting order; clicking a chip opens that stop in the inspector", async ({ page }) => {
     const { server } = await boot(page, assignedSeed());
     const row = runRow(page, `run:${DATE}:a`);
-    const chips = row.locator("ol[aria-label^='Visiting sequence'] li");
+    const stops = runStops(page, `run:${DATE}:a`);
+    const chips = stops.locator("ol[aria-label^='Visiting sequence'] li");
     await expect(chips).toHaveCount(5);
-    await expect(row.getByRole("button", { name: /Studio Café/ })).toBeVisible();
-    await row.getByRole("button", { name: /Studio Café/ }).click();
+    await expect(stops.getByRole("button", { name: /Studio Café/ })).toBeVisible();
+    await stops.getByRole("button", { name: /Studio Café/ }).click();
     const inspector = page.getByRole("complementary", { name: "Run inspector" });
     await expect(inspector).toBeVisible();
     await expect(inspector.getByRole("tab", { name: "Stops", selected: true })).toBeVisible();

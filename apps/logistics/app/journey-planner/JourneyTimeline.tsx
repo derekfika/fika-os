@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEven
 import { PlusIcon } from "./icons";
 import type { PlannerStatus, RunRowView, VehicleId } from "./model";
 import { formatMinute, RunTimelineRow, RunTimeBar, type BarMode, type BarPreview } from "./RunTimelineRow";
+import { RunStopSequence } from "./RunStopSequence";
 import { vehicleTimelineRows } from "./vehicle-timeline";
 import styles from "./timeline.module.css";
 
@@ -221,10 +222,22 @@ export function JourneyTimeline({ runs, vehicleIds, status = "ready", zoom = 1, 
                 </select>
               </label>
             </div>
-            <div className={styles.track} style={{ minHeight: 32 + vehicle.trackCount * 44 }}>
-              {vehicle.runs.filter(run => run.departure && run.return).map(run => <RunTimeBar key={run.id} run={overlaps.has(run.id) ? { ...run, overlapWarning: "Overlaps another run on this vehicle" } : run} pxPerHour={pxPerHour} preview={preview?.runId === run.id ? preview : undefined} top={13 + (vehicle.tracks.get(run.id) || 0) * 44} drop={dropTargets?.[run.id]} onSelect={() => { if (!suppressClick.current) onSelectRun(run.id); }} onPointerDown={(event, mode) => beginDrag(event, run, mode)} onResizeKey={delta => nudgeReturn(run, delta)} />)}
-              {vehicle.runs.some(run => !run.departure || !run.return) && <div className={styles.unscheduledRuns} style={{ marginTop: vehicle.trackCount * 44 + 8 }}>
-                {vehicle.runs.filter(run => !run.departure || !run.return).map(run => <button type="button" key={run.id} data-drop-run-id={run.id} onClick={() => onSelectRun(run.id)}>{run.title} · Times to set</button>)}
+            <div className={`${styles.track} ${styles.laneTrack}`} data-vehicle-track={vehicle.vehicleId}>
+              {Array.from({ length: vehicle.trackCount }, (_, track) => {
+                const members = vehicle.runs.filter(run => run.departure && run.return && (vehicle.tracks.get(run.id) || 0) === track);
+                return <div key={track} className={styles.trackBand} data-track-band={track}>
+                  <div className={styles.barLane}>
+                    {members.map(run => <RunTimeBar key={run.id} run={overlaps.has(run.id) ? { ...run, overlapWarning: "Overlaps another run on this vehicle" } : run} pxPerHour={pxPerHour} preview={preview?.runId === run.id ? preview : undefined} top={4} drop={dropTargets?.[run.id]} onSelect={() => { if (!suppressClick.current) onSelectRun(run.id); }} onPointerDown={(event, mode) => beginDrag(event, run, mode)} onResizeKey={delta => nudgeReturn(run, delta)} />)}
+                  </div>
+                  {/* Each run's visiting sequence sits directly beneath its own bar, in the same van row. */}
+                  {[...members].sort((a, b) => minutesOf(a.departure!) - minutesOf(b.departure!)).filter(run => !collapsedRunIds.has(run.id)).map(run => <RunStopSequence key={run.id} runId={run.id} runTitle={run.title} chips={run.chips} selected={run.id === selectedRunId} onSelectStop={onSelectStop ? stopKey => onSelectStop(run.id, stopKey) : undefined} activeKey={activeStopKey} offset={(preview?.runId === run.id ? preview.start : minutesOf(run.departure!)) / 60 * pxPerHour} />)}
+                </div>;
+              })}
+              {vehicle.runs.some(run => !run.departure || !run.return) && <div className={styles.unscheduledRuns}>
+                {vehicle.runs.filter(run => !run.departure || !run.return).map(run => <div key={run.id} className={styles.unscheduledRun}>
+                  <button type="button" data-drop-run-id={run.id} onClick={() => onSelectRun(run.id)}>{run.title} · Times to set</button>
+                  {!collapsedRunIds.has(run.id) && <RunStopSequence runId={run.id} runTitle={run.title} chips={run.chips} selected={run.id === selectedRunId} onSelectStop={onSelectStop ? stopKey => onSelectStop(run.id, stopKey) : undefined} activeKey={activeStopKey} />}
+                </div>)}
               </div>}
               {vehicle.runs.length === 0 && <p className={styles.laneEmpty}>No runs assigned</p>}
             </div>

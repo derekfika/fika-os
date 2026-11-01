@@ -58,7 +58,7 @@ async function mount(page: Page, f: any) {
 
 const row = (page: Page, runId: string) => page.locator(`[data-run-id="${runId}"]`);
 const card = (page: Page, req: string) => page.locator(`[data-logistics-planning-queue] [data-timeline-queue-id="projection-job:logistics-job:req:${req}"]`);
-const chips = (page: Page, runId: string) => row(page, runId).locator("ol[aria-label^='Visiting sequence'] li button").evaluateAll((buttons) => buttons.map((button) => (button.getAttribute("aria-label") || "").replace(/^Stop \d+, /, "").replace(/\. Open stop$/, "")));
+const chips = (page: Page, runId: string) => page.locator(`[data-run-stops="${runId}"]`).locator("ol[aria-label^='Visiting sequence'] li button").evaluateAll((buttons) => buttons.map((button) => (button.getAttribute("aria-label") || "").replace(/^Stop \d+, /, "").replace(/\. Open stop$/, "")));
 const inspector = (page: Page) => page.getByRole("complementary", { name: "Run inspector" });
 async function dropOnRun(page: Page, req: string, runId: string) { await selectRun(page, runId); await drag(page, await centre(card(page, req)), await centre(row(page, runId).locator("h3"))); }
 
@@ -98,7 +98,7 @@ test.describe("Journey Planner V3 · real route/domain code · 1536x960", () => 
     expect(new Set(done("assign-job-to-load").map((command) => command.jobId)).size).toBe(3);
 
     // 3. + Add collection inside the MNK stop: governed movement at the customer, joined to the visit => still ONE chip.
-    await row(page, "r1").getByRole("button", { name: /MNK/ }).click();
+    await page.locator('[data-run-stops="r1"]').getByRole("button", { name: /MNK/ }).click();
     await expect(inspector(page)).toBeVisible();
     await inspector(page).getByRole("button", { name: /Add collection/ }).click();
     const form = inspector(page).getByRole("form", { name: "Add a collection at MNK" });

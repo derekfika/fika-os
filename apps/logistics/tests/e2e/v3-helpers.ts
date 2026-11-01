@@ -73,6 +73,8 @@ export const pxPerMinute = (page: Page) => page.evaluate(() => { const section =
 
 export const queueItem = (page: Page, text: string) => page.locator("[data-logistics-planning-queue] [data-timeline-queue-id]", { hasText: text }).first();
 export const runRow = (page: Page, runId: string) => page.locator(`[data-run-id="${runId}"]`);
+/** A run's visiting sequence, which renders directly beneath its own bar in its van row (#120), not in the selected-run details. */
+export const runStops = (page: Page, runId: string) => page.locator(`[data-run-stops="${runId}"]`);
 export const commandsOf = (server: FakeLogisticsServer, action: string) => server.commands.filter((command) => command.action === action) as Record<string, any>[];
 
 export async function createRunViaDialog(page: Page, server: FakeLogisticsServer, vehicle: "Van 1" | "Van 2", times?: { departure: string; return: string }) {

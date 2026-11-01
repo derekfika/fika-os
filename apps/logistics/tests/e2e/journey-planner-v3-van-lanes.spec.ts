@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { assignedSeed, boot, centre, commandsOf, DATE, drag, queueItem, selectRun } from "./v3-helpers";
+import { assignedSeed, boot, centre, commandsOf, DATE, drag, queueItem, runStops, selectRun } from "./v3-helpers";
 import { auditLayout, expectClean } from "./layout-audit";
 
 const firstId = `run:${DATE}:a`;
@@ -120,5 +120,36 @@ for (const width of [820, 1024]) {
     await page.keyboard.press("Escape");
     expect(await auditLayout(page, "[data-journey-planner]", ["[data-testid=journey-timeline-scroller]"]), `tablet ${width}px layout`).toEqual([]);
     expectClean(issues, `tablet ${width}px van lanes`);
+  });
+}
+
+// #120: each run's stop chain renders directly beneath its own bar inside the van row (not only in the selected-run details).
+for (const width of [820, 1024, 1280, 1536]) {
+  test(`${width}px: every run's stops sit beneath its own bar in the van row, in order, without duplicating the inspector or overflowing`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { issues } = await boot(page, multipleRuns(true));
+    const van1 = page.locator('[data-vehicle-row="van1"]');
+    for (const id of [firstId, secondId]) {
+      const bar = (await van1.locator(`[data-run-bar="${id}"]`).boundingBox())!;
+      const stops = van1.locator(`[data-run-stops="${id}"]`);
+      await expect(stops, `stops of ${id} are inside the van row`).toBeVisible();
+      const box = (await stops.boundingBox())!;
+      expect(box.y, `stops of ${id} start below its bar`).toBeGreaterThanOrEqual(bar.y + bar.height - 1);
+      await expect(stops.locator("ol[aria-label^='Visiting sequence'] li").first()).toContainText("CPU");
+      await expect(stops.locator("ol[aria-label^='Visiting sequence'] li").last()).toContainText("CPU");
+    }
+    // The seeded first run keeps its saved visiting order.
+    const names = await van1.locator(`[data-run-stops="${firstId}"] li button`).evaluateAll(buttons => buttons.map(button => (button.getAttribute("aria-label") || "").replace(/^Stop \d+, /, "").split(":")[0]));
+    expect(names.length).toBeGreaterThan(1);
+    expect(await auditLayout(page, "[data-journey-planner]", ["[data-testid=journey-timeline-scroller]", "[role=tabpanel]", "[class*=inspector-module][class*=scroll]"]), `${width}px layout`).toEqual([]);
+    // Selecting a run keeps its stops in the van row, shows the inspector once and does not repeat the sequence in the details block.
+    await selectRun(page, firstId);
+    await expect(page.locator(`ol[aria-label="Visiting sequence for Run 1"]`)).toHaveCount(1);
+    await expect(van1.locator(`[data-run-stops="${firstId}"]`)).toHaveCount(1);
+    await expect(runStops(page, firstId)).toHaveCount(1);
+    await expect(page.getByLabel("Selected run details").locator("ol[aria-label^='Visiting sequence']")).toHaveCount(0);
+    await expect(page.getByRole("complementary", { name: "Run inspector" })).toHaveCount(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    expectClean(issues, `${width}px stops under runs`);
   });
 }

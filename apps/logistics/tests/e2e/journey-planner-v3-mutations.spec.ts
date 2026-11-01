@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { expectClean } from "./layout-audit";
-import { assignedSeed, boot, centre, commandsOf, createRunViaDialog, DATE, drag, pxPerMinute, queueItem, runRow, v3Seed } from "./v3-helpers";
+import { assignedSeed, boot, centre, commandsOf, createRunViaDialog, DATE, drag, pxPerMinute, queueItem, runRow, runStops, v3Seed } from "./v3-helpers";
 
 /**
  * Pending, confirmed, rejected, stale and uncertain states for Run timing and queue placement through the mounted V3 planner.
@@ -84,7 +84,7 @@ test.describe("Journey Planner V3 · mutation states · 1536x960", () => {
     expect(server.state.jobs.find((job) => job.id === "job:2")!.runId).toBeUndefined();
     await drag(page, await centre(queueItem(page, "Studio Café")), await centre(runRow(page, run.id).locator("h3")));
     await expect.poll(() => server.state.jobs.find((job) => job.id === "job:2")!.runId).toBe(run.id);
-    await expect(runRow(page, run.id).getByRole("button", { name: /Studio Café/ })).toBeVisible();
+    await expect(runStops(page, run.id).getByRole("button", { name: /Studio Café/ })).toBeVisible();
   });
 
   test("an uncertain queue placement is reconciled against the server: no duplicate assignment and no lost job", async ({ page }) => {

@@ -68,7 +68,8 @@ test("timeline: one scroll owner, both van lanes retain every run and selected c
   await expect(page.locator("[data-run-bar]")).toHaveCount(4);
   const scrollers = await page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>("[data-journey-planner] *")).filter((el) => { const o = getComputedStyle(el).overflowX; return (o === "auto" || o === "scroll") && el.scrollWidth > el.clientWidth + 1; }).map((el) => el.getAttribute("data-testid") || el.className));
   expect(scrollers).toEqual(["journey-timeline-scroller"]);
-  const selected = page.locator('[data-run-id="fx-run-1"]');
+  // Each run's stops render directly beneath its own bar in its van row (#120), not in the selected-run details.
+  const selected = page.locator('[data-run-stops="fx-run-1"]');
   const labels = await selected.locator("ol[aria-label^='Visiting sequence'] li").allInnerTexts();
   expect(labels[0]).toContain("CPU");
   expect(labels[labels.length - 1]).toContain("CPU");

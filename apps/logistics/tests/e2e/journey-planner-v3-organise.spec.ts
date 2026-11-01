@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectClean } from "./layout-audit";
-import { assignedSeed, boot, centre, commandsOf, DATE, drag, queueItem, runRow, selectRun } from "./v3-helpers";
+import { assignedSeed, boot, centre, commandsOf, DATE, drag, queueItem, runRow, runStops, selectRun } from "./v3-helpers";
 
 /**
  * Organise Run, retirement, collections and rejected / stale / uncertain mutations through the mounted V3 planner.
@@ -10,7 +10,7 @@ const RUN = `run:${DATE}:a`;
 const EMPTY = `run:${DATE}:b`;
 const inspectorOf = (page: Page) => page.getByRole("complementary", { name: "Run inspector" });
 const stopNames = (page: Page) => inspectorOf(page).getByRole("list", { name: "Stops in visiting order" }).locator(":scope > li").evaluateAll((items) => items.map((item) => item.querySelector("[class*=stopName]")?.textContent || ""));
-const chipNames = (page: Page, runId = RUN) => runRow(page, runId).locator("ol[aria-label^='Visiting sequence'] li button").evaluateAll((buttons) => buttons.map((button) => (button.getAttribute("aria-label") || "").replace(/^Stop \d+, /, "").split(":")[0]));
+const chipNames = (page: Page, runId = RUN) => page.locator(`[data-run-stops="${runId}"]`).locator("ol[aria-label^='Visiting sequence'] li button").evaluateAll((buttons) => buttons.map((button) => (button.getAttribute("aria-label") || "").replace(/^Stop \d+, /, "").split(":")[0]));
 const stopId = (job: number) => `projection-stop:delivery:load:job:${job}`;
 async function openRun(page: Page, runId = RUN) { await page.locator(`[data-run-bar="${runId}"]`).click(); await expect(inspectorOf(page)).toBeVisible(); }
 
@@ -155,7 +155,7 @@ test.describe("Journey Planner V3 · Organise Run and rejected mutations · 1536
     await expect(page.getByRole("alert").filter({ hasText: /still contains operational work|work/ })).toBeVisible();
     expect(server.state.runs.find((run) => run.id === EMPTY)!.retired).toBeFalsy();
     await expect(runRow(page, EMPTY)).toBeVisible();
-    await expect(runRow(page, EMPTY).getByRole("button", { name: /North Kitchen/ })).toBeVisible();
+    await expect(runStops(page, EMPTY).getByRole("button", { name: /North Kitchen/ })).toBeVisible();
   });
 
   test("a populated run can never be deleted from the UI", async ({ page }) => {

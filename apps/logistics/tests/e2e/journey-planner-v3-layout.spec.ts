@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { auditLayout, expectClean } from "./layout-audit";
-import { assignedSeed, boot, centre, commandsOf, DATE, drag, queueItem, runRow } from "./v3-helpers";
+import { assignedSeed, boot, centre, commandsOf, DATE, drag, queueItem, runRow, runStops } from "./v3-helpers";
 
 /**
  * Journey Planner V3 on the real page: no clipped controls, no competing scrollbars, no hit-testing errors across the
@@ -51,7 +51,7 @@ for (const viewport of MATRIX) {
     // it are intentionally covered until it closes. Docked desktop keeps both usable.
     if (viewport.width >= 1100) {
       await expectHittable(runRow(page, RUN).getByRole("button", { name: "Run 1 actions" }), "row actions");
-      await expectHittable(runRow(page, RUN).getByRole("button", { name: /Market Hall/ }), "chip");
+      await expectHittable(runStops(page, RUN).getByRole("button", { name: /Market Hall/ }), "chip");
     }
     await expectHittable(inspector.getByRole("button", { name: "Edit times" }), "Edit times");
     await expectHittable(inspector.getByRole("button", { name: "Move Market Hall down" }), "reorder arrow");
