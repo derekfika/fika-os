@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-01T11:57:33.880Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-01T12:14:48.454Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -131,6 +131,7 @@ Snapshot: 2026-11-01T11:57:33.880Z. The local governed registry remains authorit
 | logistics-desktop-proof-continuation | codex-luna-logistics-proof-continuation | apps/logistics/docs/batch1-authority-drivers.md, apps/logistics/tests/helpers/authority-route-harness.cjs, apps/logistics/tests/desktop-admission-contract.test.ts, apps/integration-hub/tests/logistics-operational-access.test.ts | codex/logistics-desktop-proof-continuation | [#209](https://github.com/derekfika/fika-os/pull/209) | retired | 2026-10-31T13:50:34.823Z |
 | logistics-driver-phase1 | logistics-pwa-notifications | apps/logistics | codex/logistics-driver-phase1 | [#82](https://github.com/derekfika/fika-os/pull/82) | finished | 2026-10-27T12:59:56.553Z |
 | logistics-dual-van-sessions | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-dual-van-sessions | [#84](https://github.com/derekfika/fika-os/pull/84) | finished | 2026-10-27T15:00:13.245Z |
+| logistics-inspector-layout | haiku-logistics-inspector | apps/logistics/app/styles.css, apps/logistics/app/page.tsx | codex/logistics-inspector-layout | [#246](https://github.com/derekfika/fika-os/pull/246) | finished | 2026-11-01T12:14:45.177Z |
 | logistics-iss-021-a11y | logistics-mobile-redesign | apps/logistics | codex/logistics-iss-021-a11y | [#79](https://github.com/derekfika/fika-os/pull/79) | finished | 2026-10-27T10:33:21.341Z |
 | logistics-legacy-luna | luna-logistics | apps/logistics, docs/ui-evidence/logistics-desktop-uat, docs/ui-evidence/logistics-interactive-planning, artifacts/desktop-review, artifacts/logistics-desktop-uat | claude/fika-logistics-desktop-ui-f23c88 | [#18](https://github.com/derekfika/fika-os/pull/18) | finished | 2026-10-23T14:00:05.994Z |
 | logistics-loaded-checkbox-accessible-action | luna-logistics-loaded-checkbox-accessible-action | apps/logistics | codex/logistics-loaded-checkbox-accessible-action | — | retired | 2026-10-31T01:58:52.570Z |
