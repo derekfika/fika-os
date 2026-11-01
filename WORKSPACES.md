@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-01T15:32:40.577Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-01T15:42:46.996Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -168,6 +168,7 @@ Snapshot: 2026-11-01T15:32:40.577Z. The local governed registry remains authorit
 | logistics-withdrawal-uat-iss010 | uat-20261025-1150 | apps/logistics, CHANGELOG.md | codex/logistics-withdrawal-uat-iss010 | [#57](https://github.com/derekfika/fika-os/pull/57) | finished | 2026-10-25T22:58:46.128Z |
 | logistics-withdrawal-uat | uat-20261025-1150 | apps/logistics | codex/logistics-withdrawal-uat | — | finished | 2026-10-25T20:08:09.257Z |
 | marker-recovery-entrypoint-fix | codex-marker-entrypoint-cycle-fix | tools/workflow/deploy-marker-recovery.mjs, tools/workflow/deploy-marker-recovery.test.mjs | codex/marker-recovery-entrypoint-fix | [#249](https://github.com/derekfika/fika-os/pull/249) | retired | 2026-11-01T15:32:38.586Z |
+| marker-recovery-pr249-integration | codex-marker-entrypoint-integration | tools/workflow/deploy-marker-recovery.mjs, tools/workflow/deploy-marker-recovery.test.mjs | codex/marker-recovery-pr249-integration | [#250](https://github.com/derekfika/fika-os/pull/250) | retired | 2026-11-01T15:42:44.739Z |
 | menu-copy-dish-between-days | codex-menu-copy-dish-between-days | apps/menu-planning | codex/menu-copy-dish-between-days | [#9](https://github.com/derekfika/fika-os/pull/9) | finished | 2026-10-23T15:37:09.723Z |
 | menu-dish-editor-modal | claude-menu-modal | apps/menu-planning/app/dish-editor-modal.tsx, apps/menu-planning/app/dish-editor-modal.css, apps/menu-planning/lib/dish-editor.ts, apps/menu-planning/app/week-planner.tsx, apps/menu-planning/app/planner-data.ts, apps/menu-planning/tests/dish-editor.test.ts | codex/menu-dish-editor-modal | [#185](https://github.com/derekfika/fika-os/pull/185) | finished | 2026-10-30T19:50:14.526Z |
 | menu-dish-library-upgrade | claude-menu-upgrade | apps/menu-planning/lib/dish-library-upgrade.ts, apps/menu-planning/scripts/replace-dish-library.ts, apps/menu-planning/lib/canonical-menu-repository.ts, apps/menu-planning/tests/dish-library-upgrade.test.ts, docs/deployment/dish-library-upgrade-runbook.md | codex/menu-dish-library-upgrade | [#189](https://github.com/derekfika/fika-os/pull/189) | finished | 2026-10-30T22:19:50.118Z |
