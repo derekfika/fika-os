@@ -5,6 +5,7 @@ import { git, ref, stateDir, jsonFile, lock } from './runtime.mjs';
 import { APPS, digest, target } from './policy.mjs';
 import { workspaceRecords } from './workspaces.mjs';
 import { leaseIdentity } from './workspace-state.mjs';
+import { recoverDeployOperation as governed } from './workspace-admin.mjs';
 
 /**
  * Recovery of an interrupted DEPLOY workspace-operation marker.
@@ -165,7 +166,6 @@ export function parseArguments(argv) {
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
     const { id, options } = parseArguments(process.argv.slice(2));
-    const { recoverDeployOperation: governed } = await import('./workspace-admin.mjs');
     console.log(JSON.stringify(governed(id, options), null, 2));
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
