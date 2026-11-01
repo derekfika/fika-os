@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-01T14:59:54.946Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-01T15:07:03.457Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -55,7 +55,7 @@ Snapshot: 2026-11-01T14:59:54.946Z. The local governed registry remains authorit
 | deployment-dashboard-instructions | codex-deployment-dashboard-instructions | AGENTS.md, docs/deployment/deployment-dashboard.md | codex/deployment-dashboard-instructions | [#35](https://github.com/derekfika/fika-os/pull/35) | finished | 2026-10-24T19:09:31.421Z |
 | dev-operation-recovery | codex-pr-reconciliation | tools/workflow, docs/deployment/workspace-management.md | codex/dev-operation-recovery | [#127](https://github.com/derekfika/fika-os/pull/127) | retired | 2026-10-29T08:39:58.789Z |
 | developer-workflow-upgrade | luna-workflow-upgrade | tools/workflow, tools/deploy-dashboard, .github, AGENTS.md, docs/deployment, docs/ai/agent-reference.md, LOCAL-WORKSPACE.md, .changes | codex/developer-workflow-upgrade | [#99](https://github.com/derekfika/fika-os/pull/99) | retired | 2026-10-28T08:48:50.371Z |
-| email-sender-recovery | sol-email-sender-recovery | apps/integration-hub/lib/booking-email-delivery.ts, apps/integration-hub/lib/booking-email-rollout-guard.ts, apps/integration-hub/lib/booking-email-site-identities.ts, apps/integration-hub/lib/workspace-gmail-dwd.ts, apps/integration-hub/tests/booking-email-multisite-auth.test.ts, apps/integration-hub/tests/booking-email-rollout-guard.test.ts, apps/integration-hub/tests/hospitality-launch-hardening.test.ts, apps/integration-hub/tests/booking-email.test.ts, apps/integration-hub/tests/workspace-gmail-dwd.test.ts | codex/email-sender-recovery | [#247](https://github.com/derekfika/fika-os/pull/247) | active | 2026-11-01T10:30:38.635Z |
+| email-sender-recovery | sol-email-sender-recovery | apps/integration-hub/lib/booking-email-delivery.ts, apps/integration-hub/lib/booking-email-rollout-guard.ts, apps/integration-hub/lib/booking-email-site-identities.ts, apps/integration-hub/lib/workspace-gmail-dwd.ts, apps/integration-hub/tests/booking-email-multisite-auth.test.ts, apps/integration-hub/tests/booking-email-rollout-guard.test.ts, apps/integration-hub/tests/hospitality-launch-hardening.test.ts, apps/integration-hub/tests/booking-email.test.ts, apps/integration-hub/tests/workspace-gmail-dwd.test.ts | codex/email-sender-recovery | [#247](https://github.com/derekfika/fika-os/pull/247) | finished | 2026-11-01T15:06:47.882Z |
 | feat-033-design-system-audit | codex-feat-033-design-system | docs/design-system | codex/feat-033-design-system-audit | [#27](https://github.com/derekfika/fika-os/pull/27) | finished | 2026-10-24T12:27:50.923Z |
 | feat-033-visual-showcase-brief | codex-feat-033-visual-showcase-brief | docs/design-system | codex/feat-033-visual-showcase-brief | [#28](https://github.com/derekfika/fika-os/pull/28) | finished | 2026-10-24T12:56:42.648Z |
 | feat-034-allergen | feat-034-allergen | apps/shared, docs/ai | codex/feat-034-allergen | [#74](https://github.com/derekfika/fika-os/pull/74) | finished | 2026-10-28T06:40:27.771Z |
