@@ -4,7 +4,7 @@ import { readGmailOAuthFiles, refreshGmailAccessToken } from "./gmail-client";
 import type { BookingNotificationKind, BookingNotificationRecord } from "./booking-notifications";
 import type { CanonicalBooking } from "./hospitality-booking-service";
 import { EMAIL_FOOTER_MARKER, emailInlineImages } from "./booking-email-template";
-import { applyStagingMailRouting, decideOutboundRouting, OutboundGateError, type OutboundDecision } from "@fika/server-shared/outbound-environment";
+import { applyStagingMailRouting, decideOutboundRouting, OutboundGateError, PRODUCTION_PROJECT_ID, type DriveVerification, type OutboundDecision, type StagingDriveDestinations } from "@fika/server-shared/outbound-environment";
 
 export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 const RCOA_EMAIL_TEST_OPLOC = "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2";
@@ -34,28 +34,35 @@ export function resolveBookingSender(oplocId: string | undefined, kind: BookingN
 
 export const STAGING_SUBJECT_PREFIX = "[STAGING] ";
 
+/** Output of a TRUSTED, code-injected verifier that has actually read Drive parents/ownership. Never sourced from env or config JSON. */
+export type TrustedStagingDriveVerifier = () => { driveRootFolderId: string; destinations: StagingDriveDestinations; driveVerification: DriveVerification } | undefined;
+
 /**
- * Staging outbound decision for booking mail, from server-verified environment only.
- * Returns undefined for production/local/unset (legacy passthrough, unchanged). Staging, and any other
- * non-empty mode value, goes through the shared outbound gate and fails closed (OutboundGateError).
- * The sink inbox is the gate's ownerInbox, read from FIKA_STAGING_OWNER_INBOX; nothing is hard-coded here.
- * The gate also demands Drive destinations and an ancestry proof in staging; those come only from the
- * server-side verifier config FIKA_OUTBOUND_STAGING_DRIVE_JSON and are never fabricated here.
+ * Outbound decision for booking mail, from server-verified environment only. Fails closed (OutboundGateError) when
+ * the mode is unset, unknown or inconsistent with the deployed project.
+ * - production: passthrough, only when the project is fika-os (the Hub's production apphosting sets both mode and project).
+ * - local: the gate's local decision, which blocks routing (no local OAuth send).
+ * - staging: the sink inbox is the gate's ownerInbox (FIKA_STAGING_OWNER_INBOX). The gate also demands Drive destinations
+ *   and an ancestry proof; those come ONLY from the injected `driveVerifier`. With no verifier staging stays closed.
  */
-export function resolveBookingOutbound(env: Record<string, string | undefined> = process.env): OutboundDecision | undefined {
+export function resolveBookingOutbound(env: Record<string, string | undefined> = process.env, driveVerifier?: TrustedStagingDriveVerifier): OutboundDecision | undefined {
   const mode = env.FIKA_RUNTIME_MODE;
-  if (!mode || mode === "local" || mode === "production") return undefined;
+  const actualProjectId = env.FIREBASE_PROJECT_ID || env.GCLOUD_PROJECT;
+  if (mode === "production") {
+    if (actualProjectId !== PRODUCTION_PROJECT_ID) throw new OutboundGateError("OUTBOUND_PROJECT_MISMATCH");
+    return undefined;
+  }
+  if (mode === "local") return decideOutboundRouting({ mode, actualProjectId });
   if (mode !== "staging") throw new OutboundGateError("OUTBOUND_UNKNOWN_MODE");
-  let drive: { driveRootFolderId?: string; destinations?: unknown; driveVerification?: unknown } = {};
-  try { const parsed = JSON.parse(env.FIKA_OUTBOUND_STAGING_DRIVE_JSON || "{}"); if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) drive = parsed; } catch { /* the gate rejects the missing Drive config */ }
+  const verified = driveVerifier?.();
   return decideOutboundRouting({
     mode,
-    actualProjectId: env.FIREBASE_PROJECT_ID || env.GCLOUD_PROJECT,
+    actualProjectId,
     actualServiceIdentity: env.FIKA_OUTBOUND_SERVICE_IDENTITY,
     ownerInbox: env.FIKA_STAGING_OWNER_INBOX,
-    driveRootFolderId: drive.driveRootFolderId,
-    destinations: drive.destinations as never,
-    driveVerification: drive.driveVerification as never,
+    driveRootFolderId: verified?.driveRootFolderId,
+    destinations: verified?.destinations,
+    driveVerification: verified?.driveVerification,
   });
 }
 
