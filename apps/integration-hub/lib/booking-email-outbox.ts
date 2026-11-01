@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import { claimEvent, eventIsDue, markEventDeadLetter, markEventDelivered, markEventFailed, outboxRecord, type DurableDomainEvent } from "@fika/server-shared/durable-outbox";
 import type { BookingNotificationRecord } from "./booking-notifications";
+import type { OutboundDecision } from "@fika/server-shared/outbound-environment";
 import type { CanonicalBooking } from "./hospitality-booking-service";
-import { bookingGmailToken, GmailSendFailure, gmailRawMessage, notificationIsCurrent, resolveBookingSender, sendBookingGmail } from "./booking-email-delivery";
+import { bookingGmailToken, GmailSendFailure, gmailRawMessage, notificationIsCurrent, resolveBookingOutbound, resolveBookingSender, routeBookingMessage, sendBookingGmail, type BookingSender } from "./booking-email-delivery";
 
 export function notificationEvent(message: BookingNotificationRecord): DurableDomainEvent<BookingNotificationRecord> {
   return { eventId: message.notificationId, eventType: `hospitality.email.${message.kind}`, sourceAggregateId: message.bookingId, sourceVersion: message.bookingVersion || 0, occurredAt: message.createdAt, schemaVersion: "fika.booking-email.v2", payload: message, delivery: message.delivery || { status: message.status === "sent" ? "delivered" : "pending", attempts: message.attempts } };
@@ -21,7 +22,7 @@ export type EmailOutboxStore = {
 };
 
 /** The send barrier is durable before network I/O. Expired armed claims never auto-send again. */
-export async function runBookingEmailWorker(store: EmailOutboxStore, limit = 25, deps = { sender: resolveBookingSender, token: bookingGmailToken, send: sendBookingGmail }) {
+export async function runBookingEmailWorker(store: EmailOutboxStore, limit = 25, deps: { sender: (oplocId: string | undefined, kind: BookingNotificationRecord["kind"]) => BookingSender; token: (sender: BookingSender) => Promise<string>; send: (raw: string, token: string) => Promise<string>; outbound?: () => OutboundDecision | undefined } = { sender: resolveBookingSender, token: bookingGmailToken, send: sendBookingGmail }) {
   const at = new Date().toISOString();
   const ids = await store.candidates(Math.max(1, Math.min(25, Math.floor(limit) || 25)), at);
   let attempted = 0;
@@ -36,7 +37,7 @@ export async function runBookingEmailWorker(store: EmailOutboxStore, limit = 25,
       continue;
     }
     let raw: string, token: string, evidence: { from: string; replyTo: string; displayName: string; authenticatedAccount: string; messageHash: string };
-    try { const sender = deps.sender(message.oplocId, message.kind); raw = gmailRawMessage(message, sender); token = await deps.token(sender); evidence = { from: sender.from, replyTo: sender.replyTo, displayName: sender.displayName, authenticatedAccount: sender.authenticatedAccount, messageHash: crypto.createHash("sha256").update(raw).digest("hex") }; }
+    try { const decision = (deps.outbound ?? resolveBookingOutbound)(); const sender = deps.sender(message.oplocId, message.kind); raw = gmailRawMessage(routeBookingMessage(message, decision), sender, { omitReplyTo: Boolean(decision) }); token = await deps.token(sender); evidence = { from: sender.from, replyTo: decision ? "" : sender.replyTo, displayName: sender.displayName, authenticatedAccount: sender.authenticatedAccount, messageHash: crypto.createHash("sha256").update(raw).digest("hex") }; }
     catch { await store.finish(id, claimId, markEventFailed(event, "Sender configuration or Gmail authentication unavailable before send.", new Date().toISOString())); continue; }
     if (!await store.arm(id, claimId, new Date().toISOString(), evidence)) continue;
     try {

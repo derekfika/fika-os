@@ -4,6 +4,7 @@ import { readGmailOAuthFiles, refreshGmailAccessToken } from "./gmail-client";
 import type { BookingNotificationKind, BookingNotificationRecord } from "./booking-notifications";
 import type { CanonicalBooking } from "./hospitality-booking-service";
 import { EMAIL_FOOTER_MARKER, emailInlineImages } from "./booking-email-template";
+import { applyStagingMailRouting, decideOutboundRouting, OutboundGateError, type OutboundDecision } from "@fika/server-shared/outbound-environment";
 
 export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 const RCOA_EMAIL_TEST_OPLOC = "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2";
@@ -29,6 +30,41 @@ export function resolveBookingSender(oplocId: string | undefined, kind: BookingN
   if (!sender.verifiedSendAs && !scopedRcoaTest) throw new Error("Booking site From identity has not been verified by its Workspace owner.");
   if (!sender.enabled?.includes(kind)) throw new Error("This site lifecycle notification is disabled.");
   return sender;
+}
+
+export const STAGING_SUBJECT_PREFIX = "[STAGING] ";
+
+/**
+ * Staging outbound decision for booking mail, from server-verified environment only.
+ * Returns undefined for production/local/unset (legacy passthrough, unchanged). Staging, and any other
+ * non-empty mode value, goes through the shared outbound gate and fails closed (OutboundGateError).
+ * The sink inbox is the gate's ownerInbox, read from FIKA_STAGING_OWNER_INBOX; nothing is hard-coded here.
+ * The gate also demands Drive destinations and an ancestry proof in staging; those come only from the
+ * server-side verifier config FIKA_OUTBOUND_STAGING_DRIVE_JSON and are never fabricated here.
+ */
+export function resolveBookingOutbound(env: Record<string, string | undefined> = process.env): OutboundDecision | undefined {
+  const mode = env.FIKA_RUNTIME_MODE;
+  if (!mode || mode === "local" || mode === "production") return undefined;
+  if (mode !== "staging") throw new OutboundGateError("OUTBOUND_UNKNOWN_MODE");
+  let drive: { driveRootFolderId?: string; destinations?: unknown; driveVerification?: unknown } = {};
+  try { const parsed = JSON.parse(env.FIKA_OUTBOUND_STAGING_DRIVE_JSON || "{}"); if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) drive = parsed; } catch { /* the gate rejects the missing Drive config */ }
+  return decideOutboundRouting({
+    mode,
+    actualProjectId: env.FIREBASE_PROJECT_ID || env.GCLOUD_PROJECT,
+    actualServiceIdentity: env.FIKA_OUTBOUND_SERVICE_IDENTITY,
+    ownerInbox: env.FIKA_STAGING_OWNER_INBOX,
+    driveRootFolderId: drive.driveRootFolderId,
+    destinations: drive.destinations as never,
+    driveVerification: drive.driveVerification as never,
+  });
+}
+
+/** Staging: To becomes the sink inbox, Cc/Bcc are cleared and the subject is prefixed. No decision: unchanged (same reference). */
+export function routeBookingMessage(message: BookingNotificationRecord, decision: OutboundDecision | undefined): BookingNotificationRecord {
+  if (!decision) return message;
+  const routed = applyStagingMailRouting(decision, { to: message.to, cc: message.cc });
+  const subject = message.subject.startsWith(STAGING_SUBJECT_PREFIX) ? message.subject : `${STAGING_SUBJECT_PREFIX}${message.subject}`;
+  return { ...message, to: routed.to, cc: routed.cc, subject };
 }
 
 export function notificationIsCurrent(message: BookingNotificationRecord, booking: CanonicalBooking) {
@@ -61,18 +97,19 @@ export function notificationIsCurrent(message: BookingNotificationRecord, bookin
   return true;
 }
 
-export function gmailRawMessage(message: BookingNotificationRecord, sender: BookingSender) {
+/** `omitReplyTo` (staging) drops the Reply-To header and the reply-to contact line so no customer-facing reply route remains. */
+export function gmailRawMessage(message: BookingNotificationRecord, sender: BookingSender, options: { omitReplyTo?: boolean } = {}) {
   const recipients = [...message.to, ...message.cc];
   if (!message.to.length || recipients.some(value => !address(value))) throw new Error("Booking recipients are invalid.");
   const encode = (value: string) => `=?UTF-8?B?${Buffer.from(value).toString("base64")}?=`;
   const identity = crypto.createHash("sha256").update(message.notificationId).digest("hex");
   const boundary = `fika_${identity}`;
   const templated = message.html.includes(EMAIL_FOOTER_MARKER);
-  const contact = templated ? "" : `\n\nFor questions, reply to ${sender.replyTo}.`;
+  const contact = templated || options.omitReplyTo ? "" : `\n\nFor questions, reply to ${sender.replyTo}.`;
   const body = (value: string) => Buffer.from(value).toString("base64").match(/.{1,76}/g)?.join("\r\n") || "";
   const wrap = (base64: string) => (base64.match(/.{1,76}/g) || []).join("\r\n");
   const images = emailInlineImages(message.html);
-  const htmlPart = ["Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: base64", "", body(message.html + (templated ? "" : `<p>For questions, reply to ${sender.replyTo}.</p>`))];
+  const htmlPart = ["Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: base64", "", body(message.html + (templated || options.omitReplyTo ? "" : `<p>For questions, reply to ${sender.replyTo}.</p>`))];
   // Brand logos travel as inline (cid) parts of the HTML alternative so Gmail and Outlook render them without remote images.
   const relatedBoundary = `fikarel_${identity}`;
   const htmlAlternative = images.length
@@ -80,7 +117,7 @@ export function gmailRawMessage(message: BookingNotificationRecord, sender: Book
         ...images.flatMap(image => [`--${relatedBoundary}`, "Content-Type: image/png", "Content-Transfer-Encoding: base64", `Content-ID: <${image.contentId}>`, `Content-Disposition: inline; filename="${image.contentId}.png"`, "", wrap(image.base64)]), `--${relatedBoundary}--`]
     : htmlPart;
   return [
-    `From: ${encode(sender.displayName)} <${sender.from}>`, `Reply-To: ${sender.replyTo}`, `To: ${message.to.join(", ")}`,
+    `From: ${encode(sender.displayName)} <${sender.from}>`, ...(options.omitReplyTo ? [] : [`Reply-To: ${sender.replyTo}`]), `To: ${message.to.join(", ")}`,
     ...(message.cc.length ? [`Cc: ${message.cc.join(", ")}`] : []), `Subject: ${encode(message.subject)}`, `Message-ID: <${identity}@notifications.fikacatering.com>`,
     `Date: ${new Date(message.createdAt).toUTCString()}`, "MIME-Version: 1.0", `Content-Type: multipart/alternative; boundary="${boundary}"`, "",
     `--${boundary}`, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", body(message.text + contact),
