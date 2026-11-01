@@ -120,11 +120,10 @@ export default function RotationsManager({ styles, permissions, initialHead, ini
   }
 
   function addGroup() {
-    if (!configuration || !groupName.trim() || !groupItem || !groupDishes.length || mappedItems.has(groupItem)) return;
+    if (!configuration || !groupName.trim() || !groupItem || mappedItems.has(groupItem)) return;
     const bank = groupDishes.map((id) => dishById.get(id)).filter((dish): dish is DishOption => Boolean(dish)).map((dish) => ({ dishId: dish.id, recipeRevision: dish.revision }));
-    if (!bank.length) return;
-    const id = crypto.randomUUID(); const first = bank[0]!.dishId;
-    updateConfiguration((current) => ({ ...current, groups: [...current.groups, { id, label: groupName.trim(), categoryId: groupCategory, itemId: groupItem, dishBank: bank, weeks: weekNumbers(current).map((week) => ({ week, dishIds: [first] })), rules: structuredClone(current.groups[0]!.rules) }] }));
+    const id = crypto.randomUUID();
+    updateConfiguration((current) => ({ ...current, groups: [...current.groups, { id, label: groupName.trim(), categoryId: groupCategory, itemId: groupItem, dishBank: bank, weeks: weekNumbers(current).map((week) => ({ week, dishIds: [] })), rules: structuredClone(current.groups[0]!.rules) }] }));
     setSelectedGroupId(id); setGroupName(""); setGroupItem(""); setGroupDishes([]);
   }
 
@@ -152,14 +151,14 @@ export default function RotationsManager({ styles, permissions, initialHead, ini
         <div className={styles.sectionHeading}><div><h2>Groups</h2><span>{configuration?.groups.length || 0} in this draft</span></div></div>
         {configuration && <nav className={styles.groupList} aria-label="Choose a rotation group">{configuration.groups.map((group) => <button key={group.id} type="button" aria-current={group.id === selectedGroup?.id ? "page" : undefined} className={`${styles.groupButton} ${group.id === selectedGroup?.id ? styles.groupSelected : ""}`} onClick={() => setSelectedGroupId(group.id)}><span>{group.label}</span><small>{group.dishBank.length} dishes</small></button>)}</nav>}
         {configuration && <form className={styles.addGroupForm} onSubmit={(event) => { event.preventDefault(); addGroup(); }}>
-          <label htmlFor="new-rotation-group">Add a group</label><input id="new-rotation-group" value={groupName} onChange={(event) => setGroupName(event.target.value)} maxLength={160} placeholder="Group name" disabled={!permissions.Manage || busy} />
+          <label htmlFor="new-rotation-group">Add rotation row</label><input id="new-rotation-group" value={groupName} onChange={(event) => setGroupName(event.target.value)} maxLength={160} placeholder="Row name" disabled={!permissions.Manage || busy} />
           <label htmlFor="new-group-category">Category</label><select id="new-group-category" value={groupCategory} onChange={(event) => setGroupCategory(event.target.value)} disabled={!permissions.Manage || busy}>{configuration.categories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select>
           <label htmlFor="new-group-item-search">Search Hospitality catalogue</label><input id="new-group-item-search" type="search" value={itemSearch} onChange={(event) => setItemSearch(event.target.value)} disabled={!permissions.Manage || busy} placeholder="Search item name or category" />
           <label htmlFor="new-group-item">Hospitality catalogue item</label><select id="new-group-item" value={groupItem} onChange={(event) => setGroupItem(event.target.value)} disabled={!permissions.Manage || busy}><option value="">Choose an active item</option>{visibleItems.filter((item) => !mappedItems.has(item.id)).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.category}</option>)}</select>
           <label htmlFor="new-group-dish-search">Search Hospitality dishes</label><input id="new-group-dish-search" type="search" value={dishSearch} onChange={(event) => setDishSearch(event.target.value)} disabled={!permissions.Manage || busy} placeholder="Search dish name or category" />
           <label htmlFor="new-group-dishes">Hospitality dishes</label><select id="new-group-dishes" multiple value={groupDishes} onChange={(event) => { const shown = new Set(visibleDishes.map((dish) => dish.id)); setGroupDishes([...groupDishes.filter((id) => !shown.has(id)), ...Array.from(event.target.selectedOptions, (option) => option.value)]); }} disabled={!permissions.Manage || busy}>{visibleDishes.map((dish) => <option key={dish.id} value={dish.id}>{dish.name} · {dish.category}</option>)}</select>
-          <small>New groups start with the first selected dish in each week; adjust the plan before saving.</small>
-          <button className={styles.secondaryButton} type="submit" disabled={!permissions.Manage || busy || !groupName.trim() || !groupItem || !groupDishes.length || mappedItems.has(groupItem)}>Add group</button>
+          <small>Rows can start empty. Add dishes to the bank, then choose offerings independently in each week.</small>
+          <button className={styles.secondaryButton} type="submit" disabled={!permissions.Manage || busy || !groupName.trim() || !groupItem || mappedItems.has(groupItem)}>Add rotation row</button>
         </form>}
       </aside>
 
