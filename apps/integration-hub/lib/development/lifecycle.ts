@@ -56,7 +56,7 @@ export function deriveSteps(issueNumber: number, app: string, pulls: RawPull[], 
     const recs = matching(external.deployments.records, "staging", stagingShas, app).sort((a, b) => b.deployedAt.localeCompare(a.deployedAt));
     stagingRecord = recs.find(r => r.status === "serving");
     const latest = recs[0];
-    const evidenceOf = (r: DeploymentRecord): Evidence => ({ source: r.source, at: r.deployedAt, url: r.evidenceUrl });
+    const evidenceOf = (r: DeploymentRecord): Evidence => ({ source: r.source, at: r.deployedAt, url: r.evidenceUrl, sha: r.sourceSha });
     out.push(stagingRecord ? step("staging", "evidenced", "Staging serving " + sha7(stagingRecord.sourceSha) + ".", evidenceOf(stagingRecord))
       : latest?.status === "failed" ? step("staging", "failed", "Staging deployment of " + sha7(latest.sourceSha) + " failed.", evidenceOf(latest))
       : latest ? step("staging", "pending", "Submitted but not yet verified as serving.", evidenceOf(latest))

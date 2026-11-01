@@ -1,10 +1,11 @@
+import type { MarksView } from "./marks-shared";
 // Development dashboard (#241) shared types. Everything here is serialisable and safe for the browser:
 // no credential, request header or raw GitHub body text ever appears in these shapes.
 
 export type StepKey = "started" | "coded" | "tested" | "merged" | "staging" | "uat" | "production";
 export type StepStatus = "evidenced" | "pending" | "failed" | "not_reached" | "not_connected";
 
-export interface Evidence { source: string; at?: string; url?: string; detail?: string }
+export interface Evidence { source: string; at?: string; url?: string; detail?: string; sha?: string }
 export interface LifecycleStep { key: StepKey; label: string; status: StepStatus; evidence?: Evidence; note: string }
 
 export type PipelineStatus = "not_started" | "in_progress" | "ci_failing" | "merged_awaiting_deploy" | "awaiting_uat" | "uat_failed" | "uat_accepted" | "live";
@@ -53,4 +54,6 @@ export interface DevelopmentSnapshot {
   schema: 1; repository: string; generatedAt: string; lastVerified: string | null; flags: SnapshotFlags; reasons: string[];
   rateLimit?: { limit: number; remaining: number; resetAt: string };
   sources: SourceStatus[]; summary: SummaryCounts; issues: IssueView[]; releases: ReleaseRow[]; activity: ActivityItem[];
+  /** Owner-recorded assertions, kept apart from the verified fields above. Added per request by the route, never cached with GitHub data. */
+  marks?: MarksView;
 }

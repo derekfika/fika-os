@@ -1,4 +1,5 @@
 import { GoogleAuth } from "google-auth-library";
+import { authorizedHospitalityMailboxes, RCOA_HOSPITALITY_OPLOC_ID } from "./booking-email-site-identities";
 
 const scope = "https://www.googleapis.com/auth/gmail.send";
 const tokenAudience = "https://oauth2.googleapis.com/token";
@@ -69,11 +70,12 @@ function signingClaims(mailbox: string, now = Math.floor(Date.now() / 1000)): Jw
 }
 
 /** Dedicated keyless Gmail DWD. Never reads a service-account key or the Drive DWD credential. */
-export async function workspaceGmailToken(mailbox: string, env: Record<string, string | undefined> = process.env, dependencies: Dependencies = {}) {
-  if (mailbox !== rcoaMailbox) throw new Error("Workspace Gmail mailbox is not approved for RCoA verification.");
+export async function workspaceGmailToken(mailbox: string, env: Record<string, string | undefined> = process.env, dependencies: Dependencies = {}, oplocId: string = RCOA_HOSPITALITY_OPLOC_ID) {
+  const normalizedMailbox = mailbox.trim().toLowerCase();
+  if (!authorizedHospitalityMailboxes(oplocId, env).has(normalizedMailbox)) throw new Error("Workspace Gmail mailbox is not approved for this Hospitality OPLOC.");
   if (env.FIKA_HOSPITALITY_EMAIL_MAILER_SERVICE_ACCOUNT?.trim() !== mailerServiceAccount) throw new Error("Workspace Gmail mailer service account is missing or invalid.");
   try {
-    const assertion = await (dependencies.signJwt || signJwtWithIam)(mailerServiceAccount, signingClaims(mailbox));
+    const assertion = await (dependencies.signJwt || signJwtWithIam)(mailerServiceAccount, signingClaims(normalizedMailbox));
     const token = await (dependencies.exchangeJwt || exchangeSignedJwt)(assertion);
     if (!token) throw new Error();
     return token;
