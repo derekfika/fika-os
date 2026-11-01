@@ -1,3 +1,4 @@
+import { seedVisibility } from "./rcoa-service-visibility";
 import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { localRcoaMenuCatalogue } from "../../lib/local-rcoa-menu";
@@ -9,7 +10,7 @@ export const SERVICE_DATE = "2026-10-19";
 /** A governed catalogue package shaped like the published one: stable Item IDs in the hospitality-menu-item namespace (not the legacy source IDs). */
 export const governedId = (sourceItemId: string, index: number) => `hospitality-menu-item:${index % 6 === 0 ? "mnk" : "rcoa"}:${sourceItemId}`;
 export const governedPackage = {
-  schemaVersion: 1, contract: "fika.hospitality-catalogue-package.v1",
+  schemaVersion: 2, contract: "fika.hospitality-catalogue-package.v2", serviceLayout: seedVisibility.layout,
   oplocs: [{ id: RCOA_OPLOC, label: "RCoA" }, { id: "oploc:rcoa-test", label: "RCoA (test)" }], exceptions: [],
   items: localRcoaMenuCatalogue.items.map((item, index) => ({
     id: governedId(item.source.sourceItemId, index), name: item.name, category: item.category, description: item.description,
@@ -23,7 +24,7 @@ export const governedMenu = portalMenuFromCatalogue(governedPackage as never, RC
 
 const bytes = gzipSync(Buffer.from(JSON.stringify(governedPackage)));
 const contentHash = createHash("sha256").update(bytes).digest("hex");
-const manifest = { dataset: "hospitality-booking/catalogue", packageVersion: 1, schemaVersion: 1, contractVersion: "fika.hospitality-catalogue-package.v1", objectName: `hospitality-booking/catalogue/${contentHash}.json.gz`, compression: "gzip", contentHash, compressedSize: bytes.byteLength, uncompressedSize: JSON.stringify(governedPackage).length, recordCount: governedPackage.items.length, generatedAt: "2026-10-19T08:00:00.000Z" };
+const manifest = { dataset: "hospitality-booking/catalogue", packageVersion: 1, schemaVersion: 2, contractVersion: "fika.hospitality-catalogue-package.v2", objectName: `hospitality-booking/catalogue/${contentHash}.json.gz`, compression: "gzip", contentHash, compressedSize: bytes.byteLength, uncompressedSize: JSON.stringify(governedPackage).length, recordCount: governedPackage.items.length, generatedAt: "2026-10-19T08:00:00.000Z" };
 
 /** Serves the Hub catalogue endpoints the server-side loader calls; undefined for every other URL. */
 export function governedCatalogueResponse(url: string): Response | undefined {

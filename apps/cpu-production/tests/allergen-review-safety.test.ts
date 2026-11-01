@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { CANONICAL_ALLERGEN_KEYS, isCompleteOperationalAllergenMap, normaliseOperationalAllergens, toggleOperationalAllergen, type OperationalAllergenState } from "../../shared/allergen-contract";
-import { applyHospitalityCellClick, derivedNoKeyState } from "../app/ui/allergen-cell-state";
+import { applyHospitalityCellClick, noKeyTicked } from "../app/ui/allergen-cell-state";
 import { isSigningAvailable, reviewFingerprint, savedFingerprintAfterSave } from "../app/lib/allergen-review-session";
 import { LEGACY_PLAN_REVISION, planRevisionToken, reviewRevisionConflict } from "../app/lib/production-plan-state";
 import { confirmAllergenReviewMap } from "../app/lib/allergen-review-state";
@@ -12,16 +12,15 @@ import type { PlannedMenuItem, ProductionPlan } from "../app/lib/production-plan
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const named = CANONICAL_ALLERGEN_KEYS.filter((key) => key !== "no_key_allergens");
 
-// ---------- 1. the derived "No key allergens" indicator is read only and cannot conceal named evidence
+// ---------- 1. issue 225: "No Key Allergens" is a deliberate chef attestation, never derived, and never hides named evidence
 const evidence = (): Record<string, OperationalAllergenState> => ({ gluten: "contains", milk: "may_contain" }); // fish is unrecorded
 
-test("clicking the derived No key allergens column does nothing: gluten stays contains, milk stays may contain, fish stays unrecorded", () => {
-  const start = evidence();
-  let current = start;
-  for (let attempt = 0; attempt < 5; attempt += 1) current = applyHospitalityCellClick(current, "no_key_allergens");
-  assert.equal(current, start, "the same object comes back: nothing changed");
-  assert.deepEqual(current, { gluten: "contains", milk: "may_contain" });
-  assert.equal(current.fish, undefined);
+test("ticking No Key over recorded allergens replaces them only by the chef's deliberate tick; clicking other cells then withdraws the tick", () => {
+  const ticked = applyHospitalityCellClick(evidence(), "no_key_allergens");
+  assert.deepEqual(ticked, { no_key_allergens: "contains" });
+  assert.equal(noKeyTicked(ticked, { declaration: { declared: true } }), true);
+  const withAllergen = applyHospitalityCellClick(ticked, "fish", { declaration: { declared: true } });
+  assert.deepEqual(withAllergen, { fish: "contains" }, "selecting an allergen withdraws No Key");
 });
 
 test("no sequence of clicks on other allergens can turn the recorded evidence into clear, and unrecorded is never assumed clear", () => {
@@ -33,35 +32,39 @@ test("no sequence of clicks on other allergens can turn the recorded evidence in
   assert.equal(isCompleteOperationalAllergenMap(current), false);
 });
 
-test("the shared cycle used by Delivered-In is unchanged; only the Hospitality entry point blocks the derived column", () => {
+test("the shared cycle used by Delivered-In is unchanged; CPU No Key is an explicit toggle", () => {
   const delivered = toggleOperationalAllergen({ gluten: "contains" }, "no_key_allergens");
   assert.equal(delivered.gluten, "clear", "Delivered-In behaviour (shared contract) is untouched");
-  assert.deepEqual(applyHospitalityCellClick({ gluten: "contains" }, "no_key_allergens"), { gluten: "contains" });
+  assert.deepEqual(applyHospitalityCellClick({ gluten: "contains" }, "no_key_allergens"), { no_key_allergens: "contains" });
 });
 
-test("the derived indicator reflects the named states and never alters them", () => {
-  assert.equal(derivedNoKeyState(evidence()), "clear", "a positive named allergen means there are key allergens, so the indicator is clear");
-  assert.equal(derivedNoKeyState(Object.fromEntries(named.map((key) => [key, "clear"]))), "contains", "all named explicitly clear = no key allergens");
-  assert.equal(derivedNoKeyState({ ...Object.fromEntries(named.map((key) => [key, "clear"])), fish: "unrecorded" }), "unrecorded", "one unrecorded named allergen keeps it unrecorded");
-  assert.equal(derivedNoKeyState({ ...Object.fromEntries(named.map((key) => [key, "clear"])), fish: "may_contain" }), "clear");
+test("the CPU tick is false for blank rows and for legacy automatic No Key values; all-clear is never a declaration", () => {
+  assert.equal(noKeyTicked({}), false);
+  assert.equal(noKeyTicked(Object.fromEntries(named.map((key) => [key, "clear"])) as Record<string, OperationalAllergenState>), false);
+  assert.equal(noKeyTicked({ ...Object.fromEntries(named.map((key) => [key, "clear"])), no_key_allergens: "contains" } as Record<string, OperationalAllergenState>), false, "a legacy derived No Key value without a declaration record is not ticked");
+  assert.equal(noKeyTicked({ no_key_allergens: "contains" }, { declaration: { declared: true } }), true);
 });
 
-test("persistence cannot accept an inconsistent derived value that hides named evidence", () => {
+test("Delivered-In style persistence normalisation (shared contract) still derives; CPU does not use it for No Key", () => {
   const forgedClearEverything = normaliseOperationalAllergens({ ...evidence(), no_key_allergens: "contains" });
   assert.equal(forgedClearEverything.gluten, "contains");
   assert.equal(forgedClearEverything.milk, "may_contain");
-  assert.equal(forgedClearEverything.no_key_allergens, "clear", "positive named evidence forces the derived value");
-  const allClearForged = normaliseOperationalAllergens({ ...Object.fromEntries(named.map((key) => [key, "clear"])), no_key_allergens: "clear" });
-  assert.equal(allClearForged.no_key_allergens, "contains", "all named clear forces the derived value");
+  assert.equal(forgedClearEverything.no_key_allergens, "clear", "shared contract is unchanged for other apps");
   const withUnrecorded = normaliseOperationalAllergens({ ...evidence(), no_key_allergens: "contains" });
   assert.equal(isCompleteOperationalAllergenMap(withUnrecorded), false, "an unrecorded named allergen still blocks planning and signing");
+  assert.doesNotMatch(read("../app/api/production-plan/route.ts"), /deriveNoKeyAllergens|normaliseOperationalAllergens/, "the CPU route no longer derives No Key");
 });
 
-test("the Hospitality grid renders the derived column as a non-interactive element", () => {
+test("the Hospitality grid renders No Key as a keyboard-reachable labelled checkbox with a 44px target, not a read-only icon", () => {
   const component = read("../app/ui/HospitalityAllergenDetail.tsx");
-  assert.match(component, /if \(key === "no_key_allergens"\) return;/);
-  assert.match(component, /if \(key === "no_key_allergens"\) \{\s*const derivedState = derivedNoKeyState\(sub\.allergens\);[\s\S]*?<span\s+role="img"[\s\S]*?read only/);
-  assert.doesNotMatch(component, /toggleOperationalAllergen\(/, "the component no longer calls the shared toggle directly");
+  assert.match(component, /type="checkbox"/);
+  assert.match(component, /onChange=\{\(\) => toggleCell\(menuItem\.id, sub, "no_key_allergens"\)\}/);
+  assert.match(component, /htmlFor=\{inputId\}/);
+  assert.match(component, /aria-describedby=\{`\$\{inputId\}-status`\}/);
+  assert.match(component, /No Key Allergens<span className="visually-hidden"> for/);
+  assert.doesNotMatch(component, /derivedNoKeyState|read only/);
+  assert.match(read("../app/ui/hospitality-allergen-detail.css"), /\.no-key-control\{[^}]*min-height:44px;min-width:44px/);
+  assert.match(read("../app/ui/hospitality-allergen-detail.css"), /\.no-key-checkbox:focus-visible\{outline:3px solid/);
 });
 
 // ---------- 2. two reviewers: a stale save is rejected and never overwrites newer evidence
@@ -181,5 +184,5 @@ test("editing a confirmed row reopens it: earlier derived Clears revert to unrec
   assert.equal(isCompleteOperationalAllergenMap(edited), false);
   const emptied = applyHospitalityCellClick(applyHospitalityCellClick(applyHospitalityCellClick({}, "fish"), "fish"), "fish");
   assert.equal(emptied.fish, undefined);
-  assert.equal(emptied.no_key_allergens, "unrecorded");
+  assert.equal(emptied.no_key_allergens, undefined, "removing the last allergen leaves the row BLANK, never No Key");
 });

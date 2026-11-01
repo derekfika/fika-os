@@ -14,13 +14,14 @@ import type {
   MatrixSignatureScope,
 } from "../lib/production-plan";
 import { allergenReviewProblems, describeAllergenReviewProblem, effectiveProductionPlanStatus, hasAllergenAuthority } from "../lib/production-plan-state";
-import { confirmAllergenReviewMap, unresolvedNamedAllergenKeys } from "../lib/allergen-review-state";
+import { BLOCKED_ROW_MESSAGES, confirmAllergenReviewMap, unresolvedNamedAllergenKeys } from "../lib/allergen-review-state";
+import { PENDING_DECLARATION, editableAllergens, isRowVerified, rowAttestation } from "../lib/allergen-explicit";
 import { deriveMatrixStorageStatus, hasUnsavedEdits, isSigningAvailable, MATRIX_POLL_INTERVAL_MS, reviewFingerprint, savedFingerprintAfterSave, type MatrixStorageStatus } from "../lib/allergen-review-session";
 import "./hospitality-allergen-detail.css";
 import { mayContainNotes } from "./allergen-matrix";
 import { isCompleteOperationalAllergenMap, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
 import { matrixColumns } from "./allergen-matrix";
-import { applyHospitalityCellClick, rowReviewBadge, cellLabel, cellState, derivedNoKeyState, emptyAllergens, hydrateSavedAllergens } from "./allergen-cell-state";
+import { applyHospitalityCellClick, rowReviewBadge, cellLabel, cellState, emptyAllergens, hydrateSavedAllergens } from "./allergen-cell-state";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 import { canonicalAllergenMatrixForHash } from "../../../shared/allergen-matrix-hash";
 const allergenColumns = matrixColumns;
@@ -410,9 +411,7 @@ export default function HospitalityAllergenDetail({
     () => menuItems.flatMap((item) => item.subItems),
     [menuItems],
   );
-  const completeCount = subItems.filter(
-    (item) => item.evidenceStatus === "completed",
-  ).length;
+  const completeCount = subItems.filter(isRowVerified).length;
   const guestCount = eventGuestCountLabel(order.guestCount);
 
   const markMatrixEdited = () => {
@@ -500,23 +499,35 @@ export default function HospitalityAllergenDetail({
     markMatrixEdited();
     setMenuItems((items) => items.filter((item) => item.id !== id));
   };
-  const toggleCell = (menuId: string, sub: PlannedSubItem, key: string) => {
-    // "No key allergens" is derived from the named allergens and can never be edited, so it cannot overwrite named evidence.
-    if (key === "no_key_allergens") return;
+  /** The row is checked only when a chef verified it: named allergens or a deliberate No Key tick. A blank or legacy automatic row never is. */
+  const rowChecked = (sub: PlannedSubItem) => isRowVerified(sub) && !unresolvedNamedAllergenKeys(sub.allergens).length;
+  const [statusAnnouncement, setStatusAnnouncement] = useState("");
+  const rowContext = (sub: PlannedSubItem) => ({ review: sub.allergenReview, declaration: sub.noKeyDeclaration });
+  const editRowAllergens = (menuId: string, sub: PlannedSubItem, allergens: Record<string, import("../../../shared/allergen-contract").OperationalAllergenState>) => {
     markMatrixEdited();
-    const allergens = applyHospitalityCellClick(sub.allergens, key);
     setRowErrors((current) => { if (!(sub.id in current)) return current; const next = { ...current }; delete next[sub.id]; return next; });
-    updateSubItem(menuId, sub.id, {
-      allergens,
-      evidenceStatus: "not_completed",
-    });
+    // A pending tick is honoured in the browser only; the server discards this record and stamps the authenticated chef and time.
+    updateSubItem(menuId, sub.id, { allergens, evidenceStatus: "not_completed", allergenReview: undefined, noKeyDeclaration: allergens.no_key_allergens === "contains" ? PENDING_DECLARATION : undefined });
+  };
+  const toggleCell = (menuId: string, sub: PlannedSubItem, key: string) => {
+    if (reviewLockedByAuthority) return;
+    const hadNoKey = rowAttestation(sub) === "declared";
+    const allergens = applyHospitalityCellClick(sub.allergens, key, rowContext(sub));
+    editRowAllergens(menuId, sub, allergens);
+    if (key !== "no_key_allergens" && hadNoKey) setStatusAnnouncement(`${sub.name || "Row"}: No Key Allergens cleared because an allergen was selected.`);
+    else if (key === "no_key_allergens") setStatusAnnouncement(allergens.no_key_allergens === "contains" ? `${sub.name || "Row"}: No Key Allergens ticked. All allergens cleared.` : `${sub.name || "Row"}: No Key Allergens unticked. The row is blank and not verified.`);
+    else setStatusAnnouncement("");
   };
   const [locallyChecked, setLocallyChecked] = useState<Set<string>>(() => new Set());
   const completeSubItem = (menuId: string, sub: PlannedSubItem) => {
-    if (reviewLockedByAuthority || (sub.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys(sub.allergens).length)) return;
-    // Mark checked is the chef's explicit confirmation of the whole displayed row: white cells become confirmed Clear,
-    // while Contains and May Contain declarations are kept exactly as recorded.
-    const completion = confirmAllergenReviewMap(sub.allergens);
+    if (reviewLockedByAuthority || rowChecked(sub)) return;
+    // Mark checked is the chef's explicit confirmation of the whole displayed row: white cells become confirmed Clear, while
+    // Contains / May Contain and a deliberate No Key Allergens tick are kept exactly as recorded. A blank row cannot be checked.
+    const completion = confirmAllergenReviewMap(sub.allergens, rowContext(sub));
+    if (completion.blocked) {
+      setRowErrors((current) => ({ ...current, [sub.id]: BLOCKED_ROW_MESSAGES[completion.blocked!] }));
+      return;
+    }
     markMatrixEdited();
     setRowErrors((current) => { const next = { ...current }; delete next[sub.id]; return next; });
     setLocallyChecked(current => new Set(current).add(sub.id));
@@ -530,7 +541,9 @@ export default function HospitalityAllergenDetail({
       ...candidate,
       productionItemId: productionItem.id,
       name: productionItem.title,
-      allergens: hydrateSavedAllergens(productionItem.allergens),
+      allergens: editableAllergens(productionItem.allergens),
+      allergenReview: undefined,
+      noKeyDeclaration: undefined,
       mayContainNotes: productionItem.mayContainNotes || "",
       evidenceStatus: "not_completed" as const,
     } : candidate) } : item);
@@ -669,7 +682,10 @@ export default function HospitalityAllergenDetail({
     const problems = allergenReviewProblems(menuItems);
     setReviewProblems(problems.map(describeAllergenReviewProblem));
     const nextRowErrors: Record<string, string> = {};
-    for (const problem of problems) if (problem.rowId && problem.kind === "allergens-not-recorded") nextRowErrors[problem.rowId] = `Record ${problem.allergens.join(", ")}.`;
+    for (const problem of problems) {
+      if (problem.rowId && problem.kind === "allergens-not-recorded") nextRowErrors[problem.rowId] = `Record ${problem.allergens.join(", ")}.`;
+      else if (problem.rowId && (problem.kind === "row-blank" || problem.kind === "no-key-legacy" || problem.kind === "no-key-conflict")) nextRowErrors[problem.rowId] = describeAllergenReviewProblem(problem).split(": ").slice(1).join(": ");
+    }
     setRowErrors(nextRowErrors);
     if (problems.length) {
       setSavedFingerprint(undefined);
@@ -1031,17 +1047,26 @@ export default function HospitalityAllergenDetail({
                             </th>
                             {allergenColumns.map(([key, label]) => {
                               if (key === "no_key_allergens") {
-                                const derivedState = derivedNoKeyState(sub.allergens);
+                                const attestation = rowAttestation(sub);
+                                const ticked = attestation === "declared" || attestation === "conflict";
+                                const inputId = `no-key-${sub.id}`;
                                 return (
                                   <td key={key}>
-                                    <span
-                                      role="img"
-                                      aria-label={`${label} for ${sub.name || "sub-item"}: ${derivedState} (derived from the named allergens, read only)`}
-                                      title="Derived from the named allergens"
-                                      className={`allergen-cell allergen-cell--${derivedState} allergen-cell--derived`}
-                                    >
-                                      {cellLabel(derivedState)}
-                                    </span>
+                                    <label className={`no-key-control${ticked ? " no-key-control--ticked" : ""}`} htmlFor={inputId}>
+                                      <input
+                                        id={inputId}
+                                        type="checkbox"
+                                        className="no-key-checkbox"
+                                        checked={ticked}
+                                        disabled={reviewLockedByAuthority}
+                                        aria-describedby={`${inputId}-status`}
+                                        onChange={() => toggleCell(menuItem.id, sub, "no_key_allergens")}
+                                      />
+                                      <span className="no-key-label">No Key Allergens<span className="visually-hidden"> for {sub.name || "sub-item"}</span></span>
+                                    </label>
+                                    <small id={`${inputId}-status`} className="no-key-status" data-testid={`no-key-status-${sub.id}`}>
+                                      {attestation === "declared" ? "Declared: no key allergens" : attestation === "legacy_unverified" ? "Legacy value, not verified" : attestation === "conflict" ? "Conflict with allergens" : attestation === "positives" ? "Allergens recorded" : "Not verified"}
+                                    </small>
                                   </td>
                                 );
                               }
@@ -1077,15 +1102,15 @@ export default function HospitalityAllergenDetail({
                             <td>
                               <button
                                 type="button"
-                                className={`check-button ${sub.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys(sub.allergens).length ? "check-button--done" : ""}`}
-                                disabled={busy || reviewLockedByAuthority || (sub.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys(sub.allergens).length)}
-                                aria-label={sub.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys(sub.allergens).length ? `${sub.name || "Sub-item"}: checked` : reviewLockedByAuthority ? `${sub.name || "Sub-item"}: reopen review to amend` : `${sub.name || "Sub-item"}: mark checked`}
-                                title={reviewLockedByAuthority ? "Reopen the allergen review before amending signed authority" : sub.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys(sub.allergens).length ? "This row is already checked" : undefined}
+                                className={`check-button ${rowChecked(sub) ? "check-button--done" : ""}`}
+                                disabled={busy || reviewLockedByAuthority || (rowChecked(sub))}
+                                aria-label={rowChecked(sub) ? `${sub.name || "Sub-item"}: checked` : reviewLockedByAuthority ? `${sub.name || "Sub-item"}: reopen review to amend` : `${sub.name || "Sub-item"}: mark checked`}
+                                title={reviewLockedByAuthority ? "Reopen the allergen review before amending signed authority" : rowChecked(sub) ? "This row is already checked" : undefined}
                                 onClick={() =>
                                   completeSubItem(menuItem.id, sub)
                                 }
                               >
-                                {sub.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys(sub.allergens).length
+                                {rowChecked(sub)
                                   ? "Checked"
                                   : reviewLockedByAuthority
                                     ? "Reopen review to amend"
@@ -1110,6 +1135,7 @@ export default function HospitalityAllergenDetail({
               </article>
             ))}
           </div>
+          <p className="visually-hidden" role="status" aria-live="polite" data-testid="no-key-announcement">{statusAnnouncement}</p>
           <textarea
             className="planning-notes"
             value={planningNotes}

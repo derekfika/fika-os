@@ -7,7 +7,7 @@ import { groupedSlots } from "@/lib/week-planner-layout";
 import PlanningContextNav from "./planning-context-nav";
 import { rankDishPickerItems } from "@/lib/dish-picker";
 import { categoryForSlot } from "@/lib/dish-categories";
-import { assessDishCopyTarget, compatibleDishCopyTargets, copyableDishForSource } from "@/lib/dish-copy";
+import { assessDishCopyTarget, compatibleDishCopyTargets, copyableDishForSource, dishCopyUnavailableReason } from "@/lib/dish-copy";
 import { invalidateCatalogueCache } from "@/lib/menu-catalogue-cache";
 import PlannerModal from "./planner-modal";
 import DuplicatePlanningModal from "./duplicate-planning-modal";
@@ -23,6 +23,7 @@ import { dishesForSlot, emptyPickerFilters, emptyPickerMessage, filterOptions, f
 import { dishSlotRecommendation, saladRecommendationOptions, saladSlotMatches } from "@/lib/dish-slot-recommendations";
 import { weekPlannerSlotLabel } from "@/lib/week-planner-slot-label";
 import type { DishTag } from "@/lib/dish-tags";
+import { dishDisplayName, dishDisplayNameOffset } from "@/lib/dish-display-name";
 
 const plannerSlotLabel = (slot: string) => weekPlannerSlotLabel(slot, slotLabel(slot));
 
@@ -113,7 +114,7 @@ export default function WeekPlanner() {
   const spell = useSpellcheckLists();
   const dictionary = useSpellingDictionary();
   const [spellOpen, setSpellOpen] = useState(false);
-  const spellItems = useMemo(() => (snapshot?.entries || []).filter(entry => entry.itemLabel.trim()).map(entry => ({ entryId: entry.id, dayId: entry.dayId, dishLabel: entry.itemLabel, dayName: snapshot?.days.find(day => day.id === entry.dayId)?.dayName || "", slot: plannerSlotLabel(entry.slot), replaceable: snapshot?.week.dayStatuses?.[entry.dayId] ? snapshot.week.dayStatuses[entry.dayId] === "draft" : snapshot?.week.status === "draft" })), [snapshot]);
+  const spellItems = useMemo(() => (snapshot?.entries || []).filter(entry => entry.itemLabel.trim()).map(entry => ({ entryId: entry.id, dayId: entry.dayId, dishLabel: dishDisplayName(entry.itemLabel), dayName: snapshot?.days.find(day => day.id === entry.dayId)?.dayName || "", slot: plannerSlotLabel(entry.slot), replaceable: snapshot?.week.dayStatuses?.[entry.dayId] ? snapshot.week.dayStatuses[entry.dayId] === "draft" : snapshot?.week.status === "draft" })), [snapshot]);
   const spellCount = useMemo(() => spellItems.reduce((total, item) => total + findSpellingIssues(item.dishLabel, { ignored: spell.ignored, addedWords: spell.added, speller: dictionary.speller }).length, 0), [spellItems, spell.ignored, spell.added, dictionary.speller]);
   const copyPendingRef = useRef(false);
   if (!snapshot) return <MenuPlanningShell section="Week Planner"><div className="menu-loading">Loading Week Planner…</div></MenuPlanningShell>;
@@ -121,11 +122,14 @@ export default function WeekPlanner() {
     const current = snapshot.entries.find(entry => entry.id === item.entryId && entry.dayId === item.dayId);
     const dayStatus = snapshot.week.dayStatuses?.[item.dayId];
     const replaceable = dayStatus ? dayStatus === "draft" : snapshot.week.status === "draft";
-    if (!current || !replaceable || current.itemLabel.slice(finding.start, finding.end) !== finding.word) {
+    const sourceOffset = current ? dishDisplayNameOffset(current.itemLabel) : 0;
+    const sourceStart = finding.start + sourceOffset;
+    const sourceEnd = finding.end + sourceOffset;
+    if (!current || !replaceable || current.itemLabel.slice(sourceStart, sourceEnd) !== finding.word) {
       setCopyFeedback("This draft row changed or is no longer editable. Refresh the week before replacing the spelling.");
       return false;
     }
-    const corrected = replaceSpellingFinding(current.itemLabel, finding, replacement);
+    const corrected = replaceSpellingFinding(current.itemLabel, { ...finding, start: sourceStart, end: sourceEnd }, replacement);
     if (!corrected) return false;
     return command("update-entry", { weekId: snapshot.week.id, entryId: current.id, dayId: current.dayId, expectedWeekVersion: snapshot.week.version, patch: { itemLabel: corrected } });
   };
@@ -152,7 +156,7 @@ export default function WeekPlanner() {
   const weekDate = (offset: number) => { const date = new Date(`${snapshot.week.weekCommencing}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + offset); return date.toISOString().slice(0, 10); };
   const menuGroups = groupedSlots(snapshot);
   const menuSlots = menuGroups.flatMap(([, slots]) => slots);
-  const copyTargetsFor = (entryId: string) => compatibleDishCopyTargets(snapshot, dishes, entryId, menuSlots).filter(target => snapshot.days.slice(0, 5).some(day => day.id === target.dayId));
+  const copyTargetsFor = (entryId: string) => compatibleDishCopyTargets(snapshot, dishes, entryId, menuSlots);
   const copyDish = async (sourceEntryId: string, dayId: string, slot: string) => {
     if (copyPendingRef.current) return false;
     const result = assessDishCopyTarget(snapshot, dishes, sourceEntryId, { dayId, slot });
@@ -203,7 +207,7 @@ export default function WeekPlanner() {
                       const assessment = assessDishCopyTarget(snapshot, dishes, sourceEntryId, { dayId: day.id, slot });
                       if (assessment.allowed) void copyDish(sourceEntryId, day.id, slot); else setCopyFeedback(assessment.reason);
                     }}>
-                    <button className="week-menu-cell-button" draggable={Boolean(dish)} aria-label={entry ? `Select ${entry.itemLabel}; drag or use Copy to day` : `Select dish for ${day.dayName}, ${plannerSlotLabel(slot)}`} aria-haspopup={entry ? "menu" : undefined} aria-keyshortcuts={entry ? "Shift+F10" : undefined} title={entry ? "Right-click or press Shift+F10 for more actions" : undefined}
+                    <button className="week-menu-cell-button" draggable={Boolean(dish)} aria-label={entry ? `Select ${dishDisplayName(entry.itemLabel)}; drag or use Copy to day` : `Select dish for ${day.dayName}, ${plannerSlotLabel(slot)}`} aria-haspopup={entry ? "menu" : undefined} aria-keyshortcuts={entry ? "Shift+F10" : undefined} title={entry ? "Right-click or press Shift+F10 for more actions" : undefined}
                       onContextMenu={entry ? event => { event.preventDefault(); const box = event.currentTarget.getBoundingClientRect(); const fromKeyboard = event.clientX === 0 && event.clientY === 0; openCellMenu(day.id, slot, fromKeyboard ? { x: box.left + 12, y: box.bottom - 4 } : { x: event.clientX, y: event.clientY }, event.currentTarget); } : undefined}
                       onKeyDown={entry ? event => { if (isMenuOpenKey(event)) { event.preventDefault(); const box = event.currentTarget.getBoundingClientRect(); openCellMenu(day.id, slot, { x: box.left + 12, y: box.bottom - 4 }, event.currentTarget); } } : undefined}
                       onPointerDown={entry ? event => { if (event.pointerType !== "touch") return; const start = { x: event.clientX, y: event.clientY }; const opener = event.currentTarget; cancelLongPress(); longPressRef.current = { ...start, timer: window.setTimeout(() => openCellMenu(day.id, slot, start, opener), LONG_PRESS_MS) }; } : undefined}
@@ -212,13 +216,13 @@ export default function WeekPlanner() {
                       onDragStart={event => { if (!entry || !dish) { event.preventDefault(); return; } setDraggedEntryId(entry.id); event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("text/plain", entry.id); }}
                       onDragEnd={() => setDraggedEntryId(undefined)}
                       onClick={() => { if (shouldIgnoreClick(Date.now(), ignoreClickUntilRef.current)) return; setQuery(""); setPickerFilters(emptyPickerFilters); setPickerMode("recommended"); setPicker({ dayId: day.id, slot }); }}>
-                      {entry ? <SpellUnderlinedText text={entry.itemLabel} ignored={spell.ignored} added={spell.added} speller={dictionary.speller} /> : "+ Select dish"}{entry && <span className="week-menu-drag-handle" aria-hidden="true" title="Drag to copy">⠿</span>}
+                      {entry ? <SpellUnderlinedText text={dishDisplayName(entry.itemLabel)} ignored={spell.ignored} added={spell.added} speller={dictionary.speller} /> : "+ Select dish"}{entry && <span className="week-menu-drag-handle" aria-hidden="true" title="Drag to copy">⠿</span>}
                     </button>
                     {entry && <div className="week-menu-cell-actions">
-                      {findSpellingIssues(entry.itemLabel, { ignored: spell.ignored, addedWords: spell.added, speller: dictionary.speller }).length > 0 && <InlineSpellPopover item={spellItems.find(item => item.entryId === entry.id)!} ignored={spell.ignored} added={spell.added} dictionary={dictionary.speller} onReplace={replaceDraftSpelling} onIgnore={spell.ignore} onAddWord={spell.addWord} />}
-                      <button type="button" className="week-menu-copy-action" aria-label={`Copy ${entry.itemLabel} to another day`} title="Copy to another day" disabled={!dish || copyTargetsFor(entry.id).length === 0 || copyPending} onClick={() => setCopyDialogSourceId(entry.id)}><CopyGlyph /></button>
+                      {findSpellingIssues(dishDisplayName(entry.itemLabel), { ignored: spell.ignored, addedWords: spell.added, speller: dictionary.speller }).length > 0 && <InlineSpellPopover item={spellItems.find(item => item.entryId === entry.id)!} ignored={spell.ignored} added={spell.added} dictionary={dictionary.speller} onReplace={replaceDraftSpelling} onIgnore={spell.ignore} onAddWord={spell.addWord} />}
+                      <button type="button" className="week-menu-copy-action" aria-label={`Copy ${dishDisplayName(entry.itemLabel)} to another day`} title="Copy to another day" disabled={!dish || copyTargetsFor(entry.id).length === 0 || copyPending} onClick={() => setCopyDialogSourceId(entry.id)}><CopyGlyph /></button>
                       <button type="button" className="week-menu-copy-action week-menu-more" aria-haspopup="menu" aria-label={`More actions for ${entry.itemLabel}`} title="More actions" onClick={event => { const box = event.currentTarget.getBoundingClientRect(); openCellMenu(day.id, slot, { x: box.left, y: box.bottom + 4 }, event.currentTarget); }}>⋯</button>
-                      <button type="button" className="week-menu-clear" aria-label={`Clear ${entry.itemLabel}`} onClick={() => void clearEntry(entry)}>×</button>
+                      <button type="button" className="week-menu-clear" aria-label={`Clear ${dishDisplayName(entry.itemLabel)}`} onClick={() => void clearEntry(entry)}>×</button>
                     </div>}
                   </div>;
                 })}
@@ -227,13 +231,13 @@ export default function WeekPlanner() {
           </div>
         ))}
       </WeekMatrixScroller>
-    </section>{picker && !editor && <DishPicker dishes={dishes} query={query} setQuery={setQuery} filters={pickerFilters} setFilters={setPickerFilters} mode={pickerMode} setMode={setPickerMode} slot={picker.slot} onChoose={choose} onCreate={openCreateDish} onClose={() => setPicker(undefined)} />}{picker && editor && <DishEditorModal mode={editor.mode} initialName={editor.name} initialCategory={editor.category} initialSubcategory={editor.subcategory} dishId={editor.dishId} dishes={dishes} onCancel={() => setEditor(undefined)} onSaved={async saved => { setEditor(undefined); await refreshDishes(); if (saved.outcome !== "updated") await choose({ id: saved.id, name: saved.name, category: saved.category }); }} />}{!picker && editor && <DishEditorModal mode={editor.mode} initialName={editor.name} initialCategory={editor.category} initialSubcategory={editor.subcategory} dishId={editor.dishId} dishes={dishes} onCancel={() => setEditor(undefined)} onSaved={async () => { setEditor(undefined); await refreshDishes(); }} />}{cellMenu && (() => { const entry = snapshot.entries.find(item => item.dayId === cellMenu.dayId && item.slot === cellMenu.slot); const dish = entry ? copyableDishForSource(snapshot, dishes, entry.id) : undefined; const actions = cellMenuActions({ entry: entry ? { id: entry.id, itemId: entry.itemId, itemLabel: entry.itemLabel } : undefined, dishResolved: Boolean(entry && dishes.some(item => item.id === entry.itemId)), copyAvailable: Boolean(entry && dish && copyTargetsFor(entry.id).length > 0), copyPending }); return <PlannerCellMenu anchor={{ x: cellMenu.x, y: cellMenu.y }} label={entry ? `Actions for ${entry.itemLabel}` : "Cell actions"} actions={actions} onSelect={runCellAction} onClose={closeCellMenu} />; })()}{dialog && <PlannerInputDialog dialog={dialog} onClose={() => setDialog(undefined)} />}{menuRowOpen && <AddMenuRowDialog snapshot={snapshot} command={command} onClose={() => setMenuRowOpen(false)} />}{copyDialogSourceId && <CopyDishDialog sourceEntryId={copyDialogSourceId} sourceDish={snapshot.entries.find(entry => entry.id === copyDialogSourceId)?.itemLabel || "dish"} targets={copyTargetsFor(copyDialogSourceId)} onCopy={copyDish} onClose={() => setCopyDialogSourceId(undefined)} />}{spellOpen && <SpellcheckPanel items={spellItems} ignored={spell.ignored} added={spell.added} dictionary={dictionary} onIgnore={spell.ignore} onAddWord={spell.addWord} onReplace={replaceDraftSpelling} onClose={() => setSpellOpen(false)} />}{duplicatePlanningOpen && <DuplicatePlanningModal origin="week" weeks={weeks} currentWeek={{ id: snapshot.week.id, weekCommencing: snapshot.week.weekCommencing, version: snapshot.week.version }} dayNames={snapshot.days.slice(0, 5).map(day => day.dayName)} onApplied={() => refreshWeek(snapshot.week.id)} onClose={() => setDuplicatePlanningOpen(false)} />}{resetOpen && <ResetWeekDialog currentWeek={snapshot.week} entryCount={snapshot.entries.filter(entry => entry.itemLabel.trim()).length} command={command} onClose={() => setResetOpen(false)} />}</MenuPlanningShell>;
+    </section>{picker && !editor && <DishPicker dishes={dishes} query={query} setQuery={setQuery} filters={pickerFilters} setFilters={setPickerFilters} mode={pickerMode} setMode={setPickerMode} slot={picker.slot} onChoose={choose} onCreate={openCreateDish} onClose={() => setPicker(undefined)} />}{picker && editor && <DishEditorModal mode={editor.mode} initialName={editor.name} initialCategory={editor.category} initialSubcategory={editor.subcategory} dishId={editor.dishId} dishes={dishes} onCancel={() => setEditor(undefined)} onSaved={async saved => { setEditor(undefined); await refreshDishes(); if (saved.outcome !== "updated") await choose({ id: saved.id, name: saved.name, category: saved.category }); }} />}{!picker && editor && <DishEditorModal mode={editor.mode} initialName={editor.name} initialCategory={editor.category} initialSubcategory={editor.subcategory} dishId={editor.dishId} dishes={dishes} onCancel={() => setEditor(undefined)} onSaved={async () => { setEditor(undefined); await refreshDishes(); }} />}{cellMenu && (() => { const entry = snapshot.entries.find(item => item.dayId === cellMenu.dayId && item.slot === cellMenu.slot); const dish = entry ? copyableDishForSource(snapshot, dishes, entry.id) : undefined; const actions = cellMenuActions({ entry: entry ? { id: entry.id, itemId: entry.itemId, itemLabel: dishDisplayName(entry.itemLabel) } : undefined, dishResolved: Boolean(entry && dishes.some(item => item.id === entry.itemId)), copyAvailable: Boolean(entry && dish && copyTargetsFor(entry.id).length > 0), copyDisabledReason: entry ? dishCopyUnavailableReason(snapshot, dishes, entry.id, menuSlots) : undefined, copyPending }); return <PlannerCellMenu anchor={{ x: cellMenu.x, y: cellMenu.y }} label={entry ? `Actions for ${dishDisplayName(entry.itemLabel)}` : "Cell actions"} actions={actions} onSelect={runCellAction} onClose={closeCellMenu} />; })()}{dialog && <PlannerInputDialog dialog={dialog} onClose={() => setDialog(undefined)} />}{menuRowOpen && <AddMenuRowDialog snapshot={snapshot} command={command} onClose={() => setMenuRowOpen(false)} />}{copyDialogSourceId && <CopyDishDialog sourceEntryId={copyDialogSourceId} sourceDish={dishDisplayName(snapshot.entries.find(entry => entry.id === copyDialogSourceId)?.itemLabel || "dish")} targets={copyTargetsFor(copyDialogSourceId)} onCopy={copyDish} onClose={() => setCopyDialogSourceId(undefined)} />}{spellOpen && <SpellcheckPanel items={spellItems} ignored={spell.ignored} added={spell.added} dictionary={dictionary} onIgnore={spell.ignore} onAddWord={spell.addWord} onReplace={replaceDraftSpelling} onClose={() => setSpellOpen(false)} />}{duplicatePlanningOpen && <DuplicatePlanningModal origin="week" weeks={weeks} currentWeek={{ id: snapshot.week.id, weekCommencing: snapshot.week.weekCommencing, version: snapshot.week.version }} dayNames={snapshot.days.slice(0, 5).map(day => day.dayName)} onApplied={() => refreshWeek(snapshot.week.id)} onClose={() => setDuplicatePlanningOpen(false)} />}</MenuPlanningShell>;
 }
 
 const GROUP_GLYPHS: Record<string, string> = {
   SALADS: "M4 14c0-5 4-9 10-10 0 6-4 10-10 10zM4 14l7-7",
   "COLD PROTEIN": "M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9",
-  "HOT MAIN": "M12 3c3 4 4 6 4 9a4 4 0 0 1-8 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 0-8z",
+  "HOT MAINS": "M12 3c3 4 4 6 4 9a4 4 0 0 1-8 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 0-8z",
   FISH: "M3 12c3-4 7-5 11-2l4-3v10l-4-3c-4 3-8 2-11-2zM7 11.5h.01",
   "VEGAN MAIN": "M12 21V11M12 11c-4 0-6-3-6-6 4 0 6 2 6 6zM12 11c4 0 6-3 6-6-4 0-6 2-6 6z",
   SOUP: "M4 11h16a8 8 0 0 1-16 0zM8 7c0-1 1-1 1-2M12 7c0-1 1-1 1-2",

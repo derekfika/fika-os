@@ -1,10 +1,11 @@
-import { assertBookingDate, bookingDateIssue } from "@fika/server-shared/hospitality-effective-offering";
+import { assertBookingDate } from "@fika/server-shared/hospitality-effective-offering";
 import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { recordDataAccess, setDataTraceOutcome, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { hubFetch } from "@/lib/hub";
-import { buildRcoaGroupHubPayloads } from "@/lib/rcoa-booking-group";
+import { buildRcoaGroupHubPayloads, RcoaGroupSubmissionSchema } from "@/lib/rcoa-booking-group";
 import { loadGovernedRcoaMenu } from "@/lib/governed-rcoa-menu";
+import { existingRcoaBookingIds } from "@/lib/rcoa-booking-replay";
 
 /**
  * One public All Day Hospitality request. Every service row is validated BEFORE anything is created; then one ordinary
@@ -18,24 +19,14 @@ export async function POST(request: NextRequest) {
     if (!expectedOplocId) return NextResponse.json({ error: { message: "RCoA booking is unavailable until its governed OPLOC mapping is configured." } }, { status: 503 });
 
     let built: ReturnType<typeof buildRcoaGroupHubPayloads>;
-    let governedMenu: Awaited<ReturnType<typeof loadGovernedRcoaMenu>>;
+    let existingIds: Set<string>;
     try {
-      governedMenu = await loadGovernedRcoaMenu(expectedOplocId);
-    } catch (error) {
-      return NextResponse.json({ error: { message: (error as Error).message || "The menu could not be verified." } }, { status: (error as { status?: number }).status || 503 });
-    }
-    try {
-      built = buildRcoaGroupHubPayloads(await request.json(), governedMenu);
+      const submission = RcoaGroupSubmissionSchema.parse(await request.json());
+      existingIds = await existingRcoaBookingIds(submission.requests.map(child => child.bookingId));
+      const governedMenu = existingIds.size === submission.requests.length ? undefined : await loadGovernedRcoaMenu(expectedOplocId).catch(error => { throw Object.assign(error, { status: 503 }); });
+      built = buildRcoaGroupHubPayloads(submission, governedMenu?.menu || [], governedMenu?.visibility, existingIds);
       const now = new Date().toISOString();
-      const invalid = built.payloads.filter(payload => bookingDateIssue(governedMenu.filter(item => payload.order.items.some(line => line.itemId === item.id)), payload.event.eventDate, now, { site: "rcoa", occasion: payload.order.eventType, startTime: payload.event.startTime }));
-      if (invalid.length) {
-        // A stored child is a replay of historical evidence, not a new order. Never grandfather a missing child.
-        const response = await hubFetch("/api/bookings/mnk/existing", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookingIds: invalid.map(payload => payload.bookingId) }) });
-        if (!response.ok) throw Object.assign(new Error("Existing services could not be verified. Try the same request again."), { status: 503 });
-        const body = await response.json() as { existingBookingIds?: unknown };
-        if (!Array.isArray(body.existingBookingIds) || body.existingBookingIds.some(id => typeof id !== "string")) throw Object.assign(new Error("Existing services could not be verified. Try again."), { status: 503 });
-        for (const payload of invalid) if (!body.existingBookingIds.includes(payload.bookingId)) assertBookingDate(governedMenu.filter(item => payload.order.items.some(line => line.itemId === item.id)), payload.event.eventDate, now, { site: "rcoa", occasion: payload.order.eventType, startTime: payload.event.startTime });
-      }
+      for (const payload of built.payloads) if (!existingIds.has(payload.bookingId)) assertBookingDate(governedMenu!.menu.filter(item => payload.order.items.some(line => line.itemId === item.id)), payload.event.eventDate, now, { site: "rcoa", occasion: payload.order.eventType, startTime: payload.event.startTime });
     } catch (error) {
       const message = error instanceof ZodError ? "Some booking information was incomplete. Check each service and try again." : (error as Error).message || "The RCoA request is invalid.";
       return NextResponse.json({ error: { message, ...((error as { code?: string }).code ? { code: (error as { code: string }).code } : {}), ...((error as { earliestDate?: string }).earliestDate ? { earliestDate: (error as { earliestDate: string }).earliestDate } : {}) } }, { status: (error as { status?: number }).status || 400 });
@@ -48,7 +39,7 @@ export async function POST(request: NextRequest) {
       try {
         const response = await hubFetch("/api/bookings/mnk", {
           method: "POST",
-          headers: { "content-type": "application/json", "x-fika-expected-rcoa-oploc-id": expectedOplocId },
+          headers: { "content-type": "application/json", "x-fika-expected-rcoa-oploc-id": expectedOplocId, ...(existingIds.has(payload.bookingId) ? { "x-fika-rcoa-existing-only": "true" } : {}) },
           body: JSON.stringify(payload),
         });
         recordDataAccess({ operation: "booking.create.rcoa.group", source: "NETWORK_UPSTREAM", documents: 0, dataset: "hospitality/bookings" });

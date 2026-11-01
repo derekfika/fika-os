@@ -72,8 +72,8 @@ const installOrderFetch = (orderId: string, serviceDate?: string) => {
     throw new Error(`Unexpected test fetch: ${url}`);
   }) as typeof fetch;
 };
-const sub = (notes: string, allergens: Record<string, string> = { milk: "clear" }) => ({ id: "sub:1", name: "Concurrency dish", quantity: 4, allergens, note: notes, evidenceStatus: "not_completed" });
-const menuItems = (notes: string, allergens?: Record<string, string>) => [{ id: "menu:1", sourceLineId: "line:x", name: "Concurrency dish", note: "", subItems: [sub(notes, allergens)] }];
+const sub = (notes: string, allergens: Record<string, string> = { milk: "clear" }, tick = false) => ({ id: "sub:1", name: "Concurrency dish", quantity: 4, allergens, note: notes, evidenceStatus: "not_completed", ...(tick ? { noKeyDeclaration: { declared: true } } : {}) });
+const menuItems = (notes: string, allergens?: Record<string, string>, tick = false) => [{ id: "menu:1", sourceLineId: "line:x", name: "Concurrency dish", note: "", subItems: [sub(notes, allergens, tick)] }];
 const post = (POST: (request: NextRequest) => Promise<Response>, body: unknown) => POST(new NextRequest("http://localhost/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
 
 /** Test hook: runs right after a production-plan write transaction commits (i.e. at the CPU-committed / Hub-not-yet-touched point). */
@@ -174,7 +174,7 @@ for (const scenario of scenarios) {
   });
 }
 
-test("POST /api/production-plan: a forged no_key_allergens value is ignored and derived on the server from the 14 named allergens", { timeout: 120_000 }, async () => {
+test("POST /api/production-plan (issue 225): No Key is only ever a stamped declaration; positives win; blank stays blank; nothing is derived", { timeout: 120_000 }, async () => {
   const orderId = "production-order:concurrency-nokey";
   installOrderFetch(orderId);
   const route = await importRouteWithTransactionGate();
@@ -182,37 +182,40 @@ test("POST /api/production-plan: a forged no_key_allergens value is ignored and 
   let revision: string | null = null;
   let lastOrderId = orderId;
   const named = ["peanuts", "tree_nuts", "gluten", "sesame", "molluscs", "fish", "soya", "celery", "shellfish", "eggs", "milk", "mustard", "lupin", "sulphites"];
-  const cases: Array<{ forged: string; allergens: Record<string, string>; expected: string }> = [
-    { forged: "contains", allergens: { milk: "clear", gluten: "clear" }, expected: "unrecorded" },
-    { forged: "contains", allergens: {}, expected: "unrecorded" },
-    { forged: "may_contain", allergens: { milk: "unrecorded" }, expected: "unrecorded" },
-    { forged: "contains", allergens: { gluten: "contains", milk: "may_contain", peanuts: "clear" }, expected: "clear" },
-    { forged: "unrecorded", allergens: Object.fromEntries(named.map((key) => [key, "clear"])), expected: "contains" },
+  const cases: Array<{ tick: boolean; sent: Record<string, string>; expectedNoKey: string | undefined; declared: boolean; expectedNamed: Record<string, string> }> = [
+    { tick: true, sent: { milk: "clear", gluten: "clear", no_key_allergens: "contains" }, expectedNoKey: "contains", declared: true, expectedNamed: { milk: "clear", gluten: "clear" } },
+    { tick: true, sent: { no_key_allergens: "contains" }, expectedNoKey: "contains", declared: true, expectedNamed: {} },
+    { tick: true, sent: { milk: "unrecorded", no_key_allergens: "may_contain" }, expectedNoKey: undefined, declared: false, expectedNamed: {} },
+    { tick: true, sent: { gluten: "contains", milk: "may_contain", peanuts: "clear", no_key_allergens: "contains" }, expectedNoKey: "clear", declared: false, expectedNamed: { gluten: "contains", milk: "may_contain", peanuts: "clear" } },
+    { tick: false, sent: Object.fromEntries(named.map((key) => [key, "clear"])), expectedNoKey: undefined, declared: false, expectedNamed: {} },
+    { tick: false, sent: { ...Object.fromEntries(named.map((key) => [key, "clear"])), no_key_allergens: "contains" }, expectedNoKey: undefined, declared: false, expectedNamed: {} },
   ];
   for (const [index, scenario] of cases.entries()) {
     // One order and service date per case: each case is an independent first save with its own change/package sequence.
     const caseOrderId = `${orderId}-${index}`;
     installOrderFetch(caseOrderId, `2026-11-0${index + 1}`);
-    const sent = { ...scenario.allergens, no_key_allergens: scenario.forged };
-    const response = await post(route.POST, { action: "save-plan", orderId: caseOrderId, planningNotes: `forged ${index}`, expectedRevision: null, menuItems: menuItems(`forged ${index}`, sent) });
+    const response = await post(route.POST, { action: "save-plan", orderId: caseOrderId, planningNotes: `case ${index}`, expectedRevision: null, menuItems: menuItems(`case ${index}`, scenario.sent, scenario.tick) });
     const body = await response.json();
     assert.equal(response.status, 200, `case ${index}: ${JSON.stringify(body).slice(0, 600)}`);
-    const stored = (await route.db.collection("fikaCpuProductionPlansV1").doc(caseOrderId).get()).data() as { menuItems: Array<{ subItems: Array<{ allergens: Record<string, string> }> }> };
-    const allergens = stored.menuItems.flatMap((item) => item.subItems).find((candidate) => candidate.allergens)!.allergens;
-    assert.equal(allergens.no_key_allergens, scenario.expected, `case ${index}: derived, not the forged ${scenario.forged}`);
-    for (const [key, state] of Object.entries(scenario.allergens)) assert.equal(allergens[key], state, `case ${index}: named ${key} preserved exactly`);
+    const stored = (await route.db.collection("fikaCpuProductionPlansV1").doc(caseOrderId).get()).data() as { menuItems: Array<{ subItems: Array<{ allergens: Record<string, string>; noKeyDeclaration?: { declared: boolean; declaredBy: string; declaredAt: string } }> }> };
+    const row = stored.menuItems.flatMap((item) => item.subItems)[0];
+    assert.equal(row.allergens.no_key_allergens, scenario.expectedNoKey, `case ${index}: No Key is only what the chef declared (or the true consequence of positives)`);
+    for (const [key, state] of Object.entries(scenario.expectedNamed)) assert.equal(row.allergens[key], state, `case ${index}: named ${key} preserved exactly`);
+    if (!scenario.expectedNoKey) assert.equal(Object.keys(row.allergens).length, 0, `case ${index}: a blank row stays blank`);
+    assert.equal(Boolean(row.noKeyDeclaration?.declared), scenario.declared, `case ${index}: declaration record`);
+    if (scenario.declared) assert.ok(row.noKeyDeclaration!.declaredBy && row.noKeyDeclaration!.declaredAt, "the server stamps the authenticated declarer and time");
     revision = body.revision;
     lastOrderId = caseOrderId;
   }
   const forgedPlanned = await post(route.POST, { action: "mark-planned", orderId: lastOrderId, planningNotes: "", expectedRevision: revision, menuItems: menuItems("x", { milk: "clear", no_key_allergens: "contains" }) });
-  assert.equal(forgedPlanned.status, 422, "a forged 'No key allergens' cannot complete an incomplete matrix");
+  assert.equal(forgedPlanned.status, 422, "an incomplete matrix cannot be planned");
 });
 
 // ---------------------------------------------------------------------------------------------------------------------------
 // mark-planned ordering: CPU validates and atomically persists FIRST; the Hub lifecycle is only touched afterwards.
 // ---------------------------------------------------------------------------------------------------------------------------
 const NAMED = ["peanuts", "tree_nuts", "gluten", "sesame", "molluscs", "fish", "soya", "celery", "shellfish", "eggs", "milk", "mustard", "lupin", "sulphites"];
-const completeItems = (notes: string, orderId: string) => [{ id: "menu:1", sourceLineId: `line:${orderId}`, name: "Concurrency dish", note: "", subItems: [{ id: "sub:1", name: "Concurrency dish", quantity: 4, allergens: Object.fromEntries(NAMED.map((key) => [key, "clear"])), note: notes, evidenceStatus: "completed" }] }];
+const completeItems = (notes: string, orderId: string) => [{ id: "menu:1", sourceLineId: `line:${orderId}`, name: "Concurrency dish", note: "", subItems: [{ id: "sub:1", name: "Concurrency dish", quantity: 4, allergens: { ...Object.fromEntries(NAMED.map((key) => [key, "clear"])), no_key_allergens: "contains" }, noKeyDeclaration: { declared: true }, note: notes, evidenceStatus: "completed" }] }];
 
 /** A stateful stand-in for the Hub that records every lifecycle transition it is asked to make. */
 function installHub(orderId: string, serviceDate: string) {
@@ -829,4 +832,101 @@ test("UAT-HAIKU4 regression: renaming the source order line reopens the reviewed
   assert.equal(after.menuItems[0].name, "Cheese and ham sandwich platter");
   assert.equal(after.menuItems[0].subItems[0].evidenceStatus, "not_completed");
   assert.equal(after.menuItems[0].subItems[0].allergenReview, undefined);
+});
+
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Issue 225: blank vs explicit No Key Allergens through the real route.
+// ---------------------------------------------------------------------------------------------------------------------------
+const ALL_CLEAR = (): Record<string, string> => Object.fromEntries(NAMED.map((key) => [key, "clear"]));
+const noKeyRow = (orderId: string, allergens: Record<string, unknown>, evidenceStatus: string, tick = false, id = "sub:1") => [{ id: "menu:1", sourceLineId: `line:${orderId}`, name: "Concurrency dish", note: "", subItems: [{ id, name: "Concurrency dish", quantity: 4, allergens, note: "", evidenceStatus, ...(tick ? { noKeyDeclaration: { declared: true } } : {}) }] }];
+
+test("issue 225: a blank row marked checked is rejected server-side and never becomes No Key; the draft survives as blank", { timeout: 120_000 }, async () => {
+  const orderId = "production-order:no-key-blank-rejected";
+  installHub(orderId, "2026-12-21");
+  const route = await importRouteWithTransactionGate();
+  route.open();
+  // Browser-side checks are not authority: a forged completed blank row with every box Clear is refused.
+  const refused = await post(route.POST, { action: "mark-planned", orderId, planningNotes: "", expectedRevision: null, menuItems: noKeyRow(orderId, ALL_CLEAR(), "completed") });
+  assert.equal(refused.status, 422);
+  assert.equal(await storedPlanOf(route.db, orderId), undefined, "nothing was persisted by the refused mark-planned");
+  // The same row saved as a draft persists, but as a BLANK not-completed row: no Clear values, no No Key.
+  const draft = await post(route.POST, { action: "save-plan", orderId, planningNotes: "", expectedRevision: null, menuItems: noKeyRow(orderId, ALL_CLEAR(), "completed") });
+  assert.equal(draft.status, 200, JSON.stringify(await draft.clone().json()).slice(0, 300));
+  const row = (await storedPlanOf(route.db, orderId))!.menuItems[0].subItems[0];
+  assert.deepEqual(row.allergens, {});
+  assert.equal(row.evidenceStatus, "not_completed");
+  assert.equal(row.allergenReview, undefined);
+  assert.equal(row.noKeyDeclaration, undefined);
+});
+
+test("issue 225: an explicit No Key declaration is accepted, stamped with the authenticated reviewer and time, and survives reload; positives and May contain are preserved", { timeout: 120_000 }, async () => {
+  const orderId = "production-order:no-key-explicit";
+  installHub(orderId, "2026-12-22");
+  const route = await importRouteWithTransactionGate();
+  route.open();
+  const declared = await post(route.POST, { action: "mark-planned", orderId, planningNotes: "", expectedRevision: null, menuItems: noKeyRow(orderId, { ...ALL_CLEAR(), no_key_allergens: "contains" }, "completed", true) });
+  const declaredBody = await declared.json();
+  assert.equal(declared.status, 200, JSON.stringify(declaredBody).slice(0, 400));
+  const row = (await storedPlanOf(route.db, orderId))!.menuItems[0].subItems[0];
+  assert.equal(row.allergens.no_key_allergens, "contains");
+  assert.equal(row.evidenceStatus, "completed");
+  assert.equal(row.allergenReview.semantics, 3);
+  assert.ok(row.allergenReview.confirmedBy && row.allergenReview.confirmedAt, "reviewer and time are server-stamped");
+  assert.equal(row.noKeyDeclaration.declared, true);
+  const reload = await (await route.GET(new NextRequest(`http://localhost/api/production-plan?orderId=${encodeURIComponent(orderId)}`))).json();
+  assert.equal(reload.plan.menuItems[0].subItems[0].allergens.no_key_allergens, "contains", "save/reopen keeps the declaration");
+
+  // Selecting an allergen replaces the declaration; the confirmed positives (and May contain) are kept; No Key is no longer declared.
+  const positives = await post(route.POST, { action: "mark-planned", orderId, planningNotes: "", expectedRevision: declaredBody.revision, menuItems: noKeyRow(orderId, { ...ALL_CLEAR(), milk: "contains", gluten: "may_contain", no_key_allergens: "clear" }, "completed") });
+  assert.equal(positives.status, 200, JSON.stringify(await positives.clone().json()).slice(0, 400));
+  const after = (await storedPlanOf(route.db, orderId))!.menuItems[0].subItems[0];
+  assert.equal(after.allergens.milk, "contains");
+  assert.equal(after.allergens.gluten, "may_contain");
+  assert.equal(after.allergens.no_key_allergens, "clear");
+  assert.equal(after.noKeyDeclaration, undefined);
+  assert.notEqual(after.allergenReview.inputFingerprint, row.allergenReview.inputFingerprint, "a material change is re-reviewed");
+});
+
+test("issue 225: a legacy automatic No Key row is preserved verbatim when re-sent, is never converted to a declaration, and cannot be planned or signed", { timeout: 180_000 }, async () => {
+  const orderId = "production-order:no-key-legacy";
+  installMeteredHospitalityHub(orderId, "2026-12-23", { hubLatencyMs: 0, materialization: "fail" });
+  const route = await importRouteWithTransactionGate();
+  route.open();
+  const legacyAllergens = { ...ALL_CLEAR(), no_key_allergens: "contains" };
+  const legacyReview = { status: "confirmed", semantics: 2, confirmedBy: "Old Chef", confirmedAt: "2026-10-01T09:00:00.000Z", statement: "recipe-ingredients-allergens-verified", inputFingerprint: "legacy" };
+  await route.db.collection("fikaCpuProductionPlansV1").doc(orderId).set({
+    id: `production-plan:${orderId}`, orderId, status: "planning", menuItems: noKeyRow(orderId, legacyAllergens, "completed").map((item) => ({ ...item, subItems: item.subItems.map((sub) => ({ ...sub, allergenReview: legacyReview })) })),
+    planningNotes: "", updatedBy: "seed", updatedAt: "2026-10-01T10:00:00.000Z", audit: [{ action: "seeded", at: "2026-10-01T09:00:00.000Z", by: "seed" }],
+  });
+  // An unrelated re-save that sends the legacy row back unchanged neither rewrites nor declares it.
+  const resave = await post(route.POST, { action: "save-plan", orderId, planningNotes: "other note", expectedRevision: "2026-10-01T10:00:00.000Z", menuItems: noKeyRow(orderId, legacyAllergens, "completed") });
+  const resaveBody = await resave.json();
+  assert.equal(resave.status, 200, JSON.stringify(resaveBody).slice(0, 400));
+  const row = (await storedPlanOf(route.db, orderId))!.menuItems[0].subItems[0];
+  assert.deepEqual(row.allergens, legacyAllergens, "legacy evidence is untouched");
+  assert.deepEqual(row.allergenReview, legacyReview, "historical review is untouched");
+  assert.equal(row.noKeyDeclaration, undefined, "no declaration was inferred");
+  assert.equal(row.evidenceStatus, "completed");
+
+  // It is flagged unverified in the review status the checker reads, and refused at Planned and at signing.
+  const status = await (await route.GET(new NextRequest(`http://localhost/api/production-plan?matrixStatus=1&orderIds=${encodeURIComponent(orderId)}`))).json();
+  const matrixStatus = status.matrixStatuses[0];
+  assert.equal(matrixStatus.reviewed, false);
+  assert.equal(matrixStatus.matrixItems[0].attestation, "legacy_unverified");
+  const planned = await post(route.POST, { action: "mark-planned", orderId, planningNotes: "other note", expectedRevision: resaveBody.revision, menuItems: noKeyRow(orderId, legacyAllergens, "completed") });
+  assert.equal(planned.status, 422, "a legacy automatic No Key row cannot be planned");
+  assert.equal((await storedPlanOf(route.db, orderId))!.menuItems[0].subItems[0].noKeyDeclaration, undefined, "the refused request changed nothing");
+  const signed = await post(route.POST, signBody(orderId, "production_chef", matrixStatus.sourceLineage));
+  const signedBody = await signed.json();
+  assert.equal(signed.status, 422, `a legacy automatic No Key row cannot be signed: ${JSON.stringify(signedBody).slice(0, 300)}`);
+  assert.equal(signedBody.error.code, "CPU_ALLERGEN_ROW_UNVERIFIED");
+  assert.equal((await storedPlanOf(route.db, orderId))!.signatures, undefined);
+
+  // The chef deliberately ticks No Key: now it is a stamped declaration and can be planned.
+  const ticked = await post(route.POST, { action: "mark-planned", orderId, planningNotes: "other note", expectedRevision: resaveBody.revision, menuItems: noKeyRow(orderId, { no_key_allergens: "contains", ...ALL_CLEAR() }, "completed", true) });
+  assert.equal(ticked.status, 200, JSON.stringify(await ticked.clone().json()).slice(0, 400));
+  const declared = (await storedPlanOf(route.db, orderId))!.menuItems[0].subItems[0];
+  assert.equal(declared.noKeyDeclaration.declared, true);
+  assert.equal(declared.allergenReview.semantics, 3);
 });

@@ -7,6 +7,9 @@ import { internalTokenAllowed } from "../shared/internal-auth";
 export async function middleware(request: NextRequest) {
   if (!hostedRuntime()) return NextResponse.next();
   const pathname = request.nextUrl.pathname;
+  // Build provenance is a public, read-only deployment probe. The route only
+  // returns the validated source SHA and does not depend on Hub admission.
+  if (pathname === "/api/build-info") return NextResponse.next();
   // The fixed-vehicle pages are PIN-entry shells. Their data remains behind
   // the signed vehicle session checked independently at every API boundary.
   if (["/mobile/van1", "/mobile/van2", "/api/logistics/mobile/session"].includes(pathname)) return NextResponse.next();

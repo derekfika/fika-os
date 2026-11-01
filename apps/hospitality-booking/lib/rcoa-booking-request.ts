@@ -2,6 +2,7 @@ import { z } from "zod";
 import { localRcoaMenuCatalogue } from "./local-rcoa-menu";
 import type { PortalMenuItem } from "./mnk-contract";
 import { isValidRcoaLondonWallTime, RCOA_MAX_SERVICES, rcoaAllowsEmptyOrder, rcoaChildReference, rcoaEventTypes, rcoaVatNote } from "./rcoa-portal";
+import { rcoaServiceCategories, RCOA_SERVICE_SETTINGS_UNAVAILABLE, type RcoaServiceVisibility } from "./rcoa-service-visibility";
 
 const eventTypeIds = rcoaEventTypes.map((event) => event.id) as [string, ...string[]];
 
@@ -120,7 +121,7 @@ function selectedChoices(
   });
 }
 
-export function buildTrustedRcoaHubPayload(value: unknown, governedMenu?: readonly PortalMenuItem[]) {
+export function buildTrustedRcoaHubPayload(value: unknown, governedMenu: readonly PortalMenuItem[] | undefined, visibility: RcoaServiceVisibility | undefined) {
   const request = RcoaBookingRequestSchema.parse(value);
   if (request.bookingGroup) {
     if (request.bookingGroup.sequence > request.bookingGroup.size) throw new Error("The service position is outside its request.");
@@ -137,7 +138,8 @@ export function buildTrustedRcoaHubPayload(value: unknown, governedMenu?: readon
   }
   if (!request.event.floorLevel?.trim()) throw new Error("Enter the floor level.");
   if (!request.event.roomOrArea?.trim()) throw new Error("Enter the room or area.");
-  const eventType = rcoaEventTypes.find((event) => event.id === request.order.eventType)!;
+  const categories = rcoaServiceCategories(visibility, request.order.eventType);
+  if (!categories) throw new Error(visibility ? "This service is no longer offered. Refresh the menu and choose another occasion." : RCOA_SERVICE_SETTINGS_UNAVAILABLE);
   if (!request.order.items.length && !rcoaAllowsEmptyOrder(request.order.eventType)) {
     throw new Error("Choose at least one menu item.");
   }
@@ -148,7 +150,7 @@ export function buildTrustedRcoaHubPayload(value: unknown, governedMenu?: readon
   const items = request.order.items.map((requested) => {
     const item = menuById.get(requested.itemId);
     if (!item) throw new Error("A menu item is no longer available. Refresh the menu and try again.");
-    if (!eventType.categories.some((category) => category === item.category)) throw new Error(`${item.name} is not available for this occasion.`);
+    if (!categories.includes(item.category)) throw new Error(`${item.name} is not available for this occasion. Refresh the menu and review your selections.`);
     if (requested.quantity < item.minimumQuantity) {
       throw new Error(`${item.name} requires a minimum quantity of ${item.minimumQuantity}.`);
     }
@@ -197,5 +199,20 @@ export function buildTrustedRcoaHubPayload(value: unknown, governedMenu?: readon
     dietaries: { ...request.dietaries, hasDietaries: dietaryCount > 0 || Boolean(request.dietaries.allergyDetails || request.dietaries.freeText) },
     acknowledgements: request.acknowledgements,
     specialInstructions: request.specialInstructions || "",
+  };
+}
+
+/** Envelope for a confirmed EXISTING id only. Hub must refuse creation and return its stored snapshot unchanged. */
+export function buildRcoaReplayHubPayload(value: unknown): ReturnType<typeof buildTrustedRcoaHubPayload> {
+  const request = RcoaBookingRequestSchema.parse(value);
+  if (request.bookingGroup && (request.bookingGroup.sequence > request.bookingGroup.size || request.bookingId.toUpperCase() !== rcoaChildReference(request.bookingGroup.id, request.bookingGroup.sequence).toUpperCase())) throw new Error("The booking reference does not match its request group.");
+  const email = request.client.email.toLowerCase();
+  return {
+    bookingId: request.bookingId, ...(request.bookingGroup ? { bookingGroup: request.bookingGroup } : {}), submittedAt: request.submittedAt,
+    status: "New", site: "RCoA Hospitality", siteId: "rcoa",
+    client: { ...request.client, email, requester: { name: request.client.name, email, phone: request.client.phone, companyName: request.client.companyName } },
+    event: request.event,
+    order: { eventType: request.order.eventType, items: request.order.items.map(line => ({ itemId: line.itemId, itemName: line.itemId, category: "", description: undefined, servingInfo: undefined, unitPrice: 0, quantity: line.quantity, lineTotal: 0, choices: [] })), netTotal: 0, vatNote: rcoaVatNote },
+    dietaries: request.dietaries, acknowledgements: request.acknowledgements, specialInstructions: request.specialInstructions || "",
   };
 }

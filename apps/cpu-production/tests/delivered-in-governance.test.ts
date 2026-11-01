@@ -41,8 +41,9 @@ test("CPU allergen review is a full-screen editable master-sign workflow", () =>
   assert.doesNotMatch(reviewPage, /Production source/);
   assert.doesNotMatch(reviewMatrix, />Source<|>Published menu</);
   assert.match(reviewMatrix, /function displayState\(/);
-  assert.match(reviewMatrix, /resolveNoKeyAllergenState/);
-  assert.match(reviewMatrix, /disabled=\{busy \|\| locked \|\| key === "no_key_allergens"\}/);
+  assert.match(reviewMatrix, /classifyRowAllergens/);
+  assert.doesNotMatch(reviewMatrix, /resolveNoKeyAllergenState/, "No Key Allergens is a chef declaration and is never resolved from the named allergens");
+  assert.match(reviewMatrix, /type="checkbox"[\s\S]*?disabled=\{busy \|\| locked\}[\s\S]*?onChange=\{\(\) => void toggle\(row\.key, key\)\}/, "No Key is an operable checkbox, locked only by busy/locked");
   assert.doesNotMatch(reviewMatrix, /states\[row\.key\]\?\.\[key\] \|\| "clear"/);
   assert.match(reviewPage, /deliveredInMenuOrdersForServiceDate/);
   assert.match(reviewPage, /Return to All sites to sign the complete Delivered-In service-date master matrix/);

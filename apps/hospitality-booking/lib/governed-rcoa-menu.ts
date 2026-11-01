@@ -4,6 +4,7 @@ import { loadHospitalityCatalogue, type CachedCatalogue } from "@fika/server-sha
 import { hubFetch } from "./hub";
 import { hospitalityCatalogueServiceDate, portalMenuFromCatalogue } from "./hospitality-portal-catalogue";
 import type { PortalMenuItem } from "./mnk-contract";
+import { rcoaVisibilityFromCatalogue, type RcoaServiceVisibility } from "./rcoa-service-visibility";
 
 /**
  * The menu RCoA booking validation trusts: the SAME governed catalogue package the portal displays (stable Item IDs, the RCoA
@@ -13,7 +14,7 @@ import type { PortalMenuItem } from "./mnk-contract";
  */
 let cache: CachedCatalogue | undefined;
 
-export async function loadGovernedRcoaMenu(oplocId: string, serviceDate = hospitalityCatalogueServiceDate()): Promise<PortalMenuItem[]> {
+export async function loadGovernedRcoaMenu(oplocId: string, serviceDate = hospitalityCatalogueServiceDate()): Promise<{ menu: PortalMenuItem[]; visibility: RcoaServiceVisibility }> {
   const result = await loadHospitalityCatalogue({
     store: { read: async () => cache, write: async (record) => { cache = record; }, clear: async () => { cache = undefined; } },
     async fetchManifest() {
@@ -30,5 +31,6 @@ export async function loadGovernedRcoaMenu(oplocId: string, serviceDate = hospit
     gunzipText: async (bytes) => gunzipSync(bytes).toString("utf8"),
   });
   if (result.source === "cache-unverified") throw Object.assign(new Error("The menu could not be verified as current, so bookings are temporarily unavailable. Please try again shortly."), { status: 503 });
-  return portalMenuFromCatalogue(result.catalogue, oplocId, serviceDate);
+  const visibility = rcoaVisibilityFromCatalogue(result.catalogue, oplocId);
+  return { menu: portalMenuFromCatalogue(result.catalogue, oplocId, serviceDate), visibility };
 }

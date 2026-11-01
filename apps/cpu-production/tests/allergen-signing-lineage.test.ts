@@ -110,8 +110,9 @@ test("review edits remain local and row checkpoints are serialized before first 
   const checkpoint = extractSourceBetween(matrix, "  const markChecked =", "  const toggle =");
   assert.match(checkpoint, /startSave/);
   assert.match(matrix, /Retry save/);
-  assert.match(matrix, /Confirm \$\{unresolvedCount\} as clear & mark checked/);
-  assert.match(matrix, /confirms \$\{unresolvedCount\} not recorded named allergen state/);
+  assert.match(matrix, /Mark checked/);
+  assert.match(matrix, /A blank row cannot be checked: select allergens or tick No Key Allergens\./);
+  assert.doesNotMatch(matrix, /as clear & mark checked/, "no bulk confirm-as-clear action: a blank row can never be confirmed");
   assert.match(matrix, /if \(!locked\) return/);
   assert.match(matrix, /editVersionRef\.current \+= 1/);
 });
@@ -165,7 +166,7 @@ test("live clean-but-unreviewed state requires one authoritative completion, whi
   assert.match(matrix, /reviewed: boolean/);
   assert.match(matrix, /const authoritativeReviewed = allStatusesPresent && statuses\.every\(status => status\.reviewed\)/);
   assert.match(matrix, /authoritativeReviewedRef\.current = authoritativeReviewed/);
-  assert.match(matrix, /evidenceStatus: nextCheckedRows\.has/);
+  assert.match(matrix, /evidenceStatus: isChecked \? "completed" as const : "not_completed" as const/);
   assert.match(matrix, /body: JSON\.stringify\(\{ action: "batch-plan", operations: orders\.map/);
 });
 

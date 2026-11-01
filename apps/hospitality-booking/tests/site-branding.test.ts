@@ -81,7 +81,7 @@ test("RCoA public page sends only configuration state and keeps the expected OPL
   assert.match(rcoaPage, /configured=\{Boolean\(process\.env\.FIKA_RCOA_OPLOC_ID\?\.trim\(\)\)\}/);
   assert.doesNotMatch(rcoaPage, /\boplocId\b/);
   assert.match(rcoaPortal, /RcoaBookingPortal\(\{ configured \}: \{ configured: boolean \}\)/);
-  assert.match(rcoaPortal, /disabled=\{sending \|\| !bookingId \|\| !rcoaConfigured\}/);
+  assert.match(rcoaPortal, /disabled=\{sending \|\| !bookingId \|\| !rcoaConfigured \|\| !visibility\}/);
   assert.match(rcoaPortal, /const rcoaConfigured = configured/);
   assert.doesNotMatch(rcoaPortal, /\boplocId\b/);
   assert.match(rcoaBookingRoute, /const expectedOplocId = process\.env\.FIKA_RCOA_OPLOC_ID\?\.trim\(\)/);

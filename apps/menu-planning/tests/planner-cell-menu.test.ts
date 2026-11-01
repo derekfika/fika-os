@@ -42,7 +42,8 @@ test("Edit fails visibly for an unresolved, historical or unlinked dish instead 
 });
 
 test("Copy explains why it is unavailable, matching the existing copy button", () => {
-  assert.match(cellMenuActions({ ...base, copyAvailable: false }).find((action) => action.id === "copy")?.disabledReason || "", /no day this dish can be copied to/);
+  assert.match(cellMenuActions({ ...base, copyAvailable: false }).find((action) => action.id === "copy")?.disabledReason || "", /no empty compatible menu cell/);
+  assert.match(cellMenuActions({ ...base, copyAvailable: false, copyDisabledReason: "The Dish Library lists this dish as Sauce, which is not compatible with its current Starch/Side menu slot." }).find((action) => action.id === "copy")?.disabledReason || "", /Dish Library lists this dish as Sauce/);
   assert.match(cellMenuActions({ ...base, copyPending: true }).find((action) => action.id === "copy")?.disabledReason || "", /already in progress/);
 });
 

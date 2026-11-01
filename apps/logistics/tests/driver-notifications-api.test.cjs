@@ -12,8 +12,12 @@ const SECRET = 'driver-inbox-test-secret-0123456789abcdef';
 const VERIFIER = { van1: 'van1-verifier-fixture', van2: 'van2-verifier-fixture' };
 const URL = 'https://logistics.test/api/logistics/driver-notifications';
 
+// Deterministic: these fixtures never see a staging mode from the environment; the original is restored afterwards.
+const ORIGINAL_RUNTIME_MODE = process.env.FIKA_RUNTIME_MODE;
+test.after(() => { if (ORIGINAL_RUNTIME_MODE === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = ORIGINAL_RUNTIME_MODE; });
+
 function setup() {
-  Object.assign(process.env, { LOGISTICS_MOBILE_SESSION_SECRET: SECRET, LOGISTICS_MOBILE_VAN1_PIN_VERIFIER: VERIFIER.van1, LOGISTICS_MOBILE_VAN2_PIN_VERIFIER: VERIFIER.van2, FIKA_INTERNAL_API_TOKEN: 'internal-processor-test-token' });
+  Object.assign(process.env, { FIKA_RUNTIME_MODE: 'local', LOGISTICS_MOBILE_SESSION_SECRET: SECRET, LOGISTICS_MOBILE_VAN1_PIN_VERIFIER: VERIFIER.van1, LOGISTICS_MOBILE_VAN2_PIN_VERIFIER: VERIFIER.van2, FIKA_INTERNAL_API_TOKEN: 'internal-processor-test-token' });
   const f = fixture(['van1', 'van2'], [], true);
   const today = londonToday();
   for (const id of ['r1', 'r2']) Object.assign(f.records.get(`${RUNS}/${id}`), { serviceDate: today, plannedCpuDepartureTime: '10:00', plannedCpuReturnTime: '16:00' });
