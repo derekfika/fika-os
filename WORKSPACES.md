@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-01T19:43:27.949Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-01T19:49:33.458Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -69,6 +69,7 @@ Snapshot: 2026-11-01T19:43:27.949Z. The local governed registry remains authorit
 | hospitality-all-day-s0-codex | codex-hospitality-all-day-s0 | apps/hospitality-booking/lib/rcoa-all-day.ts, apps/hospitality-booking/tests/rcoa-all-day.test.ts, .changes/hospitality-booking/2026-10-31-all-day-draft-extraction.md | codex/hospitality-all-day-s0-codex | [#202](https://github.com/derekfika/fika-os/pull/202) | retired | 2026-10-31T08:00:14.404Z |
 | hospitality-all-day-s0-v2 | haiku-hospitality-all-day-s0 | apps/hospitality-booking/lib/rcoa-all-day.ts, apps/hospitality-booking/tests/rcoa-all-day.test.ts, .changes/hospitality-booking/2026-10-31-all-day-draft-extraction.md | codex/hospitality-all-day-s0-v2 | — | retired | 2026-10-31T07:41:17.007Z |
 | hospitality-all-day-s0 | haiku-hospitality-all-day-s0 | apps/hospitality-booking/lib/rcoa-all-day.ts | codex/hospitality-all-day-s0 | — | retired | 2026-10-31T07:36:55.003Z |
+| hospitality-booking-create-uat | hospitality-booking-create-route-uat | apps/integration-hub/tests/munich-re-booking.emulator.test.ts | codex/hospitality-booking-create-uat | — | finished | 2026-11-01T19:49:23.331Z |
 | hospitality-booking-emulator-uat | luna-hospitality-booking-emulator-uat | apps/integration-hub/tests/hospitality-group-amendment.test.ts, apps/integration-hub/tests/hospitality-cancellation-notifications.test.ts | codex/hospitality-booking-emulator-uat | — | finished | 2026-11-01T19:43:19.830Z |
 | hospitality-catalogue-mapping | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-catalogue-mapping | — | finished | 2026-10-27T12:03:58.367Z |
 | hospitality-cfc-mr-tests | hospitality-cfc-mr | apps/integration-hub, CHANGELOG.md | codex/hospitality-cfc-mr-tests | [#81](https://github.com/derekfika/fika-os/pull/81) | finished | 2026-10-27T12:49:31.981Z |
