@@ -5,7 +5,7 @@ import { fixtureExternal, fixtureIssues, fixturePulls, FIXTURE_NOW } from "../..
 import { applyMark, createInMemoryMarksStore, createRateLimiter, MarkCommandSchema, MAX_BODY_BYTES, type MarkCommand, type MarksStore } from "../../lib/development/marks";
 import { createFirestoreMarksStore, type FsDatabase } from "../../lib/development/marks-firestore";
 import { handleMarksHistoryGet, handleMarksPost, type MarksRouteDeps } from "../../lib/development/marks-route";
-import { ownerHandled, reconcileOwnerMarks, verifiedStagingSha, type IssueMarks } from "../../lib/development/marks-shared";
+import { ownerHandled, reconcileOwnerMarks, snapshotTrusted, verifiedStagingSha, type IssueMarks } from "../../lib/development/marks-shared";
 import { handleDevelopmentGet } from "../../lib/development/route";
 import { buildSnapshot } from "../../lib/development/snapshot";
 import type { DevelopmentSnapshot } from "../../lib/development/types";
@@ -215,12 +215,14 @@ test("B: the marks route module can reach no deploy, GitHub write or issue-close
 
 // ---------- Firestore store against an in-memory fake (transactions, aggregate, audit) ----------
 /* eslint-disable @typescript-eslint/no-explicit-any -- loose in-memory stand-in for the Admin SDK surface */
+const DELETE = Symbol("delete");
+const isDelete = (data: any, field: string) => field.split(".").reduce((o: any, p) => o?.[p], data) === DELETE;
 function fakeFirestore() {
   const docs = new Map<string, Record<string, any>>();
   const direct = (colPath: string) => [...docs.entries()].filter(([k]) => k.startsWith(colPath + "/") && !k.slice(colPath.length + 1).includes("/"));
   const snapOf = (d?: Record<string, any>) => ({ exists: d !== undefined, data: () => (d ? structuredClone(d) : undefined) });
   class Ref { constructor(readonly path: string) {} collection(n: string) { return new Col(`${this.path}/${n}`); } async get() { return snapOf(docs.get(this.path)); } }
-  class Query { constructor(readonly run: () => any[]) {} async get() { return { docs: this.run().map(snapOf) }; } }
+  class Query { constructor(readonly run: () => any[]) {} limit(n: number) { return new Query(() => this.run().slice(0, n)); } async get() { return { docs: this.run().map(snapOf) }; } }
   class Col extends Query {
     constructor(readonly path: string) { super(() => direct(path).map(([, d]) => d)); }
     doc(id = crypto.randomUUID()) { return new Ref(`${this.path}/${id}`); }
@@ -233,7 +235,7 @@ function fakeFirestore() {
       const pending: (() => void)[] = []; let wrote = false;
       const tx = {
         async get(t: any) { assert.equal(wrote, false, "reads must precede writes"); return t instanceof Ref ? snapOf(docs.get(t.path)) : t.get(); },
-        set(ref: Ref, data: any, opts?: { mergeFields: string[] }) { wrote = true; pending.push(() => { if (!opts) { docs.set(ref.path, structuredClone(data)); return; } const cur = structuredClone(docs.get(ref.path) || {}); for (const field of opts.mergeFields) { const parts = field.split("."); let o = cur; let src = data; for (const p of parts.slice(0, -1)) { o[p] ||= {}; o = o[p]; src = src[p]; } o[parts[parts.length - 1]] = structuredClone(src[parts[parts.length - 1]]); } docs.set(ref.path, cur); }); },
+        set(ref: Ref, data: any, opts?: { mergeFields: string[] }) { wrote = true; pending.push(() => { if (!opts) { docs.set(ref.path, structuredClone(data)); return; } const cur = structuredClone(docs.get(ref.path) || {}); for (const field of opts.mergeFields) { if (isDelete(data, field)) { const parts = field.split("."); let o = cur; for (const p of parts.slice(0, -1)) o = o[p] || {}; delete o[parts[parts.length - 1]]; continue; } const parts = field.split("."); let o = cur; let src = data; for (const p of parts.slice(0, -1)) { o[p] ||= {}; o = o[p]; src = src[p]; } o[parts[parts.length - 1]] = structuredClone(src[parts[parts.length - 1]]); } docs.set(ref.path, cur); }); },
         create(ref: Ref, data: any) { wrote = true; pending.push(() => { if (docs.has(ref.path)) throw new Error("ALREADY_EXISTS"); docs.set(ref.path, structuredClone(data)); }); },
       };
       const out = await fn(tx); pending.forEach(f => f()); return out;
@@ -243,11 +245,11 @@ function fakeFirestore() {
 }
 
 /* eslint-enable @typescript-eslint/no-explicit-any */
-const ctx = { actorId: "identity-owner", actorName: "Derek", now: FIXTURE_NOW };
+const ctx = { actorId: "identity-owner", actorUid: "uid-1", actorName: "Derek", now: FIXTURE_NOW };
 const parse = (o: Record<string, unknown>) => MarkCommandSchema.parse(cmd(o));
 
 test("Firestore store: append writes state, event, audit and aggregate together; replay writes nothing", async () => {
-  const { db, docs } = fakeFirestore(); const store = createFirestoreMarksStore(async () => db);
+  const { db, docs } = fakeFirestore(); const store = createFirestoreMarksStore(async () => db, async () => DELETE);
   const c = parse({ note: "ok" });
   const r1 = await store.append(c, ctx); const size = docs.size;
   assert.equal(r1.replayed, false);
@@ -263,18 +265,19 @@ test("Firestore store: append writes state, event, audit and aggregate together;
 });
 
 test("Firestore store: a clear removes the slot from the aggregate and the aggregate is rebuilt from authority when missing", async () => {
-  const { db, docs } = fakeFirestore(); const store = createFirestoreMarksStore(async () => db);
+  const { db, docs } = fakeFirestore(); const store = createFirestoreMarksStore(async () => db, async () => DELETE);
   await store.append(parse({ issueNumber: 7, note: "a" }), ctx);
   await store.append(parse({ issueNumber: 8, note: "b" }), ctx);
   await store.append(parse({ issueNumber: 7, kind: "clear", target: "checked", expectedVersion: 1 }), ctx);
-  assert.deepEqual((await store.readAll())["7"].slots, {});
+  assert.equal((await store.readAll())["7"], undefined, "an issue with no marks left is dropped from the aggregate");
+  assert.equal(docs.get("development_dashboard_marks/issue-7")!.version, 2, "authoritative state keeps the version");
   docs.delete("development_dashboard_marks/current");
   const rebuilt = await store.readAll();
-  assert.equal(rebuilt["8"].slots.checked!.kind, "checked"); assert.equal(rebuilt["7"].version, 2);
+  assert.equal(rebuilt["8"].slots.checked!.kind, "checked"); assert.equal(rebuilt["7"], undefined);
   docs.delete("development_dashboard_marks/current");
   await store.append(parse({ issueNumber: 9, note: "c" }), ctx);
   const afterWrite = await store.readAll();
-  assert.deepEqual(Object.keys(afterWrite).sort(), ["7", "8", "9"], "a write with no aggregate must not start a partial one");
+  assert.deepEqual(Object.keys(afterWrite).sort(), ["8", "9"], "a write with no aggregate must not start a partial one");
 });
 
 // ---------- pure helpers ----------
@@ -315,4 +318,69 @@ test("UI: owner view label, confirm step showing the bound SHA, no alert/prompt/
   assert.match(src, /Owner-recorded/); assert.match(src, /Bound to build/); assert.match(src, /Confirm UAT|Confirm \$\{/);
   assert.doesNotMatch(src, /\b(window\.)?(alert|prompt|confirm)\(/);
   assert.match(src, /idempotencyKey/); assert.doesNotMatch(src, /body\.actor|actor:/);
+});
+
+// ---------- review follow-up (P3-2..P3-6) ----------
+test("P3-2: notes are kept out of the aggregate (history and authoritative state hold them)", async () => {
+  const { db, docs } = fakeFirestore(); const store = createFirestoreMarksStore(async () => db, async () => DELETE);
+  await store.append(parse({ issueNumber: 20, note: "private reasoning text" }), ctx);
+  assert.ok(!JSON.stringify(docs.get("development_dashboard_marks/current")).includes("private reasoning"));
+  assert.equal((await store.readAll())["20"].slots.checked!.note, undefined);
+  assert.equal((await store.history(20))[0].note, "private reasoning text");
+  assert.equal((docs.get("development_dashboard_marks/issue-20") as { slots: { checked: { note: string } } }).slots.checked.note, "private reasoning text");
+});
+
+test("P3-3: a GET with a missing aggregate computes read-only and writes nothing", async () => {
+  const { db, docs } = fakeFirestore(); const store = createFirestoreMarksStore(async () => db, async () => DELETE);
+  await store.append(parse({ issueNumber: 30, note: "n" }), ctx);
+  docs.delete("development_dashboard_marks/current");
+  const before = [...docs.keys()].sort().join();
+  const read = await store.readAll();
+  assert.equal(read["30"].slots.checked!.kind, "checked");
+  assert.equal([...docs.keys()].sort().join(), before); assert.ok(!docs.has("development_dashboard_marks/current"));
+  const empty = fakeFirestore(); await createFirestoreMarksStore(async () => empty.db, async () => DELETE).readAll();
+  assert.equal(empty.docs.size, 0);
+});
+
+test("P3-4: audit doc id equals its auditId and uses the Firebase uid as actorId, keeping the principal id", async () => {
+  const { db, docs } = fakeFirestore(); const store = createFirestoreMarksStore(async () => db, async () => DELETE);
+  const r = await store.append(parse({ issueNumber: 40 }), ctx);
+  const audit = docs.get(`integrationHubGovernanceAudit/audit_${r.event.eventId}`) as { auditId: string; actorId: string; principalId: string };
+  assert.ok(audit, "doc id is audit_<eventId>");
+  assert.equal(audit.auditId, `audit_${r.event.eventId}`); assert.equal(audit.actorId, "uid-1"); assert.equal(audit.principalId, "identity-owner");
+  const mem = createInMemoryMarksStore(); await mem.append(parse({ issueNumber: 41 }), ctx);
+  assert.equal(mem.audit[0].actorId, "uid-1");
+});
+
+test("P3-4: the route needs both the Firebase uid and the principal id", async () => {
+  const d = deps({ authorize: async () => ({ principal: { id: "p", displayName: "D" }, actor: {} }) });
+  assert.equal((await handleMarksPost(post(cmd()), d)).status, 403);
+  const ok = deps(); await handleMarksPost(post(cmd()), ok);
+  assert.equal(ok.marks.audit[0].actorId, "uid-1"); assert.equal(ok.marks.events[0].actorId, "identity-owner");
+});
+
+test("P3-5: the body read is capped by streaming, with or without Content-Length", async () => {
+  const d = deps();
+  const chunk = new TextEncoder().encode("x".repeat(1024)); let sent = 0;
+  const stream = new ReadableStream({ pull(c) { if (sent++ >= 64) c.close(); else c.enqueue(chunk); } });
+  const req = new Request("http://localhost/api/development/marks", { method: "POST", headers: { "content-type": "application/json", origin: "http://localhost" }, body: stream, duplex: "half" } as RequestInit);
+  assert.equal(req.headers.get("content-length"), null);
+  const res = await handleMarksPost(req, d);
+  assert.equal(res.status, 413); assert.ok(sent < 20, `stopped reading early (read ${sent} chunks)`);
+  assert.equal((await handleMarksPost(post(cmd()), d)).status, 200, "a small valid body still passes");
+});
+
+test("P3-6: stale, partial, unavailable or errored snapshots are never described as verified", async () => {
+  const base = snapshot();
+  for (const flag of ["stale", "partial", "unavailable", "error"] as const) {
+    const flags = { ...base.flags, [flag]: true };
+    assert.equal(snapshotTrusted({ flags }), false, flag);
+    const untrusted = deps({ service: { get: async () => ({ ...base, flags }) } });
+    await handleMarksPost(post(cmd({ issueNumber: 103, kind: "uat-accepted", boundSha: STAGING_SHA })), untrusted);
+    assert.equal(untrusted.marks.events[0].shaVerified, false, flag);
+  }
+  assert.equal(snapshotTrusted(base), true);
+  const src = readFileSync(new URL("../../app/development/DevelopmentApp.tsx", import.meta.url), "utf8");
+  assert.match(src, /trusted \? verifiedStagingSha\(issue\) : undefined/);
+  assert.match(src, /trusted=\{snapshotTrusted\(snapshot\)\}/);
 });

@@ -16,11 +16,14 @@ export const KIND_LABEL: Record<MarkKind, string> = {
 };
 export const SLOT_LABEL: Record<MarkSlot, string> = { checked: "Checked", uat: "UAT", staging: "Staging", production: "Production", blocked: "Blocked note" };
 
+/** Verified evidence is only relied on (and described as verified) when the snapshot is fresh and complete. */
+export const snapshotTrusted = (s: { flags: { stale: boolean; partial: boolean; unavailable: boolean; error: boolean } }) => !s.flags.stale && !s.flags.partial && !s.flags.unavailable && !s.flags.error;
+
 export const NOTE_MAX = 300;
 export const SHA_PATTERN = /^[0-9a-f]{40}$/;
 
 /** One current owner-recorded assertion in a slot. */
-export interface MarkEntry { kind: Exclude<MarkKind, "clear">; boundSha?: string; shaVerified?: boolean; note?: string; actorId: string; actorName: string; at: string; eventId: string }
+export interface MarkEntry { kind: Exclude<MarkKind, "clear">; boundSha?: string; shaVerified?: boolean; /** Present in authoritative state and history; omitted from the derived aggregate. */ note?: string; actorId: string; actorName: string; at: string; eventId: string }
 /** Derived current state for one issue. `version` is the optimistic-concurrency token (0 = never marked). */
 export interface IssueMarks { issueNumber: number; version: number; slots: Partial<Record<MarkSlot, MarkEntry>>; updatedAt?: string }
 /** Append-only history record: authoritative evidence of one owner action. */

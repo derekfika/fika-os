@@ -4,7 +4,7 @@ import { ArrowLeft, ExternalLink, RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./development.module.css";
 import type { DevelopmentSnapshot, IssueView, LifecycleStep, PipelineStatus, SourceStatus, StepStatus } from "@/lib/development/types";
-import { KIND_LABEL, NOTE_MAX, ownerHandled, reconcileOwnerMarks, SHA_PATTERN, SLOT_LABEL, verifiedStagingSha, type IssueMarks, type MarkEvent, type MarkKind, type MarkSlot, type StepOwnerNote } from "@/lib/development/marks-shared";
+import { KIND_LABEL, NOTE_MAX, ownerHandled, reconcileOwnerMarks, SHA_PATTERN, SLOT_LABEL, snapshotTrusted, verifiedStagingSha, type IssueMarks, type MarkEvent, type MarkKind, type MarkSlot, type StepOwnerNote } from "@/lib/development/marks-shared";
 
 type View = "pipeline" | "actions" | "releases" | "uat" | "activity";
 type Load = { kind: "loading" } | { kind: "denied"; status: number } | { kind: "error"; message: string } | { kind: "ready"; snapshot: DevelopmentSnapshot };
@@ -57,7 +57,7 @@ export default function DevelopmentApp() {
           <Freshness snapshot={snapshot} />
           <Summary snapshot={snapshot} />
           <nav className={styles.tabs} aria-label="Development views">{VIEWS.map(([key, label]) => <button key={key} type="button" className={view === key ? styles.tabActive : styles.tab} aria-pressed={view === key} onClick={() => { setView(key); setSelected(null); }}>{label}</button>)}</nav>
-          {issue ? <Detail issue={issue} marks={snapshot.marks} onClose={() => setSelected(null)} onChanged={reloadMarks} /> : <>
+          {issue ? <Detail issue={issue} trusted={snapshotTrusted(snapshot)} marks={snapshot.marks} onClose={() => setSelected(null)} onChanged={reloadMarks} /> : <>
             {view === "pipeline" && <Pipeline issues={snapshot.issues} marks={snapshot.marks?.byIssue} onSelect={setSelected} />}
             {view === "actions" && <Actions snapshot={snapshot} onSelect={setSelected} />}
             {view === "releases" && <Releases snapshot={snapshot} />}
@@ -134,7 +134,7 @@ function Stepper({ steps, notes }: { steps: LifecycleStep[]; notes: StepOwnerNot
       {notes.filter(n => n.stepKey === s.key).map(n => <div key={n.entry.eventId} className={styles.stepOwner}><Chip tone="info">Owner-recorded</Chip> <b>Verified:</b> {n.verifiedText} · <b>Owner-recorded:</b> {n.ownerText}{n.differs ? " (not corroborated by verified evidence)" : ""}<br /><small>{n.entry.actorName} · {london(n.entry.at)}{n.entry.boundSha ? ` · build ${n.entry.boundSha.slice(0, 7)} (${n.entry.shaVerified ? "verified serving build" : "unverified, typed by owner"})` : ""}{n.entry.note ? ` · “${n.entry.note}”` : ""}{n.warning ? ` · ${n.warning}` : ""}</small></div>)}</li>))}</ol>;
 }
 
-function Detail({ issue, marks, onClose, onChanged }: { issue: IssueView; marks: DevelopmentSnapshot["marks"]; onClose: () => void; onChanged: () => Promise<void> }) {
+function Detail({ issue, trusted, marks, onClose, onChanged }: { issue: IssueView; trusted: boolean; marks: DevelopmentSnapshot["marks"]; onClose: () => void; onChanged: () => Promise<void> }) {
   const issueMarks = marks?.byIssue[String(issue.number)];
   return (
     <section className={styles.panel} aria-labelledby="issue-detail-title">
@@ -156,7 +156,7 @@ function Detail({ issue, marks, onClose, onChanged }: { issue: IssueView; marks:
       {!issue.pullRequests.length ? <p className={styles.muted}>No linked pull request.</p> : <ul className={styles.plain}>{issue.pullRequests.map(p => <li key={p.number}><Link href={p.url}>PR #{p.number}</Link> {p.merged ? "merged" : p.draft ? "draft" : p.state} · head <Link href={p.commitUrl}>{p.headSha.slice(0, 7)}</Link>{p.mergeCommitSha && <> · merge <Link href={p.mergeCommitUrl}>{p.mergeCommitSha.slice(0, 7)}</Link></>} · CI {p.checks.state}{p.checks.url && <> <Link href={p.checks.url}>checks</Link></>}</li>)}</ul>}
       <h3>Lifecycle evidence</h3>
       <Stepper steps={issue.steps} notes={reconcileOwnerMarks(issue, issueMarks)} />
-      <OwnerMarks issue={issue} marks={issueMarks} available={Boolean(marks?.available)} reason={marks?.reason} onChanged={onChanged} />
+      <OwnerMarks key={issue.number} issue={issue} trusted={trusted} marks={issueMarks} available={Boolean(marks?.available)} reason={marks?.reason} onChanged={onChanged} />
     </section>
   );
 }
@@ -209,11 +209,13 @@ const ACTIONS: { kind: Exclude<MarkKind, "clear">; label: string; confirm: boole
   { kind: "blocked-note", label: "Add blocked note", confirm: false },
 ];
 
-function OwnerMarks({ issue, marks, available, reason, onChanged }: { issue: IssueView; marks?: IssueMarks; available: boolean; reason?: string; onChanged: () => Promise<void> }) {
+function OwnerMarks({ issue, trusted, marks, available, reason, onChanged }: { issue: IssueView; trusted: boolean; marks?: IssueMarks; available: boolean; reason?: string; onChanged: () => Promise<void> }) {
   const [note, setNote] = useState(""); const [sha, setSha] = useState(""); const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-  const [history, setHistory] = useState<MarkEvent[] | null>(null); const [tick, setTick] = useState(0);
-  const verifiedSha = verifiedStagingSha(issue);
+  const [history, setHistory] = useState<MarkEvent[] | null | undefined>(undefined); const [tick, setTick] = useState(0);
+  // Never describe a build as verified from a stale, partial or unavailable snapshot; the server applies the same rule.
+  const verifiedSha = trusted ? verifiedStagingSha(issue) : undefined;
+  const noteOf = (eventId: string) => history?.find(e => e.eventId === eventId)?.note;
   useEffect(() => {
     let live = true;
     void fetch(`/api/development/marks?issue=${issue.number}`, { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(body => { if (live) setHistory(body ? (body.events as MarkEvent[]) : null); }).catch(() => { if (live) setHistory(null); });
@@ -228,7 +230,7 @@ function OwnerMarks({ issue, marks, available, reason, onChanged }: { issue: Iss
     if (p.kind === "blocked-note" && !note.trim()) { setMessage({ tone: "error", text: "Write the blocked note first." }); return; }
     if (shaProblem) { setMessage({ tone: "error", text: shaProblem }); return; }
     setBusy(true); setMessage(null);
-    const body: Record<string, unknown> = { issueNumber: issue.number, kind: p.kind, expectedVersion: marks?.version ?? 0, idempotencyKey: p.key };
+    const body: Record<string, unknown> = { issueNumber: issue.number, kind: p.kind, expectedVersion: marks?.version ?? history?.[0]?.version ?? 0, idempotencyKey: p.key };
     if (p.kind === "clear") body.target = p.target; else if (note.trim()) body.note = note.trim();
     if (isUat) body.boundSha = verifiedSha || typedSha;
     try {
@@ -253,12 +255,12 @@ function OwnerMarks({ issue, marks, available, reason, onChanged }: { issue: Iss
         <li key={slot}>
           <span><Chip tone="info">Owner-recorded</Chip> <b>{KIND_LABEL[m.kind]}</b></span>
           <span className={styles.markMeta}>{m.actorName} · {london(m.at)}{m.boundSha && <> · build <span className={styles.sha}>{m.boundSha}</span> ({m.shaVerified ? "verified serving build" : "unverified, typed by owner"})</>}</span>
-          {m.note && <span>“{m.note}”</span>}
+          {noteOf(m.eventId) && <span>“{noteOf(m.eventId)}”</span>}
           <span className={styles.markActions}><button type="button" className={styles.dangerBtn} disabled={!available || busy || pending !== null} onClick={() => begin("clear", true, slot)}>{`Clear ${SLOT_LABEL[slot]} mark…`}</button></span>
         </li>))}</ul>}
       <label className={styles.field}><span>Note (optional, up to {NOTE_MAX} characters)</span><textarea className={styles.textarea} value={note} maxLength={NOTE_MAX} onChange={e => setNote(e.target.value)} disabled={!available || busy} /></label>
       <div className={styles.markActions} role="group" aria-label="Record an owner mark">
-        {ACTIONS.map(a => <button key={a.kind} type="button" className={styles.secondary} disabled={!available || busy || pending !== null} onClick={() => begin(a.kind, a.confirm)}>{a.label}</button>)}
+        {ACTIONS.map(a => <button key={a.kind} type="button" className={styles.secondary} disabled={!available || busy || pending !== null || (history === undefined && !marks)} onClick={() => begin(a.kind, a.confirm)}>{a.label}</button>)}
       </div>
       {pending && (
         <div className={styles.confirm} role="group" aria-labelledby="mark-confirm-title">
@@ -275,7 +277,7 @@ function OwnerMarks({ issue, marks, available, reason, onChanged }: { issue: Iss
         </div>)}
       <div aria-live="polite">{message && <p className={message.tone === "ok" ? styles.okText : styles.errorText} role={message.tone === "error" ? "alert" : "status"}>{message.text}</p>}</div>
       <h3>Mark history (owner-recorded)</h3>
-      {history === null ? <p className={styles.muted}>History is not available right now.</p> : history.length === 0 ? <p className={styles.muted}>No marks recorded yet.</p> : <ol className={styles.markList}>{history.map(e => <li key={e.eventId}><span><Chip tone="info">Owner-recorded</Chip> <b>{KIND_LABEL[e.kind]}</b>{e.kind === "clear" ? ` (${SLOT_LABEL[e.slot]})` : ""} · v{e.version}</span><span className={styles.markMeta}>{e.actorName} · {london(e.at)}{e.boundSha ? ` · build ${e.boundSha.slice(0, 7)} (${e.shaVerified ? "verified" : "unverified"})` : ""}</span>{e.note && <span>“{e.note}”</span>}</li>)}</ol>}
+      {history === undefined ? <p className={styles.muted}>Loading history…</p> : history === null ? <p className={styles.muted}>History is not available right now.</p> : history.length === 0 ? <p className={styles.muted}>No marks recorded yet.</p> : <ol className={styles.markList}>{history.map(e => <li key={e.eventId}><span><Chip tone="info">Owner-recorded</Chip> <b>{KIND_LABEL[e.kind]}</b>{e.kind === "clear" ? ` (${SLOT_LABEL[e.slot]})` : ""} · v{e.version}</span><span className={styles.markMeta}>{e.actorName} · {london(e.at)}{e.boundSha ? ` · build ${e.boundSha.slice(0, 7)} (${e.shaVerified ? "verified" : "unverified"})` : ""}</span>{e.note && <span>“{e.note}”</span>}</li>)}</ol>}
     </section>
   );
 }

@@ -32,7 +32,7 @@ export const MarkCommandSchema = z.object({
 export type MarkCommand = z.infer<typeof MarkCommandSchema>;
 
 /** Server-resolved facts about the issue; the client's claim about verification is never trusted. */
-export interface MarkContext { actorId: string; actorName: string; now: Date; verifiedStagingSha?: string }
+export interface MarkContext { actorId: string; actorName: string; /** Firebase uid: the actor identifier the existing governance audit records use. */ actorUid: string; now: Date; verifiedStagingSha?: string }
 
 const sha256 = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
 export const eventIdFor = (issueNumber: number, idempotencyKey: string) => `mk_${sha256(`${issueNumber}:${idempotencyKey}`).slice(0, 40)}`;
@@ -88,8 +88,8 @@ export function applyMark(state: IssueMarks | undefined, existing: MarkEvent | u
 }
 
 /** The audit record written beside each event (existing integrationHubGovernanceAudit idiom). Contains no note body beyond what the event carries. */
-export function auditRecordFor(event: MarkEvent) {
-  return { auditId: `audit_${event.eventId}`, action: `Development owner mark: ${event.kind}`, entityReference: `github-issue:${event.issueNumber}`, actorId: event.actorId, actorName: event.actorName, timestamp: event.at, reason: "Owner-recorded assertion; not verified evidence.", oplocId: null, source: MARKS_SOURCE, eventId: event.eventId, version: event.version, boundSha: event.boundSha ?? null };
+export function auditRecordFor(event: MarkEvent, actorUid: string) {
+  return { auditId: `audit_${event.eventId}`, action: `Development owner mark: ${event.kind}`, entityReference: `github-issue:${event.issueNumber}`, actorId: actorUid, principalId: event.actorId, actorName: event.actorName, timestamp: event.at, reason: "Owner-recorded assertion; not verified evidence.", oplocId: null, source: MARKS_SOURCE, eventId: event.eventId, version: event.version, boundSha: event.boundSha ?? null };
 }
 
 export interface MarksStore {
@@ -112,7 +112,7 @@ export function createInMemoryMarksStore() {
     async append(command, ctx) {
       const id = eventIdFor(command.issueNumber, command.idempotencyKey);
       const result = applyMark(states.get(command.issueNumber), events.find(e => e.eventId === id), command, ctx);
-      if (!result.replayed) { states.set(command.issueNumber, result.state); events.push(result.event); audit.push(auditRecordFor(result.event)); }
+      if (!result.replayed) { states.set(command.issueNumber, result.state); events.push(result.event); audit.push(auditRecordFor(result.event, ctx.actorUid)); }
       return structuredClone(result);
     },
   };
