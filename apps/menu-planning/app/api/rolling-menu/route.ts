@@ -40,8 +40,10 @@ import {
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
 import { queuedPublicationHandoff } from "@/lib/publication-handoff";
 import {
+  catalogueEntriesForItems,
   listCatalogueEntriesForIds,
 } from "@/lib/catalogue";
+import { resolveWeekDishReferences } from "@/lib/dish-reference-resolver";
 import { resolveAllergenSnapshot } from "@/lib/allergen-resolution";
 import {
   getWeekHead,
@@ -243,7 +245,8 @@ async function handleGet(request: NextRequest) {
       : undefined;
     const catalogueStarted = performance.now();
     const publicationStarted = performance.now();
-    const catalogue = await listCatalogueEntriesForIds(snapshot.entries.map((entry) => entry.itemId || ""));
+    const referenceResult = await resolveWeekDishReferences(snapshot, actor);
+    const catalogue = catalogueEntriesForItems(referenceResult.items);
     const currentPublicationState = await publicationState(snapshot, governedOplocs, catalogue.map(entry => entry.item).filter((item): item is NonNullable<typeof item> => Boolean(item)));
     const catalogueMs = performance.now() - catalogueStarted;
     const publicationStateMs = performance.now() - publicationStarted;
@@ -258,6 +261,7 @@ async function handleGet(request: NextRequest) {
     });
     return NextResponse.json({
       snapshot: resolved,
+      dishReferences: referenceResult.dishReferences,
       weeks,
       blockers: validateWeek(snapshot, { requireCanonicalDishId: true, activeCanonicalDishIds }),
       publicationState: currentPublicationState,
