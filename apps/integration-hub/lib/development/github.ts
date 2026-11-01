@@ -19,7 +19,7 @@ export class GithubError extends Error {
 export function githubConfig(env: Record<string, string | undefined> = process.env) {
   const token = env[TOKEN_ENV]?.trim() || undefined;
   const repo = env[REPO_ENV]?.trim() || DEFAULT_REPO;
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return { token: undefined, repo: DEFAULT_REPO, invalidRepo: true };
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || repo.split("/").some(s => s === "." || s === "..")) return { token: undefined, repo: DEFAULT_REPO, invalidRepo: true };
   return { token, repo, invalidRepo: false };
 }
 
@@ -48,10 +48,10 @@ export function summariseChecks(runs: Json[]): ChecksSummary {
   return { state, total: runs.length, failing, url, completedAt };
 }
 
-/** Issues/PRs reference one another by `#N`; the PR head branch convention `issue-N` also links. Bodies are parsed here and never returned. */
+/** A PR links to an issue only via a closing keyword (close/fix/resolve + #N) or the `issue-N` head branch convention; a bare `#N` mention does not link. Bodies are parsed here and never returned. */
 export function linkedIssueNumbers(title: string, body: string, headRef: string): number[] {
   const found = new Set<number>();
-  for (const m of `${title}\n${body}`.matchAll(/(?:^|[^\w&/])#(\d{1,7})\b/g)) found.add(Number(m[1]));
+  for (const m of `${title}\n${body}`.matchAll(/(?:^|[^\w&/])(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?)\s*:?\s+#(\d{1,7})\b/gi)) found.add(Number(m[1]));
   const ref = headRef.match(/(?:^|[/-])issue-(\d{1,7})(?:$|[-/])/i);
   if (ref) found.add(Number(ref[1]));
   return [...found];
@@ -72,6 +72,12 @@ export async function fetchGithubData(options: { token: string; repo: string; fe
     rateLimit = readRate(res) || rateLimit;
     if (res.status === 401) throw new GithubError("github_auth", "The server GitHub credential was rejected.");
     if (res.status === 429 || (res.status === 403 && rateLimit && rateLimit.remaining === 0)) throw new GithubError("github_rate_limited", "GitHub rate limit reached.", rateLimit?.resetAt);
+    if (res.status === 403) {
+      const retryAfter = Number(res.headers.get("retry-after"));
+      if (Number.isFinite(retryAfter) && retryAfter > 0) throw new GithubError("github_rate_limited", "GitHub secondary rate limit reached.", new Date(now.getTime() + retryAfter * 1000).toISOString());
+      const message = await res.json().then(b => str((b as Json)?.message), () => "");
+      if (/rate limit|abuse/i.test(message)) throw new GithubError("github_rate_limited", "GitHub secondary rate limit reached.");
+    }
     if (res.status === 403) throw new GithubError("github_auth", "The server GitHub credential lacks access to this repository.");
     if (res.status === 404) throw new GithubError("github_not_found", "Repository not found or not visible to the server credential.");
     if (res.status < 200 || res.status >= 300) throw new GithubError("github_unavailable", `GitHub responded with status ${res.status}.`);

@@ -4,3 +4,5 @@ Adds an owner-only **Development** entry to the Hub (sidebar and launcher) and a
 
 Validation: node:test suite `tests/development/development.test.ts` (auth fail-closed, stale/partial/unavailable flags, lifecycle no-over-claim, no credential in payloads), Hub typecheck and `next build`; exact results are in the PR.
 Deployment: none. Server credential wiring (secret and App Hosting config) is a separate governed follow-up.
+
+Review fixes (PR #242): PRs link to issues only via closing keywords or an `issue-N` branch; an open linked PR outranks a merged slice (shown as partially merged); production evidence matches the merge commit only; unlabelled issues never match an app-specific deployment; refresh failures (including 401/404/network/secondary 403/unparseable reset) back off for a cooldown; not-planned/duplicate closures are not "unverified"; closed-unmerged PRs are not "Coded"; only https://github.com/ links render; repo names with `.`/`..` segments are rejected; tabs expose `aria-pressed`. Validation: 28 focused tests pass, tsc, eslint, next build.

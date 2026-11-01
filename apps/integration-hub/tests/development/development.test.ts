@@ -185,3 +185,90 @@ test("authorised request returns the snapshot, no-store, GET only semantics", as
   assert.equal(res.status, 200); assert.equal(res.headers.get("cache-control"), "no-store");
   assert.equal(((await res.json()) as DevelopmentSnapshot).releases.length > 0, true);
 });
+
+// ---- Review regression tests (PR #242) ----
+import { DEFAULT_REPO, githubConfig, REPO_ENV } from "../../lib/development/github";
+import { FAILURE_COOLDOWN_MS } from "../../lib/development/snapshot";
+import type { RawIssue, RawPull } from "../../lib/development/types";
+import { readFileSync } from "node:fs";
+
+const baseIssue = (n: number, o: Partial<RawIssue> = {}): RawIssue => ({ number: n, title: "[Hub] t", url: "https://github.com/o/r/issues/" + n, state: "open", labels: [], assignees: [], createdAt: "2026-10-30T00:00:00Z", updatedAt: "2026-10-31T00:00:00Z", ...o });
+const basePull = (n: number, o: Partial<RawPull> = {}): RawPull => ({ number: n, title: "p", url: "https://github.com/o/r/pull/" + n, state: "open", draft: false, merged: false, headSha: "1".repeat(40), headRef: "x", commitUrl: "https://github.com/o/r/commit/" + "1".repeat(40), createdAt: "2026-10-30T00:00:00Z", updatedAt: "2026-10-31T00:00:00Z", checks: { state: "success", total: 1, failing: [] }, linkedIssues: [], ...o });
+const mergedPull = (n: number, o: Partial<RawPull> = {}) => basePull(n, { state: "closed", merged: true, mergedAt: "2026-10-30T00:00:00Z", mergeCommitSha: "2".repeat(40), mergeCommitUrl: "https://github.com/o/r/commit/" + "2".repeat(40), ...o });
+
+test("P2-1 only closing keywords or issue-N branch link a PR; bare mentions do not", () => {
+  assert.deepEqual(linkedIssueNumbers("See #5", "related to #6, depends on #7 and mentions #8", "feature/x"), []);
+  assert.deepEqual(linkedIssueNumbers("t", "Closes #9. Resolved #10", "x").sort((a, b) => a - b), [9, 10]);
+  assert.deepEqual(linkedIssueNumbers("t", "", "codex/issue-11-foo"), [11]);
+});
+
+test("P2-1 an open linked PR outranks a merged slice and is reported as partially merged", () => {
+  const v = buildIssueView(baseIssue(1), [mergedPull(10), basePull(11)], noExternalEvidence(), FIXTURE_NOW);
+  assert.equal(v.primaryPullRequest, 11);
+  const merged = v.steps.find(s => s.key === "merged")!;
+  assert.equal(merged.status, "pending"); assert.match(merged.note, /Partially merged/);
+  assert.notEqual(v.status, "merged_awaiting_deploy");
+});
+
+test("P3-1 only https://github.com/ links are rendered", () => {
+  const src = readFileSync(new URL("../../app/development/DevelopmentApp.tsx", import.meta.url), "utf8");
+  assert.match(src, /startsWith\("https:\/\/github\.com\/"\)/);
+});
+
+test("P3-2 repository names with dot segments are rejected", () => {
+  for (const repo of ["./x", "x/..", "../x", "./.."]) assert.equal(githubConfig({ [REPO_ENV]: repo, [TOKEN_ENV]: "t" }).token, undefined, repo);
+  assert.equal(githubConfig({ [REPO_ENV]: "o/r.js", [TOKEN_ENV]: "t" }).repo, "o/r.js");
+  assert.equal(githubConfig({}).repo, DEFAULT_REPO);
+});
+
+test("P3-3 failed refreshes (401, network, secondary 403) cool down instead of hammering GitHub", async () => {
+  for (const mode of ["401", "network", "secondary"] as const) {
+    let t = FIXTURE_NOW.getTime(); let calls = 0;
+    const svc = createSnapshotService({ env, now: () => new Date(t), fetcher: async () => { calls++; if (mode === "network") throw new Error("down"); if (mode === "401") return json({}, rate, 401); return json({ message: "You have exceeded a secondary rate limit" }, {}, 403); } });
+    await svc.get(); const first = calls;
+    await svc.get({ refresh: true }); await svc.get();
+    assert.equal(calls, first, mode + " retried within cooldown");
+    t += FAILURE_COOLDOWN_MS + 70_000; await svc.get();
+    assert.ok(calls > first, mode + " should retry after cooldown");
+  }
+});
+
+test("P3-3 rate limit with unparseable reset uses a default cooldown, not NaN", async () => {
+  const t = FIXTURE_NOW.getTime(); let calls = 0;
+  const svc = createSnapshotService({ env, now: () => new Date(t), fetcher: async () => { calls++; return json({}, { "x-ratelimit-limit": "5000", "x-ratelimit-remaining": "0", "x-ratelimit-reset": "garbage" }, 429); } });
+  await svc.get(); await svc.get(); await svc.get();
+  assert.equal(calls, 1);
+});
+
+test("P3-5 not_planned and duplicate closures are not unverified or stale and need no owner action", () => {
+  for (const reason of ["not_planned", "duplicate"]) {
+    const v = buildIssueView(baseIssue(2, { state: "closed", stateReason: reason, closedAt: "2026-10-31T00:00:00Z" }), [], noExternalEvidence(), FIXTURE_NOW);
+    assert.equal(v.closure.consistency, "closed_not_planned"); assert.equal(v.ownerAction, false);
+    assert.equal(summarise([v]).staleOrUnverified, 0);
+  }
+});
+
+test("P3-6 a PR closed without merging is not 'Coded: ready'", () => {
+  const v = buildIssueView(baseIssue(3), [basePull(30, { state: "closed" })], noExternalEvidence(), FIXTURE_NOW);
+  const coded = v.steps.find(s => s.key === "coded")!;
+  assert.equal(coded.status, "failed"); assert.match(coded.note, /closed without merging/);
+  assert.match(v.nextAction, /closed without merging/);
+});
+
+test("P3-7 view tabs expose pressed state", () => {
+  const src = readFileSync(new URL("../../app/development/DevelopmentApp.tsx", import.meta.url), "utf8");
+  assert.match(src, /aria-pressed=\{view === key\}/);
+});
+
+test("P3-4 unlabelled issues match no app-specific deployment; head commit is never production evidence", () => {
+  const dep = (environment: "staging" | "production", sha: string, app?: string) => ({ app, environment, sourceSha: sha, deployedAt: "2026-10-31T00:00:00Z", status: "serving" as const, source: "j" });
+  const ext = (records: ReturnType<typeof dep>[]) => ({ deployments: { connected: true, records }, uat: { connected: true, records: [] }, workspaces: { connected: false, records: [] } });
+  const unlabelled = baseIssue(4, { title: "no prefix" });
+  const pr = mergedPull(40, { headSha: "3".repeat(40) });
+  const a = buildIssueView(unlabelled, [pr], ext([dep("staging", "2".repeat(40), "CPU")]), FIXTURE_NOW);
+  assert.equal(a.steps.find(s => s.key === "staging")!.status, "pending");
+  const b = buildIssueView(baseIssue(5), [pr], ext([dep("production", "3".repeat(40), "Hub")]), FIXTURE_NOW);
+  assert.notEqual(b.steps.find(s => s.key === "production")!.status, "evidenced");
+  const c = buildIssueView(baseIssue(6), [pr], ext([dep("production", "2".repeat(40), "Hub")]), FIXTURE_NOW);
+  assert.equal(c.steps.find(s => s.key === "production")!.status, "evidenced");
+});

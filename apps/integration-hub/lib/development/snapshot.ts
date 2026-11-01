@@ -4,6 +4,8 @@ import { noExternalEvidence, type ActivityItem, type DevelopmentSnapshot, type E
 
 export const CACHE_TTL_MS = 60_000;
 export const MIN_REFRESH_INTERVAL_MS = 30_000;
+export const FAILURE_COOLDOWN_MS = 30_000;
+export const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 60_000;
 
 export function buildSnapshot(input: { repository: string; data: GithubFetchResult; external: ExternalEvidence; now: Date; lastVerified: string }): DevelopmentSnapshot {
   const { data, external, now } = input;
@@ -82,7 +84,9 @@ export function createSnapshotService(options: SnapshotServiceOptions = {}) {
       return snapshot;
     } catch (cause) {
       const err = cause instanceof GithubError ? cause : undefined;
-      if (err?.code === "github_rate_limited") { blockedUntil = err.resetAt ? Date.parse(err.resetAt) : at.getTime() + 60_000; rateLimit = rateLimit ? { ...rateLimit, remaining: 0 } : undefined; }
+      const reset = err?.resetAt ? Date.parse(err.resetAt) : NaN;
+      if (err?.code === "github_rate_limited") { blockedUntil = Number.isFinite(reset) ? Math.max(reset, at.getTime() + FAILURE_COOLDOWN_MS) : at.getTime() + DEFAULT_RATE_LIMIT_COOLDOWN_MS; rateLimit = rateLimit ? { ...rateLimit, remaining: 0 } : undefined; }
+      else blockedUntil = at.getTime() + FAILURE_COOLDOWN_MS; // any other failure (auth, 404, network) backs off briefly
       const reason = err ? err.message : "GitHub data could not be refreshed.";
       return stale(reason, err?.code !== "github_rate_limited") || unavailableSnapshot(repo, at, reason, err?.code !== "github_rate_limited");
     }
@@ -96,7 +100,7 @@ export function createSnapshotService(options: SnapshotServiceOptions = {}) {
       if (!config.token) return unavailableSnapshot(config.repo, at, `GitHub is not connected: no server credential is configured (${TOKEN_ENV}).`);
       const age = good ? at.getTime() - good.at : Infinity;
       if (good && (age < MIN_REFRESH_INTERVAL_MS || (!opts.refresh && age < CACHE_TTL_MS))) return good.snapshot;
-      if (at.getTime() < blockedUntil) return stale(`GitHub rate limit reached; next refresh after ${new Date(blockedUntil).toISOString()}.`, false) || unavailableSnapshot(config.repo, at, "GitHub rate limit reached; waiting for reset.");
+      if (at.getTime() < blockedUntil) return stale(`GitHub refresh paused; next attempt after ${new Date(blockedUntil).toISOString()}.`, false) || unavailableSnapshot(config.repo, at, "GitHub rate limit reached; waiting for reset.");
       inflight ||= refresh(config.repo, config.token).finally(() => { inflight = undefined; });
       return inflight;
     },

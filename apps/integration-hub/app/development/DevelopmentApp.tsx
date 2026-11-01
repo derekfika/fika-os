@@ -14,7 +14,7 @@ const TONE: Record<StepStatus, string> = { evidenced: "success", pending: "warni
 const STATUS_TONE: Record<PipelineStatus, string> = { not_started: "neutral", in_progress: "info", ci_failing: "danger", merged_awaiting_deploy: "warning", awaiting_uat: "warning", uat_failed: "danger", uat_accepted: "info", live: "success" };
 
 const london = (iso?: string | null) => iso ? new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)) : "Never";
-const safeUrl = (url?: string) => url && /^https:\/\//.test(url) ? url : undefined;
+const safeUrl = (url?: string) => url && url.startsWith("https://github.com/") ? url : undefined;
 
 function Chip({ tone, children }: { tone: string; children: React.ReactNode }) { return <span className={`${styles.chip} ${styles["tone_" + tone]}`}>{children}</span>; }
 function Link({ href, children }: { href?: string; children: React.ReactNode }) { const safe = safeUrl(href); return safe ? <a className={styles.link} href={safe} target="_blank" rel="noopener noreferrer">{children}<ExternalLink size={13} aria-hidden="true" /></a> : <span>{children}</span>; }
@@ -54,7 +54,7 @@ export default function DevelopmentApp() {
         {snapshot && <>
           <Freshness snapshot={snapshot} />
           <Summary snapshot={snapshot} />
-          <nav className={styles.tabs} aria-label="Development views">{VIEWS.map(([key, label]) => <button key={key} type="button" className={view === key ? styles.tabActive : styles.tab} aria-current={view === key ? "page" : undefined} onClick={() => { setView(key); setSelected(null); }}>{label}</button>)}</nav>
+          <nav className={styles.tabs} aria-label="Development views">{VIEWS.map(([key, label]) => <button key={key} type="button" className={view === key ? styles.tabActive : styles.tab} aria-pressed={view === key} onClick={() => { setView(key); setSelected(null); }}>{label}</button>)}</nav>
           {issue ? <Detail issue={issue} onClose={() => setSelected(null)} /> : <>
             {view === "pipeline" && <Pipeline issues={snapshot.issues} onSelect={setSelected} />}
             {view === "actions" && <IssueList title="Needs your decision" issues={snapshot.issues.filter(i => i.ownerAction)} empty="Nothing needs an owner decision right now." onSelect={setSelected} showAction />}
@@ -117,7 +117,7 @@ function IssueList({ title, issues, empty, onSelect, showAction }: { title: stri
         <li key={i.number}>
           <button type="button" className={styles.row} onClick={() => onSelect(i.number)} aria-label={`Open details for issue ${i.number}: ${i.title}`}>
             <span className={styles.rowMain}><b>#{i.number}</b> {i.title}</span>
-            <span className={styles.rowMeta}><Chip tone={STATUS_TONE[i.status]}>{i.statusLabel}</Chip>{i.closure.state === "closed" && <Chip tone={i.closure.consistency === "verified_live" ? "success" : "warning"}>{i.closure.consistency === "verified_live" ? "Closed, verified live" : "Closed, unverified"}</Chip>}{i.blocker && <Chip tone="danger">Blocked</Chip>}{i.stale && <Chip tone="warning">Stale</Chip>}</span>
+            <span className={styles.rowMeta}><Chip tone={STATUS_TONE[i.status]}>{i.statusLabel}</Chip>{i.closure.state === "closed" && <Chip tone={i.closure.consistency === "verified_live" ? "success" : i.closure.consistency === "closed_not_planned" ? "neutral" : "warning"}>{i.closure.consistency === "verified_live" ? "Closed, verified live" : i.closure.consistency === "closed_not_planned" ? "Closed, not planned" : "Closed, unverified"}</Chip>}{i.blocker && <Chip tone="danger">Blocked</Chip>}{i.stale && <Chip tone="warning">Stale</Chip>}</span>
             {showAction && <span className={styles.action}>{i.nextAction}</span>}
           </button>
         </li>))}</ul>}
@@ -136,7 +136,7 @@ function Detail({ issue, onClose }: { issue: IssueView; onClose: () => void }) {
     <section className={styles.panel} aria-labelledby="issue-detail-title">
       <button type="button" className={styles.secondary} onClick={onClose}><ArrowLeft size={15} aria-hidden="true" /> Back to list</button>
       <h2 id="issue-detail-title">#{issue.number} {issue.title}</h2>
-      <p><Chip tone={STATUS_TONE[issue.status]}>{issue.statusLabel}</Chip> {issue.closure.state === "closed" ? <Chip tone={issue.closure.consistency === "verified_live" ? "success" : "warning"}>{`Issue closed${issue.closure.closedAt ? " " + london(issue.closure.closedAt) : ""}${issue.closure.consistency === "closed_without_production_evidence" ? ": no production evidence" : ""}`}</Chip> : <Chip tone="neutral">Issue open</Chip>}</p>
+      <p><Chip tone={STATUS_TONE[issue.status]}>{issue.statusLabel}</Chip> {issue.closure.state === "closed" ? <Chip tone={issue.closure.consistency === "verified_live" ? "success" : issue.closure.consistency === "closed_not_planned" ? "neutral" : "warning"}>{`Issue closed${issue.closure.closedAt ? " " + london(issue.closure.closedAt) : ""}${issue.closure.consistency === "closed_without_production_evidence" ? ": no production evidence" : ""}`}</Chip> : <Chip tone="neutral">Issue open</Chip>}</p>
       <div className={styles.next}><b>Next action for owner:</b> {issue.nextAction}</div>
       <dl className={styles.facts}>
         <div><dt>GitHub issue</dt><dd><Link href={issue.url}>Issue #{issue.number}</Link></dd></div>

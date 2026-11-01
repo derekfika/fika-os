@@ -10,11 +10,12 @@ const step = (key: StepKey, status: StepStatus, note: string, evidence?: Evidenc
 export function primaryPull(pulls: RawPull[]): RawPull | undefined {
   const byUpdated = (a: RawPull, b: RawPull) => b.updatedAt.localeCompare(a.updatedAt);
   const merged = pulls.filter(p => p.merged).sort((a, b) => (b.mergedAt || "").localeCompare(a.mergedAt || ""));
-  return merged[0] || pulls.filter(p => p.state === "open").sort(byUpdated)[0] || [...pulls].sort(byUpdated)[0];
+  // An open linked PR means work remains, so it outranks a merged slice (reported as partially merged).
+  return pulls.filter(p => p.state === "open").sort(byUpdated)[0] || merged[0] || [...pulls].sort(byUpdated)[0];
 }
 
 function matching(records: DeploymentRecord[], env: "staging" | "production", shas: string[], app: string) {
-  return records.filter(r => r.environment === env && shas.includes(r.sourceSha) && (!r.app || app === "unassigned" || r.app.toLowerCase() === app.toLowerCase()));
+  return records.filter(r => r.environment === env && shas.includes(r.sourceSha) && (!r.app || (app !== "unassigned" && r.app.toLowerCase() === app.toLowerCase())));
 }
 
 /**
@@ -31,7 +32,7 @@ export function deriveSteps(issueNumber: number, app: string, pulls: RawPull[], 
   const earliest = [...pulls].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
   out.push(step("started", "evidenced", pulls.length > 1 ? pulls.length + " linked pull requests; first opened " + earliest.createdAt.slice(0, 10) + "." : "Pull request opened.", { source: "GitHub pull request #" + earliest.number, at: earliest.createdAt, url: earliest.url }));
   const codedEvidence = { source: "GitHub commit " + sha7(pr.headSha), at: pr.updatedAt, url: pr.commitUrl };
-  out.push(pr.draft && !pr.merged ? step("coded", "pending", "Draft pull request; not yet ready for review.", codedEvidence) : step("coded", "evidenced", "Pull request ready with head commit " + sha7(pr.headSha) + ".", codedEvidence));
+  out.push(pr.state === "closed" && !pr.merged ? step("coded", "failed", "Pull request #" + pr.number + " was closed without merging.", codedEvidence) : pr.draft && !pr.merged ? step("coded", "pending", "Draft pull request; not yet ready for review.", codedEvidence) : step("coded", "evidenced", "Pull request ready with head commit " + sha7(pr.headSha) + ".", codedEvidence));
   const c = pr.checks;
   const ciEvidence: Evidence = { source: "GitHub checks on " + sha7(pr.headSha), at: c.completedAt, url: c.url || pr.url };
   out.push(c.state === "success" ? step("tested", "evidenced", c.total + " check(s) passed on " + sha7(pr.headSha) + ".", ciEvidence)
@@ -41,14 +42,18 @@ export function deriveSteps(issueNumber: number, app: string, pulls: RawPull[], 
     : step("tested", "not_connected", "CI status was not read in this snapshot."));
   out.push(pr.merged
     ? step("merged", "evidenced", "Merged" + (pr.mergeCommitSha ? " as " + sha7(pr.mergeCommitSha) : "") + ".", { source: "GitHub pull request #" + pr.number, at: pr.mergedAt, url: pr.mergeCommitSha && pr.mergeCommitUrl ? pr.mergeCommitUrl : pr.url })
-    : step("merged", "not_reached", "Pull request not merged."));
+    : pulls.some(p => p.merged)
+      ? step("merged", "pending", "Partially merged: " + pulls.filter(p => p.merged).map(p => "#" + p.number).join(", ") + " merged, but PR #" + pr.number + " remains " + pr.state + ".", { source: "GitHub pull request #" + pr.number, at: pr.updatedAt, url: pr.url })
+      : step("merged", "not_reached", "Pull request not merged."));
 
-  const shas = [pr.mergeCommitSha, pr.headSha].filter(Boolean) as string[];
+  // Production evidence must be the merge commit on main; a PR head commit may match staging only.
+  const stagingShas = [pr.mergeCommitSha, pr.headSha].filter(Boolean) as string[];
+  const productionShas = pr.mergeCommitSha ? [pr.mergeCommitSha] : [];
   let stagingRecord: DeploymentRecord | undefined;
   if (!pr.merged) out.push(step("staging", "not_reached", "Not reached: not merged."));
   else if (!external.deployments.connected) out.push(step("staging", "not_connected", "Release and serving provenance is not connected; merged code is not assumed deployed."));
   else {
-    const recs = matching(external.deployments.records, "staging", shas, app).sort((a, b) => b.deployedAt.localeCompare(a.deployedAt));
+    const recs = matching(external.deployments.records, "staging", stagingShas, app).sort((a, b) => b.deployedAt.localeCompare(a.deployedAt));
     stagingRecord = recs.find(r => r.status === "serving");
     const latest = recs[0];
     const evidenceOf = (r: DeploymentRecord): Evidence => ({ source: r.source, at: r.deployedAt, url: r.evidenceUrl });
@@ -76,7 +81,7 @@ export function deriveSteps(issueNumber: number, app: string, pulls: RawPull[], 
   if (!pr.merged) out.push(step("production", "not_reached", "Not reached: not merged."));
   else if (!external.deployments.connected) out.push(step("production", "not_connected", "Release and serving provenance is not connected; production state is unknown, not assumed."));
   else {
-    const prod = matching(external.deployments.records, "production", shas, app).filter(r => r.status === "serving").sort((a, b) => b.deployedAt.localeCompare(a.deployedAt))[0];
+    const prod = matching(external.deployments.records, "production", productionShas, app).filter(r => r.status === "serving").sort((a, b) => b.deployedAt.localeCompare(a.deployedAt))[0];
     out.push(prod ? step("production", "evidenced", "Production serving " + sha7(prod.sourceSha) + (uatAccepted || !external.uat.connected ? "." : "; no matching UAT acceptance is recorded."), { source: prod.source, at: prod.deployedAt, url: prod.evidenceUrl }) : step("production", "pending", "No matching production serving evidence."));
   }
   return out;
@@ -97,7 +102,7 @@ export function pipelineStatus(steps: LifecycleStep[]): { status: PipelineStatus
 export function closureFor(issue: RawIssue, steps: LifecycleStep[]): IssueClosure {
   if (issue.state === "open") return { state: "open", consistency: "n/a" };
   const live = steps.find(s => s.key === "production")!.status === "evidenced";
-  const consistency = issue.stateReason === "not_planned" ? "closed_not_planned" : live ? "verified_live" : "closed_without_production_evidence";
+  const consistency = issue.stateReason === "not_planned" || issue.stateReason === "duplicate" ? "closed_not_planned" : live ? "verified_live" : "closed_without_production_evidence";
   return { state: "closed", closedAt: issue.closedAt, reason: issue.stateReason, consistency };
 }
 
@@ -121,7 +126,9 @@ function nextAction(status: PipelineStatus, issue: RawIssue, pr: RawPull | undef
   const staging = steps.find(s => s.key === "staging")!;
   switch (status) {
     case "not_started": return { text: "No work evidenced. Prioritise or assign if it should proceed.", owner: false };
-    case "in_progress": return pr && !pr.draft && pr.checks.state === "success" ? { text: "Review PR #" + pr.number + " and integrate if satisfied.", owner: true } : { text: "Work in progress; no owner action yet.", owner: false };
+    case "in_progress":
+      if (pr && pr.state === "closed" && !pr.merged) return { text: "Linked PR #" + pr.number + " was closed without merging: open a replacement or close the issue.", owner: true };
+      return pr && !pr.draft && pr.checks.state === "success" ? { text: "Review PR #" + pr.number + " and integrate if satisfied.", owner: true } : { text: "Work in progress; no owner action yet.", owner: false };
     case "ci_failing": return { text: "CI is failing on PR #" + pr?.number + "; the implementing agent must fix it before review.", owner: false };
     case "merged_awaiting_deploy": return { text: staging.status === "not_connected" ? "Merged. The dashboard cannot see releases yet; confirm staging state in the governed deployment record." : "Merged. Decide whether to deploy to staging (governed fika deploy).", owner: true };
     case "awaiting_uat": return { text: "Run UAT on the staging build and record the result.", owner: true };
