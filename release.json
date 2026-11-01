@@ -6,43 +6,46 @@
   "backend": "fika-menu-planning-staging",
   "region": "europe-west4",
   "branch": "release/staging/menu",
-  "sourceSha": "f03ed05a7ef0a165ee385428eea4b3dc730dc087",
-  "rollout": "build-2026-10-30-002",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "baseline",
-  "scopeHash": "081548e44bd206fb74a63ca0bf191eed7c98045399e5e652594f9fe95de0d6f2",
-  "observedAt": "2026-11-01T09:47:32.707Z",
+  "sourceSha": "653002c7b1dadc5ed7d4f30d260a63ee32ca4698",
+  "scopeHash": "5bc0616e3786280b98ac4c37ced973e618295bc1574738eace45514770c1fefd",
+  "inMain": true,
+  "rollback": false,
+  "executing": true,
+  "cosmeticOnly": false,
+  "standard": false,
+  "validation": {
+    "id": 124996219583,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/41355897891/job/124996219583",
+    "sha": "653002c7b1dadc5ed7d4f30d260a63ee32ca4698"
+  },
+  "approval": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "app": "menu",
+    "environment": "staging",
+    "sourceSha": "653002c7b1dadc5ed7d4f30d260a63ee32ca4698",
+    "action": "deploy",
+    "instruction": "Explicit staging execution",
+    "releaseId": null,
+    "id": "2fd8445b237c606db7f035f50bce3c779bd2fe20b89e3d6cb3a57f0829829a30",
+    "explicitExecute": true,
+    "authorisedAt": "2026-11-01T22:14:06.566Z"
+  },
+  "provenance": {
+    "number": 259,
+    "url": "https://github.com/derekfika/fika-os/pull/259",
+    "head": "a6835dfc8664894ce8f59c30d9edad881f9df329",
+    "pullRequestRisk": "standard"
+  },
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "eed2c413-7927-48d2-89be-8c8fa003af70",
   "previousGood": {
-    "sourceSha": "39f642d190513b8dca612c80635b8f262b0f7f10",
-    "rollout": "build-2026-10-28-002",
+    "sourceSha": "f03ed05a7ef0a165ee385428eea4b3dc730dc087",
+    "rollout": "build-2026-10-30-002",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "40b7f7c33b64fea1912174935aef9ea7c59995ec",
-  "reconciliation": {
-    "type": "forward-serving-baseline-adoption",
-    "authorizedAt": "2026-11-01T09:47:32.707Z",
-    "actor": "derekfika",
-    "method": "authenticated-repository-writer",
-    "authorization": "Owner-directed Menu Planning staging release-ledger reconciliation",
-    "priorLedgerCommit": "40b7f7c33b64fea1912174935aef9ea7c59995ec",
-    "verifiedAt": "2026-11-01T09:47:32.707Z",
-    "backend": "fika-menu-planning-staging",
-    "project": "fika-os-dev",
-    "build": "build-2026-10-30-002",
-    "rollout": "build-2026-10-30-002",
-    "evidence": {
-      "backend": "projects/fika-os-dev/locations/europe-west4/backends/fika-menu-planning-staging",
-      "repository": "projects/fika-os-dev/locations/europe-west4/connections/apphosting-github-conn-wz4o9sx/gitRepositoryLinks/derekfika-fika-os",
-      "rootDirectory": "apps/menu-planning",
-      "buildState": "READY",
-      "rolloutState": "SUCCEEDED",
-      "trafficPercent": 100,
-      "trafficBuild": "projects/594727519934/locations/europe-west4/backends/fika-menu-planning-staging/builds/build-2026-10-30-002",
-      "healthStatus": 200
-    },
-    "historicalGovernance": "Not established for historical external releases; this record is prospective and does not assert prior authorization.",
-    "excludedRollbackCandidates": []
-  }
+  "previousGoodRecord": "3a38ea4b18ee780d6bb3476985edcf62856bbbf9",
+  "createdAt": "2026-11-01T22:14:13.845Z"
 }
