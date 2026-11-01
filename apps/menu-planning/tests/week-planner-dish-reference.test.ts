@@ -108,7 +108,7 @@ test("status tooltip is reachable by pointer, keyboard focus and touch activatio
   assert.doesNotMatch(component, /week-dish-reference-sr-only/, "the tooltip itself is the control's accessible description");
   assert.match(styles, /\.week-dish-reference:hover \.week-dish-reference-tooltip/);
   assert.match(styles, /\.week-dish-reference:focus-within \.week-dish-reference-tooltip/);
-  assert.match(styles, /\.week-dish-reference-trigger\[aria-expanded="true"\]/);
+  assert.match(styles, /\.week-dish-reference-trigger\[aria-expanded="true"\] \+ \.week-dish-reference-tooltip \{ display: block; \}/, "touch activation reveals the tooltip sibling while the control is expanded");
   assert.match(styles, /\.week-dish-reference-tooltip \{ display: none; max-width: 100%;/);
   assert.doesNotMatch(styles.slice(styles.indexOf(".week-dish-reference-tooltip {"), styles.indexOf(".week-dish-reference-tooltip {" ) + 350), /position:\s*(absolute|fixed)/);
 });

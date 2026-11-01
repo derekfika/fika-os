@@ -42,7 +42,7 @@
 .week-dish-reference-tooltip { display: none; max-width: 100%; padding: 8px 10px; border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-card); color: var(--fika-text-primary); font-size: 12px; line-height: 18px; font-weight: 400; overflow-wrap: anywhere; }
 .week-dish-reference:hover .week-dish-reference-tooltip,
 .week-dish-reference:focus-within .week-dish-reference-tooltip,
-.week-dish-reference-trigger[aria-expanded="true"] + .week-dish-reference-sr-only + .week-dish-reference-tooltip { display: block; }
+.week-dish-reference-trigger[aria-expanded="true"] + .week-dish-reference-tooltip { display: block; }
 .week-dish-reference-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .week-menu-cell-actions { flex-wrap: wrap; }
 .week-dish-reference { flex: 0 0 100%; }
