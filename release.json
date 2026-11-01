@@ -6,12 +6,40 @@
   "backend": "fika-os-staging",
   "region": "europe-west4",
   "branch": "release/staging/hub",
-  "sourceSha": "0e21fb23bb5135032bb74f5ceff793000afae596",
-  "rollout": "build-2026-11-01-001",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "scopeHash": "a27d553cc6c1a8111c1c75deba50f1665b8b648ecb6bdc76998623cfdfcb268d",
-  "kind": "abandoned",
+  "sourceSha": "7fa32db35a25cb6f3fd9bc4797d25c4906874019",
+  "scopeHash": "40c343560116eb534b127200a526ba333124343f5066bd72c2060210f6ef0612",
+  "inMain": true,
+  "rollback": false,
+  "executing": true,
+  "cosmeticOnly": false,
+  "standard": false,
+  "validation": {
+    "id": 124842199109,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/41304163990/job/124842199109",
+    "sha": "7fa32db35a25cb6f3fd9bc4797d25c4906874019"
+  },
+  "approval": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "app": "hub",
+    "environment": "staging",
+    "sourceSha": "7fa32db35a25cb6f3fd9bc4797d25c4906874019",
+    "action": "deploy",
+    "instruction": "Explicit staging execution",
+    "releaseId": null,
+    "id": "8eefface6cc285ef43f4758929c0fe90fa155d70fbf4d93aba2a1bec1d9dfd1d",
+    "explicitExecute": true,
+    "authorisedAt": "2026-11-01T13:15:10.712Z"
+  },
+  "provenance": {
+    "number": 245,
+    "url": "https://github.com/derekfika/fika-os/pull/245",
+    "head": "15cda843b897ba0b3ae70b915c1d60a990ce50ef",
+    "pullRequestRisk": "standard"
+  },
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "2749acf6-4eb8-4e3f-bba4-9f46544da259",
   "previousGood": {
     "sourceSha": "0e21fb23bb5135032bb74f5ceff793000afae596",
     "rollout": "build-2026-11-01-001",
@@ -19,32 +47,5 @@
     "percent": 100
   },
   "previousGoodRecord": "1a37c76bc528fb3ebd1bb37d9d4566f788f1b13c",
-  "releaseId": "243c9115-32e7-449b-be0c-444a26845d28",
-  "originalIntent": "217dcc78cf6d869305e8012e8daa29e060ed9c6f",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-staging--fika-os-dev.europe-west4.hosted.app/"
-  },
-  "recovery": {
-    "resolution": "abandon",
-    "reason": "Attempt build-2026-11-01-002 FAILED at Cloud Build (secret FIKA_DEV_DASHBOARD_GITHUB_TOKEN access not yet granted); verified terminal FAILED build and rollout, serving unchanged at 0e21fb23; owner granted access, redeploying",
-    "operator": {
-      "actor": "derekfika",
-      "method": "authenticated-repository-writer",
-      "app": "hub",
-      "environment": "staging",
-      "sourceSha": "7fa32db35a25cb6f3fd9bc4797d25c4906874019",
-      "action": "reconcile:abandon",
-      "instruction": "Attempt build-2026-11-01-002 FAILED at Cloud Build (secret FIKA_DEV_DASHBOARD_GITHUB_TOKEN access not yet granted); verified terminal FAILED build and rollout, serving unchanged at 0e21fb23; owner granted access, redeploying",
-      "releaseId": "243c9115-32e7-449b-be0c-444a26845d28",
-      "id": "4121c9fdb6508854c462a9d52b02f5238be6b251f95155105a3053189fe0a9f4",
-      "explicitExecute": true,
-      "authorisedAt": "2026-11-01T13:14:54.662Z"
-    },
-    "rollout": "build-2026-11-01-002",
-    "evidenceHash": "c996662367330d23e033ede527d07394299e782367e57e10290e60b1270c9ea5",
-    "journalHash": "46e27304bbf57a07b6c88b0956df8ff0bc8226901d5781fe7af69c1510bcc6df",
-    "at": "2026-11-01T13:14:58.662Z"
-  }
+  "createdAt": "2026-11-01T13:15:17.527Z"
 }
