@@ -251,7 +251,7 @@ test.describe("Journey Planner V3 · Organise Run and rejected mutations · 1536
   test("queue-to-run drag onto the second run while the first is selected keeps the inspector and selection", async ({ page }) => {
     const { server } = await boot(page, assignedSeed());
     await openRun(page);
-    await drag(page, await centre(queueItem(page, "North Kitchen")), await centre(page.locator(`[data-vehicle-row="van2"] [data-drop-run-id="${EMPTY}"]`)));
+    await drag(page, await centre(queueItem(page, "North Kitchen")), await centre(page.locator(`[data-vehicle-row="van2"] button[data-drop-run-id="${EMPTY}"]`)));
     await expect.poll(() => commandsOf(server, "assign-job-to-load").length).toBe(1);
     expect(commandsOf(server, "assign-job-to-load")[0]).toMatchObject({ jobId: "job:4", targetRunId: EMPTY, scheduledTime: "13:00" });
     await expect(inspectorOf(page)).toBeVisible();

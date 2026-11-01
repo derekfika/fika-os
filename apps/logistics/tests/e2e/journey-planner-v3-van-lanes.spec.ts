@@ -153,3 +153,30 @@ for (const width of [820, 1024, 1280, 1536]) {
     expectClean(issues, `${width}px stops under runs`);
   });
 }
+
+test("dropping queue work on a non-selected run's stop chain targets that run, not the selected run on the van", async ({ page }) => {
+  const { server } = await boot(page, multipleRuns(true));
+  await expect(page.locator(`[data-run-bar="${firstId}"]`)).toBeVisible();
+  const stops = page.locator(`[data-run-stops="${secondId}"]`);
+  await expect(stops).toBeVisible();
+  await drag(page, await centre(queueItem(page, "North Kitchen")), await centre(stops.locator("li").first()));
+  await expect.poll(() => commandsOf(server, "assign-job-to-load").length).toBe(1);
+  expect(commandsOf(server, "assign-job-to-load")[0]).toMatchObject({ jobId: "job:4", targetRunId: secondId });
+});
+
+test("two non-overlapping runs share one band and each keeps its own stops beneath its bar; untimed drafts show stops without an empty band", async ({ page }) => {
+  await boot(page, multipleRuns());
+  const van1 = page.locator('[data-vehicle-row="van1"]');
+  const bands = van1.locator("[data-track-band]");
+  await expect(bands).toHaveCount(1);
+  await expect(bands.locator("[data-run-bar]")).toHaveCount(2);
+  await expect(bands.locator(`[data-run-stops="${firstId}"]`)).toBeVisible();
+  await expect(bands.locator(`[data-run-stops="${secondId}"]`)).toBeVisible();
+  const [a, b] = await Promise.all([firstId, secondId].map(async id => (await van1.locator(`[data-run-bar="${id}"]`).boundingBox())!));
+  expect(a.y).toBe(b.y);
+  const van2 = page.locator('[data-vehicle-row="van2"]');
+  await expect(van2.locator("[data-track-band]")).toHaveCount(0);
+  const draft = van2.locator(`[data-run-stops="${draftId}"]`);
+  await expect(draft).toBeVisible();
+  await expect(draft.locator("li").first()).toContainText("CPU");
+});

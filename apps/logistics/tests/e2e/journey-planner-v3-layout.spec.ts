@@ -83,7 +83,7 @@ for (const viewport of MATRIX.filter((item) => item.width < 1440)) {
     await audit(page, "queue peek open");
     await expectHittable(peek.locator("[data-timeline-queue-id]").first(), "peek queue card");
     // Target the Van 2 draft directly in its lane, keeping Run 1 selected.
-    const empty = page.locator(`[data-vehicle-row="van2"] [data-drop-run-id="run:${DATE}:b"]`);
+    const empty = page.locator(`[data-vehicle-row="van2"] button[data-drop-run-id="run:${DATE}:b"]`);
     await drag(page, await centre(peek.locator("[data-timeline-queue-id]", { hasText: "North Kitchen" })), await centre(empty));
     await expect.poll(() => commandsOf(server, "assign-job-to-load").length).toBe(1);
     expect(commandsOf(server, "assign-job-to-load")[0]).toMatchObject({ jobId: "job:4", targetRunId: `run:${DATE}:b`, scheduledTime: "13:00" });

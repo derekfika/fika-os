@@ -10,7 +10,7 @@ import styles from "./timeline.module.css";
  */
 export function RunStopSequence({ runId, selected, runTitle, chips, onSelectStop, offset = 0, activeKey }: { /** Stable run identity, exposed as data-run-stops so the sequence can be located under its own run. */ runId?: string; selected?: boolean; runTitle: string; chips: SequenceChipView[]; onSelectStop?: (stopKey: string) => void; /** Starting inset (px) so the sequence sits under its bar; the list may slide left to stay fully visible. */ offset?: number; activeKey?: string }) {
   const visits = chips.filter((chip) => chip.kind === "visit");
-  return <div className={styles.sequenceRow} data-run-stops={runId} data-selected={selected ? "true" : undefined}><span className={styles.sequenceSpacer} style={{ width: offset }} aria-hidden="true" /><ol className={styles.sequence} aria-label={`Visiting sequence for ${runTitle}`}>
+  return <div className={styles.sequenceRow} data-run-stops={runId} data-drop-run-id={runId} data-selected={selected ? "true" : undefined}><span className={styles.sequenceSpacer} style={{ width: offset }} aria-hidden="true" /><ol className={styles.sequence} aria-label={`Visiting sequence for ${runTitle}`}>
     {chips.map((chip, index) => {
       const last = index === chips.length - 1;
       const ordinal = chip.kind === "visit" ? visits.findIndex((visit) => visit.key === chip.key) + 1 : 0;

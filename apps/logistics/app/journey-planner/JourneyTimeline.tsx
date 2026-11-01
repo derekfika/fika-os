@@ -223,7 +223,7 @@ export function JourneyTimeline({ runs, vehicleIds, status = "ready", zoom = 1, 
               </label>
             </div>
             <div className={`${styles.track} ${styles.laneTrack}`} data-vehicle-track={vehicle.vehicleId}>
-              {Array.from({ length: vehicle.trackCount }, (_, track) => {
+              {Array.from({ length: vehicle.runs.some(run => run.departure && run.return) ? vehicle.trackCount : 0 }, (_, track) => {
                 const members = vehicle.runs.filter(run => run.departure && run.return && (vehicle.tracks.get(run.id) || 0) === track);
                 return <div key={track} className={styles.trackBand} data-track-band={track}>
                   <div className={styles.barLane}>
