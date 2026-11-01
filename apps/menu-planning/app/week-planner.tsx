@@ -233,7 +233,7 @@ export default function WeekPlanner() {
 const GROUP_GLYPHS: Record<string, string> = {
   SALADS: "M4 14c0-5 4-9 10-10 0 6-4 10-10 10zM4 14l7-7",
   "COLD PROTEIN": "M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9",
-  "HOT MAIN": "M12 3c3 4 4 6 4 9a4 4 0 0 1-8 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 0-8z",
+  "HOT MAINS": "M12 3c3 4 4 6 4 9a4 4 0 0 1-8 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 0-8z",
   FISH: "M3 12c3-4 7-5 11-2l4-3v10l-4-3c-4 3-8 2-11-2zM7 11.5h.01",
   "VEGAN MAIN": "M12 21V11M12 11c-4 0-6-3-6-6 4 0 6 2 6 6zM12 11c4 0 6-3 6-6-4 0-6 2-6 6z",
   SOUP: "M4 11h16a8 8 0 0 1-16 0zM8 7c0-1 1-1 1-2M12 7c0-1 1-1 1-2",
