@@ -77,13 +77,15 @@ test("verified immutable old record and successor map resolve exactly one active
 });
 
 test("missing, unavailable and tampered archive evidence preserves an unresolved saved row", async () => {
-  for (const failure of ["missing", "unavailable", "tampered-map", "tampered-archive", "wrong-source", "bad-index"] as const) {
+  for (const failure of ["missing", "unavailable", "tampered-map", "tampered-archive", "lower-revision", "same-revision-other-hash", "descriptor-mismatch", "bad-index"] as const) {
     const h = history();
     if (failure === "missing") h.value.archiveManifest = async () => undefined;
     if (failure === "unavailable") h.value.archived = async () => { throw new Error("fixture unavailable"); };
     if (failure === "tampered-map") h.value.successors = async () => ({ "dish:old": { ...h.mapping, toId: "dish:other" } });
     if (failure === "tampered-archive") h.archive.data.record.displayName = "Changed after hash";
-    if (failure === "wrong-source") h.manifest.catalogueRevision = 3;
+    if (failure === "lower-revision") h.manifest.catalogueRevision = 5; // archive sealed after the live revision (4): rollback/odd state
+    if (failure === "same-revision-other-hash") h.manifest.catalogueSourceHash = "d".repeat(64);
+    if (failure === "descriptor-mismatch") h.value.source = async () => ({ revision: 4, hash, historical: { archiveId: h.manifest.archiveId, archiveDigest: "e".repeat(64), mappingVersion: 1, mappingDigest: h.manifest.mappingDigest } });
     if (failure === "bad-index") h.manifest.mappingHashes["dish:old"] = "b".repeat(64);
     const original = snapshot(); const before = structuredClone(original);
     const result = await resolveWeekDishReferences(original, actor, h.value);
@@ -162,4 +164,45 @@ test("verified archive-only old ID stays visible as archived without requiring a
   const result = await resolveWeekDishReferences(snapshot(), actor, h.value);
   assert.equal(result.dishReferences.byEntryId["entry:0"].state, "archived");
   assert.equal(result.dishReferences.byEntryId["entry:0"].classification, undefined);
+});
+
+test("routine catalogue edits after cutover keep archived, merged and active references resolving", async () => {
+  const h = history(); // sealed at revision 4
+  const newHash = "f".repeat(64);
+  const archivedOnly = dish("dish:retired", true);
+  const archive2 = { id: "dish:retired", archivedAt: "2026-11-01T20:00:00Z", data: { kind: "dish", record: archivedOnly } };
+  h.manifest.dishHashes["dish:retired"] = dishReferenceDigest(archive2);
+  h.manifest.archiveDigest = dishReferenceDigest(h.manifest.dishHashes);
+  const descriptor = { archiveId: h.manifest.archiveId, archiveDigest: h.manifest.archiveDigest, mappingVersion: 1, mappingDigest: h.manifest.mappingDigest };
+  h.value.source = async () => ({ revision: 7, hash: newHash, historical: descriptor }); // cutover R=4, edited to R+3 with a new sourceHash
+  h.value.archived = async (_archiveId, ids) => Object.fromEntries([["dish:old", h.archive], ["dish:retired", archive2]].filter(([id]) => ids.includes(id as string)));
+  h.value.items = async ids => [dish("dish:survivor"), dish("dish:live"), archivedOnly].filter(item => ids.includes(item.canonicalId));
+  const result = await resolveWeekDishReferences(snapshot(["dish:old", "dish:retired", "dish:live"]), actor, h.value);
+  const refs = result.dishReferences.byEntryId;
+  assert.equal(refs["entry:0"].state, "merged");
+  assert.equal(refs["entry:0"].successor?.id, "dish:survivor");
+  assert.equal(refs["entry:1"].state, "archived");
+  assert.equal(refs["entry:2"].state, "active");
+  assert.equal(refs["entry:0"].provenance.catalogueRevision, 7);
+  assert.equal(refs["entry:0"].provenance.catalogueSourceHash, newHash);
+  assert.equal(refs["entry:0"].provenance.archiveDigest, h.manifest.archiveDigest);
+});
+
+test("a tampered archive digest still fails closed after the live revision has advanced", async () => {
+  const h = history();
+  h.value.source = async () => ({ revision: 7, hash: "f".repeat(64), historical: { archiveId: h.manifest.archiveId, archiveDigest: h.manifest.archiveDigest, mappingVersion: 1, mappingDigest: h.manifest.mappingDigest } });
+  h.manifest.dishHashes["dish:old"] = "b".repeat(64); // index no longer matches archiveDigest
+  const result = await resolveWeekDishReferences(snapshot(), actor, h.value);
+  assert.equal(result.dishReferences.byEntryId["entry:0"].state, "unresolved");
+  assert.equal(result.dishReferences.byEntryId["entry:0"].reason, "integrity_failed");
+});
+
+test("a live revision lower than the archive-bound cutover revision fails closed", async () => {
+  const h = history();
+  h.manifest.catalogueRevision = 9;
+  h.value.source = async () => ({ revision: 8, hash: "f".repeat(64), historical: { archiveId: h.manifest.archiveId, archiveDigest: h.manifest.archiveDigest, mappingVersion: 1, mappingDigest: h.manifest.mappingDigest } });
+  const result = await resolveWeekDishReferences(snapshot(), actor, h.value);
+  assert.equal(result.dishReferences.byEntryId["entry:0"].state, "unresolved");
+  assert.equal(result.dishReferences.byEntryId["entry:0"].reason, "integrity_failed");
+  assert.equal(result.dishReferences.byEntryId["entry:0"].successor, undefined);
 });

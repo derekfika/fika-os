@@ -1,0 +1,7 @@
+# 2026-11-02 — Bind dish references to the immutable archive, not the exact live revision (#151)
+
+Fixes a P1 in the #256 resolver: `verifiedManifest` required the archive's `referenceManifest.catalogueRevision`/`catalogueSourceHash` to equal the live catalogue manifest, but the canonical writer advances `sourceRevision`/`sourceHash` on every routine edit while retaining `historicalDishReferences`, so every archived/merged reference would have become `integrity_failed` after the first post-cutover edit.
+
+Semantics change: the live descriptor is bound to the archive by digests (archiveId, archiveDigest, mappingVersion, mappingDigest, recomputed from the per-document hash indexes, plus per-document and mapping digests). The archive-recorded revision is now a monotonic lower bound: live `sourceRevision >= archive cutover revision`; the same revision must carry the same hash; a lower revision, malformed revision/hash, digest mismatch, tampered document, missing archive, cycles, ambiguous maps and inactive targets still fail closed. Resolver provenance reports the live revision/hash. Contract docs updated; no DTO shape change. Not verified here: archive root environment/pre-cutover fields (the reader exposes only `referenceManifest`).
+
+Validation: resolver + route tests 20/20; added tests for post-cutover edit to R+3 (archived/merged/active resolve), tampered digest after advance, lower revision and same-revision-other-hash, descriptor mismatch. Menu typecheck clean; `npm test` 457 tests, 456 pass, 0 fail, 1 skipped. Deployment: none.
