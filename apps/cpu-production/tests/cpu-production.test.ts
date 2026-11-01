@@ -381,7 +381,7 @@ test("Liana production view captures nested menu items and sub-item allergen evi
   assert.match(liana, /Digital master allergen checker/);
   assert.match(liana, /Add rows/);
   assert.match(liana, /Add rows/);
-  assert.match(liana, /allergen-cell--\$\{state\}/);
+  assert.match(liana, /allergen-cell allergen-cell--\$\{view === "on"/);
   assert.match(allergenCellState, /may_contain/);
   assert.match(liana, /toggleOperationalAllergen/);
   assert.match(liana, /matrixColumns/);
