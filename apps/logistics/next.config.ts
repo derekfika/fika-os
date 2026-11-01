@@ -1,9 +1,11 @@
 import path from "node:path";
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
+import { resolveFikaBuildSha } from "@fika/server-shared/build-identity-resolver";
 
 const appRoot = path.resolve(__dirname);
 const repoRoot = path.resolve(appRoot, "../..");
+const buildSha = resolveFikaBuildSha();
 
 const nextConfig = (phase: string): NextConfig => {
   const isDevServer = phase === PHASE_DEVELOPMENT_SERVER;
@@ -14,6 +16,8 @@ const nextConfig = (phase: string): NextConfig => {
     output: "standalone",
     experimental: { externalDir: true },
     transpilePackages: ["@fika/server-shared"],
+    env: { FIKA_BUILD_SHA: buildSha },
+    generateBuildId: async () => buildSha,
     // App Hosting consumes the app-root standalone Webpack artifact. During
     // Turbopack development only, use the monorepo root so linked shared FIKA
     // source remains inside Turbopack's filesystem boundary.
