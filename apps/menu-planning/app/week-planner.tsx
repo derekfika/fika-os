@@ -224,9 +224,8 @@ export default function WeekPlanner() {
                     </button>
                     {entry && <div className="week-menu-cell-actions">
                       {referenceNotice && <div className={`week-dish-reference week-dish-reference--${referenceNotice.state}`}>
-                        <button type="button" className="week-dish-reference-trigger" aria-describedby={`${referenceId}-description`} aria-expanded={openDishReferenceId === entry.id} onClick={() => setOpenDishReferenceId(current => current === entry.id ? undefined : entry.id)}>{referenceNotice.label}</button>
-                        <span id={`${referenceId}-description`} className="week-dish-reference-sr-only">{referenceNotice.message}</span>
-                        <span className="week-dish-reference-tooltip" role="tooltip" aria-hidden="true">{referenceNotice.message}</span>
+                        <button type="button" className="week-dish-reference-trigger" aria-describedby={`${referenceId}-tooltip`} aria-expanded={openDishReferenceId === entry.id} onClick={() => setOpenDishReferenceId(current => current === entry.id ? undefined : entry.id)}>{referenceNotice.label}</button>
+                        <span id={`${referenceId}-tooltip`} className="week-dish-reference-tooltip" role="tooltip">{referenceNotice.message}</span>
                       </div>}
                       {findSpellingIssues(dishDisplayName(entry.itemLabel), { ignored: spell.ignored, addedWords: spell.added, speller: dictionary.speller }).length > 0 && <InlineSpellPopover item={spellItems.find(item => item.entryId === entry.id)!} ignored={spell.ignored} added={spell.added} dictionary={dictionary.speller} onReplace={replaceDraftSpelling} onIgnore={spell.ignore} onAddWord={spell.addWord} />}
                       <button type="button" className="week-menu-copy-action" aria-label={`Copy ${dishDisplayName(entry.itemLabel)} to another day`} title="Copy to another day" disabled={!dish || copyTargetsFor(entry.id).length === 0 || copyPending} onClick={() => setCopyDialogSourceId(entry.id)}><CopyGlyph /></button>

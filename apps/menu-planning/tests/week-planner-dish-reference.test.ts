@@ -101,9 +101,11 @@ test("draft, published, historical and copied-style entries are display-only con
 test("status tooltip is reachable by pointer, keyboard focus and touch activation without grid clipping", () => {
   const component = readFileSync(fileURLToPath(new URL("../app/week-planner.tsx", import.meta.url)), "utf8");
   const styles = readFileSync(fileURLToPath(new URL("../app/planner-stage2.css", import.meta.url)), "utf8");
-  assert.match(component, /className="week-dish-reference-trigger" aria-describedby=/);
+  assert.match(component, /className="week-dish-reference-trigger" aria-describedby=\{`\$\{referenceId\}-tooltip`\}/);
   assert.match(component, /aria-expanded=\{openDishReferenceId === entry\.id\}/);
-  assert.match(component, /role="tooltip" aria-hidden="true"/);
+  assert.match(component, /id=\{`\$\{referenceId\}-tooltip`\} className="week-dish-reference-tooltip" role="tooltip"/);
+  assert.doesNotMatch(component, /week-dish-reference-tooltip[^>]*aria-hidden="true"/, "the visible described tooltip remains exposed to assistive technology");
+  assert.doesNotMatch(component, /week-dish-reference-sr-only/, "the tooltip itself is the control's accessible description");
   assert.match(styles, /\.week-dish-reference:hover \.week-dish-reference-tooltip/);
   assert.match(styles, /\.week-dish-reference:focus-within \.week-dish-reference-tooltip/);
   assert.match(styles, /\.week-dish-reference-trigger\[aria-expanded="true"\]/);
