@@ -20,13 +20,17 @@ test("Week Planner shows owner-approved salad display names without changing gen
   assert.match(component, /No slot-specific recommendations yet\. Showing all category-compatible salads\./, "a zero-match default still explains its eligible catalogue fallback");
 });
 
-test("Fish follows Hot Main, Soup has its own section, and permanent Dessert rows stay last", () => {
+test("hot main, fish, vegan and soup slots share one ordered HOT MAINS banner", () => {
   const snapshot = emptyWeek("2026-11-02");
   assert.deepEqual(snapshot.week.templateSlots?.slice(-3), ["DESSERT 1", "DESSERT 2", "DESSERT 3"]);
-  snapshot.week.templateSlots = ["HOT MAIN", "FISH 1", "SOUP", "SAUCE 1", "DESSERT 1"];
+  snapshot.week.templateSlots = ["SOUP 1", "VEGAN MAIN 1", "FISH 2", "HOT MEAT 2", "HOT MAIN", "FISH 1", "HOT MEAT 1", "HOT VEG VEGAN 1", "SOUP", "SAUCE 1", "DESSERT 1"];
+  const before = structuredClone(snapshot);
   const groups = groupedSlots(snapshot);
-  assert.deepEqual(groups.map(([name]) => name), ["HOT MAIN", "FISH", "SOUP", "SAUCE", "DESSERTS"]);
+  assert.equal(groups.filter(([name]) => name === "HOT MAINS").length, 1);
+  assert.deepEqual(groups.map(([name]) => name), ["HOT MAINS", "SAUCE", "DESSERTS"]);
+  assert.deepEqual(groups[0][1], ["HOT MEAT 2", "HOT MAIN", "HOT MEAT 1", "FISH 2", "FISH 1", "VEGAN MAIN 1", "HOT VEG VEGAN 1", "SOUP 1", "SOUP"]);
   assert.deepEqual(groups.at(-1)?.[1], ["DESSERT 1", "DESSERT 2", "DESSERT 3"]);
+  assert.deepEqual(snapshot, before, "layout projection must not mutate saved or historical snapshot data");
 });
 
 test("legacy draft weeks show each permanent Dessert row once without saved-week rewrites", () => {
@@ -45,7 +49,9 @@ test("completed and published historical weeks do not gain Dessert rows", () => 
   published.week.status = "published";
   published.week.templateSlots = ["HOT MAIN", "SOUP"];
   const groups = groupedSlots(published);
-  assert.deepEqual(groups.map(([name]) => name), ["HOT MAIN", "SOUP"]);
+  assert.deepEqual(groups.map(([name]) => name), ["HOT MAINS"]);
+  assert.deepEqual(groups[0][1], ["HOT MAIN", "SOUP"]);
+  assert.deepEqual(published.week.templateSlots, ["HOT MAIN", "SOUP"], "historical display projection must preserve authored rows");
 });
 
 test("new templates include all six salad positions while saved historical plans keep their exact rows", () => {
