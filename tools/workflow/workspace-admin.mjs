@@ -5,6 +5,7 @@ import { git, command, common, root, stateDir, jsonFile, save, lock, asyncLock, 
 import { REPO, digest, safeScope } from './policy.mjs';
 import { workspaceRecords, worktrees, checkWorkspace, finishWorkspace, retireWorkspace, retireWorkspaceUnderLock } from './workspaces.mjs';
 import { leaseIdentity, registryFingerprint } from './workspace-state.mjs';
+import { recoverDeployOperation as recoverDeploy } from './deploy-marker-recovery.mjs';
 
 export const RELEASE_CONFIRMATION = 'RELEASE ALL LEASES';
 export const STATUS_BRANCH = 'meta/workspace-status';
@@ -20,6 +21,9 @@ export function recoverValidationOperation(id, options, { authorize=repositoryAd
     save(path.join(stateDir(),'workspace-audit',`validation-recovery-${id}.json`),event);unlinkSync(file);return event;
   });
 }
+
+/** Interrupted deploy markers: ledger-evidence based, preview-first. See docs/deployment/deploy-marker-recovery.md. */
+export function recoverDeployOperation(id, options, { authorize=repositoryAdministrator, ...deps }={}) { return recoverDeploy(id, options, { authorize, ...deps }); }
 
 export async function assertDevPortsIdle(ports) {
   if (!ports.length || ports.some(port => !Number.isInteger(port) || port < 1 || port > 65535)) throw Error('Workspace dev ports are missing or invalid');
