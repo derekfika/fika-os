@@ -32,5 +32,6 @@
     ,"./hospitality-service-layout": "./src/hospitality-service-layout.ts"
     ,"./hospitality-catalogue-client": "./src/hospitality-catalogue-client.ts"
     ,"./credentialed-upstream": "./src/credentialed-upstream.ts"
+    ,"./outbound-environment": "./src/outbound-environment.ts"
   }
 }
