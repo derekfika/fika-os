@@ -26,7 +26,7 @@ test("saved item hydrates stored states exactly and keeps positive/may-contain",
   assert.equal(out.gluten, "may_contain");
   assert.equal(out.milk, "clear");
   assert.equal(cellLabel(out.gluten), "MC");
-  assert.equal(out.no_key_allergens, "clear");
+  assert.equal(out.no_key_allergens, undefined, "No Key Allergens is never derived on hydration");
 });
 
 test("saved item with missing values leaves them neutral, not clear", () => {

@@ -14,7 +14,9 @@ export type PlannedSubItem = {
   note: string;
   evidenceStatus: "not_completed" | "completed" | "requires_review";
   /** Server-stamped chef confirmation (reviewer, time, inputs fingerprint). Workflow evidence: not part of the signed matrix hash. */
-  allergenReview?: import("../../../shared/allergen-review").AllergenRowReview;
+  allergenReview?: import("../../../shared/allergen-review").AllergenRowReview | import("../../../shared/allergen-declaration").ExplicitRowReview;
+  /** Server-stamped record that a chef deliberately ticked No Key Allergens (issue 225). Never client-supplied; absent on legacy rows whose No Key value was derived. */
+  noKeyDeclaration?: Pick<import("../../../shared/allergen-declaration").NoKeyDeclarationRecord, "declared"> & Partial<import("../../../shared/allergen-declaration").NoKeyDeclarationRecord>;
 };
 export type PlannedMenuItem = {
   id: string; sourceLineId?: string; name: string; note: string; subItems: PlannedSubItem[];

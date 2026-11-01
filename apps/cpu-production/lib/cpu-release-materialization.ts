@@ -6,7 +6,7 @@ import { allergenMatrixHtml } from "../app/ui/allergen-matrix";
 import { isHostedPdfRuntime, renderPdfToBuffer } from "../app/lib/local-pdf";
 import { matrixDriveConfiguration } from "../app/lib/matrix-drive-config";
 import { allergenReleaseLineageMatchesOrder, matrixSignatureScope, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../app/lib/production-plan";
-import { effectiveProductionPlanStatus, planRevisionToken } from "../app/lib/production-plan-state";
+import { allergenReviewProblems, describeAllergenReviewProblem, effectiveProductionPlanStatus, planRevisionToken } from "../app/lib/production-plan-state";
 import type { ProductionOrder } from "./production-types";
 import { dailyBundleManifestKey, dailyBundleSha256, encodeDailySignedOplocBundlePackage, buildDailySignedOplocBundle, publishDailySignedOplocBundle, verifyDailySignedOplocBundleArtifacts, type DailyBundleDurableStore } from "@fika/server-shared/daily-signed-oploc-bundle";
 import { publishReadPackage } from "@fika/server-shared/read-package";
@@ -28,8 +28,19 @@ function rendererFailure(error: unknown) {
   return Object.assign(new Error(message || "PDF_RENDERER_ERROR: the hosted PDF renderer failed."), { status: 503, code: "PDF_RENDERER_ERROR" });
 }
 
+/**
+ * Issue 225: nothing new may be materialised or published (artifact, package, downstream packet/event) from a row that is not
+ * chef-attested. A blank row, a legacy derived No Key value or a No Key/allergen conflict holds the release with a typed error before any
+ * Drive, package or outbox write. Already-published artifacts and already-signed evidence are untouched: this gates new publication only.
+ */
+export function assertCpuReleaseRowsAttested(menuItems: PlannedMenuItem[]) {
+  const unverified = allergenReviewProblems(menuItems).filter(problem => problem.kind === "row-blank" || problem.kind === "no-key-legacy" || problem.kind === "no-key-conflict");
+  if (unverified.length) throw Object.assign(new Error(`The CPU allergen release is held: verify every allergen row before it is published. ${unverified.map(describeAllergenReviewProblem).join(" ")}`), { status: 422, code: "CPU_ALLERGEN_ROW_UNVERIFIED", unverifiedRows: unverified.map(problem => ({ rowId: problem.rowId, itemId: problem.itemId, kind: problem.kind })) });
+}
+
 /** Render the one service-date master checker. OPLOC materialisation reuses this identity. */
 export async function createCpuMasterArtifact(plan: ProductionPlan, order: ProductionOrder, actor: string, timestamp: string, request: NextRequest, items: PlannedMenuItem[] = plan.menuItems) {
+  assertCpuReleaseRowsAttested(items);
   if (effectiveProductionPlanStatus(plan) !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
   if (!matrixDriveConfiguration(order).enabled) throw Object.assign(new Error("A configured Drive workspace is required before signing the CPU allergen bundle."), { status: 503 });
   const signatures = plan.signatures || [];
@@ -59,6 +70,7 @@ export function resumeCpuMaterializationPhase(result: { duplicate?: boolean; pla
 
 /** Build and publish artifacts for exactly one governed CPU order/OPLOC. */
 export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: ProductionOrder, actor: string, timestamp: string, request: NextRequest, options: { publishPackage?: boolean; masterArtifact?: MatrixArtifact } = {}) {
+  assertCpuReleaseRowsAttested(plan.menuItems);
   if (effectiveProductionPlanStatus(plan) !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
   const subItems = plan.menuItems.flatMap(item => item.subItems);
   if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before saving the matrix."), { status: 422 });
@@ -114,6 +126,8 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
   if (!allergenReleaseLineageMatchesOrder(pending, order, stored.menuItems)) throw Object.assign(new Error("The committed CPU release no longer matches the canonical source lineage."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
   if (pending.status === "current" && pending.materializationStatus === "ready") return { plan: stored, alreadyMaterialized: true };
   if (pending.status !== "pending" && !(pending.status === "current" && pending.materializationStatus !== "ready")) throw Object.assign(new Error("The CPU allergen release is no longer materializable."), { status: 409 });
+  // Hold BEFORE the started receipt is written: a retry of a pending release must not persist, render, upload or publish anything.
+  assertCpuReleaseRowsAttested(stored.menuItems);
   const materializationReceiptId = (phase: "started" | "prepared" | "final") => cpuReleaseMaterializationReceiptId(releaseId, order, phase);
   const preparedCandidate = structuredClone(stored);
   try {

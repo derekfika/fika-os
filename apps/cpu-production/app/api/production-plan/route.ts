@@ -4,7 +4,8 @@ import { z } from "zod";
 import { existsSync, promises as fs } from "node:fs";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, effectiveProductionPlanStatus, hasAllergenAuthority, planRevisionToken, nextPlanRevisionStamp, reviewRevisionConflict, isProductionPlanMatrixComplete, matrixSignatureScope, mergeMissingProductionOrderLines, sameMatrixSignatureScope, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, signedAllergenReviewMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
-import { deriveNoKeyAllergens, normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
+import { readExplicitAllergens } from "../../../../shared/allergen-declaration";
+import { allergenReviewProblems, describeAllergenReviewProblem } from "../../lib/production-plan-state";
 import { canonicalProductionFailureKind, productionOrderDetail, productionQueue, transitionProductionOrder, type CanonicalProductionFailure } from "../../../lib/production-http-client";
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
 import { rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
@@ -152,14 +153,12 @@ const plans = new Map<string, ProductionPlan>();
 const planRepository = createProductionPlanRepository();
 const isLocalRuntime = () => (process.env.FIKA_RUNTIME_MODE || "local") === "local";
 /**
- * "No key allergens" is never accepted from a client. It is derived here, on the server, solely from the 14 named allergen states:
- * any contains/may_contain => clear; all 14 clear => confirmed; anything else (including unrecorded) => unrecorded.
- * Named evidence is preserved exactly as recorded.
+ * Issue 225: "No Key Allergens" is a deliberate chef declaration and is never derived from the named allergens. This only maps
+ * legacy key names; it neither derives nor removes a No Key value. The semantic decision (blank vs positives vs declaration vs
+ * preserved legacy) is made per row by stampAllergenReviews, which also stamps the authenticated actor and time.
  */
 function strictServerAllergens(raw: Record<string, unknown> | undefined) {
-  const named = normaliseOperationalAllergens(raw);
-  delete named.no_key_allergens;
-  return deriveNoKeyAllergens(named);
+  return readExplicitAllergens(raw);
 }
 function normalisePlanAllergens(plan: ProductionPlan, previous?: { items: PlannedMenuItem[]; actor: string }): ProductionPlan {
   const normalised = { ...plan, menuItems: plan.menuItems.map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, allergens: strictServerAllergens(sub.allergens) })) })) };
@@ -171,6 +170,9 @@ function normalisePlanAllergens(plan: ProductionPlan, previous?: { items: Planne
 }
 function assertAllergenMatrixComplete(menuItems: PlannedMenuItem[], context: string) {
   if (!isProductionPlanMatrixComplete(menuItems)) throw Object.assign(new Error(`Record every allergen state, including No key allergens, before ${context}.`), { status: 422, code: "CPU_ALLERGEN_REVIEW_INCOMPLETE" });
+  // A blank row, a legacy automatic No Key value or a conflicting row is not a verified declaration and can never pass sign-off.
+  const unverified = allergenReviewProblems(menuItems).filter(problem => problem.kind === "row-blank" || problem.kind === "no-key-legacy" || problem.kind === "no-key-conflict");
+  if (unverified.length) throw Object.assign(new Error(`Verify every allergen row before ${context}: ${unverified.map(describeAllergenReviewProblem).join(" ")}`), { status: 422, code: "CPU_ALLERGEN_ROW_UNVERIFIED", unverifiedRows: unverified.map(problem => ({ rowId: problem.rowId, itemId: problem.itemId, kind: problem.kind })) });
 }
 /** Persists and adopts the revision the repository actually stamped inside the write transaction. */
 async function persistPlan(plan: ProductionPlan, expectedRevision: string | null) { const saved = await planRepository.save(plan, expectedRevision); plan.updatedAt = saved.revision; }

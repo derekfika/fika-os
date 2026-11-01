@@ -456,7 +456,14 @@ test("allergen checker uses the master-style purple header and four-state cells"
   assert.match(liana, /onPointerDown/);
   assert.match(liana, /Use your finger, stylus or mouse/);
   assert.match(liana, /reviewLockedByAuthority/);
-  assert.match(liana, /disabled=\{busy \|\| reviewLockedByAuthority \|\| \(sub\.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys\(sub\.allergens\)\.length\)\}/);
+  // Issue 225: Mark checked is unavailable once a row is verified, and a blank / legacy automatic / conflicting row can never be marked complete.
+  assert.match(liana, /disabled=\{busy \|\| reviewLockedByAuthority \|\| \(rowChecked\(sub\)\)\}/);
+  assert.match(liana, /const rowChecked = \(sub: PlannedSubItem\) => isRowVerified\(sub\) && !unresolvedNamedAllergenKeys\(sub\.allergens\)\.length;/);
+  const completeBlock = liana.slice(liana.indexOf("const completeSubItem"), liana.indexOf("const applySandwich"));
+  assert.match(completeBlock, /const completion = confirmAllergenReviewMap\(sub\.allergens, rowContext\(sub\)\);\s*if \(completion\.blocked\) \{[\s\S]*?BLOCKED_ROW_MESSAGES\[completion\.blocked!\][\s\S]*?return;\s*\}/);
+  assert.ok(completeBlock.indexOf("completion.blocked") < completeBlock.indexOf('evidenceStatus: "completed"'), "the row is only completed after the blank/legacy/conflict check");
+  assert.match(liana, /className=\{`check-button \$\{rowChecked\(sub\) \? "check-button--done" : ""\}`\}/);
+  assert.match(liana, /aria-label=\{rowChecked\(sub\) \? `\$\{sub\.name \|\| "Sub-item"\}: checked`/);
   assert.doesNotMatch(liana, /if \(planStatus === "planned"\) return/);
   assert.match(liana, /const problems = allergenReviewProblems\(menuItems\)/);
   assert.match(planCommandSchema, /mayContainNotes/);

@@ -5,6 +5,7 @@ import type { ProductionOrder } from "./production-types";
 import type { ProductionPlanRepository } from "./production-plan-repository";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import { isCompleteOperationalAllergenMap, type CanonicalAllergenMap } from "../../shared/allergen-contract";
+import { isRowVerified, rowAttestation } from "../app/lib/allergen-explicit";
 
 export const MAX_DELIVERED_IN_REVIEW_ORDER_IDS = 100;
 
@@ -17,7 +18,7 @@ export type DeliveredInReviewStatus = {
   matrixStatus?: "ready" | "generating" | "failed" | "not_configured";
   matrixArtifact?: { driveUrl?: string; localUrl?: string };
   updatedAt?: string;
-  matrixItems?: Array<{ sourceLineId: string; allergens: Record<string, string>; mayContainNotes?: string; evidenceStatus: string }>;
+  matrixItems?: Array<{ sourceLineId: string; allergens: Record<string, string>; mayContainNotes?: string; evidenceStatus: string; /** blank | positives | declared | legacy_unverified | conflict: blank and legacy automatic No Key are never verified. */ attestation?: string }>;
   sourceLineage?: MatrixSignatureScope;
 };
 
@@ -53,7 +54,7 @@ export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | unde
     return { orderId, planStatus: "draft", reviewed: false, completedSourceLineIds: [], signatureRoles: [], matrixItems: [], ...(sourceLineage ? { sourceLineage } : {}) };
   }
   const completedSourceLineIds = plan.menuItems
-    .filter((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => subItem.evidenceStatus === "completed" && isCompleteOperationalAllergenMap(subItem.allergens)))
+    .filter((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => isRowVerified(subItem) && isCompleteOperationalAllergenMap(subItem.allergens)))
     .map((item) => item.sourceLineId!);
   const scope = order ? matrixSignatureScope(order, allergenMatrixContentHash(plan.menuItems)) : undefined;
   const validSignatures = order ? signatureAuthorityForOrder(plan, order, plan.menuItems) : (plan.signatures || []).filter(signature => Boolean(signature.scope));
@@ -61,11 +62,11 @@ export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | unde
   return {
     orderId,
     planStatus: effectiveProductionPlanStatus(plan),
-    reviewed: plan.menuItems.length > 0 && plan.menuItems.every((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => subItem.evidenceStatus === "completed" && isCompleteOperationalAllergenMap(subItem.allergens))),
+    reviewed: plan.menuItems.length > 0 && plan.menuItems.every((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => isRowVerified(subItem) && isCompleteOperationalAllergenMap(subItem.allergens))),
     completedSourceLineIds,
     signatureRoles,
     updatedAt: plan.updatedAt,
-    matrixItems: plan.menuItems.flatMap((item) => item.sourceLineId ? item.subItems.map(subItem => ({ sourceLineId: item.sourceLineId!, sourceSubItemId: subItem.id, allergens: subItem.allergens, mayContainNotes: subItem.mayContainNotes, evidenceStatus: subItem.evidenceStatus })) : []),
+    matrixItems: plan.menuItems.flatMap((item) => item.sourceLineId ? item.subItems.map(subItem => ({ sourceLineId: item.sourceLineId!, sourceSubItemId: subItem.id, allergens: subItem.allergens, mayContainNotes: subItem.mayContainNotes, evidenceStatus: subItem.evidenceStatus, attestation: rowAttestation(subItem) })) : []),
     ...(scope ? { sourceLineage: scope } : {}),
     ...(plan.matrixArtifact && order && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems) ? { matrixStatus: "ready" as const } : signatureRoles.includes("production_chef") && signatureRoles.includes("head_chef_site_manager") ? plan.currentAllergenRelease?.materializationStatus === "failed" ? { matrixStatus: "failed" as const } : { matrixStatus: "generating" as const } : {}),
     ...(plan.matrixArtifact && (!order || currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems)) ? { matrixArtifact: { driveUrl: plan.matrixArtifact.driveUrl, localUrl: plan.matrixArtifact.localUrl } } : {}),

@@ -54,7 +54,16 @@ test("CPU server rejects marking an actually incomplete matrix Planned", async (
     const response = await POST(new NextRequest("http://localhost/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "mark-planned", orderId: order.canonicalId, planningNotes: "", expectedRevision: null, menuItems: [incomplete] }) }));
     assert.equal(response.status, 422);
     const body = await response.json();
-    assert.match(body.error.message, /Record every allergen state/);
+    // The all-clear row is sent as completed with no deliberate declaration: the server demotes it, so it can never be planned.
+    assert.match(body.error.message, /Complete every menu item, sub-item name and allergen checker|Verify every allergen row/);
+    const blankChecked = row("blank");
+    blankChecked.subItems[0].allergens = {};
+    const blankResponse = await POST(new NextRequest("http://localhost/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "mark-planned", orderId: order.canonicalId, planningNotes: "", expectedRevision: null, menuItems: [blankChecked] }) }));
+    assert.equal(blankResponse.status, 422, "a blank row marked completed cannot be planned");
+    const legacyAuto = row("legacy");
+    legacyAuto.subItems[0].allergens = { ...allClear(), no_key_allergens: "contains" };
+    const legacyResponse = await POST(new NextRequest("http://localhost/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "mark-planned", orderId: order.canonicalId, planningNotes: "", expectedRevision: null, menuItems: [legacyAuto] }) }));
+    assert.equal(legacyResponse.status, 422, "a derived No Key value without the chef's tick cannot be planned");
   } finally {
     globalThis.fetch = previousFetch;
     if (previousRuntime === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = previousRuntime;
@@ -63,7 +72,8 @@ test("CPU server rejects marking an actually incomplete matrix Planned", async (
 
 test("Hospitality detail enables completion only for an unlocked row and plans only on an explicit validated save", async () => {
   const detail = await readFile(new URL("../app/ui/HospitalityAllergenDetail.tsx", import.meta.url), "utf8");
-  assert.match(detail, /disabled=\{busy \|\| reviewLockedByAuthority \|\| \(sub\.evidenceStatus === "completed" && !unresolvedNamedAllergenKeys\(sub\.allergens\)\.length\)\}/);
+  assert.match(detail, /disabled=\{busy \|\| reviewLockedByAuthority \|\| \(rowChecked\(sub\)\)\}/);
+  assert.match(detail, /const rowChecked = \(sub: PlannedSubItem\) => isRowVerified\(sub\) && !unresolvedNamedAllergenKeys\(sub\.allergens\)\.length;/);
   assert.doesNotMatch(detail, /if \(planStatus === "planned"\) return/);
   assert.match(detail, /const problems = allergenReviewProblems\(menuItems\)/);
   assert.doesNotMatch(detail, /if \(allComplete\) void planCommand/);
