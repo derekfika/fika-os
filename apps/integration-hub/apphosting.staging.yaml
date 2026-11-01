@@ -121,3 +121,7 @@ env:
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON_MAILER
     availability:
       - RUNTIME
+  - variable: FIKA_DEV_DASHBOARD_GITHUB_TOKEN
+    secret: FIKA_DEV_DASHBOARD_GITHUB_TOKEN
+    availability:
+      - RUNTIME

@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Database,
   FileSpreadsheet,
+  GitPullRequest,
   History,
   LayoutDashboard,
   Link2,
@@ -319,6 +320,12 @@ export default function Hub() {
             <button type="button" aria-label="AUTHMOD" title="AUTHMOD" onClick={() => { window.location.href = "/authmod"; }}>
               <span aria-hidden="true"><ShieldCheck /></span>
               <span>AUTHMOD</span>
+            </button>
+          )}
+          {payload.actor.role === "integration-admin" && (
+            <button type="button" aria-label="Development" title="Development" onClick={() => { window.location.href = "/development"; }}>
+              <span aria-hidden="true"><GitPullRequest /></span>
+              <span>Development</span>
             </button>
           )}
         </nav>
