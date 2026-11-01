@@ -14,7 +14,8 @@ const stagingConfig = {
   ownerInbox: "owner@example.test",
   driveRootFolderId: "rootFolderId0001",
   destinations: { quotes: "quotesFolder0001", menus: "menusFolder0001", allergenPdfs: "allergenFolder001" },
-};
+  driveVerification: { method: "production-denylist", productionFolderIds: ["prodRootFolder001"] },
+} as const satisfies Partial<OutboundGateInput>;
 const staging = (over: Partial<OutboundGateInput> = {}): OutboundGateInput => ({
   mode: "staging",
   actualProjectId: "fika-os-dev",
@@ -51,6 +52,8 @@ test("production rejects every staging override, including blank values", () => 
     { driveRootFolderId: "" },
     { destinations: {} },
     { destinations: stagingConfig.destinations },
+    { driveVerification: stagingConfig.driveVerification },
+    { driveVerification: { method: "staging-root-ancestry", verifiedStagingChildIds: ["quotesFolder0001"] } as const },
   ]) {
     assert.equal(code(production(over)), "OUTBOUND_STAGING_OVERRIDE_IN_NON_STAGING", JSON.stringify(over));
   }
@@ -142,15 +145,41 @@ test("staging requires a valid Drive root and every type destination", () => {
   }
 });
 
-test("no cross-environment overrides: production Drive IDs are rejected in staging", () => {
-  const prodIds = ["prodRootFolder001"];
-  assert.equal(code(staging({ driveRootFolderId: "prodRootFolder001", knownProductionDriveIds: prodIds })), "OUTBOUND_CROSS_ENVIRONMENT_REFERENCE");
-  assert.equal(
-    code(staging({ destinations: { ...stagingConfig.destinations, menus: "prodRootFolder001" }, knownProductionDriveIds: prodIds })),
-    "OUTBOUND_CROSS_ENVIRONMENT_REFERENCE",
-  );
-  assert.equal(code(staging({ knownProductionDriveIds: prodIds })), "NO_ERROR");
-  // And staging values cannot be smuggled into production.
+test("staging requires a valid drive verification proof", () => {
+  const d = stagingConfig.destinations;
+  const ids = [d.quotes, d.menus, d.allergenPdfs];
+  for (const proof of [
+    undefined,
+    null,
+    {},
+    { method: "other" },
+    { method: "production-denylist", productionFolderIds: [] },
+    { method: "production-denylist", productionFolderIds: ["bad id"] },
+    { method: "production-denylist" },
+    { method: "staging-root-ancestry", verifiedStagingChildIds: [] },
+    { method: "staging-root-ancestry", verifiedStagingChildIds: ids.slice(1) },
+    { method: "staging-root-ancestry", verifiedStagingChildIds: [ids[0], ids[1]] },
+    { method: "staging-root-ancestry", verifiedStagingChildIds: [...ids, "bad id"] },
+  ]) {
+    assert.equal(code(staging({ driveVerification: proof as never })), "OUTBOUND_DRIVE_VERIFICATION_REQUIRED", JSON.stringify(proof));
+  }
+  assert.equal(code({ ...staging(), driveVerification: undefined }), "OUTBOUND_DRIVE_VERIFICATION_REQUIRED");
+});
+
+test("ancestry proof listing root-descendant destinations is accepted", () => {
+  const d = stagingConfig.destinations;
+  const decision = decideOutboundRouting(staging({ driveVerification: { method: "staging-root-ancestry", verifiedStagingChildIds: [d.quotes, d.menus, d.allergenPdfs] } }));
+  assert.equal(decision.kind, "staging");
+});
+
+test("no cross-environment references: denylist hits on root and each destination are rejected", () => {
+  const d = stagingConfig.destinations;
+  const deny = (id: string) => ({ method: "production-denylist", productionFolderIds: [id] }) as const;
+  assert.equal(code(staging({ driveVerification: deny(stagingConfig.driveRootFolderId) })), "OUTBOUND_CROSS_ENVIRONMENT_REFERENCE");
+  for (const id of [d.quotes, d.menus, d.allergenPdfs]) {
+    assert.equal(code(staging({ driveVerification: deny(id) })), "OUTBOUND_CROSS_ENVIRONMENT_REFERENCE", id);
+  }
+  // staging values cannot be smuggled into production
   assert.equal(code(production({ ...stagingConfig })), "OUTBOUND_STAGING_OVERRIDE_IN_NON_STAGING");
 });
 
@@ -158,6 +187,7 @@ test("local mode is blocked, refuses real projects and staging overrides", () =>
   assert.deepEqual(decideOutboundRouting({ mode: "local", actualProjectId: "fika-os-local" }), { kind: "local", mail: "blocked", drive: "blocked" });
   assert.equal(code({ mode: "local", actualProjectId: "fika-os" }), "OUTBOUND_PROJECT_MISMATCH");
   assert.equal(code({ mode: "local", actualProjectId: "fika-os-dev" }), "OUTBOUND_PROJECT_MISMATCH");
+  assert.equal(code({ mode: "local", actualProjectId: "fika-os-local", driveVerification: stagingConfig.driveVerification }), "OUTBOUND_STAGING_OVERRIDE_IN_NON_STAGING");
   assert.equal(code({ mode: "local", actualProjectId: "fika-os-local", ownerInbox: "owner@example.test" }), "OUTBOUND_STAGING_OVERRIDE_IN_NON_STAGING");
   assert.throws(() => applyStagingMailRouting(decideOutboundRouting({ mode: "local", actualProjectId: "fika-os-local" }), { to: "a@example.test" }), /blocked in local/);
 });
@@ -218,8 +248,34 @@ test("production rewrite returns the same message reference unchanged", () => {
   assert.deepEqual(message.to, ["customer@client.test"]);
 });
 
-test("rewrite rejects missing or malformed decisions", () => {
-  for (const decision of [undefined, null, {} as never, { kind: "staging", mailRecipient: "a@b.test, c@d.test", drive: {} } as never]) {
-    assert.throws(() => applyStagingMailRouting(decision, { to: "x@y.test" }), (e: unknown) => e instanceof OutboundGateError && e.code === "OUTBOUND_INVALID_DECISION");
-  }
+test("rewrite rejects forged, malformed, cloned and non-object decisions", () => {
+  const legit = decideOutboundRouting(staging());
+  const legitProd = decideOutboundRouting(production());
+  const bad = (decision: unknown) =>
+    assert.throws(() => applyStagingMailRouting(decision as never, { to: "x@y.test" }), (e: unknown) => e instanceof OutboundGateError && e.code === "OUTBOUND_INVALID_DECISION");
+  for (const decision of [
+    undefined,
+    null,
+    "production",
+    42,
+    {},
+    { kind: "production" },
+    { kind: "production", mail: "passthrough", drive: "passthrough" }, // forged literal
+    { kind: "production", mail: "passthrough", drive: "passthrough", mailRecipient: "evil@example.test" },
+    { kind: "staging", mailRecipient: "evil@example.test", drive: (legit as { drive: unknown }).drive }, // forged, different recipient
+    { kind: "staging", mailRecipient: "a@b.test, c@d.test", drive: {} },
+    { ...legit }, // spread clone
+    { ...legitProd },
+    structuredClone(legit),
+  ]) bad(decision);
+});
+
+test("legitimate decisions are frozen and still work", () => {
+  const legit = decideOutboundRouting(staging());
+  assert.ok(Object.isFrozen(legit));
+  assert.ok(Object.isFrozen((legit as { drive: object }).drive));
+  assert.ok(Object.isFrozen(decideOutboundRouting(production())));
+  assert.deepEqual((applyStagingMailRouting(legit, { to: "x@y.test" }) as { to: string[] }).to, ["owner@example.test"]);
+  const msg = { to: "x@y.test" };
+  assert.equal(applyStagingMailRouting(decideOutboundRouting(production()), msg), msg);
 });

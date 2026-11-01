@@ -16,6 +16,8 @@
  * permissions must be verified separately by the owner/admin. It ships no default inbox or
  * folder ID; the only literals are the expected project IDs below.
  *
+ * Decisions are frozen and registered at creation; `applyStagingMailRouting` accepts only those.
+ *
  * Local mode: outbound is BLOCKED (`kind: "local"`); local development never sends real mail or
  * writes real Drive files through this gate. Consumers decide how to simulate/log locally.
  *
@@ -34,6 +36,7 @@ export type OutboundGateErrorCode =
   | "OUTBOUND_DRIVE_CONFIG_INVALID"
   | "OUTBOUND_STAGING_OVERRIDE_IN_NON_STAGING"
   | "OUTBOUND_CROSS_ENVIRONMENT_REFERENCE"
+  | "OUTBOUND_DRIVE_VERIFICATION_REQUIRED"
   | "OUTBOUND_LOCAL_BLOCKED"
   | "OUTBOUND_INVALID_DECISION";
 
@@ -45,6 +48,7 @@ const MESSAGES: Record<OutboundGateErrorCode, string> = {
   OUTBOUND_DRIVE_CONFIG_INVALID: "Outbound routing is unavailable: the staging Drive root or destinations are missing or invalid.",
   OUTBOUND_STAGING_OVERRIDE_IN_NON_STAGING: "Outbound routing is unavailable: staging overrides are not permitted outside staging.",
   OUTBOUND_CROSS_ENVIRONMENT_REFERENCE: "Outbound routing is unavailable: staging configuration references production resources.",
+  OUTBOUND_DRIVE_VERIFICATION_REQUIRED: "Outbound routing is unavailable: staging Drive destinations are not verified as isolated from production.",
   OUTBOUND_LOCAL_BLOCKED: "Outbound mail and Drive writes are blocked in local mode.",
   OUTBOUND_INVALID_DECISION: "Outbound routing is unavailable: no valid routing decision was supplied.",
 };
@@ -75,9 +79,19 @@ export interface OutboundGateInput {
   driveRootFolderId?: string | null;
   /** Staging only: Drive folder IDs under the staging root. */
   destinations?: StagingDriveDestinations | null;
-  /** Optional production Drive IDs; staging config containing any of them is rejected. */
-  knownProductionDriveIds?: readonly string[];
+  /**
+   * Staging only, REQUIRED there: server-supplied proof that the Drive IDs are not production.
+   * A denylist alone is NOT isolation (it only catches IDs someone remembered to list); the
+   * "staging-root-ancestry" proof must be produced by a future consumer adapter that checks Drive
+   * `parents` (root is the owner-verified staging root, every destination is a descendant). This
+   * module performs no I/O and only validates the proof it is handed.
+   */
+  driveVerification?: DriveVerification | null;
 }
+
+export type DriveVerification =
+  | { method: "production-denylist"; productionFolderIds: readonly string[] }
+  | { method: "staging-root-ancestry"; verifiedStagingChildIds: readonly string[] };
 
 export type OutboundDecision =
   | { kind: "production"; mail: "passthrough"; drive: "passthrough" }
@@ -108,7 +122,16 @@ function identityBelongsTo(identity: unknown, projectId: string): boolean {
 
 /** Any staging field present (even blank or empty) counts as an override. */
 function hasStagingOverride(input: OutboundGateInput): boolean {
-  return present(input.ownerInbox) || present(input.driveRootFolderId) || present(input.destinations);
+  return present(input.ownerInbox) || present(input.driveRootFolderId) || present(input.destinations) || present(input.driveVerification);
+}
+
+/** Decisions are only trusted if this module created them (forged or cloned objects are rejected). */
+const issuedDecisions = new WeakSet<object>();
+function issue<D extends OutboundDecision>(decision: D): D {
+  if (decision.kind === "staging") Object.freeze(decision.drive);
+  Object.freeze(decision);
+  issuedDecisions.add(decision);
+  return decision;
 }
 
 /** Pure. Throws `OutboundGateError` (fail closed) when the inputs cannot be trusted. */
@@ -120,14 +143,14 @@ export function decideOutboundRouting(input: OutboundGateInput): OutboundDecisio
   if (mode === "local") {
     if (project === STAGING_PROJECT_ID || project === PRODUCTION_PROJECT_ID) throw new OutboundGateError("OUTBOUND_PROJECT_MISMATCH");
     if (hasStagingOverride(input)) throw new OutboundGateError("OUTBOUND_STAGING_OVERRIDE_IN_NON_STAGING");
-    return { kind: "local", mail: "blocked", drive: "blocked" };
+    return issue({ kind: "local", mail: "blocked", drive: "blocked" });
   }
 
   if (mode === "production") {
     if (project !== PRODUCTION_PROJECT_ID) throw new OutboundGateError("OUTBOUND_PROJECT_MISMATCH");
     if (!identityBelongsTo(input.actualServiceIdentity, PRODUCTION_PROJECT_ID)) throw new OutboundGateError("OUTBOUND_IDENTITY_MISMATCH");
     if (hasStagingOverride(input)) throw new OutboundGateError("OUTBOUND_STAGING_OVERRIDE_IN_NON_STAGING");
-    return { kind: "production", mail: "passthrough", drive: "passthrough" };
+    return issue({ kind: "production", mail: "passthrough", drive: "passthrough" });
   }
 
   // staging
@@ -140,13 +163,26 @@ export function decideOutboundRouting(input: OutboundGateInput): OutboundDecisio
     throw new OutboundGateError("OUTBOUND_DRIVE_CONFIG_INVALID");
   }
   const ids = [root, d.quotes, d.menus, d.allergenPdfs];
-  if (ids.some((id) => (input.knownProductionDriveIds ?? []).includes(id))) throw new OutboundGateError("OUTBOUND_CROSS_ENVIRONMENT_REFERENCE");
   if (new Set(ids).size !== ids.length) throw new OutboundGateError("OUTBOUND_DRIVE_CONFIG_INVALID");
-  return {
+  const proof = input.driveVerification;
+  const idList = (v: unknown): v is readonly string[] => Array.isArray(v) && v.length > 0 && v.every(validDriveId);
+  if (!proof || typeof proof !== "object") throw new OutboundGateError("OUTBOUND_DRIVE_VERIFICATION_REQUIRED");
+  if (proof.method === "production-denylist") {
+    if (!idList(proof.productionFolderIds)) throw new OutboundGateError("OUTBOUND_DRIVE_VERIFICATION_REQUIRED");
+    if (ids.some((id) => proof.productionFolderIds.includes(id))) throw new OutboundGateError("OUTBOUND_CROSS_ENVIRONMENT_REFERENCE");
+  } else if (proof.method === "staging-root-ancestry") {
+    if (!idList(proof.verifiedStagingChildIds)) throw new OutboundGateError("OUTBOUND_DRIVE_VERIFICATION_REQUIRED");
+    if (![d.quotes, d.menus, d.allergenPdfs].every((id) => proof.verifiedStagingChildIds.includes(id))) {
+      throw new OutboundGateError("OUTBOUND_DRIVE_VERIFICATION_REQUIRED");
+    }
+  } else {
+    throw new OutboundGateError("OUTBOUND_DRIVE_VERIFICATION_REQUIRED");
+  }
+  return issue({
     kind: "staging",
     mailRecipient: input.ownerInbox,
     drive: { root, quotes: d.quotes, menus: d.menus, allergenPdfs: d.allergenPdfs },
-  };
+  });
 }
 
 /** Non-throwing variant. Any unexpected failure is also reported as a fail-closed error. */
@@ -191,10 +227,21 @@ export function applyStagingMailRouting<M extends OutboundMailMessage>(
   decision: OutboundDecision | null | undefined,
   message: M,
 ): M | RoutedMailMessage<M> {
-  if (!decision || typeof decision !== "object") throw new OutboundGateError("OUTBOUND_INVALID_DECISION");
-  if (decision.kind === "production") return message;
-  if (decision.kind === "local") throw new OutboundGateError("OUTBOUND_LOCAL_BLOCKED");
-  if (decision.kind !== "staging" || !validEmail(decision.mailRecipient)) throw new OutboundGateError("OUTBOUND_INVALID_DECISION");
+  if (!decision || typeof decision !== "object" || !issuedDecisions.has(decision)) throw new OutboundGateError("OUTBOUND_INVALID_DECISION");
+  const keys = Object.keys(decision).sort().join(",");
+  if (decision.kind === "production") {
+    if (keys !== "drive,kind,mail" || decision.mail !== "passthrough" || decision.drive !== "passthrough") throw new OutboundGateError("OUTBOUND_INVALID_DECISION");
+    return message;
+  }
+  if (decision.kind === "local") {
+    if (keys !== "drive,kind,mail" || decision.mail !== "blocked" || decision.drive !== "blocked") throw new OutboundGateError("OUTBOUND_INVALID_DECISION");
+    throw new OutboundGateError("OUTBOUND_LOCAL_BLOCKED");
+  }
+  const drive = (decision as { drive?: Record<string, unknown> }).drive;
+  if (
+    decision.kind !== "staging" || keys !== "drive,kind,mailRecipient" || !validEmail(decision.mailRecipient) || !drive ||
+    Object.keys(drive).sort().join(",") !== "allergenPdfs,menus,quotes,root" || !Object.values(drive).every(validDriveId)
+  ) throw new OutboundGateError("OUTBOUND_INVALID_DECISION");
   const { to, cc, bcc, ...rest } = message;
   return {
     ...rest,
