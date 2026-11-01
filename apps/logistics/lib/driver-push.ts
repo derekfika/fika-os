@@ -10,7 +10,7 @@ export type PushPayload = { v: 1; title: string; body: string; tag: string; url:
 export type PushOutcome = { sent: number; removed: number; failed: number; transient: number };
 type Send = (subscription: { endpoint: string; keys: { p256dh: string; auth: string } }, payload: string, options: { TTL: number; urgency: "normal" | "high"; timeout: number; vapidDetails: VapidConfig }) => Promise<unknown>;
 
-export type PushDeps = { vapid?: VapidConfig; send?: Send; now?: () => Date };
+export type PushDeps = { vapid?: VapidConfig; send?: Send; now?: () => Date; /** Explicit environment for the staging guard (tests); defaults to process.env. Not a way to bypass the guard in staging. */ env?: NodeJS.ProcessEnv };
 
 const defaultSend: Send = (subscription, payload, options) => webpush.sendNotification(subscription, payload, { TTL: options.TTL, urgency: options.urgency, timeout: options.timeout, vapidDetails: { subject: options.vapidDetails.subject, publicKey: options.vapidDetails.publicKey, privateKey: options.vapidDetails.privateKey } });
 /**
@@ -18,7 +18,7 @@ const defaultSend: Send = (subscription, payload, options) => webpush.sendNotifi
  * push sink exists). Fail closed on FIKA_RUNTIME_MODE === "staging". There is deliberately NO override. Only the default real-network
  * sender is blocked: a caller-injected `send` (tests, isolated contracts) is unaffected, and every other mode behaves as before.
  */
-export function externalPushBlocked(deps: Pick<PushDeps, "send"> = {}, env: NodeJS.ProcessEnv = process.env): boolean {
+export function externalPushBlocked(deps: Pick<PushDeps, "send" | "env"> = {}, env: NodeJS.ProcessEnv = deps.env ?? process.env): boolean {
   return !deps.send && env.FIKA_RUNTIME_MODE?.trim().toLowerCase() === "staging";
 }
 let stagingNoticeLogged = false;
@@ -36,7 +36,7 @@ export function payloadForNotice(notice: Pick<NoticeForPush, "id" | "vehicleId" 
   return { v: 1, title: notice.title, body: notice.pushBody, tag: `notice-${notice.id.slice(0, 24)}`, url: `/mobile/${notice.vehicleId}?notice=${encodeURIComponent(notice.id)}&serviceDate=${encodeURIComponent(notice.serviceDate)}`, vehicleId: notice.vehicleId, priority: notice.priority };
 }
 
-async function sendOne(subscription: StoredSubscription, payload: PushPayload, deps: Required<PushDeps>, outcome: PushOutcome) {
+async function sendOne(subscription: StoredSubscription, payload: PushPayload, deps: Required<Omit<PushDeps, "env">>, outcome: PushOutcome) {
   try {
     await deps.send({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, JSON.stringify(payload), { TTL: TTL_SECONDS, urgency: payload.priority === "high" ? "high" : "normal", timeout: SEND_TIMEOUT_MS, vapidDetails: deps.vapid });
     outcome.sent += 1;
@@ -78,7 +78,7 @@ export async function sendToVehicle(vehicleId: PushVehicle, payload: PushPayload
   if (externalPushBlocked(deps)) { noteStagingBlocked(); return { ...outcome, devices: 0 }; }
   const vapid = deps.vapid ?? vapidConfig();
   if (!vapid) return { ...outcome, devices: 0 };
-  const resolved: Required<PushDeps> = { vapid, send: deps.send ?? defaultSend, now: deps.now ?? (() => new Date()) };
+  const resolved: Required<Omit<PushDeps, "env">> = { vapid, send: deps.send ?? defaultSend, now: deps.now ?? (() => new Date()) };
   // Only sendable subscriptions: superseded legacy and unverified replacements are excluded (see isSendable).
   const devices = await subscriptionsFor(vehicleId);
   await Promise.all(devices.map(device => sendOne(device, payload, resolved, outcome)));
