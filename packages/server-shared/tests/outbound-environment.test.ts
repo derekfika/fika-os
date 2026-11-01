@@ -14,7 +14,12 @@ const stagingConfig = {
   ownerInbox: "owner@example.test",
   driveRootFolderId: "rootFolderId0001",
   destinations: { quotes: "quotesFolder0001", menus: "menusFolder0001", allergenPdfs: "allergenFolder001" },
-  driveVerification: { method: "production-denylist", productionFolderIds: ["prodRootFolder001"] },
+  driveVerification: {
+    method: "staging-root-ancestry",
+    rootFolderId: "rootFolderId0001",
+    approvedStagingRootFolderIds: ["rootFolderId0001"],
+    verifiedStagingChildIds: ["quotesFolder0001", "menusFolder0001", "allergenFolder001"],
+  },
 } as const satisfies Partial<OutboundGateInput>;
 const staging = (over: Partial<OutboundGateInput> = {}): OutboundGateInput => ({
   mode: "staging",
@@ -53,7 +58,6 @@ test("production rejects every staging override, including blank values", () => 
     { destinations: {} },
     { destinations: stagingConfig.destinations },
     { driveVerification: stagingConfig.driveVerification },
-    { driveVerification: { method: "staging-root-ancestry", verifiedStagingChildIds: ["quotesFolder0001"] } as const },
   ]) {
     assert.equal(code(production(over)), "OUTBOUND_STAGING_OVERRIDE_IN_NON_STAGING", JSON.stringify(over));
   }
@@ -145,41 +149,53 @@ test("staging requires a valid Drive root and every type destination", () => {
   }
 });
 
-test("staging requires a valid drive verification proof", () => {
+test("staging requires a complete proof bound to the configured root", () => {
+  const v = stagingConfig.driveVerification;
   const d = stagingConfig.destinations;
-  const ids = [d.quotes, d.menus, d.allergenPdfs];
+  const kids = [d.quotes, d.menus, d.allergenPdfs];
   for (const proof of [
     undefined,
     null,
     {},
-    { method: "other" },
-    { method: "production-denylist", productionFolderIds: [] },
-    { method: "production-denylist", productionFolderIds: ["bad id"] },
-    { method: "production-denylist" },
-    { method: "staging-root-ancestry", verifiedStagingChildIds: [] },
-    { method: "staging-root-ancestry", verifiedStagingChildIds: ids.slice(1) },
-    { method: "staging-root-ancestry", verifiedStagingChildIds: [ids[0], ids[1]] },
-    { method: "staging-root-ancestry", verifiedStagingChildIds: [...ids, "bad id"] },
+    { method: "production-denylist", productionFolderIds: ["prodRootFolder001"] }, // removed method
+    { ...v, method: "other" },
+    { ...v, rootFolderId: "otherRootFolder01" }, // proof root differs from input root
+    { ...v, rootFolderId: undefined },
+    { ...v, approvedStagingRootFolderIds: [] },
+    { ...v, approvedStagingRootFolderIds: undefined },
+    { ...v, approvedStagingRootFolderIds: ["otherRootFolder01"] }, // root not in allowlist
+    { ...v, approvedStagingRootFolderIds: ["bad id", v.rootFolderId] },
+    { ...v, verifiedStagingChildIds: [] },
+    { ...v, verifiedStagingChildIds: kids.slice(1) },
+    { ...v, verifiedStagingChildIds: [kids[0], kids[1]] },
+    { ...v, verifiedStagingChildIds: [kids[0], kids[2]] },
+    { ...v, verifiedStagingChildIds: [...kids, "bad id"] },
   ]) {
     assert.equal(code(staging({ driveVerification: proof as never })), "OUTBOUND_DRIVE_VERIFICATION_REQUIRED", JSON.stringify(proof));
   }
   assert.equal(code({ ...staging(), driveVerification: undefined }), "OUTBOUND_DRIVE_VERIFICATION_REQUIRED");
 });
 
-test("ancestry proof listing root-descendant destinations is accepted", () => {
-  const d = stagingConfig.destinations;
-  const decision = decideOutboundRouting(staging({ driveVerification: { method: "staging-root-ancestry", verifiedStagingChildIds: [d.quotes, d.menus, d.allergenPdfs] } }));
-  assert.equal(decision.kind, "staging");
+test("proof for root A does not authorise input root B, and production roots are rejected", () => {
+  const v = stagingConfig.driveVerification;
+  // children verified under root A, input configured with root B (proof says A, allowlist has A only)
+  assert.equal(code(staging({ driveRootFolderId: "rootFolderIdBBBB" })), "OUTBOUND_DRIVE_VERIFICATION_REQUIRED");
+  // proof self-consistently bound to B, but B is not an approved staging root
+  assert.equal(
+    code(staging({ driveRootFolderId: "prodRootFolder001", driveVerification: { ...v, rootFolderId: "prodRootFolder001" } })),
+    "OUTBOUND_DRIVE_VERIFICATION_REQUIRED",
+  );
 });
 
-test("no cross-environment references: denylist hits on root and each destination are rejected", () => {
+test("a destination equal to the root or to another destination is rejected", () => {
   const d = stagingConfig.destinations;
-  const deny = (id: string) => ({ method: "production-denylist", productionFolderIds: [id] }) as const;
-  assert.equal(code(staging({ driveVerification: deny(stagingConfig.driveRootFolderId) })), "OUTBOUND_CROSS_ENVIRONMENT_REFERENCE");
-  for (const id of [d.quotes, d.menus, d.allergenPdfs]) {
-    assert.equal(code(staging({ driveVerification: deny(id) })), "OUTBOUND_CROSS_ENVIRONMENT_REFERENCE", id);
-  }
-  // staging values cannot be smuggled into production
+  const v = stagingConfig.driveVerification;
+  const withKids = (destinations: { quotes: string; menus: string; allergenPdfs: string }) => staging({ destinations, driveVerification: { ...v, verifiedStagingChildIds: [v.rootFolderId, ...Object.values(destinations)] } });
+  assert.equal(code(withKids({ ...d, menus: stagingConfig.driveRootFolderId })), "OUTBOUND_DRIVE_CONFIG_INVALID");
+  assert.equal(code(withKids({ ...d, menus: d.quotes })), "OUTBOUND_DRIVE_CONFIG_INVALID");
+});
+
+test("staging values cannot be smuggled into production", () => {
   assert.equal(code(production({ ...stagingConfig })), "OUTBOUND_STAGING_OVERRIDE_IN_NON_STAGING");
 });
 

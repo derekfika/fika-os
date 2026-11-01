@@ -35,7 +35,6 @@ export type OutboundGateErrorCode =
   | "OUTBOUND_OWNER_INBOX_INVALID"
   | "OUTBOUND_DRIVE_CONFIG_INVALID"
   | "OUTBOUND_STAGING_OVERRIDE_IN_NON_STAGING"
-  | "OUTBOUND_CROSS_ENVIRONMENT_REFERENCE"
   | "OUTBOUND_DRIVE_VERIFICATION_REQUIRED"
   | "OUTBOUND_LOCAL_BLOCKED"
   | "OUTBOUND_INVALID_DECISION";
@@ -47,7 +46,6 @@ const MESSAGES: Record<OutboundGateErrorCode, string> = {
   OUTBOUND_OWNER_INBOX_INVALID: "Outbound routing is unavailable: the staging owner inbox is missing or invalid.",
   OUTBOUND_DRIVE_CONFIG_INVALID: "Outbound routing is unavailable: the staging Drive root or destinations are missing or invalid.",
   OUTBOUND_STAGING_OVERRIDE_IN_NON_STAGING: "Outbound routing is unavailable: staging overrides are not permitted outside staging.",
-  OUTBOUND_CROSS_ENVIRONMENT_REFERENCE: "Outbound routing is unavailable: staging configuration references production resources.",
   OUTBOUND_DRIVE_VERIFICATION_REQUIRED: "Outbound routing is unavailable: staging Drive destinations are not verified as isolated from production.",
   OUTBOUND_LOCAL_BLOCKED: "Outbound mail and Drive writes are blocked in local mode.",
   OUTBOUND_INVALID_DECISION: "Outbound routing is unavailable: no valid routing decision was supplied.",
@@ -80,18 +78,24 @@ export interface OutboundGateInput {
   /** Staging only: Drive folder IDs under the staging root. */
   destinations?: StagingDriveDestinations | null;
   /**
-   * Staging only, REQUIRED there: server-supplied proof that the Drive IDs are not production.
-   * A denylist alone is NOT isolation (it only catches IDs someone remembered to list); the
-   * "staging-root-ancestry" proof must be produced by a future consumer adapter that checks Drive
-   * `parents` (root is the owner-verified staging root, every destination is a descendant). This
-   * module performs no I/O and only validates the proof it is handed.
+   * Staging only, REQUIRED there. This module cannot itself prove a proof is TRUE: the trusted
+   * server-side verifier/adapter must produce it by actually reading Drive `parents` and
+   * ownership, and `approvedStagingRootFolderIds` must come from owner-controlled server
+   * configuration, never from client input. The module only checks the proof is complete and
+   * bound to the configured root.
    */
   driveVerification?: DriveVerification | null;
 }
 
-export type DriveVerification =
-  | { method: "production-denylist"; productionFolderIds: readonly string[] }
-  | { method: "staging-root-ancestry"; verifiedStagingChildIds: readonly string[] };
+export interface DriveVerification {
+  method: "staging-root-ancestry";
+  /** Must equal `driveRootFolderId`. */
+  rootFolderId: string;
+  /** Non-empty server-config allowlist of owner-approved staging roots (exact IDs). */
+  approvedStagingRootFolderIds: readonly string[];
+  /** IDs the adapter proved (via Drive parents) are descendants of `rootFolderId`. */
+  verifiedStagingChildIds: readonly string[];
+}
 
 export type OutboundDecision =
   | { kind: "production"; mail: "passthrough"; drive: "passthrough" }
@@ -166,16 +170,13 @@ export function decideOutboundRouting(input: OutboundGateInput): OutboundDecisio
   if (new Set(ids).size !== ids.length) throw new OutboundGateError("OUTBOUND_DRIVE_CONFIG_INVALID");
   const proof = input.driveVerification;
   const idList = (v: unknown): v is readonly string[] => Array.isArray(v) && v.length > 0 && v.every(validDriveId);
-  if (!proof || typeof proof !== "object") throw new OutboundGateError("OUTBOUND_DRIVE_VERIFICATION_REQUIRED");
-  if (proof.method === "production-denylist") {
-    if (!idList(proof.productionFolderIds)) throw new OutboundGateError("OUTBOUND_DRIVE_VERIFICATION_REQUIRED");
-    if (ids.some((id) => proof.productionFolderIds.includes(id))) throw new OutboundGateError("OUTBOUND_CROSS_ENVIRONMENT_REFERENCE");
-  } else if (proof.method === "staging-root-ancestry") {
-    if (!idList(proof.verifiedStagingChildIds)) throw new OutboundGateError("OUTBOUND_DRIVE_VERIFICATION_REQUIRED");
-    if (![d.quotes, d.menus, d.allergenPdfs].every((id) => proof.verifiedStagingChildIds.includes(id))) {
-      throw new OutboundGateError("OUTBOUND_DRIVE_VERIFICATION_REQUIRED");
-    }
-  } else {
+  if (
+    !proof || typeof proof !== "object" || proof.method !== "staging-root-ancestry" ||
+    proof.rootFolderId !== root ||
+    !idList(proof.approvedStagingRootFolderIds) || !proof.approvedStagingRootFolderIds.includes(root) ||
+    !idList(proof.verifiedStagingChildIds) ||
+    ![d.quotes, d.menus, d.allergenPdfs].every((id) => proof.verifiedStagingChildIds.includes(id))
+  ) {
     throw new OutboundGateError("OUTBOUND_DRIVE_VERIFICATION_REQUIRED");
   }
   return issue({

@@ -5,9 +5,10 @@ email and Drive PDF routing: production passes through, staging resolves a singl
 inbox plus isolated Drive root/destinations, local is blocked, and every mode/project/identity/config
 inconsistency returns a retryable `OutboundGateError` with no side effects. `applyStagingMailRouting`
 replaces To/CC/BCC with the owner inbox in staging (originals kept only as a count). Staging additionally REQUIRES a
-server-supplied Drive verification proof (non-empty production denylist, or a staging-root ancestry
-proof listing every destination; a denylist alone is not isolation and the ancestry proof must be
-produced by a future consumer adapter), otherwise `OUTBOUND_DRIVE_VERIFICATION_REQUIRED`. Decisions
+root-bound `staging-root-ancestry` proof (root equals the configured Drive root, root is in a non-empty
+owner-approved allowlist from server config, and quotes/menus/allergenPdfs are listed as verified
+descendants), otherwise `OUTBOUND_DRIVE_VERIFICATION_REQUIRED`; the denylist method is removed. The module
+cannot prove the proof true: a future consumer adapter must read Drive parents/ownership. Decisions
 are frozen and provenance-registered; `applyStagingMailRouting` rejects forged or cloned decisions. It is a decision
 helper only: no consumer is wired, no default inbox/folder IDs ship, and DWD scopes/IAM isolation must
 be verified separately by the owner/admin. No `package.json` export entry yet; it is added with the
