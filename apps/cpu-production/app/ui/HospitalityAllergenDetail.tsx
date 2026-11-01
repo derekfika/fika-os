@@ -13,6 +13,7 @@ import type {
   ProductionPlan,
   MatrixSignatureScope,
 } from "../lib/production-plan";
+import { isAdHocProductionOrder } from "../../lib/ad-hoc-order";
 import { allergenReviewProblems, describeAllergenReviewProblem, effectiveProductionPlanStatus, hasAllergenAuthority } from "../lib/production-plan-state";
 import { BLOCKED_ROW_MESSAGES, confirmAllergenReviewMap, unresolvedNamedAllergenKeys } from "../lib/allergen-review-state";
 import { PENDING_DECLARATION, editableAllergens, isRowVerified, rowAttestation } from "../lib/allergen-explicit";
@@ -35,8 +36,8 @@ async function sha256Json(value: unknown) {
 }
 
 async function reviewedLineage(order: ProductionOrder, items: PlannedMenuItem[], authoritative?: ReviewedLineage): Promise<ReviewedLineage | undefined> {
-  if (order.origin === "hospitality_booking") {
-    if (!authoritative || authoritative.sourceOrigin !== "hospitality_booking") return undefined;
+  if (order.origin === "hospitality_booking" || isAdHocProductionOrder(order)) {
+    if (!authoritative || authoritative.sourceOrigin !== (order.origin === "hospitality_booking" ? "hospitality_booking" : "ad_hoc_production")) return undefined;
     return { ...authoritative, matrixContentHash: await sha256Json(canonicalAllergenMatrixForHash(items)) };
   }
   const serviceDate = order.serviceDate || order.requiredBy?.slice(0, 10);

@@ -10,7 +10,7 @@ export type CpuAllergenRelease = {
   contractVersion: "cpu-production.signed-allergen-release.v1";
   releaseId: string;
   serviceDate: string;
-  sourceOrigin?: "menu_planning" | "hospitality_booking";
+  sourceOrigin?: "menu_planning" | "hospitality_booking" | "ad_hoc_production";
   sourceDayId?: string;
   sourcePublicationId?: string;
   sourcePublicationDayId?: string;
@@ -72,19 +72,19 @@ function requireHash(value: string, field: string) { if (!HASH.test(value)) thro
 function requireArtifact(artifact: MatrixArtifact, field: string) { requireHash(artifact.contentHash, `${field}.contentHash`); if (!artifact.driveFileId && !artifact.localUrl) throw new Error(`${field} must have a durable identity.`); }
 
 export function buildCpuAllergenRelease(input: {
-  serviceDate: string; sourceOrigin?: "menu_planning" | "hospitality_booking"; sourceDayId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string; sourceRevision?: number; sourceVersion: number; sourceContentHash: string; version: number; signedAt: string; signatures: InternalMatrixSignature[]; items: PlannedMenuItem[]; masterArtifact: MatrixArtifact; derivedArtifacts: MatrixArtifact[]; packetArtifacts: MatrixArtifact[]; previous?: CpuAllergenRelease; status?: "pending" | "current";
+  serviceDate: string; sourceOrigin?: "menu_planning" | "hospitality_booking" | "ad_hoc_production"; sourceDayId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string; sourceRevision?: number; sourceVersion: number; sourceContentHash: string; version: number; signedAt: string; signatures: InternalMatrixSignature[]; items: PlannedMenuItem[]; masterArtifact: MatrixArtifact; derivedArtifacts: MatrixArtifact[]; packetArtifacts: MatrixArtifact[]; previous?: CpuAllergenRelease; status?: "pending" | "current";
 }): CpuAllergenRelease {
   if (!Number.isInteger(input.version) || input.version < 1) throw new Error("A release version is required.");
   const roles = new Set(input.signatures.map(signature => signature.role));
   if (!roles.has("production_chef") || !roles.has("head_chef_site_manager")) throw new Error("Both required signatures are required for a release.");
   if ((input.status || "current") === "current") requireArtifact(input.masterArtifact, "masterArtifact");
-  const hospitalitySource = input.sourceOrigin === "hospitality_booking";
+  const hospitalitySource = input.sourceOrigin === "hospitality_booking" || input.sourceOrigin === "ad_hoc_production";
   const validRevision = (value: number | undefined): value is number => typeof value === "number" && Number.isInteger(value) && value >= 1;
   const validHospitalitySource = Boolean(input.sourceBookingId && input.sourceQuoteRevisionId && validRevision(input.sourceRevision));
   const validMenuSource = Boolean(input.sourceDayId && input.sourcePublicationDayId);
   if (hospitalitySource
     ? !validHospitalitySource
-    : !validMenuSource) throw new Error(hospitalitySource ? "A canonical Hospitality Booking and Quote source identity is required for a release." : "A published Menu Planning source-day identity is required for a release.");
+    : !validMenuSource) throw new Error(hospitalitySource ? "A canonical Booking/Quote (or Ad-Hoc request) source identity is required for a release." : "A published Menu Planning source-day identity is required for a release.");
   if (!Number.isInteger(input.sourceVersion) || input.sourceVersion < 1) throw new Error("A source revision is required for a release.");
   requireHash(input.sourceContentHash, "sourceContentHash");
   if ((input.status || "current") === "current") {
