@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { fixture } from './lifecycle-fixture.mjs';
 import { stateDir, save } from './runtime.mjs';
 import { createWorkspace, workspaceRecords } from './workspaces.mjs';
@@ -273,4 +274,19 @@ test('standalone argument parsing is strict', () => {
   assert.deepEqual(parseArguments(['id', '--reason', 'because', '--execute', '--approve-hash', 'h']), { id: 'id', options: { reason: 'because', execute: true, 'approve-hash': 'h' } });
   assert.throws(() => parseArguments(['id', '--reason']), /requires a value/);
   assert.throws(() => parseArguments(['id', '--force']), /Unknown argument/);
+});
+
+test('standalone CLI terminates within its bound and fails closed on invalid arguments', () => {
+  const entrypoint = fileURLToPath(new URL('./deploy-marker-recovery.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [entrypoint, 'invalid-id', '--force'], {
+    cwd: path.resolve(path.dirname(entrypoint), '../..'),
+    encoding: 'utf8',
+    timeout: 5000,
+    windowsHide: true,
+  });
+  assert.equal(result.error, undefined, `CLI process should terminate within the timeout: ${result.error?.message}`);
+  assert.equal(result.signal, null);
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr.trim(), 'Unknown argument --force');
+  assert.equal(result.stdout, '');
 });
