@@ -20,8 +20,12 @@ const KEYS = { p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg
 const ecdh = createECDH('prime256v1'); ecdh.setPrivateKey(randomBytes(32));
 const TEST_PRIVATE_KEY = ecdh.getPrivateKey().toString('base64url');
 
+// Deterministic: these fixtures never see a staging mode from the environment; the original is restored afterwards.
+const ORIGINAL_RUNTIME_MODE = process.env.FIKA_RUNTIME_MODE;
+test.after(() => { if (ORIGINAL_RUNTIME_MODE === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = ORIGINAL_RUNTIME_MODE; });
+
 function setup() {
-  Object.assign(process.env, { LOGISTICS_MOBILE_SESSION_SECRET: SECRET, LOGISTICS_MOBILE_VAN1_PIN_VERIFIER: VERIFIER.van1, LOGISTICS_MOBILE_VAN2_PIN_VERIFIER: VERIFIER.van2, LOGISTICS_VAPID_PRIVATE_KEY: TEST_PRIVATE_KEY });
+  Object.assign(process.env, { FIKA_RUNTIME_MODE: 'local', LOGISTICS_MOBILE_SESSION_SECRET: SECRET, LOGISTICS_MOBILE_VAN1_PIN_VERIFIER: VERIFIER.van1, LOGISTICS_MOBILE_VAN2_PIN_VERIFIER: VERIFIER.van2, LOGISTICS_VAPID_PRIVATE_KEY: TEST_PRIVATE_KEY });
   // Subscribing now proves the endpoint with a real push first; these tests use a push service that accepts everything.
   require('web-push').sendNotification = async () => ({});
   const f = fixture(['van1', 'van2'], [], true);

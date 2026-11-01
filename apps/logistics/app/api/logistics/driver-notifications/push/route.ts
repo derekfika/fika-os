@@ -5,7 +5,7 @@ import { denied, driverVehicle } from "@/lib/driver-vehicle";
 import { hostedRuntime } from "@/lib/runtime";
 import { allowedPushEndpoint, vapidConfig } from "@/lib/push-config";
 import { claimTestPush, countSubscriptions, deleteSubscription, markVerified, removeSubscription, upsertSubscription } from "@/lib/driver-push-store";
-import { sendToVehicle, sendVerification } from "@/lib/driver-push";
+import { externalPushBlocked, sendToVehicle, sendVerification } from "@/lib/driver-push";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 const base64url = /^[A-Za-z0-9_-]{8,200}$/;
@@ -18,7 +18,8 @@ export async function GET(request: NextRequest) {
   try {
     const vehicleId = await driverVehicle(request);
     const vapid = vapidConfig();
-    return NextResponse.json({ enabled: Boolean(vapid), publicKey: vapid?.publicKey ?? null, devices: vapid ? await countSubscriptions(vehicleId) : 0 }, { headers: NO_STORE });
+    const enabled = Boolean(vapid) && !externalPushBlocked();
+    return NextResponse.json({ enabled, publicKey: enabled ? vapid?.publicKey ?? null : null, devices: enabled ? await countSubscriptions(vehicleId) : 0 }, { headers: NO_STORE });
   } catch (error) {
     return errorResponse(error);
   }
@@ -28,6 +29,8 @@ export async function POST(request: NextRequest) {
   try {
     if (hostedRuntime()) assertSameOrigin(request);
     const vehicleId = await driverVehicle(request);
+    // Hosted staging never sends real Web Push (no approved sink). Nothing is stored or marked verified.
+    if (externalPushBlocked()) throw denied("Push notifications are disabled in staging.", "LOGISTICS_PUSH_DISABLED_IN_STAGING", 503);
     const vapid = vapidConfig();
     if (!vapid) throw denied("Push notifications are not enabled in this environment.", "LOGISTICS_PUSH_NOT_CONFIGURED", 503);
     const body = await request.json().catch(() => null) as { action?: unknown; scope?: unknown; replaces?: unknown; subscription?: { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } }; endpoint?: unknown } | null;
@@ -45,6 +48,7 @@ export async function POST(request: NextRequest) {
       if (!verified) {
         // Migration gate: prove this endpoint can receive a push before it takes over from a legacy subscription. A rejected endpoint is removed.
         const outcome = await sendVerification(vehicleId, { endpoint, p256dh, auth });
+        if (outcome === "disabled_in_staging") throw denied("Push notifications are disabled in staging.", "LOGISTICS_PUSH_DISABLED_IN_STAGING", 503);
         if (outcome === "gone") { await deleteSubscription(saved.id); throw denied("The notification service rejected this phone. Turn notifications on again.", "LOGISTICS_PUSH_REJECTED", 422); }
         if (outcome === "delivered") {
           const result = await markVerified(saved.id, now);
