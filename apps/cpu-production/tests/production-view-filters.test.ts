@@ -129,6 +129,17 @@ test("withdrawn, cancelled and superseded orders are never eligible demand; noti
   assert.deepEqual(eligibleOrders(all, { keepCancellationNotices: true }).map((o) => o.canonicalId), ["live", "c1"]);
 });
 
+test("filter summary counts active orders while preserving cancelled booking notices", () => {
+  const active = order("active");
+  const cancelled = order("cancelled", { status: "cancelled" as ProductionOrder["status"], cancellationNotice: "Booking cancelled" });
+  const shownForCalendar = eligibleOrders([active, cancelled], { keepCancellationNotices: true });
+  assert.deepEqual(shownForCalendar.map((candidate) => candidate.canonicalId), ["active", "cancelled"], "the cancellation exception remains available to the calendar");
+  assert.equal(eligibleOrders(shownForCalendar).length, 1, "only active production demand contributes to summary counts");
+  const pageSource = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+  assert.match(pageSource, /const activeCount = \(list: readonly ProductionOrder\[\]\) => distinct\(list\.filter\(\(order\) => !isCpuWithdrawn\(order\)\)\)/);
+  assert.match(pageSource, /allSitesCount=\{activeCount\(allSitesList\)\}/);
+});
+
 test("totals: the same selected sites give the same orders whether one id or several are passed, with old string callers unchanged", () => {
   const range = { from: "2026-11-02", to: "2026-11-06" };
   assert.deepEqual(filterProductionTotalsOrders(sample, range, "oploc:b").map((o) => o.canonicalId), ["o2", "o3"]);

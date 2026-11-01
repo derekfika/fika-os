@@ -317,7 +317,12 @@ export default function CpuProduction() {
     : dayScoped(eligibleOrders(orders, { keepCancellationNotices: view === "calendar" }));
   const shownList = view === "totals" ? totalsSelectedOrders : view === "calendar" ? baseVisible : visible;
   const allSitesList = view === "totals" ? totalsAllSitesOrders : dayScoped(allSitesBase);
-  const viewState = resolveViewState({ loading: view === "totals" ? totalsLoading : !settled, error: error, eligibleCount: distinct(eligibleList), shownCount: distinct(shownList) });
+  // Cancellation notices remain in the calendar/attention UI, but are exceptions rather
+  // than active production demand and must not inflate the filter summary totals.
+  const activeCount = (list: readonly ProductionOrder[]) => distinct(list.filter((order) => !isCpuWithdrawn(order)));
+  // Keep the state message ready when an exception card is the only rendered item;
+  // the numeric summary below still reports active demand only.
+  const viewState = resolveViewState({ loading: view === "totals" ? totalsLoading : !settled, error: error, eligibleCount: activeCount(eligibleList), shownCount: distinct(shownList) });
   const filterChips = activeFilterChips({
     sites,
     siteLabels: siteLabels.current,
@@ -624,10 +629,10 @@ export default function CpuProduction() {
           onRemove={removeFilterChip}
           onReset={resetViewFilters}
           state={viewState}
-          shownCount={distinct(shownList)}
-          eligibleCount={distinct(eligibleList)}
-          allSitesCount={distinct(allSitesList)}
-          unscopedCount={unscopedOrderCount(allSitesList)}
+          shownCount={activeCount(shownList)}
+          eligibleCount={activeCount(eligibleList)}
+          allSitesCount={activeCount(allSitesList)}
+          unscopedCount={unscopedOrderCount(allSitesList.filter((order) => !isCpuWithdrawn(order)))}
           siteFiltered={sites.length > 0}
         />}
         {error && view !== "totals" && <p role="alert">{error}</p>}
