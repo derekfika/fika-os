@@ -1,0 +1,5442 @@
+{
+ "status": "PROPOSED - NOT APPROVED. No approved merge list exists; generated from local files only.",
+ "basedOn": {
+  "prodV1": "rev160 / 542 / hash 6b9b7faa...",
+  "staging": "manifest rev 18 / 546"
+ },
+ "count": 353,
+ "survivors": [
+  {
+   "id": "menu-item:local:4-bean-smokey-gumbo",
+   "name": "4 Bean Smokey Gumbo",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:smoked",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:aloo-gobi-potatoes-and-cauliflower-tossed-with-turmeric",
+   "name": "Aloo Gobi Potatoes and cauliflower tossed with turmeric",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:aloo-gobi-potatoes-and-cauliflower-tossed-with-turmeric-cumin-ginger-and-coriander-",
+   "name": "Aloo Gobi Potatoes and cauliflower tossed with turmeric, cumin, ginger and coriander.",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:style:spiced",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:artichoke-new-potato-red-pepper-sun-dried-tomato-pesto",
+   "name": "Artichoke, New Potato & Red Pepper & Sun-Dried Tomato Pesto",
+   "category": "Salad",
+   "subcategory": "Starch",
+   "tags": [
+    "dish-tag:cuisine:italian",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (2 entries, 180 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:asian-slaw-with-coriander-and-spring-onion",
+   "name": "asian slaw with coriander and spring onion",
+   "category": "Salad",
+   "subcategory": "Slaw",
+   "tags": [
+    "dish-tag:type:slaw"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 85 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:babass-green-chilli-sauce",
+   "name": "Babass Green Chilli Sauce",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:baby-leaves-with-citrus-mint-dressing-shaved-fennel",
+   "name": "Baby Leaves With Citrus & Mint Dressing & Shaved Fennel",
+   "category": "Salad",
+   "subcategory": "Leaf",
+   "tags": [
+    "dish-tag:style:fresh-raw",
+    "dish-tag:type:leaf-salad",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 95 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:bariis-iskukaris-inspired-saffron-rice",
+   "name": "Bariis Iskukaris-Inspired Saffron Rice",
+   "category": "Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:somali-inspired",
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 40 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:basbaas-green-chilli-sauce",
+   "name": "Basbaas Green Chilli Sauce",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:somali-inspired",
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:bombay-potato-with-toasted-coconut-yogurt-and-pommegranate",
+   "name": "Bombay Potato With Toasted Coconut Yogurt And Pommegranate",
+   "category": "Salad",
+   "subcategory": "Starch",
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:broccoli-green-bean-shredded-kale-with-black-olive-tapenade",
+   "name": "Broccoli, Green Bean & Shredded Kale With Black Olive Tapenade",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:bulgogi-smoked-pulled-beef-brisket",
+   "name": "Bulgogi Smoked & Pulled Beef Brisket",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:korean",
+    "dish-tag:style:braised-stewed",
+    "dish-tag:style:smoked",
+    "dish-tag:type:beef"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:bulgogi-spiced-roasted-sweet-potato-lime-and-spring-onion",
+   "name": "Bulgogi Spiced Roasted Sweet Potato, Lime And Spring Onion",
+   "category": "Salad",
+   "subcategory": "Starch",
+   "tags": [
+    "dish-tag:cuisine:korean",
+    "dish-tag:style:roasted",
+    "dish-tag:style:spiced",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:bulgur-tabbouleh-with-slow-roasted-peppers",
+   "name": "Bulgur Tabbouleh With Slow-Roasted Peppers",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:style:roasted",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (2 entries, 190 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:butter-and-chive-sauce",
+   "name": "butter and chive sauce",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:buttered-green-beans-with-kalamata-olives",
+   "name": "Buttered Green Beans with Kalamata Olives",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (2 entries, 215 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:cabbage-green-pea-sabzi",
+   "name": "Cabbage & Green Pea Sabzi",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:cabbage-green-pea-sabzi-shredded-cabbage-and-sweet-green-peas-tempered-with-mustard-seeds-cumin-and-curry-leaves-",
+   "name": "Cabbage & Green Pea Sabzi Shredded cabbage and sweet green peas tempered with mustard seeds, cumin and curry leaves.",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:leaf-salad",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:cajun-roasted-side-of-salmon-with-red-pepper-salsa",
+   "name": "Cajun Roasted Side of Salmon with Red Pepper Salsa",
+   "category": "Cold Protein",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:fish-seafood",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 24 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:cardamom-yoghurt",
+   "name": "Cardamom Yoghurt",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:cardamon-yogurt",
+   "name": "Cardamon Yogurt",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:celeraic-carrot-and-red-cabbage-slaw",
+   "name": "Celeraic Carrot And Red Cabbage Slaw",
+   "category": "Salad",
+   "subcategory": "Slaw",
+   "tags": [
+    "dish-tag:type:slaw",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 95 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:chana-and-aubergine-takari",
+   "name": "Chana And Aubergine Takari",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:chargrilled-chicken-pesto-grilled-chicken-thigh-parsley-and-pumpkin-seed-pesto",
+   "name": "Chargrilled Chicken,pesto  Grilled chicken thigh, parsley and pumpkin seed pesto",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:italian",
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 145 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:chargrilled-cornish-mackerel-with-lemon-fennel-orange-olive-salsa",
+   "name": "Chargrilled Cornish Mackerel With Lemon, Fennel, Orange & Olive Salsa",
+   "category": "Fish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:fish-seafood",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:charred-cabbage-with-date-vinaigrette-date-syrup-lemon-",
+   "name": "Charred Cabbage With Date Vinaigrette — Date Syrup & Lemon.",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:charred-kentish-aubergine-with-tahini-pomegranate-parsley-pesto",
+   "name": "Charred Kentish Aubergine With Tahini, Pomegranate & Parsley Pesto",
+   "category": "Vegan/Veggie Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:italian",
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [
+    "FZ-001"
+   ],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 15 portions): kept active",
+    "member of fuzzy-match cluster: kept active, NOT merged"
+   ]
+  },
+  {
+   "id": "menu-item:local:charred-tenderstem-broccoli-lemon-sesame-toasted-almonds",
+   "name": "Charred Tenderstem Broccoli  Lemon, sesame & toasted almonds",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 140 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:chicken-plain-flavored",
+   "name": "Chicken Plain / Flavored",
+   "category": "Cold Protein",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:chicken-thigh-in-bhuna-sauce",
+   "name": "Chicken Thigh In Bhuna Sauce",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:chicken-tikka",
+   "name": "Chicken Tikka",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:style:spiced",
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:chicken-tikka-tandoori-marinated-chicken-seasoned-with-yoghurt-ginger-garlic-kashmiri-chilli-cumin-and-garam-masala-grilled-for-a-smoky-finish-",
+   "name": "Chicken Tikka Tandoori-marinated chicken seasoned with yoghurt, ginger, garlic, Kashmiri chilli, cumin and garam masala, grilled for a smoky finish.",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:style:grilled-charred",
+    "dish-tag:style:smoked",
+    "dish-tag:style:spiced",
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:chickpea-roast-carrot-roasted-pepper-and-spinach",
+   "name": "Chickpea, Roast Carrot, Roasted Pepper And Spinach",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:chilli-flakes",
+   "name": "chilli flakes",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 80 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:chimichurri",
+   "name": "Chimichurri",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 80 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:chive-butter",
+   "name": "chive butter",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 30 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:citrus-fennel-slaw-with-celeriac",
+   "name": "Citrus & Fennel Slaw With Celeriac",
+   "category": "Salad",
+   "subcategory": "Slaw",
+   "tags": [
+    "dish-tag:type:slaw",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (2 entries, 190 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:classic-coleslaw",
+   "name": "Classic Coleslaw",
+   "category": "Salad",
+   "subcategory": "Slaw",
+   "tags": [
+    "dish-tag:type:slaw"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:classic-greek-salad",
+   "name": "Classic Greek Salad",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:cuisine:greek"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:classic-minestrone-subject-to-change-",
+   "name": "Classic Minestrone (Subject To Change)",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:italian"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:coconut-raita",
+   "name": "Coconut raita",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:coconut-rice-with-lime-leaves",
+   "name": "Coconut Rice With Lime Leaves",
+   "category": "Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:leaf-salad"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:couc-cous-salad-sundried-tomato-kalamata-olives-basil-pesto",
+   "name": "Couc Cous Salad, Sundried Tomato, Kalamata Olives Basil Pesto",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:cuisine:italian"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:crayfish-and-salmon-with-lemon-and-chive-cr-me-fraiche",
+   "name": "crayfish and salmon with lemon and chive crème fraiche",
+   "category": "Cold Protein",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:fish-seafood"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 25 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:cream-of-mushroom",
+   "name": "Cream Of Mushroom",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:crispy-fried-jerk-marinated-banana-flower",
+   "name": "Crispy Fried Jerk Marinated Banana Flower",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:caribbean-inspired",
+    "dish-tag:style:fried",
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:crushed-new-potato-s",
+   "name": "crushed new potato's",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [
+    "FZ-002"
+   ],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 140 portions): kept active",
+    "member of fuzzy-match cluster: kept active, NOT merged"
+   ]
+  },
+  {
+   "id": "menu-item:local:crushed-new-potatoes",
+   "name": "Crushed New Potatoes",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [
+    "FZ-002"
+   ],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 85 portions): kept active",
+    "member of fuzzy-match cluster: kept active, NOT merged"
+   ]
+  },
+  {
+   "id": "menu-item:local:cucumber-avocado-herb-salad-cucumber-avocado-radish-herbs-citrus",
+   "name": "Cucumber, Avocado & Herb Salad  Cucumber, avocado, radish, herbs & citrus",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 110 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:curried-carrot-coriander",
+   "name": "Curried Carrot & Coriander",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:eat-curious-spicy-bbq-vegan-pieces",
+   "name": "Eat Curious Spicy Bbq Vegan Pieces",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:bbq"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:eedemamae-beans-edamame-beans-buckthorn-sea-salt-and-tonkatatu",
+   "name": "Eedemamae beans  Edamame beans buckthorn sea salt and tonkatatu",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:japanese",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 100 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:fika-slaw-with-curry-leaf-and-coriander",
+   "name": "Fika Slaw With Curry Leaf And Coriander",
+   "category": "Salad",
+   "subcategory": "Slaw",
+   "tags": [
+    "dish-tag:style:spiced",
+    "dish-tag:type:leaf-salad",
+    "dish-tag:type:slaw"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:fire-roasted-pepper-chickpea-stew",
+   "name": "Fire-Roasted Pepper & Chickpea Stew",
+   "category": "Vegan/Veggie Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:braised-stewed",
+    "dish-tag:style:roasted",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 5 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:fish-sauce-with-chilli-and-lime",
+   "name": "Fish Sauce With Chilli And Lime",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced",
+    "dish-tag:type:fish-seafood"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:four-bean-chilli-loaded-sweet-potatotopped-with-zingy-guacamole-and-harissaa-mayo",
+   "name": "Four Bean Chilli Loaded Sweet Potatotopped With Zingy Guacamole And Harissaa Mayo",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:mexican-inspired",
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:freekah-roasted-courgette-charred-peppers-and-mint",
+   "name": "Freekah,roasted courgette,charred peppers and mint",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:grilled-charred",
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:fresh-coriander",
+   "name": "Fresh Coriander",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:fresh-raw"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 25 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:fresh-coriander-and-mint",
+   "name": "Fresh coriander and mint",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:fresh-raw"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:fresh-herbs",
+   "name": "fresh herbs",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:fresh-raw"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (3 entries, 155 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:fresh-mint-and-coriander",
+   "name": "Fresh Mint And Coriander",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:fresh-raw"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:garden-pea-with-fire-roasted-peppers-and-pickled-carrott",
+   "name": "Garden Pea With Fire Roasted Peppers And Pickled Carrott",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:ginger-miso-dressing",
+   "name": "Ginger Miso Dressing",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:japanese",
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 80 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:goan-spiced-fish",
+   "name": "Goan Spiced Fish",
+   "category": "Fish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:style:spiced",
+    "dish-tag:type:fish-seafood"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:goan-spiced-fish-firm-white-fish-marinated-with-turmeric-coriander-cumin-ginger-and-lime-gently-roasted-to-retain-its-texture-and-finished-with-fresh-coriander-",
+   "name": "Goan Spiced Fish Firm white fish marinated with turmeric, coriander, cumin, ginger and lime, gently roasted to retain its texture and finished with fresh coriander.",
+   "category": "Fish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:style:fresh-raw",
+    "dish-tag:style:roasted",
+    "dish-tag:style:spiced",
+    "dish-tag:type:fish-seafood"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:grated-carrot",
+   "name": "Grated carrot",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:grated-hot-honey-carrot",
+   "name": "Grated hot honey carrot",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 80 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:greek-style-tomato-butter-bean-fennel-salad-tomato-butter-beans-shaved-fennel-oregano",
+   "name": "Greek-Style Tomato, Butter Bean & Fennel Salad  Tomato, butter beans, shaved fennel & oregano",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:cuisine:greek",
+    "dish-tag:style:fresh-raw",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 140 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:green-beans-with-charred-red-peppers",
+   "name": "Green Beans With Charred Red Peppers",
+   "category": "Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:green-herb-tahini",
+   "name": "Green Herb Tahini",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 80 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:green-mango-cucumber-lime-salad-fresh-herbs-lime-dressing-",
+   "name": "Green Mango, Cucumber & Lime Salad — Fresh Herbs & Lime Dressing.",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:fresh-raw"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:grilled-courgette-with-basil-rocket-pesto",
+   "name": "Grilled Courgette with Basil & Rocket Pesto",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:italian",
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:leaf-salad",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 40 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:grilled-five-spice-honey-and-soy-chicken-thigh",
+   "name": "Grilled Five Spice Honey And Soy Chicken Thigh",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:chinese",
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:grilled-flatbread-brushed-with-za-atar-oil",
+   "name": "Grilled Flatbread Brushed with Za’atar Oil",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:bread"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 40 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:grilled-pita-bread",
+   "name": "Grilled Pita Bread",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:bread"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (2 entries, 215 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:harissa-roast-salmon-cold-or-hot-roasted-salmon-harissa-preserved-lemon-coriander",
+   "name": "Harissa Roast Salmon (cold or hot)  Roasted salmon, harissa, preserved lemon & coriander",
+   "category": "Fish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:style:roasted",
+    "dish-tag:style:spiced",
+    "dish-tag:type:fish-seafood"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 30 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:harissa-yoghurt",
+   "name": "Harissa Yoghurt",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 80 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:herb-lemon-grains-pearl-barley-quinoa-parsley-lemon",
+   "name": "Herb & Lemon Grains  Pearl barley, quinoa, parsley & lemon",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 100 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:herbed-couscous-with-golden-raisins",
+   "name": "Herbed Couscous with Golden Raisins",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 75 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:honey-pepper-sweet-potato-pea-salad",
+   "name": "Honey Pepper Sweet Potato & Pea Salad",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:hot-smoked-salmon-cr-me-fraiche-chive",
+   "name": "Hot Smoked Salmon, Crème Fraiche & Chive",
+   "category": "Cold Protein",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:smoked",
+    "dish-tag:type:fish-seafood"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 2 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:house-slaw-with-lemon-and-lime-dressing",
+   "name": "House Slaw With Lemon And Lime Dressing",
+   "category": "Salad",
+   "subcategory": "Slaw",
+   "tags": [
+    "dish-tag:type:slaw"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:hummus",
+   "name": "Hummus",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:jacket-2",
+   "name": "Jacket 2",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 5 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:jacket-filling-1",
+   "name": "Jacket Filling 1",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (2 entries, 10 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:jacket-filling-2",
+   "name": "Jacket Filling 2",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 5 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:jacket-potato",
+   "name": "Jacket Potato",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (3 entries, 30 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:jeera-basmati-rice",
+   "name": "Jeera Basmati Rice",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:jeera-basmati-rice-fragrant-basmati-rice-steamed-with-cumin-seeds",
+   "name": "Jeera Basmati Rice Fragrant basmati rice steamed with cumin seeds",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:jerk-marinated-chicken-thigh",
+   "name": "Jerk Marinated Chicken Thigh",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:caribbean-inspired",
+    "dish-tag:style:spiced",
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:kachumber-salad-cucumber-tomato-and-red-onion-with-lemon-fresh-coriander-and-roasted-cumin-",
+   "name": "Kachumber Salad Cucumber, Tomato And Red Onion With Lemon, Fresh Coriander And Roasted Cumin.",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:fresh-raw",
+    "dish-tag:style:roasted"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:kale-miso-slaw-kale-cabbage-carrot-sesame-miso-dressing",
+   "name": "Kale & Miso Slaw  Kale, cabbage, carrot, sesame & miso dressing",
+   "category": "Salad",
+   "subcategory": "Slaw",
+   "tags": [
+    "dish-tag:cuisine:japanese",
+    "dish-tag:type:slaw",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 140 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:kathi-roll-flatbreads",
+   "name": "Kathi Roll Flatbreads",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:bread"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:kobez-bread",
+   "name": "Kobez Bread",
+   "category": "Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:bread"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:lamb-rogan-josh",
+   "name": "Lamb Rogan Josh",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:leek-potato-subject-to-change-",
+   "name": "Leek & Potato (Subject To Change)",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:lemon-and-lime-vegan-yogurt",
+   "name": "Lemon And Lime Vegan Yogurt",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:lemon-and-lime-wedges",
+   "name": "Lemon and lime wedges",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:lemon-coconut-vegan-yoghurt-raita",
+   "name": "Lemon Coconut Vegan Yoghurt Raita",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:lemon-herb-dressing",
+   "name": "Lemon & Herb Dressing",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 80 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:lemon-herd-bulger-salad",
+   "name": "Lemon & Herd Bulger Salad",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:lemon-wedges",
+   "name": "Lemon Wedges",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 25 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:marinated-courgette-ribbons-with-basil-grilled-artichokes",
+   "name": "Marinated Courgette Ribbons With Basil & Grilled Artichokes",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 95 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:miini-poppadoms",
+   "name": "Miini Poppadoms",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:mikxed-chicken-protein-cold",
+   "name": "Mikxed Chicken Protein Cold",
+   "category": "Cold Protein",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (5 entries, 345 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:mint-and-coriander",
+   "name": "Mint and coriander",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 80 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:mint-and-coriander-chutney",
+   "name": "Mint and coriander chutney",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:miso-glazed-tofu-vegan-roasted-tofu-miso-ginger-sesame",
+   "name": "Miso Glazed Tofu — Vegan  Roasted tofu, miso, ginger & sesame",
+   "category": "Vegan/Veggie Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:japanese",
+    "dish-tag:style:roasted",
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 30 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:moroccan-vegetable-lentil-soup",
+   "name": "Moroccan Vegetable & Lentil Soup",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 10 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:olive-tapenade",
+   "name": "olive tapenade",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (2 entries, 120 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:orange-and-olive-salsa",
+   "name": "orange and olive salsa",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 50 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:orzo-pasta-lentil-charred-red-pepper-madras-seasoning",
+   "name": "Orzo Pasta, Lentil, Charred Red Pepper & Madras Seasoning",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:cuisine:italian",
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:orzo-sunblush-tomato-spinach",
+   "name": "Orzo Sunblush Tomato & Spinach",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:oven-roasted-sea-bass-with-tomato-caper-lemon-butter",
+   "name": "Oven-Roasted Sea Bass With Tomato, Caper & Lemon Butter",
+   "category": "Fish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:fish-seafood"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:pan-seared-scottish-cod-with-chive-butter",
+   "name": "Pan-Seared Scottish Cod With Chive Butter",
+   "category": "Fish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:fish-seafood"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 100 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:pickled-onion",
+   "name": "Pickled Onion",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:pickled-red-onion",
+   "name": "Pickled Red Onion",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 25 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:pickled-red-onions",
+   "name": "Pickled red onions",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:pilau-rice",
+   "name": "Pilau Rice",
+   "category": "Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:pomegranate-seeds",
+   "name": "Pomegranate seeds",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 25 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:poppadoms-chutney-selection-plain-and-spiced-poppadoms",
+   "name": "Poppadoms & Chutney Selection Plain and spiced poppadoms",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:preserved-lemon",
+   "name": "preserved lemon",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (2 entries, 130 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:proven-al-ratatouille-gently-stewed-courgette-tomato-with-white-beans-thyme",
+   "name": "Provençal Ratatouille, Gently Stewed Courgette & Tomato With White Beans & Thyme",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:french-inspired",
+    "dish-tag:style:braised-stewed",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:proven-al-ratatouille-with-white-beans",
+   "name": "Provençal Ratatouille With White Beans",
+   "category": "Vegan/Veggie Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:french-inspired",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (2 entries, 55 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:punjabi-butter-curry-sauce",
+   "name": "Punjabi butter curry sauce",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:punjabi-butter-sauce",
+   "name": "Punjabi butter sauce",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:punjabi-chana-masala",
+   "name": "Punjabi Chana Masala",
+   "category": "Vegan/Veggie Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:punjabi-chana-masala-slow-cooked-chickpeas-with-onion-tomato-ginger-garlic-and-warming-punjabi-spices-reduced-to-a-thick-rich-filling-",
+   "name": "Punjabi Chana Masala Slow-cooked chickpeas with onion, tomato, ginger, garlic and warming Punjabi spices, reduced to a thick, rich filling.",
+   "category": "Vegan/Veggie Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:style:braised-stewed",
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:punjabi-vegetable-samosas",
+   "name": "Punjabi Vegetable Samosas",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:punjabi-vegetable-samosas-crisp-pastry-filled-with-spiced-potato-",
+   "name": "Punjabi Vegetable Samosas Crisp pastry filled with spiced potato,",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:red-cabbage-coleslaw",
+   "name": "Red Cabbage Coleslaw",
+   "category": "Salad",
+   "subcategory": "Slaw",
+   "tags": [
+    "dish-tag:type:slaw",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:roast-beetroot-with-smoked-paprika-and-apricot-dressing",
+   "name": "Roast Beetroot With Smoked Paprika And Apricot Dressing",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:style:smoked"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-beet-salad-with-spiced-pickled-onion-and-roasted-pumpkin-seeds",
+   "name": "Roasted Beet Salad With Spiced Pickled Onion And Roasted Pumpkin Seeds",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-beetroot-apple-pickled-onion-british-beetroot-seasonal-apple-herbs",
+   "name": "Roasted Beetroot, Apple & Pickled Onion  British beetroot, seasonal apple & herbs",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:roasted"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 140 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-beetroot-salad-with-toasted-coconut-coriander-and-cumin",
+   "name": "Roasted beetroot salad with toasted coconut,coriander and cumin",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:roasted"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (2 entries, 160 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-butternut-squash-blue-cheese-quince-tart",
+   "name": "Roasted Butternut Squash, Blue Cheese & Quince Tart",
+   "category": "Cold Protein",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 20 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-carrot-toasted-pumpkin-seeds-and-cumin",
+   "name": "Roasted Carrot Toasted Pumpkin Seeds And Cumin",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-carrott-chick-pea-and-m-asala-lentils",
+   "name": "Roasted Carrott Chick Pea And M, Asala Lentils",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-chilli-and-garlic-sauce",
+   "name": "Roasted chilli and garlic sauce",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-mediterranean-vegetable-soup",
+   "name": "Roasted Mediterranean Vegetable Soup",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-red-pepper-coriander-soup",
+   "name": "Roasted Red Pepper & Coriander Soup",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 5 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-squash-with-balti-spice",
+   "name": "Roasted Squash With Balti Spice",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-sweet-potato-date-dukkah-roasted-sweet-potato-dates-herbs-toasted-dukkah",
+   "name": "Roasted Sweet Potato, Date & Dukkah  Roasted sweet potato, dates, herbs & toasted dukkah",
+   "category": "Salad",
+   "subcategory": "Starch",
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 110 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-tomato-basil",
+   "name": "Roasted Tomato & Basil",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-tomato-basil-soup-with-focaccia-croutons",
+   "name": "Roasted Tomato & Basil Soup With Focaccia Croutons",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 15 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:roasted-wild-mushroom-sage-confit-garlic",
+   "name": "Roasted Wild Mushroom, Sage & Confit Garlic",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:roomali-style-flatbreads",
+   "name": "Roomali-Style Flatbreads",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:bread"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:saffron-rice",
+   "name": "Saffron Rice",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:sesame-brown-and-black-wild-rice-brown-rice-spring-onion-sesame-herbs",
+   "name": "Sesame Brown and black wild rice  Brown rice, spring onion, sesame & herbs",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 100 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:sesame-flatbread",
+   "name": "Sesame Flatbread",
+   "category": "Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:bread"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:shaved-fennel-with-orange-parsley-kalamata-olives",
+   "name": "Shaved Fennel With Orange, Parsley & Kalamata Olives",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:fresh-raw",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:shredded-24-hour-beef-brisket-with-sesame-seeds-and-tahini",
+   "name": "Shredded 24 Hour Beef Brisket With Sesame Seeds And Tahini",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:type:beef"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:shredded-fennel-gorgonzola-with-orange-dressing",
+   "name": "Shredded Fennel & Gorgonzola With Orange Dressing",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [
+    "FZ-003"
+   ],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic",
+    "member of fuzzy-match cluster: kept active, NOT merged"
+   ]
+  },
+  {
+   "id": "menu-item:local:shredded-iceberg-lettuce",
+   "name": "Shredded iceberg lettuce",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:leaf-salad"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:shredded-white-and-red-cabbage",
+   "name": "Shredded white and red cabbage",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:sliced-green-chilli",
+   "name": "Sliced green chilli",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:sliced-red-onion",
+   "name": "Sliced red onion",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:sliced-spring-onion",
+   "name": "Sliced Spring Onion",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:slow-braised-british-beef-tagine-with-apricots-almonds-cinnamon",
+   "name": "Slow-Braised British Beef Tagine With Apricots, Almonds & Cinnamon",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:braised-stewed",
+    "dish-tag:type:beef"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 80 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:smashed-cucumber-fresh-mint-chilli-and-mango",
+   "name": "Smashed Cucumber Fresh Mint Chilli And Mango",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:fresh-raw",
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:smashed-cucumber-pickled-ginger-and-nori-sheets",
+   "name": "Smashed Cucumber Pickled Ginger And Nori Sheets",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:smashed-cucumber-soy-and-chilli-spiced-pickled-red-onion",
+   "name": "Smashed Cucumber Soy And Chilli Spiced Pickled Red Onion",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:smoked-mackerel-pickled-cucumber-horseradish",
+   "name": "Smoked Mackerel, Pickled Cucumber & Horseradish",
+   "category": "Cold Protein",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:smoked",
+    "dish-tag:type:fish-seafood"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 24 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:smoked-pulled-chicken-arrabbiata",
+   "name": "Smoked Pulled Chicken Arrabbiata",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:braised-stewed",
+    "dish-tag:style:smoked",
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:smoked-yoghurt",
+   "name": "Smoked Yoghurt",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:smoked"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 20 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:spiced-caauliflower-pommegranate-mint-yogurt",
+   "name": "Spiced Caauliflower, Pommegranate, Mint Yogurt",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:spiced-cauliflower-chickpeas-baby-spinach",
+   "name": "Spiced Cauliflower Chickpeas, Baby Spinach",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:spiced-lentil",
+   "name": "Spiced Lentil",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:spiced-pumpkin-and-red-lentil-bake",
+   "name": "Spiced Pumpkin And Red Lentil Bake",
+   "category": "Vegan/Veggie Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [
+    "EX-001"
+   ],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic",
+    "member of NEEDS-REVIEW exact-name cluster: kept active, NOT merged"
+   ]
+  },
+  {
+   "id": "menu-item:local:spiced-pumpkin-red-lentil-bake",
+   "name": "Spiced Pumpkin & Red Lentil Bake",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [
+    "EX-001"
+   ],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic",
+    "member of NEEDS-REVIEW exact-name cluster: kept active, NOT merged"
+   ]
+  },
+  {
+   "id": "menu-item:local:spinach-with-sumac-vinaigrette-roasted-red-peppers",
+   "name": "Spinach With Sumac Vinaigrette & Roasted Red Peppers",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 110 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:steamed-spinach-with-roasted-red-peppers",
+   "name": "Steamed Spinach with Roasted Red Peppers",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 75 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:stone-baked-rosemary-focaccia-with-smoked-salt",
+   "name": "Stone-Baked Rosemary Focaccia with Smoked Salt",
+   "category": "Starch/Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:style:smoked"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 60 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:suffolk-chicken-roasted-with-lemon-thyme-confit-garlic",
+   "name": "Suffolk Chicken Roasted With Lemon, Thyme & Confit Garlic",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 70 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:sweet-and-spicy-baby-corn-and-carrots",
+   "name": "Sweet And Spicy Baby Corn And Carrots",
+   "category": "Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:sweetcorn-edamame-toasted-sesemea",
+   "name": "Sweetcorn Edamame Toasted Sesemea",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:cuisine:japanese"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:sweetcorn-potato-chowder",
+   "name": "Sweetcorn & Potato Chowder",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:sweetcorn-shredded-fennel-and-tomato-dressing",
+   "name": "Sweetcorn Shredded Fennel And Tomato Dressing",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:tamarind-and-date-chutney",
+   "name": "Tamarind and date chutney",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [
+    "EX-002"
+   ],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic",
+    "member of NEEDS-REVIEW exact-name cluster: kept active, NOT merged"
+   ]
+  },
+  {
+   "id": "menu-item:local:tamarind-citrus-roasted-carrots",
+   "name": "Tamarind & Citrus-Roasted Carrots",
+   "category": "Side",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:tamarind-date-chutney-",
+   "name": "Tamarind & Date Chutney.",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [
+    "EX-002"
+   ],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic",
+    "member of NEEDS-REVIEW exact-name cluster: kept active, NOT merged"
+   ]
+  },
+  {
+   "id": "menu-item:local:toasted-almonds-",
+   "name": "Toasted Almonds.",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [
+    "EX-003"
+   ],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic",
+    "member of NEEDS-REVIEW exact-name cluster: kept active, NOT merged"
+   ]
+  },
+  {
+   "id": "menu-item:local:toasted-pumpkin-seeds",
+   "name": "Toasted pumpkin seeds",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 80 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:tom-yum-broth",
+   "name": "Tom Yum Broth",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:thai"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:tomato-caper-lemon-butter",
+   "name": "Tomato, Caper & Lemon Butter",
+   "category": "Sauce",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 15 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:tomato-coriander-pickled-onion-salad-citrus-dressing",
+   "name": "Tomato, Coriander & Pickled Onion Salad — Citrus Dressing",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [
+    "EX-004"
+   ],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic",
+    "proposed survivor of AUTO-SAFE cluster; 1 duplicate id(s) mapped to it (needs owner approval)"
+   ]
+  },
+  {
+   "id": "menu-item:local:tomato-cucumber-avocardo-and-red-onion",
+   "name": "Tomato Cucumber Avocardo And Red Onion",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:trio-of-tomatoes-torn-basil-shaved-fennel-with-orange-dressing",
+   "name": "Trio Of Tomatoes, Torn Basil & Shaved Fennel With Orange Dressing",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:fresh-raw",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:turmeric-roasted-potato-rocket-leaf-and-pickled-red-onion",
+   "name": "Turmeric Roasted Potato, Rocket Leaf And Pickled Red Onion",
+   "category": "Salad",
+   "subcategory": "Leaf",
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:leaf-salad",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:udon-noodle-with-pickled-chilli",
+   "name": "Udon Noodle With Pickled Chilli",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:watercress-orange-toasted-sesame-salad-citrus-segments-sesame-dressing",
+   "name": "Watercress, Orange & Toasted Sesame Salad — Citrus Segments & Sesame Dressing",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:watermelon-mango-pickled-chilli-with-toasted-cumin-seeds",
+   "name": "Watermelon Mango Pickled Chilli With Toasted Cumin Seeds",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:wild-rice-pomegranate-salad-with-charred-sweetcorn",
+   "name": "Wild Rice & Pomegranate Salad With Charred Sweetcorn",
+   "category": "Salad",
+   "subcategory": "Starch",
+   "tags": [
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 110 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:wild-rocket-baby-watercress-and-toasted-pumpkin-seeds",
+   "name": "Wild Rocket Baby Watercress And Toasted Pumpkin Seeds",
+   "category": "Salad",
+   "subcategory": "Leaf",
+   "tags": [
+    "dish-tag:type:leaf-salad"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:wild-rocket-with-balsamic-shallot-dressing",
+   "name": "Wild Rocket With Balsamic & Shallot Dressing",
+   "category": "Salad",
+   "subcategory": "Leaf",
+   "tags": [
+    "dish-tag:type:leaf-salad"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [
+    "FZ-004"
+   ],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic",
+    "member of fuzzy-match cluster: kept active, NOT merged"
+   ]
+  },
+  {
+   "id": "menu-item:local:wiltshire-lamb-kofta-with-cumin-paprika",
+   "name": "Wiltshire Lamb Kofta With Cumin & Paprika",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 75 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:local:xawaash-roasted-chicken-breast",
+   "name": "xawaash roasted chicken breast",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:xawaash-roasted-lamb-shoulder",
+   "name": "Xawaash-Roasted Lamb Shoulder",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:local:za-atar-oil",
+   "name": "Za’atar Oil",
+   "category": "Garnish",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 25 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:4-bean-smokey-gumbo",
+   "name": "Mixed Bean And Tomato Gumbo",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:applewood-smoked-vegan-cheese",
+   "name": "Applewood Smoked Vegan Cheese",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:smoked"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:asian-greens-with-yuzu-dressing",
+   "name": "Asian Greens With Yuzu Dressing",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:japanese",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:asian-noodle-broth",
+   "name": "Asian Noodle Broth",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:asian-slaw-with-teryaki-and-crispy-lotus-root",
+   "name": "Asian Slaw With Teryaki And Crispy Lotus Root",
+   "category": "Salad",
+   "subcategory": "Slaw",
+   "tags": [
+    "dish-tag:style:fried",
+    "dish-tag:type:slaw"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:avocardo-and-mint-dressing",
+   "name": "Avocardo And Mint Dressing",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:balti-sauce",
+   "name": "Balti Sauce",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:basil-almond-pesto",
+   "name": "Basil & Almond Pesto",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:italian"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:bean-sprout-coriander-lime-and-mint-asian-raw-slaw",
+   "name": "Menu-Item: Rolling: Bean-Sprout-Coriander-Lime-And-Mint-Asian-Raw-Slaw",
+   "category": "Salad",
+   "subcategory": "Slaw",
+   "tags": [
+    "dish-tag:style:fresh-raw",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:slaw",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:beef-barbacoa-with-chipotle-choilli-and-herbs",
+   "name": "Beef Barbacoa With Chipotle Choilli And Herbs",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:mexican-inspired",
+    "dish-tag:type:beef"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:beef-tagine-with-almonds-apricotts-saffron",
+   "name": "Braised Beef & Apricott Tagine With Almonds & Cinnamon",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:braised-stewed",
+    "dish-tag:type:beef"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:beetroot-and-sweet-potato-falafal",
+   "name": "Beetroot And Sweet Potato Falafal",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:bengal-spiced-lentil-and-herb-salad",
+   "name": "Bengal Spiced Lentil And Herb Salad",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:black-bean-and-cornmeal-frittars",
+   "name": "Black Bean And Cornmeal Frittars",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:bombay-potato-vegan-pie",
+   "name": "Bombay Potato Vegan Pie",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:bulgogi-braised-shredded-beef-gochujang-glaze",
+   "name": "Bulgogi Braised Shredded Beef, Gochujang Glaze",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:korean",
+    "dish-tag:style:braised-stewed",
+    "dish-tag:type:beef"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:butternet-and-sweetpotato",
+   "name": "Butternet And Sweetpotato",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:caramalised-onions",
+   "name": "Caramalised Onions",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:carrot-and-coriander",
+   "name": "Spiced Chickpea And Coconut",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:carrot-coriander-with-toasted-pumpkin-seeds",
+   "name": "Carrot And Sunflower Seed",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:cauliflower-wings-with-chipotle-spice",
+   "name": "Cauliflower Wings With Chipotle Spice",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:mexican-inspired",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:ceaser-salad-dressing-and-crouton-parmasan",
+   "name": "Ceaser Salad Dressing And Crouton, Parmasan",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:chana-and-aubergine-tarkari-dhaka-dahl-masala-sauce",
+   "name": "Chana And Aubergine Tarkari Dhaka Dahl Masala Sauce",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:style:spiced",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:charred-corn-on-the-cob",
+   "name": "Charred Corn On The Cob",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:grilled-charred"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:charred-flatbreads",
+   "name": "Charred Flatbreads",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:bread"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:charred-kentish-aubergine-with-tahini-and-pommegranit-parsley-pesto",
+   "name": "Charred Kentish Aubergine With Tahini And Pommegranit, Parsley Pesto",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:italian",
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [
+    "FZ-001"
+   ],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic",
+    "member of fuzzy-match cluster: kept active, NOT merged"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:charred-little-gem-with-parmasan",
+   "name": "Charred Little Gem With Parmasan",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:grilled-charred"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:charred-sticky-bbq-chicken-thigh-skewer",
+   "name": "Charred Sticky Bbq Chicken Thigh Skewer",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:bbq",
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:chick-pea-green-bean-with-crispy-onions-and-nighella-seed",
+   "name": "Chick Pea, Green Bean With Crispy Onions And Nighella Seed",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:style:fried",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:chicken-shawarma",
+   "name": "Grilled Chimichurie Chicken Skewers",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:grilled-charred",
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:chickpea-falafel-with-beetroot-hummus",
+   "name": "Chickpea Falafel With Beetroot Hummus",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:chickpea-tagine-with-tomato-perserved-lemon",
+   "name": "Chickpea Tagine With Tomato & Perserved Lemon",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:chimichurie-chicken-breast-strips",
+   "name": "Chimichurie Chicken Breast Strips",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:chipotle-salsa",
+   "name": "Chipotle Salsa",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:mexican-inspired"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:ciabbatta-wedges",
+   "name": "Ciabbatta Wedges",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:classic-minestronie-with-vegan-pesto",
+   "name": "Classic Minestronie With Vegan Pesto",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:italian"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 10 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:classic-ribollita-beans-kale",
+   "name": "Classic Ribollita Beans & Kale",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:coconut-shavings",
+   "name": "Coconut Shavings",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:country-vegetable",
+   "name": "Country Vegetable",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:cous-cous-salad-sundried-tomato-black-olive-and-basil-rocket-pesto",
+   "name": "Tomato Cucumber And Pink Pickled Onions",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:crispy-fried-polenta",
+   "name": "Crispy Fried Polenta",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:fried"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:crispy-fried-tofu-with-shitake-mushroom-and-hoi-sin-sauce",
+   "name": "Edamame And Crispy Fried Tofu, Tamari Dressing",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:japanese",
+    "dish-tag:style:fried"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:crispy-onions",
+   "name": "Crispy Onions",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:fried"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:crispy-potato-with-kimchi-spice",
+   "name": "Crispy Potato With Kimchi Spice",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:korean",
+    "dish-tag:style:fried",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:crispy-spiced-aubergine",
+   "name": "Crispy Spiced Aubergine",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:fried",
+    "dish-tag:style:spiced",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:crumbed-chciken-thigh-nuggets",
+   "name": "Crumbed Chciken Thigh Nuggets",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:cucumber-ribbons-with-dill-pickled-radish",
+   "name": "Cucumber Ribbons With Dill & Pickled Radish",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 110 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:cucumbewr-dill-and-curry-leaf-with-nigella-seed",
+   "name": "Cucumbewr Dill And Curry Leaf With Nigella Seed",
+   "category": "Salad",
+   "subcategory": "Leaf",
+   "tags": [
+    "dish-tag:style:spiced",
+    "dish-tag:type:leaf-salad"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:dish",
+   "name": "Dish",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:edemame-and-charred-corn-with-sesame-oil",
+   "name": "Brocolie, Edemame With Black Rice Vinegar And Toasted Sesame",
+   "category": "Salad",
+   "subcategory": "Starch",
+   "tags": [
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:fattoush-chopped-salad-croutons-seperarte-need-to-buoild-on-site",
+   "name": "Fattoush Chopped Salad /Croutons Seperarte Need To Buoild On Site",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:fattoush-pitta-shards-sumac-and-pomegranate",
+   "name": "Fattoush, Pitta Shards, Sumac And Pomegranate",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:flat-bread",
+   "name": "Flat Bread",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:bread"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:four-bean-chilli-loaded-swet-potato",
+   "name": "Four Bean Chilli Loaded Swet Potato",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:franconian-beef-hotdog-with-brioche-bun",
+   "name": "Franconian Beef Hotdog With Brioche Bun",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:beef"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:franconian-chicago-style-smoked-beef-sausage",
+   "name": "Franconian Chicago Style Smoked Beef Sausage",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:smoked",
+    "dish-tag:type:beef"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:fresh-parlsey",
+   "name": "Fresh Parlsey",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:fresh-raw"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:fried-bbq-spiced-cauliflower-wings",
+   "name": "Fried Bbq Spiced Cauliflower Wings",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:bbq",
+    "dish-tag:style:fried",
+    "dish-tag:style:spiced",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:fried-plantain",
+   "name": "Fried Plantain",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:fried"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:goa-style-potato-cauliflower-and-spinach-balti-curry",
+   "name": "Goa Style Potato Cauliflower And Spinach Balti Curry",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:gouchougang-ketchup",
+   "name": "Gouchougang Ketchup",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:green-curry-spiced-chickpea-with-fresh-coriander",
+   "name": "Green Curry Spiced Chickpea With Fresh Coriander",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:fresh-raw",
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:grilled-halloumi-roasted-peppers-with-basil-almond-pesto",
+   "name": "Grilled Halloumi & Roasted Peppers With Basil & Almond Pesto",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:italian",
+    "dish-tag:style:grilled-charred",
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:guacamole-for-sweet-potato-",
+   "name": "Harissa Mayo(For Sweet Potato)",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:style:spiced",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:heritage-potatoes-nut-butter-and-chives",
+   "name": "Heritage Potatoes Nut Butter And Chives",
+   "category": "Salad",
+   "subcategory": "Starch",
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:heritage-tabbouleh-with-sicilion-lemmon-oil-heritage-tomatos",
+   "name": "Heritage Tabbouleh With Sicilion Lemmon Oil, Heritage Tomatos",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:heritage-tomatorocket-and-toasted-seeds",
+   "name": "Heritage Tomatorocket And Toasted Seeds",
+   "category": "Salad",
+   "subcategory": "Leaf",
+   "tags": [
+    "dish-tag:type:leaf-salad"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:hoi-sin-with-sechuan-pepper",
+   "name": "Hoi Sin With Sechuan Pepper",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:honey-roasted-carrots-cumin-kent-cobnuts",
+   "name": "Honey Roasted Carrots, Cumin & Kent Cobnuts",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:hot-honey-grated-carrot",
+   "name": "Hot Honey Grated Carrot",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:katsu-curry-sauce",
+   "name": "Katsu Curry Sauce",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:kimchi",
+   "name": "Kimchi",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:korean"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:kimchi-slaw",
+   "name": "Kimchi Slaw",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:korean",
+    "dish-tag:type:slaw"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:korma-sauce",
+   "name": "Korma Sauce",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:lamb-kofta-charcoal-grilled-with-cumin-paprika-",
+   "name": "Lamb Kofta, Charcoal-Grilled With Cumin & Paprika,",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:grilled-charred"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:lamb-korma-toasted-cocnut-and-coconut-milk",
+   "name": "Lamb Korma, Toasted Cocnut And Coconut Milk",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:lamb-rogan-josh",
+   "name": "Potato, Chickpea & Baby Spinach Rogan Josh",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:lemon-tahini",
+   "name": "Lemon Tahini",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:lentil-and-bean-chilli",
+   "name": "Lentil And Bean Chilli",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:lime-and-coriander-sour-cream",
+   "name": "Lime And Coriander Sour Cream",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:mac-and-cheese-croquette-bites",
+   "name": "Mac And Cheese Croquette Bites",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:madras-spiced-pickled-pink-opnions",
+   "name": "Madras Spiced Pickled Pink Opnions",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:indian",
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:mango-chutney",
+   "name": "Mango chutney",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:minestronie",
+   "name": "Minestronie",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:mini-spring-rolls",
+   "name": "Large Vegetable Spring Rolls",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:mixed-baby-leaf",
+   "name": "Mixed Baby Leaf",
+   "category": "Salad",
+   "subcategory": "Leaf",
+   "tags": [
+    "dish-tag:type:leaf-salad"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 110 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:mixed-chicken-breast",
+   "name": "Mixed Chicken Breast",
+   "category": "Cold Protein",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:mixed-fika-leaf-salad",
+   "name": "Mixed Fika Leaf Salad",
+   "category": "Salad",
+   "subcategory": "Leaf",
+   "tags": [
+    "dish-tag:type:leaf-salad"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 50 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:mixed-leaves",
+   "name": "Mixed Leaves",
+   "category": "Salad",
+   "subcategory": "Leaf",
+   "tags": [
+    "dish-tag:type:leaf-salad"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:moroccan-vegetables-lentil-soup",
+   "name": "Moroccan Vegetables & Lentil Soup",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:mustard-greens",
+   "name": "Mustard Greens",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:orzo-pasta-with-sundried-tomato-kalamata-olivesand-torn-basil",
+   "name": "Orzo Pasta With Sundried Tomato, Kalamata Olivesand Torn Basil",
+   "category": "Salad",
+   "subcategory": "Starch",
+   "tags": [
+    "dish-tag:cuisine:italian"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:pickled-cucumber",
+   "name": "Pickled Cucumber",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:pickled-onions",
+   "name": "Pickled Onions",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:pickled-shallots-capers",
+   "name": "Pickled Shallots & Capers",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:pickled-vegetables",
+   "name": "Pickled Vegetables",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:pineapple-scotch-bonnet-and-swetcorn-salsa",
+   "name": "Pineapple, Scotch Bonnet And Swetcorn Salsa",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:poppodoms",
+   "name": "Poppodoms",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:potato-gnocchi",
+   "name": "Potato Gnocchi",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:italian",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:punjabi-samosa",
+   "name": "Punjabi Samosa",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:quinoa-chilli-roasted-courgette-aubergine-plant-based-feta",
+   "name": "Quinoa, Chilli Roasted Courgette, Aubergine, Plant Based Feta",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:cuisine:greek",
+    "dish-tag:style:roasted",
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:quinoa-citrus-mint-edamame-beans",
+   "name": "Quinoa, Citrus, Mint & Edamame Beans",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:cuisine:japanese",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:quinoa-red-kidney-bean-and-baby-spinach",
+   "name": "Quinoa, Red Kidney Bean And Baby Spinach",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:ras-el-hanout-lamb-shoulder-slow-braised-with-apricots",
+   "name": "Ras El Hanout Lamb Shoulder Slow Braised With Apricots",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:braised-stewed"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:ratatouille-tuscan-style",
+   "name": "Ratatouille Tuscan Style",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:french-inspired"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:ratatouille-with-white-beans",
+   "name": "Ratatouille With White Beans",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:french-inspired",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:rice-and-peas",
+   "name": "Rice And Peas",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:roast-carrot-edamame-bean-and-sesame-seaweed-salad",
+   "name": "Roasted Carrot, Edamame Bean & Sesame Seaweed Salad",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:cuisine:japanese",
+    "dish-tag:style:roasted",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:roast-new-potato-salad-with-herb-and-honey-mustard-dressing",
+   "name": "Roast New Potato Salad With Herb And Honey Mustard Dressing",
+   "category": "Salad",
+   "subcategory": "Starch",
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:roast-sweet-potato-charred-corn-red-peppers-and-baby-spinach",
+   "name": "Roast Sweet Potato, Charred Corn Red Peppers And Baby Spinach",
+   "category": "Salad",
+   "subcategory": "Starch",
+   "tags": [
+    "dish-tag:style:grilled-charred",
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:roasted-beetroot-with-yoghurt-pickled-shallots",
+   "name": "Roasted Beets Toasted Coconut And Picklked Shallot",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:roasted-carrot-with-harissa-kent-cobnuts",
+   "name": "Roasted Carrot With Harissa & Kent Cobnuts",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:style:roasted",
+    "dish-tag:style:spiced",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:roasted-carrott-edemame-bean-sesame-seaweed-salad",
+   "name": "Fika House Salad Leaf",
+   "category": "Salad",
+   "subcategory": "Leaf",
+   "tags": [
+    "dish-tag:type:leaf-salad"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:roasted-cauliflower-pomegranate-seeds-mint-yogurt",
+   "name": "Roasted Cauliflower, Pomegranate Seeds, Mint Yogurt",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:roasted-courgette-mint-pesto-toasted-pinenuts",
+   "name": "Roasted Courgette, Mint Pesto Toasted Pinenuts",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:cuisine:italian",
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 100 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:roasted-mediterranean-soup",
+   "name": "Roasted Mediterranean Soup",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:roasted-summer-squash-kale-butterbean",
+   "name": "Roasted Summer Squash Shredded Kale And Butterbean",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:salsa-verde",
+   "name": "Salsa Verde",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:shredded-kale-ceaser-with-all-the-trimmings",
+   "name": "Shredded Kale Ceaser With All The Trimmings",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 90 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:shredded-little-gem-and-rocket-salad",
+   "name": "Shredded Little Gem And Rocket Salad",
+   "category": "Salad",
+   "subcategory": "Leaf",
+   "tags": [
+    "dish-tag:type:leaf-salad"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 80 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:shredded-smoked-chicken-with-tahini-toasted-sesame",
+   "name": "Shredded Smoked Chicken With Tahini, Toasted Sesame",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:style:smoked",
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:siracha-mayonaise",
+   "name": "Siracha Mayonnaise",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:sliced-red-chilli",
+   "name": "Sliced Red Chilli",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:smoked-chicken-pulled-prok-lemongrass-galangaal-kaffir-lime-broth",
+   "name": "Smoked Chicken / Pulled Prok, Lemongrass, Galangaal & Kaffir Lime Broth",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:thai",
+    "dish-tag:style:braised-stewed",
+    "dish-tag:style:smoked",
+    "dish-tag:type:chicken"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:smoked-chickpea-salad-tomatoes-wilted-greens-harissa",
+   "name": "Smoked Chickpea Salad, Tomatoes, Wilted Greens, Harissa",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired",
+    "dish-tag:style:smoked",
+    "dish-tag:style:spiced",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:smoked-paprika-and-garlic-potato-wedges",
+   "name": "Smoked Paprika And Garlic Potato Wedges",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:smoked",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:smokey-paprika-and-garlic-roasted-new-potatos",
+   "name": "Smokey Paprika And Garlic Roasted New Potatos",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:style:smoked",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:spiced-beef-kofta",
+   "name": "Spiced Lamb Kofta",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:spiced"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:spicy-bbq-vegan-pieces",
+   "name": "Spicy Bbq Vegan Pieces",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:bbq"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:spicy-corn-chowder",
+   "name": "Spicy Corn Chowder",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:spicy-lentil-chill-with-roasted-peppers",
+   "name": "Spicy Lentil Chill With Roasted Peppers",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:steak-and-harveys-ale-pie",
+   "name": "Steak And Harveys Ale Pie",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:steamed-bao-bun",
+   "name": "Steamed Bao Bun",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:steamed-brocolli-with-olive-oil-toasted-almonds",
+   "name": "Steamed Brocolli With Olive Oil & Toasted Almonds",
+   "category": "Salad",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:sticky-bbq-sauce",
+   "name": "Sticky Bbq Sauce",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:bbq"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:sumac-butter",
+   "name": "Sumac Butter",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:sweet-potato-and-cumin-soup",
+   "name": "Sweet Potato And Cumin Soup",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:sweetcorn-shredded-fennel-and-tomato-dressing",
+   "name": "Shredded Fennel & Gorgonzola & Orange Dressing",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [
+    "FZ-003"
+   ],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic",
+    "member of fuzzy-match cluster: kept active, NOT merged"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:sylheti-beetroot-and-toasted-coconut-salad",
+   "name": "Sylheti Beetroot And Toasted Coconut Salad",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:taboon-flatbreads-with-noigella-and-geee",
+   "name": "Taboon Flatbreads With Noigella And Geee",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:bread"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:tahini-dressing",
+   "name": "Tahini Dressing",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:middle-eastern-inspired"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (1 entries, 25 portions): kept active"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:tandorie-marinated-diced-beef-with-balti-sauce",
+   "name": "Tandorie Marinated Diced Beef With Balti Sauce",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:beef"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:toasted-almonds",
+   "name": "toasted almonds",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": true,
+   "clusters": [
+    "EX-003"
+   ],
+   "rationale": [
+    "referenced by published 2-6 Nov v4 (2 entries, 130 portions): kept active",
+    "member of NEEDS-REVIEW exact-name cluster: kept active, NOT merged"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:tofu-mushrooms-and-cherry-tomato-spicy-tom-yum-broth",
+   "name": "Tofu, Mushrooms And Cherry Tomato, Spicy Tom Yum Broth",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:cuisine:thai"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:tomato-and-black-bean",
+   "name": "Tomato And Black Bean",
+   "category": "Soup",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:tomato-kale-broth-with-olive-oil",
+   "name": "Tomato & Kale Broth With Olive Oil",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:tonkatasu-roasted-aubergine",
+   "name": "Tonkatasu Roasted Aubergine",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:tonkatasu-sauce",
+   "name": "Tonkatasu Sauce",
+   "category": "Other",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:tumeric-roasted-cauliflower-grains-and-mustard-dressing",
+   "name": "Turmeric Roasted Cauliflower Grains And Mustard Dressing",
+   "category": "Salad",
+   "subcategory": "Grain/Pulse",
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:grain-pulse",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:tumeric-roasted-potato-rocket-and-spring-onions",
+   "name": "Turmeric Roasted Potato Rocket And Spring Onions",
+   "category": "Salad",
+   "subcategory": "Leaf",
+   "tags": [
+    "dish-tag:style:roasted",
+    "dish-tag:type:leaf-salad",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:udon-noodle-with-chinese-cabbage-coriander-ansd-sesame-pesto",
+   "name": "Udon Noodle With Chinese Cabbage, Coriander Ansd Sesame Pesto",
+   "category": "Salad",
+   "subcategory": "Veg",
+   "tags": [
+    "dish-tag:cuisine:chinese",
+    "dish-tag:cuisine:italian",
+    "dish-tag:type:vegetable-side"
+   ],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:vegan-burger",
+   "name": "Vegan Burger",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:vegan-frankfurter-with-pretzel-vegan-bun",
+   "name": "Franconian Vegan Frankfurter",
+   "category": "Hot Main",
+   "subcategory": null,
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic"
+   ]
+  },
+  {
+   "id": "menu-item:rolling:wild-rockett-balsamic-shallot-dressing",
+   "name": "Wild Rockett, Balsamic & Shallot Dressing",
+   "category": "Salad",
+   "subcategory": "Leaf",
+   "tags": [],
+   "sourceStore": "staging-export-20261101T214943Z (tags/subtypes from 30 Oct upgrade)",
+   "referencedByPublishedV4": false,
+   "clusters": [
+    "FZ-004"
+   ],
+   "rationale": [
+    "active in staging and production V1; not test/synthetic",
+    "member of fuzzy-match cluster: kept active, NOT merged"
+   ]
+  }
+ ]
+}
