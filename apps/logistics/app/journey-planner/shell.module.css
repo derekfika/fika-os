@@ -113,13 +113,17 @@
 .previewTag { position: fixed; z-index: 60; left: 12px; bottom: 10px; padding: 5px 11px; border: 1px solid var(--jp-line-strong); border-radius: 999px; background: var(--fika-surface-card); color: var(--jp-ink-2); font-size: 12px; font-weight: 600; box-shadow: var(--shadow-sm); }
 
 /* The classic details inspector (queue item / stop / load) reused as the docked column. */
-.body > :global(.mock-inspector) { position: sticky; top: 0; width: var(--jp-inspector-w); height: calc(100dvh - var(--jp-header-h)); box-shadow: none; z-index: 20; }
+.body > :global(.mock-inspector) { position: sticky; top: 0; box-sizing: border-box; width: var(--jp-inspector-w); max-width: 100vw; height: calc(100dvh - var(--jp-header-h)); max-height: calc(100dvh - var(--jp-header-h)); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; box-shadow: none; z-index: 20; }
+/* Keyboard focus is always visible inside the legacy details inspector (queue item / stop / load), on the Style Guide focus token. */
+.body > :global(.mock-inspector) :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
 .body > :global(.mock-inspector) > header { top: -20px; }
 
 /* Narrow desktop: the docked inspector becomes a drawer so the timeline keeps a usable width. */
 @media (max-width: 1099px) {
   .body[data-inspector="open"] { grid-template-columns: minmax(0, 1fr); }
   .body[data-inspector="open"] .workspace { padding-right: var(--jp-gutter); }
+  /* Below the docked breakpoint the inspector is a right overlay drawer: it leaves the grid, so it can never land under the planner. */
+  .body > :global(.mock-inspector) { position: fixed; top: 0; right: 0; bottom: 0; left: auto; width: min(var(--jp-inspector-w), 92vw); height: 100dvh; max-height: 100dvh; z-index: 60; box-shadow: -15px 0 30px rgba(40, 15, 140, .16); }
 }
 @media (max-width: 1199px) {
   .toolbar { margin-left: 0; }
