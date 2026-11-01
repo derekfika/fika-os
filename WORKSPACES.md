@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-01T01:25:11.826Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-01T03:44:11.655Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -97,6 +97,7 @@ Snapshot: 2026-11-01T01:25:11.826Z. The local governed registry remains authorit
 | iss-017-cpu-week-date-nav-2 | haiku-iss-017 | apps/cpu-production, CHANGELOG.md | codex/iss-017-cpu-week-date-nav-2 | — | finished | 2026-10-26T16:25:54.912Z |
 | iss-017-cpu-week-date-nav | haiku-iss-017 | apps/cpu-production | codex/iss-017-cpu-week-date-nav | [#63](https://github.com/derekfika/fika-os/pull/63) | finished | 2026-10-26T16:01:27.547Z |
 | iss-017-week-date-sync | haiku-iss-017-followup | apps/cpu-production, CHANGELOG.md | codex/iss-017-week-date-sync | [#64](https://github.com/derekfika/fika-os/pull/64) | finished | 2026-10-26T17:13:29.381Z |
+| issue-156-active-order-count | issue156_filter_count_fix | apps/cpu-production/app/page.tsx, apps/cpu-production/tests/production-view-filters.test.ts | codex/issue-156-active-order-count | [#230](https://github.com/derekfika/fika-os/pull/230) | retired | 2026-11-01T03:44:08.729Z |
 | issue-175-cfc-mr-visibility | luna-175-cfc-mr | apps/hospitality-booking, apps/integration-hub/app/api/bookings/mnk/route.ts, apps/integration-hub/app/api/hospitality-catalogue/portal-site/route.ts, apps/integration-hub/lib/hospitality-booking-service.ts, apps/integration-hub/lib/hospitality-service-layout.ts, apps/integration-hub/lib/mnk-booking-catalogue.ts, apps/integration-hub/lib/hospitality-provider-mapping.ts, apps/integration-hub/tests/rcoa-booking-ingestion.test.ts, apps/integration-hub/tests/hospitality-portal-site-resolution.test.ts | codex/issue-175-cfc-mr-visibility | [#224](https://github.com/derekfika/fika-os/pull/224) | active | 2026-10-31T21:57:14.920Z |
 | issue-175-rcoa-visibility | codex-sol-175-rcoa | apps/hospitality-booking, apps/integration-hub/app/api/bookings/mnk/route.ts, apps/integration-hub/lib/hospitality-booking-service.ts, apps/integration-hub/lib/hospitality-service-layout.ts, apps/integration-hub/tests/rcoa-booking-ingestion.test.ts | codex/issue-175-rcoa-visibility | [#223](https://github.com/derekfika/fika-os/pull/223) | finished | 2026-10-31T21:25:04.401Z |
 | issue-186-copy-target-feedback-sunday | luna-issue186-copy-feedback-sun | apps/menu-planning/app/week-planner.tsx, apps/menu-planning/lib/dish-copy.ts, apps/menu-planning/lib/planner-cell-menu.ts, apps/menu-planning/tests/dish-copy.test.ts, apps/menu-planning/tests/planner-cell-menu.test.ts | codex/issue-186-copy-target-feedback-sunday | [#227](https://github.com/derekfika/fika-os/pull/227) | finished | 2026-11-01T01:02:01.638Z |
@@ -138,6 +139,7 @@ Snapshot: 2026-11-01T01:25:11.826Z. The local governed registry remains authorit
 | logistics-scheduler-oidc | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-scheduler-oidc | [#88](https://github.com/derekfika/fika-os/pull/88) | finished | 2026-10-27T18:46:05.235Z |
 | logistics-source-provenance | logistics-inspector | apps/logistics, CHANGELOG.md | codex/logistics-source-provenance | — | finished | 2026-10-27T13:35:39.610Z |
 | logistics-staging-menu-url | uat-20261025-1150 | apps/logistics/apphosting.yaml, CHANGELOG.md | codex/logistics-staging-menu-url | [#52](https://github.com/derekfika/fika-os/pull/52) | finished | 2026-10-25T18:29:13.049Z |
+| logistics-staging-push-guard | claude-181-push | apps/logistics/lib/push-config.ts, apps/logistics/lib/driver-push.ts, apps/logistics/app/api/logistics/driver-notifications/process/route.ts, apps/logistics/app/api/logistics/driver-notifications/push/route.ts, apps/logistics/tests/driver-push.test.cjs, apps/logistics/tests/driver-push-android.test.cjs, apps/logistics/tests/driver-push-staging-guard.test.cjs, apps/logistics/tests/driver-notifications-api.test.cjs | codex/logistics-staging-push-guard | [#229](https://github.com/derekfika/fika-os/pull/229) | active | 2026-11-01T02:41:37.655Z |
 | logistics-stop-list-spacing | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-stop-list-spacing | [#85](https://github.com/derekfika/fika-os/pull/85) | finished | 2026-10-27T15:08:31.895Z |
 | logistics-tablet-overflow-fix | luna-logistics-tablet-fix | apps/logistics/app/journey-planner/shell.module.css, apps/logistics/app/journey-planner/timeline.module.css, apps/logistics/tests/e2e/journey-planner-v3-van-lanes.spec.ts | codex/logistics-tablet-overflow-fix | [#170](https://github.com/derekfika/fika-os/pull/170) | retired | 2026-10-30T10:18:53.548Z |
 | logistics-tablet-regression-successor | luna-logistics-tablet-tests | apps/logistics/tests/e2e/journey-planner-v3-van-lanes.spec.ts | codex/logistics-tablet-regression-successor | [#172](https://github.com/derekfika/fika-os/pull/172) | retired | 2026-10-30T10:54:25.528Z |
@@ -210,6 +212,7 @@ Snapshot: 2026-11-01T01:25:11.826Z. The local governed registry remains authorit
 | staging-release-manager-5 | claude-staging-release | docs/deployment/staging-release-scoreboard-3.md | codex/staging-release-manager-5 | — | retired | 2026-10-31T14:42:52.344Z |
 | staging-release-manager-6 | claude-staging-release | docs/deployment/staging-release-scoreboard-4.md | codex/staging-release-manager-6 | — | retired | 2026-10-31T14:54:49.933Z |
 | staging-release-manager-7 | claude-staging-release | docs/deployment/staging-release-scoreboard-5.md | codex/staging-release-manager-7 | — | retired | 2026-10-31T21:38:08.370Z |
+| staging-release-manager-8 | claude-staging-release | docs/deployment/staging-release-scoreboard-6.md | codex/staging-release-manager-8 | — | retired | 2026-11-01T02:03:18.793Z |
 | staging-release-manager | claude-staging-release | docs/deployment/staging-release-scoreboard.md | codex/staging-release-manager | — | finished | 2026-10-31T07:45:44.895Z |
 | standing-orders-pr14-sync | codex-standing-orders-pr14-sync | apps/delivered-in, apps/integration-hub, docs/deployment, CHANGELOG.md | codex/standing-orders-pr14-sync | — | finished | 2026-10-23T12:09:58.445Z |
 | uat-blocker-checkpoint | uat-20261025-1150 | CHANGELOG.md | codex/uat-blocker-checkpoint | [#45](https://github.com/derekfika/fika-os/pull/45) | retired | 2026-10-25T12:49:14.064Z |
