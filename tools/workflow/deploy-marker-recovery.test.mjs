@@ -32,7 +32,7 @@ function ledger(f, app, environment, entries) {
 const standardLedger = (f, overrides = {}) => ledger(f, 'hub', 'staging', overrides.entries || [
   { seconds: -86400, record: { kind: 'baseline', sourceSha: SHA.c } },
   { seconds: 10, record: { kind: 'intent', state: 'PENDING', sourceSha: SHA.a, releaseId: 'r-a' } },
-  { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.b, releaseId: 'r-b' } },
+  { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.a, releaseId: 'r-a' } },
 ]);
 
 function snapshot() {
@@ -69,10 +69,11 @@ test('happy path: preview is read-only; execution needs the approve-hash, audits
 
   const preview = recoverDeployOperation(id, { reason: REASON }, deps);
   assert.equal(preview.dryRun, true);
-  assert.equal(preview.evidence.app, 'hub');
-  assert.equal(preview.evidence.environment, 'staging');
-  assert.equal(preview.evidence.intent.sourceSha, SHA.a);
-  assert.equal(preview.evidence.supersedingDeploy.sourceSha, SHA.b);
+  assert.equal(preview.evidence.intents.length, 1);
+  assert.equal(preview.evidence.intents[0].app, 'hub');
+  assert.equal(preview.evidence.intents[0].environment, 'staging');
+  assert.equal(preview.evidence.intents[0].intent.releaseId, 'r-a');
+  assert.equal(preview.evidence.intents[0].terminal.kind, 'deploy');
   assert.match(preview.approveHash, /^[a-f0-9]{64}$/);
   assert.equal(preview.lease.workspace, 'staging-release-manager-3');
   assert.deepEqual(snapshot(), before, 'preview must not modify state');
@@ -82,8 +83,8 @@ test('happy path: preview is read-only; execution needs the approve-hash, audits
   assert.equal(audit.actor.login, 'fixture-admin');
   assert.equal(audit.reason, REASON);
   assert.deepEqual(audit.operation, marker);
-  assert.equal(audit.ledgerShas.intent, preview.evidence.intent.commit);
-  assert.equal(audit.ledgerShas.supersedingDeploy, preview.evidence.supersedingDeploy.commit);
+  assert.deepEqual(audit.ledgerShas.intents, [preview.evidence.intents[0].intent.commit]);
+  assert.deepEqual(audit.ledgerShas.terminals, [preview.evidence.intents[0].terminal.commit]);
   assert.equal(executed.archived, path.join(stateDir(), 'workspace-operations-archive', `${id}.json`));
   assert.equal(existsSync(file), false);
   assert.deepEqual(JSON.parse(readFileSync(executed.archived)), marker);
@@ -135,81 +136,103 @@ test('a marker that does not match the registry lease is refused', () => run(asy
   assert.ok(existsSync(file));
 }));
 
+const BASE = { seconds: -86400, record: { kind: 'baseline', sourceSha: SHA.c } };
+const hubIntent = { seconds: 10, record: { kind: 'intent', sourceSha: SHA.a, releaseId: 'r-a' } };
+const hubDone = { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.a, releaseId: 'r-a' } };
+const hospitalityLedger = (f, entries) => ledger(f, 'hospitality', 'staging', entries || [BASE,
+  { seconds: 43, record: { kind: 'intent', sourceSha: SHA.a, releaseId: 'r-h' } },
+  { seconds: 7200, record: { kind: 'deploy', sourceSha: SHA.a, releaseId: 'r-h' } }]);
+
 test('no candidate intent: absent ledgers, or intents outside the 120s window, are refused', () => run(async f => {
   const { id } = setup(f);
   assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /No release intent/);
-  standardLedger(f, { entries: [
-    { seconds: -86400, record: { kind: 'baseline', sourceSha: SHA.c } },
+  standardLedger(f, { entries: [BASE,
     { seconds: -5, record: { kind: 'intent', sourceSha: SHA.a, releaseId: 'r-early' } },
     { seconds: 300, record: { kind: 'intent', sourceSha: SHA.a, releaseId: 'r-late' } },
-    { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.b, releaseId: 'r-b' } },
-  ] });
+    { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.b, releaseId: 'r-b' } }] });
   assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /No release intent/);
 }));
 
-test('multiple candidate intents (same ledger or another app) are ambiguous', () => run(async f => {
-  const { id } = setup(f);
-  standardLedger(f, { entries: [
-    { seconds: -86400, record: { kind: 'baseline', sourceSha: SHA.c } },
-    { seconds: 10, record: { kind: 'intent', sourceSha: SHA.a, releaseId: 'r-1' } },
-    { seconds: 50, record: { kind: 'intent', sourceSha: SHA.a, releaseId: 'r-2' } },
-    { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.b, releaseId: 'r-b' } },
-  ] });
-  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /Ambiguous: 2/);
-}));
-
-test('an intent on another app within the window makes the evidence ambiguous', () => run(async f => {
-  const { id } = setup(f);
-  standardLedger(f);
-  ledger(f, 'logistics', 'staging', [
-    { seconds: -86400, record: { kind: 'baseline', sourceSha: SHA.c } },
-    { seconds: 30, record: { kind: 'intent', sourceSha: SHA.a, releaseId: 'r-l' } },
-    { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.b, releaseId: 'r-lb' } },
-  ]);
-  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /Ambiguous: 2/);
-}));
-
-test('an intent that is not superseded by a completed deploy is refused', () => run(async f => {
-  const { id } = setup(f);
-  const base = { seconds: -86400, record: { kind: 'baseline', sourceSha: SHA.c } };
-  const intent = { seconds: 10, record: { kind: 'intent', sourceSha: SHA.a, releaseId: 'r-a' } };
-  const cases = [
-    [[base, intent], /still the head|pending/],
-    [[base, intent, { seconds: 3600, record: { kind: 'intent', sourceSha: SHA.b, releaseId: 'r-b' } }], /newer release intent is pending/],
-    [[base, intent, { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.a, releaseId: 'r-a' } }], /completed deploy record/],
-    [[base, intent, { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.b, releaseId: 'r-a' } }], /completed deploy record/],
-    [[base, intent, { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.b, releaseId: 'r-b' } }, { seconds: 7200, record: { kind: 'deploy', sourceSha: SHA.a, releaseId: 'r-x' } }], /completed deploy record/],
-    [[base, intent, { seconds: 3600, record: { kind: 'rollback', sourceSha: SHA.b, releaseId: 'r-b' } }], /No later completed deploy/],
-    [[base, intent, { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.b, releaseId: 'r-b', app: 'menu' } }], /different app/],
-  ];
-  for (const [entries, message] of cases) {
-    standardLedger(f, { entries });
-    assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), message);
-  }
-}));
-
-test('a live release lock or pending journal for that app/environment is never overridden', () => run(async f => {
-  standardLedger(f);
+test('real-case shape: hub intent completed much later plus a hospitality intent in the window, both terminal, is recoverable', () => run(async f => {
   const { id, file } = setup(f);
-  const lockFile = path.join(stateDir(), 'release-hub-staging.lock');
+  standardLedger(f, { entries: [BASE, hubIntent,
+    { seconds: 1800, record: { kind: 'deploy', sourceSha: SHA.b, releaseId: 'r-other' } }, hubDone] });
+  hospitalityLedger(f);
+  const preview = recoverDeployOperation(id, { reason: REASON }, deps);
+  assert.deepEqual(preview.evidence.intents.map(i => i.app).sort(), ['hospitality', 'hub']);
+  for (const item of preview.evidence.intents) {
+    assert.equal(item.intent.releaseId, item.terminal.releaseId);
+    assert.equal(item.terminal.kind, 'deploy');
+    assert.match(item.terminal.commit, /^[a-f0-9]{40}$/);
+  }
+  assert.equal(preview.evidence.ledgerHeads.length, 2);
+  const executed = recoverDeployOperation(id, { reason: REASON, execute: true, 'approve-hash': preview.approveHash }, deps);
+  assert.equal(executed.ledgerShas.terminals.length, 2);
+  assert.equal(existsSync(file), false);
+  assert.ok(existsSync(executed.archived));
+}));
+
+test('rollback and abandoned records are terminal; other record kinds are not', () => run(async f => {
+  const { id } = setup(f);
+  for (const kind of ['rollback', 'abandoned']) {
+    standardLedger(f, { entries: [BASE, hubIntent, { seconds: 3600, record: { kind, sourceSha: SHA.a, releaseId: 'r-a' } }] });
+    assert.equal(recoverDeployOperation(id, { reason: REASON }, deps).evidence.intents[0].terminal.kind, kind);
+  }
+  standardLedger(f, { entries: [BASE, hubIntent, { seconds: 3600, record: { kind: 'baseline', sourceSha: SHA.a, releaseId: 'r-a' } }] });
+  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /no terminal record/);
+}));
+
+test('any non-terminal intent in the window refuses', () => run(async f => {
+  const { id, file } = setup(f);
+  standardLedger(f, { entries: [BASE, hubIntent, hubDone] });
+  // Second intent (hospitality) was never finished, but a different deploy of that app exists later.
+  hospitalityLedger(f, [BASE,
+    { seconds: 43, record: { kind: 'intent', sourceSha: SHA.a, releaseId: 'r-h' } },
+    { seconds: 7200, record: { kind: 'deploy', sourceSha: SHA.b, releaseId: 'r-other' } }]);
+  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /hospitality staging, release r-h\) has no terminal record/);
+  // A terminal record with a different releaseId is not proof for this intent.
+  standardLedger(f, { entries: [BASE, hubIntent, { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.a, releaseId: 'r-wrong' } }] });
+  hospitalityLedger(f);
+  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /hub staging, release r-a\) has no terminal record/);
+  // An intent without a releaseId cannot be proven finished.
+  standardLedger(f, { entries: [BASE, { seconds: 10, record: { kind: 'intent', sourceSha: SHA.a } }, hubDone] });
+  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /no releaseId/);
+  // A later record naming a different app is never trusted.
+  standardLedger(f, { entries: [BASE, hubIntent, { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.a, releaseId: 'r-a', app: 'menu' } }] });
+  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /different app/);
+  assert.ok(existsSync(file));
+}));
+
+test('a pending intent at the head of ANY ledger (even outside the window or another environment) refuses', () => run(async f => {
+  const { id } = setup(f);
+  standardLedger(f, { entries: [BASE, hubIntent, hubDone] });
+  ledger(f, 'logistics', 'prod', [BASE, { seconds: 86400, record: { kind: 'intent', sourceSha: SHA.b, releaseId: 'r-l' } }]);
+  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /logistics.*head is a pending intent/);
+  standardLedger(f, { entries: [BASE, hubDone, hubIntent] }); // hub's own head is an intent
+  ledger(f, 'logistics', 'prod', [BASE]);
+  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /hub.*head is a pending intent/);
+}));
+
+test('any release lock or non-completed/unreadable journal on any app/environment is never overridden', () => run(async f => {
+  standardLedger(f, { entries: [BASE, hubIntent, hubDone] });
+  const { id, file } = setup(f);
+  const lockFile = path.join(stateDir(), 'release-menu-prod.lock');
   writeFileSync(lockFile, '');
   assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /release lock exists.*fika reconcile/);
   assert.ok(existsSync(lockFile), 'lock is never broken');
   execFileSync(process.execPath, ['-e', `require('fs').unlinkSync(${JSON.stringify(lockFile)})`]);
-  const journal = path.join(stateDir(), 'release-hub-staging.json');
+  const journal = path.join(stateDir(), 'release-cpu-staging.json');
   writeFileSync(journal, JSON.stringify({ state: 'submitted' }));
-  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /pending release journal.*fika reconcile/);
+  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /non-completed release journal.*fika reconcile/);
   writeFileSync(journal, '{broken');
   assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /unreadable/);
-  // Controls for other app/environment pairs are unrelated.
   writeFileSync(journal, JSON.stringify({ state: 'completed' }));
-  writeFileSync(path.join(stateDir(), 'release-menu-prod.json'), JSON.stringify({ state: 'submitted' }));
   assert.ok(recoverDeployOperation(id, { reason: REASON }, deps).approveHash);
   assert.ok(existsSync(file));
 }));
 
-test('a wrong approve-hash changes nothing; replay is idempotent and an interrupted run resumes', () => run(async f => {
-  standardLedger(f);
+test('a wrong approve-hash changes nothing; an interrupted run resumes with an appended entry; replay is idempotent', () => run(async f => {
+  standardLedger(f, { entries: [BASE, hubIntent, hubDone] });
   const { id, file, marker } = setup(f);
   const { approveHash } = recoverDeployOperation(id, { reason: REASON }, deps);
   const before = snapshot();
@@ -218,9 +241,14 @@ test('a wrong approve-hash changes nothing; replay is idempotent and an interrup
 
   // Simulate a crash after the audit was written but before the marker was moved.
   const auditFile = path.join(stateDir(), 'workspace-audit', `deploy-recovery-${id}.json`);
-  save(auditFile, { schema: 'fika.deploy-marker-recovery.v1', at: '2026-11-01T00:00:00.000Z', actor: { login: 'earlier' }, reason: 'earlier run', operation: marker });
-  const resumed = recoverDeployOperation(id, { reason: REASON, execute: true, 'approve-hash': approveHash }, deps);
-  assert.equal(resumed.actor.login, 'earlier', 'the original audit event is preserved');
+  save(auditFile, { schema: 'fika.deploy-marker-recovery.v2', at: '2026-11-01T00:00:00.000Z', actor: { login: 'earlier' }, reason: 'earlier run', operation: marker });
+  const resumed = recoverDeployOperation(id, { reason: `${REASON} (resume)`, execute: true, 'approve-hash': approveHash }, { ...deps, authorize: () => ({ login: 'second-admin', administrator: true }) });
+  assert.equal(resumed.actor.login, 'earlier', 'the original event is preserved');
+  assert.equal(resumed.resumes.length, 1);
+  assert.equal(resumed.resumes[0].actor.login, 'second-admin');
+  assert.equal(resumed.resumes[0].reason, `${REASON} (resume)`);
+  assert.equal(resumed.resumes[0].approveHash, approveHash);
+  assert.deepEqual(JSON.parse(readFileSync(auditFile)).resumes, resumed.resumes);
   assert.equal(existsSync(file), false);
 
   const afterFirst = snapshot();
@@ -231,7 +259,7 @@ test('a wrong approve-hash changes nothing; replay is idempotent and an interrup
 }));
 
 test('an existing archive is never overwritten', () => run(async f => {
-  standardLedger(f);
+  standardLedger(f, { entries: [BASE, hubIntent, hubDone] });
   const { id, file } = setup(f);
   const { approveHash } = recoverDeployOperation(id, { reason: REASON }, deps);
   const archive = path.join(stateDir(), 'workspace-operations-archive', `${id}.json`);
