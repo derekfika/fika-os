@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-01T07:20:16.900Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-01T07:34:36.972Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -111,6 +111,7 @@ Snapshot: 2026-11-01T07:20:16.900Z. The local governed registry remains authorit
 | issue-221-rotations-ui | codex-issue-221 | apps/menu-planning/app/rotations | codex/issue-221-rotations-ui | [#222](https://github.com/derekfika/fika-os/pull/222) | active | 2026-10-31T20:03:12.022Z |
 | issue-225-no-key-allergens-sunday | claude-225-no-key-sun | apps/cpu-production, apps/shared/allergen-declaration.ts, apps/shared/allergen-declaration.test.ts | codex/issue-225-no-key-allergens-sunday | [#228](https://github.com/derekfika/fika-os/pull/228) | retired | 2026-11-01T01:25:08.765Z |
 | issue-225-no-key-allergens | claude-225-no-key | apps/cpu-production, apps/shared/allergen-declaration.ts, apps/shared/allergen-declaration.test.ts | codex/issue-225-no-key-allergens | — | finished | 2026-10-31T23:53:47.126Z |
+| issue-235-display-label | luna-issue-235 | apps/menu-planning/lib/dish-display-name.ts, apps/menu-planning/app/week-planner.tsx, apps/menu-planning/app/catalogue-workspace.tsx, apps/menu-planning/tests/dish-display-name.test.ts, .changes/menu-planning/2026-11-01-issue-235.md | codex/issue-235-display-label | [#237](https://github.com/derekfika/fika-os/pull/237) | finished | 2026-11-01T07:34:29.872Z |
 | kafoodle-food-data-lib | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/api/food-data, apps/integration-hub/app/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/docs/food-data-library.md | codex/kafoodle-food-data-lib | — | finished | 2026-10-31T16:21:54.029Z |
 | kafoodle-food-data-v2 | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/api/food-data, apps/integration-hub/app/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/tests/food-data.test.ts, apps/integration-hub/docs/food-data-library.md | codex/kafoodle-food-data-v2 | [#212](https://github.com/derekfika/fika-os/pull/212) | retired | 2026-10-31T17:08:24.835Z |
 | kafoodle-food-data | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data | codex/kafoodle-food-data | — | retired | 2026-10-31T16:00:02.411Z |
