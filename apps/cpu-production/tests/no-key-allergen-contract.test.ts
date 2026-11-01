@@ -70,14 +70,23 @@ test("No Key Allergens survives Menu publication, Hub materialisation, CPU revie
   assert.deepEqual(packetItems.map(item => item.allergens.no_key_allergens), ["contains", "clear", "unrecorded"]);
 });
 
-test("explicit No Key state survives sparse source and CPU review rendering", async () => {
+test("explicit No Key state is a chef tick: never resolved from the named allergens, blank stays unverified, and the matrix exposes a labelled checkbox", async () => {
   assert.equal(resolveNoKeyAllergenState({ no_key_allergens: "contains" }), "contains");
   assert.equal(resolveNoKeyAllergenState({ milk: "clear" }), "unrecorded");
   assert.equal(resolveNoKeyAllergenState(undefined), "unrecorded");
   const source = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
-  assert.match(source, /resolveNoKeyAllergenState\(states\)/);
-  assert.match(source, /completeAllergenReviewMap\(states\)/);
+  assert.doesNotMatch(source, /resolveNoKeyAllergenState|completeAllergenReviewMap|deriveNoKeyAllergens/, "the CPU matrix never derives No Key");
+  assert.match(source, /classifyRowAllergens\(states\[row\.key\], ctxFor\(row\.key\)\)/);
   assert.match(source, /checkpointAllergenReviewRow/);
-  assert.match(source, /Explicit no key allergens/);
+  assert.match(source, /type="checkbox"/);
+  assert.match(source, /No Key Allergens<span className="cpu-allergen-sr-only"> for/);
+  assert.match(source, /aria-describedby=\{`\$\{inputId\}-status`\}/);
+  assert.match(await readFile(new URL("../app/ui/allergen-review.css", import.meta.url), "utf8"), /\.cpu-no-key-control\{[^}]*min-width:44px;min-height:44px/);
   assert.doesNotMatch(source, /namedAllergenPresent/);
+});
+
+test("a published No Key attestation (contains) is carried to the packet as recorded and an unrecorded row is not promoted", () => {
+  // The published/source value is evidence from its own domain; CPU never rewrites it into or out of No Key.
+  const items = buildCpuPacketItems([{ id: "m", sourceLineId: "l", name: "Blank", note: "", subItems: [{ id: "s", name: "Blank", quantity: 1, allergens: {}, note: "", evidenceStatus: "not_completed" }] }] as never, { lines: [] } as never);
+  assert.notEqual(items[0]?.allergens?.no_key_allergens, "contains");
 });

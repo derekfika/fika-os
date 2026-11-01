@@ -9,9 +9,10 @@ import type { PlannedMenuItem } from "../app/lib/production-plan";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const named = CANONICAL_ALLERGEN_KEYS.filter((key) => key !== "no_key_allergens");
-const explicit = (state: OperationalAllergenState = "clear") => Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map((key) => [key, key === "no_key_allergens" ? "contains" : state]));
+// Issue 225: No Key Allergens is a deliberate chef tick. `explicit("clear")` is a confirmed No Key row; a positive state records allergens, so No Key is clear.
+const explicit = (state: OperationalAllergenState = "clear") => Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map((key) => [key, key === "no_key_allergens" ? (state === "clear" ? "contains" : "clear") : state]));
 const partial = (recorded: string[], state: OperationalAllergenState = "contains") => Object.fromEntries(recorded.map((key) => [key, state]));
-const row = (id: string, name: string, allergens: Record<string, OperationalAllergenState>, evidenceStatus: "completed" | "not_completed" = "completed") => ({ id, name, quantity: null, allergens, note: "", evidenceStatus });
+const row = (id: string, name: string, allergens: Record<string, OperationalAllergenState>, evidenceStatus: "completed" | "not_completed" = "completed") => ({ id, name, quantity: null, allergens, note: "", evidenceStatus, ...(allergens.no_key_allergens === "contains" ? { noKeyDeclaration: { declared: true as const, declaredBy: "Chef A", declaredAt: "2026-10-24T11:00:00.000Z" } } : {}) });
 const item = (id: string, name: string, subItems: ReturnType<typeof row>[]): PlannedMenuItem => ({ id, name, note: "", subItems });
 
 // The shape of the UAT-20261018 Angel Court record: every row "Checked", several rows only partly recorded.
@@ -48,6 +49,20 @@ test("other blockers are reported too: no rows, unnamed items and rows, and unch
   assert.equal(allergenReviewProblems([]).length, 1);
 });
 
+test("a blank row is never complete, even when marked checked, and a legacy automatic No Key row is flagged rather than honoured", () => {
+  const blankChecked = [item("a", "Item", [row("a1", "Blank row", {}, "completed")])];
+  assert.deepEqual(allergenReviewProblems(blankChecked).map((problem) => problem.kind), ["row-blank"]);
+  assert.equal(isProductionPlanMatrixComplete(blankChecked), false);
+  assert.equal(effectiveProductionPlanStatus({ status: "planned", menuItems: blankChecked }), "planning");
+  const legacyAuto = { ...explicit("clear") } as Record<string, OperationalAllergenState>;
+  const legacy = [item("a", "Item", [{ id: "l1", name: "Old row", quantity: null, allergens: legacyAuto, note: "", evidenceStatus: "completed" as const }])];
+  assert.deepEqual(allergenReviewProblems(legacy).map((problem) => problem.kind), ["no-key-legacy"]);
+  // Deliberately NOT demoted by isProductionPlanMatrixComplete: stored legacy/signed plans keep their historical status. New planning and signing are blocked by allergenReviewProblems / the server.
+  assert.match(describeAllergenReviewProblem(allergenReviewProblems(blankChecked)[0]), /A blank row is never treated as allergen-free/);
+  const conflict = [item("a", "Item", [{ ...row("c1", "Conflict", { gluten: "contains", no_key_allergens: "contains" }, "completed") }])];
+  assert.deepEqual(allergenReviewProblems(conflict).map((problem) => problem.kind), ["no-key-conflict"]);
+});
+
 test("a fully recorded, checked matrix has no outstanding requirements and is complete", () => {
   const complete = [item("a", "Item", [row("a1", "Row", explicit("may_contain")), row("a2", "Row 2", explicit("clear"))])];
   assert.deepEqual(allergenReviewProblems(complete), []);
@@ -66,7 +81,8 @@ test("positive and may-contain evidence is preserved and unrecorded allergens ar
 
 test("Mark checked is the explicit row confirmation: white cells become Clear, Contains and May Contain are kept", () => {
   const component = read("../app/ui/HospitalityAllergenDetail.tsx");
-  assert.match(component, /const completion = confirmAllergenReviewMap\(sub\.allergens\);/);
+  assert.match(component, /const completion = confirmAllergenReviewMap\(sub\.allergens, rowContext\(sub\)\);/);
+  assert.match(component, /if \(completion\.blocked\)/, "a blank row is refused client-side as well as server-side");
   assert.doesNotMatch(component, /completeAllergenReviewMap\(sub\.allergens\)/);
   const confirmed = confirmAllergenReviewMap({ gluten: "contains", eggs: "contains", milk: "contains", sesame: "may_contain" }).states;
   assert.equal(confirmed.gluten, "contains");

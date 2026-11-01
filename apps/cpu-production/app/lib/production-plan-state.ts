@@ -1,5 +1,6 @@
 import { CANONICAL_ALLERGEN_COLUMNS, isCompleteOperationalAllergenMap } from "../../../shared/allergen-contract";
 import { unresolvedNamedAllergenKeys } from "./allergen-review-state";
+import { rowAttestation } from "./allergen-explicit";
 import type { PlanStatus, PlannedMenuItem, ProductionPlan } from "./production-plan";
 
 /** The current canonical matrix is complete only when every row is named, checked and fully recorded. */
@@ -28,7 +29,7 @@ export function mergeMissingProductionOrderLines(plan: ProductionPlan, orderId: 
     const current = item.sourceLineId ? sourceName.get(item.sourceLineId) : undefined;
     if (current === undefined) return item;
     if (item.sourceItemName === undefined || sameName(item.sourceItemName, current)) return item.sourceItemName === current ? item : { ...item, sourceItemName: current };
-    return { ...item, name: current, sourceItemName: current, subItems: item.subItems.map(({ allergenReview: _dropped, ...sub }) => ({ ...sub, allergens: {}, mayContainNotes: "", evidenceStatus: "not_completed" as const })) };
+    return { ...item, name: current, sourceItemName: current, subItems: item.subItems.map(({ allergenReview: _dropped, noKeyDeclaration: _droppedDeclaration, ...sub }) => ({ ...sub, allergens: {}, mayContainNotes: "", evidenceStatus: "not_completed" as const })) };
   });
   const changed = reconciled.some((item, index) => item !== plan.menuItems[index]);
   const base = changed ? { ...plan, menuItems: reconciled } : plan;
@@ -41,7 +42,7 @@ export type AllergenReviewProblem = {
   itemName: string;
   rowId?: string;
   rowName?: string;
-  kind: "no-rows" | "item-unnamed" | "row-unnamed" | "row-unchecked" | "allergens-not-recorded";
+  kind: "no-rows" | "item-unnamed" | "row-unnamed" | "row-unchecked" | "allergens-not-recorded" | "row-blank" | "no-key-legacy" | "no-key-conflict";
   allergens: string[];
 };
 
@@ -61,6 +62,12 @@ export function allergenReviewProblems(menuItems: PlannedMenuItem[]): AllergenRe
       const rowName = row.name.trim() || "Unnamed row";
       const base = { itemId: item.id, itemName, rowId: row.id, rowName };
       if (!row.name.trim()) problems.push({ ...base, kind: "row-unnamed", allergens: [] });
+      // A row with no allergen recorded and no deliberate No Key Allergens tick is unverified: it is never treated as allergen-free,
+      // whether or not it was previously marked checked. A legacy automatic No Key value is flagged for review, not honoured.
+      const attestation = rowAttestation(row);
+      if (attestation === "blank") { problems.push({ ...base, kind: "row-blank", allergens: [] }); continue; }
+      if (attestation === "legacy_unverified") { problems.push({ ...base, kind: "no-key-legacy", allergens: [] }); continue; }
+      if (attestation === "conflict") { problems.push({ ...base, kind: "no-key-conflict", allergens: [] }); continue; }
       // An unreviewed row has one requirement: the chef confirms it with Mark checked (white cells then become confirmed Clear).
       // Only a row already marked checked yet still holding unconfirmed allergens (legacy data) needs a fresh, explicit review.
       if (row.evidenceStatus !== "completed") { problems.push({ ...base, kind: "row-unchecked", allergens: [] }); continue; }
@@ -77,8 +84,11 @@ export function describeAllergenReviewProblem(problem: AllergenReviewProblem) {
     case "no-rows": return `${where}: add at least one row to review.`;
     case "item-unnamed": return `${where}: give the menu item a name.`;
     case "row-unnamed": return `${where}: name this row.`;
-    case "row-unchecked": return `${where}: review the row, then press Mark checked (empty allergens are recorded as Clear).`;
-    case "allergens-not-recorded": return `${where}: ${problem.allergens.length} allergen${problem.allergens.length === 1 ? " was" : "s were"} never confirmed (${problem.allergens.join(", ")}). Press Mark checked again to confirm the row; empty allergens are recorded as Clear.`;
+    case "row-unchecked": return `${where}: review the row, then press Mark checked (unticked allergens are recorded as Clear).`;
+    case "row-blank": return `${where}: not verified. Select the allergens it contains, or tick No Key Allergens if the chef confirms there are none. A blank row is never treated as allergen-free.`;
+    case "no-key-legacy": return `${where}: No Key Allergens was set automatically by an earlier version and has not been verified. Review the row, then select the allergens or tick No Key Allergens yourself.`;
+    case "no-key-conflict": return `${where}: No Key Allergens conflicts with recorded allergens. Untick one of them.`;
+    case "allergens-not-recorded": return `${where}: ${problem.allergens.length} allergen${problem.allergens.length === 1 ? " was" : "s were"} never confirmed (${problem.allergens.join(", ")}). Press Mark checked again to confirm the row; unticked allergens are recorded as Clear.`;
   }
 }
 

@@ -16,7 +16,7 @@ function linedOrder(canonicalId: string) {
 }
 
 function plan(orderId: string, status: ProductionPlan["status"] = "planning") {
-  return { id: `production-plan:${orderId}`, orderId, status, menuItems: [{ id: `${orderId}:menu`, sourceLineId: `${orderId}:line:1`, name: "Dish", note: "", subItems: [{ id: `${orderId}:sub`, name: "Dish", quantity: 1, allergens: Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(key => [key, "clear"])), note: "", evidenceStatus: "completed" }] }], updatedAt: "2026-08-29T10:00:00.000Z", updatedBy: "test", audit: [] } as unknown as ProductionPlan;
+  return { id: `production-plan:${orderId}`, orderId, status, menuItems: [{ id: `${orderId}:menu`, sourceLineId: `${orderId}:line:1`, name: "Dish", note: "", subItems: [{ id: `${orderId}:sub`, name: "Dish", quantity: 1, allergens: Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(key => [key, key === "no_key_allergens" ? "contains" : "clear"])), noKeyDeclaration: { declared: true, declaredBy: "Chef A", declaredAt: "2026-08-29T09:00:00.000Z" }, note: "", evidenceStatus: "completed" }] }], updatedAt: "2026-08-29T10:00:00.000Z", updatedBy: "test", audit: [] } as unknown as ProductionPlan;
 }
 
 const signedOrder = { canonicalId: "signed-order", origin: "menu_planning", destinationOplocId: "oploc:site", serviceDate: "2026-09-03", requiredBy: "2026-09-03T12:00:00Z", sourceEntityId: "menu-day:1", sourcePublicationId: "publication:1", sourcePublicationDayId: "publication-day:1", sourceVersion: 1, sourceContentHash: "a".repeat(64), lines: [{ canonicalId: "line:1" }] } as unknown as ProductionOrder;
@@ -118,4 +118,21 @@ test("review status keeps exact-lineage signatures visible while release materia
   assert.deepEqual(changed.signatureRoles, []);
   const superseded = reviewStatusForPlan(signedOrder.canonicalId, { ...plan(signedOrder.canonicalId, "planned"), menuItems: signedItems, signatures: [signature("production_chef")], currentAllergenRelease: { ...pendingRelease, status: "superseded" } } as unknown as ProductionPlan, signedOrder);
   assert.deepEqual(superseded.signatureRoles, []);
+});
+
+test("a legacy automatic No Key row and a blank row are never reported as reviewed or attested to Delivered-In", () => {
+  const base = plan("legacy", "planned");
+  const sub = base.menuItems[0].subItems[0] as unknown as Record<string, unknown>;
+  const legacy = { ...base, menuItems: [{ ...base.menuItems[0], subItems: [{ ...sub, noKeyDeclaration: undefined }] }] } as ProductionPlan;
+  const legacyStatus = reviewStatusForPlan("legacy", legacy, order("legacy"));
+  assert.equal(legacyStatus.reviewed, false);
+  assert.deepEqual(legacyStatus.completedSourceLineIds, []);
+  assert.equal(legacyStatus.matrixItems?.[0].attestation, "legacy_unverified");
+  const blank = { ...base, menuItems: [{ ...base.menuItems[0], subItems: [{ ...sub, allergens: {}, noKeyDeclaration: undefined, evidenceStatus: "completed" }] }] } as ProductionPlan;
+  const blankStatus = reviewStatusForPlan("blank", blank, order("blank"));
+  assert.equal(blankStatus.reviewed, false);
+  assert.equal(blankStatus.matrixItems?.[0].attestation, "blank");
+  const declared = reviewStatusForPlan("declared", base, order("declared"));
+  assert.equal(declared.reviewed, true);
+  assert.equal(declared.matrixItems?.[0].attestation, "declared");
 });

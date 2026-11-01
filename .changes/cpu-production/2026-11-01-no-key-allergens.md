@@ -1,0 +1,10 @@
+# 2026-11-01 — CPU Allergen Checker: No Key Allergens is a manual chef attestation (issue 225)
+
+P0 food safety. "No Key Allergens" was derived automatically when every named allergen was clear, so a blank row could pass planning and sign-off as allergen-free. It is now a deliberate chef tick (a checkbox in the Delivered-In matrix and the Hospitality allergen detail). Ticking it clears named allergens; selecting any allergen withdraws it; removing the last allergen returns the row to blank, never to No Key. A blank row is unverified: the server demotes it, and mark-planned and both signing paths reject it with 422 `CPU_ALLERGEN_ROW_UNVERIFIED`. The server discards any client-supplied review or declaration record and stamps the authenticated actor and time. Legacy rows that only hold a derived No Key value are preserved verbatim when re-sent, shown as "Legacy No Key (unverified, review needed)", never converted into a declaration, and cannot be planned or signed until a chef acts. Delivered-In review status no longer reports such rows as reviewed and exposes a per-row `attestation`. Named CONTAINS / MAY_CONTAIN are always preserved; signed-release revocation after a material change is unchanged. Shared helper `apps/shared/allergen-declaration.ts` is the rule owner.
+
+Open point: stored plans that were already planned or signed with a derived No Key keep their historical status (`isProductionPlanMatrixComplete` was not tightened); they are flagged on review but not retroactively revoked.
+
+Style Guide compliance: PASS (light operational surfaces, semantic tokens with fallbacks, text status labels beside the checkbox, 44px target, visible focus ring).
+
+Validation: `npx tsc --noEmit` clean; affected test files run individually with `npx tsx --test` (allergen-*, cpu-allergen-*, delivered-in-*, hospitality-allergen-review, no-key-allergen-contract, production-plan-*, cpu-indexeddb, production-day, shared allergen-declaration) all pass; `npm run build` passes. Full CPU suite not run (Firestore emulator unavailable). No browser/manual verification.
+Deployment: none.

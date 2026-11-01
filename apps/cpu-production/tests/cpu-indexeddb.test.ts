@@ -192,7 +192,7 @@ test("allergen signing freezes once, preserves the first signature, and locks ed
   assert.match(page, /busy=\{signatureBusy \|\| hydrating \|\| pageState === "error"\}/);
   assert.match(page, /locked=\{hydrating \|\| pageState === "error" \|\| reviewFrozen \|\| bothSigned \|\| Boolean\(signing\)\}/);
   assert.match(matrix, /locked = false/);
-  assert.match(matrix, /disabled=\{busy \|\| locked \|\| key === "no_key_allergens"\}/);
+  assert.equal((matrix.match(/disabled={busy || locked}/g) || []).length >= 2, true, "the No Key checkbox and the allergen cells are both frozen while busy or locked");
   assert.match(matrix, /loadLocalChecked/);
   assert.match(matrix, /saveLocalChecked/);
   assert.doesNotMatch(matrix, /confirm-review/);

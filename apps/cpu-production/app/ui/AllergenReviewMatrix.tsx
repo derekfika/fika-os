@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CANONICAL_ALLERGEN_COLUMNS, resolveNoKeyAllergenState, type OperationalAllergenState } from "../../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_COLUMNS, type OperationalAllergenState } from "../../../shared/allergen-contract";
 import { applyHospitalityCellClick } from "./allergen-cell-state";
 import type { ProductionOrder } from "../../lib/production-types";
 import type { AllergenReviewRow } from "../../lib/production-day";
 import { bookingContextEntries } from "./BookingContext";
 import { titleCaseDish } from "../../lib/production-presentation";
 import { clearLocalDraft, loadLocalChecked, loadLocalDraft, saveLocalChecked, saveLocalDraft, type AllergenReviewLineage } from "../lib/allergen-review-local";
-import { checkpointAllergenReviewRow, completeAllergenReviewMap, unresolvedNamedAllergenKeys } from "../lib/allergen-review-state";
+import { checkpointAllergenReviewRow, unresolvedNamedAllergenKeys } from "../lib/allergen-review-state";
+import { PENDING_DECLARATION, classifyRowAllergens, editableAllergens, type RowAllergenContext } from "../lib/allergen-explicit";
 import "./allergen-review.css";
 
 type SignatureRole = "production_chef" | "head_chef_site_manager";
@@ -20,14 +21,18 @@ function sameLineage(left: MatrixLineage | undefined, right: MatrixLineage | und
 }
 
 function displayState(states: Record<string, OperationalAllergenState> | undefined, key: string): OperationalAllergenState | "none" {
-  if (key === "no_key_allergens") {
-    const completion = completeAllergenReviewMap(states);
-    return completion.complete ? completion.states.no_key_allergens : resolveNoKeyAllergenState(states);
-  }
   const state = states?.[key];
   if (state) return state;
   return "unrecorded";
 }
+
+const NO_KEY_STATUS_TEXT = {
+  blank: "Not verified",
+  positives: "Allergens recorded",
+  declared: "Declared: no key allergens",
+  legacy_unverified: "Legacy value, not verified",
+  conflict: "Conflict with allergens",
+} as const;
 
 export default function AllergenReviewMatrix({
   rows,
@@ -74,6 +79,12 @@ export default function AllergenReviewMatrix({
     () => Object.fromEntries(rows.map(row => [row.key, { ...(row.snapshot?.allergens || {}) }])) as Record<string, Record<string, OperationalAllergenState>>,
   );
   const [checkedRows, setCheckedRows] = useState<Set<string>>(() => new Set());
+  /** Rows where the chef deliberately ticked No Key Allergens (this session, a restored draft, or a server-held declaration). */
+  const [explicitNoKeyRows, setExplicitNoKeyRows] = useState<Set<string>>(() => new Set());
+  const explicitNoKeyRef = useRef(explicitNoKeyRows);
+  /** Untouched legacy rows exactly as the server stores them: sent back verbatim so a save never rewrites legacy evidence. */
+  const legacyRowsRef = useRef<Map<string, { allergens: Record<string, OperationalAllergenState>; completed: boolean }>>(new Map());
+  const [statusAnnouncement, setStatusAnnouncement] = useState("");
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
@@ -99,9 +110,22 @@ export default function AllergenReviewMatrix({
     onReviewSyncChange?.(status);
   };
 
+  const ctxFor = (rowKey: string): RowAllergenContext => explicitNoKeyRef.current.has(rowKey) ? { declaration: PENDING_DECLARATION } : {};
+  const updateExplicit = (next: Set<string>) => { explicitNoKeyRef.current = next; setExplicitNoKeyRows(next); };
+  /** What is sent for a row: untouched legacy rows are echoed verbatim; checked rows send the confirmed map; others send only what the chef recorded. */
+  const wireRow = (rowKey: string, statesByRow: Record<string, Record<string, OperationalAllergenState>>, checked: Set<string>) => {
+    const legacy = legacyRowsRef.current.get(rowKey);
+    if (legacy) return { allergens: legacy.allergens, evidenceStatus: legacy.completed ? "completed" as const : "not_completed" as const };
+    const map = statesByRow[rowKey] || {};
+    const isChecked = checked.has(rowKey);
+    const ticked = explicitNoKeyRef.current.has(rowKey);
+    return { allergens: isChecked ? map : editableAllergens(map, ctxFor(rowKey)) as Record<string, OperationalAllergenState>, evidenceStatus: isChecked ? "completed" as const : "not_completed" as const, ...(ticked ? { noKeyDeclaration: { declared: true as const } } : {}) };
+  };
+
   const persistDraft = (nextStates: Record<string, Record<string, OperationalAllergenState>>, nextCheckedRows: Set<string>) => {
     const draft = {
       states: nextStates,
+      explicitNoKeyRows: [...explicitNoKeyRef.current],
       checkedRows: [...nextCheckedRows],
       lineageByOrderId: latestLineageRef.current,
       savedAt: new Date().toISOString(),
@@ -151,6 +175,7 @@ export default function AllergenReviewMatrix({
                 sourceLineId: string;
                 allergens: Record<string, OperationalAllergenState>;
                 evidenceStatus: string;
+                attestation?: string;
               }>;
             }>;
           }
@@ -164,6 +189,7 @@ export default function AllergenReviewMatrix({
               sourceLineId: string;
               allergens: Record<string, OperationalAllergenState>;
               evidenceStatus: string;
+              attestation?: string;
             }>;
           }> };
 
@@ -171,7 +197,7 @@ export default function AllergenReviewMatrix({
       if (statuses.length !== orderIds.length || orderIds.some(orderId => !statuses.some(status => status.orderId === orderId))) {
         throw new Error("The allergen review matrix is incomplete. Retry before reviewing or signing.");
       }
-      const saved = new Map<string, { allergens: Record<string, OperationalAllergenState>; completed: boolean }>();
+      const saved = new Map<string, { allergens: Record<string, OperationalAllergenState>; completed: boolean; attestation?: string }>();
       const lineage = Object.fromEntries(
         statuses.flatMap(status => status.sourceLineage ? [[status.orderId, status.sourceLineage] as const] : []),
       );
@@ -203,7 +229,7 @@ export default function AllergenReviewMatrix({
         const order = orders.find(candidate => candidate.canonicalId === status.orderId);
         if (!order) continue;
         for (const item of status.matrixItems || []) {
-          const state = { allergens: item.allergens || {}, completed: item.evidenceStatus === "completed" };
+          const state = { allergens: item.allergens || {}, completed: item.evidenceStatus === "completed", attestation: item.attestation };
           saved.set(`${order.origin}:${item.sourceLineId}`, state);
           const line = order.lines.find(candidate => candidate.canonicalId === item.sourceLineId);
           if (line) saved.set(`${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`, state);
@@ -217,6 +243,16 @@ export default function AllergenReviewMatrix({
         const hasSavedEvidence = Boolean(savedState && (savedState.completed || Object.keys(savedState.allergens).length > 0));
         return [row.key, hasSavedEvidence ? savedState!.allergens : { ...(row.snapshot?.allergens || {}) }];
       })) as Record<string, Record<string, OperationalAllergenState>>;
+      // A stored row is "verified" only with named allergens or a deliberate No Key tick. Legacy automatic No Key rows are flagged,
+      // never shown as checked, and kept verbatim until the chef touches them.
+      const legacyRows = new Map<string, { allergens: Record<string, OperationalAllergenState>; completed: boolean }>();
+      const serverExplicit = new Set<string>();
+      for (const row of rows) {
+        const savedState = saved.get(row.key);
+        if (!savedState) continue;
+        if (savedState.attestation === "legacy_unverified") legacyRows.set(row.key, { allergens: savedState.allergens, completed: savedState.completed });
+        if (savedState.attestation === "declared") serverExplicit.add(row.key);
+      }
       const localDraft = await loadLocalDraft(scopeKey);
       const hasSignedAuthority = statuses.some(status => status.signatureRoles.length > 0 || ["ready", "generating", "failed"].includes(status.matrixStatus || ""));
       const draftMatchesCurrentLineage = Boolean(localDraft && !hasSignedAuthority && Object.keys(localDraft.lineageByOrderId).length === orderIds.length && orderIds.every(orderId => sameLineage(localDraft.lineageByOrderId[orderId], lineage[orderId])));
@@ -226,13 +262,15 @@ export default function AllergenReviewMatrix({
         : hydratedStates;
       latestStatesRef.current = restoredStates;
       setStates(restoredStates);
+      legacyRowsRef.current = draftMatchesCurrentLineage ? new Map() : legacyRows;
+      updateExplicit(draftMatchesCurrentLineage ? new Set(localDraft!.explicitNoKeyRows || []) : serverExplicit);
 
       // The pre-draft checklist store is still read for backwards-compatible
       // cleanup, but it cannot override server state without a matching draft
       // lineage. New persistence always uses the lineage-bound draft above.
       await loadLocalChecked(scopeKey);
       if (!cancelled) {
-        const serverChecked = new Set(rows.map(row => row.key).filter(key => saved.get(key)?.completed));
+        const serverChecked = new Set(rows.map(row => row.key).filter(key => saved.get(key)?.completed && ["positives", "declared"].includes(saved.get(key)?.attestation || "")));
         const nextCheckedRows = draftMatchesCurrentLineage
           ? new Set(localDraft!.checkedRows.filter(key => rows.some(row => row.key === key)))
           : serverChecked;
@@ -286,9 +324,8 @@ export default function AllergenReviewMatrix({
             id: `sub-item:${order.canonicalId}:${index + 1}:1`,
             name: line.itemName,
             quantity: line.customerQuantity,
-            allergens: nextStates[key] || {},
+            ...wireRow(key, nextStates, nextCheckedRows),
             note: "",
-            evidenceStatus: nextCheckedRows.has(`${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`) ? "completed" as const : "not_completed" as const,
           }],
         };
       }),
@@ -327,9 +364,8 @@ export default function AllergenReviewMatrix({
           id: `sub-item:${order.canonicalId}:${index + 1}:1`,
           name: line.itemName,
           quantity: line.customerQuantity,
-          allergens: latestStatesRef.current[key] || {},
+          ...wireRow(key, latestStatesRef.current, latestCheckedRowsRef.current),
           note: "",
-            evidenceStatus: latestCheckedRowsRef.current.has(`${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`) ? "completed" as const : "not_completed" as const,
         }],
       };
     }),
@@ -409,7 +445,7 @@ export default function AllergenReviewMatrix({
   const markChecked = async (rowKey: string) => {
     if (busy || locked) return;
     const currentCheckedRows = latestCheckedRowsRef.current;
-    const checkpoint = checkpointAllergenReviewRow(latestStatesRef.current, currentCheckedRows, rowKey, rows.length);
+    const checkpoint = checkpointAllergenReviewRow(latestStatesRef.current, currentCheckedRows, rowKey, rows.length, explicitNoKeyRef.current);
     if (checkpoint.blocked) {
       setRowErrors(current => ({ ...current, [rowKey]: checkpoint.message || "Resolve the remaining allergen states before marking this dish checked." }));
       setError(checkpoint.message || "Resolve the remaining allergen states before marking this dish checked.");
@@ -417,6 +453,7 @@ export default function AllergenReviewMatrix({
     }
     const nextStates = checkpoint.states;
     const nextCheckedRows = checkpoint.checkedRows;
+    legacyRowsRef.current.delete(rowKey);
     latestStatesRef.current = nextStates;
     setStates(nextStates);
     setRowErrors(current => {
@@ -444,8 +481,17 @@ export default function AllergenReviewMatrix({
     if (busy || locked) return;
     const nextStates = {
       ...latestStatesRef.current,
-      [rowKey]: applyHospitalityCellClick(latestStatesRef.current[rowKey] || {}, key),
+      [rowKey]: applyHospitalityCellClick(latestStatesRef.current[rowKey] || {}, key, ctxFor(rowKey)),
     };
+    // Editing a row takes it out of legacy preservation; a deliberate tick (or its removal) is tracked per row.
+    legacyRowsRef.current.delete(rowKey);
+    const hadNoKey = explicitNoKeyRef.current.has(rowKey);
+    const explicit = new Set(explicitNoKeyRef.current);
+    if (nextStates[rowKey].no_key_allergens === "contains") explicit.add(rowKey); else explicit.delete(rowKey);
+    updateExplicit(explicit);
+    setStatusAnnouncement(key === "no_key_allergens"
+      ? (explicit.has(rowKey) ? "No Key Allergens ticked. All allergens cleared." : "No Key Allergens unticked. The row is blank and not verified.")
+      : hadNoKey ? "No Key Allergens cleared because an allergen was selected." : "");
     latestStatesRef.current = nextStates;
     const nextCheckedRows = new Set(latestCheckedRowsRef.current);
     nextCheckedRows.delete(rowKey);
@@ -494,11 +540,12 @@ export default function AllergenReviewMatrix({
       {reviewSyncStatus === "error" && <p role="alert">Review is saved on this device but not yet synchronised to CPU. <button type="button" onClick={retryCheckpoint} disabled={busy || locked}>Retry save</button></p>}
       <div className="cpu-allergen-legend" aria-label="Allergen matrix legend">
         <span><i className="cpu-allergen-state cpu-allergen-state--contains" />Contains</span>
-        <span><i className="cpu-allergen-state cpu-allergen-state--contains cpu-allergen-state--explicit">Yes</i>Explicit no key allergens</span>
+        <span><i className="cpu-allergen-state cpu-allergen-state--contains cpu-allergen-state--explicit">Yes</i>No Key Allergens ticked by the chef</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--may_contain" />May contain</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--clear" />No declaration</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--none" />Not recorded</span>
-        <em>Click a cell to cycle its CPU review value.</em>
+        <em>Click a cell to cycle its CPU review value. A blank row is not verified: select allergens or tick No Key Allergens.</em>
+        <span className="cpu-allergen-sr-only" role="status" aria-live="polite" data-testid="no-key-announcement">{statusAnnouncement}</span>
       </div>
       <div className="cpu-allergen-table-wrap">
         <table className="cpu-allergen-table">
@@ -520,20 +567,41 @@ export default function AllergenReviewMatrix({
                   {row.notes.map(note => <small key={note}>Note: {note}</small>)}
                 </th>
                 {CANONICAL_ALLERGEN_COLUMNS.map(([key]) => {
+                  if (key === "no_key_allergens") {
+                    const attestation = classifyRowAllergens(states[row.key], ctxFor(row.key));
+                    const ticked = attestation === "declared" || attestation === "conflict";
+                    const inputId = `no-key-${row.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+                    return (
+                      <td key={key}>
+                        <label className={`cpu-no-key-control${ticked ? " cpu-no-key-control--ticked" : ""}`} htmlFor={inputId}>
+                          <input
+                            id={inputId}
+                            type="checkbox"
+                            className="cpu-no-key-checkbox"
+                            checked={ticked}
+                            disabled={busy || locked}
+                            aria-describedby={`${inputId}-status`}
+                            onChange={() => void toggle(row.key, key)}
+                          />
+                          <span>No Key Allergens<span className="cpu-allergen-sr-only"> for {titleCaseDish(row.name)}</span></span>
+                        </label>
+                        <small id={`${inputId}-status`} className="cpu-no-key-status" data-testid={`no-key-status-${row.key}`}>{NO_KEY_STATUS_TEXT[attestation]}</small>
+                      </td>
+                    );
+                  }
                   const state = displayState(states[row.key], key);
-                  const unresolved = key !== "no_key_allergens" && unresolvedNamedAllergenKeys(states[row.key]).includes(key);
+                  const unresolved = unresolvedNamedAllergenKeys(editableAllergens(states[row.key], ctxFor(row.key))).includes(key);
                   return (
                     <td key={key}>
                       <button
                         type="button"
-                        disabled={busy || locked || key === "no_key_allergens"}
-                        className={`cpu-allergen-state cpu-allergen-state--${state}${unresolved && rowErrors[row.key] ? " cpu-allergen-state--unresolved" : ""}`}
+                        disabled={busy || locked}
+                        className={`cpu-allergen-state cpu-allergen-state--${state === "clear" ? "clear" : state}${unresolved && rowErrors[row.key] ? " cpu-allergen-state--unresolved" : ""}`}
                         aria-invalid={unresolved && Boolean(rowErrors[row.key]) || undefined}
-                        aria-label={`${titleCaseDish(row.name)}, ${key === "no_key_allergens" ? "No key allergens" : key}: ${key === "no_key_allergens" && state === "contains" ? "explicitly recorded" : state}`}
-                        title={key === "no_key_allergens" && state === "contains" ? "Explicitly recorded: no key allergens" : key === "no_key_allergens" && state === "unrecorded" ? "No key allergen decision is not recorded" : undefined}
+                        aria-label={`${titleCaseDish(row.name)}, ${key}: ${state === "contains" ? "contains" : state === "may_contain" ? "may contain" : "not selected"}`}
                         onClick={() => void toggle(row.key, key)}
                       >
-                        {key === "no_key_allergens" ? (state === "contains" ? "Yes" : state === "unrecorded" ? "?" : "") : state === "may_contain" ? "MC" : ""}
+                        {state === "may_contain" ? "MC" : ""}
                       </button>
                     </td>
                   );
@@ -542,13 +610,8 @@ export default function AllergenReviewMatrix({
                 <td>
                   {rowErrors[row.key] && <small className="cpu-allergen-row-error" role="alert">{rowErrors[row.key]}</small>}
                   {(() => {
-                    const unresolvedCount = unresolvedNamedAllergenKeys(states[row.key]).length;
                     const checked = checkedRows.has(row.key);
-                    const actionLabel = checked
-                      ? "Checked"
-                      : unresolvedCount > 0
-                        ? `Confirm ${unresolvedCount} as clear & mark checked`
-                        : "Mark checked";
+                    const actionLabel = checked ? "Checked" : "Mark checked";
                     return (
                       <button
                         type="button"
@@ -556,7 +619,7 @@ export default function AllergenReviewMatrix({
                         onClick={() => void markChecked(row.key)}
                         disabled={busy || locked}
                         aria-label={`${titleCaseDish(row.name)}: ${actionLabel}`}
-                        title={checked || unresolvedCount === 0 ? undefined : `This confirms ${unresolvedCount} not recorded named allergen state${unresolvedCount === 1 ? "" : "s"} as clear.`}
+                        title={checked ? undefined : "Unticked allergens are recorded as Clear. A blank row cannot be checked: select allergens or tick No Key Allergens."}
                       >
                         {actionLabel}
                       </button>
