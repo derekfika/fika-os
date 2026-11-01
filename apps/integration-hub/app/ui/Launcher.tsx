@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, ArrowRight, Bell, CalendarDays, ChartNoAxesCombined, ChefHat, ChevronDown, Clock3, Database, FileText, House, LayoutGrid, LibraryBig, LogOut, Plus, Route, Settings, ShieldCheck, Star, Truck, UsersRound, type LucideIcon } from "lucide-react";
+import { Activity, ArrowRight, Bell, CalendarDays, ChartNoAxesCombined, ChefHat, ChevronDown, Clock3, Database, FileText, GitPullRequest, House, LayoutGrid, LibraryBig, LogOut, Plus, Route, Settings, ShieldCheck, Star, Truck, UsersRound, type LucideIcon } from "lucide-react";
 import { Children, useEffect, useMemo, useState } from "react";
 import { getFikaFirebaseAuth, getFikaGoogleProvider, hasFikaFirebaseClientConfig } from "@/lib/firebase-client";
 import { getRedirectResult, signInWithPopup, signInWithRedirect, signOut } from "firebase/auth";
@@ -25,6 +25,7 @@ const appDefinitions: AppDefinition[] = [
   { appId: "integration-hub", label: "Integration Hub", purpose: "Data governance and integrations", section: "administration", icon: Database, accent: "purple" },
   { appId: "authmod", label: "Access Administration", purpose: "AUTHMOD access control", section: "administration", icon: ShieldCheck, accent: "purple" },
   { appId: "usage", label: "Usage Observatory", purpose: "Platform usage and cost signals", section: "administration", icon: ChartNoAxesCombined, accent: "blue" },
+  { appId: "development", label: "Development", purpose: "GitHub issue, PR, release and UAT tracker (read-only)", section: "administration", icon: GitPullRequest, accent: "purple" },
   { appId: "food-data", label: "Food Data", purpose: "Kafoodle product, supplier and recipe libraries (read-only)", section: "administration", icon: LibraryBig, accent: "green" },
 ];
 const favourites = ["cpu-production", "menu-planning", "delivered-in", "logistics"];
@@ -47,7 +48,7 @@ export default function Launcher() {
 }
 
 function LauncherHome({ data, logout, launchError }: { data: LauncherData; logout: () => Promise<void>; launchError: LaunchError | null }) {
-  const available = useMemo(() => new Map([...data.applications, ...(data.canAdministerAuthmod ? [{ appId: "usage", label: "Usage Observatory", purpose: "Platform usage and cost signals", href: "/usage" }] : []), ...(data.principal.identityKind !== "operational" ? [{ appId: "food-data", label: "Food Data", purpose: "Kafoodle product, supplier and recipe libraries (read-only)", href: "/food-data" }] : [])].map(app => [app.appId, app])), [data.applications, data.canAdministerAuthmod, data.principal.identityKind]);
+  const available = useMemo(() => new Map([...data.applications, ...(data.canAdministerAuthmod ? [{ appId: "usage", label: "Usage Observatory", purpose: "Platform usage and cost signals", href: "/usage" }, { appId: "development", label: "Development", purpose: "GitHub issue, PR, release and UAT tracker (read-only)", href: "/development" }] : []), ...(data.principal.identityKind !== "operational" ? [{ appId: "food-data", label: "Food Data", purpose: "Kafoodle product, supplier and recipe libraries (read-only)", href: "/food-data" }] : [])].map(app => [app.appId, app])), [data.applications, data.canAdministerAuthmod, data.principal.identityKind]);
   const availableApps = appDefinitions.filter(app => available.has(app.appId));
   const renderCard = (definition: AppDefinition) => { const app = definition.appId === "authmod" ? data.canAdministerAuthmod ? { href: "/authmod" } : undefined : available.get(definition.appId); if (!app) return null; const Icon = definition.icon; const content = <><div className={styles.cardIcon} data-accent={definition.accent}><Icon size={27} /></div><h3>{definition.label}</h3><p>{definition.purpose}</p><div className={styles.cardFooter}><span className={styles.cardRule} /><span className={styles.cardArrow}><ArrowRight size={19} /></span></div></>; return <a className={styles.appCard} data-accent={definition.accent} href={app.href} target="_blank" rel="noopener noreferrer" key={definition.appId}>{content}</a>; };
   const sectionApps = (section: AppDefinition["section"]) => appDefinitions.filter(app => app.section === section && (app.appId === "authmod" ? data.canAdministerAuthmod : available.has(app.appId)));
