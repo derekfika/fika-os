@@ -62,6 +62,7 @@
 /* Visiting sequence: an ordered list, NOT a time scale. Spacing between chips carries no meaning. */
 .sequence { position: sticky; left: calc(var(--label-w) + 14px); right: calc(var(--gutter-w) + 8px); z-index: 1; display: flex; flex-wrap: wrap; width: max-content; max-width: calc(100cqw - var(--label-w) - var(--gutter-w) - 22px); align-items: center; gap: 8px 8px; margin: 0; padding: 2px 0; list-style: none; }
 .sequenceRow { display: flex; margin-top: 52px; }
+.sequenceRow[data-run-stops] { margin-top: 0; }
 .sequenceSpacer { flex: 0 0 auto; }
 .sequence li { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .arrow { color: var(--jp-muted); font-size: 13px; }
@@ -113,3 +114,15 @@ button.chip:hover { border-color: var(--jp-primary); }
 .bar[data-drop="valid"]{outline:2px solid var(--fika-status-success);outline-offset:2px}
 .bar[data-drop="invalid"]{outline:2px solid var(--fika-status-danger);outline-offset:2px}
 .selectedDetailsTitle{margin:0 0 8px;color:var(--fika-text-primary);font-size:14px;font-weight:600}
+
+/* Van lane: each track band holds a bar line, then the visiting sequence of every run on that track directly under its own bar. */
+.laneTrack{min-height:0;padding:6px 0}
+.trackBand{position:relative;padding-bottom:6px}
+.trackBand + .trackBand{border-top:1px dashed var(--jp-line)}
+.barLane{position:relative;height:44px}
+.trackBand .sequenceRow{margin-top:2px}
+.trackBand .sequenceRow[data-selected="true"] .chip[data-kind="cpu-departure"],.trackBand .sequenceRow[data-selected="true"] .chip[data-kind="cpu-return"]{border-color:var(--jp-primary)}
+.unscheduledRuns{display:grid;gap:8px;margin-top:4px}
+.unscheduledRun{display:grid;gap:6px}
+.unscheduledRun .sequenceRow{margin-top:0}
+.unscheduledRun .sequence{left:0;max-width:100%}

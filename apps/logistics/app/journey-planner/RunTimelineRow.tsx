@@ -152,7 +152,7 @@ export function RunTimelineRow({ run, pxPerHour, selected, collapsed, drop, drop
           </div>
         </div>
       </div>
-      {!collapsed && <RunStopSequence runTitle={run.title} chips={run.chips} onSelectStop={onSelectStop} activeKey={activeStopKey} offset={!detailsOnly && (timed || preview) ? barLeft : 0} />}
+      {!collapsed && !detailsOnly && <RunStopSequence runTitle={run.title} chips={run.chips} onSelectStop={onSelectStop} activeKey={activeStopKey} offset={!detailsOnly && (timed || preview) ? barLeft : 0} />}
     </div>
   </article>;
 }

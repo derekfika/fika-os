@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { auditLayout, expectClean } from "./layout-audit";
-import { assignedSeed, boot, centre, commandsOf, DATE, drag, queueItem, runRow } from "./v3-helpers";
+import { assignedSeed, boot, centre, commandsOf, DATE, drag, queueItem, runRow, runStops } from "./v3-helpers";
 
 /**
  * Journey Planner V3 on the real page: no clipped controls, no competing scrollbars, no hit-testing errors across the
@@ -51,7 +51,7 @@ for (const viewport of MATRIX) {
     // it are intentionally covered until it closes. Docked desktop keeps both usable.
     if (viewport.width >= 1100) {
       await expectHittable(runRow(page, RUN).getByRole("button", { name: "Run 1 actions" }), "row actions");
-      await expectHittable(runRow(page, RUN).getByRole("button", { name: /Market Hall/ }), "chip");
+      await expectHittable(runStops(page, RUN).getByRole("button", { name: /Market Hall/ }), "chip");
     }
     await expectHittable(inspector.getByRole("button", { name: "Edit times" }), "Edit times");
     await expectHittable(inspector.getByRole("button", { name: "Move Market Hall down" }), "reorder arrow");
@@ -83,7 +83,7 @@ for (const viewport of MATRIX.filter((item) => item.width < 1440)) {
     await audit(page, "queue peek open");
     await expectHittable(peek.locator("[data-timeline-queue-id]").first(), "peek queue card");
     // Target the Van 2 draft directly in its lane, keeping Run 1 selected.
-    const empty = page.locator(`[data-vehicle-row="van2"] [data-drop-run-id="run:${DATE}:b"]`);
+    const empty = page.locator(`[data-vehicle-row="van2"] button[data-drop-run-id="run:${DATE}:b"]`);
     await drag(page, await centre(peek.locator("[data-timeline-queue-id]", { hasText: "North Kitchen" })), await centre(empty));
     await expect.poll(() => commandsOf(server, "assign-job-to-load").length).toBe(1);
     expect(commandsOf(server, "assign-job-to-load")[0]).toMatchObject({ jobId: "job:4", targetRunId: `run:${DATE}:b`, scheduledTime: "13:00" });
