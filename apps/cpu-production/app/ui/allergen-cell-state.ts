@@ -46,7 +46,7 @@ export function applyHospitalityCellClick(allergens: Record<string, OperationalA
  * Issue 251: the Hospitality order-detail checker is strictly binary. A named allergen box is OFF (white) or ON (black, Contains);
  * a click flips it. May Contain is NOT part of this interaction and can never be created by a click here (the shared
  * `applyHospitalityCellClick` cycle used by other surfaces is untouched). A persisted legacy May Contain is preserved verbatim until
- * the chef deliberately clicks that very box, which switches it OFF as a normal edit (the edit reopens the row's review, so the
+ * the chef deliberately clicks that very box, which makes it Contains (the stricter value, never a silent deletion); a second click switches it OFF. Either is a normal edit (the edit reopens the row's review, so the
  * confirmation, signatures and releases are revoked/re-reviewed by the existing rules). Selecting a named allergen withdraws a No
  * Key tick; the last named allergen going OFF leaves the row BLANK (unverified), never No Key. No Key is exclusive with named
  * allergens and keeps its own toggle.
@@ -54,8 +54,8 @@ export function applyHospitalityCellClick(allergens: Record<string, OperationalA
 export function applyHospitalityBinaryClick(allergens: Record<string, OperationalAllergenState>, key: string, context: RowAllergenContext = {}): Record<string, OperationalAllergenState> {
   if (key === "no_key_allergens") return toggleNoKey(allergens, context);
   const base = editableAllergens(allergens, context);
-  const on = namedPositives(base)[key] !== undefined;
-  const result = selectNamedAllergen(base, key as never, on ? null : "contains", { acknowledgeNoKeyWithdrawal: true });
+  const current = namedPositives(base)[key];
+  const result = selectNamedAllergen(base, key as never, current === "contains" ? null : "contains", { acknowledgeNoKeyWithdrawal: true });
   if (!result.ok) throw new Error("Unexpected refusal while acknowledging the No Key withdrawal.");
   return result.allergens;
 }

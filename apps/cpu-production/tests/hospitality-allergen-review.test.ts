@@ -251,7 +251,8 @@ test("251: a persisted May Contain is preserved, discernible, never created, and
   assert.equal(other.eggs, "contains");
   assert.equal(other.milk, "contains");
   const amended = applyHospitalityBinaryClick(legacy, "gluten");
-  assert.equal(amended.gluten, undefined, "a deliberate click on the legacy box switches it OFF, never to a new May Contain");
+  assert.equal(amended.gluten, "contains", "a click on a legacy May Contain becomes Contains (stricter), never a silent deletion");
+  assert.equal(applyHospitalityBinaryClick(amended, "gluten").gluten, undefined, "the second click is OFF");
   assert.equal(amended.eggs, "contains");
   assert.equal(applyHospitalityCellClick(applyHospitalityCellClick({}, "fish"), "fish").fish, "may_contain", "the shared cycle used by other surfaces keeps May Contain");
   assert.equal(completeAllergenReviewMap(legacy).states.gluten, "may_contain", "the review round trip keeps it");
