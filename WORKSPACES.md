@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-01T05:29:22.939Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-01T06:08:07.362Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -97,6 +97,7 @@ Snapshot: 2026-11-01T05:29:22.939Z. The local governed registry remains authorit
 | iss-017-cpu-week-date-nav-2 | haiku-iss-017 | apps/cpu-production, CHANGELOG.md | codex/iss-017-cpu-week-date-nav-2 | — | finished | 2026-10-26T16:25:54.912Z |
 | iss-017-cpu-week-date-nav | haiku-iss-017 | apps/cpu-production | codex/iss-017-cpu-week-date-nav | [#63](https://github.com/derekfika/fika-os/pull/63) | finished | 2026-10-26T16:01:27.547Z |
 | iss-017-week-date-sync | haiku-iss-017-followup | apps/cpu-production, CHANGELOG.md | codex/iss-017-week-date-sync | [#64](https://github.com/derekfika/fika-os/pull/64) | finished | 2026-10-26T17:13:29.381Z |
+| issue-107-hot-mains-week-planner | luna-107-hot-mains | apps/menu-planning/lib/week-planner-layout.ts, apps/menu-planning/app/week-planner.tsx, apps/menu-planning/tests/week-planner-layout.test.ts | codex/issue-107-hot-mains-week-planner | [#233](https://github.com/derekfika/fika-os/pull/233) | finished | 2026-11-01T06:08:00.035Z |
 | issue-132-section-order-root-tests | luna-132-order-contract | apps/shared/menu-section-order.ts, apps/shared/menu-section-order.test.ts | codex/issue-132-section-order-root-tests | [#232](https://github.com/derekfika/fika-os/pull/232) | finished | 2026-11-01T05:29:07.129Z |
 | issue-132-section-order-s1 | luna-132-order-contract | apps/shared/menu-section-order.ts, apps/shared/tests/menu-section-order.test.ts | codex/issue-132-section-order-s1 | — | retired | 2026-11-01T04:47:15.679Z |
 | issue-156-active-order-count | issue156_filter_count_fix | apps/cpu-production/app/page.tsx, apps/cpu-production/tests/production-view-filters.test.ts | codex/issue-156-active-order-count | [#230](https://github.com/derekfika/fika-os/pull/230) | retired | 2026-11-01T03:44:08.729Z |
