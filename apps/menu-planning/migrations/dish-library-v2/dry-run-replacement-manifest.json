@@ -1,0 +1,265 @@
+{
+ "schema": "dish-library-v2.dry-run-manifest.proposal.v1",
+ "executionAllowed": false,
+ "statusNote": "DRY RUN / PROPOSAL ONLY. No approved merge list exists. Nothing here authorises any write, cutover, deployment or staging rehearsal.",
+ "assumptions": [
+  "Survivor pool = staging-store ACTIVE records (360) minus 4 workbook Cleanup Candidates, synthetic/UAT ids and the staging-only hospitality-dish record; all 82 referenced ids kept active under their own id.",
+  "Exact-normalised-name duplicates collapsed only when AUTO-SAFE; extra conservative rule added: clusters whose allergen evidence differs are NEEDS-REVIEW.",
+  "Subcategory is part of the 'same category' test (blank vs set counts as different).",
+  "Tags for survivors come from staging records (30 Oct tagging); production V1 has no tags. Workbook confidence tiers were not used to alter tags.",
+  "References come from v4days.json (2-6 Nov v4 publication); 9 Nov+ draft/future weeks were NOT checked.",
+  "Staging ids not in prod V1 are treated as staging-only artefacts and excluded; no live re-read was possible.",
+  "Local canonical digest below is NOT the repo's archive contentDigest algorithm; it is an offline drift detector."
+ ],
+ "counts": {
+  "v1ArchiveCount": 542,
+  "v1AlreadyArchived": 184,
+  "v1ActiveBeforeCutover": 358,
+  "stagingDocs": 546,
+  "totalUniqueIds": 546,
+  "v2ActiveCount": 353,
+  "archivedNotActiveCount": 192,
+  "archivedBreakdown": {
+   "already-archived": 184,
+   "excluded-test-synthetic-or-staging-only": 8
+  },
+  "mappedMergedCount": 1,
+  "keepCount": 353,
+  "reconciliation": "353 survivors + 192 archived + 1 merged = 546",
+  "referencesPreserved": "82/82",
+  "publishedV4": {
+   "entries": 101,
+   "portions": 6570,
+   "distinctDishIds": 82
+  },
+  "nineRollingIdsKept": 9,
+  "exactClusters": {
+   "total": 4,
+   "autoSafe": 1,
+   "needsReview": 3
+  },
+  "fuzzyClustersNeedsReview": 4,
+  "tags": {
+   "registryTags": 28,
+   "survivorsWithAtLeastOneTag": 272,
+   "survivorsWithNoTag": 81,
+   "perTag": {
+    "dish-tag:cuisine:caribbean-inspired": 2,
+    "dish-tag:cuisine:chinese": 2,
+    "dish-tag:cuisine:french-inspired": 4,
+    "dish-tag:cuisine:greek": 3,
+    "dish-tag:cuisine:indian": 21,
+    "dish-tag:cuisine:italian": 15,
+    "dish-tag:cuisine:japanese": 9,
+    "dish-tag:cuisine:korean": 6,
+    "dish-tag:cuisine:mexican-inspired": 4,
+    "dish-tag:cuisine:middle-eastern-inspired": 21,
+    "dish-tag:cuisine:somali-inspired": 2,
+    "dish-tag:cuisine:thai": 3,
+    "dish-tag:style:bbq": 5,
+    "dish-tag:style:braised-stewed": 10,
+    "dish-tag:style:fresh-raw": 15,
+    "dish-tag:style:fried": 10,
+    "dish-tag:style:grilled-charred": 24,
+    "dish-tag:style:roasted": 52,
+    "dish-tag:style:smoked": 16,
+    "dish-tag:style:spiced": 55,
+    "dish-tag:type:beef": 9,
+    "dish-tag:type:bread": 9,
+    "dish-tag:type:chicken": 17,
+    "dish-tag:type:fish-seafood": 11,
+    "dish-tag:type:grain-pulse": 61,
+    "dish-tag:type:leaf-salad": 17,
+    "dish-tag:type:slaw": 11,
+    "dish-tag:type:vegetable-side": 112
+   }
+  },
+  "survivorsByCategory": {
+   "Cold Protein": 8,
+   "Fish": 6,
+   "Garnish": 21,
+   "Hot Main": 63,
+   "Other": 64,
+   "Salad": 102,
+   "Sauce": 19,
+   "Side": 8,
+   "Soup": 26,
+   "Starch/Side": 29,
+   "Vegan/Veggie Main": 7
+  },
+  "saladSurvivorsWithoutSubtype": 14,
+  "workbookTiers": {
+   "High": 273,
+   "Medium": 81,
+   "Low": 4,
+   "CleanupCandidates": 4,
+   "ArchivedReference": 184
+  },
+  "saladSlotAuditNeedsReviewRows": 18
+ },
+ "inputFiles": {
+  "prodOriginal": {
+   "path": "C:/Users/derek/Documents/FIKA-exports/dish-library-production-2026-10-29/fika-dish-library-original.json",
+   "sha256": "317d0407744da162f0b013fa6812feb9134a7162db5e764d6d791a4c538352ae",
+   "bytes": 660455
+  },
+  "prodArchived": {
+   "path": "C:/Users/derek/Documents/FIKA-exports/dish-library-production-2026-10-29/fika-dish-library-archived.json",
+   "sha256": "0f6c2dd6220b38e0f0198dcf5a62f04e0dd5296bad4d6cbcf9d8a5fe24085c6b",
+   "bytes": 370769
+  },
+  "prodExportManifest": {
+   "path": "C:/Users/derek/Documents/FIKA-exports/dish-library-production-2026-10-29/export-manifest.json",
+   "sha256": "a6a58584a2de736f6c73699fc078b0c859535c3f83ae41123dbb3f6bb6637108",
+   "bytes": 1632
+  },
+  "prodPackageGz": {
+   "path": "C:/Users/derek/Documents/FIKA-exports/dish-library-production-2026-10-29/raw/catalogue-package-v160.json.gz",
+   "sha256": "ef692bdee49930db6a69cd1145d9dfbcd067b7a1861b8295807cc2388e973be0",
+   "bytes": 41616
+  },
+  "stagingDishes": {
+   "path": "C:/Users/derek/AppData/Local/Temp/claude/C--Fika-fika-os--claude-worktrees-fika-os-critical-path-8cea82/619acdf3-be85-447e-bc2d-8a709032e268/scratchpad/v2/staging-export-20261101T214943Z/catalogue-dishes.json",
+   "sha256": "16d97547b30e1c78eba095a6c363dbcb7a2559c15cd7c5ad6de3e3578d0945f6",
+   "bytes": 1174373
+  },
+  "stagingManifest": {
+   "path": "C:/Users/derek/AppData/Local/Temp/claude/C--Fika-fika-os--claude-worktrees-fika-os-critical-path-8cea82/619acdf3-be85-447e-bc2d-8a709032e268/scratchpad/v2/staging-export-20261101T214943Z/catalogue-manifest.json",
+   "sha256": "ff728808f01d0c233554964a347cb6fd057d7adfd48d6742af80897a0fc12f79",
+   "bytes": 1086
+  },
+  "stagingArchives": {
+   "path": "C:/Users/derek/AppData/Local/Temp/claude/C--Fika-fika-os--claude-worktrees-fika-os-critical-path-8cea82/619acdf3-be85-447e-bc2d-8a709032e268/scratchpad/v2/staging-export-20261101T214943Z/catalogue-archives.json",
+   "sha256": "c7915e991e7b028122f12bc5397cebba4c1203fa1168176f4a50845109cebb81",
+   "bytes": 1108408
+  },
+  "stagingOtherKinds": {
+   "path": "C:/Users/derek/AppData/Local/Temp/claude/C--Fika-fika-os--claude-worktrees-fika-os-critical-path-8cea82/619acdf3-be85-447e-bc2d-8a709032e268/scratchpad/v2/staging-export-20261101T214943Z/catalogue-other-kinds.json",
+   "sha256": "512f9ce270627679419e18c54680b0216e24d9edc9da9a0587d28475184f573a",
+   "bytes": 16513
+  },
+  "stagingExportManifest": {
+   "path": "C:/Users/derek/AppData/Local/Temp/claude/C--Fika-fika-os--claude-worktrees-fika-os-critical-path-8cea82/619acdf3-be85-447e-bc2d-8a709032e268/scratchpad/v2/staging-export-20261101T214943Z/export-manifest.json",
+   "sha256": "412dea7869a2e6b65ded08fdb8860cb569db0ef3d5e478dbbe5d5dd68c710581",
+   "bytes": 2125
+  },
+  "v4days": {
+   "path": "C:/Users/derek/AppData/Local/Temp/claude/C--Fika-fika-os--claude-worktrees-fika-os-critical-path-8cea82/619acdf3-be85-447e-bc2d-8a709032e268/scratchpad/v4days.json",
+   "sha256": "e6022bc4ce69556225abea02afb104a68ed19c0608f68a4c98abfa98b1534d93",
+   "bytes": 72465
+  },
+  "tagRescanWorkbookJson": {
+   "path": "C:/Users/derek/AppData/Local/Temp/claude/C--Fika-fika-os--claude-worktrees-fika-os-critical-path-8cea82/619acdf3-be85-447e-bc2d-8a709032e268/scratchpad/v2/decisions/FIKA_Dish_Library_Tag_Rescan_2026-10-29.json",
+   "sha256": "e856d5bb6d5de20bf227aba6963de9df2549c1b28b9e1ba63add5aa72585c375",
+   "bytes": 285925
+  },
+  "saladSlotAuditJson": {
+   "path": "C:/Users/derek/AppData/Local/Temp/claude/C--Fika-fika-os--claude-worktrees-fika-os-critical-path-8cea82/619acdf3-be85-447e-bc2d-8a709032e268/scratchpad/v2/decisions/FIKA_Salad_Slot_Tag_Audit_2026-10-30.json",
+   "sha256": "f146bd2214c7e188d7c21a7a230738b8801702d032c4f10b3deb5a5e04a101bf",
+   "bytes": 59219
+  },
+  "reviewJson": {
+   "path": "C:/Users/derek/AppData/Local/Temp/claude/C--Fika-fika-os--claude-worktrees-fika-os-critical-path-8cea82/619acdf3-be85-447e-bc2d-8a709032e268/scratchpad/v2/decisions/fika-dish-library-review.json",
+   "sha256": "ef8d13238a0c296da8a7d6fa22740703570b6117e39658f01d42bbbf8229495e",
+   "bytes": 108614
+  },
+  "medium81Json": {
+   "path": "C:/Users/derek/AppData/Local/Temp/claude/C--Fika-fika-os--claude-worktrees-fika-os-critical-path-8cea82/619acdf3-be85-447e-bc2d-8a709032e268/scratchpad/v2/decisions/medium-81.json",
+   "sha256": "f1055a8a3e341e48e4d09877240d9d3639a33daeb54b72f26752114766f48608",
+   "bytes": 28054
+  },
+  "prodV1Analysis": {
+   "path": "C:/Users/derek/AppData/Local/Temp/claude/C--Fika-fika-os--claude-worktrees-fika-os-critical-path-8cea82/619acdf3-be85-447e-bc2d-8a709032e268/scratchpad/v2/prod-v1-analysis.json",
+   "sha256": "8b128808fbfa85737deaff63983cca22b3618515327eb4276ae7426df6987095",
+   "bytes": 89860
+  }
+ },
+ "outputFiles": {
+  "v2-survivors-proposed.json": "ad62f7f369e78e2eda5976ee62d18b3f1dd32a437709531c05d7f567af860599",
+  "identity-mappings-proposed.json": "81e998f7d1b29ee0f01a0f53d6fee988d61ea4b6ffca849d0e7b0cce717e2563"
+ },
+ "v2SurvivorContentDigest": "561c5a3fe94bdd29c90d544ff17a7d2723d211a22ebdd89a5a9d09014e4a07ce",
+ "integrityChecks": {
+  "failed": 0,
+  "log": [
+   "PASS v4 published week: 101 entries :: 101",
+   "PASS v4 published week: 6570 portions :: 6570",
+   "PASS v4 published week: 82 distinct dish IDs :: 82",
+   "PASS all 82 referenced IDs resolve to an ACTIVE survivor (directly or via mapping) :: 82/82",
+   "PASS all 82 referenced IDs kept under their own ID (no remap)",
+   "PASS all 82 referenced IDs exist in prod V1 and staging",
+   "PASS no referenced ID is archived in prod or staging",
+   "PASS no referenced ID is a merge source",
+   "PASS nine rolling IDs present in prod and staging, all keep",
+   "PASS prod V1 has 542 ids (358 active/184 archived)",
+   "PASS every prod V1 id appears exactly once in mappings",
+   "PASS every staging id appears exactly once in mappings",
+   "PASS no mapping unexplained",
+   "PASS mapping oldIds unique",
+   "PASS no cycles in mappings",
+   "PASS every merge target is an ACTIVE keep survivor (no chains)",
+   "PASS no merge maps to itself",
+   "PASS 4 Cleanup Candidates identified and none is a survivor",
+   "PASS no survivor id/name matches synthetic/UAT pattern",
+   "PASS no survivor is archived",
+   "PASS no test/synthetic exclusion was overridden by a reference",
+   "PASS all survivor tags exist in the 28-tag registry",
+   "PASS counts reconcile: keep + archive + merge = total unique ids :: 353+192+1=546",
+   "PASS keep count equals survivors count",
+   "PASS workbook active (High+Medium+Low) ids equal prod V1 active ids (358)",
+   "PASS staging 546 = 360 active + 186 archived",
+   "PASS 143 added-by-upgrade records identified :: 143",
+   "PASS 2 archived-by-upgrade records identified :: 2",
+   "PASS prod export metadata: rev160, sourceHash 6b9b7faa...",
+   "PASS raw package gz sha256 equals issue-recorded ef692bde...",
+   "PASS prod export files match sha256 in export-manifest"
+  ]
+ },
+ "rollbackRequirements": {
+  "immutableArchive": {
+   "records": 542,
+   "localCanonicalDigestOfAll542RawDocs_sha256": "fa00402515c37ca8bb4a22895bc0c0fc66b9ea586602f18dcea53ece3bafd4c7",
+   "digestMethod": "sha256(canonical sorted-key JSON of [{id, raw export doc}] sorted by id) over original(358)+archived(184) export records; offline stand-in only",
+   "mustIncludeAlreadyArchived": 184,
+   "keyRule": "archive doc key must retain the original id (ids contain ':' and spaces) and be collision-free",
+   "archiveNamespace": "fikaMenuPlanningCatalogueArchives/{cutoverId}/dishes/{oldId}"
+  },
+  "sourceManifestToRecord": {
+   "revision": 160,
+   "sourceHash": "6b9b7faa669fb052511f387ee2fc0c5ec08fc2c900f3f55d12938f0da4c49465",
+   "dishCount": 542,
+   "rawPackageGzSha256": "ef692bdee49930db6a69cd1145d9dfbcd067b7a1861b8295807cc2388e973be0",
+   "rawPackageGzBytes": 41616,
+   "exportFileSha256": {
+    "original": "317d0407744da162f0b013fa6812feb9134a7162db5e764d6d791a4c538352ae",
+    "archived": "0f6c2dd6220b38e0f0198dcf5a62f04e0dd5296bad4d6cbcf9d8a5fe24085c6b"
+   }
+  },
+  "restoreProcedurePrerequisites": [
+   "Fresh authenticated read of live production manifest: must still be rev160/hash 6b9b7faa... (else re-baseline and redo diff)",
+   "Archive root written and read back (542 docs, digest equal) BEFORE any active-catalogue write",
+   "Restore tool written and rehearsed in an isolated emulator (not staging until #181): compensating catalogue revision restoring prior active membership/records/package with monotonically advanced revision",
+   "Verified gzip raw-byte package roundtrip (download decompress:false) for V1 and V2 packages",
+   "Immutable successors/{oldId} mapping set + digest bound to the cutover record (contract v1)",
+   "Scoped owner execution approval, exact lease, no concurrent writers"
+  ],
+  "readbackAndEquivalenceChecks": [
+   "V2 active ids == survivors-proposed ids exactly (count and set); tags/subtypes equal",
+   "Every V1 raw doc readable from archive and digest-equal",
+   "Published 2-6 Nov: 101 entries / 6570 portions / 82 ids unchanged; every id resolves active (or verified merged)",
+   "9 Nov draft and every other saved week: all referenced ids resolve (not yet checked)",
+   "Hub order lines (23 orders / 240 lines per 1 Nov evidence), CPU and Delivered-In lineage unchanged",
+   "Post-restore: active membership/hash equals V1 rev160 membership"
+  ]
+ },
+ "blockers": [
+  "No approved merge list (Aggressive_Dish_Cleanup_Merge_Plan / Identity_Recovery_Proposals unavailable); all merges here are PROPOSED only.",
+  "Weeks from 9 Nov onward (draft/future/copied) not checked for references.",
+  "Live production re-read needed (gcloud reauth expired): rev160/542 and live week references unverified since the 29 Oct export / 1 Nov evidence.",
+  "Staging isolation #181 open: no staging write rehearsal allowed.",
+  "Cutover executor missing: archive writer, successors/historicalDishReferences writer, activation (no active-library pointer) and rollback restore are unwritten; old script is staging-only.",
+  "Staging compressed package roundtrip unverified (staging packageState lastError: snapshot storage not configured).",
+  "PR #256 provider/readers not confirmed merged and deployed.",
+  "Owner/chef decisions needed on NEEDS-REVIEW clusters, salad subtype gaps and the staging-only hospitality-dish record."
+ ]
+}
