@@ -71,8 +71,9 @@ test("unrecorded cell is styled neutral white in both stylesheet rules", async (
 
 test("accessible name keeps unrecorded distinct from clear and unrecorded blocks completion", async () => {
   const src = await readFile(new URL("../app/ui/HospitalityAllergenDetail.tsx", import.meta.url), "utf8");
-  assert.match(src, /aria-label=\{`\$\{label\} for \$\{sub\.name \|\| "sub-item"\}: \$\{state\}`\}/);
-  assert.match(src, /title=\{state === "unrecorded" \? "Not yet assessed" : undefined\}/);
+  // Issue 251: the Hospitality boxes are binary and text-free; the accessible name carries allergen, row and on/off state, and unrecorded still blocks completion below.
+  assert.match(src, /aria-label=\{binaryCellAriaLabel\(label, sub\.name, view\)\}/);
+  assert.match(src, /aria-pressed=\{binaryCellPressed\(view\)\}/);
   assert.equal(cellState({}, "milk"), "unrecorded");
   assert.equal(cellState({ milk: "clear" }, "milk"), "clear");
   assert.equal(isCompleteOperationalAllergenMap({ ...Object.fromEntries(["no_key_allergens","peanuts","tree_nuts","gluten","sesame","molluscs","fish","soya","celery","shellfish","eggs","milk","mustard","lupin","sulphites"].map(k => [k, "clear"])), milk: "unrecorded" }), false);

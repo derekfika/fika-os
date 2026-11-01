@@ -55,16 +55,14 @@ test("Delivered-In style persistence normalisation (shared contract) still deriv
   assert.doesNotMatch(read("../app/api/production-plan/route.ts"), /deriveNoKeyAllergens|normaliseOperationalAllergens/, "the CPU route no longer derives No Key");
 });
 
-test("the Hospitality grid renders No Key as a keyboard-reachable labelled checkbox with a 44px target, not a read-only icon", () => {
+test("the Hospitality grid renders No Key as a keyboard-reachable, text-free native button with a 44px target, not a read-only icon or checkbox widget (#251)", () => {
   const component = read("../app/ui/HospitalityAllergenDetail.tsx");
-  assert.match(component, /type="checkbox"/);
-  assert.match(component, /onChange=\{\(\) => toggleCell\(menuItem\.id, sub, "no_key_allergens"\)\}/);
-  assert.match(component, /htmlFor=\{inputId\}/);
-  assert.match(component, /aria-describedby=\{`\$\{inputId\}-status`\}/);
-  assert.match(component, /No Key Allergens<span className="visually-hidden"> for/);
+  assert.doesNotMatch(component, /no-key-control|no-key-checkbox|no-key-status|No Key Allergens<span/);
+  assert.match(component, /aria-pressed=\{binaryCellPressed\(view\)\}/);
+  assert.match(component, /toggleCell\(menuItem\.id, sub, key\)/);
   assert.doesNotMatch(component, /derivedNoKeyState|read only/);
-  assert.match(read("../app/ui/hospitality-allergen-detail.css"), /\.no-key-control\{[^}]*min-height:44px;min-width:44px/);
-  assert.match(read("../app/ui/hospitality-allergen-detail.css"), /\.no-key-checkbox:focus-visible\{outline:3px solid/);
+  assert.match(read("../app/ui/hospitality-allergen-detail.css"), /\.allergen-checker \.allergen-cell\{min-width:44px;min-height:44px\}/);
+  assert.match(read("../app/ui/hospitality-allergen-detail.css"), /\.allergen-checker \.allergen-cell:focus-visible\{outline:3px solid/);
 });
 
 // ---------- 2. two reviewers: a stale save is rejected and never overwrites newer evidence

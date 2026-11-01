@@ -22,7 +22,7 @@ import "./hospitality-allergen-detail.css";
 import { mayContainNotes } from "./allergen-matrix";
 import { isCompleteOperationalAllergenMap, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
 import { matrixColumns } from "./allergen-matrix";
-import { applyHospitalityCellClick, rowReviewBadge, cellLabel, cellState, emptyAllergens, hydrateSavedAllergens } from "./allergen-cell-state";
+import { applyHospitalityBinaryClick, binaryCellAriaLabel, binaryCellPressed, binaryCellView, rowReviewBadge, emptyAllergens, hydrateSavedAllergens } from "./allergen-cell-state";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 import { canonicalAllergenMatrixForHash } from "../../../shared/allergen-matrix-hash";
 const allergenColumns = matrixColumns;
@@ -513,7 +513,7 @@ export default function HospitalityAllergenDetail({
   const toggleCell = (menuId: string, sub: PlannedSubItem, key: string) => {
     if (reviewLockedByAuthority) return;
     const hadNoKey = rowAttestation(sub) === "declared";
-    const allergens = applyHospitalityCellClick(sub.allergens, key, rowContext(sub));
+    const allergens = applyHospitalityBinaryClick(sub.allergens, key, rowContext(sub));
     editRowAllergens(menuId, sub, allergens);
     if (key !== "no_key_allergens" && hadNoKey) setStatusAnnouncement(`${sub.name || "Row"}: No Key Allergens cleared because an allergen was selected.`);
     else if (key === "no_key_allergens") setStatusAnnouncement(allergens.no_key_allergens === "contains" ? `${sub.name || "Row"}: No Key Allergens ticked. All allergens cleared.` : `${sub.name || "Row"}: No Key Allergens unticked. The row is blank and not verified.`);
@@ -879,8 +879,12 @@ export default function HospitalityAllergenDetail({
               <small>Digital master allergen checker</small>
               <h3>Production menu and sub-items</h3>
               <p>
-                Each menu item can contain multiple sub-items. Click each
-                allergen cell to cycle white → contains → MC → white.
+                Each menu item can contain multiple sub-items. Click an
+                allergen box to turn it on (black, contains) or off (white).
+                No Key Allergens is ticked deliberately by the chef and clears
+                the other boxes. A blank row is not verified and cannot be
+                marked checked. An existing May Contain shows hatched until
+                the box is clicked.
               </p>
             </div>
             <div className="checker-count">
@@ -1047,44 +1051,22 @@ export default function HospitalityAllergenDetail({
                               </div>
                             </th>
                             {allergenColumns.map(([key, label]) => {
-                              if (key === "no_key_allergens") {
-                                const attestation = rowAttestation(sub);
-                                const ticked = attestation === "declared" || attestation === "conflict";
-                                const inputId = `no-key-${sub.id}`;
-                                return (
-                                  <td key={key}>
-                                    <label className={`no-key-control${ticked ? " no-key-control--ticked" : ""}`} htmlFor={inputId}>
-                                      <input
-                                        id={inputId}
-                                        type="checkbox"
-                                        className="no-key-checkbox"
-                                        checked={ticked}
-                                        disabled={reviewLockedByAuthority}
-                                        aria-describedby={`${inputId}-status`}
-                                        onChange={() => toggleCell(menuItem.id, sub, "no_key_allergens")}
-                                      />
-                                      <span className="no-key-label">No Key Allergens<span className="visually-hidden"> for {sub.name || "sub-item"}</span></span>
-                                    </label>
-                                    <small id={`${inputId}-status`} className="no-key-status" data-testid={`no-key-status-${sub.id}`}>
-                                      {attestation === "declared" ? "Declared: no key allergens" : attestation === "legacy_unverified" ? "Legacy value, not verified" : attestation === "conflict" ? "Conflict with allergens" : attestation === "positives" ? "Allergens recorded" : "Not verified"}
-                                    </small>
-                                  </td>
-                                );
-                              }
-                              const state = cellState(sub.allergens, key);
+                              // Issue 251: every box (No Key included) is a text-free binary white/black button. Names live only in the purple header row; the review status sits in the Check column.
+                              const view = binaryCellView(sub.allergens, key, rowContext(sub));
                               return (
                                 <td key={key}>
                                   <button
                                     type="button"
-                                    aria-label={`${label} for ${sub.name || "sub-item"}: ${state}`}
-                                    title={state === "unrecorded" ? "Not yet assessed" : undefined}
-                                    className={`allergen-cell allergen-cell--${state}`}
+                                    aria-label={binaryCellAriaLabel(label, sub.name, view)}
+                                    aria-pressed={binaryCellPressed(view)}
+                                    aria-disabled={reviewLockedByAuthority || undefined}
+                                    data-allergen-key={key}
+                                    data-cell-state={view}
+                                    className={`allergen-cell allergen-cell--${view === "on" ? "contains" : view === "legacy_may_contain" ? "may_contain" : "off"}`}
                                     onClick={() =>
                                       toggleCell(menuItem.id, sub, key)
                                     }
-                                  >
-                                    {cellLabel(state)}
-                                  </button>
+                                  />
                                 </td>
                               );
                             })}

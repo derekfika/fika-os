@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { CANONICAL_ALLERGEN_KEYS, type OperationalAllergenState } from "../../shared/allergen-contract";
 import { completeAllergenReviewMap, confirmAllergenReviewMap } from "../app/lib/allergen-review-state";
-import { applyHospitalityCellClick } from "../app/ui/allergen-cell-state";
+import { applyHospitalityBinaryClick, applyHospitalityCellClick, binaryCellAriaLabel, binaryCellPressed, binaryCellView } from "../app/ui/allergen-cell-state";
+import { matrixColumns } from "../app/ui/allergen-matrix";
+import { rowAttestation } from "../app/lib/allergen-explicit";
 import { allergenReviewProblems, describeAllergenReviewProblem, effectiveProductionPlanStatus, isProductionPlanMatrixComplete } from "../app/lib/production-plan-state";
 import type { PlannedMenuItem } from "../app/lib/production-plan";
 
@@ -188,4 +190,109 @@ test("a signed review with a pending Hub sync offers an explicit Retry booking s
 test("save-matrix on an already-current release completes a pending Hub sync instead of refusing with 409", () => {
   const route = read("../app/api/production-plan/route.ts");
   assert.match(route, /if \(plan\.lifecycleSync\?\.status === "pending"\) \{\s*const onlyHub = await completeLifecycleSync\(request, plan\);[\s\S]{0,700}This CPU allergen release is already current\./);
+});
+
+// ---- Issue 251: readable, strictly binary Hospitality allergen checker ----
+type StateMap = Record<string, OperationalAllergenState>;
+const keysOf = (map: StateMap) => Object.keys(map).filter((key) => map[key] !== undefined).sort();
+const pendingDeclaration = { declaration: { declared: true as const, declaredBy: "pending-save", declaredAt: "" } };
+
+test("251: every named allergen is a binary ON/OFF box and May Contain is never reachable from a click", () => {
+  assert.equal(named.length, 14);
+  for (const key of named) {
+    const on = applyHospitalityBinaryClick({}, key);
+    assert.equal(on[key], "contains", `${key}: first click is ON (black)`);
+    assert.equal(binaryCellView(on, key), "on");
+    const off = applyHospitalityBinaryClick(on, key);
+    assert.equal(off[key], undefined, `${key}: second click is OFF (white), not May Contain`);
+    assert.equal(binaryCellView(off, key), "off");
+    assert.deepEqual(keysOf(off), [], `${key}: OFF returns the row to blank`);
+    for (const state of [...Object.values(on), ...Object.values(off)]) assert.notEqual(state, "may_contain");
+  }
+});
+
+test("251: No Key Allergens is a deliberate binary box, exclusive with named allergens, and the last allergen OFF leaves the row blank", () => {
+  const declared = applyHospitalityBinaryClick({}, "no_key_allergens");
+  assert.equal(declared.no_key_allergens, "contains");
+  assert.equal(binaryCellView(declared, "no_key_allergens", pendingDeclaration), "on");
+  const withdrawn = applyHospitalityBinaryClick(declared, "no_key_allergens", pendingDeclaration);
+  assert.deepEqual(keysOf(withdrawn), [], "second No Key click withdraws it and the row is blank");
+  assert.equal(rowAttestation({ name: "R", allergens: withdrawn, evidenceStatus: "not_completed" }), "blank");
+  const selected = applyHospitalityBinaryClick(declared, "gluten", pendingDeclaration);
+  assert.equal(selected.gluten, "contains");
+  assert.notEqual(selected.no_key_allergens, "contains", "a named allergen withdraws No Key");
+  const cleared = applyHospitalityBinaryClick({ gluten: "contains", milk: "contains", eggs: "contains" }, "no_key_allergens");
+  assert.deepEqual(keysOf(cleared), ["no_key_allergens"], "No Key clears every named allergen");
+  const last = applyHospitalityBinaryClick({ gluten: "contains" }, "gluten");
+  assert.notEqual(last.no_key_allergens, "contains", "removing the last allergen never auto-ticks No Key");
+  assert.deepEqual(keysOf(last), []);
+});
+
+test("251: a blank row stays unverified and cannot be checked, signed or released", () => {
+  const blanks = [{}, applyHospitalityBinaryClick({ gluten: "contains" }, "gluten"), applyHospitalityBinaryClick(applyHospitalityBinaryClick({}, "no_key_allergens"), "no_key_allergens", pendingDeclaration)];
+  for (const blank of blanks) {
+    assert.equal(rowAttestation({ name: "R", allergens: blank, evidenceStatus: "not_completed" }), "blank");
+    assert.equal(confirmAllergenReviewMap(blank).blocked, "blank");
+    const blankChecked = [item("a", "Item", [row("a1", "Blank row", blank, "completed")])];
+    assert.deepEqual(allergenReviewProblems(blankChecked).map((problem) => problem.kind), ["row-blank"]);
+    assert.equal(isProductionPlanMatrixComplete(blankChecked), false);
+    assert.equal(effectiveProductionPlanStatus({ status: "planned", menuItems: blankChecked }), "planning");
+  }
+  for (const state of Object.values(applyHospitalityBinaryClick({}, "no_key_allergens"))) assert.notEqual(state, "clear");
+});
+
+test("251: a persisted May Contain is preserved, discernible, never created, and only removed by a deliberate click on that box", () => {
+  const legacy = { gluten: "may_contain", eggs: "contains" } as StateMap;
+  assert.equal(binaryCellView(legacy, "gluten"), "legacy_may_contain");
+  assert.equal(binaryCellPressed("legacy_may_contain"), "mixed");
+  assert.match(binaryCellAriaLabel("Gluten", "Row", "legacy_may_contain"), /May Contain recorded/);
+  const other = applyHospitalityBinaryClick(legacy, "milk");
+  assert.equal(other.gluten, "may_contain", "clicking another box does not touch the legacy value");
+  assert.equal(other.eggs, "contains");
+  assert.equal(other.milk, "contains");
+  const amended = applyHospitalityBinaryClick(legacy, "gluten");
+  assert.equal(amended.gluten, undefined, "a deliberate click on the legacy box switches it OFF, never to a new May Contain");
+  assert.equal(amended.eggs, "contains");
+  assert.equal(applyHospitalityCellClick(applyHospitalityCellClick({}, "fish"), "fish").fish, "may_contain", "the shared cycle used by other surfaces keeps May Contain");
+  assert.equal(completeAllergenReviewMap(legacy).states.gluten, "may_contain", "the review round trip keeps it");
+});
+
+test("251: accessible names and aria-pressed carry allergen, row and on/off state for all 15 boxes", () => {
+  assert.equal(matrixColumns.length, 15);
+  assert.equal(matrixColumns.filter(([key]) => key === "no_key_allergens").length, 1);
+  assert.deepEqual(matrixColumns.map(([key]) => key).filter((key) => key !== "no_key_allergens"), named, "14 named keys in the paper-header order");
+  for (const [key, label] of matrixColumns) {
+    const on = applyHospitalityBinaryClick({}, key);
+    assert.equal(binaryCellAriaLabel(label, "Egg sandwich", binaryCellView(on, key, key === "no_key_allergens" ? pendingDeclaration : {})), `${label} for Egg sandwich: on`);
+    assert.equal(binaryCellAriaLabel(label, "", binaryCellView({}, key)), `${label} for sub-item: off`);
+    assert.equal(binaryCellPressed(binaryCellView(on, key, key === "no_key_allergens" ? pendingDeclaration : {})), true);
+    assert.equal(binaryCellPressed(binaryCellView({}, key)), false);
+  }
+});
+
+test("251: the boxes are text-free native buttons and the review status and helper text sit outside them", () => {
+  const component = read("../app/ui/HospitalityAllergenDetail.tsx");
+  const start = component.indexOf("const view = binaryCellView(");
+  const end = component.indexOf('<td className="may-contain-notes">');
+  assert.ok(start > 0 && end > start);
+  const cellSource = component.slice(start, end);
+  assert.match(cellSource, /<button[\s\S]*type="button"[\s\S]*aria-pressed=\{binaryCellPressed\(view\)\}[\s\S]*toggleCell\(menuItem\.id, sub, key\)[\s\S]*\/>/, "a self-closing native button has no children, so no visible text or symbol");
+  assert.doesNotMatch(cellSource, /cellLabel|"MC"|No Key Allergens|<input|<label|<small|no-key-status|title=/);
+  assert.match(cellSource, /allergen-cell allergen-cell--\$\{view === "on" \? "contains" : view === "legacy_may_contain" \? "may_contain" : "off"\}/);
+  assert.match(component, /data-testid=\{`review-badge-\$\{sub\.id\}`\}/, "row-level status stays in the Check column");
+  assert.match(component, /allergen box to turn it on \(black, contains\) or off \(white\)/);
+  assert.doesNotMatch(component, /white → contains → MC → white/);
+  const css = read("../app/ui/hospitality-allergen-detail.css");
+  assert.match(css, /\.allergen-checker \.allergen-cell:focus-visible\{outline:3px solid #4f34c7/, "visible keyboard focus");
+  assert.match(css, /allergen-checker thead th[^{]*\{[^}]*background:#4f34c7/, "purple heading row kept");
+  assert.match(css, /\.allergen-checker \.allergen-cell\{min-width:44px;min-height:44px\}/, "44px touch targets");
+  assert.match(css, /position:sticky;left:0/, "dish identity stays visible while scrolling horizontally");
+});
+
+test("251: a click edits through the review-reopening path and a signed-authority lock still refuses edits", () => {
+  const component = read("../app/ui/HospitalityAllergenDetail.tsx");
+  assert.match(component, /const toggleCell = \(menuId: string, sub: PlannedSubItem, key: string\) => \{\s*if \(reviewLockedByAuthority\) return;/);
+  assert.match(component, /applyHospitalityBinaryClick\(sub\.allergens, key, rowContext\(sub\)\)/);
+  assert.match(component, /evidenceStatus: "not_completed", allergenReview: undefined/);
+  assert.match(component, /aria-disabled=\{reviewLockedByAuthority \|\| undefined\}/);
 });
