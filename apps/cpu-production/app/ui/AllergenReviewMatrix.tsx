@@ -26,6 +26,15 @@ function displayState(states: Record<string, OperationalAllergenState> | undefin
   return "unrecorded";
 }
 
+// Row-level No Key status lives in the CPU review column, outside the (text-free) allergen cells.
+const NO_KEY_ROW_STATUS = {
+  blank: { text: "Not verified: select allergens or tick No Key Allergens", tone: "warning" },
+  positives: { text: "", tone: "none" },
+  declared: { text: "No Key Allergens declared", tone: "success" },
+  legacy_unverified: { text: "Legacy value, not verified", tone: "warning" },
+  conflict: { text: "Conflict: No Key Allergens with named allergens - not verified", tone: "danger" },
+} as const;
+
 export default function AllergenReviewMatrix({
   rows,
   orders,
@@ -532,7 +541,7 @@ export default function AllergenReviewMatrix({
       {reviewSyncStatus === "error" && <p role="alert">Review is saved on this device but not yet synchronised to CPU. <button type="button" onClick={retryCheckpoint} disabled={busy || locked}>Retry save</button></p>}
       <div className="cpu-allergen-legend" aria-label="Allergen matrix legend">
         <span><i className="cpu-allergen-state cpu-allergen-state--contains" />Contains</span>
-        <span><i className="cpu-allergen-state cpu-allergen-state--contains cpu-allergen-state--explicit">Yes</i>No Key Allergens ticked by the chef</span>
+        <span><i className="cpu-allergen-state cpu-allergen-state--contains" />No Key Allergens ticked by the chef (see the row status in the CPU review column)</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--may_contain" />May contain</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--clear" />No declaration</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--none" />Not recorded</span>
@@ -561,15 +570,16 @@ export default function AllergenReviewMatrix({
                 {CANONICAL_ALLERGEN_COLUMNS.map(([key]) => {
                   if (key === "no_key_allergens") {
                     const attestation = classifyRowAllergens(states[row.key], ctxFor(row.key));
-                    const ticked = attestation === "declared" || attestation === "conflict";
+                    const conflict = attestation === "conflict";
+                    const ticked = attestation === "declared" || conflict;
                     return (
                       <td key={key}>
                         <button
                           type="button"
                           disabled={busy || locked}
-                          className={`cpu-allergen-state cpu-allergen-state--${ticked ? "contains" : "clear"}`}
-                          aria-pressed={ticked}
-                          aria-label={`${titleCaseDish(row.name)}, No Key Allergens: ${ticked ? "declared" : "not declared"}`}
+                          className={`cpu-allergen-state cpu-allergen-state--${ticked ? "contains" : "clear"}${conflict ? " cpu-allergen-state--conflict" : ""}`}
+                          aria-pressed={conflict ? "mixed" : ticked}
+                          aria-label={`${titleCaseDish(row.name)}, No Key Allergens: ${conflict ? "conflict: No Key Allergens with named allergens - not verified" : ticked ? "declared" : "not declared"}`}
                           onClick={() => void toggle(row.key, key)}
                         />
                       </td>
@@ -595,6 +605,10 @@ export default function AllergenReviewMatrix({
                 <td><span className={row.snapshot ? "cpu-allergen-approved" : "cpu-allergen-missing"}>{row.snapshot ? "Published" : "Not recorded"}</span></td>
                 <td>
                   {rowErrors[row.key] && <small className="cpu-allergen-row-error" role="alert">{rowErrors[row.key]}</small>}
+                  {(() => {
+                    const status = NO_KEY_ROW_STATUS[classifyRowAllergens(states[row.key], ctxFor(row.key))];
+                    return status.text ? <small className={`cpu-allergen-row-status cpu-allergen-row-status--${status.tone}`} data-testid={`no-key-status-${row.key}`}>{status.text}</small> : null;
+                  })()}
                   {(() => {
                     const checked = checkedRows.has(row.key);
                     const actionLabel = checked ? "Checked" : "Mark checked";

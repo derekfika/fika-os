@@ -43,9 +43,10 @@ test("CPU allergen review is a full-screen editable master-sign workflow", () =>
   assert.match(reviewMatrix, /function displayState\(/);
   assert.match(reviewMatrix, /classifyRowAllergens/);
   assert.doesNotMatch(reviewMatrix, /resolveNoKeyAllergenState/, "No Key Allergens is a chef declaration and is never resolved from the named allergens");
-  assert.match(reviewMatrix, /className=\{`cpu-allergen-state cpu-allergen-state--\$\{ticked \? "contains" : "clear"\}`\}/, "No Key uses the existing binary allergen square styles");
-  assert.match(reviewMatrix, /aria-pressed=\{ticked\}/, "screen readers receive the declaration state");
-  assert.match(reviewMatrix, /aria-label=\{`\$\{titleCaseDish\(row\.name\)\}, No Key Allergens: \$\{ticked \? "declared" : "not declared"\}`\}/, "the control has a row-specific accessible name");
+  assert.match(reviewMatrix, /className=\{`cpu-allergen-state cpu-allergen-state--\$\{ticked \? "contains" : "clear"\}\$\{conflict \? " cpu-allergen-state--conflict" : ""\}`\}/, "No Key uses the existing binary allergen square styles");
+  assert.match(reviewMatrix, /aria-pressed=\{conflict \? "mixed" : ticked\}/, "screen readers receive the declaration state");
+  assert.match(reviewMatrix, /No Key Allergens: \$\{conflict \? "conflict: No Key Allergens with named allergens - not verified" : ticked \? "declared" : "not declared"\}/, "the control has a row-specific accessible name and announces a conflict");
+  assert.match(reviewMatrix, /cpu-allergen-row-status/, "row-level No Key status is shown outside the allergen cell");
   assert.match(reviewMatrix, /onClick=\{\(\) => void toggle\(row\.key, key\)\}/, "the square keeps the existing explicit declaration toggle");
   assert.doesNotMatch(reviewMatrix, /type="checkbox"/, "No Key does not render a checkbox");
   assert.doesNotMatch(reviewMatrix, /states\[row\.key\]\?\.\[key\] \|\| "clear"/);

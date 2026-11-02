@@ -79,9 +79,22 @@ test("explicit No Key state is a chef tick: never resolved from the named allerg
   assert.match(source, /classifyRowAllergens\(states\[row\.key\], ctxFor\(row\.key\)\)/);
   assert.match(source, /checkpointAllergenReviewRow/);
   const noKeyCell = source.slice(source.indexOf('if (key === "no_key_allergens")'), source.indexOf('const state = displayState'));
-  assert.match(noKeyCell, /className=\{`cpu-allergen-state cpu-allergen-state--\$\{ticked \? "contains" : "clear"\}`\}/);
-  assert.match(noKeyCell, /aria-pressed=\{ticked\}/);
-  assert.match(noKeyCell, /aria-label=\{`\$\{titleCaseDish\(row\.name\)\}, No Key Allergens: \$\{ticked \? "declared" : "not declared"\}`\}/);
+  assert.match(noKeyCell, /className=\{`cpu-allergen-state cpu-allergen-state--\$\{ticked \? "contains" : "clear"\}\$\{conflict \? " cpu-allergen-state--conflict" : ""\}`\}/);
+  assert.match(noKeyCell, /aria-pressed=\{conflict \? "mixed" : ticked\}/);
+  assert.match(noKeyCell, /aria-label=\{`\$\{titleCaseDish\(row\.name\)\}, No Key Allergens: \$\{conflict \? "conflict: No Key Allergens with named allergens - not verified" : ticked \? "declared" : "not declared"\}`\}/, "a conflict is announced as a conflict, never as declared");
+  assert.match(noKeyCell, /cpu-allergen-state--conflict/);
+  // Row-level status (outside the text-free cell) for every attestation state.
+  assert.match(source, /blank: \{ text: "Not verified/);
+  assert.match(source, /legacy_unverified: \{ text: "Legacy value, not verified"/);
+  assert.match(source, /declared: \{ text: "No Key Allergens declared"/);
+  assert.match(source, /conflict: \{ text: "Conflict: No Key Allergens with named allergens - not verified"/);
+  assert.match(source, /data-testid=\{`no-key-status-\$\{row\.key\}`\}/);
+  assert.ok(source.indexOf("no-key-status-") > source.indexOf('const state = displayState'), "the status is rendered outside the No Key cell");
+  assert.match(source, /<i className="cpu-allergen-state cpu-allergen-state--contains" \/>No Key Allergens ticked by the chef/, "legend swatch is text-free");
+  assert.doesNotMatch(source, /cpu-allergen-state--explicit/);
+  const css = await readFile(new URL("../app/ui/allergen-review.css", import.meta.url), "utf8");
+  assert.match(css, /button\.cpu-allergen-state:focus-visible\{outline:3px solid var\(--fika-focus-ring/);
+  assert.doesNotMatch(css, /cpu-no-key-/);
   assert.match(noKeyCell, /onClick=\{\(\) => void toggle\(row\.key, key\)\}/);
   assert.doesNotMatch(noKeyCell, /type="checkbox"|<span|<small|May Contain|<i[ >]/);
   assert.doesNotMatch(source, /namedAllergenPresent/);
