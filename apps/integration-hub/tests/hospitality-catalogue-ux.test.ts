@@ -70,6 +70,7 @@ test("item inspector shows effective services per permitted site", () => {
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 test("catalogue exposes Overview, Items, Services and Locations as first-class tabs", () => {
   const source = read("app/ui/HospitalityCatalogue.tsx");
+  const styles = read("app/ui/HospitalityCatalogue.css");
   assert.deepEqual(CATALOGUE_TABS.map(t => t.id), ["overview", "items", "services", "locations"]);
   assert.deepEqual(CATALOGUE_TABS.map(t => t.label), ["Overview", "Items", "Services", "Locations"]);
   assert.match(source, /role="tablist"/); assert.match(source, /role="tab"/); assert.match(source, /role="tabpanel"/);
@@ -78,6 +79,18 @@ test("catalogue exposes Overview, Items, Services and Locations as first-class t
   assert.match(source, /HospitalityCatalogueOverview/); assert.match(source, /HospitalityCatalogueServices/);
   assert.match(source, /onManageServices/);
   assert.match(source, /Manage booking services for/);
+  assert.match(styles, /\.hc \.scg-tabs\s*\{/);
+  assert.match(styles, /\.hc \.scg-tab\s*\{/);
+  assert.match(styles, /\.hc \.scg-tab:hover:not\(\[aria-selected="true"\]\)/);
+  assert.match(styles, /\.hc \.scg-tab:focus-visible/);
+  assert.match(styles, /\.hc-btn--primary\s*\{\s*min-height:\s*var\(--control-height\)/);
+  assert.match(styles, /\.hco-card-copy small, \.hco-attention-list li p, \.hco-how li small\) \{ font-size: 13px; line-height: 18px; \}/);
+  assert.match(source, /import "\.\/HospitalityCatalogue\.css"/);
+  assert.doesNotMatch(source, /<small>\{entry\.hint\}<\/small>/);
+  assert.doesNotMatch(source, /ServiceCategoryGuide\.css/);
+  assert.match(source, /<h2 className="hc-overview-title">Catalogue at a glance<\/h2>/);
+  assert.match(styles, /\.hc-overview-tab \.hco-header h2/);
+  assert.match(source, /<h1 id="hc-title">Hospitality Catalogue<\/h1>/);
 });
 
 test("bulk editor separates Item category, customer service visibility, routing, sites and defaults", () => {

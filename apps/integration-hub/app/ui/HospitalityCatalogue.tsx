@@ -163,10 +163,11 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
           writeLocation(next);
           document.getElementById(`hc-tab-${next}`)?.focus();
         }
-      }}><strong>{entry.label}</strong><small>{entry.hint}</small></button>)}</div>
+      }}><strong>{entry.label}</strong></button>)}</div>
     {CATALOGUE_TABS.filter(entry => entry.id !== tab).map(entry => <div key={entry.id} role="tabpanel" id={`hc-panel-${entry.id}`} aria-labelledby={`hc-tab-${entry.id}`} hidden />)}
 
     {tab === "overview" ? <div role="tabpanel" id="hc-panel-overview" aria-labelledby="hc-tab-overview" className="hc-overview-tab">
+      <h2 className="hc-overview-title">Catalogue at a glance</h2>
       <HospitalityCatalogueOverview payload={payload} onNavigate={next => writeLocation(next)} />
     </div> : tab === "services" || tab === "locations" ? <div role="tabpanel" id={`hc-panel-${tab}`} aria-labelledby={`hc-tab-${tab}`} className={`hc-${tab}-tab`}>
       <HospitalityCatalogueServices payload={payload} canManage={canManage} send={send} reload={load} view={tab} initialContext={servicesContext} onContextChange={context => writeLocation(tab, context, "replace")} />
