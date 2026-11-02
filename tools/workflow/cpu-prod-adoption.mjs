@@ -25,7 +25,7 @@ export async function observeCpuAdoption(t, rolloutId, read = cloud) {
   ]);
   if (!String(rollout?.build).startsWith(`${base}/builds/`) || !/^[\w-]+$/.test(rollout.build.slice(`${base}/builds/`.length))) throw Error('Rollout build is outside CPU production');
   const build = buildEvidence(await read(rollout.build));
-  return { backend:{name:backend.name, environment:backend.environment, uri:backend.uri, reconciling:backend.reconciling, codebase:backend.codebase},
+  return { backend:{name:backend.name, environment:backend.environment, uri:backend.uri, appId:backend.appId, reconciling:backend.reconciling, codebase:backend.codebase},
     traffic, build, rollout:rolloutEvidence(rollout), builds, rollouts,
     operations:operations.filter(o => o.done !== true && (!o.target || new RegExp(`^projects/(?:${t.project}|[0-9]+)/locations/${t.region}/backends/${t.backend}(?:/|$)`).test(o.target) || !o.target.includes('/backends/'))) };
 }
@@ -41,8 +41,10 @@ export function validateCpuAdoption(t, snapshot, sha, rolloutId, previous, prove
   if (!/^[\w-]+$/.test(rolloutId || '') || rollout?.name !== `${base}/rollouts/${rolloutId}` || rollout.state !== 'SUCCEEDED' || rollout.reconciling !== false ||
       rollout.build !== build?.name || !String(build?.name).startsWith(`${base}/builds/`) || !/^[\w-]+$/.test(build.name.slice(`${base}/builds/`.length))) throw Error('Completed CPU rollout identity is not verified');
   if (build.state !== 'READY' || build.reconciling !== false || build.source?.hash !== sha || build.source?.commit !== sha || build.source?.uri !== `https://github.com/${REPO}/commit/${sha}`) throw Error('CPU build does not prove the exact READY source');
+  const projectNumber = /^1:([0-9]+):web:[a-f0-9]+$/.exec(b.appId || '')?.[1];
+  if (!projectNumber) throw Error('CPU Firebase app/project number is not verified');
   const splits = traffic?.current?.splits, wanted = build.name.slice(`projects/${t.project}`.length);
-  const matches = name => new RegExp(`^projects/(?:${t.project}|[0-9]+)${wanted}$`).test(name || '');
+  const matches = name => new RegExp(`^projects/(?:${t.project}|${projectNumber})${wanted}$`).test(name || '');
   if (traffic?.rolloutPolicy?.disabled !== true || traffic.reconciling !== false || splits?.length !== 1 || splits[0].percent !== 100 || !matches(splits[0].build) ||
       (traffic.target?.splits?.length && (traffic.target.splits.length !== 1 || traffic.target.splits[0].percent !== 100 || !matches(traffic.target.splits[0].build)))) throw Error('CPU traffic is not quiescent at the selected 100% build');
   for (const [rows, selected, states, cutoff] of [[snapshot.builds,build,['READY','FAILED','DELETED','CANCELLED'],build.createTime], [snapshot.rollouts,rollout,['SUCCEEDED','FAILED','CANCELLED'],rollout.createTime]]) {
@@ -50,7 +52,7 @@ export function validateCpuAdoption(t, snapshot, sha, rolloutId, previous, prove
     if (rows.filter(r=>r.name===selected.name).length !== 1 || digest(rows.find(r=>r.name===selected.name)) !== digest(selected)) throw Error('Direct and discovered CPU release evidence differ');
     for (const row of rows) {
       const time = Date.parse(row.createTime);
-      if (!Number.isFinite(time) || time > Date.parse(cutoff) || row.reconciling !== false || (!states.includes(row.state) && !(row.state === 'SKIPPED' && time < Date.parse(cutoff)))) throw Error('A subsequent, active or unknown CPU build/rollout prevents adoption');
+      if (!Number.isFinite(time) || (row.name !== selected.name && time >= Date.parse(cutoff)) || row.reconciling !== false || (!states.includes(row.state) && !(row.state === 'SKIPPED' && time < Date.parse(cutoff)))) throw Error('A subsequent, active or unknown CPU build/rollout prevents adoption');
     }
   }
   if (!Array.isArray(snapshot.operations) || snapshot.operations.length) throw Error('CPU operations may still be in flight');

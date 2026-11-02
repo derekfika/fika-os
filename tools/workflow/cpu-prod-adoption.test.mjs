@@ -9,7 +9,7 @@ const t=target('cpu','prod'),base=backendPath(t),sha='f'.repeat(40),rolloutId='r
 function fixture(){
   const build={name:buildName,state:'READY',reconciling:false,createTime:'2026-11-02T08:33:57Z',updateTime:'2026-11-02T08:37:01Z',source:{hash:sha,commit:sha,uri:`https://github.com/${REPO}/commit/${sha}`}};
   const rollout={name:`${base}/rollouts/${rolloutId}`,build:buildName,state:'SUCCEEDED',reconciling:false,createTime:'2026-11-02T08:33:59Z',updateTime:'2026-11-02T08:37:07Z'};
-  const snapshot={backend:{name:base,environment:'production',uri:`${t.backend}--${t.project}.${t.region}.hosted.app`,reconciling:false,codebase:{repository:`projects/${t.project}/locations/${t.region}/connections/fixture/gitRepositoryLinks/derekfika-fika-os`,rootDirectory:'/apps/cpu-production'}},
+  const snapshot={backend:{name:base,environment:'production',uri:`${t.backend}--${t.project}.${t.region}.hosted.app`,appId:'1:397503564317:web:b6174aedc02ae65d3e54f4',reconciling:false,codebase:{repository:`projects/${t.project}/locations/${t.region}/connections/fixture/gitRepositoryLinks/derekfika-fika-os`,rootDirectory:'/apps/cpu-production'}},
     traffic:{rolloutPolicy:{disabled:true},reconciling:false,current:{splits:[{build:buildName.replace('projects/fika-os/','projects/397503564317/'),percent:100}]}},build,rollout,builds:[structuredClone(build)],rollouts:[structuredClone(rollout)],operations:[]};
   const previous={commit:'a'.repeat(40),record:{schema:'fika.release.v1',...t,sourceSha:'b'.repeat(40),kind:'deploy',scopeHash:'prior',rollout:'build-prior',state:'SUCCEEDED',percent:100}};
   const provenance={integrated:true,preservesPrevious:true,validation:{sha,id:123,url:'https://github.com/fixture/check'},pr:{number:1,merged:true,merged_at:'2026-11-02T08:00:00Z',merge_commit_sha:sha,base:{ref:'main',repo:{full_name:REPO}}}};
@@ -44,6 +44,8 @@ test('backend, traffic, source, discovery and merged provenance contradictions f
     f=>f.snapshot.backend.environment='staging',f=>f.snapshot.backend.reconciling=true,
     f=>f.snapshot.backend.codebase.repository='other',f=>f.snapshot.backend.codebase.rootDirectory='/apps/menu-planning',
     f=>f.snapshot.backend.uri='other.invalid',f=>f.snapshot.backend.name='other',
+    f=>delete f.snapshot.backend.appId,
+    f=>f.snapshot.traffic.current.splits[0].build=buildName.replace('projects/fika-os/','projects/999/'),
     f=>f.snapshot.traffic.current.splits[0].percent=99,f=>f.snapshot.traffic.rolloutPolicy.disabled=false,
     f=>f.snapshot.traffic.reconciling=true,f=>f.snapshot.traffic.current.splits.push(f.snapshot.traffic.current.splits[0]),
     f=>f.snapshot.traffic.current.splits[0].build='projects/1/locations/europe-west4/backends/other/builds/build-fixture',
@@ -54,6 +56,7 @@ test('backend, traffic, source, discovery and merged provenance contradictions f
     f=>f.snapshot.builds=[],f=>f.snapshot.rollouts=[],f=>f.snapshot.builds.push(structuredClone(f.snapshot.build)),
     f=>f.snapshot.rollouts[0].state='FAILED',f=>delete f.snapshot.builds[0].createTime,
     f=>f.snapshot.builds.push({...f.snapshot.build,name:`${base}/builds/newer`,createTime:'2026-11-02T10:00:00Z'}),
+    f=>f.snapshot.builds.push({...f.snapshot.build,name:`${base}/builds/same-time`}),
     f=>f.snapshot.rollouts.push({...f.snapshot.rollout,name:`${base}/rollouts/active`,state:'QUEUED',createTime:'2026-11-02T08:00:00Z'}),
     f=>f.snapshot.operations.push({done:false}),f=>f.input.previous.record.kind='intent',
     f=>f.input.previous.record.sourceSha=sha,f=>f.input.provenance.integrated=false,f=>f.input.provenance.preservesPrevious=false,
