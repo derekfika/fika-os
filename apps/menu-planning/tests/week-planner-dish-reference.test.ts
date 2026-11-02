@@ -28,6 +28,16 @@ test("matching active classification does not tint the saved placement", () => {
   assert.equal(noticeFor(entry(), references(reference({ state: "active", classification: { category: "Salad", subcategory: "Leaf" } }))), undefined);
 });
 
+test("an active salad without an assigned subtype is identified as needing classification", () => {
+  const saved = entry();
+  const before = structuredClone(saved);
+  const notice = noticeFor(saved, references(reference({ state: "active", classification: { category: "Salad" } })));
+  assert.equal(notice?.label, "Needs classification");
+  assert.match(notice!.message, /needs a salad slot classification/);
+  assert.match(notice!.message, /saved placement remains in SALAD 1/);
+  assert.deepEqual(saved, before);
+});
+
 test("verified archived references remain historical and are excluded from new picker choices", () => {
   const archived = reference({ state: "archived", provenance: { ...provenance, archiveId: "cutover-1", archiveDigest: "archive-digest" } });
   const saved = entry();
@@ -46,7 +56,10 @@ test("a merged notice names only the explicit verified successor mapping", () =>
   assert.equal(notice?.state, "merged");
   assert.match(notice!.message, /Verified V2 dish/);
   assert.deepEqual(selectableDishIds([{ id: "dish-old" }, { id: "dish-v2" }], references(merged), [entry()]), [{ id: "dish-v2" }]);
-  assert.equal(noticeFor(entry(), references(reference({ state: "merged", successor: undefined })))?.state, "unresolved");
+  const unavailableSuccessor = noticeFor(entry(), references(reference({ state: "merged", successor: undefined })));
+  assert.equal(unavailableSuccessor?.state, "unresolved");
+  assert.equal(unavailableSuccessor?.label, "Reference unavailable");
+  assert.match(unavailableSuccessor!.message, /^Historical reference unavailable/);
 });
 
 test("unresolved, stale, and mismatched-ID metadata never invents a successor or changes placement", () => {
@@ -54,13 +67,26 @@ test("unresolved, stale, and mismatched-ID metadata never invents a successor or
   const before = structuredClone(saved);
   const unresolved = noticeFor(saved, references(reference({ state: "unresolved", reason: "mapping_unverified", successor: { id: "dish-guessed", name: "Do not show", category: "Salad" } })));
   assert.equal(unresolved?.state, "unresolved");
+  assert.equal(unresolved?.label, "Reference unavailable");
+  assert.match(unresolved!.message, /^Historical reference unavailable/);
   assert.doesNotMatch(unresolved!.message, /Do not show|dish-guessed/);
+  assert.doesNotMatch(unresolved!.label, /Needs classification/);
+  for (const reason of ["not_found", "archive_unavailable", "integrity_failed", "mapping_unverified"] as const) {
+    const notice = noticeFor(saved, references(reference({ state: "unresolved", reason })));
+    assert.equal(notice?.label, "Reference unavailable", reason);
+    assert.match(notice!.message, /^Historical reference unavailable/, reason);
+    assert.match(notice!.message, /saved label and placement remain unchanged/);
+    assert.doesNotMatch(notice!.message, /Needs classification/);
+  }
   assert.equal(dishReferenceForEntry(saved, references(reference(), "another-week"), { id: "week-1", version: 4 }), undefined);
   assert.equal(noticeFor(saved, references(reference({ requestedId: "different-id" }))), undefined);
   assert.equal(noticeFor(saved, references(reference({ state: "active", requestedId: undefined, classification: { category: "Soup" } }))), undefined);
   assert.equal(noticeFor(saved, references(reference({ state: "archived", requestedId: undefined }))), undefined);
   assert.equal(noticeFor(saved, references(reference({ state: "merged", requestedId: undefined, successor: { id: "dish-v2", name: "Verified V2 dish", category: "Salad" }, provenance: { ...provenance, mappingVersion: 1, mappingDigest: "mapping" } }))), undefined);
-  assert.equal(noticeFor(entry({ itemId: undefined }), references(reference({ requestedId: undefined, reason: "missing_id" })))?.state, "unresolved");
+  const missingId = noticeFor(entry({ itemId: undefined }), references(reference({ requestedId: undefined, reason: "missing_id" })));
+  assert.equal(missingId?.state, "unresolved");
+  assert.equal(missingId?.label, "Reference unavailable");
+  assert.match(missingId!.message, /^Historical reference unavailable/);
   assert.equal(noticeFor(entry({ itemId: "dish-old" }), references(reference({ requestedId: undefined, reason: "missing_id" }))), undefined);
   assert.deepEqual(saved, before);
 });
