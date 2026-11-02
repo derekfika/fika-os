@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-02T21:00:07.370Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-02T21:36:56.213Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -155,6 +155,7 @@ Snapshot: 2026-11-02T21:00:07.370Z. The local governed registry remains authorit
 | issue-262-cpu-hosp-di-invalidation-followthrough | cpu-hosp-deliveredin-fix | apps/cpu-production/lib/cpu-durable-outbox.ts, apps/cpu-production/tests/cpu-hospitality-delivered-in-invalidation.test.ts, .changes/cpu-production/2026-11-02-hospitality-delivered-in-invalidation.md | codex/issue-262-cpu-hosp-di-invalidation-followthrough | — | finished | 2026-11-02T03:48:40.067Z |
 | issue-262-cpu-hospitality-delivered-in-invalidation | cpu_hosp_deliveredin | apps/cpu-production/lib/cpu-durable-outbox.ts, apps/cpu-production/tests/cpu-hospitality-delivered-in-invalidation.test.ts | codex/issue-262-cpu-hospitality-delivered-in-invalidation | — | retired | 2026-11-02T03:05:37.970Z |
 | issue-262-hospitality-lifecycle-e2e | hosp_e2e_contract | apps/integration-hub/tests/hospitality-lifecycle-e2e-emulator.test.ts | codex/issue-262-hospitality-lifecycle-e2e | — | finished | 2026-11-02T03:03:59.775Z |
+| issue-277-dish-search | sol-issue-277-search | apps/menu-planning/app/catalogue-workspace.tsx | codex/issue-277-dish-search | — | retired | 2026-11-02T21:36:50.698Z |
 | kafoodle-food-data-lib | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/api/food-data, apps/integration-hub/app/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/docs/food-data-library.md | codex/kafoodle-food-data-lib | — | finished | 2026-10-31T16:21:54.029Z |
 | kafoodle-food-data-v2 | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/api/food-data, apps/integration-hub/app/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/tests/food-data.test.ts, apps/integration-hub/docs/food-data-library.md | codex/kafoodle-food-data-v2 | [#212](https://github.com/derekfika/fika-os/pull/212) | retired | 2026-10-31T17:08:24.835Z |
 | kafoodle-food-data | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data | codex/kafoodle-food-data | — | retired | 2026-10-31T16:00:02.411Z |
