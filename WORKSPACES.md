@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-02T18:11:45.804Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-02T18:39:02.098Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -81,6 +81,7 @@ Snapshot: 2026-11-02T18:11:45.804Z. The local governed registry remains authorit
 | hospitality-all-day-s0 | haiku-hospitality-all-day-s0 | apps/hospitality-booking/lib/rcoa-all-day.ts | codex/hospitality-all-day-s0 | — | retired | 2026-10-31T07:36:55.003Z |
 | hospitality-booking-create-uat | hospitality-booking-create-route-uat | apps/integration-hub/tests/munich-re-booking.emulator.test.ts | codex/hospitality-booking-create-uat | — | finished | 2026-11-01T19:49:23.331Z |
 | hospitality-booking-emulator-uat | luna-hospitality-booking-emulator-uat | apps/integration-hub/tests/hospitality-group-amendment.test.ts, apps/integration-hub/tests/hospitality-cancellation-notifications.test.ts | codex/hospitality-booking-emulator-uat | — | finished | 2026-11-01T19:43:19.830Z |
+| hospitality-bulk-category | luna-hospitality-bulk-category | apps/integration-hub/lib/hospitality-catalogue-admin.ts, apps/integration-hub/app/api/hospitality-catalogue/route.ts | codex/hospitality-bulk-category | — | retired | 2026-11-02T18:38:59.159Z |
 | hospitality-catalogue-mapping | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-catalogue-mapping | — | finished | 2026-10-27T12:03:58.367Z |
 | hospitality-cfc-mr-tests | hospitality-cfc-mr | apps/integration-hub, CHANGELOG.md | codex/hospitality-cfc-mr-tests | [#81](https://github.com/derekfika/fika-os/pull/81) | finished | 2026-10-27T12:49:31.981Z |
 | hospitality-dashboard-filtering-overnight | sonnet-hospitality-dashboard-filtering-overnight | apps/hospitality-booking | codex/hospitality-dashboard-filtering-overnight | [#194](https://github.com/derekfika/fika-os/pull/194) | retired | 2026-10-31T01:34:54.385Z |
