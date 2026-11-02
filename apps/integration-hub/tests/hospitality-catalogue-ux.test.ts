@@ -84,7 +84,7 @@ test("catalogue exposes Overview, Items, Services and Locations as first-class t
   assert.match(styles, /\.hc \.scg-tab:hover:not\(\[aria-selected="true"\]\)/);
   assert.match(styles, /\.hc \.scg-tab:focus-visible/);
   assert.match(styles, /\.hc-btn--primary\s*\{\s*min-height:\s*var\(--control-height\)/);
-  assert.match(styles, /\.hco-card-copy small, \.hco-attention-list li p, \.hco-how li small\) \{ font-size: 13px; line-height: 18px; \}/);
+  assert.match(styles, /\.hco-card-copy small, \.hco-attention-list li p, \.hco-how li small\) \{ font-size: var\(--text-sm\); line-height: 1\.45; \}/);
   assert.match(source, /import "\.\/HospitalityCatalogue\.css"/);
   assert.doesNotMatch(source, /<small>\{entry\.hint\}<\/small>/);
   assert.doesNotMatch(source, /ServiceCategoryGuide\.css/);
