@@ -68,14 +68,38 @@ test("item inspector shows effective services per permitted site", () => {
 });
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
-test("catalogue exposes Items | Booking Services tabs instead of the hidden disclosure", () => {
+test("catalogue exposes Overview, Items, Services and Locations as first-class tabs", () => {
   const source = read("app/ui/HospitalityCatalogue.tsx");
-  assert.deepEqual(CATALOGUE_TABS.map(t => t.label), ["Items", "Booking Services"]);
-  assert.ok(!source.includes("Booking service categories"));
-  assert.ok(!source.includes("layoutOpen"));
+  assert.deepEqual(CATALOGUE_TABS.map(t => t.id), ["overview", "items", "services", "locations"]);
+  assert.deepEqual(CATALOGUE_TABS.map(t => t.label), ["Overview", "Items", "Services", "Locations"]);
   assert.match(source, /role="tablist"/); assert.match(source, /role="tab"/); assert.match(source, /role="tabpanel"/);
-  assert.match(source, /<ServiceCategoryGuide /); assert.match(source, /onManageServices/);
+  assert.match(source, /useState<CatalogueTab>\("overview"\)/);
+  assert.match(source, /catalogueTab/); assert.match(source, /popstate/);
+  assert.match(source, /HospitalityCatalogueOverview/); assert.match(source, /HospitalityCatalogueServices/);
+  assert.match(source, /onManageServices/);
   assert.match(source, /Manage booking services for/);
+});
+
+test("bulk editor separates Item category, customer service visibility, routing, sites and defaults", () => {
+  const source = read("app/ui/HospitalityCatalogue.tsx");
+  assert.match(source, /aria-labelledby="hc-bulk-category-title"/);
+  assert.match(source, /aria-labelledby="hc-bulk-services-title"/);
+  assert.match(source, /aria-labelledby="hc-bulk-production-title"/);
+  assert.match(source, /aria-labelledby="hc-bulk-sites-title"/);
+  assert.match(source, /Current categories:/);
+  assert.match(source, /Current prices:/);
+  assert.match(source, /Current minima:/);
+  assert.match(source, /Review changes/);
+  assert.match(source, /Review all \{categoryCheck\.changes\.length\} site visibility effect/);
+});
+
+test("Item inspector summarizes company and site values without claiming orderability", () => {
+  const source = read("app/ui/HospitalityCatalogue.tsx");
+  assert.match(source, /Item summary/);
+  assert.match(source, /Effective values at locations with item exceptions/);
+  assert.match(source, /Site permission/);
+  assert.match(source, /RCoA reads service visibility from its verified published catalogue package/);
+  assert.doesNotMatch(source, /Current booking portals do not consume that layout/);
 });
 
 test("guided editor uses only the governed command and has no alert/prompt or hard coded counts", () => {
@@ -90,6 +114,7 @@ test("Manage booking services never preselects a service", () => {
   const context = manageServicesContext(RCOA, "Wine");
   assert.deepEqual(context, { oplocId: RCOA, category: "Wine" });
   assert.equal("serviceId" in context, false);
+  assert.deepEqual(manageServicesContext(RCOA, "Wine", "hospitality-menu-item:red-a"), { oplocId: RCOA, category: "Wine", itemId: "hospitality-menu-item:red-a" });
   assert.ok(!/serviceId:\s*site\.notShownIn/.test(read("app/ui/HospitalityCatalogue.tsx")));
 });
 

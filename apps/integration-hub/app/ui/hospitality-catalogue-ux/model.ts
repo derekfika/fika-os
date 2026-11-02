@@ -8,13 +8,15 @@ import { SERVICE_IDS } from "@fika/server-shared/hospitality-service-layout";
 import { SERVICE_LABELS, serviceRuleAt, setCategoryIncluded, type ServiceLayoutView } from "../../../lib/hospitality-catalogue-types";
 import type { CatalogueRow } from "../../../lib/hospitality-catalogue-types";
 
-export type CatalogueTab = "items" | "services";
+export type CatalogueTab = "overview" | "items" | "services" | "locations";
 export const CATALOGUE_TABS: ReadonlyArray<{ id: CatalogueTab; label: string; hint: string }> = [
+  { id: "overview", label: "Overview", hint: "Catalogue summary and actions" },
   { id: "items", label: "Items", hint: "Products, prices and sites" },
-  { id: "services", label: "Booking Services", hint: "What each booking service offers customers" },
+  { id: "services", label: "Services", hint: "What each booking service offers customers" },
+  { id: "locations", label: "Locations", hint: "Where each service is available" },
 ];
 /** Context carried from an Item (or anywhere) into the Booking Services tab. */
-export type ServicesContext = { oplocId?: string; serviceId?: ServiceId; category?: string };
+export type ServicesContext = { oplocId?: string; serviceId?: ServiceId; category?: string; itemId?: string };
 
 type LayoutStored = Pick<ServiceLayoutView, "company" | "sites">;
 type ItemLike = Pick<CatalogueRow, "name" | "category" | "status" | "availableAt">;
@@ -55,7 +57,7 @@ export function guidedDraft(view: LayoutStored, oplocId: string, serviceId: Serv
 }
 
 /** Context for "Manage booking services": site and category only. The operator must pick the service; never preselect one (it could be Breakfast). */
-export const manageServicesContext = (oplocId: string, category: string): ServicesContext => ({ oplocId, category });
+export const manageServicesContext = (oplocId: string, category: string, itemId?: string): ServicesContext => ({ oplocId, category, ...(itemId ? { itemId } : {}) });
 
 /** Everyday-language impact lines for the preview. */
 export function impactLines(rows: readonly ItemLike[], change: GuidedChange, oplocId: string, siteLabel: string, serviceLabel: string) {
