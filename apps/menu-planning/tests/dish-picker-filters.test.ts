@@ -153,7 +153,7 @@ test("existing planner behaviour remains: Enter-to-create, choose, drag/copy, cl
 });
 
 test("filters read the shared registry, never hard-code tags, and never write", () => {
-  assert.match(planner, /fetch\("\/api\/dish-tags"/);
+  assert.match(planner, /loadDishTagRegistry\(\)/);
   for (const source of [panel, readFileSync(new URL("../lib/dish-picker-filters.ts", import.meta.url), "utf8")]) {
     assert.doesNotMatch(source, /method:\s*"(POST|PUT|PATCH|DELETE)"|localStorage|sessionStorage/);
   }

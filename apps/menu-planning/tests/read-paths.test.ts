@@ -4,6 +4,8 @@ import { test } from "node:test";
 import { catalogueErrorMessage, catalogueManifestFromResponse, catalogueManifestMatches, resolveCachedCatalogueEntry } from "../lib/menu-catalogue-cache";
 import { createVersionedCacheWriter } from "../lib/menu-week-cache";
 
+const sharedCacheDatabase = readFileSync(new URL("../lib/menu-cache-database.ts", import.meta.url), "utf8");
+
 test("rolling-menu read path resolves catalogue data without reconciliation writes", () => {
   const source = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
   const getBody = source.slice(source.indexOf("export async function GET"), source.indexOf("export async function POST"));
@@ -71,11 +73,11 @@ test("hosted rolling reads use targeted week and publication paths", () => {
   assert.match(planner, /popstate/);
   assert.doesNotMatch(planner, /router\.push/);
   const weekCache = readFileSync(new URL("../lib/menu-week-cache.ts", import.meta.url), "utf8");
-  assert.match(weekCache, /fika-menu-planning/);
+  assert.match(sharedCacheDatabase, /fika-menu-planning/);
   assert.match(weekCache, /selectedWeek/);
   assert.match(weekCache, /identity/);
-  assert.match(weekCache, /const databaseVersion = 3/);
-  assert.match(weekCache, /oldVersion < databaseVersion/);
+  assert.match(sharedCacheDatabase, /MENU_CACHE_VERSION = 3/);
+  assert.match(sharedCacheDatabase, /event.oldVersion < MENU_CACHE_VERSION/);
   assert.match(weekCache, /objectStore\(storeName\)\.clear/);
 });
 
@@ -182,7 +184,7 @@ test("known catalogue IDs use document lookups rather than an ID query scan", ()
 test("client catalogue cache is identity-scoped, bounded, stale-revalidating and disposable", () => {
   const cache = readFileSync(new URL("../lib/menu-catalogue-cache.ts", import.meta.url), "utf8");
   const workspace = readFileSync(new URL("../app/catalogue-workspace.tsx", import.meta.url), "utf8");
-  assert.match(cache, /fika-menu-planning/);
+  assert.match(sharedCacheDatabase, /fika-menu-planning/);
   assert.match(cache, /menuCatalogue/);
   assert.match(cache, /cacheMetadata/);
   assert.match(cache, /window\.location\.origin/);
@@ -271,7 +273,8 @@ test("catalogue manifest comparison is version based", () => {
 
 test("catalogue cache preserves warm records while manifest revalidates in the background", () => {
   const cache = readFileSync(new URL("../lib/menu-catalogue-cache.ts", import.meta.url), "utf8");
-  assert.match(cache, /findLatestCache/);
+  assert.doesNotMatch(cache, /findLatestCache/);
+  assert.match(cache, /namespace \? await readCache\(namespace\) : undefined/);
   assert.match(cache, /return cached\.entries/);
   assert.match(cache, /void revalidateCatalogue/);
   assert.match(cache, /if \(catalogueManifestMatches\(cached\.manifest, manifest\)\)/);
@@ -283,7 +286,9 @@ test("catalogue cache preserves warm records while manifest revalidates in the b
 test("catalogue cache keeps package version distinct from IndexedDB schema version", () => {
   const cache = readFileSync(new URL("../lib/menu-catalogue-cache.ts", import.meta.url), "utf8");
   assert.match(cache, /packageVersion\?: number/);
-  assert.match(cache, /indexedDbVersion = 2/);
+  assert.match(sharedCacheDatabase, /MENU_CACHE_VERSION = 3/);
+  assert.match(cache, /openMenuCacheDatabase as openDatabase/);
+  assert.doesNotMatch(cache, /indexedDB.open/);
   assert.match(cache, /packageVersion: manifest\?\.catalogueVersion/);
 });
 

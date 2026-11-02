@@ -1,3 +1,5 @@
+import { openMenuCacheDatabase as openDatabase } from "./menu-cache-database";
+export { setMenuCacheOpenTimeoutForTests } from "./menu-cache-database";
 import type { RollingSnapshot } from "./rolling-menu-types";
 import type { PublicationDayState } from "./menu-publication";
 import { clearCatalogueCache } from "./menu-catalogue-cache";
@@ -25,50 +27,12 @@ export function createVersionedCacheWriter<T>(write: (value: T) => Promise<void>
   };
   return { enqueue, invalidate, currentGeneration: () => generation };
 }
-const databaseName = "fika-menu-planning";
-const databaseVersion = 3;
 const storeName = "menuWeeks";
 const metadataStore = "cacheMetadata";
 const selectionKey = "selectedWeek";
 
 function normaliseCachedWeek(value: CachedMenuWeek): CachedMenuWeek {
   return { ...value, snapshot: { ...value.snapshot, entries: value.snapshot.entries.map(entry => ({ ...entry, allocations: entry.allocations.map(allocation => ({ ...allocation, ...(allocation.destinationId ? { destinationId: canonicalOplocId(allocation.destinationId) } : {}) })) })) } };
-}
-
-let openTimeoutMs = 3000;
-const failedOpenCooldownMs = 30000;
-let lastOpenFailureAt = 0;
-/** Test hook: shorten the bounded IndexedDB open window. */
-export function setMenuCacheOpenTimeoutForTests(ms: number) { openTimeoutMs = ms; lastOpenFailureAt = 0; }
-
-/**
- * Opens the cache database, bounded so a blocked or hung IndexedDB can never hold up first render.
- * After a failed open the cache is skipped briefly so sequential reads do not each wait out the timeout.
- */
-function openDatabase(): Promise<IDBDatabase> {
-  if (lastOpenFailureAt && Date.now() - lastOpenFailureAt < failedOpenCooldownMs) return Promise.reject(new Error("IndexedDB recently failed to open."));
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === "undefined") return reject(new Error("IndexedDB is unavailable."));
-    let settled = false;
-    const fail = (error: Error) => { if (settled) return; settled = true; clearTimeout(timer); lastOpenFailureAt = Date.now(); reject(error); };
-    const timer = setTimeout(() => fail(new Error("IndexedDB open timed out.")), openTimeoutMs);
-    let request: IDBOpenDBRequest;
-    try { request = indexedDB.open(databaseName, databaseVersion); } catch (cause) { return fail(cause instanceof Error ? cause : new Error("IndexedDB could not be opened.")); }
-    request.onblocked = () => fail(new Error("IndexedDB open is blocked by another tab."));
-    request.onupgradeneeded = (event) => {
-      const db = request.result;
-      if (request.transaction && event.oldVersion < databaseVersion) {
-        if (db.objectStoreNames.contains(storeName)) request.transaction.objectStore(storeName).clear();
-        if (db.objectStoreNames.contains(metadataStore)) request.transaction.objectStore(metadataStore).clear();
-        if (db.objectStoreNames.contains("menuCatalogue")) request.transaction.objectStore("menuCatalogue").clear();
-      }
-      if (!db.objectStoreNames.contains(storeName)) db.createObjectStore(storeName, { keyPath: "weekId" });
-      if (!db.objectStoreNames.contains("menuCatalogue")) db.createObjectStore("menuCatalogue", { keyPath: "cacheKey" });
-      if (!db.objectStoreNames.contains("cacheMetadata")) db.createObjectStore("cacheMetadata");
-    };
-    request.onsuccess = () => { if (settled) { try { request.result.close(); } catch { /* late connection; release it so it cannot block upgrades */ } return; } settled = true; clearTimeout(timer); lastOpenFailureAt = 0; resolve(request.result); };
-    request.onerror = () => fail(request.error || new Error("IndexedDB could not be opened."));
-  });
 }
 
 export async function getCachedWeek(weekId: string, identity: string) {
