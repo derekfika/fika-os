@@ -1,4 +1,17 @@
 /* Week Planner dish-picker filters (#155). Reuses the planner's FIKA tokens. */
+.planner-modal.dish-picker-dialog {
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 32px));
+  min-width: 0;
+}
+
+.dish-picker-dialog > .dish-picker {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
 .picker-filters {
   display: grid;
   gap: 10px;
@@ -91,8 +104,6 @@
 .picker-filters__panel {
   display: grid;
   gap: 14px;
-  max-height: 260px;
-  overflow: auto;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
