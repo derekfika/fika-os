@@ -70,7 +70,7 @@ test("No Key Allergens survives Menu publication, Hub materialisation, CPU revie
   assert.deepEqual(packetItems.map(item => item.allergens.no_key_allergens), ["contains", "clear", "unrecorded"]);
 });
 
-test("explicit No Key state is a chef tick: never resolved from the named allergens, blank stays unverified, and the matrix exposes a labelled checkbox", async () => {
+test("explicit No Key state is a chef tick: never resolved from the named allergens, blank stays unverified, and the matrix exposes a labelled binary square", async () => {
   assert.equal(resolveNoKeyAllergenState({ no_key_allergens: "contains" }), "contains");
   assert.equal(resolveNoKeyAllergenState({ milk: "clear" }), "unrecorded");
   assert.equal(resolveNoKeyAllergenState(undefined), "unrecorded");
@@ -78,10 +78,12 @@ test("explicit No Key state is a chef tick: never resolved from the named allerg
   assert.doesNotMatch(source, /resolveNoKeyAllergenState|completeAllergenReviewMap|deriveNoKeyAllergens/, "the CPU matrix never derives No Key");
   assert.match(source, /classifyRowAllergens\(states\[row\.key\], ctxFor\(row\.key\)\)/);
   assert.match(source, /checkpointAllergenReviewRow/);
-  assert.match(source, /type="checkbox"/);
-  assert.match(source, /No Key Allergens<span className="cpu-allergen-sr-only"> for/);
-  assert.match(source, /aria-describedby=\{`\$\{inputId\}-status`\}/);
-  assert.match(await readFile(new URL("../app/ui/allergen-review.css", import.meta.url), "utf8"), /\.cpu-no-key-control\{[^}]*min-width:44px;min-height:44px/);
+  const noKeyCell = source.slice(source.indexOf('if (key === "no_key_allergens")'), source.indexOf('const state = displayState'));
+  assert.match(noKeyCell, /className=\{`cpu-allergen-state cpu-allergen-state--\$\{ticked \? "contains" : "clear"\}`\}/);
+  assert.match(noKeyCell, /aria-pressed=\{ticked\}/);
+  assert.match(noKeyCell, /aria-label=\{`\$\{titleCaseDish\(row\.name\)\}, No Key Allergens: \$\{ticked \? "declared" : "not declared"\}`\}/);
+  assert.match(noKeyCell, /onClick=\{\(\) => void toggle\(row\.key, key\)\}/);
+  assert.doesNotMatch(noKeyCell, /type="checkbox"|<span|<small|May Contain|<i[ >]/);
   assert.doesNotMatch(source, /namedAllergenPresent/);
 });
 
