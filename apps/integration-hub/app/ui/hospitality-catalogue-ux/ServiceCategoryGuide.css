@@ -1,0 +1,42 @@
+/* Guided Booking Services editor. Light operational surface; semantic tokens only (docs/STYLE-GUIDE.md). */
+.scg { display: grid; gap: var(--space-4); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text-primary); min-width: 0; }
+.scg h2, .scg h3 { margin: 0; }
+.scg h2 { font-size: var(--text-lg); color: var(--color-brand-dark); }
+.scg h3 { font-size: var(--text-md); }
+.scg header p { margin: var(--space-1) 0 0; max-width: 72ch; font-size: var(--text-sm); color: var(--color-text-secondary); }
+.scg-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); max-width: 640px; }
+.scg-editor { display: grid; gap: var(--space-4); min-width: 0; }
+.scg-source { margin: 0; font-size: var(--text-sm); }
+.scg-live:empty { display: none; }
+.scg-cats { margin: 0; padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); min-width: 0; }
+.scg-cats legend { padding: 0 var(--space-2); font-weight: 700; }
+.scg-cats ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-2); }
+.scg-cats li { border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); }
+.scg-cats li.is-focus { border-color: var(--color-brand-primary); background: var(--color-status-info-bg); }
+.scg-cats label { display: flex; gap: var(--space-3); align-items: flex-start; min-height: 44px; padding: var(--space-2) var(--space-3); cursor: pointer; }
+.scg-cats input[type="checkbox"], .scg-save input[type="checkbox"] { width: 22px; height: 22px; flex: none; accent-color: var(--color-brand-primary); }
+.scg-cat { display: grid; gap: 2px; overflow-wrap: anywhere; }
+.scg-cat small { color: var(--color-text-secondary); }
+.scg-preview { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-muted); }
+.scg-preview ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.scg-line small { display: block; margin-top: 2px; color: var(--color-text-secondary); }
+.scg-ba { display: grid; gap: var(--space-1); margin: 0; font-size: var(--text-sm); overflow-wrap: anywhere; }
+.scg-unchanged { margin: 0; }
+.scg-save { display: grid; gap: var(--space-3); max-width: 640px; }
+.scg-save .hc-check { display: flex; gap: var(--space-2); align-items: flex-start; }
+.scg-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.scg :is(button, input, select):focus-visible, .scg-tabs button:focus-visible, .scg-adv > summary:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+@media (max-width: 760px) { .scg { padding: var(--space-3); } .scg-actions .hc-btn { flex: 1 1 100%; } }
+
+/* Items | Booking Services navigation */
+.scg-tabs { display: flex; gap: var(--space-1); border-bottom: 2px solid var(--color-border); }
+.scg-tab { display: grid; gap: 2px; min-height: 48px; padding: var(--space-2) var(--space-4); border: 0; border-bottom: 3px solid transparent; margin-bottom: -2px; background: transparent; color: var(--color-text-secondary); font: inherit; text-align: left; cursor: pointer; }
+.scg-tab strong { font-size: var(--text-md); color: inherit; }
+.scg-tab small { font-size: var(--text-xs); }
+.scg-tab[aria-selected="true"] { border-bottom-color: var(--color-brand-primary); color: var(--color-brand-dark); background: var(--color-status-info-bg); }
+.scg-adv { border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.scg-adv > summary { min-height: 44px; padding: var(--space-3) var(--space-4); font-weight: 700; cursor: pointer; }
+.scg-adv > .hsl { border: 0; }
+.scg-inspector ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.scg-inspector li { display: grid; gap: var(--space-1); }
+@media (max-width: 760px) { .scg-tab small { display: none; } .scg-tabs { overflow-x: auto; } }
