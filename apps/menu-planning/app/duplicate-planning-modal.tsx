@@ -171,9 +171,11 @@ export default function DuplicatePlanningModal({ origin, weeks, currentWeek, day
     </header>
 
     {applied ? <div className="duplicate-week-summary" role="status"><div><small>Done · draft until published</small><strong>{applied}</strong></div></div> : <>
+      <div className="duplicate-body">
+      <div className="duplicate-form">
       <fieldset className="duplicate-step">
         <legend>1 · From</legend>
-        <label>Source week<select data-modal-autofocus value={sourceWeekId} onChange={event => setSourceWeekId(event.target.value)} disabled={saving}>{sourceCandidates.map(week => <option key={week.id} value={week.id}>WC {formatWeek(week.weekCommencing)}{week.id === currentWeek.id ? " (current)" : ""}</option>)}</select></label>
+        <label className="duplicate-field">Source week<select data-modal-autofocus value={sourceWeekId} onChange={event => setSourceWeekId(event.target.value)} disabled={saving}>{sourceCandidates.map(week => <option key={week.id} value={week.id}>WC {formatWeek(week.weekCommencing)}{week.id === currentWeek.id ? " (current)" : ""}</option>)}</select></label>
         <div className="duplicate-segment" role="radiogroup" aria-label="Source scope">
           <label><input type="radio" name="dup-scope" checked={sourceScope === "week"} onChange={() => setSourceScope("week")} disabled={saving} /> Whole week</label>
           <label><input type="radio" name="dup-scope" checked={sourceScope === "days"} onChange={() => setSourceScope("days")} disabled={saving} /> Selected days</label>
@@ -183,7 +185,7 @@ export default function DuplicatePlanningModal({ origin, weeks, currentWeek, day
 
       <fieldset className="duplicate-step">
         <legend>2 · To</legend>
-        <div className="duplicate-segment" role="group" aria-label="Destination weeks">{destinationWeeks.map(([weekCommencing, offset]) => <label key={weekCommencing}><input type="checkbox" checked={destinationOffsets.includes(offset)} disabled={saving} onChange={() => toggleDestination(offset)} /> WC {formatWeek(weekCommencing)}{offset === 0 ? " · current" : ""}</label>)}</div>
+        <div className="duplicate-segment duplicate-segment--weeks" role="group" aria-label="Destination weeks">{destinationWeeks.map(([weekCommencing, offset]) => <label key={weekCommencing}><input type="checkbox" checked={destinationOffsets.includes(offset)} disabled={saving} onChange={() => toggleDestination(offset)} /> WC {formatWeek(weekCommencing)}{offset === 0 ? " · current" : ""}</label>)}</div>
         {singleDaySource && <div className="duplicate-segment" role="radiogroup" aria-label="Destination weekday">
           <label><input type="radio" name="dup-placement" checked={placement === "corresponding"} onChange={() => setPlacement("corresponding")} disabled={saving} /> Same weekday</label>
           <label><input type="radio" name="dup-placement" checked={placement === "day"} onChange={() => setPlacement("day")} disabled={saving} /> Another weekday <select value={placementDay} onChange={event => { setPlacement("day"); setPlacementDay(Number(event.target.value)); }} disabled={saving} aria-label="Destination day">{dayNames.map((name, index) => <option key={name} value={index}>{name}</option>)}</select></label>
@@ -199,8 +201,11 @@ export default function DuplicatePlanningModal({ origin, weeks, currentWeek, day
         </div>
       </fieldset>
 
+      </div>
+
       <section className="duplicate-preview" aria-live="polite" aria-label="Duplicate preview">
         <h4>Preview</h4>
+        {!preview && !previewing && !previewError && <p className="form-help">{sourceChoiceValid && destinationValid ? "Preparing the preview." : "Choose at least one source day and one destination week to see what will change."}</p>}
         {previewing && <p className="form-help" role="status">Checking the planning data…</p>}
         {previewError && <p className="menu-error" role="alert">{previewError}</p>}
         {preview && <>
@@ -218,6 +223,7 @@ export default function DuplicatePlanningModal({ origin, weeks, currentWeek, day
         </>}
         {applyError && <p className="menu-error" role="alert">{applyError}</p>}
       </section>
+      </div>
 
       <footer className="form-actions">
         <button type="button" className="button button-soft" onClick={onClose} disabled={saving}>Cancel</button>
