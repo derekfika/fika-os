@@ -6,65 +6,68 @@
   "backend": "fika-os-prod-cpu",
   "region": "europe-west4",
   "branch": "release/prod/cpu",
-  "sourceSha": "22e2b5b672c8322137ded2d088d3c2bc2e89061c",
-  "rollout": "build-2026-11-02-002",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "baseline",
-  "scopeHash": "ae306a7234d6f981b203ab401d1e5514b96e17652033947d89a7466b783f2901",
-  "observedAt": "2026-11-02T12:52:49.732Z",
-  "previousGood": {
-    "sourceSha": "dc77dce5f5b6d69ee00d74a511ba51fcc16cc3b0",
-    "rollout": "build-2026-11-02-001",
-    "state": "SUCCEEDED",
-    "percent": 100
+  "sourceSha": "3d73b2865cdeca85b6799b35cdb06a477a500bb2",
+  "scopeHash": "148b9c4adbe3513375fe1381627638bcb9361b41f8b8d77566006d3270b6d1bd",
+  "inMain": true,
+  "rollback": false,
+  "executing": true,
+  "cosmeticOnly": false,
+  "standard": false,
+  "validation": {
+    "id": 125277637058,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/41445506155/job/125277637058",
+    "sha": "3d73b2865cdeca85b6799b35cdb06a477a500bb2"
   },
-  "previousGoodRecord": "215483e9bab7f829f47618c5f576b1470dd6c3fd",
   "approval": {
     "actor": "derekfika",
     "method": "owner-instruction",
     "app": "cpu",
     "environment": "prod",
-    "sourceSha": "22e2b5b672c8322137ded2d088d3c2bc2e89061c",
-    "action": "reconcile:adopt-completed",
-    "instruction": "Derek instructed: Skip independent review and deploy to prod ASAP. Adopt the verified already-serving CPU production build 002 to unblock governed deployment; no rollout or business data mutation in this recovery.",
-    "releaseId": "215483e9bab7f829f47618c5f576b1470dd6c3fd",
-    "id": "484287461d50103b55e0901d46b511cb192ae82e6c8a7727a2f3f23d97647ecc",
+    "sourceSha": "3d73b2865cdeca85b6799b35cdb06a477a500bb2",
+    "action": "deploy",
+    "instruction": "Derek: Can u deploy CPU to prod now? I've already approved it. Use the passing tests and verified staging evidence, then run production smoke checks. Release pinned CPU candidate 3d73b286; no operational data, permissions or worker changes.",
+    "releaseId": null,
+    "id": "5cc0328ce9cc470828f0de9cc09a2f4ff861f457eb99ec52f86a83aac5f6bda8",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-02T12:52:41.517Z"
+    "authorisedAt": "2026-11-02T13:05:45.480Z"
   },
   "provenance": {
-    "pr": {
-      "number": 267,
-      "merged": true,
-      "merged_at": "2026-11-02T08:16:31Z",
-      "merge_commit_sha": "22e2b5b672c8322137ded2d088d3c2bc2e89061c",
-      "base": {
-        "ref": "main",
-        "repo": {
-          "full_name": "derekfika/fika-os"
-        }
-      }
-    },
-    "validation": {
-      "id": 125167211308,
-      "url": "https://github.com/derekfika/fika-os/actions/runs/41411856473/job/125167211308",
-      "sha": "22e2b5b672c8322137ded2d088d3c2bc2e89061c"
-    },
-    "integrated": true,
-    "preservesPrevious": true
+    "number": 274,
+    "url": "https://github.com/derekfika/fika-os/pull/274",
+    "head": "de7910e572ada2736de35c1336e2acb8c4aa74ae",
+    "pullRequestRisk": "standard"
   },
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-prod-cpu--fika-os.europe-west4.hosted.app/"
+  "productionDelta": {
+    "from": "22e2b5b672c8322137ded2d088d3c2bc2e89061c",
+    "to": "3d73b2865cdeca85b6799b35cdb06a477a500bb2",
+    "paths": [
+      ".changes/cpu-production/2026-11-02-cpu-no-key-row-status.md",
+      ".changes/cpu-production/2026-11-02-cpu-no-key-square.md",
+      ".changes/platform/2026-11-02-cpu-prod-completed-adoption.md",
+      "apps/cpu-production/app/ui/AllergenReviewMatrix.tsx",
+      "apps/cpu-production/app/ui/allergen-review.css",
+      "apps/cpu-production/tests/allergen-review-safety.test.ts",
+      "apps/cpu-production/tests/delivered-in-governance.test.ts",
+      "apps/cpu-production/tests/no-key-allergen-contract.test.ts",
+      "docs/deployment/cpu-production-reconciliation.md",
+      "tools/workflow/cpu-prod-adoption.mjs",
+      "tools/workflow/cpu-prod-adoption.test.mjs",
+      "tools/workflow/releases.mjs"
+    ],
+    "hash": "5dca9a48fdf6cd265a505d519ca29586151b90b1da49e99717ee695aea4eea27",
+    "risk": "standard"
   },
-  "reconciliation": {
-    "type": "completed-rollout-adoption",
-    "priorLedgerCommit": "215483e9bab7f829f47618c5f576b1470dd6c3fd",
-    "build": "build-2026-11-02-002",
+  "lane": "standard",
+  "stagingEvidence": "846641981953984ac45dfa53475cf860a60ec7cb",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "0401a4e9-666c-4af7-85dc-53d3e86b055b",
+  "previousGood": {
+    "sourceSha": "22e2b5b672c8322137ded2d088d3c2bc2e89061c",
     "rollout": "build-2026-11-02-002",
-    "evidenceHash": "a3634c0cff5d222d3e5982464b81cf80418a60740f4369df419432c48897d389",
-    "historicalGovernance": "Historical deployment authorization not established by this adoption; no rollout was submitted and no intent was invented."
-  }
+    "state": "SUCCEEDED",
+    "percent": 100
+  },
+  "previousGoodRecord": "1d80f19699d89fe04b5c1acbd75d24c3544df2f4",
+  "createdAt": "2026-11-02T13:06:02.015Z"
 }
