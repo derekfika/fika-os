@@ -1,15 +1,31 @@
 /* Hospitality Catalogue. Light operational surface; semantic tokens only (docs/STYLE-GUIDE.md). */
-.hc { display: grid; gap: var(--space-4); width: 100%; min-width: 0; max-width: 1500px; color: var(--color-text-primary); }
+.hc { display: grid; gap: var(--space-5); width: 100%; min-width: 0; max-width: 1500px; color: var(--color-text-primary); font-family: var(--font-body), sans-serif; }
 .hc > * { min-width: 0; }
 .hc h1, .hc h2, .hc h3 { margin: 0; }
 .hc-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
-.hc-header h1 { font-family: var(--font-display); font-size: var(--text-xl); color: var(--color-brand-dark); }
-.hc-header p { margin: var(--space-1) 0 0; max-width: 72ch; color: var(--color-text-secondary); font-size: var(--text-sm); }
+.hc-header h1 { font-family: var(--font-display); font-size: clamp(var(--text-xl), 2.5vw, 2rem); line-height: 1.25; color: var(--color-brand-dark); }
+.hc-header p { margin: var(--space-1) 0 0; max-width: 72ch; color: var(--color-text-secondary); font-size: var(--text-sm); line-height: 1.45; }
 .hc-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Catalogue section navigation belongs to this parent stylesheet so it renders
+   independently of the legacy ServiceCategoryGuide stylesheet. */
+.hc .scg-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); padding: var(--space-1); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-muted); }
+.hc .scg-tab { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 44px; padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--color-text-secondary); font: inherit; font-weight: 700; text-align: center; cursor: pointer; }
+.hc .scg-tab strong { overflow-wrap: anywhere; font-size: var(--text-sm); font-weight: 700; }
+.hc .scg-tab[aria-selected="true"] { border-color: var(--color-border); background: var(--color-surface); color: var(--color-brand-dark); box-shadow: var(--shadow-sm); }
+.hc .scg-tab:hover:not([aria-selected="true"]) { border-color: var(--color-border); background: var(--color-surface); color: var(--color-brand-dark); }
+.hc .scg-tab:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+.hc-overview-title { color: var(--color-brand-dark); font-size: var(--text-lg); line-height: 1.35; }
+.hc-overview-tab .hco-header h2 { display: none; }
+.hc-overview-tab .hco-header p { font-size: var(--text-sm); line-height: 1.45; }
+.hc-overview-tab :is(.hco-management, .hco-metrics, .hco-lower) { gap: var(--space-4); }
+.hc-overview-tab .hco-card-copy h3, .hc-overview-tab .hco-panel > h3 { line-height: 1.35; }
+.hc-overview-tab .hco-card-copy p { line-height: 1.45; }
+.hc-overview-tab :is(.hco-metric-main small, .hco-card-copy small, .hco-attention-list li p, .hco-how li small) { font-size: var(--text-sm); line-height: 1.45; }
 
 .hc-btn { min-height: 40px; padding: 0 var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-brand-primary); font: inherit; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); }
 .hc-btn:hover:not(:disabled) { background: var(--color-status-info-bg); }
-.hc-btn--primary { background: var(--color-brand-primary); border-color: var(--color-brand-primary); color: var(--color-surface); }
+.hc-btn--primary { min-height: var(--control-height); background: var(--color-brand-primary); border-color: var(--color-brand-primary); color: var(--color-surface); }
 .hc-btn--primary:hover:not(:disabled) { background: var(--color-brand-dark); }
 .hc-btn--danger { border-color: var(--color-status-danger); color: var(--color-status-danger); }
 .hc-btn--text { border-color: transparent; background: transparent; min-height: 36px; }
@@ -127,6 +143,11 @@
   .hc-grid2 { grid-template-columns: 1fr; }
   .hc-drawer__body, .hc-modal__body, .hc-drawer > header, .hc-modal > header, .hc-modal > footer { padding-left: var(--space-4); padding-right: var(--space-4); }
   .hc-modal > footer .hc-btn { flex: 1 1 100%; }
+}
+@media (max-width: 600px) {
+  .hc { gap: var(--space-4); }
+  .hc .scg-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hc .scg-tab { padding-inline: var(--space-2); }
 }
 @media (prefers-reduced-motion: reduce) { .hc *, .hc-drawer *, .hc-modal * { transition: none !important; animation: none !important; } }
 
