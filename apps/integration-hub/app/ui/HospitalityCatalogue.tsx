@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Plus, Search, X } from "lucide-react";
+import { SERVICE_IDS } from "@fika/server-shared/hospitality-service-layout";
 import ConfirmationModal from "./ConfirmationModal";
-import HospitalityServiceLayout from "./HospitalityServiceLayout";
-import ServiceCategoryGuide from "./hospitality-catalogue-ux/ServiceCategoryGuide";
+import HospitalityCatalogueOverview from "./HospitalityCatalogueOverview";
+import HospitalityCatalogueServices from "./HospitalityCatalogueServices";
 import { CATALOGUE_TABS, itemServiceVisibility, manageServicesContext, type CatalogueTab, type ServicesContext } from "./hospitality-catalogue-ux/model";
 import "./HospitalityCatalogue.css";
 import {
@@ -50,9 +51,45 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [bulk, setBulk] = useState<null | "edit" | "archive">(null);
   const [bulkReport, setBulkReport] = useState<BulkResultView | null>(null);
-  const [tab, setTab] = useState<CatalogueTab>("items");
+  const [tab, setTab] = useState<CatalogueTab>("overview");
   const [servicesContext, setServicesContext] = useState<ServicesContext>({});
-  const manageServices = (context: ServicesContext) => { setServicesContext(context); setSelectedId(null); setTab("services"); };
+  const writeLocation = (nextTab: CatalogueTab, context = servicesContext, mode: "push" | "replace" = "push") => {
+    setTab(nextTab);
+    setServicesContext(context);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("catalogueTab", nextTab);
+    if (nextTab === "services" || nextTab === "locations") {
+      if (context.oplocId) url.searchParams.set("site", context.oplocId); else url.searchParams.delete("site");
+      if (context.serviceId) url.searchParams.set("service", context.serviceId); else url.searchParams.delete("service");
+      if (context.category) url.searchParams.set("category", context.category); else url.searchParams.delete("category");
+      if (context.itemId) url.searchParams.set("itemId", context.itemId); else url.searchParams.delete("itemId");
+    } else {
+      url.searchParams.delete("site"); url.searchParams.delete("service"); url.searchParams.delete("category"); url.searchParams.delete("itemId");
+    }
+    window.history[mode === "push" ? "pushState" : "replaceState"]({}, "", `${url.pathname}${url.search}${url.hash}`);
+  };
+  const manageServices = (context: ServicesContext) => { setSelectedId(null); writeLocation("services", context); };
+  const syncFromLocation = useCallback(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get("catalogueTab");
+    const nextTab = CATALOGUE_TABS.some(entry => entry.id === requestedTab) ? requestedTab as CatalogueTab : "overview";
+    const service = params.get("service");
+    const serviceId = SERVICE_IDS.find(id => id === service);
+    const nextContext: ServicesContext = {
+      oplocId: params.get("site") || undefined,
+      serviceId,
+      category: params.get("category") || undefined,
+      itemId: params.get("itemId") || undefined,
+    };
+    setTab(nextTab);
+    setServicesContext(nextContext);
+  }, []);
+  useEffect(() => {
+    const initialSync = window.setTimeout(syncFromLocation, 0);
+    window.addEventListener("popstate", syncFromLocation);
+    return () => { window.clearTimeout(initialSync); window.removeEventListener("popstate", syncFromLocation); };
+  }, [syncFromLocation]);
 
   const request = useCallback(async (init?: RequestInit) => {
     const send = () => fetch("/api/hospitality-catalogue", { cache: "no-store", ...init });
@@ -117,12 +154,22 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
     </header>
 
     <div className="scg-tabs" role="tablist" aria-label="Catalogue sections">{CATALOGUE_TABS.map(entry => <button key={entry.id} type="button" role="tab" id={`hc-tab-${entry.id}`} aria-selected={tab === entry.id} aria-controls={`hc-panel-${entry.id}`} tabIndex={tab === entry.id ? 0 : -1} className="scg-tab"
-      onClick={() => setTab(entry.id)} onKeyDown={event => { if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); const next = tab === "items" ? "services" : "items"; setTab(next); document.getElementById(`hc-tab-${next}`)?.focus(); } }}><strong>{entry.label}</strong><small>{entry.hint}</small></button>)}</div>
+      onClick={() => writeLocation(entry.id)} onKeyDown={event => {
+        if (["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) {
+          event.preventDefault();
+          const index = CATALOGUE_TABS.findIndex(candidate => candidate.id === entry.id);
+          const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? CATALOGUE_TABS.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + CATALOGUE_TABS.length) % CATALOGUE_TABS.length;
+          const next = CATALOGUE_TABS[nextIndex].id;
+          writeLocation(next);
+          document.getElementById(`hc-tab-${next}`)?.focus();
+        }
+      }}><strong>{entry.label}</strong><small>{entry.hint}</small></button>)}</div>
+    {CATALOGUE_TABS.filter(entry => entry.id !== tab).map(entry => <div key={entry.id} role="tabpanel" id={`hc-panel-${entry.id}`} aria-labelledby={`hc-tab-${entry.id}`} hidden />)}
 
-    {tab === "services" ? <div role="tabpanel" id="hc-panel-services" aria-labelledby="hc-tab-services" className="hc-services-tab">
-      {notice && <p className="hc-success" role="status"><CheckCircle2 size={16} aria-hidden="true" /> {notice}</p>}
-      <ServiceCategoryGuide payload={payload} canManage={canManage} send={send} reload={load} context={servicesContext} onContext={setServicesContext} />
-      <details className="scg-adv"><summary>All services and the company default (advanced)</summary><HospitalityServiceLayout payload={payload} canManage={canManage} send={send} reload={load} /></details>
+    {tab === "overview" ? <div role="tabpanel" id="hc-panel-overview" aria-labelledby="hc-tab-overview" className="hc-overview-tab">
+      <HospitalityCatalogueOverview payload={payload} onNavigate={next => writeLocation(next)} />
+    </div> : tab === "services" || tab === "locations" ? <div role="tabpanel" id={`hc-panel-${tab}`} aria-labelledby={`hc-tab-${tab}`} className={`hc-${tab}-tab`}>
+      <HospitalityCatalogueServices payload={payload} canManage={canManage} send={send} reload={load} view={tab} initialContext={servicesContext} onContextChange={context => writeLocation(tab, context, "replace")} />
     </div> : <div role="tabpanel" id="hc-panel-items" aria-labelledby="hc-tab-items" className="hc-items-tab">
     <div className="hc-summary" role="group" aria-label="Catalogue summary">
       <span><strong>{payload.counts.active}</strong> active</span>
@@ -369,6 +416,27 @@ function ItemPanel({ row, payload, canManage, send, onClose, onManageServices }:
       <header><div><h2 id="hc-panel-title">{row.name}</h2><RoutingBadge state={row.routing.state} /> {inactive && <span className="hc-badge hc-badge--neutral">Archived</span>}</div><button type="button" className="hc-icon" onClick={onClose} aria-label="Close item panel"><X size={18} aria-hidden="true" /></button></header>
       <div className="hc-drawer__body">
         {row.needsReview.includes("duplicate_candidate") && <p className="hc-warning" role="status"><AlertTriangle size={15} aria-hidden="true" /> This may be a duplicate of another item. Check “Possible duplicates to review”.</p>}
+        <section className="hc-section hc-item-at-a-glance" aria-labelledby="hc-item-summary-title">
+          <h3 id="hc-item-summary-title">Item summary</h3>
+          <dl>
+            <div><dt>Status</dt><dd>{inactive ? "Archived" : "Active"}</dd></div>
+            <div><dt>Category</dt><dd>{row.category || "Not set"}</dd></div>
+            <div><dt>Company default price</dt><dd>{row.defaultPrice ? <>{formatMoney(row.defaultPrice.amount)} ex VAT<small>VAT {Math.round(row.defaultPrice.vatRate * 100)}% · effective from {row.defaultPrice.effectiveFrom}</small></> : "Not set"}</dd></div>
+            <div><dt>Item minimum</dt><dd>{minimumLabel(row)}</dd></div>
+            <div><dt>Production route</dt><dd>{ROUTING_STATE_LABELS[row.routing.state]}</dd></div>
+            <div><dt>Site permission</dt><dd>{inactive ? "Not available (archived)" : `${currentSites.length} of ${selectableSites(payload.oplocs).length} active sites`}</dd></div>
+            <div><dt>Site exceptions</dt><dd>{exceptionOfferings.length}</dd></div>
+          </dl>
+          <p className="hc-hint">Site permission, service visibility, price and booking rules are separate checks. This summary does not by itself confirm what a customer can order.</p>
+          {exceptionOfferings.length > 0 && <div className="hc-at-a-glance-table"><table><caption>Effective values at locations with item exceptions</caption><thead><tr><th scope="col">Location</th><th scope="col">Price</th><th scope="col">Minimum</th><th scope="col">Item permission</th></tr></thead><tbody>
+            {exceptionOfferings.map(offering => <tr key={offering.offeringId}>
+              <th scope="row">{oplocLabel(payload.oplocs, offering.oplocId)}{offering.operationalAreaId ? <small>{offering.operationalAreaId}</small> : null}</th>
+              <td>{offering.mode === "quote_only" ? "Quote only" : offering.price.effective ? `${formatMoney(offering.price.effective.amount)} ex VAT` : "Not set"}<small>{offering.price.source === "overrides" ? "Site override" : offering.price.source === "site_only" ? "Site value" : offering.price.source === "inherits" ? "Inherits" : offering.price.source === "quote_only" ? "Quote only" : "No price"}</small></td>
+              <td>{offering.minimum.effective ?? "—"}<small>{offering.minimum.source === "overrides" ? "Site override" : offering.minimum.source === "site_only" ? "Site value" : offering.minimum.source === "inherits" ? "Inherits" : "No minimum"}</small></td>
+              <td>{inactive ? "Not offered (archived)" : offering.available ? "Permitted" : "Not permitted"}</td>
+            </tr>)}
+          </tbody></table></div>}
+        </section>
         <section className="hc-section" aria-labelledby="hc-company-title"><h3 id="hc-company-title">Company item</h3>
           <form onSubmit={event => { event.preventDefault(); void submit(); }}>
             <Field label="Name"><input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} disabled={!canManage || inactive} maxLength={240} required /></Field>
@@ -387,14 +455,14 @@ function ItemPanel({ row, payload, canManage, send, onClose, onManageServices }:
         {!inactive && <RoutingEditor row={row} canManage={canManage} send={send} />}
         {!inactive && canManage && <AdoptDefault row={row} send={send} oplocs={payload.oplocs} />}
 
-        {!inactive && <section className="hc-section scg-inspector" aria-labelledby="hc-svc-title"><h3 id="hc-svc-title">Where customers can order this</h3>
+        {!inactive && <section className="hc-section scg-inspector" aria-labelledby="hc-svc-title"><h3 id="hc-svc-title">Service-category visibility</h3>
           {!payload.serviceLayout ? <p className="hc-hint">Booking service settings were not included in this load.</p> : currentSites.length === 0 ? <p className="hc-hint">Not available at any site, so it cannot be ordered anywhere.</p> : <ul>
             {itemServiceVisibility(payload.serviceLayout, row, currentSites).map(site => <li key={site.oplocId}>
               <strong>{oplocLabel(payload.oplocs, site.oplocId)}</strong>
-              <span>{site.shownIn.length ? `Shown for: ${site.shownIn.map(s => s.label).join(", ")}` : <span className="hc-badge hc-badge--warning">Not shown in any booking service</span>}</span>
+              <span>{site.shownIn.length ? `Category included by layout in: ${site.shownIn.map(s => s.label).join(", ")}` : <span className="hc-badge hc-badge--warning">No service includes this category</span>}</span>
               {site.shownIn.length === 0 && <small className="hc-hint">The site allows this item, but no booking service there lists the “{row.category}” category.</small>}
-              <button type="button" className="hc-btn hc-btn--text" onClick={() => onManageServices(manageServicesContext(site.oplocId, row.category))}>Manage booking services for {oplocLabel(payload.oplocs, site.oplocId)}</button></li>)}</ul>}
-          <p className="hc-hint">This comes from each site’s booking services and the item’s category. It is not a setting on the item itself. Today only the RCoA portal reads these settings; other sites may not follow them yet.</p>
+              <button type="button" className="hc-btn hc-btn--text" onClick={() => onManageServices(manageServicesContext(site.oplocId, row.category, row.itemId))}>Manage booking services for {oplocLabel(payload.oplocs, site.oplocId)}</button></li>)}</ul>}
+          <p className="hc-hint">This reflects the current Hub layout and the item’s category; it is not a setting on the item itself. RCoA reads service visibility from its verified published catalogue package. Other portal consumers must be confirmed separately, and this view does not check price, date or booking rules.</p>
         </section>}
 
         <section className="hc-section" aria-labelledby="hc-sites-title"><h3 id="hc-sites-title">Available at</h3>
@@ -544,6 +612,14 @@ function BulkModal({ mode, rows: selectedRows, payload, send, onClose, onFinishe
   const dialog = useDialog(onClose, busy);
   const sites = selectableSites(payload.oplocs);
   const currentRoutes = new Set(rows.map(row => ROUTING_STATE_LABELS[row.routing.state]));
+  const countValues = (values: string[]) => {
+    const counts = new Map<string, number>();
+    for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+    return [...counts].map(([value, count]) => `${count} ${value}`).join(" · ");
+  };
+  const currentCategories = countValues(rows.map(row => row.category || "Not set"));
+  const currentPrices = countValues(rows.map(row => row.defaultPrice ? `${formatMoney(row.defaultPrice.amount)} ex VAT` : "No company default"));
+  const currentMinimums = countValues(rows.map(row => row.defaultMinimumQuantity === undefined ? "No company minimum" : String(row.defaultMinimumQuantity)));
   function buildDraft(): BulkDraft | null {
     if (mode === "archive") return { archive: true };
     const draft: BulkDraft = {};
@@ -587,30 +663,50 @@ function BulkModal({ mode, rows: selectedRows, payload, send, onClose, onFinishe
           <p className={report.failed ? "hc-warning hc-warning--danger" : "hc-success"} role="status">{report.message}</p>
           <ul className="hc-results">{report.results.map(result => <li key={result.itemId} className={result.status === "failed" ? "is-failed" : ""}><strong>{rows.find(row => row.itemId === result.itemId)?.name || "Item"}</strong> <span>{result.status === "failed" ? "Not changed" : result.status === "unchanged" ? "Already matched" : "Updated"}</span>{result.status === "failed" && <small>{result.message}</small>}</li>)}</ul>
         </> : step === "edit" ? <>
-          <p className="hc-hint">Every field starts as Leave unchanged. Site price and minimum overrides are always preserved.</p>
-          <Field label="Production"><select value={production} onChange={event => setProduction(event.target.value as RoutingChoice | "")}><option value="">Leave unchanged</option>{ROUTING_CHOICES.map(choice => <option key={choice} value={choice}>{ROUTING_CHOICE_LABELS[choice]}</option>)}</select></Field>
-          {production && currentRoutes.size > 1 && <p className="hc-warning" role="status"><AlertTriangle size={15} aria-hidden="true" /> The selected items currently have different routes: {[...currentRoutes].join(", ")}. They will all be set to {ROUTING_CHOICE_LABELS[production]}.</p>}
-          <div className="hc-grid2">
-            <Field label="Company default price"><select value={priceMode} onChange={event => setPriceMode(event.target.value as "keep" | "set")}><option value="keep">Leave unchanged</option><option value="set">Set price</option></select></Field>
-            {priceMode === "set" && <Field label="Price (£, ex VAT)"><input inputMode="decimal" value={priceValue} onChange={event => setPriceValue(event.target.value)} /></Field>}
-          </div>
-          <div className="hc-grid2">
-            <Field label="Company default minimum"><select value={minimumMode} onChange={event => setMinimumMode(event.target.value as "keep" | "set" | "clear")}><option value="keep">Leave unchanged</option><option value="set">Set minimum</option><option value="clear">Clear default minimum</option></select></Field>
-            {minimumMode === "set" && <Field label="Minimum quantity"><input inputMode="numeric" value={minimumValue} onChange={event => setMinimumValue(event.target.value)} /></Field>}
-          </div>
-          <Field label="Site availability"><select value={siteMode} onChange={event => setSiteMode(event.target.value as typeof siteMode)}><option value="keep">Leave unchanged</option><option value="add">Add selected sites</option><option value="remove">Remove selected sites</option><option value="replace">Replace availability with selected sites</option></select></Field>
-          {siteMode !== "keep" && <SitePicker legend={siteMode === "add" ? "Sites to add" : siteMode === "remove" ? "Sites to remove" : "Available at exactly these sites"} sites={sites} value={siteIds} onChange={setSiteIds} />}
-          <Field label="Category"><select value={categoryMode} onChange={event => setCategoryMode(event.target.value as "keep" | "set")}><option value="keep">Leave unchanged</option><option value="set">Set category</option></select></Field>
-          {categoryMode === "set" && <>
-            <Field label="Target category"><input value={categoryValue} maxLength={160} list="hc-bulk-categories" onChange={event => { setCategoryValue(event.target.value); setConfirmNewCategory(false); }} /><datalist id="hc-bulk-categories">{categoriesOf(payload.rows).map(category => <option key={category} value={category} />)}</datalist></Field>
-            {categoryValue.trim() && !categoriesOf(payload.rows).includes(categoryValue.trim()) && <label className="hc-check"><input type="checkbox" checked={confirmNewCategory} onChange={event => setConfirmNewCategory(event.target.checked)} /><span>Create the new category name; I understand it will not be enabled for any service automatically.</span></label>}
-          </>}
+          <p className="hc-hint">You selected {rows.length} active item{rows.length === 1 ? "" : "s"}. Every field starts at Leave unchanged; existing site price and minimum overrides stay intact.</p>
+          <section className="hc-bulk-group" aria-labelledby="hc-bulk-category-title">
+            <h3 id="hc-bulk-category-title">Item category</h3>
+            <p className="hc-hint">Category can affect which booking services include an item. It is separate from site availability and production routing.</p>
+            <p className="hc-bulk-current"><strong>Current categories:</strong> {currentCategories}</p>
+            <Field label="Category"><select value={categoryMode} onChange={event => setCategoryMode(event.target.value as "keep" | "set")}><option value="keep">Leave unchanged</option><option value="set">Set category</option></select></Field>
+            {categoryMode === "set" && <>
+              <Field label="Target category"><input value={categoryValue} maxLength={160} list="hc-bulk-categories" onChange={event => { setCategoryValue(event.target.value); setConfirmNewCategory(false); }} /><datalist id="hc-bulk-categories">{categoriesOf(payload.rows).map(category => <option key={category} value={category} />)}</datalist></Field>
+              {categoryValue.trim() && !categoriesOf(payload.rows).includes(categoryValue.trim()) && <label className="hc-check"><input type="checkbox" checked={confirmNewCategory} onChange={event => setConfirmNewCategory(event.target.checked)} /><span>Create the new category name; it will not be enabled for a booking service automatically.</span></label>}
+            </>}
+          </section>
+          <section className="hc-bulk-group" aria-labelledby="hc-bulk-services-title">
+            <h3 id="hc-bulk-services-title">Customer-facing services</h3>
+            <p className="hc-hint">There is no per-item service switch. The preview shows stored service-category effects of a category change; site permission, effective price, booking rules, package publication and portal support are separate checks.</p>
+          </section>
+          <section className="hc-bulk-group" aria-labelledby="hc-bulk-production-title">
+            <h3 id="hc-bulk-production-title">Production routing</h3>
+            <p className="hc-bulk-current"><strong>Current routes:</strong> {countValues(rows.map(row => ROUTING_STATE_LABELS[row.routing.state]))}</p>
+            <Field label="Production route"><select value={production} onChange={event => setProduction(event.target.value as RoutingChoice | "")}><option value="">Leave unchanged</option>{ROUTING_CHOICES.map(choice => <option key={choice} value={choice}>{ROUTING_CHOICE_LABELS[choice]}</option>)}</select></Field>
+            {production && currentRoutes.size > 1 && <p className="hc-warning" role="status"><AlertTriangle size={15} aria-hidden="true" /> The selected items currently have different routes. They will all be set to {ROUTING_CHOICE_LABELS[production]}.</p>}
+          </section>
+          <section className="hc-bulk-group" aria-labelledby="hc-bulk-sites-title">
+            <h3 id="hc-bulk-sites-title">Item site availability</h3>
+            <Field label="Sites"><select value={siteMode} onChange={event => setSiteMode(event.target.value as typeof siteMode)}><option value="keep">Leave unchanged</option><option value="add">Add selected sites</option><option value="remove">Remove selected sites</option><option value="replace">Replace availability with selected sites</option></select></Field>
+            {siteMode !== "keep" && <SitePicker legend={siteMode === "add" ? "Sites to add" : siteMode === "remove" ? "Sites to remove" : "Available at exactly these sites"} sites={sites} value={siteIds} onChange={setSiteIds} />}
+          </section>
+          <section className="hc-bulk-group" aria-labelledby="hc-bulk-commercial-title">
+            <h3 id="hc-bulk-commercial-title">Company defaults</h3>
+            <div className="hc-bulk-current-values"><p><strong>Current prices:</strong> {currentPrices}</p><p><strong>Current minima:</strong> {currentMinimums}</p></div>
+            <div className="hc-grid2">
+              <Field label="Company default price"><select value={priceMode} onChange={event => setPriceMode(event.target.value as "keep" | "set")}><option value="keep">Leave unchanged</option><option value="set">Set price</option></select></Field>
+              {priceMode === "set" && <Field label="Price (£, ex VAT)"><input inputMode="decimal" value={priceValue} onChange={event => setPriceValue(event.target.value)} /></Field>}
+            </div>
+            <div className="hc-grid2">
+              <Field label="Company default minimum"><select value={minimumMode} onChange={event => setMinimumMode(event.target.value as "keep" | "set" | "clear")}><option value="keep">Leave unchanged</option><option value="set">Set minimum</option><option value="clear">Clear default minimum</option></select></Field>
+              {minimumMode === "set" && <Field label="Minimum quantity"><input inputMode="numeric" value={minimumValue} onChange={event => setMinimumValue(event.target.value)} /></Field>}
+            </div>
+          </section>
         </> : <>
           <dl className="hc-impact">{lines.map(line => <div key={line.label} className={line.tone ? `is-${line.tone}` : ""}><dt>{line.label}</dt><dd>{line.value}</dd></div>)}</dl>
           {categoryCheck && <p className={categoryCheck.safe ? categoryCheck.requiresConfirmation ? "hc-warning" : "hc-hint" : "hc-warning"} role="status"><AlertTriangle size={15} aria-hidden="true" /> {categoryCheck.reason}</p>}
           {categoryCheck?.changes.length ? <details className="hc-hint"><summary>Review all {categoryCheck.changes.length} site visibility effect{categoryCheck.changes.length === 1 ? "" : "s"}</summary><ul>{categoryCheck.changes.map((change, index) => <li key={`${index}-${change}`}>{change}</li>)}</ul></details> : null}
           {categoryCheck?.requiresConfirmation && <label className="hc-check"><input type="checkbox" checked={draft?.categoryVisibilityConfirmed === true} onChange={event => setDraft(current => current ? { ...current, categoryVisibilityConfirmed: event.target.checked } : current)} /><span>I reviewed these stored service visibility changes for the selected items and sites.</span></label>}
-          {draft?.category !== undefined && <p className="hc-hint">Production controls CPU routing. Sites control OPLOC offering availability. Service and occasion visibility is separate in the stored #175 layout. This category edit does not enable a service (including Breakfast). Current booking portals do not consume that layout, so this is a stored-config preview, not a runtime visibility guarantee.</p>}
+          {draft?.category !== undefined && <p className="hc-hint">Production controls CPU routing. Sites control OPLOC offering availability. Service and occasion visibility is separate in the stored #175 layout. This category edit does not enable a service (including Breakfast). RCoA reads visibility through its verified published catalogue package; other portal consumers must be checked separately. This preview does not confirm price, date or booking rules.</p>}
           <p className="hc-hint">Each item is changed in its own safe step. If any item cannot be changed (for example it was edited elsewhere), you will see exactly which ones; nothing fails silently.</p>
         </>}
         {error && <p role="alert" className="hc-error">{error}</p>}
