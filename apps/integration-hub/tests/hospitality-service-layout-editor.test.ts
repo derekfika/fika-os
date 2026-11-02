@@ -116,10 +116,11 @@ test("source contracts: GET reads stored layout only, the editor uses only the e
   const route = readFileSync(new URL("../app/api/hospitality-catalogue/route.ts", import.meta.url), "utf8");
   const get = route.slice(route.indexOf("export async function GET"), route.indexOf("export async function POST"));
   assert.match(get, /attachServiceLayout/); assert.doesNotMatch(get, /republishAfterMutation|buildCataloguePackage|runCatalogueCommand/);
-  const ui = readFileSync(new URL("../app/ui/HospitalityServiceLayout.tsx", import.meta.url), "utf8");
+  const ui = readFileSync(new URL("../app/ui/HospitalityCatalogueServices.tsx", import.meta.url), "utf8");
+  const layoutUi = readFileSync(new URL("../app/ui/HospitalityServiceLayout.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(ui, /\balert\(|\bprompt\(|\bconfirm\(|dangerouslySetInnerHTML|localStorage/);
   assert.doesNotMatch(ui, /action: "(create-item|update-item|set-default-price|set-site-override|set-site-availability)"/);
   const mount = readFileSync(new URL("../app/ui/HospitalityCatalogue.tsx", import.meta.url), "utf8");
-  assert.match(mount, /<HospitalityServiceLayout payload=\{payload\} canManage=\{canManage\}/);
-  assert.match(ui, /disabled=\{disabled\}/); assert.match(ui, /aria-label=\{`\$\{category\} in \$\{entry\.label\}`\}/);
+  assert.match(mount, /<(?:HospitalityServiceLayout|HospitalityCatalogueServices)\b[^>]*payload=\{payload\} canManage=\{canManage\}/);
+  assert.match(layoutUi, /disabled=\{disabled\}/); assert.match(layoutUi, /aria-label=\{`\$\{category\} in \$\{entry\.label\}`\}/);
 });
