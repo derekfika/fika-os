@@ -26,14 +26,6 @@ function displayState(states: Record<string, OperationalAllergenState> | undefin
   return "unrecorded";
 }
 
-const NO_KEY_STATUS_TEXT = {
-  blank: "Not verified",
-  positives: "Allergens recorded",
-  declared: "Declared: no key allergens",
-  legacy_unverified: "Legacy value, not verified",
-  conflict: "Conflict with allergens",
-} as const;
-
 export default function AllergenReviewMatrix({
   rows,
   orders,
@@ -570,22 +562,16 @@ export default function AllergenReviewMatrix({
                   if (key === "no_key_allergens") {
                     const attestation = classifyRowAllergens(states[row.key], ctxFor(row.key));
                     const ticked = attestation === "declared" || attestation === "conflict";
-                    const inputId = `no-key-${row.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
                     return (
                       <td key={key}>
-                        <label className={`cpu-no-key-control${ticked ? " cpu-no-key-control--ticked" : ""}`} htmlFor={inputId}>
-                          <input
-                            id={inputId}
-                            type="checkbox"
-                            className="cpu-no-key-checkbox"
-                            checked={ticked}
-                            disabled={busy || locked}
-                            aria-describedby={`${inputId}-status`}
-                            onChange={() => void toggle(row.key, key)}
-                          />
-                          <span>No Key Allergens<span className="cpu-allergen-sr-only"> for {titleCaseDish(row.name)}</span></span>
-                        </label>
-                        <small id={`${inputId}-status`} className="cpu-no-key-status" data-testid={`no-key-status-${row.key}`}>{NO_KEY_STATUS_TEXT[attestation]}</small>
+                        <button
+                          type="button"
+                          disabled={busy || locked}
+                          className={`cpu-allergen-state cpu-allergen-state--${ticked ? "contains" : "clear"}`}
+                          aria-pressed={ticked}
+                          aria-label={`${titleCaseDish(row.name)}, No Key Allergens: ${ticked ? "declared" : "not declared"}`}
+                          onClick={() => void toggle(row.key, key)}
+                        />
                       </td>
                     );
                   }
