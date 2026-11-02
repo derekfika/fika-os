@@ -45,10 +45,12 @@ test("the UI uses governed service-layout commands and does not claim portal ava
   assert.equal(SERVICE_IDS.length, 8);
 });
 
-test("location editor starts with an explicit location and service choice when no item context is supplied", () => {
+test("service selection stays explicit unless a deep link names a service", () => {
   const source = readFileSync(new URL("../app/ui/HospitalityCatalogueServices.tsx", import.meta.url), "utf8");
   assert.match(source, /const \[oplocId, setOplocId\].*initialContext\?\.oplocId/);
-  assert.match(source, /const \[serviceId, setServiceId\].*pageView === "services" \? "dining" : ""/);
+  assert.match(source, /const \[serviceId, setServiceId\] = useState<ServiceId \| "">\(initialContext\?\.serviceId \?\? ""\)/);
+  assert.match(source, /const nextService = initialContext\?\.serviceId \?\? ""/);
+  assert.doesNotMatch(source, /pageView === "services" \? "dining"/);
   assert.match(source, /Choose a location…/);
   assert.match(source, /Choose a booking service/);
   assert.match(source, /onContextChange\?\.\(\{ \.\.\.next, \.\.\.\(contextCategory/);
