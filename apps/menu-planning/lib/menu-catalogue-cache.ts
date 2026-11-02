@@ -1,4 +1,5 @@
 "use client";
+import { openMenuCacheDatabase as openDatabase } from "./menu-cache-database";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
 
 export type CachedCatalogueEntry = Record<string, unknown> & { id: string };
@@ -28,10 +29,6 @@ export function catalogueErrorMessage(value: unknown, fallback: string) {
   return fallback;
 }
 
-const databaseName = "fika-menu-planning";
-// This is the IndexedDB schema version. It is deliberately separate from the
-// immutable catalogue read-package version stored in packageVersion/manifest.
-const indexedDbVersion = 2;
 const recordStore = "menuCatalogue";
 const metadataStore = "cacheMetadata";
 const metadataKey = (namespace: string) => `catalogue:${namespace}`;
@@ -43,21 +40,6 @@ function debug(event: string, details: Record<string, unknown> = {}) {
 }
 
 function sessionValue(key: string) { try { return typeof window === "undefined" ? null : window.sessionStorage.getItem(key); } catch { return null; } }
-
-function openDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === "undefined") return reject(new Error("IndexedDB is unavailable."));
-    const request = indexedDB.open(databaseName, indexedDbVersion);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains("menuWeeks")) db.createObjectStore("menuWeeks", { keyPath: "weekId" });
-      if (!db.objectStoreNames.contains(recordStore)) db.createObjectStore(recordStore, { keyPath: "cacheKey" });
-      if (!db.objectStoreNames.contains(metadataStore)) db.createObjectStore(metadataStore);
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("IndexedDB could not be opened."));
-  });
-}
 
 export function catalogueCacheNamespace(identity?: string) {
   if (typeof window === "undefined") return undefined;
@@ -86,31 +68,10 @@ async function readCache(namespace: string): Promise<CachedCatalogue | undefined
   });
 }
 
-async function findLatestCache(): Promise<CachedCatalogue | undefined> {
-  const db = await openDatabase();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction([metadataStore], "readonly");
-    const request = transaction.objectStore(metadataStore).getAll();
-    transaction.oncomplete = async () => {
-      const candidates = (request.result as Array<Omit<CachedCatalogue, "entries"> | undefined>)
-        .filter((metadata): metadata is Omit<CachedCatalogue, "entries"> => Boolean(metadata && metadata.schemaVersion === schemaVersion && metadata.namespace))
-        .sort((a, b) => b.cachedAt - a.cachedAt);
-      try {
-        for (const candidate of candidates) {
-          const value = await readCache(candidate.namespace);
-          if (value?.entries.length) return resolve(value);
-        }
-        resolve(undefined);
-      } catch (error) { reject(error); }
-    };
-    transaction.onerror = () => reject(transaction.error || new Error("Catalogue cache metadata read failed."));
-  });
-}
-
 export async function getCachedCatalogue(namespace = catalogueCacheNamespace()) {
   try {
-    const value = namespace ? await readCache(namespace) : await findLatestCache();
-    if (!value) { recordDataAccess({ app: "menu-planning", operation: "catalogue.cache", source: "CLIENT_CACHE", documents: 0, cacheHit: false }); debug("miss", { namespace }); return undefined; }
+    const value = namespace ? await readCache(namespace) : undefined;
+    if (!value) { recordDataAccess({ app: "menu-planning", operation: "catalogue.cache", source: "CLIENT_CACHE", documents: 0, cacheHit: false }); debug("miss"); return undefined; }
     const stale = Date.now() - value.cachedAt >= CATALOGUE_CACHE_TTL_MS;
     debug(stale ? "stale" : "hit", { cachedAt: value.cachedAt, recordCount: value.entries.length });
     return value;
