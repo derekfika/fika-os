@@ -29,6 +29,9 @@ export function dishReferenceForEntry(entry: Pick<RollingEntry, "id" | "itemId" 
     const allowed = categoriesForMenuSlot(entry.slot);
     const expectedSaladSubtype = SALAD_SLOT_SUBTYPES.find(item => item.slot === entry.slot)?.subtype;
     const actualSaladSubtype = normaliseSaladSubtype(classification.subcategory);
+    if (category === "Salad" && expectedSaladSubtype && !actualSaladSubtype) {
+      return { state: "unresolved", label: "Needs classification", message: `This salad still needs a salad slot classification. Its saved placement remains in ${entry.slot}; its label and quantities are unchanged.` };
+    }
     const categoryMismatch = !allowed.includes(category);
     const subtypeMismatch = category === "Salad" && Boolean(expectedSaladSubtype && actualSaladSubtype && expectedSaladSubtype !== actualSaladSubtype);
     if (!categoryMismatch && !subtypeMismatch) return undefined;
@@ -39,7 +42,15 @@ export function dishReferenceForEntry(entry: Pick<RollingEntry, "id" | "itemId" 
   if (reference.state === "merged" && reference.requestedId && reference.successor?.id && reference.successor.id !== reference.requestedId && reference.successor.name && reference.provenance?.mappingVersion !== undefined && reference.provenance.mappingDigest) {
     return { state: "merged", label: "Merged", message: `This saved placement still refers to the original dish. Use ${reference.successor.name} for new selections.` };
   }
-  if (reference.state === "merged" || reference.state === "unresolved") return { state: "unresolved", label: "Needs classification", message: "The historical dish reference could not be verified. Its saved label and placement remain unchanged; no successor is shown." };
+  if (reference.state === "merged" || reference.state === "unresolved") {
+    const detail = reference.reason === "missing_id" ? "This saved placement has no canonical dish ID."
+      : reference.reason === "not_found" ? "This dish was not found in the current catalogue or verified archive."
+        : reference.reason === "archive_unavailable" ? "The archived dish record could not be verified."
+          : reference.reason === "integrity_failed" ? "This historical dish reference failed integrity verification."
+            : reference.reason === "mapping_unverified" || reference.state === "merged" ? "The historical dish mapping could not be verified."
+              : "This saved dish reference could not be verified.";
+    return { state: "unresolved", label: "Reference unavailable", message: `Historical reference unavailable — ${detail} Its saved label and placement remain unchanged; no successor is shown.` };
+  }
   return undefined;
 }
 
