@@ -14,13 +14,28 @@ export type MenuActor = {
 };
 const failure = (message: string, status: number) => Object.assign(new Error(message), { status });
 
+/**
+ * The Hub access contract (apps/integration-hub/app/api/menu-planning/access) returns the
+ * AuthMod identity as `principal.id`. `identityId` is accepted only as the legacy spelling.
+ * Anything that is not a non-empty string is no identity: callers must fail closed rather than
+ * let an empty actor reach an audit trail.
+ */
+export function canonicalActorId(principal: { id?: unknown; identityId?: unknown } | undefined): string | undefined {
+  for (const candidate of [principal?.id, principal?.identityId]) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+  return undefined;
+}
+
 export async function resolveMenuActor(request: NextRequest): Promise<MenuActor> {
   try {
     const response = await fetch(`${menuPlanningHubBaseUrl()}/api/menu-planning/access`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store", redirect: "error" });
-    const body = await response.json() as { principal?: { identityId: string; email?: string }; canManage?: boolean; canPublish?: boolean; scope?: { all?: boolean; ids?: string[] }; oplocs?: Array<{ id?: string }>; error?: { message?: string } };
+    const body = await response.json() as { principal?: { id?: unknown; identityId?: unknown; email?: string }; canManage?: boolean; canPublish?: boolean; scope?: { all?: boolean; ids?: string[] }; oplocs?: Array<{ id?: string }>; error?: { message?: string } };
     if (!response.ok || !body.principal) throw failure(body.error?.message || "An authenticated Menu Planning session is required.", response.status || 401);
     const ids = body.scope?.ids || (body.oplocs || []).map(oploc => oploc.id).filter((id): id is string => Boolean(id));
-    return { uid: body.principal.identityId, email: body.principal.email, role: body.canPublish ? "integration-admin" : body.canManage ? "reviewer" : "viewer", oplocIds: [...new Set(ids)], allOplocs: body.scope?.all === true };
+    const uid = canonicalActorId(body.principal);
+    if (!uid) throw failure("The authenticated session did not carry a verifiable identity; Menu Planning mutation was not performed.", 401);
+    return { uid, email: body.principal.email, role: body.canPublish ? "integration-admin" : body.canManage ? "reviewer" : "viewer", oplocIds: [...new Set(ids)], allOplocs: body.scope?.all === true };
   } catch (error) {
     if (process.env.FIKA_RUNTIME_MODE === "local" && process.env.NODE_ENV !== "production" && !request.headers.get("cookie")) return { uid: "local-menu-planner", email: "admin@local.fika", role: "integration-admin", oplocIds: [], allOplocs: true, synthetic: true };
     if (error && typeof error === "object" && "status" in error) throw error;

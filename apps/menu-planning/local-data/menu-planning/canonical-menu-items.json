@@ -1,5 +1,19 @@
 {
-  "version": 1,
+  "version": 21,
+  "sourceRevision": 21,
+  "sourceHash": "adaad39a17fc53d14953489a9cb7de4aa5a673cb3b9ac4c2f3e109453de1729c",
+  "updatedAt": "2026-11-02T08:08:41.718Z",
+  "lastMutationBy": "test",
+  "packageState": {
+    "status": "current",
+    "sourceRevision": 21,
+    "sourceHash": "adaad39a17fc53d14953489a9cb7de4aa5a673cb3b9ac4c2f3e109453de1729c",
+    "requestedAt": "2026-11-02T08:08:41.754Z",
+    "updatedAt": "2026-11-02T08:08:41.754Z",
+    "packageVersion": 21,
+    "packageHash": "e2617652130bfbf48f43a5def3177d4e9dacfc7b7e2fe02db1c36a807580d839",
+    "attempts": 1
+  },
   "items": [
     {
       "canonicalId": "menu-item:rolling:fattoush-heritage-tomates",
@@ -15666,6 +15680,646 @@
           "action": "rolling-menu-item-promoted",
           "at": "2026-08-25T15:31:23.610Z",
           "by": "rolling-menu-migration"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606897654",
+      "sourceName": "Duplicate dish 1793606897654",
+      "displayName": "Duplicate dish 1793606897654",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:17.654Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:17.663Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606897815",
+      "sourceName": "Duplicate dish 1793606897815",
+      "displayName": "Duplicate dish 1793606897815",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:17.815Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:17.819Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606897879",
+      "sourceName": "Duplicate dish 1793606897879",
+      "displayName": "Duplicate dish 1793606897879",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:17.879Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:17.881Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606897976",
+      "sourceName": "Duplicate dish 1793606897976",
+      "displayName": "Duplicate dish 1793606897976",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:17.976Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:17.979Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606898054",
+      "sourceName": "Duplicate dish 1793606898054",
+      "displayName": "Duplicate dish 1793606898054",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:18.054Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:18.056Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606898098",
+      "sourceName": "Duplicate dish 1793606898098",
+      "displayName": "Duplicate dish 1793606898098",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:18.098Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:18.101Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606898151",
+      "sourceName": "Duplicate dish 1793606898151",
+      "displayName": "Duplicate dish 1793606898151",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:18.151Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:18.154Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606898229",
+      "sourceName": "Duplicate dish 1793606898229",
+      "displayName": "Duplicate dish 1793606898229",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:18.229Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:18.232Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606898337",
+      "sourceName": "Duplicate dish 1793606898337",
+      "displayName": "Duplicate dish 1793606898337",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:18.337Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:18.339Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606898432",
+      "sourceName": "Duplicate dish 1793606898432",
+      "displayName": "Duplicate dish 1793606898432",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:18.432Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:18.435Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606919888",
+      "sourceName": "Duplicate dish 1793606919888",
+      "displayName": "Duplicate dish 1793606919888",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:39.888Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:39.906Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606920140",
+      "sourceName": "Duplicate dish 1793606920140",
+      "displayName": "Duplicate dish 1793606920140",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:40.140Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:40.155Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606920323",
+      "sourceName": "Duplicate dish 1793606920323",
+      "displayName": "Duplicate dish 1793606920323",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:40.323Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:40.331Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606920540",
+      "sourceName": "Duplicate dish 1793606920540",
+      "displayName": "Duplicate dish 1793606920540",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:40.540Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:40.547Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606920925",
+      "sourceName": "Duplicate dish 1793606920925",
+      "displayName": "Duplicate dish 1793606920925",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:40.925Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:40.932Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606921046",
+      "sourceName": "Duplicate dish 1793606921046",
+      "displayName": "Duplicate dish 1793606921046",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:41.046Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:41.053Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606921146",
+      "sourceName": "Duplicate dish 1793606921146",
+      "displayName": "Duplicate dish 1793606921146",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:41.146Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:41.152Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606921287",
+      "sourceName": "Duplicate dish 1793606921287",
+      "displayName": "Duplicate dish 1793606921287",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:41.287Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:41.292Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606921513",
+      "sourceName": "Duplicate dish 1793606921513",
+      "displayName": "Duplicate dish 1793606921513",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:41.513Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:41.518Z",
+          "by": "test"
+        }
+      ]
+    },
+    {
+      "canonicalId": "menu-item:local:duplicate-dish-1793606921704",
+      "sourceName": "Duplicate dish 1793606921704",
+      "displayName": "Duplicate dish 1793606921704",
+      "category": "Cold Protein",
+      "recipeStatus": "draft",
+      "weekId": "menu-week:menu-planning",
+      "dayId": "",
+      "sourceReference": {
+        "workbook": "Menu Planning",
+        "sheet": "Local dish creation"
+      },
+      "revision": 1,
+      "reviewStatus": "unreviewed",
+      "allergenEvidence": [
+        {
+          "allergen": "sesame",
+          "value": "contains",
+          "source": "test",
+          "reviewedBy": "test",
+          "reviewedAt": "2026-11-02T08:08:41.704Z"
+        }
+      ],
+      "mayContainReviewed": true,
+      "audit": [
+        {
+          "action": "locally-created-in-menu-planning",
+          "at": "2026-11-02T08:08:41.709Z",
+          "by": "test"
         }
       ]
     }

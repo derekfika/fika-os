@@ -349,6 +349,7 @@ async function handlePost(request: NextRequest) {
           operationId: String(body.operationId || ""),
           expectedVersions: body.expectedVersions as Record<string, number> | undefined,
           planHash: body.planHash ? String(body.planHash) : undefined,
+          targetHashes: body.targetHashes && typeof body.targetHashes === "object" ? (body.targetHashes as Record<string, string>) : undefined,
         },
         actor.uid,
         liveOplocs,

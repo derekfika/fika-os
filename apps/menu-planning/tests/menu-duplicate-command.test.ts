@@ -15,7 +15,7 @@ process.on("exit", () => rmSync(isolatedDatabaseDirectory, { recursive: true, fo
 
 const { createCanonicalMenuItem } = await import("../lib/canonical-menu-repository");
 const { duplicateMenuPlanning } = await import("../lib/menu-duplicate-command");
-const { emptyWeek, getWeek, planningWeekCommencing, saveSnapshot } = await import("../lib/rolling-menu");
+const { emptyWeek, getWeek, listWeeks, planningWeekCommencing, saveSnapshot } = await import("../lib/rolling-menu");
 
 const LIVE_OPLOCS = [{ canonicalId: "oploc:duplicate-site-a", label: "Duplicate Site A" }];
 // Each seed uses its own weeks: the store is shared across tests in this file.
@@ -112,4 +112,102 @@ test("invalid requests are rejected before any state is read or written", async 
   await assert.rejects(duplicateMenuPlanning(baseRequest(source.week.id, "short"), "tester@fika", LIVE_OPLOCS), (error: { status?: number }) => error.status === 422);
   await assert.rejects(duplicateMenuPlanning({ ...baseRequest(source.week.id, "dup-invalid-01"), destinations: [] }, "tester@fika", LIVE_OPLOCS), (error: { status?: number }) => error.status === 422);
   await assert.rejects(duplicateMenuPlanning({ ...baseRequest(source.week.id, "dup-invalid-02"), content: "everything" as never }, "tester@fika", LIVE_OPLOCS), (error: { status?: number }) => error.status === 422);
+});
+
+const twoDestinations = (secondWeek: string) => [{ weekCommencing: TARGET_WC, placement: { kind: "corresponding" as const } }, { weekCommencing: secondWeek, placement: { kind: "corresponding" as const } }];
+const secondWeekCommencing = () => planningWeekCommencing(`${2080 + seedRun}-03-19`);
+
+test("a missing, empty or non-string actor is rejected for every destination before any write", async () => {
+  const { source, target } = await seed();
+  const second = secondWeekCommencing();
+  const request = { ...baseRequest(source.week.id, "dup-actor-0001"), destinations: twoDestinations(second) };
+  for (const actor of [undefined, "", "   ", null, 42] as unknown[]) {
+    for (const mode of ["preview", "apply"] as const) {
+      await assert.rejects(duplicateMenuPlanning({ ...request, mode, planHash: "0".repeat(64), expectedVersions: { [TARGET_WC]: 1 } }, actor as string, LIVE_OPLOCS), (error: { status?: number }) => error.status === 401);
+    }
+  }
+  assert.equal((await getWeek(target.week.id)).entries.length, 0);
+  assert.equal((await listWeeks()).some(week => week.weekCommencing === second), false);
+});
+
+test("a destination week carrying an audit element without an actor is refused before any destination is written", async () => {
+  const { source, target } = await seed();
+  const second = secondWeekCommencing();
+  const secondWeek = emptyWeek(second, "duplicate-test");
+  // A legacy/corrupt element: no recorded actor. It must be reported, never repaired or invented.
+  (secondWeek.week.audit as unknown[]).push({ action: "legacy-edit", at: "2026-01-01T00:00:00.000Z" });
+  await saveSnapshot(secondWeek);
+  const request = { ...baseRequest(source.week.id, "dup-corrupt-0001"), destinations: twoDestinations(second) };
+  const preview = await duplicateMenuPlanning(request, "tester@fika", LIVE_OPLOCS);
+  await assert.rejects(
+    duplicateMenuPlanning({ ...request, mode: "apply", planHash: preview.planHash, expectedVersions: { [TARGET_WC]: 1, [second]: 1 } }, "tester@fika", LIVE_OPLOCS),
+    (error: { status?: number; message?: string }) => error.status === 409 && /audit entry without a recorded actor/.test(error.message || ""),
+  );
+  assert.equal((await getWeek(target.week.id)).entries.length, 0);
+  assert.equal((await getWeek(target.week.id)).week.version, 1);
+  const untouched = await getWeek(secondWeek.week.id);
+  assert.equal(untouched.week.version, 1);
+  assert.equal((untouched.week.audit[1] as { by?: string }).by, undefined);
+});
+
+test("multi-destination apply succeeds once; retry after a partial apply skips the applied week and keeps its quantities and version", async () => {
+  const { dish, source, target } = await seed();
+  const second = secondWeekCommencing();
+  const request = { ...baseRequest(source.week.id, "dup-retry-0001"), destinations: twoDestinations(second) };
+  const preview = await duplicateMenuPlanning(request, "tester@fika", LIVE_OPLOCS);
+  assert.deepEqual(Object.keys(preview.targetHashes).sort(), [TARGET_WC, second].sort());
+
+  // Reproduce the state a failure on the second destination leaves: only the first was saved.
+  const firstOnly = { ...request, destinations: [request.destinations[0]] };
+  const firstPreview = await duplicateMenuPlanning(firstOnly, "tester@fika", LIVE_OPLOCS);
+  await duplicateMenuPlanning({ ...firstOnly, mode: "apply", planHash: firstPreview.planHash, expectedVersions: { [TARGET_WC]: 1 } }, "tester@fika", LIVE_OPLOCS);
+  assert.equal((await getWeek(target.week.id)).week.version, 2);
+
+  // The reviewer presses Copy again with the original preview: no stale-hash or version conflict.
+  const retryRequest = { ...request, mode: "apply" as const, planHash: preview.planHash, targetHashes: preview.targetHashes, expectedVersions: { [TARGET_WC]: 1 } };
+  const retry = await duplicateMenuPlanning(retryRequest, "tester@fika", LIVE_OPLOCS);
+  assert.equal(retry.mode === "apply" ? retry.applied.map(item => item.weekCommencing).join() : "", second);
+  const firstFinal = await getWeek(target.week.id);
+  assert.equal(firstFinal.week.version, 2, "applied week is not written again");
+  assert.equal(firstFinal.entries.length, 1);
+  assert.deepEqual(firstFinal.entries[0].allocations.map(allocation => allocation.quantity), [4]);
+  assert.equal(firstFinal.week.audit.filter(event => event.action === "duplicate-plan:dup-retry-0001").length, 1);
+  const secondWeek = (await listWeeks()).find(week => week.weekCommencing === second)!;
+  const secondFinal = await getWeek(secondWeek.id);
+  assert.equal(secondFinal.entries[0].itemId, dish.canonicalId);
+  assert.deepEqual(secondFinal.entries[0].allocations.map(allocation => allocation.quantity), [4]);
+  assert.ok(secondFinal.week.audit.every(event => typeof event.by === "string" && event.by));
+
+  // A further press changes nothing.
+  const again = await duplicateMenuPlanning(retryRequest, "tester@fika", LIVE_OPLOCS);
+  assert.equal(again.mode === "apply" ? again.applied.length : -1, 0);
+});
+
+test("a partial-apply retry refuses when the reviewed per-destination digests are missing", async () => {
+  const { source, target } = await seed();
+  const second = secondWeekCommencing();
+  const request = { ...baseRequest(source.week.id, "dup-retry-0002"), destinations: twoDestinations(second) };
+  const preview = await duplicateMenuPlanning(request, "tester@fika", LIVE_OPLOCS);
+  const firstOnly = { ...request, destinations: [request.destinations[0]] };
+  const firstPreview = await duplicateMenuPlanning(firstOnly, "tester@fika", LIVE_OPLOCS);
+  await duplicateMenuPlanning({ ...firstOnly, mode: "apply", planHash: firstPreview.planHash, expectedVersions: { [TARGET_WC]: 1 } }, "tester@fika", LIVE_OPLOCS);
+  await assert.rejects(duplicateMenuPlanning({ ...request, mode: "apply", planHash: preview.planHash, expectedVersions: { [TARGET_WC]: 1 } }, "tester@fika", LIVE_OPLOCS), (error: { status?: number }) => error.status === 409);
+  await assert.rejects(duplicateMenuPlanning({ ...request, mode: "apply", planHash: preview.planHash, targetHashes: { ...preview.targetHashes, [second]: "0".repeat(64) }, expectedVersions: { [TARGET_WC]: 1 } }, "tester@fika", LIVE_OPLOCS), (error: { status?: number }) => error.status === 409);
+  assert.equal((await listWeeks()).some(week => week.weekCommencing === second), false);
+  assert.equal((await getWeek(target.week.id)).week.version, 2);
+});
+
+test("published destination days stay protected on apply", async () => {
+  const { source, target } = await seed();
+  const published = await getWeek(target.week.id);
+  published.week.status = "published";
+  published.week.dayStatuses = Object.fromEntries(published.days.map(day => [day.id, "published"]));
+  published.week.version = 2;
+  await saveSnapshot(published, 1);
+  const preview = await duplicateMenuPlanning(baseRequest(source.week.id, "dup-published-01"), "tester@fika", LIVE_OPLOCS);
+  assert.ok(preview.plan.targets[0].exceptions.some(item => item.kind === "published"));
+  await duplicateMenuPlanning({ ...baseRequest(source.week.id, "dup-published-01", { mode: "apply" }), planHash: preview.planHash, expectedVersions: { [TARGET_WC]: 2 } }, "tester@fika", LIVE_OPLOCS);
+  const after = await getWeek(target.week.id);
+  assert.equal(after.entries.length, 0);
+  assert.equal(after.week.version, 2);
 });

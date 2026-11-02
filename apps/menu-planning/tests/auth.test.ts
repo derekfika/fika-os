@@ -70,3 +70,31 @@ test("hosted mutation auth has an explicit missing-Hub configuration failure", (
   assert.match(source, /MENU_HUB_ENDPOINT_NOT_CONFIGURED/);
   assert.match(source, /menuPlanningHubBaseUrl/);
 });
+
+async function actorFromHub(principal: unknown) {
+  const originalMode = process.env.FIKA_RUNTIME_MODE;
+  const originalFetch = globalThis.fetch;
+  const originalHub = process.env.FIKA_HUB_BASE_URL;
+  process.env.FIKA_RUNTIME_MODE = "staging";
+  process.env.FIKA_HUB_BASE_URL = "https://fika-hub-staging.example/";
+  globalThis.fetch = (async () => Response.json({ principal, canManage: true, canPublish: false })) as typeof fetch;
+  try {
+    return await resolveMenuActor(new NextRequest("https://menu.example/api/rolling-menu", { headers: { cookie: "fika_os_session=session-value" } }));
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = originalMode;
+    if (originalHub === undefined) delete process.env.FIKA_HUB_BASE_URL; else process.env.FIKA_HUB_BASE_URL = originalHub;
+  }
+}
+
+test("the Hub access principal id (the actual contract) becomes the canonical actor", async () => {
+  // apps/integration-hub/app/api/menu-planning/access returns principal.id, not identityId.
+  const actor = await actorFromHub({ type: "interactive", id: "authmod-identity-7", email: "staff@example.com" });
+  assert.equal(actor.uid, "authmod-identity-7");
+});
+
+test("a principal without a verifiable identity fails closed instead of yielding an undefined actor", async () => {
+  for (const principal of [{ type: "interactive", email: "staff@example.com" }, { id: "" }, { id: "   " }, { id: 42 }, {}]) {
+    await assert.rejects(() => actorFromHub(principal), error => (error as { status?: number }).status === 401);
+  }
+});

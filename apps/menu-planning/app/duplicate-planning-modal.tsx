@@ -15,6 +15,7 @@ type ExistingMode = "replace" | "fill-empty";
 type SourceScope = "week" | "days";
 type Preview = {
   planHash: string;
+  targetHashes?: Record<string, string>;
   plan: {
     totals: { targets: number; dishesChanged: number; allocationRowsWritten: number; overwrites: number; exceptions: number; unchanged: number };
     targets: Array<{
@@ -147,7 +148,7 @@ export default function DuplicatePlanningModal({ origin, weeks, currentWeek, day
     setApplyError("");
     try {
       const expectedVersions = Object.fromEntries(preview.plan.targets.filter(target => !target.isNewWeek).map(target => [target.weekCommencing, target.expectedVersion]));
-      const response = await fetch("/api/rolling-menu", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(requestBody("apply", { planHash: preview.planHash, expectedVersions })) });
+      const response = await fetch("/api/rolling-menu", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(requestBody("apply", { planHash: preview.planHash, targetHashes: preview.targetHashes, expectedVersions })) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error?.message || payload.error || "The duplicate could not be applied. Refresh and review it again.");
       const appliedWeeks = (payload.applied || []) as Array<{ weekId: string; weekCommencing: string }>;
