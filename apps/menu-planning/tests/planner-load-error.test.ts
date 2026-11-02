@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { getCachedWeek, getCachedWeekSelection, putCachedWeek, setMenuCacheOpenTimeoutForTests, type CachedMenuWeek } from "../lib/menu-week-cache";
-import { MenuLoadError, loadFailureFrom } from "../app/planner-data";
+import { MenuLoadError, loadFailureFrom, withMenuRequestTimeout } from "../app/planner-data";
 
 const source = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 const globals = globalThis as unknown as { indexedDB?: unknown };
@@ -17,9 +17,27 @@ test("load failures keep the HTTP status for 401, 403 and 503", () => {
   assert.equal(loadFailureFrom("odd").message, "Menu could not be loaded.");
 });
 
+test("a stalled rolling-menu request aborts and becomes a retryable load error", async () => {
+  let aborted = false;
+  await assert.rejects(
+    withMenuRequestTimeout(signal => new Promise<never>((_resolve, reject) => {
+      signal.addEventListener("abort", () => { aborted = true; reject(new Error("aborted")); }, { once: true });
+    }), 20),
+    /Menu request timed out\. Please retry\./,
+  );
+  assert.equal(aborted, true);
+  assert.match(loadFailureFrom(new Error("Menu request timed out. Please retry.")).message, /Please retry/);
+});
+
+test("a completed rolling-menu request clears its timeout", async () => {
+  const result = await withMenuRequestTimeout(async () => "loaded", 100);
+  assert.equal(result, "loaded");
+});
+
 test("planner-data surfaces status from readJson and never awaits cache persistence before rendering", async () => {
   const data = await source("../app/planner-data.ts");
   assert.match(data, /throw new MenuLoadError\(/);
+  assert.match(data, /withMenuRequestTimeout\(async signal => \{ const response = await fetch\(`\/api\/rolling-menu\$\{query\}`,[^\n]*signal/);
   assert.match(data, /setLoadFailure\(loadFailureFrom\(cause\)\)/);
   assert.match(data, /const load = useCallback\(async \(weekId\?: string\) => \{[^\n]*setLoadFailure\(undefined\)/);
   assert.doesNotMatch(data, /await persistCachedWeek\(next/);
