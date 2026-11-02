@@ -10,6 +10,7 @@ const statusOf = (error: unknown) => (error && typeof error === "object" && "sta
 async function handleGet(request: Request) {
   try {
     const url = new URL(request.url);
+    const started = performance.now();
     const registry = await readDishTagRegistry();
     const tags = searchTags(registry, url.searchParams.get("q") || "", { group: url.searchParams.get("group") || undefined });
     return NextResponse.json({
@@ -19,7 +20,7 @@ async function handleGet(request: Request) {
       groups: groupTags(tags),
       groupLabels: DISH_TAG_GROUP_LABELS,
       knownGroups: DISH_TAG_GROUPS,
-    });
+    }, { headers: { "Cache-Control": "no-store", "Server-Timing": `tag-registry;dur=${(performance.now() - started).toFixed(1)}` } });
   } catch (error) {
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Tags could not be loaded." } }, { status: statusOf(error) });
   }
