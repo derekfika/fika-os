@@ -341,6 +341,18 @@ test("cold catalogue loads populate IndexedDB without broad warm reads", () => {
   assert.match(workspace, /loadCachedCatalogue\(fetchCatalogue/);
 });
 
+test("Dish Library search filters loaded entries without restarting catalogue loading", () => {
+  const workspace = readFileSync(new URL("../app/catalogue-workspace.tsx", import.meta.url), "utf8");
+  const loadCall = workspace.indexOf("loadCachedCatalogue(fetchCatalogue");
+  const effectStart = workspace.lastIndexOf("useEffect(", loadCall);
+  const effectEnd = workspace.indexOf("}, []);", loadCall);
+  assert.ok(loadCall >= 0 && effectStart >= 0 && effectEnd > loadCall);
+  const loadEffect = workspace.slice(effectStart, effectEnd);
+  assert.match(workspace, /useMemo\(\(\) => filterEntries\(allEntries, query, category, usage, status\)/);
+  assert.doesNotMatch(loadEffect, /setLoading\(true\)|query|category|usage|status/);
+  assert.match(workspace, /await invalidateCatalogueCache\(\); setDuplicateGroups[\s\S]*?loadCachedCatalogue\(fetchCatalogue/);
+});
+
 test("normal warm Dish Library path does not perform a broad catalogue Firestore read", () => {
   const workspace = readFileSync(new URL("../app/catalogue-workspace.tsx", import.meta.url), "utf8");
   const cache = readFileSync(new URL("../lib/menu-catalogue-cache.ts", import.meta.url), "utf8");
