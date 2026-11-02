@@ -266,3 +266,15 @@ test("MENU onto a blank target that already holds quantities reports them as a c
   assert.equal(result.overwrites[0].toDish, "Chicken Breast");
   assert.equal(result.overwrites[0].retainedAllocationRows, 1);
 });
+
+test("planMenuDuplicate refuses a missing or empty actor and the audit scanner locates actor-less elements", async () => {
+  const { planMenuDuplicate, findInvalidAuditActor, isVerifiedAuditActor } = await import("../lib/menu-duplicate");
+  assert.equal(isVerifiedAuditActor("staff-1"), true);
+  for (const actor of [undefined, "", "  ", null, 7]) assert.equal(isVerifiedAuditActor(actor), false);
+  assert.throws(() => planMenuDuplicate({ actor: undefined as unknown as string } as never), (error: { status?: number }) => error.status === 401);
+  const snapshot = { week: { audit: [{ action: "a", at: "t", by: "x" }, { action: "b", at: "t" }] }, entries: [] } as never;
+  assert.equal(findInvalidAuditActor(snapshot), "week.audit.1.by");
+  const entryBad = { week: { audit: [] }, entries: [{ id: "e1", audit: [{ action: "a", at: "t", by: undefined }] }] } as never;
+  assert.equal(findInvalidAuditActor(entryBad), "entries[e1].audit.0.by");
+  assert.equal(findInvalidAuditActor({ week: { audit: [{ action: "a", at: "t", by: "x" }] }, entries: [] } as never), undefined);
+});

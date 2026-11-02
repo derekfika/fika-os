@@ -133,7 +133,34 @@ export function mapDuplicateAllocations(allocations: readonly RollingAllocation[
   return { allocations: [...mapped.values()], unmapped };
 }
 
+/** An audit actor must be a verified, non-empty identity. Nothing is inferred or defaulted. */
+export function isVerifiedAuditActor(actor: unknown): actor is string {
+  return typeof actor === "string" && actor.trim().length > 0;
+}
+
+/**
+ * Locate the first audit element whose `by` is not a non-empty string anywhere in a snapshot
+ * (week, entries). Firestore rejects undefined values, so such an element would fail the write
+ * after earlier destinations were already saved. Returns a path for the safe error, never repairs it.
+ */
+export function findInvalidAuditActor(snapshot: RollingSnapshot): string | undefined {
+  const scan = (audit: unknown, path: string) => {
+    if (audit === undefined) return undefined;
+    if (!Array.isArray(audit)) return `${path}`;
+    const index = audit.findIndex(event => !event || typeof event !== "object" || !isVerifiedAuditActor((event as { by?: unknown }).by));
+    return index >= 0 ? `${path}.${index}.by` : undefined;
+  };
+  const week = scan(snapshot.week.audit, "week.audit");
+  if (week) return week;
+  for (const entry of snapshot.entries) {
+    const found = scan(entry.audit, `entries[${entry.id}].audit`);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 export function planMenuDuplicate(input: DuplicatePlanInput): DuplicatePlan {
+  if (!isVerifiedAuditActor(input.actor)) throw Object.assign(new Error("A verified authenticated actor is required to duplicate planning; nothing was written."), { status: 401 });
   const sourceDays = sortedDays(input.source);
   const sourceIndexes = input.scope.kind === "week" ? [0, 1, 2, 3, 4, 5, 6] : input.scope.dayIndexes;
   if (!sourceIndexes.length || new Set(sourceIndexes).size !== sourceIndexes.length || sourceIndexes.some(index => !Number.isInteger(index) || index < 0 || index > 6)) {

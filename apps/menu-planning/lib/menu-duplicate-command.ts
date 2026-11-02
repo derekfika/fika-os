@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { listCanonicalMenuItemsByIds } from "./canonical-menu-repository";
-import { planMenuDuplicate, type DuplicateContent, type DuplicateExisting, type DuplicatePlan, type DuplicatePlacement, type DuplicateScope, type DuplicateTargetInput } from "./menu-duplicate";
+import { findInvalidAuditActor, isVerifiedAuditActor, planMenuDuplicate, type DuplicateContent, type DuplicateExisting, type DuplicatePlan, type DuplicatePlacement, type DuplicateScope, type DuplicateTargetInput } from "./menu-duplicate";
 import { publicationState } from "./menu-publication";
 import type { GovernedOploc } from "./oploc-authority";
 import { assertWeekDateAvailable, createWeekSnapshot, isCompletePlanningWeek, listWeeks, normaliseRollingSnapshotDestinations, planningWeekCommencing, saveSnapshot } from "./rolling-menu";
@@ -26,6 +26,11 @@ export type DuplicateRequest = {
   expectedVersions?: Record<string, number>;
   /** Hash of the reviewed preview. Apply rejects when the recomputed plan differs. */
   planHash?: string;
+  /**
+   * Per-destination digests from the reviewed preview (keyed by week commencing). A retry of a
+   * partially applied operation compares only the destinations still to be written.
+   */
+  targetHashes?: Record<string, string>;
 };
 
 const VALID_CONTENT: readonly DuplicateContent[] = ["menu", "portions", "menu-and-portions"];
@@ -51,11 +56,16 @@ function validateRequest(request: DuplicateRequest) {
  * preview and apply alters it. Audit trails carry the computation timestamp, so they
  * are excluded: the same content must hash the same on every recomputation.
  */
+const targetMaterial = (target: DuplicatePlan["targets"][number]) => [target.weekId, target.weekCommencing, target.expectedVersion, target.isNewWeek, target.alreadyApplied, target.changed ? target.next : null];
+const withoutAudit = (_key: string, value: unknown) => (_key === "audit" ? undefined : value);
 export function duplicatePlanHash(plan: DuplicatePlan) {
-  const material = plan.targets.map(target => [target.weekId, target.weekCommencing, target.expectedVersion, target.isNewWeek, target.alreadyApplied, target.changed ? target.next : null]);
-  const withoutAudit = (_key: string, value: unknown) => (_key === "audit" ? undefined : value);
-  return createHash("sha256").update(JSON.stringify(material, withoutAudit)).digest("hex");
+  return createHash("sha256").update(JSON.stringify(plan.targets.map(targetMaterial), withoutAudit)).digest("hex");
 }
+/** Digest of one destination's reviewed write. Lets a retry skip destinations already applied. */
+export function duplicateTargetHash(target: DuplicatePlan["targets"][number]) {
+  return createHash("sha256").update(JSON.stringify(targetMaterial(target), withoutAudit)).digest("hex");
+}
+const targetHashes = (plan: DuplicatePlan) => Object.fromEntries(plan.targets.map(target => [target.weekCommencing, duplicateTargetHash(target)]));
 
 /** Preview view: enough for the reviewer, without leaking the write set. */
 function previewSummary(plan: DuplicatePlan) {
@@ -108,6 +118,8 @@ async function loadDestinations(request: DuplicateRequest, actorId: string, live
 }
 
 export async function duplicateMenuPlanning(request: DuplicateRequest, actorId: string, liveOplocs: readonly GovernedOploc[], at = new Date().toISOString()) {
+  // Command invariant: a verified, non-empty actor before anything is read or written.
+  if (!isVerifiedAuditActor(actorId)) throw httpError("A verified authenticated identity is required to duplicate planning. Nothing was written.", 401);
   validateRequest(request);
   const sourceSnapshot = await getWeekSnapshot<RollingSnapshot>(request.sourceWeekId);
   if (!sourceSnapshot) throw httpError("The source week was not found.", 404);
@@ -130,13 +142,33 @@ export async function duplicateMenuPlanning(request: DuplicateRequest, actorId: 
     at,
   });
   const planHash = duplicatePlanHash(plan);
-  if (request.mode === "preview") return { mode: "preview" as const, planHash, plan: previewSummary(plan) };
+  if (request.mode === "preview") return { mode: "preview" as const, planHash, targetHashes: targetHashes(plan), plan: previewSummary(plan) };
 
-  if (request.planHash !== planHash) throw httpError("The planning data changed since the preview. Review the duplicate again before applying.", 409);
+  // A retry of a partially applied operation: destinations carrying this operation's audit marker
+  // are done. They are never rewritten and are excluded from the review comparison, which then runs
+  // per destination on the ones still to be written.
+  const pending = plan.targets.filter(target => !target.alreadyApplied);
+  if (pending.length === 0) {
+    // Everything carries this operation's marker; nothing will be written.
+  } else if (pending.length === plan.targets.length) {
+    if (request.planHash !== planHash) throw httpError("The planning data changed since the preview. Review the duplicate again before applying.", 409);
+  } else {
+    const reviewed = request.targetHashes;
+    const matches = reviewed && pending.every(target => reviewed[target.weekCommencing] === duplicateTargetHash(target));
+    if (!matches) throw httpError("Part of this copy was already applied and the remaining planning data changed or was not reviewed. Review the copy again before retrying.", 409);
+  }
   for (const target of targets) {
+    if (target.alreadyApplied) continue;
     if (target.versionAtRead !== undefined && request.expectedVersions?.[target.weekCommencing] !== target.versionAtRead) {
       throw httpError(`The planning week for ${target.weekCommencing} changed since the preview. Refresh and review it again.`, 409);
     }
+  }
+  // Refuse before the first destination write if any week about to be saved carries an audit
+  // element without a verified actor. Firestore would reject it part-way, leaving earlier weeks applied.
+  for (const targetPlan of plan.targets) {
+    if (!targetPlan.changed || targetPlan.alreadyApplied) continue;
+    const invalid = findInvalidAuditActor(targetPlan.next);
+    if (invalid) throw httpError(`The planning week for ${targetPlan.weekCommencing} has an audit entry without a recorded actor (${invalid}), so it cannot be changed safely. Nothing was written; ask an administrator to review it.`, 409);
   }
   const applied: Array<{ weekId: string; weekCommencing: string; version: number }> = [];
   // Destinations are applied one at a time; each save is guarded by its reviewed version.
@@ -152,5 +184,5 @@ export async function duplicateMenuPlanning(request: DuplicateRequest, actorId: 
       applied.push({ weekId: saved.week.id, weekCommencing: saved.week.weekCommencing, version: saved.week.version });
     }
   }
-  return { mode: "apply" as const, planHash, applied, plan: previewSummary(plan), weekAuditAction: `duplicate-plan:${request.operationId}` };
+  return { mode: "apply" as const, planHash, targetHashes: targetHashes(plan), applied, plan: previewSummary(plan), weekAuditAction: `duplicate-plan:${request.operationId}` };
 }
