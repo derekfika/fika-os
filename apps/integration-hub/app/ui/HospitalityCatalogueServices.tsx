@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { SERVICE_IDS, type ServiceId, type ServiceRule } from "@fika/server-shared/hospitality-service-layout";
 import {
   SERVICE_LABELS, clearServiceOverrideCommand, layoutVocabulary, saveBlocker,
   moveCategory, serviceRuleAt, setCategoryIncluded, setServiceCategoriesCommand,
   type CataloguePayload, type ServiceLayoutView,
 } from "../../lib/hospitality-catalogue-types";
-import { oplocLabel, selectableSites } from "../../lib/hospitality-catalogue-view";
+import { selectableSites } from "../../lib/hospitality-catalogue-view";
 import "./HospitalityCatalogueServices.css";
 
 type Command = Record<string, unknown> & { action: string };
@@ -47,13 +47,22 @@ function ruleStatus(rule: ServiceRule) { return rule.hidden ? "Hidden" : "Visibl
  * Company-first editor for the existing Hospitality booking services plus a location-scoped view.
  * Writes only the current versioned service-layout commands. Categories remain exact canonical strings.
  */
-export default function HospitalityCatalogueServices({ payload, canManage, send, reload, view: pageView, initialContext, onContextChange }: Props) {
+function serviceEditorContextKey(view: CatalogueServicesView, context?: ServicesContext) {
+  return JSON.stringify([view, context?.oplocId ?? "", context?.serviceId ?? "", context?.category ?? "", context?.itemId ?? ""]);
+}
+
+export default function HospitalityCatalogueServices(props: Props) {
+  const contextKey = serviceEditorContextKey(props.view, props.initialContext);
+  return <ServicesEditor key={contextKey} {...props} />;
+}
+
+function ServicesEditor({ payload, canManage, send, reload, view: pageView, initialContext, onContextChange }: Props) {
   const layout = payload.serviceLayout;
   const sites = useMemo(() => selectableSites(payload.oplocs), [payload.oplocs]);
   const [serviceId, setServiceId] = useState<ServiceId | "">(initialContext?.serviceId ?? "");
   const [oplocId, setOplocId] = useState(() => sites.some(site => site.oplocId === initialContext?.oplocId) ? initialContext?.oplocId ?? "" : "");
-  const [contextCategory, setContextCategory] = useState(initialContext?.category);
-  const [itemId, setItemId] = useState(initialContext?.itemId ?? "");
+  const contextCategory = initialContext?.category;
+  const itemId = initialContext?.itemId ?? "";
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<ServiceRule | null>(null);
   const [reason, setReason] = useState("");
@@ -62,22 +71,6 @@ export default function HospitalityCatalogueServices({ payload, canManage, send,
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const inFlight = useRef(false);
-  const appliedContext = useRef({ view: pageView, oplocId, serviceId });
-
-  useEffect(() => {
-    const nextSite = sites.some(site => site.oplocId === initialContext?.oplocId) ? initialContext?.oplocId ?? "" : "";
-    const nextService = initialContext?.serviceId ?? "";
-    const previous = appliedContext.current;
-    const scopeChanged = previous.view !== pageView || previous.oplocId !== nextSite || previous.serviceId !== nextService;
-    setOplocId(nextSite);
-    setServiceId(nextService);
-    setContextCategory(initialContext?.category);
-    setItemId(initialContext?.itemId ?? "");
-    if (scopeChanged) {
-      setDraft(null); setReason(""); setConfirmed(false); setError(""); setStatus("");
-    }
-    appliedContext.current = { view: pageView, oplocId: nextSite, serviceId: nextService };
-  }, [pageView, initialContext?.oplocId, initialContext?.serviceId, initialContext?.category, initialContext?.itemId, sites]);
 
   if (!layout) return <section className="hcs" aria-labelledby="hcs-title"><h2 id="hcs-title">{pageView === "services" ? "Services" : "Locations"}</h2><p className="hc-note" role="status">Booking service settings were not included in this load. Reload the catalogue before editing.</p></section>;
   const currentLayout = layout;
@@ -111,12 +104,10 @@ export default function HospitalityCatalogueServices({ payload, canManage, send,
   }
   function chooseService(next: ServiceId | "") {
     setServiceId(next); setDraft(null); setReason(""); setConfirmed(false); setStatus(""); setError("");
-    appliedContext.current = { view: pageView, oplocId: isLocations ? oplocId : "", serviceId: next };
     updateContext({ ...(isLocations && oplocId ? { oplocId } : {}), ...(next ? { serviceId: next } : {}) });
   }
   function chooseSite(next: string) {
     setOplocId(next); setServiceId(""); setDraft(null); setReason(""); setConfirmed(false); setStatus(""); setError("");
-    appliedContext.current = { view: pageView, oplocId: next, serviceId: "" };
     updateContext(next ? { oplocId: next } : {});
   }
   function setCategory(category: string, included: boolean) {
@@ -233,7 +224,7 @@ export default function HospitalityCatalogueServices({ payload, canManage, send,
         </section>}
 
         {!isLocations && <section className="hcs-section" aria-labelledby="hcs-categories-title">
-          <div className="hcs-section-head"><div><h4 id="hcs-categories-title">Categories in {currentService}</h4><p>Categories match their exact names. Adding one makes active Items in that category eligible for this service, subject to each site's rules.</p></div>
+          <div className="hcs-section-head"><div><h4 id="hcs-categories-title">Categories in {currentService}</h4><p>Categories match their exact names. Adding one makes active Items in that category eligible for this service, subject to each site&apos;s rules.</p></div>
             <span className="hc-tag hc-tag--inherits">{categories.length} included</span></div>
           {categories.length === 0 && shownRule.hidden && <p className="hc-hint">No categories are included. The hidden service can keep an empty list until it is shown again.</p>}
           <ul className="hcs-categories">{orderedVocabulary.map(category => {
@@ -284,6 +275,6 @@ export default function HospitalityCatalogueServices({ payload, canManage, send,
       </main> : <div className="hcs-empty"><h3>{isLocations ? "Choose a booking service" : "Choose a booking service"}</h3><p>Select one service to review its effective categories and settings. Opening this page does not change any data.</p></div>}
     </div>}
     {isLocations && !chosenSite && <p className="hcs-empty">Choose an active location to review its service settings.</p>}
-    {isLocations && chosenSite && !serviceId && <p className="hcs-portal-note">Configured Hub service settings do not prove customer availability. Verify the location's published package and booking portal before describing a service as customer-orderable.</p>}
+     {isLocations && chosenSite && !serviceId && <p className="hcs-portal-note">Configured Hub service settings do not prove customer availability. Verify the location&apos;s published package and booking portal before describing a service as customer-orderable.</p>}
   </section>;
 }
