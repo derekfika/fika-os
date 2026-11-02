@@ -50,7 +50,7 @@ function ruleStatus(rule: ServiceRule) { return rule.hidden ? "Hidden" : "Visibl
 export default function HospitalityCatalogueServices({ payload, canManage, send, reload, view: pageView, initialContext, onContextChange }: Props) {
   const layout = payload.serviceLayout;
   const sites = useMemo(() => selectableSites(payload.oplocs), [payload.oplocs]);
-  const [serviceId, setServiceId] = useState<ServiceId | "">(initialContext?.serviceId ?? (pageView === "services" ? "dining" : ""));
+  const [serviceId, setServiceId] = useState<ServiceId | "">(initialContext?.serviceId ?? "");
   const [oplocId, setOplocId] = useState(() => sites.some(site => site.oplocId === initialContext?.oplocId) ? initialContext?.oplocId ?? "" : "");
   const [contextCategory, setContextCategory] = useState(initialContext?.category);
   const [itemId, setItemId] = useState(initialContext?.itemId ?? "");
@@ -66,7 +66,7 @@ export default function HospitalityCatalogueServices({ payload, canManage, send,
 
   useEffect(() => {
     const nextSite = sites.some(site => site.oplocId === initialContext?.oplocId) ? initialContext?.oplocId ?? "" : "";
-    const nextService = initialContext?.serviceId ?? (pageView === "services" ? "dining" : "");
+    const nextService = initialContext?.serviceId ?? "";
     const previous = appliedContext.current;
     const scopeChanged = previous.view !== pageView || previous.oplocId !== nextSite || previous.serviceId !== nextService;
     setOplocId(nextSite);
