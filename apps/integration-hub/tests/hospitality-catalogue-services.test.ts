@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { SERVICE_IDS, SERVICE_LAYOUT_SEED, type ServiceRules } from "@fika/server-shared/hospitality-service-layout";
+import { SERVICE_IDS, type ServiceRules } from "@fika/server-shared/hospitality-service-layout";
 import { buildServiceLayoutView, clearServiceOverrideCommand, setServiceCategoriesCommand, serviceRuleAt } from "../lib/hospitality-catalogue-types";
 
 const rcoa = "oploc:rcoa";
@@ -49,12 +49,11 @@ test("service selection stays explicit unless a deep link names a service", () =
   const source = readFileSync(new URL("../app/ui/HospitalityCatalogueServices.tsx", import.meta.url), "utf8");
   assert.match(source, /const \[oplocId, setOplocId\].*initialContext\?\.oplocId/);
   assert.match(source, /const \[serviceId, setServiceId\] = useState<ServiceId \| "">\(initialContext\?\.serviceId \?\? ""\)/);
-  assert.match(source, /const nextService = initialContext\?\.serviceId \?\? ""/);
   assert.doesNotMatch(source, /pageView === "services" \? "dining"/);
   assert.match(source, /Choose a location…/);
   assert.match(source, /Choose a booking service/);
   assert.match(source, /onContextChange\?\.\(\{ \.\.\.next, \.\.\.\(contextCategory/);
-  assert.match(source, /const scopeChanged = previous\.view !== pageView \|\| previous\.oplocId !== nextSite \|\| previous\.serviceId !== nextService/);
-  assert.match(source, /if \(scopeChanged\) \{/);
-  assert.match(source, /setItemId\(initialContext\?\.itemId \?\? ""\)/);
+  assert.match(source, /const contextKey = serviceEditorContextKey\(props\.view, props\.initialContext\)/);
+  assert.match(source, /<ServicesEditor key=\{contextKey\} \{\.\.\.props\} \/>/);
+  assert.doesNotMatch(source, /useEffect\(/);
 });
