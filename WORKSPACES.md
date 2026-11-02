@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-02T19:15:14.910Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-02T19:35:22.441Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -88,7 +88,7 @@ Snapshot: 2026-11-02T19:15:14.910Z. The local governed registry remains authorit
 | hospitality-booking-emulator-uat | luna-hospitality-booking-emulator-uat | apps/integration-hub/tests/hospitality-group-amendment.test.ts, apps/integration-hub/tests/hospitality-cancellation-notifications.test.ts | codex/hospitality-booking-emulator-uat | — | finished | 2026-11-01T19:43:19.830Z |
 | hospitality-bulk-category | luna-hospitality-bulk-category | apps/integration-hub/lib/hospitality-catalogue-admin.ts, apps/integration-hub/app/api/hospitality-catalogue/route.ts | codex/hospitality-bulk-category | — | retired | 2026-11-02T18:38:59.159Z |
 | hospitality-catalogue-mapping | hospitality-cfc-mr | apps/integration-hub | codex/hospitality-catalogue-mapping | — | finished | 2026-10-27T12:03:58.367Z |
-| hospitality-catalogue-v2-integration | luna-hospitality-catalogue-v2 | apps/integration-hub/app/ui/HospitalityCatalogue.tsx, apps/integration-hub/app/ui/HospitalityCatalogue.css, apps/integration-hub/app/ui/hospitality-catalogue-ux/model.ts, apps/integration-hub/tests/hospitality-catalogue-ux.test.ts | codex/hospitality-catalogue-v2-integration | — | active | 2026-11-02T18:41:46.926Z |
+| hospitality-catalogue-v2-integration | luna-hospitality-catalogue-v2 | apps/integration-hub/app/ui/HospitalityCatalogue.tsx, apps/integration-hub/app/ui/HospitalityCatalogue.css, apps/integration-hub/app/ui/hospitality-catalogue-ux/model.ts, apps/integration-hub/tests/hospitality-catalogue-ux.test.ts | codex/hospitality-catalogue-v2-integration | [#290](https://github.com/derekfika/fika-os/pull/290) | retired | 2026-11-02T19:35:17.438Z |
 | hospitality-cfc-mr-tests | hospitality-cfc-mr | apps/integration-hub, CHANGELOG.md | codex/hospitality-cfc-mr-tests | [#81](https://github.com/derekfika/fika-os/pull/81) | finished | 2026-10-27T12:49:31.981Z |
 | hospitality-dashboard-filtering-overnight | sonnet-hospitality-dashboard-filtering-overnight | apps/hospitality-booking | codex/hospitality-dashboard-filtering-overnight | [#194](https://github.com/derekfika/fika-os/pull/194) | retired | 2026-10-31T01:34:54.385Z |
 | hospitality-dashboard-filters | claude-hospitality-filters | apps/hospitality-booking/lib/dashboard-queue-filters.ts, apps/hospitality-booking/app/ui/DashboardQueueFilters.tsx, apps/hospitality-booking/app/ui/DashboardQueueFilters.module.css, apps/hospitality-booking/app/ui/HospitalityDashboard.tsx, apps/hospitality-booking/tests/dashboard-queue-filters.test.ts, apps/hospitality-booking/tests/calendar-layout.test.ts | codex/hospitality-dashboard-filters | [#166](https://github.com/derekfika/fika-os/pull/166) | retired | 2026-10-30T08:21:01.813Z |
