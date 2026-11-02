@@ -6,6 +6,7 @@ import { git, command, ancestor, ref, ghApi, scopeHash, asyncLock, save, stateDi
 import { assertHostedContext } from './hosted.mjs';
 import { recoverySnapshot, reconcileIntent, resubmitNeverSubmitted, submissionAttempts, describeSubmissionEvidence } from './recovery.mjs';
 import { readCreateAuditEvents } from './audit.mjs';
+import { assertCpuAdoptionTarget, observeCpuAdoption, adoptCompletedCpu } from './cpu-prod-adoption.mjs';
 
 export function releaseRecord(branch) {
   const sha = ref(`refs/remotes/origin/${branch}`);
@@ -117,7 +118,7 @@ export function authenticatedOperator(t, { env = process.env, github = ghApi } =
 export function executionAuthorization(t, sha, options = {}, access = {}) {
   exactSha(sha); const identity = authenticatedOperator(t, access);
   const action = options.action || 'deploy';
-  if (!['deploy','rollback','reconcile:abandon','reconcile:complete','reconcile:serving-baseline'].includes(action)) throw Error('Unknown release action');
+  if (!['deploy','rollback','reconcile:abandon','reconcile:complete','reconcile:serving-baseline','reconcile:adopt-completed'].includes(action)) throw Error('Unknown release action');
   if (t.environment === 'prod' && (options['owner-approved'] !== true || !options.reason?.trim() || options.reason.length > 1000)) throw Error('Explicit owner production authorisation required: agent records --owner-approved --reason <actual owner release instruction>; coding approval is not release approval');
   const instruction = options.reason?.trim() || 'Explicit staging execution';
   const binding = { app:t.app, environment:t.environment, sourceSha:sha, action, instruction, releaseId:options['release-id'] || null };
@@ -400,6 +401,7 @@ export async function deploy(app, environment, options) {
 }
 
 export async function reconcile(app, environment, options) {
+  if (options.resolution === 'adopt-completed') return reconcileCompletedCpu(app, environment, options);
   return asyncLock(`release-${app}-${environment}`, async () => {
     const t = target(app, environment); assertClean(git('status', '--porcelain')); git('fetch', 'origin');
     const pointer = releaseRecord(t.branch);
@@ -426,6 +428,45 @@ export async function reconcile(app, environment, options) {
       },
       append: (record, expected) => appendRecord(t, record, expected),
       finish: record => save(journalFile, record),
+    });
+  });
+}
+
+export async function reconcileCompletedCpu(app, environment, options) {
+  const t = target(app,environment); assertCpuAdoptionTarget(t);
+  const sha = exactSha(options.sha), rolloutId = options.rollout;
+  return asyncLock(`release-${app}-${environment}`,async()=>{
+    assertClean(git('status','--porcelain')); git('fetch','origin');
+    const previous = releaseRecord(t.branch); validateRecord(previous?.record,t);
+    const journalFile = path.join(stateDir(),`release-${app}-${environment}.json`);
+    const journalHash = existsSync(journalFile) ? digest(jsonFile(journalFile)) : null;
+    const assertJournal = () => {
+      const journal = existsSync(journalFile) ? jsonFile(journalFile) : null;
+      if ((journal && !['completed','abandoned'].includes(journal.state)) || (journal ? digest(journal) : null) !== journalHash) throw Error('Pending, unknown or changed CPU release journal; adoption is blocked');
+    };
+    assertJournal();
+    const prs = ghApi(`repos/${REPO}/commits/${sha}/pulls?per_page=100`).filter(p=>p.merge_commit_sha===sha && p.merged_at && p.base?.ref==='main');
+    if (prs.length !== 1) throw Error('Exactly one merged PR must identify the observed CPU source');
+    const pr = ghApi(`repos/${REPO}/pulls/${prs[0].number}`);
+    const provenance = {pr:{number:pr.number,merged:pr.merged,merged_at:pr.merged_at,merge_commit_sha:pr.merge_commit_sha,base:{ref:pr.base?.ref,repo:{full_name:pr.base?.repo?.full_name}}},
+      validation:successfulValidation(sha),integrated:ancestor(sha,'origin/main'),preservesPrevious:ancestor(previous.record.sourceSha,sha)};
+    // Executing recovery tooling must itself be integrated and exact-source validated.
+    if (options.execute) {
+      const toolSha = git('rev-parse','HEAD');
+      if (!ancestor(toolSha,'origin/main')) throw Error('CPU adoption tooling must be integrated into main before execution');
+      successfulValidation(toolSha);
+    }
+    const authorization = options.execute ? executionAuthorization(t,sha,{...options,action:'reconcile:adopt-completed','release-id':previous.commit}) : undefined;
+    return adoptCompletedCpu({t,sha,rolloutId,previous,provenance,execute:options.execute,authorization},{
+      inspect:()=>observeCpuAdoption(t,rolloutId), smoke:(uri,source)=>releaseHealthProbe(app,uri,source,fetch,environment),
+      latest:()=>{git('fetch','origin');return releaseRecord(t.branch);}, assertJournal,
+      scopeHash:source=>scopeHash(app,source),
+      archive:evidence=>{
+        const file = path.join(stateDir(),'archives',`cpu-completed-adoption-${previous.commit}-${digest(evidence)}.json`);
+        if (existsSync(file) && digest(jsonFile(file)) !== digest(evidence)) throw Error('CPU adoption evidence archive mismatch');
+        if (!existsSync(file)) save(file,evidence);
+      },
+      append:(record,expected)=>appendRecord(t,record,expected),
     });
   });
 }
