@@ -91,7 +91,7 @@ function WeekMatrixScroller({ children }: { children: ReactNode }) {
 }
 
 export default function WeekPlanner() {
-  const { snapshot, weeks, dishes, dishReferences, refreshDishes, message, error, command, selectWeek, refreshWeek } = useRollingData();
+  const { snapshot, loadFailure, load, weeks, dishes, dishReferences, refreshDishes, message, error, command, selectWeek, refreshWeek } = useRollingData();
   const [query, setQuery] = useState(""); const [picker, setPicker] = useState<{ dayId: string; slot: string }>();
   // The Create/Edit Dish modal sits over the picker; Cancel returns to the same picker, query and cell.
   // Picker filters live here (like the search text) so Cancel from the Create/Edit modal returns to the same filtered picker.
@@ -119,7 +119,13 @@ export default function WeekPlanner() {
   const spellItems = useMemo(() => (snapshot?.entries || []).filter(entry => entry.itemLabel.trim()).map(entry => ({ entryId: entry.id, dayId: entry.dayId, dishLabel: dishDisplayName(entry.itemLabel), dayName: snapshot?.days.find(day => day.id === entry.dayId)?.dayName || "", slot: plannerSlotLabel(entry.slot), replaceable: snapshot?.week.dayStatuses?.[entry.dayId] ? snapshot.week.dayStatuses[entry.dayId] === "draft" : snapshot?.week.status === "draft" })), [snapshot]);
   const spellCount = useMemo(() => spellItems.reduce((total, item) => total + findSpellingIssues(item.dishLabel, { ignored: spell.ignored, addedWords: spell.added, speller: dictionary.speller }).length, 0), [spellItems, spell.ignored, spell.added, dictionary.speller]);
   const copyPendingRef = useRef(false);
-  if (!snapshot) return <MenuPlanningShell section="Week Planner"><div className="menu-loading">Loading Week Planner…</div></MenuPlanningShell>;
+  if (!snapshot) {
+    const failure = loadFailure || (error ? { message: error, status: undefined as number | undefined } : undefined);
+    if (!failure) return <MenuPlanningShell section="Week Planner"><div className="menu-loading">Loading Week Planner…</div></MenuPlanningShell>;
+    const sessionProblem = failure.status === 401 || failure.status === 403;
+    const hubUrl = process.env.NEXT_PUBLIC_FIKA_HUB_URL;
+    return <MenuPlanningShell section="Week Planner"><section className="menu-error planner-load-error" role="alert"><h2>{sessionProblem ? "Sign in again to open the Week Planner" : "The Week Planner could not be loaded"}</h2><p>{sessionProblem ? "Your session expired or you do not have access - sign in again from the FIKA OS Hub." : failure.message}</p>{failure.status ? <small>HTTP {failure.status}</small> : null}<div className="planner-load-error-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>{sessionProblem && hubUrl ? <a className="button button-soft" href={hubUrl}>Open the FIKA OS Hub</a> : null}<button className="button button-soft" type="button" onClick={() => { void load(); }}>Retry</button></div></section></MenuPlanningShell>;
+  }
   const replaceDraftSpelling = async (item: SpellPanelItem, finding: SpellFinding, replacement: string) => {
     const current = snapshot.entries.find(entry => entry.id === item.entryId && entry.dayId === item.dayId);
     const dayStatus = snapshot.week.dayStatuses?.[item.dayId];
