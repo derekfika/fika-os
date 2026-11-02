@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { AlertTriangle, CheckCircle2, Plus, Search, X } from "lucide-react";
 import ConfirmationModal from "./ConfirmationModal";
 import HospitalityServiceLayout from "./HospitalityServiceLayout";
+import ServiceCategoryGuide from "./hospitality-catalogue-ux/ServiceCategoryGuide";
+import { CATALOGUE_TABS, itemServiceVisibility, type CatalogueTab, type ServicesContext } from "./hospitality-catalogue-ux/model";
 import "./HospitalityCatalogue.css";
 import {
   ROUTING_CHOICES, ROUTING_CHOICE_LABELS, ROUTING_STATE_LABELS,
@@ -48,7 +50,9 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [bulk, setBulk] = useState<null | "edit" | "archive">(null);
   const [bulkReport, setBulkReport] = useState<BulkResultView | null>(null);
-  const [layoutOpen, setLayoutOpen] = useState(false);
+  const [tab, setTab] = useState<CatalogueTab>("items");
+  const [servicesContext, setServicesContext] = useState<ServicesContext>({});
+  const manageServices = (context: ServicesContext) => { setServicesContext(context); setSelectedId(null); setTab("services"); };
 
   const request = useCallback(async (init?: RequestInit) => {
     const send = () => fetch("/api/hospitality-catalogue", { cache: "no-store", ...init });
@@ -112,17 +116,20 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
       {canManage && <button type="button" className="hc-btn hc-btn--primary" onClick={() => setAdding(true)}><Plus size={16} aria-hidden="true" /> Add item</button>}
     </header>
 
+    <div className="scg-tabs" role="tablist" aria-label="Catalogue sections">{CATALOGUE_TABS.map(entry => <button key={entry.id} type="button" role="tab" id={`hc-tab-${entry.id}`} aria-selected={tab === entry.id} aria-controls={`hc-panel-${entry.id}`} tabIndex={tab === entry.id ? 0 : -1} className="scg-tab"
+      onClick={() => setTab(entry.id)} onKeyDown={event => { if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); const next = tab === "items" ? "services" : "items"; setTab(next); document.getElementById(`hc-tab-${next}`)?.focus(); } }}><strong>{entry.label}</strong><small>{entry.hint}</small></button>)}</div>
+
+    {tab === "services" ? <div role="tabpanel" id="hc-panel-services" aria-labelledby="hc-tab-services" className="hc-services-tab">
+      {notice && <p className="hc-success" role="status"><CheckCircle2 size={16} aria-hidden="true" /> {notice}</p>}
+      <ServiceCategoryGuide payload={payload} canManage={canManage} send={send} reload={load} context={servicesContext} onContext={setServicesContext} />
+      <details className="scg-adv"><summary>All services and the company default (advanced)</summary><HospitalityServiceLayout payload={payload} canManage={canManage} send={send} reload={load} /></details>
+    </div> : <div role="tabpanel" id="hc-panel-items" aria-labelledby="hc-tab-items" className="hc-items-tab">
     <div className="hc-summary" role="group" aria-label="Catalogue summary">
       <span><strong>{payload.counts.active}</strong> active</span>
       <button type="button" className={`hc-chip ${filters.needsReview ? "is-on" : ""}`} aria-pressed={filters.needsReview} onClick={() => update({ needsReview: !filters.needsReview })}>Needs review <strong>{payload.counts.needsReview}</strong></button>
       <button type="button" className={`hc-chip ${filters.route === "routing_required" ? "is-on" : ""}`} aria-pressed={filters.route === "routing_required"} onClick={() => update({ route: filters.route === "routing_required" ? "all" : "routing_required" })}>Routing required <strong>{payload.counts.routingRequired}</strong></button>
       {payload.counts.archived > 0 && <button type="button" className={`hc-chip ${filters.status === "archived" ? "is-on" : ""}`} aria-pressed={filters.status === "archived"} onClick={() => update({ status: filters.status === "archived" ? "active" : "archived" })}>Archived <strong>{payload.counts.archived}</strong></button>}
       {!canManage && <span className="hc-viewonly">View only</span>}
-    </div>
-
-    <div className="hc-duplicates">
-      <button type="button" className="hc-disclosure" aria-expanded={layoutOpen} aria-controls="hsl-panel" onClick={() => setLayoutOpen(open => !open)}>Booking service categories {layoutOpen ? "(hide)" : "(show)"}</button>
-      {layoutOpen && <div id="hsl-panel"><HospitalityServiceLayout payload={payload} canManage={canManage} send={send} reload={load} /></div>}
     </div>
 
     {payload.canonicalisation.itemsAwaitingConsolidation > 0 ? <p className="hc-note" role="note">{payload.canonicalisation.itemsAwaitingConsolidation} items are duplicates of the same products and are waiting to be consolidated by the approved catalogue migration. You can keep working in the meantime.</p>
@@ -186,7 +193,9 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
       </button></li>)}</ul>
     </>}
 
-    {selected && <ItemPanel key={selected.itemId} row={selected} payload={payload} canManage={canManage} send={send} onClose={() => setSelectedId(null)} />}
+    </div>}
+
+    {selected && <ItemPanel key={selected.itemId} row={selected} payload={payload} canManage={canManage} send={send} onClose={() => setSelectedId(null)} onManageServices={manageServices} />}
     {adding && <AddItemModal payload={payload} send={send} onClose={() => setAdding(false)} />}
     {bulk && <BulkModal mode={bulk} rows={chosenRows} payload={payload} send={send} onClose={() => setBulk(null)} onFinished={report => { setBulkReport(report); setSelectedIds(new Set(report.results.filter(result => result.status === "failed").map(result => result.itemId))); }} />}
     {bulkReport && bulkReport.failed > 0 && !bulk && <div className="hc-alert" role="alert"><strong>{bulkReport.message}</strong><ul>{bulkReport.results.filter(result => result.status === "failed").map(result => <li key={result.itemId}>{rows.find(row => row.itemId === result.itemId)?.name || "Unknown item"}: {result.message}</li>)}</ul><button type="button" className="hc-btn" onClick={() => setBulkReport(null)}>Dismiss</button></div>}
@@ -336,7 +345,7 @@ function AdoptDefault({ row, send, oplocs }: { row: CatalogueRow; send: Send; op
   </section>;
 }
 
-function ItemPanel({ row, payload, canManage, send, onClose }: { row: CatalogueRow; payload: CataloguePayload; canManage: boolean; send: Send; onClose: () => void }) {
+function ItemPanel({ row, payload, canManage, send, onClose, onManageServices }: { row: CatalogueRow; payload: CataloguePayload; canManage: boolean; send: Send; onClose: () => void; onManageServices: (context: ServicesContext) => void }) {
   const [form, setForm] = useSyncedState({ name: row.name, category: row.category, description: row.description, price: row.defaultPrice ? String(row.defaultPrice.amount) : "", minimum: row.defaultMinimumQuantity !== undefined ? String(row.defaultMinimumQuantity) : "" }, `${row.itemId}:${row.version}:${row.defaultPrice?.priceId}`);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const currentSites = row.availableAt.filter(id => selectableSites(payload.oplocs).some(oploc => oploc.oplocId === id));
@@ -377,6 +386,16 @@ function ItemPanel({ row, payload, canManage, send, onClose }: { row: CatalogueR
 
         {!inactive && <RoutingEditor row={row} canManage={canManage} send={send} />}
         {!inactive && canManage && <AdoptDefault row={row} send={send} oplocs={payload.oplocs} />}
+
+        {!inactive && <section className="hc-section scg-inspector" aria-labelledby="hc-svc-title"><h3 id="hc-svc-title">Where customers can order this</h3>
+          {!payload.serviceLayout ? <p className="hc-hint">Booking service settings were not included in this load.</p> : currentSites.length === 0 ? <p className="hc-hint">Not available at any site, so it cannot be ordered anywhere.</p> : <ul>
+            {itemServiceVisibility(payload.serviceLayout, row, currentSites).map(site => <li key={site.oplocId}>
+              <strong>{oplocLabel(payload.oplocs, site.oplocId)}</strong>
+              <span>{site.shownIn.length ? `Shown for: ${site.shownIn.map(s => s.label).join(", ")}` : <span className="hc-badge hc-badge--warning">Not shown in any booking service</span>}</span>
+              {site.shownIn.length === 0 && <small className="hc-hint">The site allows this item, but no booking service there lists the “{row.category}” category.</small>}
+              <button type="button" className="hc-btn hc-btn--text" onClick={() => onManageServices({ oplocId: site.oplocId, serviceId: site.notShownIn[0]?.serviceId, category: row.category })}>Manage booking services for {oplocLabel(payload.oplocs, site.oplocId)}</button></li>)}</ul>}
+          <p className="hc-hint">This comes from each site’s booking services and the item’s category. It is not a setting on the item itself.</p>
+        </section>}
 
         <section className="hc-section" aria-labelledby="hc-sites-title"><h3 id="hc-sites-title">Available at</h3>
           <p className="hc-hint">{inactive ? "Archived items are not available anywhere." : row.unavailableAt.length === 0 ? `Available at all ${selectableSites(payload.oplocs).length} sites by default. Only exceptions are stored.` : `Available at ${row.availableAt.length} of ${selectableSites(payload.oplocs).length} sites. Not available at: ${row.unavailableAt.map(id => oplocLabel(payload.oplocs, id)).join(", ")}.`}</p>
