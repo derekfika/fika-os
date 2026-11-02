@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-02T14:28:48.733Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-02T14:29:08.744Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -202,7 +202,7 @@ Snapshot: 2026-11-02T14:28:48.733Z. The local governed registry remains authorit
 | menu-duplicate-planning | claude-menu-duplicate | apps/menu-planning | codex/menu-duplicate-planning | [#66](https://github.com/derekfika/fika-os/pull/66) | finished | 2026-10-27T21:09:33.928Z |
 | menu-edit-modal-stability | codex-luna-216-modal | apps/menu-planning/app/planner-modal.tsx, apps/menu-planning/app/dish-editor-modal.css, apps/menu-planning/app/final-tightening.css, apps/menu-planning/tests/e2e/planner-cell-menu.spec.ts, apps/menu-planning/tests/modal-safety-contract.test.ts | codex/menu-edit-modal-stability | [#218](https://github.com/derekfika/fika-os/pull/218) | retired | 2026-10-31T19:32:05.438Z |
 | menu-handoff-recovery | codex-menu-handoff-111 | tools/incidents/menu-handoff-recovery, docs/incidents/2026-10-28-menu-handoff-111.md | codex/menu-handoff-recovery | — | retired | 2026-10-28T20:51:43.152Z |
-| menu-performance-277 | sol-menu-performance-277 | apps/menu-planning/lib/menu-cache-database.ts, apps/menu-planning/lib/menu-catalogue-cache.ts, apps/menu-planning/tests/menu-cache-database.test.ts, apps/menu-planning/tests/week-planner-performance.test.ts, apps/menu-planning/lib/planner-copy-availability.ts, apps/menu-planning/app/dish-search.tsx, docs/deployment/menu-performance-277.md | codex/menu-performance-277 | — | active | 2026-11-02T14:27:16.754Z |
+| menu-performance-277 | sol-menu-performance-277 | apps/menu-planning/lib/menu-cache-database.ts, apps/menu-planning/lib/menu-catalogue-cache.ts, apps/menu-planning/tests/menu-cache-database.test.ts, apps/menu-planning/tests/week-planner-performance.test.ts, apps/menu-planning/lib/planner-copy-availability.ts, apps/menu-planning/app/dish-search.tsx, docs/deployment/menu-performance-277.md | codex/menu-performance-277 | — | retired | 2026-11-02T14:29:05.104Z |
 | menu-picker-filters | claude-menu-filters | apps/menu-planning/lib/dish-picker-filters.ts, apps/menu-planning/app/dish-picker-filters.tsx, apps/menu-planning/app/dish-picker-filters.css, apps/menu-planning/app/week-planner.tsx, apps/menu-planning/tests/dish-picker-filters.test.ts | codex/menu-picker-filters | [#187](https://github.com/derekfika/fika-os/pull/187) | finished | 2026-10-30T21:38:08.149Z |
 | menu-planner-brian-feedback | codex-menu-planner-brian-feedback | apps/menu-planning | codex/menu-planner-brian-feedback | [#25](https://github.com/derekfika/fika-os/pull/25) | finished | 2026-10-23T16:25:33.332Z |
 | menu-planner-context-menu-v2 | claude-menu-contextmenu | apps/menu-planning/lib/planner-cell-menu.ts, apps/menu-planning/app/planner-cell-menu.tsx, apps/menu-planning/app/planner-cell-menu.css, apps/menu-planning/app/week-planner.tsx, apps/menu-planning/tests/planner-cell-menu.test.ts, apps/menu-planning/tests/e2e/planner-cell-menu.spec.ts | codex/menu-planner-context-menu-v2 | [#188](https://github.com/derekfika/fika-os/pull/188) | finished | 2026-10-30T22:01:00.935Z |
