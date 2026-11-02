@@ -58,7 +58,8 @@ test("a merged notice names only the explicit verified successor mapping", () =>
   assert.deepEqual(selectableDishIds([{ id: "dish-old" }, { id: "dish-v2" }], references(merged), [entry()]), [{ id: "dish-v2" }]);
   const unavailableSuccessor = noticeFor(entry(), references(reference({ state: "merged", successor: undefined })));
   assert.equal(unavailableSuccessor?.state, "unresolved");
-  assert.equal(unavailableSuccessor?.label, "Historical reference unavailable");
+  assert.equal(unavailableSuccessor?.label, "Reference unavailable");
+  assert.match(unavailableSuccessor!.message, /^Historical reference unavailable/);
 });
 
 test("unresolved, stale, and mismatched-ID metadata never invents a successor or changes placement", () => {
@@ -66,12 +67,14 @@ test("unresolved, stale, and mismatched-ID metadata never invents a successor or
   const before = structuredClone(saved);
   const unresolved = noticeFor(saved, references(reference({ state: "unresolved", reason: "mapping_unverified", successor: { id: "dish-guessed", name: "Do not show", category: "Salad" } })));
   assert.equal(unresolved?.state, "unresolved");
-  assert.equal(unresolved?.label, "Historical reference unavailable");
+  assert.equal(unresolved?.label, "Reference unavailable");
+  assert.match(unresolved!.message, /^Historical reference unavailable/);
   assert.doesNotMatch(unresolved!.message, /Do not show|dish-guessed/);
   assert.doesNotMatch(unresolved!.label, /Needs classification/);
   for (const reason of ["not_found", "archive_unavailable", "integrity_failed", "mapping_unverified"] as const) {
     const notice = noticeFor(saved, references(reference({ state: "unresolved", reason })));
-    assert.equal(notice?.label, "Historical reference unavailable", reason);
+    assert.equal(notice?.label, "Reference unavailable", reason);
+    assert.match(notice!.message, /^Historical reference unavailable/, reason);
     assert.match(notice!.message, /saved label and placement remain unchanged/);
     assert.doesNotMatch(notice!.message, /Needs classification/);
   }
@@ -82,7 +85,8 @@ test("unresolved, stale, and mismatched-ID metadata never invents a successor or
   assert.equal(noticeFor(saved, references(reference({ state: "merged", requestedId: undefined, successor: { id: "dish-v2", name: "Verified V2 dish", category: "Salad" }, provenance: { ...provenance, mappingVersion: 1, mappingDigest: "mapping" } }))), undefined);
   const missingId = noticeFor(entry({ itemId: undefined }), references(reference({ requestedId: undefined, reason: "missing_id" })));
   assert.equal(missingId?.state, "unresolved");
-  assert.equal(missingId?.label, "Historical reference unavailable");
+  assert.equal(missingId?.label, "Reference unavailable");
+  assert.match(missingId!.message, /^Historical reference unavailable/);
   assert.equal(noticeFor(entry({ itemId: "dish-old" }), references(reference({ requestedId: undefined, reason: "missing_id" }))), undefined);
   assert.deepEqual(saved, before);
 });

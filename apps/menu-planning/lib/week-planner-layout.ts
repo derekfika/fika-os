@@ -49,7 +49,7 @@ export function dishReferenceForEntry(entry: Pick<RollingEntry, "id" | "itemId" 
           : reference.reason === "integrity_failed" ? "This historical dish reference failed integrity verification."
             : reference.reason === "mapping_unverified" || reference.state === "merged" ? "The historical dish mapping could not be verified."
               : "This saved dish reference could not be verified.";
-    return { state: "unresolved", label: "Historical reference unavailable", message: `${detail} Its saved label and placement remain unchanged; no successor is shown.` };
+    return { state: "unresolved", label: "Reference unavailable", message: `Historical reference unavailable — ${detail} Its saved label and placement remain unchanged; no successor is shown.` };
   }
   return undefined;
 }
