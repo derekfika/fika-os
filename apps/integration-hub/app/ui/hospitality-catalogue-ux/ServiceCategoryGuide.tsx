@@ -13,6 +13,7 @@ type Send = (command: Command) => Promise<{ message: string }>;
 /** Guided "pick a site, pick a service, tick categories" flow. Saves through the existing governed set-service-categories command only. */
 export default function ServiceCategoryGuide({ payload, canManage, send, reload, context, onContext }: { payload: CataloguePayload; canManage: boolean; send: Send; reload: () => Promise<void>; context: ServicesContext; onContext: (next: ServicesContext) => void }) {
   const view = payload.serviceLayout;
+  const [notice, setNotice] = useState({ status: "", error: "" }); // lives here so a reload after save/conflict keeps the message
   const sites = useMemo(() => selectableSites(payload.oplocs), [payload.oplocs]);
   if (!view) return <section className="scg" aria-labelledby="scg-title"><h2 id="scg-title">Change what a booking service offers</h2><p className="hc-note" role="status">The booking service settings were not included in this load. Reload the catalogue to edit them.</p></section>;
   const oplocId = sites.some(s => s.oplocId === context.oplocId) ? context.oplocId : undefined;
@@ -23,24 +24,27 @@ export default function ServiceCategoryGuide({ payload, canManage, send, reload,
       {!canManage && <p className="hc-viewonly" role="status">View only: you do not have permission to change booking services.</p>}</header>
     <ol className="scg-steps">
       <li><label className="hc-field"><span>1. Site</span>
-        <select value={oplocId ?? ""} onChange={e => onContext({ oplocId: e.target.value || undefined, serviceId: undefined, category: undefined })}>
+        <select value={oplocId ?? ""} onChange={e => { setNotice({ status: "", error: "" }); onContext({ oplocId: e.target.value || undefined, serviceId: undefined, category: undefined }); }}>
           <option value="">Choose a site…</option>{sites.map(s => <option key={s.oplocId} value={s.oplocId}>{s.label}</option>)}</select></label></li>
       <li><label className="hc-field"><span>2. Booking service</span>
-        <select value={serviceId ?? ""} disabled={!oplocId} onChange={e => onContext({ oplocId, serviceId: (e.target.value || undefined) as ServiceId | undefined, category: context.category })}>
+        <select value={serviceId ?? ""} disabled={!oplocId} onChange={e => { setNotice({ status: "", error: "" }); onContext({ oplocId, serviceId: (e.target.value || undefined) as ServiceId | undefined, category: context.category }); }}>
           <option value="">{oplocId ? "Choose a service…" : "Choose a site first"}</option>{SERVICE_IDS.map(id => <option key={id} value={id}>{SERVICE_LABELS[id]}</option>)}</select></label></li>
     </ol>
-    {oplocId && serviceId ? <Editor key={`${oplocId}:${serviceId}:${view.sites[oplocId]?.version ?? 0}`} payload={payload} oplocId={oplocId} serviceId={serviceId} focus={context.category} canManage={canManage} send={send} reload={reload} />
+    {oplocId && serviceId ? <Editor key={`${oplocId}:${serviceId}:${view.sites[oplocId]?.version ?? 0}`} payload={payload} oplocId={oplocId} serviceId={serviceId} focus={context.category} notice={notice} setNotice={setNotice} canManage={canManage} send={send} reload={reload} />
       : <p className="hc-hint">Pick a site and a service to see its categories.</p>}
   </section>;
 }
 
-function Editor({ payload, oplocId, serviceId, focus, canManage, send, reload }: { payload: CataloguePayload; oplocId: string; serviceId: ServiceId; focus?: string; canManage: boolean; send: Send; reload: () => Promise<void> }) {
+function Editor({ payload, oplocId, serviceId, focus, notice, setNotice, canManage, send, reload }: { payload: CataloguePayload; oplocId: string; serviceId: ServiceId; focus?: string; notice: { status: string; error: string }; setNotice: (next: { status: string; error: string }) => void; canManage: boolean; send: Send; reload: () => Promise<void> }) {
   const view = payload.serviceLayout!;
   const siteLabel = oplocLabel(payload.oplocs, oplocId), serviceLabel = SERVICE_LABELS[serviceId];
   const base = serviceRuleAt(view, oplocId, serviceId);
   const [draft, setDraft] = useState<string[]>(base.rule.categories);
   const [reason, setReason] = useState(""); const [confirmed, setConfirmed] = useState(false);
-  const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const { status, error } = notice;
+  const setError = (value: string) => setNotice({ status: "", error: value });
+  const setStatus = (value: string) => setNotice({ status: value, error: "" });
   const inFlight = useRef(false);
   const categories = useMemo(() => layoutVocabulary(view), [view]);
   const live = new Set(view.vocabulary.catalogueCategories);
@@ -88,6 +92,7 @@ function Editor({ payload, oplocId, serviceId, focus, canManage, send, reload }:
         <ul>{impact.lines.map(line => <li key={`${line.kind}:${line.category}`} className={`scg-line scg-line--${line.kind}`}><span className="hc-badge hc-badge--neutral">{line.kind === "added" ? "Added" : "Removed"}</span> {impactSentence(line, siteLabel, serviceLabel)}
           {line.names.length > 0 && line.names.length <= 15 && <small>{line.names.join(", ")}</small>}</li>)}</ul>
         <p className="scg-ba"><span><strong>Before:</strong> {change.before.join(", ") || "nothing"}</span><span><strong>After:</strong> {change.after.join(", ") || "nothing"}</span></p></>}
+      <p className="hc-hint">Items without a valid price may still not appear to customers.</p>
       <p className="hc-hint scg-unchanged"><strong>{phrase}</strong> will change. Not changing: {otherServices(serviceId).join(", ")}, every other site, the company default, prices, minimums, routing and past bookings.</p>
     </section>
 

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { buildServiceLayoutView, setServiceCategoriesCommand } from "../lib/hospitality-catalogue-types";
-import { CATALOGUE_TABS, categoryItems, guidedBlocker, guidedChange, guidedDraft, impactLines, impactSentence, itemServiceVisibility, otherServices, scopePhrase } from "../app/ui/hospitality-catalogue-ux/model";
+import { CATALOGUE_TABS, categoryItems, guidedBlocker, guidedChange, guidedDraft, impactLines, impactSentence, itemServiceVisibility, manageServicesContext, otherServices, scopePhrase } from "../app/ui/hospitality-catalogue-ux/model";
 
 const RCOA = "oploc-rcoa";
 const view = buildServiceLayoutView([
@@ -84,4 +84,25 @@ test("guided editor uses only the governed command and has no alert/prompt or ha
   assert.ok(!/\b(alert|prompt|confirm)\(/.test(source));
   assert.ok(!/\b11\b/.test(source));
   assert.match(source, /scopePhrase/); assert.match(source, /Reason for the change/);
+});
+
+test("Manage booking services never preselects a service", () => {
+  const context = manageServicesContext(RCOA, "Wine");
+  assert.deepEqual(context, { oplocId: RCOA, category: "Wine" });
+  assert.equal("serviceId" in context, false);
+  assert.ok(!/serviceId:\s*site\.notShownIn/.test(read("app/ui/HospitalityCatalogue.tsx")));
+});
+
+test("untick then retick is not a change and keeps the stored order", () => {
+  const off = guidedDraft(view, RCOA, "dining", "Dining", false).categories;
+  const back = guidedDraft(view, RCOA, "dining", "Dining", true, off).categories;
+  assert.deepEqual(back, ["Dining", "Drinks"]);
+  assert.equal(guidedChange(view, RCOA, "dining", back).changed, false);
+  assert.equal(guidedChange(view, RCOA, "dining", ["Drinks", "Dining"]).changed, false); // order alone is not a change
+});
+
+test("status and conflict notices live in the parent so they survive the reload remount", () => {
+  const source = read("app/ui/hospitality-catalogue-ux/ServiceCategoryGuide.tsx");
+  assert.match(source, /const \[notice, setNotice\] = useState/);
+  assert.ok(!/const \[status, setStatus\] = useState/.test(source));
 });

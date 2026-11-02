@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, Plus, Search, X } from "lucide-react";
 import ConfirmationModal from "./ConfirmationModal";
 import HospitalityServiceLayout from "./HospitalityServiceLayout";
 import ServiceCategoryGuide from "./hospitality-catalogue-ux/ServiceCategoryGuide";
-import { CATALOGUE_TABS, itemServiceVisibility, type CatalogueTab, type ServicesContext } from "./hospitality-catalogue-ux/model";
+import { CATALOGUE_TABS, itemServiceVisibility, manageServicesContext, type CatalogueTab, type ServicesContext } from "./hospitality-catalogue-ux/model";
 import "./HospitalityCatalogue.css";
 import {
   ROUTING_CHOICES, ROUTING_CHOICE_LABELS, ROUTING_STATE_LABELS,
@@ -393,8 +393,8 @@ function ItemPanel({ row, payload, canManage, send, onClose, onManageServices }:
               <strong>{oplocLabel(payload.oplocs, site.oplocId)}</strong>
               <span>{site.shownIn.length ? `Shown for: ${site.shownIn.map(s => s.label).join(", ")}` : <span className="hc-badge hc-badge--warning">Not shown in any booking service</span>}</span>
               {site.shownIn.length === 0 && <small className="hc-hint">The site allows this item, but no booking service there lists the “{row.category}” category.</small>}
-              <button type="button" className="hc-btn hc-btn--text" onClick={() => onManageServices({ oplocId: site.oplocId, serviceId: site.notShownIn[0]?.serviceId, category: row.category })}>Manage booking services for {oplocLabel(payload.oplocs, site.oplocId)}</button></li>)}</ul>}
-          <p className="hc-hint">This comes from each site’s booking services and the item’s category. It is not a setting on the item itself.</p>
+              <button type="button" className="hc-btn hc-btn--text" onClick={() => onManageServices(manageServicesContext(site.oplocId, row.category))}>Manage booking services for {oplocLabel(payload.oplocs, site.oplocId)}</button></li>)}</ul>}
+          <p className="hc-hint">This comes from each site’s booking services and the item’s category. It is not a setting on the item itself. Today only the RCoA portal reads these settings; other sites may not follow them yet.</p>
         </section>}
 
         <section className="hc-section" aria-labelledby="hc-sites-title"><h3 id="hc-sites-title">Available at</h3>

@@ -43,13 +43,19 @@ export function guidedChange(view: LayoutStored, oplocId: string, serviceId: Ser
   const before = [...rule.categories], after = [...draft];
   const added = after.filter(c => !before.includes(c)), removed = before.filter(c => !after.includes(c));
   const same = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((v, i) => v === b[i]);
-  return { before, after, added, removed, changed: added.length > 0 || removed.length > 0 || !same(before, after), source, hidden: Boolean(rule.hidden), createsOverride: source === "company", matchesCompany: same(after, company.categories) && Boolean(rule.hidden) === Boolean(company.hidden) };
+  return { before, after, added, removed, changed: added.length > 0 || removed.length > 0, source, hidden: Boolean(rule.hidden), createsOverride: source === "company", matchesCompany: same(after, company.categories) && Boolean(rule.hidden) === Boolean(company.hidden) };
 }
 /** The draft rule to save: the order of existing categories is kept, new ones are appended, hidden is preserved. */
 export function guidedDraft(view: LayoutStored, oplocId: string, serviceId: ServiceId, category: string, included: boolean, current?: readonly string[]): ServiceRule {
   const { rule } = serviceRuleAt(view, oplocId, serviceId);
-  return { categories: setCategoryIncluded(current ?? rule.categories, category, included), ...(rule.hidden ? { hidden: true } : {}) };
+  const next = setCategoryIncluded(current ?? rule.categories, category, included);
+  // Untick then retick must not reorder: categories already in the stored rule keep their stored order, new ones follow.
+  const ordered = [...rule.categories.filter(c => next.includes(c)), ...next.filter(c => !rule.categories.includes(c))];
+  return { categories: ordered, ...(rule.hidden ? { hidden: true } : {}) };
 }
+
+/** Context for "Manage booking services": site and category only. The operator must pick the service; never preselect one (it could be Breakfast). */
+export const manageServicesContext = (oplocId: string, category: string): ServicesContext => ({ oplocId, category });
 
 /** Everyday-language impact lines for the preview. */
 export function impactLines(rows: readonly ItemLike[], change: GuidedChange, oplocId: string, siteLabel: string, serviceLabel: string) {
