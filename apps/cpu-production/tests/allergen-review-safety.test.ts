@@ -6,6 +6,7 @@ import { applyHospitalityCellClick, noKeyTicked } from "../app/ui/allergen-cell-
 import { isSigningAvailable, reviewFingerprint, savedFingerprintAfterSave } from "../app/lib/allergen-review-session";
 import { LEGACY_PLAN_REVISION, planRevisionToken, reviewRevisionConflict } from "../app/lib/production-plan-state";
 import { confirmAllergenReviewMap } from "../app/lib/allergen-review-state";
+import { classifyRowAllergens } from "../app/lib/allergen-explicit";
 import { createProductionPlanRepository } from "../lib/production-plan-repository";
 import type { PlannedMenuItem, ProductionPlan } from "../app/lib/production-plan";
 
@@ -183,4 +184,17 @@ test("editing a confirmed row reopens it: earlier derived Clears revert to unrec
   const emptied = applyHospitalityCellClick(applyHospitalityCellClick(applyHospitalityCellClick({}, "fish"), "fish"), "fish");
   assert.equal(emptied.fish, undefined);
   assert.equal(emptied.no_key_allergens, undefined, "removing the last allergen leaves the row BLANK, never No Key");
+});
+
+test("CPU matrix: every No Key attestation has a row-level status and a conflict still blocks checking (#251)", () => {
+  const matrix = read("../app/ui/AllergenReviewMatrix.tsx");
+  assert.match(matrix, /No Key Allergens declared/);
+  assert.match(matrix, /Legacy value, not verified/);
+  assert.match(matrix, /Not verified: select allergens or tick No Key Allergens/);
+  assert.equal(classifyRowAllergens({}, {}), "blank");
+  assert.equal(classifyRowAllergens({ no_key_allergens: "contains" }, {}), "legacy_unverified");
+  assert.equal(classifyRowAllergens({ no_key_allergens: "contains" }, { declaration: { declared: true } }), "declared");
+  assert.equal(classifyRowAllergens({ no_key_allergens: "contains", fish: "contains" }, { declaration: { declared: true } }), "conflict");
+  assert.match(read("../app/lib/allergen-review-state.ts"), /conflict: "No Key Allergens conflicts with a recorded allergen/);
+  assert.match(read("../app/ui/allergen-review.css"), /button\.cpu-allergen-state:focus-visible/);
 });
