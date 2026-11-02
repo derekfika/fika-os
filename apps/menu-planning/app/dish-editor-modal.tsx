@@ -7,6 +7,7 @@ import { CANONICAL_DISH_CATEGORIES } from "@/lib/dish-categories";
 import { findSpellingIssues } from "@/lib/menu-spellcheck";
 import { invalidateCatalogueCache } from "@/lib/menu-catalogue-cache";
 import { DISH_TAG_GROUPS, DISH_TAG_GROUP_LABELS, groupTags, searchTags, type DishTag, type DishTagGroup, type DishTagRegistry } from "@/lib/dish-tags";
+import { loadDishTagRegistry, invalidateDishTagRegistry } from "@/lib/dish-tag-client";
 import {
   buildCreatePayload,
   buildUpdatePayload,
@@ -76,12 +77,10 @@ export default function DishEditorModal({ mode, initialName, initialCategory, in
 
   useEffect(() => {
     let active = true;
-    void fetch("/api/dish-tags", { cache: "no-store" })
-      .then(async (response) => ({ ok: response.ok, body: await readJson(response) }))
-      .then(({ ok, body }) => {
+    void loadDishTagRegistry()
+      .then(body => {
         if (!active) return;
-        if (!ok) setTagsError(body.error?.message || "Tags could not be loaded. You can still save the dish without tags.");
-        else setTags({ version: Number(body.version) || 0, tags: body.tags || [] });
+        setTags(body);
       })
       .catch(() => { if (active) setTagsError("Tags could not be loaded. You can still save the dish without tags."); });
     return () => { active = false; };
@@ -140,12 +139,14 @@ export default function DishEditorModal({ mode, initialName, initialCategory, in
       if (!response.ok) {
         // A concurrent change: reload the list and let the user retry rather than failing silently.
         if (response.status === 409) {
-          const fresh = await readJson(await fetch("/api/dish-tags", { cache: "no-store" }));
+          invalidateDishTagRegistry();
+          const fresh = await loadDishTagRegistry();
           if (fresh.tags) setTags({ version: Number(fresh.version) || 0, tags: fresh.tags });
         }
         throw new Error(body.error?.message || "The tag could not be created.");
       }
       const tag = body.tag as DishTag;
+      invalidateDishTagRegistry(Number(body.version) || 0);
       setTags((current) => ({ version: Number(body.version) || current.version, tags: current.tags.some((entry) => entry.id === tag.id) ? current.tags : [...current.tags, tag] }));
       setTagIds((current) => (current.includes(tag.id) ? current : [...current, tag.id]));
       setNewTagLabel("");

@@ -15,11 +15,13 @@ const COLLECTION = "fikaMenuPlanningCatalogue";
 const REGISTRY_ID = "dish-tag-registry";
 const localPath = appDataPath("menu-planning", "menu-planning", "dish-tag-registry.json");
 const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
+let firestoreClient: { projectId: string; db: Firestore } | undefined;
 
 function hostedDb() {
   const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;
   if (!projectId) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
-  return new Firestore({ projectId });
+  if (!firestoreClient || firestoreClient.projectId !== projectId) firestoreClient = { projectId, db: new Firestore({ projectId }) };
+  return firestoreClient.db;
 }
 
 function coerce(value: unknown): DishTagRegistry {
@@ -30,7 +32,11 @@ function coerce(value: unknown): DishTagRegistry {
 
 export async function readDishTagRegistry(): Promise<DishTagRegistry> {
   if (hosted()) {
-    const document = await hostedDb().collection(COLLECTION).doc(REGISTRY_ID).get();
+    const started = performance.now();
+    const db = hostedDb();
+    const setupMs = performance.now() - started;
+    const document = await db.collection(COLLECTION).doc(REGISTRY_ID).get();
+    if (process.env.FIKA_DATA_SOURCE_TRACE === "1") console.info("Menu Planning tag registry timing", { setupMs, documentGetMs: performance.now() - started - setupMs, documents: 1 });
     recordDataAccess({ app: "menu-planning", operation: "dish-tags.read", source: "FIRESTORE", documents: document.exists ? 1 : 0 });
     return document.exists ? coerce(document.data()?.registry) : emptyDishTagRegistry();
   }
