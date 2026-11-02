@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-02T08:56:05.789Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-02T09:24:43.747Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -39,6 +39,7 @@ Snapshot: 2026-11-02T08:56:05.789Z. The local governed registry remains authorit
 | cpu-fast-reauth | sol-cpu-fast-reauth | apps/cpu-production | codex/cpu-fast-reauth | [#207](https://github.com/derekfika/fika-os/pull/207) | retired | 2026-10-31T12:57:16.022Z |
 | cpu-nav-totals | agent-task | apps/cpu-production | codex/cpu-nav-totals | [#15](https://github.com/derekfika/fika-os/pull/15) | finished | 2026-10-23T10:31:45.451Z |
 | cpu-no-key-allergen-square | codex-cpu-no-key-allergen-square | apps/cpu-production/app/ui/AllergenReviewMatrix.tsx | codex/cpu-no-key-allergen-square | — | retired | 2026-11-02T08:56:01.782Z |
+| cpu-no-key-square-fix | codex-cpu-no-key-square-fix | apps/cpu-production/app/ui/AllergenReviewMatrix.tsx, apps/cpu-production/tests/no-key-allergen-contract.test.ts | codex/cpu-no-key-square-fix | [#268](https://github.com/derekfika/fika-os/pull/268) | retired | 2026-11-02T09:24:31.727Z |
 | cpu-ordered-pax-display | luna-cpu-ordered-pax-display | apps/cpu-production | codex/cpu-ordered-pax-display | [#197](https://github.com/derekfika/fika-os/pull/197) | retired | 2026-10-31T07:15:33.025Z |
 | cpu-packing-day-print | codex-cpu-packing-day-print | apps/cpu-production | codex/cpu-packing-day-print | [#26](https://github.com/derekfika/fika-os/pull/26) | finished | 2026-10-23T17:59:26.606Z |
 | cpu-packing-print | codex-cpu-packing-print | apps/cpu-production | codex/cpu-packing-print | [#23](https://github.com/derekfika/fika-os/pull/23) | finished | 2026-10-23T16:09:11.348Z |
