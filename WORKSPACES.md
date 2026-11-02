@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-02T22:28:09.187Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-02T22:44:00.550Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -154,10 +154,12 @@ Snapshot: 2026-11-02T22:28:09.187Z. The local governed registry remains authorit
 | issue-241-owner-marks | claude-241-owner-marks | apps/integration-hub/app/development, apps/integration-hub/app/api/development, apps/integration-hub/lib/development, apps/integration-hub/tests/development | codex/issue-241-owner-marks | [#243](https://github.com/derekfika/fika-os/pull/243) | retired | 2026-11-01T11:53:51.567Z |
 | issue-255-a11y-followup | issue_255_planner_mismatch_ui | apps/menu-planning/app/week-planner.tsx, apps/menu-planning/app/planner-stage2.css, apps/menu-planning/app/planner-data.ts, apps/menu-planning/lib/week-planner-layout.ts, apps/menu-planning/tests/week-planner-dish-reference.test.ts, apps/menu-planning/tests/planner-cell-menu.test.ts | codex/issue-255-a11y-followup | [#259](https://github.com/derekfika/fika-os/pull/259) | retired | 2026-11-01T21:32:42.131Z |
 | issue-255-planner-mismatch-ui | issue_255_planner_mismatch_ui | apps/menu-planning/app/week-planner.tsx, apps/menu-planning/app/planner-stage2.css, apps/menu-planning/app/planner-data.ts, apps/menu-planning/lib/week-planner-layout.ts, apps/menu-planning/tests/week-planner-dish-reference.test.ts | codex/issue-255-planner-mismatch-ui | [#257](https://github.com/derekfika/fika-os/pull/257) | finished | 2026-11-01T21:12:38.672Z |
+| issue-255-reference-message | luna-issue-255-reference-message | apps/menu-planning/lib/week-planner-layout.ts, apps/menu-planning/tests/week-planner-dish-reference.test.ts | codex/issue-255-reference-message | [#304](https://github.com/derekfika/fika-os/pull/304) | finished | 2026-11-02T22:43:49.180Z |
 | issue-262-cpu-hosp-di-invalidation-followthrough | cpu-hosp-deliveredin-fix | apps/cpu-production/lib/cpu-durable-outbox.ts, apps/cpu-production/tests/cpu-hospitality-delivered-in-invalidation.test.ts, .changes/cpu-production/2026-11-02-hospitality-delivered-in-invalidation.md | codex/issue-262-cpu-hosp-di-invalidation-followthrough | — | finished | 2026-11-02T03:48:40.067Z |
 | issue-262-cpu-hospitality-delivered-in-invalidation | cpu_hosp_deliveredin | apps/cpu-production/lib/cpu-durable-outbox.ts, apps/cpu-production/tests/cpu-hospitality-delivered-in-invalidation.test.ts | codex/issue-262-cpu-hospitality-delivered-in-invalidation | — | retired | 2026-11-02T03:05:37.970Z |
 | issue-262-hospitality-lifecycle-e2e | hosp_e2e_contract | apps/integration-hub/tests/hospitality-lifecycle-e2e-emulator.test.ts | codex/issue-262-hospitality-lifecycle-e2e | — | finished | 2026-11-02T03:03:59.775Z |
 | issue-275-fetch-timeout | issue_215_spellcheck_replace | apps/menu-planning/app/planner-data.ts, apps/menu-planning/tests/planner-load-error.test.ts | codex/issue-275-fetch-timeout | [#297](https://github.com/derekfika/fika-os/pull/297) | finished | 2026-11-02T21:41:43.002Z |
+| issue-277-catalogue-search-e2e | luna-issue-277-catalogue-e2e | apps/menu-planning/app/catalogue-workspace.tsx, apps/menu-planning/tests/e2e/catalogue-search-no-churn.spec.ts, .changes/menu-planning/2026-11-02-catalogue-search-no-churn-e2e-277.md | codex/issue-277-catalogue-search-e2e | [#303](https://github.com/derekfika/fika-os/pull/303) | active | 2026-11-02T22:29:03.914Z |
 | issue-277-changelog-eof | luna-issue-277-eof | .changes/menu-planning/2026-11-02-dish-library-search-277.md | codex/issue-277-changelog-eof | — | retired | 2026-11-02T21:46:00.152Z |
 | issue-277-dish-search-luna | luna-issue-277-search | apps/menu-planning/app/catalogue-workspace.tsx, apps/menu-planning/tests/read-paths.test.ts | codex/issue-277-dish-search-luna | [#298](https://github.com/derekfika/fika-os/pull/298) | retired | 2026-11-02T21:42:41.711Z |
 | issue-277-dish-search | sol-issue-277-search | apps/menu-planning/app/catalogue-workspace.tsx | codex/issue-277-dish-search | — | retired | 2026-11-02T21:36:50.698Z |
