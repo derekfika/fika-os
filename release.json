@@ -37,9 +37,10 @@
     "head": "3f6194d4549815fb7a374f2f47db767973712107",
     "pullRequestRisk": "standard"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "de13106e-5726-445c-ba61-144486fd9999",
+  "rollout": "build-2026-11-02-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "dc77dce5f5b6d69ee00d74a511ba51fcc16cc3b0",
     "rollout": "build-2026-11-01-002",
@@ -47,5 +48,13 @@
     "percent": 100
   },
   "previousGoodRecord": "bd5ce20966d23bf50ad7c8b166954b0ae40c0713",
-  "createdAt": "2026-11-02T08:15:13.555Z"
+  "releaseId": "de13106e-5726-445c-ba61-144486fd9999",
+  "completedAt": "2026-11-02T08:18:57.586Z",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-menu-planning-staging--fika-os-dev.europe-west4.hosted.app/api/build-info",
+    "appId": "menu-planning",
+    "buildSha": "c4beb5207340ef6e2332e20b6f0733b447b4d577"
+  }
 }
