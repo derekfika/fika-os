@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-02T22:18:18.321Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-02T22:23:31.559Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -262,6 +262,7 @@ Snapshot: 2026-11-02T22:18:18.321Z. The local governed registry remains authorit
 | munich-re-uat-verification | sol-munich-re-verification | docs/audits/2026-10-30/munich-re-postmerge-verification.md | codex/munich-re-uat-verification | — | finished | 2026-10-30T14:05:32.138Z |
 | ops-95-driver-checkbox-label | luna-iss95 | apps/logistics | codex/ops-95-driver-checkbox-label | [#163](https://github.com/derekfika/fika-os/pull/163) | retired | 2026-10-30T07:15:10.006Z |
 | pr-297-integration-alias | luna-pr297-integration | apps/menu-planning/app/planner-data.ts, apps/menu-planning/tests/planner-load-error.test.ts, .changes/menu-planning/2026-11-02-planner-load-timeout-275.md | codex/pr-297-integration-alias | [#300](https://github.com/derekfika/fika-os/pull/300) | retired | 2026-11-02T22:18:12.964Z |
+| pr-298-integration-alias | luna-pr298-integration | apps/menu-planning/app/catalogue-workspace.tsx, apps/menu-planning/tests/read-paths.test.ts, .changes/menu-planning/2026-11-02-dish-library-search-277.md | codex/pr-298-integration-alias | [#302](https://github.com/derekfika/fika-os/pull/302) | retired | 2026-11-02T22:23:26.329Z |
 | pr-backlog-audit | codex-pr-reconciliation | docs/audits/2026-10-28/pr-backlog-reconciliation.md | codex/pr-backlog-audit | [#126](https://github.com/derekfika/fika-os/pull/126) | retired | 2026-10-29T08:26:48.018Z |
 | pr-queue-clear-2026-11-01 | sol-pr-queue-clear | docs/agent-handbacks/pr-queue-clear-2026-11-01.md | codex/pr-queue-clear-2026-11-01 | — | retired | 2026-11-01T10:17:18.897Z |
 | rcoa-allday-default-guest-validation | codex-luna-rcoa-allday-default-guest-validation | apps/hospitality-booking/app/ui/RcoaBookingPortal.tsx, apps/hospitality-booking/lib/rcoa-all-day.ts, apps/hospitality-booking/tests/guest-count.test.ts, apps/hospitality-booking/tests/guest-count-ui.test.ts | codex/rcoa-allday-default-guest-validation | [#211](https://github.com/derekfika/fika-os/pull/211) | retired | 2026-10-31T14:47:44.143Z |
