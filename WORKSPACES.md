@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-02T22:44:00.550Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-02T22:44:15.583Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
