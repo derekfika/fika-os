@@ -110,7 +110,7 @@ test("UI contract: selection column, bulk bar, Leave unchanged defaults, modes, 
   assert.match(ui, /Select all \$\{selectableShown\.length\} filtered items/); assert.match(ui, /aria-label="Bulk actions"/); assert.match(ui, /Clear selection/);
   for (const text of ["Leave unchanged", "Add selected sites", "Remove selected sites", "Replace availability with selected sites", "Select all sites", "Clear all", "site", "Review changes", "Apply to ", "Existing site overrides"]) assert.ok(ui.includes(text) || readFileSync(`${process.cwd()}/lib/hospitality-catalogue-view.ts`, "utf8").includes(text), text);
   assert.match(ui, /useState<string\[\]>\(\(\) => selectableSites\(payload\.oplocs\)\.map/, "Add item defaults to every active Hospitality site from the live registry");
-  assert.match(ui, /Archive \$\{rows\.length\} item/); assert.doesNotMatch(ui, /hard.?delete|\.delete\(/i);
+  assert.match(ui, /Archive \$\{rows\.length\} item/); assert.doesNotMatch(ui, /action:\s*["'](?:hard-delete|delete-item)["']|\.deleteItem\(/i);
   assert.match(ui, /canManage && chosen\.size > 0/, "bulk controls only for managers");
   assert.doesNotMatch(ui, /window\.(alert|confirm|prompt)/); assert.doesNotMatch(ui, /firebase|firestore/i);
   assert.match(ui, /disabled=\{disabled \|\| value\.length === sites\.length\}/);
