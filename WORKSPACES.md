@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-02T11:03:27.542Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-02T12:20:43.157Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -42,10 +42,12 @@ Snapshot: 2026-11-02T11:03:27.542Z. The local governed registry remains authorit
 | cpu-no-key-prod-integration | codex-cpu-no-key-prod-integration | apps/cpu-production/app/ui/AllergenReviewMatrix.tsx, apps/cpu-production/tests/no-key-allergen-contract.test.ts, apps/cpu-production/tests/delivered-in-governance.test.ts, .changes/cpu-production/2026-11-02-cpu-no-key-square.md | codex/cpu-no-key-prod-integration | [#270](https://github.com/derekfika/fika-os/pull/270) | retired | 2026-11-02T11:03:23.607Z |
 | cpu-no-key-square-fix-v2 | codex-cpu-no-key-square-fix-v2 | apps/cpu-production/app/ui/AllergenReviewMatrix.tsx, apps/cpu-production/tests/no-key-allergen-contract.test.ts, apps/cpu-production/tests/delivered-in-governance.test.ts | codex/cpu-no-key-square-fix-v2 | [#269](https://github.com/derekfika/fika-os/pull/269) | retired | 2026-11-02T10:52:56.194Z |
 | cpu-no-key-square-fix | codex-cpu-no-key-square-fix | apps/cpu-production/app/ui/AllergenReviewMatrix.tsx, apps/cpu-production/tests/no-key-allergen-contract.test.ts | codex/cpu-no-key-square-fix | [#268](https://github.com/derekfika/fika-os/pull/268) | retired | 2026-11-02T09:24:31.727Z |
+| cpu-nokey-status-p1 | claude-nokey-p1 | apps/cpu-production/app/ui/AllergenReviewMatrix.tsx, apps/cpu-production/app/ui/allergen-review.css, apps/cpu-production/tests/no-key-allergen-contract.test.ts, apps/cpu-production/tests/delivered-in-governance.test.ts, apps/cpu-production/tests/allergen-review-safety.test.ts | codex/cpu-nokey-status-p1 | [#271](https://github.com/derekfika/fika-os/pull/271) | active | 2026-11-02T11:10:10.332Z |
 | cpu-ordered-pax-display | luna-cpu-ordered-pax-display | apps/cpu-production | codex/cpu-ordered-pax-display | [#197](https://github.com/derekfika/fika-os/pull/197) | retired | 2026-10-31T07:15:33.025Z |
 | cpu-packing-day-print | codex-cpu-packing-day-print | apps/cpu-production | codex/cpu-packing-day-print | [#26](https://github.com/derekfika/fika-os/pull/26) | finished | 2026-10-23T17:59:26.606Z |
 | cpu-packing-print | codex-cpu-packing-print | apps/cpu-production | codex/cpu-packing-print | [#23](https://github.com/derekfika/fika-os/pull/23) | finished | 2026-10-23T16:09:11.348Z |
 | cpu-pr2-reconciliation | codex-cpu-pr2-reconciliation | apps/cpu-production, docs/deployment/workflow.md, .github/workflows/validate.yml | codex/cpu-pr2-reconciliation | [#5](https://github.com/derekfika/fika-os/pull/5) | finished | 2026-10-22T20:16:51.141Z |
+| cpu-prod-reconcile-272 | sol-cpu-prod-272 | tools/workflow/releases.mjs | codex/cpu-prod-reconcile-272 | — | retired | 2026-11-02T12:20:40.012Z |
 | cpu-range-reconcile | codex-pr-reconciliation | apps/cpu-production/app/page.tsx, apps/cpu-production/tests/production-totals-range.test.ts, apps/cpu-production/tests/production-totals-input.browser.test.ts | codex/cpu-range-reconcile | [#110](https://github.com/derekfika/fika-os/pull/110) | retired | 2026-10-28T19:40:30.347Z |
 | cpu-release-record | agent-task | CHANGELOG.md | codex/cpu-release-record | [#16](https://github.com/derekfika/fika-os/pull/16) | retired | 2026-10-23T10:31:39.362Z |
 | cpu-site-filtering | luna-cpu-site-filtering | apps/cpu-production | codex/cpu-site-filtering | — | retired | 2026-10-31T08:03:13.521Z |
