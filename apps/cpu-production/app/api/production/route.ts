@@ -48,7 +48,7 @@ async function recordCpuChange(request: NextRequest, canonicalId: string, actorI
   await rebuildCpuProjection(request, serviceDate, event.sequence);
   await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
   const review = current?.destinationOplocId ? await rebuildCpuReviewPackage(request, serviceDate, current.destinationOplocId, event.sequence) : undefined;
-  await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${canonicalId}:v${event.sequence}`, sourceEntityId: canonicalId, serviceDate, sourceVersion: event.sequence, changedAt: event.changedAt, changeType: eventTypeForConsumers(changeType), order: current, logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
+  await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${canonicalId}:v${event.sequence}`, sourceEntityId: canonicalId, serviceDate, sourceVersion: event.sequence, changedAt: event.changedAt, changeType: eventTypeForConsumers(changeType), order: current, calendarOrder: current, logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
   return current;
 }
 
@@ -307,7 +307,7 @@ async function handlePost(request: NextRequest) {
       const weekProjection = await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
       const changedOrder = await productionOrderDetail(request, z.string().min(1).parse(raw.entityId));
       const review = changedOrder?.destinationOplocId ? await rebuildCpuReviewPackage(request, serviceDate, changedOrder.destinationOplocId, event.sequence) : undefined;
-      await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.entityId}:v${event.sequence}`, sourceEntityId: event.entityId, serviceDate, sourceVersion: event.sequence, changedAt: event.changedAt, changeType: eventTypeForConsumers(event.changeType), order: changedOrder || { origin: "menu_planning" }, logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
+      await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.entityId}:v${event.sequence}`, sourceEntityId: event.entityId, serviceDate, sourceVersion: event.sequence, changedAt: event.changedAt, changeType: eventTypeForConsumers(event.changeType), order: changedOrder || { origin: "menu_planning" }, ...(changedOrder ? { calendarOrder: changedOrder } : {}), logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
       return NextResponse.json({ applied: true, duplicate: event.sequence < Number(raw.sequence || event.sequence), event, dayProjection, weekProjection });
     }
     const actor = await actorFor(request);

@@ -1,7 +1,8 @@
 import type { ReadPackageManifest } from "@fika/server-shared/read-package";
 import type { ProductionOrder } from "./production-types";
 import type { CpuAllergenRelease } from "./cpu-allergen-release";
-import { deliverCpuPropagations, enqueueCpuDelivery, enqueueCpuPropagation, type CpuConsumerInvalidationInput } from "./cpu-durable-outbox";
+import { deliverCpuPropagation, deliverCpuPropagations, enqueueCpuDelivery, enqueueCpuPropagation, type CpuConsumerInvalidationInput } from "./cpu-durable-outbox";
+import { enqueueCpuXCalendarOrder } from "./cpux-calendar-publisher";
 
 type ConsumerChangeType = "changed" | "amended" | "withdrawn" | "superseded";
 
@@ -15,6 +16,7 @@ export function eventTypeForConsumers(changeType: string): ConsumerChangeType {
 export type CpuConsumerInvalidation = Omit<CpuConsumerInvalidationInput, "changeType" | "order"> & {
   changeType: ConsumerChangeType;
   order?: Pick<ProductionOrder, "origin" | "destinationOplocId">;
+  calendarOrder?: ProductionOrder;
   reviewManifest?: Pick<ReadPackageManifest, "contentHash" | "sourceVersion">;
 };
 
@@ -80,5 +82,15 @@ export async function notifyCpuConsumerInvalidations(input: CpuConsumerInvalidat
   const queued = await enqueueCpuPropagation({ ...input, changeType: input.changeType, ...(input.order ? { order: input.order } : {}) });
   const deliveries = await deliverCpuPropagations(queued);
   const results = deliveries.map(result => ({ delivered: result.status === "delivered", attempts: result.attempts || (result.status === "blocked" ? 0 : 1), ...(result.error ? { error: result.error } : {}) }));
-  return { attempted: queued.length, results, pending: results.filter(result => !result.delivered).length };
+  let calendar: { status: "queued" | "already-current" | "skipped"; delivered?: boolean; error?: string } | undefined;
+  if (input.calendarOrder) {
+    const staged = await enqueueCpuXCalendarOrder(input.calendarOrder);
+    calendar = { status: staged.status };
+    if (staged.status === "queued" && staged.eventId) {
+      const result = await deliverCpuPropagation(staged.eventId);
+      calendar.delivered = result.status === "delivered";
+      if (result.error) calendar.error = result.error;
+    }
+  }
+  return { attempted: queued.length, results, pending: results.filter(result => !result.delivered).length, ...(calendar ? { calendar } : {}) };
 }
