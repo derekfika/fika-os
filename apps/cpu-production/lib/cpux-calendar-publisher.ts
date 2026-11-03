@@ -338,11 +338,23 @@ function londonDateTime(serviceDate: string, time: string) {
   return `${serviceDate}T${time}:00${sign}${String(Math.floor(magnitude / 60)).padStart(2, "0")}:${String(magnitude % 60).padStart(2, "0")}`;
 }
 
-export function buildCpuXCalendarEventResource(order: ProductionOrder): CpuXCalendarEventResource {
+export function buildCpuXCalendarEventResource(order: ProductionOrder, publicBaseUrl = process.env.CPU_PUBLIC_BASE_URL, runtimeMode = process.env.FIKA_RUNTIME_MODE): CpuXCalendarEventResource {
   const serviceDate = order.serviceDate || "";
   if (!validDate(serviceDate)) throw Object.assign(new Error("A valid Production Order service date is required for the CPUX Calendar event."), { status: 422 });
   const lines = order.lines.filter((line) => line.workstream === "sandwiches");
   if (!lines.length) throw Object.assign(new Error("The Production Order has no explicitly routed Sandwiches workstream lines."), { status: 422 });
+  const configuredBase = publicBaseUrl?.trim();
+  if (!configuredBase) throw Object.assign(new Error("CPU_PUBLIC_BASE_URL is required to add the canonical FIKA OS order link."), { status: 503 });
+  let orderUrl: URL;
+  try { orderUrl = new URL(configuredBase); } catch { throw Object.assign(new Error("CPU_PUBLIC_BASE_URL is not a valid canonical CPU URL."), { status: 503 }); }
+  if (orderUrl.protocol !== "https:" || orderUrl.username || orderUrl.password || orderUrl.search || orderUrl.hash || orderUrl.pathname !== "/") {
+    throw Object.assign(new Error("CPU_PUBLIC_BASE_URL must be the HTTPS origin of the canonical CPU application."), { status: 503 });
+  }
+  if (runtimeMode === "production" && orderUrl.hostname !== "cpu.fikacatering.com") {
+    throw Object.assign(new Error("CPU_PUBLIC_BASE_URL does not match the approved production CPU application."), { status: 503 });
+  }
+  orderUrl.searchParams.set("order", order.canonicalId);
+  orderUrl.searchParams.set("date", serviceDate);
   const times = endTimeFor(order);
   const company = String(order.clientName || "FIKA Booking").replace(/[\r\n]+/g, " ").trim().slice(0, 120);
   const pax = Number.isFinite(order.guestCount) && Number(order.guestCount) > 0 ? ` x ${order.guestCount}` : "";
@@ -353,6 +365,7 @@ export function buildCpuXCalendarEventResource(order: ProductionOrder): CpuXCale
     `Service date: ${order.serviceDate}`,
     `Service time: ${times.start}–${times.end} (Europe/London)`,
     `Destination: ${order.destinationLabel || order.destinationAddress?.label || "Not supplied"}`,
+    `Open FIKA OS order: ${orderUrl.toString()}`,
     "Sandwich workstream items:",
     ...lines.map((line) => `• ${line.itemName}: ${line.customerQuantity} ${line.customerUnit}${line.productionInstructions ? ` — ${line.productionInstructions}` : ""}`),
   ];
@@ -421,7 +434,7 @@ export async function applyCpuXCalendarOrder(order: ProductionOrder, dependencie
     return { operation, eventId, applied: true };
   }
 
-  const resource = buildCpuXCalendarEventResource(order);
+  const resource = buildCpuXCalendarEventResource(order, environment.CPU_PUBLIC_BASE_URL, environment.FIKA_RUNTIME_MODE);
   const patchUrl = `${eventUrl}?sendUpdates=none`;
   const patched = await apiCall(patchUrl, "PATCH", resource, dependencies);
   if (patched.ok) return { operation, eventId, applied: true };

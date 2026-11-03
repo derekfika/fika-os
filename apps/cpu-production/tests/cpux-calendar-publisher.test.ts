@@ -11,6 +11,7 @@ const productionEnvironment = {
   FIKA_CPUX_CALENDAR_WRITES_ENABLED: "true",
   FIKA_CPUX_CALENDAR_BACKFILL_ENABLED: "true",
   FIKA_CPUX_CALENDAR_ID: "cpux-calendar",
+  CPU_PUBLIC_BASE_URL: "https://cpu.fikacatering.com",
 };
 
 function order(overrides: Partial<ProductionOrder> = {}): ProductionOrder {
@@ -26,25 +27,27 @@ function order(overrides: Partial<ProductionOrder> = {}): ProductionOrder {
 
 test("CPU X Calendar event uses one deterministic ID, only sandwich lines, and no attendees or attachments", () => {
   const first = order({ serviceDate: "2026-01-15" });
-  const resource = buildCpuXCalendarEventResource(first);
+  const resource = buildCpuXCalendarEventResource(first, productionEnvironment.CPU_PUBLIC_BASE_URL, "production");
   assert.equal(cpuxCalendarEventId(first.canonicalId), cpuxCalendarEventId(first.canonicalId));
   assert.match(resource.id, /^fika[a-f0-9]{64}$/);
   assert.equal(resource.summary, "FIKA Sandwich Lunch — Example Customer x 12");
   assert.equal(resource.start.dateTime, "2026-01-15T12:00:00+00:00");
   assert.equal(resource.end.dateTime, "2026-01-15T12:45:00+00:00");
   assert.match(resource.description, /Sandwich platter: 12 portions/);
+  assert.ok(resource.description.includes("Open FIKA OS order: https://cpu.fikacatering.com/?order=po%3Acalendar-test-1&date=2026-01-15"));
   assert.equal("attendees" in resource, false);
   assert.equal("attachments" in resource, false);
 
-  const summer = buildCpuXCalendarEventResource(order({ serviceDate: "2026-07-15" }));
+  const summer = buildCpuXCalendarEventResource(order({ serviceDate: "2026-07-15" }), productionEnvironment.CPU_PUBLIC_BASE_URL, "production");
   assert.equal(summer.start.dateTime, "2026-07-15T12:00:00+01:00");
   const withOtherWorkstream = order({ lines: [...order().lines, { ...order().lines[0], canonicalId: "line:2", itemName: "Soup", workstream: "hospitality" }] });
-  assert.doesNotMatch(buildCpuXCalendarEventResource(withOtherWorkstream).description, /Soup/);
-  assert.throws(() => buildCpuXCalendarEventResource(order({ serviceDate: "2026-03-29", serviceWindow: { startTime: "01:30", endTime: "02:30" } })), /does not exist in Europe\/London/);
+  assert.doesNotMatch(buildCpuXCalendarEventResource(withOtherWorkstream, productionEnvironment.CPU_PUBLIC_BASE_URL, "production").description, /Soup/);
+  assert.throws(() => buildCpuXCalendarEventResource(order({ serviceDate: "2026-03-29", serviceWindow: { startTime: "01:30", endTime: "02:30" } }), productionEnvironment.CPU_PUBLIC_BASE_URL, "production"), /does not exist in Europe\/London/);
+  assert.throws(() => buildCpuXCalendarEventResource(first, "http://cpu.fikacatering.com", "production"), /must be the HTTPS origin/);
 });
 
 test("Calendar event shape is ignored by the legacy CPUX import scanner", async () => {
-  const event = buildCpuXCalendarEventResource(order());
+  const event = buildCpuXCalendarEventResource(order(), productionEnvironment.CPU_PUBLIC_BASE_URL, "production");
   const scanner = await (await import("node:fs/promises")).readFile(new URL("../../../shared/cpu-dashboard/04_CalendarScanner.js", import.meta.url), "utf8");
   const hospitalitySummaryPattern = /^([^_]+)_([^_]+)_([^x]+)\s+x\s*\d+/i;
   const text = `${event.summary} ${event.description}`.toLowerCase();
