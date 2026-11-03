@@ -1,0 +1,29 @@
+{
+  "schema": "fika.release.v1",
+  "app": "adhoc",
+  "environment": "prod",
+  "project": "fika-os",
+  "backend": "projects/fika-os/locations/europe-west4/backends/fika-os-prod-adhoc",
+  "region": "europe-west4",
+  "branch": "release/prod/adhoc",
+  "sourceSha": null,
+  "rollout": null,
+  "state": "EMPTY",
+  "percent": 0,
+  "builds": [],
+  "rollouts": [],
+  "operations": [],
+  "traffic": {
+    "current": [],
+    "target": [],
+    "reconciling": false,
+    "autoDisabled": true
+  },
+  "kind": "empty-baseline",
+  "scopeHash": "7de8c448e66cf4bf93d7cd852aca347d30e2527e4df2ef8ac96bc0e9def1a054",
+  "observedAt": "2026-11-03T08:47:30.899Z",
+  "recovery": {
+    "firstRelease": true,
+    "noPreviousRelease": true
+  }
+}
