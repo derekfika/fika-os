@@ -7,6 +7,7 @@ export const APPS = {
   cpu: { path: 'apps/cpu-production', staging: 'fika-cpu-production-staging', prod: 'fika-os-prod-cpu' },
   'delivered-in': { path: 'apps/delivered-in', staging: 'fika-delivered-in-staging', prod: 'fika-os-prod-deliveredin' },
   logistics: { path: 'apps/logistics', staging: 'fika-logistics-staging', prod: 'fika-os-prod-logistics' },
+  adhoc: { path: 'apps/ad-hoc-production', staging: 'fika-os-staging-adhoc', prod: 'fika-os-prod-adhoc' },
 };
 export const REPO = 'derekfika/fika-os';
 export const MAIN_CHECK = 'Workflow / merge-gate';
@@ -33,9 +34,13 @@ export function risk(paths) {
 export function assertClean(status) { if (status.trim()) throw Error('Dirty workspace: commit/preserve changes before validation or deployment'); }
 export function validateRecord(record, { app, environment } = {}) {
   if (record?.schema !== 'fika.release.v1' || !Object.hasOwn(APPS, record.app) || !['staging', 'prod'].includes(record.environment)) throw Error('Invalid release record');
-  exactSha(record.sourceSha);
   const expected = target(record.app, record.environment);
   if (record.project !== expected.project || record.backend !== expected.backend || (app && record.app !== app) || (environment && record.environment !== environment)) throw Error('Release target mismatch');
+  if (record.kind === 'empty-baseline') {
+    if (record.app !== 'adhoc' || record.environment !== 'prod' || record.sourceSha != null || record.rollout != null || record.state !== 'EMPTY' || record.percent !== 0 || !record.scopeHash || record.recovery?.firstRelease !== true || record.recovery?.noPreviousRelease !== true) throw Error('Invalid Ad-Hoc first-production empty baseline');
+    return record;
+  }
+  exactSha(record.sourceSha);
   if (!['baseline', 'deploy', 'rollback'].includes(record.kind)) throw Error('Invalid release kind');
   if (!record.rollout || record.state !== 'SUCCEEDED' || record.percent !== 100 || !record.scopeHash) throw Error('Release is not verified serving state');
   return record;
