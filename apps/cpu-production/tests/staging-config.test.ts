@@ -10,6 +10,12 @@ const delivered = readFileSync(new URL("../../delivered-in/apphosting.staging.ya
 test("active CPU staging config is complete and uses the governed runtime contract", () => {
   assert.match(cpu, /FIKA_DATA_SOURCE_TRACE[\s\S]*value: "1"/);
   assert.match(cpu, /FIKA_RUNTIME_MODE[\s\S]*value: staging/);
+  assert.match(cpu, /FIKA_CPUX_CALENDAR_WRITES_ENABLED[\s\S]*value: "false"/);
+  assert.match(cpu, /FIKA_CPUX_CALENDAR_BACKFILL_ENABLED[\s\S]*value: "false"/);
+  assert.match(cpuStaging, /FIKA_CPUX_CALENDAR_WRITES_ENABLED[\s\S]*value: "false"/);
+  assert.match(cpuStaging, /FIKA_CPUX_CALENDAR_BACKFILL_ENABLED[\s\S]*value: "false"/);
+  assert.doesNotMatch(cpu, /FIKA_CPUX_CALENDAR_ID/);
+  assert.doesNotMatch(cpuStaging, /FIKA_CPUX_CALENDAR_ID/);
   assert.match(cpu, /CPU_PUBLIC_BASE_URL[\s\S]*https:\/\/cpu-staging\.fikacatering\.com/);
   assert.match(cpu, /CPU_PRODUCTION_BASE_URL[\s\S]*https:\/\/cpu-staging\.fikacatering\.com/);
   assert.match(cpu, /FIKA_INTERNAL_API_TOKEN[\s\S]*secret: FIKA_INTERNAL_API_TOKEN@3/);
@@ -36,6 +42,9 @@ test("CPU and Delivered-In staging configs converge on shared runtime contracts"
 
 test("CPU production configuration has no Drive owner or DWD secret", () => {
   assert.doesNotMatch(cpuProduction, /GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION|GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON/);
+  assert.match(cpuProduction, /FIKA_CPUX_CALENDAR_WRITES_ENABLED[\s\S]*value: "false"/);
+  assert.match(cpuProduction, /FIKA_CPUX_CALENDAR_BACKFILL_ENABLED[\s\S]*value: "false"/);
+  assert.doesNotMatch(cpuProduction, /FIKA_CPUX_CALENDAR_ID/);
 });
 
 test("staging upstreams keep API callback URLs separate from navigation URLs", () => {

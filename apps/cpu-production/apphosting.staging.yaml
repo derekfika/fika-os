@@ -10,6 +10,12 @@ env:
   - variable: FIREBASE_PROJECT_ID
     value: fika-os-dev
     availability: [BUILD, RUNTIME]
+  - variable: FIKA_CPUX_CALENDAR_WRITES_ENABLED
+    value: "false"
+    availability: [RUNTIME]
+  - variable: FIKA_CPUX_CALENDAR_BACKFILL_ENABLED
+    value: "false"
+    availability: [RUNTIME]
   - variable: FIKA_ALLOWED_EMAIL_DOMAINS
     value: fikacatering.com
     availability: [BUILD, RUNTIME]

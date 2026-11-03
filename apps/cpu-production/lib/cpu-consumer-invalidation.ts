@@ -82,7 +82,7 @@ export async function notifyCpuConsumerInvalidations(input: CpuConsumerInvalidat
   const queued = await enqueueCpuPropagation({ ...input, changeType: input.changeType, ...(input.order ? { order: input.order } : {}) });
   const deliveries = await deliverCpuPropagations(queued);
   const results = deliveries.map(result => ({ delivered: result.status === "delivered", attempts: result.attempts || (result.status === "blocked" ? 0 : 1), ...(result.error ? { error: result.error } : {}) }));
-  let calendar: { status: "queued" | "already-current" | "skipped"; delivered?: boolean; error?: string } | undefined;
+  let calendar: { status: "queued" | "already-current" | "skipped" | "disabled"; delivered?: boolean; error?: string } | undefined;
   if (input.calendarOrder) {
     const staged = await enqueueCpuXCalendarOrder(input.calendarOrder);
     calendar = { status: staged.status };

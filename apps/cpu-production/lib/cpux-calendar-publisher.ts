@@ -14,6 +14,27 @@ export const CPUX_CALENDAR_BACKFILL_MAX_ORDERS = 25;
 const DEFAULT_EVENT_DURATION_MINUTES = 60;
 const CLAIM_TTL_MS = 2 * 60 * 1000;
 
+export type CpuXCalendarRuntimeEnvironment = Record<string, string | undefined>;
+
+/** Calendar mutations are allowed only in the explicitly enabled FIKA production project. */
+export function cpuXCalendarWritesEnabled(env: CpuXCalendarRuntimeEnvironment = process.env) {
+  if (env.FIKA_RUNTIME_MODE !== "production" || env.FIREBASE_PROJECT_ID !== "fika-os") return false;
+  if (env.GCLOUD_PROJECT && env.GCLOUD_PROJECT !== "fika-os") return false;
+  if (env.GOOGLE_CLOUD_PROJECT && env.GOOGLE_CLOUD_PROJECT !== "fika-os") return false;
+  if (env.FIREBASE_CONFIG) {
+    try {
+      const configuredProject = (JSON.parse(env.FIREBASE_CONFIG) as { projectId?: unknown }).projectId;
+      if (configuredProject && configuredProject !== "fika-os") return false;
+    } catch { return false; }
+  }
+  if (env.FIKA_CPUX_CALENDAR_WRITES_ENABLED !== "true") return false;
+  return Boolean(env.FIKA_CPUX_CALENDAR_ID?.trim());
+}
+
+export function cpuXCalendarBackfillEnabled(env: CpuXCalendarRuntimeEnvironment = process.env) {
+  return cpuXCalendarWritesEnabled(env) && env.FIKA_CPUX_CALENDAR_BACKFILL_ENABLED === "true";
+}
+
 type CalendarOperation = "upsert" | "delete";
 type CalendarState = {
   canonicalId: string;
@@ -56,19 +77,23 @@ export function cpuxCalendarEventId(canonicalId: string) {
 }
 
 export function shouldQueueCpuXCalendarOrder(current: Pick<CalendarState, "desiredVersion"> | undefined, order: Pick<ProductionOrder, "version" | "status" | "supersededBy" | "lines">) {
-  const operation = order.status === "cancelled" || order.status === "rejected" || Boolean(order.supersededBy) || !order.lines.some((line) => line.workstream === "sandwiches") ? "delete" : "upsert";
+  const operation = isCpuXCalendarOrderEligible(order) ? "upsert" : "delete";
   if (!current && operation === "delete") return false;
   return !current || order.version > current.desiredVersion;
 }
 
-function hasSandwichWorkstream(order: ProductionOrder) {
+function hasSandwichWorkstream(order: Pick<ProductionOrder, "lines">) {
   return order.lines.some((line) => line.workstream === "sandwiches");
 }
 
+export function isCpuXCalendarOrderEligible(order: Pick<ProductionOrder, "status" | "supersededBy" | "lines">) {
+  // A canonical Production Order only exists after the upstream hand-off. Its
+  // local planning status may still be "draft" or "needs_review" at that point.
+  return !["cancelled", "rejected"].includes(order.status) && !order.supersededBy && hasSandwichWorkstream(order);
+}
+
 function operationFor(order: ProductionOrder): CalendarOperation {
-  return order.status === "cancelled" || order.status === "rejected" || Boolean(order.supersededBy) || !hasSandwichWorkstream(order)
-    ? "delete"
-    : "upsert";
+  return isCpuXCalendarOrderEligible(order) ? "upsert" : "delete";
 }
 
 function deliveryEventId(order: ProductionOrder) {
@@ -95,7 +120,8 @@ function deliveryFor(order: ProductionOrder, operation: CalendarOperation): CpuD
  * Record the desired Calendar state and durable delivery in one Firestore
  * transaction. The order/version key is shared by live delivery and backfill.
  */
-export async function stageCpuXCalendarOrder(transaction: Transaction, order: ProductionOrder) {
+export async function stageCpuXCalendarOrder(transaction: Transaction, order: ProductionOrder, environment: CpuXCalendarRuntimeEnvironment = process.env) {
+  if (!cpuXCalendarWritesEnabled(environment)) return { status: "disabled" as const };
   if (!order.canonicalId || !Number.isInteger(order.version) || order.version < 1) {
     throw new Error("A canonical Production Order identity and positive version are required for CPUX Calendar delivery.");
   }
@@ -119,11 +145,13 @@ export async function stageCpuXCalendarOrder(transaction: Transaction, order: Pr
   return { status: "queued" as const, eventId };
 }
 
-export async function enqueueCpuXCalendarOrder(order: ProductionOrder) {
-  return db.runTransaction((transaction) => stageCpuXCalendarOrder(transaction, order));
+export async function enqueueCpuXCalendarOrder(order: ProductionOrder, environment: CpuXCalendarRuntimeEnvironment = process.env) {
+  if (!cpuXCalendarWritesEnabled(environment)) return { status: "disabled" as const };
+  return db.runTransaction((transaction) => stageCpuXCalendarOrder(transaction, order, environment));
 }
 
-export async function claimCpuXCalendarOrder(canonicalId: string, sourceVersion: number, now = new Date()) {
+export async function claimCpuXCalendarOrder(canonicalId: string, sourceVersion: number, now = new Date(), environment: CpuXCalendarRuntimeEnvironment = process.env) {
+  if (!cpuXCalendarWritesEnabled(environment)) return { status: "disabled" as const };
   const ref = stateRef(canonicalId);
   const claimId = `cpux-calendar:${randomUUID()}`;
   return db.runTransaction(async (transaction) => {
@@ -191,9 +219,11 @@ export async function scanCpuXCalendarBackfill(
   fromServiceDate: string,
   toServiceDate: string,
   listOrders: (serviceDate: string) => Promise<ProductionOrder[]>,
-  enqueue: (order: ProductionOrder) => Promise<{ status: "queued" | "already-current" | "skipped"; eventId?: string }>,
+  enqueue: (order: ProductionOrder) => Promise<{ status: "queued" | "already-current" | "skipped" | "disabled"; eventId?: string }>,
   deliver: (eventId: string) => Promise<{ status: string }> = deliverCpuPropagation,
+  environment: CpuXCalendarRuntimeEnvironment = process.env,
 ): Promise<CpuXCalendarBackfillResult> {
+  if (!cpuXCalendarBackfillEnabled(environment)) throw Object.assign(new Error("CPUX Calendar backfill is disabled outside the separately enabled production workflow."), { status: 503 });
   const dates = boundedBackfillDates(fromServiceDate, toServiceDate);
   const result: CpuXCalendarBackfillResult = { datesRead: 0, ordersRead: 0, queued: 0, delivered: 0, pending: 0, alreadyCurrent: 0, skipped: 0 };
   const orders: ProductionOrder[] = [];
@@ -218,6 +248,42 @@ export async function scanCpuXCalendarBackfill(
       } else result.pending += 1;
     } else if (staged.status === "already-current") result.alreadyCurrent += 1;
     else result.skipped += 1;
+  }
+  return result;
+}
+
+export type CpuXCalendarBackfillPreview = {
+  datesRead: number;
+  ordersRead: number;
+  candidateCount: number;
+  ineligibleCount: number;
+  wrongServiceDateCount: number;
+};
+
+/** Read-only bounded preview. It never stages or delivers Calendar outbox work. */
+export async function previewCpuXCalendarBackfill(
+  fromServiceDate: string,
+  toServiceDate: string,
+  listOrders: (serviceDate: string) => Promise<ProductionOrder[]>,
+): Promise<CpuXCalendarBackfillPreview> {
+  const dates = boundedBackfillDates(fromServiceDate, toServiceDate);
+  const result: CpuXCalendarBackfillPreview = { datesRead: 0, ordersRead: 0, candidateCount: 0, ineligibleCount: 0, wrongServiceDateCount: 0 };
+  const orders: ProductionOrder[] = [];
+  for (const serviceDate of dates) {
+    const dateOrders = await listOrders(serviceDate);
+    result.datesRead += 1;
+    result.ordersRead += dateOrders.length;
+    for (const order of dateOrders) {
+      if (order.serviceDate !== serviceDate) result.wrongServiceDateCount += 1;
+      else orders.push(order);
+    }
+  }
+  if (orders.length > CPUX_CALENDAR_BACKFILL_MAX_ORDERS) {
+    throw Object.assign(new Error(`The CPUX Calendar backfill is limited to ${CPUX_CALENDAR_BACKFILL_MAX_ORDERS} canonical orders per call; use a smaller explicit date range.`), { status: 413 });
+  }
+  for (const order of orders) {
+    if (isCpuXCalendarOrderEligible(order)) result.candidateCount += 1;
+    else result.ineligibleCount += 1;
   }
   return result;
 }
@@ -304,6 +370,7 @@ export function buildCpuXCalendarEventResource(order: ProductionOrder): CpuXCale
 type CalendarFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 export type CpuXCalendarApiDependencies = {
   calendarId?: string;
+  environment?: CpuXCalendarRuntimeEnvironment;
   getAccessToken?: () => Promise<string>;
   fetcher?: CalendarFetch;
 };
@@ -337,7 +404,13 @@ function calendarFailure(response: Response) {
 }
 
 export async function applyCpuXCalendarOrder(order: ProductionOrder, dependencies: CpuXCalendarApiDependencies = {}) {
-  const collection = calendarTarget(dependencies.calendarId);
+  const environment = dependencies.environment || process.env;
+  if (!cpuXCalendarWritesEnabled(environment)) throw Object.assign(new Error("CPUX Calendar writes are disabled outside the explicitly enabled production runtime."), { status: 503 });
+  const configuredCalendarId = environment.FIKA_CPUX_CALENDAR_ID?.trim();
+  if (dependencies.calendarId && dependencies.calendarId.trim() !== configuredCalendarId) {
+    throw Object.assign(new Error("A Calendar ID override does not match the explicitly configured production Calendar."), { status: 503 });
+  }
+  const collection = calendarTarget(configuredCalendarId);
   const eventId = cpuxCalendarEventId(order.canonicalId);
   const eventUrl = `${collection}/${encodeURIComponent(eventId)}`;
   const operation = operationFor(order);

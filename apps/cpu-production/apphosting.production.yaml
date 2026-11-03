@@ -7,6 +7,13 @@ env:
   - variable: FIREBASE_PROJECT_ID
     value: fika-os
     availability: [BUILD, RUNTIME]
+  # Calendar publishing stays disabled until the production calendar and ACL are reviewed.
+  - variable: FIKA_CPUX_CALENDAR_WRITES_ENABLED
+    value: "false"
+    availability: [RUNTIME]
+  - variable: FIKA_CPUX_CALENDAR_BACKFILL_ENABLED
+    value: "false"
+    availability: [RUNTIME]
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
     value: AIzaSyCFryGfpWmJ52Zqikk3v1AozINumPeE-TE
     availability: [BUILD, RUNTIME]

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { internalTokenAllowed } from "../../../../../shared/internal-auth";
-import { applyCpuXCalendarOrder, claimCpuXCalendarOrder, finishCpuXCalendarOrder, releaseCpuXCalendarOrderClaim } from "../../../../lib/cpux-calendar-publisher";
+import { applyCpuXCalendarOrder, claimCpuXCalendarOrder, cpuXCalendarWritesEnabled, finishCpuXCalendarOrder, releaseCpuXCalendarOrderClaim } from "../../../../lib/cpux-calendar-publisher";
 import { productionOrderDetail } from "../../../../lib/production-http-client";
 
 export const dynamic = "force-dynamic";
@@ -13,11 +13,13 @@ function payload(value: unknown): value is { canonicalId: string; sourceVersion:
 
 export async function POST(request: NextRequest) {
   if (!internalTokenAllowed(request)) return NextResponse.json({ error: { message: "Internal CPUX Calendar access is not authorised." } }, { status: 401 });
+  if (!cpuXCalendarWritesEnabled()) return NextResponse.json({ error: { message: "CPUX Calendar writes are disabled outside the explicitly enabled production runtime." } }, { status: 503 });
   const body = await request.json().catch(() => undefined);
   if (!payload(body)) return NextResponse.json({ error: { message: "A canonical Production Order identity and source version are required." } }, { status: 422 });
   const claim = await claimCpuXCalendarOrder(body.canonicalId, body.sourceVersion);
   if (claim.status === "superseded") return NextResponse.json({ applied: false, status: "superseded" });
   if (claim.status === "missing") return NextResponse.json({ error: { message: "No staged CPUX Calendar publication exists for this order." } }, { status: 409 });
+  if (claim.status === "disabled") return NextResponse.json({ error: { message: "CPUX Calendar writes are disabled outside the explicitly enabled production runtime." } }, { status: 503 });
   if (claim.status === "busy") return NextResponse.json({ error: { message: "Another CPUX Calendar delivery is active for this order." } }, { status: 503, headers: { "retry-after": "10" } });
 
   try {
