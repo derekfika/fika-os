@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-03T14:16:03.835Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-03T19:52:30.459Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -49,6 +49,7 @@ Snapshot: 2026-11-03T14:16:03.835Z. The local governed registry remains authorit
 | cpu-allergen-checker-251 | claude-cpu-251 | apps/cpu-production/app/ui/allergen-cell-state.ts, apps/cpu-production/app/ui/HospitalityAllergenDetail.tsx, apps/cpu-production/tests/cpu-production.test.ts, apps/cpu-production/tests/hospitality-allergen-review.test.ts, apps/cpu-production/app/globals.css | codex/cpu-allergen-checker-251 | [#252](https://github.com/derekfika/fika-os/pull/252) | active | 2026-11-01T16:44:26.756Z |
 | cpu-allergen-master-review-polish | codex-cpu-allergen-master-review-polish | apps/cpu-production/app/allergens/page.css | codex/cpu-allergen-master-review-polish | — | retired | 2026-11-02T08:54:58.859Z |
 | cpu-cancelled-demand | uat-20261025-1150 | apps/cpu-production | codex/cpu-cancelled-demand | [#46](https://github.com/derekfika/fika-os/pull/46) | finished | 2026-10-26T15:25:59.075Z |
+| cpu-cpux-calendar-publisher | luna-144-cpux-calendar | apps/cpu-production/app/api/production/route.ts, apps/cpu-production/app/api/internal/cpux-calendar/route.ts, apps/cpu-production/app/api/internal/cpux-calendar-backfill/route.ts, apps/cpu-production/lib/cpu-durable-outbox.ts, apps/cpu-production/lib/cpu-consumer-invalidation.ts, apps/cpu-production/lib/cpux-calendar-publisher.ts, apps/cpu-production/package.json, apps/cpu-production/package-lock.json, apps/cpu-production/tests/cpux-calendar-publisher.test.ts | codex/cpu-cpux-calendar-publisher | [#326](https://github.com/derekfika/fika-os/pull/326) | finished | 2026-11-03T19:52:12.273Z |
 | cpu-deep-link-iss018-fix | uat-20261025-1150 | apps/cpu-production, CHANGELOG.md | codex/cpu-deep-link-iss018-fix | [#80](https://github.com/derekfika/fika-os/pull/80) | finished | 2026-10-27T12:02:56.344Z |
 | cpu-deep-link-iss018 | uat-20261025-1150 | apps/cpu-production | codex/cpu-deep-link-iss018 | — | finished | 2026-10-26T23:15:02.390Z |
 | cpu-fast-reauth | sol-cpu-fast-reauth | apps/cpu-production | codex/cpu-fast-reauth | [#207](https://github.com/derekfika/fika-os/pull/207) | retired | 2026-10-31T12:57:16.022Z |
