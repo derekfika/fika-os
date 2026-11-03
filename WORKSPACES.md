@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-03T09:14:00.358Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-03T13:44:48.996Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -19,9 +19,10 @@ Snapshot: 2026-11-03T09:14:00.358Z. The local governed registry remains authorit
 | adhoc-hub-prod-launch | luna-adhoc-hub-prod-launch | apps/integration-hub/apphosting.production.yaml, apps/integration-hub/tests/apphosting-build-config.test.ts | codex/adhoc-hub-prod-launch | [#320](https://github.com/derekfika/fika-os/pull/320) | retired | 2026-11-03T09:13:54.839Z |
 | adhoc-launcher-config | luna-adhoc-launcher | apps/integration-hub/apphosting.staging.yaml, apps/integration-hub/tests/apphosting-build-config.test.ts | codex/adhoc-launcher-config | [#97](https://github.com/derekfika/fika-os/pull/97) | retired | 2026-11-01T11:49:09.922Z |
 | adhoc-operational-uat | uat-20261025-1150 | apps/ad-hoc-production | codex/adhoc-operational-uat | — | finished | 2026-10-28T06:41:05.515Z |
-| adhoc-p0-go-live | luna-adhoc-p0-go-live | tools/workflow/policy.mjs, tools/workflow/policy.test.mjs, tools/workflow/releases.mjs, tools/workflow/releases.test.mjs, apps/ad-hoc-production/apphosting.production.yaml, apps/ad-hoc-production/tests/independence.test.ts | codex/adhoc-p0-go-live | [#318](https://github.com/derekfika/fika-os/pull/318) | active | 2026-11-03T07:03:21.802Z |
+| adhoc-p0-go-live | luna-adhoc-p0-go-live | tools/workflow/policy.mjs, tools/workflow/policy.test.mjs, tools/workflow/releases.mjs, tools/workflow/releases.test.mjs, apps/ad-hoc-production/apphosting.production.yaml, apps/ad-hoc-production/tests/independence.test.ts | codex/adhoc-p0-go-live | [#321](https://github.com/derekfika/fika-os/pull/321) | active | 2026-11-03T07:03:21.802Z |
 | adhoc-signing-pdf | claude-adhoc-sign | apps/cpu-production, apps/hospitality-booking/apphosting.staging.yaml | codex/adhoc-signing-pdf | [#42](https://github.com/derekfika/fika-os/pull/42) | finished | 2026-10-24T21:59:07.602Z |
 | adhoc-signing-recovery | sol-adhoc-safety | apps/cpu-production | codex/adhoc-signing-recovery | [#248](https://github.com/derekfika/fika-os/pull/248) | retired | 2026-11-01T14:59:52.210Z |
+| adhoc-unhealthy-first-release-recovery | luna-adhoc-unhealthy-first-release-recovery | tools/workflow/recovery.mjs, tools/workflow/recovery.test.mjs | codex/adhoc-unhealthy-first-release-recovery | [#323](https://github.com/derekfika/fika-os/pull/323) | retired | 2026-11-03T13:44:45.489Z |
 | agent-routing-policy-docs | luna-agent-routing-policy-docs | AGENTS.md, .github/ISSUE_TEMPLATE | codex/agent-routing-policy-docs | [#195](https://github.com/derekfika/fika-os/pull/195) | retired | 2026-10-31T01:41:58.110Z |
 | allergen-confirm-cpu-server | claude-allergen | apps/cpu-production | codex/allergen-confirm-cpu-server | [#39](https://github.com/derekfika/fika-os/pull/39) | finished | 2026-10-24T20:27:21.764Z |
 | allergen-confirm-cpu-ui | claude-allergen | apps/cpu-production | codex/allergen-confirm-cpu-ui | [#40](https://github.com/derekfika/fika-os/pull/40) | finished | 2026-10-24T21:38:46.175Z |
