@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-03T08:31:13.058Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-03T09:14:00.358Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -16,6 +16,7 @@ Snapshot: 2026-11-03T08:31:13.058Z. The local governed registry remains authorit
 | adhoc-cpu-dashboard-classification | luna-adhoc-cpu-dashboard-classification | apps/cpu-production/lib/production-scope.ts, apps/cpu-production/lib/cpu-dashboard-adapter.ts, apps/cpu-production/lib/production-presentation.ts, apps/cpu-production/lib/production-day.ts, apps/cpu-production/tests/production-item-scope.test.ts, apps/cpu-production/tests/cpu-dashboard-adapter.test.ts, apps/cpu-production/tests/production-presentation.test.ts, apps/cpu-production/tests/production-day.test.ts | codex/adhoc-cpu-dashboard-classification | — | retired | 2026-10-30T16:54:45.667Z |
 | adhoc-first-release-recovery-v2 | luna-adhoc-p0-go-live | tools/workflow/recovery.mjs, tools/workflow/recovery.test.mjs | codex/adhoc-first-release-recovery-v2 | [#319](https://github.com/derekfika/fika-os/pull/319) | retired | 2026-11-03T08:31:03.885Z |
 | adhoc-first-release-recovery | luna-adhoc-first-release-recovery | tools/workflow/recovery.mjs | codex/adhoc-first-release-recovery | — | retired | 2026-11-03T07:06:44.680Z |
+| adhoc-hub-prod-launch | luna-adhoc-hub-prod-launch | apps/integration-hub/apphosting.production.yaml, apps/integration-hub/tests/apphosting-build-config.test.ts | codex/adhoc-hub-prod-launch | [#320](https://github.com/derekfika/fika-os/pull/320) | retired | 2026-11-03T09:13:54.839Z |
 | adhoc-launcher-config | luna-adhoc-launcher | apps/integration-hub/apphosting.staging.yaml, apps/integration-hub/tests/apphosting-build-config.test.ts | codex/adhoc-launcher-config | [#97](https://github.com/derekfika/fika-os/pull/97) | retired | 2026-11-01T11:49:09.922Z |
 | adhoc-operational-uat | uat-20261025-1150 | apps/ad-hoc-production | codex/adhoc-operational-uat | — | finished | 2026-10-28T06:41:05.515Z |
 | adhoc-p0-go-live | luna-adhoc-p0-go-live | tools/workflow/policy.mjs, tools/workflow/policy.test.mjs, tools/workflow/releases.mjs, tools/workflow/releases.test.mjs, apps/ad-hoc-production/apphosting.production.yaml, apps/ad-hoc-production/tests/independence.test.ts | codex/adhoc-p0-go-live | [#318](https://github.com/derekfika/fika-os/pull/318) | active | 2026-11-03T07:03:21.802Z |
