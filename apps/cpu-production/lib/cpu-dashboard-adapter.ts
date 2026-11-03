@@ -15,6 +15,12 @@ export function dashboardInitialDate(search: string, fallback: string) {
   return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== requested ? fallback : requested;
 }
 
+/** Canonical CPU deep-link IDs are opaque; accept a bounded, non-empty query value only. */
+export function dashboardInitialOrderId(search: string) {
+  const requested = new URLSearchParams(search).get("order")?.trim();
+  return requested && requested.length <= 256 ? requested : undefined;
+}
+
 /** Rehydrates the compact day read model into the shape used by the existing UI. */
 export type CpuProjection = CpuDayProjection | CpuWeekProjection;
 

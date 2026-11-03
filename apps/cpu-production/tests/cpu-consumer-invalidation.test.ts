@@ -71,3 +71,35 @@ test("CPU mutation routes publish before consumer notification without per-order
   assert.match(plan, /rebuildCpuReviewPackage[\s\S]*notifyCpuConsumerInvalidations/);
   assert.doesNotMatch(production, /orders\.map\([^)]*notifyCpuConsumerInvalidations/);
 });
+
+test("live Calendar invalidation stays skipped in staging even with an accidental enable flag", async () => {
+  const saved = {
+    mode: process.env.FIKA_RUNTIME_MODE,
+    project: process.env.FIREBASE_PROJECT_ID,
+    writes: process.env.FIKA_CPUX_CALENDAR_WRITES_ENABLED,
+    backfill: process.env.FIKA_CPUX_CALENDAR_BACKFILL_ENABLED,
+    calendar: process.env.FIKA_CPUX_CALENDAR_ID,
+  };
+  const previousFetch = globalThis.fetch;
+  let fetches = 0;
+  process.env.FIKA_RUNTIME_MODE = "staging";
+  process.env.FIREBASE_PROJECT_ID = "fika-os-dev";
+  process.env.FIKA_CPUX_CALENDAR_WRITES_ENABLED = "true";
+  process.env.FIKA_CPUX_CALENDAR_BACKFILL_ENABLED = "true";
+  process.env.FIKA_CPUX_CALENDAR_ID = "accidental-live-calendar";
+  globalThis.fetch = (async () => { fetches += 1; return new Response("{}", { status: 200 }); }) as typeof fetch;
+  try {
+    const result = await notifyCpuConsumerInvalidations({
+      eventId: "cpu-change:calendar-stage-test", sourceEntityId: "order:stage-test", serviceDate: "2026-11-03", sourceVersion: 1,
+      changedAt: "2026-11-03T10:00:00Z", changeType: "changed", calendarOrder: { canonicalId: "order:stage-test" } as never,
+    });
+    assert.deepEqual(result.calendar, { status: "disabled" });
+    assert.equal(result.attempted, 0);
+    assert.equal(fetches, 0);
+  } finally {
+    globalThis.fetch = previousFetch;
+    for (const [key, value] of Object.entries({ FIKA_RUNTIME_MODE: saved.mode, FIREBASE_PROJECT_ID: saved.project, FIKA_CPUX_CALENDAR_WRITES_ENABLED: saved.writes, FIKA_CPUX_CALENDAR_BACKFILL_ENABLED: saved.backfill, FIKA_CPUX_CALENDAR_ID: saved.calendar })) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+});

@@ -27,7 +27,7 @@ import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperat
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, isCpuWithdrawn, type CpuLifecycle } from "../lib/production-presentation";
 import { aggregateProductionTotals, orderDate, productionJobCount } from "../lib/production-day";
-import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, dashboardInitialDate, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
+import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, dashboardInitialDate, dashboardInitialOrderId, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 import { calendarDateInputPatch, calendarWeekChangePatch } from "../lib/cpu-week-date-sync";
 import { addOperationalDays, filterProductionTotalsOrders, filterProductionTotalsOrdersToDates, formatProductionTotalsDateRange, formatProductionTotalsSelection, operationalWeekRange, productionTotalsWeekDates, resolveProductionTotalsRange } from "../lib/production-totals-range";
 import { loadProductionTotalsRange } from "../lib/cpu-totals-loader";
@@ -427,6 +427,13 @@ export default function CpuProduction() {
       if (requestId === detailRequest.current) setDetailLoading(false);
     }
   };
+  const orderLinkHandled = useRef(false);
+  useEffect(() => {
+    if (orderLinkHandled.current || !settled) return;
+    orderLinkHandled.current = true;
+    const canonicalId = dashboardInitialOrderId(window.location.search);
+    if (canonicalId) void openOrder({ canonicalId });
+  }, [settled]);
   const acknowledgeCancelledBooking = async (order: ProductionOrder) => {
     setError("");
     const response = await fetchCpuApi("/api/production", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "acknowledge-cancellation", canonicalId: order.canonicalId, expectedVersion: order.version }) });
