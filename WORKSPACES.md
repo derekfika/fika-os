@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-03T21:38:41.630Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-03T21:54:06.722Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -174,6 +174,7 @@ Snapshot: 2026-11-03T21:38:41.630Z. The local governed registry remains authorit
 | issue-277-dish-search-luna | luna-issue-277-search | apps/menu-planning/app/catalogue-workspace.tsx, apps/menu-planning/tests/read-paths.test.ts | codex/issue-277-dish-search-luna | [#298](https://github.com/derekfika/fika-os/pull/298) | retired | 2026-11-02T21:42:41.711Z |
 | issue-277-dish-search | sol-issue-277-search | apps/menu-planning/app/catalogue-workspace.tsx | codex/issue-277-dish-search | — | retired | 2026-11-02T21:36:50.698Z |
 | issue116-adhoc-prod-preflight | codex-issue116-adhoc-preflight | apps/ad-hoc-production | codex/issue116-adhoc-prod-preflight | — | retired | 2026-11-03T21:20:39.509Z |
+| issue116-hub-prod-dryrun | codex-issue116-hub-dryrun | .changes/platform/2026-11-03-issue116-hub-prod-dryrun.md | codex/issue116-hub-prod-dryrun | — | retired | 2026-11-03T21:54:02.144Z |
 | issue116-hub-prod-preflight | codex-issue116-preflight | apps/integration-hub/app/page.tsx | codex/issue116-hub-prod-preflight | — | retired | 2026-11-03T21:18:17.382Z |
 | issue116-logistics-ledger-read | codex-issue116-ledger-read | tools/workflow/policy.mjs | codex/issue116-logistics-ledger-read | — | retired | 2026-11-03T21:26:39.640Z |
 | issue144-calendar-quote-v2 | codex-issue144-calendar-quote | apps/integration-hub/lib/cpux-calendar-quote.ts, apps/integration-hub/app/api/production/calendar-quote, apps/integration-hub/tests/cpux-calendar-quote.test.ts, apps/cpu-production/lib/cpux-calendar-publisher.ts, apps/cpu-production/app/api/internal/cpux-calendar/route.ts, apps/cpu-production/app/api/production-quote, apps/cpu-production/tests/cpux-calendar-publisher.test.ts, apps/cpu-production/tests/cpux-calendar-quote-route.test.ts | codex/issue144-calendar-quote-v2 | [#328](https://github.com/derekfika/fika-os/pull/328) | retired | 2026-11-03T21:38:36.211Z |
