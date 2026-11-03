@@ -44,6 +44,29 @@ export function validateRecord(record, { app, environment } = {}) {
     return record;
   }
   exactSha(record.sourceSha);
+  if (record.kind === 'abandoned') {
+    const recovery = record.recovery;
+    if (recovery?.resolution !== 'abandon' || !recovery.reason?.trim() || recovery.reason.length > 500 ||
+        !/^[a-f0-9]{40}$/.test(recovery.operator?.sourceSha || '') || !/^[a-f0-9]{64}$/.test(recovery.evidenceHash || '') ||
+        !/^[a-f0-9]{64}$/.test(recovery.journalHash || '') || !Number.isFinite(Date.parse(recovery.at)) ||
+        !/^[a-f0-9]{40}$/.test(record.originalIntent || '') || !record.scopeHash || !record.smoke || typeof record.smoke.ok !== 'boolean' ||
+        recovery.rollout !== (record.rollout || null)) throw Error('Invalid abandoned release evidence');
+    if (record.state === 'SUCCEEDED') {
+      if (!record.rollout || record.percent !== 100) throw Error('Abandoned release does not identify its stable serving attempt');
+    } else if (record.state === 'FAILED') {
+      if (record.percent !== 0 || (record.rollout != null && !/^[a-z][a-z0-9-]{2,100}$/.test(record.rollout))) throw Error('Abandoned release does not identify its failed attempt');
+    } else throw Error('Abandoned release has an unsupported terminal state');
+    if (recovery.firstRelease === true) {
+      if (record.app !== 'adhoc' || record.environment !== 'prod' || recovery.noPreviousRelease !== true || record.previousGood != null || record.previousGoodRecord != null ||
+          !/^[a-f0-9]{40}$/.test(record.firstReleaseBaselineRecord || '') || recovery.operator.sourceSha !== record.sourceSha || record.smoke.ok !== false) throw Error('Invalid abandoned Ad-Hoc first-release evidence');
+    } else {
+      const previous = record.previousGood;
+      if (!previous || !/^[a-f0-9]{40}$/.test(record.previousGoodRecord || '') || !/^[a-f0-9]{40}$/.test(previous.sourceSha || '') ||
+          !previous.rollout || previous.state !== 'SUCCEEDED' || previous.percent !== 100 ||
+          (record.sourceSha !== previous.sourceSha && (record.sourceSha !== recovery.operator.sourceSha || record.smoke.ok !== false))) throw Error('Abandoned release has no valid previous-good lineage');
+    }
+    return record;
+  }
   if (!['baseline', 'deploy', 'rollback'].includes(record.kind)) throw Error('Invalid release kind');
   if (!record.rollout || record.state !== 'SUCCEEDED' || record.percent !== 100 || !record.scopeHash) throw Error('Release is not verified serving state');
   return record;
