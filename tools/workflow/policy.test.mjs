@@ -23,7 +23,7 @@ test('release cannot claim another target or an unverified serving state', () =>
 });
 test('only Ad-Hoc production accepts an explicit empty first-release baseline with no fabricated source or build',()=>{
  const record={schema:'fika.release.v1',...target('adhoc','prod'),kind:'empty-baseline',state:'EMPTY',percent:0,rollout:null,sourceSha:null,scopeHash:'backend-empty-proof',recovery:{firstRelease:true,noPreviousRelease:true}};
- validateRecord(record,{app:'adhoc',environment:'prod'});for(const change of [{app:'cpu'},{environment:'staging'},{sourceSha:sha},{rollout:'invented'},{percent:100},{recovery:{firstRelease:true}}])assert.throws(()=>validateRecord({...record,...change}));
+ validateRecord(record,{app:'adhoc',environment:'prod'});const legacy={...record,backend:'projects/fika-os/locations/europe-west4/backends/fika-os-prod-adhoc'};assert.equal(validateRecord(legacy,{app:'adhoc',environment:'prod'}),legacy);assert.throws(()=>validateRecord({...record,backend:'fika-os-prod-cpu'}));for(const change of [{app:'cpu'},{environment:'staging'},{sourceSha:sha},{rollout:'invented'},{percent:100},{recovery:{firstRelease:true}}])assert.throws(()=>validateRecord({...record,...change}));
 });
 test('solo-owner flags are explicit and obsolete approval-comment flags are rejected',()=>{
  const p=parse(['deploy','cpu','--prod','--execute','--owner-approved','--reason','Ship CPU']);assert.equal(p.options['owner-approved'],true);assert.equal(p.options.reason,'Ship CPU');assert.throws(()=>parse(['--approval-url','https://example.invalid/comment']));assert.equal(parse(['deploy','cpu','--prod','--execute']).options['owner-approved'],undefined);

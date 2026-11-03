@@ -52,12 +52,16 @@ export async function stableAdhocProductionState(t, read=cloud, options={}) {
   if(digest(first)!==digest(second))throw Error('Ad-Hoc production prestate changed between independent snapshots');
   return first;
 }
+export function adhocEmptyBaselineRecord(t, current, observedAt = new Date().toISOString()) {
+  if (t.app !== 'adhoc' || t.environment !== 'prod') throw Error('Empty first-release baselines are restricted to Ad-Hoc production');
+  return {schema:'fika.release.v1',...t,...current,backend:t.backend,kind:'empty-baseline',scopeHash:digest({app:t.app,project:t.project,backend:t.backend,root:APPS.adhoc.path,state:'EMPTY'}),observedAt,recovery:{firstRelease:true,noPreviousRelease:true}};
+}
 export async function bootstrap(t, options = {}) {
   const existing = releaseRecord(t.branch);
   if (existing) { validateRecord(existing.record, t); return { status: 'existing', ...existing }; }
   if (t.app==='adhoc' && t.environment==='prod') {
     const current=await stableAdhocProductionState(t);
-    const record={schema:'fika.release.v1',...t,...current,kind:'empty-baseline',scopeHash:digest({app:t.app,project:t.project,backend:t.backend,root:APPS.adhoc.path,state:'EMPTY'}),observedAt:new Date().toISOString(),recovery:{firstRelease:true,noPreviousRelease:true}};
+    const record=adhocEmptyBaselineRecord(t,current);
     if (!options.execute) return {status:'dry-run-empty-first-release',record};
     const commit=appendRecord(t,record,git('rev-parse','origin/main'));git('branch',t.branch,commit);return {status:'created-empty-first-release',commit,record};
   }
