@@ -3,27 +3,60 @@
   "app": "adhoc",
   "environment": "prod",
   "project": "fika-os",
-  "backend": "projects/fika-os/locations/europe-west4/backends/fika-os-prod-adhoc",
+  "backend": "fika-os-prod-adhoc",
   "region": "europe-west4",
   "branch": "release/prod/adhoc",
-  "sourceSha": null,
-  "rollout": null,
-  "state": "EMPTY",
-  "percent": 0,
-  "builds": [],
-  "rollouts": [],
-  "operations": [],
-  "traffic": {
-    "current": [],
-    "target": [],
-    "reconciling": false,
-    "autoDisabled": true
+  "sourceSha": "be97ed68ee074c50f9126807d15679a29c8fedec",
+  "scopeHash": "81dcfbfe2e20a67f5dbf1c4bdd7fd94c35f5ff778d818736a2eec1ba8590ca53",
+  "inMain": true,
+  "rollback": false,
+  "executing": true,
+  "cosmeticOnly": false,
+  "standard": false,
+  "validation": {
+    "id": 125830814004,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/41610423005/job/125830814004",
+    "sha": "be97ed68ee074c50f9126807d15679a29c8fedec"
   },
-  "kind": "empty-baseline",
-  "scopeHash": "7de8c448e66cf4bf93d7cd852aca347d30e2527e4df2ef8ac96bc0e9def1a054",
-  "observedAt": "2026-11-03T08:47:30.899Z",
-  "recovery": {
-    "firstRelease": true,
-    "noPreviousRelease": true
-  }
+  "approval": {
+    "actor": "derekfika",
+    "method": "owner-instruction",
+    "app": "adhoc",
+    "environment": "prod",
+    "sourceSha": "be97ed68ee074c50f9126807d15679a29c8fedec",
+    "action": "deploy",
+    "instruction": "Derek authorizes the governed first Ad-Hoc Production release under the conditional go-live directive",
+    "releaseId": null,
+    "id": "62a33400d4dd21bb028120c5d037a5bcb458a57f9455e9d7c708fa2ac89e5bf2",
+    "explicitExecute": true,
+    "authorisedAt": "2026-11-03T13:32:34.730Z"
+  },
+  "provenance": {
+    "number": 321,
+    "url": "https://github.com/derekfika/fika-os/pull/321",
+    "head": "be97ed68ee074c50f9126807d15679a29c8fedec",
+    "pullRequestRisk": "standard"
+  },
+  "productionDelta": {
+    "from": null,
+    "to": "be97ed68ee074c50f9126807d15679a29c8fedec",
+    "paths": [
+      "apps/ad-hoc-production/**",
+      "packages/server-shared/**",
+      "package-lock.json"
+    ],
+    "hash": "4e50e87ba6c61f7bc663a73904a2bb7c64815d7873da52d8967722b46fe54373",
+    "risk": "standard",
+    "firstRelease": true
+  },
+  "lane": "standard",
+  "stagingEvidence": "1ffa60875faa5690f5ddda142498cbe97546c6b4",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "15cc8dc2-6d38-4086-8976-15fe06607680",
+  "previousGood": null,
+  "previousGoodRecord": null,
+  "firstRelease": true,
+  "firstReleaseBaselineRecord": "163686e873567f01997fcc05c272c57832855bba",
+  "createdAt": "2026-11-03T13:32:42.952Z"
 }
