@@ -7,56 +7,44 @@
   "region": "europe-west4",
   "branch": "release/prod/adhoc",
   "sourceSha": "be97ed68ee074c50f9126807d15679a29c8fedec",
+  "rollout": "build-2026-11-03-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
   "scopeHash": "81dcfbfe2e20a67f5dbf1c4bdd7fd94c35f5ff778d818736a2eec1ba8590ca53",
-  "inMain": true,
-  "rollback": false,
-  "executing": true,
-  "cosmeticOnly": false,
-  "standard": false,
-  "validation": {
-    "id": 125830814004,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/41610423005/job/125830814004",
-    "sha": "be97ed68ee074c50f9126807d15679a29c8fedec"
-  },
-  "approval": {
-    "actor": "derekfika",
-    "method": "owner-instruction",
-    "app": "adhoc",
-    "environment": "prod",
-    "sourceSha": "be97ed68ee074c50f9126807d15679a29c8fedec",
-    "action": "deploy",
-    "instruction": "Derek authorizes the governed first Ad-Hoc Production release under the conditional go-live directive",
-    "releaseId": null,
-    "id": "62a33400d4dd21bb028120c5d037a5bcb458a57f9455e9d7c708fa2ac89e5bf2",
-    "explicitExecute": true,
-    "authorisedAt": "2026-11-03T13:32:34.730Z"
-  },
-  "provenance": {
-    "number": 321,
-    "url": "https://github.com/derekfika/fika-os/pull/321",
-    "head": "be97ed68ee074c50f9126807d15679a29c8fedec",
-    "pullRequestRisk": "standard"
-  },
-  "productionDelta": {
-    "from": null,
-    "to": "be97ed68ee074c50f9126807d15679a29c8fedec",
-    "paths": [
-      "apps/ad-hoc-production/**",
-      "packages/server-shared/**",
-      "package-lock.json"
-    ],
-    "hash": "4e50e87ba6c61f7bc663a73904a2bb7c64815d7873da52d8967722b46fe54373",
-    "risk": "standard",
-    "firstRelease": true
-  },
-  "lane": "standard",
-  "stagingEvidence": "1ffa60875faa5690f5ddda142498cbe97546c6b4",
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "15cc8dc2-6d38-4086-8976-15fe06607680",
+  "kind": "abandoned",
   "previousGood": null,
   "previousGoodRecord": null,
-  "firstRelease": true,
   "firstReleaseBaselineRecord": "163686e873567f01997fcc05c272c57832855bba",
-  "createdAt": "2026-11-03T13:32:42.952Z"
+  "releaseId": "15cc8dc2-6d38-4086-8976-15fe06607680",
+  "originalIntent": "199e1ed3d8dd04a1e7da914ef7a5e84571d8436e",
+  "smoke": {
+    "ok": false,
+    "status": 503,
+    "url": "https://fika-os-prod-adhoc--fika-os.europe-west4.hosted.app/api/me",
+    "entryStatus": 200,
+    "reason": "adhoc_auth_gate_not_fail_closed"
+  },
+  "recovery": {
+    "resolution": "abandon",
+    "reason": "Derek's existing conditional authorization is to deploy Ad-Hoc Production once all mandatory gates pass. Reconcile failed build-2026-11-03-001: exact source was served at 100% but auth smoke failed while the backend environment was unset; backend environment is now production, the runtime secret permission exists, and reviewed production config will be applied by the corrected rollout.",
+    "operator": {
+      "actor": "derekfika",
+      "method": "owner-instruction",
+      "app": "adhoc",
+      "environment": "prod",
+      "sourceSha": "be97ed68ee074c50f9126807d15679a29c8fedec",
+      "action": "reconcile:abandon",
+      "instruction": "Derek's existing conditional authorization is to deploy Ad-Hoc Production once all mandatory gates pass. Reconcile failed build-2026-11-03-001: exact source was served at 100% but auth smoke failed while the backend environment was unset; backend environment is now production, the runtime secret permission exists, and reviewed production config will be applied by the corrected rollout.",
+      "releaseId": "15cc8dc2-6d38-4086-8976-15fe06607680",
+      "id": "bd0bc3c18c1d6bfcda261cdb1da09eb777092cb2c30b25cb6fec8c5e5fc565b2",
+      "explicitExecute": true,
+      "authorisedAt": "2026-11-03T13:57:11.867Z"
+    },
+    "rollout": "build-2026-11-03-001",
+    "firstRelease": true,
+    "noPreviousRelease": true,
+    "evidenceHash": "5e3ad64521e5c5794cf7e2075dd0f38c49afeec580ce3d5d6bf1a9f88965b70f",
+    "journalHash": "357c37a937eab89eced67b5e49fb2f7584b6f2ae4be4b515c10e5db5a8f0f03c",
+    "at": "2026-11-03T13:57:16.202Z"
+  }
 }
