@@ -41,7 +41,7 @@ export function validateRecord(record, { app, environment } = {}) {
     return record;
   }
   exactSha(record.sourceSha);
-  if (!['baseline', 'deploy', 'rollback','intent','abandoned'].includes(record.kind)) throw Error('Invalid release kind');
+  if (!['baseline', 'deploy', 'rollback'].includes(record.kind)) throw Error('Invalid release kind');
   if (!record.rollout || record.state !== 'SUCCEEDED' || record.percent !== 100 || !record.scopeHash) throw Error('Release is not verified serving state');
   return record;
 }

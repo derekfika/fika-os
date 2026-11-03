@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { APPS, REPO, MAIN_CHECK, target, exactSha, assertClean, validateRecord, risk, assertResume, assertServingLineage, digest } from './policy.mjs';
 import { git, command, ancestor, ref, ghApi, scopeHash, asyncLock, save, stateDir, jsonFile, serving, cloud, backendPath } from './runtime.mjs';
 import { assertHostedContext } from './hosted.mjs';
+import { discover } from './discovery.mjs';
 import { recoverySnapshot, reconcileIntent, resubmitNeverSubmitted, submissionAttempts, describeSubmissionEvidence } from './recovery.mjs';
 import { readCreateAuditEvents } from './audit.mjs';
 import { assertCpuAdoptionTarget, observeCpuAdoption, adoptCompletedCpu } from './cpu-prod-adoption.mjs';
@@ -23,13 +24,47 @@ export function appendRecord(t, record, expected) {
   git('fetch', 'origin', `refs/heads/${t.branch}:refs/remotes/origin/${t.branch}`);
   return commit;
 }
+
+/** Read-only, backend-specific proof for Ad-Hoc first release/retry. No missing
+ * serving revision is interpreted as empty unless Firebase independently proves
+ * backend identity, disabled automatic rollouts, zero traffic and no live ops. */
+export async function inspectAdhocProductionState(t, read = cloud, { allowFailedHistory = false } = {}) {
+  if (t.app !== 'adhoc' || t.environment !== 'prod') throw Error('First-release state inspection is restricted to Ad-Hoc production');
+  const base = backendPath(t);
+  const [backend, traffic, builds, rollouts, operations] = await Promise.all([
+    read(base), read(`${base}/traffic`),
+    discover(`${base}/builds`, 'builds', b=>({name:b.name,state:b.state,reconciling:Boolean(b.reconciling)}), read),
+    discover(`${base}/rollouts`, 'rollouts', r=>({name:r.name,state:r.state,reconciling:Boolean(r.reconciling)}), read),
+    discover(`projects/${t.project}/locations/${t.region}/operations`, 'operations', o=>({name:o.name,done:o.done===true,target:o.metadata?.target||o.response?.name||''}), read),
+  ]);
+  const current=traffic.current?.splits||[], targetTraffic=traffic.target?.splits||[];
+  const active=operations.filter(o=>!o.done&&(!o.target||o.target===t.backend||String(o.target).includes(`/backends/${t.backend}`)));
+  const repo=String(backend.codebase?.repository||'');
+  if (backend.name!==base || backend.reconciling!==false || ![`/${APPS.adhoc.path}`,APPS.adhoc.path].includes(backend.codebase?.rootDirectory) || !repo.endsWith('/gitRepositoryLinks/derekfika-fika-os')) throw Error('Ad-Hoc production backend identity, repository or root is not verified');
+  if (traffic.rolloutPolicy?.disabled!==true || traffic.reconciling || current.length || targetTraffic.length || active.length) throw Error('Ad-Hoc production does not have quiescent zero traffic with automatic rollouts disabled');
+  if (allowFailedHistory) {
+    if (builds.some(b=>!['FAILED','CANCELLED','DELETED'].includes(b.state)||b.reconciling) || rollouts.some(r=>!['FAILED','CANCELLED'].includes(r.state)||r.reconciling)) throw Error('First-release retry is blocked by a successful, active or unknown build/rollout');
+  } else if (builds.length || rollouts.length) throw Error('Ad-Hoc production has deployment history; the first-release empty baseline cannot be created');
+  return { sourceSha:null, rollout:null, state:'EMPTY', percent:0, backend:base, builds, rollouts, operations:active, traffic:{current,target:targetTraffic,reconciling:Boolean(traffic.reconciling),autoDisabled:true} };
+}
+export async function stableAdhocProductionState(t, read=cloud, options={}) {
+  const first=await inspectAdhocProductionState(t,read,options),second=await inspectAdhocProductionState(t,read,options);
+  if(digest(first)!==digest(second))throw Error('Ad-Hoc production prestate changed between independent snapshots');
+  return first;
+}
 export async function bootstrap(t, options = {}) {
+  const existing = releaseRecord(t.branch);
+  if (existing) { validateRecord(existing.record, t); return { status: 'existing', ...existing }; }
+  if (t.app==='adhoc' && t.environment==='prod') {
+    const current=await stableAdhocProductionState(t);
+    const record={schema:'fika.release.v1',...t,...current,kind:'empty-baseline',scopeHash:digest({app:t.app,project:t.project,backend:t.backend,root:APPS.adhoc.path,state:'EMPTY'}),observedAt:new Date().toISOString(),recovery:{firstRelease:true,noPreviousRelease:true}};
+    if (!options.execute) return {status:'dry-run-empty-first-release',record};
+    const commit=appendRecord(t,record,git('rev-parse','origin/main'));git('branch',t.branch,commit);return {status:'created-empty-first-release',commit,record};
+  }
   const current = await serving(t);
   if (!ref(current.sourceSha)) git('fetch', 'origin', current.sourceSha);
   const historicalException = !ancestor(current.sourceSha, 'origin/main');
   const record = { schema: 'fika.release.v1', ...t, ...current, kind: 'baseline', scopeHash: scopeHash(t.app, current.sourceSha), observedAt: new Date().toISOString(), historicalException, reconciliation: historicalException ? 'Existing deployed source not integrated into main; preserve, reconcile by reviewed PR before any new production promotion' : undefined };
-  const existing = releaseRecord(t.branch);
-  if (existing) { validateRecord(existing.record, t); return { status: 'existing', ...existing }; }
   if (!options.execute) return { status: 'dry-run', record };
   const commit = appendRecord(t, record); git('branch', t.branch, commit); return { status: 'created', commit, record };
 }
@@ -47,6 +82,16 @@ export function rolloutArguments(plan) {
 }
 export async function releaseHealthProbe(app, backendUri, sourceSha, fetchImpl = fetch, environment) {
   const origin = `https://${String(backendUri).replace(/^https?:\/\//, '').replace(/\/$/, '')}`;
+  if(app==='adhoc'){
+    const options={redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(30000)};
+    try{
+      const entry=await fetchImpl(`${origin}/`,options);
+      if(entry.status!==200)return {ok:false,status:entry.status,url:`${origin}/`,reason:'adhoc_entry_unavailable_or_redirected'};
+      const auth=await fetchImpl(`${origin}/api/me`,options);
+      const ok=[401,403].includes(auth.status)&&!auth.headers?.get?.('location');
+      return {ok,status:auth.status,url:`${origin}/api/me`,entryStatus:entry.status,authGate:ok?'unauthenticated_request_denied':undefined,...(ok?{}:{reason:'adhoc_auth_gate_not_fail_closed'})};
+    }catch{return {ok:false,status:null,url:`${origin}/`,reason:'request_failed'};}
+  }
   if (app === 'hospitality' && environment === 'staging') {
     const url = `${origin}/`;
     try {
@@ -230,7 +275,8 @@ export function assertStagingEvidence(plan, staged, integrated) {
 }
 function bindProductionDelta(plan, before) {
   if (plan.environment !== 'prod' || plan.rollback) return;
-  plan.productionDelta = productionDelta(before.sourceSha, plan.sourceSha);
+  const firstRelease=before.state==='EMPTY'&&before.sourceSha==null;
+  plan.productionDelta = firstRelease ? {from:null,to:plan.sourceSha,paths:[`${APPS.adhoc.path}/**`,'packages/server-shared/**','package-lock.json'],hash:digest({initialProductionRelease:plan.sourceSha,scopeHash:plan.scopeHash}),risk:'standard',firstRelease:true} : productionDelta(before.sourceSha, plan.sourceSha);
   plan.lane = releaseLane(plan.productionDelta, plan.cosmeticOnly, plan.standard);
   if (plan.executing && plan.lane === 'standard') {
     const staged = plan.stagingEvidence ? { commit:plan.stagingEvidence, record:JSON.parse(git('show', `${plan.stagingEvidence}:release.json`)) } : releaseRecord(target(plan.app,'staging').branch);
@@ -282,6 +328,12 @@ export function planRelease(app, environment, supplied = {}) {
   const current = releaseRecord(t.branch); if (!current) throw Error('Bootstrap the verified release baseline first');
   if (options.resume && current.record.kind === 'intent') { options.sha ||= current.record.sourceSha; options.record ||= current.record.rollbackRecord; }
   else if (options.rollback || options.record) Object.assign(options,rollbackSelection(t,current,options));
+  else if(current.record.kind==='abandoned') {
+    if(!(app==='adhoc'&&environment==='prod'&&current.record.recovery?.firstRelease===true&&current.record.previousGood==null&&current.record.previousGoodRecord==null&&current.record.firstReleaseBaselineRecord))throw Error('Abandoned release has no validated first-release retry lineage; reconcile or explicitly roll back');
+    exactSha(current.record.sourceSha);const baselineCommit=exactSha(current.record.firstReleaseBaselineRecord);
+    const baseline=validateRecord(JSON.parse(git('show',`${baselineCommit}:release.json`)),t);
+    if(baseline.kind!=='empty-baseline'||!ancestor(baselineCommit,current.commit))throw Error('Abandoned first-release baseline lineage is invalid');
+  } else validateRecord(current.record,t);
   const sha = exactSha(options.sha || git('rev-parse', environment === 'staging' ? 'HEAD' : 'origin/main'));
   const hash = scopeHash(app, sha);
   const result = { ...t, sourceSha: sha, scopeHash: hash, inMain: ancestor(sha, 'origin/main'), rollback: Boolean(options.record), executing:Boolean(options.execute), cosmeticOnly:Boolean(options['cosmetic-only']), standard:Boolean(options.standard) };
@@ -292,6 +344,7 @@ export function planRelease(app, environment, supplied = {}) {
     if (old.sourceSha !== sha || old.scopeHash !== hash) throw Error('Rollback source does not match the verified historical record');
     result.rollbackRecord = options.record;
   }
+  if(environment==='prod'&&app==='adhoc'&&current.record.kind==='empty-baseline'&&(options.rollback||options.record))throw Error('The first production release has no earlier release to roll back to');
   if (options.execute) {
     result.validation = result.rollback ? { verifiedHistoricalRecord: options.record } : successfulValidation(sha);
     if (options.resume) {
@@ -314,8 +367,10 @@ export async function deploy(app, environment, options) {
     const backend = await cloud(backendPath(plan));
     const journalFile = path.join(stateDir(), `release-${app}-${environment}.json`);
     if (!options.execute) {
-      const before = await serving(plan);
-      assertServingLineage(plan, before, ancestor(before.sourceSha, plan.sourceSha), scopeHash(app,before.sourceSha) === plan.scopeHash);
+      const pointer=releaseRecord(plan.branch);
+      const firstRelease=app==='adhoc'&&environment==='prod'&&['empty-baseline','abandoned'].includes(pointer?.record.kind)&& (pointer.record.kind==='empty-baseline'||pointer.record.recovery?.firstRelease===true);
+      const before=firstRelease ? await stableAdhocProductionState(plan,cloud,{allowFailedHistory:pointer.record.kind==='abandoned'}) : await serving(plan);
+      if(!firstRelease)assertServingLineage(plan, before, ancestor(before.sourceSha, plan.sourceSha), scopeHash(app,before.sourceSha) === plan.scopeHash);
       bindProductionDelta(plan, before);
       return { dryRun: true, plan, before, url: backend.uri, next: environment === 'prod'
         ? 'After explicit owner release authorisation, the agent adds --execute --owner-approved --reason <owner instruction>. SHA, lane and staging requirements are resolved internally; no rollout changed.'
@@ -326,21 +381,22 @@ export async function deploy(app, environment, options) {
     if (pointer?.record.kind === 'intent') {
       if (!options.resume) throw Error('Pending distributed release intent: use --resume; never submit another rollout');
       assertResume(pointer.record, journal, plan);
-      bindProductionDelta(plan, journal.before);
+      bindProductionDelta(plan, journal.firstRelease ? journal.observedBefore : journal.before);
       if (digest(plan.productionDelta || null) !== digest(pointer.record.productionDelta || null) || digest(plan.productionDelta || null) !== digest(journal.plan.productionDelta || null)) throw Error('Resume production delta differs from original intent');
     } else {
       if (options.resume) throw Error('No matching pending release to resume');
+      const firstRelease=app==='adhoc'&&environment==='prod'&&((pointer.record.kind==='empty-baseline')||(pointer.record.kind==='abandoned'&&pointer.record.recovery?.firstRelease===true));
       const abandoned = pointer.record.kind === 'abandoned';
-      if (abandoned) {
+      if (abandoned && !firstRelease) {
         if (!pointer.record.smoke?.ok && !plan.rollback) throw Error('Abandoned unhealthy release requires an explicit verified rollback');
         const good = validateRecord(JSON.parse(git('show', `${exactSha(pointer.record.previousGoodRecord)}:release.json`)), plan);
         if (good.sourceSha !== pointer.record.previousGood?.sourceSha || good.rollout !== pointer.record.previousGood?.rollout) throw Error('Abandoned release rollback evidence differs');
       } else validateRecord(pointer.record, plan);
-      const before = await serving(plan);
-      if (pointer.record.sourceSha !== before.sourceSha) throw Error('Live serving source differs from release ledger; reconcile the external release before proceeding');
-      assertServingLineage(plan, before, ancestor(before.sourceSha, plan.sourceSha), scopeHash(app,before.sourceSha) === plan.scopeHash);
+      const before = firstRelease ? await stableAdhocProductionState(plan,cloud,{allowFailedHistory:abandoned}) : await serving(plan);
+      if (!firstRelease&&pointer.record.sourceSha !== before.sourceSha) throw Error('Live serving source differs from release ledger; reconcile the external release before proceeding');
+      if(!firstRelease)assertServingLineage(plan, before, ancestor(before.sourceSha, plan.sourceSha), scopeHash(app,before.sourceSha) === plan.scopeHash);
       bindProductionDelta(plan, before);
-      if (before.sourceSha === plan.sourceSha) {
+      if (!firstRelease&&before.sourceSha === plan.sourceSha) {
         const health = await releaseHealthProbe(app, backend.uri, before.sourceSha, fetch, plan.environment);
         if (!health.ok || digest(before) !== digest(await serving(plan))) throw Error('Cannot verify already-serving release while health/traffic is unstable');
         if (!abandoned) return { alreadyServing: true, before, smoke: health };
@@ -349,11 +405,14 @@ export async function deploy(app, environment, options) {
         validateRecord(record, plan); const commit = appendRecord(plan, record, pointer.commit); return { alreadyServing:true, commit, record };
       }
       firebaseAuthPreflight(target(plan.app, plan.environment));
-      journal = { releaseId: randomUUID(), plan, before: abandoned ? pointer.record.previousGood : before, observedBefore: before,
-        previousGoodRecord: abandoned ? pointer.record.previousGoodRecord : pointer.commit, state: 'pending', createdAt: new Date().toISOString() };
+      journal = { releaseId: randomUUID(), plan, before: firstRelease ? null : abandoned ? pointer.record.previousGood : before, observedBefore: before,
+        previousGoodRecord: firstRelease ? null : abandoned ? pointer.record.previousGoodRecord : pointer.commit,
+        firstRelease, firstReleaseBaselineRecord:firstRelease ? (pointer.record.kind==='empty-baseline'?pointer.commit:pointer.record.firstReleaseBaselineRecord) : undefined,
+        state: 'pending', createdAt: new Date().toISOString() };
       save(journalFile, journal);
       journal.intentCommit = appendRecord(plan, { schema: 'fika.release.v1', ...plan, kind: 'intent', state: 'PENDING', releaseId: journal.releaseId,
-        previousGood: journal.before, previousGoodRecord: journal.previousGoodRecord, createdAt: journal.createdAt }, pointer.commit);
+        previousGood: firstRelease ? null : journal.before, previousGoodRecord: journal.previousGoodRecord, firstRelease:journal.firstRelease||undefined,
+        firstReleaseBaselineRecord:journal.firstReleaseBaselineRecord, createdAt: journal.createdAt }, pointer.commit);
       save(journalFile, journal);
       // Exactly one selected backend; no branch-based or project-wide deployment command.
       journal.submissionStartedAt = new Date().toISOString(); save(journalFile, journal);
@@ -394,7 +453,8 @@ export async function deploy(app, environment, options) {
     if (!health.ok) throw Error(`Non-destructive release health probe failed (${health.reason || health.status}); preserve journal and stop for rollback decision`);
     git('fetch', 'origin'); const latest = releaseRecord(plan.branch);
     if (latest?.record.releaseId !== journal.releaseId || latest.record.kind !== 'intent') throw Error('Release intent changed unexpectedly; do not overwrite it');
-    const record = { schema: 'fika.release.v1', ...plan, ...verified, kind: plan.rollback ? 'rollback' : 'deploy', previousGood: journal.before, previousGoodRecord:journal.previousGoodRecord, releaseId: journal.releaseId, completedAt: new Date().toISOString(), smoke: health };
+    const record = { schema: 'fika.release.v1', ...plan, ...verified, kind: plan.rollback ? 'rollback' : 'deploy', previousGood: journal.firstRelease ? null : journal.before, previousGoodRecord:journal.previousGoodRecord,
+      firstReleaseBaselineRecord:journal.firstReleaseBaselineRecord, releaseId: journal.releaseId, completedAt: new Date().toISOString(), smoke: health };
     validateRecord(record, plan); const commit = appendRecord(plan, record, latest.commit);
     save(journalFile, { ...journal, state: 'completed', record, commit }); return { commit, record };
   });
@@ -412,11 +472,14 @@ export async function reconcile(app, environment, options) {
     // Dry-run returns only selected, non-secret evidence and never changes ledger/journal.
     if (!options.execute) return { dryRun: true, releaseId: pointer.record.releaseId, snapshot, next: 'Agent verifies the terminal attempt before --resolution abandon|complete --rollout <ID> --reason <instruction> --execute. Production additionally needs explicit --owner-approved; no approval comment.' };
     const operator = executionAuthorization(t,pointer.record.sourceSha,{...options,action:`reconcile:${options.resolution}`,'release-id':pointer.record.releaseId});
-    const previousGoodRecord = exactSha(journal.previousGoodRecord);
-    const good = validateRecord(JSON.parse(git('show', `${previousGoodRecord}:release.json`)), t);
-    if (good.sourceSha !== journal.before?.sourceSha || good.rollout !== journal.before?.rollout || !ancestor(previousGoodRecord, pointer.commit)) throw Error('Original known-good rollback evidence is invalid');
+    if (journal.firstRelease !== true) {
+      const previousGoodRecord = exactSha(journal.previousGoodRecord);
+      const good = validateRecord(JSON.parse(git('show', `${previousGoodRecord}:release.json`)), t);
+      if (good.sourceSha !== journal.before?.sourceSha || good.rollout !== journal.before?.rollout || !ancestor(previousGoodRecord, pointer.commit)) throw Error('Original known-good rollback evidence is invalid');
+    } else if (journal.previousGoodRecord != null || !journal.firstReleaseBaselineRecord || !ancestor(journal.firstReleaseBaselineRecord,pointer.commit)) throw Error('First-release recovery baseline lineage is invalid');
     const backend = await cloud(backendPath(t));
-    return reconcileIntent({ pointer, journal, t, operator, rolloutId: options.rollout, resolution: options.resolution, reason: options.reason }, {
+    const audit=journal.firstRelease===true&&options.rollout==='none'?auditCreateEvents(t,Date.parse(journal.submissionStartedAt)):undefined;
+    return reconcileIntent({ pointer, journal, t, operator, rolloutId: options.rollout, resolution: options.resolution, reason: options.reason, audit }, {
       inspect: () => recoverySnapshot(t),
       smoke: sourceSha => releaseHealthProbe(app, backend.uri, sourceSha, fetch, environment),
       scopeHash: sha => scopeHash(app, sha),

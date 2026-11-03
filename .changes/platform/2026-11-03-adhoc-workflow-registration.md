@@ -2,5 +2,5 @@
 
 The canonical release registry now maps Ad-Hoc to its existing staging and production App Hosting backends so affected-app validation and release targeting use the established `adhoc` identifier.
 
-Validation: `node --test tools/workflow/policy.test.mjs` passed (15/15). Full workflow validation pending.
+Validation: policy tests passed (16/16); release tests passed (18/18); full workflow CI pending.
 Deployment: none.

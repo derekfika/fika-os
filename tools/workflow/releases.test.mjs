@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { protection } from './cli.mjs';
 import { APPS, target, validateRecord } from './policy.mjs';
-import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe, validateServingBaselineSnapshot, servingBaselineRecord } from './releases.mjs';
+import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe, validateServingBaselineSnapshot, servingBaselineRecord, inspectAdhocProductionState } from './releases.mjs';
 import { backendPath } from './runtime.mjs';
 
 test('Hospitality staging health requires the exact local entry redirect and a healthy workspace', async () => {
@@ -44,6 +44,28 @@ test('Menu Planner health probe fails closed for redirects, statuses and missing
 test('other application health probes retain root endpoint smoke semantics',async()=>{
  let request;const result=await releaseHealthProbe('cpu','cpu-backend.hosted.app','a'.repeat(40),async(url,options)=>{request={url,options};return {ok:true,status:200};});
  assert.deepEqual(result,{ok:true,status:200,url:'https://cpu-backend.hosted.app/'});assert.equal(request.url,'https://cpu-backend.hosted.app/');assert.equal(request.options.redirect,'error');
+});
+test('Ad-Hoc health requires a live entry and fail-closed unauthenticated identity endpoint',async()=>{
+ const calls=[];const response=(status,location=null)=>({status,headers:new Headers(location?{location}:{})});
+ const ok=await releaseHealthProbe('adhoc','adhoc-backend.hosted.app','a'.repeat(40),async(url,options)=>{calls.push({url,options});return calls.length===1?response(200):response(401);},'prod');
+ assert.equal(ok.ok,true);assert.equal(ok.authGate,'unauthenticated_request_denied');assert.equal(calls.length,2);assert.equal(calls[0].options.redirect,'manual');assert.match(calls[1].url,/\/api\/me$/);
+ for(const outcome of [[307,null],[200,307],[200,302]]){let n=0;const result=await releaseHealthProbe('adhoc','adhoc-backend.hosted.app','a'.repeat(40),async()=>{n++;return response(n===1?outcome[0]:outcome[1]||401,n===1&&outcome[0]===307?'/login':n===2&&outcome[1]===302?'/login':null);},'prod');assert.equal(result.ok,false);}
+});
+test('Ad-Hoc first-production prestate accepts only the exact quiescent empty backend',async()=>{
+ const t=target('adhoc','prod'),base=backendPath(t);
+ const snapshot={backend:{name:base,reconciling:false,codebase:{rootDirectory:'apps/ad-hoc-production',repository:'projects/fika-os/locations/europe-west4/gitRepositoryLinks/derekfika-fika-os'}},traffic:{rolloutPolicy:{disabled:true},reconciling:false,current:{splits:[]},target:{splits:[]}},builds:[],rollouts:[],operations:[]};
+ const read=async resource=>{if(resource===base)return snapshot.backend;if(resource===`${base}/traffic`)return snapshot.traffic;if(resource.includes('/builds?'))return {builds:snapshot.builds};if(resource.includes('/rollouts?'))return {rollouts:snapshot.rollouts};return {operations:snapshot.operations};};
+ const state=await inspectAdhocProductionState(t,read);assert.equal(state.state,'EMPTY');assert.equal(state.sourceSha,null);assert.equal(state.rollout,null);assert.equal(state.percent,0);
+ const mutations=[
+  ['root',s=>s.backend.codebase.rootDirectory='/apps/elsewhere'],
+  ['auto-rollouts',s=>s.traffic.rolloutPolicy.disabled=false],
+  ['current-traffic',s=>s.traffic.current.splits=[{build:`${base}/builds/x`,percent:100}]],
+  ['target-traffic',s=>s.traffic.target.splits=[{build:`${base}/builds/x`,percent:100}]],
+  ['build-history',s=>s.builds.push({name:'build-x',state:'FAILED'})],
+  ['rollout-history',s=>s.rollouts.push({name:'rollout-x',state:'FAILED'})],
+  ['active-operation',s=>s.operations.push({name:'op-x',done:false,target:base})],
+ ];
+ for(const [label,mutate] of mutations){const bad=structuredClone(snapshot);mutate(bad);await assert.rejects(inspectAdhocProductionState(t,async resource=>{if(resource===base)return bad.backend;if(resource===`${base}/traffic`)return bad.traffic;if(resource.includes('/builds?'))return {builds:bad.builds};if(resource.includes('/rollouts?'))return {rollouts:bad.rollouts};return {operations:bad.operations};}),label);}
 });
 test('Logistics staging health accepts only its exact unauthenticated staging Hub gate redirect',async()=>{
  const backend='https://fika-logistics-staging--fika-os-dev.europe-west4.hosted.app',url=`${backend}/`;

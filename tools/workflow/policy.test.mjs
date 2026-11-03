@@ -21,13 +21,17 @@ test('release cannot claim another target or an unverified serving state', () =>
   const record={schema:'fika.release.v1',...target('cpu','prod'),sourceSha:sha,kind:'baseline',rollout:'b1',state:'SUCCEEDED',percent:100,scopeHash:'hash'};
   validateRecord(record,{app:'cpu',environment:'prod'}); assert.throws(()=>validateRecord({...record,backend:target('hub','prod').backend})); assert.throws(()=>validateRecord({...record,percent:50})); assert.throws(()=>validateRecord({...record,kind:'intent',state:'PENDING'})); assert.throws(()=>validateRecord(record,{app:'logistics'}));
 });
+test('only Ad-Hoc production accepts an explicit empty first-release baseline with no fabricated source or build',()=>{
+ const record={schema:'fika.release.v1',...target('adhoc','prod'),kind:'empty-baseline',state:'EMPTY',percent:0,rollout:null,sourceSha:null,scopeHash:'backend-empty-proof',recovery:{firstRelease:true,noPreviousRelease:true}};
+ validateRecord(record,{app:'adhoc',environment:'prod'});for(const change of [{app:'cpu'},{environment:'staging'},{sourceSha:sha},{rollout:'invented'},{percent:100},{recovery:{firstRelease:true}}])assert.throws(()=>validateRecord({...record,...change}));
+});
 test('solo-owner flags are explicit and obsolete approval-comment flags are rejected',()=>{
  const p=parse(['deploy','cpu','--prod','--execute','--owner-approved','--reason','Ship CPU']);assert.equal(p.options['owner-approved'],true);assert.equal(p.options.reason,'Ship CPU');assert.throws(()=>parse(['--approval-url','https://example.invalid/comment']));assert.equal(parse(['deploy','cpu','--prod','--execute']).options['owner-approved'],undefined);
 });
 
 test('scopes reject traversal; overlapping app/shared paths are detected',()=>{for(const s of ['../cpu','C:/repo','apps\\cpu','/root',''])assert.throws(()=>safeScope(s));assert.equal(partialPathOverlap('apps/cpu-production','apps/cpu-production/app'),true);assert.equal(partialPathOverlap('apps/cpu-production','apps/logistics'),false);});
 test('CLI rejects unknown flags, duplicate flags and missing values',()=>{for(const args of [['--force'],['--prod','--prod'],['--sha']])assert.throws(()=>parse(args));assert.equal(parse(['deploy','cpu','--prod']).options.execute,undefined);});
-test('script/bin-only root metadata does not rebuild six apps',()=>assert.deepEqual(affected(['package.json'],{rootRuntimeChanged:false}).apps,[]));
+test('script/bin-only root metadata does not rebuild registered apps',()=>assert.deepEqual(affected(['package.json'],{rootRuntimeChanged:false}).apps,[]));
 test('pending resume is bound to original source, scope, target, approval, lease and rollback baseline',()=>{
  const plan={...target('cpu','prod'),sourceSha:sha,scopeHash:'tree',approval:{id:123}};const before={sourceSha:'b'.repeat(40),rollout:'previous'};const intent={schema:'fika.release.v1',...plan,kind:'intent',state:'PENDING',releaseId:'lease',previousGood:before};const journal={releaseId:'lease',plan,before};assertResume(intent,journal,plan);
  assert.throws(()=>assertResume(intent,undefined,plan));assert.throws(()=>assertResume(intent,{...journal,releaseId:'other'},plan));assert.throws(()=>assertResume(intent,{...journal,before:{sourceSha:'c'.repeat(40)}},plan));
