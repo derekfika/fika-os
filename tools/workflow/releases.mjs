@@ -33,21 +33,29 @@ export async function inspectAdhocProductionState(t, read = cloud, { allowFailed
   const base = backendPath(t);
   const [backend, traffic, builds, rollouts, operations] = await Promise.all([
     read(base), read(`${base}/traffic`),
-    discover(`${base}/builds`, 'builds', b=>({name:b.name,state:b.state,reconciling:Boolean(b.reconciling)}), read),
-    discover(`${base}/rollouts`, 'rollouts', r=>({name:r.name,state:r.state,reconciling:Boolean(r.reconciling)}), read),
+    discover(`${base}/builds`, 'builds', b=>({name:b.name,state:b.state,reconciling:Boolean(b.reconciling),sourceSha:b.source?.codebase?.hash||b.source?.codebase?.commit||null}), read),
+    discover(`${base}/rollouts`, 'rollouts', r=>({name:r.name,state:r.state,reconciling:Boolean(r.reconciling),build:r.build}), read),
     discover(`projects/${t.project}/locations/${t.region}/operations`, 'operations', o=>({name:o.name,done:o.done===true,target:o.metadata?.target||o.response?.name||''}), read),
   ]);
   const current=traffic.current?.splits||[], targetTraffic=traffic.target?.splits||[];
   const active=operations.filter(o=>!o.done&&(!o.target||o.target===t.backend||String(o.target).includes(`/backends/${t.backend}`)));
   const repo=String(backend.codebase?.repository||'');
-  if (backend.name!==base || backend.reconciling!==false || ![`/${APPS.adhoc.path}`,APPS.adhoc.path].includes(backend.codebase?.rootDirectory) || !repo.endsWith('/gitRepositoryLinks/derekfika-fika-os')) throw Error('Ad-Hoc production backend identity, repository or root is not verified');
-  if (traffic.rolloutPolicy?.disabled!==true || traffic.reconciling || current.length || targetTraffic.length || active.length) throw Error('Ad-Hoc production does not have quiescent zero traffic with automatic rollouts disabled');
+  if (backend.name!==base || backend.reconciling!==false || backend.environment!=='production' || ![`/${APPS.adhoc.path}`,APPS.adhoc.path].includes(backend.codebase?.rootDirectory) || !repo.endsWith('/gitRepositoryLinks/derekfika-fika-os')) throw Error('Ad-Hoc production backend identity, environment, repository or root is not verified');
+  if (traffic.rolloutPolicy?.disabled!==true || traffic.reconciling || targetTraffic.length || active.length) throw Error('Ad-Hoc production traffic is unstable or automatic rollouts are enabled');
+  const retry=allowFailedHistory && typeof allowFailedHistory==='object' ? allowFailedHistory : null;
+  const unhealthyServingRetry=Boolean(retry?.kind==='abandoned' && retry.recovery?.firstRelease===true && retry.recovery?.resolution==='abandon' && retry.smoke?.ok===false && retry.state==='SUCCEEDED' && retry.percent===100 && retry.previousGood==null && retry.previousGoodRecord==null && retry.firstReleaseBaselineRecord && retry.recovery?.rollout===retry.rollout && retry.rollout);
+  if(unhealthyServingRetry){
+    const id=name=>String(name||'').split('/').at(-1);
+    const build=builds.length===1?builds[0]:null, rollout=rollouts.length===1?rollouts[0]:null;
+    if(current.length!==1 || current[0].percent!==100 || id(current[0].build)!==id(retry.rollout) || id(retry.rollout)!==id(rollout?.name) || id(rollout?.build)!==id(build?.name) || rollout?.state!=='SUCCEEDED' || rollout?.reconciling || build?.state!=='READY' || build?.reconciling || build?.sourceSha!==retry.sourceSha) throw Error('First-release retry does not match the exact recorded unhealthy serving attempt');
+    return {sourceSha:null,rollout:null,state:'EMPTY',percent:0,backend:base,builds,rollouts,operations:active,traffic:{current,target:targetTraffic,reconciling:Boolean(traffic.reconciling),autoDisabled:true},unhealthyFirstRelease:{sourceSha:retry.sourceSha,rollout:retry.rollout,baselineRecord:retry.firstReleaseBaselineRecord,smoke:retry.smoke}};
+  }
+  if(current.length) throw Error('Ad-Hoc production first-release retry has unexpected serving traffic');
   if (allowFailedHistory) {
     if (builds.some(b=>!['FAILED','CANCELLED','DELETED'].includes(b.state)||b.reconciling) || rollouts.some(r=>!['FAILED','CANCELLED'].includes(r.state)||r.reconciling)) throw Error('First-release retry is blocked by a successful, active or unknown build/rollout');
   } else if (builds.length || rollouts.length) throw Error('Ad-Hoc production has deployment history; the first-release empty baseline cannot be created');
   return { sourceSha:null, rollout:null, state:'EMPTY', percent:0, backend:base, builds, rollouts, operations:active, traffic:{current,target:targetTraffic,reconciling:Boolean(traffic.reconciling),autoDisabled:true} };
-}
-export async function stableAdhocProductionState(t, read=cloud, options={}) {
+}export async function stableAdhocProductionState(t, read=cloud, options={}) {
   const first=await inspectAdhocProductionState(t,read,options),second=await inspectAdhocProductionState(t,read,options);
   if(digest(first)!==digest(second))throw Error('Ad-Hoc production prestate changed between independent snapshots');
   return first;
@@ -373,7 +381,7 @@ export async function deploy(app, environment, options) {
     if (!options.execute) {
       const pointer=releaseRecord(plan.branch);
       const firstRelease=app==='adhoc'&&environment==='prod'&&['empty-baseline','abandoned'].includes(pointer?.record.kind)&& (pointer.record.kind==='empty-baseline'||pointer.record.recovery?.firstRelease===true);
-      const before=firstRelease ? await stableAdhocProductionState(plan,cloud,{allowFailedHistory:pointer.record.kind==='abandoned'}) : await serving(plan);
+      const before=firstRelease ? await stableAdhocProductionState(plan,cloud,{allowFailedHistory:pointer.record.kind==='abandoned'?pointer.record:false}) : await serving(plan);
       if(!firstRelease)assertServingLineage(plan, before, ancestor(before.sourceSha, plan.sourceSha), scopeHash(app,before.sourceSha) === plan.scopeHash);
       bindProductionDelta(plan, before);
       return { dryRun: true, plan, before, url: backend.uri, next: environment === 'prod'
@@ -396,7 +404,7 @@ export async function deploy(app, environment, options) {
         const good = validateRecord(JSON.parse(git('show', `${exactSha(pointer.record.previousGoodRecord)}:release.json`)), plan);
         if (good.sourceSha !== pointer.record.previousGood?.sourceSha || good.rollout !== pointer.record.previousGood?.rollout) throw Error('Abandoned release rollback evidence differs');
       } else validateRecord(pointer.record, plan);
-      const before = firstRelease ? await stableAdhocProductionState(plan,cloud,{allowFailedHistory:abandoned}) : await serving(plan);
+      const before = firstRelease ? await stableAdhocProductionState(plan,cloud,{allowFailedHistory:abandoned?pointer.record:false}) : await serving(plan);
       if (!firstRelease&&pointer.record.sourceSha !== before.sourceSha) throw Error('Live serving source differs from release ledger; reconcile the external release before proceeding');
       if(!firstRelease)assertServingLineage(plan, before, ancestor(before.sourceSha, plan.sourceSha), scopeHash(app,before.sourceSha) === plan.scopeHash);
       bindProductionDelta(plan, before);
