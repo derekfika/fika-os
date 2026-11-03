@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-03T21:20:42.576Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-03T21:24:16.048Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -175,6 +175,8 @@ Snapshot: 2026-11-03T21:20:42.576Z. The local governed registry remains authorit
 | issue-277-dish-search | sol-issue-277-search | apps/menu-planning/app/catalogue-workspace.tsx | codex/issue-277-dish-search | — | retired | 2026-11-02T21:36:50.698Z |
 | issue116-adhoc-prod-preflight | codex-issue116-adhoc-preflight | apps/ad-hoc-production | codex/issue116-adhoc-prod-preflight | — | retired | 2026-11-03T21:20:39.509Z |
 | issue116-hub-prod-preflight | codex-issue116-preflight | apps/integration-hub/app/page.tsx | codex/issue116-hub-prod-preflight | — | retired | 2026-11-03T21:18:17.382Z |
+| issue144-calendar-quote-v2 | codex-issue144-calendar-quote | apps/integration-hub/lib/cpux-calendar-quote.ts, apps/integration-hub/app/api/production/calendar-quote, apps/integration-hub/tests/cpux-calendar-quote.test.ts, apps/cpu-production/lib/cpux-calendar-publisher.ts, apps/cpu-production/app/api/internal/cpux-calendar/route.ts, apps/cpu-production/app/api/production-quote, apps/cpu-production/tests/cpux-calendar-publisher.test.ts, apps/cpu-production/tests/cpux-calendar-quote-route.test.ts | codex/issue144-calendar-quote-v2 | — | active | 2026-11-03T21:21:23.286Z |
+| issue322-serving-preflight | codex-issue322-preflight | apps/logistics/app/api/logistics/route.ts | codex/issue322-serving-preflight | — | retired | 2026-11-03T21:24:12.461Z |
 | kafoodle-food-data-lib | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/api/food-data, apps/integration-hub/app/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/docs/food-data-library.md | codex/kafoodle-food-data-lib | — | finished | 2026-10-31T16:21:54.029Z |
 | kafoodle-food-data-v2 | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/api/food-data, apps/integration-hub/app/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/tests/food-data.test.ts, apps/integration-hub/docs/food-data-library.md | codex/kafoodle-food-data-v2 | [#212](https://github.com/derekfika/fika-os/pull/212) | retired | 2026-10-31T17:08:24.835Z |
 | kafoodle-food-data | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data | codex/kafoodle-food-data | — | retired | 2026-10-31T16:00:02.411Z |
