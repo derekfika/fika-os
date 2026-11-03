@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { protection } from './cli.mjs';
 import { APPS, target, validateRecord } from './policy.mjs';
-import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe, validateServingBaselineSnapshot, servingBaselineRecord, inspectAdhocProductionState, adhocEmptyBaselineRecord } from './releases.mjs';
+import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe, validateServingBaselineSnapshot, servingBaselineRecord, inspectAdhocProductionState, stableAdhocProductionState, adhocEmptyBaselineRecord } from './releases.mjs';
 import { backendPath } from './runtime.mjs';
 
 test('Hospitality staging health requires the exact local entry redirect and a healthy workspace', async () => {
@@ -53,7 +53,7 @@ test('Ad-Hoc health requires a live entry and fail-closed unauthenticated identi
 });
 test('Ad-Hoc first-production prestate accepts only the exact quiescent empty backend',async()=>{
  const t=target('adhoc','prod'),base=backendPath(t);
- const snapshot={backend:{name:base,reconciling:false,codebase:{rootDirectory:'apps/ad-hoc-production',repository:'projects/fika-os/locations/europe-west4/gitRepositoryLinks/derekfika-fika-os'}},traffic:{rolloutPolicy:{disabled:true},reconciling:false,current:{splits:[]},target:{splits:[]}},builds:[],rollouts:[],operations:[]};
+ const snapshot={backend:{name:base,environment:'production',reconciling:false,codebase:{rootDirectory:'apps/ad-hoc-production',repository:'projects/fika-os/locations/europe-west4/gitRepositoryLinks/derekfika-fika-os'}},traffic:{rolloutPolicy:{disabled:true},reconciling:false,current:{splits:[]},target:{splits:[]}},builds:[],rollouts:[],operations:[]};
  const read=async resource=>{if(resource===base)return snapshot.backend;if(resource===`${base}/traffic`)return snapshot.traffic;if(resource.includes('/builds?'))return {builds:snapshot.builds};if(resource.includes('/rollouts?'))return {rollouts:snapshot.rollouts};return {operations:snapshot.operations};};
  const state=await inspectAdhocProductionState(t,read);assert.equal(state.state,'EMPTY');assert.equal(state.sourceSha,null);assert.equal(state.rollout,null);assert.equal(state.percent,0);
  const mutations=[
@@ -173,4 +173,17 @@ test('real release ledger preserves source objects; a competing stale writer is 
 test('Ad-Hoc empty first-release record uses the governed backend ID even when inspection returns a resource path',()=>{
  const t=target('adhoc','prod');const inspected={backend:backendPath(t),sourceSha:null,rollout:null,state:'EMPTY',percent:0,builds:[],rollouts:[],operations:[],traffic:{current:[],target:[],reconciling:false,autoDisabled:true}};
  const record=adhocEmptyBaselineRecord(t,inspected,'2026-11-03T00:00:00.000Z');assert.equal(record.backend,t.backend);assert.equal(record.sourceSha,null);assert.equal(record.rollout,null);assert.equal(validateRecord(record,t),record);
+});
+
+test('Ad-Hoc first-release retry accepts only the exact recorded unhealthy serving attempt',async()=>{
+ const t=target('adhoc','prod'),base=backendPath(t),source='b'.repeat(40),rolloutId='build-first-unhealthy';
+ const record={kind:'abandoned',app:'adhoc',environment:'prod',sourceSha:source,rollout:rolloutId,state:'SUCCEEDED',percent:100,previousGood:null,previousGoodRecord:null,firstReleaseBaselineRecord:'c'.repeat(40),smoke:{ok:false,status:503,reason:'adhoc_auth_gate_not_fail_closed'},recovery:{firstRelease:true,noPreviousRelease:true,resolution:'abandon',rollout:rolloutId}};
+ const snapshot={backend:{name:base,environment:'production',reconciling:false,codebase:{rootDirectory:'apps/ad-hoc-production',repository:'projects/fika-os/locations/europe-west4/gitRepositoryLinks/derekfika-fika-os'}},traffic:{rolloutPolicy:{disabled:true},reconciling:false,current:{splits:[{build:`${base}/builds/${rolloutId}`,percent:100}]},target:{splits:[]}},builds:[{name:`${base}/builds/${rolloutId}`,state:'READY',reconciling:false,source:{codebase:{hash:source}}}],rollouts:[{name:`${base}/rollouts/${rolloutId}`,build:`${base}/builds/${rolloutId}`,state:'SUCCEEDED',reconciling:false}],operations:[]};
+ const read=async resource=>{if(resource===base)return snapshot.backend;if(resource===`${base}/traffic`)return snapshot.traffic;if(resource.includes('/builds?'))return {builds:snapshot.builds};if(resource.includes('/rollouts?'))return {rollouts:snapshot.rollouts};return {operations:snapshot.operations};};
+ const state=await inspectAdhocProductionState(t,read,{allowFailedHistory:record});assert.equal(state.unhealthyFirstRelease.sourceSha,source);assert.equal(state.unhealthyFirstRelease.rollout,rolloutId);assert.equal(state.traffic.current[0].percent,100);
+ const stable=await stableAdhocProductionState(t,read,{allowFailedHistory:record});assert.equal(stable.unhealthyFirstRelease.rollout,rolloutId);
+ await assert.rejects(inspectAdhocProductionState(t,read),'unexpected serving traffic');
+ for(const mutate of [s=>s.traffic.current.splits[0].build=`${base}/builds/other`,s=>s.builds[0].source.codebase.hash='d'.repeat(40),s=>s.rollouts[0].state='BUILDING',s=>s.traffic.current.splits[0].percent=50]){const bad=structuredClone(snapshot);mutate(bad);await assert.rejects(inspectAdhocProductionState(t,async resource=>{if(resource===base)return bad.backend;if(resource===`${base}/traffic`)return bad.traffic;if(resource.includes('/builds?'))return {builds:bad.builds};if(resource.includes('/rollouts?'))return {rollouts:bad.rollouts};return {operations:bad.operations};},{allowFailedHistory:record}));}
+ await assert.rejects(inspectAdhocProductionState(t,read,{allowFailedHistory:{...record,smoke:{ok:true}}}));
+ const wrongEnv={...snapshot,backend:{...snapshot.backend,environment:null}};await assert.rejects(inspectAdhocProductionState(t,async resource=>resource===base?wrongEnv.backend:read(resource)));
 });
