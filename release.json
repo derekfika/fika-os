@@ -37,9 +37,10 @@
     "head": "98160f3c3e244139b8c83ae14406b71fff66da77",
     "pullRequestRisk": "standard"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "75fd0372-666b-46db-ae01-f7526a6670f7",
+  "rollout": "build-2026-11-03-002",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "be97ed68ee074c50f9126807d15679a29c8fedec",
     "rollout": "build-2026-11-03-001",
@@ -47,5 +48,13 @@
     "percent": 100
   },
   "previousGoodRecord": "1ffa60875faa5690f5ddda142498cbe97546c6b4",
-  "createdAt": "2026-11-03T13:52:18.449Z"
+  "releaseId": "75fd0372-666b-46db-ae01-f7526a6670f7",
+  "completedAt": "2026-11-03T13:55:32.719Z",
+  "smoke": {
+    "ok": true,
+    "status": 401,
+    "url": "https://fika-os-staging-adhoc--fika-os-dev.europe-west4.hosted.app/api/me",
+    "entryStatus": 200,
+    "authGate": "unauthenticated_request_denied"
+  }
 }
