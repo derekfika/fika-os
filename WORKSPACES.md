@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-03T20:13:41.716Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-03T20:17:11.095Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -75,7 +75,7 @@ Snapshot: 2026-11-03T20:13:41.716Z. The local governed registry remains authorit
 | cpu-totals-runsheet-resume | codex-cpu-totals-runsheet-resume | apps/cpu-production | codex/cpu-totals-runsheet-resume | [#191](https://github.com/derekfika/fika-os/pull/191) | retired | 2026-10-31T00:47:59.132Z |
 | cpu-totals-runsheet | codex-cpu-totals-runsheet | apps/cpu-production | codex/cpu-totals-runsheet | — | finished | 2026-10-31T00:19:21.569Z |
 | cpux-calendar-active-config | luna-cpux-calendar-active-config | apps/cpu-production/apphosting.yaml | codex/cpux-calendar-active-config | — | retired | 2026-11-03T20:13:37.634Z |
-| cpux-calendar-production-guard | luna-cpux-calendar-production-guard | apps/cpu-production/app/api/internal/cpux-calendar, apps/cpu-production/app/api/internal/cpux-calendar-backfill, apps/cpu-production/app/api/production/route.ts, apps/cpu-production/lib/cpu-consumer-invalidation.ts, apps/cpu-production/lib/cpux-calendar-publisher.ts, apps/cpu-production/tests/cpux-calendar-publisher.test.ts, apps/cpu-production/tests/cpu-consumer-invalidation.test.ts, apps/cpu-production/tests/staging-config.test.ts, apps/cpu-production/tests/cpux-calendar-runtime-guard.test.ts, apps/cpu-production/package.json, apps/cpu-production/package-lock.json, apps/cpu-production/apphosting.staging.yaml, apps/cpu-production/apphosting.production.yaml, .changes/cpu-production | codex/cpux-calendar-production-guard | — | active | 2026-11-03T20:00:11.321Z |
+| cpux-calendar-production-guard | luna-cpux-calendar-production-guard | apps/cpu-production/app/api/internal/cpux-calendar, apps/cpu-production/app/api/internal/cpux-calendar-backfill, apps/cpu-production/app/api/production/route.ts, apps/cpu-production/lib/cpu-consumer-invalidation.ts, apps/cpu-production/lib/cpux-calendar-publisher.ts, apps/cpu-production/tests/cpux-calendar-publisher.test.ts, apps/cpu-production/tests/cpu-consumer-invalidation.test.ts, apps/cpu-production/tests/staging-config.test.ts, apps/cpu-production/tests/cpux-calendar-runtime-guard.test.ts, apps/cpu-production/package.json, apps/cpu-production/package-lock.json, apps/cpu-production/apphosting.staging.yaml, apps/cpu-production/apphosting.production.yaml, .changes/cpu-production | codex/cpux-calendar-production-guard | — | retired | 2026-11-03T20:17:05.513Z |
 | delivered-in-staging-recovery | root | apps/delivered-in | codex/delivered-in-staging-recovery | [#51](https://github.com/derekfika/fika-os/pull/51) | finished | 2026-10-26T12:16:10.979Z |
 | deploy-dashboard-agent-guidance | codex-deploy-dashboard-guidance | AGENTS.md | codex/deploy-dashboard-agent-guidance | — | finished | 2026-10-24T19:06:00.112Z |
 | deployment-dashboard-changelog | codex-deployment-dashboard-changelog | AGENTS.md, docs/deployment/deployment-dashboard.md, CHANGELOG.md | codex/deployment-dashboard-changelog | — | finished | 2026-10-24T19:32:00.684Z |
