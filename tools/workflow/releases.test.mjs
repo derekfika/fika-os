@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { protection } from './cli.mjs';
 import { APPS, target, validateRecord } from './policy.mjs';
-import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe, validateServingBaselineSnapshot, servingBaselineRecord, inspectAdhocProductionState } from './releases.mjs';
+import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe, validateServingBaselineSnapshot, servingBaselineRecord, inspectAdhocProductionState, adhocEmptyBaselineRecord } from './releases.mjs';
 import { backendPath } from './runtime.mjs';
 
 test('Hospitality staging health requires the exact local entry redirect and a healthy workspace', async () => {
@@ -168,4 +168,9 @@ test('real release ledger preserves source objects; a competing stale writer is 
   const first=append({...record,kind:'intent',releaseId:'first',state:'PENDING'},deployed);append({...record,kind:'intent',releaseId:'competing',state:'PENDING'},deployed,false);
   assert.equal(git('ls-remote','origin','refs/heads/release/staging/cpu').split(/\s/)[0],first);assert.equal(git('merge-base','--is-ancestor',sourceSha,first),'');
  } finally {assert.equal(path.dirname(path.resolve(base)),path.resolve(os.tmpdir()));assert.ok(path.basename(base).startsWith('fika-workflow-test-'));rmSync(base,{recursive:true,force:true});}
+});
+
+test('Ad-Hoc empty first-release record uses the governed backend ID even when inspection returns a resource path',()=>{
+ const t=target('adhoc','prod');const inspected={backend:backendPath(t),sourceSha:null,rollout:null,state:'EMPTY',percent:0,builds:[],rollouts:[],operations:[],traffic:{current:[],target:[],reconciling:false,autoDisabled:true}};
+ const record=adhocEmptyBaselineRecord(t,inspected,'2026-11-03T00:00:00.000Z');assert.equal(record.backend,t.backend);assert.equal(record.sourceSha,null);assert.equal(record.rollout,null);assert.equal(validateRecord(record,t),record);
 });

@@ -35,7 +35,10 @@ export function assertClean(status) { if (status.trim()) throw Error('Dirty work
 export function validateRecord(record, { app, environment } = {}) {
   if (record?.schema !== 'fika.release.v1' || !Object.hasOwn(APPS, record.app) || !['staging', 'prod'].includes(record.environment)) throw Error('Invalid release record');
   const expected = target(record.app, record.environment);
-  if (record.project !== expected.project || record.backend !== expected.backend || (app && record.app !== app) || (environment && record.environment !== environment)) throw Error('Release target mismatch');
+  const firstReleaseBackend = record.kind === 'empty-baseline' && record.app === 'adhoc' && record.environment === 'prod'
+    ? [expected.backend, `projects/${expected.project}/locations/${expected.region}/backends/${expected.backend}`].includes(record.backend)
+    : record.backend === expected.backend;
+  if (record.project !== expected.project || !firstReleaseBackend || (app && record.app !== app) || (environment && record.environment !== environment)) throw Error('Release target mismatch');
   if (record.kind === 'empty-baseline') {
     if (record.app !== 'adhoc' || record.environment !== 'prod' || record.sourceSha != null || record.rollout != null || record.state !== 'EMPTY' || record.percent !== 0 || !record.scopeHash || record.recovery?.firstRelease !== true || record.recovery?.noPreviousRelease !== true) throw Error('Invalid Ad-Hoc first-production empty baseline');
     return record;
