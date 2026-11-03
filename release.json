@@ -1,0 +1,17 @@
+{
+  "schema": "fika.release.v1",
+  "app": "adhoc",
+  "environment": "staging",
+  "project": "fika-os-dev",
+  "backend": "fika-os-staging-adhoc",
+  "region": "europe-west4",
+  "branch": "release/staging/adhoc",
+  "sourceSha": "12632b68d04f3930e2510bb4291948f50fcb7b60",
+  "rollout": "build-2026-10-24-006",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "baseline",
+  "scopeHash": "a628151a1ea4eb90f890b154cb8a0142e14808455c5e35f34bc8abaf7a22c69f",
+  "observedAt": "2026-11-03T08:47:20.491Z",
+  "historicalException": false
+}
