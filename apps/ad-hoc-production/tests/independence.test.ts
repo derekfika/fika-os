@@ -53,6 +53,19 @@ test("the staging App Hosting config declares every variable the app reads at ru
   assert.doesNotMatch(yaml, /FIKA_HUB_ORIGIN/, "the retired variable is gone");
 });
 
+test("production App Hosting is bound only to production Hub and runtime-only secret access", () => {
+  const yaml = readFileSync(path.join(root, "apphosting.production.yaml"), "utf8");
+  assert.match(yaml, /FIKA_RUNTIME_MODE\s*\r?\n\s*value:\s*production/);
+  assert.match(yaml, /FIREBASE_PROJECT_ID\s*\r?\n\s*value:\s*fika-os\b/);
+  assert.match(yaml, /FIKA_HUB_BASE_URL\s*\r?\n\s*value:\s*https:\/\/fika-os-prod-hub--fika-os\.europe-west4\.hosted\.app/);
+  assert.match(yaml, /variable:\s*FIKA_INTERNAL_API_TOKEN\s*\r?\n\s*secret:\s*FIKA_INTERNAL_API_TOKEN\s*\r?\n\s*availability:\s*\[RUNTIME\]/);
+  assert.doesNotMatch(yaml, /staging-os|fika-os-dev|@3|FIKA_INTERNAL_API_TOKEN\s*\r?\n\s*value:/);
+  const env: Record<string, string> = { FIKA_RUNTIME_MODE: "production", FIREBASE_PROJECT_ID: "fika-os", FIKA_HUB_BASE_URL: "https://fika-os-prod-hub--fika-os.europe-west4.hosted.app", FIKA_INTERNAL_API_TOKEN: "injected-from-secret-manager" };
+  assert.equal(getFikaRuntimeConfig(env).mode, "production");
+  assert.equal(getFikaRuntimeConfig(env).projectId, "fika-os");
+  assert.equal(getHubBaseUrl(env), "https://fika-os-prod-hub--fika-os.europe-west4.hosted.app");
+});
+
 test("the service token is only ever read in server-only modules, never in browser components", () => {
   for (const file of sources()) {
     const source = readFileSync(file, "utf8");

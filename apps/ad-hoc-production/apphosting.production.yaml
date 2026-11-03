@@ -1,0 +1,18 @@
+# Firebase App Hosting production configuration for Ad-Hoc Production.
+# Backend root: apps/ad-hoc-production; backend: fika-os-prod-adhoc.
+env:
+  - variable: FIKA_DATA_SOURCE_TRACE
+    value: "1"
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_RUNTIME_MODE
+    value: production
+    availability: [BUILD, RUNTIME]
+  - variable: FIREBASE_PROJECT_ID
+    value: fika-os
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_HUB_BASE_URL
+    value: https://fika-os-prod-hub--fika-os.europe-west4.hosted.app
+    availability: [RUNTIME]
+  - variable: FIKA_INTERNAL_API_TOKEN
+    secret: FIKA_INTERNAL_API_TOKEN
+    availability: [RUNTIME]
