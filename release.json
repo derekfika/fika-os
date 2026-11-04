@@ -6,40 +6,12 @@
   "backend": "fika-cpu-production-staging",
   "region": "europe-west4",
   "branch": "release/staging/cpu",
-  "sourceSha": "13a2d2eec048f63fc6f8256a399c9de548eec405",
-  "scopeHash": "b8059c9fbc1397a5f5c35b0a075f53cd07d4777d8ff7135630655b4acf924fd3",
-  "inMain": true,
-  "rollback": false,
-  "executing": true,
-  "cosmeticOnly": false,
-  "standard": true,
-  "validation": {
-    "id": 126817364135,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/41898977072/job/126817364135",
-    "sha": "13a2d2eec048f63fc6f8256a399c9de548eec405"
-  },
-  "approval": {
-    "actor": "derekfika",
-    "method": "authenticated-repository-writer",
-    "app": "cpu",
-    "environment": "staging",
-    "sourceSha": "13a2d2eec048f63fc6f8256a399c9de548eec405",
-    "action": "deploy",
-    "instruction": "Owner requested governed coordinated recovery sprint 344 342 340 343; stage final CPU withdrawal and destination access guards after verified Hub Delivered-In Logistics consumers; no business test or Drive writes",
-    "releaseId": null,
-    "id": "0088c2c897971ad944174f85ebd2b7533bb694dbbdacfc52c4846a3ea95a8fbc",
-    "explicitExecute": true,
-    "authorisedAt": "2026-11-04T19:48:36.872Z"
-  },
-  "provenance": {
-    "number": 352,
-    "url": "https://github.com/derekfika/fika-os/pull/352",
-    "head": "13a2d2eec048f63fc6f8256a399c9de548eec405",
-    "pullRequestRisk": "standard"
-  },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "6bfb1392-956f-4036-9d36-fde381a356af",
+  "sourceSha": "60768ebde28533b591b6d38dff5c217ce80b52e0",
+  "rollout": "build-2026-11-03-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "scopeHash": "179a56e3a324e62a16ff9740a120449ac4f5b135555cf8f6d0b926b1b31bdecb",
+  "kind": "abandoned",
   "previousGood": {
     "sourceSha": "60768ebde28533b591b6d38dff5c217ce80b52e0",
     "rollout": "build-2026-11-03-001",
@@ -47,5 +19,32 @@
     "percent": 100
   },
   "previousGoodRecord": "1d7df001342d1b41f499f8a89e22f1197379777f",
-  "createdAt": "2026-11-04T19:48:44.080Z"
+  "releaseId": "6bfb1392-956f-4036-9d36-fde381a356af",
+  "originalIntent": "3fd96d9202ba6acc38d66c9d24a3e2db9749aa18",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-cpu-production-staging--fika-os-dev.europe-west4.hosted.app/"
+  },
+  "recovery": {
+    "resolution": "abandon",
+    "reason": "Continue owner-authorised recovery sprint: CPU staging attempt 6bfb1392 failed its isolated dependency build, original submitter returned, rollout FAILED, previous verified 60768ebd still serves 100%; retain failed attempt and rollback evidence before corrected candidate",
+    "operator": {
+      "actor": "derekfika",
+      "method": "authenticated-repository-writer",
+      "app": "cpu",
+      "environment": "staging",
+      "sourceSha": "13a2d2eec048f63fc6f8256a399c9de548eec405",
+      "action": "reconcile:abandon",
+      "instruction": "Continue owner-authorised recovery sprint: CPU staging attempt 6bfb1392 failed its isolated dependency build, original submitter returned, rollout FAILED, previous verified 60768ebd still serves 100%; retain failed attempt and rollback evidence before corrected candidate",
+      "releaseId": "6bfb1392-956f-4036-9d36-fde381a356af",
+      "id": "c6e3211b074fcc38ed95fdbc2981b8afad067345010311e3abd8f548b82f9ed5",
+      "explicitExecute": true,
+      "authorisedAt": "2026-11-04T19:57:24.424Z"
+    },
+    "rollout": "build-2026-11-04-001",
+    "evidenceHash": "10d9e1cd99ff134419a1d60223ba34ca34ec51707c9a55f1e3a23aeaafa7c0d2",
+    "journalHash": "eaaa40f6aeca6d3f1a2c6ff80f26a47974cc2f4617b61914e3e62d5ce4e80c69",
+    "at": "2026-11-04T19:57:28.866Z"
+  }
 }
