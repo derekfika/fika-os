@@ -5,13 +5,14 @@ import { allergenMatrixHtml } from "../../../ui/allergen-matrix";
 import { renderPdfToBuffer } from "../../../lib/local-pdf";
 import { getCpuReviewPackage, recordCpuReviewFallback, rebuildCpuReviewPackage } from "../../../../lib/cpu-review-package";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
-import { requireCpuActor } from "../../../../lib/cpu-access-client";
+import { cpuDestinationAllowed, requireCpuActor, resolveCpuDestinationScope } from "../../../../lib/cpu-access-client";
+import { currentAllergenReleaseMatchesOrder, type ProductionPlan } from "../../../lib/production-plan";
 
 export const dynamic = "force-dynamic";
 
-type ReviewState = "clear" | "contains" | "may_contain";
+type ReviewState = "clear" | "contains" | "may_contain" | "unrecorded";
 type ReviewSignature = { role: "production_chef" | "head_chef_site_manager"; printedName: string; signedAt: string; actor?: string; attestation?: string; signatureDataUrl?: string };
-type ReviewPlan = { orderId: string; signatures?: ReviewSignature[]; menuItems?: Array<{ id: string; sourceLineId?: string; name: string; note: string; subItems?: Array<{ id: string; name: string; quantity: number | null; allergens?: Record<string, ReviewState>; mayContainNotes?: string; note: string; evidenceStatus: "not_completed" | "completed" | "requires_review" }> }> };
+type ReviewPlan = Pick<ProductionPlan, "orderId" | "signatures" | "menuItems" | "currentAllergenRelease">;
 
 async function sitePdf(request: NextRequest, serviceDate: string, oplocId: string, orders: Awaited<ReturnType<typeof productionQueue>>, plans: Map<string, ReviewPlan>, signatures: ReviewSignature[]) {
   const siteOrders = orders.filter(order => order.destinationOplocId === oplocId);
@@ -40,6 +41,8 @@ async function handleGet(request: NextRequest) {
   if (!serviceDate || !oplocId) return NextResponse.json({ error: { message: "A service date and OPLOC are required." } }, { status: 422 });
   try {
     await requireCpuActor(request);
+    const destinationScope = await resolveCpuDestinationScope(request, [oplocId]);
+    if (!cpuDestinationAllowed(destinationScope, oplocId)) return NextResponse.json({ error: { message: "This destination is outside your CPU Production access scope." } }, { status: 403 });
     const reconcile = request.nextUrl.searchParams.get("reconcile") === "1";
     if (!reconcile) {
       try {
@@ -47,28 +50,52 @@ async function handleGet(request: NextRequest) {
         if (packaged) {
           const sourceOrders = packaged.value.projection.sourceOrders;
           const signatureList = packaged.value.projection.signatures;
-          const signed = signatureList.some(signature => signature.role === "production_chef") && signatureList.some(signature => signature.role === "head_chef_site_manager");
-          const entries: Record<string, { allergens: Record<string, ReviewState>; mayContainNotes?: string }> = {};
-          if (signed) for (const order of sourceOrders) for (const item of order.entries) {
-            const key = item.sourceBookingLineId || item.sourceLineId;
-            entries[key] = { allergens: Object.fromEntries(Object.entries(item.allergens).filter(([, value]) => value !== "unrecorded")) as Record<string, ReviewState>, ...(item.mayContainNotes ? { mayContainNotes: item.mayContainNotes } : {}) };
+          const signed = sourceOrders.length > 0 && sourceOrders.every(order => order.reviewStatus === "signed") && signatureList.some(signature => signature.role === "production_chef") && signatureList.some(signature => signature.role === "head_chef_site_manager");
+          const currentOrders = (await productionQueue(request, serviceDate)).filter(order => order.origin === "menu_planning" && order.destinationOplocId === oplocId && order.status !== "cancelled" && !order.supersededBy);
+          const packagedVersions = new Map(sourceOrders.map(order => [order.productionOrderId, order.orderVersion]));
+          const sourceCurrent = currentOrders.length === sourceOrders.length && currentOrders.every(order => packagedVersions.get(order.canonicalId) === order.version);
+          if (!sourceCurrent) {
+            recordCpuReviewFallback("stale-source");
+          } else if (signed) {
+            const plans = await loadPlansForOrders(sourceOrders.map(order => order.productionOrderId));
+            const planByOrder = new Map(plans.map(plan => [plan.orderId, plan]));
+            const currentAuthority = currentOrders.every(order => {
+              const plan = planByOrder.get(order.canonicalId);
+              const release = plan?.currentAllergenRelease;
+              return Boolean(plan && release?.status === "current" && release.materializationStatus === "ready" && currentAllergenReleaseMatchesOrder(release, order, plan.menuItems));
+            });
+            if (!currentAuthority) {
+              recordCpuReviewFallback("stale-release");
+            } else {
+              const entries: Record<string, { allergens: Record<string, ReviewState>; mayContainNotes?: string }> = {};
+              for (const order of sourceOrders) for (const item of order.entries) {
+                const key = item.sourceBookingLineId || item.sourceLineId;
+                entries[key] = { allergens: Object.fromEntries(Object.entries(item.allergens).filter(([, value]) => value !== "unrecorded")) as Record<string, ReviewState>, ...(item.mayContainNotes ? { mayContainNotes: item.mayContainNotes } : {}) };
+              }
+              const artifact = sourceOrders.find(order => order.matrixArtifact)?.matrixArtifact;
+              const sitePdfUrl = artifact?.driveUrl || artifact?.localUrl;
+              return NextResponse.json({ status: "signed", signatures: signatureList, ...(sitePdfUrl ? { drivePdfUrl: sitePdfUrl } : {}), entries, package: packaged.manifest }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+            }
+          } else {
+            return NextResponse.json({ status: "pending", signatures: signatureList, entries: {}, package: packaged.manifest }, { headers: { "Cache-Control": "no-store, max-age=0" } });
           }
-          const artifact = sourceOrders.find(order => order.matrixArtifact)?.matrixArtifact;
-          const sitePdfUrl = signed ? artifact?.driveUrl || artifact?.localUrl : undefined;
-          return NextResponse.json({ status: signed ? "signed" : "pending", signatures: signatureList, ...(sitePdfUrl ? { drivePdfUrl: sitePdfUrl } : {}), entries, package: packaged.manifest }, { headers: { "Cache-Control": "no-store, max-age=0" } });
         }
         recordCpuReviewFallback("missing");
       } catch {
         recordCpuReviewFallback("invalid");
       }
     } else recordCpuReviewFallback("explicit-reconciliation");
-    const orders = (await productionQueue(request, serviceDate)).filter(order => order.origin === "menu_planning");
+    const orders = (await productionQueue(request, serviceDate)).filter(order => order.origin === "menu_planning" && order.destinationOplocId === oplocId && order.status !== "cancelled" && !order.supersededBy);
     const planRecords = await loadPlansForOrders(orders.map(order => order.canonicalId));
     const plans = new Map(planRecords.map(plan => [plan.orderId, plan as ReviewPlan]));
     const signatures = new Map<string, ReviewSignature>();
     for (const plan of plans.values()) for (const signature of plan.signatures || []) signatures.set(signature.role, signature);
     const signatureList = [...signatures.values()];
-    const signed = signatureList.some(signature => signature.role === "production_chef") && signatureList.some(signature => signature.role === "head_chef_site_manager");
+    const signed = orders.length > 0 && orders.every(order => {
+      const plan = plans.get(order.canonicalId);
+      const release = plan?.currentAllergenRelease;
+      return Boolean(plan && release?.status === "current" && release.materializationStatus === "ready" && currentAllergenReleaseMatchesOrder(release, order, plan.menuItems));
+    });
     const entries: Record<string, { allergens: Record<string, ReviewState>; mayContainNotes?: string }> = {};
     if (signed) for (const order of orders) {
       if (order.destinationOplocId !== oplocId) continue;

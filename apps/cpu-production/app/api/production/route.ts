@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { errorResponse } from "../../../lib/api";
-import { requireCpuActor } from "../../../lib/cpu-access-client";
+import { cpuDestinationAllowed, requireCpuActor, requireCpuDestinationScope, resolveCpuDestinationScope, type CpuDestinationScope } from "../../../lib/cpu-access-client";
 import { acknowledgeProductionCancellation, createCpuProductionOrder, productionOrderDetail, productionQueue, productionQueueForWeek, reportProductionAllergenDiscrepancy, transitionProductionOrder, updateProductionLines } from "../../../lib/production-http-client";
 import { ordersForScope } from "../../../lib/cpu-routing";
 import { withReadableDestinations } from "../../../lib/cpu-oploc-labels";
@@ -17,7 +18,10 @@ import type { ProductionOrder } from "../../../lib/production-types";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { cpuProjectionPackageIsCurrent, getCpuProjectionManifest, getCpuProjectionPackage, recordCpuPackageFallback, type CpuProjectionPackage } from "../../../lib/cpu-read-package";
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
-import { eventTypeForConsumers, notifyCpuConsumerInvalidations } from "../../../lib/cpu-consumer-invalidation";
+import { buildCpuAllergenReleaseEvent, eventTypeForConsumers, notifyCpuConsumerInvalidations } from "../../../lib/cpu-consumer-invalidation";
+import { revokeCpuAllergenRelease } from "../../../lib/cpu-allergen-release";
+import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
+import { planRevisionToken, type ProductionPlan } from "../../lib/production-plan";
 import { internalTokenAllowed } from "../../../../shared/internal-auth";
 
 const localActor = {
@@ -29,6 +33,78 @@ const localActor = {
 const actorFor = (request: NextRequest) => requireCpuActor(request);
 function internalProjectionRequest(request: NextRequest) {
   return internalTokenAllowed(request);
+}
+function destinationScopeKey(scope: CpuDestinationScope) {
+  return createHash("sha256").update(JSON.stringify({ allOplocs: scope.allOplocs, oplocIds: [...scope.oplocIds].sort() })).digest("hex").slice(0, 16);
+}
+async function scopedProjection<T extends CpuProjectionPackage>(request: NextRequest, projection: T, scope: CpuDestinationScope): Promise<T> {
+  if (scope.allOplocs) return projection;
+  const resolvedScope = await resolveCpuDestinationScope(request, projection.orders.flatMap(order => order.destinationOplocId ? [order.destinationOplocId] : []));
+  const orders = projection.orders.filter(order => cpuDestinationAllowed(resolvedScope, order.destinationOplocId, order.destination));
+  return {
+    ...projection,
+    orders,
+    projectionContentHash: undefined,
+    summary: {
+      orders: orders.length,
+      ready: orders.filter(order => order.planningReadiness === "ready").length,
+      attention: orders.filter(order => order.attention.length > 0).length,
+      planned: orders.filter(order => order.workflowStatus === "planned").length,
+      totalUnits: orders.reduce((sum, order) => sum + order.quantities.reduce((total, line) => total + line.quantity, 0), 0),
+    },
+  } as T;
+}
+async function assertDestinationAccess(request: NextRequest, scope: CpuDestinationScope, destinationOplocId?: string, destination?: ProductionOrder["destination"]) {
+  const resolvedScope = scope.allOplocs || !destinationOplocId ? scope : await resolveCpuDestinationScope(request, [destinationOplocId]);
+  if (!cpuDestinationAllowed(resolvedScope, destinationOplocId, destination)) throw Object.assign(new Error("This destination is outside your CPU Production access scope."), { status: 403 });
+}
+async function assertOrderAccess(request: NextRequest, scope: CpuDestinationScope, canonicalId: string) {
+  const order = canonicalId.startsWith("production-order:v1:fixture:")
+    ? localFixtureOrders().find(item => item.canonicalId === canonicalId)
+    : await productionOrderDetail(request, canonicalId);
+  if (!order) throw Object.assign(new Error("Production Order was not found."), { status: 404 });
+  await assertDestinationAccess(request, scope, order.destinationOplocId, order.destination);
+  return order;
+}
+async function revokeWithdrawnMenuAuthority(order: ProductionOrder, changedAt: string) {
+  if (order.origin !== "menu_planning" || (order.status !== "cancelled" && !order.supersededBy)) return;
+  const repository = createProductionPlanRepository();
+  const reason = order.status === "cancelled" ? "The published Menu Planning source day was withdrawn." : "The published Menu Planning source day was superseded.";
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const stored = await repository.get(order.canonicalId);
+    if (!stored) return;
+    const hasAuthority = Boolean(stored.currentAllergenRelease || stored.signatures?.length || stored.signedSignatures?.length || stored.signedMenuContentHash || stored.matrixArtifact || stored.signedMatrixArtifact || stored.masterMatrixArtifact || stored.siteMatrixArtifacts);
+    if (!hasAuthority) return;
+    const plan: ProductionPlan = structuredClone(stored);
+    const release = plan.currentAllergenRelease;
+    const historical = release?.status === "current" ? revokeCpuAllergenRelease(release, { at: changedAt, by: "integration-hub", reason }) : release;
+    if (historical && !(plan.allergenReleaseHistory || []).some(item => item.releaseId === historical.releaseId)) plan.allergenReleaseHistory = [...(plan.allergenReleaseHistory || []), historical];
+    plan.currentAllergenRelease = undefined;
+    plan.signatures = undefined;
+    plan.signedMenuContentHash = undefined;
+    plan.signedSignatures = undefined;
+    plan.signedMatrixArtifact = undefined;
+    plan.matrixArtifact = undefined;
+    plan.masterMatrixArtifact = undefined;
+    plan.siteMatrixArtifacts = undefined;
+    plan.audit.push({ action: "allergen-release-revoked", at: changedAt, by: "integration-hub", reason });
+    plan.updatedAt = changedAt;
+    plan.updatedBy = "integration-hub";
+    const releaseEvent = historical?.packetArtifacts[0]?.contentHash && order.destinationOplocId
+      ? buildCpuAllergenReleaseEvent({ eventType: "revoked", release: historical, oplocId: order.destinationOplocId }) : undefined;
+    try {
+      await repository.saveAndAppendCpuChange(plan, planRevisionToken(stored), {
+        serviceDate: order.serviceDate!, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length,
+        changeType: "menu-source-withdrawn", actorId: "integration-hub", changedAt,
+        idempotencyKey: `menu-source-withdrawn:${order.canonicalId}:v${order.version}:${release?.releaseId || plan.audit.length}`,
+        propagation: { sourceEntityId: plan.id, serviceDate: order.serviceDate!, sourceVersion: plan.audit.length, changedAt, changeType: order.supersededBy ? "superseded" : "withdrawn", order, logistics: false },
+        ...(releaseEvent ? { deliveries: [{ eventId: `${releaseEvent.eventId}:delivered-in:${order.destinationOplocId}`, sourceAggregateId: releaseEvent.releaseId, sourceVersion: releaseEvent.sourceVersion, occurredAt: changedAt, consumer: "delivered-in", route: "/api/internal/cpu-release-event", body: releaseEvent as unknown as Record<string, unknown> }] } : {}),
+      });
+      return;
+    } catch (error) {
+      if ((error as { status?: number }).status !== 409 || attempt === 2) throw error;
+    }
+  }
 }
 function withServerTiming(response: NextResponse, timings: Record<string, number>) {
   response.headers.set("Server-Timing", Object.entries(timings).map(([name, duration]) => `${name};dur=${Math.max(0, duration).toFixed(1)}`).join(", "));
@@ -152,13 +228,15 @@ const AcknowledgeCancellation = z.object({ action: z.literal("acknowledge-cancel
 async function handleGet(request: NextRequest) {
   try {
     const actor = await actorFor(request);
+    const destinationScope = await requireCpuDestinationScope(request);
     if (request.nextUrl.searchParams.get("cacheScope") === "1") {
       const runtime = process.env.FIKA_RUNTIME_MODE || "unknown";
       const project = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || "unknown";
-      return NextResponse.json({ cacheScope: `${runtime}:${project}:${actor.uid}` });
+      return NextResponse.json({ cacheScope: `${runtime}:${project}:${actor.uid}:${destinationScopeKey(destinationScope)}` });
     }
     const projectionDate = request.nextUrl.searchParams.get("serviceDate") || europeLondonDate();
     if (request.nextUrl.searchParams.get("diagnostic") === "1") {
+      if (!destinationScope.allOplocs) throw Object.assign(new Error("Global CPU Production scope is required for diagnostics."), { status: 403 });
       const week = request.nextUrl.searchParams.get("weekCommencing");
       const projection = (await cpuProjections().doc(week ? `week:${week}` : projectionDate).get()).data() as { orders?: Array<Record<string, unknown>> } | undefined;
       const canonical = week ? await productionQueueForWeek(request, week) : await productionQueue(request, projectionDate);
@@ -180,8 +258,10 @@ async function handleGet(request: NextRequest) {
       const week = request.nextUrl.searchParams.get("weekCommencing");
       const reconcile = request.nextUrl.searchParams.get("reconcile") === "1";
       if (!reconcile) {
+        let packageReadComplete = false;
         try {
           const packaged = await getCpuProjectionPackage(projectionDate, week || undefined);
+          packageReadComplete = true;
           if (packaged) {
             let projection = packaged.value.projection;
             if (cpuProjectionHasAmbiguousWorkstreamMapping(projection)) {
@@ -190,25 +270,26 @@ async function handleGet(request: NextRequest) {
                 : await rebuildCpuDayProjection(request, projectionDate);
               recordDeliveredInReadBudget({ stage: "projection_refresh", projectionDocs: 1, selectedIds: projection.orders.length, rebuildScopes: 1 });
               const manifest = await getCpuProjectionManifest(projectionDate, week || undefined);
-              const filtered = filterCpuProjectionForScope(projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
+              const filtered = await scopedProjection(request, filterCpuProjectionForScope(projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope"))), destinationScope);
               return withServerTiming(NextResponse.json({ projection: filtered, package: manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
             }
-            const filtered = filterCpuProjectionForScope(projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
+            const filtered = await scopedProjection(request, filterCpuProjectionForScope(projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope"))), destinationScope);
             recordDeliveredInReadBudget({ stage: "package_body_load", projectionDocs: 0, selectedIds: filtered.orders.length });
             return withServerTiming(NextResponse.json({ projection: filtered, package: packaged.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
           }
-        } catch {
+        } catch (error) {
+          if (packageReadComplete) throw error;
           recordCpuPackageFallback("invalid");
           return withServerTiming(NextResponse.json({ error: { code: "CPU_PROJECTION_PACKAGE_INTEGRITY_FAILURE", message: "The CPU projection package failed integrity verification." }, freshness: "unavailable" }, { status: 503 }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
         }
         recordCpuPackageFallback("missing");
         if (week) {
           const recoveredWeek = await recoverMissingCpuWeekProjection(request, week);
-          const filtered = filterCpuProjectionForScope(recoveredWeek.projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
+          const filtered = await scopedProjection(request, filterCpuProjectionForScope(recoveredWeek.projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope"))), destinationScope);
           return withServerTiming(NextResponse.json({ projection: filtered, package: recoveredWeek.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
         }
         const recoveredDay = await recoverMissingCpuDayProjection(request, projectionDate);
-        const filtered = filterCpuProjectionForScope(recoveredDay.projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
+        const filtered = await scopedProjection(request, filterCpuProjectionForScope(recoveredDay.projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope"))), destinationScope);
         return withServerTiming(NextResponse.json({ projection: filtered, package: recoveredDay.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
       } else recordCpuPackageFallback("explicit-reconciliation");
       const storedStartedAt = performance.now();
@@ -233,7 +314,7 @@ async function handleGet(request: NextRequest) {
       const requiresRefresh = !stored.exists || !packageCurrent || needsReadableDestinations || needsCancellationRefresh || needsOrderRefresh;
       const refreshedProjection = requiresRefresh ? week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuDayProjection(request, projectionDate) : stored.data();
       const packageManifest = await getCpuProjectionManifest(projectionDate, week || undefined);
-      const response = NextResponse.json({ projection: refreshedProjection, package: packageManifest });
+      const response = NextResponse.json({ projection: refreshedProjection ? await scopedProjection(request, filterCpuProjectionForScope(refreshedProjection as CpuProjectionPackage, normaliseProductionScope(request.nextUrl.searchParams.get("scope"))), destinationScope) : undefined, package: packageManifest });
       recordDeliveredInReadBudget({ stage: requiresRefresh ? "projection_refresh" : "projection_body_load", projectionDocs: 1, canonicalOrderDocs: canonicalIds.size });
       return withServerTiming(response, { stored: storedDuration, package: packageDuration, canonical: canonicalDuration, total: performance.now() - startedAt });
     }
@@ -244,6 +325,7 @@ async function handleGet(request: NextRequest) {
       return NextResponse.json({ lastChangeSequence: Number(manifest?.sourceVersion?.replace("cpu-change-", "") || 0), revision: Number(manifest?.packageVersion || 0), packageVersion: manifest?.packageVersion || 0, contentHash: manifest?.contentHash, sourceVersion: manifest?.sourceVersion });
     }
     if (request.nextUrl.searchParams.has("changesSince")) {
+      if (!destinationScope.allOplocs) throw Object.assign(new Error("Global CPU Production scope is required for change diagnostics."), { status: 403 });
       const startedAt = performance.now();
       const after = Number(request.nextUrl.searchParams.get("changesSince") || 0);
       const week = request.nextUrl.searchParams.get("weekCommencing");
@@ -258,12 +340,14 @@ async function handleGet(request: NextRequest) {
     const scope = normaliseProductionScope(request.nextUrl.searchParams.get("scope"));
     if (id?.startsWith("production-order:v1:fixture:")) {
       const order = localFixtureOrders().find((item) => item.canonicalId === id);
+      if (order) await assertDestinationAccess(request, destinationScope, order.destinationOplocId, order.destination);
       const filtered = order ? (await ordersForScope(request, [order], scope))[0] : undefined;
       return NextResponse.json({ order: filtered, scope });
     }
     if (id) {
       const order = await productionOrderDetail(request, id);
       if (!order) return NextResponse.json({ error: { message: "Production Order was not found." } }, { status: 404 });
+      await assertDestinationAccess(request, destinationScope, order.destinationOplocId, order.destination);
       const readable = await withReadableDestinations(request, [order]);
       return NextResponse.json({ order: readable[0], scope });
     }
@@ -284,7 +368,9 @@ async function handleGet(request: NextRequest) {
         ),
       )]
       : fetched;
-    const orders = await withReadableDestinations(request, await ordersForScope(request, sourceOrders, scope));
+    const resolvedScope = await resolveCpuDestinationScope(request, sourceOrders.flatMap(order => order.destinationOplocId ? [order.destinationOplocId] : []));
+    const permittedOrders = sourceOrders.filter(order => cpuDestinationAllowed(resolvedScope, order.destinationOplocId, order.destination));
+    const orders = await withReadableDestinations(request, await ordersForScope(request, permittedOrders, scope));
     return NextResponse.json({ orders, scope, localFixtures: includeLocalFixtures });
   } catch (error) {
     return errorResponse(error);
@@ -302,28 +388,33 @@ async function handlePost(request: NextRequest) {
       const revision = z.number().int().positive().parse(raw.revision);
       const changeType = z.string().min(1).parse(raw.changeType);
       const changedAt = z.string().min(1).parse(raw.changedAt || new Date().toISOString());
+      const changedOrder = await productionOrderDetail(request, entityId);
+      if (changedOrder?.serviceDate) await revokeWithdrawnMenuAuthority(changedOrder, changedAt);
       const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId, revision, changeType, actorId: z.string().min(1).parse(raw.actorId || "integration-hub"), changedAt, idempotencyKey: z.string().min(1).parse(raw.idempotencyKey), propagation: { sourceEntityId: entityId, serviceDate, sourceVersion: revision, changedAt, changeType: eventTypeForConsumers(changeType), order: { origin: "menu_planning" }, logistics: true } });
       const dayProjection = await rebuildCpuProjection(request, serviceDate, event.sequence);
       const weekProjection = await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
-      const changedOrder = await productionOrderDetail(request, z.string().min(1).parse(raw.entityId));
       const review = changedOrder?.destinationOplocId ? await rebuildCpuReviewPackage(request, serviceDate, changedOrder.destinationOplocId, event.sequence) : undefined;
       await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.entityId}:v${event.sequence}`, sourceEntityId: event.entityId, serviceDate, sourceVersion: event.sequence, changedAt: event.changedAt, changeType: eventTypeForConsumers(event.changeType), order: changedOrder || { origin: "menu_planning" }, ...(changedOrder ? { calendarOrder: changedOrder } : {}), logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
       return NextResponse.json({ applied: true, duplicate: event.sequence < Number(raw.sequence || event.sequence), event, dayProjection, weekProjection });
     }
     const actor = await actorFor(request);
+    const destinationScope = await requireCpuDestinationScope(request);
     if (raw?.action === "rebuild-cpu-projection") {
+      if (!destinationScope.allOplocs) throw Object.assign(new Error("Global CPU Production scope is required to rebuild projections."), { status: 403 });
       const serviceDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(raw.serviceDate);
       const projection = await rebuildCpuProjection(request, serviceDate);
       return NextResponse.json({ projection: await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate)), dayProjection: projection });
     }
     if (raw?.action === "cpu-create") {
       const command = Cpu.parse(raw);
+      await assertDestinationAccess(request, destinationScope, command.destinationOplocId);
       const result = await createCpuProductionOrder(request, command, command.idempotencyKey);
       if (result.order) await recordCpuChange(request, result.order.canonicalId, actor.uid, result.created ? "created" : "replayed", result.order, command.idempotencyKey);
       return NextResponse.json(result);
     }
     if (raw?.action === "update-lines") {
       const command = UpdateLines.parse(raw);
+      await assertOrderAccess(request, destinationScope, command.canonicalId);
       if (command.canonicalId.startsWith("production-order:v1:fixture:")) {
         const updated = updateLocalFixture(command.canonicalId, (current) => ({
           ...current,
@@ -385,17 +476,20 @@ async function handlePost(request: NextRequest) {
     }
     if (raw?.action === "report-allergen-discrepancy") {
       const command = AllergenDiscrepancy.parse(raw);
+      await assertOrderAccess(request, destinationScope, command.canonicalId);
       const result = await reportProductionAllergenDiscrepancy(request, command);
       await recordCpuChange(request, command.canonicalId, actor.uid, "allergen-discrepancy", result.order, command.idempotencyKey || `allergen-discrepancy:${command.canonicalId}:v${command.expectedVersion}`);
       return NextResponse.json(result);
     }
     if (raw?.action === "acknowledge-cancellation") {
       const command = AcknowledgeCancellation.parse(raw);
+      await assertOrderAccess(request, destinationScope, command.canonicalId);
       const order = (await acknowledgeProductionCancellation(request, command)).order;
       await recordCpuChange(request, command.canonicalId, actor.uid, "cancelled-order-dismissed", order, command.idempotencyKey || `ack-cancellation:${command.canonicalId}:v${command.expectedVersion}`);
       return NextResponse.json({ order });
     }
     const command = Transition.parse(raw);
+    await assertOrderAccess(request, destinationScope, command.canonicalId);
     if (command.canonicalId.startsWith("production-order:v1:fixture:")) {
       const updated = updateLocalFixture(command.canonicalId, (current) => ({
         ...current,
