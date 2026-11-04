@@ -6,13 +6,15 @@ import type { FoodDataLoader, FoodDataSession, DatasetResult } from "@/lib/food-
 import { datasetVersion } from "@/lib/food-data/manifest";
 import { buildIngredientRecords } from "@/lib/food-data/ingredients";
 import { buildRecipeIndex, buildRecipeRecords } from "@/lib/food-data/recipes";
+import type { CompositionLoadResult } from "@/lib/food-data/composition-loader";
+import type { IngredientRecord } from "@/lib/food-data/ingredients";
 import styles from "./food-data.module.css";
 import ProductLibrary, { useIngredientIndex } from "./ProductLibrary";
 import RecipeLibrary from "./RecipeLibrary";
 import { integer, snapshotLabel } from "./shared";
 
 type View = "products" | "recipes";
-type Phase = { kind: "loading" } | { kind: "ready"; session: FoodDataSession; loader: FoodDataLoader; persistent: boolean } | { kind: "error"; code: string; message: string };
+type Phase = { kind: "loading" } | { kind: "ready"; session: FoodDataSession; loader: FoodDataLoader; persistent: boolean; composition?: CompositionLoadResult; compositionError?: string } | { kind: "error"; code: string; message: string };
 const sourceText = { downloaded: "Downloaded this visit", cache: "Loaded from this browser’s saved copy", "cache-stale": "Saved copy (newer version unavailable)" } as const;
 
 export default function FoodDataWorkspace() {
@@ -23,9 +25,12 @@ export default function FoodDataWorkspace() {
     let cancelled = false;
     (async () => {
       try {
-        const { loader, persistent: canPersist } = await createBrowserFoodDataLoader();
-        const session = await loader.load();
-        if (!cancelled) setPhase({ kind: "ready", session, loader, persistent: canPersist });
+        const { loader, compositionLoader, persistent: canPersist } = await createBrowserFoodDataLoader();
+        const [session, compositionState] = await Promise.all([
+          loader.load(),
+          compositionLoader.load().then(composition => ({ composition })).catch(error => ({ compositionError: (error as Error).message || "Full recipe compositions are unavailable." })),
+        ]);
+        if (!cancelled) setPhase({ kind: "ready", session, loader, persistent: canPersist, ...compositionState });
       } catch (error) {
         const failure = error as { code?: string; message?: string };
         if (!cancelled) setPhase({ kind: "error", code: failure.code || "FOOD_DATA_UNAVAILABLE", message: failure.message || "Food Data is unavailable." });
@@ -44,7 +49,7 @@ export default function FoodDataWorkspace() {
     <main className={styles.inner}>
       {phase.kind === "loading" && <div className={styles.state} role="status"><h2>Loading Food Data…</h2><p>Checking your access and the saved copy in this browser. The first visit downloads about 1.6&nbsp;MB.</p></div>}
       {phase.kind === "error" && <ErrorState code={phase.code} message={phase.message} />}
-      {phase.kind === "ready" && <Ready session={phase.session} view={view} choose={choose} persistent={phase.persistent} loader={phase.loader} />}
+      {phase.kind === "ready" && <Ready session={phase.session} view={view} choose={choose} persistent={phase.persistent} loader={phase.loader} composition={phase.composition} compositionError={phase.compositionError} />}
     </main>
   </div>;
 }
@@ -57,7 +62,7 @@ function ErrorState({ code, message }: { code: string; message: string }) {
   return <div className={styles.state} role="alert"><h2>{code === "FOOD_DATA_FORBIDDEN" ? "Food Data isn’t available to this account" : code === "FOOD_DATA_UNAUTHENTICATED" ? "Sign in required" : code === "FOOD_DATA_DISABLED" ? "Food Data is switched off" : "Food Data is unavailable"}</h2>{body}</div>;
 }
 
-function Ready({ session, view, choose, persistent, loader }: { session: FoodDataSession; view: View; choose: (view: View) => void; persistent: boolean; loader?: FoodDataLoader }) {
+function Ready({ session, view, choose, persistent, loader, composition, compositionError }: { session: FoodDataSession; view: View; choose: (view: View) => void; persistent: boolean; loader?: FoodDataLoader; composition?: CompositionLoadResult; compositionError?: string }) {
   const { manifest, results } = session;
   const ingredientBundle = results.ingredients.ok ? results.ingredients.bundle : undefined;
   const recipeBundle = results.recipes.ok ? results.recipes.bundle : undefined;
@@ -91,7 +96,7 @@ function Ready({ session, view, choose, persistent, loader }: { session: FoodDat
       {!results.ingredients.ok ? <Failure result={results.ingredients} /> : ingredientBuild && "error" in ingredientBuild ? <Failure result={{ ok: false, dataset: "ingredients", error: ingredientBuild.error!, code: "FOOD_DATA_SCHEMA_INVALID" }} /> : <ProductLibrary index={ingredientIndex} manifest={manifest} />}
     </div>
     <div role="tabpanel" id="panel-recipes" aria-labelledby="tab-recipes" hidden={view !== "recipes"}>
-      {!results.recipes.ok ? <Failure result={results.recipes} /> : recipeBuild && "error" in recipeBuild ? <Failure result={{ ok: false, dataset: "recipes", error: recipeBuild.error!, code: "FOOD_DATA_SCHEMA_INVALID" }} /> : recipeBuild?.index ? <RecipeLibrary index={recipeBuild.index} manifest={manifest} /> : null}
+      {!results.recipes.ok ? <Failure result={results.recipes} /> : recipeBuild && "error" in recipeBuild ? <Failure result={{ ok: false, dataset: "recipes", error: recipeBuild.error!, code: "FOOD_DATA_SCHEMA_INVALID" }} /> : recipeBuild?.index ? <RecipeLibrary index={recipeBuild.index} manifest={manifest} composition={composition} compositionError={compositionError} ingredients={ingredientBuild && "records" in ingredientBuild ? ingredientBuild.records as IngredientRecord[] : []} /> : null}
     </div>
   </>;
 }
