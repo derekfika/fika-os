@@ -5,7 +5,7 @@ import { allergenMatrixHtml } from "../../../ui/allergen-matrix";
 import { renderPdfToBuffer } from "../../../lib/local-pdf";
 import { getCpuReviewPackage, recordCpuReviewFallback, rebuildCpuReviewPackage } from "../../../../lib/cpu-review-package";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
-import { requireCpuActor } from "../../../../lib/cpu-access-client";
+import { cpuDestinationAllowed, requireCpuActor, requireCpuDestinationScope } from "../../../../lib/cpu-access-client";
 import { currentAllergenReleaseMatchesOrder, type ProductionPlan } from "../../../lib/production-plan";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +41,8 @@ async function handleGet(request: NextRequest) {
   if (!serviceDate || !oplocId) return NextResponse.json({ error: { message: "A service date and OPLOC are required." } }, { status: 422 });
   try {
     await requireCpuActor(request);
+    const destinationScope = await requireCpuDestinationScope(request);
+    if (!cpuDestinationAllowed(destinationScope, oplocId)) return NextResponse.json({ error: { message: "This destination is outside your CPU Production access scope." } }, { status: 403 });
     const reconcile = request.nextUrl.searchParams.get("reconcile") === "1";
     if (!reconcile) {
       try {
