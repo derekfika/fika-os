@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-04T22:17:54.932Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-04T22:40:09.472Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -210,6 +210,7 @@ Snapshot: 2026-11-04T22:17:54.932Z. The local governed registry remains authorit
 | logistics-notifications-inbox | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-notifications-inbox | [#87](https://github.com/derekfika/fika-os/pull/87) | finished | 2026-10-27T18:29:47.305Z |
 | logistics-operational-access | luna-logistics-access | apps/logistics, apps/integration-hub/lib/authmod-core, apps/integration-hub/app/api/logistics/access, apps/integration-hub/lib/authmod-admission-cache.ts, apps/integration-hub/tests/logistics-operational-access.test.ts, apps/integration-hub/tests/authmod-admission-cache.test.ts, apps/integration-hub/scripts/logistics-access-policy.ts | codex/logistics-operational-access | [#104](https://github.com/derekfika/fika-os/pull/104) | retired | 2026-10-28T11:54:36.883Z |
 | logistics-order-noise | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-order-noise | [#90](https://github.com/derekfika/fika-os/pull/90) | finished | 2026-10-27T19:15:26.913Z |
+| logistics-prod-auth-probe-v2 | luna-overnight-357-logistics | tools/workflow/releases.mjs, tools/workflow/releases.test.mjs | codex/logistics-prod-auth-probe-v2 | [#363](https://github.com/derekfika/fika-os/pull/363) | active | 2026-11-04T22:20:59.468Z |
 | logistics-prod-auth-probe | luna-overnight-357-logistics | tools/workflow/releases.mjs | codex/logistics-prod-auth-probe | — | retired | 2026-11-04T22:17:46.910Z |
 | logistics-push-inbox | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-push-inbox | — | finished | 2026-10-27T16:24:29.291Z |
 | logistics-pwa-phase2 | logistics-pwa-notifications | apps/logistics | codex/logistics-pwa-phase2 | [#83](https://github.com/derekfika/fika-os/pull/83) | finished | 2026-10-27T14:32:41.957Z |
@@ -291,7 +292,8 @@ Snapshot: 2026-11-04T22:17:54.932Z. The local governed registry remains authorit
 | munich-re-portal | claude-munich-re-onboarding | apps/hospitality-booking/app/ui/BookingPortal.tsx, apps/hospitality-booking/lib/munich-re-locations.ts, apps/hospitality-booking/tests/munich-re-portal.test.ts, apps/hospitality-booking/tests/mnk-contract.test.ts | codex/munich-re-portal | [#128](https://github.com/derekfika/fika-os/pull/128) | revoked | 2026-10-30T13:18:28.912Z |
 | munich-re-uat-verification | sol-munich-re-verification | docs/audits/2026-10-30/munich-re-postmerge-verification.md | codex/munich-re-uat-verification | — | finished | 2026-10-30T14:05:32.138Z |
 | ops-95-driver-checkbox-label | luna-iss95 | apps/logistics | codex/ops-95-driver-checkbox-label | [#163](https://github.com/derekfika/fika-os/pull/163) | retired | 2026-10-30T07:15:10.006Z |
-| overnight-drive-containment-358 | codex-drive-containment-358 | packages/server-shared/src/drive-owner.ts, packages/server-shared/tests/drive-owner-staging.test.ts, apps/cpu-production/app/lib/matrix-drive-config.ts, apps/cpu-production/tests/matrix-drive-config.test.ts, apps/cpu-production/app/api/production-plan/route.ts, apps/cpu-production/tests/drive-readiness-staging.test.ts | codex/overnight-drive-containment-358 | — | active | 2026-11-04T22:00:08.412Z |
+| overnight-cpu-drive-test-compat | luna-overnight-357-cpu-tests | apps/cpu-production/tests/ad-hoc-signing.test.ts | codex/overnight-cpu-drive-test-compat | [#362](https://github.com/derekfika/fika-os/pull/362) | finished | 2026-11-04T22:33:23.361Z |
+| overnight-drive-containment-358 | codex-drive-containment-358 | packages/server-shared/src/drive-owner.ts, packages/server-shared/tests/drive-owner-staging.test.ts, apps/cpu-production/app/lib/matrix-drive-config.ts, apps/cpu-production/tests/matrix-drive-config.test.ts, apps/cpu-production/app/api/production-plan/route.ts, apps/cpu-production/tests/drive-readiness-staging.test.ts | codex/overnight-drive-containment-358 | [#361](https://github.com/derekfika/fika-os/pull/361) | retired | 2026-11-04T22:40:04.622Z |
 | overnight-no-key-audit | luna-overnight-357 | apps/menu-planning/app/allergen-checker.tsx | codex/overnight-no-key-audit | — | active | 2026-11-04T21:49:34.390Z |
 | overnight-policy-v31 | luna-overnight-357-policy | overnight.md | codex/overnight-policy-v31 | [#359](https://github.com/derekfika/fika-os/pull/359) | retired | 2026-11-04T22:11:53.311Z |
 | pr-297-integration-alias | luna-pr297-integration | apps/menu-planning/app/planner-data.ts, apps/menu-planning/tests/planner-load-error.test.ts, .changes/menu-planning/2026-11-02-planner-load-timeout-275.md | codex/pr-297-integration-alias | [#300](https://github.com/derekfika/fika-os/pull/300) | retired | 2026-11-02T22:18:12.964Z |
