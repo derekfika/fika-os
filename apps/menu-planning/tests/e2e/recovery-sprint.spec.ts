@@ -3,11 +3,19 @@ import { applyRollingEntryPatch } from "../../lib/rolling-command";
 import { emptyWeek } from "../../lib/rolling-menu";
 import type { RollingSnapshot } from "../../lib/rolling-menu-types";
 
-async function fixture(page: Page) {
+async function fixture(page: Page, portions = false) {
   const weeks = ["2098-11-03", "2098-11-10"].map(date => {
     const snapshot = emptyWeek(date, "isolated-browser");
     snapshot.entries = snapshot.days.slice(0, 2).map((day, index) => ({ id: `${day.id}:entry:synthetic`, dayId: day.id, date: day.date, slot: "SOUP", itemId: `dish:synthetic:${index}`, itemLabel: index ? "Synthetic sauce" : "Synthetic soup", portions: 7, allocations: [], allergens: {}, audit: [] }));
     snapshot.week.entryIds = snapshot.entries.map(entry => entry.id);
+    if (portions) for (const day of snapshot.days) {
+      const oneOff = { id: `${day.id}:one-off:synthetic`, label: "Shared venue", address: "12 One Off Street", addressStatus: "confirmed" as const };
+      day.oneOffDestinations = [oneOff];
+      for (const entry of snapshot.entries.filter(row => row.dayId === day.id)) {
+        entry.portions = 16;
+        entry.allocations = [{ destinationId: "oploc:synthetic:a", destinationLabel: "Shared venue", quantity: 4 }, { destinationId: "oploc:synthetic:b", destinationLabel: "Site B", quantity: 5 }, { oneOffDestinationId: oneOff.id, destinationLabel: oneOff.label, destinationAddress: oneOff.address, quantity: 7 }];
+      }
+    }
     snapshot.days.forEach(day => { day.entryIds = snapshot.entries.filter(entry => entry.dayId === day.id).map(entry => entry.id); });
     return snapshot;
   });
@@ -16,6 +24,7 @@ async function fixture(page: Page) {
   await page.route(/^https:\/\//, route => route.abort());
   await page.route("**/api/**", async route => {
     const request = route.request(), url = new URL(request.url());
+    if (url.pathname === "/api/oplocs") return route.fulfill({ json: { oplocs: [{ canonicalId: "oploc:synthetic:a", label: "Shared venue", address: "1 Governed Street" }, { canonicalId: "oploc:synthetic:b", label: "Site B" }] } });
     if (url.pathname !== "/api/rolling-menu") return route.fulfill({ json: {} });
     const weekId = url.searchParams.get("weekId");
     const snapshot = weeks.find(week => week.week.id === weekId || week.week.weekCommencing === weekId) || weeks[0];
@@ -25,14 +34,15 @@ async function fixture(page: Page) {
     const target = weeks.find(week => week.week.id === body.weekId)!;
     if (body.expectedWeekVersion !== target.week.version) return route.fulfill({ status: 409, json: { error: { message: "Another editor changed this week. Refresh before saving." } } });
     const next = structuredClone(target);
-    for (const update of body.updates) applyRollingEntryPatch(next.entries.find(entry => entry.id === update.entryId)!, update.patch, { actor: "isolated-browser-reviewer", at: "2098-11-03T10:00:00Z" });
+    for (const update of body.updates) applyRollingEntryPatch(next.entries.find(entry => entry.id === update.entryId)!, update.patch || { allocations: update.allocations, portions: update.allocations.reduce((sum: number, allocation: { quantity: number }) => sum + allocation.quantity, 0) }, { actor: "isolated-browser-reviewer", at: "2098-11-03T10:00:00Z" });
     next.week.version += 1;
     Object.assign(target, next);
     if (connection.interruptNextResponse) { connection.interruptNextResponse = false; return route.abort("failed"); }
     return route.fulfill({ json: { snapshot: target, weeks: weeks.map(week => week.week), publicationState: {} } });
   });
-  await page.goto(`/allergens?week=${weeks[0].week.weekCommencing}&day=${weeks[0].days[0].date}`);
-  await expect(page.getByRole("button", { name: /Synthetic soup, No key allergens:/ })).toBeVisible();
+  await page.goto(`/${portions ? "portions" : "allergens"}?week=${weeks[0].week.weekCommencing}&day=${weeks[0].days[0].date}`);
+  if (portions) await expect(page.getByRole("spinbutton", { name: "Synthetic soup portions for Shared venue (one-off)", exact: true })).toBeVisible();
+  else await expect(page.getByRole("button", { name: /Synthetic soup, No key allergens:/ })).toBeVisible();
   return { weeks, writes, connection };
 }
 
@@ -149,4 +159,27 @@ test("a different signed-in identity cannot recover or submit the previous user'
   await expect(page.getByRole("textbox", { name: "Specific allergen details for Synthetic soup", exact: true })).toHaveValue("");
   await expect(page.getByRole("button", { name: "Save allergen changes", exact: true })).toBeDisabled();
   expect(server.writes).toHaveLength(0);
+});
+
+test("same-name governed and one-off portion columns preserve distinct allocations on edit and removal", async ({ page }) => {
+  const server = await fixture(page, true);
+  const governed = page.getByRole("spinbutton", { name: "Synthetic soup portions for Shared venue", exact: true });
+  const oneOff = page.getByRole("spinbutton", { name: "Synthetic soup portions for Shared venue (one-off)", exact: true });
+  await expect(governed).toHaveValue("4");
+  await expect(oneOff).toHaveValue("7");
+  await oneOff.fill("9");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+  let allocations = server.weeks[0].entries[0].allocations;
+  expect(allocations.find(row => row.destinationId === "oploc:synthetic:a")?.quantity).toBe(4);
+  expect(allocations.find(row => row.destinationId === "oploc:synthetic:b")?.quantity).toBe(5);
+  expect(allocations.find(row => row.oneOffDestinationId)?.quantity).toBe(9);
+  expect(allocations.find(row => row.oneOffDestinationId)).not.toHaveProperty("destinationId");
+  await governed.fill("");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+  allocations = server.weeks[0].entries[0].allocations;
+  expect(allocations).toHaveLength(2);
+  expect(allocations.find(row => row.oneOffDestinationId)?.quantity).toBe(9);
+  expect(server.writes).toHaveLength(2);
 });
