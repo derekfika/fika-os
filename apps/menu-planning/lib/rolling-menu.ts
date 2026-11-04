@@ -44,7 +44,10 @@ const normaliseDestination = (allocation: RollingAllocation, liveOplocs: readonl
   // Hub is the authority for current OPLOC IDs. Preserve an explicit Hub ID even
   // when this local compatibility map has not seen it yet; publication validates
   // it against the live Hub list before allowing the menu through.
-  return allocation.destinationId ? allocation : { ...allocation, destinationId: undefined };
+  if (allocation.destinationId) return allocation;
+  const oneOff = { ...allocation };
+  delete oneOff.destinationId;
+  return oneOff;
 };
 export const normaliseRollingSnapshotDestinations = (snapshot: RollingSnapshot, liveOplocs: readonly LiveGovernedOploc[] = []): RollingSnapshot => ({ ...snapshot, entries: snapshot.entries.map(entry => ({ ...entry, allocations: entry.allocations.map(allocation => normaliseDestination(allocation, liveOplocs)) })) });
 export async function attachCanonicalDishIds(items: Array<{ canonicalId: string; displayName: string; reviewStatus?: string }>, actor = "rolling-menu-migration", scope?: { weekId: string; dayId?: string }) { let updated = 0; const active = items.filter(item => item.reviewStatus !== "archived"); const weeks = scope ? [{ id: scope.weekId }] : await listWeeks(); for (const week of weeks) { const snapshot = await getWeek(week.id); let changed = false; for (const entry of snapshot.entries) { if (scope?.dayId && entry.dayId !== scope.dayId) continue; if (entry.itemId) continue; const match = active.find(item => item.displayName.trim().toLocaleLowerCase() === entry.itemLabel.trim().toLocaleLowerCase()); if (!match) continue; entry.itemId = match.canonicalId; entry.audit.push({ action: "canonical-dish-identity-attached", at: now(), by: actor }); updated += 1; changed = true; } if (changed) { snapshot.week.version += 1; await saveSnapshot(snapshot, snapshot.week.version - 1); } } return updated; }

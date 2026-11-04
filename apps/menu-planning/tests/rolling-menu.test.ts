@@ -50,6 +50,24 @@ test("Hub-provided historical OPLOC IDs are canonicalised before Menu Planning p
   assert.deepEqual(normalised.entries[0].allocations[0], { destinationId: "oploc:current", destinationLabel: "Current label", quantity: 10 });
 });
 
+test("one-off destination normalization preserves routing fields and omits optional IDs", () => {
+  const week = emptyWeek("2098-11-02");
+  const oneOff = { destinationLabel: "Synthetic event venue 339", destinationAddress: "12 Test Street", quantity: 7, sourceLabel: "Original event venue" };
+  week.entries = [{ id: "entry:one-off", dayId: week.days[0].id, date: week.days[0].date, slot: "SOUP", itemLabel: "Test soup", portions: 16, allocations: [
+    { destinationId: "oploc:old", destinationLabel: "Old site", quantity: 4 },
+    { destinationLabel: "Current site", quantity: 5 },
+    { ...oneOff, destinationId: undefined },
+  ], allergens: {}, audit: [] }];
+  const result = normaliseRollingSnapshotDestinations(week, [{ canonicalId: "oploc:current", label: "Current site", legacyIds: ["oploc:old"] }]);
+  assert.deepEqual(result.entries[0].allocations, [
+    { destinationId: "oploc:current", destinationLabel: "Current site", quantity: 4 },
+    { destinationId: "oploc:current", destinationLabel: "Current site", quantity: 5 },
+    oneOff,
+  ]);
+  assert.equal(Object.hasOwn(result.entries[0].allocations[2], "destinationId"), false);
+  assert.equal(Object.hasOwn(week.entries[0].allocations[2], "destinationId"), true, "normalization does not mutate input");
+});
+
 test("planner default week prefers the current service week over distant future test data", () => {
   const current = emptyWeek("2026-08-17").week;
   const future = emptyWeek("2029-01-12").week;
