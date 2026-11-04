@@ -52,7 +52,19 @@ export function applyRollingMutationDelta(snapshot: RollingSnapshot, mutation: R
   if (!mutation?.week?.id || mutation.week.id !== snapshot.week.id || Number(mutation.week.version) <= Number(snapshot.week.version)) return snapshot;
   const changedEntries = new Map(mutation.entries.map(entry => [entry.id, entry]));
   const changedDays = new Map(mutation.days.map(day => [day.id, day]));
-  return { ...snapshot, week: { ...snapshot.week, ...mutation.week }, days: snapshot.days.map(day => changedDays.get(day.id) || day), entries: snapshot.entries.map(entry => changedEntries.get(entry.id) || entry) };
+  const days = [...snapshot.days];
+  for (const day of mutation.days) {
+    const index = days.findIndex(candidate => candidate.id === day.id);
+    if (index < 0) days.push(day);
+    else days[index] = changedDays.get(day.id)!;
+  }
+  const entries = [...snapshot.entries];
+  for (const entry of mutation.entries) {
+    const index = entries.findIndex(candidate => candidate.id === entry.id);
+    if (index < 0) entries.push(entry);
+    else entries[index] = changedEntries.get(entry.id)!;
+  }
+  return { ...snapshot, week: { ...snapshot.week, ...mutation.week }, days, entries };
 }
 function persistCachedWeek(value: CachedMenuWeek, generation = weekCacheWriter.currentGeneration()) { if (!cacheIdentity || value.identity !== cacheIdentity) return Promise.resolve(); return weekCacheWriter.enqueue(value.weekId, value.version, value, generation); }
 /** Load failure that keeps the HTTP status so the UI can tell an expired session (401/403) from a server fault. */
@@ -84,12 +96,12 @@ const loadCatalogue = (onUpdate?: (dishes: Dish[]) => void) => { if (catalogueCa
 export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
   const [handoff, setHandoff] = useState<{ weekId: string; value: PublicationHandoff }>();
   const shouldLoadCatalogue = options.loadCatalogue !== false;
-  const [snapshot, setSnapshot] = useState<RollingSnapshot>(); const [weeks, setWeeks] = useState<WeekSummary[]>([]); const weeksRef = useRef(weeks); const [dishes, setDishes] = useState<Dish[]>([]); const [dishReferences, setDishReferences] = useState<DishReferences>(); const [publicationState, setPublicationState] = useState<Record<string, PublicationDayState>>({}); const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [loadFailure, setLoadFailure] = useState<LoadFailure>();
+  const [snapshot, setSnapshot] = useState<RollingSnapshot>(); const snapshotRef = useRef(snapshot); snapshotRef.current = snapshot; const [weeks, setWeeks] = useState<WeekSummary[]>([]); const weeksRef = useRef(weeks); const [dishes, setDishes] = useState<Dish[]>([]); const [dishReferences, setDishReferences] = useState<DishReferences>(); const [publicationState, setPublicationState] = useState<Record<string, PublicationDayState>>({}); const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [loadFailure, setLoadFailure] = useState<LoadFailure>();
   const operationRef = useRef(0); const appliedVersionsRef = useRef(new Map<string, number>());
   const params = useSearchParams(); const [requestedWeek, setRequestedWeek] = useState(() => params.get("week"));
-  const applyCached = useCallback((cached: CachedMenuWeek, source: "memory" | "indexeddb") => { const applied = appliedVersionsRef.current.get(cached.weekId); if (applied !== undefined && cached.version < applied) return; appliedVersionsRef.current.set(cached.weekId, cached.version); weekCache.set(cached.weekId, cached); const cachedWeeks = cached.weeks?.length ? cached.weeks : [{ id: cached.weekId, weekCommencing: cached.weekCommencing, entryIds: cached.snapshot.week.entryIds, version: cached.version }]; weeksRef.current = cachedWeeks; setWeeks(cachedWeeks); setSnapshot(cached.snapshot); setDishReferences(undefined); setPublicationState(cached.publicationState); setError(""); if (source === "memory") recordDataAccess({ app: "menu-planning", operation: "week.memory", source: "MEMORY", documents: 1, cacheHit: true }); console.info("Menu Planning week cache timing", { source, cacheHit: true, renderMs: 0 }); }, []);
+  const applyCached = useCallback((cached: CachedMenuWeek, source: "memory" | "indexeddb") => { const applied = appliedVersionsRef.current.get(cached.weekId); if (applied !== undefined && cached.version < applied) return; appliedVersionsRef.current.set(cached.weekId, cached.version); weekCache.set(cached.weekId, cached); const cachedWeeks = cached.weeks?.length ? cached.weeks : [{ id: cached.weekId, weekCommencing: cached.weekCommencing, entryIds: cached.snapshot.week.entryIds, version: cached.version }]; weeksRef.current = cachedWeeks; setWeeks(cachedWeeks); snapshotRef.current = cached.snapshot; setSnapshot(cached.snapshot); setDishReferences(undefined); setPublicationState(cached.publicationState); setError(""); if (source === "memory") recordDataAccess({ app: "menu-planning", operation: "week.memory", source: "MEMORY", documents: 1, cacheHit: true }); console.info("Menu Planning week cache timing", { source, cacheHit: true, renderMs: 0 }); }, []);
   const fetchWeek = useCallback(async (weekId?: string, snapshotOnly = false) => { const query = weekId ? `?weekId=${encodeURIComponent(weekId)}${snapshotOnly ? "&snapshotOnly=true" : ""}` : ""; const started = performance.now(); const result = await withMenuRequestTimeout(async signal => { const response = await fetch(`/api/rolling-menu${query}`, { cache: "no-store", signal }); const body = await readJson(response); return { ...body, identity: response.headers.get("x-fika-menu-identity") || "" }; }); console.info("Menu Planning week cache timing", { source: "server", fullWeekFetchMs: performance.now() - started }); return result; }, []);
-  const revalidateWeek = useCallback(async (weekId: string, cached: CachedMenuWeek, operation: number, generation: number) => { try { const started = performance.now(); const summaryBody = await readJson(await fetch(`/api/rolling-menu?summariesOnly=true&weekId=${encodeURIComponent(weekId)}`, { cache: "no-store" })); const summary = summaryBody.week as { id: string; version: number } | null | undefined; console.info("Menu Planning week cache timing", { source: "server", weekHeadVersionCheckMs: performance.now() - started, cacheVersion: cached.version, serverVersion: summary?.version }); if (operation !== operationRef.current || (summary && Number(summary.version) <= cached.version)) return; const body = await fetchWeek(weekId); if (operation !== operationRef.current || body.snapshot?.week?.id !== weekId) return; if (body.snapshot?.week?.id) { const value: CachedMenuWeek = { weekId: body.snapshot.week.id, weekCommencing: body.snapshot.week.weekCommencing, version: Number(body.snapshot.week.version || 0), snapshot: body.snapshot, publicationState: body.publicationState || {}, weeks: body.weeks || [], cachedAt: Date.now(), identity: cacheIdentity || "local" }; const applied = appliedVersionsRef.current.get(value.weekId); if (applied !== undefined && value.version < applied) return; appliedVersionsRef.current.set(value.weekId, value.version); weekCache.set(value.weekId, value); if (cacheIdentity) { await persistCachedWeek(value, generation); await putCachedWeekSelection({ weekId: value.weekId, weekCommencing: value.weekCommencing, identity: cacheIdentity, selectedAt: Date.now() }); } if (operation !== operationRef.current) return; weeksRef.current = value.weeks || []; setWeeks(weeksRef.current); setSnapshot(value.snapshot); setDishReferences(parseDishReferences(body.dishReferences, weekId, value.version)); setPublicationState(value.publicationState); } } catch { /* Background revalidation must not blank a visible cached week. */ } }, [fetchWeek]);
+  const revalidateWeek = useCallback(async (weekId: string, cached: CachedMenuWeek, operation: number, generation: number) => { try { const started = performance.now(); const summaryBody = await readJson(await fetch(`/api/rolling-menu?summariesOnly=true&weekId=${encodeURIComponent(weekId)}`, { cache: "no-store" })); const summary = summaryBody.week as { id: string; version: number } | null | undefined; console.info("Menu Planning week cache timing", { source: "server", weekHeadVersionCheckMs: performance.now() - started, cacheVersion: cached.version, serverVersion: summary?.version }); if (operation !== operationRef.current || (summary && Number(summary.version) <= cached.version)) return; const body = await fetchWeek(weekId); if (operation !== operationRef.current || body.snapshot?.week?.id !== weekId) return; if (body.snapshot?.week?.id) { const value: CachedMenuWeek = { weekId: body.snapshot.week.id, weekCommencing: body.snapshot.week.weekCommencing, version: Number(body.snapshot.week.version || 0), snapshot: body.snapshot, publicationState: body.publicationState || {}, weeks: body.weeks || [], cachedAt: Date.now(), identity: cacheIdentity || "local" }; const applied = appliedVersionsRef.current.get(value.weekId); if (applied !== undefined && value.version < applied) return; appliedVersionsRef.current.set(value.weekId, value.version); weekCache.set(value.weekId, value); if (cacheIdentity) { await persistCachedWeek(value, generation); await putCachedWeekSelection({ weekId: value.weekId, weekCommencing: value.weekCommencing, identity: cacheIdentity, selectedAt: Date.now() }); } if (operation !== operationRef.current) return; weeksRef.current = value.weeks || []; setWeeks(weeksRef.current); snapshotRef.current = value.snapshot; setSnapshot(value.snapshot); setDishReferences(parseDishReferences(body.dishReferences, weekId, value.version)); setPublicationState(value.publicationState); } } catch { /* Background revalidation must not blank a visible cached week. */ } }, [fetchWeek]);
   const load = useCallback(async (weekId?: string) => { const operation = ++operationRef.current; const generation = weekCacheWriter.currentGeneration(); setLoadFailure(undefined); try {
     const availableWeeks = weeksRef.current;
     let target = weekId || (requestedWeek ? availableWeeks.find(item => item.id === requestedWeek || item.weekCommencing === requestedWeek)?.id : undefined);
@@ -101,7 +113,7 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
     const body = await fetchWeek(target); if (operation !== operationRef.current) return; const identity = typeof body.identity === "string" ? body.identity : "";
     if (identity && cacheIdentity && identity !== cacheIdentity) { weekCacheWriter.invalidate(); weekCache.clear(); await clearMenuPlanningCache(); }
     if (identity) cacheIdentity = identity;
-    const next: CachedMenuWeek = { weekId: body.snapshot.week.id, weekCommencing: body.snapshot.week.weekCommencing, version: Number(body.snapshot.week.version || 0), snapshot: body.snapshot, publicationState: body.publicationState || {}, weeks: body.weeks || [], cachedAt: Date.now(), identity: cacheIdentity || "local" }; appliedVersionsRef.current.set(next.weekId, next.version); weekCache.set(next.weekId, next); persistInBackground(next, generation); if (operation !== operationRef.current) return; setError(""); setSnapshot(next.snapshot); setDishReferences(parseDishReferences(body.dishReferences, next.weekId, next.version)); weeksRef.current = body.weeks || availableWeeks; setWeeks(weeksRef.current); setPublicationState(next.publicationState);
+    const next: CachedMenuWeek = { weekId: body.snapshot.week.id, weekCommencing: body.snapshot.week.weekCommencing, version: Number(body.snapshot.week.version || 0), snapshot: body.snapshot, publicationState: body.publicationState || {}, weeks: body.weeks || [], cachedAt: Date.now(), identity: cacheIdentity || "local" }; appliedVersionsRef.current.set(next.weekId, next.version); weekCache.set(next.weekId, next); persistInBackground(next, generation); if (operation !== operationRef.current) return; setError(""); snapshotRef.current = next.snapshot; setSnapshot(next.snapshot); setDishReferences(parseDishReferences(body.dishReferences, next.weekId, next.version)); weeksRef.current = body.weeks || availableWeeks; setWeeks(weeksRef.current); setPublicationState(next.publicationState);
     const governedWeeks = [...(body.weeks || availableWeeks)].sort((a: { weekCommencing: string }, b: { weekCommencing: string }) => a.weekCommencing.localeCompare(b.weekCommencing)); const index = governedWeeks.findIndex((item: { id: string }) => item.id === next.snapshot?.week?.id); for (const neighbor of [governedWeeks[index - 1], governedWeeks[index + 1]]) if (neighbor && !weekCache.has(neighbor.id)) void fetchWeek(neighbor.id, true).then(prefetched => { if (prefetched.snapshot?.week?.id) { const value: CachedMenuWeek = { weekId: prefetched.snapshot.week.id, weekCommencing: prefetched.snapshot.week.weekCommencing, version: Number(prefetched.snapshot.week.version || 0), snapshot: prefetched.snapshot, publicationState: prefetched.publicationState || {}, weeks: prefetched.weeks || [], cachedAt: Date.now(), identity: cacheIdentity || "local" }; const applied = appliedVersionsRef.current.get(value.weekId); if (applied === undefined || value.version >= applied) { appliedVersionsRef.current.set(value.weekId, value.version); weekCache.set(value.weekId, value); if (cacheIdentity) void persistCachedWeek(value, generation); } } }).catch(() => undefined);
   } catch (cause) { if (operation !== operationRef.current) return; setLoadFailure(loadFailureFrom(cause)); setError(cause instanceof Error ? cause.message : "Menu could not be loaded."); } }, [applyCached, fetchWeek, revalidateWeek, requestedWeek]);
   const refreshWeek = useCallback(async (weekId: string) => {
@@ -118,7 +130,7 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
       weekCache.set(weekId, value);
       weeksRef.current = value.weeks || weeksRef.current;
       setWeeks(weeksRef.current);
-      setSnapshot(value.snapshot);
+      snapshotRef.current = value.snapshot; setSnapshot(value.snapshot);
       setDishReferences(parseDishReferences(body.dishReferences, weekId, value.version));
       setPublicationState(value.publicationState);
       setError("");
@@ -135,7 +147,92 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
   useEffect(() => { if (shouldLoadCatalogue) void loadCatalogue(setDishes).then(setDishes).catch((cause: Error) => setError(cause.message)); }, [shouldLoadCatalogue]);
   const selectWeek = useCallback((weekId: string) => { const target = weeksRef.current.find(item => item.id === weekId); if (!target) return; operationRef.current += 1; const url = new URL(window.location.href); url.searchParams.set("week", target.weekCommencing); url.searchParams.delete("day"); window.history.pushState({}, "", url); setRequestedWeek(target.weekCommencing); if (cacheIdentity) void putCachedWeekSelection({ weekId: target.id, weekCommencing: target.weekCommencing, identity: cacheIdentity, selectedAt: Date.now() }); }, []);
   useEffect(() => { const onSelect = (event: Event) => { const weekId = (event as CustomEvent<string>).detail; selectWeek(weekId); }; window.addEventListener("menu-week-select", onSelect); return () => window.removeEventListener("menu-week-select", onSelect); }, [selectWeek]);
-  const command = useCallback(async (action: string, extra: Record<string, unknown> = {}) => { const operation = ++operationRef.current; const generation = weekCacheWriter.currentGeneration(); const payload = { ...extra } as Record<string, any>; if (snapshot && (action === "create-entry" || action === "update-entry" || action === "batch-update-entries") && snapshot.week.id === payload.weekId) { payload.expectedWeekVersion ??= snapshot.week.version; if (action === "update-entry") { const entry = snapshot.entries.find(candidate => candidate.id === payload.entryId); payload.dayId ??= entry?.dayId; } else if (action === "batch-update-entries" && Array.isArray(payload.updates)) payload.updates = payload.updates.map((update: Record<string, unknown>) => ({ ...update, dayId: update.dayId || snapshot.entries.find(entry => entry.id === update.entryId)?.dayId })); } setMessage("Saving…"); try { const response = await fetch("/api/rolling-menu", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...payload }) }); const body = await response.json().catch(() => ({})); if (operation !== operationRef.current) return false; if (!response.ok) { setError(body.error?.message || "Could not save."); setMessage(""); return false; } const nextSnapshot = body.mutation && snapshot ? applyRollingMutationDelta(snapshot, body.mutation) : body.snapshot; const nextWeeks = body.weeks || (body.mutation?.week ? weeksRef.current.map(week => week.id === body.mutation.week.id ? { ...week, ...body.mutation.week } : week) : weeksRef.current); const nextPublicationState = body.publicationState || publicationState; setError(""); if (body.handoff && nextSnapshot) setHandoff({ weekId: nextSnapshot.week.id, value: body.handoff }); if (nextSnapshot) { setSnapshot(nextSnapshot); setDishReferences(parseDishReferences(body.dishReferences, nextSnapshot.week.id, Number(nextSnapshot.week.version || 0))); } else setDishReferences(undefined); setWeeks(nextWeeks); weeksRef.current = nextWeeks; setPublicationState(nextPublicationState); const value = nextSnapshot?.week?.id ? { weekId: nextSnapshot.week.id, weekCommencing: nextSnapshot.week.weekCommencing, version: Number(nextSnapshot.week.version || 0), snapshot: nextSnapshot, publicationState: nextPublicationState, weeks: nextWeeks, cachedAt: Date.now(), identity: cacheIdentity || "local" } as CachedMenuWeek : undefined; if (value) { appliedVersionsRef.current.set(value.weekId, value.version); weekCache.set(value.weekId, value); if (cacheIdentity) { void persistCachedWeek(value, generation); void putCachedWeekSelection({ weekId: value.weekId, weekCommencing: value.weekCommencing, identity: cacheIdentity, selectedAt: Date.now() }); } } setMessage(action === "publish" ? `Published · downstream handoff ${body.handoff?.status || "pending"}` : action === "batch-update-entries" ? "Changes saved" : "Saved"); window.setTimeout(() => setMessage(""), 1200); return true; } catch (cause) { if (operation !== operationRef.current) return false; setError(cause instanceof Error ? cause.message : "Could not save. Please try again."); setMessage(""); return false; } }, [publicationState, snapshot]);
+  const command = useCallback(async (action: string, extra: Record<string, unknown> = {}) => {
+    const operation = ++operationRef.current;
+    const generation = weekCacheWriter.currentGeneration();
+    const payload = { ...extra } as Record<string, any>;
+    const weekMutation = action === "create-entry" || action === "update-entry" || action === "batch-update-entries";
+    const requestedWeekId = typeof payload.weekId === "string" ? payload.weekId : undefined;
+    const currentSnapshot = snapshotRef.current;
+    const baseSnapshot = currentSnapshot?.week.id === requestedWeekId ? currentSnapshot : snapshot;
+    if (weekMutation && baseSnapshot && baseSnapshot.week.id === requestedWeekId) {
+      payload.expectedWeekVersion = baseSnapshot.week.version;
+      if (action === "update-entry") {
+        const entry = baseSnapshot.entries.find(candidate => candidate.id === payload.entryId);
+        payload.dayId ??= entry?.dayId;
+      } else if (action === "batch-update-entries" && Array.isArray(payload.updates)) {
+        payload.updates = payload.updates.map((update: Record<string, unknown>) => ({ ...update, dayId: update.dayId || baseSnapshot.entries.find(entry => entry.id === update.entryId)?.dayId }));
+      }
+    }
+    setMessage("Saving…");
+    try {
+      const response = await fetch("/api/rolling-menu", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...payload }) });
+      const body = await response.json().catch(() => ({}));
+      if (operation !== operationRef.current && !weekMutation) return false;
+      if (!response.ok) {
+        const errorMessage = body.error?.message || "Could not save.";
+        if (response.status === 409 && weekMutation && requestedWeekId) {
+          const refreshed = await refreshWeek(requestedWeekId);
+          setError(refreshed ? `${errorMessage} The latest week is loaded. Review it before trying again.` : errorMessage);
+        } else setError(errorMessage);
+        setMessage("");
+        return false;
+      }
+      const latestSnapshot = snapshotRef.current;
+      const weekId = body.mutation?.week?.id || body.snapshot?.week?.id;
+      const cachedSnapshot = weekId ? weekCache.get(weekId)?.snapshot : undefined;
+      const localSnapshot = latestSnapshot?.week.id === weekId ? latestSnapshot : cachedSnapshot;
+      const responseBase = latestSnapshot?.week.id === weekId ? latestSnapshot : cachedSnapshot || baseSnapshot;
+      const responseSnapshot = body.snapshot as RollingSnapshot | undefined;
+      const nextSnapshot = body.mutation && responseBase
+        ? applyRollingMutationDelta(responseBase, body.mutation)
+        : responseSnapshot && localSnapshot && localSnapshot.week.id === responseSnapshot.week.id && Number(localSnapshot.week.version) > Number(responseSnapshot.week.version)
+          ? localSnapshot
+          : responseSnapshot;
+      const nextWeeks = body.weeks || (body.mutation?.week ? weeksRef.current.map(week => week.id === body.mutation.week.id ? { ...week, ...body.mutation.week } : week) : weeksRef.current);
+      const nextPublicationState = body.publicationState || publicationState;
+      setError("");
+      if (body.handoff && nextSnapshot) setHandoff({ weekId: nextSnapshot.week.id, value: body.handoff });
+      const selectedWeekStillMatches = Boolean(nextSnapshot && (weekMutation ? snapshotRef.current?.week.id === nextSnapshot.week.id : operation === operationRef.current));
+      if (nextSnapshot) {
+        const value: CachedMenuWeek = { weekId: nextSnapshot.week.id, weekCommencing: nextSnapshot.week.weekCommencing, version: Number(nextSnapshot.week.version || 0), snapshot: nextSnapshot, publicationState: nextPublicationState, weeks: nextWeeks, cachedAt: Date.now(), identity: cacheIdentity || "local" };
+        appliedVersionsRef.current.set(value.weekId, value.version);
+        weekCache.set(value.weekId, value);
+        if (cacheIdentity) { void persistCachedWeek(value, generation); void putCachedWeekSelection({ weekId: value.weekId, weekCommencing: value.weekCommencing, identity: cacheIdentity, selectedAt: Date.now() }); }
+        if (selectedWeekStillMatches) {
+          snapshotRef.current = nextSnapshot;
+          setSnapshot(nextSnapshot);
+          setDishReferences(parseDishReferences(body.dishReferences, nextSnapshot.week.id, Number(nextSnapshot.week.version || 0)));
+          setPublicationState(nextPublicationState);
+          setWeeks(nextWeeks);
+          weeksRef.current = nextWeeks;
+        }
+      } else setDishReferences(undefined);
+      setMessage(action === "publish" ? `Published · downstream handoff ${body.handoff?.status || "pending"}` : action === "batch-update-entries" ? "Changes saved" : "Saved");
+      window.setTimeout(() => setMessage(""), 1200);
+      return true;
+    } catch (cause) {
+      if (operation !== operationRef.current && !weekMutation) return false;
+      if (weekMutation && requestedWeekId) {
+        const refreshed = await refreshWeek(requestedWeekId);
+        const latest = snapshotRef.current?.week.id === requestedWeekId ? snapshotRef.current : undefined;
+        const entry = latest?.entries.find(candidate => candidate.id === payload.entryId);
+        const patch = payload.patch && typeof payload.patch === "object" ? payload.patch as Record<string, unknown> : undefined;
+        const confirmed = Boolean(refreshed && latest && (
+          (action === "create-entry" && latest.entries.some(candidate => candidate.dayId === payload.dayId && candidate.slot === payload.slot && candidate.itemId === payload.itemId && candidate.itemLabel === payload.itemLabel)) ||
+          (action === "update-entry" && entry && patch && Object.entries(patch).every(([key, value]) => JSON.stringify((entry as unknown as Record<string, unknown>)[key]) === JSON.stringify(value)))
+        ));
+        if (confirmed) {
+          setError("");
+          setMessage("Save confirmed in the latest week.");
+          return true;
+        }
+        setError(refreshed ? "The save response was interrupted. The latest week is loaded; check the slot before trying again." : "The save response was interrupted and the latest week could not be checked. Do not retry until the week has been refreshed.");
+      } else setError(cause instanceof Error ? cause.message : "Could not save. Please try again.");
+      setMessage("");
+      return false;
+    }
+  }, [publicationState, refreshWeek, snapshot]);
   const refreshDishes = async () => { resetCatalogueMemory(); setDishes(await loadCatalogue(setDishes)); };
   return { snapshot, setSnapshot, loadFailure, weeks, dishes, dishReferences, refreshDishes, publicationState, handoff, message, error, setError, load, refreshWeek, selectWeek, command };
 }

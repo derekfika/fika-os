@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { getCachedWeek, getCachedWeekSelection, putCachedWeek, setMenuCacheOpenTimeoutForTests, type CachedMenuWeek } from "../lib/menu-week-cache";
-import { MenuLoadError, loadFailureFrom, withMenuRequestTimeout } from "../app/planner-data";
+import { applyRollingMutationDelta, MenuLoadError, loadFailureFrom, withMenuRequestTimeout } from "../app/planner-data";
 
 const source = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 const globals = globalThis as unknown as { indexedDB?: unknown };
@@ -34,6 +34,24 @@ test("a completed rolling-menu request clears its timeout", async () => {
   assert.equal(result, "loaded");
 });
 
+test("rolling mutation deltas advance the week and include newly created entries", () => {
+  const before = {
+    week: { id: "rolling-week:2099-01-05", version: 96, entryIds: [] },
+    days: [{ id: "day:1", entryIds: [] }],
+    entries: [],
+  } as unknown as Parameters<typeof applyRollingMutationDelta>[0];
+  const created = { id: "entry:new", dayId: "day:1", slot: "SALAD 1", itemId: "dish:new", itemLabel: "New salad" } as never;
+  const after = applyRollingMutationDelta(before, {
+    week: { ...before.week, version: 97, entryIds: ["entry:new"] },
+    days: [{ id: "day:1", entryIds: ["entry:new"] } as never],
+    entries: [created],
+  });
+  assert.equal(after.week.version, 97);
+  assert.equal(after.entries[0]?.id, "entry:new");
+  assert.deepEqual(after.days[0]?.entryIds, ["entry:new"]);
+  assert.equal(applyRollingMutationDelta(after, { week: { ...after.week, version: 97 }, days: [], entries: [] }), after, "an already-applied version is not applied twice");
+});
+
 test("planner-data surfaces status from readJson and never awaits cache persistence before rendering", async () => {
   const data = await source("../app/planner-data.ts");
   assert.match(data, /throw new MenuLoadError\(/);
@@ -42,7 +60,10 @@ test("planner-data surfaces status from readJson and never awaits cache persiste
   assert.match(data, /const load = useCallback\(async \(weekId\?: string\) => \{[^\n]*setLoadFailure\(undefined\)/);
   assert.doesNotMatch(data, /await persistCachedWeek\(next/);
   assert.doesNotMatch(data, /await persistCachedWeek\(value, generation\);\s*\n\s*await putCachedWeekSelection/);
-  assert.match(data, /persistInBackground\(next, generation\); if \(operation !== operationRef\.current\) return; setError\(""\); setSnapshot\(next\.snapshot\)/);
+  assert.match(data, /if \(operation !== operationRef\.current && !weekMutation\) return false/);
+  assert.match(data, /response\.status === 409 && weekMutation && requestedWeekId/);
+  assert.match(data, /The latest week is loaded\. Review it before trying again\./);
+  assert.match(data, /The save response was interrupted[\s\S]*Do not retry until the week has been refreshed\./);
 });
 
 test("Week Planner shows an alert with Retry instead of loading forever when the first load fails", async () => {
