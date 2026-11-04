@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-04T20:57:52.309Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-04T21:08:52.935Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -329,6 +329,7 @@ Snapshot: 2026-11-04T20:57:52.309Z. The local governed registry remains authorit
 | staging-release-manager-7 | claude-staging-release | docs/deployment/staging-release-scoreboard-5.md | codex/staging-release-manager-7 | — | retired | 2026-10-31T21:38:08.370Z |
 | staging-release-manager-8 | claude-staging-release | docs/deployment/staging-release-scoreboard-6.md | codex/staging-release-manager-8 | — | retired | 2026-11-01T02:03:18.793Z |
 | staging-release-manager | claude-staging-release | docs/deployment/staging-release-scoreboard.md | codex/staging-release-manager | — | finished | 2026-10-31T07:45:44.895Z |
+| staging-url-guidance-20261104 | codex-staging-url-guidance | AGENTS.md, overnight.md | codex/staging-url-guidance-20261104 | [#356](https://github.com/derekfika/fika-os/pull/356) | retired | 2026-11-04T21:08:49.688Z |
 | standing-orders-pr14-sync | codex-standing-orders-pr14-sync | apps/delivered-in, apps/integration-hub, docs/deployment, CHANGELOG.md | codex/standing-orders-pr14-sync | — | finished | 2026-10-23T12:09:58.445Z |
 | uat-blocker-checkpoint | uat-20261025-1150 | CHANGELOG.md | codex/uat-blocker-checkpoint | [#45](https://github.com/derekfika/fika-os/pull/45) | retired | 2026-10-25T12:49:14.064Z |
 | uat-handback-2026-10-31 | claude-uat-handback | docs/agent-handbacks | codex/uat-handback-2026-10-31 | [#203](https://github.com/derekfika/fika-os/pull/203) | retired | 2026-10-31T11:20:46.034Z |
