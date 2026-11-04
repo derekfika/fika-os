@@ -582,8 +582,8 @@ export function buildPlannerDay(input: {
           stopId: stop.canonicalId,
           sequence: stop.sequence,
           destination: {
-            id: stop.locationOplocId,
-            label: oplocLabel(stop.locationOplocId, stop.locationLabelSnapshot),
+            id: stop.oneOffEndpointId || stop.locationOplocId,
+            label: stop.oneOffEndpointId ? stop.locationLabelSnapshot : oplocLabel(stop.locationOplocId, stop.locationLabelSnapshot),
           },
           requiredTime: stop.requiredTime,
           window: stop.window,

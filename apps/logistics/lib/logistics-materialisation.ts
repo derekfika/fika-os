@@ -1,3 +1,4 @@
+import { sameMenuDestination } from "@fika/server-shared/menu-destination";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import { CPU_PRODUCTION_LOCATION_ID, CPU_SITE_OPLOC_ID } from "../../shared/production-location";
 import { buildLogisticsDayProjection, type LogisticsProjectionInvalidation } from "./logistics-projection";
@@ -55,6 +56,7 @@ export function logisticsJobForRequirement(
     ...(originOplocId ? { originOplocId } : {}),
     destinationOplocId: requirement.destinationOplocId,
     destinationLabelSnapshot: requirement.destinationLabelSnapshot,
+    ...(requirement.destination ? { destination: requirement.destination } : {}),
     ...(requirement.requiredDeliveryWindow ? { requestedWindow: requirement.requiredDeliveryWindow } : requirement.readyAt ? { requestedWindow: { startTime: new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(requirement.readyAt)) } } : {}),
     productionReadiness: readiness,
     deliveryStatus: prior?.deliveryStatus || "pending",
@@ -82,6 +84,7 @@ function jobMaterialisationContent(job: LogisticsJob) {
     originOplocId: job.originOplocId,
     destinationOplocId: job.destinationOplocId,
     destinationLabelSnapshot: job.destinationLabelSnapshot,
+    ...(job.destination?.kind === "one-off" ? { destination: job.destination } : {}),
     requestedWindow: job.requestedWindow,
     productionReadiness: job.productionReadiness,
     contents: job.contents,
@@ -201,6 +204,12 @@ export async function reconcileRequirementJob(id: string, requirement: Fulfilmen
       const loadId = doc.data().loadId;
       const loadSnapshot = await tx.get(deliveryLoads().doc(loadId));
       const load = loadSnapshot.exists ? loadSnapshot.data() as DeliveryLoad : undefined;
+      if (load && next.destination?.kind === "one-off" && !sameMenuDestination(next.destination, load.destination) && (load.loaded || load.status === "dispatched" || load.status === "delivered" || load.deliveryExecution?.arrivedAt || load.deliveryExecution?.completion)) {
+        // Preserve movement/execution evidence. The new source remains in
+        // attention and fails compatibility until Logistics explicitly reconciles it.
+        next.productionReadiness = "attention";
+        continue;
+      }
       if (!load || !compatibleAssignedLoad(next, load)) {
         const members = load ? await tx.get(logisticsAssignments().where("loadId", "==", load.id)) : undefined;
         const remainingJobs = members ? (await Promise.all(members.docs.filter(member => member.data().jobId !== id).map(member => tx.get(logisticsJobs().doc(member.data().jobId))))).filter(snapshot => snapshot.exists).map(snapshot => snapshot.data() as LogisticsJob) : [];
@@ -216,7 +225,11 @@ export async function reconcileRequirementJob(id: string, requirement: Fulfilmen
     const dayStops = nativeState ? nativeSnapshots.filter(doc => doc.exists).map(doc => normalizeStop(doc.data()!)) : dayRuns ? (await Promise.all(dayRuns.docs.map(doc => tx.get(stops().where("runId", "==", doc.id))))).flatMap(snapshot => snapshot.docs.map(doc => normalizeStop(doc.data()))) : [];
     for (const stop of dayStops.filter(stop => stop.requirementRefs.some(ref => ref.requirementId === requirementId))) {
       const arrival = stop.plannedArrivalTime || stop.plannedWindow?.startTime;
-      const compatible = next.sourceStatus !== "withdrawn" && stop.locationOplocId === next.destinationOplocId && (!prior || prior.originOplocId === next.originOplocId && prior.serviceDate === next.serviceDate) && (!arrival || compatibleLoad(next, { serviceDate: next.serviceDate, originOplocId: next.originOplocId!, destinationOplocId: stop.locationOplocId, scheduledTime: arrival, status: "planned" } as DeliveryLoad));
+      const compatible = next.sourceStatus !== "withdrawn" && (next.destination?.kind === "one-off" ? stop.oneOffEndpointId === next.destination.id && stop.locationAddressSnapshot === next.destination.address && (!prior || sameMenuDestination(prior.destination, next.destination)) : stop.locationOplocId === next.destinationOplocId) && (!prior || prior.originOplocId === next.originOplocId && prior.serviceDate === next.serviceDate) && (!arrival || compatibleLoad(next, { serviceDate: next.serviceDate, originOplocId: next.originOplocId!, destinationOplocId: next.destinationOplocId, destination: next.destination, scheduledTime: arrival, status: "planned" } as DeliveryLoad));
+      if (!compatible && next.destination?.kind === "one-off" && (stop.status === "arrived" || stop.status === "completed" || stop.loaded)) {
+        next.productionReadiness = "attention";
+        continue;
+      }
       const refs = compatible ? stop.requirementRefs.map(ref => ref.requirementId === requirementId ? { ...ref, sourceVersion: next.sourceVersion || ref.sourceVersion } : ref) : stop.requirementRefs.filter(ref => ref.requirementId !== requirementId);
       if (JSON.stringify(refs) === JSON.stringify(stop.requirementRefs)) continue;
       nativeChanges.push({ stop, refs, remove: !refs.length && !stop.movementRequestIds.length });

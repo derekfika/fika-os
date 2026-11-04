@@ -1,3 +1,4 @@
+import { menuDestination } from "@fika/server-shared/menu-destination";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { appDataPath, resolveGovernedOploc } from "./fika-contracts";
@@ -31,6 +32,7 @@ const dayName = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateStri
 const slotOf = (value: unknown): string | undefined => { const text = String(value ?? "").trim().toUpperCase(); if (ROLLING_SLOTS.includes(text as (typeof ROLLING_SLOTS)[number]) || LEGACY_ROLLING_SLOTS.includes(text as (typeof LEGACY_ROLLING_SLOTS)[number])) return text; if (/^EXTRAS/.test(text)) return "EXTRAS 1"; return undefined; };
 export type LiveGovernedOploc = { canonicalId: string; label: string; legacyIds?: string[] };
 const normaliseDestination = (allocation: RollingAllocation, liveOplocs: readonly LiveGovernedOploc[] = []): RollingAllocation => {
+  if (allocation.oneOffDestinationId || allocation.destination?.kind === "one-off") { const oneOff = { ...allocation }; if (!oneOff.destinationId) delete oneOff.destinationId; return oneOff; }
   const liveById = new Map(liveOplocs.flatMap(oploc => [[oploc.canonicalId, oploc] as const, ...(oploc.legacyIds || []).map(id => [id, oploc] as const)]));
   const liveByLabel = new Map(liveOplocs.map(oploc => [oploc.label.trim().toLocaleLowerCase(), oploc]));
   const live = allocation.destinationId ? liveById.get(allocation.destinationId) : undefined;
@@ -49,7 +51,15 @@ const normaliseDestination = (allocation: RollingAllocation, liveOplocs: readonl
   delete oneOff.destinationId;
   return oneOff;
 };
-export const normaliseRollingSnapshotDestinations = (snapshot: RollingSnapshot, liveOplocs: readonly LiveGovernedOploc[] = []): RollingSnapshot => ({ ...snapshot, entries: snapshot.entries.map(entry => ({ ...entry, allocations: entry.allocations.map(allocation => normaliseDestination(allocation, liveOplocs)) })) });
+export const normaliseRollingSnapshotDestinations = (snapshot: RollingSnapshot, liveOplocs: readonly LiveGovernedOploc[] = []): RollingSnapshot => ({
+  ...snapshot,
+  entries: snapshot.entries.map(entry => ({ ...entry, allocations: entry.allocations.map(allocation => {
+    const registered = snapshot.days.find(day => day.id === entry.dayId)?.oneOffDestinations || [];
+    const matches = !allocation.destinationId && !allocation.oneOffDestinationId ? registered.filter(item => item.label === allocation.destinationLabel && (item.address || "") === (allocation.destinationAddress || "")) : [];
+    const scoped = matches.length === 1 ? { ...allocation, oneOffDestinationId: matches[0].id } : allocation;
+    return normaliseDestination(scoped, liveOplocs);
+  }) })),
+});
 export async function attachCanonicalDishIds(items: Array<{ canonicalId: string; displayName: string; reviewStatus?: string }>, actor = "rolling-menu-migration", scope?: { weekId: string; dayId?: string }) { let updated = 0; const active = items.filter(item => item.reviewStatus !== "archived"); const weeks = scope ? [{ id: scope.weekId }] : await listWeeks(); for (const week of weeks) { const snapshot = await getWeek(week.id); let changed = false; for (const entry of snapshot.entries) { if (scope?.dayId && entry.dayId !== scope.dayId) continue; if (entry.itemId) continue; const match = active.find(item => item.displayName.trim().toLocaleLowerCase() === entry.itemLabel.trim().toLocaleLowerCase()); if (!match) continue; entry.itemId = match.canonicalId; entry.audit.push({ action: "canonical-dish-identity-attached", at: now(), by: actor }); updated += 1; changed = true; } if (changed) { snapshot.week.version += 1; await saveSnapshot(snapshot, snapshot.week.version - 1); } } return updated; }
 export async function repointDestinationId(oldId: string, newId: string, newLabel: string, actor = "oploc-identity-recovery") {
   let updated = 0;
@@ -183,7 +193,17 @@ export async function addOneOffDestination(weekId: string, dayId: string, label:
   if (!day) throw Object.assign(new Error("Menu day was not found."), { status: 404 });
   if (!cleanLabel) throw Object.assign(new Error("A one-off location name is required."), { status: 422 });
   const existing = day.oneOffDestinations?.find(item => item.label.toLocaleLowerCase() === cleanLabel.toLocaleLowerCase());
-  if (existing) return snapshot;
+  if (existing) {
+    if (!cleanAddress || existing.address === cleanAddress && existing.addressStatus === "confirmed") return snapshot;
+    for (const entry of snapshot.entries.filter(entry => entry.dayId === day.id)) for (const allocation of entry.allocations) {
+      if (!allocation.destinationId && !allocation.oneOffDestinationId && allocation.destinationLabel === existing.label && (allocation.destinationAddress || "") === (existing.address || "")) allocation.oneOffDestinationId = existing.id;
+    }
+    existing.address = cleanAddress;
+    existing.addressStatus = "confirmed";
+    snapshot.week.version += 1;
+    snapshot.week.audit.push({ action: "one-off-destination-address-updated", at: now(), by: actor });
+    return saveSnapshot(snapshot, snapshot.week.version - 1);
+  }
   day.oneOffDestinations = [...(day.oneOffDestinations || []), { id: `${day.id}:one-off:${Date.now()}`, label: cleanLabel, ...(cleanAddress ? { address: cleanAddress, addressStatus: "confirmed" as const } : { addressStatus: "pending" as const }) }];
   snapshot.week.version += 1; snapshot.week.audit.push({ action: "one-off-destination-added", at: now(), by: actor });
   return saveSnapshot(snapshot, snapshot.week.version - 1);
@@ -344,8 +364,25 @@ export async function resetWeek(weekId: string, actor = "local-menu-planner") {
   target.week.audit.push({ action: "week-reset", at: now(), by: actor });
   return saveSnapshot(target, target.week.version - 1);
 }
-function entryIntegrityErrors(entry: RollingEntry, governedIds?: Set<string>) { const errors: string[] = []; const label = entry.itemLabel.trim() || entry.slot; const invalidQuantities = entry.allocations.filter(allocation => !Number.isFinite(allocation.quantity) || allocation.quantity < 0); const activeAllocations = entry.allocations.filter(allocation => Number.isFinite(allocation.quantity) && allocation.quantity > 0); if (invalidQuantities.length) errors.push(`${label} contains an invalid allocation quantity.`); if (!activeAllocations.length) return errors; if (!entry.itemId?.trim()) errors.push(`${label} needs a canonical dish identity before publication.`); const unknown = activeAllocations.filter(allocation => !allocation.destinationId || (governedIds ? !governedIds.has(allocation.destinationId) : !resolveGovernedOploc(allocation.destinationId))); if (unknown.length) errors.push(`${label} has an unresolved destination; select a governed OPLOC.`); const destinationKeys = activeAllocations.map(allocation => allocation.destinationId || `unresolved:${allocation.destinationLabel.trim().toLocaleLowerCase()}`); if (new Set(destinationKeys).size !== destinationKeys.length) errors.push(`${label} has duplicate destination allocations.`); return errors; }
-export function validateWeek(snapshot: RollingSnapshot, options: { governedOplocIds?: Set<string>; requireCanonicalDishId?: boolean; activeCanonicalDishIds?: Set<string>; canonicalCatalogueUnavailable?: boolean } = {}): string[] { const errors: string[] = []; const entries = snapshot.entries.filter(entry => entry.itemLabel.trim()); if (!entries.length) errors.push("Add at least one menu entry."); let catalogue: MenuItem[] = []; let catalogueError = Boolean(options.canonicalCatalogueUnavailable); if (!options.activeCanonicalDishIds && !catalogueError) { try { const cataloguePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json"); const parsed = JSON.parse(readFileSync(cataloguePath, "utf8")) as { items?: MenuItem[] }; if (!Array.isArray(parsed.items)) throw new Error("items is not an array"); catalogue = parsed.items; } catch { catalogueError = true; } } if (catalogueError && options.requireCanonicalDishId) errors.push("The authoritative canonical Dish Library is unavailable; publication cannot continue."); for (const entry of entries) { errors.push(...entryIntegrityErrors(entry, options.governedOplocIds)); if (options.requireCanonicalDishId && !catalogueError && (options.activeCanonicalDishIds ? !entry.itemId || !options.activeCanonicalDishIds.has(entry.itemId) : !entry.itemId || !catalogue.some(item => item.canonicalId === entry.itemId && item.reviewStatus !== "archived"))) errors.push(`${entry.itemLabel || entry.slot} references a canonical dish that does not exist or is archived.`); } return [...new Set(errors)]; }
+function entryIntegrityErrors(entry: RollingEntry, governedIds?: Set<string>, day?: RollingDay) {
+  const errors: string[] = [];
+  const label = entry.itemLabel.trim() || entry.slot;
+  if (entry.allocations.some(allocation => !Number.isFinite(allocation.quantity) || allocation.quantity < 0)) errors.push(`${label} contains an invalid allocation quantity.`);
+  const active = entry.allocations.filter(allocation => Number.isFinite(allocation.quantity) && allocation.quantity > 0);
+  if (!active.length) return errors;
+  if (!entry.itemId?.trim()) errors.push(`${label} needs a canonical dish identity before publication.`);
+  const keys: string[] = [];
+  for (const allocation of active) {
+    try {
+      const destination = menuDestination(allocation, entry.dayId, day?.oneOffDestinations || []);
+      if (destination.kind === "governed" && !(governedIds ? governedIds.has(destination.id) : resolveGovernedOploc(destination.id))) errors.push(`${label} has an unresolved governed destination; select its current Hub OPLOC.`);
+      keys.push(destination.id);
+    } catch (error) { errors.push(`${label}: ${error instanceof Error ? error.message : "The destination is invalid."}`); }
+  }
+  if (new Set(keys).size !== keys.length) errors.push(`${label} has duplicate destination allocations.`);
+  return errors;
+}
+export function validateWeek(snapshot: RollingSnapshot, options: { governedOplocIds?: Set<string>; requireCanonicalDishId?: boolean; activeCanonicalDishIds?: Set<string>; canonicalCatalogueUnavailable?: boolean } = {}): string[] { const errors: string[] = []; const entries = snapshot.entries.filter(entry => entry.itemLabel.trim()); if (!entries.length) errors.push("Add at least one menu entry."); let catalogue: MenuItem[] = []; let catalogueError = Boolean(options.canonicalCatalogueUnavailable); if (!options.activeCanonicalDishIds && !catalogueError) { try { const cataloguePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json"); const parsed = JSON.parse(readFileSync(cataloguePath, "utf8")) as { items?: MenuItem[] }; if (!Array.isArray(parsed.items)) throw new Error("items is not an array"); catalogue = parsed.items; } catch { catalogueError = true; } } if (catalogueError && options.requireCanonicalDishId) errors.push("The authoritative canonical Dish Library is unavailable; publication cannot continue."); for (const entry of entries) { errors.push(...entryIntegrityErrors(entry, options.governedOplocIds, snapshot.days.find(day => day.id === entry.dayId))); if (options.requireCanonicalDishId && !catalogueError && (options.activeCanonicalDishIds ? !entry.itemId || !options.activeCanonicalDishIds.has(entry.itemId) : !entry.itemId || !catalogue.some(item => item.canonicalId === entry.itemId && item.reviewStatus !== "archived"))) errors.push(`${entry.itemLabel || entry.slot} references a canonical dish that does not exist or is archived.`); } return [...new Set(errors)]; }
 
 export async function validateWeekAuthoritative(snapshot: RollingSnapshot, options: { governedOplocIds?: Set<string>; requireCanonicalDishId?: boolean } = {}) {
   const requireCanonicalDishId = options.requireCanonicalDishId !== false;

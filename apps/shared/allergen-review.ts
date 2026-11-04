@@ -54,7 +54,7 @@ export function reopenRow(allergens: Record<string, unknown> | undefined): Canon
 }
 
 /** A row is confirmed only if the record is current-semantics, attributed, matches the present inputs and the map is complete. */
-export function isRowConfirmed(row: { allergens: Record<string, unknown> | undefined; review?: Partial<AllergenRowReview> | null; identity: string; mayContainNotes?: string }): boolean {
+export function isRowConfirmed(row: { allergens: Record<string, unknown> | undefined; review?: (Partial<Omit<AllergenRowReview, "semantics">> & { semantics?: number }) | null; identity: string; mayContainNotes?: string; allergenDetailNotes?: string }): boolean {
   const review = row.review;
   return Boolean(review && review.status === "confirmed" && review.semantics === ROW_CONFIRMATION_SEMANTICS && review.statement === ROW_CONFIRMATION_STATEMENT && review.confirmedBy && review.confirmedAt
     && review.inputFingerprint === rowFingerprint(row.identity, row.allergens, row.mayContainNotes)
@@ -62,6 +62,6 @@ export function isRowConfirmed(row: { allergens: Record<string, unknown> | undef
 }
 
 /** Whether a material edit (identity, positives or may-contain note) invalidates an existing confirmation. */
-export function confirmationInvalidatedBy(review: Partial<AllergenRowReview> | null | undefined, next: { identity: string; allergens: Record<string, unknown> | undefined; mayContainNotes?: string }): boolean {
+export function confirmationInvalidatedBy(review: (Partial<Omit<AllergenRowReview, "semantics">> & { semantics?: number }) | null | undefined, next: { identity: string; allergens: Record<string, unknown> | undefined; mayContainNotes?: string; allergenDetailNotes?: string }): boolean {
   return Boolean(review?.inputFingerprint) && review!.inputFingerprint !== rowFingerprint(next.identity, next.allergens, next.mayContainNotes);
 }

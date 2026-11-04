@@ -66,7 +66,7 @@ export const sameNamedAllergens = (left: Record<string, unknown> | undefined, ri
   return NAMED.every(key => (a[key] ?? "unrecorded") === (b[key] ?? "unrecorded"));
 };
 
-type RowLike = { name: string; allergens: Record<string, unknown> | undefined; evidenceStatus: string; allergenReview?: StoredRowReview | null; noKeyDeclaration?: Partial<NoKeyDeclarationRecord> | null; mayContainNotes?: string };
+type RowLike = { name: string; allergens: Record<string, unknown> | undefined; evidenceStatus: string; allergenReview?: StoredRowReview | null; noKeyDeclaration?: Partial<NoKeyDeclarationRecord> | null; mayContainNotes?: string; allergenDetailNotes?: string };
 
 /**
  * Whether a row holds a chef-verified allergen declaration: checked, and either named allergens or an explicit No Key. A blank row,
@@ -78,6 +78,6 @@ export function rowAttestation(row: RowLike): RowAttestation {
 export const isRowVerified = (row: RowLike) => row.evidenceStatus === "completed" && ["positives", "declared"].includes(rowAttestation(row));
 
 /** Used by tests and the server: a freshly confirmed explicit review is valid for exactly these inputs. */
-export const explicitReviewMatches = (row: RowLike & { identity: string }) => isExplicitRowConfirmed({ allergens: row.allergens, review: row.allergenReview as never, identity: row.identity, mayContainNotes: row.mayContainNotes });
+export const explicitReviewMatches = (row: RowLike & { identity: string }) => isExplicitRowConfirmed({ allergens: row.allergens, review: row.allergenReview as never, identity: row.identity, mayContainNotes: row.mayContainNotes, allergenDetailNotes: row.allergenDetailNotes });
 
 export type { OperationalAllergenState };

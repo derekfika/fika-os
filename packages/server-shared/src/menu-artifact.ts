@@ -23,6 +23,8 @@ export type NormalizedMenuItem = {
   contains: string[];
   /** Canonical allergen keys the dish may contain. */
   mayContain: string[];
+  allergenDetailNotes?: string;
+  mayContainNotes?: string;
 };
 
 export type NormalizedMenuSection = { key: string; label?: string; items: NormalizedMenuItem[] };
@@ -79,9 +81,9 @@ export function menuAllergenLabel(key: string) {
  * Declared allergens for one dish: everything it contains, then anything it may
  * contain (never dropped). `no_key_allergens` is not an allergen.
  */
-export function menuAllergenLine(item: Pick<NormalizedMenuItem, "contains" | "mayContain">) {
+export function menuAllergenLine(item: Pick<NormalizedMenuItem, "contains" | "mayContain" | "allergenDetailNotes" | "mayContainNotes">) {
   const declared = [...new Set([...item.contains, ...item.mayContain])].filter(key => key !== "no_key_allergens");
-  return declared.length ? `(${declared.map(menuAllergenLabel).join(", ")})` : "";
+  return [declared.length ? `(${declared.map(menuAllergenLabel).join(", ")})` : "", item.allergenDetailNotes?.trim() ? `Specific allergens: ${item.allergenDetailNotes.trim()}` : "", item.mayContainNotes?.trim() ? `May contain: ${item.mayContainNotes.trim()}` : ""].filter(Boolean).join("; ");
 }
 
 /** Allergen states from either workflow -> normalized sets. `unrecorded` is never treated as clear. */

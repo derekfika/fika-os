@@ -43,11 +43,13 @@ test("Delivered-In consumes the CPU shared daily bundle gzip package end-to-end"
     assert.match(packet?.manifest.objectName || "", /\.json\.gz$/);
     assert.notEqual(packet?.manifest.contentHash, packet?.packet.contentHash);
     assert.ok(packet);
+    assert.ok(await readCpuDailySignedPacket(published.serviceDate, published.oploc.id, sourceHash, published.source.revision));
+    await assert.rejects(readCpuDailySignedPacket(published.serviceDate, published.oploc.id, sourceHash, published.source.revision + 1), /source version/i);
     assert.equal(packet.bundle.packet.objectName.endsWith(`${packet.packet.contentHash}.json`), true);
     assert.equal(packet?.sourceBundleHash, sourceHash);
     assert.equal(packet?.signedPdfUrl, "https://drive.google.test/pdf");
     assert.equal(cpuDailyPacketReview(packet!).entries.get("entry:1")?.allergens.milk, "contains");
-    assert.equal(cpuDailyPacketReview(packet!).entries.get("entry:1")?.allergens.gluten, undefined);
+    assert.equal(cpuDailyPacketReview(packet!).entries.get("entry:1")?.allergens.gluten, "clear", "the signed recorded clear survives the packet");
   } finally {
     if (previous === undefined) delete process.env.FIKA_SNAPSHOT_DIR;
     else process.env.FIKA_SNAPSHOT_DIR = previous;

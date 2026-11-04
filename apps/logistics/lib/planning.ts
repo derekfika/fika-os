@@ -164,6 +164,8 @@ export function combineStop(
     visitId?: string;
   },
 ) {
+  const destination = input.requirement?.destination;
+  if (destination?.kind === "one-off") input = { ...input, locationOplocId: "", oneOffEndpointId: destination.id, locationLabel: destination.label };
   const now = input.now || new Date().toISOString();
   const sameVisitLocation = (stop: DeliveryStop) =>
     stop.runId === input.runId &&
@@ -208,6 +210,7 @@ export function combineStop(
         ...(input.visitId ? { visitId: input.visitId } : {}),
         ...(input.oneOffEndpointId ? { oneOffEndpointId: input.oneOffEndpointId } : {}),
         locationLabelSnapshot: input.locationLabel,
+        ...(destination?.kind === "one-off" ? { locationAddressSnapshot: destination.address, notes: [destination.address, destination.contact, destination.deliveryInstructions].filter(Boolean).join(" | ") } : {}),
         requirementRefs: input.requirement
           ? [
               {

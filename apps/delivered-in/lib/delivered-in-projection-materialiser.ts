@@ -7,20 +7,20 @@ import { projectionId } from "./delivered-in-day-projection";
 import { writeDeliveredInProjection } from "./delivered-in-projection-store";
 
 type Review = {
-  entries: Map<string, { allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenState?: "clear" | "contains" | "may_contain" | "unrecorded"; mayContainNotes?: string }>;
+  entries: Map<string, { allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenState?: "clear" | "contains" | "may_contain" | "unrecorded"; mayContainNotes?: string; allergenDetailNotes?: string }>;
   cpuReview: { status: "pending" | "signed"; signatures: Array<{ role: string; printedName: string; signedAt: string }>; drivePdfUrl?: string };
   orderIds: string[];
   updatedAt?: string;
   package?: { packageVersion?: number; contentHash?: string; sourceBundleHash?: string; sourceVersion?: string; contractVersion?: string; sourceCompleteness?: "complete" | "partial"; sourceStatus?: "current" | "partial" | "valid_empty"; releaseId?: string; releaseVersion?: string; signedAt?: string; generatedAt?: string };
 };
 
-export type ReviewLoader = (request: NextRequest, date: string, oplocId: string, sourceBundleHash?: string) => Promise<Review | undefined>;
+export type ReviewLoader = (request: NextRequest, date: string, oplocId: string, sourceBundleHash?: string, sourceVersion?: number) => Promise<Review | undefined>;
 
 export async function buildDeliveredInDayProjection(input: { request: NextRequest; site: Site; day: ProjectedDay; loadReview: ReviewLoader; governed: boolean }): Promise<DeliveredInDayProjection> {
   let review: Review | undefined;
   let cpuFailure: { code: string; message: string } | undefined;
   try {
-    review = await input.loadReview(input.request, input.day.date, input.site.oplocId, input.day.contentHash);
+    review = await input.loadReview(input.request, input.day.date, input.site.oplocId, input.day.contentHash, input.day.version);
   } catch (error) {
     const detail = error && typeof error === "object" ? error as { code?: unknown; message?: unknown } : {};
     const code = typeof detail.code === "string" ? detail.code : "CPU_DAILY_PACKET_INVALID";
@@ -34,16 +34,18 @@ export async function buildDeliveredInDayProjection(input: { request: NextReques
   const sourceEntries = input.day.entries.map(entry => {
     const packetId = entry.canonicalDishId || entry.sourceEntryId;
     const packetReviewed = review?.cpuReview.status === "signed" && !cpuFailure ? packetEntries?.get(packetId) : undefined;
-    const allergenKeys = Object.keys(entry.allergens);
+    const allergenKeys = [...new Set([...Object.keys(entry.allergens), ...Object.keys(packetReviewed?.allergens || {})])];
     const allergens = packetReviewed && packetReviewed.allergenState !== "unrecorded"
       ? Object.fromEntries(allergenKeys.map(key => [key, packetReviewed.allergens[key] || "unrecorded" as const]))
       : Object.fromEntries(allergenKeys.map(key => [key, "unrecorded" as const]));
     const allergensVisible = review?.cpuReview.status === "signed" && !cpuFailure && packetReviewed?.allergenState !== "unrecorded" && Object.values(allergens).every(state => state !== "unrecorded");
+    const { mayContainNotes: _unverifiedNotes, allergenDetailNotes: _unverifiedDetails, ...sourceEntry } = entry;
     return {
-      ...entry,
+      ...sourceEntry,
       allergensVisible,
       allergens,
-      ...(packetReviewed?.mayContainNotes ? { mayContainNotes: packetReviewed.mayContainNotes } : {}),
+      ...(allergensVisible && packetReviewed?.mayContainNotes ? { mayContainNotes: packetReviewed.mayContainNotes } : {}),
+      ...(allergensVisible && packetReviewed?.allergenDetailNotes ? { allergenDetailNotes: packetReviewed.allergenDetailNotes } : {}),
     };
   });
   const artifact = review?.cpuReview.status === "signed" && !cpuFailure ? await latestSiteMenuArtifactHosted(input.site.oplocId, input.day.sourceDayId) : undefined;
@@ -66,7 +68,7 @@ export async function buildDeliveredInDayProjection(input: { request: NextReques
     oplocLabel: input.site.label,
     serviceDate: input.day.date,
     entries: sourceEntries,
-    siteMenu: siteMenuState(input.day, artifact),
+    siteMenu: artifact?.sourcePacketHash && review?.package?.contentHash && artifact.sourcePacketHash !== review.package.contentHash ? { status: "stale", artifact } : siteMenuState(input.day, artifact),
     sourceLineage: {
       menu: { publicationId: input.day.publicationId, publicationDayId: input.day.publicationDayId, sourceDayId: input.day.sourceDayId, version: input.day.version, contentHash: input.day.contentHash },
       cpu: {
@@ -84,7 +86,7 @@ export async function buildDeliveredInDayProjection(input: { request: NextReques
       menu: input.day.entries.length ? "present" : "empty",
       cpu: cpuException ? "unavailable" : review?.package?.sourceStatus === "valid_empty" ? "present" : review?.cpuReview.status === "signed" ? "present" : "pending",
       exceptions: [
-        ...(!input.governed ? [{ code: "OPLOC_NOT_GOVERNED", source: "integration-hub" as const, message: "The destination is not present in the current OPLOC authority." }] : []),
+        ...(!input.governed && input.site.destination?.kind !== "one-off" ? [{ code: "OPLOC_NOT_GOVERNED", source: "integration-hub" as const, message: "The destination is not present in the current OPLOC authority." }] : []),
         ...(cpuException ? [{ ...cpuException, source: "cpu-production" as const }] : []),
       ],
     },

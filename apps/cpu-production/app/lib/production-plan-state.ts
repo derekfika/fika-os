@@ -29,7 +29,7 @@ export function mergeMissingProductionOrderLines(plan: ProductionPlan, orderId: 
     const current = item.sourceLineId ? sourceName.get(item.sourceLineId) : undefined;
     if (current === undefined) return item;
     if (item.sourceItemName === undefined || sameName(item.sourceItemName, current)) return item.sourceItemName === current ? item : { ...item, sourceItemName: current };
-    return { ...item, name: current, sourceItemName: current, subItems: item.subItems.map(({ allergenReview: _dropped, noKeyDeclaration: _droppedDeclaration, ...sub }) => ({ ...sub, allergens: {}, mayContainNotes: "", evidenceStatus: "not_completed" as const })) };
+    return { ...item, name: current, sourceItemName: current, subItems: item.subItems.map(({ allergenReview: _dropped, noKeyDeclaration: _droppedDeclaration, ...sub }) => ({ ...sub, allergens: {}, mayContainNotes: "", allergenDetailNotes: "", evidenceStatus: "not_completed" as const })) };
   });
   const changed = reconciled.some((item, index) => item !== plan.menuItems[index]);
   const base = changed ? { ...plan, menuItems: reconciled } : plan;

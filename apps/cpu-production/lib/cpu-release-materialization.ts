@@ -142,6 +142,7 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
   const order = await productionOrderDetail(request, orderId);
   if (!order) throw Object.assign(new Error("The production order could not be loaded for release materialization."), { status: 503 });
   if (isAdHocProductionOrder(order) && order.status === "cancelled") throw Object.assign(new Error("The Ad-Hoc order is cancelled; its release cannot be materialized."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
+  if (order.origin === "menu_planning" && (order.status === "cancelled" || order.workflowStatus === "cancelled")) throw Object.assign(new Error("The Menu Planning publication is withdrawn; its CPU release cannot be materialized."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
   if (order.origin === "menu_planning" && order.supersededBy) throw Object.assign(new Error("The Menu Planning production order has been superseded; its CPU release cannot be materialized."), { status: 409, code: "CPU_RELEASE_SUPERSEDED_ORDER" });
   if (!allergenReleaseLineageMatchesOrder(pending, order, stored.menuItems)) throw Object.assign(new Error("The committed CPU release no longer matches the canonical source lineage."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
   if (pending.status === "current" && pending.materializationStatus === "ready") return { plan: stored, alreadyMaterialized: true };
@@ -167,12 +168,16 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     artifactCandidate.audit.push({ action: "allergen-matrix-materialized", at: artifactCandidate.updatedAt, by: artifactCandidate.updatedBy, reason: `Prepared artifacts for committed CPU release ${releaseId}.` });
     const preparedResult = await repository.saveAndAppendCpuChange(artifactCandidate, planRevisionToken(startedPlan), { serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: artifactCandidate.id, revision: artifactCandidate.audit.length, changeType: "allergen-release-artifacts-prepared", actorId: artifactCandidate.updatedBy, changedAt: artifactCandidate.updatedAt, idempotencyKey: materializationReceiptId("prepared") });
     const preparedPlan = resumeCpuMaterializationPhase(preparedResult, artifactCandidate, "prepared");
+    if (order.origin === "menu_planning") {
+      const latestOrder = await productionOrderDetail(request, orderId);
+      if (!latestOrder || !allergenReleaseLineageMatchesOrder(preparedPlan.currentAllergenRelease, latestOrder, preparedPlan.menuItems)) throw Object.assign(new Error("The Menu Planning source changed during artifact preparation; re-review its current publication."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
+    }
     await prepared.publish();
-    if (isAdHocProductionOrder(order)) {
+    if (isAdHocProductionOrder(order) || order.origin === "menu_planning") {
       // Uploading may take time. Recheck bounded canonical authority before making the PDF current if an amendment/cancellation arrived meanwhile.
       const latestOrder = await productionOrderDetail(request, orderId);
       if (!latestOrder || latestOrder.status === "cancelled" || !allergenReleaseLineageMatchesOrder(preparedPlan.currentAllergenRelease, latestOrder, preparedPlan.menuItems)) {
-        throw Object.assign(new Error("The Ad-Hoc source changed during PDF materialization; re-review and sign its current revision."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
+        throw Object.assign(new Error("The canonical source changed during PDF materialization; re-review and sign its current revision."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
       }
     }
     const ready = structuredClone(preparedPlan);
@@ -200,7 +205,7 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     console.error("FIKA CPU allergen release materialization failed", { app: "cpu-production", serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), releaseId, destinationOplocId: order.destinationOplocId, expectedOplocCount: 1, materializedOplocCount: 0, failedOplocCount: 1, pendingOplocCount: 1, handoffStatus: "retryable", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: materializationError });
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const current = await repository.get(orderId) || stored;
-      if (isAdHocProductionOrder(order) && (!current.currentAllergenRelease || current.currentAllergenRelease.releaseId !== releaseId || !["pending", "current"].includes(current.currentAllergenRelease.status))) break;
+      if ((isAdHocProductionOrder(order) || order.origin === "menu_planning") && (!current.currentAllergenRelease || current.currentAllergenRelease.releaseId !== releaseId || !["pending", "current"].includes(current.currentAllergenRelease.status))) break;
       if (current.currentAllergenRelease?.status === "current" && current.currentAllergenRelease.materializationStatus === "ready") break;
       const failed = structuredClone(current);
       failed.currentAllergenRelease = { ...(failed.currentAllergenRelease || pending), materializationStatus: "failed", materializationError };

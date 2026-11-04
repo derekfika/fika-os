@@ -12,6 +12,7 @@ export type PlannedSubItem = {
   quantity: number | null;
   allergens: Record<string, AllergenCellState>;
   mayContainNotes?: string;
+  allergenDetailNotes?: string;
   note: string;
   evidenceStatus: "not_completed" | "completed" | "requires_review";
   /** Server-stamped chef confirmation (reviewer, time, inputs fingerprint). Workflow evidence: not part of the signed matrix hash. */
@@ -48,7 +49,7 @@ export type ProductionPlan = { id: string; orderId: string; status: PlanStatus; 
 
 export { effectiveProductionPlanStatus, hasAllergenAuthority, planRevisionToken, reviewRevisionConflict, nextPlanRevisionStamp, isProductionPlanMatrixComplete, mergeMissingProductionOrderLines } from "./production-plan-state";
 
-export type SigningLineageOrder = { canonicalId: string; serviceDate?: string; requiredBy: string; origin?: string; status?: string; version?: number; currentRevision?: number; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string };
+export type SigningLineageOrder = { canonicalId: string; serviceDate?: string; requiredBy: string; origin?: string; status?: string; workflowStatus?: string; supersededBy?: string; version?: number; currentRevision?: number; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string };
 
 const sourceHash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
@@ -60,6 +61,7 @@ const sourceHash = (value: unknown) => createHash("sha256").update(JSON.stringif
 export { AD_HOC_ORDER_ID_PREFIX, isAdHocProductionOrder };
 
 export function signingLineageForOrder(order: SigningLineageOrder, matrixContentHash: string): MatrixSignatureScope | undefined {
+  if (order.origin === "menu_planning" && (order.status === "cancelled" || order.workflowStatus === "cancelled" || order.supersededBy)) return undefined;
   const serviceDate = order.serviceDate || order.requiredBy?.slice(0, 10);
   if (!serviceDate) return undefined;
   if (isAdHocProductionOrder(order)) {

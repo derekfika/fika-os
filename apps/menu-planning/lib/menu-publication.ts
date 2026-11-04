@@ -1,3 +1,5 @@
+import { menuDestination, menuDestinationKey, type MenuDestination } from "@fika/server-shared/menu-destination";
+import type { ExplicitRowReview, NoKeyDeclarationRecord } from "../../shared/allergen-declaration";
 import { hospitalityArchiveBase } from "./hospitality-archive-url";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -77,15 +79,18 @@ export type PublishedMenuEntry = {
   portions: number;
   allocations: Array<{
     destinationId?: string;
+    destination?: MenuDestination;
     destinationLabel: string;
     destinationAddress?: string;
     quantity: number;
   }>;
   allergens: CanonicalAllergenMap;
+  allergenReview?: import("../../shared/allergen-review").AllergenRowReview | ExplicitRowReview;
+  noKeyDeclaration?: NoKeyDeclarationRecord;
   /** Legacy snapshots may omit this; all newly published entries write it. */
   allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting";
   allergenEvidenceReason?: string;
-  mayContainNotes?: string;
+  mayContainNotes?: string; allergenDetailNotes?: string;
 };
 export type CompiledPublishedWeekSnapshot = {
   schemaVersion: 1;
@@ -262,25 +267,28 @@ const publishedEntry = (
       (sum, allocation) => sum + allocation.quantity,
       0,
     ),
-    allocations: activeAllocations.map((allocation) => ({
-      ...(allocation.destinationId !== undefined
-        ? { destinationId: allocation.destinationId }
-        : {}),
-      destinationLabel: allocation.destinationLabel,
-      ...(allocation.destinationAddress !== undefined
-        ? { destinationAddress: allocation.destinationAddress }
-        : {}),
-      quantity: allocation.quantity,
-    })),
+    allocations: activeAllocations.map(allocation => {
+      const destination = menuDestination(allocation, entry.dayId, day?.oneOffDestinations || []);
+      return {
+        destination,
+        ...(destination.kind === "governed" ? { destinationId: destination.id } : {}),
+        destinationLabel: destination.label,
+        ...(destination.kind === "one-off" ? { destinationAddress: destination.address } : allocation.destinationAddress ? { destinationAddress: allocation.destinationAddress } : {}),
+        quantity: allocation.quantity,
+      };
+    }),
     allergens: clone(resolved.allergens),
+    ...(entry.allergenReview ? { allergenReview: clone(entry.allergenReview) } : {}),
+    ...(entry.noKeyDeclaration ? { noKeyDeclaration: clone(entry.noKeyDeclaration) } : {}),
     allergenEvidenceStatus: resolved.evidenceStatus,
     ...(resolved.evidenceReason ? { allergenEvidenceReason: resolved.evidenceReason } : {}),
     ...(mayContainNotes !== undefined ? { mayContainNotes } : {}),
+    ...(entry.allergenDetailNotes !== undefined ? { allergenDetailNotes: entry.allergenDetailNotes } : {}),
   });
 };
 const compareStableText = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0;
 const allocationIdentity = (allocation: RollingEntry["allocations"][number]) =>
-  allocation.destinationId?.trim() ||
+  menuDestinationKey(allocation)?.trim() ||
   `unresolved:${allocation.destinationLabel.trim().toLowerCase()}|${(allocation.destinationAddress || "").trim().toLowerCase()}`;
 function orderedEntriesForDay(snapshot: RollingSnapshot, day: RollingDay) {
   const position = new Map((day.entryIds || []).map((id, index) => [id, index]));
@@ -531,7 +539,7 @@ function appendPublicationEvents(
     ...new Set(
       day.entries.flatMap((entry) =>
         entry.allocations
-          .map((allocation) => allocation.destinationId)
+          .map((allocation) => menuDestinationKey(allocation))
           .filter((id): id is string => Boolean(id)),
       ),
     ),
@@ -540,7 +548,7 @@ function appendPublicationEvents(
     .filter((candidate) => candidate.sourceDayId === day.sourceDayId)
     .flatMap((candidate) =>
       candidate.entries.flatMap((entry) =>
-        entry.allocations.map((allocation) => allocation.destinationId),
+        entry.allocations.map((allocation) => menuDestinationKey(allocation)),
       ),
     )
     .filter((id): id is string => Boolean(id));
@@ -565,11 +573,12 @@ function appendPublicationEvents(
           sourceVersion: day.version,
           sourceContentHash: day.contentHash,
           destinationOplocId,
+          destination: day.entries.flatMap(entry => entry.allocations).find(allocation => menuDestinationKey(allocation) === destinationOplocId)?.destination || publication.days.flatMap(previous => previous.entries.flatMap(entry => entry.allocations)).find(allocation => menuDestinationKey(allocation) === destinationOplocId)?.destination,
           destinationLabel:
             day.entries
               .flatMap((entry) => entry.allocations)
               .find(
-                (allocation) => allocation.destinationId === destinationOplocId,
+                (allocation) => menuDestinationKey(allocation) === destinationOplocId,
               )?.destinationLabel || destinationOplocId,
           serviceDate: day.date,
           status: active
@@ -584,7 +593,7 @@ function appendPublicationEvents(
                 entry.allocations
                   .filter(
                     (allocation) =>
-                      allocation.destinationId === destinationOplocId,
+                      menuDestinationKey(allocation) === destinationOplocId,
                   )
                   .map((allocation) =>
                     normalizePublicationValue({
@@ -598,6 +607,9 @@ function appendPublicationEvents(
                       workstream: "delivered_in" as const,
                       approvedAllergenSnapshot: normalizePublicationValue({
                         allergens: entry.allergens,
+                        allergenReview: entry.allergenReview,
+                        noKeyDeclaration: entry.noKeyDeclaration,
+                        allergenDetailNotes: entry.allergenDetailNotes,
                         allergenEvidenceStatus: entry.allergenEvidenceStatus,
                         ...(entry.mayContainNotes !== undefined
                           ? { mayContainNotes: entry.mayContainNotes }
