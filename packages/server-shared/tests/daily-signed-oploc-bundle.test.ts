@@ -45,8 +45,8 @@ test("daily bundles are distinct by service day and OPLOC while sharing one sour
 test("the minimized packet preserves every CPU sub-item and allergen state", () => {
   const built = build({ id: "oploc:haleon", name: "Haleon" });
   assert.deepEqual(built.packet.items, [
-    { menuItemId: "menu:1", menuItemName: "Lunch", allergenNames: ["gluten"], mayContainAllergenNames: [], allergenState: "contains" },
-    { menuItemId: "sub:2", menuItemName: "Sauce", allergenNames: [], mayContainAllergenNames: ["sesame"], allergenState: "may_contain" },
+    { menuItemId: "menu:1", menuItemName: "Lunch", allergens: { gluten: "contains" }, allergenNames: ["gluten"], mayContainAllergenNames: [], allergenState: "contains" },
+    { menuItemId: "sub:2", menuItemName: "Sauce", allergens: { sesame: "may_contain" }, allergenNames: [], mayContainAllergenNames: ["sesame"], allergenState: "may_contain" },
   ]);
   assert.equal(built.packet.source.contentHash, built.bundle.source.contentHash);
   assert.equal(built.packet.contentHash, built.bundle.packet.contentHash);

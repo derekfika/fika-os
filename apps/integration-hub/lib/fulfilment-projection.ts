@@ -49,6 +49,7 @@ export type ProductionFulfilmentReconciliationResult = {
 function productionSource(order: ProductionOrderFulfilmentSource): ProductionOrderFulfilmentSource {
   return {
     ...order,
+    ...(order.destination?.kind === "one-off" ? { sourceDayId: order.destination.sourceDayId } : {}),
     // Hospitality amendments retire the frozen handoff while a replacement is quoted.
     // Generic CPU amendments remain active work; only this upstream snapshot is withdrawn.
     status: order.origin === "hospitality_booking" && order.status === "amended" ? "withdrawn" : order.status,

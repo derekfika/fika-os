@@ -1,11 +1,12 @@
-export type SiteAccess = { email: string; oplocIds: string[]; permissions: string[] };
-export type Site = { oplocId: string; label: string };
-export type SourceAllocation = { destinationId?: string; destinationLabel: string; quantity: number };
-export type SourceEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: SourceAllocation[]; allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; mayContainNotes?: string };
+import { menuDestination, menuDestinationKey, type MenuDestination } from "@fika/server-shared/menu-destination";
+export type SiteAccess = { email: string; oplocIds: string[]; permissions: string[]; canViewOneOffDestinations?: boolean; oneOffDestinationIds?: string[] };
+export type Site = { oplocId: string; label: string; destination?: MenuDestination };
+export type SourceAllocation = { destinationId?: string; destination?: MenuDestination; destinationAddress?: string; destinationLabel: string; quantity: number };
+export type SourceEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: SourceAllocation[]; allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; allergenDetailNotes?: string; mayContainNotes?: string };
 export type SourceDay = { publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; status: "published" | "superseded" | "withdrawn"; contentHash: string; entries: SourceEntry[]; allergenSignoff: { productionChef?: { printedName: string; signedAt: string }; headChefSiteManager?: { printedName: string; signedAt: string }; printedName?: string; signedAt?: string }; driveArchive?: { pdfDriveUrl?: string; pdfStatus?: string; pdfFileName?: string } };
 export type SourcePublication = { publicationId: string; sourceWeekId: string; weekCommencing: string; weekEnding: string; publicationStatus?: "withdrawn"; publicationVersion?: number; days: SourceDay[] };
-export type ProjectedEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; quantity: number; allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; mayContainNotes?: string; allergensVisible?: boolean };
-export type ProjectedDestination = { oplocId: string; label: string; portions: number };
+export type ProjectedEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; quantity: number; allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; allergenDetailNotes?: string; mayContainNotes?: string; allergensVisible?: boolean };
+export type ProjectedDestination = { oplocId: string; label: string; portions: number; destination?: MenuDestination };
 export type AllergenReleaseDelta = { dishName: string; allergen: string; previous: "clear" | "contains" | "may_contain" | "unrecorded"; current: "clear" | "contains" | "may_contain" | "unrecorded" };
 export type AllergenSafetyState = {
   status: "current" | "revoked_pending" | "reprint_required";
@@ -42,12 +43,16 @@ export function isRelevantPublishedWeek(publication: SourcePublication, asOf = o
   return publication.weekEnding >= currentWeekCommencing && publication.weekCommencing <= horizon;
 }
 
-export function assertAuthorisedOploc(access: SiteAccess, requestedOplocId: string) { if (!access.oplocIds.some(allowed => oplocIdsMatch(allowed, requestedOplocId))) throw Object.assign(new Error("You are not authorised to view this Delivered-In site."), { status: 403 }); }
+export function assertAuthorisedOploc(access: SiteAccess, requestedOplocId: string) { if (!access.oplocIds.some(allowed => oplocIdsMatch(allowed, requestedOplocId)) && !(access.canViewOneOffDestinations && access.oneOffDestinationIds?.includes(requestedOplocId))) throw Object.assign(new Error("You are not authorised to view this Delivered-In site."), { status: 403 }); }
+
+const allocationMatches = (allocation: SourceAllocation, selected: string) => allocation.destination?.kind === "one-off" ? allocation.destination.id === selected : oplocIdsMatch(allocation.destinationId, selected);
 
 export function assertPublishedAllocationIntegrity(publicationId: string, day: SourceDay, entry: SourceEntry, governedOplocIds = new Set(GOVERNED_OPLOC_BY_ID.keys()), selectedOplocId?: string) {
   const governed = new Set([...governedOplocIds].map(canonicalOplocId));
-  for (const allocation of entry.allocations.filter(candidate => !selectedOplocId || oplocIdsMatch(candidate.destinationId, selectedOplocId))) {
-    if (!allocation.destinationId || !governed.has(canonicalOplocId(allocation.destinationId))) {
+  for (const allocation of entry.allocations.filter(candidate => !selectedOplocId || allocationMatches(candidate, selectedOplocId))) {
+    let oneOff = false;
+    if (allocation.destination?.kind === "one-off") { menuDestination(allocation, day.sourceDayId); oneOff = true; }
+    if (!oneOff && (!allocation.destinationId || !governed.has(canonicalOplocId(allocation.destinationId)))) {
       throw Object.assign(
         new Error(`Published Delivered-In integrity error: ${publicationId} ${day.dayName} contains an unresolved destination for ${entry.dishName}.`),
         { status: 502 },
@@ -81,10 +86,11 @@ export function projectPublishedWeeks(publications: SourcePublication[], selecte
         .map(day => {
           const destinations = new Map<string, ProjectedDestination>();
           for (const entry of day.entries) for (const allocation of entry.allocations) {
-            if (!allocation.destinationId) continue;
-            const canonicalId = canonicalOplocId(allocation.destinationId)!;
+            const key = menuDestinationKey(allocation);
+            if (!key) continue;
+            const canonicalId = allocation.destination?.kind === "one-off" ? key : canonicalOplocId(key)!;
             const current = destinations.get(canonicalId);
-            destinations.set(canonicalId, { oplocId: canonicalId, label: allocation.destinationLabel, portions: (current?.portions || 0) + allocation.quantity });
+            destinations.set(canonicalId, { ...(allocation.destination ? { destination: allocation.destination } : {}), oplocId: canonicalId, label: allocation.destinationLabel, portions: (current?.portions || 0) + allocation.quantity });
           }
           return {
           publicationId: publication.publicationId,
@@ -104,7 +110,7 @@ export function projectPublishedWeeks(publications: SourcePublication[], selecte
             // a valid site's published menu.
             assertPublishedAllocationIntegrity(publication.publicationId, day, entry, governedOplocIds, selectedOplocId);
             return entry.allocations
-              .filter(allocation => oplocIdsMatch(allocation.destinationId, selectedCanonicalOplocId))
+              .filter(allocation => allocationMatches(allocation, selectedCanonicalOplocId || selectedOplocId))
               .map(allocation => ({
                 sourceEntryId: entry.sourceEntryId,
                 slot: entry.slot,
@@ -114,6 +120,7 @@ export function projectPublishedWeeks(publications: SourcePublication[], selecte
                 allergens: entry.allergens,
                 ...(entry.allergenEvidenceStatus ? { allergenEvidenceStatus: entry.allergenEvidenceStatus } : {}),
                 mayContainNotes: entry.mayContainNotes,
+                ...(entry.allergenDetailNotes ? { allergenDetailNotes: entry.allergenDetailNotes } : {}),
               }));
           }),
         }; }),

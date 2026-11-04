@@ -212,8 +212,9 @@ test("manifest and Allergen Checker paths avoid unnecessary full catalogue reads
   assert.match(checker, /useRollingData\(\{ loadCatalogue: false \}\)/);
   assert.match(checker, /entry\.allergens/);
   assert.match(checker, /function displayAllergenState\(/);
-  assert.match(checker, /resolveNoKeyAllergenState/);
-  assert.match(checker, /disabled=\{saving \|\| key === "no_key_allergens"\}/);
+  assert.match(checker, /storedExplicitAllergens/);
+  assert.doesNotMatch(checker, /disabled=\{saving \|\| key === "no_key_allergens"\}/);
+  assert.match(checker, /toggleExplicitAllergen/);
   assert.match(checker, /Record the planned allergen information for CPU Production/);
   assert.match(checker, /CPU performs the final independent safety check/);
   assert.match(checker, /command\("batch-update-entries"/);
@@ -228,7 +229,8 @@ test("allergen checker uses quiet state cells without changing semantic state la
   assert.doesNotMatch(checker, /stateMark[\s\S]*clear: "✓"/);
   assert.doesNotMatch(checker, /stateMark[\s\S]*contains: "C"/);
   assert.match(checker, /aria-label=\{`\$\{entry\.itemLabel\}, \$\{label\}: \$\{stateLabel\[displayState\]\}`\}/);
-  assert.match(checker, /disabled=\{saving \|\| key === "no_key_allergens"\}/);
+  assert.doesNotMatch(checker, /disabled=\{saving \|\| key === "no_key_allergens"\}/);
+  assert.match(checker, /toggleExplicitAllergen/);
   assert.match(checker, /May contain notes for \$\{entry\.itemLabel\}/);
   assert.match(checker, /Not recorded is never treated as clear/);
 });

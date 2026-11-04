@@ -55,7 +55,7 @@ export async function reconcileDeliveredInDay(request: NextRequest, oplocId: str
   if (context.mode === "internal" && (context.oplocId !== oplocId || context.serviceDate !== serviceDate)) throw Object.assign(new Error("Bounded internal reconciliation scope does not match the requested OPLOC and service date."), { status: 409, code: "DELIVERED_IN_RECONCILIATION_SCOPE_MISMATCH" });
   let selectedSite: Site;
   if (context.mode === "interactive") {
-    const resolved = await resolveAccess(request);
+    const resolved = await resolveAccess(request, "delivered-in", { serviceDate });
     assertAuthorisedOploc(resolved.access, oplocId);
     selectedSite = resolved.sites.find(candidate => candidate.oplocId === oplocId) || { oplocId, label: oplocId };
   } else {
@@ -69,6 +69,8 @@ export async function reconcileDeliveredInDay(request: NextRequest, oplocId: str
     return { status: "withdrawn", serviceDate, oplocId };
   }
   if (!day.day) return { status: "missing", serviceDate, oplocId };
+  const destination = day.day.destinations?.find(candidate => candidate.oplocId === oplocId);
+  if (destination?.destination?.kind === "one-off") selectedSite = { oplocId, label: destination.label, destination: destination.destination };
   const candidate = await buildDeliveredInDayProjection({ request, site: selectedSite, day: day.day, loadReview: options.loadReview || cpuReviewForDay, governed: true });
   const comparable = (value: unknown) => JSON.stringify(value, (_key, item) => _key === "generatedAt" || _key === "projectionVersion" ? undefined : item);
   const sourceCertainty = candidate.sourceLineage.cpu.sourceBundleHash ? "CPU daily signed packet matched the Menu Planning source bundle hash." : "CPU daily signed packet metadata was not supplied.";

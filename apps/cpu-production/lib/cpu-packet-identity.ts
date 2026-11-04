@@ -7,7 +7,7 @@ import type { ProductionLine, ProductionOrder } from "./production-types";
  * production-line identity, while Delivered-In needs the governed Menu
  * canonical dish identity for Menu Planning orders.
  */
-function correspondingProductionLine(item: PlannedMenuItem, order: ProductionOrder, itemIndex: number): ProductionLine | undefined {
+function correspondingProductionLine(item: PlannedMenuItem, order: Pick<ProductionOrder, "origin" | "lines">, itemIndex: number): ProductionLine | undefined {
   const sourceLineId = item.sourceLineId?.trim();
   if (sourceLineId) {
     const byStableIdentity = order.lines.find(line => [line.canonicalId, line.sourceBookingLineId, line.sourceMenuItemId].includes(sourceLineId));
@@ -20,7 +20,7 @@ function correspondingProductionLine(item: PlannedMenuItem, order: ProductionOrd
   return order.lines[itemIndex];
 }
 
-function primaryPacketIdentity(item: PlannedMenuItem, order: ProductionOrder, itemIndex: number): string {
+function primaryPacketIdentity(item: PlannedMenuItem, order: Pick<ProductionOrder, "origin" | "lines">, itemIndex: number): string {
   const line = correspondingProductionLine(item, order, itemIndex);
   if (line) {
     if (order.origin === "menu_planning") return line.sourceMenuItemId || line.sourceBookingLineId || line.canonicalId;
@@ -30,13 +30,17 @@ function primaryPacketIdentity(item: PlannedMenuItem, order: ProductionOrder, it
 }
 
 /** Build packet items while preserving deterministic identities for sub-items. */
-export function buildCpuPacketItems(menuItems: PlannedMenuItem[], order: ProductionOrder) {
+export function buildCpuPacketItems(menuItems: PlannedMenuItem[], order: Pick<ProductionOrder, "origin" | "lines">) {
   return menuItems.flatMap((item, itemIndex) => {
     const primaryId = primaryPacketIdentity(item, order, itemIndex);
     return item.subItems.map((sub, subIndex) => ({
       menuItemId: subIndex === 0 ? primaryId : `${primaryId}:sub:${sub.id}`,
       menuItemName: sub.name || item.name,
       allergens: sub.allergens,
+      ...(sub.allergenReview ? { allergenReview: sub.allergenReview } : {}),
+      ...(sub.noKeyDeclaration?.declared && sub.noKeyDeclaration.declaredBy && sub.noKeyDeclaration.declaredAt ? { noKeyDeclaration: { declared: true as const, declaredBy: sub.noKeyDeclaration.declaredBy, declaredAt: sub.noKeyDeclaration.declaredAt } } : {}),
+      ...(sub.allergenDetailNotes ? { allergenDetailNotes: sub.allergenDetailNotes } : {}),
+      ...(sub.mayContainNotes ? { mayContainNotes: sub.mayContainNotes } : {}),
       allergenState: sub.evidenceStatus === "completed" ? undefined : "unrecorded" as const,
     }));
   });

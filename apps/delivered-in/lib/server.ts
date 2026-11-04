@@ -1,3 +1,4 @@
+import { menuDestination, type OneOffMenuDestination } from "@fika/server-shared/menu-destination";
 import type { NextRequest } from "next/server";
 import { assertAuthorisedOploc, operationalDateLondon, projectPublishedWeeks, type ProjectedDay, type Site, type SiteAccess, type SourcePublication } from "./projection";
 import type { DeliveredInService } from "@fika/server-shared/delivered-in-access";
@@ -63,10 +64,10 @@ export async function readAuthoritativeMenuPublications(request: NextRequest, fr
 }
 
 /** Ordinary Delivered-In reads consume the immutable, signed CPU packet only. */
-export async function cpuReviewForDay(_request: NextRequest, date: string, oplocId: string, sourceBundleHash?: string) {
+export async function cpuReviewForDay(_request: NextRequest, date: string, oplocId: string, sourceBundleHash?: string, sourceVersion?: number) {
   if (!sourceBundleHash) return undefined;
   try {
-    const packet = await readCpuDailySignedPacket(date, oplocId, sourceBundleHash);
+    const packet = await readCpuDailySignedPacket(date, oplocId, sourceBundleHash, sourceVersion);
     if (!packet) return undefined;
     recordDataAccess({ app: "delivered-in", operation: "cpu-review-package.by-day", source: "SNAPSHOT", dataset: "cpu-production/review", documents: packet.manifest.recordCount, cacheResult: "HIT" });
     recordDeliveredInAppReadBudget({ stage: "cpu_review_package", upstreamRequests: 0, recordsInspected: packet.manifest.recordCount, serviceDate: date, oplocId });
@@ -86,7 +87,25 @@ async function resolveGovernedOplocIds(request: NextRequest) {
   return new Set(body.oplocs.map(oploc => oploc.canonicalId).filter((id): id is string => Boolean(id)));
 }
 
-export async function resolveAccess(request: NextRequest, service: DeliveredInService = "delivered-in"): Promise<{ access: SiteAccess; sites: Site[] }> {
+export function oneOffSitesFromPackets(packets: MenuPlanningWeekPacket[]): Site[] {
+  const oneOffs = new Map<string, OneOffMenuDestination>();
+  for (const packet of packets) {
+    if (packet.publicationStatus === "withdrawn") continue;
+    const latest = new Map<string, MenuPlanningWeekPacket["days"][number]>();
+    for (const day of packet.days) if (!latest.has(day.sourceDayId) || latest.get(day.sourceDayId)!.version < day.version) latest.set(day.sourceDayId, day);
+    for (const day of latest.values()) {
+      if (day.status && day.status !== "published") continue;
+      for (const entry of day.entries) for (const allocation of entry.allocations) {
+        if (allocation.destination?.kind !== "one-off" || allocation.quantity <= 0) continue;
+        const destination = menuDestination(allocation, day.sourceDayId);
+        if (destination.kind === "one-off") oneOffs.set(destination.id, destination);
+      }
+    }
+  }
+  return [...oneOffs.values()].map(destination => ({ oplocId: destination.id, label: `${destination.label} (one-off)`, destination }));
+}
+
+export async function resolveAccess(request: NextRequest, service: DeliveredInService = "delivered-in", context: { serviceDate?: string } = {}): Promise<{ access: SiteAccess; sites: Site[] }> {
   // Keep the default route URL compatible with older local Hub processes;
   // only Grab & Go needs the explicit service selector.
   const accessUrl = service === "grab-and-go" ? `${hubBase()}/api/delivered-in/access?service=grab-and-go` : `${hubBase()}/api/delivered-in/access`;
@@ -94,6 +113,17 @@ export async function resolveAccess(request: NextRequest, service: DeliveredInSe
   recordDataAccess({ app: "delivered-in", operation: "hub.authmod.access", source: "NETWORK_UPSTREAM", dataset: "integration-hub/delivered-in-access", documents: 0, cacheResult: "BYPASS" });
   const body = await readJson<{ access?: SiteAccess; sites?: Site[]; error?: { code?: string; message?: string; requestId?: string }; requestId?: string }>(response, "Integration Hub access service");
   if (!response.ok || !body.access || !body.sites) throw failure(body.error?.message || "Delivered-In access could not be resolved.", response.status || 502, body.error?.code, body.error?.requestId || body.requestId);
+  if (body.access.canViewOneOffDestinations && service === "delivered-in") {
+    const requested = context.serviceDate || request.nextUrl.searchParams.get("week") || request.nextUrl.searchParams.get("serviceDate");
+    const date = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && Number.isFinite(Date.parse(`${requested}T12:00:00Z`)) ? requested : operationalDateLondon();
+    const fromWeek = mondayOf(date);
+    const packets = await readMenuPlanningWeekPackets(fromWeek, addDays(fromWeek, 7));
+    const oneOffSites = oneOffSitesFromPackets(packets);
+    return {
+      access: { ...body.access, oneOffDestinationIds: oneOffSites.map(site => site.oplocId) },
+      sites: [...body.sites, ...oneOffSites],
+    };
+  }
   return { access: body.access, sites: body.sites };
 }
 
@@ -177,9 +207,9 @@ export async function recoverRequestedWeek(request: NextRequest, oplocId: string
 function emptyWeek(weekCommencing: string) { return { publicationId: "", weekCommencing, weekEnding: addDays(weekCommencing, 6), days: [] as DeliveredInDayProjection[] }; }
 
 export async function projectedWeeks(request: NextRequest, requestedOplocId?: string, options: { usePackages?: boolean; requestedWeek?: string } = {}) {
-  const resolved = await resolveAccess(request); const access = resolved.access; const sites = resolved.sites;
-  if (!access.oplocIds.length) return { access, sites, selectedOplocId: undefined, weeks: [] };
-  const selectedOplocId = requestedOplocId || (access.oplocIds.length === 1 ? access.oplocIds[0] : undefined);
+  const resolved = await resolveAccess(request, "delivered-in", { serviceDate: options.requestedWeek }); const access = resolved.access; const sites = resolved.sites;
+  if (!sites.length) return { access, sites, selectedOplocId: undefined, weeks: [] };
+  const selectedOplocId = requestedOplocId || (sites.length === 1 ? sites[0].oplocId : undefined);
   if (!selectedOplocId) return { access, sites, selectedOplocId: undefined, weeks: [] };
   assertAuthorisedOploc(access, selectedOplocId);
   const site = sites.find(candidate => candidate.oplocId === selectedOplocId) || { oplocId: selectedOplocId, label: selectedOplocId };
@@ -235,11 +265,11 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
 }
 
 export async function projectionHead(request: NextRequest, requestedOplocId?: string, requestedWeek?: string) {
-  const resolved = await resolveAccess(request);
+  const resolved = await resolveAccess(request, "delivered-in", { serviceDate: requestedWeek });
   const access = resolved.access;
   const sites = resolved.sites;
-  if (!access.oplocIds.length) return { access, sites, selectedOplocId: undefined, projectionState: "unavailable" as const, entries: [], withdrawnServiceDates: [], unavailableServiceDates: [] };
-  const selectedOplocId = requestedOplocId || (access.oplocIds.length === 1 ? access.oplocIds[0] : undefined);
+  if (!sites.length) return { access, sites, selectedOplocId: undefined, projectionState: "unavailable" as const, entries: [], withdrawnServiceDates: [], unavailableServiceDates: [] };
+  const selectedOplocId = requestedOplocId || (sites.length === 1 ? sites[0].oplocId : undefined);
   if (!selectedOplocId) return { access, sites, selectedOplocId: undefined, projectionState: "unavailable" as const, entries: [], withdrawnServiceDates: [], unavailableServiceDates: [] };
   assertAuthorisedOploc(access, selectedOplocId);
   let window = await readProjectionIndexWindow(selectedOplocId, operationalDateLondon(), requestedWeek);
@@ -340,7 +370,8 @@ function unavailableDayProjection(day: ProjectedDay, site: Site, error: unknown)
 }
 
 export async function projectedAllergenDay(request: NextRequest, requestedOplocId: string, publicationDayId: string, options: { authoritative?: boolean } = {}) {
-  const result = await projectedWeeks(request, requestedOplocId, { usePackages: !options.authoritative });
+  const requestedWeek = /rolling-week:(\d{4}-\d{2}-\d{2})/.exec(publicationDayId)?.[1];
+  const result = await projectedWeeks(request, requestedOplocId, { usePackages: !options.authoritative, requestedWeek });
   for (const week of result.weeks) {
     const day = week.days.find(candidate => candidate.publicationDayId === publicationDayId);
     if (day) return { ...day, site: result.sites.find(site => site.oplocId === requestedOplocId) };

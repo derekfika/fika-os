@@ -13,6 +13,7 @@
     "./drive-owner": "./src/drive-owner.ts",
     "./governed-oplocs": "./src/governed-oplocs.ts",
     "./runtime-config": "./src/runtime-config.ts",
+    "./menu-destination": "./src/menu-destination.ts",
     "./external-production": "./src/external-production.ts",
     "./hospitality-matrix-storage": "./src/hospitality-matrix-storage.ts"
     ,"./data-source-meter": "./src/data-source-meter.ts"

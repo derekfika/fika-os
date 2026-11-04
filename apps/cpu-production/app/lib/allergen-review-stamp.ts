@@ -3,7 +3,7 @@ import { confirmRowExplicit, explicitRowFingerprint, namedPositives, readExplici
 import { classifyRowAllergens, sameNamedAllergens } from "./allergen-explicit";
 import type { PlannedMenuItem, PlannedSubItem } from "./production-plan";
 
-const sameAllergens = (left: PlannedSubItem, right: PlannedSubItem, leftIdentity: string, rightIdentity: string) => rowFingerprint(leftIdentity, left.allergens, left.mayContainNotes) === rowFingerprint(rightIdentity, right.allergens, right.mayContainNotes);
+const sameAllergens = (left: PlannedSubItem, right: PlannedSubItem, leftIdentity: string, rightIdentity: string) => rowFingerprint(leftIdentity, left.allergens, left.mayContainNotes) === rowFingerprint(rightIdentity, right.allergens, right.mayContainNotes) && (left.allergenDetailNotes || "") === (right.allergenDetailNotes || "");
 
 /**
  * Server-owned allergen declaration and confirmation evidence for CPU rows (issue 225).
@@ -37,7 +37,7 @@ export function stampAllergenReviews(previous: PlannedMenuItem[], next: PlannedM
 
       // Legacy automatic No Key / all-clear row sent back unchanged: keep the stored evidence exactly as it was.
       if (prior && priorKind === "legacy_unverified" && !tickIntent && !hasPositives && row.evidenceStatus === prior.evidenceStatus
-        && sameNamedAllergens(prior.allergens, raw) && readExplicitAllergens(prior.allergens).no_key_allergens === raw.no_key_allergens) {
+        && (prior.mayContainNotes || "") === (row.mayContainNotes || "") && (prior.allergenDetailNotes || "") === (row.allergenDetailNotes || "") && sameNamedAllergens(prior.allergens, raw) && readExplicitAllergens(prior.allergens).no_key_allergens === raw.no_key_allergens) {
         return { ...row, allergens: prior.allergens, ...(prior.allergenReview ? { allergenReview: prior.allergenReview } : {}) };
       }
 
@@ -57,12 +57,12 @@ export function stampAllergenReviews(previous: PlannedMenuItem[], next: PlannedM
       const reviewedInput = wantsNoKey ? { no_key_allergens: "contains" as const } : positives;
       const identity = identityOf(row);
       const priorReview = prior?.allergenReview;
-      if (priorReview?.semantics === 3 && priorReview.inputFingerprint === explicitRowFingerprint(identity, reviewedInput, row.mayContainNotes)) return { ...withDeclaration, allergenReview: priorReview };
-      if (priorReview?.semantics === 2 && hasPositives && priorReview.inputFingerprint === rowFingerprint(identity, positives, row.mayContainNotes)) return { ...withDeclaration, allergenReview: priorReview };
+      if (priorReview?.semantics === 3 && priorReview.inputFingerprint === explicitRowFingerprint(identity, reviewedInput, row.mayContainNotes, row.allergenDetailNotes)) return { ...withDeclaration, allergenReview: priorReview };
+      if (priorReview?.semantics === 2 && hasPositives && (prior?.allergenDetailNotes || "") === (row.allergenDetailNotes || "") && priorReview.inputFingerprint === rowFingerprint(identity, positives, row.mayContainNotes)) return { ...withDeclaration, allergenReview: priorReview };
       // Historical completed rows with positives and no stored confirmation stay unstamped while unchanged.
       if (prior && hasPositives && prior.evidenceStatus === "completed" && !prior.allergenReview && sameAllergens(prior, row, identityOf(prior), identity)) return withDeclaration;
       try {
-        return { ...withDeclaration, allergenReview: confirmRowExplicit({ allergens: reviewedInput, identity, mayContainNotes: row.mayContainNotes, actor, now: at }).review };
+        return { ...withDeclaration, allergenReview: confirmRowExplicit({ allergens: reviewedInput, identity, mayContainNotes: row.mayContainNotes, allergenDetailNotes: row.allergenDetailNotes, actor, now: at }).review };
       } catch {
         return { ...withDeclaration, evidenceStatus: "not_completed" as const };
       }

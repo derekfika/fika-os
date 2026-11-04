@@ -20,7 +20,7 @@ export const CPU_DAILY_PACKET_DATASET = DAILY_SIGNED_OPLOC_BUNDLE_DATASET;
 export const CPU_DAILY_PACKET_CONTRACT = DAILY_SIGNED_OPLOC_BUNDLE_PACKAGE_CONTRACT;
 export const cpuDailyPacketManifestKey = dailyBundleManifestKey;
 
-export type CpuDailyPacketReviewEntry = { allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenState: DailyAllergenPacket["items"][number]["allergenState"]; mayContainNotes?: string };
+export type CpuDailyPacketReviewEntry = { allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenState: DailyAllergenPacket["items"][number]["allergenState"]; mayContainNotes?: string; allergenDetailNotes?: string };
 export type CpuDailySignedPacket = {
   bundle: DailySignedOplocBundle;
   packet: DailyAllergenPacket;
@@ -66,13 +66,17 @@ const packetStore = () => hosted() ? cloudStore() : localStore();
 function packetEntries(packet: DailyAllergenPacket) {
   return new Map(packet.items.map(item => {
     const allergens: CpuDailyPacketReviewEntry["allergens"] = {};
+    for (const [key, value] of Object.entries(item.allergens || {})) {
+      if (!["clear", "contains", "may_contain", "unrecorded"].includes(value || "")) throw Object.assign(new Error("The signed CPU packet contains an invalid allergen state."), { status: 502, code: "CPU_DAILY_PACKET_INVALID" });
+      allergens[key] = value as CpuDailyPacketReviewEntry["allergens"][string];
+    }
     for (const name of item.allergenNames) allergens[name] = "contains";
     for (const name of item.mayContainAllergenNames) allergens[name] = "may_contain";
-    return [item.menuItemId, { allergens, allergenState: item.allergenState, ...(item.allergenState === "unrecorded" ? { mayContainNotes: "Allergen evidence is unrecorded." } : {}) }];
+    return [item.menuItemId, { allergens, allergenState: item.allergenState, ...(item.mayContainNotes ? { mayContainNotes: item.mayContainNotes } : {}), ...(item.allergenDetailNotes ? { allergenDetailNotes: item.allergenDetailNotes } : {}) }];
   }));
 }
 
-export async function readCpuDailySignedPacket(serviceDate: string, oplocId: string, expectedSourceBundleHash: string): Promise<CpuDailySignedPacket | undefined> {
+export async function readCpuDailySignedPacket(serviceDate: string, oplocId: string, expectedSourceBundleHash: string, expectedSourceVersion?: number): Promise<CpuDailySignedPacket | undefined> {
   const retrieved = await retrieveReadPackage<DailySignedOplocBundlePackage>(packetStore(), cpuDailyPacketManifestKey(serviceDate, oplocId));
   if (!retrieved) return undefined;
   if (retrieved.manifest.dataset !== CPU_DAILY_PACKET_DATASET || retrieved.manifest.contractVersion !== CPU_DAILY_PACKET_CONTRACT || retrieved.manifest.scope !== `${oplocId}:${serviceDate}`) throw invalid("CPU daily packet manifest contract or scope is unsupported.");
@@ -81,6 +85,7 @@ export async function readCpuDailySignedPacket(serviceDate: string, oplocId: str
   const bundle = assertDailySignedOplocBundle(value.bundle);
   const packet = assertDailyAllergenPacket(value.packet);
   if (packet.source.contentHash !== expectedSourceBundleHash || bundle.source.contentHash !== expectedSourceBundleHash) throw lineageMismatch("The signed CPU allergen package source hash does not match the current published Menu Planning day.");
+  if (expectedSourceVersion !== undefined && (bundle.source.revision !== expectedSourceVersion || packet.source.revision !== expectedSourceVersion)) throw lineageMismatch("The signed CPU allergen package source version does not match the current published Menu Planning day.");
   if (bundle.status !== "published" || packet.bundleId !== bundle.bundleId || packet.serviceDate !== serviceDate || packet.oploc.id !== oplocId || packet.source.revision !== bundle.source.revision || packet.contentHash !== bundle.packet.contentHash) throw invalid("CPU daily packet scope or bundle binding is invalid.");
   if (bundle.pdf.contentHash.length !== 64 || !bundle.pdf.fileId || !bundle.pdf.url) throw invalid("CPU daily packet has no durable signed PDF identity and URL.");
   if (await cpuSignedBundleIsRevoked(oplocId, serviceDate, bundle.bundleId)) return undefined;

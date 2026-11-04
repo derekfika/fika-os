@@ -76,7 +76,8 @@ export async function applyCpuReleaseEvent(request: NextRequest, event: CpuRelea
     return { status: "reconciled" as const, regenerated: false, reason: existing ? "no-current-projection" : "no-previous-menu", receipt };
   }
   const changed = new Set((event.changedDishIds || []).map(id).filter(Boolean));
-  const affected = projection.entries.some(entry => changed.has(entry.canonicalDishId || entry.sourceEntryId));
+  const packetChanged = Boolean(projection.sourceLineage.cpu.contentHash && existing.sourcePacketHash !== projection.sourceLineage.cpu.contentHash);
+  const affected = packetChanged || projection.entries.some(entry => changed.has(entry.canonicalDishId || entry.sourceEntryId));
   if (!affected) {
     const receipt = await completeCpuReleaseReceipt(identity, { result: "applied", projectionId: projection.projectionId, projectionContentHash: projection.sourceLineage.menu.contentHash });
     logCpuRelease(event, "receipt-completed", { result: receipt.result, artifactId: existing.artifactId, regenerated: false });

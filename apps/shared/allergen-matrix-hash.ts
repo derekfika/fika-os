@@ -9,6 +9,7 @@ export type SemanticAllergenMatrixItem = {
     quantity: number | null;
     allergens: Record<string, string>;
     mayContainNotes?: string;
+    allergenDetailNotes?: string;
   }>;
 };
 
@@ -23,6 +24,7 @@ export function canonicalAllergenMatrixForHash(items: SemanticAllergenMatrixItem
       quantity: sub.quantity,
       allergens: Object.fromEntries(Object.entries(normaliseOperationalAllergens(sub.allergens)).sort(([left], [right]) => left.localeCompare(right))),
       mayContainNotes: sub.mayContainNotes || "",
+      ...(sub.allergenDetailNotes?.trim() ? { allergenDetailNotes: sub.allergenDetailNotes.trim() } : {}),
     })),
   }));
 }
