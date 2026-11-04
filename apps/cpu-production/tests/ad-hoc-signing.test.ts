@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
 import { NextRequest } from "next/server";
 import { confirmAllergenReviewMap } from "../app/lib/allergen-review-state";
 import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRelease } from "../lib/cpu-allergen-release";
@@ -14,10 +15,29 @@ const order = (extra: Record<string, unknown> = {}) => ({
   requiredBy: "2026-11-17T12:00:00.000Z", version: 1, currentRevision: 1, clientName: "UAT board meeting", serviceType: "Ad-hoc · Board meeting", destinationLabel: "1 Test Street", serviceWindow: { startTime: "12:00" }, ...extra,
 });
 
+async function primeSyntheticProductionIdentity() {
+  process.env.FIKA_RUNTIME_MODE = "production";
+  process.env.FIREBASE_PROJECT_ID = "fika-os";
+  delete process.env.GOOGLE_CLOUD_PROJECT;
+  delete process.env.GCLOUD_PROJECT;
+  const fetch = globalThis.fetch;
+  globalThis.fetch = (async (input: unknown) => {
+    assert.equal(String(input), "http://metadata.google.internal/computeMetadata/v1/project/project-id");
+    return new Response("fika-os", { headers: { "Metadata-Flavor": "Google" } });
+  }) as typeof fetch;
+  try {
+    for (let attempt = 0; attempt < 20 && stagingDriveAccessBlocked(); attempt++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(stagingDriveAccessBlocked(), false, "synthetic metadata establishes the production test identity");
+  } finally {
+    globalThis.fetch = fetch;
+  }
+}
+
 test("committed Ad-Hoc materialization is repeat-safe and rechecks amendments/cancellation after upload", async () => {
   const saved = { env: { ...process.env }, fetch: globalThis.fetch };
   Object.assign(process.env, { FIKA_CPU_PLAN_STORE: "memory", FIKA_RUNTIME_MODE: "production", FIKA_HUB_BASE_URL: "https://os.fikacatering.com", FIKA_PDF_RENDERER_URL: "https://renderer.test", FIKA_PDF_RENDERER_TOKEN: "test", HOSPITALITY_BOOKING_BASE_URL: "https://hospitality.test", GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON: "{}", GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION: "test-chef@example.test", GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID: "cpu-release-test-folder" });
   try {
+    await primeSyntheticProductionIdentity();
     for (const scenario of ["ready", "lifecycle", "amended", "cancelled", "matrix-edit"] as const) {
       const sourceId = `${requestId}:${scenario}`;
       const canonicalId = `production-order:v1:ad-hoc:${sourceId}`;
@@ -119,6 +139,7 @@ test("signed Ad-Hoc release is PDF-only: one Drive PDF, no OPLOC needed, no Deli
   // DWD is intentionally denied until Drive isolation is verified; the staging
   // denial and zero-token/network behavior are covered by drive-readiness tests.
   Object.assign(process.env, { FIKA_RUNTIME_MODE: "production", FIKA_PDF_RENDERER_URL: "https://renderer.test", FIKA_PDF_RENDERER_TOKEN: "t", HOSPITALITY_BOOKING_BASE_URL: "https://hospitality.test", GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON: "{}", GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION: "cpux@fikacatering.com", GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID: "cpu-release-test-folder" });
+  await primeSyntheticProductionIdentity();
   const calls: string[] = []; let driveBody: Record<string, unknown> | undefined;
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
     const url = String(input); calls.push(url);
