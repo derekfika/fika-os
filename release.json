@@ -7,11 +7,33 @@
   "region": "europe-west4",
   "branch": "release/staging/cpu",
   "sourceSha": "60768ebde28533b591b6d38dff5c217ce80b52e0",
+  "scopeHash": "179a56e3a324e62a16ff9740a120449ac4f5b135555cf8f6d0b926b1b31bdecb",
+  "inMain": true,
+  "rollback": true,
+  "executing": true,
+  "cosmeticOnly": false,
+  "standard": false,
+  "rollbackRecord": "1d7df001342d1b41f499f8a89e22f1197379777f",
+  "validation": {
+    "verifiedHistoricalRecord": "1d7df001342d1b41f499f8a89e22f1197379777f"
+  },
+  "approval": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "app": "cpu",
+    "environment": "staging",
+    "sourceSha": "60768ebde28533b591b6d38dff5c217ce80b52e0",
+    "action": "rollback",
+    "instruction": "Continue owner-authorised recovery sprint: reverify the recorded healthy CPU staging previous-good source already serving 100%, preserving the failed build record, before deploying the validated build repair; no production action",
+    "releaseId": null,
+    "id": "d39e7a61e0f795602acad697ff04cba3cf2884fee65db473e80bb611e5fca52c",
+    "explicitExecute": true,
+    "authorisedAt": "2026-11-04T20:09:35.892Z"
+  },
   "rollout": "build-2026-11-03-001",
   "state": "SUCCEEDED",
   "percent": 100,
-  "scopeHash": "179a56e3a324e62a16ff9740a120449ac4f5b135555cf8f6d0b926b1b31bdecb",
-  "kind": "abandoned",
+  "kind": "rollback",
   "previousGood": {
     "sourceSha": "60768ebde28533b591b6d38dff5c217ce80b52e0",
     "rollout": "build-2026-11-03-001",
@@ -19,32 +41,12 @@
     "percent": 100
   },
   "previousGoodRecord": "1d7df001342d1b41f499f8a89e22f1197379777f",
-  "releaseId": "6bfb1392-956f-4036-9d36-fde381a356af",
-  "originalIntent": "3fd96d9202ba6acc38d66c9d24a3e2db9749aa18",
+  "releaseId": "0f39393a-43f6-4991-a000-583d418890bb",
+  "reverifiedServing": true,
+  "completedAt": "2026-11-04T20:09:40.778Z",
   "smoke": {
     "ok": true,
     "status": 200,
     "url": "https://fika-cpu-production-staging--fika-os-dev.europe-west4.hosted.app/"
-  },
-  "recovery": {
-    "resolution": "abandon",
-    "reason": "Continue owner-authorised recovery sprint: CPU staging attempt 6bfb1392 failed its isolated dependency build, original submitter returned, rollout FAILED, previous verified 60768ebd still serves 100%; retain failed attempt and rollback evidence before corrected candidate",
-    "operator": {
-      "actor": "derekfika",
-      "method": "authenticated-repository-writer",
-      "app": "cpu",
-      "environment": "staging",
-      "sourceSha": "13a2d2eec048f63fc6f8256a399c9de548eec405",
-      "action": "reconcile:abandon",
-      "instruction": "Continue owner-authorised recovery sprint: CPU staging attempt 6bfb1392 failed its isolated dependency build, original submitter returned, rollout FAILED, previous verified 60768ebd still serves 100%; retain failed attempt and rollback evidence before corrected candidate",
-      "releaseId": "6bfb1392-956f-4036-9d36-fde381a356af",
-      "id": "c6e3211b074fcc38ed95fdbc2981b8afad067345010311e3abd8f548b82f9ed5",
-      "explicitExecute": true,
-      "authorisedAt": "2026-11-04T19:57:24.424Z"
-    },
-    "rollout": "build-2026-11-04-001",
-    "evidenceHash": "10d9e1cd99ff134419a1d60223ba34ca34ec51707c9a55f1e3a23aeaafa7c0d2",
-    "journalHash": "eaaa40f6aeca6d3f1a2c6ff80f26a47974cc2f4617b61914e3e62d5ce4e80c69",
-    "at": "2026-11-04T19:57:28.866Z"
   }
 }
