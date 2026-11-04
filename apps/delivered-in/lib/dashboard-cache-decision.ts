@@ -49,6 +49,19 @@ export type CacheableDay = {
   contentHash?: string;
 };
 
+/** Old IndexedDB entries can predate server-side artifact containment. */
+export function cachedDayHasArtifactAccess(value: unknown, artifact = false): boolean {
+  if (Array.isArray(value)) return value.some(item => cachedDayHasArtifactAccess(item, artifact));
+  if (!value || typeof value !== "object") return false;
+  const pointers = new Set(["driveUrl", "driveFileId", "drivePdfUrl", "pdfDriveUrl", "pdfPath", "localUrl", "signedPdfUrl", "presentationUrl"]);
+  return Object.entries(value).some(([key, item]) => {
+    const context = artifact || /artifact|packet|bundle/i.test(key);
+    if ((pointers.has(key) || (context && (key === "url" || key === "fileId"))) && typeof item === "string" && item.length > 0) return true;
+    if (typeof item === "string" && /https?:\/\/(drive|docs)\.google\.com\//i.test(item)) return true;
+    return cachedDayHasArtifactAccess(item, context);
+  });
+}
+
 /**
  * Decide whether cached days can stand in for the authoritative dashboard.
  * Withdrawn entries are never shown from the cache, and a cache hit requires
@@ -67,12 +80,13 @@ export function selectDeliveredInCachedDays<D extends CacheableDay>(input: {
       const cached = cachedByDate.get(entry.serviceDate);
       return Boolean(
         cached &&
+          !cachedDayHasArtifactAccess(cached) &&
           cached.projectionVersion === entry.projectionVersion &&
           cached.contentHash === entry.contentHash,
       );
     });
   const visibleCachedDays = input.cachedDays.filter((day) =>
-    activeEntries.some((entry) => entry.serviceDate === day.date),
+    !cachedDayHasArtifactAccess(day) && activeEntries.some((entry) => entry.serviceDate === day.date),
   );
   return { matches, visibleCachedDays };
 }
