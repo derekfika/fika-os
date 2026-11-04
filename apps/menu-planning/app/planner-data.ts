@@ -234,13 +234,15 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
     }
   }, [publicationState, refreshWeek, snapshot]);
   const refreshDishes = async () => { resetCatalogueMemory(); setDishes(await loadCatalogue(setDishes)); };
-  const acceptSavedSnapshot = useCallback((saved: RollingSnapshot) => {
+  const acceptSavedSnapshot = useCallback((saved: RollingSnapshot, savedPublicationState?: Record<string, PublicationDayState>) => {
     const current = snapshotRef.current;
     if (current?.week.id !== saved.week.id || saved.week.version < current.week.version) return;
     snapshotRef.current = saved; setSnapshot(saved); setDishReferences(undefined);
     const summaries = weeksRef.current.map(week => week.id === saved.week.id ? { ...week, version: saved.week.version, entryIds: saved.week.entryIds } : week);
     weeksRef.current = summaries; setWeeks(summaries); appliedVersionsRef.current.set(saved.week.id, saved.week.version);
-    const value: CachedMenuWeek = { weekId: saved.week.id, weekCommencing: saved.week.weekCommencing, version: saved.week.version, snapshot: saved, publicationState, weeks: summaries, cachedAt: Date.now(), identity: cacheIdentity };
+    const currentPublicationState = savedPublicationState || publicationState;
+    setPublicationState(currentPublicationState);
+    const value: CachedMenuWeek = { weekId: saved.week.id, weekCommencing: saved.week.weekCommencing, version: saved.week.version, snapshot: saved, publicationState: currentPublicationState, weeks: summaries, cachedAt: Date.now(), identity: cacheIdentity };
     weekCache.set(saved.week.id, value); persistInBackground(value, weekCacheWriter.currentGeneration());
   }, [publicationState]);
   return { snapshot, setSnapshot, identity: cacheIdentity, acceptSavedSnapshot, loadFailure, weeks, dishes, dishReferences, refreshDishes, publicationState, handoff, message, error, setError, load, refreshWeek, selectWeek, command };

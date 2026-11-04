@@ -50,3 +50,10 @@ test("published days remain locked and a new conflicting slot requires explicit 
   const remote = editWeek(base, "create-entry", { id: `${base.week.id}:entry:remote`, dayId: "day:1", slot: "SOUP", itemId: "dish:other", itemLabel: "Their soup" });
   assert.equal(reconcileWeek(base, local, remote).conflicts[0].field, "create"); assert.equal(local.entries[1].itemLabel, "My soup");
 });
+test("clearing a newly placed dish produces no save, and newly created allocations stay in the draft changes", () => {
+  const base = fixture(); const created = editWeek(base, "create-entry", { id: `${base.week.id}:entry:soup`, dayId: "day:1", slot: "SOUP", itemId: "dish:soup", itemLabel: "Soup" });
+  const allocated = editWeek(created, "batch-update-entries", { updates: [{ entryId: created.entries[1].id, allocations: [{ destinationId: "site:1", destinationLabel: "Fixture site", quantity: 10 }] }] });
+  assert.equal(weekChanges(base, allocated).creates[0].portions, 10); assert.equal(weekChanges(base, allocated).creates[0].allocations[0].quantity, 10);
+  const cleared = editWeek(created, "update-entry", { entryId: created.entries[1].id, patch: { itemId: "", itemLabel: "", portions: 0, allocations: [] } });
+  assert.equal(isWeekDirty(base, cleared), false);
+});

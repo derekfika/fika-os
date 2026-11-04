@@ -4,6 +4,7 @@ import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent as React
 import MenuPlanningShell from "./menu-planning-shell";
 import { useWeekDraft } from "./use-week-draft";
 import WeekDraftNotices from "./week-draft-notices";
+import { editableDay } from "@/lib/week-draft";
 import { slotLabel, useRollingData, type Dish } from "./planner-data";
 import { dishReferenceForEntry, groupedSlots, selectableDishIds } from "@/lib/week-planner-layout";
 import { plannerCopyAvailability, memoizePlannerSpeller } from "@/lib/planner-copy-availability";
@@ -12,7 +13,7 @@ import { rankDishPickerItems } from "@/lib/dish-picker";
 import { categoryForSlot } from "@/lib/dish-categories";
 import { assessDishCopyTarget, compatibleDishCopyTargets, copyableDishForSource, dishCopyUnavailableReason } from "@/lib/dish-copy";
 import { invalidateCatalogueCache } from "@/lib/menu-catalogue-cache";
-import { loadDishTagRegistry } from "@/lib/dish-tag-client";
+import { invalidateDishTagRegistry, loadDishTagRegistry } from "@/lib/dish-tag-client";
 import PlannerModal from "./planner-modal";
 import DuplicatePlanningModal from "./duplicate-planning-modal";
 import { InlineSpellPopover, SpellUnderlinedText, SpellcheckPanel, useSpellcheckLists, useSpellingDictionary, type SpellPanelItem } from "./spellcheck-panel";
@@ -100,7 +101,7 @@ export default function WeekPlanner() {
   const draft = useWeekDraft(data.snapshot, data.identity, data.acceptSavedSnapshot);
   const snapshot = draft.snapshot;
   const command = async (action: string, input: Record<string, unknown> = {}) => {
-    if (["update-entry", "create-entry", "add-menu-slot", "remove-menu-slot"].includes(action)) return draft.command(action, input);
+    if (["update-entry", "batch-update-entries", "create-entry", "add-menu-slot", "remove-menu-slot"].includes(action)) return draft.command(action, input);
     if (draft.dirty || draft.recovered || draft.saving) { draft.setError("Save Week or discard your draft before using this operation."); return false; }
     return data.command(action, input);
   };
@@ -169,7 +170,7 @@ export default function WeekPlanner() {
   const choose = async (dish: Dish) => { if (!picker) return; const category = categoryForSlot(picker.slot); if (dish.category !== category) setClassification({ dish, category }); else await placeDish(dish); };
   const classifyAndPlace = async () => {
     if (!classification || classifying) return; setClassifying(true);
-    try { const response = await fetch("/api/catalogue", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "add-use-classification", id: classification.dish.id, category: classification.category }) }); const body = await response.json(); if (!response.ok) throw Error(body.error?.message || "Classification could not be added."); await invalidateCatalogueCache(); await refreshDishes(); await placeDish(classification.dish); }
+    try { const response = await fetch("/api/catalogue", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "add-use-classification", id: classification.dish.id, category: classification.category }) }); const body = await response.json(); if (!response.ok) throw Error(body.error?.message || "Classification could not be added."); invalidateDishTagRegistry(); await invalidateCatalogueCache(); await refreshDishes(); await placeDish(classification.dish); }
     catch (cause) { draft.setError(cause instanceof Error ? cause.message : "Classification could not be added."); } finally { setClassifying(false); }
   };
   const openCreateDish = (name: string) => { const slot = picker?.slot || ""; setEditor({ mode: "create", name, category: categoryForSlot(slot), subcategory: saladSubtypeForSlot(slot) }); };
@@ -245,7 +246,7 @@ export default function WeekPlanner() {
                       const assessment = assessDishCopyTarget(snapshot, selectableDishes, sourceEntryId, { dayId: day.id, slot });
                       if (assessment.allowed) void copyDish(sourceEntryId, day.id, slot); else setCopyFeedback(assessment.reason);
                     }}>
-                    <button className="week-menu-cell-button" draggable={Boolean(dish)} aria-label={entry ? `Select ${dishDisplayName(entry.itemLabel)}; drag or use Copy to day` : `Select dish for ${day.dayName}, ${plannerSlotLabel(slot)}`} aria-haspopup={entry ? "menu" : undefined} aria-keyshortcuts={entry ? "Shift+F10" : undefined} title={entry ? "Right-click or press Shift+F10 for more actions" : undefined}
+                    <button className="week-menu-cell-button" disabled={!editableDay(snapshot, day.id) || Boolean(draft.recovered)} draggable={Boolean(dish)} aria-label={entry ? `Select ${dishDisplayName(entry.itemLabel)}; drag or use Copy to day` : `Select dish for ${day.dayName}, ${plannerSlotLabel(slot)}`} aria-haspopup={entry ? "menu" : undefined} aria-keyshortcuts={entry ? "Shift+F10" : undefined} title={entry ? "Right-click or press Shift+F10 for more actions" : undefined}
                       onContextMenu={entry ? event => { event.preventDefault(); const box = event.currentTarget.getBoundingClientRect(); const fromKeyboard = event.clientX === 0 && event.clientY === 0; openCellMenu(day.id, slot, fromKeyboard ? { x: box.left + 12, y: box.bottom - 4 } : { x: event.clientX, y: event.clientY }, event.currentTarget); } : undefined}
                       onKeyDown={entry ? event => { if (isMenuOpenKey(event)) { event.preventDefault(); const box = event.currentTarget.getBoundingClientRect(); openCellMenu(day.id, slot, { x: box.left + 12, y: box.bottom - 4 }, event.currentTarget); } } : undefined}
                       onPointerDown={entry ? event => { if (event.pointerType !== "touch") return; const start = { x: event.clientX, y: event.clientY }; const opener = event.currentTarget; cancelLongPress(); longPressRef.current = { ...start, timer: window.setTimeout(() => openCellMenu(day.id, slot, start, opener), LONG_PRESS_MS) }; } : undefined}
@@ -264,7 +265,7 @@ export default function WeekPlanner() {
                       {(spellFindings.get(entry.id)?.length || 0) > 0 && <InlineSpellPopover item={spellItemsById.get(entry.id)!} ignored={spell.ignored} added={spell.added} dictionary={plannerSpeller} onReplace={replaceDraftSpelling} onIgnore={spell.ignore} onAddWord={spell.addWord} />}
                       <button type="button" className="week-menu-copy-action" aria-label={`Copy ${dishDisplayName(entry.itemLabel)} to another day`} title="Copy to another day" disabled={!dish || !renderIndexes!.available.has(entry.id) || copyPending} onClick={() => setCopyDialogSourceId(entry.id)}><CopyGlyph /></button>
                       <button type="button" className="week-menu-copy-action week-menu-more" aria-haspopup="menu" aria-label={`More actions for ${entry.itemLabel}`} title="More actions" onClick={event => { const box = event.currentTarget.getBoundingClientRect(); openCellMenu(day.id, slot, { x: box.left, y: box.bottom + 4 }, event.currentTarget); }}>⋯</button>
-                      <button type="button" className="week-menu-clear" aria-label={`Clear ${dishDisplayName(entry.itemLabel)}`} onClick={() => void clearEntry(entry)}>×</button>
+                      <button type="button" className="week-menu-clear" disabled={!editableDay(snapshot, day.id) || Boolean(draft.recovered)} aria-label={`Clear ${dishDisplayName(entry.itemLabel)}`} onClick={() => void clearEntry(entry)}>×</button>
                     </div>}
                   </div>;
                 })}

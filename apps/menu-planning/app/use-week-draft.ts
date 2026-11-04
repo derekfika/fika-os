@@ -1,11 +1,12 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RollingSnapshot } from "@/lib/rolling-menu-types";
+import type { PublicationDayState } from "./planner-data";
 import { draftStorageKey, editWeek, equal, isWeekDirty, parseRecoveredDraft, reconcileWeek, weekChanges, type DraftConflict, type RecoveredWeekDraft, type WeekSaveRequest } from "@/lib/week-draft";
 
 type DraftState = { base: RollingSnapshot; draft: RollingSnapshot; templateAdditions: string[]; pending?: RecoveredWeekDraft["pending"] };
 type Review = { latest: RollingSnapshot; merged: RollingSnapshot; conflicts: DraftConflict[] };
-export function useWeekDraft(source: RollingSnapshot | undefined, identity: string, applySaved: (snapshot: RollingSnapshot) => void) {
+export function useWeekDraft(source: RollingSnapshot | undefined, identity: string, applySaved: (snapshot: RollingSnapshot, publicationState?: Record<string, PublicationDayState>) => void) {
   const [state, setState] = useState<DraftState>();
   const stateRef = useRef(state);
   const [recovered, setRecovered] = useState<RecoveredWeekDraft>();
@@ -16,11 +17,12 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
   const [storageError, setStorageError] = useState("");
   const [navigation, setNavigation] = useState<{ href?: string; weekId?: string }>();
   const saving = useRef(false);
+  const leaving = useRef(false);
   const scopeRef = useRef("");
   const environment = typeof window === "undefined" ? "" : window.location.origin;
   const key = source && identity ? draftStorageKey(identity, environment, source.week.id) : "";
   const dirty = Boolean(state && (isWeekDirty(state.base, state.draft) || state.pending));
-  const protect = useRef(false); protect.current = dirty || Boolean(recovered) || saving.current;
+  const protect = useRef(false); protect.current = !leaving.current && (dirty || Boolean(recovered) || saving.current);
   const persist = useCallback((value: DraftState, storageKey = scopeRef.current) => {
     if (!storageKey || !identity) { setStorageError("Draft recovery is unavailable until your identity is verified. Keep this tab open."); return; }
     try {
@@ -34,6 +36,7 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
   useEffect(() => {
     if (!source || !key) return;
     if (key !== scopeRef.current) {
+      leaving.current = false;
       scopeRef.current = key;
       const initial = { base: structuredClone(source), draft: structuredClone(source), templateAdditions: [] };
       stateRef.current = initial; setState(initial); setLatest(undefined); setReview(undefined); setError(""); setStatus("saved");
@@ -43,7 +46,8 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
     }
     const current = stateRef.current;
     if (!current || source.week.version <= current.base.week.version || saving.current) return;
-    if (isWeekDirty(current.base, current.draft) || current.pending) { setLatest(source); setStatus("conflict"); }
+    if (current.pending) { setStatus("failed"); setError("A previous save has an unknown outcome. Retry Save Week to verify it safely before reviewing newer changes."); }
+    else if (isWeekDirty(current.base, current.draft)) { setLatest(source); setStatus("conflict"); }
     else { const next = { base: structuredClone(source), draft: structuredClone(source), templateAdditions: [] }; stateRef.current = next; setState(next); }
   }, [source, key, identity, environment]);
 
@@ -68,12 +72,12 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
     try {
       const draft = editWeek(current.draft, action, input);
       const added = action === "add-menu-slot" && input.persistence === "template" ? (draft.week.customSlots || []).filter(slot => !current.draft.week.customSlots?.includes(slot)) : [];
-      replace({ ...current, draft, templateAdditions: [...current.templateAdditions, ...added] });
+      replace({ ...current, draft, templateAdditions: [...current.templateAdditions, ...added].filter(slot => draft.week.customSlots?.includes(slot) && !draft.week.removedSlots?.includes(slot)) });
       if (!saving.current && status !== "conflict") setStatus("editing"); setError(""); return true;
     } catch (cause) { setError(cause instanceof Error ? cause.message : "This change could not be added to the draft."); return false; }
   };
   const getLatest = async (weekId: string) => {
-    const response = await fetch(`/api/rolling-menu?weekId=${encodeURIComponent(weekId)}`, { cache: "no-store" });
+    const response = await fetch(`/api/rolling-menu?weekId=${encodeURIComponent(weekId)}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
     const body = await response.json();
     if (!response.ok || body.snapshot?.week?.id !== weekId) throw Error(body.error?.message || "The latest week could not be loaded.");
     return body.snapshot as RollingSnapshot;
@@ -85,7 +89,7 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
     const pending = current.pending || { request: { weekId: current.base.week.id, expectedWeekVersion: current.base.week.version, requestId: crypto.randomUUID(), changes: { ...weekChanges(current.base, current.draft), ...(current.templateAdditions.length ? { templateAdditions: current.templateAdditions } : {}) } } satisfies WeekSaveRequest, submitted: structuredClone(current.draft) };
     saving.current = true; setStatus("saving"); setError(""); replace({ ...current, pending });
     try {
-      const response = await fetch("/api/rolling-menu", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save-week", ...pending.request }) });
+      const response = await fetch("/api/rolling-menu", { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30_000), body: JSON.stringify({ action: "save-week", ...pending.request }) });
       const body = await response.json();
       if (!response.ok) {
         if (response.status === 409) {
@@ -103,7 +107,7 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
       const next = { base: structuredClone(saved), draft: rebased.merged, templateAdditions: stateRef.current!.templateAdditions.filter(slot => !pending.request.changes.templateAdditions?.includes(slot)) };
       if (rebased.conflicts.length) { replace({ base: pending.submitted, draft: inFlightDraft, templateAdditions: next.templateAdditions }); setLatest(saved); setReview({ latest: saved, ...rebased }); setStatus("conflict"); }
       else { replace(next); setStatus(isWeekDirty(next.base, next.draft) ? "editing" : "saved"); }
-      applySaved(saved);
+      applySaved(saved, body.publicationState);
       return true;
     } catch (cause) { if (stateRef.current?.pending) setStatus("failed"); setError(cause instanceof Error ? cause.message : "Save Week failed. Your full draft is retained."); return false; }
     finally { saving.current = false; }
@@ -113,7 +117,8 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
     const current = stateRef.current;
     const next = { base: recovered.base, draft: recovered.draft, pending: recovered.pending, templateAdditions: (recovered as RecoveredWeekDraft & { templateAdditions?: string[] }).templateAdditions || [] };
     replace(next); setRecovered(undefined);
-    if (current.base.week.version !== recovered.base.week.version) { setLatest(current.base); setStatus("conflict"); } else setStatus("editing");
+    if (recovered.pending) { setLatest(undefined); setStatus("failed"); setError("An interrupted save was recovered. Retry Save Week to verify its outcome using the original request ID."); }
+    else if (current.base.week.version !== recovered.base.week.version) { setLatest(current.base); setStatus("conflict"); } else setStatus("editing");
   };
   const discardRecovered = () => { try { window.localStorage.removeItem(key); setRecovered(undefined); } catch { setStorageError("The recovered draft could not be removed."); } };
   const discard = () => { if (saving.current || stateRef.current?.pending) { setError("Retry the interrupted save to establish its outcome before discarding."); return; } if (stateRef.current) { const base = latest || stateRef.current.base; replace({ base, draft: structuredClone(base), templateAdditions: [] }); applySaved(base); } setLatest(undefined); setReview(undefined); setStatus("saved"); setError(""); };
@@ -132,7 +137,7 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
     setReview({ ...review, merged, conflicts: review.conflicts.filter((_, item) => item !== index) });
   };
   const applyReview = () => { if (!review || review.conflicts.length || !stateRef.current) return; replace({ base: structuredClone(review.latest), draft: review.merged, templateAdditions: stateRef.current.templateAdditions }); applySaved(review.latest); setReview(undefined); setLatest(undefined); setStatus("editing"); setError(""); };
-  const leave = (selectWeek: (weekId: string) => void) => { if (!navigation || saving.current) return; const target = navigation; setNavigation(undefined); protect.current = false; if (target.weekId) selectWeek(target.weekId); else if (target.href) window.location.assign(target.href); };
+  const leave = (selectWeek: (weekId: string) => void) => { if (!navigation || saving.current) return; const target = navigation; leaving.current = true; setNavigation(undefined); protect.current = false; if (target.weekId) selectWeek(target.weekId); else if (target.href) window.location.assign(target.href); };
   return { snapshot: state?.base.week.id === source?.week.id ? state?.draft : source, dirty, status, error, storageError, recovered, review, latest, navigation, command, save, restore, discardRecovered, discard, reviewLatest, resolveConflict, applyReview, leave, cancelNavigation: () => setNavigation(undefined), setError, saving: saving.current };
 }
 function editableDayForReview(snapshot: RollingSnapshot, entryId: string) { const entry = snapshot.entries.find(entry => entry.id === entryId); return entry && snapshot.week.status !== "published" && snapshot.week.status !== "archived" && snapshot.week.dayStatuses?.[entry.dayId] !== "published"; }

@@ -17,7 +17,7 @@ test("Week Planner shows owner-approved salad display names without changing gen
   assert.match(component, /<strong>\{plannerSlotLabel\(slot\)\}<\/strong>/, "slot row headings show the explicit subtype");
   assert.match(component, /<small>\{plannerSlotLabel\(slot\)\}<\/small>/, "picker headings show the explicit subtype");
   assert.match(component, /Select dish for \$\{day\.dayName\}, \$\{plannerSlotLabel\(slot\)\}/, "Monday and other day cells expose the same specific label");
-  assert.match(component, /No slot-specific recommendations yet\. Showing all category-compatible salads\./, "a zero-match default still explains its eligible catalogue fallback");
+  assert.match(component, /Recommended dishes for this row appear first/, "recommendations never hide other catalogue dishes");
 });
 
 test("hot main, fish, vegan and soup slots share one ordered HOT MAINS banner", () => {

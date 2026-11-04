@@ -8,7 +8,7 @@ import { suggestMenuRowSlot } from "./menu-template";
 export const DRAFT_ENTRY_FIELDS = ["itemId", "itemLabel", "slot", "portions", "allocations"] as const;
 export type WeekChanges = {
   updates: Array<{ entryId: string; dayId: string; patch: RollingEntryPatch }>;
-  creates: Array<Pick<RollingEntry, "id" | "dayId" | "slot" | "itemId" | "itemLabel">>;
+  creates: Array<Pick<RollingEntry, "id" | "dayId" | "slot" | "itemId" | "itemLabel" | "portions" | "allocations">>;
   customSlots?: string[];
   removedSlots?: string[];
   templateAdditions?: string[];
@@ -21,7 +21,7 @@ export function weekChanges(base: RollingSnapshot, draft: RollingSnapshot): Week
   const creates: WeekChanges["creates"] = [];
   for (const entry of draft.entries) {
     const before = existing.get(entry.id);
-    if (!before) { creates.push({ id: entry.id, dayId: entry.dayId, slot: entry.slot, itemId: entry.itemId, itemLabel: entry.itemLabel }); continue; }
+    if (!before) { if (!entry.itemLabel.trim() && !entry.portions && !entry.allocations.length) continue; creates.push({ id: entry.id, dayId: entry.dayId, slot: entry.slot, itemId: entry.itemId || undefined, itemLabel: entry.itemLabel, portions: entry.portions, allocations: entry.allocations }); continue; }
     const patch: RollingEntryPatch = {};
     for (const key of DRAFT_ENTRY_FIELDS) if (!equal(before[key], entry[key])) Object.assign(patch, { [key]: entry[key] ?? (key === "itemId" ? "" : undefined) });
     if (Object.keys(patch).length) updates.push({ entryId: entry.id, dayId: entry.dayId, patch });
@@ -41,7 +41,9 @@ export function editableDay(snapshot: RollingSnapshot, dayId: string) {
 /** Apply ordinary planner actions without network activity or server-owned review/audit evidence. */
 export function editWeek(snapshot: RollingSnapshot, action: string, input: Record<string, any>): RollingSnapshot {
   const next = structuredClone(snapshot);
-  if (action === "update-entry") {
+  if (action === "batch-update-entries") {
+    return (input.updates || []).reduce((draft: RollingSnapshot, update: Record<string, any>) => editWeek(draft, "update-entry", { entryId: update.entryId, patch: update.patch || { allocations: update.allocations || [], portions: (update.allocations || []).reduce((sum: number, allocation: { quantity: number }) => sum + Number(allocation.quantity), 0) } }), snapshot);
+  } else if (action === "update-entry") {
     const entry = next.entries.find(entry => entry.id === input.entryId);
     if (!entry || !editableDay(next, entry.dayId)) throw Error("This menu day is locked. Use the publication amendment workflow first.");
     applyRollingEntryPatch(entry, input.patch || {});

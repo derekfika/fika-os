@@ -12,12 +12,12 @@ const id = z.string().trim().min(1).max(300).refine(value => !value.includes("/"
 const allocation = z.object({ destinationId: id.optional(), destinationLabel: z.string().min(1).max(300), destinationAddress: z.string().max(1000).optional(), quantity: z.number().finite().nonnegative(), sourceLabel: z.string().max(300).optional() }).strict();
 const slot = z.string().min(1).max(80).refine(isGovernedMenuSlot, "Choose a governed menu row");
 const patch = z.object({ itemId: z.string().max(300).optional(), itemLabel: z.string().max(500).optional(), slot: slot.optional(), portions: z.number().finite().nonnegative().optional(), allocations: z.array(allocation).max(100).optional() }).strict();
-const requestSchema = z.object({ weekId: id, expectedWeekVersion: z.number().int().positive(), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/), changes: z.object({ updates: z.array(z.object({ entryId: id, dayId: id, patch }).strict()).max(350), creates: z.array(z.object({ id, dayId: id, slot, itemId: id.optional(), itemLabel: z.string().trim().max(500) }).strict()).max(350), customSlots: z.array(slot).max(100).optional(), removedSlots: z.array(slot).max(100).optional(), templateAdditions: z.array(slot).max(50).optional() }).strict() }).strict();
+const requestSchema = z.object({ weekId: id, expectedWeekVersion: z.number().int().positive(), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/), changes: z.object({ updates: z.array(z.object({ entryId: id, dayId: id, patch }).strict()).max(350), creates: z.array(z.object({ id, dayId: id, slot, itemId: id.optional(), itemLabel: z.string().trim().max(500), portions: z.number().finite().nonnegative(), allocations: z.array(allocation).max(100) }).strict()).max(350), customSlots: z.array(slot).max(100).optional(), removedSlots: z.array(slot).max(100).optional(), templateAdditions: z.array(slot).max(50).optional() }).strict().refine(changes => changes.updates.length + changes.creates.length <= 350) }).strict();
 function fail(message: string, status = 422): never { throw Object.assign(new Error(message), { status }); }
 type Receipt = RollingWeek["audit"][number] & { requestId?: string; fingerprint?: string; baseVersion?: number; savedVersion?: number };
 const fingerprint = (request: WeekSaveRequest) => createHash("sha256").update(JSON.stringify(request)).digest("hex");
 
-export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveRequest, actor: string, allowedOplocIds: ReadonlySet<string>, at = new Date().toISOString()) {
+export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveRequest, actor: string, allowedOplocIds: ReadonlySet<string>, at = new Date().toISOString(), oplocAliases: ReadonlyMap<string, string> = new Map()) {
   const hash = fingerprint(request);
   const receipt = (snapshot.week.audit as Receipt[]).find(event => event.requestId === request.requestId);
   if (receipt) {
@@ -27,19 +27,21 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
   if (snapshot.week.id !== request.weekId || snapshot.week.version !== request.expectedWeekVersion) fail("This week changed on the server. Your draft is retained; review the latest week before saving.", 409);
   if (["published", "archived"].includes(snapshot.week.status)) fail("This week is locked. Use the publication amendment workflow first.", 409);
   const next = structuredClone(snapshot);
+  if (next.week.dayIds.some(id => !next.days.some(day => day.id === id)) || next.week.entryIds.some(id => !next.entries.some(entry => entry.id === id)) || next.days.some(day => day.entryIds.some(id => !next.entries.some(entry => entry.id === id && entry.dayId === day.id)))) fail("This week is incomplete. No changes were saved.", 409);
   const audit: Receipt = { action: "week-draft-saved", at, by: actor, requestId: request.requestId, fingerprint: hash, baseVersion: snapshot.week.version, savedVersion: snapshot.week.version + 1 };
   const touched = new Set<string>();
   const checkAllocations = (entry: RollingSnapshot["entries"][number]) => {
-    if (entry.allocations.some(value => value.destinationId && !allowedOplocIds.has(value.destinationId))) fail("This save contains a destination outside your permitted scope.", 403);
+    if (entry.allocations.some(value => value.destinationId && !allowedOplocIds.has(oplocAliases.get(value.destinationId) || value.destinationId))) fail("This save contains a destination outside your permitted scope.", 403);
     if (entry.portions !== entry.allocations.reduce((sum, value) => sum + value.quantity, 0) && entry.allocations.length) fail("Portions must match destination allocations.");
   };
   for (const update of request.changes.updates) {
     if (touched.has(update.entryId)) fail("A save cannot change the same entry twice.");
     touched.add(update.entryId);
     const entry = next.entries.find(entry => entry.id === update.entryId && entry.dayId === update.dayId && next.week.entryIds.includes(entry.id));
-    if (!entry || !editableDay(next, entry.dayId)) fail("A changed menu entry is missing or locked.", 409);
+    if (!entry || !editableDay(next, entry.dayId) || !next.days.find(day => day.id === entry.dayId)?.entryIds.includes(entry.id)) fail("A changed menu entry is missing or locked.", 409);
     checkAllocations(entry);
     applyRollingEntryPatch(entry, update.patch, { actor, at });
+    if (update.patch.allocations) entry.allocations = entry.allocations.map(value => value.destinationId && oplocAliases.has(value.destinationId) ? { ...value, destinationId: oplocAliases.get(value.destinationId) } : value);
     checkAllocations(entry);
     entry.audit.push(audit);
   }
@@ -48,7 +50,9 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
     touched.add(created.id);
     const day = next.days.find(day => day.id === created.dayId && next.week.dayIds.includes(day.id));
     if (!day || !editableDay(next, day.id)) fail("A new menu entry belongs to a missing or locked day.", 409);
-    next.entries.push({ ...created, date: day.date, portions: 0, allocations: [], allergens: {}, allergenReviewInvalidated: true, audit: [audit] });
+    if (created.itemLabel.trim() && !created.itemId) fail("Choose an existing canonical dish for each new named entry.");
+    const entry = { ...created, date: day.date, allocations: created.allocations.map(value => value.destinationId && oplocAliases.has(value.destinationId) ? { ...value, destinationId: oplocAliases.get(value.destinationId) } : value), allergens: {}, allergenReviewInvalidated: true, audit: [audit] };
+    checkAllocations(entry); next.entries.push(entry);
     next.week.entryIds.push(created.id); day.entryIds.push(created.id);
   }
   if (request.changes.customSlots) next.week.customSlots = [...new Set(request.changes.customSlots)];
@@ -75,7 +79,7 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
 }
 
 /** A bounded week transaction; the existing adapter persists diffs and leaves publications/outboxes untouched. */
-export async function saveWeekDraft(raw: unknown, actor: string, allowedOplocIds: ReadonlySet<string>) {
+export async function saveWeekDraft(raw: unknown, actor: string, allowedOplocIds: ReadonlySet<string>, oplocAliases: ReadonlyMap<string, string> = new Map()) {
   const parsed = requestSchema.safeParse(raw);
   if (!parsed.success) fail("The week save contains invalid entries or relationships.");
   const request = parsed.data as WeekSaveRequest;
@@ -88,7 +92,7 @@ export async function saveWeekDraft(raw: unknown, actor: string, allowedOplocIds
     const week = rolling.weeks.find(week => week.id === request.weekId);
     if (!week) return fail("The planning week was not found.", 404);
     const current = { week, days: rolling.days.filter(day => week.dayIds.includes(day.id)), entries: rolling.entries.filter(entry => week.entryIds.includes(entry.id)) };
-    const result = applyWeekSave(current, request, actor, allowedOplocIds);
+    const result = applyWeekSave(current, request, actor, allowedOplocIds, new Date().toISOString(), oplocAliases);
     if (!result.replayed) {
       rolling.weeks[rolling.weeks.findIndex(week => week.id === request.weekId)] = result.snapshot.week;
       const entries = new Map(result.snapshot.entries.map(entry => [entry.id, entry]));

@@ -56,3 +56,17 @@ test("canonical creation is retained, not deleted/recreated, and forged review e
   const forged = { ...request, changes: { ...request.changes, updates: [{ entryId: source.entries[0].id, dayId: source.days[0].id, patch: { allergenReview: { by: "fake" } } }] } };
   await assert.rejects(saveWeekDraft(forged, "person:1", allowed), /invalid entries/);
 });
+test("governed aliases resolve before scope checks, and invalid allocations roll back without partial writes", () => {
+  const source = base(); source.entries[0].allocations[0].destinationId = "legacy:site";
+  const request = { weekId: source.week.id, expectedWeekVersion: 1, requestId: "request-alias-save", changes: { updates: [{ entryId: source.entries[0].id, dayId: source.days[0].id, patch: { allocations: source.entries[0].allocations } }], creates: [] } };
+  const saved = applyWeekSave(source, request, "person:1", allowed, "2026-11-04T12:00:00Z", new Map([["legacy:site", "site:1"]]));
+  assert.equal(saved.snapshot.entries[0].allocations[0].destinationId, "site:1"); assert.equal(source.entries[0].allocations[0].destinationId, "legacy:site");
+  assert.throws(() => applyWeekSave(source, { ...request, changes: { ...request.changes, updates: [{ ...request.changes.updates[0], patch: { allocations: [{ destinationId: "site:2", destinationLabel: "Other", quantity: 12 }] } }] } }, "person:1", allowed), /scope/);
+});
+test("week-only and template rows save atomically and replay without duplicate settings or audit", async () => {
+  const source = await getWeek("rolling-week:2099-01-05"); const draft = editWeek(source, "add-menu-slot", { category: "Garnish", persistence: "template" });
+  const slot = draft.week.customSlots!.at(-1)!; const request = { weekId: source.week.id, expectedWeekVersion: source.week.version, requestId: "request-template-row", changes: { ...weekChanges(source, draft), templateAdditions: [slot] } };
+  const first = await saveWeekDraft(request, "person:1", allowed); const replay = await saveWeekDraft(request, "person:1", allowed);
+  const { getMenuTemplateSlots } = await import("../lib/operational-store");
+  assert.equal(first.snapshot.week.customSlots?.filter(value => value === slot).length, 1); assert.equal((await getMenuTemplateSlots()).filter(value => value === slot).length, 1); assert.equal(replay.replayed, true); assert.equal(replay.snapshot.week.version, first.snapshot.week.version);
+});
