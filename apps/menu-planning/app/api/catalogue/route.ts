@@ -7,6 +7,7 @@ import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { getCatalogueReadPackage } from "@/lib/catalogue-read-package";
 import { requireCatalogueMutationActor, resolveMenuActor } from "@/lib/auth";
 import type { MenuItem } from "@/lib/domain";
+import { addDishUseClassification } from "@/lib/dish-context-classification";
 
 async function handleGet(request: Request) {
   try {
@@ -41,6 +42,10 @@ async function handlePost(request: import("next/server").NextRequest) {
     const body = await request.json() as { action?: string; id?: string; displayName?: string; category?: string; subcategory?: string; description?: string; preparationNotes?: string; mayContainNotes?: string; ingredients?: MenuItem["ingredients"]; methodSteps?: string[]; tagIds?: string[]; canonicalIds?: string[]; items?: Array<{ displayName: string; category?: string; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; sourceEvidence?: { document: string; excerpt?: string; importedAt: string } }>; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; sourceEvidence?: { document: string; excerpt?: string; importedAt: string }; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown"; source: string; reviewedBy?: string; reviewedAt?: string; notes?: string }> };
     action = String(body.action || "");
     const actor = requireCatalogueMutationActor(await resolveMenuActor(request));
+    if (action === "add-use-classification") {
+      if (!body.id || !body.category) return NextResponse.json({ error: { message: "A dish and classification are required." } }, { status: 422 });
+      return NextResponse.json(await addDishUseClassification(body.id, body.category, actor.uid));
+    }
     if (action === "create-dish") {
       if (!body.displayName?.trim()) return NextResponse.json({ error: { message: "A dish name is required." } }, { status: 422 });
       const result = await createCanonicalMenuItem({ ...body, displayName: body.displayName! }, actor.uid);

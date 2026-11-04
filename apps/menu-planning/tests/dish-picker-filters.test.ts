@@ -68,23 +68,23 @@ test("tag filter matches any selected tag; categories and salad slots likewise",
   assert.deepEqual(ids(salad1.filter((entry) => dishMatchesFilters(entry, { ...emptyPickerFilters, subtypes: [UNASSIGNED_SUBTYPE] }))), ["none1"]);
 });
 
-test("groups combine with AND and category filters cannot widen the slot's eligible categories", () => {
+test("groups combine with AND and explicit category filters can find dishes from any category", () => {
   const filters = { tagIds: ["t:spiced"], categories: ["Hot Main"], subtypes: [] };
   const result = filterPickerDishes(dishes, "HOT MAIN", "", filters);
   assert.deepEqual(ids(result.dishes), ["hot1", "hot2"]);
-  assert.equal(result.offered, 3);
+  assert.equal(result.offered, dishes.length);
   assert.equal(result.shown, 2);
   const leafOnly = filterPickerDishes(dishes, "SALAD 2", "", { tagIds: ["t:slaw"], categories: [], subtypes: ["Leaf"] });
   assert.deepEqual(ids(leafOnly.dishes), ["leaf1"], "All compatible can deliberately override the default subtype recommendation");
-  assert.equal(filterPickerDishes(dishes, "HOT MAIN", "", { tagIds: [], categories: ["Salad"], subtypes: [] }).shown, 0, "a category filter cannot pull another primary category into a slot");
-  assert.equal(filterPickerDishes(dishes, "SOUP", "", { tagIds: ["t:slaw"], categories: [], subtypes: [] }).shown, 0);
+  assert.equal(filterPickerDishes(dishes, "HOT MAIN", "", { tagIds: [], categories: ["Salad"], subtypes: [] }).shown, 6, "category is an explicit filter, not a slot restriction");
+  assert.equal(filterPickerDishes(dishes, "SOUP", "", { tagIds: ["t:slaw"], categories: [], subtypes: [] }).shown, 2);
 });
 
 test("search and filters combine; counts report offered versus shown", () => {
   const result = filterPickerDishes(dishes, "HOT MAIN", "stew", { tagIds: ["t:spiced"], categories: [], subtypes: [] });
   assert.deepEqual(ids(result.dishes), ["hot2"]);
-  assert.deepEqual([result.offered, result.shown], [3, 1]);
-  assert.equal(filterPickerDishes(dishes, "HOT MAIN", "", emptyPickerFilters).shown, 3);
+  assert.deepEqual([result.offered, result.shown], [dishes.length, 1]);
+  assert.equal(filterPickerDishes(dishes, "HOT MAIN", "", emptyPickerFilters).shown, dishes.length);
 });
 
 test("options list only what the slot offers, with counts, in a stable order", () => {
@@ -139,8 +139,8 @@ test("the planner keeps filters and recommendation mode with the search so Cance
   assert.match(planner, /filters=\{pickerFilters\} setFilters=\{setPickerFilters\}/);
   assert.match(planner, /<DishPickerFilters /);
   assert.match(planner, /const \[pickerMode, setPickerMode\] = useState<"recommended" \| "all">\("recommended"\)/);
-  assert.match(planner, /All compatible dishes/);
-  assert.match(planner, /saladSlotMatches\(dish, slot, tags\)/);
+  assert.match(planner, /Search the entire Dish Library/);
+  assert.match(planner, /rankDishPickerItems\(result.dishes/);
   assert.match(planner, /setPickerMode\("recommended"\)/);
 });
 

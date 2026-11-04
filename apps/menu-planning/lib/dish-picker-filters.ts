@@ -78,7 +78,7 @@ export type PickerResult<T> = { dishes: T[]; offered: number; shown: number };
  * picker can say "12 of 40 dishes" and distinguish "no match" from "nothing offered for this slot".
  */
 export function filterPickerDishes<T extends PickerFilterDish>(dishes: readonly T[], slot: string, query: string, filters: PickerFilters): PickerResult<T> {
-  const offered = dishesForSlot(dishes, slot);
+  const offered = [...dishes];
   const matching = offered.filter((dish) => dishMatchesQuery(dish, query) && dishMatchesFilters(dish, filters));
   return { dishes: matching, offered: offered.length, shown: matching.length };
 }

@@ -1,0 +1,21 @@
+"use client";
+import type { useWeekDraft } from "./use-week-draft";
+import PlannerModal from "./planner-modal";
+type Draft = ReturnType<typeof useWeekDraft>;
+const show = (value: unknown) => value === undefined ? "None" : typeof value === "string" ? value || "Blank" : JSON.stringify(value);
+export default function WeekDraftNotices({ draft, selectWeek }: { draft: Draft; selectWeek: (weekId: string) => void }) {
+  return <>
+    <div className="planner-toolbar" aria-label="Week draft controls">
+      <strong role="status" aria-live="polite">{draft.status === "saving" ? "Saving…" : draft.status === "conflict" ? "Conflict · draft retained" : draft.status === "failed" ? "Save failed · draft retained" : draft.dirty ? "Unsaved Changes" : "Saved"}</strong>
+      <button type="button" className="button button-purple" disabled={draft.saving || Boolean(draft.recovered) || Boolean(draft.latest) || !draft.dirty} onClick={() => void draft.save()}>{draft.saving ? "Saving…" : draft.status === "failed" ? "Retry Save Week" : "Save Week"}</button>
+      {draft.dirty && <button type="button" className="button button-soft" disabled={draft.saving} onClick={draft.discard}>Discard current draft</button>}
+      {draft.status === "conflict" && <button type="button" className="button button-soft" onClick={() => void draft.reviewLatest()}>Review latest week</button>}
+      <span>Week edits stay in this browser until you save.</span>
+    </div>
+    {draft.error && <p className="menu-error" role="alert">{draft.error}</p>}
+    {draft.storageError && <p className="menu-error" role="alert">{draft.storageError}</p>}
+    {draft.recovered && <section className="workspace-panel" aria-label="Recovered draft"><h3>Unsaved draft found</h3><p>A draft from {new Date(draft.recovered.savedAt).toLocaleString("en-GB")} is available. Its base version is {draft.recovered.base.week.version}. Restore it to review your work against the current week.</p><div className="form-actions"><button type="button" className="button button-purple" onClick={draft.restore}>Restore Draft</button><button type="button" className="button button-soft" onClick={draft.discardRecovered}>Discard Draft</button></div></section>}
+    {draft.navigation && <PlannerModal title="Unsaved week changes" onClose={draft.cancelNavigation} busy={draft.saving} dismissible={!draft.saving} className="item-detail planner-input-dialog"><h3>Unsaved week changes</h3><p>Your changes have not been saved to the week. Stay here to save, or leave with a recoverable browser draft.</p>{draft.storageError && <p role="alert">Browser recovery failed. Stay here and save before leaving.</p>}<footer className="form-actions"><button type="button" className="button button-purple" onClick={draft.cancelNavigation}>Stay and edit</button><button type="button" className="button button-soft" disabled={draft.saving || Boolean(draft.storageError)} onClick={() => draft.leave(selectWeek)}>Leave and keep draft</button></footer></PlannerModal>}
+    {draft.review && <PlannerModal title="Review week conflict" onClose={() => draft.setError("Choose each conflict and apply the reviewed draft to continue.")} dismissible={false} className="item-detail planner-input-dialog"><h3>Review week conflict</h3><p>Server version {draft.review.latest.week.version} is loaded for comparison. Independent changes are combined. Choose each conflicting value; applying this review prepares a draft and does not save it.</p>{draft.review.conflicts.map((conflict, index) => <section key={`${conflict.entryId}:${conflict.field}`}><h4>{conflict.label}</h4><p>Before: {show(conflict.base)}</p><p>Your draft: {show(conflict.local)}</p><p>Server: {show(conflict.remote)}</p><div className="form-actions"><button type="button" className="button button-soft" onClick={() => draft.resolveConflict(index, "local")}>Keep my value</button><button type="button" className="button button-soft" onClick={() => draft.resolveConflict(index, "remote")}>Keep server value</button></div></section>)}{!draft.review.conflicts.length && <p role="status">All differences reviewed. Your combined draft is ready.</p>}<footer className="form-actions"><button type="button" className="button button-purple" disabled={Boolean(draft.review.conflicts.length)} onClick={draft.applyReview}>Apply reviewed draft</button></footer></PlannerModal>}
+  </>;
+}

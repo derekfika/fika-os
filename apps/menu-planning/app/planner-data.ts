@@ -234,7 +234,16 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
     }
   }, [publicationState, refreshWeek, snapshot]);
   const refreshDishes = async () => { resetCatalogueMemory(); setDishes(await loadCatalogue(setDishes)); };
-  return { snapshot, setSnapshot, loadFailure, weeks, dishes, dishReferences, refreshDishes, publicationState, handoff, message, error, setError, load, refreshWeek, selectWeek, command };
+  const acceptSavedSnapshot = useCallback((saved: RollingSnapshot) => {
+    const current = snapshotRef.current;
+    if (current?.week.id !== saved.week.id || saved.week.version < current.week.version) return;
+    snapshotRef.current = saved; setSnapshot(saved); setDishReferences(undefined);
+    const summaries = weeksRef.current.map(week => week.id === saved.week.id ? { ...week, version: saved.week.version, entryIds: saved.week.entryIds } : week);
+    weeksRef.current = summaries; setWeeks(summaries); appliedVersionsRef.current.set(saved.week.id, saved.week.version);
+    const value: CachedMenuWeek = { weekId: saved.week.id, weekCommencing: saved.week.weekCommencing, version: saved.week.version, snapshot: saved, publicationState, weeks: summaries, cachedAt: Date.now(), identity: cacheIdentity };
+    weekCache.set(saved.week.id, value); persistInBackground(value, weekCacheWriter.currentGeneration());
+  }, [publicationState]);
+  return { snapshot, setSnapshot, identity: cacheIdentity, acceptSavedSnapshot, loadFailure, weeks, dishes, dishReferences, refreshDishes, publicationState, handoff, message, error, setError, load, refreshWeek, selectWeek, command };
 }
 export const slotLabel = (slot: string) => slot.replace(/^SALAD \d+$/, "Salad").replace(/^COLD PROTEIN(?: \d+)?$/, "Cold Protein").replace(/^HOT VEG VEGAN(?: \d+)?$/, "Vegan/Veggie Main").replace(/^HOT MEAT(?: \d+)?$/, "Hot Main").replace(/^HOT MAIN(?: \d+)?$/, "Hot Main").replace(/^VEGAN MAIN(?: \d+)?$/, "Vegan/Veggie Main").replace(/^STARCH\/SIDE \d+$/, "Starch/Side").replace(/^EXTRAS \d+$/, "Starch/Side").replace(/^SIDE \d+$/, "Starch/Side").replace(/^GARNISH \d+$/, "Garnish").replace(/^SAUCE \d+$/, "Sauce").replace(/^FISH(?: \d+)?$/, "Fish").replace(/^SOUP(?: \d+)?$/, "Soup").replace(/^DESSERT (\d+)$/, "Dessert $1");
 export function patchEntry(entry: RollingEntry, patch: Record<string, unknown>) { return { action: "update-entry", weekId: entry.id.split(":entry:")[0], entryId: entry.id, patch }; }
