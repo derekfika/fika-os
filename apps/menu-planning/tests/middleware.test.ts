@@ -80,3 +80,36 @@ test("other internal APIs are not automatically bypassed", async () => {
     else process.env.FIKA_HUB_BASE_URL = originalHub;
   }
 });
+
+test("hosted sign-in redirects return to the canonical environment URL, never the internal or forwarded host", async () => {
+  const originalMode = process.env.FIKA_RUNTIME_MODE;
+  const originalHub = process.env.FIKA_HUB_BASE_URL;
+  const originalPublicHub = process.env.NEXT_PUBLIC_FIKA_HUB_URL;
+  const originalFetch = globalThis.fetch;
+  process.env.FIKA_RUNTIME_MODE = "staging";
+  process.env.FIKA_HUB_BASE_URL = "https://staging-os.fikacatering.com";
+  delete process.env.NEXT_PUBLIC_FIKA_HUB_URL;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ error: { code: "FIKA_SESSION_MISSING" } }), { status: 401 })) as typeof fetch;
+  try {
+    const request = new NextRequest("https://0.0.0.0:8080/week-planner?week=2026-11-09", {
+      headers: { "x-forwarded-host": "attacker.example", "x-forwarded-proto": "http" },
+    });
+    const response = await middleware(request);
+    assert.equal(response.status, 307);
+    const location = new URL(response.headers.get("location")!);
+    assert.equal(location.searchParams.get("appId"), "menu-planning");
+    assert.equal(location.searchParams.get("launchError"), "FIKA_SESSION_MISSING");
+    assert.equal(location.searchParams.get("returnTo"), "https://menu-planning-staging.fikacatering.com/week-planner?week=2026-11-09");
+
+    process.env.FIKA_RUNTIME_MODE = "production";
+    const productionResponse = await middleware(new NextRequest("https://0.0.0.0:8080/week-planner"));
+    const productionLocation = new URL(productionResponse.headers.get("location")!);
+    assert.equal(productionLocation.searchParams.get("returnTo"), "https://menuplanner.fikacatering.com/week-planner");
+    assert.ok(!productionLocation.searchParams.get("returnTo")!.includes("0.0.0.0"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = originalMode;
+    if (originalHub === undefined) delete process.env.FIKA_HUB_BASE_URL; else process.env.FIKA_HUB_BASE_URL = originalHub;
+    if (originalPublicHub === undefined) delete process.env.NEXT_PUBLIC_FIKA_HUB_URL; else process.env.NEXT_PUBLIC_FIKA_HUB_URL = originalPublicHub;
+  }
+});
