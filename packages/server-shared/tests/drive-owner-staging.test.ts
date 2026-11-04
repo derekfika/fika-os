@@ -41,18 +41,37 @@ test("hosted staging project fails closed even if its runtime mode is missing or
   assert.equal(requests, 0);
 });
 
-test("production DWD still obtains a token using its existing path", async () => {
-  process.env.FIKA_RUNTIME_MODE = "production";
+test("unknown and contradictory hosted configuration never reaches metadata, token or Drive", async () => {
   Reflect.set(process.env, "NODE_ENV", "production");
-  process.env.FIREBASE_PROJECT_ID = "fika-os";
-  delete process.env.GOOGLE_CLOUD_PROJECT;
-  delete process.env.GCLOUD_PROJECT;
+  let requests = 0;
+  globalThis.fetch = async () => { requests++; throw new Error("unexpected network"); };
+  for (const [mode, project, cloud] of [["production", undefined, undefined], ["production", "fika-os", "fika-os-dev"], ["local", "fika-os", "fika-os"]]) {
+    process.env.FIKA_RUNTIME_MODE = mode!;
+    if (project) process.env.FIREBASE_PROJECT_ID = project; else delete process.env.FIREBASE_PROJECT_ID;
+    if (cloud) process.env.GOOGLE_CLOUD_PROJECT = cloud; else delete process.env.GOOGLE_CLOUD_PROJECT;
+    await assert.rejects(driveAccessToken(owner("dwd")), { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED" });
+  }
+  assert.equal(requests, 0);
+});
+
+test("a mismatched metadata project is denied before credential parsing or token request", async () => {
+  Reflect.set(process.env, "NODE_ENV", "production"); process.env.FIKA_RUNTIME_MODE = "production";
+  process.env.FIREBASE_PROJECT_ID = "fika-os"; delete process.env.GOOGLE_CLOUD_PROJECT; delete process.env.GCLOUD_PROJECT;
+  let requests = 0;
+  globalThis.fetch = async (url) => { requests++; assert.match(String(url), /metadata.google.internal/); return new Response("fika-os-dev", { headers: { "Metadata-Flavor": "Google" } }); };
+  await assert.rejects(driveAccessToken(owner("dwd")), { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED" });
+  assert.equal(requests, 1);
+});
+
+test("verified production metadata preserves the DWD token path", async () => {
+  Reflect.set(process.env, "NODE_ENV", "production"); process.env.FIKA_RUNTIME_MODE = "production";
+  process.env.FIREBASE_PROJECT_ID = "fika-os"; delete process.env.GOOGLE_CLOUD_PROJECT; delete process.env.GCLOUD_PROJECT;
   const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON = JSON.stringify({ client_email: "synthetic@example.test", private_key: privateKey.export({ type: "pkcs8", format: "pem" }) });
   let requests = 0;
-  globalThis.fetch = async (url) => { requests++; assert.equal(String(url), "https://oauth2.googleapis.com/token"); return new Response(JSON.stringify({ access_token: "synthetic-token" })); };
+  globalThis.fetch = async (url) => { requests++; if (String(url).includes("metadata.google.internal")) return new Response("fika-os", { headers: { "Metadata-Flavor": "Google" } }); assert.equal(String(url), "https://oauth2.googleapis.com/token"); return new Response(JSON.stringify({ access_token: "synthetic-token" })); };
   assert.equal(await driveAccessToken(owner("dwd")), "synthetic-token");
-  assert.equal(requests, 1);
+  assert.equal(requests, 2);
 });
 
 test("local OAuth still uses its existing cached token path", async () => {

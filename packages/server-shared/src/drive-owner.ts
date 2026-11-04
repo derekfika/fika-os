@@ -38,16 +38,40 @@ async function dwdAccessToken(owner: ResolvedDriveOwner) {
   const response = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${unsigned}.${base64Url(crypto.sign("RSA-SHA256", Buffer.from(unsigned), credentials.private_key))}` }) });
   const body = await response.json() as { access_token?: string; error?: string }; if (!response.ok || !body.access_token) throw new Error(`Google Workspace Drive authentication failed: ${body.error || response.status}.`); return body.access_token;
 }
-/** Staging Drive access is held until a trusted destination/ACL verifier is implemented. */
-export function stagingDriveAccessBlocked() {
-  const stagingProject = [process.env.FIREBASE_PROJECT_ID, process.env.GOOGLE_CLOUD_PROJECT, process.env.GCLOUD_PROJECT].includes("fika-os-dev");
-  // A hosted staging project stays blocked even when its runtime mode is missing or misconfigured.
-  // Explicit local development retains its existing behavior outside the production runtime.
-  return process.env.FIKA_RUNTIME_MODE === "staging" || (process.env.NODE_ENV === "production" && stagingProject);
+// Only a metadata-server response can establish the project of a hosted runtime.
+// Process configuration is used as an additional consistency check, never as proof.
+let verifiedProject: string | undefined;
+let verification: Promise<boolean> | undefined;
+function explicitLocal() {
+  return process.env.FIKA_RUNTIME_MODE === "local" && process.env.NODE_ENV !== "production" && !process.env.K_SERVICE && !process.env.K_REVISION && !process.env.K_CONFIGURATION;
 }
-export function driveAccessToken(owner: ResolvedDriveOwner) {
-  // This guard precedes credential parsing, local token reads and every token request. A configured
-  // folder or a client-supplied assertion is not proof that the target is isolated from production.
-  if (stagingDriveAccessBlocked()) return Promise.reject(Object.assign(new Error("Staging Drive access is disabled until destination isolation is verified."), { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED" }));
+function claimsProduction() {
+  const projects = [process.env.FIREBASE_PROJECT_ID, process.env.GOOGLE_CLOUD_PROJECT, process.env.GCLOUD_PROJECT].map(value => value?.trim()).filter(Boolean);
+  return process.env.FIKA_RUNTIME_MODE === "production" && projects.length > 0 && projects.every(value => value === "fika-os");
+}
+async function verifyHostedProduction(): Promise<boolean> {
+  if (!claimsProduction()) return false;
+  if (verifiedProject === "fika-os") return true;
+  if (!verification) verification = (async () => {
+    try {
+      const response = await fetch("http://metadata.google.internal/computeMetadata/v1/project/project-id", { headers: { "Metadata-Flavor": "Google" }, redirect: "error", signal: AbortSignal.timeout(1500) });
+      const project = response.ok && response.headers.get("Metadata-Flavor") === "Google" ? (await response.text()).trim() : "";
+      if (project === "fika-os") verifiedProject = project;
+      return project === "fika-os";
+    } catch { return false; }
+  })().finally(() => { verification = undefined; });
+  return verification;
+}
+/** Unknown and staging runtimes stay closed while production identity is verified. */
+export function stagingDriveAccessBlocked() {
+  if (explicitLocal()) return false;
+  if (!claimsProduction()) return true;
+  if (verifiedProject === "fika-os") return false;
+  // Readiness remains closed until the bounded metadata verification completes.
+  void verifyHostedProduction();
+  return true;
+}
+export async function driveAccessToken(owner: ResolvedDriveOwner) {
+  if (!explicitLocal() && !(await verifyHostedProduction())) throw Object.assign(new Error("Drive access is disabled until runtime identity and destination isolation are verified."), { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED" });
   return owner.authMode === "dwd" ? dwdAccessToken(owner) : localOAuthAccessToken();
 }
