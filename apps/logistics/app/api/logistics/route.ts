@@ -222,6 +222,11 @@ function resolveCanonicalLoadSchedule(loads: import("@/lib/types").DeliveryLoad[
 
 type PlannedTiming = { plannedArrivalTime?: string; plannedWindow?: { startTime: string; endTime?: string } };
 
+function sameStopEndpoint(left: Pick<DeliveryStop, "locationOplocId" | "oneOffEndpointId">, right: Pick<DeliveryStop, "locationOplocId" | "oneOffEndpointId">) {
+  if (left.oneOffEndpointId || right.oneOffEndpointId) return Boolean(left.oneOffEndpointId && right.oneOffEndpointId && left.oneOffEndpointId === right.oneOffEndpointId);
+  return left.locationOplocId === right.locationOplocId;
+}
+
 function resolveStopPlannedTiming(stop: DeliveryStop, requested: PlannedTiming, conflicts: DeliveryStop[]): PlannedTiming {
   const start = requested.plannedWindow?.startTime || requested.plannedArrivalTime;
   if (!start) return requested;
@@ -230,7 +235,7 @@ function resolveStopPlannedTiming(stop: DeliveryStop, requested: PlannedTiming, 
     if (candidate.canonicalId === stop.canonicalId || candidate.status === "completed") return [];
     const candidateLane = candidate.linkedOperation === "collection" || candidate.movementType === "collection" ? "collection" : "delivery";
     const stopLane = stop.linkedOperation === "collection" || stop.movementType === "collection" ? "collection" : "delivery";
-    if (candidateLane !== stopLane || candidate.locationOplocId === stop.locationOplocId) return [];
+    if (candidateLane !== stopLane || sameStopEndpoint(candidate, stop)) return [];
     const candidateStart = candidate.plannedWindow?.startTime || candidate.plannedArrivalTime;
     if (!candidateStart) return [];
     return [{ id: candidate.canonicalId, start: candidateStart, end: candidate.plannedWindow?.endTime }];
