@@ -76,3 +76,88 @@ test("108-entry planner: responsive typing, warm catalogue cache and no keypress
   if(!baseline){expect(reloadCatalogueRequests).toBe(0);expect(tagGets).toBe(1);expect(inputToPaintMs).toHaveLength(10);expect([...inputToPaintMs].sort((a,b)=>a-b)[5]).toBeLessThan(100);expect(Math.max(...inputToPaintMs)).toBeLessThan(350);}
   await page.screenshot({path:info.outputPath("108-entry-planner.png")});
 });
+
+
+test("repeated Week Planner saves rebase after success and refresh safely after a genuine conflict", async ({ page }) => {
+  const days = ["Monday", "Tuesday", "Wednesday"].map((dayName, index) => ({ id: `save-day:${index}`, dayName, date: `2099-02-${String(2 + index).padStart(2, "0")}`, entryIds: [] as string[] }));
+  const week = { id: "rolling-week:2099-02-02", version: 96, status: "draft", weekCommencing: days[0].date, weekEnding: "2099-02-08", dayIds: days.map(day => day.id), entryIds: [] as string[], templateSlots: ["SOUP"], sourceFiles: [], audit: [] };
+  const entries = days.map((day, index) => ({ id: `save-entry:${index}`, dayId: day.id, date: day.date, slot: "SOUP", itemId: `dish:original:${index}`, itemLabel: `Original soup ${index}`, portions: 0, allocations: [], allergens: {}, audit: [] }));
+  entries.forEach((entry, index) => { days[index].entryIds = [entry.id]; });
+  week.entryIds = entries.map(entry => entry.id);
+  const dishes = ["Tomato soup", "Pea soup", "Pumpkin soup"].map((name, index) => ({ id: `dish:target:${index}`, canonicalId: `dish:target:${index}`, displayName: name, name, category: "Soup", status: "approved", usage: [], tagIds: [], item: { tagIds: [] } }));
+  let serverVersion = 96;
+  let externalConflictNext = false;
+  const writes: Array<{ expectedVersion: number; committed: boolean; entryId: string }> = [];
+  const currentSnapshot = () => ({ week: { ...week, version: serverVersion }, days: days.map(day => ({ ...day, entryIds: [...day.entryIds] })), entries: entries.map(entry => ({ ...entry })) });
+
+  await page.route(/^https:\/\//, route => route.abort());
+  await page.route("**/api/**", async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() !== "GET") {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      if (url.pathname === "/api/rolling-menu" && body.action === "update-entry") {
+        if (externalConflictNext) {
+          externalConflictNext = false;
+          serverVersion += 1;
+          entries[2] = { ...entries[2], itemId: "dish:external", itemLabel: "External edit preserved" };
+        }
+        const expectedVersion = Number(body.expectedWeekVersion);
+        if (expectedVersion !== serverVersion) {
+          writes.push({ expectedVersion, committed: false, entryId: String(body.entryId) });
+          return route.fulfill({ status: 409, json: { error: { message: `rolling-week:2099-02-02 changed from version ${expectedVersion} to ${serverVersion}; refresh before saving.` } } });
+        }
+        const index = entries.findIndex(entry => entry.id === body.entryId);
+        const patch = body.patch as Record<string, unknown>;
+        entries[index] = { ...entries[index], ...patch };
+        serverVersion += 1;
+        writes.push({ expectedVersion, committed: true, entryId: String(body.entryId) });
+        const updatedWeek = { ...week, version: serverVersion };
+        return route.fulfill({ json: { mutation: { week: updatedWeek, days: [], entries: [entries[index]] } } });
+      }
+      return route.fulfill({ status: 400, json: { error: { message: "Unexpected fixture write." } } });
+    }
+    if (url.pathname === "/api/rolling-menu") {
+      if (url.searchParams.has("summariesOnly")) return route.fulfill({ json: { week: { id: week.id, version: serverVersion }, weeks: [{ ...week, version: serverVersion }] } });
+      return route.fulfill({ headers: { "x-fika-menu-identity": "save-conflict-fixture" }, json: { snapshot: currentSnapshot(), weeks: [{ ...week, version: serverVersion }], publicationState: {}, identity: "save-conflict-fixture" } });
+    }
+    if (url.pathname === "/api/catalogue") return route.fulfill({ headers: { "x-fika-menu-identity": "save-conflict-fixture" }, json: { entries: dishes, categories: ["Soup"], identity: "save-conflict-fixture", manifest: { schemaVersion: 1, catalogueVersion: 1, dishCount: dishes.length } } });
+    if (url.pathname === "/api/dish-tags") return route.fulfill({ json: { schemaVersion: 1, version: 1, total: 0, tags: [] } });
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto("/?week=2099-02-02", { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("3 dishes planned")).toBeVisible();
+  for (const [index, dishName] of [[0, "Tomato soup"], [1, "Pea soup"]] as const) {
+    await page.getByRole("button", { name: `Select Original soup ${index}; drag or use Copy to day` }).click();
+    const search = page.getByRole("textbox", { name: /Search soup dishes/i });
+    await search.fill(dishName);
+    await page.getByRole("button", { name: new RegExp(`^${dishName}`) }).click();
+  }
+  expect(writes).toEqual([
+    { expectedVersion: 96, committed: true, entryId: entries[0].id },
+    { expectedVersion: 97, committed: true, entryId: entries[1].id },
+  ]);
+
+  externalConflictNext = true;
+  await page.getByRole("button", { name: "Select Original soup 2; drag or use Copy to day" }).click();
+  const conflictSearch = page.getByRole("textbox", { name: /Search soup dishes/i });
+  await conflictSearch.fill("Pumpkin soup");
+  await page.getByRole("button", { name: /^Pumpkin soup/ }).click();
+  await expect(page.locator(".menu-error[role=alert]")).toContainText("The latest week is loaded. Review it before trying again.");
+  await expect(page.getByRole("button", { name: /Select External edit preserved;/ })).toBeVisible();
+  expect(writes.at(-1)).toEqual({ expectedVersion: 98, committed: false, entryId: entries[2].id });
+
+  await page.getByRole("button", { name: "Select Tomato soup; drag or use Copy to day" }).click();
+  const retrySearch = page.getByRole("textbox", { name: /Search soup dishes/i });
+  await retrySearch.fill("Pumpkin soup");
+  await page.getByRole("button", { name: /^Pumpkin soup/ }).click();
+  expect(writes.at(-1)).toEqual({ expectedVersion: 99, committed: true, entryId: entries[0].id });
+  await page.evaluate(() => new Promise<void>(resolve => { const request = indexedDB.deleteDatabase("fika-menu-planning"); request.onsuccess = request.onerror = request.onblocked = () => resolve(); }));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByText("3 dishes planned")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Select External edit preserved;/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Select Pumpkin soup;/ })).toHaveCount(1);
+  expect(serverVersion).toBe(100);
+  expect(writes.filter(write => write.committed)).toHaveLength(3);
+});
