@@ -17,7 +17,10 @@ import type { ProductionOrder } from "../../../lib/production-types";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { cpuProjectionPackageIsCurrent, getCpuProjectionManifest, getCpuProjectionPackage, recordCpuPackageFallback, type CpuProjectionPackage } from "../../../lib/cpu-read-package";
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
-import { eventTypeForConsumers, notifyCpuConsumerInvalidations } from "../../../lib/cpu-consumer-invalidation";
+import { buildCpuAllergenReleaseEvent, eventTypeForConsumers, notifyCpuConsumerInvalidations } from "../../../lib/cpu-consumer-invalidation";
+import { revokeCpuAllergenRelease } from "../../../lib/cpu-allergen-release";
+import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
+import { planRevisionToken, type ProductionPlan } from "../../lib/production-plan";
 import { internalTokenAllowed } from "../../../../shared/internal-auth";
 
 const localActor = {
@@ -29,6 +32,46 @@ const localActor = {
 const actorFor = (request: NextRequest) => requireCpuActor(request);
 function internalProjectionRequest(request: NextRequest) {
   return internalTokenAllowed(request);
+}
+async function revokeWithdrawnMenuAuthority(order: ProductionOrder, changedAt: string) {
+  if (order.origin !== "menu_planning" || (order.status !== "cancelled" && !order.supersededBy)) return;
+  const repository = createProductionPlanRepository();
+  const reason = order.status === "cancelled" ? "The published Menu Planning source day was withdrawn." : "The published Menu Planning source day was superseded.";
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const stored = await repository.get(order.canonicalId);
+    if (!stored) return;
+    const hasAuthority = Boolean(stored.currentAllergenRelease || stored.signatures?.length || stored.signedSignatures?.length || stored.signedMenuContentHash || stored.matrixArtifact || stored.signedMatrixArtifact || stored.masterMatrixArtifact || stored.siteMatrixArtifacts);
+    if (!hasAuthority) return;
+    const plan: ProductionPlan = structuredClone(stored);
+    const release = plan.currentAllergenRelease;
+    const historical = release?.status === "current" ? revokeCpuAllergenRelease(release, { at: changedAt, by: "integration-hub", reason }) : release;
+    if (historical && !(plan.allergenReleaseHistory || []).some(item => item.releaseId === historical.releaseId)) plan.allergenReleaseHistory = [...(plan.allergenReleaseHistory || []), historical];
+    plan.currentAllergenRelease = undefined;
+    plan.signatures = undefined;
+    plan.signedMenuContentHash = undefined;
+    plan.signedSignatures = undefined;
+    plan.signedMatrixArtifact = undefined;
+    plan.matrixArtifact = undefined;
+    plan.masterMatrixArtifact = undefined;
+    plan.siteMatrixArtifacts = undefined;
+    plan.audit.push({ action: "allergen-release-revoked", at: changedAt, by: "integration-hub", reason });
+    plan.updatedAt = changedAt;
+    plan.updatedBy = "integration-hub";
+    const releaseEvent = historical?.packetArtifacts[0]?.contentHash && order.destinationOplocId
+      ? buildCpuAllergenReleaseEvent({ eventType: "revoked", release: historical, oplocId: order.destinationOplocId }) : undefined;
+    try {
+      await repository.saveAndAppendCpuChange(plan, planRevisionToken(stored), {
+        serviceDate: order.serviceDate!, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length,
+        changeType: "menu-source-withdrawn", actorId: "integration-hub", changedAt,
+        idempotencyKey: `menu-source-withdrawn:${order.canonicalId}:v${order.version}:${release?.releaseId || plan.audit.length}`,
+        propagation: { sourceEntityId: plan.id, serviceDate: order.serviceDate!, sourceVersion: plan.audit.length, changedAt, changeType: order.supersededBy ? "superseded" : "withdrawn", order, logistics: false },
+        ...(releaseEvent ? { deliveries: [{ eventId: `${releaseEvent.eventId}:delivered-in:${order.destinationOplocId}`, sourceAggregateId: releaseEvent.releaseId, sourceVersion: releaseEvent.sourceVersion, occurredAt: changedAt, consumer: "delivered-in", route: "/api/internal/cpu-release-event", body: releaseEvent as unknown as Record<string, unknown> }] } : {}),
+      });
+      return;
+    } catch (error) {
+      if ((error as { status?: number }).status !== 409 || attempt === 2) throw error;
+    }
+  }
 }
 function withServerTiming(response: NextResponse, timings: Record<string, number>) {
   response.headers.set("Server-Timing", Object.entries(timings).map(([name, duration]) => `${name};dur=${Math.max(0, duration).toFixed(1)}`).join(", "));
@@ -302,10 +345,11 @@ async function handlePost(request: NextRequest) {
       const revision = z.number().int().positive().parse(raw.revision);
       const changeType = z.string().min(1).parse(raw.changeType);
       const changedAt = z.string().min(1).parse(raw.changedAt || new Date().toISOString());
+      const changedOrder = await productionOrderDetail(request, entityId);
+      if (changedOrder?.serviceDate) await revokeWithdrawnMenuAuthority(changedOrder, changedAt);
       const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId, revision, changeType, actorId: z.string().min(1).parse(raw.actorId || "integration-hub"), changedAt, idempotencyKey: z.string().min(1).parse(raw.idempotencyKey), propagation: { sourceEntityId: entityId, serviceDate, sourceVersion: revision, changedAt, changeType: eventTypeForConsumers(changeType), order: { origin: "menu_planning" }, logistics: true } });
       const dayProjection = await rebuildCpuProjection(request, serviceDate, event.sequence);
       const weekProjection = await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
-      const changedOrder = await productionOrderDetail(request, z.string().min(1).parse(raw.entityId));
       const review = changedOrder?.destinationOplocId ? await rebuildCpuReviewPackage(request, serviceDate, changedOrder.destinationOplocId, event.sequence) : undefined;
       await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.entityId}:v${event.sequence}`, sourceEntityId: event.entityId, serviceDate, sourceVersion: event.sequence, changedAt: event.changedAt, changeType: eventTypeForConsumers(event.changeType), order: changedOrder || { origin: "menu_planning" }, ...(changedOrder ? { calendarOrder: changedOrder } : {}), logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
       return NextResponse.json({ applied: true, duplicate: event.sequence < Number(raw.sequence || event.sequence), event, dayProjection, weekProjection });
