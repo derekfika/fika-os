@@ -3,6 +3,9 @@ import { admissionFailure, admissionJson, parseAdmissionBody } from "./lib/admis
 
 const isHosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
 const hubUrl = () => (process.env.FIKA_HUB_BASE_URL || "").replace(/\/$/, "");
+const publicMenuOrigin = () => process.env.FIKA_RUNTIME_MODE === "production"
+  ? "https://menuplanner.fikacatering.com"
+  : "https://menu-planning-staging.fikacatering.com";
 
 export async function middleware(request: NextRequest) {
   if (request.nextUrl.pathname === "/api/internal/menu-planning-diagnostic" || request.nextUrl.pathname === "/api/internal/menu-publication-outbox" || request.nextUrl.pathname === "/api/build-info") return NextResponse.next();
@@ -22,7 +25,7 @@ export async function middleware(request: NextRequest) {
   const failure = admissionFailure("Menu Planning", response?.status || 503, response ? await parseAdmissionBody(response) : undefined, requestId);
   console.warn("FIKA hosted admission failed", { timestamp: new Date().toISOString(), appId: "menu-planning", status: failure.status, code: failure.code, runtimeMode: process.env.FIKA_RUNTIME_MODE || "unknown", requestId });
   if (request.nextUrl.pathname.startsWith("/api/")) return NextResponse.json(admissionJson(failure, requestId), { status: failure.status, headers: { "x-request-id": requestId } });
-  if (failure.status === 401) { const target = new URL(process.env.NEXT_PUBLIC_FIKA_HUB_URL || hubUrl() || request.nextUrl.origin); target.searchParams.set("returnTo", request.nextUrl.href); target.searchParams.set("launchError", failure.code); target.searchParams.set("appId", "menu-planning"); return NextResponse.redirect(target); }
+  if (failure.status === 401) { const target = new URL(process.env.NEXT_PUBLIC_FIKA_HUB_URL || hubUrl() || request.nextUrl.origin); const returnTo = new URL(`${request.nextUrl.pathname}${request.nextUrl.search}`, publicMenuOrigin()); target.searchParams.set("returnTo", returnTo.href); target.searchParams.set("launchError", failure.code); target.searchParams.set("appId", "menu-planning"); return NextResponse.redirect(target); }
   const target = new URL("/admission-error", request.url); target.searchParams.set("code", failure.code); target.searchParams.set("message", failure.message); if (failure.supportingText) target.searchParams.set("supportingText", failure.supportingText); target.searchParams.set("requestId", requestId); return NextResponse.rewrite(target);
 }
 
