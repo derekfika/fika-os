@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-04T14:58:10.214Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-04T14:58:26.166Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -130,7 +130,7 @@ Snapshot: 2026-11-04T14:58:10.214Z. The local governed registry remains authorit
 | hub-ledger-reconciliation | uat-20261025-1150 | tools/workflow, docs/deployment, CHANGELOG.md | codex/hub-ledger-reconciliation | [#49](https://github.com/derekfika/fika-os/pull/49) | finished | 2026-10-25T17:42:30.830Z |
 | hub-service-layout-editor | claude-hub-service-layout-editor | apps/integration-hub/lib/hospitality-catalogue-service.ts, apps/integration-hub/lib/hospitality-catalogue-types.ts, apps/integration-hub/lib/hospitality-catalogue-admin.ts, apps/integration-hub/lib/hospitality-service-layout.ts, apps/integration-hub/app/api/hospitality-catalogue/route.ts, apps/integration-hub/app/ui/HospitalityCatalogue.tsx, apps/integration-hub/app/ui/HospitalityCatalogue.css, apps/integration-hub/app/ui/HospitalityServiceLayout.tsx, apps/integration-hub/app/ui/HospitalityServiceLayout.css, apps/integration-hub/tests/hospitality-service-layout-editor.test.ts, apps/integration-hub/tests/hospitality-service-layout.test.ts, apps/integration-hub/tests/hospitality-service-layout.emulator.test.ts | codex/hub-service-layout-editor | [#196](https://github.com/derekfika/fika-os/pull/196) | finished | 2026-10-31T02:07:32.352Z |
 | iss-001-changelog-entry | haiku-iss-001 | CHANGELOG.md | codex/iss-001-changelog-entry | — | finished | 2026-10-26T15:33:51.058Z |
-| iss-001-di-cache-resilience | haiku-iss-001 | apps/delivered-in | codex/iss-001-di-cache-resilience | [#62](https://github.com/derekfika/fika-os/pull/62) | finished | 2026-11-04T14:57:29.673Z |
+| iss-001-di-cache-resilience | haiku-iss-001 | apps/delivered-in | codex/iss-001-di-cache-resilience | [#62](https://github.com/derekfika/fika-os/pull/62) | retired | 2026-11-04T14:58:24.188Z |
 | iss-004-browser-stable-id-search | haiku-iss-004 | apps/menu-planning | codex/iss-004-browser-stable-id-search | [#61](https://github.com/derekfika/fika-os/pull/61) | finished | 2026-10-26T13:19:49.508Z |
 | iss-017-changelog-entry | haiku-iss-017 | CHANGELOG.md | codex/iss-017-changelog-entry | — | finished | 2026-10-26T15:54:22.595Z |
 | iss-017-cpu-week-date-nav-2 | haiku-iss-017 | apps/cpu-production, CHANGELOG.md | codex/iss-017-cpu-week-date-nav-2 | — | finished | 2026-10-26T16:25:54.912Z |
