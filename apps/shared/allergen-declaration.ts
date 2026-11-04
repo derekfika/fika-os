@@ -45,13 +45,14 @@ export function rowDeclarationState(input: Record<string, unknown> | undefined):
 }
 
 /** Identity of exactly what the chef reviewed. Unlike the semantics-2 fingerprint it includes the explicit No Key declaration. */
-export function explicitRowFingerprint(identity: string, input: Record<string, unknown> | undefined, mayContainNotes?: string): string {
+export function explicitRowFingerprint(identity: string, input: Record<string, unknown> | undefined, mayContainNotes?: string, allergenDetailNotes?: string): string {
   const positives = namedPositives(input);
   return JSON.stringify([
     "v3", identity.trim().toLocaleLowerCase("en-GB"),
     NAMED_KEYS.filter((key) => positives[key]).map((key) => [key, positives[key]]),
     isNoKeyDeclared(input),
     (mayContainNotes || "").trim(),
+    ...(allergenDetailNotes?.trim() ? [allergenDetailNotes.trim()] : []),
   ]);
 }
 
@@ -71,6 +72,16 @@ export function withdrawNoKey(input: Record<string, unknown> | undefined): Canon
   return map;
 }
 
+/** Explicit checker interaction: named Contains → May contain → blank; No Key is a deliberate binary choice. */
+export function toggleExplicitAllergen(input: Record<string, unknown> | undefined, key: CanonicalAllergenKey): CanonicalAllergenMap {
+  const base = reopenRowExplicit(input);
+  if (key === "no_key_allergens") return isNoKeyDeclared(base) ? withdrawNoKey(base) : { no_key_allergens: "contains" };
+  const state = namedPositives(base)[key];
+  const selected = selectNamedAllergen(base, key, state === "contains" ? "may_contain" : state === "may_contain" ? null : "contains", { acknowledgeNoKeyWithdrawal: true });
+  if (!selected.ok) throw new Error("The No Key declaration could not be withdrawn.");
+  return selected.allergens;
+}
+
 export type SelectResult = { ok: true; allergens: CanonicalAllergenMap } | { ok: false; reason: "no_key_declared" };
 
 /**
@@ -85,7 +96,7 @@ export function selectNamedAllergen(input: Record<string, unknown> | undefined, 
   return { ok: true, allergens: result };
 }
 
-export type ConfirmExplicitInput = { allergens: Record<string, unknown> | undefined; identity: string; mayContainNotes?: string; actor: string; now: string };
+export type ConfirmExplicitInput = { allergens: Record<string, unknown> | undefined; identity: string; mayContainNotes?: string; allergenDetailNotes?: string; actor: string; now: string };
 export type ConfirmedExplicitRow = { allergens: CanonicalAllergenMap; review: ExplicitRowReview };
 
 /**
@@ -104,7 +115,7 @@ export function confirmRowExplicit(input: ConfirmExplicitInput): ConfirmedExplic
   allergens.no_key_allergens = state === "declared" ? "contains" : "clear";
   return {
     allergens,
-    review: { status: "confirmed", semantics: EXPLICIT_REVIEW_SEMANTICS, confirmedBy: input.actor.trim(), confirmedAt: input.now, statement: ROW_CONFIRMATION_STATEMENT, inputFingerprint: explicitRowFingerprint(input.identity, allergens, input.mayContainNotes) },
+    review: { status: "confirmed", semantics: EXPLICIT_REVIEW_SEMANTICS, confirmedBy: input.actor.trim(), confirmedAt: input.now, statement: ROW_CONFIRMATION_STATEMENT, inputFingerprint: explicitRowFingerprint(input.identity, allergens, input.mayContainNotes, input.allergenDetailNotes) },
   };
 }
 
@@ -119,12 +130,12 @@ export function reopenRowExplicit(input: Record<string, unknown> | undefined): C
 const isExplicitComplete = (map: CanonicalAllergenMap) => CANONICAL_ALLERGEN_KEYS.every((key) => map[key] === "clear" || map[key] === "contains" || map[key] === "may_contain");
 
 /** A semantics-3 review is valid only for the exact reviewed inputs, with a complete, conflict-free map and a consistent No key slot. */
-export function isExplicitRowConfirmed(row: { allergens: Record<string, unknown> | undefined; review?: Partial<ExplicitRowReview> | null; identity: string; mayContainNotes?: string }): boolean {
+export function isExplicitRowConfirmed(row: { allergens: Record<string, unknown> | undefined; review?: Partial<ExplicitRowReview> | null; identity: string; mayContainNotes?: string; allergenDetailNotes?: string }): boolean {
   const review = row.review;
   const map = readExplicitAllergens(row.allergens);
   const state = rowDeclarationState(map);
   if (!review || review.status !== "confirmed" || review.semantics !== EXPLICIT_REVIEW_SEMANTICS || review.statement !== ROW_CONFIRMATION_STATEMENT || !review.confirmedBy || !review.confirmedAt) return false;
-  if (review.inputFingerprint !== explicitRowFingerprint(row.identity, map, row.mayContainNotes)) return false;
+  if (review.inputFingerprint !== explicitRowFingerprint(row.identity, map, row.mayContainNotes, row.allergenDetailNotes)) return false;
   if (!isExplicitComplete(map) || state === "conflict" || state === "blank") return false;
   return state === "declared" ? true : map.no_key_allergens === "clear";
 }
@@ -151,7 +162,7 @@ export type RowReviewStatus = "unchecked" | "checked" | "checked_legacy" | "conf
  * Row-level status. A semantics-2 review (No key was derived at the time) stays valid but is reported as `checked_legacy`;
  * it is never reinterpreted as an explicit declaration and never rewritten.
  */
-export function rowReviewStatus(row: { allergens: Record<string, unknown> | undefined; review?: StoredRowReview | null; declaration?: Partial<NoKeyDeclarationRecord> | null; identity: string; mayContainNotes?: string }): RowReviewStatus {
+export function rowReviewStatus(row: { allergens: Record<string, unknown> | undefined; review?: StoredRowReview | null; declaration?: Partial<NoKeyDeclarationRecord> | null; identity: string; mayContainNotes?: string; allergenDetailNotes?: string }): RowReviewStatus {
   const stored = storedExplicitAllergens(row.allergens, { review: row.review, declaration: row.declaration });
   if (rowDeclarationState(stored) === "conflict") return "conflict";
   if (row.review?.semantics === EXPLICIT_REVIEW_SEMANTICS) return isExplicitRowConfirmed({ ...row, allergens: stored } as unknown as Parameters<typeof isExplicitRowConfirmed>[0]) ? "checked" : "unchecked";
@@ -160,6 +171,6 @@ export function rowReviewStatus(row: { allergens: Record<string, unknown> | unde
 }
 
 /** Material edit check: a previous confirmation no longer applies if identity, positives, the declaration or the note changed. */
-export function explicitConfirmationInvalidatedBy(review: { inputFingerprint?: string } | null | undefined, next: { identity: string; allergens: Record<string, unknown> | undefined; mayContainNotes?: string }): boolean {
-  return Boolean(review?.inputFingerprint) && review!.inputFingerprint !== explicitRowFingerprint(next.identity, next.allergens, next.mayContainNotes);
+export function explicitConfirmationInvalidatedBy(review: { inputFingerprint?: string } | null | undefined, next: { identity: string; allergens: Record<string, unknown> | undefined; mayContainNotes?: string; allergenDetailNotes?: string }): boolean {
+  return Boolean(review?.inputFingerprint) && review!.inputFingerprint !== explicitRowFingerprint(next.identity, next.allergens, next.mayContainNotes, next.allergenDetailNotes);
 }

@@ -69,7 +69,8 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
         runId,
         sequence: (loadStopIdsByRun.get(runId)?.length || 0) + 1,
         // Both legs happen at the customer. CPU (originOplocId) is only the eventual return destination.
-        locationOplocId: load.destinationOplocId,
+        locationOplocId: load.destination?.kind === "one-off" ? "" : load.destinationOplocId,
+        ...(load.destination?.kind === "one-off" ? { oneOffEndpointId: load.destination.id, locationAddressSnapshot: load.destination.address } : {}),
         locationLabelSnapshot: load.destinationLabelSnapshot || load.destinationOplocId,
         ...((collection ? load.collectionVisitId : load.deliveryVisitId) ? { visitId: (collection ? load.collectionVisitId : load.deliveryVisitId) as string } : {}),
         requirementRefs: load.jobs.map((job) => ({ requirementId: job.id, sourceVersion: job.sourceVersion || 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], ...(job.workstream ? { workstream: job.workstream } : {}) })),

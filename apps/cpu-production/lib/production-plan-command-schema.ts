@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { OPERATIONAL_ALLERGEN_STATES } from "../../shared/allergen-contract";
 
-export const SubItem = z.object({ id: z.string().min(1), productionItemId: z.string().min(1).optional(), name: z.string(), quantity: z.number().positive().nullable(), allergens: z.record(z.string(), z.enum(OPERATIONAL_ALLERGEN_STATES)), mayContainNotes: z.string().optional(), note: z.string(), evidenceStatus: z.enum(["not_completed", "completed", "requires_review"]),
+export const SubItem = z.object({ id: z.string().min(1), productionItemId: z.string().min(1).optional(), name: z.string(), quantity: z.number().positive().nullable(), allergens: z.record(z.string(), z.enum(OPERATIONAL_ALLERGEN_STATES)), mayContainNotes: z.string().optional(), allergenDetailNotes: z.string().optional(), note: z.string(), evidenceStatus: z.enum(["not_completed", "completed", "requires_review"]),
   /** Intent flag only: the chef deliberately ticked No Key Allergens. The server discards every other field and stamps its own provenance. */
   noKeyDeclaration: z.object({ declared: z.literal(true), declaredBy: z.string().optional(), declaredAt: z.string().optional() }).optional() });
 export const MenuItem = z.object({ id: z.string().min(1), sourceLineId: z.string().optional(), name: z.string(), note: z.string(), subItems: z.array(SubItem) });

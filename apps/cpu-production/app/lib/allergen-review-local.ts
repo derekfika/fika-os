@@ -14,6 +14,7 @@ export type AllergenReviewLineage = {
 export type AllergenReviewDraft = {
   states: Record<string, Record<string, OperationalAllergenState>>;
   checkedRows: string[];
+  notesByRow?: Record<string, { mayContainNotes: string; allergenDetailNotes: string }>;
   /** Rows where the chef deliberately ticked No Key Allergens. Absent in drafts saved before issue 225 (no row is then treated as declared). */
   explicitNoKeyRows?: string[];
   lineageByOrderId: Record<string, AllergenReviewLineage>;

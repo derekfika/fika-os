@@ -6,6 +6,7 @@ export type CpuReleaseStatus = "pending" | "current" | "revoked" | "superseded";
 export type CpuReleaseMaterializationStatus = "pending" | "ready" | "failed";
 export type CpuReleaseSignature = InternalMatrixSignature & { valid: boolean };
 export type CpuReleaseDelta = { menuItemId: string; dishName: string; allergen: string; previously: string; now: string };
+export type CpuReleaseNoteDelta = { menuItemId: string; dishName: string; field: "allergenDetailNotes" | "mayContainNotes"; previously: string; now: string };
 export type CpuAllergenRelease = {
   contractVersion: "cpu-production.signed-allergen-release.v1";
   releaseId: string;
@@ -33,8 +34,9 @@ export type CpuAllergenRelease = {
   masterArtifact: MatrixArtifact;
   derivedArtifacts: MatrixArtifact[];
   packetArtifacts: MatrixArtifact[];
-  matrix: Array<{ menuItemId: string; dishName: string; allergens: Record<string, string> }>;
+  matrix: Array<{ menuItemId: string; dishName: string; allergens: Record<string, string>; allergenDetailNotes?: string; mayContainNotes?: string }>;
   deltaFromPrevious: CpuReleaseDelta[];
+  noteChangesFromPrevious?: CpuReleaseNoteDelta[];
 };
 
 const HASH = /^[a-f0-9]{64}$/i;
@@ -43,12 +45,28 @@ const jsonHash = (value: unknown) => createHash("sha256").update(JSON.stringify(
 /**
  * Hash only signed matrix meaning.  Workflow flags, editor ids and free-form
  * UI notes are deliberately excluded; source identity, row identity,
- * canonical states and may-contain evidence remain bound to the signature.
+ * canonical states, specific allergen details and may-contain evidence remain
+ * bound to the signature.
  */
 export function allergenMatrixContentHash(items: PlannedMenuItem[]) { return jsonHash(canonicalAllergenMatrixForHash(items)); }
 
 export function releaseMatrix(items: PlannedMenuItem[]) {
-  return items.flatMap(item => item.subItems.map((sub, index) => ({ menuItemId: `${item.id}:${sub.id || index}`, dishName: sub.name || item.name, allergens: { ...sub.allergens } })));
+  return items.flatMap(item => item.subItems.map((sub, index) => ({ menuItemId: `${item.id}:${sub.id || index}`, dishName: sub.name || item.name, allergens: { ...sub.allergens }, ...(sub.allergenDetailNotes?.trim() ? { allergenDetailNotes: sub.allergenDetailNotes.trim() } : {}), ...(sub.mayContainNotes?.trim() ? { mayContainNotes: sub.mayContainNotes.trim() } : {}) })));
+}
+
+/** Prose evidence is separate from the allergen-state delta consumed by Delivered-In. */
+export function allergenReleaseNoteDelta(previous: CpuAllergenRelease | undefined, nextItems: PlannedMenuItem[]): CpuReleaseNoteDelta[] {
+  if (!previous) return [];
+  const next = releaseMatrix(nextItems);
+  const before = new Map(previous.matrix.map(row => [row.menuItemId, row]));
+  const after = new Map(next.map(row => [row.menuItemId, row]));
+  return [...new Set([...before.keys(), ...after.keys()])].flatMap(menuItemId => {
+    const prior = before.get(menuItemId), row = after.get(menuItemId);
+    return (["allergenDetailNotes", "mayContainNotes"] as const).flatMap(field => {
+      const previously = prior?.[field]?.trim() || "", now = row?.[field]?.trim() || "";
+      return previously === now ? [] : [{ menuItemId, dishName: row?.dishName || prior!.dishName, field, previously, now }];
+    });
+  });
 }
 
 export function allergenReleaseDelta(previous: CpuAllergenRelease | undefined, nextItems: PlannedMenuItem[]): CpuReleaseDelta[] {
@@ -92,12 +110,13 @@ export function buildCpuAllergenRelease(input: {
     input.packetArtifacts.forEach((artifact, index) => requireArtifact(artifact, `packetArtifacts[${index}]`));
   }
   const matrix = releaseMatrix(input.items);
+  const noteChanges = allergenReleaseNoteDelta(input.previous, input.items);
   const matrixContentHash = jsonHash(matrix);
   const expectedPlanHash = allergenMatrixContentHash(input.items);
   if (input.signatures.some(signature => !signature.scope || signature.scope.matrixContentHash !== expectedPlanHash)) throw new Error("Every release signature must be bound to the exact current publication-day matrix.");
   return {
     contractVersion: "cpu-production.signed-allergen-release.v1", releaseId: `cpu-allergen-release:${input.serviceDate}:${input.sourcePublicationDayId || `${input.sourceBookingId}:${input.sourceQuoteRevisionId}`}:v${input.version}`, serviceDate: input.serviceDate, ...(input.sourceOrigin ? { sourceOrigin: input.sourceOrigin } : {}), ...(input.sourceDayId ? { sourceDayId: input.sourceDayId } : {}), ...(input.sourcePublicationId ? { sourcePublicationId: input.sourcePublicationId } : {}), ...(input.sourcePublicationDayId ? { sourcePublicationDayId: input.sourcePublicationDayId } : {}), ...(input.sourceBookingId ? { sourceBookingId: input.sourceBookingId } : {}), ...(input.sourceQuoteRevisionId ? { sourceQuoteRevisionId: input.sourceQuoteRevisionId } : {}), ...(input.sourceRevision ? { sourceRevision: input.sourceRevision } : {}), sourceVersion: input.sourceVersion, sourceContentHash: input.sourceContentHash, version: input.version, matrixContentHash, signedAt: input.signedAt,
-    signatures: input.signatures.map(signature => ({ ...signature, valid: true })), ...(input.previous ? { previousReleaseId: input.previous.releaseId } : {}), status: input.status || "current", materializationStatus: input.status === "pending" ? "pending" : "ready", masterArtifact: input.masterArtifact, derivedArtifacts: [...input.derivedArtifacts], packetArtifacts: [...input.packetArtifacts], matrix, deltaFromPrevious: allergenReleaseDelta(input.previous, input.items),
+    signatures: input.signatures.map(signature => ({ ...signature, valid: true })), ...(input.previous ? { previousReleaseId: input.previous.releaseId } : {}), status: input.status || "current", materializationStatus: input.status === "pending" ? "pending" : "ready", masterArtifact: input.masterArtifact, derivedArtifacts: [...input.derivedArtifacts], packetArtifacts: [...input.packetArtifacts], matrix, deltaFromPrevious: allergenReleaseDelta(input.previous, input.items), ...(noteChanges.length ? { noteChangesFromPrevious: noteChanges } : {}),
   };
 }
 

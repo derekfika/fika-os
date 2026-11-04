@@ -112,7 +112,7 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
       }
     }
   }
-  const proposed = createLoad({ deliveryVisitId, serviceDate: job.serviceDate, originOplocId: job.originOplocId, destinationOplocId: job.destinationOplocId, scheduledTime: intent.scheduledTime, scheduledEnd: intent.scheduledEnd, collectionRequired: intent.collectionRequired, runId: intent.targetRunId, vehicleId, destinationLabelSnapshot: job.destinationLabelSnapshot, by, now });
+  const proposed = createLoad({ deliveryVisitId, serviceDate: job.serviceDate, originOplocId: job.originOplocId, destinationOplocId: job.destinationOplocId, scheduledTime: intent.scheduledTime, scheduledEnd: intent.scheduledEnd, collectionRequired: intent.collectionRequired, runId: intent.targetRunId, vehicleId, destinationLabelSnapshot: job.destinationLabelSnapshot, destination: job.destination, by, now });
   if (!compatibleLoad(job, proposed)) throw new HttpError(422, "The job and delivery load no longer match the current operational details.");
   const matching = [...available.values()].filter(l => l.status !== "cancelled" && l.originOplocId === proposed.originOplocId && l.destinationOplocId === proposed.destinationOplocId && l.runId === proposed.runId && l.vehicleId === proposed.vehicleId && l.scheduledTime === proposed.scheduledTime && l.scheduledEnd === proposed.scheduledEnd && Boolean(l.collectionRequired) === Boolean(intent.collectionRequired) && l.deliveryVisitId === proposed.deliveryVisitId);
   if (matching.length > 1 || assigned.size > 1) throw new HttpError(409, "Duplicate canonical load or assignment requires review.", "LOGISTICS_ASSIGN_DUPLICATE_PLACEMENT");

@@ -53,6 +53,7 @@ export function cpuProjectionToOrders(projection: CpuProjection): ProductionOrde
       sourceBookingId: row.sourceReference || row.id,
       sourceQuoteRevisionId: "projection",
       ...(row.destinationOplocId ? { destinationOplocId: row.destinationOplocId } : {}),
+      ...(row.destination ? { destination: row.destination } : {}),
       ...(row.destinationLabel ? { destinationLabel: row.destinationLabel } : {}),
       ...(row.sourceEntityId ? { sourceEntityId: row.sourceEntityId } : {}),
       ...(row.sourcePublicationId ? { sourcePublicationId: row.sourcePublicationId } : {}),

@@ -774,7 +774,9 @@ test("publication and production graphs omit absent optional Firestore fields", 
     const entry = created.entries.find(value => value.dayId === week.days[0].id)!;
     await updateEntryForTest(week.week.id, entry.id);
     const preview = publicationPreview(await getWeek(week.week.id), week.days[0].id)[0];
-    const optionalPreview = buildPublishedDay({ week: week.week, days: week.days, entries: [{ ...entry, itemId: undefined, mayContainNotes: undefined, allocations: [{ destinationLabel: "Unmapped venue", quantity: 10 }] }] }, week.days[0]);
+    const oneOff = { id: `${week.days[0].id}:one-off:serialization`, label: "Unmapped venue", address: "10 Test Street", addressStatus: "confirmed" as const };
+    const oneOffDay = { ...week.days[0], oneOffDestinations: [oneOff] };
+    const optionalPreview = buildPublishedDay({ week: week.week, days: [oneOffDay, ...week.days.slice(1)], entries: [{ ...entry, itemId: undefined, mayContainNotes: undefined, allocations: [{ oneOffDestinationId: oneOff.id, destinationLabel: oneOff.label, destinationAddress: oneOff.address, quantity: 10 }] }] }, oneOffDay);
     assert.equal("mayContainNotes" in optionalPreview.entries[0], false);
     assert.equal("canonicalDishId" in optionalPreview.entries[0], false);
     assert.equal("destinationId" in optionalPreview.entries[0].allocations[0], false);

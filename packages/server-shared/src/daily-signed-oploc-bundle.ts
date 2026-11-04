@@ -1,12 +1,13 @@
+import { approvedAllergenSnapshotSchema, type SourceAllergenSnapshot } from "./external-production";
 import { createHash } from "node:crypto";
 import { encodeReadPackage } from "./read-package";
 
 /**
  * Safety-critical CPU release contract.  A bundle is the immutable evidence
- * for one service day and one governed operational location (OPLOC).
+ * for one service day and one governed or explicitly scoped one-off destination.
  *
- * The packet is deliberately small: consumers only need menu-item names and
- * allergen names, not the full CPU plan.  The source hash is repeated in the
+ * The packet retains reviewed states, declarations and specific/may-contain
+ * evidence without copying the full CPU plan. The source hash is repeated in the
  * packet and manifest so a packet/PDF can never be detached from the matrix
  * revision that was signed.
  */
@@ -46,6 +47,11 @@ export type DailyBundleArtifact = {
 export type DailyAllergenPacketItem = {
   menuItemId: string;
   menuItemName: string;
+  allergenDetailNotes?: string;
+  mayContainNotes?: string;
+  allergens?: Record<string, string | undefined>;
+  allergenReview?: SourceAllergenSnapshot["allergenReview"];
+  noKeyDeclaration?: SourceAllergenSnapshot["noKeyDeclaration"];
   /** Names for explicit CONTAINS cells. */
   allergenNames: string[];
   /** Names for explicit MAY_CONTAIN cells, kept separate for safety. */
@@ -109,7 +115,11 @@ export type DailySignedOplocBundlePackage = {
 export type DailyBundleInputItem = {
   menuItemId: string;
   menuItemName: string;
+  allergenDetailNotes?: string;
+  mayContainNotes?: string;
   allergens?: Record<string, string | undefined>;
+  allergenReview?: SourceAllergenSnapshot["allergenReview"];
+  noKeyDeclaration?: SourceAllergenSnapshot["noKeyDeclaration"];
   /** Explicit state is accepted for callers that have already reduced a row. */
   allergenState?: DailyAllergenPacketItem["allergenState"];
 };
@@ -170,7 +180,7 @@ function requireNonEmpty(value: string, field: string) { if (!value.trim()) fail
 function stateForItem(item: DailyBundleInputItem): DailyAllergenPacketItem["allergenState"] {
   if (item.allergenState) return item.allergenState;
   const values = Object.values(item.allergens || {}).filter((value): value is string => typeof value === "string");
-  if (!values.length) return "unrecorded";
+  if (!values.length || values.some(value => !["clear", "contains", "may_contain"].includes(value))) return "unrecorded";
   if (values.includes("contains")) return "contains";
   if (values.includes("may_contain")) return "may_contain";
   return "clear";
@@ -193,6 +203,7 @@ export function buildDailyAllergenPacket(input: {
   const items = input.items.map(item => {
     requireNonEmpty(item.menuItemId, "menuItemId");
     requireNonEmpty(item.menuItemName, "menuItemName");
+    if (!approvedAllergenSnapshotSchema.safeParse({ ...item, allergens: item.allergens || {} }).success) failure("The allergen matrix contains invalid declaration evidence.");
     const contains: string[] = [];
     const mayContain: string[] = [];
     for (const [name, state] of Object.entries(item.allergens || {})) {
@@ -200,8 +211,9 @@ export function buildDailyAllergenPacket(input: {
       if (state === "contains") contains.push(name);
       if (state === "may_contain") mayContain.push(name);
     }
+    for (const state of Object.values(item.allergens || {})) if (state !== undefined && !["clear", "contains", "may_contain", "unrecorded"].includes(state)) failure("The allergen matrix contains an invalid state.");
     const allergenState = stateForItem(item);
-    return { menuItemId: item.menuItemId, menuItemName: item.menuItemName, allergenNames: [...new Set(contains)].sort(), mayContainAllergenNames: [...new Set(mayContain)].sort(), allergenState };
+    return { menuItemId: item.menuItemId, menuItemName: item.menuItemName, ...(item.allergens ? { allergens: Object.fromEntries(Object.entries(item.allergens).filter((pair): pair is [string, string] => typeof pair[1] === "string")) } : {}), ...(item.allergenReview ? { allergenReview: item.allergenReview } : {}), ...(item.noKeyDeclaration ? { noKeyDeclaration: item.noKeyDeclaration } : {}), ...(item.allergenDetailNotes?.trim() ? { allergenDetailNotes: item.allergenDetailNotes.trim() } : {}), ...(item.mayContainNotes?.trim() ? { mayContainNotes: item.mayContainNotes.trim() } : {}), allergenNames: [...new Set(contains)].sort(), mayContainAllergenNames: [...new Set(mayContain)].sort(), allergenState };
   });
   const unsigned = { contractVersion: DAILY_BUNDLE_PACKET_CONTRACT, schemaVersion: 1 as const, bundleId: input.bundleId, serviceDate: input.serviceDate, oploc: input.oploc, source: input.source, items };
   const bytes = Buffer.from(json(unsigned), "utf8");
@@ -216,6 +228,19 @@ export function assertDailyAllergenPacket(packet: DailyAllergenPacket) {
   requireNonEmpty(packet.oploc.id, "oploc.id");
   requireNonEmpty(packet.oploc.name, "oploc.name");
   requireHash(packet.contentHash, "packet.contentHash");
+  for (const item of packet.items) {
+    if ((item.allergenDetailNotes !== undefined && typeof item.allergenDetailNotes !== "string") || (item.mayContainNotes !== undefined && typeof item.mayContainNotes !== "string")) failure("The signed allergen packet contains invalid note fields.");
+    requireNonEmpty(item.menuItemId, "menuItemId");
+    requireNonEmpty(item.menuItemName, "menuItemName");
+    if (!["clear", "contains", "may_contain", "unrecorded"].includes(item.allergenState) || !Array.isArray(item.allergenNames) || !Array.isArray(item.mayContainAllergenNames) || [...item.allergenNames, ...item.mayContainAllergenNames].some(name => typeof name !== "string")) failure("The signed allergen packet contains invalid allergen fields.");
+    if (item.allergens) {
+      if (!approvedAllergenSnapshotSchema.safeParse(item).success) failure("The signed allergen packet contains invalid declaration evidence.");
+      const contains = Object.entries(item.allergens).filter(([, state]) => state === "contains").map(([key]) => key).sort();
+      const mayContain = Object.entries(item.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key).sort();
+      if (json(contains) !== json([...item.allergenNames].sort()) || json(mayContain) !== json([...item.mayContainAllergenNames].sort())) failure("The signed allergen packet lists disagree with its recorded matrix.");
+      if (item.allergenState !== "unrecorded" && item.allergenState !== stateForItem({ ...item, allergenState: undefined })) failure("The signed allergen packet summary disagrees with its recorded matrix.");
+    }
+  }
   if (dailyBundleSha256(dailyAllergenPacketBytes(packet)) !== packet.contentHash) failure("The daily allergen packet failed its integrity check.");
   return packet;
 }

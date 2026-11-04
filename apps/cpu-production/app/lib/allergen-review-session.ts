@@ -2,7 +2,7 @@ import type { PlannedMenuItem } from "./production-plan";
 
 /** Identifies the exact reviewed content so signing is only offered for what was actually persisted. */
 export function reviewFingerprint(items: PlannedMenuItem[], notes: string) {
-  return JSON.stringify([notes.trim(), items.map((item) => [item.id, item.name.trim(), item.subItems.map((sub) => [sub.id, sub.name.trim(), sub.evidenceStatus, (sub.mayContainNotes || "").trim(), Object.entries(sub.allergens).sort(([left], [right]) => left.localeCompare(right))])])]);
+  return JSON.stringify([notes.trim(), items.map((item) => [item.id, item.name.trim(), item.subItems.map((sub) => [sub.id, sub.name.trim(), sub.evidenceStatus, (sub.mayContainNotes || "").trim(), (sub.allergenDetailNotes || "").trim(), Object.entries(sub.allergens).sort(([left], [right]) => left.localeCompare(right))])])]);
 }
 
 /**

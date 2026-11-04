@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     const deliveredIn = enabledFor("delivered-in");
     const grabAndGo = enabledFor("grab-and-go");
     const authorized = packageValue.oplocs.filter(oploc => (scope.all || scope.ids.has(oploc.canonicalId)) && enabled.has(oploc.canonicalId));
-    return NextResponse.json({ access: { email: session.email || "", oplocIds: authorized.map(oploc => oploc.canonicalId), permissions: [...DELIVERED_IN_PERMISSIONS] }, sites: authorized.map(oploc => ({ oplocId: oploc.canonicalId, label: oploc.label, services: { deliveredIn: deliveredIn.has(oploc.canonicalId), grabAndGo: grabAndGo.has(oploc.canonicalId) } })) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    return NextResponse.json({ access: { email: session.email || "", canViewOneOffDestinations: service === "delivered-in" && scope.all && actor.role === "integration-admin", oplocIds: authorized.map(oploc => oploc.canonicalId), permissions: [...DELIVERED_IN_PERMISSIONS] }, sites: authorized.map(oploc => ({ oplocId: oploc.canonicalId, label: oploc.label, services: { deliveredIn: deliveredIn.has(oploc.canonicalId), grabAndGo: grabAndGo.has(oploc.canonicalId) } })) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     const requestId = request.headers.get("x-request-id") || undefined;
     const status = Number((error as { status?: number }).status) || 403;

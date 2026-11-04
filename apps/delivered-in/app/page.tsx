@@ -320,7 +320,10 @@ function DishTable({ day }: { day: ProjectedDay }) {
                     {entry.slot || "Uncategorised"}
                   </span>
                 </td>
-                <th>{titleCase(entry.dishName)}</th>
+                <th>{titleCase(entry.dishName)}
+                  {entry.allergensVisible && entry.allergenDetailNotes && <small>Specific allergens: {entry.allergenDetailNotes}</small>}
+                  {entry.allergensVisible && entry.mayContainNotes && <small>May contain: {entry.mayContainNotes}</small>}
+                </th>
                 <td className="numeric">{entry.quantity.toLocaleString()}</td>
                 <td>
                   <StatusChip tone="good">Published</StatusChip>
@@ -554,7 +557,7 @@ export default function Page() {
         if (await redirectForSessionFailure(headResponse, current)) return;
         throw new Error("Unavailable");
       }
-      const nextSite = head.access.oplocIds.length
+      const nextSite = head.sites.length
         ? head.selectedOplocId || head.sites[0]?.oplocId || ""
         : "";
       setSelectedSiteId(nextSite);
@@ -757,7 +760,7 @@ export default function Page() {
           <span className="avatar">OS</span>
         </div>
       </header>
-      {dashboard && dashboard.access.oplocIds.length > 0 && (
+      {dashboard && dashboard.sites.length > 0 && (
         <nav className="top-nav" aria-label="Delivered-In navigation">
           <button
             type="button"
@@ -800,7 +803,7 @@ export default function Page() {
         </section>
       )}
       {dashboard && <ProjectionWarnings dashboard={dashboard} />}
-      {dashboard?.access.oplocIds.length === 0 && (
+      {dashboard?.sites.length === 0 && (
         <section className="ops-empty">
           <p className="ops-eyebrow">Access required</p>
           <h2>No Delivered-In site access</h2>
@@ -809,7 +812,7 @@ export default function Page() {
           </p>
         </section>
       )}
-      {dashboard && dashboard.access.oplocIds.length > 0 && (
+      {dashboard && dashboard.sites.length > 0 && (
         <>
           <section
             className="period-controls"

@@ -1,3 +1,4 @@
+import { assertOneOffMenuDestination, menuDestinationKey, type MenuDestination } from "../../packages/server-shared/src/menu-destination";
 import crypto from "node:crypto";
 import { CPU_SITE_OPLOC_ID } from "./production-location";
 import { fulfilmentWorkstream, type FulfilmentWorkstream } from "./fulfilment-workstream";
@@ -32,6 +33,7 @@ export type FulfilmentRequirement = {
   workstream?: FulfilmentWorkstream;
   productionLocationId?: string;
   destinationOplocId: string;
+  destination?: MenuDestination;
   destinationLabelSnapshot: string;
   serviceDate: string;
   readyAt?: string;
@@ -48,7 +50,7 @@ export type FulfilmentRequirement = {
 
 type SourceContext = { at?: string; by: string; productionLocationId?: string; readyAt?: string; requiredDeliveryWindow?: { startTime: string; endTime?: string } };
 type SourceLine = { sourceLineId: string; canonicalItemId?: string; displayName: string; quantity: number; unit: string; orderedQuantity?: number; orderedUnit?: string; sortOrder: number };
-type SourceProjection = { sourceDomain: FulfilmentSourceDomain; sourceEntityId: string; sourceVersion: number; sourceContentHash?: string; legacySourceContentHash?: string; destinationOplocId: string; destinationLabelSnapshot: string; serviceDate: string; lines: SourceLine[]; status: FulfilmentRequirementStatus; workstream: FulfilmentWorkstream; context: SourceContext };
+type SourceProjection = { sourceDomain: FulfilmentSourceDomain; sourceEntityId: string; sourceVersion: number; sourceContentHash?: string; legacySourceContentHash?: string; destinationOplocId: string; destinationLabelSnapshot: string; destination?: MenuDestination; serviceDate: string; lines: SourceLine[]; status: FulfilmentRequirementStatus; workstream: FulfilmentWorkstream; context: SourceContext };
 
 const stable = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
@@ -87,6 +89,7 @@ export function productionOrderFulfilmentContentHash(order: ProductionOrderFulfi
     canonicalId: order.canonicalId,
     productionLocationId: order.productionLocationId,
     destinationOplocId: order.destinationOplocId,
+    ...(order.destination?.kind === "one-off" ? { destination: order.destination } : {}),
     serviceDate: order.serviceDate || order.requiredBy.slice(0, 10),
     requiredBy: order.requiredBy,
     requiredDeliveryWindow: order.serviceWindow,
@@ -105,6 +108,7 @@ function sourceDeliveryProjection(source: SourceProjection) {
     sourceEntityId: source.sourceEntityId,
     productionLocationId: source.context.productionLocationId,
     destinationOplocId: source.destinationOplocId,
+    ...(source.destination?.kind === "one-off" ? { destination: source.destination } : {}),
     serviceDate: source.serviceDate,
     readyAt: source.context.readyAt,
     requiredDeliveryWindow: source.context.requiredDeliveryWindow,
@@ -118,6 +122,7 @@ function requirementDeliveryProjection(requirement: FulfilmentRequirement) {
     sourceEntityId: requirement.sourceEntityId,
     productionLocationId: requirement.productionLocationId,
     destinationOplocId: requirement.destinationOplocId,
+    ...(requirement.destination?.kind === "one-off" ? { destination: requirement.destination } : {}),
     serviceDate: requirement.serviceDate,
     readyAt: requirement.readyAt,
     requiredDeliveryWindow: requirement.requiredDeliveryWindow,
@@ -198,12 +203,15 @@ export type ProductionOrderFulfilmentSource = {
   canonicalId: string;
   version: number;
   sourceEntityId?: string;
+  /** Menu day retained when the adapter uses the canonical order as its source entity. */
+  sourceDayId?: string;
   sourceVersion?: number;
   origin?: "hospitality_booking" | "cpu_created" | "legacy_import" | "menu_planning" | "grab_and_go";
   schemaVersion?: string;
   productionLocationId?: string;
   requiresDelivery?: boolean;
   destinationOplocId?: string;
+  destination?: MenuDestination;
   destinationLabel?: string;
   serviceDate?: string;
   requiredBy: string;
@@ -216,17 +224,22 @@ export type ProductionOrderFulfilmentSource = {
 
 export function fulfilmentFromProductionOrder(order: ProductionOrderFulfilmentSource, by: string, at = new Date().toISOString(), previous?: FulfilmentRequirement) {
   const destinationOplocId = requireDestination(order.destinationOplocId, order.canonicalId);
+  if (order.destination?.kind === "one-off") {
+    assertOneOffMenuDestination(order.destination, order.sourceDayId || order.sourceEntityId || "");
+    if (order.origin !== "menu_planning" || order.destination.id !== destinationOplocId) throw Object.assign(new Error("One-off fulfilment destination does not match its Menu source."), { status: 422 });
+  }
   const isGrabAndGo = order.origin === "grab_and_go";
-  const source: SourceProjection = { sourceDomain: isGrabAndGo ? "grab-and-go" : "cpu-production", sourceEntityId: isGrabAndGo ? (order.sourceEntityId || order.canonicalId) : order.canonicalId, sourceVersion: isGrabAndGo ? (order.sourceVersion || order.version) : order.version, sourceContentHash: isGrabAndGo ? sourceContentHash(order) : productionOrderFulfilmentContentHash(order), ...(isGrabAndGo ? {} : { legacySourceContentHash: sourceContentHash(order) }), destinationOplocId, destinationLabelSnapshot: order.destinationLabel || destinationOplocId, serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), lines: order.lines.map(productionLineFulfilmentProjection), status: isGrabAndGo ? (order.status === "cancelled" || order.status === "withdrawn" ? "withdrawn" : "ready_for_planning") : productionStatusToFulfilmentStatus(order.status, order.supersededBy), workstream: fulfilmentWorkstream({ sourceDomain: isGrabAndGo ? "grab-and-go" : "cpu-production", origin: order.origin, productionCategory: order.productionCategory }), context: { at, by, productionLocationId: isGrabAndGo ? undefined : order.productionLocationId, readyAt: isGrabAndGo ? undefined : order.requiredBy, requiredDeliveryWindow: isGrabAndGo ? undefined : order.serviceWindow } };
+  const source: SourceProjection = { sourceDomain: isGrabAndGo ? "grab-and-go" : "cpu-production", sourceEntityId: isGrabAndGo ? (order.sourceEntityId || order.canonicalId) : order.canonicalId, sourceVersion: isGrabAndGo ? (order.sourceVersion || order.version) : order.version, sourceContentHash: isGrabAndGo ? sourceContentHash(order) : productionOrderFulfilmentContentHash(order), ...(isGrabAndGo ? {} : { legacySourceContentHash: sourceContentHash(order) }), destinationOplocId, destinationLabelSnapshot: order.destinationLabel || destinationOplocId, ...(order.destination ? { destination: order.destination } : {}), serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), lines: order.lines.map(productionLineFulfilmentProjection), status: isGrabAndGo ? (order.status === "cancelled" || order.status === "withdrawn" ? "withdrawn" : "ready_for_planning") : productionStatusToFulfilmentStatus(order.status, order.supersededBy), workstream: fulfilmentWorkstream({ sourceDomain: isGrabAndGo ? "grab-and-go" : "cpu-production", origin: order.origin, productionCategory: order.productionCategory }), context: { at, by, productionLocationId: isGrabAndGo ? undefined : order.productionLocationId, readyAt: isGrabAndGo || order.destination?.kind === "one-off" && !order.serviceWindow ? undefined : order.requiredBy, requiredDeliveryWindow: isGrabAndGo ? undefined : order.serviceWindow } };
   return materialiseFulfilmentRequirement(source, previous);
 }
 
-export type PublishedMenuDayFulfilmentSource = { publicationDayId: string; sourceDayId: string; version: number; contentHash: string; date: string; status: "published" | "superseded" | "withdrawn"; entries: Array<{ sourceEntryId: string; canonicalDishId?: string; dishName: string; slot: string; allocations: Array<{ destinationId?: string; destinationLabel: string; quantity: number }> }> };
+export type PublishedMenuDayFulfilmentSource = { publicationDayId: string; sourceDayId: string; version: number; contentHash: string; date: string; status: "published" | "superseded" | "withdrawn"; entries: Array<{ sourceEntryId: string; canonicalDishId?: string; dishName: string; slot: string; allocations: Array<{ destinationId?: string; destination?: MenuDestination; destinationLabel: string; quantity: number }> }> };
 
 export function fulfilmentFromPublishedMenuDay(day: PublishedMenuDayFulfilmentSource, destinationOplocId: string, previous?: FulfilmentRequirement) {
-  const allocations = day.entries.flatMap(entry => entry.allocations.filter(allocation => allocation.destinationId === destinationOplocId).map(allocation => ({ entry, allocation })));
+  const allocations = day.entries.flatMap(entry => entry.allocations.filter(allocation => menuDestinationKey(allocation) === destinationOplocId).map(allocation => ({ entry, allocation })));
+  for (const { allocation } of allocations) if (allocation.destination?.kind === "one-off") assertOneOffMenuDestination(allocation.destination, day.sourceDayId);
   const firstLabel = allocations[0]?.allocation.destinationLabel || destinationOplocId;
-  const source: SourceProjection = { sourceDomain: "menu-planning", sourceEntityId: day.sourceDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, destinationOplocId: requireDestination(destinationOplocId, day.publicationDayId), destinationLabelSnapshot: firstLabel, serviceDate: day.date, lines: allocations.map(({ entry, allocation }, index) => ({ sourceLineId: entry.sourceEntryId, canonicalItemId: entry.canonicalDishId, displayName: entry.dishName, quantity: allocation.quantity, unit: "portion", sortOrder: index })), status: day.status === "withdrawn" ? "withdrawn" : "ready_for_planning", workstream: "Delivered-In", context: { by: "menu-planning-publication" } };
+  const source: SourceProjection = { sourceDomain: "menu-planning", sourceEntityId: day.sourceDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, destinationOplocId: requireDestination(destinationOplocId, day.publicationDayId), destinationLabelSnapshot: firstLabel, ...(allocations[0]?.allocation.destination ? { destination: allocations[0].allocation.destination } : {}), serviceDate: day.date, lines: allocations.map(({ entry, allocation }, index) => ({ sourceLineId: entry.sourceEntryId, canonicalItemId: entry.canonicalDishId, displayName: entry.dishName, quantity: allocation.quantity, unit: "portion", sortOrder: index })), status: day.status === "withdrawn" ? "withdrawn" : "ready_for_planning", workstream: "Delivered-In", context: { by: "menu-planning-publication" } };
   return materialiseFulfilmentRequirement(source, previous);
 }
 
@@ -249,5 +262,5 @@ export function materialiseFulfilmentRequirement(source: SourceProjection, previ
   const version = previous ? previous.version + 1 : 1;
   const deliveryChanged = Boolean(previous && deliveryContentChanged);
   const auditAction = !previous ? "fulfilment-requirement-created" : status === "withdrawn" ? "fulfilment-withdrawn" : deliveryChanged || (status === "amended" && previous.status !== "amended") ? "fulfilment-amended" : "fulfilment-reconciled";
-  return { canonicalId: identity, entityType: "Fulfilment Requirement", schemaVersion: FULFILMENT_REQUIREMENT_SCHEMA_VERSION, version, sourceDomain: source.sourceDomain, sourceEntityId: source.sourceEntityId, sourceVersion: source.sourceVersion, workstream: source.workstream, ...(source.sourceContentHash ? { sourceContentHash: source.sourceContentHash } : {}), ...(source.context.productionLocationId ? { productionLocationId: source.context.productionLocationId } : {}), destinationOplocId: source.destinationOplocId, destinationLabelSnapshot: source.destinationLabelSnapshot, serviceDate: source.serviceDate, ...(source.context.readyAt ? { readyAt: source.context.readyAt } : {}), ...(source.context.requiredDeliveryWindow ? { requiredDeliveryWindow: source.context.requiredDeliveryWindow } : {}), lines: source.lines.map((line, index) => ({ canonicalId: `${identity}:line:${index + 1}`, sourceLineId: line.sourceLineId, ...(line.canonicalItemId ? { canonicalItemId: line.canonicalItemId } : {}), displayNameSnapshot: line.displayName, quantity: line.quantity, unit: line.unit, ...(line.orderedQuantity !== undefined && line.orderedUnit ? { orderedQuantity: line.orderedQuantity, orderedUnit: line.orderedUnit } : {}), sortOrder: line.sortOrder })), status, createdAt: previous?.createdAt || at, createdBy: previous?.createdBy || source.context.by, updatedAt: at, updatedBy: source.context.by, audit: [...(previous?.audit || []), { action: auditAction, at, by: source.context.by, sourceVersion: source.sourceVersion, idempotencyKey, ...(status === "withdrawn" ? { reason: "Upstream source was cancelled or withdrawn." } : auditAction === "fulfilment-reconciled" ? { reason: "Canonical fulfilment projection reconciled without changing delivery instructions." } : {}) }], idempotencyKey };
+  return { canonicalId: identity, entityType: "Fulfilment Requirement", schemaVersion: FULFILMENT_REQUIREMENT_SCHEMA_VERSION, version, sourceDomain: source.sourceDomain, sourceEntityId: source.sourceEntityId, sourceVersion: source.sourceVersion, workstream: source.workstream, ...(source.sourceContentHash ? { sourceContentHash: source.sourceContentHash } : {}), ...(source.context.productionLocationId ? { productionLocationId: source.context.productionLocationId } : {}), destinationOplocId: source.destinationOplocId, destinationLabelSnapshot: source.destinationLabelSnapshot, ...(source.destination ? { destination: source.destination } : {}), serviceDate: source.serviceDate, ...(source.context.readyAt ? { readyAt: source.context.readyAt } : {}), ...(source.context.requiredDeliveryWindow ? { requiredDeliveryWindow: source.context.requiredDeliveryWindow } : {}), lines: source.lines.map((line, index) => ({ canonicalId: `${identity}:line:${index + 1}`, sourceLineId: line.sourceLineId, ...(line.canonicalItemId ? { canonicalItemId: line.canonicalItemId } : {}), displayNameSnapshot: line.displayName, quantity: line.quantity, unit: line.unit, ...(line.orderedQuantity !== undefined && line.orderedUnit ? { orderedQuantity: line.orderedQuantity, orderedUnit: line.orderedUnit } : {}), sortOrder: line.sortOrder })), status, createdAt: previous?.createdAt || at, createdBy: previous?.createdBy || source.context.by, updatedAt: at, updatedBy: source.context.by, audit: [...(previous?.audit || []), { action: auditAction, at, by: source.context.by, sourceVersion: source.sourceVersion, idempotencyKey, ...(status === "withdrawn" ? { reason: "Upstream source was cancelled or withdrawn." } : auditAction === "fulfilment-reconciled" ? { reason: "Canonical fulfilment projection reconciled without changing delivery instructions." } : {}) }], idempotencyKey };
 }

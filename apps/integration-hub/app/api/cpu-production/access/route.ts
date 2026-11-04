@@ -18,7 +18,7 @@ async function handleGet(request: NextRequest) {
     const scope = await resolvePermittedOplocIds({ repository, principal, appId: "cpu-production" });
     const packageValue = validateOplocReadPackage((await getOplocReadPackage()).value);
     const oplocs = packageValue.oplocs.filter(oploc => scope.all || scope.ids.has(oploc.canonicalId)).map(oploc => ({ id: oploc.canonicalId, label: oploc.label, active: true }));
-    return NextResponse.json({ principal, oplocs }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ principal, oplocs, allOplocs: scope.all }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return errorResponse(error, request.headers.get("x-request-id") || undefined); }
 }
 

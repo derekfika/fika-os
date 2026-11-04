@@ -11,6 +11,7 @@ import { productionQueue } from "./production-http-client";
 import { loadPlansForOrders } from "./cpu-projection-repository";
 import type { NextRequest } from "next/server";
 import { normaliseOperationalAllergens } from "../../shared/allergen-contract";
+import { isCpuWithdrawn } from "./production-presentation";
 
 export type CpuReviewAllergenState = "clear" | "contains" | "may_contain" | "unrecorded";
 export type CpuReviewEntry = {
@@ -22,7 +23,7 @@ export type CpuReviewEntry = {
   dishName?: string;
   allergens: Record<string, CpuReviewAllergenState>;
   allergenState: "CLEAR" | "CONTAINS" | "MAY_CONTAIN" | "UNRECORDED";
-  mayContainNotes?: string;
+  mayContainNotes?: string; allergenDetailNotes?: string;
   evidenceStatus: string;
 };
 export type CpuReviewSignature = { role: "production_chef" | "head_chef_site_manager"; printedName: string; signedAt: string; actor?: string; attestation?: string; scope?: { productionOrderId: string; serviceDate: string; sourceOrigin?: "menu_planning" | "hospitality_booking" | "ad_hoc_production"; sourceDayId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string; sourceRevision?: number; sourceVersion: number; sourceContentHash: string; matrixContentHash: string } };
@@ -62,22 +63,22 @@ const packageKey = (serviceDate: string, oplocId: string) => `cpu-production/rev
 const dataset = "snapshots/cpu-production/delivered-in-review";
 const requiredRoles: CpuReviewOrder["requiredSignatureRoles"] = ["production_chef", "head_chef_site_manager"];
 
-function entryFor(order: ProductionOrder, plan: ProductionPlan | undefined, sourceLineId: string, dishName?: string, allergens: Record<string, string> = {}, evidenceStatus = "not_completed", mayContainNotes?: string, sourceSubItemId?: string): CpuReviewEntry {
+function entryFor(order: ProductionOrder, plan: ProductionPlan | undefined, sourceLineId: string, dishName?: string, allergens: Record<string, string> = {}, evidenceStatus = "not_completed", mayContainNotes?: string, sourceSubItemId?: string, allergenDetailNotes?: string): CpuReviewEntry {
   const sourceLine = order.lines.find(line => line.canonicalId === sourceLineId || line.sourceBookingLineId === sourceLineId);
   const canonicalAllergens = normaliseOperationalAllergens(allergens);
   const values = Object.values(canonicalAllergens);
   const known = values.filter(value => ["clear", "contains", "may_contain"].includes(value));
   const allergenState: CpuReviewEntry["allergenState"] = evidenceStatus !== "completed" || !known.length || values.includes("unrecorded") ? "UNRECORDED" : known.some(value => value === "contains") ? "CONTAINS" : known.some(value => value === "may_contain") ? "MAY_CONTAIN" : "CLEAR";
-  return { sourceLineId, ...(sourceSubItemId ? { sourceSubItemId } : {}), ...(sourceLine?.sourceBookingLineId ? { sourceBookingLineId: sourceLine.sourceBookingLineId } : {}), ...(sourceLine?.sourceMenuItemId ? { sourceMenuItemId: sourceLine.sourceMenuItemId } : {}), ...(dishName ? { dishName } : {}), allergens: canonicalAllergens as Record<string, CpuReviewAllergenState>, allergenState, ...(mayContainNotes ? { mayContainNotes } : {}), evidenceStatus };
+  return { sourceLineId, ...(sourceSubItemId ? { sourceSubItemId } : {}), ...(sourceLine?.sourceBookingLineId ? { sourceBookingLineId: sourceLine.sourceBookingLineId } : {}), ...(sourceLine?.sourceMenuItemId ? { sourceMenuItemId: sourceLine.sourceMenuItemId } : {}), ...(dishName ? { dishName } : {}), allergens: canonicalAllergens as Record<string, CpuReviewAllergenState>, allergenState, ...(mayContainNotes ? { mayContainNotes } : {}), ...(allergenDetailNotes ? { allergenDetailNotes } : {}), evidenceStatus };
 }
 
 export function buildCpuReviewProjection(serviceDate: string, oplocId: string, orders: ProductionOrder[], plans: ProductionPlan[], revision = 1, lastChangeSequence = 0, generatedAt = new Date().toISOString()): CpuReviewProjection {
   const planByOrder = new Map(plans.map(plan => [plan.orderId, plan]));
-  const sourceOrders: CpuReviewOrder[] = orders.filter(order => order.origin === "menu_planning" && order.destinationOplocId === oplocId && !order.supersededBy).map(order => {
+  const sourceOrders: CpuReviewOrder[] = orders.filter(order => order.origin === "menu_planning" && order.destinationOplocId === oplocId && !isCpuWithdrawn(order)).map(order => {
     const plan = planByOrder.get(order.canonicalId);
     const entries = plan?.menuItems?.flatMap(item => item.sourceLineId
-      ? item.subItems.map(sub => entryFor(order, plan, item.sourceLineId!, sub.name || item.name, sub.allergens, sub.evidenceStatus, sub.mayContainNotes, sub.id))
-      : []) || order.lines.map(line => entryFor(order, plan, line.canonicalId, line.itemName, line.approvedAllergenSnapshot?.allergens || {}, line.allergenEvidenceStatus === "confirmed" ? "completed" : "not_completed", line.approvedAllergenSnapshot?.mayContainNotes));
+      ? item.subItems.map(sub => entryFor(order, plan, item.sourceLineId!, sub.name || item.name, sub.allergens, sub.evidenceStatus, sub.mayContainNotes, sub.id, sub.allergenDetailNotes))
+      : []) || order.lines.map(line => entryFor(order, plan, line.canonicalId, line.itemName, line.approvedAllergenSnapshot?.allergens || {}, line.allergenEvidenceStatus === "confirmed" ? "completed" : "not_completed", line.approvedAllergenSnapshot?.mayContainNotes, undefined, line.approvedAllergenSnapshot?.allergenDetailNotes));
     const scope = plan ? matrixSignatureScope(order, allergenMatrixContentHash(plan.menuItems)) : undefined;
     const releaseCurrent = !plan?.currentAllergenRelease || currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems);
     const signatures = releaseCurrent ? (plan?.signatures || []).filter(signature => signatureMatchesScope(signature, scope)).map(signature => ({ role: signature.role, printedName: signature.printedName, signedAt: signature.signedAt, actor: signature.actor, attestation: signature.attestation, scope: signature.scope })) : [];

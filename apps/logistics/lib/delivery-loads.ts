@@ -1,5 +1,6 @@
 import type { DeliveryLoad, LogisticsAssignment, LogisticsJob } from "./types";
 import { HttpError } from "./http-error";
+import { sameMenuDestination } from "@fika/server-shared/menu-destination";
 
 export type LoadKey = Pick<DeliveryLoad, "serviceDate" | "originOplocId" | "destinationOplocId" | "scheduledTime" | "scheduledEnd" | "runId" | "vehicleId" | "collectionRequired"> & Partial<Pick<DeliveryLoad, "deliveryVisitId">>;
 
@@ -28,6 +29,7 @@ function loadCompatibility(job: LogisticsJob, load: DeliveryLoad, retainUnschedu
     serviceDateMatch: job.serviceDate === load.serviceDate,
     originMatch: job.originOplocId === load.originOplocId,
     destinationMatch: job.destinationOplocId === load.destinationOplocId,
+    destinationSnapshotMatch: job.destination?.kind === "one-off" ? sameMenuDestination(job.destination, load.destination) : load.destination?.kind !== "one-off",
     scheduledArrivalPresent: retainUnscheduled && load.scheduledTime === undefined || Boolean(load.scheduledTime && arrivalWithinSource(undefined, load.scheduledTime)),
     arrivalWithinRequestedWindow: arrivalWithinSource(job.requestedWindow, load.scheduledTime),
   };
@@ -38,6 +40,7 @@ function loadCompatibility(job: LogisticsJob, load: DeliveryLoad, retainUnschedu
   if (!checks.serviceDateMatch) reasons.push("service_date_mismatch");
   if (!checks.originMatch) reasons.push("origin_oploc_mismatch");
   if (!checks.destinationMatch) reasons.push("destination_oploc_mismatch");
+  if (!checks.destinationSnapshotMatch) reasons.push("destination_address_or_routing_changed");
   // Upstream timing is retained as source context, but Fulfilment Requirement
   // has no hard-constraint contract. Logistics owns the operational arrival.
   const warnings = load.scheduledTime && job.requestedWindow && !checks.arrivalWithinRequestedWindow
@@ -69,12 +72,12 @@ export function findCompatibleLoad(job: LogisticsJob, loads: DeliveryLoad[]) {
   return loads.find((load) => load.status !== "cancelled" && compatibleLoad(job, load));
 }
 
-export function createLoad(input: LoadKey & { destinationLabelSnapshot?: string; scheduledEnd?: string; by: string; now?: string }): DeliveryLoad {
+export function createLoad(input: LoadKey & { destinationLabelSnapshot?: string; destination?: DeliveryLoad["destination"]; scheduledEnd?: string; by: string; now?: string }): DeliveryLoad {
   if (!input.originOplocId || !input.destinationOplocId || !input.scheduledTime)
     throw new Error("A load requires canonical origin and destination OPLOC IDs and a scheduled time.");
   const now = input.now || new Date().toISOString();
   const id = deliveryLoadId(input);
-  return { id, serviceDate: input.serviceDate, originOplocId: input.originOplocId, destinationOplocId: input.destinationOplocId, ...(input.collectionRequired ? { collectionRequired: true } : {}), ...(input.runId ? { runId: input.runId } : {}), ...(input.deliveryVisitId ? { deliveryVisitId: input.deliveryVisitId } : {}), ...(input.vehicleId ? { vehicleId: input.vehicleId } : {}), ...(input.destinationLabelSnapshot ? { destinationLabelSnapshot: input.destinationLabelSnapshot } : {}), scheduledTime: input.scheduledTime, ...(input.scheduledEnd ? { scheduledEnd: input.scheduledEnd } : {}), status: "planned", createdAt: now, updatedAt: now, version: 1, audit: [{ action: "load-created", at: now, by: input.by, version: 1 }] };
+  return { id, serviceDate: input.serviceDate, originOplocId: input.originOplocId, destinationOplocId: input.destinationOplocId, ...(input.destination ? { destination: input.destination } : {}), ...(input.collectionRequired ? { collectionRequired: true } : {}), ...(input.runId ? { runId: input.runId } : {}), ...(input.deliveryVisitId ? { deliveryVisitId: input.deliveryVisitId } : {}), ...(input.vehicleId ? { vehicleId: input.vehicleId } : {}), ...(input.destinationLabelSnapshot ? { destinationLabelSnapshot: input.destinationLabelSnapshot } : {}), scheduledTime: input.scheduledTime, ...(input.scheduledEnd ? { scheduledEnd: input.scheduledEnd } : {}), status: "planned", createdAt: now, updatedAt: now, version: 1, audit: [{ action: "load-created", at: now, by: input.by, version: 1 }] };
 }
 
 export function assignJob(job: LogisticsJob, load: DeliveryLoad, existing: LogisticsAssignment[], by: string, now = new Date().toISOString()) {

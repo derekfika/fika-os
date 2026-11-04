@@ -18,7 +18,7 @@ export type DeliveredInReviewStatus = {
   matrixStatus?: "ready" | "generating" | "failed" | "not_configured";
   matrixArtifact?: { driveUrl?: string; localUrl?: string };
   updatedAt?: string;
-  matrixItems?: Array<{ sourceLineId: string; allergens: Record<string, string>; mayContainNotes?: string; evidenceStatus: string; /** blank | positives | declared | legacy_unverified | conflict: blank and legacy automatic No Key are never verified. */ attestation?: string }>;
+  matrixItems?: Array<{ sourceLineId: string; allergens: Record<string, string>; mayContainNotes?: string; allergenDetailNotes?: string; evidenceStatus: string; /** blank | positives | declared | legacy_unverified | conflict: blank and legacy automatic No Key are never verified. */ attestation?: string }>;
   sourceLineage?: MatrixSignatureScope;
 };
 
@@ -34,6 +34,8 @@ function initialReviewItems(order: ProductionOrder): PlannedMenuItem[] {
       quantity: line.customerQuantity,
       allergens: (line.approvedAllergenSnapshot?.allergens || {}) as CanonicalAllergenMap,
       ...(line.approvedAllergenSnapshot?.mayContainNotes ? { mayContainNotes: line.approvedAllergenSnapshot.mayContainNotes } : {}),
+      ...(line.approvedAllergenSnapshot?.allergenDetailNotes ? { allergenDetailNotes: line.approvedAllergenSnapshot.allergenDetailNotes } : {}),
+      ...(line.approvedAllergenSnapshot?.noKeyDeclaration ? { noKeyDeclaration: line.approvedAllergenSnapshot.noKeyDeclaration } : {}),
       note: "",
       evidenceStatus: "completed",
     }],
@@ -66,7 +68,7 @@ export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | unde
     completedSourceLineIds,
     signatureRoles,
     updatedAt: plan.updatedAt,
-    matrixItems: plan.menuItems.flatMap((item) => item.sourceLineId ? item.subItems.map(subItem => ({ sourceLineId: item.sourceLineId!, sourceSubItemId: subItem.id, allergens: subItem.allergens, mayContainNotes: subItem.mayContainNotes, evidenceStatus: subItem.evidenceStatus, attestation: rowAttestation(subItem) })) : []),
+    matrixItems: plan.menuItems.flatMap((item) => item.sourceLineId ? item.subItems.map(subItem => ({ sourceLineId: item.sourceLineId!, sourceSubItemId: subItem.id, allergens: subItem.allergens, mayContainNotes: subItem.mayContainNotes, allergenDetailNotes: subItem.allergenDetailNotes, evidenceStatus: subItem.evidenceStatus, attestation: rowAttestation(subItem) })) : []),
     ...(scope ? { sourceLineage: scope } : {}),
     ...(plan.matrixArtifact && order && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems) ? { matrixStatus: "ready" as const } : signatureRoles.includes("production_chef") && signatureRoles.includes("head_chef_site_manager") ? plan.currentAllergenRelease?.materializationStatus === "failed" ? { matrixStatus: "failed" as const } : { matrixStatus: "generating" as const } : {}),
     ...(plan.matrixArtifact && (!order || currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems)) ? { matrixArtifact: { driveUrl: plan.matrixArtifact.driveUrl, localUrl: plan.matrixArtifact.localUrl } } : {}),

@@ -1,3 +1,5 @@
+import { menuDestination, type MenuDestination } from "@fika/server-shared/menu-destination";
+import { approvedAllergenSnapshotSchema } from "@fika/server-shared/external-production";
 import { createHash } from "node:crypto";
 import { canonicalOplocId } from "@fika/server-shared/governed-oplocs";
 import { gunzipSync } from "node:zlib";
@@ -15,7 +17,7 @@ export const MENU_PLANNING_WEEK_PACKET_COLLECTION = "fikaMenuPlanningWeekPackets
 export const MENU_PLANNING_PUBLICATIONS_COLLECTION = "fikaMenuPlanningPublications";
 export const MENU_PLANNING_SNAPSHOTS_COLLECTION = "fikaMenuPlanningPublishedSnapshots";
 
-export type MenuPlanningWeekPacketEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: Array<{ destinationId?: string; destinationLabel: string; quantity: number }>; allergens?: Record<string, string>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; mayContainNotes?: string };
+export type MenuPlanningWeekPacketEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: Array<{ destinationId?: string; destination?: MenuDestination; destinationAddress?: string; destinationLabel: string; quantity: number }>; allergens?: Record<string, string>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; mayContainNotes?: string; allergenDetailNotes?: string };
 export type MenuPlanningWeekPacketDay = { publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; status?: "published" | "superseded" | "withdrawn"; contentHash?: string; entries: MenuPlanningWeekPacketEntry[]; allergenSignoff?: Record<string, unknown> };
 export type MenuPlanningWeekPacket = { schemaVersion: number; publicationId: string; sourceWeekId: string; publicationStatus?: "withdrawn"; publicationVersion?: number; contentHash?: string; week: { weekCommencing: string; weekEnding: string }; days: MenuPlanningWeekPacketDay[] };
 type PacketDocument = { packet?: unknown; payload?: unknown; payloadBase64?: unknown; encoding?: unknown; contentHash?: unknown; compressedSize?: unknown; uncompressedSize?: unknown; [key: string]: unknown };
@@ -50,9 +52,16 @@ function validate(value: unknown, expectedPublicationId?: string): MenuPlanningW
       const allocations = entry.allocations.map(allocation => {
         const allocationQuantity = allocation && typeof allocation === "object" && "quantity" in allocation ? allocation.quantity : undefined;
         if (!isRecord(allocation) || (allocation.destinationId !== undefined && typeof allocation.destinationId !== "string") || typeof allocation.destinationLabel !== "string" || typeof allocationQuantity !== "number" || !Number.isFinite(allocationQuantity) || allocationQuantity < 0) throw invalid("The Menu Planning weekly packet contains an invalid portion allocation.");
-        return { ...(allocation.destinationId !== undefined ? { destinationId: canonicalOplocId(allocation.destinationId) } : {}), destinationLabel: allocation.destinationLabel, quantity: allocationQuantity };
+        const destination = allocation.destination as MenuDestination | undefined;
+        if (destination) {
+          try { menuDestination({ destination, destinationId: allocation.destinationId as string | undefined, destinationLabel: allocation.destinationLabel }, day.sourceDayId as string); }
+          catch { throw invalid("The published packet contains an invalid destination snapshot."); }
+        }
+        return { ...(allocation.destinationId !== undefined ? { destinationId: canonicalOplocId(allocation.destinationId) } : {}), ...(destination ? { destination } : {}), destinationLabel: allocation.destinationLabel, ...(typeof allocation.destinationAddress === "string" ? { destinationAddress: allocation.destinationAddress } : {}), quantity: allocationQuantity };
       });
-      return { sourceEntryId: entry.sourceEntryId, slot: entry.slot, ...(typeof entry.canonicalDishId === "string" ? { canonicalDishId: entry.canonicalDishId } : {}), dishName: entry.dishName, portions: entryPortions, allocations, ...(isRecord(entry.allergens) ? { allergens: Object.fromEntries(Object.entries(entry.allergens).filter(([, state]) => typeof state === "string").map(([key, state]) => [key, state as string])) } : {}), ...(entry.allergenEvidenceStatus === "confirmed" || entry.allergenEvidenceStatus === "unreviewed" || entry.allergenEvidenceStatus === "missing" || entry.allergenEvidenceStatus === "conflicting" ? { allergenEvidenceStatus: entry.allergenEvidenceStatus } : {}), ...(typeof entry.mayContainNotes === "string" ? { mayContainNotes: entry.mayContainNotes } : {}) };
+      const evidence = approvedAllergenSnapshotSchema.safeParse({ allergens: entry.allergens || {}, allergenReview: entry.allergenReview, noKeyDeclaration: entry.noKeyDeclaration, allergenDetailNotes: entry.allergenDetailNotes, mayContainNotes: entry.mayContainNotes });
+      if (!evidence.success) throw invalid("The published packet contains invalid allergen evidence.");
+      return { ...evidence.data, sourceEntryId: entry.sourceEntryId, slot: entry.slot, ...(typeof entry.canonicalDishId === "string" ? { canonicalDishId: entry.canonicalDishId } : {}), dishName: entry.dishName, portions: entryPortions, allocations, ...(isRecord(entry.allergens) ? { allergens: Object.fromEntries(Object.entries(entry.allergens).filter(([, state]) => typeof state === "string").map(([key, state]) => [key, state as string])) } : {}), ...(entry.allergenEvidenceStatus === "confirmed" || entry.allergenEvidenceStatus === "unreviewed" || entry.allergenEvidenceStatus === "missing" || entry.allergenEvidenceStatus === "conflicting" ? { allergenEvidenceStatus: entry.allergenEvidenceStatus } : {}), ...(typeof entry.mayContainNotes === "string" ? { mayContainNotes: entry.mayContainNotes } : {}) };
     });
     return { publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: dayVersion, ...(day.status === "published" || day.status === "superseded" || day.status === "withdrawn" ? { status: day.status } : {}), contentHash: day.contentHash, entries, ...(isRecord(day.allergenSignoff) ? { allergenSignoff: day.allergenSignoff } : {}) };
   });
