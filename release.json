@@ -37,9 +37,10 @@
     "head": "a37f2654ba6004a0014aa0a5b66dc50e67aeabc7",
     "pullRequestRisk": "standard"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "22230e3a-a563-4e72-9ca3-43f610cf3843",
+  "rollout": "build-2026-11-04-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "60768ebde28533b591b6d38dff5c217ce80b52e0",
     "rollout": "build-2026-11-03-001",
@@ -47,5 +48,12 @@
     "percent": 100
   },
   "previousGoodRecord": "9d18e9f7d589f96c813f9cfc9bb686b8276c325f",
-  "createdAt": "2026-11-04T19:41:40.555Z"
+  "releaseId": "22230e3a-a563-4e72-9ca3-43f610cf3843",
+  "completedAt": "2026-11-04T19:45:24.382Z",
+  "smoke": {
+    "ok": true,
+    "status": 307,
+    "url": "https://fika-logistics-staging--fika-os-dev.europe-west4.hosted.app/",
+    "authGate": "FIKA_SESSION_MISSING"
+  }
 }
