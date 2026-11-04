@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { forwardedHeaders, type CpuActor } from "./production-http-client";
+import { forwardedHeaders, hubJson, type CpuActor } from "./production-http-client";
 import { getHubBaseUrl } from "./hub-url";
 export type CpuDestinationScope = { allOplocs: boolean; oplocIds: string[] };
 const accessByRequest = new WeakMap<NextRequest, Promise<{ actor: CpuActor; scope: CpuDestinationScope }>>();
@@ -23,6 +23,36 @@ function accessFor(request: NextRequest) {
 }
 export async function requireCpuActor(request: NextRequest): Promise<CpuActor> { return (await accessFor(request)).actor; }
 export async function requireCpuDestinationScope(request: NextRequest): Promise<CpuDestinationScope> { return (await accessFor(request)).scope; }
+const aliasByRequest = new WeakMap<NextRequest, Map<string, Promise<string | undefined>>>();
+type OplocIdentities = { oplocs: Array<{ canonicalId: string; requestedId?: string; label: string }> };
+/** Resolve historical governed IDs through Hub authority before filtering; never rewrite source evidence. */
+export async function resolveCpuDestinationScope(request: NextRequest, destinationIds: readonly string[]): Promise<CpuDestinationScope> {
+  const scope = await requireCpuDestinationScope(request);
+  if (scope.allOplocs) return scope;
+  const ids = [...new Set(destinationIds.filter(id => id && !id.includes(":one-off:") && !scope.oplocIds.includes(id)))];
+  if (!ids.length) return scope;
+  let aliases = aliasByRequest.get(request);
+  if (!aliases) { aliases = new Map(); aliasByRequest.set(request, aliases); }
+  const missing = ids.filter(id => !aliases.has(id));
+  for (let offset = 0; offset < missing.length; offset += 100) {
+    const batch = missing.slice(offset, offset + 100);
+    const token = process.env.FIKA_INTERNAL_API_TOKEN?.trim();
+    // The existing server credential reads reference identity only. The user's
+    // admitted canonical scope remains the authority for every returned alias.
+    const pending = hubJson(request, "/api/oploc-labels", { method: "POST", headers: { "content-type": "application/json", accept: "application/json", ...(token ? { "x-fika-internal-token": token } : {}) }, body: JSON.stringify({ oplocIds: batch }) }, (value): value is OplocIdentities => Boolean(value && typeof value === "object" && Array.isArray((value as OplocIdentities).oplocs) && (value as OplocIdentities).oplocs.every(item => typeof item.canonicalId === "string" && typeof item.label === "string" && (item.requestedId === undefined || typeof item.requestedId === "string")))).then(value => {
+      const resolved = new Map<string, string>();
+      for (const item of value.oplocs) {
+        const requested = item.requestedId || item.canonicalId;
+        if (!batch.includes(requested) || (resolved.has(requested) && resolved.get(requested) !== item.canonicalId)) throw Object.assign(new Error("Hub returned inconsistent destination identity evidence."), { status: 503, code: "CPU_DESTINATION_IDENTITY_INVALID" });
+        resolved.set(requested, item.canonicalId);
+      }
+      return resolved;
+    });
+    for (const id of batch) aliases.set(id, pending.then(resolved => resolved.get(id)));
+  }
+  const canonicalIds = await Promise.all(ids.map(id => aliases.get(id)!));
+  return { ...scope, oplocIds: [...scope.oplocIds, ...ids.filter((_, index) => Boolean(canonicalIds[index] && scope.oplocIds.includes(canonicalIds[index]!)))] };
+}
 export function cpuDestinationAllowed(scope: CpuDestinationScope, destinationId?: string, destination?: import("./production-types").ProductionOrder["destination"]) {
   if (scope.allOplocs) return true;
   if (destination?.kind === "one-off" || destinationId?.includes(":one-off:")) return false;
