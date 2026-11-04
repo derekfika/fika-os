@@ -116,7 +116,7 @@ export async function releaseHealthProbe(app, backendUri, sourceSha, fetchImpl =
       return { ok: false, status: null, url, reason: 'request_failed' };
     }
   }
-  if (app === 'logistics' && environment === 'staging') {
+  if (app === 'logistics' && (environment === 'staging' || environment === 'prod')) {
     const url = `${origin}/`;
     try {
       const response = await fetchImpl(url, { redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(30000) });
@@ -124,7 +124,8 @@ export async function releaseHealthProbe(app, backendUri, sourceSha, fetchImpl =
       if (response.status !== 307 || !location) return { ok: false, status: response.status, url, reason: 'unexpected_logistics_auth_response' };
       const target = new URL(location, origin);
       const keys = [...target.searchParams.keys()].sort();
-      const valid = target.protocol === 'https:' && target.origin === 'https://staging-os.fikacatering.com' && target.pathname === '/' &&
+      const expectedHubOrigin = environment === 'prod' ? 'https://os.fikacatering.com' : 'https://staging-os.fikacatering.com';
+      const valid = target.protocol === 'https:' && target.origin === expectedHubOrigin && target.pathname === '/' &&
         target.username === '' && target.password === '' && target.hash === '' &&
         JSON.stringify(keys) === JSON.stringify(['appId', 'launchError', 'returnTo']) &&
         target.searchParams.get('appId') === 'logistics' && target.searchParams.get('launchError') === 'FIKA_SESSION_MISSING' &&
