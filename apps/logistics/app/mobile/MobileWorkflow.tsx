@@ -491,7 +491,7 @@ function NavItem({ active, icon, label, accessibleLabel, badge, onClick }: { act
 function loadCount(lanes: DeliveryStop[], data: Data) { const count = lanes.reduce((total, lane) => total + loadSubloads(lane, data, movementsForStop(lane, data.movements)[0]).length, 0); return `${count} ${count === 1 ? "container" : "containers"}`; }
 function StopDetail({ stop, lanes, visitNumber, isNext, data, busy, onClose, onAction, onIssue }: { stop: DeliveryStop; lanes: DeliveryStop[]; visitNumber: number; isNext: boolean; data: Data; busy: boolean; onClose: () => void; onAction: (action: string, stop: DeliveryStop, extra?: Record<string, unknown>) => void; onIssue: (lane: DeliveryStop) => void }) {
   const oploc = data.oplocs.find((item) => item.id === stop.locationOplocId);
-  const address = oploc?.address || oploc?.label || stop.locationLabelSnapshot;
+  const address = stopNavigationAddress(stop, oploc);
   const runStatus = data.runs.find((run) => run.canonicalId === stop.runId)?.status;
   const visitStatus = groupRunVisits(lanes)[0]?.status ?? "planned";
   const deliveries = lanes.filter((lane) => !stopIsCollection(lane));
@@ -516,6 +516,10 @@ function StopDetail({ stop, lanes, visitNumber, isNext, data, busy, onClose, onA
     {collections.length ? collections.map((lane) => <LaneSection key={lane.canonicalId} lane={lane} data={data} runStatus={runStatus} busy={busy} onAction={onAction} onIssue={onIssue} />) : <EmptyLane title="Collections" message="No collections at this stop" icon={<ArrowUpRightIcon size={22} />} />}
     {stop.notes && <section ref={notesRef} className={styles.notesBlock}><h3>Notes</h3><div className={styles.notes}><NoteIcon size={22} /><p>{stop.notes}</p></div></section>}
   </section></div>;
+}
+
+function stopNavigationAddress(stop: DeliveryStop & { locationAddressSnapshot?: string }, oploc?: { address?: string; label?: string }) {
+  return oploc?.address || stop.locationAddressSnapshot || oploc?.label || stop.locationLabelSnapshot;
 }
 function EmptyLane({ title, message, icon }: { title: string; message: string; icon: ReactNode }) {
   return <section className={styles.lane}><div className={styles.laneHead}><h3>{title} (0)</h3></div><div className={styles.emptyCard}><span>{icon}</span><p>{message}</p></div></section>;
