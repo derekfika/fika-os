@@ -10,7 +10,8 @@ const mayContainNotes = (_allergens: Record<string, string>, notes?: string) => 
 export function allergenMatrixHtml(order: { clientName?: string; destinationLabel?: string; serviceType?: string; serviceDate?: string; serviceWindow?: { startTime: string; endTime?: string }; requiredBy: string }, menuItems: PlannedMenuItem[], signatures: InternalMatrixSignature[] = []) {
   const rows = menuItems.flatMap(item => item.subItems.map(sub => {
     const notes = mayContainNotes(sub.allergens, sub.mayContainNotes);
-    return `<tr><th>${escapeHtml(sub.name || "Dish / food / product")}</th>${matrixColumns.map(([key]) => { const state = sub.allergens[key] || "unrecorded"; return `<td class="${state}">${state === "may_contain" ? "MC" : state === "unrecorded" ? "UR" : ""}</td>`; }).join("")}<td class="notes">${escapeHtml(notes)}</td></tr>`;
+    const details = (sub as typeof sub & { allergenDetailNotes?: string }).allergenDetailNotes?.trim() || "";
+    return `<tr><th>${escapeHtml(sub.name || "Dish / food / product")}</th>${matrixColumns.map(([key]) => { const state = sub.allergens[key] || "unrecorded"; return `<td class="${state}">${state === "may_contain" ? "MC" : state === "unrecorded" ? "UR" : ""}</td>`; }).join("")}<td class="notes">${details ? `<strong>Specific allergens:</strong> ${escapeHtml(details)}` : ""}${details && notes ? "<br>" : ""}${notes ? `<strong>May contain:</strong> ${escapeHtml(notes)}` : ""}</td></tr>`;
   })).join("");
   const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
   const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(serviceDate) ? new Date(`${serviceDate}T12:00:00`) : undefined;
