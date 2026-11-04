@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-04T19:43:28.033Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-04T20:04:02.725Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -70,6 +70,7 @@ Snapshot: 2026-11-04T19:43:28.033Z. The local governed registry remains authorit
 | cpu-site-filtering | luna-cpu-site-filtering | apps/cpu-production | codex/cpu-site-filtering | — | retired | 2026-10-31T08:03:13.521Z |
 | cpu-site-filters | claude-cpu-site-filters | apps/cpu-production/lib/production-view-filters.ts, apps/cpu-production/lib/production-totals-range.ts, apps/cpu-production/app/page.tsx, apps/cpu-production/app/calendar/page.tsx, apps/cpu-production/app/ui/ProductionSiteFilter.tsx, apps/cpu-production/app/ui/ProductionSiteFilter.module.css, apps/cpu-production/app/ui/ProductionCalendar.tsx, apps/cpu-production/tests/production-view-filters.test.ts | codex/cpu-site-filters | [#171](https://github.com/derekfika/fika-os/pull/171) | retired | 2026-10-30T11:15:55.002Z |
 | cpu-staging-500 | codex-cpu-staging-500 | apps/cpu-production, CHANGELOG.md | codex/cpu-staging-500 | — | retired | 2026-10-22T21:25:43.206Z |
+| cpu-staging-build-344 | sol-cpu-build-recovery | apps/cpu-production/tsconfig.json | codex/cpu-staging-build-344 | [#353](https://github.com/derekfika/fika-os/pull/353) | retired | 2026-11-04T20:03:58.799Z |
 | cpu-totals-custom-range | codex-cpu-totals-custom-range | apps/cpu-production | codex/cpu-totals-custom-range | [#8](https://github.com/derekfika/fika-os/pull/8) | finished | 2026-10-23T08:30:24.517Z |
 | cpu-totals-range | codex-cpu-totals-range | apps/cpu-production, CHANGELOG.md | codex/cpu-totals-range | [#6](https://github.com/derekfika/fika-os/pull/6) | retired | 2026-10-22T21:00:43.866Z |
 | cpu-totals-runsheet-resume | codex-cpu-totals-runsheet-resume | apps/cpu-production | codex/cpu-totals-runsheet-resume | [#191](https://github.com/derekfika/fika-os/pull/191) | retired | 2026-10-31T00:47:59.132Z |
