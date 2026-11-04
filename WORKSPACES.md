@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-04T21:08:52.935Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-04T22:11:57.222Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -290,6 +290,9 @@ Snapshot: 2026-11-04T21:08:52.935Z. The local governed registry remains authorit
 | munich-re-portal | claude-munich-re-onboarding | apps/hospitality-booking/app/ui/BookingPortal.tsx, apps/hospitality-booking/lib/munich-re-locations.ts, apps/hospitality-booking/tests/munich-re-portal.test.ts, apps/hospitality-booking/tests/mnk-contract.test.ts | codex/munich-re-portal | [#128](https://github.com/derekfika/fika-os/pull/128) | revoked | 2026-10-30T13:18:28.912Z |
 | munich-re-uat-verification | sol-munich-re-verification | docs/audits/2026-10-30/munich-re-postmerge-verification.md | codex/munich-re-uat-verification | — | finished | 2026-10-30T14:05:32.138Z |
 | ops-95-driver-checkbox-label | luna-iss95 | apps/logistics | codex/ops-95-driver-checkbox-label | [#163](https://github.com/derekfika/fika-os/pull/163) | retired | 2026-10-30T07:15:10.006Z |
+| overnight-drive-containment-358 | codex-drive-containment-358 | packages/server-shared/src/drive-owner.ts, packages/server-shared/tests/drive-owner-staging.test.ts, apps/cpu-production/app/lib/matrix-drive-config.ts, apps/cpu-production/tests/matrix-drive-config.test.ts, apps/cpu-production/app/api/production-plan/route.ts, apps/cpu-production/tests/drive-readiness-staging.test.ts | codex/overnight-drive-containment-358 | — | active | 2026-11-04T22:00:08.412Z |
+| overnight-no-key-audit | luna-overnight-357 | apps/menu-planning/app/allergen-checker.tsx | codex/overnight-no-key-audit | — | active | 2026-11-04T21:49:34.390Z |
+| overnight-policy-v31 | luna-overnight-357-policy | overnight.md | codex/overnight-policy-v31 | [#359](https://github.com/derekfika/fika-os/pull/359) | retired | 2026-11-04T22:11:53.311Z |
 | pr-297-integration-alias | luna-pr297-integration | apps/menu-planning/app/planner-data.ts, apps/menu-planning/tests/planner-load-error.test.ts, .changes/menu-planning/2026-11-02-planner-load-timeout-275.md | codex/pr-297-integration-alias | [#300](https://github.com/derekfika/fika-os/pull/300) | retired | 2026-11-02T22:18:12.964Z |
 | pr-298-integration-alias | luna-pr298-integration | apps/menu-planning/app/catalogue-workspace.tsx, apps/menu-planning/tests/read-paths.test.ts, .changes/menu-planning/2026-11-02-dish-library-search-277.md | codex/pr-298-integration-alias | [#302](https://github.com/derekfika/fika-os/pull/302) | retired | 2026-11-02T22:23:26.329Z |
 | pr-backlog-audit | codex-pr-reconciliation | docs/audits/2026-10-28/pr-backlog-reconciliation.md | codex/pr-backlog-audit | [#126](https://github.com/derekfika/fika-os/pull/126) | retired | 2026-10-29T08:26:48.018Z |
