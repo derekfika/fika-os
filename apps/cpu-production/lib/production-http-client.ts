@@ -50,7 +50,7 @@ export async function productionOrderDetail(request: NextRequest, canonicalId: s
     const value = (await call(request, path, { method: "GET", headers: { accept: "application/json" } }, one)).order;
     // Interactive one-off access needs explicit global CPU authority. Internal
     // callers retain the token checks at their existing API admission boundary.
-    if (value.destination?.kind === "one-off" && request.headers.get("cookie")) {
+    if ((value.destination?.kind === "one-off" || value.destinationOplocId?.includes(":one-off:")) && request.headers.get("cookie")) {
       const { requireCpuDestinationScope, cpuDestinationAllowed } = await import("./cpu-access-client");
       if (!cpuDestinationAllowed(await requireCpuDestinationScope(request), value.destinationOplocId, value.destination)) throw Object.assign(new Error("CPU access to this one-off destination was not granted."), { status: 403, code: "CPU_DESTINATION_SCOPE_DENIED" });
     }

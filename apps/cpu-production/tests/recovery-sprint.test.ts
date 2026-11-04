@@ -39,12 +39,13 @@ test("one-off access needs explicit trusted global scope and shares the existing
   try {
     for (const allOplocs of [true, false, undefined]) {
       let admissions = 0;
+      let includeSnapshot = true;
       globalThis.fetch = (async input => {
         if (String(input).includes("/api/cpu-production/access")) {
           admissions += 1;
           return Response.json({ principal: { id: "synthetic-chef" }, oplocs: [{ id: "oploc:synthetic" }, { id: destination.id }], ...(allOplocs !== undefined ? { allOplocs } : {}) });
         }
-        return Response.json({ order: { ...order, version: 1, destination, destinationOplocId: destination.id } });
+        return Response.json({ order: { ...order, version: 1, ...(includeSnapshot ? { destination } : {}), destinationOplocId: destination.id } });
       }) as typeof fetch;
       const request = new NextRequest("http://localhost/api/production-plan", { headers: { cookie: "synthetic-session=isolated" } });
       assert.equal((await requireCpuActor(request)).uid, "synthetic-chef");
@@ -54,6 +55,9 @@ test("one-off access needs explicit trusted global scope and shares the existing
       assert.equal(cpuDestinationAllowed(scope, destination.id, destination), allOplocs === true);
       assert.equal(cpuDestinationAllowed(scope, "oploc:unrelated"), allOplocs === true);
       if (allOplocs === true) assert.deepEqual((await productionOrderDetail(request, order.canonicalId)).destination, destination);
+      else await assert.rejects(productionOrderDetail(request, order.canonicalId), { status: 403, code: "CPU_DESTINATION_SCOPE_DENIED" });
+      includeSnapshot = false;
+      if (allOplocs === true) assert.equal((await productionOrderDetail(request, order.canonicalId)).destinationOplocId, destination.id);
       else await assert.rejects(productionOrderDetail(request, order.canonicalId), { status: 403, code: "CPU_DESTINATION_SCOPE_DENIED" });
       assert.equal(admissions, 1);
     }
