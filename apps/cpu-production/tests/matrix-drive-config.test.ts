@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { matrixDriveConfiguration } from "../app/lib/matrix-drive-config";
+import { containedMatrixReviewStatus, containedMatrixStatus, matrixDriveConfiguration } from "../app/lib/matrix-drive-config";
 import type { ProductionOrder } from "../lib/production-types";
 
 const order = (origin: ProductionOrder["origin"], destinationOplocId?: string) => ({ origin, destinationOplocId } as ProductionOrder);
@@ -15,11 +15,25 @@ test("missing Drive configuration deliberately disables persistence", () => {
   assert.deepEqual(matrixDriveConfiguration(order("menu_planning")), { enabled: false, reason: "not_configured" });
 });
 
-test("staging CPU Drive configuration enables the existing finalisation path", () => {
+test("staging holds CPU and Hospitality Drive materialisation regardless of configured folders", () => {
   process.env.FIKA_RUNTIME_MODE = "staging";
   process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON = "configured-later";
   process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION = "derek@fikacatering.com";
-  assert.deepEqual(matrixDriveConfiguration(order("menu_planning")), { enabled: true, ownerKey: "APP_CPU_PRODUCTION" });
+  process.env.GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID = "unverified-folder";
+  process.env.HOSPITALITY_BOOKING_BASE_URL = "https://hospitality.example";
+  assert.deepEqual(matrixDriveConfiguration(order("menu_planning")), { enabled: false, reason: "not_configured" });
+  assert.deepEqual(matrixDriveConfiguration(order("hospitality_booking", "oploc:angel")), { enabled: false, reason: "not_configured" });
+});
+
+test("staging holds ready and generating artifacts while preserving failure diagnostics", () => {
+  process.env.FIKA_RUNTIME_MODE = "staging";
+  assert.equal(containedMatrixStatus("ready"), "not_configured");
+  assert.equal(containedMatrixStatus("generating"), "not_configured");
+  assert.equal(containedMatrixStatus("failed"), "failed");
+  assert.equal(containedMatrixStatus(undefined), undefined);
+  assert.deepEqual(containedMatrixReviewStatus({ orderId: "fixture", matrixStatus: "failed", matrixArtifact: { driveUrl: "unverified" } }), { orderId: "fixture", matrixStatus: "failed" });
+  process.env.FIKA_RUNTIME_MODE = "production";
+  assert.equal(containedMatrixStatus("ready"), "ready");
 });
 
 test("production CPU Drive stays disabled without an explicit folder even with DWD and owner", () => {

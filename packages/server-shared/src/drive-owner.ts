@@ -38,4 +38,16 @@ async function dwdAccessToken(owner: ResolvedDriveOwner) {
   const response = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${unsigned}.${base64Url(crypto.sign("RSA-SHA256", Buffer.from(unsigned), credentials.private_key))}` }) });
   const body = await response.json() as { access_token?: string; error?: string }; if (!response.ok || !body.access_token) throw new Error(`Google Workspace Drive authentication failed: ${body.error || response.status}.`); return body.access_token;
 }
-export function driveAccessToken(owner: ResolvedDriveOwner) { return owner.authMode === "dwd" ? dwdAccessToken(owner) : localOAuthAccessToken(); }
+/** Staging Drive access is held until a trusted destination/ACL verifier is implemented. */
+export function stagingDriveAccessBlocked() {
+  const stagingProject = [process.env.FIREBASE_PROJECT_ID, process.env.GOOGLE_CLOUD_PROJECT, process.env.GCLOUD_PROJECT].includes("fika-os-dev");
+  // A hosted staging project stays blocked even when its runtime mode is missing or misconfigured.
+  // Explicit local development retains its existing behavior outside the production runtime.
+  return process.env.FIKA_RUNTIME_MODE === "staging" || (process.env.NODE_ENV === "production" && stagingProject);
+}
+export function driveAccessToken(owner: ResolvedDriveOwner) {
+  // This guard precedes credential parsing, local token reads and every token request. A configured
+  // folder or a client-supplied assertion is not proof that the target is isolated from production.
+  if (stagingDriveAccessBlocked()) return Promise.reject(Object.assign(new Error("Staging Drive access is disabled until destination isolation is verified."), { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED" }));
+  return owner.authMode === "dwd" ? dwdAccessToken(owner) : localOAuthAccessToken();
+}
