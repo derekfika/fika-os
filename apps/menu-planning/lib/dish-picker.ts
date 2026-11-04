@@ -28,13 +28,12 @@ export function rankDishPickerItems(items: DishPickerItem[], query: string, slot
   const meatWords = "beef chicken pork lamb turkey meat brisket steak mince sausage";
   const vegWords = "veg vegan vegetarian plant tofu bean chickpea lentil aubergine mushroom cauliflower";
   return items
-    .filter(item => slotCategories.has(normaliseDishCategory(item.category)))
     .filter(item => !q || normaliseDishName(`${item.name} ${(item.aliases || []).join(" ")} ${item.category || ""} ${item.subcategory || ""} ${item.description || ""}`).includes(q))
     .map(item => {
       const text = `${item.name} ${item.category || ""} ${item.subcategory || ""} ${item.description || ""}`.toLocaleLowerCase();
       const context = slotWords.reduce((score, word) => score + (text.includes(word) ? 1 : 0), 0)
         + (item.category?.toLocaleLowerCase() === slot.toLocaleLowerCase() ? 6 : 0)
-        + (slotCategories.has(normaliseDishCategory(item.category)) ? 3 : 0)
+        + (slotCategories.has(normaliseDishCategory(item.category)) || [...slotCategories].some(category => item.tagIds?.includes(`dish-tag:type:menu-use-${category.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-$/, "")}`)) ? 10 : 0)
         + (slotCategories.has("Hot Main") && slot.toLocaleLowerCase().includes("meat") && meatWords.split(" ").some(word => text.includes(word)) ? 5 : 0)
         + (slotCategories.has("Vegan/Veggie Main") && slot.toLocaleLowerCase().includes("veg") && vegWords.split(" ").some(word => text.includes(word)) ? 5 : 0);
       const nameScore = normaliseDishName(item.name) === q && q ? 100 : normaliseDishName(item.name).startsWith(q) && q ? 20 : 0;

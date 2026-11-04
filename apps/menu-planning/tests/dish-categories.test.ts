@@ -39,5 +39,5 @@ test("menu slots stay distinct from dish categories and Hot Main accepts Fish di
   assert.deepEqual(rankDishPickerItems([{ id: "side-1", name: "Roast Potatoes", category: "Side" }], "", "STARCH/SIDE 1").map(item => item.id), ["side-1"]);
   assert.deepEqual(rankDishPickerItems([{ id: "sauce-1", name: "Salsa Verde", category: "Sauce" }], "", "SAUCE 1").map(item => item.id), ["sauce-1"]);
   assert.deepEqual(rankDishPickerItems([{ id: "garnish-1", name: "Chopped Herbs", category: "Garnish" }], "", "GARNISH 1").map(item => item.id), ["garnish-1"]);
-  assert.deepEqual(rankDishPickerItems([{ id: "salad-1", name: "Green Salad", category: "Salad" }], "", "HOT MAIN").map(item => item.id), []);
+  assert.deepEqual(rankDishPickerItems([{ id: "salad-1", name: "Green Salad", category: "Salad" }], "", "HOT MAIN").map(item => item.id), ["salad-1"]);
 });

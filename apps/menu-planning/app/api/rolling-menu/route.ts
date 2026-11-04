@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { saveWeekDraft } from "@/lib/week-draft-save";
 import {
   addMenuSlot,
   addOneOffDestination,
@@ -305,6 +306,11 @@ async function handlePost(request: NextRequest) {
     const liveOplocs = (await readDeliveredInOplocs(request)).filter((oploc) =>
       actorCanAccessOploc(actor, oploc.canonicalId),
     );
+    if (action === "save-week") {
+      const { action: _action, ...saveRequest } = body;
+      const result = await saveWeekDraft(saveRequest, actor.uid, new Set(liveOplocs.map(oploc => oploc.canonicalId)), new Map(liveOplocs.flatMap(oploc => (oploc.legacyIds || []).map(alias => [alias, oploc.canonicalId] as const))));
+      return NextResponse.json({ snapshot: scopedSnapshot(result.snapshot, actor), replayed: result.replayed, publicationState: await publicationState(result.snapshot, liveOplocs) });
+    }
     if (action === "create-week") {
       const weekCommencing = planningWeekCommencing(
         String(body.weekCommencing),
