@@ -15,6 +15,7 @@ test("CPU routes limit site scope without hiding one-offs from trusted global st
   process.env.FIKA_SNAPSHOT_DIR = directory;
   const serviceDate = "2026-11-05";
   const allowedId = "production-order:scope-allowed";
+  const aliasId = "production-order:scope-alias";
   const otherId = "production-order:scope-other";
   const oneOffId = "production-order:scope-one-off";
   const oneOffDestination = "week:scope:day:0:one-off:venue";
@@ -25,6 +26,7 @@ test("CPU routes limit site scope without hiding one-offs from trusted global st
   });
   const orders = [
     order(allowedId, "oploc:allowed", { kind: "governed", id: "oploc:allowed", label: "Allowed site" }),
+    order(aliasId, "oploc:historical-allowed"),
     order(otherId, "oploc:other", { kind: "governed", id: "oploc:other", label: "Other site" }),
     order(oneOffId, oneOffDestination, { kind: "one-off", id: oneOffDestination, sourceDayId: "week:scope:day:0", label: "One-off venue", address: "1 Test Road" }),
   ];
@@ -37,7 +39,11 @@ test("CPU routes limit site scope without hiding one-offs from trusted global st
     if (url.includes("/api/cpu-production/access")) return new Response(JSON.stringify({ principal: { id: "scope-user", displayName: "Scope user" }, allOplocs: globalAccess, oplocs: [{ id: "oploc:allowed" }] }), { status: 200 });
     if (url.includes("/api/production?canonicalId=")) return new Response(JSON.stringify({ order: orders.find(item => url.includes(encodeURIComponent(item.canonicalId))) }), { status: 200 });
     if (url.includes("/api/production?serviceDate=") || url.includes("/api/production?weekCommencing=")) return new Response(JSON.stringify({ orders }), { status: 200 });
-    if (url.includes("/api/oploc-labels")) throw new Error("Explicit one-off destinations must not require Hub OPLOC labels.");
+    if (url.includes("/api/oploc-labels")) {
+      const requested = (JSON.parse(String(init?.body)) as { oplocIds: string[] }).oplocIds;
+      assert.ok(!requested.includes(oneOffDestination), "one-off keys must never enter governed OPLOC alias lookup");
+      return new Response(JSON.stringify({ oplocs: requested.flatMap(id => id === "oploc:historical-allowed" ? [{ requestedId: id, canonicalId: "oploc:allowed", label: "Allowed site" }] : []) }), { status: 200 });
+    }
     throw new Error(`Unexpected upstream request: ${method} ${url}`);
   }) as typeof fetch;
   const request = (query: string) => new NextRequest(`http://localhost/api/production${query}`, { headers: { cookie: "session=scope-test" } });
@@ -46,10 +52,11 @@ test("CPU routes limit site scope without hiding one-offs from trusted global st
     const { GET: reviewGet } = await import("../app/api/delivered-in/review/route");
     const queue = await GET(request(`?serviceDate=${serviceDate}`));
     assert.equal(queue.status, 200);
-    assert.deepEqual((await queue.json()).orders.map((item: ProductionOrder) => item.canonicalId), [allowedId]);
+    assert.deepEqual((await queue.json()).orders.map((item: ProductionOrder) => item.canonicalId), [allowedId, aliasId]);
     const allowed = await GET(request(`?canonicalId=${encodeURIComponent(allowedId)}`));
     assert.equal(allowed.status, 200);
     assert.equal((await allowed.json()).order.canonicalId, allowedId);
+    assert.equal((await GET(request(`?canonicalId=${encodeURIComponent(aliasId)}`))).status, 200, "Hub-authorized historical alias remains visible at its canonical site");
     for (const id of [otherId, oneOffId]) assert.equal((await GET(request(`?canonicalId=${encodeURIComponent(id)}`))).status, 403);
     assert.equal((await GET(request(`?diagnostic=1&serviceDate=${serviceDate}`))).status, 403);
     assert.equal((await GET(request(`?changesSince=0&serviceDate=${serviceDate}`))).status, 403);
@@ -59,9 +66,9 @@ test("CPU routes limit site scope without hiding one-offs from trusted global st
     const projected = await GET(request(`?projection=1&serviceDate=${serviceDate}`));
     assert.equal(projected.status, 200, await projected.clone().text());
     const projectedBody = await projected.json();
-    assert.deepEqual(projectedBody.projection.orders.map((item: { id: string }) => item.id), [allowedId]);
-    assert.equal(projectedBody.projection.summary.orders, 1);
-    assert.equal(projectedBody.projection.summary.totalUnits, 4);
+    assert.deepEqual(projectedBody.projection.orders.map((item: { id: string }) => item.id), [allowedId, aliasId]);
+    assert.equal(projectedBody.projection.summary.orders, 2);
+    assert.equal(projectedBody.projection.summary.totalUnits, 8);
     assert.equal(projectedBody.projection.projectionContentHash, undefined, "a filtered view cannot claim the full package content hash");
     assert.equal((await GET(request(`?projectionHead=1&serviceDate=${serviceDate}`))).status, 200);
     const { loadCpuAllergenProjection } = await import("../app/lib/cpu-allergen-projection-loader");
@@ -73,14 +80,14 @@ test("CPU routes limit site scope without hiding one-offs from trusted global st
     };
     const cold = await loadCpuAllergenProjection(serviceDate, "delivered_in", dependencies);
     assert.equal(cold.cacheHit, false);
-    assert.deepEqual(cold.projection.orders.map(item => item.id), [allowedId]);
+    assert.deepEqual(cold.projection.orders.map(item => item.id), [allowedId, aliasId]);
     const warm = await loadCpuAllergenProjection(serviceDate, "delivered_in", dependencies);
     assert.equal(warm.cacheHit, true, "the global package head must validate the scoped cached view without a refresh loop");
-    assert.deepEqual(warm.projection.orders.map(item => item.id), [allowedId]);
-    const postCount = calls.filter(call => call.method === "POST").length;
+    assert.deepEqual(warm.projection.orders.map(item => item.id), [allowedId, aliasId]);
+    const productionPostCount = calls.filter(call => call.method === "POST" && call.url.includes("/api/production")).length;
     const deniedMutation = await POST(new NextRequest("http://localhost/api/production", { method: "POST", headers: { cookie: "session=scope-test", "content-type": "application/json" }, body: JSON.stringify({ action: "transition", canonicalId: otherId, expectedVersion: 1, status: "planned", reason: "Test scope denial" }) }));
     assert.equal(deniedMutation.status, 403);
-    assert.equal(calls.filter(call => call.method === "POST").length, postCount, "denied mutation must not reach Hub write");
+    assert.equal(calls.filter(call => call.method === "POST" && call.url.includes("/api/production")).length, productionPostCount, "denied mutation must not reach Hub write");
     const deniedReview = await reviewGet(new NextRequest(`http://localhost/api/delivered-in/review?serviceDate=${serviceDate}&oplocId=${encodeURIComponent(oneOffDestination)}`, { headers: { cookie: "session=scope-test" } }));
     assert.equal(deniedReview?.status, 403);
     globalAccess = true;
@@ -89,7 +96,7 @@ test("CPU routes limit site scope without hiding one-offs from trusted global st
     const globalOneOff = await GET(request(`?canonicalId=${encodeURIComponent(oneOffId)}`));
     assert.equal(globalOneOff.status, 200);
     assert.equal((await globalOneOff.json()).order.destination.id, oneOffDestination);
-    assert.equal(calls.filter(call => call.url.includes("/api/oploc-labels")).length, 0);
+    assert.ok(calls.some(call => call.url.includes("/api/oploc-labels")), "historical governed alias uses bounded Hub authority");
   } finally {
     globalThis.fetch = saved.fetch;
     if (saved.mode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = saved.mode;
