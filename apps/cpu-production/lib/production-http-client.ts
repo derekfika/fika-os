@@ -46,7 +46,16 @@ export async function productionQueue(request: NextRequest, serviceDate?: string
 export async function productionQueueForWeek(request: NextRequest, weekCommencing: string) { return (await call(request, `/api/production?weekCommencing=${encodeURIComponent(weekCommencing)}`, { method: "GET", headers: { accept: "application/json" } }, orders)).orders; }
 export async function productionOrderDetail(request: NextRequest, canonicalId: string) {
   const path = `/api/production?canonicalId=${encodeURIComponent(canonicalId)}`;
-  try { return (await call(request, path, { method: "GET", headers: { accept: "application/json" } }, one)).order; }
+  try {
+    const value = (await call(request, path, { method: "GET", headers: { accept: "application/json" } }, one)).order;
+    // Interactive one-off access needs explicit global CPU authority. Internal
+    // callers retain the token checks at their existing API admission boundary.
+    if (value.destination?.kind === "one-off" && request.headers.get("cookie")) {
+      const { requireCpuDestinationScope, cpuDestinationAllowed } = await import("./cpu-access-client");
+      if (!cpuDestinationAllowed(await requireCpuDestinationScope(request), value.destinationOplocId, value.destination)) throw Object.assign(new Error("CPU access to this one-off destination was not granted."), { status: 403, code: "CPU_DESTINATION_SCOPE_DENIED" });
+    }
+    return value;
+  }
   catch (cause) {
     const error = cause as CanonicalProductionFailure;
     const failureKind = canonicalProductionFailureKind(error);

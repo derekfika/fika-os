@@ -16,6 +16,8 @@ import { NextRequest } from "next/server";
 import { createProductionPlanRepository } from "../lib/production-plan-repository";
 import { materializeCommittedCpuRelease } from "../lib/cpu-release-materialization";
 import type { ProductionPlan } from "../app/lib/production-plan";
+import { cpuDestinationAllowed, requireCpuActor, requireCpuDestinationScope } from "../lib/cpu-access-client";
+import { productionOrderDetail } from "../lib/production-http-client";
 
 const at = "2098-11-02T09:00:00Z";
 const order = { canonicalId: "production:synthetic", serviceDate: "2098-11-02", requiredBy: "2098-11-02T12:00:00Z", origin: "menu_planning", sourceEntityId: "week:synthetic:day:0", sourcePublicationDayId: "publication:synthetic:day:0:v1", sourceVersion: 1, sourceContentHash: "a".repeat(64), lines: [{ canonicalId: "line:synthetic", sourceMenuItemId: "dish:synthetic" }] } as ProductionOrder;
@@ -29,6 +31,33 @@ test("CPU read packages retain one-off routing identity and snapshot alongside g
   assert.equal(reloaded[0].destinationOplocId, destination.id);
   assert.equal(reloaded[0].lines[0].customerQuantity, 7);
   assert.deepEqual(reloaded[1].destination, governed.destination);
+});
+
+test("one-off access needs explicit trusted global scope and shares the existing admission read", async () => {
+  const previousFetch = globalThis.fetch;
+  const destination = { kind: "one-off" as const, id: "week:synthetic:day:0:one-off:venue", sourceDayId: "week:synthetic:day:0", label: "Synthetic venue", address: "1 Test Road" };
+  try {
+    for (const allOplocs of [true, false, undefined]) {
+      let admissions = 0;
+      globalThis.fetch = (async input => {
+        if (String(input).includes("/api/cpu-production/access")) {
+          admissions += 1;
+          return Response.json({ principal: { id: "synthetic-chef" }, oplocs: [{ id: "oploc:synthetic" }, { id: destination.id }], ...(allOplocs !== undefined ? { allOplocs } : {}) });
+        }
+        return Response.json({ order: { ...order, version: 1, destination, destinationOplocId: destination.id } });
+      }) as typeof fetch;
+      const request = new NextRequest("http://localhost/api/production-plan", { headers: { cookie: "synthetic-session=isolated" } });
+      assert.equal((await requireCpuActor(request)).uid, "synthetic-chef");
+      const scope = await requireCpuDestinationScope(request);
+      assert.equal(admissions, 1, "scope and actor share one bounded Hub admission read");
+      assert.equal(cpuDestinationAllowed(scope, "oploc:synthetic"), true);
+      assert.equal(cpuDestinationAllowed(scope, destination.id, destination), allOplocs === true);
+      assert.equal(cpuDestinationAllowed(scope, "oploc:unrelated"), allOplocs === true);
+      if (allOplocs === true) assert.deepEqual((await productionOrderDetail(request, order.canonicalId)).destination, destination);
+      else await assert.rejects(productionOrderDetail(request, order.canonicalId), { status: 403, code: "CPU_DESTINATION_SCOPE_DENIED" });
+      assert.equal(admissions, 1);
+    }
+  } finally { globalThis.fetch = previousFetch; }
 });
 const items = (detail = "Almond and wheat", may = "Shared sesame equipment"): PlannedMenuItem[] => {
   const allergens = confirmRowExplicit({ allergens: { tree_nuts: "contains", gluten: "contains", sesame: "may_contain" }, identity: "Synthetic dish", allergenDetailNotes: detail, mayContainNotes: may, actor: "synthetic-chef", now: at }).allergens;
