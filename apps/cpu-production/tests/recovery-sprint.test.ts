@@ -16,7 +16,7 @@ import { NextRequest } from "next/server";
 import { createProductionPlanRepository } from "../lib/production-plan-repository";
 import { materializeCommittedCpuRelease } from "../lib/cpu-release-materialization";
 import type { ProductionPlan } from "../app/lib/production-plan";
-import { cpuDestinationAllowed, requireCpuActor, requireCpuDestinationScope } from "../lib/cpu-access-client";
+import { cpuDestinationAllowed, requireCpuActor, requireCpuDestinationScope, resolveCpuDestinationScope } from "../lib/cpu-access-client";
 import { productionOrderDetail } from "../lib/production-http-client";
 
 const at = "2098-11-02T09:00:00Z";
@@ -70,6 +70,57 @@ const items = (detail = "Almond and wheat", may = "Shared sesame equipment"): Pl
 const signatures = (menuItems: PlannedMenuItem[]): InternalMatrixSignature[] => (["production_chef", "head_chef_site_manager"] as const).map(role => ({ role, printedName: "Synthetic Chef", signedAt: at, actor: "synthetic-chef", attestation: "Synthetic checked evidence", scope: matrixSignatureScope(order, allergenMatrixContentHash(menuItems))! }));
 const artifact = { id: "artifact:synthetic", bookingId: "synthetic", fileName: "synthetic.pdf", createdAt: at, createdBy: "synthetic-chef", contentHash: "b".repeat(64), pdfStatus: "generated" as const, driveStatus: "not_configured" as const, localUrl: "/synthetic.pdf" };
 const build = (menuItems: PlannedMenuItem[], previous?: CpuAllergenRelease) => buildCpuAllergenRelease({ serviceDate: order.serviceDate!, sourceDayId: order.sourceEntityId!, sourcePublicationDayId: order.sourcePublicationDayId!, sourceVersion: 1, sourceContentHash: order.sourceContentHash!, version: previous ? previous.version + 1 : 1, signedAt: at, signatures: signatures(menuItems), items: menuItems, masterArtifact: artifact, derivedArtifacts: [], packetArtifacts: [], previous });
+
+test("historical governed aliases use bounded Hub authority without admitting one-offs or unrelated sites", async () => {
+  const previous = { fetch: globalThis.fetch, token: process.env.FIKA_INTERNAL_API_TOKEN };
+  process.env.FIKA_INTERNAL_API_TOKEN = "isolated-reference-token";
+  let admissions = 0;
+  const batches: string[][] = [];
+  globalThis.fetch = (async (input, init) => {
+    if (String(input).includes("/api/cpu-production/access")) { admissions += 1; return Response.json({ principal: { id: "synthetic-chef" }, allOplocs: false, oplocs: [{ id: "oploc:allowed" }] }); }
+    assert.ok(String(input).endsWith("/api/oploc-labels"));
+    assert.equal(new Headers(init?.headers).get("x-fika-internal-token"), "isolated-reference-token");
+    const ids = JSON.parse(String(init?.body)).oplocIds as string[];
+    batches.push(ids);
+    return Response.json({ oplocs: ids.filter(id => id !== "oploc:missing").map(id => ({ requestedId: id, canonicalId: id === "oploc:foreign-alias" ? "oploc:foreign" : "oploc:allowed", label: "Synthetic reference" })) });
+  }) as typeof fetch;
+  try {
+    const request = new NextRequest("http://localhost/api/production", { headers: { cookie: "synthetic-session=isolated" } });
+    const ids = ["oploc:allowed", ...Array.from({ length: 205 }, (_, i) => `legacy:synthetic:${i}`), "oploc:foreign-alias", "oploc:missing", "day:synthetic:one-off:venue"];
+    const [first, second] = await Promise.all([resolveCpuDestinationScope(request, ids), resolveCpuDestinationScope(request, ids)]);
+    assert.equal(admissions, 1);
+    assert.deepEqual(batches.map(batch => batch.length), [100, 100, 7]);
+    assert.ok(!batches.flat().includes("day:synthetic:one-off:venue"));
+    assert.equal(cpuDestinationAllowed(first, "legacy:synthetic:204"), true);
+    assert.equal(cpuDestinationAllowed(first, "oploc:foreign-alias"), false);
+    assert.equal(cpuDestinationAllowed(first, "oploc:missing"), false);
+    assert.equal(cpuDestinationAllowed(first, "day:synthetic:one-off:venue"), false);
+    assert.deepEqual(second, first);
+    assert.deepEqual((await requireCpuDestinationScope(request)).oplocIds, ["oploc:allowed"], "canonical admission evidence is never mutated");
+  } finally { globalThis.fetch = previous.fetch; if (previous.token === undefined) delete process.env.FIKA_INTERNAL_API_TOKEN; else process.env.FIKA_INTERNAL_API_TOKEN = previous.token; }
+});
+
+test("unavailable or inconsistent alias authority fails closed and global admission needs no reference read", async () => {
+  const previousFetch = globalThis.fetch;
+  let global = false;
+  let invalid = false;
+  let references = 0;
+  globalThis.fetch = (async input => {
+    if (String(input).includes("/api/cpu-production/access")) return Response.json({ principal: { id: "synthetic-chef" }, allOplocs: global, oplocs: [{ id: "oploc:allowed" }] });
+    references += 1;
+    return invalid ? Response.json({ oplocs: [{ requestedId: "unrequested-id", canonicalId: "oploc:allowed", label: "Invalid evidence" }] }) : Response.json({ error: { message: "Reference authority unavailable" } }, { status: 503 });
+  }) as typeof fetch;
+  try {
+    const request = () => new NextRequest("http://localhost/api/production", { headers: { cookie: "synthetic-session=isolated" } });
+    await assert.rejects(resolveCpuDestinationScope(request(), ["legacy:synthetic"]), { status: 503 });
+    invalid = true;
+    await assert.rejects(resolveCpuDestinationScope(request(), ["legacy:synthetic"]), { status: 503, code: "CPU_DESTINATION_IDENTITY_INVALID" });
+    global = true;
+    const scope = await resolveCpuDestinationScope(request(), ["legacy:synthetic", "day:synthetic:one-off:venue"]);
+    assert.equal(scope.allOplocs, true);
+    assert.equal(references, 2);
+  } finally { globalThis.fetch = previousFetch; }
+});
 
 test("specific and may-contain notes survive command validation, server review stamping and serialised reload", () => {
   const sent = items().map(item => MenuItem.parse(JSON.parse(JSON.stringify(item))));
