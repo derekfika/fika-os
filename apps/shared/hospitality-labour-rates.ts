@@ -46,10 +46,10 @@ export function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-export type LabourCalculationInput = { roleId: string; staffCount: number; hours: number; overtime: boolean };
+export type LabourCalculationInput = { roleId: string; staffCount: number; hours: number };
 export type LabourCalculation = {
   role: LabourRole;
-  /** Stored charge fields: hourlyRate is ALWAYS the normal TCTE; multiplier is 1 or 1.5. */
+  /** Stored charge fields keep the base normal TCTE plus the locked 1.5× multiplier. */
   hourlyRate: number;
   multiplier: 1 | 1.5;
   net: number;
@@ -61,22 +61,26 @@ export type LabourValidation = { ok: true; value: LabourCalculation } | { ok: fa
 export function calculateLabour(input: LabourCalculationInput): LabourValidation {
   const role = findApprovedRole(input.roleId);
   if (!role) return { ok: false, error: "Choose an approved labour role." };
-  if (typeof input.overtime !== "boolean") return { ok: false, error: "Choose Normal or Overtime." };
   if (typeof input.staffCount !== "number" || !Number.isInteger(input.staffCount) || input.staffCount < 1 || input.staffCount > MAX_STAFF) {
     return { ok: false, error: `Staff count must be a whole number from 1 to ${MAX_STAFF}.` };
   }
   if (typeof input.hours !== "number" || !Number.isFinite(input.hours) || input.hours <= 0 || input.hours > MAX_HOURS) {
     return { ok: false, error: `Hours must be more than 0 and no more than ${MAX_HOURS}.` };
   }
-  const multiplier = input.overtime ? OVERTIME_MULTIPLIER : NORMAL_MULTIPLIER;
-  const net = roundMoney(input.staffCount * input.hours * (role.normalRate * multiplier));
+  const multiplier = OVERTIME_MULTIPLIER;
+  const net = roundMoney(input.staffCount * input.hours * role.overtimeRate);
   return { ok: true, value: { role, hourlyRate: role.normalRate, multiplier, net } };
 }
 
-/** A stored line is "approved" when it is an approved role at the normal TCTE with a 1× or 1.5× multiplier. */
+/** Recognizes canonical snapshots, including historical 1× lines that remain readable and editable. */
 export function isApprovedLabourLine(labour: { roleId?: string; hourlyRate: number; multiplier: number }) {
   const role = findApprovedRole(labour.roleId);
   return !!role && labour.hourlyRate === role.normalRate && (labour.multiplier === NORMAL_MULTIPLIER || labour.multiplier === OVERTIME_MULTIPLIER);
+}
+
+/** A saved canonical Normal line stays unchanged until an operator intentionally edits it. */
+export function isHistoricalNormalLabourLine(labour: { roleId?: string; hourlyRate: number; multiplier: number }) {
+  return Number.isFinite(labour.hourlyRate) && labour.hourlyRate > 0 && labour.multiplier === NORMAL_MULTIPLIER;
 }
 
 export type GovernedLabourLine = {
@@ -88,7 +92,7 @@ export type GovernedLabourLine = {
 
 /**
  * Hub-side lock for NEW or CHANGED labour lines: approved role identity + exact locked normal TCTE +
- * multiplier exactly 1 (Normal) or 1.5 (Overtime). Returns a message when the line is not permitted.
+ * locked 1.5× Agency / overtime multiplier. Returns a message when the line is not permitted.
  * Never applied to stored/historical lines (they stay readable and quotable exactly as saved).
  */
 export function governedLabourViolation(labour: GovernedLabourLine): string | null {
@@ -96,6 +100,6 @@ export function governedLabourViolation(labour: GovernedLabourLine): string | nu
   if (!role) return "Labour must use an approved labour role.";
   if (labour.roleLabel !== role.label) return "Labour role name must match the approved role.";
   if (labour.hourlyRate !== role.normalRate) return "Labour rates are locked. Use the approved rate for this role.";
-  if (labour.multiplier !== NORMAL_MULTIPLIER && labour.multiplier !== OVERTIME_MULTIPLIER) return "Labour is charged at Normal (1×) or Overtime (1.5×) only.";
+  if (labour.multiplier !== OVERTIME_MULTIPLIER) return "New or edited labour must use the approved Agency / overtime rate (1.5×).";
   return null;
 }
