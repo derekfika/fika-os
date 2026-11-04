@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-04T22:11:57.222Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-04T22:17:54.932Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -210,6 +210,7 @@ Snapshot: 2026-11-04T22:11:57.222Z. The local governed registry remains authorit
 | logistics-notifications-inbox | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-notifications-inbox | [#87](https://github.com/derekfika/fika-os/pull/87) | finished | 2026-10-27T18:29:47.305Z |
 | logistics-operational-access | luna-logistics-access | apps/logistics, apps/integration-hub/lib/authmod-core, apps/integration-hub/app/api/logistics/access, apps/integration-hub/lib/authmod-admission-cache.ts, apps/integration-hub/tests/logistics-operational-access.test.ts, apps/integration-hub/tests/authmod-admission-cache.test.ts, apps/integration-hub/scripts/logistics-access-policy.ts | codex/logistics-operational-access | [#104](https://github.com/derekfika/fika-os/pull/104) | retired | 2026-10-28T11:54:36.883Z |
 | logistics-order-noise | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-order-noise | [#90](https://github.com/derekfika/fika-os/pull/90) | finished | 2026-10-27T19:15:26.913Z |
+| logistics-prod-auth-probe | luna-overnight-357-logistics | tools/workflow/releases.mjs | codex/logistics-prod-auth-probe | — | retired | 2026-11-04T22:17:46.910Z |
 | logistics-push-inbox | logistics-pwa-notifications | apps/logistics, CHANGELOG.md | codex/logistics-push-inbox | — | finished | 2026-10-27T16:24:29.291Z |
 | logistics-pwa-phase2 | logistics-pwa-notifications | apps/logistics | codex/logistics-pwa-phase2 | [#83](https://github.com/derekfika/fika-os/pull/83) | finished | 2026-10-27T14:32:41.957Z |
 | logistics-release-health-probe | uat-20261025-1150 | tools/workflow, docs/deployment/workflow.md, CHANGELOG.md | codex/logistics-release-health-probe | [#53](https://github.com/derekfika/fika-os/pull/53) | finished | 2026-10-25T18:42:30.810Z |
