@@ -1,3 +1,5 @@
+import { mayAutoRefreshDashboard } from "../../shared/passive-dashboard-refresh";
+
 export const PASSIVE_REFRESH_INTERVAL_MS = 15 * 60_000;
 
 export type PassiveRefreshGate = {
@@ -9,6 +11,5 @@ export type PassiveRefreshGate = {
 };
 
 export function mayRequestPassiveRefresh({ now, lastAttemptAt, visible, requestsBlocked, inFlight }: PassiveRefreshGate) {
-  if (!visible || requestsBlocked || inFlight) return false;
-  return lastAttemptAt === undefined || now - lastAttemptAt >= PASSIVE_REFRESH_INTERVAL_MS;
+  return mayAutoRefreshDashboard({ now, lastAttemptAt, visible, requestsBlocked, inFlight, minimumIntervalMs: PASSIVE_REFRESH_INTERVAL_MS });
 }
