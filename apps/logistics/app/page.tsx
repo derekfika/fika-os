@@ -517,11 +517,10 @@ function PlannerContents() {
     const now = Date.now();
     const visible = document.visibilityState === "visible";
     const inFlight = Boolean(activeDayContext.current && syncCheckInFlight.current.has(scopedRequestKey(activeDayContext.current)));
-    // Local change notifications are event-driven, not idle polling. Preserve them
-    // outside office hours, with the existing 15-minute deduplication throttle.
+    // Broadcasts indicate actual changes, so bypass the passive timetable.
+    // In-flight deduplication still prevents overlapping reads.
     if (reason === "broadcast") {
-      if (!visible || requestsBlocked.current || inFlight ||
-          (lastPassiveSyncAt.current !== undefined && now - lastPassiveSyncAt.current < PASSIVE_REFRESH_INTERVAL_MS)) return;
+      if (!visible || requestsBlocked.current || inFlight) return;
     } else if (!mayRequestPassiveRefresh({
       now, lastAttemptAt: lastPassiveSyncAt.current, visible,
       requestsBlocked: requestsBlocked.current, inFlight,
