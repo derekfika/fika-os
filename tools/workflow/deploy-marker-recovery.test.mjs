@@ -219,6 +219,18 @@ test('later valid pending intent records in the same ledger do not masquerade as
   assert.equal(recoverDeployOperation(id, { reason: REASON }, deps).evidence.intents[0].terminal.kind, 'deploy');
 }));
 
+test('a later orphan intent cannot be hidden by an unrelated terminal ledger head', () => run(async f => {
+  const { id, file } = setup(f);
+  standardLedger(f, { entries: [BASE,
+    { seconds: 10, record: { kind: 'intent', state: 'PENDING', sourceSha: SHA.a, releaseId: 'r-a' } },
+    { seconds: 180, record: { kind: 'intent', state: 'PENDING', sourceSha: SHA.b, releaseId: 'r-b' } },
+    { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.a, releaseId: 'r-a' } },
+    { seconds: 7200, record: { kind: 'deploy', sourceSha: SHA.c, releaseId: 'r-unrelated' } },
+  ] });
+  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /Later intent .* has no matching terminal/);
+  assert.ok(existsSync(file));
+}));
+
 test('rollback and abandoned records are terminal; other record kinds are not', () => run(async f => {
   const { id } = setup(f);
   for (const kind of ['rollback','abandoned']) {
