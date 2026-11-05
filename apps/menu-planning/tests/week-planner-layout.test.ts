@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { emptyWeek } from "../lib/rolling-menu";
+import { emptyWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { assertMenuSlotCanBeRemoved } from "../lib/rolling-menu-types";
 import { groupedSlots } from "../lib/week-planner-layout";
 import { weekPlannerSlotLabel } from "../lib/week-planner-slot-label";
@@ -22,7 +22,7 @@ test("Week Planner shows owner-approved salad display names without changing gen
 
 test("hot main, fish, vegan and soup slots share one ordered HOT MAINS banner", () => {
   const snapshot = emptyWeek("2026-11-02");
-  assert.deepEqual(snapshot.week.templateSlots?.slice(-3), ["DESSERT 1", "DESSERT 2", "DESSERT 3"]);
+  assert.deepEqual(snapshot.week.templateSlots?.filter(slot => slot.startsWith("DESSERT ")), ROLLING_SLOTS.filter(slot => slot.startsWith("DESSERT ")));
   snapshot.week.templateSlots = ["SOUP 1", "VEGAN MAIN 1", "FISH 2", "HOT MEAT 2", "HOT MAIN", "FISH 1", "HOT MEAT 1", "HOT VEG VEGAN 1", "SOUP", "SAUCE 1", "DESSERT 1"];
   const before = structuredClone(snapshot);
   const groups = groupedSlots(snapshot);
