@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-05T20:34:50.137Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-05T20:56:01.555Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -294,6 +294,7 @@ Snapshot: 2026-11-05T20:34:50.137Z. The local governed registry remains authorit
 | menu-planning-hospitality-rotations | claude-rotations-architecture | apps/menu-planning, apps/integration-hub/lib, apps/integration-hub/app, apps/integration-hub/tests/hospitality-rotations.test.ts, apps/integration-hub/tests/hospitality-rotations-route.test.ts, apps/integration-hub/tests/hospitality-rotations.emulator.test.ts, apps/integration-hub/tests/hospitality-rotation-dishes.test.ts, apps/hospitality-booking/app/rotations, apps/hospitality-booking/tests/rotations-ui.test.ts, apps/shared | codex/menu-planning-hospitality-rotations | [#150](https://github.com/derekfika/fika-os/pull/150) | finished | 2026-10-30T07:15:18.506Z |
 | menu-portion-order-334 | luna-menu-portion-order-334 | apps/menu-planning/app/portion-planner.tsx, apps/menu-planning/lib/portion-menu-order.ts, apps/menu-planning/tests/portion-menu-order.test.ts, .changes/menu-planning/2026-11-05-portion-order-334.md | codex/menu-portion-order-334 | [#398](https://github.com/derekfika/fika-os/pull/398) | retired | 2026-11-05T18:49:20.893Z |
 | menu-portion-planner-keyboard-scroll | menu-issue-93 | apps/menu-planning, CHANGELOG.md | codex/menu-portion-planner-keyboard-scroll | [#94](https://github.com/derekfika/fika-os/pull/94) | finished | 2026-10-28T06:40:44.057Z |
+| menu-portion-resize-379 | codex-menu-portion-resize-379 | apps/menu-planning/app/portion-planner.tsx, apps/menu-planning/app/layout.tsx, apps/menu-planning/app/portion-planner-resize.css, apps/menu-planning/tests/portion-planner-resize.test.ts, apps/menu-planning/tests/e2e/portion-planner-resize.spec.ts | codex/menu-portion-resize-379 | [#405](https://github.com/derekfika/fika-os/pull/405) | active | 2026-11-05T20:44:20.166Z |
 | menu-prod-baseline-reconcile-recovery | luna-overnight-357-menu-baseline | tools/workflow/releases.mjs, tools/workflow/releases.test.mjs | codex/menu-prod-baseline-reconcile-recovery | [#377](https://github.com/derekfika/fika-os/pull/377) | retired | 2026-11-05T10:16:52.351Z |
 | menu-publish-hotfix | codex-menu-p0-111 | apps/menu-planning/lib/menu-publication.ts, apps/menu-planning/tests/publication-authority.test.ts, apps/menu-planning/tests/publication-canonical-lookup.emulator.test.ts | codex/menu-publish-hotfix | [#112](https://github.com/derekfika/fika-os/pull/112) | finished | 2026-10-28T20:02:47.799Z |
 | menu-publish-p0 | codex-menu-p0-111 | tools/incidents/menu-publish-p0, docs/incidents/2026-10-28-menu-publish-111.md | codex/menu-publish-p0 | — | finished | 2026-10-28T20:10:36.178Z |
@@ -325,6 +326,7 @@ Snapshot: 2026-11-05T20:34:50.137Z. The local governed registry remains authorit
 | overnight-no-key-audit | luna-overnight-357 | apps/menu-planning/app/allergen-checker.tsx | codex/overnight-no-key-audit | — | active | 2026-11-04T21:49:34.390Z |
 | overnight-policy-v31 | luna-overnight-357-policy | overnight.md | codex/overnight-policy-v31 | [#359](https://github.com/derekfika/fika-os/pull/359) | retired | 2026-11-04T22:11:53.311Z |
 | overnight-prod-serving-status | luna-overnight-357-release-status | docs/deployment/workflow.md | codex/overnight-prod-serving-status | — | retired | 2026-11-04T23:40:50.532Z |
+| p0-334-boxed-print | codex-p0-334-boxed-print | apps/cpu-production/app/ui/day-production-print.ts, apps/cpu-production/tests/day-production-print.test.ts, apps/cpu-production/tests/print/day-production-pdf.test.ts | codex/p0-334-boxed-print | [#404](https://github.com/derekfika/fika-os/pull/404) | retired | 2026-11-05T20:55:55.881Z |
 | p0-334-release-recovery | luna-p0-334-release-recovery | .changes/platform/p0-334-release-recovery.md | codex/p0-334-release-recovery | — | active | 2026-11-05T19:17:48.895Z |
 | pr-297-integration-alias | luna-pr297-integration | apps/menu-planning/app/planner-data.ts, apps/menu-planning/tests/planner-load-error.test.ts, .changes/menu-planning/2026-11-02-planner-load-timeout-275.md | codex/pr-297-integration-alias | [#300](https://github.com/derekfika/fika-os/pull/300) | retired | 2026-11-02T22:18:12.964Z |
 | pr-298-integration-alias | luna-pr298-integration | apps/menu-planning/app/catalogue-workspace.tsx, apps/menu-planning/tests/read-paths.test.ts, .changes/menu-planning/2026-11-02-dish-library-search-277.md | codex/pr-298-integration-alias | [#302](https://github.com/derekfika/fika-os/pull/302) | retired | 2026-11-02T22:23:26.329Z |
