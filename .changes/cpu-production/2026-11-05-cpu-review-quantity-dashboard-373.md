@@ -1,6 +1,6 @@
 # 2026-11-05 CPU dashboard review and quantity visibility (#373)
 
-Date: 2026-11-05  
+Date: 2026-11-05
 Task: CPU dashboard review and quantity visibility (#373)
 
 - Complexity: Medium. Recommended model: Luna. Reason: scoped CPU UI/presentation correction using existing canonical order state.
