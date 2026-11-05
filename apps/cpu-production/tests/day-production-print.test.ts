@@ -63,6 +63,8 @@ test("print HTML preserves every line and empty checkbox and has no interactive 
   assert.equal((html.match(/data-line-id=/g) || []).length, 100);
   assert.match(html, /Dish 99/);
   assert.match(html, /dashed/);
+  assert.match(html, /\.collection \.menu-section-row th\{[^}]*border:\.6pt solid #111/);
+  assert.match(html, /\.collection tr\{break-inside:avoid\}/);
   assert.match(paginateDayProduction.toString(), /Packed by/);
   assert.doesNotMatch(html, /<button|<script/);
   assert.match(html, /data-site-key="order:long"/);

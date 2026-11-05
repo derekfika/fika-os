@@ -8,6 +8,7 @@ import {
   paginateDayProduction,
   runSheetProductionPrintHtml,
 } from "../../app/ui/day-production-print";
+import { CANONICAL_MENU_SLOTS } from "../../../shared/menu-section-order";
 import type { ProductionOrder } from "../../lib/production-types";
 const day = "2026-10-23";
 const collection = (id: string, rows: number, long = false) =>
@@ -156,6 +157,112 @@ for (const scenario of cases)
       await browser.close();
     }
   });
+
+test("Chromium A4 PDF: canonical 29-slot categories are boxed and ordered", async () => {
+  const order = {
+    canonicalId: "order:synthetic-boxed-29-slot",
+    version: 1,
+    status: "planned",
+    serviceDate: day,
+    requiredBy: day + "T11:00:00Z",
+    serviceWindow: { startTime: "12:00" },
+    destinationOplocId: "oploc:synthetic-only",
+    destinationLabel: "SYNTHETIC - NOT FOR SERVICE",
+    serviceType: "Lunch",
+    origin: "menu_planning",
+    sourcePublicationId: "publication:synthetic-boxed-29-slot",
+    sourcePublicationDayId: "publication-day:synthetic-boxed-29-slot",
+    sourceVersion: 1,
+    lines: CANONICAL_MENU_SLOTS.map((slot, index) => ({
+      canonicalId: `line:synthetic-${index + 1}`,
+      sourceBookingLineId: `entry:synthetic-${index + 1}`,
+      itemName: `Synthetic ${slot.label} dish ${index + 1}`,
+      customerQuantity: 8 + (index % 6) * 4,
+      customerUnit: "portions",
+      productionQuantity: 8 + (index % 6) * 4,
+      productionUnit: "portions",
+      status: "ready",
+      sortOrder: index,
+      slot: slot.id,
+      canonicalSlotId: slot.id,
+      menuOrderVersion: "fika.menu-order.v1",
+      canonicalOrderIndex: slot.order,
+    })),
+  } as ProductionOrder;
+  const html = dayProductionPrintHtml([order], day, "SYNTHETIC UAT FIXTURE - NOT FOR SERVICE");
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.emulateMedia({ media: "screen" });
+    await page.setContent(html);
+    await page.addScriptTag({
+      content: "const __name = (fn) => fn; (" + paginateDayProduction.toString() + ")()",
+    });
+    const result = await page.evaluate(() => {
+      const output = document.getElementById("day-pages")!;
+      const sections = Array.from(output.querySelectorAll<HTMLElement>(".menu-section-row th"));
+      return {
+        rows: output.querySelectorAll("tr[data-line-id]").length,
+        slots: Array.from(output.querySelectorAll<HTMLElement>(".slot-label")).map((node) => node.textContent?.trim()),
+        sections: sections.map((node) => {
+          const style = getComputedStyle(node);
+          return {
+            label: node.textContent?.trim(),
+            borders: [
+              { width: Number.parseFloat(style.borderTopWidth), style: style.borderTopStyle },
+              { width: Number.parseFloat(style.borderRightWidth), style: style.borderRightStyle },
+              { width: Number.parseFloat(style.borderBottomWidth), style: style.borderBottomStyle },
+              { width: Number.parseFloat(style.borderLeftWidth), style: style.borderLeftStyle },
+            ],
+          };
+        }),
+        pageCount: output.querySelectorAll(".print-page").length,
+        scope: output.dataset.scope,
+        siteTitle: output.querySelector(".print-page h1")?.textContent,
+      };
+    });
+    assert.equal(result.rows, 29);
+    const expectedSections = [
+      "SALADS", "COLD PROTEINS", "HOT MAINS", "STARCH/SIDES", "GARNISHES", "SAUCES", "DESSERTS",
+    ];
+    assert.deepEqual([...new Set(result.sections.map((section) => section.label))], expectedSections);
+    assert.equal(result.slots.length, 29);
+    const labelsPerSection = new Map<string, number>();
+    for (const slot of CANONICAL_MENU_SLOTS) {
+      const key = `${slot.sectionId}:${slot.label}`;
+      labelsPerSection.set(key, (labelsPerSection.get(key) || 0) + 1);
+    }
+    const expectedSlots = CANONICAL_MENU_SLOTS.map((slot) => {
+      const key = `${slot.sectionId}:${slot.label}`;
+      const index = slot.id.match(/(\d+)$/)?.[1];
+      return labelsPerSection.get(key)! > 1 && index ? `${slot.label} ${index}` : slot.label;
+    });
+    assert.deepEqual(result.slots, expectedSlots);
+    for (const section of result.sections) {
+      assert.ok(section.borders.every((border) => border.width >= 0.5 && border.style === "solid"), `${section.label} should be visibly boxed on four sides`);
+    }
+    assert.match(result.scope || "", /SYNTHETIC/);
+    assert.match(result.siteTitle || "", /NOT FOR SERVICE/);
+    assert.equal(result.pageCount, 2, "29-slot canonical menu keeps its existing two-page A4 pagination");
+
+    const outputDir = path.resolve(process.env.CPU_PRINT_EVIDENCE_DIR || "test-results/cpu-print");
+    mkdirSync(outputDir, { recursive: true });
+    await page.emulateMedia({ media: "print" });
+    await page.pdf({
+      path: path.join(outputDir, "canonical-29-slot-boxed.pdf"),
+      format: "A4",
+      preferCSSPageSize: true,
+      printBackground: false,
+    });
+    await page.screenshot({
+      path: path.join(outputDir, "canonical-29-slot-boxed.png"),
+      fullPage: true,
+    });
+    writeFileSync(path.join(outputDir, "canonical-29-slot-boxed.json"), JSON.stringify(result, null, 2));
+  } finally {
+    await browser.close();
+  }
+});
 
 test("Chromium A4 print keeps every site/date group separate and labels continuation pages", async () => {
   const day2 = "2026-10-24";
