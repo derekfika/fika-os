@@ -201,7 +201,7 @@ function buildReconcilePlan(record, targetSha) {
   const unstagedPaths = nulPaths(run, ['diff', '--no-renames', '--name-only', '-z']);
   const untrackedPaths = nulPaths(run, ['ls-files', '--others', '--exclude-standard', '-z']);
   const dirty = [...new Set([...stagedPaths, ...unstagedPaths, ...untrackedPaths])];
-  const outside = dirty.filter(file => !scoped(file, record.scopes));
+  const outside = dirty.filter(file => !scoped(file, record.scopes) && !changelogPath(file));
   if (outside.length) throw Error(`Uncommitted changes outside leased scopes cannot be transferred: ${outside.join(', ')}`);
   const stagedPatch = patch(cwd, ['diff', '--cached', '--binary', '--full-index', 'HEAD']);
   const unstagedPatch = patch(cwd, ['diff', '--binary', '--full-index']);
@@ -260,7 +260,7 @@ export function reconcileWorkspace(name, options) {
       const paths = [...new Set([...nulPaths((...args) => repoCommand(directory, ...args), ['diff', '--no-renames', '--name-only', '-z', `${targetSha}...HEAD`]),
         ...nulPaths((...args) => repoCommand(directory, ...args), ['diff', '--no-renames', '--name-only', '-z', 'HEAD']),
         ...nulPaths((...args) => repoCommand(directory, ...args), ['ls-files', '--others', '--exclude-standard', '-z'])])];
-      const bad = paths.filter(file => !scoped(file, source.scopes)); if (bad.length) throw Error(`Replacement diff exceeds leased scope: ${bad.join(', ')}`);
+      const bad = paths.filter(file => !scoped(file, source.scopes) && !changelogPath(file)); if (bad.length) throw Error(`Replacement diff exceeds leased scope: ${bad.join(', ')}`);
       journal.phase = 'validated'; journal.resultPaths = paths; save(journalFile, journal);
       const freshSource = jsonFile(sourceLeaseFile);
       if (sha256(readFileSync(sourceLeaseFile)) !== sourceLeaseDigest || freshSource.owner !== options.owner || freshSource.state !== 'active') throw Error('Source lease changed during reconciliation; replacement retained for recovery, no ownership transition performed');
