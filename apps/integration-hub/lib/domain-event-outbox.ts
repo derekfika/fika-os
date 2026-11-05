@@ -1,5 +1,6 @@
 import type { Transaction } from "firebase-admin/firestore";
 import { db } from "./firebase-admin";
+import { stageHospitalityMirrorIntent } from "./cpux-mirror/queue";
 import type { DurableDomainEvent } from "../../shared/domain-events";
 
 const events = () => db.collection("fikaDomainEventsV1");
@@ -11,6 +12,7 @@ const events = () => db.collection("fikaDomainEventsV1");
  */
 export function stageDomainEvent(transaction: Transaction, event: DurableDomainEvent) {
   transaction.set(events().doc(event.eventId), event);
+  stageHospitalityMirrorIntent(transaction, event);
 }
 
 export async function listDomainEvents(limit = 500) {

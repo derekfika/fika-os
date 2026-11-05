@@ -47,6 +47,10 @@ export async function forwardDeliveredInInvalidation(event: DurableDomainEvent) 
   }
 }
 export async function forwardProductionMaterialisationEvent(event: DurableDomainEvent) {
+  if (event.eventType === "cpux.calendar.delivered-in") {
+    const { deliverDeliveredInMirror } = await import("./cpux-mirror/service");
+    return deliverDeliveredInMirror(event);
+  }
   if (event.eventType !== "production.materialise") return;
   await Promise.all([forwardProductionMaterialisation(event.payload as ExternalProductionMaterialisation), forwardDeliveredInInvalidation(event)]);
 }

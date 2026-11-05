@@ -1,3 +1,6 @@
+import { mirrorEnabled } from "../../shared/cpux-calendar/google";
+import { londonServiceDate } from "../../shared/cpux-calendar/contract";
+import { DELIVERED_IN_MIRROR_EVENT } from "./cpux-mirror/source";
 import { menuDestination, menuDestinationKey, type MenuDestination } from "@fika/server-shared/menu-destination";
 import type { ExplicitRowReview, NoKeyDeclarationRecord } from "../../shared/allergen-declaration";
 import { hospitalityArchiveBase } from "./hospitality-archive-url";
@@ -507,6 +510,7 @@ function appendPublicationEvents(
   day: PublishedMenuDay,
   action: "published" | "amended" | "withdrawn",
   actor: string,
+  options: { repair?: true } = {},
 ) {
   stored.events ||= [];
   const eventIds: string[] = [];
@@ -535,6 +539,16 @@ function appendPublicationEvents(
       },
     }),
   );
+  const today = !options.repair && mirrorEnabled() ? londonServiceDate(new Date(occurredAt)) : undefined;
+  if (today && day.date >= today) {
+    addEvent(createDomainEvent({
+      eventType: DELIVERED_IN_MIRROR_EVENT,
+      sourceAggregateId: `${publication.publicationId}:${day.publicationDayId}:${action}`,
+      sourceVersion: day.version,
+      occurredAt,
+      payload: { publicationId: publication.publicationId, publicationDayId: day.publicationDayId, serviceDate: day.date, actor },
+    }));
+  }
   const currentDestinations = [
     ...new Set(
       day.entries.flatMap((entry) =>
@@ -1095,6 +1109,7 @@ export async function repairPublishedMenuPublication(publicationId: string) {
              day,
              day.version > 1 ? "amended" : "published",
              target.audit.at(-1)?.by || "publication-repair",
+             { repair: true },
              ),
            );
         for (const event of stored.events || [])
