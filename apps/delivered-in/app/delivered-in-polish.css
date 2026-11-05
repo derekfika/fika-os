@@ -15,3 +15,4 @@
 .brand-lockup:before{content:"";display:block;width:75px;height:30px;background:url('/fika-logo.png') left top/75px auto no-repeat}.brand-lockup:after{display:none}.brand-divider{width:auto;height:auto;border:0;background:none}.brand-divider:before{content:'OS';color:var(--purple);font-size:.75rem;font-weight:900;letter-spacing:.05em}
 
 @media(max-width:680px){.compact-header{min-width:0}.brand-lockup{min-width:0;white-space:nowrap}.header-actions{min-width:0;max-width:60vw}.site-picker{min-width:0}.site-picker select{width:min(40vw,150px);min-width:0}}
+.allergen-matrix thead th:first-child,.allergen-matrix tbody th,.ops-allergen-table thead th:first-child,.ops-allergen-table tbody th:first-child{width:300px;min-width:300px;max-width:360px;white-space:normal;overflow-wrap:anywhere;word-break:normal}

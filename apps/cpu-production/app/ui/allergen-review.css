@@ -15,3 +15,5 @@ button.cpu-allergen-state--conflict:focus-visible{outline-offset:2px}
 .cpu-allergen-row-status--success{color:var(--fika-status-success,#1d6b3a)}
 .cpu-allergen-row-status--warning{color:var(--fika-status-warning,#704800)}
 .cpu-allergen-row-status--danger{color:var(--fika-status-danger,#a21d47)}
+.cpu-allergen-table thead th:first-child,
+.cpu-allergen-table tbody th{width:300px;min-width:300px;max-width:360px;white-space:normal;overflow-wrap:anywhere;word-break:normal}

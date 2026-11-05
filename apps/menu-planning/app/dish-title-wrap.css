@@ -1,0 +1,29 @@
+/* Keep long dish names readable in portion planning and the Menu allergen checker. */
+.portion-matrix thead th:first-child,
+.portion-matrix tbody th {
+  width: 300px;
+  min-width: 300px;
+  max-width: 360px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.operational-allergen-matrix thead th:first-child,
+.operational-allergen-matrix tbody th {
+  width: 300px;
+  min-width: 300px;
+  max-width: 360px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+@media (max-width: 600px) {
+  .portion-matrix thead th:first-child,
+  .portion-matrix tbody th {
+    width: 220px;
+    min-width: 220px;
+    max-width: 260px;
+  }
+}
