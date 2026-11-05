@@ -9,6 +9,7 @@ import {
   cpuSourceLabel,
 } from "../../lib/production-presentation";
 import { orderedQuantityLabel } from "../../lib/ordered-quantity";
+import { runSheetMenuSections } from "../../lib/menu-run-sheet-order";
 export function collectionOrders(orders: ProductionOrder[]) {
   const unique = new Map<string, ProductionOrder>();
   for (const order of orders)
@@ -51,6 +52,12 @@ export function collectionDate(order: ProductionOrder) {
       : "Date TBC")
   );
 }
+function collectionLineRows(order: ProductionOrder, escape: (value: unknown) => string) {
+  return runSheetMenuSections(order).flatMap(section => [
+    '<tr class="menu-section-row"><th colspan="3">' + escape(section.label) + '</th></tr>',
+    ...section.lines.map(({ line, slotLabel }) => '<tr><td class="check"><i class="box"></i></td><th>' + (slotLabel ? '<small class="slot-label">' + escape(slotLabel) + '</small> ' : '') + escape(line.itemName) + '</th><td class="quantity"><strong>' + escape(collectionQuantity(line)) + '</strong></td></tr>'),
+  ]).join("");
+}
 const escape = (s: unknown) =>
   String(s ?? "").replace(
     /[&<>"']/g,
@@ -60,7 +67,7 @@ const escape = (s: unknown) =>
       ]!,
   );
 const css =
-  "@page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;background:white;color:black;font:11pt/1.35 Arial,sans-serif}h1{font-size:22pt;margin:0 0 4mm}p{margin:2mm 0}article{border:1pt dashed black;padding:5mm}table{width:100%;border-collapse:collapse;margin-top:5mm}th,td{text-align:left;padding:3mm 2mm;border-bottom:.5pt solid #999;vertical-align:top;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid}th.quantity,td.quantity{width:28%;text-align:right}td.quantity strong{display:block}th.check,td.check{width:16mm;white-space:nowrap}i.box{display:inline-block;width:5mm;height:5mm;border:1pt solid black}footer{break-inside:avoid;margin-top:10mm;display:flex;gap:10mm;flex-wrap:wrap}.notes{height:13mm;border-bottom:.5pt solid #999}caption{text-align:left;font-weight:bold;margin-top:4mm}";
+  "@page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;background:white;color:black;font:11pt/1.35 Arial,sans-serif}h1{font-size:22pt;margin:0 0 4mm}p{margin:2mm 0}article{border:1pt dashed black;padding:5mm}table{width:100%;border-collapse:collapse;margin-top:5mm}th,td{text-align:left;padding:3mm 2mm;border-bottom:.5pt solid #999;vertical-align:top;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid}.menu-section-row th{padding-top:3mm;border-bottom:1pt solid black;font-size:9pt;font-weight:bold;letter-spacing:.04em}.slot-label{font-size:8pt;font-weight:bold}th.quantity,td.quantity{width:28%;text-align:right}td.quantity strong{display:block}th.check,td.check{width:16mm;white-space:nowrap}i.box{display:inline-block;width:5mm;height:5mm;border:1pt solid black}footer{break-inside:avoid;margin-top:10mm;display:flex;gap:10mm;flex-wrap:wrap}.notes{height:13mm;border-bottom:.5pt solid #999}caption{text-align:left;font-weight:bold;margin-top:4mm}";
 const doc = (title: string, body: string) =>
   '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>' +
   escape(title) +
@@ -92,15 +99,7 @@ export function collectionPrintHtml(order: ProductionOrder) {
           .join(" · "),
       ) +
       '</p><table><thead><tr><th class="check">Check</th><th>Dish</th><th class="quantity">Customer ordered quantity</th></tr></thead><tbody>' +
-      order.lines
-        .map(
-          (l) =>
-            '<tr><td class="check"><i class="box"></i></td><th>' +
-            escape(l.itemName) +
-            '</th><td class="quantity">' +
-            "<strong>" + escape(collectionQuantity(l)) + "</strong></td></tr>",
-        )
-        .join("") +
+      collectionLineRows(order, escape) +
       "</tbody></table><footer><span>Packed by: __________________</span><span>Checked by: __________________</span><span>Date / time: ________________</span></footer></article>",
   );
 }
