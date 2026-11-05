@@ -1,22 +1,41 @@
 "use client";
-import { useDeferredValue, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { RecipeGroup, RecipeIndex, RecipeRecord } from "@/lib/food-data/recipes";
 import type { FoodManifest } from "@/lib/food-data/manifest";
+import type { CompositionLoadResult } from "@/lib/food-data/composition-loader";
+import { reconcileCompositionBundle } from "@/lib/food-data/compositions";
+import type { IngredientRecord } from "@/lib/food-data/ingredients";
 import styles from "./food-data.module.css";
 import VirtualList from "./VirtualList";
 import { Allergens, Field, Nutrition, blank, integer } from "./shared";
 
 const COLS = "minmax(0,4fr) minmax(0,1fr) minmax(0,2fr)";
 
-export default function RecipeLibrary({ index, manifest }: { index: RecipeIndex; manifest: FoodManifest }) {
+export default function RecipeLibrary({ index, manifest, composition, compositionError, ingredients }: { index: RecipeIndex; manifest: FoodManifest; composition?: CompositionLoadResult; compositionError?: string; ingredients: IngredientRecord[] }) {
   const [text, setText] = useState(""); const [selected, setSelected] = useState<string | undefined>();
+  const [activeLibrary, setActiveLibrary] = useState<"metadata" | "compositions">("metadata");
   const deferred = useDeferredValue(text); const detail = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => index.search(deferred), [index, deferred]);
   const activeIndex = selected === undefined ? -1 : groups.findIndex(group => group.name === selected);
   const group = activeIndex === -1 ? undefined : groups[activeIndex];
 
+  const compositionData = useMemo(() => composition ? reconcileCompositionBundle(composition.bundle, ingredients) : undefined, [composition, ingredients]);
+  const compositionGroups = useMemo(() => compositionData?.groups.filter(({ recipe }) => !deferred || `${recipe.recipeName} ${recipe.reference} ${recipe.list}`.toLocaleLowerCase("en-GB").includes(deferred.toLocaleLowerCase("en-GB"))) || [], [compositionData, deferred]);
+  const handleLibraryTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft" && event.key !== "Home" && event.key !== "End") return;
+    event.preventDefault();
+    const next = event.key === "Home" ? "metadata" : event.key === "End" ? "compositions" : activeLibrary === "metadata" ? "compositions" : "metadata";
+    setActiveLibrary(next);
+    document.getElementById(next === "metadata" ? "tab-legacy-recipes" : "tab-recipe-compositions")?.focus();
+  };
+
   return <section aria-label="Recipe Library">
-    <p className={`${styles.note} ${styles.noteWarn}`} role="note"><strong>Recipe metadata, not production recipes.</strong> The Kafoodle recipe export carries names, allergens, nutrition, yields and costing figures. It has no ingredient quantities or method, so nothing here can be used to prepare a dish, and these records are not part of the FIKA OS Dish Library.</p>
+    <div className={styles.tabs} role="tablist" aria-label="Recipe data versions">
+      <button id="tab-legacy-recipes" role="tab" aria-selected={activeLibrary === "metadata"} aria-controls="panel-legacy-recipes" tabIndex={activeLibrary === "metadata" ? 0 : -1} className={styles.tab} onClick={() => setActiveLibrary("metadata")} onKeyDown={handleLibraryTabKeyDown}>Legacy metadata snapshot</button>
+      <button id="tab-recipe-compositions" role="tab" aria-selected={activeLibrary === "compositions"} aria-controls="panel-recipe-compositions" tabIndex={activeLibrary === "compositions" ? 0 : -1} className={styles.tab} onClick={() => setActiveLibrary("compositions")} onKeyDown={handleLibraryTabKeyDown}>Full compositions v2</button>
+    </div>
+    <div id="panel-legacy-recipes" role="tabpanel" aria-labelledby="tab-legacy-recipes" hidden={activeLibrary !== "metadata"}>
+    <p className={`${styles.note} ${styles.noteWarn}`} role="note"><strong>Legacy recipe metadata.</strong> The 31 October snapshot carries names, allergens, nutrition, yields and costing figures, but no ingredient quantities or method. It remains available as exported and is not part of the FIKA OS Dish Library.</p>
     <form className={styles.toolbar} role="search" style={{ gridTemplateColumns: "minmax(0,2fr) auto" }} onSubmit={event => event.preventDefault()}>
       <Field id="rl-search" label="Search recipe name"><input id="rl-search" type="search" value={text} onChange={event => setText(event.target.value)} autoComplete="off" /></Field>
       <button type="button" className={styles.button} disabled={!text} onClick={() => setText("")}>Clear search</button>
@@ -41,7 +60,62 @@ export default function RecipeLibrary({ index, manifest }: { index: RecipeIndex;
         {group ? <RecipeDetail group={group} index={index} manifest={manifest} /> : <div><h2>Recipe detail</h2><p className={styles.muted}>Select a recipe to compare its exported rows, allergens, nutrition, yields and costing.</p></div>}
       </div>
     </div>
+    </div>
+    <div id="panel-recipe-compositions" role="tabpanel" aria-labelledby="tab-recipe-compositions" hidden={activeLibrary !== "compositions"}>
+      <CompositionLibrary composition={composition} error={compositionError} data={compositionData} groups={compositionGroups} searchText={text} onSearch={setText} />
+    </div>
   </section>;
+}
+
+function CompositionLibrary({ composition, error, data, groups, searchText, onSearch }: { composition?: CompositionLoadResult; error?: string; data?: ReturnType<typeof reconcileCompositionBundle>; groups: NonNullable<ReturnType<typeof reconcileCompositionBundle>>["groups"]; searchText: string; onSearch: (value: string) => void }) {
+  const [selected, setSelected] = useState<number>();
+  const active = selected === undefined ? -1 : groups.findIndex(({ recipe }) => recipe.sourceGroupIndex === selected);
+  const selectedGroup = active >= 0 ? groups[active] : undefined;
+  if (!composition || !data) return <div className={styles.state} role="status"><h2>Full recipe compositions aren’t available</h2><p>{error || "The separate v2 snapshot has not been imported to this environment yet."} The legacy metadata snapshot remains available above.</p></div>;
+  return <>
+    <p className={`${styles.note} ${styles.noteWarn}`} role="note"><strong>Review snapshot · NOT APPROVED FOR FOOD LABELS.</strong> This 3 November export preserves source group boundaries and rows. It is not chef approved; allergen declarations, preparation, yield, units and food safety require qualified review.</p>
+    <p className={styles.count} role="status" aria-live="polite">{integer.format(groups.length)} of {integer.format(data.groups.length)} source recipe groups · {integer.format(composition.bundle.sourceRows)} ingredient lines · {integer.format(data.counts.matched)} uniquely linked by supplier code · {integer.format(data.counts.ambiguous)} ambiguous · {integer.format(data.counts.missing)} unmatched · {integer.format(data.counts.nestedRecipe)} nested recipe references.</p>
+    {composition.warning && <p className={`${styles.note} ${styles.noteWarn}`} role="status">{composition.warning}</p>}
+    {data.counts.ambiguous + data.counts.missing + data.counts.nestedRecipe > 0 && <p className={`${styles.note} ${styles.noteWarn}`} role="note">Ingredient names are never used to decide a link. Ambiguous, missing and nested recipe references remain explicitly flagged. No allergen or declaration is inferred.</p>}
+    <form className={styles.toolbar} role="search" style={{ gridTemplateColumns: "minmax(0,2fr) auto" }} onSubmit={event => event.preventDefault()}>
+      <Field id="comp-search" label="Search recipe name, reference or list"><input id="comp-search" type="search" value={searchText} onChange={event => onSearch(event.target.value)} autoComplete="off" /></Field>
+      <span className={`${styles.badge} ${styles.badgeInfo}`}>Snapshot {composition.manifest.exportDate}</span>
+    </form>
+    <div className={styles.layout}>
+      <div className={styles.listCard} aria-label="Composition source groups">
+        {groups.length === 0 ? <div className={styles.state}><h2>No composition groups match</h2><p>Try another search or use the search field in the legacy recipe list.</p></div> : groups.map(({ recipe }) => <button key={recipe.sourceGroupIndex} type="button" className={styles.compositionItem} aria-current={selected === recipe.sourceGroupIndex ? "true" : undefined} onClick={() => setSelected(recipe.sourceGroupIndex)}>
+          <strong>{recipe.recipeName || "(no name)"}</strong><span>Group {recipe.sourceGroupIndex + 1} · rows {recipe.sourceRowStart}–{recipe.sourceRowEnd}</span><span>Reference {recipe.reference || "not recorded"} · List {recipe.list || "not recorded"}</span>
+        </button>)}
+      </div>
+      <div className={styles.detail} tabIndex={-1} role="region" aria-label="Recipe composition detail">
+        {selectedGroup ? <CompositionDetail group={selectedGroup} exportDate={composition.manifest.exportDate} /> : <div><h2>Recipe composition</h2><p className={styles.muted}>Select a source group to inspect every ingredient line, quantity, unit and supplier identifier.</p></div>}
+      </div>
+    </div>
+  </>;
+}
+
+function CompositionDetail({ group, exportDate }: { group: NonNullable<ReturnType<typeof reconcileCompositionBundle>>["groups"][number]; exportDate: string }) {
+  const { recipe, lines } = group;
+  const steps = Object.entries(recipe.metadata).filter(([key, value]) => /^step\s*\d+/i.test(key) && value.trim());
+  return <div>
+    <h2>{recipe.recipeName || "(no name)"}</h2>
+    <p className={styles.muted}>Source group {recipe.sourceGroupIndex + 1} · {recipe.reference ? `Reference ${recipe.reference}` : "No reference"} · {recipe.list ? `List ${recipe.list}` : "No list"} · Kafoodle snapshot {exportDate}</p>
+    <p className={`${styles.note} ${styles.noteWarn}`}><strong>NOT APPROVED FOR FOOD LABELS.</strong> This source group does not certify ingredient declarations, allergens, yield, preparation completeness or food-safety compliance.</p>
+    <h3>Ingredients ({lines.length} source lines)</h3>
+    <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th scope="col">Source row</th><th scope="col">Ingredient</th><th scope="col">Ingredient ID</th><th scope="col">Supplier code</th><th scope="col">Quantity</th><th scope="col">Unit</th><th scope="col">Reference check</th></tr></thead>
+      <tbody>{lines.map(({ line, match }) => <tr key={line.sourceRow}><th scope="row">{line.sourceRow}</th><td>{line.ingredientName || <span className={styles.muted}>not recorded</span>}{match.status === "matched" && <div className={styles.muted}>v1 product: {match.candidate.name || "(no product name)"}{match.candidate.productCode ? ` · product code ${match.candidate.productCode}` : ""}{match.candidate.supplier ? ` · ${match.candidate.supplier}` : ""}</div>}{match.status === "matched" && match.candidate.declaration && <div className={styles.muted}>Product declaration as exported: {match.candidate.declaration}</div>}</td><td>{line.ingredientId || <span className={styles.muted}>not recorded</span>}</td><td>{line.supplierCode || <span className={styles.muted}>not recorded</span>}{line.supplierName && <div className={styles.muted}>{line.supplierName}</div>}</td><td>{line.quantityRaw || <span className={styles.muted}>not recorded</span>}</td><td>{line.unitRaw || <span className={styles.muted}>not recorded</span>}</td><td><MatchStatus status={match.status} candidates={match.status === "ambiguous" ? match.candidates.length : undefined} /></td></tr>)}</tbody>
+    </table></div>
+    <h3>Preparation text</h3>
+    {steps.length ? <ol>{steps.map(([key, value]) => <li key={key}><strong>{key}:</strong> {value}</li>)}</ol> : <p className={`${styles.note} ${styles.noteWarn}`}>No preparation steps are recorded for this group.</p>}
+    <p className={styles.muted}>Exported fields and line order are preserved. Units are shown exactly as exported; no conversion, scaling, ingredient order change or serving yield is inferred.</p>
+  </div>;
+}
+
+function MatchStatus({ status, candidates }: { status: "matched" | "ambiguous" | "missing" | "nested-recipe"; candidates?: number }) {
+  if (status === "matched") return <span className={`${styles.badge} ${styles.badgeOk}`}>Unique supplier code match</span>;
+  if (status === "ambiguous") return <span className={`${styles.badge} ${styles.badgeWarn}`}>Ambiguous · {candidates} candidates</span>;
+  if (status === "nested-recipe") return <span className={`${styles.badge} ${styles.badgeWarn}`}>Recipe reference · review</span>;
+  return <span className={`${styles.badge} ${styles.badgeWarn}`}>Unmatched · review</span>;
 }
 
 function RecipeDetail({ group, index, manifest }: { group: RecipeGroup; index: RecipeIndex; manifest: FoodManifest }) {

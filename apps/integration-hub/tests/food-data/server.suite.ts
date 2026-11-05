@@ -1,21 +1,27 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { foodDataConfig } from "../../lib/food-data/config";
+import { foodDataConfig, recipeCompositionConfig } from "../../lib/food-data/config";
 import { FoodDataError, datasetVersion } from "../../lib/food-data/manifest";
-import { handleFoodDataBundle, handleFoodDataManifest, type FoodDataServerDeps } from "../../lib/food-data/service";
+import { handleCompositionBundle, handleCompositionManifest, handleFoodDataBundle, handleFoodDataManifest, type FoodDataServerDeps } from "../../lib/food-data/service";
 import { defaultFiles, makeManifest } from "./fixtures";
 
 const files = defaultFiles(); const manifest = makeManifest(files);
+const compositionJson = Buffer.from(JSON.stringify({ schemaVersion: 2, dataset: "kafoodle-recipe-compositions", exportDate: "2026-11-03", sourceFile: "source.csv", sourceCsvSha256: "c".repeat(64), sourceColumns: [], sourceRows: 0, recipes: [], labelSafetyStatus: "NOT_APPROVED_FOR_FOOD_LABELS" }));
+const compositionGzip = gzipSync(compositionJson);
+const compositionManifest = { schemaVersion: 2, dataset: "kafoodle-recipe-compositions", exportDate: "2026-11-03", file: { object: "recipe-compositions.json.gz", sourceCsvSha256: "c".repeat(64), sourceCsvFilename: "source.csv", columns: 0, sourceRows: 0, recipeGroups: 0, distinctRecipeNames: 0, jsonBytes: compositionJson.length, gzipBytes: compositionGzip.length, jsonSha256: createHash("sha256").update(compositionJson).digest("hex"), gzipSha256: createHash("sha256").update(compositionGzip).digest("hex"), status: "unreviewed", labelSafetyStatus: "NOT_APPROVED_FOR_FOOD_LABELS" } };
 function harness(overrides: Partial<{ enabled: boolean; authenticated: boolean; objects: Record<string, Uint8Array> }> = {}) {
   const reads: string[] = []; const counts = { authenticate: 0 };
   const objects: Record<string, Uint8Array> = overrides.objects ?? { "manifest.json": Buffer.from(JSON.stringify(manifest)), "ingredients.json.gz": files.ingredients.gzip, "recipes.json.gz": files.recipes.gzip };
+  const compObjects: Record<string, Uint8Array> = { "manifest.json": Buffer.from(JSON.stringify(compositionManifest)), "recipe-compositions.json.gz": compositionGzip };
   const deps: FoodDataServerDeps = {
     config: { enabled: overrides.enabled ?? true, bucket: "b", prefix: "p/" },
     async authenticate() { counts.authenticate++; if (overrides.authenticated === false) throw new FoodDataError("Sign in", "FOOD_DATA_UNAUTHENTICATED", 401); return { identityId: "identity:a" }; },
     store: () => ({ async read(name) { reads.push(name); const bytes = objects[name]; if (!bytes) throw new FoodDataError("missing", "FOOD_DATA_OBJECT_MISSING", 404); return bytes; } }),
+    compositionStore: () => ({ async read(name) { reads.push(`compositions/${name}`); const bytes = compObjects[name]; if (!bytes) throw new FoodDataError("missing", "FOOD_DATA_OBJECT_MISSING", 404); return bytes; } }),
   };
   return { deps, reads, counts };
 }
@@ -29,6 +35,22 @@ test("food data server: authorised manifest request is one small object read and
   const body = await response.json() as { identityScope: string; readOnly: boolean; manifest: { snapshot: string; pricing: { priceEffectiveDate: null } } };
   assert.equal(body.identityScope, "identity:a"); assert.equal(body.readOnly, true); assert.equal(body.manifest.pricing.priceEffectiveDate, null);
   assert.deepEqual(h.reads, ["manifest.json"]);
+});
+
+test("composition v2 server: authenticated manifest and bundle read only their separate immutable prefix objects", async () => {
+  const h = harness();
+  const response = await handleCompositionManifest(get("/api/food-data/compositions/manifest"), h.deps);
+  assert.equal(response.status, 200);
+  assert.deepEqual(h.reads, ["compositions/manifest.json"]);
+  const version = `${compositionManifest.exportDate}:${compositionManifest.file.gzipSha256}`;
+  const bundle = await handleCompositionBundle(get(`/api/food-data/compositions/bundle?version=${encodeURIComponent(version)}`), h.deps);
+  assert.equal(bundle.status, 200);
+  assert.equal(bundle.headers.get("content-encoding"), null);
+  assert.deepEqual(Buffer.from(await bundle.arrayBuffer()), compositionGzip);
+  assert.deepEqual(h.reads, ["compositions/manifest.json", "compositions/manifest.json", "compositions/recipe-compositions.json.gz"]);
+  const denied = harness({ authenticated: false });
+  assert.equal((await handleCompositionManifest(get("/m"), denied.deps)).status, 401);
+  assert.deepEqual(denied.reads, [], "refused sessions cause zero composition object reads");
 });
 
 test("food data server: refused callers cause zero storage reads", async () => {
@@ -98,6 +120,13 @@ test("food data config: staging and local only, pinned prefix, kill switch", () 
   assert.equal(foodDataConfig({ FIKA_RUNTIME_MODE: "staging", FIKA_FOOD_DATA_ENABLED: "false" }).enabled, false);
   assert.equal(foodDataConfig({ FIKA_RUNTIME_MODE: "staging", FIKA_FOOD_DATA_PREFIX: "../x/" }).enabled, false);
   assert.equal(foodDataConfig({ FIKA_RUNTIME_MODE: "staging" }).prefix, "kafoodle/v1/2026-10-31/");
+});
+
+test("composition v2 config: fixed date prefix, independent kill switch and production disabled", () => {
+  assert.equal(recipeCompositionConfig({ FIKA_RUNTIME_MODE: "staging" }).prefix, "kafoodle/compositions/v2/2026-11-03/");
+  assert.equal(recipeCompositionConfig({ FIKA_RUNTIME_MODE: "staging", FIKA_FOOD_COMPOSITIONS_PREFIX: "../v1/" }).enabled, false);
+  assert.equal(recipeCompositionConfig({ FIKA_RUNTIME_MODE: "staging", FIKA_FOOD_COMPOSITIONS_ENABLED: "false" }).enabled, false);
+  assert.equal(recipeCompositionConfig({ FIKA_RUNTIME_MODE: "production" }).enabled, false);
 });
 
 test("food data isolation: the feature has no Firestore catalogue access and touches no existing domain module", () => {
