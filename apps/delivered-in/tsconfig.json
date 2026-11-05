@@ -25,7 +25,11 @@
         "name": "next"
       }
     ],
-    "paths": { "@/*": ["./*"] },
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"],
+      "zod": ["./node_modules/zod"]
+    },
     "incremental": true,
     "allowJs": true
   },
