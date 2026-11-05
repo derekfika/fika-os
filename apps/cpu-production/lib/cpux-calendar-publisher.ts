@@ -38,12 +38,14 @@ export function cpuXCalendarBackfillEnabled(env: CpuXCalendarRuntimeEnvironment 
 type CalendarOperation = "upsert" | "delete";
 type CalendarState = {
   canonicalId: string;
+  desiredGeneration?: number;
   desiredVersion: number;
   desiredOperation: CalendarOperation;
   calendarEventId: string;
   publishedVersion?: number;
+  publishedCanonicalId?: string;
   publishedOperation?: CalendarOperation;
-  claim?: { id: string; version: number; expiresAt: string };
+  claim?: { id: string; canonicalId?: string; version: number; expiresAt: string };
   updatedAt: string;
 };
 
@@ -76,10 +78,23 @@ export function cpuxCalendarEventId(canonicalId: string) {
   return `fika${safeDocumentId(canonicalId)}`;
 }
 
-export function shouldQueueCpuXCalendarOrder(current: Pick<CalendarState, "desiredVersion"> | undefined, order: Pick<ProductionOrder, "version" | "status" | "supersededBy" | "lines">) {
+/** Hospitality's base handoff ID survives the owner's replacement-order amendment workflow. */
+export function cpuXCalendarOrderIdentity(order: Pick<ProductionOrder, "canonicalId" | "origin" | "sourceBookingId">) {
+  if (order.origin !== "hospitality_booking") return { canonicalId: order.canonicalId, generation: 1 };
+  const base = `production-order:v1:${order.sourceBookingId}`;
+  const suffix = order.canonicalId.slice(base.length);
+  if (!order.sourceBookingId.startsWith("booking:") || !order.canonicalId.startsWith(base) || (suffix && !/^:r[1-9]\d*$/.test(suffix))) {
+    throw Object.assign(new Error("The Hospitality Production Order lineage could not be verified for Calendar publication."), { status: 422 });
+  }
+  const generation = suffix ? Number(suffix.slice(2)) : 1;
+  if (!Number.isSafeInteger(generation) || generation < (suffix ? 2 : 1)) throw new Error("The Hospitality Production Order generation is invalid.");
+  return { canonicalId: base, generation };
+}
+
+export function shouldQueueCpuXCalendarOrder(current: (Pick<CalendarState, "desiredVersion"> & Partial<Pick<CalendarState, "desiredGeneration">>) | undefined, order: Pick<ProductionOrder, "version" | "status" | "supersededBy" | "lines">, generation = 1) {
   const operation = isCpuXCalendarOrderEligible(order) ? "upsert" : "delete";
   if (!current && operation === "delete") return false;
-  return !current || order.version > current.desiredVersion;
+  return !current || generation > (current.desiredGeneration || 1) || (generation === (current.desiredGeneration || 1) && order.version > current.desiredVersion);
 }
 
 function hasSandwichWorkstream(order: Pick<ProductionOrder, "lines">) {
@@ -89,7 +104,7 @@ function hasSandwichWorkstream(order: Pick<ProductionOrder, "lines">) {
 export function isCpuXCalendarOrderEligible(order: Pick<ProductionOrder, "status" | "supersededBy" | "lines">) {
   // A canonical Production Order only exists after the upstream hand-off. Its
   // local planning status may still be "draft" or "needs_review" at that point.
-  return !["cancelled", "rejected"].includes(order.status) && !order.supersededBy && hasSandwichWorkstream(order);
+  return !["cancelled", "rejected", "amended"].includes(order.status) && !order.supersededBy && hasSandwichWorkstream(order);
 }
 
 function operationFor(order: ProductionOrder): CalendarOperation {
@@ -125,16 +140,26 @@ export async function stageCpuXCalendarOrder(transaction: Transaction, order: Pr
   if (!order.canonicalId || !Number.isInteger(order.version) || order.version < 1) {
     throw new Error("A canonical Production Order identity and positive version are required for CPUX Calendar delivery.");
   }
-  const ref = stateRef(order.canonicalId);
+  const identity = cpuXCalendarOrderIdentity(order);
+  const ref = stateRef(identity.canonicalId);
   const snapshot = await transaction.get(ref);
   const current = snapshot.exists ? snapshot.data() as CalendarState : undefined;
   const operation = operationFor(order);
-  if (!shouldQueueCpuXCalendarOrder(current, order)) return current ? { status: "already-current" as const } : { status: "skipped" as const };
+  if (!shouldQueueCpuXCalendarOrder(current, order, identity.generation)) {
+    // Retry the existing durable delivery after a failed/unfinished attempt. Never
+    // create another event or let an older generation replay over its successor.
+    if (current?.canonicalId === order.canonicalId && current.desiredVersion === order.version
+      && (current.publishedVersion !== order.version || (current.publishedCanonicalId || identity.canonicalId) !== order.canonicalId || current.publishedOperation !== operation)) {
+      return { status: "queued" as const, eventId: deliveryEventId(order), calendarEventId: current.calendarEventId };
+    }
+    return current ? { status: "already-current" as const } : { status: "skipped" as const };
+  }
 
-  const eventId = cpuxCalendarEventId(order.canonicalId);
+  const eventId = cpuxCalendarEventId(identity.canonicalId);
   await stageCpuDeliveries(transaction, [deliveryFor(order, operation)]);
   transaction.set(ref, {
     canonicalId: order.canonicalId,
+    desiredGeneration: identity.generation,
     desiredVersion: order.version,
     desiredOperation: operation,
     calendarEventId: eventId,
@@ -142,7 +167,8 @@ export async function stageCpuXCalendarOrder(transaction: Transaction, order: Pr
     ...(current?.publishedOperation ? { publishedOperation: current.publishedOperation } : {}),
     updatedAt: new Date().toISOString(),
   } satisfies CalendarState, { merge: true });
-  return { status: "queued" as const, eventId };
+  // Callers deliver this durable outbox event, not the separate Google event ID.
+  return { status: "queued" as const, eventId: deliveryEventId(order), calendarEventId: eventId };
 }
 
 export async function enqueueCpuXCalendarOrder(order: ProductionOrder, environment: CpuXCalendarRuntimeEnvironment = process.env) {
@@ -150,27 +176,27 @@ export async function enqueueCpuXCalendarOrder(order: ProductionOrder, environme
   return db.runTransaction((transaction) => stageCpuXCalendarOrder(transaction, order, environment));
 }
 
-export async function claimCpuXCalendarOrder(canonicalId: string, sourceVersion: number, now = new Date(), environment: CpuXCalendarRuntimeEnvironment = process.env) {
+export async function claimCpuXCalendarOrder(canonicalId: string, sourceVersion: number, now = new Date(), environment: CpuXCalendarRuntimeEnvironment = process.env, calendarIdentity = canonicalId) {
   if (!cpuXCalendarWritesEnabled(environment)) return { status: "disabled" as const };
-  const ref = stateRef(canonicalId);
+  const ref = stateRef(calendarIdentity);
   const claimId = `cpux-calendar:${randomUUID()}`;
   return db.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) return { status: "missing" as const };
     const current = snapshot.data() as CalendarState;
-    if (current.desiredVersion !== sourceVersion) return { status: "superseded" as const };
+    if (current.canonicalId !== canonicalId || current.desiredVersion !== sourceVersion) return { status: "superseded" as const };
     if (current.claim && new Date(current.claim.expiresAt).getTime() > now.getTime()) return { status: "busy" as const };
     const claimed: CalendarState = {
       ...current,
-      claim: { id: claimId, version: sourceVersion, expiresAt: new Date(now.getTime() + CLAIM_TTL_MS).toISOString() },
+      claim: { id: claimId, canonicalId, version: sourceVersion, expiresAt: new Date(now.getTime() + CLAIM_TTL_MS).toISOString() },
     };
     transaction.set(ref, claimed);
     return { status: "claimed" as const, claimId, state: claimed };
   });
 }
 
-export async function finishCpuXCalendarOrder(canonicalId: string, claimId: string, sourceVersion: number, operation: CalendarOperation) {
-  const ref = stateRef(canonicalId);
+export async function finishCpuXCalendarOrder(canonicalId: string, claimId: string, sourceVersion: number, operation: CalendarOperation, calendarIdentity = canonicalId) {
+  const ref = stateRef(calendarIdentity);
   await db.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) return;
@@ -179,6 +205,7 @@ export async function finishCpuXCalendarOrder(canonicalId: string, claimId: stri
     transaction.set(ref, {
       ...current,
       publishedVersion: sourceVersion,
+      publishedCanonicalId: canonicalId,
       publishedOperation: operation,
       claim: null,
       updatedAt: new Date().toISOString(),
@@ -186,8 +213,8 @@ export async function finishCpuXCalendarOrder(canonicalId: string, claimId: stri
   });
 }
 
-export async function releaseCpuXCalendarOrderClaim(canonicalId: string, claimId: string) {
-  const ref = stateRef(canonicalId);
+export async function releaseCpuXCalendarOrderClaim(canonicalId: string, claimId: string, calendarIdentity = canonicalId) {
+  const ref = stateRef(calendarIdentity);
   await db.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) return;
@@ -355,6 +382,8 @@ export function buildCpuXCalendarEventResource(order: ProductionOrder, publicBas
   }
   orderUrl.searchParams.set("order", order.canonicalId);
   orderUrl.searchParams.set("date", serviceDate);
+  const identity = cpuXCalendarOrderIdentity(order);
+  const quoteUrl = order.origin === "hospitality_booking" ? new URL(`/api/production-quote?bookingId=${encodeURIComponent(order.sourceBookingId)}`, configuredBase).toString() : undefined;
   const times = endTimeFor(order);
   const company = String(order.clientName || "FIKA Booking").replace(/[\r\n]+/g, " ").trim().slice(0, 120);
   const pax = Number.isFinite(order.guestCount) && Number(order.guestCount) > 0 ? ` x ${order.guestCount}` : "";
@@ -366,11 +395,12 @@ export function buildCpuXCalendarEventResource(order: ProductionOrder, publicBas
     `Service time: ${times.start}–${times.end} (Europe/London)`,
     `Destination: ${order.destinationLabel || order.destinationAddress?.label || "Not supplied"}`,
     `Open FIKA OS order: ${orderUrl.toString()}`,
+    ...(quoteUrl ? [`Open current quote PDF (FIKA OS sign-in required): ${quoteUrl}`] : []),
     "Sandwich workstream items:",
     ...lines.map((line) => `• ${line.itemName}: ${line.customerQuantity} ${line.customerUnit}${line.productionInstructions ? ` — ${line.productionInstructions}` : ""}`),
   ];
   return {
-    id: cpuxCalendarEventId(order.canonicalId),
+    id: cpuxCalendarEventId(identity.canonicalId),
     summary: `FIKA Sandwich Lunch — ${company}${pax}`,
     description: descriptionLines.join("\n").slice(0, 8000),
     ...(order.destinationLabel || order.destinationAddress?.label ? { location: order.destinationLabel || order.destinationAddress?.label } : {}),
@@ -386,6 +416,7 @@ export type CpuXCalendarApiDependencies = {
   environment?: CpuXCalendarRuntimeEnvironment;
   getAccessToken?: () => Promise<string>;
   fetcher?: CalendarFetch;
+  quoteArtifact?: { revisionId: string; driveFileId: string };
 };
 
 async function defaultAccessToken() {
@@ -424,7 +455,7 @@ export async function applyCpuXCalendarOrder(order: ProductionOrder, dependencie
     throw Object.assign(new Error("A Calendar ID override does not match the explicitly configured production Calendar."), { status: 503 });
   }
   const collection = calendarTarget(configuredCalendarId);
-  const eventId = cpuxCalendarEventId(order.canonicalId);
+  const eventId = cpuxCalendarEventId(cpuXCalendarOrderIdentity(order).canonicalId);
   const eventUrl = `${collection}/${encodeURIComponent(eventId)}`;
   const operation = operationFor(order);
   if (operation === "delete") {
@@ -434,6 +465,9 @@ export async function applyCpuXCalendarOrder(order: ProductionOrder, dependencie
     return { operation, eventId, applied: true };
   }
 
+  if (order.origin === "hospitality_booking" && (dependencies.quoteArtifact?.revisionId !== order.sourceQuoteRevisionId || !/^[a-zA-Z0-9_-]{1,200}$/.test(dependencies.quoteArtifact?.driveFileId || ""))) {
+    throw Object.assign(new Error("A current saved quote PDF matching the Production Order is required for Calendar publication."), { status: 409 });
+  }
   const resource = buildCpuXCalendarEventResource(order, environment.CPU_PUBLIC_BASE_URL, environment.FIKA_RUNTIME_MODE);
   const patchUrl = `${eventUrl}?sendUpdates=none`;
   const patched = await apiCall(patchUrl, "PATCH", resource, dependencies);
