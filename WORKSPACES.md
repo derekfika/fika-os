@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-05T21:47:05.151Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-05T21:56:02.845Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -148,6 +148,7 @@ Snapshot: 2026-11-05T21:47:05.151Z. The local governed registry remains authorit
 | hub-ledger-reconciliation | uat-20261025-1150 | tools/workflow, docs/deployment, CHANGELOG.md | codex/hub-ledger-reconciliation | [#49](https://github.com/derekfika/fika-os/pull/49) | finished | 2026-10-25T17:42:30.830Z |
 | hub-service-layout-editor | claude-hub-service-layout-editor | apps/integration-hub/lib/hospitality-catalogue-service.ts, apps/integration-hub/lib/hospitality-catalogue-types.ts, apps/integration-hub/lib/hospitality-catalogue-admin.ts, apps/integration-hub/lib/hospitality-service-layout.ts, apps/integration-hub/app/api/hospitality-catalogue/route.ts, apps/integration-hub/app/ui/HospitalityCatalogue.tsx, apps/integration-hub/app/ui/HospitalityCatalogue.css, apps/integration-hub/app/ui/HospitalityServiceLayout.tsx, apps/integration-hub/app/ui/HospitalityServiceLayout.css, apps/integration-hub/tests/hospitality-service-layout-editor.test.ts, apps/integration-hub/tests/hospitality-service-layout.test.ts, apps/integration-hub/tests/hospitality-service-layout.emulator.test.ts | codex/hub-service-layout-editor | [#196](https://github.com/derekfika/fika-os/pull/196) | finished | 2026-10-31T02:07:32.352Z |
 | integrate-334-cpu-run-sheet | luna-afk-334 | apps/cpu-production/app/ui/day-production-print.ts, apps/cpu-production/tests/day-production-print.test.ts, apps/cpu-production/tests/print/day-production-pdf.test.ts | codex/integrate-334-cpu-run-sheet | [#410](https://github.com/derekfika/fika-os/pull/410) | retired | 2026-11-05T21:47:00.630Z |
+| integrate-373-review-quantity | luna-afk-373 | apps/cpu-production/app/ui/ProductionCalendar.tsx, apps/cpu-production/app/ui/ProductionOrderDetail.tsx, apps/cpu-production/lib/production-presentation.ts, apps/cpu-production/tests/production-presentation.test.ts | codex/integrate-373-review-quantity | [#411](https://github.com/derekfika/fika-os/pull/411) | retired | 2026-11-05T21:55:58.999Z |
 | integrate-381-allergen-layout | luna-afk-381 | apps/menu-planning/app/dish-title-wrap.css, apps/menu-planning/tests/allergen-checker-layout.test.ts | codex/integrate-381-allergen-layout | [#409](https://github.com/derekfika/fika-os/pull/409) | retired | 2026-11-05T21:41:49.624Z |
 | integrate-portion-resize-379 | luna-afk-379 | apps/menu-planning/app/layout.tsx, apps/menu-planning/app/portion-planner-resize.css, apps/menu-planning/app/portion-planner.tsx, apps/menu-planning/tests/portion-planner-resize.test.ts | codex/integrate-portion-resize-379 | [#408](https://github.com/derekfika/fika-os/pull/408) | retired | 2026-11-05T21:33:40.880Z |
 | iss-001-changelog-entry | haiku-iss-001 | CHANGELOG.md | codex/iss-001-changelog-entry | — | finished | 2026-10-26T15:33:51.058Z |
