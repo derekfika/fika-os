@@ -67,7 +67,9 @@ export function ledgerEvidence(marker, { requireAll = false } = {}) {
     const later = chain.slice(0, index).reverse().map(item => ({ entry: item, record: releaseJson(item.commit) })); // oldest first
     for (const { record: r } of later) {
       if (r.app !== t.app || r.environment !== t.environment) throw Error(`A later record on ${t.branch} names a different app/environment; refusing`);
-      validateRecord(r, { app: t.app, environment: t.environment });
+      if (r.kind === 'intent') {
+        if (r.schema !== 'fika.release.v1' || r.state !== 'PENDING' || r.project !== t.project || r.backend !== t.backend || r.region !== t.region || r.branch !== t.branch || !r.releaseId || !/^[a-f0-9]{40}$/.test(r.sourceSha || '') || !/^[a-f0-9]{64}$/.test(r.scopeHash || '')) throw Error(`Invalid later pending intent on ${t.branch}; refusing`);
+      } else validateRecord(r, { app: t.app, environment: t.environment });
     }
     const terminal = later.find(({ record: r }) => TERMINAL_KINDS.includes(r.kind) && r.releaseId === record.releaseId);
     if (!terminal) throw Error(`Intent ${entry.commit.slice(0, 8)} (${t.app} ${t.environment}, release ${record.releaseId}) has no terminal record (deploy, rollback or abandoned) with the same releaseId; it may still be pending; use fika reconcile`);

@@ -208,6 +208,17 @@ test('real-case shape: hub intent completed much later plus a hospitality intent
   assert.ok(existsSync(executed.archived));
 }));
 
+test('later valid pending intent records in the same ledger do not masquerade as terminal kinds', () => run(async f => {
+  const { id } = setup(f);
+  standardLedger(f, { entries: [BASE,
+    { seconds: 10, record: { kind: 'intent', state: 'PENDING', sourceSha: SHA.a, releaseId: 'r-a' } },
+    { seconds: 180, record: { kind: 'intent', state: 'PENDING', sourceSha: SHA.b, releaseId: 'r-b' } },
+    { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.a, releaseId: 'r-a' } },
+    { seconds: 7200, record: { kind: 'deploy', sourceSha: SHA.b, releaseId: 'r-b' } },
+  ] });
+  assert.equal(recoverDeployOperation(id, { reason: REASON }, deps).evidence.intents[0].terminal.kind, 'deploy');
+}));
+
 test('rollback and abandoned records are terminal; other record kinds are not', () => run(async f => {
   const { id } = setup(f);
   for (const kind of ['rollback','abandoned']) {
