@@ -17,7 +17,7 @@ import { hospitalityPlatformOf, isGovernedRoutingPlatform, planHospitalityCpuRou
 import { adHocProductionOrderId } from "../../shared/ad-hoc-production-contract";
 import { adaptCpuProductionWorkstreams } from "../../shared/production-workstreams";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
-import { parseExternalProductionMaterialisation, type ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
+import { parseExternalProductionMaterialisation, type ExternalProductionMaterialisation, type MenuOrderMetadata } from "@fika/server-shared/external-production";
 export type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
 
 
@@ -26,7 +26,7 @@ export type ProductionStatus = "received" | "draft" | "needs_review" | "accepted
 export type ProductionException = { canonicalId: string; severity: "info" | "warning" | "blocking"; status: "open" | "resolved"; description: string; createdAt: string; createdBy: string; resolvedAt?: string; resolvedBy?: string; resolutionNotes?: string; audit: ProductionAuditEvent[] };
 export type ProductionAuditEvent = { action: string; at: string; by: string; previousState?: string; newState?: string; reason?: string; correlationId?: string; causationId?: string; idempotencyKey?: string };
 export type ProductionWorkstream = "sandwiches" | "hospitality" | "delivered_in" | "grab_and_go" | "unassigned";
-export type ProductionLine = { canonicalId: string; sourceBookingLineId: string; sourceMenuItemId?: string; sourceOfferingId?: string; itemName: string; description?: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; actualQuantity?: number; shortfallQuantity?: number; substitution?: string; wasteQuantity?: number; conversionSnapshot?: { quantity: number; unit: string; rule: string }; choices?: unknown[]; servingGuidance?: string; productionInstructions?: string; dietaries: Record<string, unknown>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; approvedAllergenSnapshot?: import("@fika/server-shared/external-production").SourceAllergenSnapshot; status: "pending" | "ready" | "complete" | "exception"; sortOrder: number; exceptions?: string[]; workstream?: ProductionWorkstream };
+export type ProductionLine = { canonicalId: string; sourceBookingLineId: string; sourceMenuItemId?: string; sourceOfferingId?: string; itemName: string; description?: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; actualQuantity?: number; shortfallQuantity?: number; substitution?: string; wasteQuantity?: number; conversionSnapshot?: { quantity: number; unit: string; rule: string }; choices?: unknown[]; servingGuidance?: string; productionInstructions?: string; dietaries: Record<string, unknown>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; approvedAllergenSnapshot?: import("@fika/server-shared/external-production").SourceAllergenSnapshot; status: "pending" | "ready" | "complete" | "exception"; sortOrder: number; exceptions?: string[]; workstream?: ProductionWorkstream } & MenuOrderMetadata;
 export type ProductionRequirement = { canonicalId: string; entityType: "Production Requirement"; schemaVersion: string; version: number; sourceBookingId: string; sourceBookingRevision: number; sourceQuoteRevisionId: string; productionLocationId?: string; requestedServiceDate: string; serviceWindow: { startTime: string; endTime?: string }; requiredBy: string; status: "draft" | "needs_review" | "accepted" | "cancelled"; sourceSnapshot: { booking: CanonicalBooking; quote: unknown }; createdAt: string; createdBy: string; updatedAt: string; updatedBy: string; audit: ProductionAuditEvent[] };
 export type ProductionOrigin = "hospitality_booking" | "cpu_created" | "legacy_import" | "menu_planning" | "grab_and_go";
 export type ProductionCategory = "delivered_in" | "fine_dining" | "hospitality" | "events" | "grab_and_go" | "other";
@@ -418,6 +418,32 @@ export function externalProductionStatus(input: Pick<ExternalProductionMateriali
   return input.sourceDomain === "menu-planning" ? "menu_available" : "received";
 }
 
+/** Maps a parsed external line into canonical Hub state without losing Menu order evidence. */
+export function projectExternalProductionLine(input: ExternalProductionMaterialisation, orderId: string, index: number, orderStatus: ProductionStatus): ProductionLine {
+  const line = input.lines[index];
+  if (!line) throw new RangeError("External production line index is out of range.");
+  const complete = orderStatus !== "cancelled";
+  return {
+    canonicalId: `${orderId}:line:${index + 1}`,
+    sourceBookingLineId: line.sourceLineId,
+    ...(line.canonicalItemId ? { sourceMenuItemId: line.canonicalItemId } : {}),
+    itemName: line.itemName,
+    customerQuantity: line.quantity,
+    customerUnit: line.unit,
+    productionQuantity: line.quantity,
+    productionUnit: line.unit,
+    conversionSnapshot: { quantity: line.quantity, unit: line.unit, rule: "Explicit upstream source quantity." },
+    dietaries: {},
+    ...(line.approvedAllergenSnapshot ? { approvedAllergenSnapshot: structuredClone(line.approvedAllergenSnapshot), allergenEvidenceStatus: line.approvedAllergenSnapshot.allergenEvidenceStatus || "confirmed" as const } : { allergenEvidenceStatus: "unreviewed" as const }),
+    status: complete ? "ready" : "exception",
+    sortOrder: index,
+    ...(line.menuOrderVersion ? { menuOrderVersion: line.menuOrderVersion } : {}),
+    ...(line.slot ? { slot: line.slot } : {}),
+    ...(line.canonicalSlotId ? { canonicalSlotId: line.canonicalSlotId, canonicalOrderIndex: line.canonicalOrderIndex } : {}),
+    workstream: line.workstream || (input.sourceDomain === "grab-and-go" ? "grab_and_go" : "delivered_in"),
+  };
+}
+
 /** Converts an upstream production-bound record into the one canonical CPU order. */
 export async function materialiseExternalProductionOrder(actor: Actor, input: ExternalProductionMaterialisation) {
   input = parseExternalProductionMaterialisation(input);
@@ -450,7 +476,7 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
       ...(input.destination ? { destination: structuredClone(input.destination) } : {}),
       ...(input.destination?.kind === "one-off" ? { destinationAddress: { identity: input.destination.id, label: input.destination.label, address: input.destination.address, ...(input.destination.contact ? { contact: input.destination.contact } : {}), ...(input.destination.deliveryInstructions ? { deliveryInstructions: input.destination.deliveryInstructions } : {}) } } : {}),
       serviceType: input.sourceDomain === "grab-and-go" ? "Grab & Go" : "Delivered-In menu", serviceDate: input.serviceDate, requiredBy: input.requiredBy || `${input.serviceDate}T00:00`, ...(input.serviceWindow ? { serviceWindow: input.serviceWindow } : input.sourceDomain === "menu-planning" ? {} : { serviceWindow: { startTime: "00:00" } }),
-      status, priority: previous?.priority || "normal", lines: input.lines.map((line, index) => ({ canonicalId: `${canonicalId}:line:${index + 1}`, sourceBookingLineId: line.sourceLineId, ...(line.canonicalItemId ? { sourceMenuItemId: line.canonicalItemId } : {}), itemName: line.itemName, customerQuantity: line.quantity, customerUnit: line.unit, productionQuantity: line.quantity, productionUnit: line.unit, conversionSnapshot: { quantity: line.quantity, unit: line.unit, rule: "Explicit upstream source quantity." }, dietaries: {}, ...(line.approvedAllergenSnapshot ? { approvedAllergenSnapshot: structuredClone(line.approvedAllergenSnapshot), allergenEvidenceStatus: line.approvedAllergenSnapshot.allergenEvidenceStatus || "confirmed" as const } : { allergenEvidenceStatus: "unreviewed" as const }), status: status === "cancelled" ? "exception" as const : "ready" as const, sortOrder: index, workstream: line.workstream || (input.sourceDomain === "grab-and-go" ? "grab_and_go" : "delivered_in") })),
+      status, priority: previous?.priority || "normal", lines: input.lines.map((_, index) => projectExternalProductionLine(input, canonicalId, index, status)),
       exceptions: [], createdAt: previous?.createdAt || now, createdBy: previous?.createdBy || actor.uid, idempotencyKey: `materialise:${input.sourceDomain}:${input.sourceEntityId}:${input.destinationOplocId}`, externalReferences: previous?.externalReferences || [], audit: [...(previous?.audit || []), { action: previous ? "external-production-order-amended" : "external-production-order-created", at: now, by: actor.uid, previousState: previous?.status, newState: status, reason: `Materialised from ${input.sourceDomain}.` }],
     };
     const event = createDomainEvent({ eventType: status === "cancelled" ? "production.order.withdrawn" : previous ? "production.order.amended" : "production.order.created", sourceAggregateId: canonicalId, sourceVersion: order.version, occurredAt: now, correlationId: order.idempotencyKey, payload: { canonicalId, version: order.version, status, productionOrder: order } });

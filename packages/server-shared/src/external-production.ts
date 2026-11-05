@@ -3,6 +3,15 @@ import { z } from "zod";
 
 const OPERATIONAL_ALLERGEN_STATES = ["clear", "contains", "may_contain", "unrecorded"] as const;
 
+/** Optional presentation metadata; absent on legacy non-menu production lines. */
+export type MenuOrderMetadata = {
+  menuOrderVersion?: string;
+  /** Original authored placement label, retained as evidence. */
+  slot?: string;
+  canonicalSlotId?: string;
+  canonicalOrderIndex?: number;
+};
+
 export type ExternalProductionMaterialisation = {
   sourceDomain: "grab-and-go" | "menu-planning";
   sourceEntityId: string;
@@ -26,6 +35,10 @@ export type ExternalProductionMaterialisation = {
     quantity: number;
     unit: string;
     workstream?: "sandwiches" | "hospitality" | "delivered_in" | "grab_and_go" | "unassigned";
+    menuOrderVersion?: string;
+    slot?: string;
+    canonicalSlotId?: string;
+    canonicalOrderIndex?: number;
     approvedAllergenSnapshot?: {
       allergens: Record<string, string>;
       allergenReview?: { status: "confirmed"; semantics: 2 | 3; confirmedBy: string; confirmedAt: string; statement: "recipe-ingredients-allergens-verified"; inputFingerprint: string };
@@ -80,9 +93,22 @@ export const externalProductionMaterialisationInput = z.object({
     quantity: z.number().nonnegative(),
     unit: z.string().min(1),
     workstream: z.enum(["sandwiches", "hospitality", "delivered_in", "grab_and_go", "unassigned"]).optional(),
+    menuOrderVersion: z.string().trim().min(1).max(80).optional(),
+    slot: z.string().trim().min(1).max(160).optional(),
+    canonicalSlotId: z.string().trim().min(1).max(160).optional(),
+    canonicalOrderIndex: z.number().int().nonnegative().optional(),
     approvedAllergenSnapshot: approvedAllergenSnapshotSchema.optional(),
   })).min(1),
-}).strict();
+}).strict().superRefine((input, context) => {
+  input.lines.forEach((line, index) => {
+    if (line.canonicalSlotId && (!line.menuOrderVersion || !line.slot || line.canonicalOrderIndex === undefined)) {
+      context.addIssue({ code: "custom", message: "Canonical menu slot metadata requires its version, original slot label, and order index.", path: ["lines", index, "canonicalSlotId"] });
+    }
+    if (line.canonicalOrderIndex !== undefined && !line.canonicalSlotId) {
+      context.addIssue({ code: "custom", message: "Canonical menu order index requires a canonical slot ID.", path: ["lines", index, "canonicalOrderIndex"] });
+    }
+  });
+});
 
 export function parseExternalProductionMaterialisation(value: unknown) {
   const input = externalProductionMaterialisationInput.parse(value) as ExternalProductionMaterialisation;

@@ -629,6 +629,10 @@ function appendPublicationEvents(
                       ...(entry.canonicalDishId !== undefined
                         ? { canonicalItemId: entry.canonicalDishId }
                         : {}),
+                      ...(entry.menuOrderVersion ? { menuOrderVersion: entry.menuOrderVersion } : {}),
+                      ...(entry.slot ? { slot: entry.slot } : {}),
+                      ...(entry.canonicalSlotId ? { canonicalSlotId: entry.canonicalSlotId } : {}),
+                      ...(entry.canonicalOrderIndex !== undefined ? { canonicalOrderIndex: entry.canonicalOrderIndex } : {}),
                       itemName: entry.dishName,
                       quantity: allocation.quantity,
                       unit: "portion",
