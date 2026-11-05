@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { protection } from './cli.mjs';
 import { APPS, target, validateRecord } from './policy.mjs';
-import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe, validateServingBaselineSnapshot, servingBaselineRecord, inspectAdhocProductionState, stableAdhocProductionState, adhocEmptyBaselineRecord } from './releases.mjs';
+import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe, reconcile, validateServingBaselineSnapshot, servingBaselineRecord, inspectAdhocProductionState, stableAdhocProductionState, adhocEmptyBaselineRecord } from './releases.mjs';
 import { backendPath } from './runtime.mjs';
 
 test('Hospitality staging health requires the exact local entry redirect and a healthy workspace', async () => {
@@ -134,6 +134,26 @@ test('Hub serving baseline reconciliation fails closed on target, SHA, traffic, 
  const prev={commit:'a'.repeat(40),record:{schema:'fika.release.v1',...t,sourceSha:'b'.repeat(40),kind:'baseline',scopeHash:'p',rollout:'old',state:'SUCCEEDED',percent:100}};
  assert.throws(()=>servingBaselineRecord(t,{snapshot:base,expectedSha:sha,expectedRollout:id,previous:prev,previousCommit:prev.commit,authorization:{},observedAt:'2026-10-25T14:00:00.000Z',health:{ok:true,status:200}}),/authorization/i);
  assert.throws(()=>servingBaselineRecord(t,{snapshot:base,expectedSha:sha,expectedRollout:id,previous:prev,previousCommit:prev.commit,authorization:{actor:'owner',explicitExecute:true,action:'reconcile:serving-baseline',sourceSha:sha,releaseId:prev.commit,instruction:'ok',authorisedAt:'now'},observedAt:'2026-10-25T14:00:00.000Z',health:{ok:false,status:503}}),/health/i);
+});
+test('Menu production serving baseline requires exact healthy evidence and owner-bound append-only authorization',()=>{
+ const t=target('menu','prod'),sha='c'.repeat(40),rolloutId='build-2026-11-04-003',base=backendPath(t),buildName=`${base}/builds/${rolloutId}`;
+ const snapshot={backend:{name:base,environment:'production',uri:`${t.backend}--${t.project}.${t.region}.hosted.app`,reconciling:false,codebase:{repository:'projects/fika-os/locations/europe-west4/connections/apphosting-github-conn-w1hpt65/gitRepositoryLinks/derekfika-fika-os',rootDirectory:'/apps/menu-planning'}},traffic:{rolloutPolicy:{disabled:true},reconciling:false,current:{splits:[{build:`projects/111111111111/locations/${t.region}/backends/${t.backend}/builds/${rolloutId}`,percent:100}]}},build:{name:buildName,state:'READY',reconciling:false,source:{codebase:{hash:sha,commit:sha,uri:`https://github.com/derekfika/fika-os/commit/${sha}`}}},rollout:{name:`${base}/rollouts/${rolloutId}`,state:'SUCCEEDED',reconciling:false,build:buildName}};
+ assert.deepEqual(validateServingBaselineSnapshot(t,snapshot,sha,rolloutId),{sourceSha:sha,rollout:rolloutId,state:'SUCCEEDED',percent:100});
+ const bad=[s=>s.backend.environment='staging',s=>s.backend.uri='fika-os-menu-staging--fika-os-dev.europe-west4.hosted.app',s=>s.backend.codebase.rootDirectory='/apps/integration-hub',s=>s.traffic.current.splits[0].percent=90,s=>s.traffic.rolloutPolicy.disabled=false,s=>s.build.source.codebase.hash='d'.repeat(40),s=>s.rollout.state='FAILED'];
+ for(const mutate of bad){const altered=structuredClone(snapshot);mutate(altered);assert.throws(()=>validateServingBaselineSnapshot(t,altered,sha,rolloutId));}
+ assert.throws(()=>validateServingBaselineSnapshot(target('menu','staging'),snapshot,sha,rolloutId));
+ const previous={commit:'a'.repeat(40),record:{schema:'fika.release.v1',...t,sourceSha:'b'.repeat(40),kind:'baseline',scopeHash:'prior',rollout:'build-2026-11-02-002',state:'SUCCEEDED',percent:100}};
+ const authorization={actor:'owner',method:'owner-instruction',explicitExecute:true,action:'reconcile:serving-baseline',sourceSha:sha,releaseId:previous.commit,instruction:'Owner instruction in #357 to reconcile the existing Menu production baseline',authorisedAt:'2026-11-04T22:00:00.000Z'};
+ const validation={id:123,url:'https://github.com/derekfika/fika-os/actions/runs/123',sha};
+ const record=servingBaselineRecord(t,{snapshot,expectedSha:sha,expectedRollout:rolloutId,previous,previousCommit:previous.commit,authorization,observedAt:'2026-11-04T22:01:00.000Z',health:{ok:true,status:200,appId:'menu-planning',buildSha:sha},scopeHashValue:'verified-production-source-tree',validation});
+ assert.equal(record.kind,'baseline');assert.equal(record.environment,'prod');assert.equal(record.sourceSha,sha);assert.equal(record.rollout,rolloutId);assert.equal(record.state,'SUCCEEDED');
+ assert.equal(record.previousGoodRecord,previous.commit);assert.equal(record.reconciliation.priorLedgerCommit,previous.commit);assert.deepEqual(record.reconciliation.exactSourceValidation,validation);
+ assert.match(record.reconciliation.historicalGovernance,/not established/i);
+ assert.throws(()=>servingBaselineRecord(t,{snapshot,expectedSha:sha,expectedRollout:rolloutId,previous,previousCommit:previous.commit,authorization:{...authorization,releaseId:'d'.repeat(40)},observedAt:'2026-11-04T22:01:00.000Z',health:{ok:true,status:200,appId:'menu-planning',buildSha:sha},validation}),/authorization/i);
+ assert.throws(()=>servingBaselineRecord(t,{snapshot,expectedSha:sha,expectedRollout:rolloutId,previous,previousCommit:previous.commit,authorization,observedAt:'2026-11-04T22:01:00.000Z',health:{ok:true,status:200,appId:'menu-planning',buildSha:'d'.repeat(40)},validation}),/health/i);
+});
+test('serving-baseline reconciliation uses the governed reconcile entry point and rejects other apps',async()=>{
+ await assert.rejects(reconcile('cpu','prod',{resolution:'serving-baseline'}),/restricted to the governed Hub or Menu staging\/production backend/);
 });
 test('production needs explicit owner release instruction bound to resolved scope/action, without review/comment API calls',()=>{
  const access={env:{},github:endpoint=>{assert.ok(endpoint==='user'||endpoint==='repos/derekfika/fika-os');return endpoint==='user'?{login:'owner',type:'User'}:{owner:{login:'owner'},permissions:{push:true}};}};
