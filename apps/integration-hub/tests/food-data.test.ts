@@ -2,3 +2,4 @@
 import "./food-data/data.suite";
 import "./food-data/loader.suite";
 import "./food-data/server.suite";
+import "./food-data/compositions.suite";

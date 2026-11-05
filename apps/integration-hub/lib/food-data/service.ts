@@ -3,12 +3,15 @@ import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { FoodDataError, datasetVersion, parseManifest, type FoodDataset, type FoodManifest } from "./manifest";
 import { foodDataConfig, isFoodDataset, type FoodDataConfig } from "./config";
 import type { FoodDataObjectStore } from "./storage";
+import { compositionVersion, parseCompositionManifest } from "./compositions";
+import { recipeCompositionConfig } from "./config";
 
 export type FoodDataServerDeps = {
   config: FoodDataConfig;
   /** Resolves the verified Hub session of an active staff (person) account to its AUTHMOD identity id, or throws FoodDataError 401/403. No further grant is required. */
   authenticate(request: Request): Promise<{ identityId: string }>;
   store(): FoodDataObjectStore;
+  compositionStore?(): FoodDataObjectStore;
 };
 
 const NO_STORE = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", Vary: "Cookie" };
@@ -21,7 +24,7 @@ export function foodDataErrorResponse(error: unknown) {
 }
 
 /** Session authentication happens before ANY storage access; a refused caller causes zero object reads. */
-async function authorise(request: Request, deps: FoodDataServerDeps) {
+export async function authoriseFoodDataRequest(request: Request, deps: FoodDataServerDeps) {
   if (!deps.config.enabled) throw new FoodDataError("Food Data is not enabled in this environment.", "FOOD_DATA_DISABLED", 404);
   const site = request.headers.get("sec-fetch-site");
   if (site && site !== "same-origin" && site !== "none") throw new FoodDataError("Food Data is only served to this application.", "FOOD_DATA_FORBIDDEN", 403);
@@ -38,7 +41,7 @@ async function readManifest(deps: FoodDataServerDeps): Promise<FoodManifest> {
 
 export async function handleFoodDataManifest(request: Request, deps: FoodDataServerDeps) {
   try {
-    const identityId = await authorise(request, deps);
+    const identityId = await authoriseFoodDataRequest(request, deps);
     const manifest = await readManifest(deps);
     recordDataAccess({ app: "integration-hub", operation: "food-data.manifest", source: "NETWORK_UPSTREAM", documents: 1, estimatedBillableReads: 0, dataset: "integration-hub/food-data-manifest" });
     return json({ identityScope: identityId, readOnly: true, manifest });
@@ -47,7 +50,7 @@ export async function handleFoodDataManifest(request: Request, deps: FoodDataSer
 
 export async function handleFoodDataBundle(request: Request, datasetName: string, deps: FoodDataServerDeps) {
   try {
-    await authorise(request, deps);
+    await authoriseFoodDataRequest(request, deps);
     if (!isFoodDataset(datasetName)) throw new FoodDataError("Unknown Food Data dataset.", "FOOD_DATA_OBJECT_MISSING", 404);
     const dataset: FoodDataset = datasetName;
     const manifest = await readManifest(deps);
@@ -64,6 +67,53 @@ export async function handleFoodDataBundle(request: Request, datasetName: string
     // Deliberately NOT Content-Encoding: gzip, so the browser keeps the exact stored bytes for SHA-256 verification.
     return new Response(bytes as unknown as BodyInit, { status: 200, headers: { ...NO_STORE, "Content-Type": "application/gzip", "Content-Length": String(bytes.byteLength), "X-Food-Data-Version": requested } });
   } catch (error) { return foodDataErrorResponse(error); }
+}
+
+/** Independent v2 snapshot path. It reuses the same session/AUTHMOD boundary and never reads Firestore catalogue data. */
+export async function handleCompositionManifest(request: Request, deps: FoodDataServerDeps) {
+  try {
+    const identityId = await authoriseFoodDataRequest(request, deps);
+    const config = recipeCompositionConfig();
+    if (!config.enabled) throw new FoodDataError("Recipe compositions are not enabled in this environment.", "FOOD_DATA_DISABLED", 404);
+    const bytes = await (deps.compositionStore?.() || compositionStore(config)).read("manifest.json");
+    let value: unknown;
+    try { value = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new FoodDataError("Recipe composition manifest is not valid JSON.", "FOOD_DATA_MANIFEST_INVALID", 502); }
+    const manifest = parseCompositionManifest(value);
+    recordDataAccess({ app: "integration-hub", operation: "food-data.compositions.manifest", source: "NETWORK_UPSTREAM", documents: 1, estimatedBillableReads: 0, dataset: "integration-hub/food-data-compositions-v2-manifest" });
+    return json({ identityScope: identityId, readOnly: true, manifest });
+  } catch (error) { return foodDataErrorResponse(error); }
+}
+
+export async function handleCompositionBundle(request: Request, deps: FoodDataServerDeps) {
+  try {
+    await authoriseFoodDataRequest(request, deps);
+    const config = recipeCompositionConfig();
+    if (!config.enabled) throw new FoodDataError("Recipe compositions are not enabled in this environment.", "FOOD_DATA_DISABLED", 404);
+    const store = deps.compositionStore?.() || compositionStore(config);
+    const manifestBytes = await store.read("manifest.json");
+    let value: unknown;
+    try { value = JSON.parse(new TextDecoder().decode(manifestBytes)); } catch { throw new FoodDataError("Recipe composition manifest is not valid JSON.", "FOOD_DATA_MANIFEST_INVALID", 502); }
+    const manifest = parseCompositionManifest(value);
+    const requested = new URL(request.url).searchParams.get("version");
+    if (requested !== compositionVersion(manifest)) throw new FoodDataError("This composition version is no longer current. Check its manifest again.", "FOOD_DATA_VERSION_CHANGED", 409);
+    const bytes = await store.read(manifest.file.object);
+    if (bytes.byteLength !== manifest.file.gzipBytes || createHash("sha256").update(bytes).digest("hex") !== manifest.file.gzipSha256) {
+      console.error("[food-data] recipe composition object failed its manifest hash");
+      throw new FoodDataError("The stored recipe composition object failed its integrity check.", "FOOD_DATA_INTEGRITY_FAILED", 502);
+    }
+    recordDataAccess({ app: "integration-hub", operation: "food-data.compositions.bundle", source: "NETWORK_UPSTREAM", documents: manifest.file.sourceRows, estimatedBillableReads: 0, dataset: "integration-hub/food-data-compositions-v2" });
+    return new Response(bytes as unknown as BodyInit, { status: 200, headers: { ...NO_STORE, "Content-Type": "application/gzip", "Content-Length": String(bytes.byteLength), "X-Food-Data-Version": requested } });
+  } catch (error) { return foodDataErrorResponse(error); }
+}
+
+function compositionStore(config: ReturnType<typeof recipeCompositionConfig>): FoodDataObjectStore {
+  return {
+    async read(name) {
+      const storage = await import("./storage");
+      const localDirectory = process.env.FIKA_RUNTIME_MODE === "local" || !process.env.FIKA_RUNTIME_MODE ? process.env.FIKA_FOOD_COMPOSITIONS_LOCAL_DIR : undefined;
+      return (localDirectory ? storage.localDirFoodDataStore(localDirectory) : storage.gcsFoodDataStore(config.bucket, config.prefix)).read(name);
+    },
+  };
 }
 
 export function liveFoodDataDeps(): FoodDataServerDeps {
