@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-05T20:56:01.555Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-05T20:57:25.287Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -294,7 +294,7 @@ Snapshot: 2026-11-05T20:56:01.555Z. The local governed registry remains authorit
 | menu-planning-hospitality-rotations | claude-rotations-architecture | apps/menu-planning, apps/integration-hub/lib, apps/integration-hub/app, apps/integration-hub/tests/hospitality-rotations.test.ts, apps/integration-hub/tests/hospitality-rotations-route.test.ts, apps/integration-hub/tests/hospitality-rotations.emulator.test.ts, apps/integration-hub/tests/hospitality-rotation-dishes.test.ts, apps/hospitality-booking/app/rotations, apps/hospitality-booking/tests/rotations-ui.test.ts, apps/shared | codex/menu-planning-hospitality-rotations | [#150](https://github.com/derekfika/fika-os/pull/150) | finished | 2026-10-30T07:15:18.506Z |
 | menu-portion-order-334 | luna-menu-portion-order-334 | apps/menu-planning/app/portion-planner.tsx, apps/menu-planning/lib/portion-menu-order.ts, apps/menu-planning/tests/portion-menu-order.test.ts, .changes/menu-planning/2026-11-05-portion-order-334.md | codex/menu-portion-order-334 | [#398](https://github.com/derekfika/fika-os/pull/398) | retired | 2026-11-05T18:49:20.893Z |
 | menu-portion-planner-keyboard-scroll | menu-issue-93 | apps/menu-planning, CHANGELOG.md | codex/menu-portion-planner-keyboard-scroll | [#94](https://github.com/derekfika/fika-os/pull/94) | finished | 2026-10-28T06:40:44.057Z |
-| menu-portion-resize-379 | codex-menu-portion-resize-379 | apps/menu-planning/app/portion-planner.tsx, apps/menu-planning/app/layout.tsx, apps/menu-planning/app/portion-planner-resize.css, apps/menu-planning/tests/portion-planner-resize.test.ts, apps/menu-planning/tests/e2e/portion-planner-resize.spec.ts | codex/menu-portion-resize-379 | [#405](https://github.com/derekfika/fika-os/pull/405) | active | 2026-11-05T20:44:20.166Z |
+| menu-portion-resize-379 | codex-menu-portion-resize-379 | apps/menu-planning/app/portion-planner.tsx, apps/menu-planning/app/layout.tsx, apps/menu-planning/app/portion-planner-resize.css, apps/menu-planning/tests/portion-planner-resize.test.ts, apps/menu-planning/tests/e2e/portion-planner-resize.spec.ts | codex/menu-portion-resize-379 | [#405](https://github.com/derekfika/fika-os/pull/405) | finished | 2026-11-05T20:57:14.221Z |
 | menu-prod-baseline-reconcile-recovery | luna-overnight-357-menu-baseline | tools/workflow/releases.mjs, tools/workflow/releases.test.mjs | codex/menu-prod-baseline-reconcile-recovery | [#377](https://github.com/derekfika/fika-os/pull/377) | retired | 2026-11-05T10:16:52.351Z |
 | menu-publish-hotfix | codex-menu-p0-111 | apps/menu-planning/lib/menu-publication.ts, apps/menu-planning/tests/publication-authority.test.ts, apps/menu-planning/tests/publication-canonical-lookup.emulator.test.ts | codex/menu-publish-hotfix | [#112](https://github.com/derekfika/fika-os/pull/112) | finished | 2026-10-28T20:02:47.799Z |
 | menu-publish-p0 | codex-menu-p0-111 | tools/incidents/menu-publish-p0, docs/incidents/2026-10-28-menu-publish-111.md | codex/menu-publish-p0 | — | finished | 2026-10-28T20:10:36.178Z |
