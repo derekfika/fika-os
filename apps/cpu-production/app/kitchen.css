@@ -57,6 +57,33 @@
   padding: 0;
   margin: 12px 0 0;
 }
+.kitchen-menu-sections {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.kitchen-menu-section {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 10px;
+  background: var(--fika-surface-card);
+}
+.kitchen-menu-section h4 {
+  margin: 0;
+  color: var(--fika-text-primary);
+  font: 700 0.875rem/1.25 var(--fika-font-body);
+}
+.kitchen-menu-section .kitchen-dishes {
+  margin-top: 4px;
+}
+.kitchen-slot-label {
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--fika-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
 .kitchen-dishes li {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) auto;
