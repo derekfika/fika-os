@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-05T19:34:44.267Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-05T19:36:10.963Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -104,7 +104,7 @@ Snapshot: 2026-11-05T19:34:44.267Z. The local governed registry remains authorit
 | food-data-open-access | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/tests/food-data.test.ts, apps/integration-hub/docs/food-data-library.md | codex/food-data-open-access | [#214](https://github.com/derekfika/fika-os/pull/214) | retired | 2026-10-31T17:32:34.354Z |
 | gate0-monday-readonly | sol-gate0-readiness | docs/audits/2026-10-30/gate0-monday-readiness.md | codex/gate0-monday-readonly | [#177](https://github.com/derekfika/fika-os/pull/177) | retired | 2026-10-30T17:04:31.456Z |
 | gng-apphosting-resolution-2 | codex-gng-apphosting-resolution | apps/delivered-in/package.json, apps/delivered-in/package-lock.json, apps/delivered-in/tsconfig.json | codex/gng-apphosting-resolution-2 | [#400](https://github.com/derekfika/fika-os/pull/400) | retired | 2026-11-05T19:33:49.267Z |
-| gng-apphosting-resolution | codex-gng-apphosting-resolution | apps/delivered-in/package.json, apps/delivered-in/tsconfig.json | codex/gng-apphosting-resolution | — | finished | 2026-11-05T19:00:05.692Z |
+| gng-apphosting-resolution | codex-gng-apphosting-resolution | apps/delivered-in/package.json, apps/delivered-in/tsconfig.json | codex/gng-apphosting-resolution | — | retired | 2026-11-05T19:36:00.011Z |
 | gng-oidc-runbook-idfix | codex-gng-oidc-scheduler-auth | docs/deployment/grab-and-go-standing-orders-release.md | codex/gng-oidc-runbook-idfix | [#399](https://github.com/derekfika/fika-os/pull/399) | retired | 2026-11-05T18:46:44.501Z |
 | gng-oidc-runbook | codex-gng-oidc-scheduler-auth | docs/deployment/grab-and-go-standing-orders-release.md | codex/gng-oidc-runbook | [#397](https://github.com/derekfika/fika-os/pull/397) | retired | 2026-11-05T18:38:38.845Z |
 | gng-oidc-scheduler-auth | codex-gng-oidc-scheduler-auth | apps/delivered-in/app/api/internal, apps/delivered-in/lib/scheduler-auth.ts, apps/delivered-in/tests/scheduler-auth.test.ts, docs/deployment/grab-and-go-standing-orders.md | codex/gng-oidc-scheduler-auth | [#396](https://github.com/derekfika/fika-os/pull/396) | retired | 2026-11-05T18:41:26.570Z |
