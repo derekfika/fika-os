@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-05T18:49:24.668Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-05T19:33:53.349Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -103,6 +103,8 @@ Snapshot: 2026-11-05T18:49:24.668Z. The local governed registry remains authorit
 | food-data-grant-ui | kafoodle-food-data-sonnet | apps/integration-hub/app/authmod/accounts, apps/integration-hub/tests/food-data-grant-ui.test.ts, apps/integration-hub/docs/food-data-library.md | codex/food-data-grant-ui | [#213](https://github.com/derekfika/fika-os/pull/213) | retired | 2026-10-31T17:15:20.642Z |
 | food-data-open-access | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/tests/food-data.test.ts, apps/integration-hub/docs/food-data-library.md | codex/food-data-open-access | [#214](https://github.com/derekfika/fika-os/pull/214) | retired | 2026-10-31T17:32:34.354Z |
 | gate0-monday-readonly | sol-gate0-readiness | docs/audits/2026-10-30/gate0-monday-readiness.md | codex/gate0-monday-readonly | [#177](https://github.com/derekfika/fika-os/pull/177) | retired | 2026-10-30T17:04:31.456Z |
+| gng-apphosting-resolution-2 | codex-gng-apphosting-resolution | apps/delivered-in/package.json, apps/delivered-in/package-lock.json, apps/delivered-in/tsconfig.json | codex/gng-apphosting-resolution-2 | [#400](https://github.com/derekfika/fika-os/pull/400) | retired | 2026-11-05T19:33:49.267Z |
+| gng-apphosting-resolution | codex-gng-apphosting-resolution | apps/delivered-in/package.json, apps/delivered-in/tsconfig.json | codex/gng-apphosting-resolution | — | finished | 2026-11-05T19:00:05.692Z |
 | gng-oidc-runbook-idfix | codex-gng-oidc-scheduler-auth | docs/deployment/grab-and-go-standing-orders-release.md | codex/gng-oidc-runbook-idfix | [#399](https://github.com/derekfika/fika-os/pull/399) | retired | 2026-11-05T18:46:44.501Z |
 | gng-oidc-runbook | codex-gng-oidc-scheduler-auth | docs/deployment/grab-and-go-standing-orders-release.md | codex/gng-oidc-runbook | [#397](https://github.com/derekfika/fika-os/pull/397) | retired | 2026-11-05T18:38:38.845Z |
 | gng-oidc-scheduler-auth | codex-gng-oidc-scheduler-auth | apps/delivered-in/app/api/internal, apps/delivered-in/lib/scheduler-auth.ts, apps/delivered-in/tests/scheduler-auth.test.ts, docs/deployment/grab-and-go-standing-orders.md | codex/gng-oidc-scheduler-auth | [#396](https://github.com/derekfika/fika-os/pull/396) | retired | 2026-11-05T18:41:26.570Z |
@@ -322,6 +324,7 @@ Snapshot: 2026-11-05T18:49:24.668Z. The local governed registry remains authorit
 | overnight-no-key-audit | luna-overnight-357 | apps/menu-planning/app/allergen-checker.tsx | codex/overnight-no-key-audit | — | active | 2026-11-04T21:49:34.390Z |
 | overnight-policy-v31 | luna-overnight-357-policy | overnight.md | codex/overnight-policy-v31 | [#359](https://github.com/derekfika/fika-os/pull/359) | retired | 2026-11-04T22:11:53.311Z |
 | overnight-prod-serving-status | luna-overnight-357-release-status | docs/deployment/workflow.md | codex/overnight-prod-serving-status | — | retired | 2026-11-04T23:40:50.532Z |
+| p0-334-release-recovery | luna-p0-334-release-recovery | .changes/platform/p0-334-release-recovery.md | codex/p0-334-release-recovery | — | active | 2026-11-05T19:17:48.895Z |
 | pr-297-integration-alias | luna-pr297-integration | apps/menu-planning/app/planner-data.ts, apps/menu-planning/tests/planner-load-error.test.ts, .changes/menu-planning/2026-11-02-planner-load-timeout-275.md | codex/pr-297-integration-alias | [#300](https://github.com/derekfika/fika-os/pull/300) | retired | 2026-11-02T22:18:12.964Z |
 | pr-298-integration-alias | luna-pr298-integration | apps/menu-planning/app/catalogue-workspace.tsx, apps/menu-planning/tests/read-paths.test.ts, .changes/menu-planning/2026-11-02-dish-library-search-277.md | codex/pr-298-integration-alias | [#302](https://github.com/derekfika/fika-os/pull/302) | retired | 2026-11-02T22:23:26.329Z |
 | pr-backlog-audit | codex-pr-reconciliation | docs/audits/2026-10-28/pr-backlog-reconciliation.md | codex/pr-backlog-audit | [#126](https://github.com/derekfika/fika-os/pull/126) | retired | 2026-10-29T08:26:48.018Z |
