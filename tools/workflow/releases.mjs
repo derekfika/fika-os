@@ -240,7 +240,7 @@ export function servingBaselineRecord(t, { snapshot, expectedSha, expectedRollou
       excludedRollbackCandidates:t.app === 'hub' ? ['build-2026-10-24-002'] : [] } };
 }
 
-export async function reconcileServingBaseline(app, environment, options, access = {}) {
+async function reconcileVerifiedServingBaseline(app, environment, options, access = {}) {
   assertServingBaselineTarget(target(app, environment));
   if (options.execute && !options.reason?.trim()) throw Error('Explicit owner baseline-reconciliation instruction is required in --reason');
   return asyncLock(`release-${app}-${environment}`, async () => {
@@ -267,6 +267,14 @@ export async function reconcileServingBaseline(app, environment, options, access
     if (written?.commit !== commit || written.record.reconciliation?.priorLedgerCommit !== prior.commit || written.record.sourceSha !== sha) throw Error('Reconciliation ledger readback did not match the appended record; preserve evidence and stop');
     return { status:'reconciled', commit, record, snapshotsStable:true, health };
   });
+}
+export async function reconcileServingBaseline(app, environment, options, access = {}) {
+  if (environment !== 'staging') throw Error('The existing serving-baseline command is restricted to staging');
+  return reconcileVerifiedServingBaseline(app, environment, options, access);
+}
+export async function reconcileProductionServingBaseline(app, environment, options, access = {}) {
+  if (environment !== 'prod') throw Error('Production serving-baseline reconciliation requires the production target');
+  return reconcileVerifiedServingBaseline(app, environment, options, access);
 }
 export function productionDelta(from, to) {
   exactSha(from); exactSha(to);
@@ -480,7 +488,9 @@ export async function deploy(app, environment, options) {
 }
 
 export async function reconcile(app, environment, options) {
-  if (options.resolution === 'serving-baseline') return reconcileServingBaseline(app, environment, options);
+  if (options.resolution === 'serving-baseline') return environment === 'prod'
+    ? reconcileProductionServingBaseline(app, environment, options)
+    : reconcileServingBaseline(app, environment, options);
   if (options.resolution === 'adopt-completed') return reconcileCompletedCpu(app, environment, options);
   return asyncLock(`release-${app}-${environment}`, async () => {
     const t = target(app, environment); assertClean(git('status', '--porcelain')); git('fetch', 'origin');
