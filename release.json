@@ -6,40 +6,12 @@
   "backend": "fika-delivered-in-staging",
   "region": "europe-west4",
   "branch": "release/staging/delivered-in",
-  "sourceSha": "bedd6c07216227d1766427f74c03b2ec45c7da5c",
-  "scopeHash": "5c89106b3e14607578331c4dbc57fdc8d032c6de6589be1848219e8ef82e1a8c",
-  "inMain": true,
-  "rollback": false,
-  "executing": true,
-  "cosmeticOnly": false,
-  "standard": false,
-  "validation": {
-    "id": 127456453645,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/42087417112/job/127456453645",
-    "sha": "bedd6c07216227d1766427f74c03b2ec45c7da5c"
-  },
-  "approval": {
-    "actor": "derekfika",
-    "method": "authenticated-repository-writer",
-    "app": "delivered-in",
-    "environment": "staging",
-    "sourceSha": "bedd6c07216227d1766427f74c03b2ec45c7da5c",
-    "action": "deploy",
-    "instruction": "Explicit staging execution",
-    "releaseId": null,
-    "id": "5e0fa2fe541098c68470dd59c8282e30797e4dae19be104d3d60fb86bb545a45",
-    "explicitExecute": true,
-    "authorisedAt": "2026-11-05T18:48:16.838Z"
-  },
-  "provenance": {
-    "number": 399,
-    "url": "https://github.com/derekfika/fika-os/pull/399",
-    "head": "8bdb84491e946323cc8736f7b18374feba03eb24",
-    "pullRequestRisk": "fast"
-  },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "3a0ea06a-4310-41bf-959b-d64562238932",
+  "sourceSha": "a37f2654ba6004a0014aa0a5b66dc50e67aeabc7",
+  "rollout": "build-2026-11-04-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "scopeHash": "eef37f529715681eb3d0d7b5e377016258313c0b1da9afc1e19a72820689eb99",
+  "kind": "abandoned",
   "previousGood": {
     "sourceSha": "a37f2654ba6004a0014aa0a5b66dc50e67aeabc7",
     "rollout": "build-2026-11-04-001",
@@ -47,5 +19,32 @@
     "percent": 100
   },
   "previousGoodRecord": "3bef648760bf46b13ed09a1ab6054f58acabe05a",
-  "createdAt": "2026-11-05T18:48:29.620Z"
+  "releaseId": "3a0ea06a-4310-41bf-959b-d64562238932",
+  "originalIntent": "2aacdc8e746912bde0bdb16abd3965c82a3db984",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-delivered-in-staging--fika-os-dev.europe-west4.hosted.app/"
+  },
+  "recovery": {
+    "resolution": "abandon",
+    "reason": "Owner-approved staging validation failed in App Hosting build; preserve prior serving baseline and require a governed dependency-resolution fix before retry",
+    "operator": {
+      "actor": "derekfika",
+      "method": "authenticated-repository-writer",
+      "app": "delivered-in",
+      "environment": "staging",
+      "sourceSha": "bedd6c07216227d1766427f74c03b2ec45c7da5c",
+      "action": "reconcile:abandon",
+      "instruction": "Owner-approved staging validation failed in App Hosting build; preserve prior serving baseline and require a governed dependency-resolution fix before retry",
+      "releaseId": "3a0ea06a-4310-41bf-959b-d64562238932",
+      "id": "36555e82d04e9b2228ec3f0e09301474e8c676fd6c8995bce378b7689b19a1d8",
+      "explicitExecute": true,
+      "authorisedAt": "2026-11-05T18:58:59.096Z"
+    },
+    "rollout": "build-2026-11-05-001",
+    "evidenceHash": "ca1ca73f1fe152e383b9678f304bad44cda69147a6475ea360df322add78e7e0",
+    "journalHash": "217d628d45ceef584b5d3d1288293043974fc0d639bdac9b9ccced292496ce9a",
+    "at": "2026-11-05T18:59:03.554Z"
+  }
 }
