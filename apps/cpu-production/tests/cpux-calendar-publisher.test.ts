@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ProductionOrder } from "../lib/production-types";
-import { applyCpuXCalendarOrder, boundedBackfillDates, buildCpuXCalendarEventResource, claimCpuXCalendarOrder, cpuXCalendarBackfillEnabled, cpuXCalendarWritesEnabled, cpuxCalendarEventId, enqueueCpuXCalendarOrder, previewCpuXCalendarBackfill, scanCpuXCalendarBackfill, shouldQueueCpuXCalendarOrder, stageCpuXCalendarOrder } from "../lib/cpux-calendar-publisher";
+import { applyCpuXCalendarOrder, boundedBackfillDates, buildCpuXCalendarEventResource, claimCpuXCalendarOrder, cpuXCalendarOrderIdentity, cpuXCalendarBackfillEnabled, cpuXCalendarWritesEnabled, cpuxCalendarEventId, enqueueCpuXCalendarOrder, finishCpuXCalendarOrder, releaseCpuXCalendarOrderClaim, previewCpuXCalendarBackfill, scanCpuXCalendarBackfill, shouldQueueCpuXCalendarOrder, stageCpuXCalendarOrder } from "../lib/cpux-calendar-publisher";
 
 const productionEnvironment = {
   FIKA_RUNTIME_MODE: "production",
@@ -13,10 +13,11 @@ const productionEnvironment = {
   FIKA_CPUX_CALENDAR_ID: "cpux-calendar",
   CPU_PUBLIC_BASE_URL: "https://cpu.fikacatering.com",
 };
+const quoteArtifact = { revisionId: "quote:1", driveFileId: "existing-quote-file" };
 
 function order(overrides: Partial<ProductionOrder> = {}): ProductionOrder {
   return {
-    canonicalId: "po:calendar-test-1", entityType: "Production Order", schemaVersion: "0.1.0", version: 7,
+    canonicalId: "production-order:v1:booking:1", entityType: "Production Order", schemaVersion: "0.1.0", version: 7,
     requirementIds: [], sourceBookingId: "booking:1", sourceQuoteRevisionId: "quote:1", requiredBy: "2026-11-03T12:00:00",
     serviceDate: "2026-11-03", serviceWindow: { startTime: "12:00", endTime: "12:45" }, status: "accepted", priority: "normal",
     lines: [{ canonicalId: "line:1", sourceBookingLineId: "source:1", itemName: "Sandwich platter", customerQuantity: 12, customerUnit: "portions", dietaries: {}, status: "ready", sortOrder: 0, workstream: "sandwiches" }],
@@ -34,7 +35,8 @@ test("CPU X Calendar event uses one deterministic ID, only sandwich lines, and n
   assert.equal(resource.start.dateTime, "2026-01-15T12:00:00+00:00");
   assert.equal(resource.end.dateTime, "2026-01-15T12:45:00+00:00");
   assert.match(resource.description, /Sandwich platter: 12 portions/);
-  assert.ok(resource.description.includes("Open FIKA OS order: https://cpu.fikacatering.com/?order=po%3Acalendar-test-1&date=2026-01-15"));
+  assert.ok(resource.description.includes("Open FIKA OS order: https://cpu.fikacatering.com/?order=production-order%3Av1%3Abooking%3A1&date=2026-01-15"));
+  assert.ok(resource.description.includes("https://cpu.fikacatering.com/api/production-quote?bookingId=booking%3A1"));
   assert.equal("attendees" in resource, false);
   assert.equal("attachments" in resource, false);
 
@@ -60,6 +62,7 @@ test("Calendar event shape is ignored by the legacy CPUX import scanner", async 
 test("Calendar delivery patches a deterministic event or inserts it once after a 404", async () => {
   const calls: Array<{ method: string; url: string; body?: Record<string, unknown> }> = [];
   const result = await applyCpuXCalendarOrder(order(), {
+    quoteArtifact,
     calendarId: "cpux-calendar",
     environment: productionEnvironment,
     getAccessToken: async () => "test-token",
@@ -71,13 +74,14 @@ test("Calendar delivery patches a deterministic event or inserts it once after a
   assert.equal(result.applied, true);
   assert.deepEqual(calls.map(call => call.method), ["PATCH", "POST"]);
   assert.match(calls[0].url, /events\/fika[a-f0-9]{64}\?sendUpdates=none$/);
-  assert.equal(calls[1].body?.id, cpuxCalendarEventId("po:calendar-test-1"));
+  assert.equal(calls[1].body?.id, cpuxCalendarEventId(order().canonicalId));
   assert.equal("attendees" in (calls[1].body || {}), false);
 });
 
 test("simultaneous first delivery that wins the deterministic ID turns insert conflict into an update", async () => {
   const methods: string[] = [];
   await applyCpuXCalendarOrder(order(), {
+    quoteArtifact,
     calendarId: "cpux-calendar", environment: productionEnvironment, getAccessToken: async () => "test-token",
     fetcher: async (_input, init) => {
       methods.push(init?.method || "GET");
@@ -90,6 +94,7 @@ test("simultaneous first delivery that wins the deterministic ID turns insert co
 test("Calendar updates and cancellations reuse the one event identity and deletion is retry-safe", async () => {
   const calls: Array<{ method: string; url: string }> = [];
   const updated = await applyCpuXCalendarOrder(order({ version: 8 }), {
+    quoteArtifact,
     calendarId: "cpux-calendar", environment: productionEnvironment, getAccessToken: async () => "test-token",
     fetcher: async (input, init) => { calls.push({ method: init?.method || "GET", url: String(input) }); return new Response("{}", { status: 200 }); },
   });
@@ -203,4 +208,106 @@ test("internal Calendar handlers guard before claim or backfill access", async (
   const backfill = await readFile(new URL("../app/api/internal/cpux-calendar-backfill/route.ts", import.meta.url), "utf8");
   assert.match(delivery, /cpuXCalendarWritesEnabled\(\)[\s\S]*?claimCpuXCalendarOrder/);
   assert.match(backfill, /body\.mode !== "execute"[\s\S]*?previewCpuXCalendarBackfill[\s\S]*?cpuXCalendarBackfillEnabled\(\)[\s\S]*?scanCpuXCalendarBackfill/);
+});
+
+test("replacement Hospitality orders keep one Calendar event and stable resolver link while quote revisions remain separate", async () => {
+  const first = order();
+  const replacement = order({ canonicalId: `${first.canonicalId}:r12`, version: 1, sourceQuoteRevisionId: "quote:2" });
+  const oldResource = buildCpuXCalendarEventResource(first, productionEnvironment.CPU_PUBLIC_BASE_URL, "production");
+  const newResource = buildCpuXCalendarEventResource(replacement, productionEnvironment.CPU_PUBLIC_BASE_URL, "production");
+  assert.equal(oldResource.id, newResource.id);
+  const link = (description: string) => description.split("\n").find(line => line.startsWith("Open current quote PDF"));
+  assert.equal(link(oldResource.description), link(newResource.description));
+  assert.equal(cpuXCalendarOrderIdentity(replacement).generation, 12);
+  const calls: Array<{ method: string; url: string }> = [];
+  const dependencies = {
+    environment: productionEnvironment, getAccessToken: async () => "mock-token",
+    fetcher: async (url: string | URL, init?: RequestInit) => { calls.push({ method: init?.method || "GET", url: String(url) }); return new Response("{}", { status: 200 }); },
+  };
+  const updated = await applyCpuXCalendarOrder(replacement, { ...dependencies, quoteArtifact: { revisionId: "quote:2", driveFileId: "new-immutable-file" } });
+  const cancelled = await applyCpuXCalendarOrder({ ...replacement, status: "cancelled", version: 2 }, dependencies);
+  assert.equal(updated.eventId, cancelled.eventId);
+  assert.deepEqual(calls.map(value => value.method), ["PATCH", "DELETE"]);
+  assert.equal(calls[0].url, calls[1].url);
+});
+
+test("missing or mismatched quote artifacts fail before any token, Calendar or Drive call", async () => {
+  let writes = 0;
+  const dependencies = { environment: productionEnvironment, getAccessToken: async () => { writes++; return "must-not-load"; }, fetcher: async () => { writes++; return new Response("{}"); } };
+  await assert.rejects(applyCpuXCalendarOrder(order(), dependencies), /current saved quote PDF/);
+  await assert.rejects(applyCpuXCalendarOrder(order(), { ...dependencies, quoteArtifact: { ...quoteArtifact, revisionId: "quote:other" } }), /current saved quote PDF/);
+  assert.equal(writes, 0);
+});
+
+test("staging, development and test refuse every mutation boundary even with production flags and a matching quote", async () => {
+  for (const runtime of ["staging", "development", "test", "local"]) {
+    const environment = { ...productionEnvironment, FIKA_RUNTIME_MODE: runtime };
+    let operations = 0;
+    assert.deepEqual(await enqueueCpuXCalendarOrder(order(), environment), { status: "disabled" });
+    assert.deepEqual(await claimCpuXCalendarOrder(order().canonicalId, 7, new Date(), environment), { status: "disabled" });
+    assert.deepEqual(await stageCpuXCalendarOrder({ get: async () => { operations++; }, set: () => { operations++; } } as never, order(), environment), { status: "disabled" });
+    await assert.rejects(applyCpuXCalendarOrder(order(), { environment, quoteArtifact, getAccessToken: async () => { operations++; return "blocked"; }, fetcher: async () => { operations++; return new Response("{}"); } }), /disabled/);
+    assert.equal(operations, 0);
+  }
+});
+
+test("HTTP Calendar handler blocks staging, development and test before Hub, credential or Firestore access", async t => {
+  const { NextRequest } = await import("next/server");
+  const { POST } = await import("../app/api/internal/cpux-calendar/route");
+  const { db } = await import("../lib/firebase-admin");
+  const keys = [...Object.keys(productionEnvironment), "FIKA_INTERNAL_API_TOKEN"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  t.after(() => { for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; } });
+  let operations = 0;
+  t.mock.method(globalThis, "fetch", async () => { operations++; throw Error("External calls forbidden"); });
+  t.mock.method(db, "runTransaction", async () => { operations++; throw Error("Persistence access forbidden"); });
+  for (const runtime of ["staging", "development", "test"]) {
+    Object.assign(process.env, productionEnvironment, { FIKA_RUNTIME_MODE: runtime, FIKA_INTERNAL_API_TOKEN: "mock-internal-token" });
+    const response = await POST(new NextRequest("https://cpu.fikacatering.com/api/internal/cpux-calendar", { method: "POST", headers: { "content-type": "application/json", "x-fika-internal-token": "mock-internal-token" }, body: JSON.stringify({ canonicalId: order().canonicalId, sourceVersion: 7 }) }));
+    assert.equal(response.status, 503);
+  }
+  assert.equal(operations, 0);
+});
+
+test("transactional lineage state fences old cancellation, duplicate replay and simultaneous replacement delivery", async t => {
+  const { db } = await import("../lib/firebase-admin");
+  const documents = new Map<string, Record<string, any>>();
+  let externalCalls = 0;
+  t.mock.method(globalThis, "fetch", async () => { externalCalls++; throw Error("External writes forbidden"); });
+  const transaction = {
+    get: async (ref: { path: string }) => ({ exists: documents.has(ref.path), data: () => structuredClone(documents.get(ref.path)) }),
+    create: (ref: { path: string }, value: Record<string, any>) => { assert.equal(documents.has(ref.path), false); documents.set(ref.path, structuredClone(value)); },
+    set: (ref: { path: string }, value: Record<string, any>, options?: { merge?: boolean }) => documents.set(ref.path, structuredClone({ ...(options?.merge ? documents.get(ref.path) : {}), ...value })),
+  };
+  t.mock.method(db, "runTransaction", async (callback: (value: unknown) => unknown) => callback(transaction));
+  const first = order({ version: 20 });
+  const replacement = order({ canonicalId: `${first.canonicalId}:r12`, version: 1, sourceQuoteRevisionId: "quote:2" });
+  const identity = cpuXCalendarOrderIdentity(first).canonicalId;
+  const staged = await enqueueCpuXCalendarOrder(first, productionEnvironment);
+  assert.equal(staged.status, "queued");
+  if (staged.status !== "queued") return;
+  assert.ok(documents.has(`fikaCpuPropagationOutboxV1/${staged.eventId}`), "immediate delivery must receive the actual staged outbox identity");
+  assert.equal(staged.calendarEventId, cpuxCalendarEventId(identity));
+  const claim = await claimCpuXCalendarOrder(first.canonicalId, first.version, new Date(), productionEnvironment, identity);
+  assert.equal(claim.status, "claimed");
+  if (claim.status !== "claimed") return;
+  assert.equal((await enqueueCpuXCalendarOrder(replacement, productionEnvironment)).status, "queued");
+  assert.equal((await claimCpuXCalendarOrder(replacement.canonicalId, 1, new Date(), productionEnvironment, identity)).status, "busy");
+  assert.equal((await enqueueCpuXCalendarOrder({ ...first, version: 99, status: "cancelled" }, productionEnvironment)).status, "already-current");
+  await finishCpuXCalendarOrder(first.canonicalId, claim.claimId, first.version, "upsert", identity);
+  assert.equal((await claimCpuXCalendarOrder(first.canonicalId, first.version, new Date(), productionEnvironment, identity)).status, "superseded");
+  const newer = await claimCpuXCalendarOrder(replacement.canonicalId, 1, new Date(), productionEnvironment, identity);
+  assert.equal(newer.status, "claimed");
+  if (newer.status !== "claimed") return;
+  await releaseCpuXCalendarOrderClaim(replacement.canonicalId, newer.claimId, identity);
+  const retried = await enqueueCpuXCalendarOrder(replacement, productionEnvironment);
+  assert.equal(retried.status, "queued", "an unfinished attempt retries its existing outbox record");
+  if (retried.status === "queued") assert.ok(documents.has(`fikaCpuPropagationOutboxV1/${retried.eventId}`));
+  const retryClaim = await claimCpuXCalendarOrder(replacement.canonicalId, 1, new Date(), productionEnvironment, identity);
+  assert.equal(retryClaim.status, "claimed");
+  if (retryClaim.status !== "claimed") return;
+  await finishCpuXCalendarOrder(replacement.canonicalId, retryClaim.claimId, 1, "upsert", identity);
+  assert.equal((await enqueueCpuXCalendarOrder(replacement, productionEnvironment)).status, "already-current");
+  assert.equal(documents.size, 3, "one lineage state and one outbox record per distinct accepted source version");
+  assert.equal(externalCalls, 0);
 });
