@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-05T19:33:53.349Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-05T19:34:44.267Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -108,7 +108,7 @@ Snapshot: 2026-11-05T19:33:53.349Z. The local governed registry remains authorit
 | gng-oidc-runbook-idfix | codex-gng-oidc-scheduler-auth | docs/deployment/grab-and-go-standing-orders-release.md | codex/gng-oidc-runbook-idfix | [#399](https://github.com/derekfika/fika-os/pull/399) | retired | 2026-11-05T18:46:44.501Z |
 | gng-oidc-runbook | codex-gng-oidc-scheduler-auth | docs/deployment/grab-and-go-standing-orders-release.md | codex/gng-oidc-runbook | [#397](https://github.com/derekfika/fika-os/pull/397) | retired | 2026-11-05T18:38:38.845Z |
 | gng-oidc-scheduler-auth | codex-gng-oidc-scheduler-auth | apps/delivered-in/app/api/internal, apps/delivered-in/lib/scheduler-auth.ts, apps/delivered-in/tests/scheduler-auth.test.ts, docs/deployment/grab-and-go-standing-orders.md | codex/gng-oidc-scheduler-auth | [#396](https://github.com/derekfika/fika-os/pull/396) | retired | 2026-11-05T18:41:26.570Z |
-| gng-oidc-staging | codex-gng-oidc-scheduler-auth | apps/delivered-in/lib/scheduler-auth.ts | codex/gng-oidc-staging | — | active | 2026-11-05T18:47:26.685Z |
+| gng-oidc-staging | codex-gng-oidc-scheduler-auth | apps/delivered-in/lib/scheduler-auth.ts | codex/gng-oidc-staging | — | retired | 2026-11-05T19:34:39.471Z |
 | grab-go-standing-ux | codex-grab-go-standing-ux | apps/delivered-in, CHANGELOG.md | codex/grab-go-standing-ux | [#21](https://github.com/derekfika/fika-os/pull/21) | finished | 2026-10-24T19:27:36.155Z |
 | hierarchical-agent-instructions | codex-hierarchical-agent-instructions | AGENTS.md, CLAUDE.md, README.md, docs/ai/agent-reference.md, apps/integration-hub/AGENTS.md, apps/integration-hub/CLAUDE.md, apps/hospitality-booking/AGENTS.md, apps/hospitality-booking/CLAUDE.md, apps/menu-planning/AGENTS.md, apps/menu-planning/CLAUDE.md, apps/cpu-production/AGENTS.md, apps/cpu-production/CLAUDE.md, apps/delivered-in/AGENTS.md, apps/delivered-in/CLAUDE.md, apps/logistics/AGENTS.md, apps/logistics/CLAUDE.md | codex/hierarchical-agent-instructions | [#4](https://github.com/derekfika/fika-os/pull/4) | finished | 2026-10-22T19:47:37.742Z |
 | hospitality-all-day-s0-codex | codex-hospitality-all-day-s0 | apps/hospitality-booking/lib/rcoa-all-day.ts, apps/hospitality-booking/tests/rcoa-all-day.test.ts, .changes/hospitality-booking/2026-10-31-all-day-draft-extraction.md | codex/hospitality-all-day-s0-codex | [#202](https://github.com/derekfika/fika-os/pull/202) | retired | 2026-10-31T08:00:14.404Z |
