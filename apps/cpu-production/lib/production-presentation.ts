@@ -58,19 +58,46 @@ export function cpuSourceLabel(order: ProductionOrder) {
 }
 
 export function cpuAttentionLabel(order: ProductionOrder) {
-  if (order.cancellationNotice && !order.cpuDismissedAt) return "Cancelled booking";
-  if (order.exceptions.some(exception => exception.status === "open" && exception.severity === "blocking")) return "Blocked";
-  if (["blocked", "failed", "reconciliation_required"].includes(order.status)) return "Blocked";
-  if (order.status === "needs_clarification") return "Needs clarification";
-  if (order.status === "needs_review") return "Needs review";
-  if (order.status === "amended" || order.version > 1) return "Amended";
-  return "";
+  return cpuAttentionReasons(order)[0] || "";
+}
+
+/**
+ * Review signals are derived only from persisted order state. A canonical
+ * draft with an amended workflow is awaiting review, and missing production
+ * quantities stay visible as unconfigured rather than borrowing customer
+ * portions or being treated as ready.
+ */
+export function cpuAttentionReasons(order: ProductionOrder): string[] {
+  if (order.cancellationNotice && !order.cpuDismissedAt) return ["Cancelled booking"];
+  if (order.exceptions.some(exception => exception.status === "open" && exception.severity === "blocking")) return ["Blocked"];
+  if (["blocked", "failed", "reconciliation_required"].includes(order.status)) return ["Blocked"];
+
+  const reasons: string[] = [];
+  if (order.status === "needs_clarification" || order.workflowStatus === "needs_clarification") reasons.push("Needs clarification");
+  if (
+    order.status === "needs_review" ||
+    order.workflowStatus === "needs_review" ||
+    (order.status === "draft" && order.workflowStatus === "amended")
+  ) reasons.push("Needs review");
+
+  const missingProductionQuantities = isCpuWithdrawn(order) ? 0 : order.lines.filter(line =>
+    line.productionQuantity === undefined ||
+    !Number.isFinite(line.productionQuantity) ||
+    line.productionQuantity < 0 ||
+    !line.productionUnit?.trim()
+  ).length;
+  if (missingProductionQuantities > 0) {
+    reasons.push(`Missing production quantities · ${missingProductionQuantities} line${missingProductionQuantities === 1 ? "" : "s"}`);
+  }
+
+  if (order.status === "amended" || order.workflowStatus === "amended" || order.version > 1) reasons.push("Amended");
+  return reasons;
 }
 
 export function cpuAttentionKey(order: ProductionOrder) {
   const label = cpuAttentionLabel(order);
   if (label === "Cancelled booking") return "cancelled_booking";
-  return label === "Needs review" ? "needs_review" : label === "Needs clarification" ? "needs_clarification" : label === "Blocked" ? "blocked" : label === "Amended" ? "amended" : "";
+  return label === "Needs review" ? "needs_review" : label === "Needs clarification" ? "needs_clarification" : label === "Blocked" ? "blocked" : label.startsWith("Missing production quantities") ? "missing_quantities" : label === "Amended" ? "amended" : "";
 }
 
 export function cpuRequiredTime(order: ProductionOrder) {
