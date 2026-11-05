@@ -5,7 +5,7 @@ export type PublishedMenuPublicationSummary = { weekCommencing: string };
 export type PublishedMenuAllocation = { destinationLabel: string; quantity: number };
 export type PublishedMenuEntrySummary = { slot: string; dishName: string; portions: number; canonicalDishId?: string; sourceEntryId?: string; menuOrderVersion?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; allocations: PublishedMenuAllocation[] };
 export type DestinationProductionGroup = { destinationLabel: string; total: number; entries: Array<{ slot: string; dishName: string; quantity: number; sourceEntryId?: string; canonicalSlotId?: string; canonicalOrderIndex?: number }> };
-export type ProductionTotal = { slot: string; dishName: string; quantity: number; canonicalDishId?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; menuOrderVersion?: string };
+export type ProductionTotal = { slot: string; dishName: string; quantity: number; canonicalDishId?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; menuOrderVersion?: string; slots: Array<{ slot: string; canonicalSlotId?: string; canonicalOrderIndex?: number }> };
 export function publishedMatrixUrl(publicationId: string, publicationDayId: string) { return `/api/menu-publications?publicationId=${encodeURIComponent(publicationId)}&publicationDayId=${encodeURIComponent(publicationDayId)}&format=matrix`; }
 
 export function currentPublishedDays<T extends PublishedMenuDaySummary>(days: T[] = []) {
@@ -55,8 +55,11 @@ export function aggregateProductionTotals(entries: PublishedMenuEntrySummary[] =
     // its position; destination rows retain the distinct slot occurrences.
     const key = entry.canonicalDishId ? `id:${entry.canonicalDishId}` : `name:${normalizedName}`;
     const existing = totals.get(key);
-    if (existing) existing.quantity += quantity;
-    else totals.set(key, { slot: entry.slot, dishName: entry.dishName, quantity, originalIndex: entry.canonicalOrderIndex ?? index, ...(entry.canonicalDishId ? { canonicalDishId: entry.canonicalDishId } : {}), ...(entry.canonicalSlotId ? { canonicalSlotId: entry.canonicalSlotId } : {}), ...(entry.canonicalOrderIndex !== undefined ? { canonicalOrderIndex: entry.canonicalOrderIndex } : {}), ...(entry.menuOrderVersion ? { menuOrderVersion: entry.menuOrderVersion } : {}), ...(entry.sourceEntryId ? { sourceEntryId: entry.sourceEntryId } : {}) });
+    const slot = { slot: entry.slot, ...(entry.canonicalSlotId ? { canonicalSlotId: entry.canonicalSlotId } : {}), ...(entry.canonicalOrderIndex !== undefined ? { canonicalOrderIndex: entry.canonicalOrderIndex } : {}) };
+    if (existing) {
+      existing.quantity += quantity;
+      if (!existing.slots.some(item => (item.canonicalSlotId || item.slot) === (slot.canonicalSlotId || slot.slot))) existing.slots.push(slot);
+    } else totals.set(key, { slot: entry.slot, dishName: entry.dishName, quantity, slots: [slot], originalIndex: entry.canonicalOrderIndex ?? index, ...(entry.canonicalDishId ? { canonicalDishId: entry.canonicalDishId } : {}), ...(entry.canonicalSlotId ? { canonicalSlotId: entry.canonicalSlotId } : {}), ...(entry.canonicalOrderIndex !== undefined ? { canonicalOrderIndex: entry.canonicalOrderIndex } : {}), ...(entry.menuOrderVersion ? { menuOrderVersion: entry.menuOrderVersion } : {}), ...(entry.sourceEntryId ? { sourceEntryId: entry.sourceEntryId } : {}) });
   });
   return orderMenuEntries([...totals.values()].map((entry, index) => ({ entry, slot: canonicalMenuSlotIdFor(entry.canonicalSlotId || "") || canonicalMenuSlotIdFor(entry.slot) || entry.slot, originalIndex: entry.canonicalOrderIndex ?? entry.originalIndex ?? index, sourceEntryId: entry.sourceEntryId }))).map(({ entry }) => entry);
 }

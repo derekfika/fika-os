@@ -23,9 +23,9 @@ test("production totals aggregate canonical dishes across sites and slots in fir
     entry("HOT FISH", "Mixed leaves", 5, "dish:salad", "Site A"),
     entry("SALAD 1", "Mixed leaves", 4, "dish:salad", "Site B"),
   ]);
-  assert.deepEqual(rows.map(row => [row.canonicalSlotId, row.dishName, row.quantity]), [
-    ["SALAD 1", "Mixed leaves", 12],
-    ["DESSERT 1", "Pear crumble", 2],
+  assert.deepEqual(rows.map(row => [row.canonicalSlotId, row.dishName, row.quantity, row.slots.map(slot => slot.canonicalSlotId || slot.slot)]), [
+    ["SALAD 1", "Mixed leaves", 12, ["SALAD 1", "HOT FISH"]],
+    ["DESSERT 1", "Pear crumble", 2, ["DESSERT 1"]],
   ]);
 });
 
