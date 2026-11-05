@@ -103,6 +103,24 @@ export async function assertWeekDateAvailable(weekCommencing: string) {
     if (snapshot && isCompletePlanningWeek(snapshot)) throw weekConflict(weekCommencing);
   }
 }
+/** Start a blank week without replacing an existing shell or racing an occupied Monday. */
+export async function createOrReuseBlankWeek(weekCommencing: string, actor = "local-menu-planner") {
+  const candidate = await createWeekSnapshot(weekCommencing, actor);
+  return withMenuPlanningTransaction(state => {
+    const stored = state.rolling as unknown as Stored;
+    const existing = stored.weeks.find(week => week.id === candidate.week.id);
+    if (existing) {
+      const current = snapshotFromStored(stored, existing.id);
+      const publications = state.publications as { publications?: Array<{ sourceWeekId?: string }> };
+      const hasPublicationHistory = (publications.publications || []).some(publication => publication.sourceWeekId === existing.id);
+      if (current.week.status !== "draft" || current.week.sourceFiles.length || hasPublicationHistory || Object.values(current.week.dayStatuses || {}).some(status => status === "published" || status === "superseded")) throw weekConflict(weekCommencing);
+      if (current.entries.length || current.week.entryIds.length) throw weekConflict(weekCommencing);
+      return current;
+    }
+    replaceSnapshotInStored(stored, candidate);
+    return candidate;
+  }, undefined, { weekId: candidate.week.id, sourceWeekId: "__none__", includeEvents: false });
+}
 export async function listWeeks(): Promise<RollingWeek[]> { return (await listWeekSummaries<RollingWeek>()).slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
 export async function listWeeksByCommencing(weekCommencings: string[]): Promise<RollingWeek[]> { return (await listWeekSummariesByCommencing<RollingWeek>(weekCommencings)).slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
 export { getWeekSnapshot };
@@ -350,19 +368,28 @@ export async function batchUpdateEntries(weekId: string, expectedWeekVersion: nu
 }
 export async function publishWeek(weekId: string, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) { const snapshot = normaliseRollingSnapshotDestinations(await getWeek(weekId), liveOplocs); if (snapshot.week.status === "published") throw Object.assign(new Error("This menu week is already published."), { status: 409 }); snapshot.week.status = "published"; snapshot.week.dayStatuses = undefined; snapshot.week.version += 1; snapshot.week.audit.push({ action: "week-published", at: now(), by: actor }); return saveSnapshot(snapshot, snapshot.week.version - 1); }
 export async function duplicateWeek(weekId: string, weekCommencing: string, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) { const source = normaliseRollingSnapshotDestinations(await getWeek(weekId), liveOplocs); const next = await createWeekSnapshot(weekCommencing, actor); const dayMap = new Map(source.days.map((d, i) => [d.id, next.days[i]?.id])); next.entries = source.entries.map(e => ({ ...structuredClone(e), id: `${next.week.id}:entry:${e.id.split(":entry:").pop()}`, dayId: dayMap.get(e.dayId) || next.days[0].id, date: addDays(weekCommencing, source.days.findIndex(d => d.id === e.dayId)), audit: [{ action: "entry-copied", at: now(), by: actor }] })); next.days.forEach(d => d.entryIds = next.entries.filter(e => e.dayId === d.id).map(e => e.id)); next.week.entryIds = next.entries.map(e => e.id); next.week.sourceFiles = source.week.sourceFiles.slice(); next.week.customSlots = source.week.customSlots?.slice() || []; next.week.removedSlots = source.week.removedSlots?.slice() || []; return saveSnapshot(next); }
-export async function resetWeek(weekId: string, actor = "local-menu-planner") {
-  const target = await getWeek(weekId);
-  target.entries = [];
-  target.days = target.days.map(day => ({ ...day, entryIds: [], oneOffDestinations: [] }));
-  target.week.entryIds = [];
-  target.week.sourceFiles = [];
-  target.week.customSlots = [];
-  target.week.removedSlots = [];
-  target.week.status = "draft";
-  target.week.dayStatuses = Object.fromEntries(target.days.map(day => [day.id, "draft"]));
-  target.week.version += 1;
-  target.week.audit.push({ action: "week-reset", at: now(), by: actor });
-  return saveSnapshot(target, target.week.version - 1);
+export async function resetWeek(weekId: string, expectedWeekVersion: number, actor = "local-menu-planner") {
+  if (!Number.isInteger(expectedWeekVersion) || expectedWeekVersion < 1) throw Object.assign(new Error("Refresh the week before resetting it."), { status: 422 });
+  return withMenuPlanningTransaction(state => {
+    const rolling = state.rolling as unknown as Stored;
+    const target = snapshotFromStored(rolling, weekId);
+    if (target.week.id !== weekId || !rolling.weeks.some(week => week.id === weekId)) throw Object.assign(new Error("This planning week no longer exists. Refresh the Week Planner."), { status: 404 });
+    if (target.week.version !== expectedWeekVersion) throw Object.assign(new Error("This week changed on the server. Refresh it before resetting."), { status: 409 });
+    const publications = state.publications as { publications?: Array<{ sourceWeekId?: string }> };
+    const hasPublicationHistory = (publications.publications || []).some(publication => publication.sourceWeekId === weekId);
+    if (target.week.status !== "draft" || hasPublicationHistory || Object.values(target.week.dayStatuses || {}).some(status => status === "published" || status === "superseded")) {
+      throw Object.assign(new Error("This week is published, imported, or otherwise locked. Use its governed amendment or withdrawal workflow; reset is unavailable."), { status: 409 });
+    }
+    target.entries = [];
+    target.days = target.days.map(day => ({ ...day, entryIds: [], oneOffDestinations: [] }));
+    target.week.entryIds = [];
+    target.week.status = "draft";
+    target.week.dayStatuses = Object.fromEntries(target.days.map(day => [day.id, "draft"]));
+    target.week.version += 1;
+    target.week.audit.push({ action: "week-reset", at: now(), by: actor });
+    replaceSnapshotInStored(rolling, target);
+    return target;
+  }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: weekId, includeEvents: false });
 }
 function entryIntegrityErrors(entry: RollingEntry, governedIds?: Set<string>, day?: RollingDay) {
   const errors: string[] = [];
