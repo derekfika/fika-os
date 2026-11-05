@@ -506,6 +506,11 @@ export function resolveHospitalityDestinationOploc(
 export function resolveHospitalityDestinationId(payload: Pick<MnkBookingPayload, "siteId" | "site">, mappings: Array<Record<string, unknown>>) {
   const sourceIdentifiers = portalSourceIdentifiers(payload);
   const portalSiteId = portalSiteKeyForPayload(payload);
+  if (portalSiteId === "cfc" || portalSiteId === "munich-re") {
+    const candidates = mappings.filter(candidate => String(candidate.sourceIdentifier || "").trim().toLowerCase() === portalSiteId && candidate.sourceEntityType === "provider-location" && candidate.mappingStatus === "confirmed");
+    if (candidates.length !== 1) return undefined;
+    return String(candidates[0]!.targetCanonicalId || candidates[0]!.oplocId || "").trim() || undefined;
+  }
   const candidates = mappings.filter(candidate => sourceIdentifiers.includes(String(candidate.sourceIdentifier || "").trim().toLowerCase()) && String(candidate.mappingStatus || "") === "confirmed" && (portalSiteId === "rcoa" ? String(candidate.sourceEntityType || "") === "provider-location" : Boolean(String(candidate.sourceEntityType || ""))));
   const mapping = portalSiteId === "rcoa" ? (candidates.length === 1 ? candidates[0] : undefined) : candidates[0];
   return String(mapping?.oplocId || mapping?.targetCanonicalId || "").trim() || undefined;
@@ -810,6 +815,10 @@ export async function ingestMnkBooking(
     );
     if (!result.created) return result;
     if (isRcoa) await assertRcoaBookingServiceVisibility(transaction, result.booking, canonicalRecords);
+    else if (portalSiteId === "cfc" || portalSiteId === "munich-re") {
+      const verified = await assertMappedBookingServiceVisibility(transaction, result.booking, canonicalRecords);
+      result.booking.order.items = result.booking.order.items.map(item => verified?.has(item.itemId) ? { ...item, category: verified.get(item.itemId) } : item);
+    }
     await assertHospitalityBookingDate(transaction, result.booking, now, canonicalRecords);
     // Grouped services are ingested one by one: the customer gets ONE request-received email, created in the same
     // transaction that commits the last service. Single-service bookings keep their per-booking notification.
@@ -1237,20 +1246,65 @@ export async function assertRcoaBookingServiceVisibility(transaction: Transactio
   return verifiedCategories;
 }
 
+/** CFC and Munich RE accept only canonical, active Items offered by the verified site's current service layout. */
+export async function assertMappedBookingServiceVisibility(transaction: Transaction, booking: CanonicalBooking, records: CanonicalRecord[] = [], current?: CanonicalBooking) {
+  const siteId = booking.service.portalSiteId;
+  if (siteId !== "cfc" && siteId !== "munich-re") return;
+  const contextChanged = current && (current.order.eventType !== booking.order.eventType || current.service.oplocId !== booking.service.oplocId);
+  const lines = current && !contextChanged ? booking.order.items.filter(line => {
+    const prior = current.order.items.find(item => item.itemId === line.itemId);
+    return !prior || line.quantity > prior.quantity || groupHash(line.choices || []) !== groupHash(prior.choices || []);
+  }) : booking.order.items;
+  if (current && !lines.length) return;
+  const oplocId = booking.service.oplocId;
+  if (!oplocId) throw conflict("Hospitality service settings require a canonical destination OPLOC.");
+  const layout = await readBookingServiceLayout(transaction, oplocId);
+  const categories = resolveServiceCategories(layout, oplocId, booking.order.eventType || "");
+  if (!categories) throw conflict("This service is no longer offered. Refresh the menu and choose another service.");
+  const missingIds = [...new Set(lines.map(line => line.menuItemId || line.itemId).filter(id => id.startsWith("hospitality-menu-item:") && !records.some(record => record.canonicalId === id)))];
+  if (missingIds.length > 100) throw conflict("Too many menu items to verify safely.");
+  const snapshots = missingIds.length ? await transaction.getAll(...missingIds.map(id => canonical().doc(stableDocumentId(id)))) : [];
+  if (missingIds.length) recordDataAccess({ app: "integration-hub", operation: "hospitality.booking.service-category-items", source: "FIRESTORE", dataset: "hospitality-ingest", documents: snapshots.filter(snapshot => snapshot.exists).length, estimatedBillableReads: missingIds.length, firestoreReadKind: "transaction" });
+  const authority = [...records, ...snapshots.filter(snapshot => snapshot.exists).map(snapshot => snapshot.data() as CanonicalRecord)];
+  const verified = new Map<string, string>();
+  for (const line of lines) {
+    const itemId = line.menuItemId || line.itemId;
+    if (itemId.startsWith("hospitality-menu-item:")) {
+      const item = authority.find(record => record.entityType === "Hospitality Menu Item" && record.canonicalId === itemId);
+      if (!item) throw conflict("A selected menu item is not available in the governed catalogue.");
+      if (item.lifecycleStatus === "archived" || item.publicationStatus === "withdrawn" || item.record.lifecycleState !== "active") throw conflict("A selected menu item is not available in the governed catalogue.");
+      const category = item.record.category;
+      if (typeof category !== "string" || !categories.includes(category)) throw conflict("A selected menu item is not offered for this service. Review the saved selections before continuing.");
+      verified.set(line.itemId, category);
+      continue;
+    }
+    const provider = siteId === "cfc" ? "cfc-hospitality-brochure" : "munich-re-generic-brochure";
+    const matches = authority.filter(record => record.entityType === "Hospitality Menu Item" && Array.isArray(record.record.providerMappings) && record.record.providerMappings.some(raw => (raw as { provider?: string; sourceItemId?: string }).provider === provider && (raw as { sourceItemId?: string }).sourceItemId === line.itemId));
+    if (matches.length !== 1) throw conflict("A changed legacy menu item is not uniquely linked to a governed catalogue Item.");
+    const item = matches[0]!;
+    if (item.lifecycleStatus === "archived" || item.publicationStatus === "withdrawn" || item.record.lifecycleState !== "active") throw conflict("A selected menu item is not available in the governed catalogue.");
+    const category = item.record.category;
+    if (typeof category !== "string" || !categories.includes(category)) throw conflict("A selected menu item is not offered for this service. Review the saved selections before continuing.");
+    verified.set(line.itemId, category);
+  }
+  return verified;
+}
+
 /** Prepare all affected reads before applying writes; shared by single and atomic group amendments. */
 async function prepareBookingAmendment(transaction: Transaction, actor: Actor, canonicalId: string, current: CanonicalBooking, next: CanonicalBooking, command: Extract<WorkflowCommand, { action: "amend" }>, now: string, projectionChanges: ProductionProjectionChange[], grouped = false) {
   const patch = command.patch;
   const items = patch.order.items
     .filter((item) => item.quantity > 0)
-    .map((item) => ({
-      // RCoA historical line evidence survives omitted optional fields in a non-line amendment.
-      ...(current.service.portalSiteId === "rcoa" ? current.order.items.find(prior => prior.itemId === item.itemId) : undefined),
-      ...structuredClone(item),
-      lineTotal:
-        Math.round(
-          (item.unitPrice * item.quantity + Number.EPSILON) * 100,
-        ) / 100,
-    }));
+    .map((item) => {
+      const prior = current.order.items.find(existing => existing.itemId === item.itemId);
+      return {
+        // Preserve RCoA historical line evidence and CFC/Munich RE historical categories on non-demand edits.
+        ...(current.service.portalSiteId === "rcoa" ? prior : undefined),
+        ...structuredClone(item),
+        ...((current.service.portalSiteId === "cfc" || current.service.portalSiteId === "munich-re") && prior ? { category: prior.category } : {}),
+        lineTotal: Math.round((item.unitPrice * item.quantity + Number.EPSILON) * 100) / 100,
+      };
+    });
   if (!items.length && current.order.items.length > 0)
     throw conflict("Keep at least one menu line on the Booking.");
   const ricePaperLine = items.find((item) => /rice paper rolls?/i.test(String(item.itemName || "")) && item.quantity < 3);
@@ -1273,7 +1327,7 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
     vatTotal: 0,
     grossTotal: items.reduce((total, item) => total + item.lineTotal, 0),
   };
-  const verifiedCategories = await assertRcoaBookingServiceVisibility(transaction, next, [], current);
+  const verifiedCategories = await assertRcoaBookingServiceVisibility(transaction, next, [], current) || await assertMappedBookingServiceVisibility(transaction, next, [], current);
   if (verifiedCategories) next.order.items = next.order.items.map(item => verifiedCategories.has(item.itemId) ? { ...item, category: verifiedCategories.get(item.itemId) } : item);
   const cutoffChanged = current.order.eventType !== next.order.eventType ||
     (["eventDate", "startTime", "endTime", "guestCount", "oplocId", "floorLevel", "roomOrArea", "deliveryPoint"] as const).some(key => (current.service[key] ?? "") !== (next.service[key] ?? "")) ||

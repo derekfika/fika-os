@@ -18,6 +18,9 @@ import { catalogueMinimums, effectiveProductMinimum, validateCatalogueRules, typ
 import StartAgainButton from "./StartAgainButton";
 import GuestCountInput, { GuestCountNotice } from "./GuestCountInput";
 import { effectiveGuestMinimum, guestCountMessage } from "../../lib/guest-count";
+import { resolveServiceCategories } from "@fika/server-shared/hospitality-service-layout";
+import type { HospitalityServiceVisibility } from "@/lib/rcoa-service-visibility";
+import { visibleHospitalityServiceOptions } from "@/lib/hospitality-portal-service-options";
 
 type ChoiceValue = string | string[] | Record<string, number>;
 type Line = {
@@ -157,6 +160,7 @@ export default function BookingPortal({
   const currentSiteLabel = siteLabel?.trim() || site.theme.shortLabel;
   const themeStyle = hospitalitySiteThemeStyle(site) as CSSProperties;
   const [menu, setMenu] = useState<PortalMenuItem[]>([]);
+  const [serviceVisibility, setServiceVisibility] = useState<HospitalityServiceVisibility>();
   const [catalogueWarning, setCatalogueWarning] = useState("");
   const [occasion, setOccasion] = useState("");
   const [step, setStep] = useState(0);
@@ -292,19 +296,25 @@ export default function BookingPortal({
 
   useEffect(() => {
     let active = true;
-    void loadHospitalityPortalMenu(site.key, oplocId).then(({ menu: nextMenu, catalogue }) => {
+    void loadHospitalityPortalMenu(site.key, oplocId).then(({ menu: nextMenu, catalogue, visibility }) => {
       if (!active) return;
       setMenu(nextMenu);
+      setServiceVisibility(visibility);
       setCatalogueWarning(catalogue.source === "cache-unverified" ? "Showing the last saved menu. Its current version could not be verified; check your connection and refresh before submitting." : "");
     }).catch(() => { if (active) setError(`The ${site.label} catalogue could not be loaded. Check your connection and try again.`); });
     return () => { active = false; };
   }, [site.key, site.label, oplocId]);
+  const offeredOccasions = useMemo(() => site.key === "cfc" || site.key === "munich-re" ? visibleHospitalityServiceOptions(serviceVisibility) : occasions, [site.key, serviceVisibility]);
   const categories = useMemo(
-    () =>
-      (allowed[occasion] || []).filter((category) =>
+    () => {
+      const governed = (site.key === "cfc" || site.key === "munich-re")
+        ? serviceVisibility ? resolveServiceCategories(serviceVisibility.layout, serviceVisibility.oplocId, occasion) : undefined
+        : allowed[occasion];
+      return (governed || []).filter((category) =>
         menu.some((item) => item.category === category),
-      ),
-    [menu, occasion],
+      );
+    },
+    [menu, occasion, site.key, serviceVisibility],
   );
   useEffect(() => {
     if (!categories.includes(category)) setCategory(categories[0] || "");
@@ -712,6 +722,7 @@ export default function BookingPortal({
               setOccasion={setOccasion}
               errors={fieldErrors}
               clearError={clearValidation}
+              offeredOccasions={offeredOccasions}
             />
           )}
           {step === 1 && (
@@ -847,11 +858,13 @@ function Choose({
   setOccasion,
   errors,
   clearError,
+  offeredOccasions,
 }: {
   occasion: string;
   setOccasion: (id: string) => void;
   errors: BookingFieldErrors;
   clearError: (field: string) => void;
+  offeredOccasions: typeof occasions;
 }) {
   return (
     <section>
@@ -861,7 +874,7 @@ function Choose({
         Choose an occasion and we’ll show the relevant menu and notice guidance.
       </p>
       <div className="occasion-grid" data-booking-field="occasion" aria-describedby={errors.occasion ? inlineErrorId("occasion") : undefined} aria-invalid={errors.occasion ? true : undefined}>
-        {occasions.map((item) => (
+        {offeredOccasions.map((item) => (
           <button
             type="button"
             key={item.id}

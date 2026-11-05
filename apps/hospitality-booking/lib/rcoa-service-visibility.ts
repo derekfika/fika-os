@@ -2,7 +2,9 @@ import { MAX_CATEGORIES_PER_SERVICE, SERVICE_IDS, isServiceId, resolveServiceCat
 import type { CataloguePackage } from "@fika/server-shared/hospitality-effective-offering";
 
 export type RcoaServiceVisibility = { layout: ServiceLayoutPackage; oplocId: string };
+export type HospitalityServiceVisibility = RcoaServiceVisibility;
 export const RCOA_SERVICE_SETTINGS_UNAVAILABLE = "The RCoA service settings could not be verified. Refresh the menu and try again.";
+export const HOSPITALITY_SERVICE_SETTINGS_UNAVAILABLE = "The Hospitality service settings could not be verified. Refresh the menu and try again.";
 
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value));
 const validRule = (value: unknown) => object(value) && Array.isArray(value.categories) && value.categories.length <= MAX_CATEGORIES_PER_SERVICE &&
@@ -11,11 +13,19 @@ const validRule = (value: unknown) => object(value) && Array.isArray(value.categ
 
 /** The package is already hash-verified by the shared loader; reject missing/old or malformed visibility data explicitly. */
 export function rcoaVisibilityFromCatalogue(pkg: Pick<CataloguePackage, "serviceLayout" | "oplocs">, oplocId: string): RcoaServiceVisibility {
+  return buildHospitalityVisibility(pkg, oplocId, RCOA_SERVICE_SETTINGS_UNAVAILABLE);
+}
+
+export function hospitalityVisibilityFromCatalogue(pkg: Pick<CataloguePackage, "serviceLayout" | "oplocs">, oplocId: string): HospitalityServiceVisibility {
+  return buildHospitalityVisibility(pkg, oplocId, HOSPITALITY_SERVICE_SETTINGS_UNAVAILABLE);
+}
+
+function buildHospitalityVisibility(pkg: Pick<CataloguePackage, "serviceLayout" | "oplocs">, oplocId: string, unavailableMessage: string): HospitalityServiceVisibility {
   const layout: unknown = pkg.serviceLayout;
   if (!oplocId || !pkg.oplocs.some(site => site.id === oplocId) || !object(layout) || typeof layout.version !== "string" || !layout.version.trim() ||
     !object(layout.company) || !SERVICE_IDS.every(id => validRule((layout.company as Record<string, unknown>)[id])) || !object(layout.sites) ||
     !Object.values(layout.sites).every(rules => object(rules) && Object.entries(rules).every(([id, rule]) => isServiceId(id) && validRule(rule)))) {
-    throw Object.assign(new Error(RCOA_SERVICE_SETTINGS_UNAVAILABLE), { status: 503 });
+    throw Object.assign(new Error(unavailableMessage), { status: 503 });
   }
   return { layout: layout as ServiceLayoutPackage, oplocId };
 }

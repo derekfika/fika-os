@@ -2,9 +2,12 @@ import { browserCatalogueDeps, loadHospitalityCatalogue, type CatalogueLoadResul
 import { resolveSiteCatalogue, type EffectiveOffering } from "@fika/server-shared/hospitality-effective-offering";
 import type { PortalMenuItem } from "./mnk-contract";
 import type { PortalSiteKey } from "./portal-sites";
-import { rcoaVisibilityFromCatalogue, RCOA_SERVICE_SETTINGS_UNAVAILABLE, type RcoaServiceVisibility } from "./rcoa-service-visibility";
+import { hospitalityVisibilityFromCatalogue, rcoaVisibilityFromCatalogue, RCOA_SERVICE_SETTINGS_UNAVAILABLE, type HospitalityServiceVisibility } from "./rcoa-service-visibility";
 
 const UK_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" });
+export function assertHospitalityVisibilityPackageCurrent(site: PortalSiteKey, source: CatalogueLoadResult["source"]) {
+  if ((site === "cfc" || site === "munich-re") && source === "cache-unverified") throw new Error("The Hospitality catalogue and service settings could not be verified. Refresh and try again.");
+}
 export function hospitalityCatalogueServiceDate(now = new Date()) { return UK_DATE.format(now); }
 
 function portalMenuItem(offering: EffectiveOffering): PortalMenuItem | undefined {
@@ -40,20 +43,11 @@ function portalMenuItem(offering: EffectiveOffering): PortalMenuItem | undefined
   };
 }
 
-export async function loadHospitalityPortalMenu(site: PortalSiteKey, requestedOplocId?: string, init: RequestInit = {}): Promise<{ menu: PortalMenuItem[]; catalogue: CatalogueLoadResult; visibility?: RcoaServiceVisibility }> {
+export async function loadHospitalityPortalMenu(site: PortalSiteKey, requestedOplocId?: string, init: RequestInit = {}): Promise<{ menu: PortalMenuItem[]; catalogue: CatalogueLoadResult; visibility?: HospitalityServiceVisibility }> {
   let oplocId = requestedOplocId?.trim();
   if (!oplocId) {
     const siteResponse = await fetch(`/api/hospitality-catalogue/site?site=${encodeURIComponent(site)}`, { cache: "no-cache", ...init });
     if (!siteResponse.ok) {
-      // CFC and Munich RE still use their explicitly local brochure snapshots;
-      // preserve that existing no-Firestore compatibility path until a
-      // governed OPLOC binding is available for the global package.
-      if (site === "cfc" || site === "munich-re") {
-        const legacy = await fetch(`/api/reference-data?site=${encodeURIComponent(site)}`, init);
-        if (!legacy.ok) throw new Error("This Hospitality site has no configured catalogue location.");
-        const body = await legacy.json() as { menu?: PortalMenuItem[] };
-        return { menu: Array.isArray(body.menu) ? body.menu.filter(item => typeof item.unitPrice === "number" && Number.isFinite(item.unitPrice)) : [], catalogue: { catalogue: { schemaVersion: 1, contract: "local-compatibility", items: [], exceptions: [], oplocs: [] }, source: "network", contentHash: "", generatedAt: "", downloaded: false, notes: [] } };
-      }
       throw new Error("This Hospitality site has no configured catalogue location.");
     }
     const body = await siteResponse.json() as { oplocId?: unknown };
@@ -62,7 +56,8 @@ export async function loadHospitalityPortalMenu(site: PortalSiteKey, requestedOp
   }
   const catalogue = await loadHospitalityCatalogue(browserCatalogueDeps("/api/hospitality-catalogue/package", init));
   if (site === "rcoa" && catalogue.source === "cache-unverified") throw new Error(RCOA_SERVICE_SETTINGS_UNAVAILABLE);
-  const visibility = site === "rcoa" ? rcoaVisibilityFromCatalogue(catalogue.catalogue, oplocId) : undefined;
+  assertHospitalityVisibilityPackageCurrent(site, catalogue.source);
+  const visibility = site === "rcoa" ? rcoaVisibilityFromCatalogue(catalogue.catalogue, oplocId) : site === "cfc" || site === "munich-re" ? hospitalityVisibilityFromCatalogue(catalogue.catalogue, oplocId) : undefined;
   return { menu: portalMenuFromCatalogue(catalogue.catalogue, oplocId, hospitalityCatalogueServiceDate(), site === "angel-court"), catalogue, ...(visibility ? { visibility } : {}) };
 }
 
