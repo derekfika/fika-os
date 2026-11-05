@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
 import { eventGuestCountLabel, orderedQuantityLabel } from "../../lib/ordered-quantity";
-import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, isCpuWithdrawn } from "../../lib/production-presentation";
+import { cpuAttentionLabel, cpuAttentionReasons, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, isCpuWithdrawn } from "../../lib/production-presentation";
 import { orderDate, productionJobCount, sourceHeading } from "../../lib/production-day";
 import "./production-calendar.css";
 import "./production-card-overrides.css";
@@ -68,7 +68,8 @@ export default function ProductionCalendar({ orders, open, onCancelBooking, week
             {day.orders.length ? <><div className="calendar-day-summary"><strong>{productionJobCount(day.orders)} production job{productionJobCount(day.orders) === 1 ? "" : "s"}</strong><span>{day.orders.filter(order => order.origin === "menu_planning" && !isCpuWithdrawn(order)).reduce((sum, order) => sum + order.lines.reduce((total, line) => total + line.customerQuantity, 0), 0) || "—"} lunch portions ordered</span><span>{day.orders.filter(order => Boolean(cpuAttentionLabel(order))).length} need attention</span>{reviewAllergens && day.orders.some(order => order.origin === "menu_planning" && !isCpuWithdrawn(order)) && <button type="button" className="calendar-day-open" onClick={() => reviewAllergens(day.key)}>Delivered-In allergens</button>}</div>{day.orders.map(order => {
               const customerPax = guestCount(order);
               const status = cpuLifecycle(order);
-              const statusLabel = order.cancellationNotice ? "Cancelled" : cpuLifecycleLabels[status];
+              const attentionReasons = cpuAttentionReasons(order);
+              const statusLabel = order.cancellationNotice ? "Cancelled" : attentionReasons.includes("Needs review") ? "Needs review" : cpuLifecycleLabels[status];
               const dietaries = dietarySummary(order);
               const isDeliveredIn = order.origin === "menu_planning";
               const siteName = order.destinationLabel || cpuDestinationLabel(order);
@@ -77,13 +78,14 @@ export default function ProductionCalendar({ orders, open, onCancelBooking, week
                 <div className={`production-card-wrap${order.cancellationNotice ? " production-card-wrap--cancelled" : ""}`} key={order.canonicalId}>
                 <button className={`production-card production-card--${status}${isDeliveredIn ? " production-card--delivered-in" : ""}${order.cancellationNotice ? " production-card--cancelled-booking" : ""}`} type="button" aria-label={isDeliveredIn ? `Open Delivered-In inspector for ${siteName} on ${day.key}, ${portions.toLocaleString()} portions` : order.cancellationNotice ? `Dismiss cancelled booking for ${order.clientName || cpuDestinationLabel(order)}` : `Open production booking for ${order.clientName || cpuDestinationLabel(order)}`} onClick={() => isDeliveredIn ? open(order) : order.cancellationNotice && onCancelBooking ? onCancelBooking(order) : open(order)}>
                   {isDeliveredIn ? <div className="production-card-delivered-in"><h3>{siteName}</h3><span>{portions.toLocaleString()} portions</span></div> : <>
-                    <div className="production-card-top"><strong>{sourceHeading(order)}</strong><span className={`calendar-status calendar-status--${order.cancellationNotice ? "cancelled" : status}`}>{statusLabel}</span></div>
+                    <div className="production-card-top"><strong>{sourceHeading(order)}</strong><span className={`calendar-status calendar-status--${order.cancellationNotice ? "cancelled" : attentionReasons.includes("Needs review") ? "needs_review" : status}`}>{statusLabel}</span></div>
                     <div className="production-card-destination"><h3>{cardOploc(order)}</h3></div>
                     <div className="production-card-quantities" aria-label="Customer ordered dishes and quantities">{order.lines.map((line) => <span key={line.canonicalId}><b>{line.itemName}</b><em>{orderedQuantityLabel(line)}</em></span>)}</div>
                     {dietaries && <p className="production-card-dietaries"><b>Dietary:</b> {dietaries}</p>}
                     <div className="production-card-meta"><span>Event guests: {eventGuestCountLabel(customerPax)}</span></div>
                     {order.exceptions.length > 0 && <div className="calendar-exceptions"><small className="calendar-exception">{order.exceptions.length} exception{order.exceptions.length === 1 ? "" : "s"} needs attention</small><small className="calendar-exception-detail">{order.exceptions[0].description}</small></div>}
                   </>}
+                  {attentionReasons.map(reason => <small className="calendar-exception" key={`${order.canonicalId}:${reason}`} role="status">{reason}</small>)}
                   {order.cancellationNotice && <span className="production-card-cancel-overlay" aria-hidden="true"><span>×</span></span>}
                 </button>
                 {reviewAllergens && order.origin === "menu_planning" && !order.cancellationNotice && <button type="button" className="production-card-allergens" onClick={(event) => { event.stopPropagation(); reviewAllergens(orderDate(order)); }}>Delivered-In allergens</button>}
