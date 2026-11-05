@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-05T07:01:02.211Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-05T08:31:43.616Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -186,7 +186,7 @@ Snapshot: 2026-11-05T07:01:02.211Z. The local governed registry remains authorit
 | kafoodle-food-data-lib | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/api/food-data, apps/integration-hub/app/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/docs/food-data-library.md | codex/kafoodle-food-data-lib | — | finished | 2026-10-31T16:21:54.029Z |
 | kafoodle-food-data-v2 | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data, apps/integration-hub/app/api/food-data, apps/integration-hub/app/food-data, apps/integration-hub/app/ui/food-data, apps/integration-hub/app/ui/Launcher.tsx, apps/integration-hub/tests/food-data, apps/integration-hub/tests/food-data.test.ts, apps/integration-hub/docs/food-data-library.md | codex/kafoodle-food-data-v2 | [#212](https://github.com/derekfika/fika-os/pull/212) | retired | 2026-10-31T17:08:24.835Z |
 | kafoodle-food-data | kafoodle-food-data-sonnet | apps/integration-hub/lib/food-data | codex/kafoodle-food-data | — | retired | 2026-10-31T16:00:02.411Z |
-| legacy-deploy-marker-recovery | luna-legacy-marker-357 | tools/workflow/deploy-marker-recovery.mjs, tools/workflow/deploy-marker-recovery.test.mjs, docs/deployment/deploy-marker-recovery.md, .changes/platform/2026-11-05-canonical-deploy-marker-recovery.md | codex/legacy-deploy-marker-recovery | — | active | 2026-11-05T04:50:11.503Z |
+| legacy-deploy-marker-recovery | luna-legacy-marker-357 | tools/workflow/deploy-marker-recovery.mjs, tools/workflow/deploy-marker-recovery.test.mjs, docs/deployment/deploy-marker-recovery.md, .changes/platform/2026-11-05-canonical-deploy-marker-recovery.md | codex/legacy-deploy-marker-recovery | [#370](https://github.com/derekfika/fika-os/pull/370) | retired | 2026-11-05T08:31:30.227Z |
 | logistics-246-handoff | claude-uat-visual | apps/logistics/app/styles.css | codex/logistics-246-handoff | — | finished | 2026-11-01T16:14:21.744Z |
 | logistics-android-changelog | logistics-pwa-notifications | CHANGELOG.md | codex/logistics-android-changelog | — | finished | 2026-10-28T09:04:01.241Z |
 | logistics-android-push | logistics-pwa-notifications | apps/logistics | codex/logistics-android-push | [#96](https://github.com/derekfika/fika-os/pull/96) | finished | 2026-10-28T09:00:58.054Z |
