@@ -24,7 +24,7 @@ test("incremental changes are ordered, cursor-based, and capped", () => {
 
 test("dashboard polling has separate bounded cadences", () => {
   assert.match(passiveRefresh, /PASSIVE_REFRESH_INTERVAL_MS = 15 \* 60_000/);
-  assert.match(page, /setInterval[\s\S]*PASSIVE_REFRESH_INTERVAL_MS/);
+  assert.match(page, /setInterval[\s\S]*DASHBOARD_REFRESH_CHECK_MS/);
   assert.doesNotMatch(page, /}, 30_000\)/);
   assert.doesNotMatch(page, /}, 5 \* 60_000\)/);
   assert.match(page, /lastPassiveSyncAt\.current/);
