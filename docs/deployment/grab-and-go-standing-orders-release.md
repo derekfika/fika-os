@@ -1,4 +1,4 @@
-# Grab & Go standing orders — production release and Commerzbank UAT
+# Grab & Go standing orders — production release and UAT
 
 Status: **prepared, not executed.** Nothing here has been merged, deployed, scheduled or written to production. Every step marked **[OWNER]** needs Derek's explicit instruction. Design: [grab-and-go-standing-orders.md](grab-and-go-standing-orders.md).
 
@@ -9,7 +9,7 @@ Status: **prepared, not executed.** Nothing here has been merged, deployed, sche
 | App | `delivered-in` only (production backend `fika-os-prod-deliveredin`, project `fika-os`, `europe-west4`). Hub is **not** redeployed: only its Firestore index file and a test change. |
 | Data | Additive. New record types in `fikaDeliveredInGrabAndGoStandingOrdersV1`; two optional fields (`source`, `control`) on new/changed orders. No migration, no backfill, no existing record is read differently. |
 | Indexes | Two composite indexes in `apps/integration-hub/firestore.indexes.json` (`recordType`+`oplocId`+`version desc`, `recordType`+`oplocId`+`at desc`). Only the History panel needs them; the scheduler scan and all order paths use equality filters / known ids. If an index is missing the History panel says it is unavailable and everything else works. |
-| Scheduler | None created. Generator endpoint is token-only and inert until called. |
+| Scheduler | Grab & Go jobs are not provisioned by the app release. The generator and bounded handoff-recovery endpoints accept dedicated Google OIDC plus the legacy internal token during coordinated rotation. Production Scheduler jobs must use OIDC and remain paused until cutover checks pass. |
 | Lane | Operational/data-sensitive. The repository's release policy decides the lane from the full delta; **do not assume the cosmetic fast track**. Run `fika deploy delivered-in --prod` (dry run) after merge to see the lane; if it requires a verified staging deployment of the same tree, that is a safeguard to satisfy (a plain staging deploy + smoke, not a business UAT cycle), not one to bypass. |
 
 ## 2. Production deployment sequence (all **[OWNER]**-authorised, in order)
@@ -20,8 +20,8 @@ Status: **prepared, not executed.** Nothing here has been merged, deployed, sche
    `npx tsx scripts/standing-uat-report.ts census --project fika-os` (from `apps/delivered-in`, operator ADC). Expect `no existing record uses or collides with the v2 schema`. The script performs reads only.
 4. If the lane requires it: `fika deploy delivered-in --staging --execute`, then smoke.
 5. `fika deploy delivered-in --prod --execute --owner-approved --reason "<Derek's instruction>"` (dry run first). Do not disable any safeguard.
-6. Production smoke (non-writing): `/api/build-info` reports the released SHA; unauthenticated `POST /api/internal/grab-and-go-standing-orders` → 403; signed-in Grab & Go page loads and shows the **Orders | Standing orders** tabs; Standing tab loads for an eligible site (shows "Not set up" and the next generation time); `gcloud scheduler jobs list --project fika-os --location europe-west4` shows **no** standing-order job.
-7. Run Commerzbank UAT (section 4). The scheduler stays off.
+6. Production smoke (non-writing): `/api/build-info` reports the released SHA; unauthenticated `POST /api/internal/grab-and-go-standing-orders` → 403; signed-in Grab & Go page loads and shows the **Orders | Standing orders** tabs; Standing tab loads for active eligible sites. Do not send an unsigned or wrong-audience OIDC request that could create operational side effects; verify rejected auth with route tests and a non-mutating production preflight approved for the release.
+7. Run the approved production order reconciliation (section 4), then provision the jobs in section 5 as **paused** and validate their exact identities, target, audience, body, schedule, timezone, retry/deadline settings and last-attempt state. Do not resume until shared-token rotation and compatibility checks are complete.
 
 ## 3. Production data authority
 
@@ -29,9 +29,9 @@ Status: **prepared, not executed.** Nothing here has been merged, deployed, sche
 - Existing production orders/handoffs are never modified by this release. Generated and manual orders share ids, so a manual order always wins and a cancelled date is never recreated.
 - The census and UAT report scripts are read-only (reads only; no HTTP, no writes) and refuse to run without `--project`.
 
-## 4. Commerzbank live UAT — how it will be done
+## 4. Live order reconciliation and UAT — how it will be done
 
-Commerzbank's canonical OPLOC in the governed list is `oploc:8449a63b-4df8-42f7-8b73-1d2c8669f58c`. **Nothing is hard-coded**: the site appears in the picker only if the production Hub grants Derek Grab & Go access to it (service arrangement active, AUTHMOD scope). Eligibility is therefore confirmed by Commerzbank appearing in the picker; this was **not** verified against the live Hub from this workspace (no production session).
+Audit all active standing-order templates and canonical OPLOCs, not only Commerzbank. The production generator must receive no OPLOC filter and is bounded by the existing 50-template limit. Commerzbank's canonical OPLOC is `oploc:8449a63b-4df8-42f7-8b73-1d2c8669f58c`; CFC is `oploc:0d8626f9-99bd-4dde-9471-191dd0abfb2e`; MNK is `oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f`.
 
 **Everything below that writes (template, order) is a genuine production write and starts only when Derek says so.**
 
@@ -45,30 +45,26 @@ Commerzbank's canonical OPLOC in the governed list is `oploc:8449a63b-4df8-42f7-
 8. **Unrelated orders:** the report for a date that already had a manual Commerzbank order must show it untouched and "skipped-manual-order" semantics (manual always wins).
 9. Sign-off: Derek records sign-off; only then is the scheduler considered.
 
-## 5. Scheduler activation after sign-off — **[OWNER]** approval required, not created by this work
+## 5. Scheduler provisioning and activation
 
-Same convention as the existing outbox jobs ([cpu-durable-outbox-scheduler.md](cpu-durable-outbox-scheduler.md)): Cloud Scheduler HTTP job, internal token from Secret Manager, `Europe/London` time zone. Three small jobs (all idempotent; any can be retried or run twice):
+Use direct Cloud Scheduler Google OIDC authentication, following the verified Logistics Scheduler pattern ([driver-notifications-scheduler.md](../../apps/logistics/docs/driver-notifications-scheduler.md)). No shared credential belongs in a Scheduler header, job body, or command line. Use the production identity `fika-delivered-in-gng-scheduler@fika-os.iam.gserviceaccount.com` and separate exact audiences for the two routes. The service account has no project-wide IAM roles; grant only the minimum invocation needed by the actual target. Jobs call the operator-facing production Delivered-In custom domain.
 
 | Job | Schedule (London) | Purpose |
 |---|---|---|
 | `fika-delivered-in-standing-orders-mon` | `1 12 * * 1` | Monday 12:01 → Wednesday's order |
 | `fika-delivered-in-standing-orders-thu` | `1 12 * * 4` | Thursday 12:01 → next Monday's order |
-| `fika-delivered-in-standing-orders-recovery` | `1 9,15 * * *` | Missed-run recovery until each cut-off (creates nothing if the primary runs succeeded) |
+| `fika-delivered-in-standing-orders-recovery` | `0 9,15 * * *` | Daily missed-run recovery until each cut-off |
+| `fika-delivered-in-grab-and-go-outbox-recovery` | `*/5 * * * *` | Bounded handoff retry, body `{"limit":25}` |
 
-```powershell
-$token = (gcloud secrets versions access latest --secret=FIKA_INTERNAL_API_TOKEN --project=fika-os).Trim()
-gcloud scheduler jobs create http fika-delivered-in-standing-orders-mon --project=fika-os --location=europe-west4 --schedule="1 12 * * 1" --time-zone="Europe/London" --uri="https://<production Delivered-In host>/api/internal/grab-and-go-standing-orders" --http-method=POST --headers="Content-Type=application/json,x-fika-internal-token=$token" --message-body='{"oplocId":"oploc:8449a63b-4df8-42f7-8b73-1d2c8669f58c"}' --attempt-deadline=180s --max-retry-attempts=3
-```
+Both generation routes use the audience documented in [the standing-order design](grab-and-go-standing-orders.md); handoff recovery uses its distinct audience. Scheduled generation sends `{}` so every active template is considered within the existing limit; never pin Commerzbank or any single OPLOC. Recovery remains replay-safe and cannot invent source orders. Create all four jobs paused, inspect the stored OIDC service account and audience without dumping headers, verify the custom-domain auth round-trip and serving SHA, then coordinate token rotation. After verified compatibility and removal of compromised-token Scheduler headers, activate only the approved Grab & Go jobs. Confirm the first authorised execution in Scheduler history and reconcile its source, Hub, CPU and Logistics results. London timezone handling follows BST/GMT; application due-date and cutoff checks remain authoritative.
 
-Roll-out stages: (1) create the jobs **paused** with the Commerzbank-only body, resume, watch two cycles; (2) only then widen by recreating with body `{}` (all active templates, ≤ 50 per run). Correct London time is guaranteed twice over: the job time zone, and the endpoint itself decides what is due from London wall-clock rules, so an early or mistimed call creates nothing.
-
-When the scheduler is disabled or unavailable: nothing is generated automatically, nothing else changes. The UI shows *Due · not created yet* with *Create now…* for the next two open deliveries until the cut-off, then *Not generated · cut-off passed*. Manual ordering is unaffected.
+Keep the existing CPU and Logistics recovery jobs paused pending their separate bounded backlog and compatibility review. When Grab & Go schedules are disabled or unavailable, nothing is generated automatically; the UI shows *Due · not created yet* until cutoff and manual ordering remains available.
 
 ## 6. Rollback
 
-1. **Stop generation (preferred, instant):** pause the scheduler jobs (`gcloud scheduler jobs pause …`) and/or *Pause generation* on the template. No data change.
+1. **Stop generation (preferred, instant):** pause the four Grab & Go Scheduler jobs and/or *Pause generation* on the template. No data change.
 2. **Withdraw an unwanted generated order:** cancel it (Orders tab, or *Cancel automatic orders*); it propagates to CPU/Logistics through the normal handoff.
-3. **Roll back the app:** `fika rollback delivered-in --prod --execute --owner-approved --reason "…"` using the recorded rollback target. The previous app ignores the new record types and treats generated orders as ordinary orders (extra fields are carried along untouched). Standing documents and indexes are inert and can stay.
+3. **Roll back the app:** use the recorded governed Delivered-In rollback target. Keep authentication compatible with the dedicated Scheduler identity and the rotated secret during rollback; never restore the compromised token or put credentials back into Scheduler headers. If the rollback target cannot validate the required OIDC identity, keep jobs paused until a compatible reviewed build is restored.
 4. No migration to reverse.
 
 ## 7. Cost and recurring behaviour
