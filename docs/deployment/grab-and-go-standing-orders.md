@@ -59,7 +59,22 @@ Collection `fikaDeliveredInGrabAndGoStandingOrdersV1`, three record types, all `
 ## Endpoints
 
 - Site: `GET|POST /api/delivered-in/grab-and-go/standing-orders` — Grab & Go service access and authorised-OPLOC scope (same as ordering); actor is the signed-in email, never client-supplied. Actions: `save`, `populate-slot`, `activate`, `pause`, `resume`, `terminate`, `cancel-upcoming`, `generate`.
-- Internal: `POST /api/internal/grab-and-go-standing-orders` — `x-fika-internal-token` only. Body `{}` / `{ "limit": 1–50 }` / `{ "oplocId": "oploc:…" }`. Scans at most `limit + 1` active templates and looks at ≤ 3 dates each. No date override.
+- Scheduler generator: `POST /api/internal/grab-and-go-standing-orders` — Google OIDC audience `fika-delivered-in-standing-orders-scheduler`; body `{}` or an optional bounded `{ "limit": 1–50 }`. An optional canonical `oplocId` is for bounded operations only. Scheduled all-site generation sends `{}`; it does not pin an OPLOC or accept a date override. The route verifies Google's signature, issuer, time claims, audience, the environment's exact service-account email and the staging/production project pairing. Only the dedicated `fika-delivered-in-gng-scheduler` identity is accepted.
+- Scheduler handoff recovery: `POST /api/internal/grab-and-go-outbox` — Google OIDC audience `fika-delivered-in-grab-and-go-handoff-recovery`; body `{ "limit": 1–25 }`. It only retries committed, due outbox events and is idempotent. It cannot create a standing order or invent a source order.
+- The existing shared service-token path remains for non-Scheduler internal callers during coordinated credential migration. Scheduler jobs must use OIDC and must not store a credential in HTTP headers. Rotating the shared token across all bound runtimes and removing legacy Scheduler headers is a separate coordinated cutover; the two OIDC routes alone do not complete that rotation.
+
+## Production Scheduler plan (paused until the reviewed release and credential cutover)
+
+Create the following jobs in project `fika-os`, region `europe-west4`, timezone `Europe/London`, target the operator-facing Delivered-In production URL, and set `--oidc-service-account-email=fika-delivered-in-gng-scheduler@fika-os.iam.gserviceaccount.com`. Use the exact route-specific audience above. The staging environment uses the matching account in project `fika-os-dev`; production and staging identities are not interchangeable. Keep jobs paused until the app is released, the shared-token rotation and Scheduler cleanup are verified, and the approved controlled execution is ready.
+
+| Job | Cron | Request body | Effect |
+|---|---|---|---|
+| `fika-delivered-in-standing-orders-mon` | `1 12 * * 1` | `{}` | Monday 12:01 generates due Wednesday orders |
+| `fika-delivered-in-standing-orders-thu` | `1 12 * * 4` | `{}` | Thursday 12:01 generates due following-Monday orders |
+| `fika-delivered-in-standing-orders-recovery` | `0 9,15 * * *` | `{}` | Bounded missed-run recovery for all active templates |
+| `fika-delivered-in-grab-and-go-outbox-recovery` | `*/5 * * * *` | `{ "limit": 25 }` | Bounded retry of due Grab & Go handoffs |
+
+Generation sends no OPLOC filter, so it covers all active standing-order sites up to the existing 50-template bound. The exact dates, cutoff, catalogue, manual-order precedence and cancellation checks remain owned by the generator. No Nov 2/4 backfill is permitted.
 
 ## Tests
 

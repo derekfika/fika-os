@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { internalTokenAllowed } from "../../../../../shared/internal-auth";
+import { getFikaRuntimeConfig } from "@fika/server-shared/runtime-config";
 import { getGrabAndGoCataloguePackage } from "../../../../lib/grab-and-go-catalogue-client";
 import { runStandingGeneration, SCHEDULER_TEMPLATE_LIMIT } from "../../../../lib/grab-and-go-standing-service";
+import { schedulerRequestAllowed, STANDING_ORDER_SCHEDULER_AUDIENCE } from "../../../../lib/scheduler-auth";
 
 export const dynamic = "force-dynamic";
 /**
- * Bounded, replay-safe standing-order generator. Authenticated by the internal service token only; no browser session
- * can reach it. No Cloud Scheduler job is created by this code: a run happens only when an authorised caller POSTs here.
+ * Bounded, replay-safe standing-order generator. Accepts existing service authentication or this environment's dedicated
+ * Google Scheduler identity. No browser session can reach it and this code does not create Scheduler jobs.
  */
 export async function POST(request: NextRequest) {
-  if (!internalTokenAllowed(request)) return NextResponse.json({ error: { message: "Internal generation authority required." } }, { status: 403 });
+  const internal = internalTokenAllowed(request);
+  let scheduler = false;
+  if (!internal) { try { scheduler = await schedulerRequestAllowed(request, getFikaRuntimeConfig(), STANDING_ORDER_SCHEDULER_AUDIENCE); } catch { scheduler = false; } }
+  if (!internal && !scheduler) return NextResponse.json({ error: { message: "Internal generation authority required." } }, { status: 403, headers: { "Cache-Control": "no-store" } });
   try {
     const body = await request.json().catch(() => ({})) as { limit?: unknown; oplocId?: unknown };
     if (!body || typeof body !== "object" || Object.keys(body).some(key => !["limit", "oplocId"].includes(key))) return NextResponse.json({ error: { message: "Only a bounded limit and an optional OPLOC are supported." } }, { status: 422 });
