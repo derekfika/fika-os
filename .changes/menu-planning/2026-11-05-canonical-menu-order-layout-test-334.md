@@ -1,4 +1,4 @@
-# Canonical menu order layout regression (#334)
+# 2026-11-05 Canonical menu order layout regression (#334)
 
 Date: 2026-11-05
 Task: Canonical menu order layout regression (#334)
