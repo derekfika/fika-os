@@ -7,11 +7,33 @@
   "region": "europe-west4",
   "branch": "release/staging/delivered-in",
   "sourceSha": "a37f2654ba6004a0014aa0a5b66dc50e67aeabc7",
+  "scopeHash": "eef37f529715681eb3d0d7b5e377016258313c0b1da9afc1e19a72820689eb99",
+  "inMain": true,
+  "rollback": true,
+  "executing": true,
+  "cosmeticOnly": false,
+  "standard": false,
+  "rollbackRecord": "3bef648760bf46b13ed09a1ab6054f58acabe05a",
+  "validation": {
+    "verifiedHistoricalRecord": "3bef648760bf46b13ed09a1ab6054f58acabe05a"
+  },
+  "approval": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "app": "delivered-in",
+    "environment": "staging",
+    "sourceSha": "a37f2654ba6004a0014aa0a5b66dc50e67aeabc7",
+    "action": "rollback",
+    "instruction": "Explicit staging execution",
+    "releaseId": null,
+    "id": "2c313afc01f663881d1c0aaa24f583a6118e1991f02d6130bc7e92bd8e591b61",
+    "explicitExecute": true,
+    "authorisedAt": "2026-11-05T19:19:52.546Z"
+  },
   "rollout": "build-2026-11-04-001",
   "state": "SUCCEEDED",
   "percent": 100,
-  "scopeHash": "eef37f529715681eb3d0d7b5e377016258313c0b1da9afc1e19a72820689eb99",
-  "kind": "abandoned",
+  "kind": "rollback",
   "previousGood": {
     "sourceSha": "a37f2654ba6004a0014aa0a5b66dc50e67aeabc7",
     "rollout": "build-2026-11-04-001",
@@ -19,32 +41,12 @@
     "percent": 100
   },
   "previousGoodRecord": "3bef648760bf46b13ed09a1ab6054f58acabe05a",
-  "releaseId": "3a0ea06a-4310-41bf-959b-d64562238932",
-  "originalIntent": "2aacdc8e746912bde0bdb16abd3965c82a3db984",
+  "releaseId": "27c09922-bf62-44d8-a952-4e8674d53468",
+  "reverifiedServing": true,
+  "completedAt": "2026-11-05T19:19:57.838Z",
   "smoke": {
     "ok": true,
     "status": 200,
     "url": "https://fika-delivered-in-staging--fika-os-dev.europe-west4.hosted.app/"
-  },
-  "recovery": {
-    "resolution": "abandon",
-    "reason": "Owner-approved staging validation failed in App Hosting build; preserve prior serving baseline and require a governed dependency-resolution fix before retry",
-    "operator": {
-      "actor": "derekfika",
-      "method": "authenticated-repository-writer",
-      "app": "delivered-in",
-      "environment": "staging",
-      "sourceSha": "bedd6c07216227d1766427f74c03b2ec45c7da5c",
-      "action": "reconcile:abandon",
-      "instruction": "Owner-approved staging validation failed in App Hosting build; preserve prior serving baseline and require a governed dependency-resolution fix before retry",
-      "releaseId": "3a0ea06a-4310-41bf-959b-d64562238932",
-      "id": "36555e82d04e9b2228ec3f0e09301474e8c676fd6c8995bce378b7689b19a1d8",
-      "explicitExecute": true,
-      "authorisedAt": "2026-11-05T18:58:59.096Z"
-    },
-    "rollout": "build-2026-11-05-001",
-    "evidenceHash": "ca1ca73f1fe152e383b9678f304bad44cda69147a6475ea360df322add78e7e0",
-    "journalHash": "217d628d45ceef584b5d3d1288293043974fc0d639bdac9b9ccced292496ce9a",
-    "at": "2026-11-05T18:59:03.554Z"
   }
 }
