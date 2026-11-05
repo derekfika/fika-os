@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ProductionOrder } from "../lib/production-types";
-import { cpuAttentionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, isAdHocProductionOrder, isAdHocProductionOrderId } from "../lib/production-presentation";
+import { cpuAttentionKey, cpuAttentionLabel, cpuAttentionReasons, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, isAdHocProductionOrder, isAdHocProductionOrderId } from "../lib/production-presentation";
 import { readFileSync } from "node:fs";
 
 function order(overrides: Partial<ProductionOrder> = {}): ProductionOrder {
@@ -49,6 +49,35 @@ test("CPU presentation names source, destination timing, and exceptions explicit
   assert.equal(cpuRequiredTime(order({ requiredBy: "" })), "Time TBC");
   assert.equal(cpuRequiredTime(order({ requiredBy: "2026-08-24T00:00" })), "Time TBC");
   assert.equal(cpuAttentionLabel(order({ status: "blocked" })), "Blocked");
+});
+
+test("amended draft workflow is presented for review instead of as ready or ordinary planning", () => {
+  const orderNeedingReview = order({ status: "draft", workflowStatus: "amended", version: 2 });
+  assert.equal(cpuAttentionLabel(orderNeedingReview), "Needs review");
+  assert.equal(cpuAttentionKey(orderNeedingReview), "needs_review");
+  assert.deepEqual(cpuAttentionReasons(orderNeedingReview), ["Needs review", "Amended"]);
+});
+
+test("missing production quantities are explicit and never inferred from ordered customer portions", () => {
+  const incomplete = order({
+    status: "draft",
+    lines: [
+      { canonicalId: "line:missing", sourceBookingLineId: "source:missing", itemName: "Lunch", customerQuantity: 12, customerUnit: "portion", dietaries: {}, status: "ready", sortOrder: 0 },
+      { canonicalId: "line:configured", sourceBookingLineId: "source:configured", itemName: "Soup", customerQuantity: 12, customerUnit: "portion", productionQuantity: 42, productionUnit: "piece", dietaries: {}, status: "ready", sortOrder: 1 },
+    ],
+  });
+  assert.deepEqual(cpuAttentionReasons(incomplete), ["Missing production quantities · 1 line"]);
+  assert.equal(cpuAttentionKey(incomplete), "missing_quantities");
+  assert.equal(cpuAttentionLabel(order({ status: "cancelled", lines: incomplete.lines })), "");
+});
+
+test("dashboard cards and order detail expose review and unconfigured production quantities", () => {
+  const calendar = readFileSync(new URL("../app/ui/ProductionCalendar.tsx", import.meta.url), "utf8");
+  const detail = readFileSync(new URL("../app/ui/ProductionOrderDetail.tsx", import.meta.url), "utf8");
+  assert.match(calendar, /cpuAttentionReasons\(order\)/);
+  assert.match(detail, /Production quantities/);
+  assert.match(detail, /Not configured/);
+  assert.match(detail, /customer portions are not substituted/);
 });
 
 test("only the canonical Ad-Hoc order namespace gets the Ad-Hoc source label", () => {
