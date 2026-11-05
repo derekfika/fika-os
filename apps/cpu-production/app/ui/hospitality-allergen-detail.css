@@ -49,3 +49,5 @@
 .allergen-checker .check-button{min-width:140px;white-space:normal}
 .allergen-checker .review-badge{max-width:none}
 .allergen-checker .review-badge--blank,.allergen-checker .review-badge--legacy_no_key,.allergen-checker .review-badge--unreviewed{padding:4px 6px;border-left:4px solid #704800;background:#fff8e6}
+.allergen-checker col.allergen-col--name{width:300px}
+.allergen-checker thead th:first-child,.allergen-checker tbody th{width:300px;min-width:300px;max-width:360px;white-space:normal;overflow-wrap:anywhere;word-break:normal}
