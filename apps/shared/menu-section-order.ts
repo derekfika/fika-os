@@ -1,164 +1,91 @@
-/**
- * Provisional, presentation-only menu section ordering for FIKA OS.
- *
- * The top-level sequence and Hot Mains subgroups reflect the provisional
- * interpretation recorded on issue #132. They are not Brian-approved and
- * must not be treated as a taxonomy or persistence migration. No consumer
- * imports this module yet; changing these constants currently changes no UI,
- * publication, projection, totals or historical evidence.
- */
-export const PROVISIONAL_MENU_SECTION_ORDER = [
-  "HOT MAINS",
-  "SOUP",
-  "SALADS",
-  "SAUCES",
-  "GARNISHES",
-  "DESSERTS",
-  "OTHER",
-] as const;
+/** Canonical, presentation-only culinary order. It does not change dish taxonomy. */
+export const MENU_ORDER_VERSION = "fika.menu-order.v1" as const;
 
-export const PROVISIONAL_HOT_MAIN_SUBGROUP_ORDER = [
-  "HOT MEAT / HOT MAIN",
-  "HOT FISH",
-  "HOT VEG / VEGAN",
-] as const;
+export type MenuSectionId = "salads" | "cold-proteins" | "hot-main" | "starch-sides" | "garnish" | "sauce" | "desserts" | "other";
 
-export const SALAD_SLOT_ORDER = [
-  "SALAD 1",
-  "SALAD 2",
-  "SALAD 3",
-  "SALAD 4",
-  "SALAD 5",
-  "SALAD 6",
-] as const;
+export interface MenuPresentationSlot {
+  id: string;
+  sectionId: Exclude<MenuSectionId, "other">;
+  sectionLabel: string;
+  label: string;
+  order: number;
+}
 
-export type MenuSectionId =
-  | "hot-mains"
-  | "soup"
-  | "salads"
-  | "sauces"
-  | "garnishes"
-  | "desserts"
-  | "other";
+const slot = (id: string, sectionId: MenuPresentationSlot["sectionId"], sectionLabel: string, label: string, order: number): MenuPresentationSlot => ({ id, sectionId, sectionLabel, label, order });
 
-export type HotMainSubgroupId = "hot-meat-main" | "hot-fish" | "hot-veg-vegan";
+/** 29 distinct daily placements, including repeated display labels. */
+export const CANONICAL_MENU_SLOTS = [
+  slot("SALAD 1", "salads", "SALADS", "Leaf Salad", 0),
+  slot("SALAD 2", "salads", "SALADS", "Slaw", 1),
+  slot("SALAD 3", "salads", "SALADS", "Starch", 2),
+  slot("SALAD 4", "salads", "SALADS", "Veg", 3),
+  slot("SALAD 5", "salads", "SALADS", "Grain/Pulse", 4),
+  slot("SALAD 6", "salads", "SALADS", "FIKA Seasonal", 5),
+  slot("COLD PROTEIN MEAT", "cold-proteins", "COLD PROTEINS", "Meat", 6),
+  slot("COLD PROTEIN FISH", "cold-proteins", "COLD PROTEINS", "Fish", 7),
+  slot("COLD PROTEIN VEGAN", "cold-proteins", "COLD PROTEINS", "Vegan", 8),
+  slot("HOT MAIN", "hot-main", "HOT MAINS", "Hot Main", 9),
+  slot("HOT FISH", "hot-main", "HOT MAINS", "Fish", 10),
+  slot("HOT VEGAN", "hot-main", "HOT MAINS", "Vegan/Veggie", 11),
+  slot("SOUP", "hot-main", "HOT MAINS", "Soup", 12),
+  ...Array.from({ length: 4 }, (_, i) => slot(`STARCH/SIDE ${i + 1}`, "starch-sides", "STARCH/SIDES", "Starch/Side", 13 + i)),
+  ...Array.from({ length: 4 }, (_, i) => slot(`GARNISH ${i + 1}`, "garnish", "GARNISHES", "Garnish", 17 + i)),
+  ...Array.from({ length: 4 }, (_, i) => slot(`SAUCE ${i + 1}`, "sauce", "SAUCES", "Sauce", 21 + i)),
+  ...Array.from({ length: 4 }, (_, i) => slot(`DESSERT ${i + 1}`, "desserts", "DESSERTS", "Dessert", 25 + i)),
+] as const satisfies readonly MenuPresentationSlot[];
 
 export interface MenuSectionDescriptor {
   id: MenuSectionId;
-  label: (typeof PROVISIONAL_MENU_SECTION_ORDER)[number];
+  label: string;
   order: number;
-  subgroupId?: HotMainSubgroupId;
-  subgroupLabel?: (typeof PROVISIONAL_HOT_MAIN_SUBGROUP_ORDER)[number];
-  subgroupOrder?: number;
-  saladSlotOrder?: number;
+  slotOrder?: number;
 }
 
 export interface MenuSectionOrderEntry {
   slot: string;
-  /** Position in the authored Week Planner sequence when it is available. */
   originalIndex?: number;
-  /** Stable identity tie-break for entries that otherwise have equal order. */
   sourceEntryId?: string;
 }
 
-const SECTION_ORDER: Record<MenuSectionId, number> = {
-  "hot-mains": 0,
-  soup: 1,
-  salads: 2,
-  sauces: 3,
-  garnishes: 4,
-  desserts: 5,
-  other: 6,
+const normalize = (value: string) => value.trim().replace(/\s+/g, " ").toUpperCase();
+const bySlot = new Map<string, MenuPresentationSlot>(CANONICAL_MENU_SLOTS.map(item => [normalize(item.id), item]));
+const legacyAliases: Record<string, string> = {
+  "HOT MEAT": "HOT MAIN", "HOT MEAT 1": "HOT MAIN", "VEGAN MAIN": "HOT VEGAN", "HOT VEG VEGAN": "HOT VEGAN",
+  "FISH": "HOT FISH", "COLD PROTEIN": "COLD PROTEIN MEAT", "COLD PROTEIN 1": "COLD PROTEIN MEAT",
+  "SOUP 1": "SOUP", "STARCH/SIDE": "STARCH/SIDE 1", "SIDE 1": "STARCH/SIDE 1", "EXTRAS 1": "STARCH/SIDE 1",
+  "EXTRAS 2": "STARCH/SIDE 2", "EXTRAS 3": "STARCH/SIDE 3", "EXTRAS 4": "STARCH/SIDE 4",
 };
+const orderedSections = ["SALADS", "COLD PROTEINS", "HOT MAINS", "STARCH/SIDES", "GARNISHES", "SAUCES", "DESSERTS"] as const;
 
-function normalizedSlot(value: string): string {
-  return value.trim().replace(/\s+/g, " ").toUpperCase();
-}
-
-function saladSlotOrder(slot: string): number | undefined {
-  const index = (SALAD_SLOT_ORDER as readonly string[]).indexOf(slot);
-  if (index >= 0) return index;
-  return slot === "SALAD" || slot.startsWith("SALAD ") ? SALAD_SLOT_ORDER.length : undefined;
-}
-
-function hotMainSubgroup(slot: string): Pick<MenuSectionDescriptor, "subgroupId" | "subgroupLabel" | "subgroupOrder"> | undefined {
-  if (/^(HOT MAIN|HOT MEAT)(?:\s|$)/.test(slot)) {
-    return { subgroupId: "hot-meat-main", subgroupLabel: PROVISIONAL_HOT_MAIN_SUBGROUP_ORDER[0], subgroupOrder: 0 };
-  }
-  if (/^(FISH|HOT FISH)(?:\s|$)/.test(slot)) {
-    return { subgroupId: "hot-fish", subgroupLabel: PROVISIONAL_HOT_MAIN_SUBGROUP_ORDER[1], subgroupOrder: 1 };
-  }
-  if (/^(VEGAN MAIN|HOT VEG VEGAN)(?:\s|$)/.test(slot)) {
-    return { subgroupId: "hot-veg-vegan", subgroupLabel: PROVISIONAL_HOT_MAIN_SUBGROUP_ORDER[2], subgroupOrder: 2 };
-  }
-  return undefined;
-}
-
-/** Classifies canonical, legacy and unknown slots without dropping entries. */
 export function menuSectionForSlot(value: string): MenuSectionDescriptor {
-  const slot = normalizedSlot(value);
-  const hotMain = hotMainSubgroup(slot);
-  if (hotMain) {
-    return { id: "hot-mains", label: "HOT MAINS", order: SECTION_ORDER["hot-mains"], ...hotMain };
-  }
-
-  const saladOrder = saladSlotOrder(slot);
-  if (saladOrder !== undefined) {
-    return { id: "salads", label: "SALADS", order: SECTION_ORDER.salads, saladSlotOrder: saladOrder };
-  }
-
-  if (/^SOUP(?:\s|$)/.test(slot)) {
-    return { id: "soup", label: "SOUP", order: SECTION_ORDER.soup };
-  }
-  if (/^SAUCE(?:S|\s|$)/.test(slot)) {
-    return { id: "sauces", label: "SAUCES", order: SECTION_ORDER.sauces };
-  }
-  if (/^GARNISH(?:ES|\s|$)/.test(slot)) {
-    return { id: "garnishes", label: "GARNISHES", order: SECTION_ORDER.garnishes };
-  }
-  if (/^DESSERT(?:S|\s|$)/.test(slot)) {
-    return { id: "desserts", label: "DESSERTS", order: SECTION_ORDER.desserts };
-  }
-
-  return { id: "other", label: "OTHER", order: SECTION_ORDER.other };
+  const normalized = normalize(value);
+  const alias = legacyAliases[normalized]
+    || (/^HOT MEAT(?: \d+)?$/.test(normalized) ? "HOT MAIN" : undefined)
+    || (/^(FISH|HOT FISH)(?: \d+)?$/.test(normalized) ? "HOT FISH" : undefined)
+    || (/^(VEGAN MAIN|HOT VEG VEGAN)(?: \d+)?$/.test(normalized) ? "HOT VEGAN" : undefined)
+    || (/^SOUP(?: \d+)?$/.test(normalized) ? "SOUP" : undefined)
+    || (/^COLD PROTEIN(?: \d+)?$/.test(normalized) ? "COLD PROTEIN MEAT" : undefined)
+    || (/^EXTRAS (\d+)$/.test(normalized) ? `STARCH/SIDE ${normalized.match(/\d+/)?.[0]}` : undefined)
+    || (/^(GARNISH|SAUCE|DESSERT) (\d+)$/.test(normalized) ? normalized : undefined);
+  const canonical = bySlot.get(normalized) || bySlot.get(normalize(alias || ""));
+  if (canonical) return { id: canonical.sectionId, label: canonical.sectionLabel, order: orderedSections.indexOf(canonical.sectionLabel as typeof orderedSections[number]), slotOrder: canonical.order };
+  // Unknown/historical slots remain visible after canonical slots in stable authored order.
+  return { id: "other", label: "OTHER", order: orderedSections.length };
 }
 
-function compareNumber(a: number | undefined, b: number | undefined): number {
-  const left = Number.isFinite(a) ? a! : Number.MAX_SAFE_INTEGER;
-  const right = Number.isFinite(b) ? b! : Number.MAX_SAFE_INTEGER;
-  return left - right;
+function compareNumber(a?: number, b?: number): number {
+  return (Number.isFinite(a) ? a! : Number.MAX_SAFE_INTEGER) - (Number.isFinite(b) ? b! : Number.MAX_SAFE_INTEGER);
 }
 
-/**
- * Compares entries by provisional section/subgroup, then by authored sequence.
- * It never sorts dishes by display name. Unknown slots remain in OTHER.
- */
-export function compareMenuEntries(
-  left: MenuSectionOrderEntry,
-  right: MenuSectionOrderEntry,
-): number {
-  const leftSection = menuSectionForSlot(left.slot);
-  const rightSection = menuSectionForSlot(right.slot);
-  return leftSection.order - rightSection.order
-    || compareNumber(leftSection.subgroupOrder, rightSection.subgroupOrder)
-    || compareNumber(leftSection.saladSlotOrder, rightSection.saladSlotOrder)
+export function compareMenuEntries(left: MenuSectionOrderEntry, right: MenuSectionOrderEntry): number {
+  const a = menuSectionForSlot(left.slot); const b = menuSectionForSlot(right.slot);
+  return a.order - b.order || compareNumber(a.slotOrder, b.slotOrder)
     || compareNumber(left.originalIndex, right.originalIndex)
-    || compareStableId(left.sourceEntryId, right.sourceEntryId);
+    || (left.sourceEntryId ?? "").localeCompare(right.sourceEntryId ?? "");
 }
 
-/** Returns a sorted copy; array position supplies a deterministic legacy fallback. */
 export function orderMenuEntries<T extends MenuSectionOrderEntry>(entries: readonly T[]): T[] {
-  return entries
-    .map((entry, index) => ({ entry, index }))
-    .sort((left, right) => compareMenuEntries(
-      { ...left.entry, originalIndex: left.entry.originalIndex ?? left.index },
-      { ...right.entry, originalIndex: right.entry.originalIndex ?? right.index },
-    ))
+  return entries.map((entry, index) => ({ entry, index }))
+    .sort((a, b) => compareMenuEntries({ ...a.entry, originalIndex: a.entry.originalIndex ?? a.index }, { ...b.entry, originalIndex: b.entry.originalIndex ?? b.index }))
     .map(({ entry }) => entry);
-}
-
-function compareStableId(left: string | undefined, right: string | undefined): number {
-  const a = left ?? "";
-  const b = right ?? "";
-  return a < b ? -1 : a > b ? 1 : 0;
 }
