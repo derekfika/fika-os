@@ -73,6 +73,20 @@ export function menuSectionForSlot(value: string): MenuSectionDescriptor {
   return { id: "other", label: "OTHER", order: orderedSections.length };
 }
 
+/** Resolve only a known canonical placement or a deliberate legacy alias. */
+export function canonicalMenuSlotIdFor(value: string): string | undefined {
+  const normalized = normalize(value);
+  const alias = legacyAliases[normalized]
+    || (/^HOT MEAT(?: \d+)?$/.test(normalized) ? "HOT MAIN" : undefined)
+    || (/^(?:FISH|HOT FISH)(?: \d+)?$/.test(normalized) ? "HOT FISH" : undefined)
+    || (/^(?:VEGAN MAIN|HOT VEG VEGAN)(?: \d+)?$/.test(normalized) ? "HOT VEGAN" : undefined)
+    || (/^SOUP(?: \d+)?$/.test(normalized) ? "SOUP" : undefined)
+    || (/^COLD PROTEIN(?: \d+)?$/.test(normalized) ? "COLD PROTEIN MEAT" : undefined)
+    || (/^(?:GARNISH|SAUCE|DESSERT) (\d+)$/.test(normalized) ? normalized : undefined);
+  const canonical = bySlot.get(normalized) || bySlot.get(normalize(alias || ""));
+  return canonical?.id;
+}
+
 function compareNumber(a?: number, b?: number): number {
   return (Number.isFinite(a) ? a! : Number.MAX_SAFE_INTEGER) - (Number.isFinite(b) ? b! : Number.MAX_SAFE_INTEGER);
 }

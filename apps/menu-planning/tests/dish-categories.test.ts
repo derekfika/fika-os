@@ -30,6 +30,11 @@ test("menu slots stay distinct from dish categories and Hot Main accepts Fish di
   assert.equal(canonicalDishCategoryForSlot("STARCH/SIDE 1"), "Starch/Side");
   assert.equal(canonicalDishCategoryForSlot("DESSERT 1"), "Dessert");
   assert.deepEqual(categoriesForMenuSlot("DESSERT 3"), ["Dessert"]);
+  assert.deepEqual(categoriesForMenuSlot("COLD PROTEIN MEAT"), ["Cold Protein"]);
+  assert.deepEqual(categoriesForMenuSlot("COLD PROTEIN FISH"), ["Fish"]);
+  assert.deepEqual(categoriesForMenuSlot("COLD PROTEIN VEGAN"), ["Vegan/Veggie Main"]);
+  assert.deepEqual(categoriesForMenuSlot("HOT FISH"), ["Fish"]);
+  assert.deepEqual(categoriesForMenuSlot("HOT VEGAN"), ["Vegan/Veggie Main"]);
   assert.equal(canonicalDishCategoryForSlot("CUSTOM DESSERT"), undefined);
   const fish: DishPickerItem = { id: "fish-1", name: "Roast Salmon", category: "Fish" };
   assert.deepEqual(rankDishPickerItems([fish], "", "HOT MAIN").map(item => item.id), ["fish-1"]);
