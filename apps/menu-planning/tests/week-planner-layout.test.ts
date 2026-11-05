@@ -27,7 +27,7 @@ test("hot main, fish, vegan and soup slots share one ordered HOT MAINS banner", 
   const before = structuredClone(snapshot);
   const groups = groupedSlots(snapshot);
   assert.equal(groups.filter(([name]) => name === "HOT MAINS").length, 1);
-  assert.deepEqual(groups.map(([name]) => name), ["HOT MAINS", "SAUCE", "DESSERTS"]);
+  assert.deepEqual(groups.map(([name]) => name), ["HOT MAINS", "SAUCES", "DESSERTS"]);
   assert.deepEqual(groups[0][1], ["HOT MEAT 2", "HOT MAIN", "HOT MEAT 1", "FISH 2", "FISH 1", "VEGAN MAIN 1", "HOT VEG VEGAN 1", "SOUP 1", "SOUP"]);
   assert.deepEqual(groups.at(-1)?.[1], ["DESSERT 1", "DESSERT 2", "DESSERT 3"]);
   assert.deepEqual(snapshot, before, "layout projection must not mutate saved or historical snapshot data");

@@ -1,92 +1,35 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  compareMenuEntries,
-  menuSectionForSlot,
-  orderMenuEntries,
-  PROVISIONAL_HOT_MAIN_SUBGROUP_ORDER,
-  PROVISIONAL_MENU_SECTION_ORDER,
-  SALAD_SLOT_ORDER,
-} from "./menu-section-order";
+import { CANONICAL_MENU_SLOTS, MENU_ORDER_VERSION, menuSectionForSlot, orderMenuEntries } from "./menu-section-order";
 
-test("the exported section and salad hierarchies are explicitly provisional", () => {
-  assert.deepEqual(PROVISIONAL_MENU_SECTION_ORDER, [
-    "HOT MAINS", "SOUP", "SALADS", "SAUCES", "GARNISHES", "DESSERTS", "OTHER",
-  ]);
-  assert.deepEqual(PROVISIONAL_HOT_MAIN_SUBGROUP_ORDER, [
-    "HOT MEAT / HOT MAIN", "HOT FISH", "HOT VEG / VEGAN",
-  ]);
-  assert.deepEqual(SALAD_SLOT_ORDER, [
-    "SALAD 1", "SALAD 2", "SALAD 3", "SALAD 4", "SALAD 5", "SALAD 6",
+test("canonical presentation contract contains Brian's 29 distinct slots in section order", () => {
+  assert.equal(MENU_ORDER_VERSION, "fika.menu-order.v1");
+  assert.equal(CANONICAL_MENU_SLOTS.length, 29);
+  assert.equal(new Set(CANONICAL_MENU_SLOTS.map(slot => slot.id)).size, 29);
+  assert.deepEqual(CANONICAL_MENU_SLOTS.map(slot => slot.label), [
+    "Leaf Salad", "Slaw", "Starch", "Veg", "Grain/Pulse", "FIKA Seasonal",
+    "Meat", "Fish", "Vegan", "Hot Main", "Fish", "Vegan/Veggie", "Soup",
+    ...Array(4).fill("Starch/Side"), ...Array(4).fill("Garnish"),
+    ...Array(4).fill("Sauce"), ...Array(4).fill("Dessert"),
   ]);
 });
 
-test("canonical and legacy slot IDs map to their intended provisional sections", () => {
-  assert.equal(menuSectionForSlot("HOT MAIN").id, "hot-mains");
-  assert.equal(menuSectionForSlot("HOT MEAT").subgroupId, "hot-meat-main");
-  assert.equal(menuSectionForSlot("FISH").subgroupId, "hot-fish");
-  assert.equal(menuSectionForSlot("VEGAN MAIN").subgroupId, "hot-veg-vegan");
-  assert.equal(menuSectionForSlot("HOT VEG VEGAN").subgroupId, "hot-veg-vegan");
-  assert.equal(menuSectionForSlot("SOUP 1").id, "soup");
-  assert.equal(menuSectionForSlot("SAUCE 4").id, "sauces");
-  assert.equal(menuSectionForSlot("GARNISH 2").id, "garnishes");
-  assert.equal(menuSectionForSlot("DESSERT 3").id, "desserts");
-  assert.equal(menuSectionForSlot("EXTRAS 1").id, "other");
-  assert.equal(menuSectionForSlot("COLD PROTEIN").id, "other");
+test("legacy saved slot labels map deterministically without changing their source values", () => {
+  assert.equal(menuSectionForSlot("HOT MEAT 2").label, "HOT MAINS");
+  assert.equal(menuSectionForSlot("FISH 1").label, "HOT MAINS");
+  assert.equal(menuSectionForSlot("COLD PROTEIN").label, "COLD PROTEINS");
+  assert.equal(menuSectionForSlot("EXTRAS 2").label, "STARCH/SIDES");
+  assert.equal(menuSectionForSlot("CUSTOM SLOT").label, "OTHER");
 });
 
-test("Hot Mains subgroups use the provisional subgroup sequence", () => {
+test("ordering preserves canonical slot order, stable legacy fallback, and duplicate dishes", () => {
   const entries = [
-    { slot: "VEGAN MAIN", sourceEntryId: "vegan" },
-    { slot: "FISH", sourceEntryId: "fish" },
-    { slot: "HOT MAIN", sourceEntryId: "meat" },
+    { slot: "DESSERT 2", id: "one", name: "Zebra cake" },
+    { slot: "SALAD 2", id: "two", name: "Z slaw" },
+    { slot: "SALAD 1", id: "three", name: "A leaf salad" },
+    { slot: "CUSTOM", id: "four", name: "Legacy" },
+    { slot: "SALAD 1", id: "three", name: "A leaf salad" },
   ];
-  assert.deepEqual(orderMenuEntries(entries).map(({ sourceEntryId }) => sourceEntryId), ["meat", "fish", "vegan"]);
-});
-
-test("all six salad positions sort explicitly before a custom salad slot", () => {
-  const entries = [
-    { slot: "SALAD 6", sourceEntryId: "seasonal" },
-    { slot: "SALAD 2", sourceEntryId: "slaw" },
-    { slot: "SALAD 5", sourceEntryId: "grain-pulse" },
-    { slot: "SALAD 1", sourceEntryId: "leaf" },
-    { slot: "SALAD 4", sourceEntryId: "veg" },
-    { slot: "SALAD 3", sourceEntryId: "starch" },
-    { slot: "SALAD 7", sourceEntryId: "custom" },
-  ];
-  assert.deepEqual(orderMenuEntries(entries).map(({ sourceEntryId }) => sourceEntryId), [
-    "leaf", "slaw", "starch", "veg", "grain-pulse", "seasonal", "custom",
-  ]);
-});
-
-test("section ordering preserves authored order within a section and never alphabetizes dishes", () => {
-  const entries = [
-    { slot: "SOUP 1", originalIndex: 2, sourceEntryId: "z-soup", label: "A soup" },
-    { slot: "SOUP 2", originalIndex: 1, sourceEntryId: "a-soup", label: "Z soup" },
-  ];
-  assert.deepEqual(orderMenuEntries(entries).map(({ label }) => label), ["Z soup", "A soup"]);
-  assert.equal(compareMenuEntries(entries[0], entries[1]) > 0, true);
-});
-
-test("unknown slots stay visible in stable OTHER order and duplicate entries are not removed", () => {
-  const entries = [
-    { slot: "CUSTOM BREAKFAST", sourceEntryId: "b" },
-    { slot: "CUSTOM DRINKS", sourceEntryId: "a" },
-    { slot: "CUSTOM BREAKFAST", sourceEntryId: "b" },
-  ];
-  const ordered = orderMenuEntries(entries);
-  assert.equal(ordered.length, entries.length);
-  assert.deepEqual(ordered.map(({ sourceEntryId }) => sourceEntryId), ["b", "a", "b"]);
-  assert.ok(ordered.every(({ slot }) => menuSectionForSlot(slot).id === "other"));
-});
-
-test("sort returns a copy and preserves fallback array order rather than alphabetizing by ID", () => {
-  const entries = [
-    { slot: "CUSTOM", sourceEntryId: "z" },
-    { slot: "CUSTOM", sourceEntryId: "a" },
-  ];
-  const ordered = orderMenuEntries(entries);
-  assert.notEqual(ordered, entries);
-  assert.deepEqual(ordered.map(({ sourceEntryId }) => sourceEntryId), ["z", "a"]);
-  assert.equal(compareMenuEntries(entries[0], entries[1]) > 0, true);
+  assert.deepEqual(orderMenuEntries(entries).map(entry => entry.id), ["three", "three", "two", "one", "four"]);
+  assert.deepEqual(entries.map(entry => entry.id), ["one", "two", "three", "four", "three"]);
 });
