@@ -38,3 +38,21 @@ test('real Git workspace lifecycle, scoped concurrency, dirty preservation and r
     const checked=path.resolve(base);assert.equal(path.dirname(checked),path.resolve(os.tmpdir()));assert.ok(path.basename(checked).startsWith('fika-workflow-test-'));rmSync(checked,{recursive:true,force:true});
   }
 });
+
+test('workspace reconciliation preserves a unique scope-exempt changelog fragment',()=>{
+  const base=mkdtempSync(path.join(os.tmpdir(),'fika-workspace-changelog-test-'));const remote=path.join(base,'remote.git');const repo=path.join(base,'repo');mkdirSync(repo);
+  const git=(...args)=>execFileSync('git',args,{cwd:repo,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+  const run=(args,ok=true)=>{const r=spawnSync(process.execPath,[cli,...args],{cwd:repo,encoding:'utf8'});assert.equal(r.status===0,ok,r.stderr||r.stdout);return r.status===0?JSON.parse(r.stdout):r.stderr;};
+  try {
+    execFileSync('git',['init','--bare',remote],{stdio:'ignore'});git('init','-b','main');git('config','user.email','test@example.invalid');git('config','user.name','Workspace changelog recovery test');writeFileSync(path.join(repo,'README.md'),'fixture');git('add','.');git('commit','-m','Fixture baseline');git('remote','add','origin',remote);git('push','-u','origin','main');
+    const source=run(['workspace','create','cpu-source','--owner','agent-one','--scope','apps/cpu-production']);
+    const fragment='.changes/platform/2026-11-05-reconcile-recovery.md';const content='# 2026-11-05 — Reconcile recovery\n\nPreserve the unique platform change record with its workspace source.\n\nValidation: fixture recovery regression.\nDeployment: none.\n';
+    const sourceFile=path.join(source.directory,fragment);mkdirSync(path.dirname(sourceFile),{recursive:true});writeFileSync(sourceFile,content);
+    const preview=run(['workspace','reconcile','cpu-source','--owner','agent-one','--replacement','cpu-recovery-preview']);assert.equal(preview.dryRun,true);assert.deepEqual(preview.wouldChange.untracked.map(x=>x.path),[fragment]);assert.equal(existsSync(path.join(base,'agent-workspaces/fika-os/cpu-recovery-preview')),false);
+    const result=run(['workspace','reconcile','cpu-source','--owner','agent-one','--replacement','cpu-recovery-successor','--execute']);
+    assert.equal(readFileSync(path.join(result.replacement.directory,fragment),'utf8').replace(/\r\n/g,'\n'),content);assert.equal(readFileSync(sourceFile,'utf8').replace(/\r\n/g,'\n'),content);assert.equal(result.paths.includes(fragment),true);
+    assert.equal(run(['workspace','check','cpu-recovery-successor','--owner','agent-one']).withinScope,true);
+  } finally {
+    const checked=path.resolve(base);assert.equal(path.dirname(checked),path.resolve(os.tmpdir()));assert.ok(path.basename(checked).startsWith('fika-workspace-changelog-test-'));rmSync(checked,{recursive:true,force:true});
+  }
+});
