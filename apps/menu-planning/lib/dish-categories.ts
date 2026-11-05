@@ -53,6 +53,9 @@ export function categoriesForMenuSlot(slot: string): readonly ReadableDishCatego
   if (/^SALAD(?: \d+)?$/.test(value)) return ["Salad"];
   if (/^SOUP(?: \d+)?$/.test(value)) return ["Soup"];
   if (/^DESSERT(?: \d+)?$/.test(value)) return ["Dessert"];
+  if (value === "COLD PROTEIN MEAT") return ["Cold Protein"];
+  if (value === "COLD PROTEIN FISH" || value === "HOT FISH") return ["Fish"];
+  if (value === "COLD PROTEIN VEGAN" || value === "HOT VEGAN") return ["Vegan/Veggie Main"];
   if (/^COLD PROTEIN(?: \d+)?$/.test(value)) return ["Cold Protein"];
   if (/^(?:STARCH\/SIDE|EXTRAS|SIDE)(?: \d+)?$/.test(value)) return ["Starch/Side"];
   if (/^GARNISH(?: \d+)?$/.test(value)) return ["Garnish"];

@@ -281,12 +281,15 @@ test("blank rolling week has seven days and all six standard salad template rows
   const week = emptyWeek("2026-08-17");
   assert.equal(week.days.length, 7);
   assert.deepEqual(week.week.templateSlots, [...ROLLING_SLOTS]);
-  assert.deepEqual(week.week.templateSlots.slice(-3), ["DESSERT 1", "DESSERT 2", "DESSERT 3"]);
+  assert.equal(week.week.templateSlots.length, 29);
+  assert.deepEqual(week.week.templateSlots.slice(-4), ["DESSERT 1", "DESSERT 2", "DESSERT 3", "DESSERT 4"]);
   assert.ok(ROLLING_SLOTS.includes("SALAD 5" as typeof ROLLING_SLOTS[number]));
   assert.ok(ROLLING_SLOTS.includes("SALAD 6" as typeof ROLLING_SLOTS[number]));
   assert.equal(ROLLING_SLOTS.filter(slot => slot.startsWith("STARCH/SIDE ")).length, 4);
   assert.equal(ROLLING_SLOTS.filter(slot => slot.startsWith("GARNISH ")).length, 4);
   assert.equal(ROLLING_SLOTS.filter(slot => slot.startsWith("SAUCE ")).length, 4);
+  assert.deepEqual(slotsForWeek({ ...week.week, templateSlots: undefined }), ["SALAD 1", "SALAD 2", "SALAD 3", "SALAD 4", "SALAD 5", "SALAD 6", "COLD PROTEIN", "SOUP", "HOT MEAT", "VEGAN MAIN", "HOT VEG VEGAN", "EXTRAS 1", "EXTRAS 2", "EXTRAS 3", "EXTRAS 4", "EXTRAS 5", "EXTRAS 6", "DESSERT 1", "DESSERT 2", "DESSERT 3"]);
+  assert.ok(!slotsForWeek({ ...week.week, templateSlots: undefined }).includes("DESSERT 4"));
   assert.equal(validateWeek(week).length, 1);
 });
 
@@ -301,13 +304,13 @@ test("week-only and permanent menu rows persist at their intended scope", async 
   assert.ok((await getWeek(current.week.id)).week.customSlots?.includes("STARCH/SIDE 5"));
 
   const permanent = await addMenuSlot(current.week.id, "Vegan/Veggie Main", "template", "test");
-  assert.equal(permanent.slot, "VEGAN MAIN 2");
+  assert.equal(permanent.slot, "VEGAN MAIN 1");
   const future = await createWeekSnapshot("2031-05-19");
-  assert.ok(future.week.templateSlots?.includes("VEGAN MAIN 2"));
+  assert.ok(future.week.templateSlots?.includes("VEGAN MAIN 1"));
   assert.ok(!future.week.templateSlots?.includes("STARCH/SIDE 5"));
 
   const existing = await getWeek(preexisting.week.id);
-  assert.ok(!slotsForWeek(existing.week).includes("VEGAN MAIN 2"));
+  assert.ok(!slotsForWeek(existing.week).includes("VEGAN MAIN 1"));
   assert.ok(!existing.week.customSlots?.includes("VEGAN MAIN 2"));
   assert.ok(!slotsForWeek((await getWeek(current.week.id)).week).includes("VEGAN MAIN 2"));
 });
@@ -666,7 +669,9 @@ test("publication content hash ignores Firestore entry and allocation read order
   const shuffled = { ...snapshot, entries: [second, { ...first, allocations: first.allocations.slice().reverse() }] };
   const shuffledHash = buildPublishedDay(shuffled, day);
   assert.equal(shuffledHash.contentHash, published.contentHash, "document and allocation return order does not change semantic content hash");
-  assert.deepEqual(published.entries.map(entry => entry.sourceEntryId), day.entryIds, "stored day entryIds preserve intentional menu order");
+  assert.deepEqual(published.entries.map(entry => entry.sourceEntryId), day.entryIds, "canonical order preserves this already-canonical authored order");
+  assert.ok(published.entries.every(entry => entry.menuOrderVersion === "fika.menu-order.v1"));
+  assert.deepEqual(published.entries.map(entry => entry.canonicalSlotId), ["SALAD 1", "SOUP"]);
   assert.deepEqual(published.entries[0].allocations.map(allocation => allocation.destinationId), ["site:a", "site:b"], "allocations use stable destination identity order");
 
   const publication = { sourceWeekId: snapshot.week.id, days: [{ sourceDayId: day.id, status: "published" as const, contentHash: published.contentHash }] } as any;
@@ -676,6 +681,29 @@ test("publication content hash ignores Firestore entry and allocation read order
   assert.equal(compareWorkingWeekToPublication(shuffled, historicalPublication).dayHasUnpublishedChanges[day.id], false, "verified immutable pre-fix hashes remain equivalent without rewriting history");
   const changed = { ...snapshot, entries: snapshot.entries.map(entry => entry.id === first.id ? { ...entry, allocations: entry.allocations.map(allocation => allocation.destinationId === "site:a" ? { ...allocation, quantity: 4 } : allocation) } : entry) };
   assert.equal(compareWorkingWeekToPublication(changed, publication).dayHasUnpublishedChanges[day.id], true, "a genuine portion change remains dirty");
+});
+
+test("new publication revisions use canonical slot order and keep unknown historical slots stable", () => {
+  const snapshot = emptyWeek("2031-01-20");
+  const day = snapshot.days[0];
+  const rows: RollingEntry[] = [
+    { id: "entry:d2", dayId: day.id, date: day.date, slot: "DESSERT 2", itemLabel: "Dessert two", portions: 1, allocations: [{ destinationId: "site", destinationLabel: "Site", quantity: 1 }], allergens: {}, audit: [] },
+    { id: "entry:extra6", dayId: day.id, date: day.date, slot: "EXTRAS 6", itemLabel: "Historical six", portions: 1, allocations: [{ destinationId: "site", destinationLabel: "Site", quantity: 1 }], allergens: {}, audit: [] },
+    { id: "entry:side1", dayId: day.id, date: day.date, slot: "EXTRAS 1", itemLabel: "Side one", portions: 1, allocations: [{ destinationId: "site", destinationLabel: "Site", quantity: 1 }], allergens: {}, audit: [] },
+    { id: "entry:d1", dayId: day.id, date: day.date, slot: "DESSERT 1", itemLabel: "Dessert one", portions: 1, allocations: [{ destinationId: "site", destinationLabel: "Site", quantity: 1 }], allergens: {}, audit: [] },
+    { id: "entry:extra5", dayId: day.id, date: day.date, slot: "EXTRAS 5", itemLabel: "Historical five", portions: 1, allocations: [{ destinationId: "site", destinationLabel: "Site", quantity: 1 }], allergens: {}, audit: [] },
+  ];
+  day.entryIds = rows.map(row => row.id);
+  snapshot.entries = rows;
+  const before = JSON.stringify(snapshot);
+  const published = buildPublishedDay(snapshot, day);
+  assert.deepEqual(published.entries.map(entry => entry.sourceEntryId), ["entry:side1", "entry:d1", "entry:d2", "entry:extra6", "entry:extra5"]);
+  assert.equal(published.entries.find(entry => entry.sourceEntryId === "entry:side1")?.canonicalSlotId, "STARCH/SIDE 1");
+  assert.equal(published.entries.find(entry => entry.sourceEntryId === "entry:extra5")?.canonicalSlotId, undefined);
+  assert.equal(published.entries.find(entry => entry.sourceEntryId === "entry:extra6")?.canonicalSlotId, undefined);
+  assert.equal(JSON.stringify(snapshot), before, "publishing does not rewrite the source week or authored entry order");
+  const publication = { publicationId: "publication:canonical-order", sourceWeekId: snapshot.week.id, weekCommencing: snapshot.week.weekCommencing, weekEnding: snapshot.week.weekEnding, publicationVersion: 1, days: [{ publicationDayId: "day:canonical-order", sourceDayId: day.id, date: day.date, dayName: day.dayName, version: 1, status: "published" as const, contentHash: published.contentHash, publishedAt: "2031-01-20T00:00:00.000Z", publishedBy: "test", entries: published.entries }], audit: [] };
+  assert.equal(buildCompiledPublicationSnapshot(publication, snapshot.week.version).menuOrderVersion, "fika.menu-order.v1");
 });
 
 test("Portion Planner publication stays clean after reload, turns dirty on allocation edit, and clears after amendment", async () => {

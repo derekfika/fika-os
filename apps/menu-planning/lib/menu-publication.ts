@@ -26,6 +26,7 @@ import {
   type Stored as RollingMenuStored,
 } from "./rolling-menu";
 import type { GovernedOploc } from "./oploc-authority";
+import { CANONICAL_MENU_SLOTS, canonicalMenuSlotIdFor, MENU_ORDER_VERSION, orderMenuEntries } from "../../shared/menu-section-order";
 import { renderPdfLocally } from "./local-pdf";
 import { resolveAllergenSnapshot } from "./allergen-resolution";
 import type { MenuItem } from "./domain";
@@ -77,6 +78,10 @@ export type MenuPublicationWeekPublishInput = { weekContentHash?: string };
 export type PublishedMenuEntry = {
   sourceEntryId: string;
   slot: string;
+  /** Present on newly generated revisions; absent on immutable legacy evidence. */
+  menuOrderVersion?: typeof MENU_ORDER_VERSION;
+  canonicalSlotId?: string;
+  canonicalOrderIndex?: number;
   canonicalDishId?: string;
   dishName: string;
   portions: number;
@@ -97,6 +102,8 @@ export type PublishedMenuEntry = {
 };
 export type CompiledPublishedWeekSnapshot = {
   schemaVersion: 1;
+  /** Absent for legacy publications that predate canonical slot metadata. */
+  menuOrderVersion?: typeof MENU_ORDER_VERSION;
   snapshotId: string;
   publicationId: string;
   sourceWeekId: string;
@@ -259,9 +266,15 @@ const publishedEntry = (
     throw Object.assign(new Error(`${day?.dayName || "Menu day"}: ${entry.itemLabel || entry.slot} cannot be published because governed allergen evidence is unresolved (${resolved.unresolved.join(", ")}).`), { status: 422, code: "PUBLICATION_ALLERGEN_UNRESOLVED" });
   }
   const mayContainNotes = entry.mayContainNotes ?? resolved.mayContainNotes;
+  const canonicalSlotId = canonicalMenuSlotIdFor(entry.slot);
+  const canonicalOrderIndex = canonicalSlotId
+    ? CANONICAL_MENU_SLOTS.findIndex(item => item.id === canonicalSlotId)
+    : -1;
   return normalizePublicationValue({
     sourceEntryId: entry.id,
     slot: entry.slot,
+    menuOrderVersion: MENU_ORDER_VERSION,
+    ...(canonicalSlotId && canonicalOrderIndex >= 0 ? { canonicalSlotId, canonicalOrderIndex } : {}),
     ...(canonicalDish?.canonicalId
       ? { canonicalDishId: canonicalDish.canonicalId }
       : {}),
@@ -298,17 +311,15 @@ function orderedEntriesForDay(snapshot: RollingSnapshot, day: RollingDay) {
   const slotPosition = new Map(
     [...slotsForWeek(snapshot.week), ...(snapshot.week.customSlots || [])].map((slot, index) => [slot, index]),
   );
-  return snapshot.entries
+  const entries = snapshot.entries
     .filter((entry) => entry.dayId === day.id && entry.itemLabel.trim() && entry.allocations.some((allocation) => Number.isFinite(allocation.quantity) && allocation.quantity > 0))
-    .slice()
-    .sort((left, right) => {
-      const leftPosition = position.get(left.id);
-      const rightPosition = position.get(right.id);
-      if (leftPosition !== undefined || rightPosition !== undefined)
-        return (leftPosition ?? Number.MAX_SAFE_INTEGER) - (rightPosition ?? Number.MAX_SAFE_INTEGER) || compareStableText(left.id, right.id);
-      const slotDifference = (slotPosition.get(left.slot) ?? Number.MAX_SAFE_INTEGER) - (slotPosition.get(right.slot) ?? Number.MAX_SAFE_INTEGER);
-      return slotDifference || compareStableText(left.slot, right.slot) || compareStableText(left.id, right.id);
-    });
+    .slice();
+  return orderMenuEntries(entries.map((entry, index) => ({
+    entry,
+    slot: entry.slot,
+    originalIndex: position.get(entry.id) ?? slotPosition.get(entry.slot) ?? index,
+    sourceEntryId: entry.id,
+  }))).map(({ entry }) => entry);
 }
 function historicalDayMatchesWorkingOrder(current: PublishedMenuDay, day: RollingDay, snapshot: RollingSnapshot, workingHash: string) {
   const originalContent = normalizePublicationValue({ sourceDayId: current.sourceDayId, date: current.date, dayName: current.dayName, entries: current.entries });
@@ -366,8 +377,12 @@ export function buildCompiledPublicationSnapshot(
       .filter((day) => day.status === "published")
       .map((day) => day.publishedBy)
       .at(-1) || "";
+  const publishedDays = publication.days.filter((day) => day.status === "published");
+  const hasCanonicalOrder = publishedDays.length > 0
+    && publishedDays.every(day => day.entries.every(entry => entry.menuOrderVersion === MENU_ORDER_VERSION));
   const base = normalizePublicationValue({
     schemaVersion: 1 as const,
+    ...(hasCanonicalOrder ? { menuOrderVersion: MENU_ORDER_VERSION } : {}),
     snapshotId: `${publication.publicationId}:snapshot:v${publicationVersion}`,
     publicationId: publication.publicationId,
     sourceWeekId: publication.sourceWeekId,
@@ -387,8 +402,7 @@ export function buildCompiledPublicationSnapshot(
       weekCommencing: publication.weekCommencing,
       weekEnding: publication.weekEnding,
     },
-    days: publication.days
-      .filter((day) => day.status === "published")
+    days: publishedDays
       .sort((a, b) => a.date.localeCompare(b.date))
     .map((day) => ({
         publicationDayId: day.publicationDayId,

@@ -1,15 +1,13 @@
-export const ROLLING_SLOTS = [
-  "SALAD 1", "SALAD 2", "SALAD 3", "SALAD 4", "SALAD 5", "SALAD 6",
-  "HOT MAIN", "VEGAN MAIN", "COLD PROTEIN", "SOUP",
-  "STARCH/SIDE 1", "STARCH/SIDE 2", "STARCH/SIDE 3", "STARCH/SIDE 4",
-  "GARNISH 1", "GARNISH 2", "GARNISH 3", "GARNISH 4",
-  "SAUCE 1", "SAUCE 2", "SAUCE 3", "SAUCE 4",
-  "DESSERT 1", "DESSERT 2", "DESSERT 3",
-] as const;
+import { CANONICAL_MENU_SLOTS } from "../../shared/menu-section-order";
+
+/** New weeks use the versioned canonical 29-slot order. */
+export const ROLLING_SLOTS = CANONICAL_MENU_SLOTS.map(item => item.id) as readonly string[];
+/** Old drafts keep their three historical permanent rows; new templates include Dessert 4. */
 export const PERMANENT_DESSERT_SLOTS = ["DESSERT 1", "DESSERT 2", "DESSERT 3"] as const;
+const NEVER_REMOVABLE_DESSERT_SLOTS = [...PERMANENT_DESSERT_SLOTS, "DESSERT 4"] as const;
 /** Slots found in older saved weeks remain readable and retain their historical ordering. */
-export const LEGACY_ROLLING_SLOTS = ["SALAD 1", "SALAD 2", "SALAD 3", "SALAD 4", "SALAD 5", "SALAD 6", "COLD PROTEIN", "SOUP", "HOT MEAT", "HOT VEG VEGAN", "EXTRAS 1", "EXTRAS 2", "EXTRAS 3", "EXTRAS 4", "EXTRAS 5", "EXTRAS 6"] as const;
-export type RollingSlot = typeof ROLLING_SLOTS[number];
+export const LEGACY_ROLLING_SLOTS = ["SALAD 1", "SALAD 2", "SALAD 3", "SALAD 4", "SALAD 5", "SALAD 6", "COLD PROTEIN", "SOUP", "HOT MEAT", "VEGAN MAIN", "HOT VEG VEGAN", "EXTRAS 1", "EXTRAS 2", "EXTRAS 3", "EXTRAS 4", "EXTRAS 5", "EXTRAS 6"] as const;
+export type RollingSlot = typeof CANONICAL_MENU_SLOTS[number]["id"];
 export type RollingWeekStatus = "draft" | "imported" | "needs_review" | "ready" | "partially_published" | "published" | "archived";
 export type RollingDayPublicationStatus = "draft" | "ready" | "published" | "superseded";
 import type { CanonicalAllergenMap, OperationalAllergenState } from "./fika-contracts";
@@ -29,8 +27,8 @@ export function plannerSlotsForWeek(week: RollingWeek) {
 }
 export function assertMenuSlotCanBeRemoved(slot: string) {
   const clean = slot.trim().toLocaleUpperCase().replace(/\s+/g, " ");
-  if ((PERMANENT_DESSERT_SLOTS as readonly string[]).includes(clean)) {
-    throw Object.assign(new Error("The three standard Dessert rows are permanent and cannot be removed."), { status: 409 });
+  if ((NEVER_REMOVABLE_DESSERT_SLOTS as readonly string[]).includes(clean)) {
+    throw Object.assign(new Error("Standard Dessert rows are permanent and cannot be removed."), { status: 409 });
   }
 }
 export function hasPlannedDishes(week: { entryIds?: readonly string[] }) { return (week.entryIds?.length || 0) > 0; }

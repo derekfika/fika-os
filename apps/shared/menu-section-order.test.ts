@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CANONICAL_MENU_SLOTS, MENU_ORDER_VERSION, menuSectionForSlot, orderMenuEntries } from "./menu-section-order";
+import { CANONICAL_MENU_SLOTS, MENU_ORDER_VERSION, canonicalMenuSlotIdFor, menuSectionForSlot, orderMenuEntries } from "./menu-section-order";
 
 test("canonical presentation contract contains Brian's 29 distinct slots in section order", () => {
   assert.equal(MENU_ORDER_VERSION, "fika.menu-order.v1");
@@ -20,6 +20,11 @@ test("legacy saved slot labels map deterministically without changing their sour
   assert.equal(menuSectionForSlot("COLD PROTEIN").label, "COLD PROTEINS");
   assert.equal(menuSectionForSlot("EXTRAS 2").label, "STARCH/SIDES");
   assert.equal(menuSectionForSlot("CUSTOM SLOT").label, "OTHER");
+  assert.equal(canonicalMenuSlotIdFor("EXTRAS 1"), "STARCH/SIDE 1");
+  assert.equal(canonicalMenuSlotIdFor("EXTRAS 4"), "STARCH/SIDE 4");
+  assert.equal(canonicalMenuSlotIdFor("EXTRAS 5"), undefined);
+  assert.equal(canonicalMenuSlotIdFor("EXTRAS 6"), undefined);
+  assert.equal(canonicalMenuSlotIdFor("COLD PROTEIN"), "COLD PROTEIN MEAT");
 });
 
 test("ordering preserves canonical slot order, stable legacy fallback, and duplicate dishes", () => {
