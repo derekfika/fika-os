@@ -2,4 +2,5 @@
 
 Stage Calendar work with successful CPU handoffs and reconcile current approved quotes, canonical site identity, CPU production quantities, amendments and cancellations. Add a bounded, separately approved 9 November catch-up command.
 
-Validation included focused Calendar and Drive tests, the Hub suite against pinned business specs, typecheck and build. Deployment and operator UAT are pending.
+Validation: Focused Calendar and Drive tests, the Hub suite against pinned business specs, typecheck and build.
+Deployment: Pending, including operator UAT.
