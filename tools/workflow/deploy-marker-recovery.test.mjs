@@ -10,6 +10,7 @@ import { createWorkspace, workspaceRecords } from './workspaces.mjs';
 import { beginWorkspaceOperation } from './workspace-state.mjs';
 import { recoverDeployOperation } from './workspace-admin.mjs';
 import { parseArguments } from './deploy-marker-recovery.mjs';
+import { APPS, target } from './policy.mjs';
 
 const T0 = '2026-10-31T08:12:47.498Z';
 const at = (seconds) => new Date(Date.parse(T0) + seconds * 1000).toISOString();
@@ -24,7 +25,13 @@ function ledger(f, app, environment, entries) {
   for (const { record, seconds } of entries) {
     const env = { ...process.env, GIT_COMMITTER_DATE: at(seconds), GIT_AUTHOR_DATE: at(seconds) };
     const run = (args, input) => execFileSync('git', args, { cwd: f.repo, encoding: 'utf8', input, env, windowsHide: true }).trim();
-    const blob = run(['hash-object', '-w', '--stdin'], `${JSON.stringify({ schema: 'fika.release.v1', app, environment, ...record }, null, 2)}\n`);
+    const mapped = target(app, environment);
+    const kind = record.kind;
+    const complete = { schema: 'fika.release.v1', app, environment, project: mapped.project, backend: mapped.backend, region: mapped.region, branch: mapped.branch,
+      sourceSha: SHA.a, scopeHash: 'd'.repeat(64), rollout: ['deploy','rollback','baseline','abandoned'].includes(kind) ? 'build-fixture-001' : null,
+      state: kind === 'intent' ? 'PENDING' : 'SUCCEEDED', percent: kind === 'intent' ? 0 : 100, ...record,
+      ...(kind === 'abandoned' ? { originalIntent: parent } : {}) };
+    const blob = run(['hash-object', '-w', '--stdin'], `${JSON.stringify(complete, null, 2)}\n`);
     const tree = run(['mktree'], `100644 blob ${blob}\trelease.json\n`);
     parent = run(['commit-tree', tree, ...(parent ? ['-p', parent] : []), '-m', `Release record: ${app} ${environment} ${record.kind} ${record.sourceSha}`]);
   }
@@ -101,6 +108,34 @@ test('happy path: preview is read-only; execution needs the approve-hash, audits
   assert.equal(remoteRefs(f), refsBefore, 'ledgers unchanged');
 }));
 
+test('canonical operator marker is recoverable only with terminal evidence and has no lease identity', () => run(async f => {
+  standardLedger(f);
+  for (const app of Object.keys(APPS)) for (const environment of ['staging','prod']) if (!(app === 'hub' && environment === 'staging')) ledger(f, app, environment, [BASE]);
+  const { id, file, marker } = setup(f);
+  const canonical = { ...marker, name: null, owner: 'canonical-operator', leaseId: null };
+  save(file, canonical);
+  const before = snapshot();
+  const preview = recoverDeployOperation(id, { reason: REASON }, deps);
+  assert.equal(preview.lease, null);
+  assert.equal(preview.marker.owner, 'canonical-operator');
+  assert.deepEqual(snapshot(), before);
+  const result = recoverDeployOperation(id, { reason: REASON, execute: true, 'approve-hash': preview.approveHash }, deps);
+  assert.equal(result.lease, null);
+  assert.ok(existsSync(result.archived));
+  assert.equal(JSON.parse(readFileSync(path.join(stateDir(), 'workspace-audit', `deploy-recovery-${id}.json`))).lease, null);
+}));
+
+test('canonical marker rejects partial identity and any other unresolved operation', () => run(async f => {
+  standardLedger(f);
+  const { id, file, marker } = setup(f);
+  save(file, { ...marker, name: null, owner: 'not-canonical', leaseId: null });
+  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /recorded workspace lease/);
+  save(file, { ...marker, name: null, owner: 'canonical-operator', leaseId: null });
+  save(path.join(stateDir(), 'workspace-operations', 'other.json'), { id: 'other', kind: 'dev' });
+  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /Another unresolved operation marker/);
+  assert.ok(existsSync(file));
+}));
+
 test('authorisation, id, reason and approve-hash inputs fail closed', () => run(async f => {
   standardLedger(f);
   const { id, file } = setup(f);
@@ -175,10 +210,13 @@ test('real-case shape: hub intent completed much later plus a hospitality intent
 
 test('rollback and abandoned records are terminal; other record kinds are not', () => run(async f => {
   const { id } = setup(f);
-  for (const kind of ['rollback', 'abandoned']) {
-    standardLedger(f, { entries: [BASE, hubIntent, { seconds: 3600, record: { kind, sourceSha: SHA.a, releaseId: 'r-a' } }] });
+  for (const kind of ['rollback','abandoned']) {
+    const terminal = kind === 'rollback' ? { kind, sourceSha: SHA.a, releaseId: 'r-a' } : { kind, sourceSha: SHA.a, releaseId: 'r-a', originalIntent: '0'.repeat(40), scopeHash: 'd'.repeat(64), smoke: { ok: false }, previousGood: { sourceSha: SHA.c, rollout: 'build-prev-001', state: 'SUCCEEDED', percent: 100 }, previousGoodRecord: SHA.c, recovery: { resolution: 'abandon', reason: 'Fixture abandonment', operator: { sourceSha: SHA.a }, evidenceHash: 'e'.repeat(64), journalHash: 'f'.repeat(64), at: at(3600), rollout: 'build-fixture-001' } };
+    standardLedger(f, { entries: [BASE, hubIntent, { seconds: 3600, record: terminal }] });
     assert.equal(recoverDeployOperation(id, { reason: REASON }, deps).evidence.intents[0].terminal.kind, kind);
   }
+  standardLedger(f, { entries: [BASE, hubIntent, { seconds: 3600, record: { kind: 'abandoned', sourceSha: SHA.a, releaseId: 'r-a' } }] });
+  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /Invalid abandoned release evidence/);
   standardLedger(f, { entries: [BASE, hubIntent, { seconds: 3600, record: { kind: 'baseline', sourceSha: SHA.a, releaseId: 'r-a' } }] });
   assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /no terminal record/);
 }));
@@ -200,7 +238,7 @@ test('any non-terminal intent in the window refuses', () => run(async f => {
   assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /no releaseId/);
   // A later record naming a different app is never trusted.
   standardLedger(f, { entries: [BASE, hubIntent, { seconds: 3600, record: { kind: 'deploy', sourceSha: SHA.a, releaseId: 'r-a', app: 'menu' } }] });
-  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /different app/);
+  assert.throws(() => recoverDeployOperation(id, { reason: REASON }, deps), /Release target mismatch/);
   assert.ok(existsSync(file));
 }));
 

@@ -37,8 +37,8 @@ need not rely on time.)
 2. Marker `kind` is `deploy`, `id` equals the requested id, and its integer `pid` is confirmed
    not alive (checked before and after the ledger evidence).
 3. Exact marker id and a reason of at least 8 characters.
-4. The marker's workspace, owner and lease id match the registry's lease.
-5. No `release-*.lock` file exists, and no `release-*.json` journal is non-completed or unreadable,
+4. Either the marker workspace, owner and lease id match a registry lease, or the marker is exactly `{ name: null, owner: 'canonical-operator', leaseId: null }`. Partial or other ownerless identities remain protected. Canonical recovery audits `lease: null` and never adopts/releases a workspace lease.
+5. For the canonical tuple, no other unresolved operation marker may exist; unreadable marker inventory fails closed. No `release-*.lock` file exists, and no `release-*.json` journal is non-completed or unreadable,
    for **any** app or environment. Locks are never broken.
 6. Read-only ledger evidence (after `git fetch origin`, git objects only, first-parent history of every
    `release/<env>/<app>` ledger that exists):
@@ -48,7 +48,7 @@ need not rely on time.)
    * **every** such intent has a releaseId, and a later record on its own ledger with the **same
      releaseId** and a terminal kind (`deploy`, `rollback` or `abandoned`). The terminal record may be
      hours later (an intent completed by `--resume` still counts). All later records on that ledger
-     must name the same app and environment.
+     must name the same app and environment. Records validate against mapped project/backend; intents are PENDING and deploy/rollback terminal source and scope match their intent.
 
 Zero candidate intents, an intent without a terminal record of the same releaseId, a head intent
 anywhere, a live pid, a lock or a non-completed journal refuse with a precise message. Use
@@ -69,7 +69,9 @@ anywhere, a live pid, a lock or a non-completed journal refuse with a precise me
   returns the audit with `alreadyApplied: true`.
 * It changes **nothing else**: no lease, registry, ledger, journal or lock.
 
-After recovery, the workspace's lease is unchanged; run the normal `workspace complete`.
+For canonical markers, historical terminal ledger evidence does not establish current cloud quiescence. Before execution, obtain two stable read-only App Hosting observations for every plausible target backend if attribution is ambiguous. Verify exact build/rollout linkage and terminal status, traffic, automatic-rollout setting, and absence of active operations. If authenticated inspection is unavailable or results are active, unknown, or contradictory, keep the marker protected.
+
+After recovery of a workspace-backed marker, the workspace lease is unchanged; run the normal `workspace complete` when that task is finished. A canonical marker has no workspace lease and requires no workspace completion.
 
 ## Preview shape
 

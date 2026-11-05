@@ -2,7 +2,7 @@ import path from 'node:path';
 import { existsSync, mkdirSync, renameSync, openSync, writeSync, fsyncSync, closeSync, readdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { git, ref, stateDir, jsonFile, lock } from './runtime.mjs';
-import { APPS, digest, target } from './policy.mjs';
+import { APPS, digest, target, validateRecord } from './policy.mjs';
 import { workspaceRecords } from './workspaces.mjs';
 import { leaseIdentity } from './workspace-state.mjs';
 import { recoverDeployOperation as governed } from './workspace-admin.mjs';
@@ -39,31 +39,40 @@ function ledgerChain(branch) {
 const summarise = (entry, record) => ({ commit: entry.commit, committedAt: new Date(entry.ct * 1000).toISOString(), kind: record.kind, app: record.app, environment: record.environment, sourceSha: record.sourceSha, releaseId: record.releaseId || null, recordDigest: digest(record) });
 
 /** Read-only ledger evidence. Throws a precise refusal for anything unfinished or ambiguous. */
-export function ledgerEvidence(marker) {
+export function ledgerEvidence(marker, { requireAll = false } = {}) {
   const startSeconds = Math.floor(Date.parse(marker.startedAt) / 1000);
   if (!Number.isFinite(startSeconds)) throw Error('Marker startedAt is missing or invalid; refusing');
   const candidates = []; const heads = [];
   for (const app of Object.keys(APPS)) for (const environment of ['staging', 'prod']) {
     const t = target(app, environment);
     const chain = ledgerChain(t.branch);
-    if (!chain) continue;
+    if (!chain) { if (requireAll) throw Error(`Expected release ledger ${t.branch} is missing or unreadable; refusing`); else continue; }
     const headRecord = releaseJson(chain[0].commit);
     if (headRecord.kind === 'intent') throw Error(`Release ledger ${t.branch} head is a pending intent (${chain[0].commit.slice(0, 8)}); use fika reconcile`);
+    validateRecord(headRecord, { app, environment });
     heads.push({ ledgerBranch: t.branch, ...summarise(chain[0], headRecord) });
     chain.forEach((entry, index) => {
       if (entry.ct < startSeconds || entry.ct > startSeconds + INTENT_WINDOW_SECONDS) return;
       const record = releaseJson(entry.commit);
-      if (record.kind === 'intent') candidates.push({ t, chain, index, entry, record });
+      if (record.kind === 'intent') {
+        if (!record.releaseId) throw Error(`Intent ${entry.commit.slice(0, 8)} on ${t.branch} has no releaseId; cannot prove it finished; use fika reconcile`);
+        if (record.schema !== 'fika.release.v1' || record.state !== 'PENDING' || record.app !== app || record.environment !== environment || record.project !== t.project || record.backend !== t.backend || record.region !== t.region || record.branch !== t.branch || !/^[a-f0-9]{40}$/.test(record.sourceSha || '') || !/^[a-f0-9]{64}$/.test(record.scopeHash || '')) throw Error(`Invalid or mismatched pending intent on ${t.branch}; refusing`);
+        candidates.push({ t, chain, index, entry, record });
+      } else validateRecord(record, { app, environment });
     });
   }
   if (!candidates.length) throw Error(`No release intent record found on any release ledger within ${INTENT_WINDOW_SECONDS}s after the marker started; refusing. Use fika reconcile if a deploy is pending.`);
   const intents = candidates.map(({ t, chain, index, entry, record }) => {
     if (record.app !== t.app || record.environment !== t.environment) throw Error('Intent record app/environment does not match its ledger branch; refusing');
-    if (!record.releaseId) throw Error(`Intent ${entry.commit.slice(0, 8)} on ${t.branch} has no releaseId; cannot prove it finished; use fika reconcile`);
     const later = chain.slice(0, index).reverse().map(item => ({ entry: item, record: releaseJson(item.commit) })); // oldest first
-    for (const { record: r } of later) if (r.app !== t.app || r.environment !== t.environment) throw Error(`A later record on ${t.branch} names a different app/environment; refusing`);
+    for (const { record: r } of later) {
+      if (r.app !== t.app || r.environment !== t.environment) throw Error(`A later record on ${t.branch} names a different app/environment; refusing`);
+      validateRecord(r, { app: t.app, environment: t.environment });
+    }
     const terminal = later.find(({ record: r }) => TERMINAL_KINDS.includes(r.kind) && r.releaseId === record.releaseId);
     if (!terminal) throw Error(`Intent ${entry.commit.slice(0, 8)} (${t.app} ${t.environment}, release ${record.releaseId}) has no terminal record (deploy, rollback or abandoned) with the same releaseId; it may still be pending; use fika reconcile`);
+    if (terminal.record.kind !== 'abandoned' && (terminal.record.sourceSha !== record.sourceSha || terminal.record.scopeHash !== record.scopeHash || terminal.record.project !== record.project || terminal.record.backend !== record.backend)) throw Error(`Terminal record for ${record.releaseId} does not match intent source, scope or target; refusing`);
+    if (terminal.record.kind === 'abandoned' && terminal.record.originalIntent !== entry.commit) throw Error(`Abandoned terminal for ${record.releaseId} does not reference its original intent; refusing`);
     return { ledgerBranch: t.branch, app: t.app, environment: t.environment, intent: summarise(entry, record), terminal: summarise(terminal.entry, terminal.record) };
   }).sort((a, b) => a.intent.commit.localeCompare(b.intent.commit));
   return { windowSeconds: INTENT_WINDOW_SECONDS, intents, ledgerHeads: heads };
@@ -86,14 +95,26 @@ function build(id, { processAlive }) {
   if (!existsSync(file)) return { file, missing: true };
   const marker = jsonFile(file);
   if (marker.id !== id || marker.kind !== 'deploy' || !Number.isInteger(marker.pid) || marker.pid < 1 || processAlive(marker.pid)) throw Error('Only a deploy marker whose process is confirmed exited may be recovered; other kinds and live processes remain protected');
-  const record = workspaceRecords().find(r => r.name === marker.name);
-  if (!record || record.owner !== marker.owner || !marker.leaseId || leaseIdentity(record) !== marker.leaseId) throw Error('Deploy marker does not match the recorded workspace lease; refusing');
+  const canonical = marker.name === null && marker.leaseId === null && marker.owner === 'canonical-operator';
+  const registry = workspaceRecords(); // validates registry integrity for both identity forms
+  const record = canonical ? null : registry.find(r => r.name === marker.name);
+  if (!canonical && (!record || record.owner !== marker.owner || !marker.leaseId || leaseIdentity(record) !== marker.leaseId)) throw Error('Deploy marker does not match the recorded workspace lease; refusing');
+  if (canonical) {
+    const ops = path.join(stateDir(), 'workspace-operations');
+    for (const name of readdirSync(ops)) {
+      if (!name.endsWith('.json')) throw Error(`Unexpected operation entry ${name}; refusing canonical recovery`);
+      let other; try { other = jsonFile(path.join(ops, name)); } catch { throw Error(`Unreadable operation marker ${name}; refusing canonical recovery`); }
+      if (other.id !== id) throw Error(`Another unresolved operation marker ${other.id || name} exists; refusing canonical recovery`);
+    }
+  } else if (marker.name == null || marker.leaseId == null || marker.owner == null) {
+    throw Error('Partial workspace identity is not recoverable');
+  }
   assertNoReleaseControl();
-  const evidence = ledgerEvidence(marker);
+  const evidence = ledgerEvidence(marker, { requireAll: canonical });
   if (processAlive(marker.pid)) throw Error('Deploy process is live; preserve its marker');
-  const lease = { workspace: record.name, owner: record.owner, leaseId: marker.leaseId, state: record.state };
+  const lease = canonical ? null : { workspace: record.name, owner: record.owner, leaseId: marker.leaseId, state: record.state };
   // The hash binds marker, lease and every intent/terminal pair. Unrelated head movement does not invalidate it.
-  const approveHash = digest({ schema: 'fika.deploy-marker-recovery-plan.v2', marker, lease, intents: evidence.intents });
+  const approveHash = digest({ schema: 'fika.deploy-marker-recovery-plan.v3', marker, lease, intents: evidence.intents });
   return { file, marker, lease, evidence, approveHash };
 }
 
