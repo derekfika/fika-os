@@ -41,4 +41,3 @@ test("resize preference is local to the browser, and the table grows only with d
   assert.match(resizeStyles, /touch-action: none/);
   assert.match(resizeStyles, /:focus-visible[\s\S]*var\(--fika-focus-ring\)/);
 });
-
