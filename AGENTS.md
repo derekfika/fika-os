@@ -18,6 +18,8 @@ Applies repository-wide. Read the nearest app guide before working there; nested
 
 ## Read only what the task needs
 
+For owner AFK shorthand and blocker-local execution, follow the [Permanent AFK command protocol](overnight.md#permanent-afk-command-protocol). Commands set task priority and run limits; they do not waive repository safeguards. A blocked task stays preserved with its next action while independent ready work continues.
+
 For new implementation issues, include **Complexity**, **Recommended model**, and a concise **Reason**. Defaults: Low (contained polish, text, docs, or isolated low-risk fixes) → Luna/Haiku; Medium (scoped app features or moderately involved UX/local data work) → Sonnet; High (auth/security, migrations, production-data correctness, cross-app contracts/integrations, risky deployment/cutover, or substantial app architecture) → Sol. Split mixed-complexity scopes into independently verifiable issues; keep a parent at its highest relevant risk until split. Reassess and record complexity if scope changes. Owner direction takes precedence, and model choice never bypasses required controls. Issue text does not itself enforce model routing; see the [implementation issue form](.github/ISSUE_TEMPLATE/implementation.yml).
 
 Codex uses root and scoped AGENTS.md. Claude's CLAUDE.md files import those same files; keep wrappers import-only, never duplicate policy. When starting at the root, explicitly read each affected app guide before editing. Preserve generated Next.js blocks in any existing AGENTS.md.
