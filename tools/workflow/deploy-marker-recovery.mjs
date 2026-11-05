@@ -65,9 +65,17 @@ export function ledgerEvidence(marker, { requireAll = false } = {}) {
   const intents = candidates.map(({ t, chain, index, entry, record }) => {
     if (record.app !== t.app || record.environment !== t.environment) throw Error('Intent record app/environment does not match its ledger branch; refusing');
     const later = chain.slice(0, index).reverse().map(item => ({ entry: item, record: releaseJson(item.commit) })); // oldest first
-    for (const { record: r } of later) {
+    for (let laterIndex = 0; laterIndex < later.length; laterIndex++) {
+      const { entry: laterEntry, record: r } = later[laterIndex];
       if (r.app !== t.app || r.environment !== t.environment) throw Error(`A later record on ${t.branch} names a different app/environment; refusing`);
-      validateRecord(r, { app: t.app, environment: t.environment });
+      if (r.kind === 'intent') {
+        if (r.schema !== 'fika.release.v1' || r.state !== 'PENDING' || r.project !== t.project || r.backend !== t.backend || r.region !== t.region || r.branch !== t.branch || !r.releaseId || !/^[a-f0-9]{40}$/.test(r.sourceSha || '') || !/^[a-f0-9]{64}$/.test(r.scopeHash || '')) throw Error(`Invalid later pending intent on ${t.branch}; refusing`);
+        const completion = later.slice(laterIndex + 1).find(({ record: terminal }) => TERMINAL_KINDS.includes(terminal.kind) && terminal.releaseId === r.releaseId);
+        if (!completion) throw Error(`Later intent ${laterEntry.commit.slice(0, 8)} on ${t.branch} has no matching terminal record; refusing`);
+        if (completion.record.kind === 'abandoned') {
+          if (completion.record.originalIntent !== laterEntry.commit) throw Error(`Later abandoned release ${r.releaseId} does not reference its intent; refusing`);
+        } else if (completion.record.sourceSha !== r.sourceSha || completion.record.scopeHash !== r.scopeHash || completion.record.project !== r.project || completion.record.backend !== r.backend) throw Error(`Later terminal for ${r.releaseId} does not match intent source, scope or target; refusing`);
+      } else validateRecord(r, { app: t.app, environment: t.environment });
     }
     const terminal = later.find(({ record: r }) => TERMINAL_KINDS.includes(r.kind) && r.releaseId === record.releaseId);
     if (!terminal) throw Error(`Intent ${entry.commit.slice(0, 8)} (${t.app} ${t.environment}, release ${record.releaseId}) has no terminal record (deploy, rollback or abandoned) with the same releaseId; it may still be pending; use fika reconcile`);
