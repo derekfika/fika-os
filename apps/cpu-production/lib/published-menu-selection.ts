@@ -50,8 +50,10 @@ export function aggregateProductionTotals(entries: PublishedMenuEntrySummary[] =
   ordered.forEach(({ entry }, index) => {
     const quantity = entry.allocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
     const normalizedName = entry.dishName.trim().toLocaleLowerCase().replace(/\s+/g, " ");
-    const slotId = canonicalMenuSlotIdFor(entry.canonicalSlotId || "") || canonicalMenuSlotIdFor(entry.slot) || entry.slot.trim();
-    const key = `${entry.canonicalDishId ? `id:${entry.canonicalDishId}` : `name:${normalizedName}`}|slot:${slotId}`;
+    // Production totals describe the canonical dish once, even when the same
+    // dish appears in multiple menu slots. The first canonical slot determines
+    // its position; destination rows retain the distinct slot occurrences.
+    const key = entry.canonicalDishId ? `id:${entry.canonicalDishId}` : `name:${normalizedName}`;
     const existing = totals.get(key);
     if (existing) existing.quantity += quantity;
     else totals.set(key, { slot: entry.slot, dishName: entry.dishName, quantity, originalIndex: entry.canonicalOrderIndex ?? index, ...(entry.canonicalDishId ? { canonicalDishId: entry.canonicalDishId } : {}), ...(entry.canonicalSlotId ? { canonicalSlotId: entry.canonicalSlotId } : {}), ...(entry.canonicalOrderIndex !== undefined ? { canonicalOrderIndex: entry.canonicalOrderIndex } : {}), ...(entry.menuOrderVersion ? { menuOrderVersion: entry.menuOrderVersion } : {}), ...(entry.sourceEntryId ? { sourceEntryId: entry.sourceEntryId } : {}) });

@@ -16,7 +16,7 @@ test("published destination and totals views follow all 29 canonical slots inste
   assert.deepEqual(grouped[0].entries.map(item => item.canonicalSlotId), CANONICAL_MENU_SLOTS.map(slot => slot.id));
 });
 
-test("same dish and same slot aggregates across sites; distinct slots remain separate and ordered", () => {
+test("production totals aggregate canonical dishes across sites and slots in first-slot order", () => {
   const rows = aggregateProductionTotals([
     entry("DESSERT 1", "Pear crumble", 2),
     entry("SALAD 1", "Mixed leaves", 3, "dish:salad", "Site A"),
@@ -24,15 +24,14 @@ test("same dish and same slot aggregates across sites; distinct slots remain sep
     entry("SALAD 1", "Mixed leaves", 4, "dish:salad", "Site B"),
   ]);
   assert.deepEqual(rows.map(row => [row.canonicalSlotId, row.dishName, row.quantity]), [
-    ["SALAD 1", "Mixed leaves", 7],
-    ["HOT FISH", "Mixed leaves", 5],
+    ["SALAD 1", "Mixed leaves", 12],
     ["DESSERT 1", "Pear crumble", 2],
   ]);
 });
 
 test("legacy unknown slots remain after canonical entries in stable source order", () => {
   const canonical = entry("SALAD 1", "Dish Z", 1);
-  const unknown = (id: string, slot: string): PublishedMenuEntrySummary => ({ sourceEntryId: id, slot, dishName: "Soup name does not infer slot", portions: 1, allocations: [{ destinationLabel: "Site A", quantity: 1 }] });
-  const rows = aggregateProductionTotals([unknown("entry:unknown-b", "OLD EXTRA B"), canonical, unknown("entry:unknown-a", "OLD EXTRA A")]);
+  const unknown = (id: string, slot: string, dishName: string): PublishedMenuEntrySummary => ({ sourceEntryId: id, slot, dishName, portions: 1, allocations: [{ destinationLabel: "Site A", quantity: 1 }] });
+  const rows = aggregateProductionTotals([unknown("entry:unknown-b", "OLD EXTRA B", "Soup B"), canonical, unknown("entry:unknown-a", "OLD EXTRA A", "Soup A")]);
   assert.deepEqual(rows.map(row => row.slot), ["SALAD 1", "OLD EXTRA B", "OLD EXTRA A"]);
 });
