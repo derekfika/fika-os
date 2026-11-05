@@ -47,6 +47,18 @@ test("production Totals count canonical orders and line quantities once by expli
   ]);
 });
 
+test("CPU production Totals follow canonical Menu slots, merge destinations per slot, and keep repeated dishes in distinct slots", () => {
+  const makeLine = (id: string, slot: string, orderIndex: number, quantity: number) => ({ ...order("fixture", 0).lines[0], canonicalId: id, sourceBookingLineId: id, sourceMenuItemId: "dish:shared", itemName: "Mixed leaves", customerQuantity: quantity, slot, canonicalSlotId: slot, canonicalOrderIndex: orderIndex, menuOrderVersion: "fika.menu-order.v1", sortOrder: orderIndex });
+  const first = { ...order("Site A", 0), canonicalId: "production-order:a", lines: [makeLine("a:dish", "DESSERT 1", 25, 2), makeLine("a:hot", "HOT FISH", 10, 5), makeLine("a:salad", "SALAD 1", 0, 3)] };
+  const second = { ...order("Site B", 0), canonicalId: "production-order:b", lines: [makeLine("b:salad", "SALAD 1", 0, 4)] };
+  const totals = aggregateProductionTotals([first, second]).find(category => category.category === "Delivered-In")!;
+  assert.deepEqual(totals.items.map(item => [item.canonicalSlotId, item.name, item.quantity]), [
+    ["SALAD 1", "Mixed leaves", 7],
+    ["HOT FISH", "Mixed leaves", 5],
+    ["DESSERT 1", "Mixed leaves", 2],
+  ]);
+});
+
 test("Ad-Hoc Totals use the Hospitality dashboard classification without mutating line routing", () => {
   const adHoc = { ...order("Ad-Hoc site", 0), canonicalId: "production-order:v1:ad-hoc:request:totals", origin: "cpu_created" as const, productionCategory: "grab_and_go" as const, lines: [
     { ...order("Ad-Hoc site", 0).lines[0], canonicalId: "adhoc:sandwich", itemName: "Sandwich", customerQuantity: 2, customerUnit: "pieces", workstream: "sandwiches" as const },
@@ -157,6 +169,33 @@ test("master Delivered-In allergen review unions overlapping dishes across the s
     ["Dish 4", 4, [{ label: "Destination B", quantity: 4 }]],
   ]);
   assert.deepEqual(review?.destinations, ["Destination A", "Destination B"]);
+});
+
+test("CPU master allergen rows follow canonical slot order and preserve slot labels without changing review identity or evidence", () => {
+  const source = order("Site A", 0);
+  const makeLine = (id: string, dishId: string, name: string, slot: string, index: number, allergens?: Record<string, string>) => ({
+    ...source.lines[0], canonicalId: id, sourceBookingLineId: id, sourceMenuItemId: dishId, itemName: name,
+    slot, canonicalSlotId: slot, canonicalOrderIndex: index, menuOrderVersion: "fika.menu-order.v1", sortOrder: index,
+    ...(allergens ? { allergenEvidenceStatus: "confirmed" as const, approvedAllergenSnapshot: { allergens, sourcePublicationDayId: "publication:day", sourceVersion: 2, sourceContentHash: "hash:v2" } } : { allergenEvidenceStatus: "unreviewed" as const }),
+  });
+  const rows = buildAllergenReviewRows([{ ...source, lines: [
+    makeLine("dessert", "dish:pear", "Pear crumble", "DESSERT 1", 25, { milk: "contains" }),
+    makeLine("fish", "dish:shared", "Mixed leaves", "HOT FISH", 10, { mustard: "may_contain" }),
+    makeLine("salad", "dish:shared", "Mixed leaves", "SALAD 1", 0, { mustard: "may_contain" }),
+    makeLine("unknown", "dish:unknown", "Mystery soup", "SOUP", 12),
+  ] as unknown as ProductionOrder["lines"] }]);
+  assert.deepEqual(rows.map(row => row.key), [
+    "menu_planning:dish:shared",
+    "menu_planning:dish:unknown",
+    "menu_planning:dish:pear",
+  ]);
+  assert.deepEqual(rows[0].menuSlots?.map(slot => slot.label), ["Leaf Salad", "Fish"]);
+  assert.equal(rows[0].snapshot?.allergens.mustard, "may_contain");
+  assert.equal(rows[0].reviewed, true);
+  assert.equal(rows[1].reviewed, false);
+  assert.equal(rows[1].attention, true);
+  assert.equal(rows[1].snapshot, undefined);
+  assert.equal(rows[2].snapshot?.allergens.milk, "contains");
 });
 
 test("superseded Menu Planning orders are excluded from the release review scope", () => {

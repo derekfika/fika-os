@@ -603,6 +603,7 @@ export default function AllergenReviewMatrix({
               <tr key={row.key} className={rowErrors[row.key] ? "cpu-allergen-row--error" : undefined}>
                 <th>
                   {titleCaseDish(row.name)}
+                  {row.menuSlots?.length ? <small>Menu slot: {row.menuSlots.map(slot => slot.label).join(" · ")}</small> : null}
                   <small>{row.quantity.toLocaleString()} required · {row.destinations.map(item => item.label).join(" · ")}</small>
                   {bookingContextEntries(row.dietaries).length > 0 && <small>Dietary: {bookingContextEntries(row.dietaries).join(" · ")}</small>}
                   {row.notes.map(note => <small key={note}>Note: {note}</small>)}
