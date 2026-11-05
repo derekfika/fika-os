@@ -47,7 +47,7 @@ Audit all active standing-order templates and canonical OPLOCs, not only Commerz
 
 ## 5. Scheduler provisioning and activation
 
-Use direct Cloud Scheduler Google OIDC authentication, following the verified Logistics Scheduler pattern ([driver-notifications-scheduler.md](../../apps/logistics/docs/driver-notifications-scheduler.md)). No shared credential belongs in a Scheduler header, job body, or command line. Use the production identity `fika-delivered-in-gng-scheduler@fika-os.iam.gserviceaccount.com` and separate exact audiences for the two routes. The service account has no project-wide IAM roles; grant only the minimum invocation needed by the actual target. Jobs call the operator-facing production Delivered-In custom domain.
+Use direct Cloud Scheduler Google OIDC authentication, following the verified Logistics Scheduler pattern ([driver-notifications-scheduler.md](../../apps/logistics/docs/driver-notifications-scheduler.md)). No shared credential belongs in a Scheduler header, job body, or command line. Use the production identity `fika-deliveredin-gng-scheduler@fika-os.iam.gserviceaccount.com` and separate exact audiences for the two routes. The service account has no project-wide IAM roles; grant only the minimum invocation needed by the actual target. Jobs call the operator-facing production Delivered-In custom domain.
 
 | Job | Schedule (London) | Purpose |
 |---|---|---|
