@@ -1,6 +1,7 @@
 import { PERMANENT_DESSERT_SLOTS, plannerSlotsForWeek, type RollingEntry, type RollingSnapshot } from "./rolling-menu-types";
 import { categoriesForMenuSlot, normaliseDishCategory } from "./dish-categories";
 import { normaliseSaladSubtype, SALAD_SLOT_SUBTYPES } from "./dish-editor";
+import { menuSectionForSlot, orderMenuEntries } from "../../shared/menu-section-order";
 
 export type DishReferenceState = "active" | "archived" | "merged" | "unresolved";
 export type DishReference = {
@@ -71,21 +72,16 @@ export function groupedSlots(snapshot: RollingSnapshot) {
     ...snapshot.entries.map(entry => entry.slot),
   ])).filter(slot => !snapshot.week.removedSlots?.includes(slot)
     || (snapshot.week.status === "draft" && (PERMANENT_DESSERT_SLOTS as readonly string[]).includes(slot)));
-  const groupFor = (slot: string) => slot.startsWith("SALAD ") ? "SALADS"
-    : slot.startsWith("COLD PROTEIN") ? "COLD PROTEIN"
-      : /^(HOT MAIN|HOT MEAT|FISH|VEGAN MAIN|HOT VEG VEGAN|SOUP)/.test(slot) ? "HOT MAINS"
-              : /^(STARCH\/SIDE|EXTRAS|SIDE)/.test(slot) ? "STARCH/SIDE"
-                : slot.startsWith("GARNISH") ? "GARNISH"
-                  : slot.startsWith("SAUCE") ? "SAUCE"
-                    : slot.startsWith("DESSERT") ? "DESSERTS" : "OTHER";
-  const hotMainsSubgroupOrder = (slot: string) => /^(HOT MAIN|HOT MEAT)/.test(slot) ? 0
-    : slot.startsWith("FISH") ? 1
-      : /^(VEGAN MAIN|HOT VEG VEGAN)/.test(slot) ? 2
-        : slot.startsWith("SOUP") ? 3 : -1;
-  const order = ["SALADS", "COLD PROTEIN", "HOT MAINS", "STARCH/SIDE", "GARNISH", "SAUCE", "OTHER", "DESSERTS"];
-  return order.map(group => {
-    const grouped = slots.filter(slot => groupFor(slot) === group);
-    if (group === "HOT MAINS") grouped.sort((left, right) => hotMainsSubgroupOrder(left) - hotMainsSubgroupOrder(right));
-    return [group, grouped] as [string, string[]];
-  }).filter(([, values]) => values.length);
+  const groups = new Map<string, string[]>();
+  for (const slot of slots) {
+    const section = menuSectionForSlot(slot).label;
+    groups.set(section, [...(groups.get(section) || []), slot]);
+  }
+  return [...groups.entries()]
+    .map(([section, values]) => [section, orderMenuEntries(values.map((slot, originalIndex) => ({ slot, originalIndex }))).map(item => item.slot)] as [string, string[]])
+    .sort(([left], [right]) => {
+      const a = menuSectionForSlot(groups.get(left)?.[0] || "").order;
+      const b = menuSectionForSlot(groups.get(right)?.[0] || "").order;
+      return a - b;
+    });
 }
