@@ -6,6 +6,7 @@ import {
   batchUpdateEntries,
   cleanDuplicateEntries,
   createEntry,
+  createOrReuseBlankWeek,
   createWeekSnapshot,
   defaultWeekForDate,
   duplicateWeek,
@@ -315,7 +316,7 @@ async function handlePost(request: NextRequest) {
       const weekCommencing = planningWeekCommencing(
         String(body.weekCommencing),
       );
-      const snapshot = await saveSnapshot(await createWeekSnapshot(weekCommencing, actor.uid));
+      const snapshot = await createOrReuseBlankWeek(weekCommencing, actor.uid);
       return NextResponse.json({
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await listWeeks(),
@@ -363,7 +364,7 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json(result);
     }
     if (action === "reset-week") {
-      const snapshot = await resetWeek(String(body.weekId), actor.uid);
+      const snapshot = await resetWeek(String(body.weekId), Number(body.expectedWeekVersion), actor.uid);
       return NextResponse.json({
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await listWeeks(),

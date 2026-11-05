@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, createEntry, createWeekSnapshot, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, saveSnapshot, saveSnapshotsCreateOnly, slotsForWeek, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, createEntry, createOrReuseBlankWeek, createWeekSnapshot, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, resetWeek, saveSnapshot, saveSnapshotsCreateOnly, slotsForWeek, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, createCanonicalMenuItems, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { buildCompiledPublicationSnapshot, buildPublishedDay, compareWorkingWeekToPublication, contentHash, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
@@ -438,6 +438,49 @@ test("week lifecycle prevents collisions, publishes once, and duplicates publish
   } finally {
     if (before) await writeFile(rollingFile, before); else await rm(rollingFile, { force: true });
   }
+});
+
+test("Reset Week clears draft placements through an optimistic transaction while preserving week metadata", async () => {
+  const source = emptyWeek("2099-09-07", "test");
+  source.week.customSlots = ["SEASONAL SIDE"];
+  source.week.sourceFiles = ["historic-import.xlsx"];
+  source.days[0].oneOffDestinations = [{ id: "venue:test", label: "Test venue", addressStatus: "confirmed", address: "1 Test Road" }];
+  await saveSnapshot(source);
+  const created = await createEntry(source.week.id, source.days[0].id, "HOT MAIN", "Test roast", "test", "dish:test-roast");
+  const reset = await resetWeek(source.week.id, created.week.version, "test");
+  assert.equal(reset.entries.length, 0);
+  assert.ok(reset.days.every(day => day.entryIds.length === 0 && day.oneOffDestinations?.length === 0));
+  assert.deepEqual(reset.week.customSlots, ["SEASONAL SIDE"]);
+  assert.deepEqual(reset.week.sourceFiles, ["historic-import.xlsx"]);
+  assert.equal(reset.week.version, created.week.version + 1);
+  assert.equal(reset.week.audit.at(-1)?.action, "week-reset");
+  await assert.rejects(() => resetWeek(source.week.id, created.week.version, "test"), (error: any) => error.status === 409);
+});
+
+test("Reset Week fails closed for a published week", async () => {
+  const source = await saveSnapshot(emptyWeek("2099-10-05", "test"));
+  const published = await publishWeek(source.week.id, "test");
+  await assert.rejects(() => resetWeek(source.week.id, published.week.version, "test"), (error: any) => error.status === 409 && /locked/.test(error.message));
+  assert.equal((await getWeek(source.week.id)).week.status, "published");
+});
+
+test("Start Blank Week reuses empty shells without overwriting metadata and rejects occupied weeks", async () => {
+  const shell = emptyWeek("2099-11-02", "test");
+  shell.week.customSlots = ["EVENT SIDE"];
+  shell.week.audit.push({ action: "operator-note", at: new Date().toISOString(), by: "test" });
+  await saveSnapshot(shell);
+  const reused = await createOrReuseBlankWeek(shell.week.weekCommencing, "test");
+  assert.equal(reused.week.version, shell.week.version);
+  assert.deepEqual(reused.week.customSlots, ["EVENT SIDE"]);
+  assert.deepEqual(reused.week.audit, shell.week.audit);
+
+  const occupied = emptyWeek("2099-11-09", "test");
+  const dish = { id: `${occupied.week.id}:entry:test`, dayId: occupied.days[0].id, date: occupied.days[0].date, slot: "HOT MAIN", itemLabel: "Test dish", portions: 0, allocations: [], allergens: {}, audit: [] };
+  occupied.entries.push(dish);
+  occupied.days[0].entryIds.push(dish.id);
+  occupied.week.entryIds.push(dish.id);
+  await saveSnapshot(occupied);
+  await assert.rejects(() => createOrReuseBlankWeek(occupied.week.weekCommencing, "test"), (error: any) => error.status === 409);
 });
 
 test("portion planner saves one optimistic batch and rejects stale retries", async () => {
