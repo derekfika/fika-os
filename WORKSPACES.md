@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-05T19:36:10.963Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-05T20:34:50.137Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -23,6 +23,7 @@ Snapshot: 2026-11-05T19:36:10.963Z. The local governed registry remains authorit
 | adhoc-signing-pdf | claude-adhoc-sign | apps/cpu-production, apps/hospitality-booking/apphosting.staging.yaml | codex/adhoc-signing-pdf | [#42](https://github.com/derekfika/fika-os/pull/42) | finished | 2026-10-24T21:59:07.602Z |
 | adhoc-signing-recovery | sol-adhoc-safety | apps/cpu-production | codex/adhoc-signing-recovery | [#248](https://github.com/derekfika/fika-os/pull/248) | retired | 2026-11-01T14:59:52.210Z |
 | adhoc-unhealthy-first-release-recovery | luna-adhoc-unhealthy-first-release-recovery | tools/workflow/recovery.mjs, tools/workflow/recovery.test.mjs | codex/adhoc-unhealthy-first-release-recovery | [#323](https://github.com/derekfika/fika-os/pull/323) | retired | 2026-11-03T13:44:45.489Z |
+| afk-command-protocol | luna-afk-command-protocol | AGENTS.md, overnight.md | codex/afk-command-protocol | [#403](https://github.com/derekfika/fika-os/pull/403) | retired | 2026-11-05T20:34:46.202Z |
 | agent-routing-policy-docs | luna-agent-routing-policy-docs | AGENTS.md, .github/ISSUE_TEMPLATE | codex/agent-routing-policy-docs | [#195](https://github.com/derekfika/fika-os/pull/195) | retired | 2026-10-31T01:41:58.110Z |
 | allergen-confirm-cpu-server | claude-allergen | apps/cpu-production | codex/allergen-confirm-cpu-server | [#39](https://github.com/derekfika/fika-os/pull/39) | finished | 2026-10-24T20:27:21.764Z |
 | allergen-confirm-cpu-ui | claude-allergen | apps/cpu-production | codex/allergen-confirm-cpu-ui | [#40](https://github.com/derekfika/fika-os/pull/40) | finished | 2026-10-24T21:38:46.175Z |
