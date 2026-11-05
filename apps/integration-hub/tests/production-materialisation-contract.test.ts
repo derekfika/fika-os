@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseExternalProductionMaterialisation } from "@fika/server-shared/external-production";
+import { projectExternalProductionLine } from "../lib/production-domain";
 
 test("the Menu Planning publisher payload, including publicationId, is accepted by the Hub contract", () => {
   const payload = {
@@ -20,6 +21,10 @@ test("the Menu Planning publisher payload, including publicationId, is accepted 
       itemName: "Mixed Leaf",
       quantity: 7,
       unit: "portion",
+      menuOrderVersion: "fika.menu-order.v1",
+      slot: "SALAD 1",
+      canonicalSlotId: "SALAD 1",
+      canonicalOrderIndex: 0,
       workstream: "delivered_in" as const,
       approvedAllergenSnapshot: {
         allergens: { milk: "clear" },
@@ -32,4 +37,8 @@ test("the Menu Planning publisher payload, including publicationId, is accepted 
 
   assert.deepEqual(parseExternalProductionMaterialisation(payload), payload);
   assert.throws(() => parseExternalProductionMaterialisation({ ...payload, unexpected: true }), /Unrecognized key/);
+  assert.throws(() => parseExternalProductionMaterialisation({ ...payload, lines: [{ ...payload.lines[0], canonicalOrderIndex: undefined }] }), /Canonical menu slot metadata requires/);
+  const parsed = parseExternalProductionMaterialisation(payload);
+  const productionLine = projectExternalProductionLine(parsed, "production-order:menu", 0, "menu_available");
+  assert.deepEqual([productionLine.menuOrderVersion, productionLine.slot, productionLine.canonicalSlotId, productionLine.canonicalOrderIndex, productionLine.sortOrder], ["fika.menu-order.v1", "SALAD 1", "SALAD 1", 0, 0]);
 });
