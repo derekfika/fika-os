@@ -100,3 +100,25 @@ test("printed HTML keeps separate site identities and contains the paper handove
   assert.match(paginateDayProduction.toString(), /Printed /);
   assert.match(paginateDayProduction.toString(), /Paper-only checkboxes/);
 });
+
+test("printed Menu run sheets use canonical section order, actual slot labels, and retain one site per page", () => {
+  const day = "2026-10-30";
+  const source = order("order:menu", day, "oploc:menu", "Menu Site");
+  const menu = {
+    ...source,
+    origin: "menu_planning",
+    lines: [
+      { ...source.lines[0], canonicalId: "line:dessert", itemName: "Pear crumble", slot: "DESSERT 1", canonicalSlotId: "DESSERT 1", menuOrderVersion: "fika.menu-order.v1", canonicalOrderIndex: 25 },
+      { ...source.lines[0], canonicalId: "line:hot-fish", itemName: "Baked salmon", slot: "HOT FISH", canonicalSlotId: "HOT FISH", menuOrderVersion: "fika.menu-order.v1", canonicalOrderIndex: 10 },
+      { ...source.lines[0], canonicalId: "line:salad", itemName: "Mixed leaves", slot: "SALAD 1", canonicalSlotId: "SALAD 1", menuOrderVersion: "fika.menu-order.v1", canonicalOrderIndex: 0 },
+      { ...source.lines[0], canonicalId: "line:garnish", itemName: "Crispy onions", slot: "GARNISH 1", canonicalSlotId: "GARNISH 1", menuOrderVersion: "fika.menu-order.v1", canonicalOrderIndex: 17 },
+    ],
+  } as unknown as ProductionOrder;
+  const html = runSheetProductionPrintHtml(new Map([[day, [menu]]]), [day], ["oploc:oploc:menu"], new Date("2026-10-30T09:00:00Z"));
+  const sectionPositions = ["SALADS", "HOT MAINS", "GARNISHES", "DESSERTS"].map(label => html.indexOf(`<th colspan="3">${label}</th>`));
+  assert.ok(sectionPositions.every(position => position >= 0));
+  assert.deepEqual(sectionPositions, [...sectionPositions].sort((a, b) => a - b));
+  assert.ok(html.indexOf("Leaf Salad</small> Mixed leaves") < html.indexOf("Fish</small> Baked salmon"));
+  assert.ok(html.indexOf("Garnish 1</small> Crispy onions") < html.indexOf("Dessert</small> Pear crumble"));
+  assert.equal((html.match(/data-site-key="oploc:oploc:menu"/g) || []).length, 1);
+});

@@ -132,6 +132,17 @@ test("legacy lines without valid ordered quantity and unit require verification"
   assert.doesNotMatch(html, /Prep: 45 pieces/);
 });
 
+test("single-collection print retains Menu section and slot metadata", () => {
+  const menu = order("menu", [
+    { ...line("dessert"), itemName: "Pear crumble", slot: "DESSERT 1", canonicalSlotId: "DESSERT 1", menuOrderVersion: "fika.menu-order.v1", canonicalOrderIndex: 25 },
+    { ...line("salad"), itemName: "Mixed leaves", slot: "SALAD 1", canonicalSlotId: "SALAD 1", menuOrderVersion: "fika.menu-order.v1", canonicalOrderIndex: 0 },
+  ]);
+  const html = collectionPrintHtml(menu);
+  assert.ok(html.indexOf("SALADS</th>") < html.indexOf("DESSERTS</th>"));
+  assert.match(html, /Leaf Salad<\/small> Mixed leaves/);
+  assert.match(html, /Dessert<\/small> Pear crumble/);
+});
+
 test("daily and selected multi-day totals print reuse verified aggregation and never combine incompatible units", () => {
   const a = order("a", [line("same", 4), line("same-unit", 2, "boxes")]);
   a.lines[1].itemName = a.lines[0].itemName;
