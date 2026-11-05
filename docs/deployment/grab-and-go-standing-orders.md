@@ -65,7 +65,7 @@ Collection `fikaDeliveredInGrabAndGoStandingOrdersV1`, three record types, all `
 
 ## Production Scheduler plan (paused until the reviewed release and credential cutover)
 
-Create the following jobs in project `fika-os`, region `europe-west4`, timezone `Europe/London`, target the operator-facing Delivered-In production URL, and set `--oidc-service-account-email=fika-delivered-in-gng-scheduler@fika-os.iam.gserviceaccount.com`. Use the exact route-specific audience above. The staging environment uses the matching account in project `fika-os-dev`; production and staging identities are not interchangeable. Keep jobs paused until the app is released, the shared-token rotation and Scheduler cleanup are verified, and the approved controlled execution is ready.
+Create the following jobs in project `fika-os`, region `europe-west4`, timezone `Europe/London`, target the operator-facing Delivered-In production URL, and set `--oidc-service-account-email=fika-deliveredin-gng-scheduler@fika-os.iam.gserviceaccount.com`. Use the exact route-specific audience above. The staging environment uses the matching account in project `fika-os-dev`; production and staging identities are not interchangeable. Keep jobs paused until the app is released, the shared-token rotation and Scheduler cleanup are verified, and the approved controlled execution is ready.
 
 | Job | Cron | Request body | Effect |
 |---|---|---|---|
