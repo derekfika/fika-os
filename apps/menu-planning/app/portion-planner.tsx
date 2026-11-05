@@ -10,6 +10,7 @@ import { useRollingData } from "./planner-data";
 import { loadPublicationReadiness } from "@/lib/publication-readiness-cache";
 import type { RollingAllocation } from "@/lib/rolling-menu-types";
 import { allocationMatchesPortionDestination, draftValueMatchesPersisted, persistedPortionValue, reconcilePortionDraft } from "@/lib/portion-draft";
+import { orderPortionPlannerEntries } from "../lib/portion-menu-order";
 
 type Oploc = { canonicalId: string; label: string; address?: string };
 type Destination = { id: string; label: string; address?: string; oneOff?: boolean };
@@ -63,7 +64,7 @@ export default function PortionPlanner() {
     return () => { active = false; };
   }, [snapshot?.week.id, selectedDayId, snapshot?.week.version, readinessRefresh, setError]);
   if (!snapshot) return <MenuPlanningShell section="Portion Planner"><div className="menu-loading">Loading Portion Planner…</div></MenuPlanningShell>;
-  const day = snapshot.days.find(item => item.id === selectedDayId) || snapshot.days[0]; const entries = snapshot.entries.filter(entry => entry.dayId === day.id && entry.itemLabel.trim());
+  const day = snapshot.days.find(item => item.id === selectedDayId) || snapshot.days[0]; const entries = orderPortionPlannerEntries(snapshot.entries.filter(entry => entry.dayId === day.id && entry.itemLabel.trim()));
   const allDestinations: Destination[] = [...oplocs.map(item => ({ id: item.canonicalId, label: item.label, address: item.address })), ...(day.oneOffDestinations || []).map(item => ({ id: `oneoff:${item.id}`, label: item.label, address: item.address, oneOff: true })), ...entries.flatMap(entry => entry.allocations.filter(allocation => allocation.destinationId && !oplocs.some(item => item.canonicalId === allocation.destinationId)).map(allocation => ({ id: allocation.destinationId as string, label: allocation.destinationLabel, address: allocation.destinationAddress })))].filter((item, index, values) => values.findIndex(candidate => candidate.id === item.id) === index).sort((a, b) => a.label.localeCompare(b.label));
   const explicitlyAdded = new Set((params.get("dest") || "").split(",").filter(Boolean)); const activeIds = new Set([...explicitlyAdded, ...allDestinations.filter(destination => entries.some(entry => entry.allocations.some(allocation => allocationMatchesPortionDestination(allocation, destination)))).map(destination => destination.id), ...allDestinations.filter(destination => destination.oneOff).map(destination => destination.id)]); const destinations = showAll ? allDestinations : allDestinations.filter(destination => activeIds.has(destination.id)); const state = publicationState[day.id];
   const valueFor = (entry: typeof entries[number], destination: Destination) => draftValues[`${entry.id}|${destination.id}`] ?? String(persistedPortionValue(entry, destination) || "");
