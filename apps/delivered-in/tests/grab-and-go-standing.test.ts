@@ -181,7 +181,9 @@ test("pause only stops future generation; cancelling outstanding automatic order
   const pending = await f.service.standingOverview(OPLOC, f.catalogue(), THU); const row = pending.upcoming.find(item => item.deliveryDate === "2026-11-09")!;
   assert.equal(row.order!.handoff, "pending"); assert.match(row.exception!, /cancellation is recorded but CPU has not been updated/); assert.equal(pending.operations[0].complete, false);
   // Recovery: the existing bounded outbox worker (or the retry button) delivers the identical cancellation.
-  f.failForward(false); const recovery = await f.handoff.recoverGrabHandoffs(25, new Date(THU.getTime() + 120_000)); assert.equal(recovery.delivered, 1);
+  // Retry timestamps use the real clock inside the outbox delivery attempt. Advance the recovery
+  // clock from that same clock so this fixture's simulated Thursday date cannot make the retry early.
+  f.failForward(false); const recovery = await f.handoff.recoverGrabHandoffs(25, new Date(Date.now() + 120_000)); assert.equal(recovery.delivered, 1);
   assert.equal(f.calls.at(-1).status, "cancelled"); assert.equal(f.calls.at(-1).sourceVersion, 2);
   const healed = await f.service.standingOverview(OPLOC, f.catalogue(), THU); assert.equal(healed.upcoming.find(item => item.deliveryDate === "2026-11-09")!.order!.handoff, "delivered"); assert.equal(healed.upcoming.find(item => item.deliveryDate === "2026-11-09")!.exception, undefined);
   // Retrying the explicit action is idempotent and never touches manual orders or already-cancelled ones.
