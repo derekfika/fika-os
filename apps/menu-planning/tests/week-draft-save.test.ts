@@ -11,7 +11,7 @@ process.chdir(directory); process.env.MENU_PLANNING_DB_PATH = join(directory, "i
 const { applyWeekSave, saveWeekDraft } = await import("../lib/week-draft-save");
 const { createCanonicalMenuItem } = await import("../lib/canonical-menu-repository");
 const { emptyWeek, saveSnapshot, getWeek } = await import("../lib/rolling-menu");
-const { readPublicationState } = await import("../lib/operational-store");
+const { readPublicationState, updatePublicationState } = await import("../lib/operational-store");
 const allowed = new Set(["site:1"]);
 const base = (): RollingSnapshot => { const snapshot = emptyWeek("2099-01-05", "fixture-actor"); const entry = { id: `${snapshot.week.id}:entry:one`, dayId: snapshot.days[0].id, date: snapshot.days[0].date, slot: "GARNISH 1", itemId: "dish:fixture", itemLabel: "Almonds", portions: 12, allocations: [{ destinationId: "site:1", destinationLabel: "Fixture site", quantity: 12 }], allergens: { nuts: "contains" as const }, audit: [] }; snapshot.entries.push(entry); snapshot.days[0].entryIds.push(entry.id); snapshot.week.entryIds.push(entry.id); return snapshot; };
 test("atomic save preserves identities, portions and audits; replay is idempotent and reused IDs reject drift", () => {
@@ -46,6 +46,22 @@ test("real isolated persistence: 20 local edits, one save, repeated saves, retry
   assert.deepEqual(await readPublicationState(), beforePublications);
   await assert.rejects(saveWeekDraft({ ...request, requestId: "request-other-editor" }, "person:2", allowed), /changed on the server/);
   assert.equal((await getWeek(source.week.id)).week.version, 3);
+});
+test("explicit published working-draft save persists rolling rows only and preserves immutable publication and outbox", async () => {
+  const source = emptyWeek("2099-02-02", "fixture-actor"); const day = source.days[0]; const entry = { id: `${source.week.id}:entry:one`, dayId: day.id, date: day.date, slot: "GARNISH 1", itemId: "dish:fixture", itemLabel: "Almonds", portions: 12, allocations: [{ destinationId: "site:1", destinationLabel: "Fixture site", quantity: 12 }], allergens: { nuts: "contains" as const }, audit: [] };
+  source.entries.push(entry); source.week.entryIds.push(entry.id); day.entryIds.push(entry.id); source.week.status = "published"; source.week.dayStatuses = { [day.id]: "published" }; await saveSnapshot(source);
+  const publication = { publicationId: `menu-publication:${source.week.id}`, sourceWeekId: source.week.id, weekCommencing: source.week.weekCommencing, weekEnding: source.week.weekEnding, publicationVersion: 1, publicationStatus: "published", days: [{ publicationDayId: "publication-day:immutable-v1", sourceDayId: source.days[0].id, date: source.days[0].date, dayName: source.days[0].dayName, version: 1, status: "published", contentHash: "immutable-hash-v1", entries: [{ id: source.entries[0].id, itemId: source.entries[0].itemId, itemLabel: source.entries[0].itemLabel, slot: source.entries[0].slot, portions: 12, allocations: structuredClone(source.entries[0].allocations) }] }], audit: [{ action: "published", at: "2026-01-01T00:00:00Z", by: "publisher" }] };
+  await updatePublicationState<{ publications: unknown[]; events: unknown[] }>(state => { state.publications.push(publication); });
+  const beforePublication = await readPublicationState<{ publications: unknown[]; events: unknown[] }>(); const beforeRolling = await getWeek(source.week.id);
+  const draft = { ...source, entries: [{ ...source.entries[0], itemLabel: "Working draft name", portions: 15, allocations: [{ ...source.entries[0].allocations[0], quantity: 15 }] }] };
+  const request = { weekId: source.week.id, expectedWeekVersion: 1, requestId: "request-working-draft", workingDraft: true, changes: weekChanges(source, draft) };
+  const saved = await saveWeekDraft(request, "person:1", allowed);
+  assert.equal(saved.snapshot.entries[0].itemLabel, "Working draft name"); assert.equal(saved.snapshot.entries[0].portions, 15);
+  assert.equal(saved.snapshot.week.status, "published"); assert.equal(saved.snapshot.week.dayStatuses?.[source.days[0].id], "published");
+  assert.equal((await getWeek(source.week.id)).week.version, 2);
+  const afterPublication = await readPublicationState<{ publications: unknown[]; events: unknown[] }>();
+  assert.deepEqual(afterPublication.publications, beforePublication.publications); assert.deepEqual(afterPublication.events, beforePublication.events);
+  assert.equal(beforeRolling.entries[0].itemLabel, "Almonds");
 });
 test("canonical creation is retained, not deleted/recreated, and forged review evidence is rejected", async () => {
   const dish = await createCanonicalMenuItem({ displayName: "Fixture soup 337", category: "Soup" }, "fixture-actor");

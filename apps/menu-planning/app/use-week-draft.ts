@@ -6,7 +6,7 @@ import { draftStorageKey, editWeek, equal, isWeekDirty, parseRecoveredDraft, rec
 
 type DraftState = { base: RollingSnapshot; draft: RollingSnapshot; templateAdditions: string[]; pending?: RecoveredWeekDraft["pending"] };
 type Review = { latest: RollingSnapshot; merged: RollingSnapshot; conflicts: DraftConflict[] };
-export function useWeekDraft(source: RollingSnapshot | undefined, identity: string, applySaved: (snapshot: RollingSnapshot, publicationState?: Record<string, PublicationDayState>) => void) {
+export function useWeekDraft(source: RollingSnapshot | undefined, identity: string, applySaved: (snapshot: RollingSnapshot, publicationState?: Record<string, PublicationDayState>) => void, workingDraftMode = false) {
   const [state, setState] = useState<DraftState>();
   const stateRef = useRef(state);
   const [recovered, setRecovered] = useState<RecoveredWeekDraft>();
@@ -70,7 +70,7 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
     const current = stateRef.current;
     if (!current || recovered) { setError("Restore or discard the recovered draft before editing."); return false; }
     try {
-      const draft = editWeek(current.draft, action, input);
+      const draft = editWeek(current.draft, action, input, { workingDraft: workingDraftMode });
       const added = action === "add-menu-slot" && input.persistence === "template" ? (draft.week.customSlots || []).filter(slot => !current.draft.week.customSlots?.includes(slot)) : [];
       replace({ ...current, draft, templateAdditions: [...current.templateAdditions, ...added].filter(slot => draft.week.customSlots?.includes(slot) && !draft.week.removedSlots?.includes(slot)) });
       if (!saving.current && status !== "conflict") setStatus("editing"); setError(""); return true;
@@ -86,7 +86,7 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
     const current = stateRef.current;
     if (!current || saving.current || recovered || latest || !identity) return false;
     if (!isWeekDirty(current.base, current.draft) && !current.pending) return true;
-    const pending = current.pending || { request: { weekId: current.base.week.id, expectedWeekVersion: current.base.week.version, requestId: crypto.randomUUID(), changes: { ...weekChanges(current.base, current.draft), ...(current.templateAdditions.length ? { templateAdditions: current.templateAdditions } : {}) } } satisfies WeekSaveRequest, submitted: structuredClone(current.draft) };
+    const pending = current.pending || { request: { weekId: current.base.week.id, expectedWeekVersion: current.base.week.version, requestId: crypto.randomUUID(), ...(workingDraftMode ? { workingDraft: true } : {}), changes: { ...weekChanges(current.base, current.draft), ...(current.templateAdditions.length ? { templateAdditions: current.templateAdditions } : {}) } } satisfies WeekSaveRequest, submitted: structuredClone(current.draft) };
     saving.current = true; setStatus("saving"); setError(""); replace({ ...current, pending });
     try {
       const response = await fetch("/api/rolling-menu", { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30_000), body: JSON.stringify({ action: "save-week", ...pending.request }) });
@@ -138,6 +138,6 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
   };
   const applyReview = () => { if (!review || review.conflicts.length || !stateRef.current) return; replace({ base: structuredClone(review.latest), draft: review.merged, templateAdditions: stateRef.current.templateAdditions }); applySaved(review.latest); setReview(undefined); setLatest(undefined); setStatus("editing"); setError(""); };
   const leave = (selectWeek: (weekId: string) => void) => { if (!navigation || saving.current) return; const target = navigation; leaving.current = true; setNavigation(undefined); protect.current = false; if (target.weekId) selectWeek(target.weekId); else if (target.href) window.location.assign(target.href); };
-  return { snapshot: state?.base.week.id === source?.week.id ? state?.draft : source, dirty, status, error, storageError, recovered, review, latest, navigation, command, save, restore, discardRecovered, discard, reviewLatest, resolveConflict, applyReview, leave, cancelNavigation: () => setNavigation(undefined), setError, saving: saving.current };
+  return { snapshot: state?.base.week.id === source?.week.id ? state?.draft : source, dirty, status, error, storageError, recovered, review, latest, navigation, command, save, restore, discardRecovered, discard, reviewLatest, resolveConflict, applyReview, leave, cancelNavigation: () => setNavigation(undefined), setError, saving: saving.current, workingDraftMode };
 }
 function editableDayForReview(snapshot: RollingSnapshot, entryId: string) { const entry = snapshot.entries.find(entry => entry.id === entryId); return entry && snapshot.week.status !== "published" && snapshot.week.status !== "archived" && snapshot.week.dayStatuses?.[entry.dayId] !== "published"; }

@@ -13,7 +13,7 @@ export type WeekChanges = {
   removedSlots?: string[];
   templateAdditions?: string[];
 };
-export type WeekSaveRequest = { weekId: string; expectedWeekVersion: number; requestId: string; changes: WeekChanges };
+export type WeekSaveRequest = { weekId: string; expectedWeekVersion: number; requestId: string; changes: WeekChanges; workingDraft?: boolean };
 export const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 export function weekChanges(base: RollingSnapshot, draft: RollingSnapshot): WeekChanges {
   const existing = new Map(base.entries.map(entry => [entry.id, entry]));
@@ -36,29 +36,43 @@ export function isWeekDirty(base: RollingSnapshot, draft: RollingSnapshot) {
   return Boolean(changes.updates.length || changes.creates.length || changes.customSlots || changes.removedSlots);
 }
 export function editableDay(snapshot: RollingSnapshot, dayId: string) {
-  return snapshot.week.status !== "archived" && snapshot.week.status !== "published" && snapshot.week.dayStatuses?.[dayId] !== "published" && snapshot.days.some(day => day.id === dayId);
+  const status: string | undefined = snapshot.week.dayStatuses?.[dayId];
+  // A working draft may be saved for published evidence only in the separate,
+  // explicitly scoped amendment workflow. Ordinary edits remain draft-only.
+  return snapshot.week.status !== "archived"
+    && snapshot.week.status !== "published"
+    && status !== "published"
+    && status !== "superseded"
+    && status !== "withdrawn"
+    && snapshot.days.some(day => day.id === dayId);
+}
+/** Published rows are editable only through the explicit working-draft save mode. */
+export function editableWorkingDraftDay(snapshot: RollingSnapshot, dayId: string) {
+  return snapshot.week.status !== "archived"
+    && snapshot.week.dayStatuses?.[dayId] === "published"
+    && snapshot.days.some(day => day.id === dayId);
 }
 /** Apply ordinary planner actions without network activity or server-owned review/audit evidence. */
-export function editWeek(snapshot: RollingSnapshot, action: string, input: Record<string, any>): RollingSnapshot {
+export function editWeek(snapshot: RollingSnapshot, action: string, input: Record<string, any>, options: { workingDraft?: boolean } = {}): RollingSnapshot {
   const next = structuredClone(snapshot);
   if (action === "batch-update-entries") {
-    return (input.updates || []).reduce((draft: RollingSnapshot, update: Record<string, any>) => editWeek(draft, "update-entry", { entryId: update.entryId, patch: update.patch || { allocations: update.allocations || [], portions: (update.allocations || []).reduce((sum: number, allocation: { quantity: number }) => sum + Number(allocation.quantity), 0) } }), snapshot);
+    return (input.updates || []).reduce((draft: RollingSnapshot, update: Record<string, any>) => editWeek(draft, "update-entry", { entryId: update.entryId, patch: update.patch || { allocations: update.allocations || [], portions: (update.allocations || []).reduce((sum: number, allocation: { quantity: number }) => sum + Number(allocation.quantity), 0) } }, options), snapshot);
   } else if (action === "update-entry") {
     const entry = next.entries.find(entry => entry.id === input.entryId);
-    if (!entry || !editableDay(next, entry.dayId)) throw Error("This menu day is locked. Use the publication amendment workflow first.");
+    if (!entry || !(options.workingDraft ? editableWorkingDraftDay(next, entry.dayId) : editableDay(next, entry.dayId))) throw Error("This menu day is locked. Use the publication amendment workflow first.");
     applyRollingEntryPatch(entry, input.patch || {});
   } else if (action === "create-entry") {
     const day = next.days.find(day => day.id === input.dayId);
-    if (!day || !editableDay(next, day.id)) throw Error("This menu day is locked.");
+    if (!day || !(options.workingDraft ? editableWorkingDraftDay(next, day.id) : editableDay(next, day.id))) throw Error("This menu day is locked.");
     if (next.entries.some(entry => entry.dayId === day.id && entry.slot === input.slot)) throw Error("That menu slot already exists.");
     const entry: RollingEntry = { id: input.id || `${next.week.id}:entry:${crypto.randomUUID()}`, dayId: day.id, date: day.date, slot: input.slot, itemId: input.itemId, itemLabel: input.itemLabel || "", portions: 0, allocations: [], allergens: {}, audit: [] };
     next.entries.push(entry); day.entryIds.push(entry.id); next.week.entryIds.push(entry.id);
   } else if (action === "add-menu-slot") {
-    if (next.week.status === "published" || next.week.status === "archived") throw Error("This week is locked.");
+    if (next.week.status !== "draft") throw Error("This week is locked.");
     const slot = suggestMenuRowSlot(input.category, [...plannerSlotsForWeek(next.week), ...(next.week.customSlots || []), ...(next.week.removedSlots || [])]);
     next.week.customSlots = [...(next.week.customSlots || []), slot];
   } else if (action === "remove-menu-slot") {
-    if (next.week.status === "published" || next.week.status === "archived") throw Error("This week is locked.");
+    if (next.week.status !== "draft") throw Error("This week is locked.");
     const slot = String(input.slot).trim().toUpperCase().replace(/\s+/g, " ");
     assertMenuSlotCanBeRemoved(slot);
     if (next.entries.some(entry => entry.slot === slot && entry.itemLabel.trim())) throw Error("Clear the dishes in this row before removing it.");

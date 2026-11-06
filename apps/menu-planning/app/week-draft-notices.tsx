@@ -7,10 +7,10 @@ export default function WeekDraftNotices({ draft, selectWeek }: { draft: Draft; 
   return <>
     <div className="planner-toolbar" aria-label="Week draft controls">
       <strong role="status" aria-live="polite">{draft.status === "saving" ? "Saving…" : draft.status === "conflict" ? "Conflict · draft retained" : draft.status === "failed" ? "Save failed · draft retained" : draft.dirty ? "Unsaved Changes" : "Saved"}</strong>
-      <button type="button" className="button button-purple" disabled={draft.saving || Boolean(draft.recovered) || Boolean(draft.latest) || draft.status === "conflict" || !draft.dirty} onClick={() => void draft.save()}>{draft.saving ? "Saving…" : draft.status === "failed" ? "Retry Save Week" : "Save Week"}</button>
+      <button type="button" className="button button-purple" disabled={draft.saving || Boolean(draft.recovered) || Boolean(draft.latest) || draft.status === "conflict" || !draft.dirty} onClick={() => void draft.save()}>{draft.saving ? "Saving…" : draft.status === "failed" ? (draft.workingDraftMode ? "Retry Save Working Draft" : "Retry Save Week") : (draft.workingDraftMode ? "Save Working Draft" : "Save Week")}</button>
       {draft.dirty && <button type="button" className="button button-soft" disabled={draft.saving} onClick={draft.discard}>Discard current draft</button>}
       {draft.status === "conflict" && <button type="button" className="button button-soft" onClick={() => void draft.reviewLatest()}>Review latest week</button>}
-      <span>Week edits stay in this browser until you save.</span>
+      <span>{draft.workingDraftMode ? "Working draft is saved to the planner only; published menus remain unchanged." : "Week edits stay in this browser until you save."}</span>
     </div>
     {draft.error && <p className="menu-error" role="alert">{draft.error}</p>}
     {draft.storageError && <p className="menu-error" role="alert">{draft.storageError}</p>}
