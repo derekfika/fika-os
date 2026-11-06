@@ -13,7 +13,7 @@ import {
   CANONICAL_ALLERGEN_COLUMNS,
   normaliseOperationalAllergens,
 } from "../../../shared/allergen-contract";
-import { collectionOrders, collectionQuantity, collectionQuantityHeading, collectionDate, collectionTime } from "./kitchen-print";
+import { collectionOrders, collectionQuantity, collectionQuantityHeading, collectionDate, collectionTime, isCoreSaladLine } from "./kitchen-print";
 import { RunSheetPrintDialog } from "./RunSheetPrintDialog";
 import { runSheetMenuSections } from "../../lib/menu-run-sheet-order";
 export type PackingView = {
@@ -128,7 +128,7 @@ export function CollectionCard({
             (x) => x.lineId === line.canonicalId,
           );
           return (
-            <li key={line.canonicalId}>
+            <li key={line.canonicalId} className={isCoreSaladLine(line) ? "kitchen-core-salad" : undefined}>
               <label className="kitchen-check">
                 <input
                   type="checkbox"
@@ -152,6 +152,7 @@ export function CollectionCard({
                 >
                   {line.itemName}
                 </button>
+                {isCoreSaladLine(line) && <span className="kitchen-core-salad-label">Core Salad</span>}
                 {saved?.changed && (
                   <small className="kitchen-warning">
                     Changed since packing — check again

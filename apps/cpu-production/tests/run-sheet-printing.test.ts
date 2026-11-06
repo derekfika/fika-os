@@ -10,7 +10,7 @@ import {
   runSheetPrintSiteOptions,
   selectedRunSheetPrintOrders,
 } from "../app/ui/run-sheet-printing";
-import { paginateDayProduction, runSheetProductionPrintHtml } from "../app/ui/day-production-print";
+import { dayProductionPrintHtml, paginateDayProduction, runSheetProductionPrintHtml } from "../app/ui/day-production-print";
 
 const order = (id: string, day: string, siteId: string, label: string, version = 1) => ({
   canonicalId: id,
@@ -121,4 +121,14 @@ test("printed Menu run sheets use canonical section order, actual slot labels, a
   assert.ok(html.indexOf(">Leaf Salad</td>") < html.indexOf(">Fish</td>"));
   assert.ok(html.indexOf(">Garnish 1</td>") < html.indexOf(">Dessert</td>"));
   assert.equal((html.match(/data-site-key="oploc:oploc:menu"/g) || []).length, 1);
+});
+
+test("day A4 renderer prints an explicit monochrome Core Salad label", () => {
+  const day = "2026-10-30";
+  const source = order("order:core", day, "oploc:core", "Core Site");
+  const coreLine = { ...source.lines[0], isCoreSalad: true };
+  const html = dayProductionPrintHtml([{ ...source, origin: "menu_planning", lines: [coreLine] } as ProductionOrder], day);
+  assert.match(html, /<small class="core-salad-label">Core Salad<\/small>/);
+  assert.match(html, /class="core-salad"/);
+  assert.match(html, /border-top:1pt solid black/);
 });

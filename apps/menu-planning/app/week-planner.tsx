@@ -279,7 +279,7 @@ export default function WeekPlanner() {
                       onDragStart={event => { if (!entry || !dish) { event.preventDefault(); return; } setDraggedEntryId(entry.id); event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("text/plain", entry.id); }}
                       onDragEnd={() => setDraggedEntryId(undefined)}
                       onClick={() => { if (shouldIgnoreClick(Date.now(), ignoreClickUntilRef.current)) return; setQuery(""); setPickerFilters(emptyPickerFilters); setPickerMode("recommended"); setPicker({ dayId: day.id, slot }); }}>
-                      {entry ? <SpellUnderlinedText text={dishDisplayName(entry.itemLabel)} ignored={spell.ignored} added={spell.added} speller={plannerSpeller} /> : "+ Select dish"}{entry?.isCoreSalad && <span aria-label="Core Salad" style={{ color: "var(--fika-status-success)", background: "var(--fika-status-success-surface)", padding: "2px 6px", borderRadius: "var(--radius-sm)", fontSize: "11px", fontWeight: 700 }}>CORE SALAD</span>}{entry && <span className="week-menu-drag-handle" aria-hidden="true" title="Drag to copy">⠿</span>}
+                      {entry ? <SpellUnderlinedText text={dishDisplayName(entry.itemLabel)} ignored={spell.ignored} added={spell.added} speller={plannerSpeller} /> : "+ Select dish"}{entry?.isCoreSalad && <span className="core-salad-label">Core Salad</span>}{entry && <span className="week-menu-drag-handle" aria-hidden="true" title="Drag to copy">⠿</span>}
                     </button>
                     {entry && <div className="week-menu-cell-actions">
                       {referenceNotice && <div className={`week-dish-reference week-dish-reference--${referenceNotice.state}`}>

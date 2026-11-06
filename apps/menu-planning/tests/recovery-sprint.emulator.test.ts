@@ -52,7 +52,7 @@ test("emulator: weekly publication, one-off amendment and signed allergen handof
       const oneOff = { id: `${day.id}:one-off:fixture`, label: `Synthetic event ${dayIndex}`, ...(dayIndex ? { address: `${dayIndex + 10} Test Street`, addressStatus: "confirmed" as const } : { addressStatus: "pending" as const }), contact: "Synthetic receiving team", deliveryInstructions: "Use reception" };
       day.oneOffDestinations = [oneOff];
       return ["SOUP", "SALAD 1"].map((slot, index) => {
-        const row = { id: `${day.id}:entry:${index}`, dayId: day.id, date: day.date, slot, itemId: `dish:fixture:${index}`, itemLabel: `Synthetic dish ${index}`, portions: 16, allocations: [...governed.map((site, i) => ({ destinationId: site.id, destinationLabel: site.label, quantity: i + 4 })), { oneOffDestinationId: oneOff.id, destinationLabel: oneOff.label, ...(oneOff.address ? { destinationAddress: oneOff.address } : {}), quantity: 7 }], allergens: {}, audit: [] };
+        const row = { id: `${day.id}:entry:${index}`, dayId: day.id, date: day.date, slot, itemId: `dish:fixture:${index}`, itemLabel: `Synthetic dish ${index}`, ...(dayIndex === 0 && slot === "SALAD 1" ? { isCoreSalad: true } : {}), portions: 16, allocations: [...governed.map((site, i) => ({ destinationId: site.id, destinationLabel: site.label, quantity: i + 4 })), { oneOffDestinationId: oneOff.id, destinationLabel: oneOff.label, ...(oneOff.address ? { destinationAddress: oneOff.address } : {}), quantity: 7 }], allergens: {}, audit: [] };
         applyRollingEntryPatch(row, { explicitAllergenDeclaration: true, confirmAllergenReview: true, allergens: index ? { no_key_allergens: "contains" } : { tree_nuts: "contains", gluten: "contains", sesame: "may_contain" }, allergenDetailNotes: index ? "" : "Almond and wheat", mayContainNotes: index ? "" : "Shared sesame equipment" }, { actor: "isolated-planner", at: "2098-11-03T08:00:00Z" });
         return row;
       });
@@ -73,7 +73,9 @@ test("emulator: weekly publication, one-off amendment and signed allergen handof
     await menuRepository.db.terminate();
     const publication = await publications.createPublishedMenuWeek(snapshot.week.id, {}, "isolated-planner", ids);
     assert.equal(publication.days.filter(day => day.status === "published").length, 5);
-    assert.equal(cpuDecoder.decodeMenuPlanningWeekPacket(publication.weekPacket).days.length, 5);
+    const cpuPacket = cpuDecoder.decodeMenuPlanningWeekPacket(publication.weekPacket);
+    assert.equal(cpuPacket.days.length, 5);
+    assert.deepEqual(cpuPacket.days.flatMap(day => day.entries.filter(entry => entry.isCoreSalad).map(entry => entry.sourceEntryId)), [snapshot.entries[1].id]);
     const decoded = diDecoder.decodeMenuPlanningWeekPacket(publication.weekPacket);
     const source = diDecoder.packetPublication(decoded);
     const allEvents = await publications.listMenuPublicationEvents();
@@ -95,6 +97,7 @@ test("emulator: weekly publication, one-off amendment and signed allergen handof
     }
     const oneOff = materialised.find(value => value.payload.destination?.kind === "one-off" && value.payload.destination.addressStatus === "pending")!;
     assert.equal(oneOff.order.destination?.kind, "one-off");
+    assert.deepEqual(oneOff.order.lines.filter(line => line.isCoreSalad).map(line => line.slot), ["SALAD 1"]);
     assert.equal((await db.collection("fikaProductionOrdersV1").where("sourceEntityId", "==", oneOff.payload.sourceEntityId).get()).size, 3);
     const requirements = await db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", oneOff.order.canonicalId).get();
     assert.equal(requirements.size, 1);

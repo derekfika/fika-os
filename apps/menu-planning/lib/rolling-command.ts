@@ -35,6 +35,7 @@ export function applyRollingEntryPatch(entry: RollingEntry, rawPatch: RollingEnt
   const restoringReview = patch.allergenReviewInvalidated === false && patch.allergens !== undefined;
   const normalizedPatch = patch.allergens !== undefined ? { ...patch, allergens: useExplicit ? readExplicitAllergens(patch.allergens) : normaliseOperationalAllergens(patch.allergens) } : patch;
   Object.assign(entry, { ...normalizedPatch, ...(patch.itemLabel !== undefined ? { itemLabel: String(patch.itemLabel).trim() } : {}), ...(patch.allergens !== undefined && patch.allergenReviewInvalidated === undefined ? { allergenReviewInvalidated: false } : {}), ...(dishChanged && !restoringReview ? { allergens: {}, mayContainNotes: "", allergenDetailNotes: "", allergenReviewInvalidated: true } : {}) });
+  if (entry.isCoreSalad && (!nextLabel || !/^SALAD [1-6]$/i.test(entry.slot))) delete entry.isCoreSalad;
   if (dishChanged) delete entry.noKeyDeclaration;
   if (useExplicit && (patch.allergens !== undefined || patch.mayContainNotes !== undefined || patch.allergenDetailNotes !== undefined || dishChanged || confirmAllergenReview)) {
     if (!context?.actor?.trim()) throw Object.assign(new Error("An authenticated reviewer is required."), { status: 403 });
