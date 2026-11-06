@@ -18,6 +18,10 @@
     "url": "https://github.com/derekfika/fika-os/actions/runs/42228449991/job/127929415395",
     "sha": "5a5e344162003047effbbfc58271a6c2e365fb21"
   },
+  "resumeOperator": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer"
+  },
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
@@ -37,9 +41,10 @@
     "head": "c2ebb375339ca3fb571d69f59ab0466019ab9330",
     "pullRequestRisk": "standard"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "122bf1d7-d32a-44b2-a4db-fe0b6093a397",
+  "rollout": "build-2026-11-06-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "8724bdb9308c5e217896eafe04b73705bc579f44",
     "rollout": "build-2026-11-05-001",
@@ -47,5 +52,13 @@
     "percent": 100
   },
   "previousGoodRecord": "71cbbbeb8a51a53dce1bf8847409385285c7f4ad",
-  "createdAt": "2026-11-06T15:23:49.443Z"
+  "releaseId": "122bf1d7-d32a-44b2-a4db-fe0b6093a397",
+  "completedAt": "2026-11-06T15:34:09.575Z",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-menu-planning-staging--fika-os-dev.europe-west4.hosted.app/api/build-info",
+    "appId": "menu-planning",
+    "buildSha": "5a5e344162003047effbbfc58271a6c2e365fb21"
+  }
 }
