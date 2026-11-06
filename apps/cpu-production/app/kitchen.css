@@ -134,8 +134,9 @@
   max-width: 125px;
 }
 @media (max-width: 700px) {
-  .kitchen-dish-columns, .kitchen-dishes li { grid-template-columns: 36px minmax(72px, .8fr) minmax(0, 1.6fr) minmax(58px, .55fr); gap: 5px; }
+  .kitchen-dish-columns, .kitchen-dishes li { grid-template-columns: 36px minmax(72px, .8fr) minmax(0, 1.6fr) minmax(64px, .65fr); gap: 5px; }
   .kitchen-dish-name { font-size: .9rem; }
+  .kitchen-quantity { font-size: .85rem; }
 }
 .kitchen-dishes small {
   display: block;
