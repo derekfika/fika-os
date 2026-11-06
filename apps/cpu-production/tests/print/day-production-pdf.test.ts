@@ -187,8 +187,9 @@ test("Chromium A4 PDF: canonical 29-slot categories are boxed and ordered", asyn
       canonicalSlotId: slot.id,
       menuOrderVersion: "fika.menu-order.v1",
       canonicalOrderIndex: slot.order,
+      ...(index === 0 ? { isCoreSalad: true } : {}),
     })),
-  } as ProductionOrder;
+  } as ProductionOrder & { lines: Array<ProductionOrder["lines"][number] & { isCoreSalad?: boolean }> };
   const html = dayProductionPrintHtml([order], day, "SYNTHETIC UAT FIXTURE - NOT FOR SERVICE");
   const browser = await chromium.launch({ headless: true });
   try {
@@ -204,6 +205,7 @@ test("Chromium A4 PDF: canonical 29-slot categories are boxed and ordered", asyn
       return {
         rows: output.querySelectorAll("tr[data-line-id]").length,
         slots: Array.from(output.querySelectorAll<HTMLElement>(".category")).map((node) => node.textContent?.trim()),
+        coreSaladLabels: output.querySelectorAll(".core-salad-label").length,
         sections: sections.map((node) => {
           const style = getComputedStyle(node);
           return {
@@ -222,6 +224,7 @@ test("Chromium A4 PDF: canonical 29-slot categories are boxed and ordered", asyn
       };
     });
     assert.equal(result.rows, 29);
+    assert.equal(result.coreSaladLabels, 1);
     const expectedSections = [
       "SALADS", "COLD PROTEINS", "HOT MAINS", "STARCH/SIDES", "GARNISHES", "SAUCES", "DESSERTS",
     ];

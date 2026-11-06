@@ -5,7 +5,7 @@ import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabel
 
 export type DeliveredInDishTotal = { key: string; dishName: string; total: number; destinations: Array<{ label: string; quantity: number }> };
 export type DeliveredInDishRow = { key: string; name: string; quantity: number; destinations: Array<{ label: string; quantity: number }>; snapshot?: NonNullable<ProductionLine["approvedAllergenSnapshot"]>; reviewed: boolean; snapshotMismatch?: { sources: string[]; detail: string } };
-export type AllergenReviewRow = DeliveredInDishRow & { sources: string[]; attention: boolean; dietaries: Record<string, unknown>; notes: string[]; menuSlots?: Array<{ id: string; label: string; order: number }>; menuOrderVersion?: string; slot?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; menuSortOrder?: number };
+export type AllergenReviewRow = DeliveredInDishRow & { sources: string[]; attention: boolean; dietaries: Record<string, unknown>; notes: string[]; menuSlots?: Array<{ id: string; label: string; order: number; isCoreSalad?: boolean }>; menuOrderVersion?: string; slot?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; menuSortOrder?: number };
 export type DeliveredInAllergenReview = { publicationDayId: string; serviceDate: string; sourceVersion?: number; sourceContentHash?: string; orders: string[]; destinations: string[]; rows: AllergenReviewRow[] };
 export function allergenReviewKey(order: ProductionOrder, line: ProductionLine) { return order.origin === "menu_planning" ? `${order.origin}:${order.sourcePublicationDayId || order.sourceEntityId || orderDate(order)}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}` : `${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`; }
 
@@ -90,7 +90,8 @@ function retainMenuOrder(row: AllergenReviewRow, line: ProductionLine) {
     const identity = id || line.slot || label;
     const order = slotIndex ?? index ?? Number.MAX_SAFE_INTEGER;
     const slots = new Map((row.menuSlots || []).map(slot => [slot.id, slot]));
-    slots.set(identity, { id: identity, label, order });
+    const isCoreSalad = line.isCoreSalad || slots.get(identity)?.isCoreSalad;
+    slots.set(identity, { id: identity, label, order, ...(isCoreSalad ? { isCoreSalad: true } : {}) });
     row.menuSlots = [...slots.values()].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
   }
   const currentIndex = row.canonicalOrderIndex ?? (row.canonicalSlotId ? CANONICAL_MENU_SLOTS.find(candidate => candidate.id === row.canonicalSlotId)?.order : undefined) ?? row.menuSortOrder;

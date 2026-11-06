@@ -64,6 +64,21 @@ test("CPU projection preserves booking dietary and note context", () => {
   assert.equal(hydrated.lines[0].productionInstructions, "Label each portion.");
 });
 
+test("Core Salad and its slot survive the cached CPU dashboard projection", () => {
+  const source = order("order:core-salad");
+  source.origin = "menu_planning";
+  const metadata = { slot: "SALAD 1", canonicalSlotId: "SALAD 1", canonicalOrderIndex: 0, menuOrderVersion: "fika.menu-order.v1", isCoreSalad: true };
+  Object.assign(source.lines[0], metadata);
+  const legacy = order("order:legacy");
+  legacy.origin = "menu_planning";
+  Object.assign(legacy.lines[0], { slot: "SOUP", canonicalSlotId: "SOUP" });
+  const projection = JSON.parse(JSON.stringify(buildCpuDayProjection("2026-08-24", [source, legacy])));
+  const [marked, unmarked] = cpuProjectionToOrders(projection);
+  for (const [field, value] of Object.entries(metadata)) assert.equal(marked.lines[0][field as keyof typeof metadata], value);
+  assert.equal(unmarked.lines[0].isCoreSalad, undefined);
+  assert.equal(unmarked.lines[0].slot, undefined, "existing projection content remains stable");
+});
+
 test("CPU projection preserves allergen review source identity and evidence", () => {
   const source = {
     ...order("order:allergen-context"),

@@ -192,3 +192,13 @@ body{font-family:var(--body,Arial,sans-serif)}
 
 .cpu-tablet-menu-toggle:focus-visible,.cpu-drawer-close:focus-visible,.cpu-sidebar-nav button:focus-visible,.cpu-production-scope button:focus-visible,.cpu-toolbar-actions button:focus-visible,.cpu-filters button:focus-visible,.cpu-tablet-attention button:focus-visible,.calendar-nav button:focus-visible,.calendar-day-open:focus-visible{outline:3px solid var(--fika-focus-ring);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.cpu-sidebar{transition:none}}
+
+.cpu-core-salad-label {
+  display: inline-block;
+  margin-inline-start: .25rem;
+  padding: .125rem .375rem;
+  border-radius: .25rem;
+  color: var(--fika-status-success);
+  background: var(--fika-status-success-surface);
+  font-weight: 700;
+}

@@ -8,6 +8,7 @@ import {
   totalsPrintHtml,
   collectionQuantity,
   collectionTime,
+  isCoreSaladLine,
 } from "../app/ui/kitchen-print";
 import { eventGuestCountLabel, orderedQuantityLabel } from "../lib/ordered-quantity";
 
@@ -144,6 +145,17 @@ test("single-collection print retains Menu section and slot metadata", () => {
   assert.ok(html.indexOf("SALADS</th>") < html.indexOf("DESSERTS</th>"));
   assert.match(html, /class="category">Leaf Salad<\/td><th class="dish">Mixed leaves<\/th>/);
   assert.match(html, /class="category">Dessert<\/td><th class="dish">Pear crumble<\/th>/);
+});
+
+test("Core Salad is explicitly labeled while ordinary and legacy rows remain unchanged", () => {
+  const core = { ...line("core"), isCoreSalad: true } as ProductionLine & { isCoreSalad: boolean };
+  const ordinary = line("ordinary");
+  const html = collectionPrintHtml(order("core-menu", [core, ordinary]));
+  assert.equal(isCoreSaladLine(core), true);
+  assert.equal(isCoreSaladLine(ordinary), false);
+  assert.match(html, /class="core-salad"/);
+  assert.match(html, /<small class="core-salad-label">Core Salad<\/small>/);
+  assert.doesNotMatch(html, /Dish ordinary<\/th> <small class="core-salad-label">/);
 });
 
 test("daily and selected multi-day totals print reuse verified aggregation and never combine incompatible units", () => {

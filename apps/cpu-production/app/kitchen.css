@@ -89,6 +89,8 @@
 .kitchen-dish-columns span:first-child { grid-column: 1; }
 .kitchen-category { min-width: 0; color: var(--fika-text-secondary); overflow-wrap: anywhere; }
 .kitchen-dish-cell { min-width: 0; }
+.kitchen-core-salad { background: var(--fika-status-success-surface); }
+.kitchen-core-salad-label { display: inline-block; margin: 0 0 0 8px; padding: 2px 7px; border: 1px solid var(--fika-status-success); border-radius: 999px; color: var(--fika-status-success); font-size: .75rem; font-weight: 700; white-space: nowrap; }
 .kitchen-slot-label {
   display: inline-block;
   margin-right: 8px;
