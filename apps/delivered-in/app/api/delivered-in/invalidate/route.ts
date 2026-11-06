@@ -1,8 +1,14 @@
+import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
+import { containArtifactLinks } from "@/lib/artifact-containment";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateDeliveredInProjection } from "@/lib/delivered-in-invalidation";
 import type { DeliveredInInvalidation } from "@/lib/delivered-in-projection-store";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { deliveredInErrorBody } from "@/lib/server";
+
+function safeJson(data: unknown, init?: ResponseInit) {
+  return NextResponse.json(containArtifactLinks(data, stagingDriveAccessBlocked()), init);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -17,12 +23,12 @@ function validInput(value: unknown): value is DeliveredInInvalidation {
 }
 async function handlePost(request: NextRequest) {
   try {
-    if (!internalAllowed(request)) return NextResponse.json({ error: { message: "Internal authentication is required." } }, { status: 401 });
+    if (!internalAllowed(request)) return safeJson({ error: { message: "Internal authentication is required." } }, { status: 401 });
     const body = await request.json().catch(() => undefined);
-    if (!validInput(body)) return NextResponse.json({ error: { message: "A bounded invalidation scope and source identity are required." } }, { status: 422 });
-    return NextResponse.json(await invalidateDeliveredInProjection(request, body, { reconciliationContext: { mode: "internal", oplocId: body.oplocId, serviceDate: body.serviceDate } }));
+    if (!validInput(body)) return safeJson({ error: { message: "A bounded invalidation scope and source identity are required." } }, { status: 422 });
+    return safeJson(await invalidateDeliveredInProjection(request, body, { reconciliationContext: { mode: "internal", oplocId: body.oplocId, serviceDate: body.serviceDate } }));
   } catch (error) {
-    return NextResponse.json(deliveredInErrorBody(error, "Delivered-In invalidation failed."), { status: Number((error as { status?: number }).status) || 502 });
+    return safeJson(deliveredInErrorBody(error, "Delivered-In invalidation failed."), { status: Number((error as { status?: number }).status) || 502 });
   }
 }
 export async function POST(request: NextRequest) { return withDataTrace({ app: "delivered-in", action: "delivered-in.projection.invalidate", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handlePost(request)); }

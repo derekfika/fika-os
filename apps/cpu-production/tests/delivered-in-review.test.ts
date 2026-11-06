@@ -71,7 +71,7 @@ test("single-order GET and Delivered In detail use direct/batch review paths", a
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   const detail = await readFile(new URL("../app/ui/DeliveredInProductionDetail.tsx", import.meta.url), "utf8");
   assert.match(route, /if \(orderId\)/);
-  assert.match(route, /getPlan\(request, orderId\)/);
+  assert.match(route, /getPlan\(request, orderId, storedForRevision\)/);
   assert.match(route, /get\("reviewStatus"\) === "1"/);
   assert.match(route, /get\("matrixStatus"\) === "1"/);
   assert.match(route, /action.*batch-plan/);
