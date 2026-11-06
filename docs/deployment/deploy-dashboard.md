@@ -94,19 +94,14 @@ npm run test:dashboard
 | --- | --- | --- |
 | Per app/environment async file lock `release-<app>-<env>.lock` in `<git-common-dir>/fika-workflow` (`asyncLock`) | `releases.mjs` around the whole execute path | A killed process leaves the lock; the next deploy fails with "inspect it, never auto-break locks". |
 | Remote **pending release intent** (a commit of kind `intent` on `release/<env>/<app>`) plus local journal `release-<app>-<env>.json` | `releases.mjs` (`appendRecord`, `planRelease`) | While present, any other deploy is refused ("Pending distributed release intent: use --resume"). Stranded by auth failures (fixed), crashes, or a rollout that never started. |
-| `--resume`, `reconcile` (abandon/complete) with two stable snapshots, audit-log reads and owner approval | `recovery.mjs` | Needed to clear a stranded intent; slow and can itself be refused when evidence is ambiguous. |
-| Release ledger branches (12 append-only `release/{staging,prod}/<app>`) and "live serving must equal ledger" check | `releases.mjs` | A deploy made any other way makes the next governed deploy fail until reconciled. |
-| Lane/lineage gates (exact-source CI, staging evidence, scope hash, integrated-into-main, owner-approved) | `releases.mjs`, `policy.mjs` | Policy, not a lock. Intentionally **kept for production decisions**; the dashboard enforces its own smaller checks only. |
+| `--resume` and `reconcile` with authoritative snapshots and audit-log reads | `recovery.mjs` | Preserve the original attempt and recover only when Firebase evidence resolves the outcome. |
+| Append-only release ledgers | `releases.mjs` | Preserve verified rollback evidence and serialize submission through a pending intent. Missing or stale baselines can be recorded from independently verified Firebase state. |
+| Merged main provenance, exact-source CI and target verification | `releases.mjs`, `policy.mjs` | The supported CLI checks all three in both environments. |
 
 None of these is used by the dashboard. The dashboard's equivalent safety comes from Firebase itself (in-progress rollout check, per-backend serialisation) plus the pinned-SHA and confirmation rules.
 
 ### Proposed retirement (each step needs your approval; nothing below has been done)
 
-1. **Run in parallel (now).** Use the dashboard for staging. Keep `fika deploy` available. Nothing is deleted or migrated.
-2. **Stop creating new intents and locks on the routine path.** Change `fika deploy` so that, for staging, it delegates to the same runner as the dashboard (Firebase-derived conflict check, verified result, append-only history) and does not take `release-<app>-<env>.lock` or write an `intent` commit. This is the change that removes stranded-intent failures. It edits `tools/workflow`, so it needs a governed workspace and your sign-off.
-3. **Production.** After a period of clean staging use, route production the same way, keeping explicit owner confirmation and the integrated-into-`main` rule. Decide whether you still want staging-evidence and lane gates for production; if so keep them as a *pre-check*, not as persisted state.
-4. **Existing state: preserve, don't migrate.** Leave the `release/*` ledgers, journals, rollback records and the one pending Hub staging intent exactly as they are. They remain valid rollback evidence and `fika reconcile` keeps working for them. Add a read-only "legacy records" view later if wanted. Do not delete or rewrite them, and do not resolve that pending intent without a separate decision.
-5. **Retire the lock/intent code only after** a defined quiet period with no pending intents anywhere, a verified export of the ledgers, and your explicit go-ahead. Until then the code stays dormant.
-6. Preserve Firebase permissions, the automatic-rollout-disabled policy and verified rollback capability.
+Any future dashboard deployment integration should invoke the same governed workflow and surface its result. The dashboard remains a status and workspace reference until it meets the [migration criteria](deployment-dashboard.md).
 
 Known gap to decide on: the dashboard's local history is per machine. If deployments are ever run from more than one computer, the Firebase serving state is still correct everywhere, but each machine's "local record" only covers its own deployments.
