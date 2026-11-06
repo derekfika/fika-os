@@ -1,8 +1,8 @@
 # Recovering an interrupted deploy operation marker
 
-`fika workspace complete` refuses while a durable operation marker for the workspace exists
-in `.git/fika-workflow/workspace-operations/`. `recover-validation` and `recover-dev` cover
-only those kinds; releases stay protected. This note covers the one narrow, evidence-based
+Durable operation markers are kept in `.git/fika-workflow/workspace-operations/`.
+`recover-validation` and `recover-dev` cover their respective legacy markers.
+This note covers the narrow, evidence-based
 case for a **deploy** marker: the deploy process died after writing its marker, and every
 release intent it could have created has since reached a terminal ledger record.
 
@@ -11,13 +11,11 @@ This does not replace `fika reconcile`. If any release might still be pending, u
 
 ## Entry point
 
-`cli.mjs` is not wired yet (follow-up). Until then, run from the **canonical checkout**
-(`C:\Fika\fika-os`, authenticated as the repository owner/administrator, exactly like
-`recover-dev`), using the merged tool:
+Run from the **canonical checkout** (`C:\Fika\fika-os`) authenticated as the repository owner/administrator:
 
 ```text
-node tools/workflow/deploy-marker-recovery.mjs <marker-id> --reason "<verified outcome>"
-node tools/workflow/deploy-marker-recovery.mjs <marker-id> --reason "<same reason>" --execute --approve-hash <hash>
+npm run fika -- workspace recover-deploy <marker-id> --reason "<verified outcome>"
+npm run fika -- workspace recover-deploy <marker-id> --reason "<same reason>" --execute --approve-hash <hash>
 ```
 
 The first form is a dry-run preview and the default. `recoverDeployOperation` is also
@@ -25,8 +23,9 @@ exported from `workspace-admin.mjs`, with injectable `authorize` and `processAli
 
 ## Why the rules are strict
 
-A deploy marker records only workspace, owner, lease, pid and start time: no app, environment or
-release id. It can therefore only be matched to the release ledgers by time. To make that safe, the
+A deploy marker records process identity and start time. Historical markers may name a source record.
+Current markers include the observed checkout, branch and HEAD. Matching to the release ledger
+still relies on time. To make that safe, the
 tool requires the whole release system to be quiescent and every intent in the window to be provably
 finished. (Follow-up: future deploy markers should record app, environment and releaseId so matching
 need not rely on time.)
@@ -59,7 +58,7 @@ anywhere, a live pid, a lock or a non-completed journal refuse with a precise me
 * **Preview** (default): prints the marker, lease, evidence (each intent with its terminal record, and
   each ledger head) and an `approveHash` over the marker, lease and every intent/terminal pair. It
   changes nothing.
-* **Execute** (`--execute --approve-hash`): under the existing `workspaces` lock it recomputes the
+* **Execute** (`--execute --approve-hash`): under the shared operation-marker mutex it recomputes the
   evidence and refuses if the hash differs. It then writes
   `workspace-audit/deploy-recovery-<id>.json` (actor, reason, evidence, intent and terminal ledger SHAs,
   original marker), fsyncs it, and only then **moves** the marker to
@@ -71,7 +70,7 @@ anywhere, a live pid, a lock or a non-completed journal refuse with a precise me
 
 For canonical markers, historical terminal ledger evidence does not establish current cloud quiescence. Before execution, obtain two stable read-only App Hosting observations for every plausible target backend if attribution is ambiguous. Verify exact build/rollout linkage and terminal status, traffic, automatic-rollout setting, and absence of active operations. If authenticated inspection is unavailable or results are active, unknown, or contradictory, keep the marker protected.
 
-After recovery of a workspace-backed marker, the workspace lease is unchanged; run the normal `workspace complete` when that task is finished. A canonical marker has no workspace lease and requires no workspace completion.
+Recovery preserves historical source records and does not control task completion.
 
 ## Preview shape
 
@@ -102,6 +101,4 @@ After recovery of a workspace-backed marker, the workspace lease is unchanged; r
 
 ## Follow-up
 
-* Wire `fika workspace recover-deploy` in `tools/workflow/cli.mjs` once the lease that owns that file
-  is released. The standalone entrypoint and the exported function stay compatible.
 * Record app, environment and releaseId in future deploy markers.

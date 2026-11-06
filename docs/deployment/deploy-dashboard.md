@@ -1,8 +1,8 @@
 # Deploy Control dashboard
 
-One local page shows app assignments and live Firebase status. Its Workspace Management section now calls the existing governed workspace registry for administrator revocation and separate cleanup; it has no second registry or dashboard-specific lease locks. Deployment adapters retain their existing behavior. The governed `fika deploy` CLI remains the supported release interface under the [deployment migration criteria](deployment-dashboard.md).
+One local page shows app assignments and live Firebase status. Its task worktree section reads Git registrations and advisory task metadata. The governed `fika deploy` CLI remains the supported release interface under the [deployment migration criteria](deployment-dashboard.md).
 
-Workspace Management: <http://127.0.0.1:4180/#workspace-management>. See [confirmation, cleanup, fencing and recovery](workspace-management.md).
+Task worktrees are visible at <http://127.0.0.1:4180/#workspace-management>. See [source workflow and historical migration](workspace-management.md).
 
 ## Start it (Windows)
 
@@ -97,7 +97,6 @@ npm run test:dashboard
 | `--resume`, `reconcile` (abandon/complete) with two stable snapshots, audit-log reads and owner approval | `recovery.mjs` | Needed to clear a stranded intent; slow and can itself be refused when evidence is ambiguous. |
 | Release ledger branches (12 append-only `release/{staging,prod}/<app>`) and "live serving must equal ledger" check | `releases.mjs` | A deploy made any other way makes the next governed deploy fail until reconciled. |
 | Lane/lineage gates (exact-source CI, staging evidence, scope hash, integrated-into-main, owner-approved) | `releases.mjs`, `policy.mjs` | Policy, not a lock. Intentionally **kept for production decisions**; the dashboard enforces its own smaller checks only. |
-| Workspace leases (`workspaces/<name>.json`, overlapping-scope rejection, no name reuse) | `workspaces.mjs` | Governs development, not deployment. **Not changed here.** |
 
 None of these is used by the dashboard. The dashboard's equivalent safety comes from Firebase itself (in-progress rollout check, per-backend serialisation) plus the pinned-SHA and confirmation rules.
 
@@ -108,6 +107,6 @@ None of these is used by the dashboard. The dashboard's equivalent safety comes 
 3. **Production.** After a period of clean staging use, route production the same way, keeping explicit owner confirmation and the integrated-into-`main` rule. Decide whether you still want staging-evidence and lane gates for production; if so keep them as a *pre-check*, not as persisted state.
 4. **Existing state: preserve, don't migrate.** Leave the `release/*` ledgers, journals, rollback records and the one pending Hub staging intent exactly as they are. They remain valid rollback evidence and `fika reconcile` keeps working for them. Add a read-only "legacy records" view later if wanted. Do not delete or rewrite them, and do not resolve that pending intent without a separate decision.
 5. **Retire the lock/intent code only after** a defined quiet period with no pending intents anywhere, a verified export of the ledgers, and your explicit go-ahead. Until then the code stays dormant.
-6. **Unchanged throughout:** workspace leases and the development workflow, Firebase permissions, automatic-rollout-disabled policy, rollback capability.
+6. Preserve Firebase permissions, the automatic-rollout-disabled policy and verified rollback capability.
 
 Known gap to decide on: the dashboard's local history is per machine. If deployments are ever run from more than one computer, the Firebase serving state is still correct everywhere, but each machine's "local record" only covers its own deployments.

@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifyRecoveryArtifact } from './workspaces.mjs';
 
-const cli = fileURLToPath(new URL('./cli.mjs', import.meta.url));
+const cli = fileURLToPath(new URL('./legacy-workspace-fixture.mjs', import.meta.url));
 function fixture(scope = 'apps/cpu-production') {
   const base = mktemp(); const remote = path.join(base, 'remote.git'); const repo = path.join(base, 'repo'); mkdirSync(repo);
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
