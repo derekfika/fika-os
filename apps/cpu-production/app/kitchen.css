@@ -77,6 +77,18 @@
 .kitchen-menu-section .kitchen-dishes {
   margin-top: 4px;
 }
+.kitchen-dish-columns {
+  display: grid;
+  grid-template-columns: 44px minmax(90px, .8fr) minmax(0, 2fr) minmax(76px, .55fr);
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--fika-text-secondary);
+  font-size: .75rem;
+  font-weight: 700;
+}
+.kitchen-dish-columns span:first-child { grid-column: 1; }
+.kitchen-category { min-width: 0; color: var(--fika-text-secondary); overflow-wrap: anywhere; }
+.kitchen-dish-cell { min-width: 0; }
 .kitchen-slot-label {
   display: inline-block;
   margin-right: 8px;
@@ -86,7 +98,7 @@
 }
 .kitchen-dishes li {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(90px, .8fr) minmax(0, 2fr) minmax(76px, .55fr);
   gap: 8px;
   align-items: center;
   border-top: 1px solid var(--fika-border-default);
@@ -118,6 +130,10 @@
   text-align: right;
   white-space: normal;
   max-width: 125px;
+}
+@media (max-width: 700px) {
+  .kitchen-dish-columns, .kitchen-dishes li { grid-template-columns: 36px minmax(72px, .8fr) minmax(0, 1.6fr) minmax(58px, .55fr); gap: 5px; }
+  .kitchen-dish-name { font-size: .9rem; }
 }
 .kitchen-dishes small {
   display: block;

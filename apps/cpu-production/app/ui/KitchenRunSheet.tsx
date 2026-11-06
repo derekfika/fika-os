@@ -13,7 +13,7 @@ import {
   CANONICAL_ALLERGEN_COLUMNS,
   normaliseOperationalAllergens,
 } from "../../../shared/allergen-contract";
-import { collectionOrders, collectionQuantity, collectionDate, collectionTime } from "./kitchen-print";
+import { collectionOrders, collectionQuantity, collectionQuantityHeading, collectionDate, collectionTime } from "./kitchen-print";
 import { RunSheetPrintDialog } from "./RunSheetPrintDialog";
 import { runSheetMenuSections } from "../../lib/menu-run-sheet-order";
 export type PackingView = {
@@ -121,6 +121,7 @@ export function CollectionCard({
         {runSheetMenuSections(order).map((section) => (
           <section className="kitchen-menu-section" key={section.id} aria-label={section.label}>
             <h4>{section.label}</h4>
+            <div className="kitchen-dish-columns" aria-hidden="true"><span>Packing</span><span>Category</span><span>Dish name</span><span>{collectionQuantityHeading(order)}</span></div>
             <ul className="kitchen-dishes">
         {section.lines.map(({ line, slotLabel }) => {
           const saved = packing?.view?.lines.find(
@@ -139,8 +140,8 @@ export function CollectionCard({
                 />
                 <span className="sr-only">Packed: {line.itemName}</span>
               </label>
-              <div>
-                {slotLabel && <span className="kitchen-slot-label">{slotLabel}</span>}
+              <span className="kitchen-category">{slotLabel || section.label}</span>
+              <div className="kitchen-dish-cell">
                 <button
                   type="button"
                   className="kitchen-dish-name"
