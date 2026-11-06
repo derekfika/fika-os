@@ -20,6 +20,7 @@ const ICONS: Record<CellMenuActionId, string> = {
   copy: "M8 8h11v11H8zM5 16V5h11",
   clear: "M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13",
   select: "M12 5v14M5 12h14",
+  "toggle-core": "M12 3v18M3 12h18",
 };
 
 /**

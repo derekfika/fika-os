@@ -20,6 +20,7 @@ export type MenuPlanningWeekPacketEntry = {
   sourceEntryId: string;
   slot: string;
   canonicalDishId?: string;
+  isCoreSalad?: boolean;
   dishName: string;
   portions: number;
   allocations: Array<{ destinationId?: string; destination?: MenuDestination; destinationAddress?: string; destinationLabel: string; quantity: number }>;
@@ -87,7 +88,7 @@ function validatePacket(value: unknown, expectedPublicationId?: string): MenuPla
       });
       const evidence = approvedAllergenSnapshotSchema.safeParse({ allergens: entry.allergens || {}, allergenReview: entry.allergenReview, noKeyDeclaration: entry.noKeyDeclaration, allergenDetailNotes: entry.allergenDetailNotes, mayContainNotes: entry.mayContainNotes });
       if (!evidence.success) throw packetFailure("The Menu Planning packet contains invalid allergen evidence.");
-      return { ...evidence.data, sourceEntryId: entry.sourceEntryId, slot: entry.slot, ...(typeof entry.canonicalDishId === "string" ? { canonicalDishId: entry.canonicalDishId } : {}), dishName: entry.dishName, portions: entryPortions, allocations, ...(isRecord(entry.allergens) ? { allergens: Object.fromEntries(Object.entries(entry.allergens).filter(([, state]) => typeof state === "string").map(([key, state]) => [key, state as string])) } : {}), ...(entry.allergenEvidenceStatus === "confirmed" || entry.allergenEvidenceStatus === "unreviewed" || entry.allergenEvidenceStatus === "missing" || entry.allergenEvidenceStatus === "conflicting" ? { allergenEvidenceStatus: entry.allergenEvidenceStatus } : {}), ...(typeof entry.mayContainNotes === "string" ? { mayContainNotes: entry.mayContainNotes } : {}) };
+      return { ...evidence.data, sourceEntryId: entry.sourceEntryId, slot: entry.slot, ...(typeof entry.canonicalDishId === "string" ? { canonicalDishId: entry.canonicalDishId } : {}), ...(entry.isCoreSalad === true && /^SALAD [1-6]$/i.test(entry.slot) ? { isCoreSalad: true } : {}), dishName: entry.dishName, portions: entryPortions, allocations, ...(isRecord(entry.allergens) ? { allergens: Object.fromEntries(Object.entries(entry.allergens).filter(([, state]) => typeof state === "string").map(([key, state]) => [key, state as string])) } : {}), ...(entry.allergenEvidenceStatus === "confirmed" || entry.allergenEvidenceStatus === "unreviewed" || entry.allergenEvidenceStatus === "missing" || entry.allergenEvidenceStatus === "conflicting" ? { allergenEvidenceStatus: entry.allergenEvidenceStatus } : {}), ...(typeof entry.mayContainNotes === "string" ? { mayContainNotes: entry.mayContainNotes } : {}) };
     });
     return { publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: dayVersion, ...(day.status === "published" || day.status === "superseded" || day.status === "withdrawn" ? { status: day.status } : {}), contentHash: day.contentHash, entries, ...(isRecord(day.allergenSignoff) ? { allergenSignoff: day.allergenSignoff } : {}) };
   });

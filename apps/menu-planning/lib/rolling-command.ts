@@ -2,7 +2,7 @@ import { confirmRowExplicit, isExplicitRowConfirmed, readExplicitAllergens, reop
 import type { RollingDay, RollingEntry, RollingWeek } from "./rolling-menu-types";
 import { confirmRow, confirmationInvalidatedBy, isRowConfirmed, normaliseOperationalAllergens, reopenRow } from "./fika-contracts";
 
-export type RollingEntryPatch = Partial<Pick<RollingEntry, "itemId" | "itemLabel" | "portions" | "slot" | "allocations" | "allergens" | "mayContainNotes" | "allergenDetailNotes" | "allergenReviewInvalidated">> & { confirmAllergenReview?: boolean; explicitAllergenDeclaration?: boolean };
+export type RollingEntryPatch = Partial<Pick<RollingEntry, "itemId" | "itemLabel" | "portions" | "slot" | "allocations" | "isCoreSalad" | "allergens" | "mayContainNotes" | "allergenDetailNotes" | "allergenReviewInvalidated">> & { confirmAllergenReview?: boolean; explicitAllergenDeclaration?: boolean };
 export type RollingDayPatch = Partial<Pick<RollingDay, "entryIds" | "oneOffDestinations">>;
 export type RollingWeekPatch = Partial<Pick<RollingWeek, "status" | "sourceFiles" | "customSlots" | "removedSlots" | "dayStatuses" | "entryIds">>;
 export type RollingMutationCommand = {
@@ -25,6 +25,7 @@ export type RollingPatchContext = { actor: string; at: string };
 export function applyRollingEntryPatch(entry: RollingEntry, rawPatch: RollingEntryPatch, context?: RollingPatchContext) {
   // `allergenReview` is server-owned evidence; whatever a client sends under that key is discarded.
   const { confirmAllergenReview, explicitAllergenDeclaration, allergenReview: _clientRecord, noKeyDeclaration: _clientDeclaration, ...patch } = rawPatch as RollingEntryPatch & { allergenReview?: unknown; noKeyDeclaration?: unknown };
+  if (patch.isCoreSalad === true && !/^SALAD [1-6]$/i.test(patch.slot || entry.slot)) throw Object.assign(new Error("Core Salad can only be marked on one of the six salad placements."), { status: 422 });
   if (patch.allergenDetailNotes !== undefined && typeof patch.allergenDetailNotes !== "string") throw Object.assign(new Error("Specific allergen details must be text."), { status: 422 });
   const useExplicit = explicitAllergenDeclaration || entry.allergenReview?.semantics === 3 || Boolean(entry.noKeyDeclaration);
   const nextItemId = patch.itemId !== undefined ? patch.itemId || "" : entry.itemId || "";

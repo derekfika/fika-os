@@ -5,7 +5,7 @@ import { assertMenuSlotCanBeRemoved, plannerSlotsForWeek } from "./rolling-menu-
 import { suggestMenuRowSlot } from "./menu-template";
 
 // Browser recovery data is never authority. Only these editable fields cross the save boundary.
-export const DRAFT_ENTRY_FIELDS = ["itemId", "itemLabel", "slot", "portions", "allocations"] as const;
+export const DRAFT_ENTRY_FIELDS = ["itemId", "itemLabel", "slot", "portions", "allocations", "isCoreSalad"] as const;
 export type WeekChanges = {
   updates: Array<{ entryId: string; dayId: string; patch: RollingEntryPatch }>;
   creates: Array<Pick<RollingEntry, "id" | "dayId" | "slot" | "itemId" | "itemLabel" | "portions" | "allocations">>;
@@ -23,7 +23,7 @@ export function weekChanges(base: RollingSnapshot, draft: RollingSnapshot): Week
     const before = existing.get(entry.id);
     if (!before) { if (!entry.itemLabel.trim() && !entry.portions && !entry.allocations.length) continue; creates.push({ id: entry.id, dayId: entry.dayId, slot: entry.slot, itemId: entry.itemId || undefined, itemLabel: entry.itemLabel, portions: entry.portions, allocations: entry.allocations }); continue; }
     const patch: RollingEntryPatch = {};
-    for (const key of DRAFT_ENTRY_FIELDS) if (!equal(before[key], entry[key])) Object.assign(patch, { [key]: entry[key] ?? (key === "itemId" ? "" : undefined) });
+    for (const key of DRAFT_ENTRY_FIELDS) if (!(key === "isCoreSalad" ? Boolean(before[key]) === Boolean(entry[key]) : equal(before[key], entry[key]))) Object.assign(patch, { [key]: entry[key] ?? (key === "itemId" ? "" : undefined) });
     if (Object.keys(patch).length) updates.push({ entryId: entry.id, dayId: entry.dayId, patch });
   }
   return { updates, creates,
