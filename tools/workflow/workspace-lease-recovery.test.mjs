@@ -122,10 +122,16 @@ test('recovery CLI accepts exact selectors and rejects conflicting execution mod
 // Historical shape (hospitality-rotations-integration-v2 -> v3): reconcileWorkspace copied the source leaseId into its replacement.
 function historicalPair(f, s) {
   const result = reconcileWorkspace(s.unrelated.name, { owner: s.unrelated.owner, replacement: 'rotations-task-v3', execute: true });
-  assert.equal(result.source.leaseId, result.replacement.leaseId);
   completeWorkspace('rotations-task-v3', { owner: s.unrelated.owner }, { evidenceFor: () => ({ pushed: true, inMain: true, pr: { number: 2 } }) });
   const registry = path.join(stateDir(), 'workspaces'); const file = name => path.join(registry, `${name}.json`);
   const journal = jsonFile(result.journal);
+  // Model the old on-disk format after producing a verified terminal reconciliation.
+  const legacyId = result.source.leaseId;
+  const replacementFile = file(result.replacement.name);
+  save(replacementFile, { ...jsonFile(replacementFile), leaseId: legacyId });
+  journal.preparedReplacement.leaseId = legacyId;
+  journal.leaseTransition.replacement.leaseId = legacyId;
+  save(result.journal, journal);
   return { result, journal, journalFile: result.journal, file, mutate: (name, change) => { const original = readFileSync(file(name), 'utf8'); save(file(name), { ...jsonFile(file(name)), ...change }); return () => writeFileSync(file(name), original); } };
 }
 
