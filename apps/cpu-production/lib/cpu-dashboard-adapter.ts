@@ -73,6 +73,7 @@ export function cpuProjectionToOrders(projection: CpuProjection): ProductionOrde
       guestCount: row.pax,
       ...(row.bookingDietaries ? { bookingDietaries: row.bookingDietaries } : {}),
       ...(row.bookingNotes ? { bookingNotes: row.bookingNotes } : {}),
+      ...(row.kitchenNotes ? { kitchenNotes: row.kitchenNotes } : {}),
       requiredBy: row.requiredBy,
       serviceWindow: row.serviceWindow,
       status: row.status,

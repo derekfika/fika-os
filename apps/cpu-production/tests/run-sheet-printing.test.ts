@@ -132,3 +132,11 @@ test("day A4 renderer prints an explicit monochrome Core Salad label", () => {
   assert.match(html, /class="core-salad"/);
   assert.match(html, /\.core-salad-label\{[^}]*border:\.6pt solid currentColor/);
 });
+
+test("internal run-sheet print escapes and preserves multiline kitchen notes", () => {
+  const day = "2026-10-30";
+  const source = { ...order("order:kitchen-notes", day, "oploc:notes", "Notes Site"), kitchenNotes: "Keep warm\n<script>alert(1)</script>" } as ProductionOrder;
+  const html = runSheetProductionPrintHtml(new Map([[day, [source]]]), [day], ["oploc:oploc:notes"], new Date("2026-10-30T09:00:00Z"));
+  assert.match(html, /<strong>Kitchen notes<\/strong><p>Keep warm<br>&lt;script&gt;alert\(1\)&lt;\/script&gt;<\/p>/);
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+});

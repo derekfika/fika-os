@@ -396,12 +396,13 @@ async function handlePost(request: NextRequest) {
       const changeType = z.string().min(1).parse(raw.changeType);
       const changedAt = z.string().min(1).parse(raw.changedAt || new Date().toISOString());
       const changedOrder = await productionOrderDetail(request, entityId);
-      if (changedOrder?.serviceDate) await revokeWithdrawnMenuAuthority(changedOrder, changedAt);
-      const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId, revision, changeType, actorId: z.string().min(1).parse(raw.actorId || "integration-hub"), changedAt, idempotencyKey: z.string().min(1).parse(raw.idempotencyKey), propagation: { sourceEntityId: entityId, serviceDate, sourceVersion: revision, changedAt, changeType: eventTypeForConsumers(changeType), order: { origin: "menu_planning" }, logistics: true } });
+      const kitchenNotesOnly = changeType === "kitchen-notes-updated";
+      if (!kitchenNotesOnly && changedOrder?.serviceDate) await revokeWithdrawnMenuAuthority(changedOrder, changedAt);
+      const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId, revision, changeType, actorId: z.string().min(1).parse(raw.actorId || "integration-hub"), changedAt, idempotencyKey: z.string().min(1).parse(raw.idempotencyKey), propagation: { sourceEntityId: entityId, serviceDate, sourceVersion: revision, changedAt, changeType: eventTypeForConsumers(changeType), order: changedOrder || { origin: "menu_planning" }, logistics: !kitchenNotesOnly } });
       const dayProjection = await rebuildCpuProjection(request, serviceDate, event.sequence);
       const weekProjection = await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
-      const review = changedOrder?.destinationOplocId ? await rebuildCpuReviewPackage(request, serviceDate, changedOrder.destinationOplocId, event.sequence) : undefined;
-      await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.entityId}:v${event.sequence}`, sourceEntityId: event.entityId, serviceDate, sourceVersion: event.sequence, changedAt: event.changedAt, changeType: eventTypeForConsumers(event.changeType), order: changedOrder || { origin: "menu_planning" }, ...(changedOrder ? { calendarOrder: changedOrder } : {}), logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
+      const review = !kitchenNotesOnly && changedOrder?.destinationOplocId ? await rebuildCpuReviewPackage(request, serviceDate, changedOrder.destinationOplocId, event.sequence) : undefined;
+      await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.entityId}:v${event.sequence}`, sourceEntityId: event.entityId, serviceDate, sourceVersion: event.sequence, changedAt: event.changedAt, changeType: eventTypeForConsumers(event.changeType), order: changedOrder || { origin: "menu_planning" }, ...(!kitchenNotesOnly && changedOrder ? { calendarOrder: changedOrder } : {}), logistics: !kitchenNotesOnly, ...(review ? { reviewManifest: review.manifest } : {}) });
       return NextResponse.json({ applied: true, duplicate: event.sequence < Number(raw.sequence || event.sequence), event, dayProjection, weekProjection });
     }
     const actor = await actorFor(request);

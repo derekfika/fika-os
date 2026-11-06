@@ -176,6 +176,8 @@ export type CanonicalBooking = {
   acknowledgements: Record<string, unknown>;
   bookingGroup?: BookingGroupLink;
   notes?: string;
+  kitchenNotes?: string;
+  kitchenNotesPropagation?: { status: "pending" | "delivered"; attemptedAt: string; sourceVersion: number; deliveredAt?: string };
   attachments: string[];
   statusHistory: Array<{
     status: CanonicalBooking["lifecycleStatus"];

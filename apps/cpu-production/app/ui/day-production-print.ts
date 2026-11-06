@@ -61,7 +61,7 @@ function printCollection(order: ProductionOrder, day: string, siteKey: string, s
 <div><dt>Collection Time</dt><dd>${escape(details.collection)}</dd></div>
 <div><dt>Order ref</dt><dd>${escape(details.reference)}</dd></div>
 ${details.serviceWindow && details.serviceWindow !== "TBC" ? `<div class="service-window"><dt>Service / delivery window</dt><dd>${escape(details.serviceWindow)}</dd></div>` : ""}
-</dl></header>
+</dl></header>${order.kitchenNotes ? `<section class="kitchen-instructions"><strong>Kitchen notes</strong><p>${escape(order.kitchenNotes).replace(/\r?\n/g, "<br>")}</p></section>` : ""}
 <table><thead><tr><th class="check" scope="col">Pack</th><th class="category-column" scope="col">Category</th><th scope="col">Dish name</th><th class="quantity" scope="col">${escape(collectionQuantityHeading(order))}</th></tr></thead><tbody>${printLineRows(order)}</tbody></table>${handoverFields}</article>`;
 }
 
