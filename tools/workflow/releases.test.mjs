@@ -9,24 +9,39 @@ import { APPS, target, validateRecord } from './policy.mjs';
 import { rolloutArguments, assertFastTrack, executionAuthorization, releaseLane, assertStagingEvidence, releaseHealthProbe, reconcile, validateServingBaselineSnapshot, servingBaselineRecord, inspectAdhocProductionState, stableAdhocProductionState, adhocEmptyBaselineRecord } from './releases.mjs';
 import { backendPath } from './runtime.mjs';
 
-test('Hospitality staging health requires the exact local entry redirect and a healthy workspace', async () => {
- const backend='https://hospitality.hosted.app'; const calls=[];
- const ok=await releaseHealthProbe('hospitality',backend,'a'.repeat(40),async(url,options)=>{
-  calls.push({url,options}); return {status:calls.length===1?307:200,headers:new Headers({location:'/workspace'})};
- },'staging');
- assert.equal(ok.ok,true); assert.deepEqual(calls.map(c=>c.url),[`${backend}/`,`${backend}/workspace`]);
- assert.ok(calls.every(c=>c.options.redirect==='manual'&&c.options.cache==='no-store'));
- for(const location of ['/workspace?x=1','https://external.test/workspace','//external.test/workspace','/','/workspace/']) {
-  let count=0; const result=await releaseHealthProbe('hospitality',backend,'a'.repeat(40),async()=>{count++;return {status:307,headers:new Headers({location})};},'staging');
-  assert.equal(result.ok,false);assert.equal(count,1);
- }
- for(const status of [307,401,403,404,500]) {
-  let count=0;const result=await releaseHealthProbe('hospitality',backend,'a'.repeat(40),async()=>({status:++count===1?307:status,headers:new Headers({location:'/workspace'})}),'staging');
-  assert.equal(result.ok,false);
- }
- const failed=await releaseHealthProbe('hospitality',backend,'a'.repeat(40),async()=>{throw Error('transport');},'staging');assert.equal(failed.ok,false);
- const prod=await releaseHealthProbe('hospitality',backend,'a'.repeat(40),async()=>({ok:false,status:307}),'prod');assert.equal(prod.ok,false);
-});
+for (const environment of ['staging', 'prod']) {
+  test(`Hospitality ${environment} health requires the exact local entry redirect and a healthy workspace`, async () => {
+    const backend = 'https://hospitality.hosted.app';
+    const calls = [];
+    const probe = fetchImpl => releaseHealthProbe('hospitality', backend, 'a'.repeat(40), fetchImpl, environment);
+    const response = (status, location = '/workspace') => ({ ok: status === 200, status, headers: new Headers({ location }) });
+    const ok = await probe(async (url, options) => {
+      calls.push({ url, options });
+      return response(calls.length === 1 ? 307 : 200);
+    });
+    assert.equal(ok.ok, true);
+    assert.deepEqual(calls.map(call => call.url), [`${backend}/`, `${backend}/workspace`]);
+    assert.ok(calls.every(call => call.options.redirect === 'manual' && call.options.cache === 'no-store'));
+
+    for (const invalid of [response(200), response(302), response(307, ''), ...[
+      '/workspace?x=1', 'https://external.test/workspace', '//external.test/workspace', '/', '/workspace/',
+    ].map(location => response(307, location))]) {
+      let count = 0;
+      const result = await probe(async () => {
+        count++;
+        return invalid;
+      });
+      assert.equal(result.reason, 'unexpected_hospitality_entry_redirect');
+      assert.equal(count, 1);
+    }
+    for (const status of [307, 401, 403, 404, 500]) {
+      const result = await probe(async url => response(url === `${backend}/` ? 307 : status));
+      assert.equal(result.reason, 'hospitality_workspace_unavailable');
+    }
+    const failed = await probe(async () => { throw Error('transport'); });
+    assert.equal(failed.reason, 'request_failed');
+  });
+}
 test('Menu Planner health probe requires the exact uncached build identity endpoint',async()=>{
  const sha='a'.repeat(40);let request;
  const ok=await releaseHealthProbe('menu','https://menu-backend.hosted.app/',sha,async(url,options)=>{request={url,options};return {status:200,json:async()=>({appId:'menu-planning',buildSha:sha})};});
