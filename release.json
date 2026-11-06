@@ -7,78 +7,50 @@
   "region": "europe-west4",
   "branch": "release/prod/hospitality",
   "validation": {
-    "id": 128135031831,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/42287798415/job/128135031831",
-    "sha": "a038272350044690e871ceec7e88032d7816f860"
+    "id": 128146007290,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/42291251378/job/128146007290",
+    "sha": "dd8e06cf76cc2d0703396c92b810387e2f82dcc4"
   },
   "provenance": {
-    "number": 442,
-    "url": "https://github.com/derekfika/fika-os/pull/442",
-    "head": "966a49f872c4597948c0ebb701b043691e232cdf"
+    "number": 443,
+    "url": "https://github.com/derekfika/fika-os/pull/443",
+    "head": "517e61fea4c7d4accdc36f04d9775e86b790ac4c"
   },
-  "sourceSha": "a038272350044690e871ceec7e88032d7816f860",
-  "scopeHash": "41d16a4d0b7edf113b55579d3d6dae562ec3bcd0138a7b73edd89ddf584104ad",
+  "sourceSha": "dd8e06cf76cc2d0703396c92b810387e2f82dcc4",
+  "scopeHash": "3bf3597181be904c0b87454df9d8bf118f23e1bcda61323953f3af4f79afabc6",
   "rollback": false,
   "productionDelta": {
-    "from": "535eedabdddd2a5ba5324937e7e8a2160d353882",
-    "to": "a038272350044690e871ceec7e88032d7816f860",
+    "from": "a038272350044690e871ceec7e88032d7816f860",
+    "to": "dd8e06cf76cc2d0703396c92b810387e2f82dcc4",
     "paths": [
-      ".changes/cpu-production/2026-11-06-441-kitchen-notes.md",
-      ".changes/hospitality-booking/2026-11-06-441-kitchen-notes.md",
-      ".changes/integration-hub/2026-11-06-441-kitchen-notes.md",
-      "apps/cpu-production/app/api/production/route.ts",
-      "apps/cpu-production/app/ui/BookingContext.tsx",
-      "apps/cpu-production/app/ui/day-production-print.ts",
-      "apps/cpu-production/app/ui/run-sheet-paper-styles.ts",
-      "apps/cpu-production/lib/cpu-dashboard-adapter.ts",
-      "apps/cpu-production/lib/cpu-projection.ts",
-      "apps/cpu-production/lib/production-types.ts",
-      "apps/cpu-production/tests/cpu-projection.test.ts",
-      "apps/cpu-production/tests/run-sheet-printing.test.ts",
+      ".changes/hospitality-booking/2026-11-06-441-kitchen-notes-privacy-copy.md",
       "apps/hospitality-booking/app/ui/GroupAmendmentEditor.tsx",
-      "apps/hospitality-booking/app/ui/HospitalityDashboard.tsx",
-      "apps/hospitality-booking/lib/canonical-types.ts",
-      "apps/hospitality-booking/tests/quote-document.test.ts",
-      "apps/integration-hub/app/api/hospitality-bookings/route.ts",
-      "apps/integration-hub/lib/cpu-projection-client.ts",
-      "apps/integration-hub/lib/hospitality-booking-service.ts",
-      "apps/integration-hub/lib/hospitality-kitchen-notes-outbox.ts",
-      "apps/integration-hub/lib/production-domain.ts",
-      "apps/integration-hub/tests/hospitality-kitchen-notes.test.ts",
-      "apps/integration-hub/tests/production-domain.test.ts"
+      "apps/hospitality-booking/app/ui/HospitalityDashboard.tsx"
     ],
-    "hash": "d88563800e325b675cf6131c9f39c4249a0b86368cb14c716a0b7d9d1898dcee"
+    "hash": "4569370b3e867d545187f887214e1a980369e6e8299f8b8284f1ed32a473623d"
   },
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "hospitality",
     "environment": "prod",
-    "sourceSha": "a038272350044690e871ceec7e88032d7816f860",
+    "sourceSha": "dd8e06cf76cc2d0703396c92b810387e2f82dcc4",
     "action": "deploy",
     "instruction": "Execute deploy",
     "releaseId": null,
-    "id": "4183ee6b253edbe0594e99781e1be9a48ff543f255c66170ee288713b7dd1fc9",
+    "id": "643f336260837eb4a7cb31b3852f396bd7fd6cf92d4d67da86204063446409a7",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-06T20:36:39.348Z"
+    "authorisedAt": "2026-11-06T20:49:58.382Z"
   },
-  "rollout": "build-2026-11-06-002",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "54a1ca2e-9489-46ef-ad97-fb687ea74873",
   "previousGood": {
-    "sourceSha": "535eedabdddd2a5ba5324937e7e8a2160d353882",
-    "rollout": "build-2026-11-06-001",
+    "sourceSha": "a038272350044690e871ceec7e88032d7816f860",
+    "rollout": "build-2026-11-06-002",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "b2bbf7091e88c80381341a178cc12ac697b294b9",
-  "releaseId": "ccddeeab-68bc-4346-aa49-b33a7df4e643",
-  "completedAt": "2026-11-06T20:39:48.397Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-prod-hospitality--fika-os.europe-west4.hosted.app/",
-    "entryRedirect": "/workspace"
-  }
+  "previousGoodRecord": "7e7edfb51a6e6c56468d490a3605e324f8dca377",
+  "createdAt": "2026-11-06T20:50:00.302Z"
 }
