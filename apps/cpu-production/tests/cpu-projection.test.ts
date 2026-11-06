@@ -52,12 +52,15 @@ test("empty week projection is a valid zero-order package payload", () => {
   assert.deepEqual(projection.summary, { orders: 0, ready: 0, attention: 0, planned: 0, totalUnits: 0 });
 });
 
-test("CPU projection preserves booking dietary and note context", () => {
-  const source = { ...order("order:context"), bookingDietaries: { vegetarian: 3, gluten_free: 1 }, bookingNotes: "Use the side entrance.", lines: [{ ...order("order:context").lines[0], productionQuantity: 24, productionUnit: "piece", dietaries: { vegetarian: 3 }, productionInstructions: "Label each portion." }] };
+test("CPU projection preserves customer and kitchen note context separately", () => {
+  const source = { ...order("order:context"), bookingDietaries: { vegetarian: 3, gluten_free: 1 }, bookingNotes: "Use the side entrance.", kitchenNotes: "Keep warm\nLabel for service.", lines: [{ ...order("order:context").lines[0], productionQuantity: 24, productionUnit: "piece", dietaries: { vegetarian: 3 }, productionInstructions: "Label each portion." }] };
   const projection = buildCpuDayProjection("2026-08-24", [source]);
   const hydrated = cpuProjectionToOrders(projection)[0];
   assert.deepEqual(projection.orders[0].bookingDietaries, { vegetarian: 3, gluten_free: 1 });
   assert.equal(projection.orders[0].bookingNotes, "Use the side entrance.");
+  assert.equal(projection.orders[0].kitchenNotes, "Keep warm\nLabel for service.");
+  assert.equal(hydrated.bookingNotes, "Use the side entrance.");
+  assert.equal(hydrated.kitchenNotes, "Keep warm\nLabel for service.");
   assert.equal(projection.orders[0].quantities[0].quantity, 10);
   assert.equal(projection.orders[0].quantities[0].productionQuantity, 24);
   assert.deepEqual(hydrated.lines[0].dietaries, { vegetarian: 3 });

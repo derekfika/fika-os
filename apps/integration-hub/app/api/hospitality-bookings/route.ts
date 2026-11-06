@@ -11,6 +11,7 @@ import { assertHospitalityBookingMutationAccess, assertHospitalityBookingReadAcc
 import { bookingAdditionalChargesSchema, labourRateSettingsSchema } from "@/lib/hospitality-additional-charges-schema";
 import { bookingWorkspace, createProductionOrder, executeBookingWorkflow, getBookingByCanonicalId, getDashboardQuoteSettingsForBooking, saveDashboardQuoteSettings } from "@/lib/hospitality-booking-service";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { saveHospitalityKitchenNotes } from "@/lib/production-domain";
 
 const Base = { canonicalId: z.string().min(8), expectedVersion: z.number().int().positive() };
 const Change = z.discriminatedUnion("action", [
@@ -21,6 +22,7 @@ const Change = z.discriminatedUnion("action", [
   z.object({ ...Base, action: z.literal("amend"), reason: z.string().trim().min(3).max(1000), patch: bookingAmendmentPatch, hospitalityAdmin: z.literal(true).optional() }).strict(),
   z.object({ ...Base, action: z.literal("approve"), quoteRevisionId: z.string().min(8) }).strict(),
   z.object({ ...Base, action: z.literal("production-handoff") }).strict(),
+  z.object({ ...Base, action: z.literal("save-kitchen-notes"), kitchenNotes: z.string().max(4000) }).strict(),
   z.object({ ...Base, action: z.literal("complete"), notes: z.string().trim().max(1000).optional() }).strict(),
   z.object({ ...Base, action: z.literal("cancel"), reason: z.string().trim().min(3).max(1000), removeCalendar: z.boolean().optional(), cancelProduction: z.boolean().optional(), notify: z.boolean().optional() }).strict(),
 ]);
@@ -71,6 +73,7 @@ export async function POST(request: NextRequest) { return withDataTrace({ app: "
   }
   const booking = await getBookingByCanonicalId(change.canonicalId);
   await assertHospitalityBookingMutationAccess(repository, principal, booking, actor.role === "integration-admin" || actor.role === "reviewer");
+  if (change.action === "save-kitchen-notes") return NextResponse.json(await saveHospitalityKitchenNotes(actor, change.canonicalId, change.expectedVersion, change.kitchenNotes));
   if (change.action === "production-handoff") return NextResponse.json(await createProductionOrder(actor, change.canonicalId, change.expectedVersion));
   return NextResponse.json(await executeBookingWorkflow(actor, change.canonicalId, change.expectedVersion, change, "customer-cancellation"));
 } catch (error) { return errorResponse(error); } }); }

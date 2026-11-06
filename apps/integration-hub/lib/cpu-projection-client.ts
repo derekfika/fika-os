@@ -22,7 +22,7 @@ function cpuBase() {
   return approvedCredentialedUpstream("cpu", configured);
 }
 
-export async function notifyCpuProjection(order: CpuProjectionOrder, changeType: "created" | "amended" | "withdrawn", idempotencyKey: string) {
+export async function notifyCpuProjection(order: CpuProjectionOrder, changeType: "created" | "amended" | "withdrawn" | "kitchen-notes-updated", idempotencyKey: string) {
   if (!order.serviceDate) return { applied: false, skipped: true };
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (process.env.FIKA_INTERNAL_API_TOKEN) headers["x-fika-internal-token"] = process.env.FIKA_INTERNAL_API_TOKEN;

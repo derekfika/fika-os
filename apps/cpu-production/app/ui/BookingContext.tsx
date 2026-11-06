@@ -15,6 +15,6 @@ export function bookingContextEntries(values: Record<string, unknown> | undefine
 export default function BookingContext({ order }: { order: ProductionOrder }) {
   const dietary = bookingContextEntries(order.bookingDietaries).length ? bookingContextEntries(order.bookingDietaries) : [...new Set(order.lines.flatMap((line) => bookingContextEntries(line.dietaries)))];
   const lineNotes = order.lines.flatMap((line) => line.productionInstructions ? [`${line.itemName}: ${line.productionInstructions}`] : []);
-  if (!dietary.length && !order.bookingNotes && !lineNotes.length) return null;
-  return <section className="cpu-booking-context"><h3>Booking dietary & notes</h3>{dietary.length > 0 && <div><strong>Dietary / allergen requests</strong><ul>{dietary.map((item) => <li key={item}>{item}</li>)}</ul></div>}{order.bookingNotes && <div><strong>Booking notes</strong><p>{order.bookingNotes}</p></div>}{lineNotes.length > 0 && <div><strong>Item notes</strong><ul>{lineNotes.map((item) => <li key={item}>{item}</li>)}</ul></div>}</section>;
+  if (!dietary.length && !order.bookingNotes && !order.kitchenNotes && !lineNotes.length) return null;
+  return <section className="cpu-booking-context"><h3>Booking dietary & notes</h3>{dietary.length > 0 && <div><strong>Dietary / allergen requests</strong><ul>{dietary.map((item) => <li key={item}>{item}</li>)}</ul></div>}{order.bookingNotes && <div><strong>Customer booking notes</strong><p>{order.bookingNotes}</p></div>}{order.kitchenNotes && <div><strong>Kitchen notes</strong><p style={{ whiteSpace: "pre-wrap" }}>{order.kitchenNotes}</p></div>}{lineNotes.length > 0 && <div><strong>Item notes</strong><ul>{lineNotes.map((item) => <li key={item}>{item}</li>)}</ul></div>}</section>;
 }

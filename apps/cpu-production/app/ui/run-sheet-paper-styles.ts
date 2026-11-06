@@ -30,6 +30,7 @@ body{margin:0;background:white;color:var(--fika-text-primary,black);font:10pt/1.
 .collection-details dt{font-size:7.5pt;font-weight:700;color:var(--fika-action-secondary,currentColor)}
 .collection-details dd{margin:0;font-weight:700}
 .collection-details .service-window{grid-column:span 2}
+.kitchen-instructions{border:.6pt solid var(--fika-status-warning,currentColor);background:var(--fika-status-warning-surface,transparent);padding:1.5mm 2mm;margin:1mm 0 2mm;break-inside:avoid}.kitchen-instructions p{margin:1mm 0 0;white-space:normal}
 .continuation{font-size:8pt;font-weight:700;margin-top:1mm!important}
 .collection table{width:100%;border-collapse:collapse;table-layout:fixed;border:.6pt solid var(--fika-text-secondary,currentColor)}
 .collection th,.collection td{text-align:left;vertical-align:middle;padding:1mm 2mm;border-bottom:.5pt solid var(--fika-border-default,currentColor);font-size:10pt;overflow-wrap:anywhere;white-space:normal}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createCpuProductionOrder, externalProductionStatus, materialiseExternalProductionOrder, materialisedProductionId, productionOrderV1Id, productionRequirementId } from "../lib/production-domain";
+import { createCpuProductionOrder, externalProductionStatus, materialiseExternalProductionOrder, materialisedProductionId, productionOrderV1Id, productionRequirementId, saveHospitalityKitchenNotes } from "../lib/production-domain";
 import { transitionProductionOrder } from "../lib/production-domain";
 import { db } from "../lib/firebase-admin";
 import type { ProductionLine } from "../lib/production-domain";
@@ -8,8 +8,57 @@ import { listDomainEvents } from "../lib/domain-event-outbox";
 import { stableDocumentId } from "../lib/canonical-editor";
 import { CPU_SITE_OPLOC_ID } from "../../shared/production-location";
 import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requirement";
+import { kitchenNotesEventId } from "../lib/hospitality-kitchen-notes-outbox";
 
 const emulatorEnabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os" && process.env.FIRESTORE_EMULATOR_HOST === "127.0.0.1:8292" && (process.env.FIKA_RUNTIME_MODE || "local") === "local";
+
+test("emulator: kitchen notes update only the canonical order note and retry CPU projection durably", { skip: !emulatorEnabled }, async () => {
+  const actor = { uid: "integration-test", name: "Integration Test", role: "integration-admin" as const, synthetic: true as const };
+  const bookingId = `booking:kitchen-notes:${Date.now()}:${process.pid}`;
+  const orderId = productionOrderV1Id(bookingId);
+  const booking = { canonicalId: bookingId, entityType: "Booking", schemaVersion: "0.1.0", version: 7, lifecycleStatus: "Sent to CPU", createdAt: "2026-10-30T09:00:00.000Z", createdBy: actor.uid, updatedAt: "2026-10-30T09:00:00.000Z", updatedBy: actor.uid, client: { name: "Host", email: "host@example.com", companyName: "Client" }, service: { eventDate: "2026-12-01", startTime: "12:00", guestCount: 10, oplocId: "oploc:kitchen-notes" }, order: { eventType: "Lunch", items: [{ itemId: "item:1", itemName: "Soup", unitPrice: 10, quantity: 10 }] }, dietaries: {}, acknowledgements: {}, notes: "Customer-visible note", kitchenNotes: "Old kitchen note", attachments: [], statusHistory: [], audit: [], quoteState: { currentRevisionId: "quote:test", revisions: [{ id: "quote:test", snapshot: { notes: "Customer-visible note" }, stale: false }] } };
+  const lines = [{ canonicalId: `${orderId}:line:1`, sourceBookingLineId: `${bookingId}:line:1`, itemName: "Soup", customerQuantity: 10, customerUnit: "portion", productionQuantity: 10, productionUnit: "portion", dietaries: {}, status: "ready", sortOrder: 0 }];
+  const order = { canonicalId: orderId, entityType: "Production Order", schemaVersion: "0.1.0", version: 3, requirementIds: [], sourceBookingId: bookingId, sourceQuoteRevisionId: "quote:test", requiredBy: "2026-12-01T12:00:00", serviceDate: "2026-12-01", serviceWindow: { startTime: "12:00" }, status: "planned", workflowStatus: "planned", priority: "normal", lines, exceptions: [], bookingNotes: "Customer-visible note", kitchenNotes: "Old kitchen note", allergenSignoff: { status: "signed", signedBy: "test" }, origin: "hospitality_booking", currentRevision: 2, createdAt: "2026-10-30T09:00:00.000Z", createdBy: actor.uid, idempotencyKey: "handoff:test", externalReferences: [], audit: [], destinationOplocId: "oploc:kitchen-notes" };
+  const bookingRef = db.collection("fikaBookings").doc(bookingId);
+  const orderRef = db.collection("fikaProductionOrdersV1").doc(stableDocumentId(orderId));
+  await bookingRef.set(booking); await orderRef.set(order);
+  const originalFetch = globalThis.fetch;
+  let calls = 0; const payloads: Array<Record<string, unknown>> = [];
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    calls++; payloads.push(JSON.parse(String(init?.body || "{}")));
+    return new Response(calls <= 2 ? "CPU unavailable" : JSON.stringify({ applied: true }), { status: calls <= 2 ? 503 : 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    const failed = await saveHospitalityKitchenNotes(actor, bookingId, 7, "Keep warm\nLabel for service");
+    assert.equal(failed.propagation, "pending");
+    const savedOrder = (await orderRef.get()).data()!;
+    assert.equal(savedOrder.canonicalId, orderId); assert.equal(savedOrder.version, 4); assert.equal(savedOrder.status, "planned"); assert.equal(savedOrder.currentRevision, 2);
+    assert.deepEqual(savedOrder.lines, lines); assert.equal(savedOrder.kitchenNotes, "Keep warm\nLabel for service");
+    const savedBooking = (await bookingRef.get()).data()!;
+    assert.equal(savedBooking.notes, "Customer-visible note"); assert.equal(savedBooking.quoteState.revisions[0].snapshot.notes, "Customer-visible note");
+    assert.equal(savedBooking.kitchenNotesPropagation.status, "pending");
+    await assert.rejects(saveHospitalityKitchenNotes(actor, bookingId, 7, "stale write"), /changed elsewhere/);
+    assert.equal((await db.collection("fikaBookingNotifications").where("bookingId", "==", bookingId).get()).size, 0);
+    const retried = await saveHospitalityKitchenNotes(actor, bookingId, savedBooking.version, "Keep warm\nLabel for service");
+    assert.equal(retried.propagation, "delivered"); assert.equal(retried.unchanged, true);
+    const finalOrder = (await orderRef.get()).data()!;
+    assert.equal(finalOrder.version, 4); assert.deepEqual(finalOrder.lines, lines); assert.equal(finalOrder.status, "planned");
+    assert.deepEqual(finalOrder.allergenSignoff, { status: "signed", signedBy: "test" });
+    assert.equal((await db.collection("fikaHospitalityKitchenNotesOutboxV1").doc(kitchenNotesEventId(bookingId, 8)).get()).get("delivery.status"), "delivered");
+    assert.equal(payloads.at(-1)?.changeType, "kitchen-notes-updated");
+    const cleared = await saveHospitalityKitchenNotes(actor, bookingId, savedBooking.version, "");
+    assert.equal(cleared.propagation, "delivered");
+    const clearedBooking = (await bookingRef.get()).data()!; const clearedOrder = (await orderRef.get()).data()!;
+    assert.equal(clearedBooking.kitchenNotes, ""); assert.equal(clearedOrder.kitchenNotes, "");
+    assert.equal(clearedOrder.canonicalId, orderId); assert.equal(clearedOrder.version, 5); assert.equal(clearedOrder.status, "planned");
+    assert.deepEqual(clearedOrder.lines, lines); assert.deepEqual(clearedOrder.allergenSignoff, { status: "signed", signedBy: "test" });
+    assert.equal((await db.collection("fikaHospitalityKitchenNotesOutboxV1").doc(kitchenNotesEventId(bookingId, 9)).get()).get("delivery.status"), "delivered");
+  } finally {
+    globalThis.fetch = originalFetch;
+    const batch = db.batch(); batch.delete(bookingRef); batch.delete(orderRef); batch.delete(db.collection("fikaBookingAudit").doc(`${bookingId.replace(/[^A-Za-z0-9_-]/g, "_")}:kitchen-notes:v8`)); batch.delete(db.collection("fikaBookingAudit").doc(`${bookingId.replace(/[^A-Za-z0-9_-]/g, "_")}:kitchen-notes:v9`)); batch.delete(db.collection("fikaHospitalityKitchenNotesOutboxV1").doc(kitchenNotesEventId(bookingId, 8))); batch.delete(db.collection("fikaHospitalityKitchenNotesOutboxV1").doc(kitchenNotesEventId(bookingId, 9)));
+    await batch.commit();
+  }
+});
 
 test("production identifiers are stable and distinct by source booking and quote", () => {
   assert.equal(productionOrderV1Id("booking:mnk:one"), "production-order:v1:booking:mnk:one");

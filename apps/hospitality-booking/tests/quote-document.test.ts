@@ -54,6 +54,22 @@ test("quoteHtml renders a self-contained branded immutable quote snapshot", () =
   assert.doesNotMatch(html, /stylesheet|globals\.css|tailwind|font-family:Arial|font-family:sans-serif/i);
 });
 
+test("the rendered quote stays on its saved customer snapshot when internal kitchen notes change", () => {
+  const booking = {
+    canonicalId: "booking-kitchen-notes",
+    kitchenNotes: "DO NOT PRINT: keep warm\nInternal service instruction",
+    notes: "Customer note retained",
+    quoteState: { currentRevisionId: "quote-customer-snapshot", revisions: [{ id: "quote-customer-snapshot", revision: 1, createdAt: "2026-10-01T10:00:00.000Z", snapshot: {
+      bookingId: "booking-kitchen-notes", client: { name: "Guest", companyName: "Customer", email: "guest@example.test" },
+      service: { eventDate: "2026-12-01", startTime: "12:00", guestCount: 10 }, order: { lines: [] }, charges: [], dietaries: {},
+      notes: "Customer note retained", totals: { itemsNet: { amount: 0 }, chargesNet: { amount: 0 }, net: { amount: 0 }, vat: { amount: 0 }, gross: { amount: 0 }, vatRate: 0.2 },
+    } }] },
+  } as never;
+  const html = quoteHtml(booking);
+  assert.match(html, /Customer note retained/);
+  assert.doesNotMatch(html, /DO NOT PRINT|Internal service instruction/);
+});
+
 test("quoteHtml rejects a missing or stale immutable revision", () => {
   assert.throws(() => quoteHtml({ quoteState: { revisions: [], currentRevisionId: "missing" } } as never), /No current quote revision/);
 });
