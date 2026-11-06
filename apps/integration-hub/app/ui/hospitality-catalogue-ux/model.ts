@@ -8,15 +8,26 @@ import { SERVICE_IDS } from "@fika/server-shared/hospitality-service-layout";
 import { SERVICE_LABELS, serviceRuleAt, setCategoryIncluded, type ServiceLayoutView } from "../../../lib/hospitality-catalogue-types";
 import type { CatalogueRow } from "../../../lib/hospitality-catalogue-types";
 
-export type CatalogueTab = "overview" | "items" | "services" | "locations";
+export type CatalogueTab = "overview" | "manager" | "items" | "services" | "locations";
 export const CATALOGUE_TABS: ReadonlyArray<{ id: CatalogueTab; label: string; hint: string }> = [
   { id: "overview", label: "Overview", hint: "Catalogue summary and actions" },
+  { id: "manager", label: "Catalogue Manager", hint: "Browse services, categories and items together" },
   { id: "items", label: "Items", hint: "Products, prices and sites" },
   { id: "services", label: "Services", hint: "What each booking service offers customers" },
   { id: "locations", label: "Locations", hint: "Where each service is available" },
 ];
 /** Context carried from an Item (or anywhere) into the Booking Services tab. */
 export type ServicesContext = { oplocId?: string; serviceId?: ServiceId; category?: string; itemId?: string };
+
+/** Counts are catalogue records and site permission, never a claim of customer orderability. */
+export function managerItemCounts(rows: readonly Pick<CatalogueRow, "category" | "status" | "availableAt">[], category: string, oplocId?: string) {
+  const matching = rows.filter(row => row.category === category);
+  return {
+    active: matching.filter(row => row.status === "active").length,
+    sitePermitted: oplocId ? matching.filter(row => row.status === "active" && row.availableAt.includes(oplocId)).length : undefined,
+    archived: matching.filter(row => row.status === "archived").length,
+  };
+}
 
 type LayoutStored = Pick<ServiceLayoutView, "company" | "sites">;
 type ItemLike = Pick<CatalogueRow, "name" | "category" | "status" | "availableAt">;
