@@ -81,9 +81,10 @@
     "explicitExecute": true,
     "authorisedAt": "2026-11-06T20:27:31.014Z"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "78f4ba24-c1ed-4e16-a42c-f570fe28b6fd",
+  "rollout": "build-2026-11-06-004",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "326d0fbcbeeb3020d838023bad6aa0bc1906099d",
     "rollout": "build-2026-11-06-003",
@@ -91,5 +92,11 @@
     "percent": 100
   },
   "previousGoodRecord": "799f5983a2485e71308fca71038c4287d9bc5e30",
-  "createdAt": "2026-11-06T20:27:33.079Z"
+  "releaseId": "78f4ba24-c1ed-4e16-a42c-f570fe28b6fd",
+  "completedAt": "2026-11-06T20:31:12.194Z",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-os-prod-cpu--fika-os.europe-west4.hosted.app/"
+  }
 }
