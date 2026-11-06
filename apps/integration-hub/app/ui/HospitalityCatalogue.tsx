@@ -7,6 +7,7 @@ import { SERVICE_IDS } from "@fika/server-shared/hospitality-service-layout";
 import ConfirmationModal from "./ConfirmationModal";
 import HospitalityCatalogueOverview from "./HospitalityCatalogueOverview";
 import HospitalityCatalogueServices from "./HospitalityCatalogueServices";
+import HospitalityCatalogueManager from "./HospitalityCatalogueManager";
 import { CATALOGUE_TABS, itemServiceVisibility, manageServicesContext, type CatalogueTab, type ServicesContext } from "./hospitality-catalogue-ux/model";
 import "./HospitalityCatalogue.css";
 import {
@@ -62,7 +63,7 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     url.searchParams.set("catalogueTab", nextTab);
-    if (nextTab === "services" || nextTab === "locations") {
+    if (nextTab === "services" || nextTab === "locations" || nextTab === "manager") {
       if (context.oplocId) url.searchParams.set("site", context.oplocId); else url.searchParams.delete("site");
       if (context.serviceId) url.searchParams.set("service", context.serviceId); else url.searchParams.delete("service");
       if (context.category) url.searchParams.set("category", context.category); else url.searchParams.delete("category");
@@ -172,6 +173,8 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
     {tab === "overview" ? <div role="tabpanel" id="hc-panel-overview" aria-labelledby="hc-tab-overview" className="hc-overview-tab">
       <h2 className="hc-overview-title">Catalogue at a glance</h2>
       <HospitalityCatalogueOverview payload={payload} onNavigate={next => writeLocation(next)} />
+    </div> : tab === "manager" ? <div role="tabpanel" id="hc-panel-manager" aria-labelledby="hc-tab-manager" className="hc-manager-tab">
+      <HospitalityCatalogueManager payload={payload} context={servicesContext} onContextChange={context => writeLocation("manager", context, "replace")} onOpenItem={itemId => { setSelectedId(itemId); writeLocation("items"); }} />
     </div> : tab === "services" || tab === "locations" ? <div role="tabpanel" id={`hc-panel-${tab}`} aria-labelledby={`hc-tab-${tab}`} className={`hc-${tab}-tab`}>
       <HospitalityCatalogueServices payload={payload} canManage={canManage} send={send} reload={load} view={tab} initialContext={servicesContext} onContextChange={context => writeLocation(tab, context, "replace")} />
     </div> : <div role="tabpanel" id="hc-panel-items" aria-labelledby="hc-tab-items" className="hc-items-tab">
