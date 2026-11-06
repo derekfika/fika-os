@@ -103,4 +103,46 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   const beforeGroup = await snapshot();
   await assert.rejects(amendHospitalityBookingGroup(actor, { bookingGroupId: groupId, expectedSourceHash: groupCommercialState(groupId, grouped).sourceHash, reason: "Test", services: grouped.map(child => ({ bookingId: child.canonicalId, expectedVersion: child.version, patch: { ...standardPatch, client: child.client } })) }, async () => {}), (e: any) => e.status === 422 && e.code === shortNoticeCode);
   assert.deepEqual(await snapshot(), beforeGroup, "group amendment rejects atomically before any child writes");
+
+  const authorizeAdmin = async (booking: CanonicalBooking) => {
+    assert.equal(booking.service.oplocId, site);
+    return { oplocId: site, identityId: "authmod:fixture", grantId: "grant:fixture", grantVersion: 7 };
+  };
+  let near = addBusinessDate(ukBookingClock(new Date().toISOString()).date);
+  while ([0, 6].includes(deliveryWeekday(near))) near = addBusinessDate(near);
+  const staffPatch = { client: standardCurrent.client, service: { eventDate: near, startTime: "09:00", guestCount: 11 },
+    order: { eventType: "lunch", items: [{ itemId: standard, unitPrice: 0, quantity: 11 }, { itemId: sandwich, unitPrice: 0, quantity: 2, itemName: "Untrusted name" }] } };
+  const staffCommand = { action: "amend" as const, reason: "Urgent guest increase", patch: staffPatch };
+  const beforeStaff = await snapshot();
+  await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, staffCommand), { code: "PRODUCT_NOTICE" });
+  await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, { ...staffCommand, patch: { ...staffPatch, service: { ...staffPatch.service, eventDate: "2020-01-06" } } }, undefined, authorizeAdmin), { code: "HOSPITALITY_ADMIN_SERVICE_TIME" });
+  await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, { ...staffCommand, patch: { ...staffPatch, dietaries: { severeAllergyAcknowledged: true } } }, undefined, authorizeAdmin), { code: "HOSPITALITY_ADMIN_DIETARY_REVIEW" });
+  assert.deepEqual(await snapshot(), beforeStaff);
+  const result = await executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, staffCommand, undefined, authorizeAdmin);
+  assert.equal(result.booking.service.guestCount, 11);
+  assert.deepEqual(result.booking.order.items.map(item => [item.menuItemId, item.itemName, item.unitPrice]), [[standard, "Test product", 1], [sandwich, "Test product", 1]]);
+  assert.equal(result.booking.order.netTotal, 13);
+  const audit = await db.collection("fikaBookingAudit").where("canonicalId", "==", standardCurrent.canonicalId).get();
+  const override = audit.docs.find(doc => doc.data().hospitalityAdmin)?.data().hospitalityAdmin;
+  assert.equal(override.grantVersion, 7);
+  assert.equal(override.beforePax, 10);
+  assert.equal(override.afterPax, 11);
+  assert.equal(override.noticeOverridden, true);
+  const afterStaff = await snapshot();
+  await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, staffCommand, undefined, authorizeAdmin), { status: 409 });
+  assert.deepEqual(await snapshot(), afterStaff);
+
+  const staffGroup = {
+    bookingGroupId: groupId, expectedSourceHash: groupCommercialState(groupId, grouped).sourceHash,
+    reason: "Amend both services", hospitalityAdmin: true as const,
+    services: grouped.map(child => ({ bookingId: child.canonicalId, expectedVersion: child.version, patch: { ...staffPatch, client: child.client } })),
+  };
+  await assert.rejects(amendHospitalityBookingGroup(actor, staffGroup, async () => {}), { status: 403 });
+  const invalidGroup = structuredClone(staffGroup);
+  invalidGroup.services[1].patch.order.items[1].itemId = "hospitality-menu-item:unauthorised";
+  await assert.rejects(amendHospitalityBookingGroup(actor, invalidGroup, async () => {}, authorizeAdmin), { status: 422 });
+  assert.deepEqual(await snapshot(), afterStaff, "a rejected group never commits the earlier service");
+  const savedGroup = await amendHospitalityBookingGroup(actor, staffGroup, async () => {}, authorizeAdmin);
+  assert.deepEqual(savedGroup.bookings.map(booking => booking.service.guestCount), [11, 11]);
+  assert.deepEqual(savedGroup.bookings.map(booking => booking.order.netTotal), [13, 13]);
 });

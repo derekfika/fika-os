@@ -24,7 +24,7 @@ const serviceAnchor = (group: HospitalityBookingGroup, service: HospitalityGroup
 const serviceLabel = (service: HospitalityGroupService) => `${service.time}${service.endTime ? `–${service.endTime}` : ""} · ${service.serviceType.replaceAll("_", " ")}`;
 type ChargeTarget = { service: HospitalityGroupService; booking: CanonicalBooking; sourceHash: string };
 
-export function HospitalityGroupDetail({ group, busy, onQuote, production, site, oplocId, onAmended, onBusyChange }: { group: HospitalityBookingGroup; busy: boolean; onQuote(): void; production: ReactNode; site: string; oplocId: string; onAmended(): Promise<void>; onBusyChange(busy: boolean): void }) {
+export function HospitalityGroupDetail({ group, busy, onQuote, production, site, oplocId, hospitalityAdmin, onAmended, onBusyChange }: { group: HospitalityBookingGroup; busy: boolean; onQuote(): void; production: ReactNode; site: string; oplocId: string; hospitalityAdmin?: boolean; onAmended(): Promise<void>; onBusyChange(busy: boolean): void }) {
   const editButton = useRef<HTMLButtonElement>(null);
   const closeEditor = () => { setEditing(false); requestAnimationFrame(() => editButton.current?.focus()); };
   const [editing, setEditing] = useState(false);
@@ -128,7 +128,7 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
     </header>
     <GroupLocation services={group.services} />
     <div className={styles.actions}>
-      <button ref={editButton} type="button" disabled={busy || anyCancelled || editing || cancelOpen || Boolean(chargeTarget)} onClick={() => setEditing(true)}>Amend booking</button>
+      <button ref={editButton} type="button" disabled={busy || anyCancelled || editing || cancelOpen || Boolean(chargeTarget)} onClick={() => setEditing(true)}>{hospitalityAdmin ? "Edit booking" : "Amend booking"}</button>
       {!anyCancelled && <button ref={cancelButton} type="button" className={styles.danger} disabled={busy || editing || cancelOpen || Boolean(chargeTarget)} onClick={() => { setCancelError(""); setCancelOpen(true); }}>Cancel booking</button>}
       {ready && group.quote?.driveUrl ? <a href={group.quote.driveUrl} target="_blank" rel="noopener noreferrer">Open group quote</a> : <button type="button" className="primary" disabled={busy || editing || cancelOpen || Boolean(chargeTarget) || !eligible} aria-busy={busy} onClick={onQuote}>{busy ? "Preparing group quote…" : group.quote?.status === "failed" || group.quote?.status === "artifact_pending" ? "Retry group quote" : group.quote ? "Generate updated group quote" : "Generate group quote"}</button>}
     </div>

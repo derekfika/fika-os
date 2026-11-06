@@ -6,7 +6,8 @@ import { hospitalityGroupProjection } from "./hospitality-group-projection";
 import { explicitMenuProductionRouting } from "./connections-service";
 import { LEGACY_HOSPITALITY_MENU_ROUTING } from "./hospitality-routing-suggestions";
 import { BOOKING_LABELS, hospitalityPlatformOf, isGovernedRoutingPlatform, LINE_LABELS, planHospitalityCpuRouting, routingKeys } from "./hospitality-cpu-routing";
-import { assertHospitalityBookingDate } from "./hospitality-booking-cutoffs";
+import { assertHospitalityBookingDate, prepareHospitalityAdminOrder } from "./hospitality-booking-cutoffs";
+import type { HospitalityAdminAuthority } from "./hospitality-booking-authorization";
 import { trustedPublicOrder } from "./hospitality-price-trust";
 import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, loadRcoaBookingCatalogue, mnkBookingPricingRecords, rcoaBookingConstraintRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
@@ -51,7 +52,7 @@ import {
 import { notifyCpuProjection } from "./cpu-projection-client";
 import { deliverLogisticsProjectionForProductionOrder } from "./logistics-projection-outbox";
 import { localBookingFixtures } from "./local-booking-fixtures";
-import { catalogueMinimums, effectiveProductMinimum, bookingPolicyFor, type RuleItem } from "@fika/server-shared/hospitality-effective-offering";
+import { bookingServiceInstant, catalogueMinimums, effectiveProductMinimum, bookingPolicyFor, type RuleItem } from "@fika/server-shared/hospitality-effective-offering";
 import { GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { Transaction } from "firebase-admin/firestore";
@@ -1238,7 +1239,49 @@ export async function assertRcoaBookingServiceVisibility(transaction: Transactio
 }
 
 /** Prepare all affected reads before applying writes; shared by single and atomic group amendments. */
-async function prepareBookingAmendment(transaction: Transaction, actor: Actor, canonicalId: string, current: CanonicalBooking, next: CanonicalBooking, command: Extract<WorkflowCommand, { action: "amend" }>, now: string, projectionChanges: ProductionProjectionChange[], grouped = false) {
+type AuthorizeHospitalityAdmin = (booking: CanonicalBooking, transaction: Transaction) => Promise<HospitalityAdminAuthority>;
+
+function unchangedAmendment(current: CanonicalBooking, patch: Extract<WorkflowCommand, { action: "amend" }>["patch"]) {
+  const comparable = (booking: CanonicalBooking) => groupHash({
+    client: booking.client, service: Object.fromEntries(Object.keys(patch.service).map(key => [key, booking.service[key as keyof typeof booking.service] ?? ""])),
+    order: { ...(booking.order.eventType ? { eventType: booking.order.eventType } : {}), items: booking.order.items.map(item => Object.fromEntries(["itemId", "itemName", "category", "description", "servingInfo", "unitPrice", "quantity", "choices", "comments"].filter(key => item[key as keyof typeof item] !== undefined).map(key => [key, item[key as keyof typeof item]]))) },
+    notes: booking.notes || "", dietaries: booking.dietaries, deliveryChargeRequired: booking.deliveryChargeRequired !== false,
+  });
+  const proposed = { ...current, client: patch.client, service: { ...current.service, ...patch.service }, order: { ...current.order, ...patch.order }, notes: patch.notes || "", dietaries: patch.dietaries || current.dietaries, deliveryChargeRequired: patch.deliveryChargeRequired ?? current.deliveryChargeRequired };
+  return comparable(current) === comparable(proposed as CanonicalBooking);
+}
+
+function futureService(service: CanonicalBooking["service"], now: string) {
+  try {
+    const start = bookingServiceInstant(service.eventDate, service.startTime);
+    if (service.endTime && bookingServiceInstant(service.eventDate, service.endTime) <= start) throw new Error("End time must follow the service start.");
+    if (start <= Date.parse(now)) throw new Error("An elapsed service cannot be amended through Hospitality Admin.");
+    return start;
+  } catch (error) {
+    throw Object.assign(new Error((error as Error).message), { status: 422, code: "HOSPITALITY_ADMIN_SERVICE_TIME" });
+  }
+}
+
+function validateStaffDietaries(current: CanonicalBooking, patch: Record<string, unknown> | undefined, guests: number) {
+  const prior = current.dietaries || {};
+  const next = patch ?? prior;
+  const counts = new Set(["vegetarian", "vegan", "glutenFree", "coeliac", "dairyFree", "halal", "otherCount"]);
+  const notes = new Set(["freeText", "additionalNotes"]);
+  for (const key of new Set([...Object.keys(prior), ...Object.keys(next)])) {
+    if (groupHash(prior[key] ?? null) === groupHash(next[key] ?? null)) continue;
+    const value = next[key];
+    if (counts.has(key) && typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= guests) continue;
+    if (notes.has(key) && typeof value === "string" && value.length <= 4000) continue;
+    if (key === "hasDietaries" && value === true) continue;
+    throw Object.assign(new Error("Amend dietary counts and notes here. Existing allergy declarations and acknowledgements need their own review."), { status: 422, code: "HOSPITALITY_ADMIN_DIETARY_REVIEW" });
+  }
+  if ([...counts].some(key => typeof next[key] === "number" && Number(next[key]) > guests)) {
+    throw Object.assign(new Error("Dietary guest counts cannot exceed the amended guest count."), { status: 422, code: "HOSPITALITY_ADMIN_DIETARY_COUNT" });
+  }
+}
+
+async function prepareBookingAmendment(transaction: Transaction, actor: Actor, canonicalId: string, current: CanonicalBooking, next: CanonicalBooking, command: Extract<WorkflowCommand, { action: "amend" }>, now: string, projectionChanges: ProductionProjectionChange[], grouped = false, admin?: HospitalityAdminAuthority) {
+  if (current.lifecycleStatus === "Cancelled") throw conflict("Cancelled bookings cannot be reopened through an amendment.");
   const patch = command.patch;
   const items = patch.order.items
     .filter((item) => item.quantity > 0)
@@ -1273,12 +1316,39 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
     vatTotal: 0,
     grossTotal: items.reduce((total, item) => total + item.lineTotal, 0),
   };
-  const verifiedCategories = await assertRcoaBookingServiceVisibility(transaction, next, [], current);
+  let override;
+  if (admin) {
+    if ((patch.deliveryChargeRequired ?? current.deliveryChargeRequired ?? true) !== (current.deliveryChargeRequired ?? true)) throw conflict("Change production or delivery responsibility through its existing review action.");
+    const previousStart = futureService(current.service, now);
+    futureService(next.service, now);
+    validateStaffDietaries(current, patch.dietaries, next.service.guestCount);
+    const gallagher = isGallagherBooking({ companyName: current.client.clientCompany || current.client.companyName, email: current.client.email });
+    if ((gallagher || isGallagherBooking({ companyName: next.client.clientCompany || next.client.companyName, email: next.client.email })) &&
+        (next.service.guestCount < GALLAGHER_MINIMUM_GUESTS || !next.client.invoiceReference?.trim())) throw conflict("Gallagher bookings require at least five guests and an Invoice / PO reference.");
+    const { order, noticeOverridden } = await prepareHospitalityAdminOrder(transaction, next, admin.oplocId, now, gallagher);
+    next.order = order;
+    override = {
+      ...admin, noticeOverridden: noticeOverridden || previousStart - Date.parse(now) < 72 * 3_600_000,
+      beforePax: current.service.guestCount, afterPax: next.service.guestCount,
+      beforeLines: current.order.items.map(item => ({ id: item.menuItemId || item.itemId, quantity: item.quantity })),
+      afterLines: next.order.items.map(item => ({ id: item.menuItemId || item.itemId, quantity: item.quantity })),
+      downstream: "replacement-quote-and-explicit-resend",
+    };
+  }
+  const verifiedCategories = await assertRcoaBookingServiceVisibility(transaction, admin ? { ...next, service: { ...next.service, oplocId: admin.oplocId } } : next, [], current);
   if (verifiedCategories) next.order.items = next.order.items.map(item => verifiedCategories.has(item.itemId) ? { ...item, category: verifiedCategories.get(item.itemId) } : item);
   const cutoffChanged = current.order.eventType !== next.order.eventType ||
     (["eventDate", "startTime", "endTime", "guestCount", "oplocId", "floorLevel", "roomOrArea", "deliveryPoint"] as const).some(key => (current.service[key] ?? "") !== (next.service[key] ?? "")) ||
     groupHash(current.order.items.map(i => [i.itemId, i.quantity, i.choices])) !== groupHash(items.map(i => [i.itemId, i.quantity, i.choices]));
-  if (cutoffChanged) await assertHospitalityBookingDate(transaction, next, now);
+  if (!admin && cutoffChanged) await assertHospitalityBookingDate(transaction, next, now);
+  if (admin && !grouped) {
+    const platform = hospitalityPlatformOf(next);
+    if (platform && isGovernedRoutingPlatform(platform)) {
+      const routes = await explicitMenuProductionRouting(next.order.items.flatMap(item => routingKeys(item, platform)), transaction);
+      const plan = planHospitalityCpuRouting(next.order.items, platform, routes);
+      if (["routing_required", "routing_conflict"].includes(plan.status)) throw conflict("Resolve production routing for all amended items before saving this booking.");
+    }
+  }
   next.notes = optional(patch.notes);
   next.deliveryChargeRequired = patch.deliveryChargeRequired ?? current.deliveryChargeRequired ?? true;
   next.commercialVersion = (current.commercialVersion || 1) + 1;
@@ -1294,11 +1364,12 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
   // move it to an explicit amended state so the next approved quote gets
   // a replacement Production Order.
   const priorOrderQuery = productionOrderV1s().where("sourceBookingId", "==", canonicalId);
-  const priorOrders = await transaction.get(grouped ? priorOrderQuery.limit(51) : priorOrderQuery);
+  const priorOrders = await transaction.get(grouped || admin ? priorOrderQuery.limit(51) : priorOrderQuery);
   const priorRequirementQuery = db.collection("fikaProductionRequirements").where("sourceBookingId", "==", canonicalId);
-  const priorRequirements = await transaction.get(grouped ? priorRequirementQuery.limit(51) : priorRequirementQuery);
-  if (grouped && (priorOrders.size > 50 || priorRequirements.size > 50)) throw conflict("Booking history exceeds the safe amendment limit; reconciliation is required.");
+  const priorRequirements = await transaction.get(grouped || admin ? priorRequirementQuery.limit(51) : priorRequirementQuery);
+  if ((grouped || admin) && (priorOrders.size > 50 || priorRequirements.size > 50)) throw conflict("Booking history exceeds the safe amendment limit; reconciliation is required.");
   const retiringOrders = priorOrders.docs.filter(prior => !["cancelled", "amended"].includes((prior.data() as ProductionOrderV1).status));
+  if (admin && hospitalityCancellationRequiresCpuReview(retiringOrders.map(prior => (prior.data() as ProductionOrderV1).status))) throw conflict("CPU must review advanced production before this booking can be amended.");
   if (grouped && (retiringOrders.length > 3 || priorRequirements.docs.filter(d => d.data().status !== "cancelled").length > 3)) throw conflict("Multiple active handoffs require reconciliation before amendment.");
   for (const prior of retiringOrders) {
     const order = prior.data() as ProductionOrderV1;
@@ -1307,7 +1378,7 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
   const stageChanges = await prepareHospitalityProductionChanges(transaction, projectionChanges, actor.uid, canonicalId, now, command.reason);
   next.dietaries = command.patch.dietaries ? structuredClone(command.patch.dietaries) : current.dietaries;
   next.lifecycleStatus = "Reviewed";
-  return () => {
+  const stage = () => {
     stageChanges();
     for (const prior of retiringOrders) {
       const order = prior.data() as ProductionOrderV1;
@@ -1360,6 +1431,7 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
       );
     }
   };
+  return { stage, override };
 }
 
 export async function executeBookingWorkflow(
@@ -1368,22 +1440,29 @@ export async function executeBookingWorkflow(
   expectedVersion: number,
   command: WorkflowCommand,
   cancellationEvent: CancellationEvent = "internal-reconciliation",
+  authorizeAdmin?: AuthorizeHospitalityAdmin,
 ) {
   const result = await db.runTransaction(async (transaction) => {
     const ref = bookings().doc(canonicalId);
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) throw conflict("Booking was not found.");
     const current = snapshot.data() as CanonicalBooking;
+    const admin = command.action === "amend" && authorizeAdmin ? await authorizeAdmin(current, transaction) : undefined;
     // Retrying a cancellation after the Hub committed it is a safe no-op.
     if (command.action === "cancel" && current.lifecycleStatus === "Cancelled") {
       return { booking: current, notificationKind: undefined, projectionChanges: [], idempotent: true as const };
     }
+    if (admin && current.version !== expectedVersion) throw Object.assign(new Error("Booking changed elsewhere. Refresh before amending."), { status: 409 });
     assertBookingExpectedVersion(current.version, expectedVersion, command.action);
     if (current.bookingGroup?.id && ["amend", "cancel"].includes(command.action)) throw conflict("Amend this booking from its grouped booking action.");
     if (current.bookingGroup?.id && command.action === "quote") throw conflict("Generate the consolidated quote from the booking group.");
     if (command.action === "quote-pdf-status" && current.quoteState?.revisions.find(q => q.id === command.revisionId)?.groupQuoteId) throw conflict("Group quote artifacts are owned by the group quote workflow.");
     assertWorkflowCommand(current, command);
     const now = new Date().toISOString();
+    if (admin && command.action === "amend" && unchangedAmendment(current, command.patch)) {
+      if (current.lifecycleStatus === "Cancelled") throw conflict("Cancelled bookings cannot be reopened through an amendment.");
+      return { booking: current, notificationKind: undefined, projectionChanges: [], amendmentNoop: true as const };
+    }
     const nextVersion = current.version + 1;
     const next: CanonicalBooking = {
       ...current,
@@ -1395,6 +1474,7 @@ export async function executeBookingWorkflow(
       dashboardWorkflow: current.dashboardWorkflow || {},
     };
     const projectionChanges: ProductionProjectionChange[] = [];
+    let override: Awaited<ReturnType<typeof prepareBookingAmendment>>["override"];
     if (command.action === "review") {
       next.lifecycleStatus = "Reviewed";
       next.dashboardWorkflow = {
@@ -1415,7 +1495,9 @@ export async function executeBookingWorkflow(
       };
     }
     if (command.action === "amend") {
-      const stage = await prepareBookingAmendment(transaction, actor, canonicalId, current, next, command, now, projectionChanges);
+      const prepared = await prepareBookingAmendment(transaction, actor, canonicalId, current, next, command, now, projectionChanges, false, admin);
+      override = prepared.override;
+      const { stage } = prepared;
       stage();
     }
     if (command.action === "set-additional-charges") {
@@ -1580,7 +1662,7 @@ export async function executeBookingWorkflow(
         action: `workflow-${command.action}`,
         at: now,
         actorId: actor.uid,
-        command,
+        ...(override ? { reason, version: next.version, hospitalityAdmin: override } : { command }),
         ...(command.action === "cancel" ? { cancellationEvent } : {}),
       },
     );
@@ -1600,6 +1682,7 @@ export async function executeBookingWorkflow(
     }
     return { booking: next, notificationKind, projectionChanges, idempotent: false as const };
   });
+  if (result.amendmentNoop) return { booking: result.booking, unchanged: true, projectionPropagation: await propagateProductionChanges([]) };
   if (result.idempotent) {
     try {
     const reconciliation = await reconcileCancelledBookingOrders(canonicalId);
@@ -1926,30 +2009,35 @@ export async function getHospitalityBookingGroup(id: string) {
   return validateBookingGroup(id, snapshot.docs.map(d => d.data() as CanonicalBooking));
 }
 
-export async function amendHospitalityBookingGroup(actor: Actor, input: GroupAmendmentCommand, authorize: (children: CanonicalBooking[]) => Promise<void>) {
+export async function amendHospitalityBookingGroup(actor: Actor, input: GroupAmendmentCommand, authorize: (children: CanonicalBooking[]) => Promise<void>, authorizeAdmin?: AuthorizeHospitalityAdmin) {
   const command = groupAmendmentCommand.parse(input);
+  if (command.hospitalityAdmin && !authorizeAdmin) throw Object.assign(new Error("Hospitality Admin authorization is required."), { status: 403 });
   const result = await db.runTransaction(async transaction => {
     const snapshot = await transaction.get(bookings().where("bookingGroup.id", "==", command.bookingGroupId).limit(MAX_GROUP_SERVICES + 1));
     const children = validateBookingGroup(command.bookingGroupId, snapshot.docs.map(d => d.data() as CanonicalBooking));
     await authorize(children);
+    const adminBySite = new Map<string | undefined, HospitalityAdminAuthority>();
+    if (authorizeAdmin) for (const child of children) {
+      const site = child.service.oplocId;
+      if (!adminBySite.has(site)) adminBySite.set(site, await authorizeAdmin(child, transaction));
+    }
     if (children.some(child => child.lifecycleStatus === "Cancelled")) throw conflict("Cancelled services cannot be reopened through a grouped amendment.");
     if (groupCommercialState(command.bookingGroupId, children).sourceHash !== command.expectedSourceHash) throw Object.assign(new Error("Booking changed elsewhere. Refresh before amending."), { status: 409 });
     if (command.services.length !== children.length || new Set(command.services.map(s => s.bookingId)).size !== children.length || command.services.some(s => !children.some(b => b.canonicalId === s.bookingId))) throw conflict("The amendment must include exactly the current booking services.");
     const now = new Date().toISOString();
-    const prepared: Array<{ next: CanonicalBooking; stage: () => void; changes: ProductionProjectionChange[] }> = [];
+    const prepared: Array<{ next: CanonicalBooking; stage: () => void; changes: ProductionProjectionChange[]; override: Awaited<ReturnType<typeof prepareBookingAmendment>>["override"] }> = [];
     const nextChildren: CanonicalBooking[] = [];
     for (const child of children) {
       const service = command.services.find(s => s.bookingId === child.canonicalId)!;
       if (child.version !== service.expectedVersion) throw Object.assign(new Error("A service changed elsewhere. Refresh before amending."), { status: 409 });
       const patch = service.patch;
-      const comparable = (b: CanonicalBooking) => groupHash({ client: b.client, service: Object.fromEntries(Object.keys(patch.service).map(key => [key, b.service[key as keyof typeof b.service] ?? ""])), order: { ...(b.order.eventType ? { eventType: b.order.eventType } : {}), items: b.order.items.map(item => Object.fromEntries(["itemId", "itemName", "category", "description", "servingInfo", "unitPrice", "quantity", "choices", "comments"].filter(key => item[key as keyof typeof item] !== undefined).map(key => [key, item[key as keyof typeof item]]))) }, notes: b.notes || "", dietaries: b.dietaries, deliveryChargeRequired: b.deliveryChargeRequired !== false });
-      const proposed = { ...child, client: patch.client, service: { ...child.service, ...patch.service }, order: { ...child.order, ...patch.order }, notes: patch.notes || "", dietaries: patch.dietaries || child.dietaries, deliveryChargeRequired: patch.deliveryChargeRequired ?? child.deliveryChargeRequired };
-      if (comparable(child) === comparable(proposed as CanonicalBooking)) { nextChildren.push(child); continue; }
+      const admin = adminBySite.get(child.service.oplocId);
+      if (unchangedAmendment(child, patch)) { nextChildren.push(child); continue; }
       const action = { action: "amend" as const, reason: command.reason, patch };
       assertWorkflowCommand(child, action);
       const next: CanonicalBooking = structuredClone({ ...child, quoteState: child.quoteState || { revisions: [] }, version: child.version + 1, updatedAt: now, updatedBy: actor.uid });
       const changes: ProductionProjectionChange[] = [];
-      const stage = await prepareBookingAmendment(transaction, actor, child.canonicalId, child, next, action, now, changes, true);
+      const { stage, override } = await prepareBookingAmendment(transaction, actor, child.canonicalId, child, next, action, now, changes, true, admin);
       const platform = hospitalityPlatformOf(next);
       if (platform && isGovernedRoutingPlatform(platform)) {
         const routes = await explicitMenuProductionRouting(next.order.items.flatMap(item => routingKeys(item, platform)), transaction);
@@ -1958,13 +2046,13 @@ export async function amendHospitalityBookingGroup(actor: Actor, input: GroupAme
       }
       next.statusHistory = [...child.statusHistory, { status: next.lifecycleStatus, changedAt: now, changedBy: actor.uid, reason: command.reason }];
       next.audit = [...child.audit, { action: "workflow-amend", at: now, by: actor.uid, reason: command.reason }];
-      prepared.push({ next, stage, changes }); nextChildren.push(next);
+      prepared.push({ next, stage, changes, override }); nextChildren.push(next);
     }
     validateBookingGroup(command.bookingGroupId, nextChildren);
     // All authorization, membership, routing and downstream reads complete before the first write.
-    for (const { next, stage } of prepared) {
+    for (const { next, stage, override } of prepared) {
       stage(); transaction.set(bookings().doc(next.canonicalId), next);
-      transaction.create(bookingAudit().doc(`${next.canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${next.version}`), { canonicalId: next.canonicalId, bookingGroupId: command.bookingGroupId, action: "workflow-amend", actorId: actor.uid, at: now, reason: command.reason, version: next.version });
+      transaction.create(bookingAudit().doc(`${next.canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${next.version}`), { canonicalId: next.canonicalId, bookingGroupId: command.bookingGroupId, action: "workflow-amend", actorId: actor.uid, at: now, reason: command.reason, version: next.version, ...(override ? { hospitalityAdmin: override } : {}) });
     }
     if (prepared.length) {
       const changed = prepared.map(item => item.next);
