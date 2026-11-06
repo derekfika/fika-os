@@ -28,6 +28,7 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
   const editButton = useRef<HTMLButtonElement>(null);
   const closeEditor = () => { setEditing(false); requestAnimationFrame(() => editButton.current?.focus()); };
   const [editing, setEditing] = useState(false);
+  const [pendingAmendmentGroup, setPendingAmendmentGroup] = useState<string>();
   const [chargeTarget, setChargeTarget] = useState<ChargeTarget>();
   const [chargeLoading, setChargeLoading] = useState<string>();
   const [chargeError, setChargeError] = useState("");
@@ -132,7 +133,8 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
       {!anyCancelled && <button ref={cancelButton} type="button" className={styles.danger} disabled={busy || editing || cancelOpen || Boolean(chargeTarget)} onClick={() => { setCancelError(""); setCancelOpen(true); }}>Cancel booking</button>}
       {ready && group.quote?.driveUrl ? <a href={group.quote.driveUrl} target="_blank" rel="noopener noreferrer">Open group quote</a> : <button type="button" className="primary" disabled={busy || editing || cancelOpen || Boolean(chargeTarget) || !eligible} aria-busy={busy} onClick={onQuote}>{busy ? "Preparing group quote…" : group.quote?.status === "failed" || group.quote?.status === "artifact_pending" ? "Retry group quote" : group.quote ? "Generate updated group quote" : "Generate group quote"}</button>}
     </div>
-    {editing && <GroupAmendmentEditor key={group.id} group={group} site={site} oplocId={oplocId} onBusyChange={onBusyChange} onCancel={closeEditor} onSaved={async () => { await onAmended(); closeEditor(); }} />}
+    {editing && <GroupAmendmentEditor key={group.id} group={group} site={site} oplocId={oplocId} onBusyChange={onBusyChange} onCancel={closeEditor} onSaved={async pending => { setPendingAmendmentGroup(pending ? group.id : undefined); await onAmended(); closeEditor(); }} />}
+    {pendingAmendmentGroup === group.id && <p role="status">A CPU or Logistics update was still pending when this amendment was saved.</p>}
     {cancelError && !cancelOpen && !anyCancelled && <p role="alert" className={styles.error}>{cancelError} The booking may already be cancelled. Refresh before retrying.</p>}
     {anyCancelled && <>
       <CancellationStatusPanel view={cancellation} retry={cancelOutcome} busy={cancelBusy} error={cancelError} onRetry={() => void runCancel("Retry cancellation downstream recovery", true)} />

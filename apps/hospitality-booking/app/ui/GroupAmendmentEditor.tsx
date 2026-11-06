@@ -10,7 +10,7 @@ import { loadHospitalityPortalMenu } from "../../lib/hospitality-portal-catalogu
 import { HospitalityAdminAddItem, HospitalityAdminAmendmentReview, hospitalityAdminMenu, staffDietaryField, type AmendmentCatalogue } from "./HospitalityAdminAmendmentReview";
 import styles from "./HospitalityGroupDetail.module.css";
 
-export function GroupAmendmentEditor({ group, site, oplocId, onCancel, onSaved, onBusyChange }: { group: HospitalityBookingGroup; site: string; oplocId: string; onCancel(): void; onSaved(): Promise<void>; onBusyChange(busy: boolean): void }) {
+export function GroupAmendmentEditor({ group, site, oplocId, onCancel, onSaved, onBusyChange }: { group: HospitalityBookingGroup; site: string; oplocId: string; onCancel(): void; onSaved(projectionPending: boolean): Promise<void>; onBusyChange(busy: boolean): void }) {
   const now = useBookingClock();
   const [menuReady, setMenuReady] = useState(false);
   const [source, setSource] = useState<{ group: HospitalityBookingGroup; bookings: CanonicalBooking[] }>();
@@ -63,7 +63,7 @@ export function GroupAmendmentEditor({ group, site, oplocId, onCancel, onSaved, 
       const response = await fetch("/api/booking-groups/amend", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookingGroupId: source.group.id, expectedSourceHash: source.group.sourceHash, reason, ...(hospitalityAdmin ? { hospitalityAdmin: true } : {}), services: drafts.map((b, i) => ({ bookingId: b.canonicalId, expectedVersion: source.bookings[i].version, patch: { ...amendmentPatchDto({ ...b, notes: b.notes || "", deliveryChargeRequired: b.deliveryChargeRequired !== false }), service: { ...amendmentPatchDto({ ...b, notes: b.notes || "", deliveryChargeRequired: b.deliveryChargeRequired !== false }).service, endTime: b.service.endTime || "", floorLevel: b.service.floorLevel || "", roomOrArea: b.service.roomOrArea || "", deliveryPoint: b.service.deliveryPoint || "", onsiteContactName: b.service.onsiteContactName || "", onsiteContactPhone: b.service.onsiteContactPhone || "" }, dietaries: b.dietaries } })) }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message || "The booking amendment could not be saved.");
-      await onSaved();
+      await onSaved(hospitalityAdmin && body.projectionPropagation?.status === "pending");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "The amendment could not be confirmed. Refresh before retrying."); }
     finally { lock.current = false; setSaving(false); onBusyChange(false); }
   };
