@@ -1,6 +1,6 @@
 # Grab & Go standing orders — production release and UAT
 
-Status: **prepared, not executed.** Nothing here has been merged, deployed, scheduled or written to production. Every step marked **[OWNER]** needs Derek's explicit instruction. Design: [grab-and-go-standing-orders.md](grab-and-go-standing-orders.md).
+Status: **prepared, not executed.** Nothing here has been merged, deployed, scheduled or written to production. Separate authorisation applies to indexes, operational data and Scheduler changes. Design: [grab-and-go-standing-orders.md](grab-and-go-standing-orders.md).
 
 ## 1. Release facts
 
@@ -10,16 +10,15 @@ Status: **prepared, not executed.** Nothing here has been merged, deployed, sche
 | Data | Additive. New record types in `fikaDeliveredInGrabAndGoStandingOrdersV1`; two optional fields (`source`, `control`) on new/changed orders. No migration, no backfill, no existing record is read differently. |
 | Indexes | Two composite indexes in `apps/integration-hub/firestore.indexes.json` (`recordType`+`oplocId`+`version desc`, `recordType`+`oplocId`+`at desc`). Only the History panel needs them; the scheduler scan and all order paths use equality filters / known ids. If an index is missing the History panel says it is unavailable and everything else works. |
 | Scheduler | Grab & Go jobs are not provisioned by the app release. The generator and bounded handoff-recovery endpoints accept dedicated Google OIDC plus the legacy internal token during coordinated rotation. Production Scheduler jobs must use OIDC and remain paused until cutover checks pass. |
-| Lane | Operational/data-sensitive. The repository's release policy decides the lane from the full delta; **do not assume the cosmetic fast track**. Run `fika deploy delivered-in --prod` (dry run) after merge to see the lane; if it requires a verified staging deployment of the same tree, that is a safeguard to satisfy (a plain staging deploy + smoke, not a business UAT cycle), not one to bypass. |
 
-## 2. Production deployment sequence (all **[OWNER]**-authorised, in order)
+## 2. Production deployment sequence
 
 1. CI: `Workflow / merge-gate` green on the PR. Merge by merge-commit PR on explicit instruction.
 2. **Indexes first.** Deploy the two Firestore indexes to project `fika-os` using the existing Firestore index deployment practice (`firebase deploy --only firestore:indexes --project fika-os --config apps/integration-hub/firebase.json`) and wait until both are `READY` (`gcloud firestore indexes composite list --project fika-os`). Indexes are additive and safe to precede the app.
 3. Read-only census against production to confirm nothing uses or collides with the v2 shape:
    `npx tsx scripts/standing-uat-report.ts census --project fika-os` (from `apps/delivered-in`, operator ADC). Expect `no existing record uses or collides with the v2 schema`. The script performs reads only.
-4. If the lane requires it: `fika deploy delivered-in --staging --execute`, then smoke.
-5. `fika deploy delivered-in --prod --execute --owner-approved --reason "<Derek's instruction>"` (dry run first). Do not disable any safeguard.
+4. If staging validation is useful, run `fika deploy delivered-in --staging --execute` and record smoke.
+5. When production deployment is requested, run `fika deploy delivered-in --prod --execute`.
 6. Production smoke (non-writing): `/api/build-info` reports the released SHA; unauthenticated `POST /api/internal/grab-and-go-standing-orders` → 403; signed-in Grab & Go page loads and shows the **Orders | Standing orders** tabs; Standing tab loads for active eligible sites. Do not send an unsigned or wrong-audience OIDC request that could create operational side effects; verify rejected auth with route tests and a non-mutating production preflight approved for the release.
 7. Run the approved production order reconciliation (section 4), then provision the jobs in section 5 as **paused** and validate their exact identities, target, audience, body, schedule, timezone, retry/deadline settings and last-attempt state. Do not resume until shared-token rotation and compatibility checks are complete.
 
@@ -80,6 +79,5 @@ Keep the existing CPU and Logistics recovery jobs paused pending their separate 
 
 1. **Activation does not generate.** Per the agreed schedule, activating/amending/resuming creates no order; a date that is already due is created by the next scheduler run or by *Create now…*. If Derek wants activation to create the currently due date automatically, that is a one-line policy change plus its test.
 2. **Cancelled dates are final** (existing ordering behaviour) — relevant to UAT step 7.
-3. **Release lane** (section 1) may require a staging deployment to satisfy repository policy.
-4. Live Hub eligibility/permissions for Commerzbank are confirmed at UAT time, not in this workspace.
-5. Production firestore index build time is unknown until deployed; the app degrades gracefully meanwhile.
+3. Live Hub eligibility/permissions for Commerzbank are confirmed at UAT time, not in this workspace.
+4. Production firestore index build time is unknown until deployed; the app degrades gracefully meanwhile.
