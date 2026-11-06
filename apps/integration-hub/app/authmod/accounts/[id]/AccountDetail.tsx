@@ -103,14 +103,12 @@ function RetiredAuthorities({ account, options, mutate }: { account: Account; op
 function HospitalityAdminControl({ account, options, mutate }: { account: Account; options: Options; mutate: (command: Record<string, unknown>) => Promise<void> }) {
   const grants = (account.temporaryAccess || []).filter(grant => grant.capability === (HOSPITALITY_BOOKING_ADMIN + " · Manage") && ["active", "scheduled"].includes(grant.status));
   const companyGrants = grants.filter(grant => grant.scope.kind === "organisation");
-  const effectiveCompanyGrant = companyGrants.some(grant => ["active", "scheduled"].includes(grant.status));
   const legacySiteGrants = grants.filter(grant => grant.scope.kind === "oploc");
   const activePerson = account.identity.identityKind === "person" && account.identity.status === "active";
-  const includedWithSuperuser = activePerson && account.fullAccess;
   return <div className={styles.authority}>
     <div className={styles.authorityInfo}>
       <strong>Hospitality Admin</strong>
-      {includedWithSuperuser ? <small>Included with Superuser across all FIKA Hospitality sites, including after the normal notice deadline. This is computed access; no separate grant is stored.</small> : <small>Amend existing Hospitality bookings across all FIKA sites, including after the normal notice deadline.</small>}
+      <small>This separate company-wide grant allows late amendments to existing Hospitality bookings at all active FIKA Hospitality sites.</small>
       {companyGrants.map(grant => <div className={styles.authorityGrant} key={grant.id}>
         <small>Company-wide</small>
         <Chip value={grant.status === "active" ? "Granted" : "Scheduled"} tone={grant.status === "active" ? "green" : "grey"} />
@@ -121,7 +119,7 @@ function HospitalityAdminControl({ account, options, mutate }: { account: Accoun
         <Chip value={grant.status === "active" ? "Legacy grant" : grant.status} tone="grey" />
         <button type="button" className={styles.secondary} onClick={() => void mutate({ action: "authority-revoke", grantId: grant.id })}>Revoke</button>
       </div>)}
-      {!includedWithSuperuser && <button type="button" className={styles.secondary} disabled={!activePerson || effectiveCompanyGrant} onClick={() => void mutate({ action: "authority-grant", appId: "hospitality-booking", resource: HOSPITALITY_BOOKING_ADMIN, authorityAction: "Manage", scope: { kind: "organisation", ids: [] } })}>{effectiveCompanyGrant ? "Company-wide grant active" : companyGrants.length ? "Renew company-wide Hospitality Admin" : "Grant company-wide Hospitality Admin"}</button>}
+      {!companyGrants.length && <button type="button" className={styles.secondary} disabled={!activePerson} onClick={() => void mutate({ action: "authority-grant", appId: "hospitality-booking", resource: HOSPITALITY_BOOKING_ADMIN, authorityAction: "Manage", scope: { kind: "organisation", ids: [] } })}>Grant company-wide Hospitality Admin</button>}
       {!activePerson && <small>Requires an active person account.</small>}
     </div>
   </div>;
