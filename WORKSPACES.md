@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-06T10:07:51.841Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-06T10:08:51.175Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -395,7 +395,7 @@ Snapshot: 2026-11-06T10:07:51.841Z. The local governed registry remains authorit
 | uat-report-2026-10-31-pass3 | claude-uat-qa | docs/agent-handbacks | codex/uat-report-2026-10-31-pass3 | [#205](https://github.com/derekfika/fika-os/pull/205) | retired | 2026-10-31T12:11:58.505Z |
 | uat-report-2026-10-31-queue | claude-uat-report | docs/agent-handbacks | codex/uat-report-2026-10-31-queue | [#204](https://github.com/derekfika/fika-os/pull/204) | retired | 2026-10-31T12:01:08.652Z |
 | workflow-proof | codex-workflow-modernisation | apps/hospitality-booking/docs | codex/workflow-proof | — | retired | 2026-10-22T17:27:37.642Z |
-| workspace-management-v2-b1-compat | luna-workspace-v2 | tools/workflow/workspace-lock.mjs, tools/workflow/workspace-lock.test.mjs, tools/workflow/runtime.mjs, tools/workflow/workspace-state.mjs, tools/workflow/workspaces.mjs, tools/workflow/reconcile-workspace.test.mjs, tools/workflow/workspace-admin.test.mjs, tools/workflow/workspace-lease-recovery.test.mjs, .github/workflows/validate.yml | codex/workspace-management-v2-b1-compat | [#421](https://github.com/derekfika/fika-os/pull/421) | active | 2026-11-06T09:58:04.540Z |
+| workspace-management-v2-b1-compat | luna-workspace-v2 | tools/workflow/workspace-lock.mjs, tools/workflow/workspace-lock.test.mjs, tools/workflow/runtime.mjs, tools/workflow/workspace-state.mjs, tools/workflow/workspaces.mjs, tools/workflow/reconcile-workspace.test.mjs, tools/workflow/workspace-admin.test.mjs, tools/workflow/workspace-lease-recovery.test.mjs, .github/workflows/validate.yml | codex/workspace-management-v2-b1-compat | [#421](https://github.com/derekfika/fika-os/pull/421) | retired | 2026-11-06T10:08:42.335Z |
 | workspace-management-v2-b1 | luna-workspace-v2 | tools/workflow/workspace-lock.mjs, tools/workflow/workspace-lock.test.mjs, tools/workflow/runtime.mjs, tools/workflow/workspace-state.mjs, tools/workflow/workspaces.mjs, tools/workflow/workspace-fencing.mjs, tools/workflow/reconcile-workspace.test.mjs, tools/workflow/workspace-admin.test.mjs, .github/workflows/validate.yml | codex/workspace-management-v2-b1 | [#419](https://github.com/derekfika/fika-os/pull/419) | retired | 2026-11-06T09:52:59.547Z |
 | workspace-reconcile-tooling | uat-workspace-reconcile | tools/workflow | codex/workspace-reconcile-tooling | [#76](https://github.com/derekfika/fika-os/pull/76) | finished | 2026-10-28T06:56:42.242Z |
 | workspace-recovery-compat | claude-workspace-recovery-compat | tools/workflow/workspace-lease-recovery.mjs, tools/workflow/workspace-lease-recovery.test.mjs, tools/workflow/workspaces.mjs, docs/deployment/workspace-management.md | codex/workspace-recovery-compat | [#169](https://github.com/derekfika/fika-os/pull/169) | retired | 2026-10-30T09:48:53.322Z |
