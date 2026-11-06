@@ -107,7 +107,7 @@ for (const scenario of cases)
             output.querySelectorAll<HTMLElement>("[data-collection-start]"),
           ).map((e) => e.dataset.collectionId),
           lines: Array.from(
-            output.querySelectorAll<HTMLElement>("tbody tr"),
+            output.querySelectorAll<HTMLElement>("tbody tr[data-line-id]"),
           ).map((e) => e.dataset.lineId),
           overflow,
           overlaps,
@@ -203,7 +203,7 @@ test("Chromium A4 PDF: canonical 29-slot categories are boxed and ordered", asyn
       const sections = Array.from(output.querySelectorAll<HTMLElement>(".menu-section-row th"));
       return {
         rows: output.querySelectorAll("tr[data-line-id]").length,
-        slots: Array.from(output.querySelectorAll<HTMLElement>(".slot-label")).map((node) => node.textContent?.trim()),
+        slots: Array.from(output.querySelectorAll<HTMLElement>(".category")).map((node) => node.textContent?.trim()),
         sections: sections.map((node) => {
           const style = getComputedStyle(node);
           return {
