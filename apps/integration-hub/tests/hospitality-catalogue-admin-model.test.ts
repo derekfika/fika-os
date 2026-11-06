@@ -82,7 +82,8 @@ test("price migration analysis: equal site values propose a default; differing v
 test("the portal read contract inherits the company default price and minimum, honours overrides, and keeps quote-only and archived items out", () => {
   const cake = item("hospitality-menu-item:cake", "Cake", { defaultMinimumQuantity: 8 });
   const records = [cake, offering("o:a", cake.canonicalId, "oploc:a"), offering("o:b", cake.canonicalId, "oploc:b", { minimumQuantity: 12 }), offering("o:q", cake.canonicalId, "oploc:a", { operationalAreaId: "operational-area:x", offeringMode: "quote_only" }), price("p:d", { itemId: cake.canonicalId }, 3), price("p:b", { offeringId: "o:b" }, 3.75)];
-  const at = (oplocId: string, operationalAreaId?: string) => hospitalityPortalReadFromRecords(records, { oplocId, operationalAreaId, serviceDate: TODAY }).offerings as Array<Record<string, any>>;
+  type PortalOffering = { price: { amount: number }; constraints: { minimumQuantity: number }; offeringMode?: string; quoteRequired?: boolean };
+  const at = (oplocId: string, operationalAreaId?: string) => hospitalityPortalReadFromRecords(records, { oplocId, operationalAreaId, serviceDate: TODAY }).offerings as PortalOffering[];
   const a = at("oploc:a")[0]; assert.equal(a.price.amount, 3); assert.equal(a.constraints.minimumQuantity, 8);
   const b = at("oploc:b")[0]; assert.equal(b.price.amount, 3.75); assert.equal(b.constraints.minimumQuantity, 12);
   const q = at("oploc:a", "operational-area:x").find(offer => offer.offeringMode === "quote_only")!; assert.equal(q.quoteRequired, true); assert.equal("price" in q, false);
@@ -178,7 +179,7 @@ test("UI contract: no browser Firestore, native dialogs or raw IDs in the ordina
   assert.match(ui, /ConfirmationModal/); assert.match(ui, /\/api\/hospitality-catalogue/);
   const ordinary = ui.slice(0, ui.indexOf('<details className="hc-section hc-advanced">'));
   assert.doesNotMatch(ordinary.slice(ordinary.indexOf("function ItemPanel")), />\s*\{(row|offering|member)\.(itemId|oplocId|offeringId)\}\s*</, "raw IDs only inside the collapsed advanced section");
-  assert.match(ui, /canManage && <button type="button" className="hc-btn hc-btn--primary" onClick=\{\(\) => setAdding\(true\)\}/, "Add item only for managers");
+  assert.match(ui, /canManage && <div className="hc-header__actions"><button type="button" className="hc-btn" onClick=\{\(\) => setManagingCategories\(true\)\}>Manage categories<\/button><button type="button" className="hc-btn" onClick=\{\(\) => setAdding\("bulk"\)\}>Paste multiple items<\/button><button type="button" className="hc-btn hc-btn--primary" onClick=\{\(\) => setAdding\("single"\)\}/, "category management, single and bulk creation only for managers");
   assert.match(ui, /canManage && !inactive && <button type="submit"/); assert.match(ui, /disabled=\{!canManage \|\| inactive\}/);
   assert.match(ui, /INHERITS/); assert.match(ui, /OVERRIDES/); assert.match(ui, /Reset to company default/); assert.match(ui, /ROUTING REQUIRED/);
   for (const label of ["No CPU / In house", "CPU · Hospitality", "CPU · Sandwiches", "CPU · Delivered-In"]) assert.match(readFileSync(`${process.cwd()}/lib/hospitality-catalogue-types.ts`, "utf8"), new RegExp(label));

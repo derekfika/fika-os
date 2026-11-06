@@ -8,7 +8,7 @@ import test from "node:test";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
 import type { Actor } from "../lib/auth";
-import { runBulkCatalogueUpdate, runCatalogueCommand, type BulkSpec } from "../lib/hospitality-catalogue-admin";
+import { catalogueCreateItemId, runBulkCatalogueCreate, runBulkCatalogueUpdate, runCatalogueCommand, type BulkCreateSpec, type BulkSpec } from "../lib/hospitality-catalogue-admin";
 import { loadCataloguePayload, loadCatalogueRows } from "../lib/hospitality-catalogue-loader";
 import type { CatalogueRow } from "../lib/hospitality-catalogue-types";
 import { SERVICE_IDS } from "@fika/server-shared/hospitality-service-layout";
@@ -212,4 +212,68 @@ test("category bulk update holds when target visibility is unmapped in the store
   const result = await runBulkCatalogueUpdate(admin, w.spec({ category: "Unmapped category" }, [x]));
   assert.equal(result.results[0].status, "failed"); assert.match(result.results[0].message, /no visible service mapping/);
   assert.equal((await get(x))?.record.category, before?.record.category, "visibility hold leaves canonical item untouched");
+});
+
+test("bulk create uses canonical transactions, explicit site scope, an immutable price and replay-safe row IDs", { skip: !enabled }, async () => {
+  const w = await world();
+  const requestId = `bulk-${unique()}`;
+  const itemId = catalogueCreateItemId(requestId);
+  const spec: BulkCreateSpec = {
+    operationId: `bulk-create-${unique()}`,
+    items: [{ action: "create-item", requestId, name: `Imported drink ${unique()}`, category: "Wine, Beer & Non-Alc", routing: "in_house", defaultPrice: { amount: 2.5, vatRate: 0.2 }, oplocIds: [w.oplocs[0]], restrictToSelectedOplocs: true }],
+  };
+  const first = await runBulkCatalogueCreate(admin, spec);
+  assert.equal(first.failed, 0); assert.equal(first.results[0].status, "applied"); assert.equal(first.results[0].itemId, itemId);
+  const created = await get(itemId); assert.equal(created?.record.category, "Wine, Beer & Non-Alc"); assert.deepEqual(created?.record.allowedOplocIds, [w.oplocs[0]]);
+  const prices = await canonical().where("record.hospitalityMenuItemId", "==", itemId).get();
+  const price = prices.docs.map(doc => doc.data() as CanonicalRecord).find(record => record.entityType === "Hospitality Menu Price");
+  assert.equal(price?.record.amount, 2.5); assert.equal(price?.record.vatRate, 0.2);
+  assert.equal((await db.collection("integrationHubHospitalityMenuProductionRouting").doc(stableDocumentId(itemId)).get()).exists, true);
+  const retry = await runBulkCatalogueCreate(admin, spec);
+  assert.equal(retry.failed, 0); assert.equal(retry.results[0].status, "already_applied");
+  const duplicateRows = await canonical().where("record.name", "==", spec.items[0].name).get(); assert.equal(duplicateRows.size, 1);
+  const summary = (await audit().doc(`bulk-create-${spec.operationId}`).get()).data()!;
+  assert.equal(summary.actorId, admin.uid); assert.equal(summary.details.succeeded, 1); assert.deepEqual(summary.details.itemIds, [itemId]);
+});
+
+test("category rename updates current and archived Items plus all stored service rules atomically, with replay and stale guards", { skip: !enabled }, async () => {
+  const w = await world(); const [active, archived, untouched] = w.items;
+  for (const itemId of [active, archived]) {
+    const original = await get(itemId);
+    await runCatalogueCommand(admin, { action: "update-item", itemId, expectedVersion: Number(original?.record.version), name: String(original?.record.name), category: "Wine", defaultMinimumQuantity: Number(original?.record.defaultMinimumQuantity) });
+  }
+  const archivedRecord = await get(archived);
+  await runCatalogueCommand(admin, { action: "set-item-status", itemId: archived, expectedVersion: Number(archivedRecord?.record.version), status: "archived" });
+  const company = db.collection("integrationHubHospitalityServiceLayout").doc("company");
+  const site = db.collection("integrationHubHospitalityServiceLayout").doc(w.oplocs[0]);
+  await company.set({ schema: 1, scope: "company", version: 3, services: Object.fromEntries(SERVICE_IDS.map(id => [id, { categories: id === "breakfast" ? ["Food", "Wine"] : ["Food"] }])), createdAt: stamp, createdBy: admin.uid, updatedAt: stamp, updatedBy: admin.uid });
+  await site.set({ schema: 1, scope: "site", oplocId: w.oplocs[0], version: 5, services: Object.fromEntries(SERVICE_IDS.map(id => [id, { categories: id === "lunch" ? ["Wine"] : [] }])), createdAt: stamp, createdBy: admin.uid, updatedAt: stamp, updatedBy: admin.uid });
+  const beforeActive = await get(active); const beforeArchived = await get(archived);
+  const itemVersions = { [active]: Number(beforeActive?.record.version), [archived]: Number(beforeArchived?.record.version) };
+  const layoutVersions = { company: 3, [`site:${w.oplocs[0]}`]: 5 };
+  const renamedCategory = `Wine, Beer & Non-Alc ${w.key}`;
+  const command = { action: "rename-category" as const, operationId: `rename-${unique()}`, category: "Wine", newCategory: renamedCategory, expectedItemVersions: itemVersions, expectedLayoutVersions: layoutVersions, reason: "RCoA drink category launch" };
+  try {
+    const result = await runCatalogueCommand(admin, command);
+    assert.deepEqual(result.itemIds.sort(), [active, archived].sort());
+    assert.equal((await get(active))?.record.category, renamedCategory);
+    assert.equal((await get(archived))?.record.category, renamedCategory, "archived records remain readable and migrate by canonical ID");
+    assert.equal((await get(untouched))?.record.category, "Food");
+    const nextCompany = (await company.get()).data()!; const nextSite = (await site.get()).data()!;
+    assert.equal(nextCompany.version, 4); assert.deepEqual(nextCompany.services.breakfast.categories, ["Food", renamedCategory]);
+    assert.equal(nextSite.version, 6); assert.deepEqual(nextSite.services.lunch.categories, [renamedCategory]);
+    assert.deepEqual(nextSite.services.breakfast.categories, [], "unrelated site service rules stay unchanged");
+    const receipt = (await db.collection("integrationHubHospitalityCategoryRenameReceipts").doc(command.operationId).get()).data()!;
+    assert.deepEqual(receipt.itemIds.sort(), [active, archived].sort());
+    assert.equal((await runCatalogueCommand(admin, command)).message, result.message, "same operation replay returns the original receipt");
+    await assert.rejects(runCatalogueCommand(admin, { ...command, newCategory: "Different category" }), /already used for different changes/);
+
+    const stale = { ...command, operationId: `rename-${unique()}`, category: renamedCategory, newCategory: `Stale target ${unique()}`, expectedItemVersions: { ...itemVersions, [active]: itemVersions[active] - 1 }, expectedLayoutVersions: { company: 4, [`site:${w.oplocs[0]}`]: 6 } };
+    await assert.rejects(runCatalogueCommand(admin, stale), /changed elsewhere/);
+    const duplicateTarget = { ...command, operationId: `rename-${unique()}`, newCategory: "Food", expectedItemVersions: { [active]: Number((await get(active))?.record.version), [archived]: Number((await get(archived))?.record.version) }, expectedLayoutVersions: { company: 4, [`site:${w.oplocs[0]}`]: 6 } };
+    await assert.rejects(runCatalogueCommand(admin, duplicateTarget), /already exists/);
+    await assert.rejects(runCatalogueCommand(viewer, { ...command, operationId: `rename-${unique()}` }), (error: Error & { status?: number }) => error.status === 403);
+  } finally {
+    await company.delete(); await site.delete();
+  }
 });
