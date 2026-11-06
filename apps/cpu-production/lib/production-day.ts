@@ -5,8 +5,9 @@ import { menuPlacementKey, publishedPlacementLabel } from "./menu-run-sheet-orde
 import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel, isAdHocProductionOrder, isCpuWithdrawn } from "./production-presentation";
 
 export type DeliveredInDishTotal = { key: string; dishName: string; total: number; destinations: Array<{ label: string; quantity: number }> };
-export type DeliveredInDishRow = { key: string; name: string; quantity: number; destinations: Array<{ label: string; quantity: number }>; snapshot?: NonNullable<ProductionLine["approvedAllergenSnapshot"]>; reviewed: boolean; snapshotMismatch?: { sources: string[]; detail: string } };
-export type AllergenReviewRow = DeliveredInDishRow & { sources: string[]; attention: boolean; dietaries: Record<string, unknown>; notes: string[]; menuSlots?: Array<{ id: string; label: string; order: number; isCoreSalad?: boolean }>; menuOrderVersion?: string; slot?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; menuSortOrder?: number };
+type DishPlacement = { menuSlots?: Array<{ id: string; label: string; order: number; isCoreSalad?: boolean }>; menuOrderVersion?: string; slot?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; menuSortOrder?: number };
+export type DeliveredInDishRow = DishPlacement & { key: string; name: string; quantity: number; destinations: Array<{ label: string; quantity: number }>; snapshot?: NonNullable<ProductionLine["approvedAllergenSnapshot"]>; reviewed: boolean; snapshotMismatch?: { sources: string[]; detail: string } };
+export type AllergenReviewRow = DeliveredInDishRow & { sources: string[]; attention: boolean; dietaries: Record<string, unknown>; notes: string[] };
 export type DeliveredInAllergenReview = { publicationDayId: string; serviceDate: string; sourceVersion?: number; sourceContentHash?: string; orders: string[]; destinations: string[]; rows: AllergenReviewRow[] };
 export function allergenReviewKey(order: ProductionOrder, line: ProductionLine) { return order.origin === "menu_planning" ? `${order.origin}:${order.sourcePublicationDayId || order.sourceEntityId || orderDate(order)}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}` : `${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`; }
 
@@ -82,7 +83,7 @@ function menuSlotLabel(line: ProductionLine) {
   return repeats && repeatedIndex ? `${slot.label} ${repeatedIndex}` : slot.label;
 }
 
-function retainMenuOrder(row: AllergenReviewRow, line: ProductionLine) {
+function retainMenuOrder(row: DishPlacement, line: ProductionLine) {
   const id = canonicalMenuSlotIdFor(menuPlacementKey(line));
   const slotIndex = id ? CANONICAL_MENU_SLOTS.find(candidate => candidate.id === id)?.order : undefined;
   const index = line.canonicalOrderIndex ?? slotIndex ?? line.sortOrder;
@@ -105,7 +106,7 @@ function retainMenuOrder(row: AllergenReviewRow, line: ProductionLine) {
   }
 }
 
-function orderedAllergenRows(rows: AllergenReviewRow[]) {
+function orderedMenuRows<T extends DeliveredInDishRow>(rows: T[]) {
   return orderMenuEntries(rows.map((row, index) => ({ row, slot: row.canonicalSlotId || row.slot || "", originalIndex: row.canonicalOrderIndex ?? row.menuSortOrder ?? index, sourceEntryId: row.key }))).map(({ row }) => row);
 }
 
@@ -159,12 +160,17 @@ export function buildDeliveredInDishRows(orders: ProductionOrder[]): DeliveredIn
   for (const order of orders) for (const line of order.lines) {
     const key = line.sourceMenuItemId || line.itemName.trim().toLowerCase();
     const current = rows.get(key) || ({ key, name: line.itemName, quantity: 0, destinations: [], destinationMap: new Map<string, number>(), allergens: {} as Record<string, OperationalAllergenState>, snapshot: undefined, reviewed: true } as DeliveredInDishRow & { destinationMap: Map<string, number>; allergens: Record<string, OperationalAllergenState> });
+    if (order.origin === "menu_planning") retainMenuOrder(current, line);
     const quantity = line.customerQuantity; const label = destination(order);
     current.quantity += quantity; current.destinationMap.set(label, (current.destinationMap.get(label) || 0) + quantity); current.reviewed = current.reviewed && line.allergenEvidenceStatus === "confirmed";
     if (line.approvedAllergenSnapshot) { if (snapshotMismatch(current.snapshot, line.approvedAllergenSnapshot)) { current.snapshotMismatch ||= { sources: [], detail: "Published allergen snapshot mismatch between destination Production Orders." }; current.reviewed = false; } else { current.snapshot ||= line.approvedAllergenSnapshot; for (const [keyName, state] of Object.entries(line.approvedAllergenSnapshot.allergens)) current.allergens[keyName] = mergeAllergenState(current.allergens[keyName], state); } }
     rows.set(key, current);
   }
-  return [...rows.values()].map(row => ({ ...row, destinations: [...row.destinationMap.entries()].map(([label, quantity]) => ({ label, quantity })).sort((a, b) => a.label.localeCompare(b.label)), snapshot: row.snapshot ? { ...row.snapshot, allergens: row.allergens } : undefined })).sort((a, b) => a.name.localeCompare(b.name));
+  return orderedMenuRows([...rows.values()].map(row => ({
+    ...row,
+    destinations: [...row.destinationMap.entries()].map(([label, quantity]) => ({ label, quantity })).sort((a, b) => a.label.localeCompare(b.label)),
+    snapshot: row.snapshot ? { ...row.snapshot, allergens: row.allergens } : undefined,
+  })).sort((a, b) => a.name.localeCompare(b.name)));
 }
 export function buildAllergenReviewRows(orders: ProductionOrder[]): AllergenReviewRow[] {
   const grouped = new Map<string, AllergenReviewRow & { destinationMap: Map<string, number>; allergens: Record<string, OperationalAllergenState> }>();
@@ -187,7 +193,7 @@ export function buildAllergenReviewRows(orders: ProductionOrder[]): AllergenRevi
     }
     grouped.set(key, current);
   }
-  return orderedAllergenRows([...grouped.values()].map(row => ({ ...row, destinations: [...row.destinationMap.entries()].map(([label, quantity]) => ({ label, quantity })).sort((a, b) => a.label.localeCompare(b.label)), snapshot: row.snapshot ? { ...row.snapshot, allergens: row.allergens } : undefined })));
+  return orderedMenuRows([...grouped.values()].map(row => ({ ...row, destinations: [...row.destinationMap.entries()].map(([label, quantity]) => ({ label, quantity })).sort((a, b) => a.label.localeCompare(b.label)), snapshot: row.snapshot ? { ...row.snapshot, allergens: row.allergens } : undefined })));
 }
 export function buildDeliveredInAllergenReview(orders: ProductionOrder[]): DeliveredInAllergenReview | undefined {
   const menuOrders = deliveredInMenuOrdersForServiceDate(orders);
