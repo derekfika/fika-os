@@ -61,7 +61,7 @@ import { stageDomainEvent } from "./domain-event-outbox";
 import { prepareFulfilmentEvent } from "./fulfilment-projection";
 import { cancellationDeliveryStatus, deliverHospitalityCancellation, ensureHospitalityCancellationEvent, hospitalityCancellationEventId, stageHospitalityCancellation } from "./hospitality-cancellation-outbox";
 import { readBookingServiceLayout } from "./hospitality-service-layout";
-import { resolveServiceCategories } from "@fika/server-shared/hospitality-service-layout";
+import { isServiceId, resolveServiceCategories } from "@fika/server-shared/hospitality-service-layout";
 import { hospitalityCatalogues } from "@fika/server-shared/hospitality-catalogue";
 
 export const MNK_BOOKING_INGESTION_CONTRACT_VERSION =
@@ -1326,6 +1326,13 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
     if ((gallagher || isGallagherBooking({ companyName: next.client.clientCompany || next.client.companyName, email: next.client.email })) &&
         (next.service.guestCount < GALLAGHER_MINIMUM_GUESTS || !next.client.invoiceReference?.trim())) throw conflict("Gallagher bookings require at least five guests and an Invoice / PO reference.");
     const { order, noticeOverridden } = await prepareHospitalityAdminOrder(transaction, next, admin.oplocId, now, gallagher);
+    if (isServiceId(order.eventType)) {
+      const layout = await readBookingServiceLayout(transaction, admin.oplocId);
+      const categories = resolveServiceCategories(layout, admin.oplocId, order.eventType);
+      if (!categories || order.items.some(item => !item.category || !categories.includes(item.category))) throw conflict("A selected item or service is not offered at this booking's OPLOC.");
+    } else if (current.order.eventType !== order.eventType || rcoaVisibilityAmendmentLines(current, next).length) {
+      throw conflict("Choose a current Hospitality service before changing menu selections for this booking.");
+    }
     next.order = order;
     override = {
       ...admin, noticeOverridden: noticeOverridden || previousStart - Date.parse(now) < 72 * 3_600_000,
@@ -1335,7 +1342,7 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
       downstream: "replacement-quote-and-explicit-resend",
     };
   }
-  const verifiedCategories = await assertRcoaBookingServiceVisibility(transaction, admin ? { ...next, service: { ...next.service, oplocId: admin.oplocId } } : next, [], current);
+  const verifiedCategories = admin ? undefined : await assertRcoaBookingServiceVisibility(transaction, next, [], current);
   if (verifiedCategories) next.order.items = next.order.items.map(item => verifiedCategories.has(item.itemId) ? { ...item, category: verifiedCategories.get(item.itemId) } : item);
   const cutoffChanged = current.order.eventType !== next.order.eventType ||
     (["eventDate", "startTime", "endTime", "guestCount", "oplocId", "floorLevel", "roomOrArea", "deliveryPoint"] as const).some(key => (current.service[key] ?? "") !== (next.service[key] ?? "")) ||

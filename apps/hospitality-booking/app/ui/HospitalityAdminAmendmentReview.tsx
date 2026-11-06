@@ -2,7 +2,7 @@ import type { CanonicalBooking } from "../../lib/canonical-types";
 import { bookingServiceInstant, bookingDateIssue, type CutoffItem } from "@fika/server-shared/hospitality-effective-offering";
 import type { PortalMenuItem } from "../../lib/mnk-contract";
 import { portalMenuFromCatalogue, type loadHospitalityPortalMenu } from "../../lib/hospitality-portal-catalogue";
-import { filterRcoaMenu } from "../../lib/rcoa-portal";
+import { resolveServiceCategories } from "@fika/server-shared/hospitality-service-layout";
 
 type BookingDetails = Pick<CanonicalBooking, "service" | "order">;
 export type AmendmentCatalogue = Awaited<ReturnType<typeof loadHospitalityPortalMenu>>;
@@ -10,8 +10,10 @@ export const staffDietaryField = (key: string) => ["vegetarian", "vegan", "glute
 
 export function hospitalityAdminMenu(source: AmendmentCatalogue | undefined, booking: BookingDetails, oplocId?: string) {
   if (!source || !oplocId || source.catalogue.source === "cache-unverified") return [];
-  const menu = portalMenuFromCatalogue(source.catalogue.catalogue, oplocId, booking.service.eventDate, false, booking.service.operationalAreaId);
-  return booking.service.portalSiteId === "rcoa" ? filterRcoaMenu(menu, booking.order.eventType || "", "", "", source.visibility) : menu;
+  const catalogue = source.catalogue.catalogue;
+  const categories = catalogue.serviceLayout && resolveServiceCategories(catalogue.serviceLayout, oplocId, booking.order.eventType || "");
+  if (!categories) return [];
+  return portalMenuFromCatalogue(catalogue, oplocId, booking.service.eventDate, false, booking.service.operationalAreaId).filter(item => categories.includes(item.category));
 }
 
 export function HospitalityAdminAddItem({ menu, order, onAdd }: { menu: PortalMenuItem[]; order: BookingDetails["order"]; onAdd(line: BookingDetails["order"]["items"][number]): void }) {

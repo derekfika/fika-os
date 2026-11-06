@@ -117,6 +117,7 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, staffCommand), { code: "PRODUCT_NOTICE" });
   await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, { ...staffCommand, patch: { ...staffPatch, service: { ...staffPatch.service, eventDate: "2020-01-06" } } }, undefined, authorizeAdmin), { code: "HOSPITALITY_ADMIN_SERVICE_TIME" });
   await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, { ...staffCommand, patch: { ...staffPatch, dietaries: { severeAllergyAcknowledged: true } } }, undefined, authorizeAdmin), { code: "HOSPITALITY_ADMIN_DIETARY_REVIEW" });
+  await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, { ...staffCommand, patch: { ...staffPatch, order: { ...staffPatch.order, eventType: "breakfast" } } }, undefined, authorizeAdmin), /not offered at this booking's OPLOC/);
   assert.deepEqual(await snapshot(), beforeStaff);
   const result = await executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, staffCommand, undefined, authorizeAdmin);
   assert.equal(result.booking.service.guestCount, 11);
