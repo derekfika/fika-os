@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireActor } from "@/lib/auth";
 import { requireFikaSession } from "@/lib/fika-session";
 import { FirestoreAuthModRepository } from "@/lib/authmod-core";
-import { assertHospitalityBookingMutationAccess, requireHospitalityBookingAdmin, resolveHospitalityBookingAdmin } from "@/lib/hospitality-booking-authorization";
+import { assertHospitalityBookingMutationAccess, assertHospitalityBookingReadAccess, requireHospitalityBookingAdmin, resolveHospitalityBookingAdmin } from "@/lib/hospitality-booking-authorization";
 import { amendHospitalityBookingGroup, getHospitalityBookingGroup } from "@/lib/hospitality-booking-service";
 import { groupAmendmentCommand } from "@/lib/hospitality-group-amendment";
 import { groupCommercialState } from "@/lib/hospitality-group-commercial";
@@ -31,9 +31,9 @@ export async function GET(request: NextRequest) {
     const children = await getHospitalityBookingGroup(id);
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
     const repository = new FirestoreAuthModRepository();
-    for (const child of new Map(children.map(b => [b.service.oplocId, b])).values()) await assertHospitalityBookingMutationAccess(repository, principal, child, actor.role === "integration-admin" || actor.role === "reviewer");
     const sites = [...new Set(children.map(child => child.service.oplocId))];
+    for (const child of new Map(children.map(b => [b.service.oplocId, b])).values()) await assertHospitalityBookingReadAccess(repository, principal, child, actor.role === "integration-admin" || actor.role === "reviewer");
     const admin = sites.length === 1 ? await resolveHospitalityBookingAdmin(repository, principal, sites[0]).catch(() => undefined) : undefined;
-    return NextResponse.json({ bookings: children, sourceHash: groupCommercialState(id, children).sourceHash, hospitalityAdminOplocId: admin?.oplocId }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ bookings: children, sourceHash: groupCommercialState(id, children).sourceHash, hospitalityAdminAuthority: admin }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return errorResponse(error); }
 }

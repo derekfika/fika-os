@@ -210,7 +210,7 @@ export default function HospitalityDashboard({
       const body = await response.json();
       if (!response.ok)
         throw Error(body.error?.message || "Could not load Bookings.");
-      setAdminOplocId(typeof body.hospitalityAdminOplocId === "string" ? body.hospitalityAdminOplocId : undefined);
+      setAdminOplocId(typeof body.hospitalityAdminAuthority?.oplocId === "string" ? body.hospitalityAdminAuthority.oplocId : undefined);
       setBookings(body.cpuRouting ? body.bookings.map((item: CanonicalBooking) => body.cpuRouting[item.canonicalId] ? { ...item, cpuRouting: body.cpuRouting[item.canonicalId] } : item) : body.bookings);
       setGroups(body.bookingGroups || []);
       setStandaloneIds(new Set((body.dashboardBookings || body.bookings).map((item: CanonicalBooking) => item.canonicalId)));

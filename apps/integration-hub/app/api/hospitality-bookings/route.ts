@@ -4,10 +4,10 @@ import { z } from "zod";
 import { errorResponse } from "@/lib/api";
 import { requireActor } from "@/lib/auth";
 import { FirestoreAuthModRepository } from "@/lib/authmod-core";
-import { createAuthModEvaluationContext, resolveUserAccess } from "@/lib/authmod-core/evaluator";
+import { resolveUserAccess } from "@/lib/authmod-core/evaluator";
 import { requireFikaSession } from "@/lib/fika-session";
 import { assertPermission } from "@/lib/authmod";
-import { assertHospitalityBookingMutationAccess, requireHospitalityBookingAdmin, resolveHospitalityBookingAdmin } from "@/lib/hospitality-booking-authorization";
+import { assertHospitalityBookingMutationAccess, assertHospitalityBookingReadAccess, requireHospitalityBookingAdmin, resolveHospitalityBookingAdmin } from "@/lib/hospitality-booking-authorization";
 import { bookingAdditionalChargesSchema, labourRateSettingsSchema } from "@/lib/hospitality-additional-charges-schema";
 import { bookingWorkspace, createProductionOrder, executeBookingWorkflow, getBookingByCanonicalId, getDashboardQuoteSettingsForBooking, saveDashboardQuoteSettings } from "@/lib/hospitality-booking-service";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
@@ -34,25 +34,23 @@ export async function GET(request: NextRequest) { return withDataTrace({ app: "i
     const session = await requireFikaSession(request);
     const repository = new FirestoreAuthModRepository();
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
-    const decision = await resolveUserAccess(repository, { principal, appId: "hospitality-booking", oplocId: booking.service.oplocId });
-    if (!decision.allowed && actor.role !== "integration-admin" && actor.role !== "reviewer") throw Object.assign(new Error("That Hospitality location is not authorised for your account."), { status: 403 });
+    await assertHospitalityBookingReadAccess(repository, principal, booking, actor.role === "integration-admin" || actor.role === "reviewer");
     return NextResponse.json({ booking, quoteSettings: await getDashboardQuoteSettingsForBooking(booking) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   }
   const site = request.nextUrl.searchParams.get("site") || undefined;
   const oploc = request.nextUrl.searchParams.get("oploc") || undefined;
   const includeArchive = request.nextUrl.searchParams.get("archive") === "true";
-  let hospitalityAdminOplocId: string | undefined;
+  let hospitalityAdminAuthority;
   if (site) {
     if (!oploc) throw Object.assign(new Error("A governed Hospitality OPLOC is required for a scoped dashboard read."), { status: 400 });
     const session = await requireFikaSession(request);
     const repository = new FirestoreAuthModRepository();
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
-    const context = createAuthModEvaluationContext(repository, principal);
-    const decision = await resolveUserAccess(repository, { principal, appId: "hospitality-booking", oplocId: oploc }, context);
-    if (!decision.allowed) throw Object.assign(new Error("That Hospitality location is not authorised for your account."), { status: 403 });
-    hospitalityAdminOplocId = (await resolveHospitalityBookingAdmin(repository, principal, oploc, context).catch(() => undefined))?.oplocId;
+    const decision = await resolveUserAccess(repository, { principal, appId: "hospitality-booking", oplocId: oploc });
+    hospitalityAdminAuthority = await resolveHospitalityBookingAdmin(repository, principal, oploc).catch(() => undefined);
+    if (!decision.allowed && !hospitalityAdminAuthority) throw Object.assign(new Error("That Hospitality location is not authorised for your account."), { status: 403 });
   }
-  return NextResponse.json({ ...await bookingWorkspace(site, oploc, includeArchive), hospitalityAdminOplocId }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  return NextResponse.json({ ...await bookingWorkspace(site, oploc, includeArchive), hospitalityAdminAuthority }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 } catch (error) { return errorResponse(error); } }); }
 export async function POST(request: NextRequest) { return withDataTrace({ app: "integration-hub", action: "integration-hub.hospitality-bookings.mutate", path: "/api/hospitality-bookings", requestId: request.headers.get("x-request-id") || undefined }, async () => { try {
   const actor = await requireActor(request);

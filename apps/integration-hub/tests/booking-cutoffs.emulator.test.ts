@@ -16,8 +16,7 @@ import { executeBookingWorkflow, canonicalBookingId, amendHospitalityBookingGrou
 import { groupCommercialState } from "../lib/hospitality-group-commercial";
 import type { Actor } from "../lib/auth";
 import { FirestoreAuthModRepository } from "../lib/authmod-core/firestore-repository";
-import { grantAuthority, revokeAuthority } from "../lib/authmod-core/authority";
-import { HOSPITALITY_BOOKING_ADMIN, V1_APPLICATIONS } from "../lib/authmod-core/model";
+import { V1_APPLICATIONS } from "../lib/authmod-core/model";
 import { requireHospitalityBookingAdmin } from "../lib/hospitality-booking-authorization";
 import { rebuildOplocReadPackage } from "../lib/oploc-read-package";
 import { addBusinessDate, ukBookingClock, deliveryWeekday, earliestSandwichDelivery } from "@fika/server-shared/hospitality-effective-offering";
@@ -128,10 +127,7 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   const timestamp = new Date().toISOString();
   const active = { status: "active" as const, version: 1, createdAt: timestamp, updatedAt: timestamp };
   await repository.saveApplication(V1_APPLICATIONS.find(app => app.appId === appId)!);
-  await repository.saveIdentity({ ...active, id: principal.id, displayName: principal.displayName, identityKind: "person", identityLinkStatus: "matched", fullAccess: false, provenance: "system" });
-  await repository.saveSiteAssignment({ ...active, id: `site:${tag}`, identityId: principal.id, oplocId: site, source: "system" });
-  await repository.saveAppAssignment({ ...active, id: `app:${tag}`, identityId: principal.id, appId, source: "system" });
-  const grant = await grantAuthority(repository, { actor: principal, subjectType: "interactive", subjectId: principal.id, appId, resource: HOSPITALITY_BOOKING_ADMIN, action: "Manage", scope: { kind: "oploc", ids: [site] }, reason: "Fixture staff authority" });
+  await repository.saveIdentity({ ...active, id: principal.id, displayName: principal.displayName, identityKind: "person", identityLinkStatus: "unmatched", fullAccess: true, provenance: "system" });
   await rebuildOplocReadPackage();
   const authorizeAdmin = (booking: CanonicalBooking, transaction: Transaction) =>
     requireHospitalityBookingAdmin(new FirestoreAuthModRepository("hospitality-admin", undefined, transaction), principal, booking.service.oplocId);
@@ -154,8 +150,10 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   assert.equal(result.booking.order.netTotal, 13);
   const audit = await db.collection("fikaBookingAudit").where("canonicalId", "==", standardCurrent.canonicalId).get();
   const override = audit.docs.find(doc => doc.data().hospitalityAdmin)?.data().hospitalityAdmin;
-  assert.equal(override.grantId, grant.id);
-  assert.equal(override.grantVersion, grant.version);
+  assert.equal(override.source, "superuser");
+  assert.equal(override.grantId, undefined);
+  assert.equal(override.grantVersion, undefined);
+  assert.equal(override.identityVersion, 1);
   assert.equal(override.beforePax, 10);
   assert.equal(override.afterPax, 11);
   assert.equal(override.noticeOverridden, true);
@@ -176,7 +174,7 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   const savedGroup = await amendHospitalityBookingGroup(actor, staffGroup, async () => {}, authorizeAdmin);
   assert.deepEqual(savedGroup.bookings.map(booking => booking.service.guestCount), [11, 11]);
   assert.deepEqual(savedGroup.bookings.map(booking => booking.order.netTotal), [13, 13]);
-  await revokeAuthority(repository, { actor: principal, grantId: grant.id, expectedVersion: grant.version, reason: "Fixture staff revoked" });
+  await repository.saveIdentity({ ...active, id: principal.id, displayName: principal.displayName, identityKind: "person", identityLinkStatus: "unmatched", fullAccess: false, provenance: "system", version: 2 });
   const afterRevocation = await snapshot();
   await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, result.booking.version, staffCommand, undefined, authorizeAdmin), { status: 403 });
   assert.deepEqual(await snapshot(), afterRevocation);

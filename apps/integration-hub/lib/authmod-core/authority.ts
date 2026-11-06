@@ -31,14 +31,13 @@ export async function grantAuthority(repository: AuthModRepository, input: { sub
   }
   if (isOrganisationAuthority(input.resource) && input.scope.kind !== "organisation") throw Object.assign(new Error("This authority is organisation-wide and cannot be OPLOC-scoped."), { status: 422, code: "AUTHMOD_ORGANISATION_SCOPE_REQUIRED" });
   if (input.resource === HOSPITALITY_BOOKING_ADMIN) {
-    const sites = input.scope.ids;
-    if (input.appId !== "hospitality-booking" || input.action !== "Manage" || input.scope.kind !== "oploc" ||
-        !sites.length || new Set(sites).size !== sites.length || !(await Promise.all(sites.map(id => repository.getActiveOploc(id)))).every(Boolean)) {
-      throw Object.assign(new Error("Hospitality Admin requires Manage and explicit active Hospitality OPLOCs."), { status: 422, code: "AUTHMOD_HOSPITALITY_ADMIN_SCOPE" });
+    if (input.appId !== "hospitality-booking" || input.action !== "Manage" || input.scope.kind !== "organisation" || input.scope.ids.length !== 0) {
+      throw Object.assign(new Error("Hospitality Admin is a company-wide Manage authority and does not take OPLOC IDs."), { status: 422, code: "AUTHMOD_HOSPITALITY_ADMIN_SCOPE" });
     }
-    const assigned = new Set((await repository.listSiteAssignments(input.subjectId)).filter(site => isEffective(site)).map(site => site.oplocId));
-    if (!sites.every(id => assigned.has(id))) throw Object.assign(new Error("Assign the Hospitality sites to this account before granting Hospitality Admin."), { status: 422, code: "AUTHMOD_HOSPITALITY_ADMIN_SCOPE" });
-    input = { ...input, scope: { kind: "oploc", ids: [...sites].sort() } };
+    const target = await repository.getIdentity(input.subjectId);
+    if (!target || target.identityKind !== "person" || target.status !== "active") {
+      throw Object.assign(new Error("Company-wide Hospitality Admin requires an active person identity."), { status: 422, code: "AUTHMOD_PERSON_REQUIRED" });
+    }
   }
   const id = idempotentId("authority", input.subjectType, input.subjectId, input.appId, input.resource, input.action, input.scope.kind, ...input.scope.ids);
   const existing = (await repository.listAuthorityGrants(input.subjectId, input.subjectType)).find(value => value.id === id); const timestamp = now();
