@@ -6,6 +6,7 @@ export type AmendmentDraft = {
   order: CanonicalBooking["order"];
   notes: string;
   deliveryChargeRequired: boolean;
+  adminOplocId?: string;
 };
 
 /** Build the strict Integration Hub amendment shape from editable dashboard data. */
@@ -37,6 +38,10 @@ export function amendmentPatchDto(draft: AmendmentDraft) {
       ...(service.deliveryPoint ? { deliveryPoint: service.deliveryPoint } : {}),
       ...(service.onsiteContactName ? { onsiteContactName: service.onsiteContactName } : {}),
       ...(service.onsiteContactPhone ? { onsiteContactPhone: service.onsiteContactPhone } : {}),
+      ...(draft.adminOplocId ? {
+        endTime: service.endTime || "", floorLevel: service.floorLevel || "", roomOrArea: service.roomOrArea || "",
+        deliveryPoint: service.deliveryPoint || "", onsiteContactName: service.onsiteContactName || "", onsiteContactPhone: service.onsiteContactPhone || "",
+      } : {}),
     },
     order: {
       ...(order.eventType ? { eventType: order.eventType } : {}),

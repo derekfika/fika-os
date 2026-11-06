@@ -41,7 +41,7 @@ async function cpuFixture(failEntityId?: string) {
 async function fixture(governedAmendment = false) {
   assert.equal(process.env.FIREBASE_PROJECT_ID, "demo-fika-os");
   assert.match(process.env.FIRESTORE_EMULATOR_HOST || "", /^(127\.0\.0\.1|localhost):\d+$/);
-  const key = randomUUID(), id = `group:${key}`, item = `hospitality-menu-item:canonical:${key}`, other = `${item}:other`, inHouse = `${item}:in-house`;
+  const key = randomUUID(), id = `group:${key}`, item = `hospitality-menu-item:canonical:${key}`, other = `${item}:other`, inHouse = `${item}:in-house`, unresolved = `${item}:unresolved`;
   for (const [menuItemId, workstreams] of [[item, ["hospitality"]], [other, ["sandwiches"]], [inHouse, []]] as Array<[string, string[]]>) await db.collection("integrationHubHospitalityMenuProductionRouting").doc(stableDocumentId(menuItemId)).set({ menuItemId, workstreams });
   const now = new Date().toISOString();
   let date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -51,8 +51,8 @@ async function fixture(governedAmendment = false) {
     date = future.toISOString().slice(0, 10);
     const put = async (id: string, entityType: string, record: Record<string, unknown>) => db.collection("integrationHubCanonical").doc(stableDocumentId(id)).set({ canonicalId: id, entityType, lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active", ...record } });
     await put(`oploc:${key}`, "OPLOC", { approvedName: "Fixture site" });
-    for (const menuId of [item, other, inHouse]) {
-      await put(menuId, "Hospitality Menu Item", { name: "Fixture menu item", category: "Food", defaultMinimumQuantity: 1 });
+    for (const menuId of [item, other, inHouse, unresolved]) {
+      await put(menuId, "Hospitality Menu Item", { name: "Fixture menu item", category: "Lunch", defaultMinimumQuantity: 1 });
       await put(menuId + ":price", "Hospitality Menu Price", { hospitalityMenuItemId: menuId, amount: 2, vatRate: 0, effectiveFrom: "2020-01-01" });
     }
   }
@@ -65,7 +65,7 @@ async function fixture(governedAmendment = false) {
   const read = async () => Promise.all(children.map(async b => (await bookings().doc(b.canonicalId).get()).data() as CanonicalBooking));
   const command = (rows: CanonicalBooking[]): GroupAmendmentCommand => ({ bookingGroupId: id, expectedSourceHash: groupCommercialState(id, rows).sourceHash, reason: "UAT amendment", services: rows.map(b => ({ bookingId: b.canonicalId, expectedVersion: b.version, patch: { client: structuredClone(b.client), service: { eventDate: b.service.eventDate, startTime: b.service.startTime, guestCount: b.service.guestCount, roomOrArea: b.service.roomOrArea }, order: { eventType: b.order.eventType, items: b.order.items.map(({ lineTotal: _, ...line }) => line) }, notes: b.notes, dietaries: structuredClone(b.dietaries), deliveryChargeRequired: true } })) });
   const quote = async (version: number) => generateHospitalityGroupQuote({ bookingGroupId: id, expectedVersion: version, expectedSourceHash: groupCommercialState(id, await read()).sourceHash }, { actorId: actor.uid, authorize: async () => {}, target: async b => ({ oplocId: b.service.oplocId!, folderId: "test-folder" }), store: firestoreGroupQuoteStore, artifact: { reserve: async () => `test-file-${randomUUID()}`, ensure: async q => ({ fileId: q.artifact.fileId!, driveUrl: "https://example.test/fixture.pdf" }) } });
-  return { children, read, command, quote, id, item, other, inHouse };
+  return { children, read, command, quote, id, item, other, inHouse, unresolved };
 }
 test("group service date validation handles invalid dates, London DST gap and end-before-start", () => {
   assert.equal(validLondonServiceTime("2026-03-29", "01:30"), false);
@@ -340,7 +340,7 @@ test("stale versions, unresolved routing, authorization failure, missing members
   const f = await fixture(true), before = await f.read();
   const stale = f.command(before); stale.services[1].expectedVersion = 99; stale.services[0].patch.notes = "must roll back";
   await assert.rejects(amendHospitalityBookingGroup(actor, stale, async () => {}), /changed elsewhere/);
-  const unresolved = f.command(before); unresolved.services[0].patch.notes = "must roll back"; unresolved.services[1].patch.order.items[0].itemId = "hospitality-menu-item:canonical:unresolved";
+  const unresolved = f.command(before); unresolved.services[0].patch.notes = "must roll back"; unresolved.services[1].patch.order.items[0].itemId = f.unresolved;
   await assert.rejects(amendHospitalityBookingGroup(actor, unresolved, async () => {}), /routing|catalogue identity/);
   await assert.rejects(amendHospitalityBookingGroup(actor, f.command(before), async () => { throw Error("not authorized"); }), /not authorized/);
   const missing = f.command(before); missing.services.pop(); await assert.rejects(amendHospitalityBookingGroup(actor, missing, async () => {}), /exactly the current/);

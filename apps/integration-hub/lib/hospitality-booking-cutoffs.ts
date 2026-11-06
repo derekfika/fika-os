@@ -1,5 +1,5 @@
 import type { Transaction } from "firebase-admin/firestore";
-import { assertBookingDate, bookingPolicyFor, type CutoffItem } from "@fika/server-shared/hospitality-effective-offering";
+import { assertBookingDate, bookingPolicyFor, catalogueProductionConversion, validateCatalogueRules, type CutoffItem, type RuleItem, type RuleLine } from "@fika/server-shared/hospitality-effective-offering";
 import { hospitalityCatalogues } from "@fika/server-shared/hospitality-catalogue";
 import { stableDocumentId } from "./canonical-editor";
 import { db } from "./firebase-admin";
@@ -11,7 +11,7 @@ import type { CanonicalBooking } from "./hospitality-booking-service";
 const canonical = () => db.collection("integrationHubCanonical");
 
 /** Read current bounded catalogue relations inside the mutation transaction, never trust saved/client notice fields. */
-export async function assertHospitalityBookingDate(transaction: Transaction, booking: CanonicalBooking, now: string, knownItems?: CanonicalRecord[]) {
+async function resolveBookingItems(transaction: Transaction, booking: CanonicalBooking, knownItems?: CanonicalRecord[], operationalAreaId?: string) {
   const site = booking.service.portalSiteId || "mnk";
   const local = hospitalityCatalogues[site as keyof typeof hospitalityCatalogues]?.items || [];
   const mergeCache = new Map<string, Promise<string>>();
@@ -55,16 +55,74 @@ export async function assertHospitalityBookingDate(transaction: Transaction, boo
   const offerings = related.filter(r => r.entityType === "Hospitality Menu Offering" && r.record.oplocId === booking.service.oplocId);
   const prices = await read("record.hospitalityMenuOfferingId", offerings.map(r => r.canonicalId));
   const oplocs = booking.service.oplocId ? await read("canonicalId", [booking.service.oplocId]) : [];
-  const effective = booking.service.oplocId ? hospitalityPortalReadFromRecords([...records, ...related, ...prices, ...oplocs], { oplocId: booking.service.oplocId, serviceDate: booking.service.eventDate }).offerings : [];
+  const effective = booking.service.oplocId ? hospitalityPortalReadFromRecords([...records, ...related, ...prices, ...oplocs], { oplocId: booking.service.oplocId, serviceDate: booking.service.eventDate, operationalAreaId }).offerings : [];
   const routes = await explicitMenuProductionRouting([...new Set([...ids, ...canonicalIds])], transaction);
-  const items: CutoffItem[] = matched.map(({ line, record }) => {
+  return matched.map(({ line, record }) => {
     const fallback = local.find(i => i.canonicalId === line.itemId || i.source.sourceItemId === line.itemId);
     if (!record && !fallback) throw Object.assign(new Error("This booking item has no verified current catalogue identity."), { status: 422 });
     const offering = effective.find(o => o.itemId === record?.canonicalId);
     if (record && !offering) throw Object.assign(new Error("This item has no available current catalogue Offering at the booking site."), { status: 422 });
     const aliases = [line.itemId, line.menuItemId || "", ...(Array.isArray(record?.record.providerMappings) ? record.record.providerMappings.flatMap(raw => typeof (raw as { sourceItemId?: unknown })?.sourceItemId === "string" ? [(raw as { sourceItemId: string }).sourceItemId] : []) : [])];
     const id = record?.canonicalId || fallback?.canonicalId || line.itemId;
-    return { id, bookingPolicy: bookingPolicyFor(id, (routes[id] || routes[line.itemId] || []).includes("sandwiches") ? "sandwiches" : undefined, aliases), noticeRequiredDays: offering?.constraints.noticeRequiredDays ?? fallback?.orderingConstraints.noticeRequiredDays, configuration: offering?.configuration as CutoffItem["configuration"] };
+    const cutoff: CutoffItem = { id, bookingPolicy: bookingPolicyFor(id, (routes[id] || routes[line.itemId] || []).includes("sandwiches") ? "sandwiches" : undefined, aliases), noticeRequiredDays: offering?.constraints.noticeRequiredDays ?? fallback?.orderingConstraints.noticeRequiredDays, configuration: offering?.configuration as CutoffItem["configuration"] };
+    return { line, offering, cutoff, record };
   });
-  assertBookingDate(items, booking.service.eventDate, now, { site, occasion: booking.order.eventType, startTime: booking.service.startTime });
+}
+
+function assertDate(booking: CanonicalBooking, items: CutoffItem[], now: string) {
+  assertBookingDate(items, booking.service.eventDate, now, { site: booking.service.portalSiteId || "mnk", occasion: booking.order.eventType, startTime: booking.service.startTime });
+}
+
+export async function assertHospitalityBookingDate(transaction: Transaction, booking: CanonicalBooking, now: string, knownItems?: CanonicalRecord[]) {
+  const items = await resolveBookingItems(transaction, booking, knownItems);
+  assertDate(booking, items.map(item => item.cutoff), now);
+}
+
+const money = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+
+/** The staff exception skips notice only. Resolve and price all selected lines from current OPLOC offerings. */
+export async function prepareHospitalityAdminOrder(transaction: Transaction, booking: CanonicalBooking, oplocId: string, now: string, gallagher: boolean) {
+  const scoped = { ...booking, service: { ...booking.service, oplocId } };
+  const items = await resolveBookingItems(transaction, scoped, undefined, booking.service.operationalAreaId);
+  let noticeOverridden = false;
+  try {
+    assertDate(scoped, items.map(item => item.cutoff), now);
+  } catch (error) {
+    if (!["BOOKING_NOTICE", "PRODUCT_NOTICE"].includes((error as { code?: string }).code || "")) throw error;
+    noticeOverridden = true;
+  }
+  const ruleItems: RuleItem[] = [];
+  const ruleLines: RuleLine[] = [];
+  let vatTotal = 0;
+  const lines = items.map(({ line, offering, record, cutoff }) => {
+    if (!record || !offering?.price || offering.price.vatRate < 0 || offering.price.vatRate > 1) throw Object.assign(new Error("Every item needs a priced, current offering at this booking's OPLOC."), { status: 422 });
+    const configuration = offering.configuration as RuleItem["configuration"];
+    const { noticeHours: _notice, ...rules } = configuration?.rules || {};
+    ruleItems.push({ id: offering.itemId, name: offering.name, bookingPolicy: cutoff.bookingPolicy, ...offering.constraints, configuration, rules });
+    const choices = (line.choices || []).map(value => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw Object.assign(new Error("Invalid menu selection."), { status: 422 });
+      const { id, value: selected, values, quantities } = value as NonNullable<RuleLine["choices"]>[number];
+      return { id, ...(selected !== undefined ? { value: selected } : {}), ...(values !== undefined ? { values } : {}), ...(quantities !== undefined ? { quantities } : {}) };
+    });
+    ruleLines.push({ itemId: offering.itemId, quantity: line.quantity, choices });
+    const lineTotal = money(offering.price.amount * line.quantity);
+    if (!Number.isFinite(lineTotal)) throw Object.assign(new Error("The ordered quantity is outside the supported price range."), { status: 422 });
+    vatTotal += money(lineTotal * offering.price.vatRate);
+    return {
+      itemId: offering.itemId, menuItemId: offering.itemId, itemName: offering.name, category: offering.category,
+      ...(offering.description ? { description: offering.description } : {}),
+      ...(typeof offering.configuration?.servingInfo === "string" ? { servingInfo: offering.configuration.servingInfo } : {}),
+      unitPrice: offering.price.amount, quantity: line.quantity, lineTotal,
+      ...(rules.productionConversion ? { productionConversion: rules.productionConversion } : {}),
+      ...(choices.length ? { choices } : {}), ...(line.comments ? { comments: line.comments } : {}),
+    };
+  });
+  try {
+    validateCatalogueRules(ruleItems, ruleLines, { gallagher, siteId: booking.service.portalSiteId, guestCount: booking.service.guestCount, eventDate: booking.service.eventDate, startTime: booking.service.startTime, now });
+    for (const line of lines) catalogueProductionConversion(line.quantity, line.productionConversion);
+  } catch (error) {
+    throw Object.assign(new Error((error as Error).message), { status: 422 });
+  }
+  const netTotal = money(lines.reduce((total, line) => total + line.lineTotal, 0));
+  return { order: { ...booking.order, items: lines, netTotal, vatTotal: money(vatTotal), grossTotal: money(netTotal + vatTotal) }, noticeOverridden };
 }

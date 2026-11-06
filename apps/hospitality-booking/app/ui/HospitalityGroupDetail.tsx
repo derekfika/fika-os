@@ -24,10 +24,11 @@ const serviceAnchor = (group: HospitalityBookingGroup, service: HospitalityGroup
 const serviceLabel = (service: HospitalityGroupService) => `${service.time}${service.endTime ? `–${service.endTime}` : ""} · ${service.serviceType.replaceAll("_", " ")}`;
 type ChargeTarget = { service: HospitalityGroupService; booking: CanonicalBooking; sourceHash: string };
 
-export function HospitalityGroupDetail({ group, busy, onQuote, production, site, oplocId, onAmended, onBusyChange }: { group: HospitalityBookingGroup; busy: boolean; onQuote(): void; production: ReactNode; site: string; oplocId: string; onAmended(): Promise<void>; onBusyChange(busy: boolean): void }) {
+export function HospitalityGroupDetail({ group, busy, onQuote, production, site, oplocId, hospitalityAdmin, onAmended, onBusyChange }: { group: HospitalityBookingGroup; busy: boolean; onQuote(): void; production: ReactNode; site: string; oplocId: string; hospitalityAdmin?: boolean; onAmended(): Promise<void>; onBusyChange(busy: boolean): void }) {
   const editButton = useRef<HTMLButtonElement>(null);
   const closeEditor = () => { setEditing(false); requestAnimationFrame(() => editButton.current?.focus()); };
   const [editing, setEditing] = useState(false);
+  const [pendingAmendmentGroup, setPendingAmendmentGroup] = useState<string>();
   const [chargeTarget, setChargeTarget] = useState<ChargeTarget>();
   const [chargeLoading, setChargeLoading] = useState<string>();
   const [chargeError, setChargeError] = useState("");
@@ -128,11 +129,12 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
     </header>
     <GroupLocation services={group.services} />
     <div className={styles.actions}>
-      <button ref={editButton} type="button" disabled={busy || anyCancelled || editing || cancelOpen || Boolean(chargeTarget)} onClick={() => setEditing(true)}>Amend booking</button>
+      <button ref={editButton} type="button" disabled={busy || anyCancelled || editing || cancelOpen || Boolean(chargeTarget)} onClick={() => setEditing(true)}>{hospitalityAdmin ? "Edit booking" : "Amend booking"}</button>
       {!anyCancelled && <button ref={cancelButton} type="button" className={styles.danger} disabled={busy || editing || cancelOpen || Boolean(chargeTarget)} onClick={() => { setCancelError(""); setCancelOpen(true); }}>Cancel booking</button>}
       {ready && group.quote?.driveUrl ? <a href={group.quote.driveUrl} target="_blank" rel="noopener noreferrer">Open group quote</a> : <button type="button" className="primary" disabled={busy || editing || cancelOpen || Boolean(chargeTarget) || !eligible} aria-busy={busy} onClick={onQuote}>{busy ? "Preparing group quote…" : group.quote?.status === "failed" || group.quote?.status === "artifact_pending" ? "Retry group quote" : group.quote ? "Generate updated group quote" : "Generate group quote"}</button>}
     </div>
-    {editing && <GroupAmendmentEditor key={group.id} group={group} site={site} oplocId={oplocId} onBusyChange={onBusyChange} onCancel={closeEditor} onSaved={async () => { await onAmended(); closeEditor(); }} />}
+    {editing && <GroupAmendmentEditor key={group.id} group={group} site={site} oplocId={oplocId} onBusyChange={onBusyChange} onCancel={closeEditor} onSaved={async pending => { setPendingAmendmentGroup(pending ? group.id : undefined); await onAmended(); closeEditor(); }} />}
+    {pendingAmendmentGroup === group.id && <p role="status">A CPU or Logistics update was still pending when this amendment was saved.</p>}
     {cancelError && !cancelOpen && !anyCancelled && <p role="alert" className={styles.error}>{cancelError} The booking may already be cancelled. Refresh before retrying.</p>}
     {anyCancelled && <>
       <CancellationStatusPanel view={cancellation} retry={cancelOutcome} busy={cancelBusy} error={cancelError} onRetry={() => void runCancel("Retry cancellation downstream recovery", true)} />

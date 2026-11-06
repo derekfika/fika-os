@@ -1,10 +1,10 @@
 import type { AuthPrincipal, AuthorityGrant, AuthModAction, DelegationRecord, EffectivePeriod } from "./model";
-import { assertValidEffectivePeriod, idempotentId, isEffective, now } from "./model";
+import { assertValidEffectivePeriod, HOSPITALITY_BOOKING_ADMIN, idempotentId, isEffective, now } from "./model";
 import { auditEvent } from "./audit";
 import type { AuthModRepository } from "./repository";
 import { isLogisticsVehicleId } from "../../../shared/logistics-authority";
 
-export const PERSON_REQUIRED_AUTHORITIES = ["authmod", "authmod.admin", "menu.publish", "logistics.driver"] as const;
+export const PERSON_REQUIRED_AUTHORITIES = ["authmod", "authmod.admin", "menu.publish", "logistics.driver", HOSPITALITY_BOOKING_ADMIN] as const;
 export function isPersonRequiredAuthority(resource: string) { return (PERSON_REQUIRED_AUTHORITIES as readonly string[]).includes(resource); }
 export const ORGANISATION_AUTHORITIES = ["authmod", "menu.publish"] as const;
 export function isOrganisationAuthority(resource: string) { return (ORGANISATION_AUTHORITIES as readonly string[]).includes(resource); }
@@ -30,6 +30,16 @@ export async function grantAuthority(repository: AuthModRepository, input: { sub
     if (!target || target.identityKind !== "person") throw Object.assign(new Error("This authority requires a person identity."), { status: 422, code: "AUTHMOD_PERSON_REQUIRED" });
   }
   if (isOrganisationAuthority(input.resource) && input.scope.kind !== "organisation") throw Object.assign(new Error("This authority is organisation-wide and cannot be OPLOC-scoped."), { status: 422, code: "AUTHMOD_ORGANISATION_SCOPE_REQUIRED" });
+  if (input.resource === HOSPITALITY_BOOKING_ADMIN) {
+    const sites = input.scope.ids;
+    if (input.appId !== "hospitality-booking" || input.action !== "Manage" || input.scope.kind !== "oploc" ||
+        !sites.length || new Set(sites).size !== sites.length || !(await Promise.all(sites.map(id => repository.getActiveOploc(id)))).every(Boolean)) {
+      throw Object.assign(new Error("Hospitality Admin requires Manage and explicit active Hospitality OPLOCs."), { status: 422, code: "AUTHMOD_HOSPITALITY_ADMIN_SCOPE" });
+    }
+    const assigned = new Set((await repository.listSiteAssignments(input.subjectId)).filter(site => isEffective(site)).map(site => site.oplocId));
+    if (!sites.every(id => assigned.has(id))) throw Object.assign(new Error("Assign the Hospitality sites to this account before granting Hospitality Admin."), { status: 422, code: "AUTHMOD_HOSPITALITY_ADMIN_SCOPE" });
+    input = { ...input, scope: { kind: "oploc", ids: [...sites].sort() } };
+  }
   const id = idempotentId("authority", input.subjectType, input.subjectId, input.appId, input.resource, input.action, input.scope.kind, ...input.scope.ids);
   const existing = (await repository.listAuthorityGrants(input.subjectId, input.subjectType)).find(value => value.id === id); const timestamp = now();
   const grant: AuthorityGrant = { id, subjectType: input.subjectType, subjectId: input.subjectId, appId: input.appId, resource: input.resource, action: input.action, scope: input.scope, status: "active", provenance: input.provenance || "explicit-special-authority", effectiveFrom: effectivePeriod?.effectiveFrom, effectiveTo: effectivePeriod?.effectiveTo, reason: input.reason, grantedBy: input.actor.id, version: (existing?.version || 0) + 1, createdAt: existing?.createdAt || timestamp, updatedAt: timestamp };
@@ -42,6 +52,7 @@ function scopeWithin(source: AuthorityGrant["scope"], requested: AuthorityGrant[
 export async function createDelegation(repository: AuthModRepository, input: { delegatorId: string; delegateId: string; sourceGrantId: string; action: AuthModAction; scope: AuthorityGrant["scope"]; effectiveFrom: string; effectiveTo: string; actor: AuthPrincipal; reason: string }) {
   assertValidEffectivePeriod({ effectiveFrom: input.effectiveFrom, effectiveTo: input.effectiveTo }, true); if (!input.reason?.trim()) throw Object.assign(new Error("A reason is required for delegation."), { status: 422, code: "AUTHMOD_REASON_REQUIRED" });
   const source = await repository.getAuthorityGrant(input.sourceGrantId); if (!source || source.id !== input.sourceGrantId || source.subjectId !== input.delegatorId || source.subjectType !== "interactive" || !isEffective(source)) throw Object.assign(new Error("Delegation source authority is not currently effective."), { status: 422, code: "AUTHMOD_DELEGATION_SOURCE_INVALID" });
+  if (source.resource === HOSPITALITY_BOOKING_ADMIN) throw Object.assign(new Error("An AUTHMOD administrator must grant Hospitality Admin directly."), { status: 422, code: "AUTHMOD_DELEGATION_SOURCE_INVALID" });
   if (source.delegationSourceGrantId) throw Object.assign(new Error("Recursive delegation is not supported."), { status: 422, code: "AUTHMOD_DELEGATION_RECURSIVE" });
   if (isOrganisationAuthority(source.resource) && input.scope.kind !== "organisation") throw Object.assign(new Error("This authority is organisation-wide and cannot be OPLOC-scoped."), { status: 422, code: "AUTHMOD_ORGANISATION_SCOPE_REQUIRED" });
   assertAuthorityNotRetired(source.resource);

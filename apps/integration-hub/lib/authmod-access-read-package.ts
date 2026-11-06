@@ -25,8 +25,9 @@ export function validateAuthmodAccessReadPackage(value: AuthmodAccessReadPackage
 const entries = new Map<string, { version: number; value: AuthmodAccessReadPackage }>();
 const inFlight = new Map<string, Promise<AuthmodAccessReadPackage>>();
 
-export async function readAuthmodAccessHead(identityId: string) {
-  const snapshot = await db.collection("authmodAccessHeads").doc(identityId).get();
+export async function readAuthmodAccessHead(identityId: string, transaction?: FirebaseFirestore.Transaction) {
+  const ref = db.collection("authmodAccessHeads").doc(identityId);
+  const snapshot = await (transaction ? transaction.get(ref) : ref.get());
   recordDataAccess({ app: "integration-hub", operation: "authmod.package.head", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
   return snapshot.exists ? Number(snapshot.data()?.version || 0) : 0;
 }
@@ -81,8 +82,17 @@ export async function bootstrapActiveAuthmodAccessPackages() {
   return { attempted: identities.length, published: results.filter(value => value.status === "published").length, failed: results.filter(value => value.status === "failed").length, results };
 }
 
-export async function getAuthmodAccessReadPackage(identityId: string) {
-  const head = await readAuthmodAccessHead(identityId);
+export async function getAuthmodAccessReadPackage(identityId: string, transaction?: FirebaseFirestore.Transaction) {
+  const head = await readAuthmodAccessHead(identityId, transaction);
+  if (transaction) {
+    const cached = entries.get(identityId);
+    if (cached?.version === head && cached.value.securityVersion === head) return cached.value;
+    const result = await retrieveReadPackage<AuthmodAccessReadPackage>(oplocPackageStore(), authmodAccessManifestKey(identityId));
+    if (!result || result.manifest.sourceVersion !== `authmod-security:${head}` || result.value.securityVersion !== head) {
+      throw Object.assign(new Error("AUTHMOD access is unavailable for this transaction. Refresh and try again."), { status: 503, code: "AUTHMOD_ACCESS_PACKAGE_STALE" });
+    }
+    return validateAuthmodAccessReadPackage(result.value);
+  }
   const cached = entries.get(identityId);
   if (cached && cached.version === head) {
     recordDataAccess({ app: "integration-hub", operation: "authmod.package.cache", source: "APP_CACHE", documents: 0, cacheHit: true, cacheResult: "HIT" });
