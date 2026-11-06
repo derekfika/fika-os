@@ -536,6 +536,14 @@ function resolvedExternalDestination(incoming: MenuDestination | undefined, prev
   return { ...snapshot, address: previous.address };
 }
 
+function menuPublicationRevision(publicationId: string, publicationDayId: string) {
+  if (!publicationDayId.startsWith(`${publicationId}:`)) return undefined;
+  const suffix = publicationDayId.slice(publicationId.length);
+  // Current week publications use :vN:day:I; older day publications use :day:I:vN.
+  const match = /^:v([1-9]\d*):day:\d+$/.exec(suffix) || /^:day:[^:]+:v([1-9]\d*)$/.exec(suffix);
+  return match ? Number(match[1]) : undefined;
+}
+
 /** Converts an upstream production-bound record into the one canonical CPU order. */
 export async function materialiseExternalProductionOrder(actor: Actor, input: ExternalProductionMaterialisation) {
   input = parseExternalProductionMaterialisation(input);
@@ -556,7 +564,36 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
     // Menu withdrawal retains the published content version. Cancellation is
     // terminal for that version; only a newer publication may restore work.
     if (previous && input.sourceDomain === "menu-planning" && previous.sourceVersion === input.sourceVersion && previous.status === "cancelled" && status !== "cancelled") return { created: false, duplicate: true, order: previous };
-    if (previous && previous.sourceVersion === input.sourceVersion && previous.sourceContentHash === input.sourceContentHash && previous.status === status) return { created: false, duplicate: true, order: previous };
+    if (previous && previous.sourceVersion === input.sourceVersion && previous.sourceContentHash === input.sourceContentHash && previous.status === status) {
+      // Republishing a week can replace an unchanged day's immutable publication ID
+      // without increasing its content version. Logistics checks this current ID on
+      // the canonical order, so record the newer pointer as an order amendment.
+      const publicationId = input.publicationId;
+      const priorDayId = previous.sourcePublicationDayId;
+      const incomingDayId = input.sourcePublicationDayId;
+      const priorRevision = publicationId && priorDayId ? menuPublicationRevision(publicationId, priorDayId) : undefined;
+      const incomingRevision = publicationId && incomingDayId ? menuPublicationRevision(publicationId, incomingDayId) : undefined;
+      if (input.sourceDomain !== "menu-planning" || status !== "menu_available" || !input.sourceContentHash ||
+          !publicationId || previous.sourcePublicationId !== publicationId || previous.sourceEntityId !== input.sourceEntityId ||
+          previous.serviceDate !== input.serviceDate || !incomingDayId || priorRevision === undefined || incomingRevision === undefined ||
+          incomingRevision <= priorRevision) return { created: false, duplicate: true, order: previous };
+      const now = new Date().toISOString();
+      const order: ProductionOrder = {
+        ...previous, sourcePublicationDayId: incomingDayId, version: previous.version + 1,
+        currentRevision: previous.currentRevision + 1, updatedAt: now,
+        audit: [...previous.audit, { action: "menu-publication-pointer-advanced", at: now, by: actor.uid,
+          previousState: priorDayId, newState: incomingDayId,
+          reason: `Same-content Menu publication revision ${priorRevision} advanced to ${incomingRevision}.` }],
+      };
+      const event = createDomainEvent({ eventType: "production.order.amended", sourceAggregateId: canonicalId,
+        sourceVersion: order.version, occurredAt: now, correlationId: order.idempotencyKey,
+        payload: { canonicalId, version: order.version, status: order.status, productionOrder: order } });
+      const fulfilment = await stageFulfilmentEvent(transaction, event);
+      if (!fulfilment.applied) throw conflict("The current fulfilment requirement could not be updated. Refresh the planning queue.");
+      transaction.set(ref, order);
+      stageDomainEvent(transaction, event);
+      return { created: false, duplicate: false, order };
+    }
     const now = new Date().toISOString();
     const destination = resolvedExternalDestination(input.destination, previous?.destination);
     const order: ProductionOrder = {
