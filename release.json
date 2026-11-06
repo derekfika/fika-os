@@ -7,58 +7,61 @@
   "region": "europe-west4",
   "branch": "release/prod/hospitality",
   "validation": {
-    "id": 128146007290,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/42291251378/job/128146007290",
-    "sha": "dd8e06cf76cc2d0703396c92b810387e2f82dcc4"
+    "id": 128192301130,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/42304923977/job/128192301130",
+    "sha": "aad3f7561719913a61c17a7118ad22a01d292d7b"
   },
   "provenance": {
-    "number": 443,
-    "url": "https://github.com/derekfika/fika-os/pull/443",
-    "head": "517e61fea4c7d4accdc36f04d9775e86b790ac4c"
+    "number": 446,
+    "url": "https://github.com/derekfika/fika-os/pull/446",
+    "head": "1be35c39c8021130d69cffae11e6597bce5259ea"
   },
-  "sourceSha": "dd8e06cf76cc2d0703396c92b810387e2f82dcc4",
-  "scopeHash": "3bf3597181be904c0b87454df9d8bf118f23e1bcda61323953f3af4f79afabc6",
+  "sourceSha": "aad3f7561719913a61c17a7118ad22a01d292d7b",
+  "scopeHash": "5da69f5fce526cf7a8434c94ef77786cfc5624d44e89b17bc5f060763124668a",
   "rollback": false,
   "productionDelta": {
-    "from": "a038272350044690e871ceec7e88032d7816f860",
-    "to": "dd8e06cf76cc2d0703396c92b810387e2f82dcc4",
+    "from": "dd8e06cf76cc2d0703396c92b810387e2f82dcc4",
+    "to": "aad3f7561719913a61c17a7118ad22a01d292d7b",
     "paths": [
-      ".changes/hospitality-booking/2026-11-06-441-kitchen-notes-privacy-copy.md",
+      ".changes/hospitality-booking/2026-11-06-issue-441-safety-guidance.md",
+      ".changes/integration-hub/2026-11-06-issue-306-manager-readonly.md",
+      ".changes/integration-hub/2026-11-06-issue-322-menu-publication-pointer.md",
       "apps/hospitality-booking/app/ui/GroupAmendmentEditor.tsx",
-      "apps/hospitality-booking/app/ui/HospitalityDashboard.tsx"
+      "apps/hospitality-booking/app/ui/HospitalityDashboard.tsx",
+      "apps/hospitality-booking/tests/group-amendment-ui.test.ts",
+      "apps/integration-hub/app/ui/HospitalityCatalogue.tsx",
+      "apps/integration-hub/app/ui/HospitalityCatalogueManager.css",
+      "apps/integration-hub/app/ui/HospitalityCatalogueManager.tsx",
+      "apps/integration-hub/app/ui/hospitality-catalogue-ux/model.ts",
+      "apps/integration-hub/lib/production-domain.ts",
+      "apps/integration-hub/tests/hospitality-catalogue-manager.test.ts",
+      "apps/integration-hub/tests/hospitality-catalogue-ux.test.ts",
+      "apps/integration-hub/tests/production-domain.test.ts"
     ],
-    "hash": "4569370b3e867d545187f887214e1a980369e6e8299f8b8284f1ed32a473623d"
+    "hash": "c100336145fbb0be69e930c69a5140027ee9c0f7277318bb9c8adbfa95eaec87"
   },
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "hospitality",
     "environment": "prod",
-    "sourceSha": "dd8e06cf76cc2d0703396c92b810387e2f82dcc4",
+    "sourceSha": "aad3f7561719913a61c17a7118ad22a01d292d7b",
     "action": "deploy",
-    "instruction": "Execute deploy",
+    "instruction": "PR #446 adds internal allergen review guidance to kitchen-only notes; exact merged CI passed; prior verified Hospitality production build-003 is rollback target.",
     "releaseId": null,
-    "id": "643f336260837eb4a7cb31b3852f396bd7fd6cf92d4d67da86204063446409a7",
+    "id": "468ab2715f15016d21578c50365ec9339141fd8478170a188195368f2810c681",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-06T20:49:58.382Z"
+    "authorisedAt": "2026-11-06T22:30:24.317Z"
   },
-  "rollout": "build-2026-11-06-003",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "a5652362-2031-4bcc-8eb1-0f08f6daa910",
   "previousGood": {
-    "sourceSha": "a038272350044690e871ceec7e88032d7816f860",
-    "rollout": "build-2026-11-06-002",
+    "sourceSha": "dd8e06cf76cc2d0703396c92b810387e2f82dcc4",
+    "rollout": "build-2026-11-06-003",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "7e7edfb51a6e6c56468d490a3605e324f8dca377",
-  "releaseId": "54a1ca2e-9489-46ef-ad97-fb687ea74873",
-  "completedAt": "2026-11-06T20:53:18.192Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-prod-hospitality--fika-os.europe-west4.hosted.app/",
-    "entryRedirect": "/workspace"
-  }
+  "previousGoodRecord": "c201ec390c3b05b47716520a812a6b3386839a74",
+  "createdAt": "2026-11-06T22:30:26.948Z"
 }
