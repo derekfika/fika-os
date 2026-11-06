@@ -1,15 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { NextRequest } from "next/server";
 import { POST as existingPost } from "../app/api/bookings/mnk/existing/route";
 import { POST } from "../app/api/bookings/mnk/route";
+import { POST as dashboardPost } from "../app/api/hospitality-bookings/route";
+import type { Transaction } from "firebase-admin/firestore";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
 import { assertHospitalityBookingDate } from "../lib/hospitality-booking-cutoffs";
 import { executeBookingWorkflow, canonicalBookingId, amendHospitalityBookingGroup, type CanonicalBooking } from "../lib/hospitality-booking-service";
 import { groupCommercialState } from "../lib/hospitality-group-commercial";
 import type { Actor } from "../lib/auth";
+import { FirestoreAuthModRepository } from "../lib/authmod-core/firestore-repository";
+import { grantAuthority, revokeAuthority } from "../lib/authmod-core/authority";
+import { HOSPITALITY_BOOKING_ADMIN, V1_APPLICATIONS } from "../lib/authmod-core/model";
+import { requireHospitalityBookingAdmin } from "../lib/hospitality-booking-authorization";
+import { rebuildOplocReadPackage } from "../lib/oploc-read-package";
 import { addBusinessDate, ukBookingClock, deliveryWeekday, earliestSandwichDelivery } from "@fika/server-shared/hospitality-effective-offering";
 const enabled = process.env.FIKA_CUTOFF_EMULATOR_TEST === "true" && process.env.FIREBASE_PROJECT_ID === "demo-fika-os" && process.env.FIRESTORE_EMULATOR_HOST === "127.0.0.1:8292";
 const actor: Actor = { uid: "test:cutoff", name: "Cutoff test", role: "integration-admin", synthetic: true };
@@ -18,7 +28,7 @@ async function snapshot() {
   for (const collection of await db.listCollections()) for (const doc of (await collection.get()).docs) rows.push([doc.ref.path, doc.data()]);
   return rows.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 }
-test("emulator: real Hub POST rejects prohibited dates before any persistence; current routing, sparse notices, retries and amendments", { skip: !enabled }, async () => {
+test("emulator: real Hub POST rejects prohibited dates before any persistence; current routing, sparse notices, retries and amendments", { skip: !enabled }, async t => {
   const reset = await fetch("http://127.0.0.1:8292/emulator/v1/projects/demo-fika-os/databases/(default)/documents", { method: "DELETE" });
   assert.ok(reset.ok);
   const tag = randomUUID(), site = `oploc:cutoff:${tag}`, sandwich = `hospitality-menu-item:opaque:${tag}`, rolls = `hospitality-menu-item:${tag}:rice_paper_rolls`, standard = `hospitality-menu-item:${tag}:coffee`;
@@ -104,16 +114,35 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   await assert.rejects(amendHospitalityBookingGroup(actor, { bookingGroupId: groupId, expectedSourceHash: groupCommercialState(groupId, grouped).sourceHash, reason: "Test", services: grouped.map(child => ({ bookingId: child.canonicalId, expectedVersion: child.version, patch: { ...standardPatch, client: child.client } })) }, async () => {}), (e: any) => e.status === 422 && e.code === shortNoticeCode);
   assert.deepEqual(await snapshot(), beforeGroup, "group amendment rejects atomically before any child writes");
 
-  const authorizeAdmin = async (booking: CanonicalBooking) => {
-    assert.equal(booking.service.oplocId, site);
-    return { oplocId: site, identityId: "authmod:fixture", grantId: "grant:fixture", grantVersion: 7 };
-  };
+  const packageRoot = await mkdtemp(path.join(tmpdir(), "hospitality-admin-cutoff-"));
+  const previousRoot = process.env.FIKA_SNAPSHOT_DIR;
+  process.env.FIKA_SNAPSHOT_DIR = packageRoot;
+  t.after(async () => {
+    if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot;
+    assert.equal(path.dirname(path.resolve(packageRoot)), path.resolve(tmpdir()));
+    await rm(packageRoot, { recursive: true, force: true });
+  });
+  const principal = { type: "interactive" as const, id: `identity:staff:${tag}`, displayName: "Fixture staff", identityKind: "person" as const };
+  const repository = new FirestoreAuthModRepository();
+  const appId = "hospitality-booking";
+  const timestamp = new Date().toISOString();
+  const active = { status: "active" as const, version: 1, createdAt: timestamp, updatedAt: timestamp };
+  await repository.saveApplication(V1_APPLICATIONS.find(app => app.appId === appId)!);
+  await repository.saveIdentity({ ...active, id: principal.id, displayName: principal.displayName, identityKind: "person", identityLinkStatus: "matched", fullAccess: false, provenance: "system" });
+  await repository.saveSiteAssignment({ ...active, id: `site:${tag}`, identityId: principal.id, oplocId: site, source: "system" });
+  await repository.saveAppAssignment({ ...active, id: `app:${tag}`, identityId: principal.id, appId, source: "system" });
+  const grant = await grantAuthority(repository, { actor: principal, subjectType: "interactive", subjectId: principal.id, appId, resource: HOSPITALITY_BOOKING_ADMIN, action: "Manage", scope: { kind: "oploc", ids: [site] }, reason: "Fixture staff authority" });
+  await rebuildOplocReadPackage();
+  const authorizeAdmin = (booking: CanonicalBooking, transaction: Transaction) =>
+    requireHospitalityBookingAdmin(new FirestoreAuthModRepository("hospitality-admin", undefined, transaction), principal, booking.service.oplocId);
   let near = addBusinessDate(ukBookingClock(new Date().toISOString()).date);
   while ([0, 6].includes(deliveryWeekday(near))) near = addBusinessDate(near);
   const staffPatch = { client: standardCurrent.client, service: { eventDate: near, startTime: "09:00", guestCount: 11 },
     order: { eventType: "lunch", items: [{ itemId: standard, unitPrice: 0, quantity: 11 }, { itemId: sandwich, unitPrice: 0, quantity: 2, itemName: "Untrusted name" }] } };
   const staffCommand = { action: "amend" as const, reason: "Urgent guest increase", patch: staffPatch };
   const beforeStaff = await snapshot();
+  const unauthenticated = await dashboardPost(new NextRequest("http://test/api/hospitality-bookings", { method: "POST", body: JSON.stringify({ ...staffCommand, canonicalId: standardCurrent.canonicalId, expectedVersion: standardCurrent.version, hospitalityAdmin: true }) }));
+  assert.equal(unauthenticated.status, 401);
   await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, staffCommand), { code: "PRODUCT_NOTICE" });
   await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, { ...staffCommand, patch: { ...staffPatch, service: { ...staffPatch.service, eventDate: "2020-01-06" } } }, undefined, authorizeAdmin), { code: "HOSPITALITY_ADMIN_SERVICE_TIME" });
   await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, { ...staffCommand, patch: { ...staffPatch, dietaries: { severeAllergyAcknowledged: true } } }, undefined, authorizeAdmin), { code: "HOSPITALITY_ADMIN_DIETARY_REVIEW" });
@@ -125,7 +154,8 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   assert.equal(result.booking.order.netTotal, 13);
   const audit = await db.collection("fikaBookingAudit").where("canonicalId", "==", standardCurrent.canonicalId).get();
   const override = audit.docs.find(doc => doc.data().hospitalityAdmin)?.data().hospitalityAdmin;
-  assert.equal(override.grantVersion, 7);
+  assert.equal(override.grantId, grant.id);
+  assert.equal(override.grantVersion, grant.version);
   assert.equal(override.beforePax, 10);
   assert.equal(override.afterPax, 11);
   assert.equal(override.noticeOverridden, true);
@@ -146,4 +176,8 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   const savedGroup = await amendHospitalityBookingGroup(actor, staffGroup, async () => {}, authorizeAdmin);
   assert.deepEqual(savedGroup.bookings.map(booking => booking.service.guestCount), [11, 11]);
   assert.deepEqual(savedGroup.bookings.map(booking => booking.order.netTotal), [13, 13]);
+  await revokeAuthority(repository, { actor: principal, grantId: grant.id, expectedVersion: grant.version, reason: "Fixture staff revoked" });
+  const afterRevocation = await snapshot();
+  await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, result.booking.version, staffCommand, undefined, authorizeAdmin), { status: 403 });
+  assert.deepEqual(await snapshot(), afterRevocation);
 });
