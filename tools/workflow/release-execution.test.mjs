@@ -66,7 +66,7 @@ function releaseIO(t, sourceSha) {
       const match = endpoint.match(/\/commits\/([a-f0-9]{40})\/(pulls|check-runs)\?/);
       assert.ok(match, endpoint);
       const [,sha,type] = match;
-      return type === 'pulls' ? (state.provenance ? [{ number:434, merge_commit_sha:sha, merged_at:'2026-11-06', base:{ref:'main',repo:{full_name:REPO}}, head:{sha} }] : []) :
+      return type === 'pulls' ? (state.provenance ? [{ number:434, merge_commit_sha:sha === state.historicalHead ? 'c'.repeat(40) : sha, merged_at:'2026-11-06', base:{ref:'main',repo:{full_name:REPO}}, head:{sha} }] : []) :
         { check_runs:state.conclusion ? [{name:MAIN_CHECK,head_sha:sha,app:{slug:'github-actions'},conclusion:state.conclusion}] : [] };
     },
     async read(resource) {
@@ -113,6 +113,9 @@ test('AUTHMOD and shared/backend merged sources deploy directly to production wi
   const second = await deploy(t.app,t.environment,{execute:true},f.io);
   assert.equal(second.record.sourceSha,shared);
   assert.deepEqual(second.record.productionDelta.paths,['packages/server-shared/src/contract.ts']);
+  // A previous deployment recorded the exact PR head before it was merged.
+  f.state.historicalHead = authmod;
+  await assert.rejects(deploy(t.app,t.environment,{execute:true,sha:authmod},f.io),/result of a merged PR/);
   const restored = await deploy(t.app,t.environment,{execute:true,rollback:true},f.io);
   assert.equal(restored.record.kind,'rollback');
   assert.equal(restored.record.sourceSha,authmod);

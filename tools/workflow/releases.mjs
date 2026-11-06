@@ -278,10 +278,13 @@ export function productionDelta(from, to) {
   return { from, to, paths, hash: digest({ from, to, paths }) };
 }
 
-function mergedSource(sha, github) {
+function mergedSource(sha, github, { historicalRollback = false } = {}) {
   if (!ancestor(sha, 'origin/main')) throw Error('Release source must already be integrated into origin/main');
   const pulls = github(`repos/${REPO}/commits/${sha}/pulls?per_page=100`);
-  const pr = pulls.find(p => p.merge_commit_sha === sha && p.merged_at && p.base?.ref === 'main' && p.base?.repo?.full_name === REPO);
+  // Historical releases sometimes pinned the PR head before integration. A verified rollback can
+  // reuse that exact green head once it is an ancestor of main and its own PR is merged.
+  const pr = pulls.find(p => p.merged_at && p.base?.ref === 'main' && p.base?.repo?.full_name === REPO &&
+    (p.merge_commit_sha === sha || (historicalRollback && p.head?.sha === sha)));
   if (!pr) throw Error('Exact release source must be the result of a merged PR into the protected main branch');
   return { validation: successfulValidation(sha, github), provenance: { number: pr.number, url: pr.html_url, head: pr.head.sha } };
 }
@@ -325,7 +328,7 @@ function planRelease(t, options, pointer, before, access) {
   const rollback = options.rollback || Boolean(options.record);
   const selected = rollback ? rollbackSelection(t, pointer, options, before) : options;
   const sourceSha = exactSha(selected.sha || git('rev-parse', 'origin/main'));
-  const source = mergedSource(sourceSha, access.github);
+  const source = mergedSource(sourceSha, access.github, { historicalRollback:rollback });
   const plan = { ...t, ...source, sourceSha, scopeHash: scopeHash(t.app, sourceSha), rollback };
   if (rollback) {
     const record = exactSha(selected.record);
@@ -481,7 +484,7 @@ export async function deploy(app, environment, options, {
       };
       try {
         if (!pointer.record.retryClaim && (journal.submissionFailure || !journal.submissionStartedAt)) {
-          mergedSource(plan.sourceSha, github);
+          mergedSource(plan.sourceSha, github, { historicalRollback:plan.rollback });
           await resubmitNeverSubmitted({ intent: pointer.record, journal }, { ...io, preflight: () => preflight(t) });
           resubmissionNote = 'Original submission was proven never to have reached Firebase and was resubmitted once for the same intent.';
         }

@@ -64,7 +64,7 @@ Automatic rollouts remain disabled. The CLI verifies target/provenance, submits 
 
 ## Rollback and interrupted releases
 
-Rollback selects a verified earlier release record and checks its exact merged main source and CI. Use `--record` to select another verified record from the same target's history. If history has no eligible rollback target, investigate the missing evidence before proceeding.
+Rollback selects a verified earlier release record and checks its exact integrated source and CI. Historical records that pinned a PR head can roll back to that head once its PR has merged and the exact commit is in main. Use `--record` to select another verified record from the same target's history. If history has no eligible rollback target, investigate the missing evidence before proceeding.
 
 Append-only `release/staging/<app>` and `release/prod/<app>` ledgers retain historical records. A normal deployment can append a baseline automatically when the ledger is missing or differs from verified Firebase serving state. The recorded previous state comes from the selected backend and its exact build, rollout and traffic. If the serving source cannot be identified, the backend is actively reconciling, or another attempt has an unknown outcome, stop for diagnosis. A pending intent is a technical safeguard against competing submissions. Restore its matching journal before continuing.
 
