@@ -50,6 +50,24 @@ test("published days remain locked and a new conflicting slot requires explicit 
   const remote = editWeek(base, "create-entry", { id: `${base.week.id}:entry:remote`, dayId: "day:1", slot: "SOUP", itemId: "dish:other", itemLabel: "Their soup" });
   assert.equal(reconcileWeek(base, local, remote).conflicts[0].field, "create"); assert.equal(local.entries[1].itemLabel, "My soup");
 });
+test("superseded publication evidence and archived structural changes stay locked", () => {
+  const base = fixture();
+  for (const status of ["published", "superseded"] as const) {
+    const locked = structuredClone(base); locked.week.dayStatuses = { "day:1": status };
+    assert.throws(() => editWeek(locked, "update-entry", { entryId: "entry:1", patch: { itemLabel: "Unsafe edit" } }), /locked/);
+    assert.throws(() => editWeek(locked, "create-entry", { id: `${base.week.id}:entry:new-${status}`, dayId: "day:1", slot: "SOUP", itemId: "dish:soup", itemLabel: "Soup" }), /locked/);
+  }
+  const archived = structuredClone(base); archived.week.status = "archived";
+  assert.throws(() => editWeek(archived, "add-menu-slot", { category: "Soup" }), /locked/);
+  assert.throws(() => editWeek(archived, "remove-menu-slot", { slot: "GARNISH 1" }), /locked/);
+});
+test("published working draft editing is explicit and cannot change shared row structure", () => {
+  const base = fixture(); base.week.status = "published"; base.week.dayStatuses = { "day:1": "published" };
+  assert.throws(() => editWeek(base, "update-entry", { entryId: "entry:1", patch: { portions: 15 } }), /locked/);
+  const draft = editWeek(base, "update-entry", { entryId: "entry:1", patch: { portions: 15, allocations: [{ destinationId: "site:1", destinationLabel: "Fixture site", quantity: 15 }] } }, { workingDraft: true });
+  assert.equal(draft.entries[0].portions, 15); assert.equal(base.entries[0].portions, 12); assert.equal(draft.week.status, "published");
+  assert.throws(() => editWeek(base, "create-entry", { dayId: "day:1", slot: "SOUP", itemId: "dish:soup", itemLabel: "Soup" }), /locked/);
+});
 test("clearing a newly placed dish produces no save, and newly created allocations stay in the draft changes", () => {
   const base = fixture(); const created = editWeek(base, "create-entry", { id: `${base.week.id}:entry:soup`, dayId: "day:1", slot: "SOUP", itemId: "dish:soup", itemLabel: "Soup" });
   const allocated = editWeek(created, "batch-update-entries", { updates: [{ entryId: created.entries[1].id, allocations: [{ destinationId: "site:1", destinationLabel: "Fixture site", quantity: 10 }] }] });

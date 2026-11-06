@@ -12,6 +12,7 @@ import type {
   RollingDay,
   RollingEntry,
   RollingSnapshot,
+  RollingWeek,
 } from "./rolling-menu-types";
 import {
   getWeek,
@@ -197,6 +198,16 @@ const stable = (value: unknown): string => {
 };
 export const contentHash = (value: unknown) =>
   createHash("sha256").update(stable(value)).digest("hex");
+/** True only when a server-stamped working draft still targets the current publication lineage. */
+export function hasCurrentPublishedWorkingDraft(week: Pick<RollingWeek, "audit">, publication: Pick<MenuPublication, "days"> | undefined, sourceDayId?: string) {
+  if (!publication) return false;
+  const current = new Map(publication.days.filter(day => day.status === "published").map(day => [day.sourceDayId, day.publicationDayId]));
+  return week.audit.some(event => {
+    if (event.action !== "week-draft-saved") return false;
+    const lineages = (event as typeof event & { workingDraftLineage?: Array<{ dayId: string; publicationDayId: string }> }).workingDraftLineage;
+    return Array.isArray(lineages) && lineages.some(lineage => (!sourceDayId || lineage.dayId === sourceDayId) && current.get(lineage.dayId) === lineage.publicationDayId);
+  });
+}
 const read = async (): Promise<StoredPublications> => {
   const value = await readPublicationState<Partial<StoredPublications>>();
   if (!Array.isArray(value.publications))
@@ -870,9 +881,10 @@ export async function createPublishedMenuDay(
       const current = publication.days.find(
         (value) => value.sourceDayId === day.id && value.status === "published",
       );
-      if (current?.contentHash === preview.contentHash)
+      const hasWorkingDraft = current && hasCurrentPublishedWorkingDraft(snapshot.week, publication, day.id);
+      if (hasWorkingDraft)
         throw conflict(
-          `This menu day is already published at version ${current.version}.`,
+          "This published day has a saved working draft. Use the scoped day-and-site amendment workflow before publishing changes.",
         );
       const version =
         publication.days
@@ -1010,6 +1022,11 @@ export async function createPublishedMenuWeek(
           .filter((day) => day.status === "published")
           .map((day) => [day.sourceDayId, day]),
       );
+      const hasWorkingDraft = hasCurrentPublishedWorkingDraft(snapshot.week, publication);
+      if (hasWorkingDraft)
+        throw conflict(
+          "This week has publication history. Use the scoped day-and-site amendment workflow; whole-week republishing is blocked.",
+        );
       const comparison = compareWorkingWeekToPublication(snapshot, publication, governedOplocs || [], canonicalDishes);
       if (nextVersion > 1 && !comparison.hasUnpublishedChanges)
         throw conflict(
