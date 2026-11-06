@@ -289,7 +289,7 @@ const publishedEntry = (
         destination,
         ...(destination.kind === "governed" ? { destinationId: destination.id } : {}),
         destinationLabel: destination.label,
-        ...(destination.kind === "one-off" ? { destinationAddress: destination.address } : allocation.destinationAddress ? { destinationAddress: allocation.destinationAddress } : {}),
+        ...(destination.kind === "one-off" ? (destination.address ? { destinationAddress: destination.address } : {}) : allocation.destinationAddress ? { destinationAddress: allocation.destinationAddress } : {}),
         quantity: allocation.quantity,
       };
     }),

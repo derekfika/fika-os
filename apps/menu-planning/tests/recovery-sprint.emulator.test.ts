@@ -40,6 +40,7 @@ test("emulator: weekly publication, one-off amendment and signed allergen handof
     const { logisticsJobForRequirement } = await importApp("../../logistics/lib/logistics-materialisation");
     const { createLoad, compatibleLoad } = await importApp("../../logistics/lib/delivery-loads");
     const { combineStop } = await importApp("../../logistics/lib/planning");
+    const { assertRunReady } = await importApp("../../logistics/lib/run-execution");
     const snapshot = menu.emptyWeek("2098-11-03", "isolated-planner");
     const originalWeekId = snapshot.week.id;
     snapshot.week.id += `:recovery:${randomUUID()}`;
@@ -48,10 +49,10 @@ test("emulator: weekly publication, one-off amendment and signed allergen handof
     const governed = [GOVERNED_OPLOCS[0], GOVERNED_OPLOCS[2]];
     const ids = new Set(governed.map(site => site.id));
     snapshot.entries = snapshot.days.slice(0, 5).flatMap((day, dayIndex) => {
-      const oneOff = { id: `${day.id}:one-off:fixture`, label: `Synthetic event ${dayIndex}`, address: `${dayIndex + 10} Test Street`, addressStatus: "confirmed" as const, contact: "Synthetic receiving team", deliveryInstructions: "Use reception" };
+      const oneOff = { id: `${day.id}:one-off:fixture`, label: `Synthetic event ${dayIndex}`, ...(dayIndex ? { address: `${dayIndex + 10} Test Street`, addressStatus: "confirmed" as const } : { addressStatus: "pending" as const }), contact: "Synthetic receiving team", deliveryInstructions: "Use reception" };
       day.oneOffDestinations = [oneOff];
       return ["SOUP", "SALAD 1"].map((slot, index) => {
-        const row = { id: `${day.id}:entry:${index}`, dayId: day.id, date: day.date, slot, itemId: `dish:fixture:${index}`, itemLabel: `Synthetic dish ${index}`, portions: 16, allocations: [...governed.map((site, i) => ({ destinationId: site.id, destinationLabel: site.label, quantity: i + 4 })), { oneOffDestinationId: oneOff.id, destinationLabel: oneOff.label, destinationAddress: oneOff.address, quantity: 7 }], allergens: {}, audit: [] };
+        const row = { id: `${day.id}:entry:${index}`, dayId: day.id, date: day.date, slot, itemId: `dish:fixture:${index}`, itemLabel: `Synthetic dish ${index}`, portions: 16, allocations: [...governed.map((site, i) => ({ destinationId: site.id, destinationLabel: site.label, quantity: i + 4 })), { oneOffDestinationId: oneOff.id, destinationLabel: oneOff.label, ...(oneOff.address ? { destinationAddress: oneOff.address } : {}), quantity: 7 }], allergens: {}, audit: [] };
         applyRollingEntryPatch(row, { explicitAllergenDeclaration: true, confirmAllergenReview: true, allergens: index ? { no_key_allergens: "contains" } : { tree_nuts: "contains", gluten: "contains", sesame: "may_contain" }, allergenDetailNotes: index ? "" : "Almond and wheat", mayContainNotes: index ? "" : "Shared sesame equipment" }, { actor: "isolated-planner", at: "2098-11-03T08:00:00Z" });
         return row;
       });
@@ -92,13 +93,28 @@ test("emulator: weekly publication, one-off amendment and signed allergen handof
       assert.deepEqual(persisted.lines[0].approvedAllergenSnapshot.allergens, payload.lines[0].approvedAllergenSnapshot!.allergens);
       materialised.push({ order: first.order, payload });
     }
-    const oneOff = materialised.find(value => value.payload.destination?.kind === "one-off")!;
+    const oneOff = materialised.find(value => value.payload.destination?.kind === "one-off" && value.payload.destination.addressStatus === "pending")!;
     assert.equal(oneOff.order.destination?.kind, "one-off");
     assert.equal((await db.collection("fikaProductionOrdersV1").where("sourceEntityId", "==", oneOff.payload.sourceEntityId).get()).size, 3);
     const requirements = await db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", oneOff.order.canonicalId).get();
     assert.equal(requirements.size, 1);
-    const requirement = requirements.docs[0].data() as ReturnType<typeof fulfilmentFromProductionOrder>;
-    assert.deepEqual(requirement.destination, oneOff.payload.destination);
+    const pendingRequirement = requirements.docs[0].data() as ReturnType<typeof fulfilmentFromProductionOrder>;
+    assert.deepEqual(pendingRequirement.destination, oneOff.payload.destination);
+    assert.equal(pendingRequirement.status, "pending");
+    const run = { serviceDate: pendingRequirement.serviceDate };
+    const pendingStop = combineStop([], { runId: "synthetic-run", locationOplocId: pendingRequirement.destinationOplocId, locationLabel: pendingRequirement.destinationLabelSnapshot, requirement: pendingRequirement, by: "isolated-dispatcher" });
+    await assert.rejects(assertRunReady({}, run, { native: [{ ...pendingStop, plannedArrivalTime: "11:30", loaded: true }], legs: [] }, [pendingRequirement], true), /Confirm the current one-off delivery address/);
+    await assert.rejects(hub.confirmMenuOneOffProductionAddress(oneOff.order.canonicalId, oneOff.order.version + 1, "10 Test Street", "isolated-dispatcher"), /routing changed/);
+    const confirmed = await hub.confirmMenuOneOffProductionAddress(oneOff.order.canonicalId, oneOff.order.version, "10 Test Street", "isolated-dispatcher");
+    const repeated = await hub.confirmMenuOneOffProductionAddress(oneOff.order.canonicalId, oneOff.order.version, "10 Test Street", "isolated-dispatcher");
+    assert.equal(repeated.version, confirmed.version, "retry does not generate another order version");
+    assert.equal(confirmed.sourceVersion, oneOff.order.sourceVersion, "confirmation preserves the published Menu version");
+    assert.equal(confirmed.audit.at(-1)?.by, "isolated-dispatcher");
+    assert.equal(oneOff.payload.destination.addressStatus, "pending");
+    oneOff.order = confirmed;
+    const requirement = (await requirements.docs[0].ref.get()).data() as ReturnType<typeof fulfilmentFromProductionOrder>;
+    assert.deepEqual(requirement.destination, confirmed.destination);
+    assert.equal(requirement.status, "ready_for_planning");
     assert.equal(requirement.readyAt, undefined, "missing routing time does not invent midnight");
     const job = logisticsJobForRequirement(requirement, undefined, "isolated-dispatcher", "2098-11-03T09:00:00Z");
     const load = createLoad({ serviceDate: job.serviceDate, originOplocId: job.originOplocId!, destinationOplocId: job.destinationOplocId!, destination: job.destination, scheduledTime: "11:30", by: "isolated-dispatcher" });
@@ -106,7 +122,8 @@ test("emulator: weekly publication, one-off amendment and signed allergen handof
     const stop = combineStop([], { runId: "synthetic-run", locationOplocId: job.destinationOplocId!, locationLabel: job.destinationLabelSnapshot!, requirement, by: "isolated-dispatcher" });
     assert.equal(stop.locationOplocId, "");
     assert.equal(stop.oneOffEndpointId, oneOff.payload.destinationOplocId);
-    assert.equal(stop.locationAddressSnapshot, oneOff.payload.destination?.kind === "one-off" ? oneOff.payload.destination.address : "");
+    assert.equal(stop.locationAddressSnapshot, "10 Test Street");
+    await assert.doesNotReject(assertRunReady({}, run, { native: [{ ...stop, plannedArrivalTime: "11:30", loaded: true }], legs: [] }, [requirement], true));
     assert.throws(() => assertAuthorisedOploc({ email: "isolated-site", oplocIds: [governed[0].id], permissions: [] }, oneOff.payload.destinationOplocId), { status: 403 });
     assert.doesNotThrow(() => assertAuthorisedOploc({ email: "isolated-admin", oplocIds: [], permissions: [], canViewOneOffDestinations: true, oneOffDestinationIds: [oneOff.payload.destinationOplocId] }, oneOff.payload.destinationOplocId));
     const menuItems = oneOff.order.lines.map(line => ({ id: `item:${line.canonicalId}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub:${line.canonicalId}`, name: line.itemName, quantity: line.customerQuantity, allergens: approvedAllergenSnapshotSchema.parse(line.approvedAllergenSnapshot).allergens, allergenDetailNotes: line.approvedAllergenSnapshot!.allergenDetailNotes, mayContainNotes: line.approvedAllergenSnapshot!.mayContainNotes, ...(line.approvedAllergenSnapshot?.noKeyDeclaration ? { noKeyDeclaration: { declared: true as const } } : {}), note: "", evidenceStatus: "completed" as const }] }));
@@ -126,12 +143,15 @@ test("emulator: weekly publication, one-off amendment and signed allergen handof
     const destination = oneOff.payload.destination!;
     const projection = await buildDeliveredInDayProjection({ request: {} as never, site: { oplocId: destination.id, label: destination.label, destination }, day, governed: false, loadReview: async () => cpuDailyPacketReview(packet) });
     assert.ok(projection.entries.every(row => row.allergensVisible));
-    assert.equal(projection.entries[0].allergenDetailNotes, "Almond and wheat");
-    assert.equal(projection.entries[0].mayContainNotes, "Shared sesame equipment");
-    assert.equal(projection.entries[1].allergens.no_key_allergens, "contains");
+    const declaredDish = projection.entries.find(row => row.sourceEntryId === `${day.sourceDayId}:entry:0`);
+    const noKeyDish = projection.entries.find(row => row.sourceEntryId === `${day.sourceDayId}:entry:1`);
+    assert.equal(declaredDish?.allergenDetailNotes, "Almond and wheat");
+    assert.equal(declaredDish?.mayContainNotes, "Shared sesame equipment");
+    assert.equal(noKeyDish?.allergens.no_key_allergens, "contains");
     assert.equal(projection.oplocLabel, destination.label);
     const changed = await menu.getWeek(snapshot.week.id);
     changed.days[0].oneOffDestinations![0].address = "99 Amended Test Street";
+    changed.days[0].oneOffDestinations![0].addressStatus = "confirmed";
     changed.entries.find(row => row.dayId === changed.days[0].id)!.allocations[2].quantity += 2;
     changed.week.version += 1;
     await menu.saveSnapshot(changed, changed.week.version - 1);

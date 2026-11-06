@@ -14,6 +14,24 @@ function upstreamUnavailable(message:string, cause?:unknown) { return Object.ass
 async function fetchUpstream(url:string, label:string, cookie?:string):Promise<Response> { let response:Response; try { response = await fetch(url, requestInit(cookie)); } catch (error) { throw upstreamUnavailable(`${label} request failed.`, error); } if (!response.ok) throw upstreamUnavailable(`${label} read failed (${response.status}).`); return response; }
 export async function fetchRequirements(serviceDate?:string, cookie?:string):Promise<FulfilmentRequirement[]> { const response = await fetchUpstream(`${hub}/api/fulfilment-requirements${serviceDate ? `?serviceDate=${encodeURIComponent(serviceDate)}` : ""}`, "Integration Hub fulfilment", cookie); const body = await response.json() as {requirements?:FulfilmentRequirement[]}; return body.requirements || []; }
 export async function fetchAuthoritativeProductionOrder(canonicalId:string, cookie?:string):Promise<AuthoritativeProductionOrder | undefined> { const params = new URLSearchParams({ canonicalId }); const response = await fetchUpstream(`${hub}/api/production?${params.toString()}`, "Integration Hub Production Order", cookie); const body = await response.json() as {order?:AuthoritativeProductionOrder}; return body.order; }
+export async function confirmOneOffAddress(orderId: string, expectedVersion: number, address: string, cookie?: string) {
+  const init = requestInit(cookie);
+  const headers = new Headers(init.headers);
+  headers.set("content-type", "application/json");
+  let response: Response;
+  try {
+    response = await fetch(`${hub}/api/logistics/one-off-address`, {
+      ...init, method: "POST", headers,
+      body: JSON.stringify({ orderId, expectedVersion, address }), signal: AbortSignal.timeout(15000),
+    });
+  } catch (error) {
+    throw upstreamUnavailable("Delivery address confirmation could not be verified. Refresh the planning queue before retrying.", error);
+  }
+  if (response.status === 409) throw Object.assign(new Error("The one-off routing changed. Refresh the planning queue."), { status: 409 });
+  if (response.status === 401 || response.status === 403) throw Object.assign(new Error("Logistics Manage access is required to confirm the address."), { status: response.status });
+  if (!response.ok) throw upstreamUnavailable(`Delivery address confirmation failed (${response.status}).`);
+  return await response.json() as { orderId: string; version: number; projected: boolean };
+}
 async function fetchAuthoritativeMenuPublication(publicationId:string, cookie?:string):Promise<AuthoritativePublication | undefined> {
   const params = new URLSearchParams({ publicationId });
   let response:Response;

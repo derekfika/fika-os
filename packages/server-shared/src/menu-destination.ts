@@ -5,6 +5,7 @@ export type OneOffMenuDestination = {
   sourceDayId: string;
   label: string;
   address: string;
+  addressStatus?: "pending";
   contact?: string;
   deliveryInstructions?: string;
 };
@@ -22,7 +23,9 @@ const fail = (message: string): never => { throw Object.assign(new Error(message
 export function assertOneOffMenuDestination(value: OneOffMenuDestination, sourceDayId: string): OneOffMenuDestination {
   if (value.kind !== "one-off" || value.sourceDayId !== sourceDayId || typeof value.id !== "string" || !value.id.startsWith(`${sourceDayId}:one-off:`) || value.id.length <= `${sourceDayId}:one-off:`.length) fail("The one-off destination identity does not belong to this service day. Select its recorded one-off location again.");
   if (typeof value.label !== "string" || !value.label.trim()) fail("The one-off destination needs a location name.");
-  if (typeof value.address !== "string" || !value.address.trim()) fail(`${value.label}: add and confirm a delivery address before publication.`);
+  if (typeof value.address !== "string" || (value.addressStatus === "pending" ? value.address !== "" : value.addressStatus !== undefined || !value.address.trim())) {
+    fail(`${value.label}: the one-off delivery address and its status are inconsistent.`);
+  }
   if ((value.contact !== undefined && typeof value.contact !== "string") || (value.deliveryInstructions !== undefined && typeof value.deliveryInstructions !== "string")) fail("The one-off destination contains invalid routing information.");
   return value;
 }
@@ -44,19 +47,26 @@ export function menuDestination(allocation: MenuDestinationAllocation, sourceDay
     if (candidates.length !== 1) fail(`${allocation.destinationLabel}: unresolved destination: select the recorded one-off location for this day; its identity is missing or ambiguous.`);
     if (allocation.destinationId) fail("A one-off destination cannot also declare a governed OPLOC.");
     const item = candidates[0];
-    if (item.addressStatus !== "confirmed") fail(`${item.label}: add and confirm a delivery address before publication.`);
-    return assertOneOffMenuDestination({ kind: "one-off", id: item.id, sourceDayId, label: item.label, address: item.address || "", ...(item.contact ? { contact: item.contact } : {}), ...(item.deliveryInstructions ? { deliveryInstructions: item.deliveryInstructions } : {}) }, sourceDayId);
+    if (item.addressStatus !== "confirmed" && item.addressStatus !== "pending") fail(`${item.label}: the one-off delivery address status is unknown.`);
+    return assertOneOffMenuDestination({
+      kind: "one-off", id: item.id, sourceDayId, label: item.label,
+      ...(item.addressStatus === "pending" ? { address: "", addressStatus: "pending" } : { address: item.address || "" }),
+      ...(item.contact ? { contact: item.contact } : {}),
+      ...(item.deliveryInstructions ? { deliveryInstructions: item.deliveryInstructions } : {}),
+    }, sourceDayId);
   }
   if (allocation.destination && (allocation.destination.kind !== "governed" || allocation.destination.id !== allocation.destinationId)) fail("The governed destination snapshot does not match its OPLOC identity.");
   return { kind: "governed", id: allocation.destinationId, label: allocation.destinationLabel };
 }
 
 export const menuDestinationKey = (allocation: MenuDestinationAllocation) => allocation.destination?.id || allocation.oneOffDestinationId || allocation.destinationId;
+export const oneOffAddressPending = (destination: MenuDestination | undefined) =>
+  destination?.kind === "one-off" && (destination.addressStatus === "pending" || typeof destination.address !== "string" || !destination.address.trim());
 
 /** Firestore map key ordering must not turn identical routing evidence into an amendment. */
 export function sameMenuDestination(left: MenuDestination | undefined, right: MenuDestination | undefined) {
   if (!left || !right) return left === right;
   if (left.kind !== right.kind || left.id !== right.id) return false;
-  if (left.kind === "one-off" && right.kind === "one-off") return left.sourceDayId === right.sourceDayId && left.label === right.label && left.address === right.address && (left.contact || "") === (right.contact || "") && (left.deliveryInstructions || "") === (right.deliveryInstructions || "");
+  if (left.kind === "one-off" && right.kind === "one-off") return left.sourceDayId === right.sourceDayId && left.label === right.label && left.address === right.address && left.addressStatus === right.addressStatus && (left.contact || "") === (right.contact || "") && (left.deliveryInstructions || "") === (right.deliveryInstructions || "");
   return true;
 }

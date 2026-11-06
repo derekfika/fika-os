@@ -25,7 +25,9 @@ test("publication supports recorded day-scoped one-offs without weakening govern
   assert.deepEqual(validateWeek(normalized, { governedOplocIds: new Set(["oploc:a", "oploc:b"]) }), []);
   assert.equal(menuDestination(allocation, day.id, day.oneOffDestinations).kind, "one-off");
   assert.throws(() => menuDestination(allocation, week.days[1].id, day.oneOffDestinations), /does not belong/);
-  assert.throws(() => menuDestination(allocation, day.id, [{ ...oneOff, addressStatus: "pending" }]), /confirm a delivery address/);
+  const pending = { kind: "one-off", id: oneOff.id, sourceDayId: day.id, label: oneOff.label, address: "", addressStatus: "pending" };
+  assert.deepEqual(menuDestination(allocation, day.id, [{ ...oneOff, addressStatus: "pending" }]), pending);
+  assert.deepEqual(menuDestination({ destinationLabel: oneOff.label }, day.id, [{ id: oneOff.id, label: oneOff.label, addressStatus: "pending" }]), pending);
   assert.throws(() => menuDestination({ ...allocation, destinationId: "oploc:a" }, day.id, day.oneOffDestinations), /cannot also declare/);
   const legacy = { destinationLabel: oneOff.label, destinationAddress: oneOff.address, quantity: 7 };
   assert.equal(menuDestination(legacy, day.id, day.oneOffDestinations).id, oneOff.id);
@@ -33,7 +35,8 @@ test("publication supports recorded day-scoped one-offs without weakening govern
   const forged = { destination: { kind: "one-off" as const, id: `${day.id}:one-off:unrecorded`, sourceDayId: day.id, label: "Forged", address: "Unconfirmed address" }, destinationLabel: "Forged", quantity: 7 };
   assert.throws(() => menuDestination(forged, day.id, []), /missing or ambiguous/);
   const pendingSnapshot = { ...allocation, destination: { kind: "one-off" as const, id: oneOff.id, sourceDayId: day.id, label: oneOff.label, address: oneOff.address } };
-  assert.throws(() => menuDestination(pendingSnapshot, day.id, [{ ...oneOff, addressStatus: "pending" }]), /confirm a delivery address/);
+  assert.deepEqual(menuDestination(pendingSnapshot, day.id, [{ ...oneOff, addressStatus: "pending" }]), pending);
+  assert.throws(() => menuDestination({ ...pendingSnapshot, destination: { ...pendingSnapshot.destination, address: "" } }, day.id), /address and its status are inconsistent/);
 });
 
 test("explicit No Key toggles independently; positives withdraw it and the last removed positive stays blank", () => {

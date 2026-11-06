@@ -1,4 +1,5 @@
 import type { Transaction } from "firebase-admin/firestore";
+import { oneOffAddressPending } from "@fika/server-shared/menu-destination";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsJob } from "./types";
 import { deliveryLoads, stops, normalizeStop } from "./store";
@@ -54,6 +55,9 @@ export async function assertRunReady(tx: Transaction, run: DeliveryRun, work: Ru
     for (const ref of stop.requirementRefs) {
       const req = requirements.find(item => item.canonicalId === ref.requirementId);
       if (!req || req.status === "withdrawn" || req.sourceVersion !== ref.sourceVersion || req.serviceDate !== run.serviceDate) throw new HttpError(409, "Native fulfilment source requires reconciliation.");
+      if (oneOffAddressPending(req.destination) || (req.destination?.kind === "one-off" && stop.locationAddressSnapshot !== req.destination.address)) {
+        throw new HttpError(422, "Confirm the current one-off delivery address before departure.");
+      }
     }
     const collection = stop.linkedOperation === "collection" || stop.movementType === "collection";
     if (dispatch && !collection && !stop.loaded) throw new HttpError(422, "Every delivery must be loaded before dispatch.");
@@ -66,6 +70,9 @@ export async function assertRunReady(tx: Transaction, run: DeliveryRun, work: Ru
     if (!(leg.lane === "delivery" ? leg.load.scheduledTime : leg.load.collectionScheduledTime) || leg.load.collectionRequired && !leg.load.collectionScheduledTime) throw new HttpError(422, "Required delivery/collection timing is missing.");
     for (const job of leg.jobs) {
       const req = assertJobSource(job, requirements);
+      if (oneOffAddressPending(req.destination) || (req.destination?.kind === "one-off" && (leg.load.destination?.kind !== "one-off" || leg.load.destination.address !== req.destination.address))) {
+        throw new HttpError(422, "Confirm the current one-off delivery address before departure.");
+      }
       if (job.productionReadiness !== "ready" || req.status === "pending") throw new HttpError(422, "Production work is not ready for departure.");
       if (dispatch && leg.lane === "delivery" && !deliveryLoaded(job)) throw new HttpError(422, "Every delivery subload must be loaded before dispatch.");
     }
