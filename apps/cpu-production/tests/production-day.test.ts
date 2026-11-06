@@ -211,3 +211,25 @@ test("conflicting published snapshots block the consolidated review instead of b
   assert.equal(rows[0].snapshotMismatch?.detail, "Published allergen snapshot mismatch between destination Production Orders.");
   assert.equal(rows[0].attention, true);
 });
+
+test("Day and Week allocation inspector orders dishes by published placement and retains Core on its slot", () => {
+  const site = order("FIKA Xchange", 12);
+  const [base] = site.lines;
+  site.lines = [
+    { ...base, canonicalId: "line:dessert", itemName: "Apple tart", sourceMenuItemId: "dish:dessert", slot: "DESSERT 1", sortOrder: 0 },
+    { ...base, canonicalId: "line:leaf", itemName: "Watercress", slot: "SALAD 1", isCoreSalad: true, sortOrder: 1 },
+    { ...base, canonicalId: "line:starch", itemName: "Watercress", slot: "SALAD 3", sortOrder: 2 },
+    { ...base, canonicalId: "line:legacy", itemName: "Barley", sourceMenuItemId: "dish:legacy", sortOrder: 3 },
+  ];
+  const rows = buildDeliveredInDishRows([site]);
+  assert.deepEqual(rows.map(row => row.name), ["Watercress", "Apple tart", "Barley"]);
+  assert.deepEqual(rows[0].menuSlots?.map(slot => [slot.id, slot.label, Boolean(slot.isCoreSalad)]), [
+    ["SALAD 1", "Leaf Salad", true], ["SALAD 3", "Starch", false],
+  ]);
+  assert.equal(rows[0].quantity, 24);
+  assert.equal(rows[2].menuSlots, undefined);
+  const day = aggregateDeliveredIn([site]);
+  assert.deepEqual(day.map(row => row.dishName), rows.map(row => row.name));
+  assert.deepEqual(day[0].menuSlots, rows[0].menuSlots);
+  assert.equal(day[0].total, rows[0].quantity);
+});
