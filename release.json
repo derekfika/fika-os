@@ -7,11 +7,33 @@
   "region": "europe-west4",
   "branch": "release/staging/logistics",
   "sourceSha": "a37f2654ba6004a0014aa0a5b66dc50e67aeabc7",
+  "scopeHash": "e65be626d0226a0f78f559f9472bb347f6e91e2a772577b1b599fc15fc660f09",
+  "inMain": true,
+  "rollback": true,
+  "executing": true,
+  "cosmeticOnly": false,
+  "standard": false,
+  "rollbackRecord": "046409f4ad272047623c96b323d15adb4a4aa2b7",
+  "validation": {
+    "verifiedHistoricalRecord": "046409f4ad272047623c96b323d15adb4a4aa2b7"
+  },
+  "approval": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "app": "logistics",
+    "environment": "staging",
+    "sourceSha": "a37f2654ba6004a0014aa0a5b66dc50e67aeabc7",
+    "action": "rollback",
+    "instruction": "Reverify and restore the existing 100 percent Logistics staging baseline in the ledger after a failed build.",
+    "releaseId": null,
+    "id": "28329e8337790464af34f01f7c22362386e651898485bc39af2402aeab696a32",
+    "explicitExecute": true,
+    "authorisedAt": "2026-11-06T15:06:37.301Z"
+  },
   "rollout": "build-2026-11-04-001",
   "state": "SUCCEEDED",
   "percent": 100,
-  "scopeHash": "e65be626d0226a0f78f559f9472bb347f6e91e2a772577b1b599fc15fc660f09",
-  "kind": "abandoned",
+  "kind": "rollback",
   "previousGood": {
     "sourceSha": "a37f2654ba6004a0014aa0a5b66dc50e67aeabc7",
     "rollout": "build-2026-11-04-001",
@@ -19,33 +41,13 @@
     "percent": 100
   },
   "previousGoodRecord": "046409f4ad272047623c96b323d15adb4a4aa2b7",
-  "releaseId": "6a2fc26e-5538-4410-b64c-06386cc56978",
-  "originalIntent": "8c4d265354f41c36791322e467423cb99898621e",
+  "releaseId": "846430d8-d594-4431-afbd-57f9bc77cfef",
+  "reverifiedServing": true,
+  "completedAt": "2026-11-06T15:06:40.621Z",
   "smoke": {
     "ok": true,
     "status": 307,
     "url": "https://fika-logistics-staging--fika-os-dev.europe-west4.hosted.app/",
     "authGate": "FIKA_SESSION_MISSING"
-  },
-  "recovery": {
-    "resolution": "abandon",
-    "reason": "Logistics staging deploy requested. Firebase confirms terminal failed framework build, with previous verified rollout still serving at 100 percent. Preserve failed attempt and prepare corrected build.",
-    "operator": {
-      "actor": "derekfika",
-      "method": "authenticated-repository-writer",
-      "app": "logistics",
-      "environment": "staging",
-      "sourceSha": "5a5e344162003047effbbfc58271a6c2e365fb21",
-      "action": "reconcile:abandon",
-      "instruction": "Logistics staging deploy requested. Firebase confirms terminal failed framework build, with previous verified rollout still serving at 100 percent. Preserve failed attempt and prepare corrected build.",
-      "releaseId": "6a2fc26e-5538-4410-b64c-06386cc56978",
-      "id": "42e1f227f67e04a99e373f7af0f174bc9c78a04930c57d982b3e2075aac51a61",
-      "explicitExecute": true,
-      "authorisedAt": "2026-11-06T15:05:37.953Z"
-    },
-    "rollout": "build-2026-11-06-001",
-    "evidenceHash": "883171e63646a32569e2c4ec70ea17a7eba703e59bed9ea1ff5b7e0de995d74f",
-    "journalHash": "167537aff3f3216fa2189c9a026b9e4588d93374dfe63101d868a439a82c94a9",
-    "at": "2026-11-06T15:05:42.875Z"
   }
 }
