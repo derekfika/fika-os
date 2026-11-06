@@ -2,10 +2,13 @@ import path from 'node:path';
 import { existsSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { common, root, git, stateDir, jsonFile, save } from './runtime.mjs';
-import { authorityForCurrentWorkspace } from './workspace-state.mjs';
 
 /** Git invokes this from the checkout, including when an old agent uses its older CLI. */
-export function checkGitWorkspaceFence() { authorityForCurrentWorkspace(); }
+export function checkGitWorkspaceFence() {
+  if (path.resolve(root()) === path.resolve(common(), '..')) return;
+  const branch = git('branch', '--show-current');
+  if (!branch || branch === 'main' || branch.startsWith('release/')) throw Error('Use an independent task branch for linked-worktree writes');
+}
 export function installWorkspaceFences({ sourceRoot = path.resolve(common(), '..') } = {}) {
   if (path.resolve(root()) !== path.resolve(common(), '..')) throw Error('Install workspace fencing from the canonical checkout');
   const gateModule = path.join(sourceRoot, 'tools/workflow/workspace-fencing.mjs');

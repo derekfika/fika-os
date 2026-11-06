@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { existsSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { common, root, git, stateDir, lock, save, jsonFile } from './runtime.mjs';
+import { common, root, git, stateDir, lock, operationMarkerLock, save, jsonFile } from './runtime.mjs';
 import { digest, safeScope } from './policy.mjs';
 
 export const leaseIdentity = r => r.leaseId || digest([r.name, r.owner, r.directory, r.branch, r.baseline, r.createdAt]);
@@ -64,6 +64,16 @@ export async function governedOperation(kind, fn, selection) {
     const deadline=Date.now()+60000;
     for(;;)try{operation.end();break;}catch(error){if(!error.message.includes('Another operation holds')||Date.now()>=deadline)throw error;await new Promise(resolve=>setTimeout(resolve,200));}
   }
+}
+
+/** Release evidence is independent of source ownership. Per-target locks and intent CAS stay in releases.mjs. */
+export async function governedReleaseOperation(kind, fn) {
+  const id = randomUUID();
+  const file = path.join(stateDir(), 'workspace-operations', `${id}.json`);
+  const source = { directory: root(), branch: git('branch', '--show-current'), head: git('rev-parse', 'HEAD') };
+  operationMarkerLock(() => save(file, { id, kind, name: null, owner: 'canonical-operator', leaseId: null, source, pid: process.pid, startedAt: new Date().toISOString() }));
+  try { return await fn(); }
+  finally { operationMarkerLock(() => unlinkSync(file)); }
 }
 /** Registry bytes and durable operation files participate in preview concurrency detection. */
 export function registryFingerprint() {

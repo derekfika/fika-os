@@ -35,6 +35,19 @@ export async function asyncLock(name, fn) {
   try { fd = openSync(file, 'wx'); } catch { throw Error(`Another operation holds ${file}; inspect it, never auto-break locks`); }
   try { return await fn(); } finally { closeSync(fd); unlinkSync(file); }
 }
+export const SOURCE_HISTORY_BARRIER = 'fika.source-workspace-history.v1\n';
+export function operationMarkerLock(fn) {
+  const dir = stateDir();
+  const legacy = path.join(dir, 'workspaces.lock');
+  if (!existsSync(legacy) || readFileSync(legacy, 'utf8') !== SOURCE_HISTORY_BARRIER) return lock('workspaces', fn);
+  const { DatabaseSync } = process.getBuiltinModule?.('node:sqlite') || {};
+  if (!DatabaseSync) throw Error('Operation marker writes require Node 22.13 or later after source history migration');
+  const db = new DatabaseSync(path.join(dir, 'operation-markers.sqlite'));
+  try {
+    db.exec('PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE');
+    try { return fn(); } finally { db.exec('ROLLBACK'); }
+  } finally { db.close(); }
+}
 export function inside(parent, child) {
   const r = path.relative(realpathSync(parent), realpathSync(child));
   if (!r || r.startsWith('..') || path.isAbsolute(r)) throw Error('Target must be a strict descendant of the managed workspace root');

@@ -83,12 +83,14 @@ test('sweep retires only unchanged finished workspaces and retains dirty/ignored
     const out=sweepWorkspaces({'approve-hash':p.planHash},deps);assert.deepEqual(out.retired,[one.name]);assert.equal(readFileSync(path.join(two.directory,'.env'),'utf8'),'keep');assert.ok(f.git('show-ref',`refs/heads/${one.branch}`));
   });}finally{f.dispose();}
 });
-test('Git hook fences reject old-agent pushes after revocation and preserve prior hooks',()=>{
+test('Git hooks allow independent task branches and forward the original hook after legacy revocation',()=>{
   const f=fixture();try{f.within(()=>{
-    const hooks=path.join(f.repo,'.git','original-hooks');mkdirSync(hooks);writeFileSync(path.join(hooks,'pre-push'),'#!/bin/sh\nexit 0\n',{mode:0o755});f.git('config','core.hooksPath',hooks);
+    const hooks=path.join(f.repo,'.git','original-hooks');mkdirSync(hooks);writeFileSync(path.join(hooks,'pre-push'),'#!/bin/sh\necho forwarded > hook-ran\n',{mode:0o755});f.git('config','core.hooksPath',hooks);
     const sourceRoot=fileURLToPath(new URL('../../',import.meta.url));const installed=installWorkspaceFences({sourceRoot});assert.equal(installed.original,hooks);assert.equal(installWorkspaceFences({sourceRoot}).alreadyInstalled,true);
     const one=make();const p=previewReleaseAll(deps);apply(p);
-    assert.throws(()=>f.run(one.directory,'push','origin',one.branch),/FIKA HOLD|revoked|failed to push/);assert.ok(existsSync(path.join(hooks,'pre-push')));
+    f.run(one.directory,'push','origin',one.branch);
+    assert.equal(readFileSync(path.join(one.directory,'hook-ran'),'utf8').trim(),'forwarded');
+    assert.equal(workspaceRecords()[0].state,'revoked');
   });}finally{f.dispose();}
 });
 test('scope check accepts only byte-identical inherited main content after concurrent integration',()=>{

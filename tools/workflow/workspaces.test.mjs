@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-const cli=fileURLToPath(new URL('./cli.mjs',import.meta.url));
+const cli=fileURLToPath(new URL('./legacy-workspace-fixture.mjs',import.meta.url));
 test('real Git workspace lifecycle, scoped concurrency, dirty preservation and retirement',()=>{
   const base=mkdtempSync(path.join(os.tmpdir(),'fika-workflow-test-'));const remote=path.join(base,'remote.git');const repo=path.join(base,'repo');mkdirSync(repo);
   const git=(...args)=>execFileSync('git',args,{cwd:repo,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();

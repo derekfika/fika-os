@@ -1,11 +1,11 @@
 # FIKA OS local workspace
 
-For concurrent agent tasks, use the isolated scope/port leases in
+For agent tasks, use independent Git worktrees and local port selection in
 [the governed workflow](docs/deployment/workflow.md). The fixed-port supervisor
 below is for an exclusive whole-platform local session; do not share its mutable
 emulator/runtime state between independent tasks.
 
-Normal completed tasks must run `fika workspace complete <task> --owner <agent-task>` from the canonical checkout, and report lease release plus retirement/protection. The Deployment Dashboard's [Workspace Management](http://127.0.0.1:4180/#workspace-management) section uses that same local registry. Administrator revocation, separate safe cleanup, interrupted-operation recovery and the GitHub snapshot are described in [workspace management](docs/deployment/workspace-management.md).
+Record completion with `fika workspace complete <task> --owner <agent-task>` from the canonical checkout. The checkout and its files stay in place. The Deployment Dashboard’s [task worktree inventory](http://127.0.0.1:4180/#workspace-management) reads local Git registrations. See [workspace management](docs/deployment/workspace-management.md) for historical records and interrupted-operation recovery.
 
 Double-click `fikaos.bat` to start the single foreground FIKA OS supervisor. It restores the verified local Firebase dataset, starts Firebase and all local apps on their fixed ports, starts the passive launcher, and opens one browser page: the FIKA OS launcher. Use `Start-FIKA-OS-All.cmd` as the legacy fallback.
 

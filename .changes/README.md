@@ -20,5 +20,4 @@ Deployment: none, or the verified app/environment/build.
 ```
 
 Use `fika changelog check --base origin/main` to check the same rule as CI.
-Changelog indexes and these uniquely named bookkeeping files are exempt from
-implementation leases; source files remain subject to the full scope rules.
+Use unique fragment names to avoid overlapping edits.

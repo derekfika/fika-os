@@ -17,22 +17,18 @@ An ordinary coding request never authorises production. Clarify genuinely ambigu
 `origin/main` is the sole integration authority in `C:\Fika\fika-os`. Each task gets a scoped worktree/branch from a recorded main baseline:
 
 ```powershell
-npm run fika -- workspace create cpu-calendar --owner agent-task --scope apps/cpu-production
+npm run fika -- workspace create cpu-calendar --owner agent-task
 ```
 
-The command allocates isolated paths/ports and rejects overlapping active leases and reused names. Never create another clone, overwrite another task's files or share mutable dependencies, `.next`, environment files or test data. Coordinate shared providers/contracts before consumer implementation. `fika dev cpu --workspace cpu-calendar --owner agent-task` uses its allocated port; the fixed-port whole-platform supervisor requires exclusive ownership.
+The command creates a new task branch and linked worktree from fetched main. Optional `--scope` reports advisory overlap with open PRs. Never overwrite another task’s files or share mutable dependencies, `.next`, environment files or test data. Coordinate shared providers before consumer implementation. Choose an unused port with `fika dev cpu --workspace cpu-calendar --port 13100`.
 
-Run `fika workspace check`, `fika affected` and `fika validate`, add unique `.changes/<app>/<change-id>.md` fragments for each affected app, and push the task branch. App indexes are `apps/<app>/CHANGELOG.md`; app-only work never requires root edits. Shared tooling/platform work uses `.changes/platform/` or root `CHANGELOG.md`. Read-only/documentation-only work has no mandatory entry; changelog-only changes do not build apps. Existing affected-app tests/typechecks/builds, shared-contract fan-out, CPU memory-store configuration and the relevant isolated Hub emulator regression remain enforced by CI.
+Run `fika workspace check <task>` for source and advisory overlap. From the task checkout, run `fika affected` and `fika validate`, add unique `.changes/<app>/<change-id>.md` fragments for each affected app, and push the task branch. Shared tooling/platform work uses `.changes/platform/` or root `CHANGELOG.md`. Read-only and documentation-only work have no mandatory entry. Affected app tests, typechecks, builds, shared-contract fan-out and isolated emulator coverage remain enforced by CI.
 
-Every normally completed task runs `fika workspace complete <task> --owner <agent-task>` from the canonical checkout. It records final Git/PR evidence, releases scope and attempts safe retirement while retaining branches, unique commits, recovery and ignored data. Unpushed or dirty work needs explicit `--preserve --reason`; unfinished/interrupted work is never silently completed. Report the returned cleanup and GitHub snapshot-publication outcome. See [workspace management](workspace-management.md) for administrator revocation, fencing, sweep and recovery.
+Use `fika workspace complete <task> --owner <agent-task>` from the canonical checkout to record final Git/PR evidence. The checkout remains in place. Record unpushed or dirty work explicitly with `--preserve --reason`. See [workspace management](workspace-management.md) for historical records, migration and interrupted-operation recovery.
 
 PRs are agent-managed CI/integration tools. Main requires strict `Workflow / merge-gate`, with zero mandatory human approvals and admin-enforced force-push/deletion protection. After CI passes and integration is authorised, the agent can use a merge-commit PR merge pinned to its verified head. GitHub rechecks protected-branch requirements. Do not merge when the owner explicitly said to stop before merging. Squash/rebase merging and automatic branch deletion remain disabled to preserve staged ancestry and unfinished work.
 
-For a clean, pushed unmerged stack blocked by inherited committed scope, an administrator
-can separately preview `workspace recover-stacked` for exactly one lease. This retains
-the original checkout/history and requires a new governed successor lease; it does not
-relax normal completion or scope checks. See the exact-ID, owner-approved procedure in
-[workspace management](workspace-management.md#recover-exactly-one-clean-pushed-stacked-lease).
+Use `fika integrate --workspace <task> --pr <number>` to verify the exact head and current main base before merging. If main advances, merge it into the task branch, review the resulting diff and rerun CI.
 
 ## Releases
 
