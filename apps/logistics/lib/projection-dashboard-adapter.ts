@@ -1,4 +1,5 @@
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
+import { oneOffAddressPending } from "@fika/server-shared/menu-destination";
 import { lineBreakdown } from "./ordered-quantity";
 import { fulfilmentWorkstream } from "../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, LogisticsDayProjection } from "./types";
@@ -140,14 +141,14 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
     destinationLabel: job.destinationLabelSnapshot || job.destinationOplocId || "Unknown destination",
     ...(job.requestedWindow ? { deliveryWindow: job.requestedWindow } : {}),
     requiredTimes: job.requestedWindow?.startTime ? [job.requestedWindow.startTime] : [],
-    requirementRefs: [{ requirementId: job.id, sourceVersion: job.sourceVersion || 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], sourceEntityId: job.sourceId, status: "ready_for_planning", workstream: job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType }) }],
+    requirementRefs: [{ requirementId: job.id, sourceVersion: job.sourceVersion || 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], sourceEntityId: job.sourceId, status: oneOffAddressPending(job.destination) ? "pending" : "ready_for_planning", workstream: job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType }) }],
     requirementCount: 1,
     sourceLabels: [job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType })],
     combinedLines: lines(job),
     unitBreakdown: lineBreakdown(lines(job)),
     readiness: job.productionReadiness === "attention" ? "ATTENTION" : job.productionReadiness === "pending" ? "PENDING" : "READY",
-    attention: job.productionReadiness === "attention" ? ["Upstream amendment requires review"] : [],
-    planningState: job.productionReadiness === "attention" ? "attention" : "unplanned",
+    attention: oneOffAddressPending(job.destination) ? ["Address pending"] : job.productionReadiness === "attention" ? ["Upstream amendment requires review"] : [],
+    planningState: oneOffAddressPending(job.destination) || job.productionReadiness === "attention" ? "attention" : "unplanned",
     collectionRequired: Boolean(projection.collectionRequiredKeys?.includes(`projection-job:${job.id}`)),
     deliveryStatus: job.deliveryStatus,
     collectionStatus: job.collectionStatus,

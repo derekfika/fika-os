@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { oneOffAddressPending } from "@fika/server-shared/menu-destination";
+import { OneOffAddressForm } from "./one-off-address-form";
 import { lineDisplayText } from "../lib/ordered-quantity";
 import * as React from "react";
 import type { CSSProperties, ReactNode, DragEvent, MouseEvent, MutableRefObject } from "react";
@@ -1256,6 +1258,11 @@ function RealPlanner(props: RealPlannerProps) {
   };
   const handleInspectorAction = async (payload: object) => {
     const action = payload as { action?: string; runId?: string; targetRunId?: string; stopId?: string; requirementId?: string; plannedArrivalTime?: string; plannedWindow?: { startTime: string; endTime?: string }; loaded?: boolean };
+    if (action.action === "confirm-menu-one-off-address") {
+      const result = await props.actAndReconcile(payload);
+      if (typeof result === "object" && result.projected === false) props.setError("Address saved. Logistics sync is pending. Refresh before assigning this delivery.");
+      return;
+    }
     if (action.action === "schedule-stop" && action.runId && action.stopId) {
       const start = action.plannedWindow?.startTime || action.plannedArrivalTime;
       if (start) scheduleStop(action.runId, action.stopId, action.runId, start, action.plannedWindow?.endTime, undefined);
@@ -2522,6 +2529,10 @@ function Inspector({
   const routeSheetTrigger = useRef<HTMLButtonElement>(null);
   const closeRouteSheet = React.useCallback(() => setRouteSheetOpen(false), []);
   const group = selection.kind === "group" ? planner.workGroups.find((item) => item.groupKey === selection.id) : undefined;
+  const pendingAddresses = group ? (projection?.planningQueue || []).filter(job =>
+    job.sourceType === "cpu-production" && oneOffAddressPending(job.destination) &&
+    group.requirementRefs.some(ref => ref.requirementId === job.id || ref.requirementId === job.requirementId),
+  ) : [];
   const movement = selection.kind === "movement" ? planner.movements.find((item) => item.movementId === selection.id) : undefined;
   const run = selection.kind === "run" ? planner.runs.find((item) => item.runId === selection.id) : undefined;
   const stop = selection.kind === "stop" ? planner.runs.flatMap((item) => item.stops).find((item) => item.stopId === selection.id) : undefined;
@@ -2557,6 +2568,7 @@ function Inspector({
   return <aside className="mock-inspector" aria-label="Details inspector" onKeyDown={(event) => { if (event.key === "Escape" && !event.defaultPrevented && !(event.target instanceof HTMLElement && event.target.closest("[role=dialog]"))) { event.preventDefault(); onClose(); } }}>
     <header><div><p className="eyebrow">{run ? "Run inspector" : stop ? "Stop inspector" : selection.kind === "load" ? "Load inspector" : "Inspector"}</p><h2>{group?.destinationLabel || movement?.type || stopTitle || (selection.kind === "load" ? `Load · ${selectedStop?.destination.label || "Details"}` : undefined) || runName || "Details"}</h2></div><button className="close" onClick={onClose} aria-label="Close inspector">×</button></header>
     {group && <>
+      {pendingAddresses.map(job => <OneOffAddressForm key={job.id} job={job} busy={placementPending} onConfirm={onAction} />)}
       {group.deliveryWindow && <><InspectorMeta label="Preferred source timing" value={formatWindow(group.deliveryWindow)!} /><p className="context-line">Advisory timing · Logistics sets the operational schedule.</p></>}
       {!group.deliveryWindow && group.requiredTimes[0] && <><InspectorMeta label="Preferred source timing" value={formatAdvisoryTime(group.requiredTimes[0])} /><p className="context-line">Advisory timing · Logistics sets the operational schedule.</p></>}
       <label className="collection-toggle inspector-collection-toggle"><input type="checkbox" checked={Boolean(group.collectionRequired)} disabled={Boolean(assignedDelivery)} onChange={(event) => onAction({ action: "set-collection-required", groupKey: group.groupKey, serviceDate: group.serviceDate, collectionRequired: event.target.checked })} /> Collection required</label>
@@ -2570,7 +2582,7 @@ function Inspector({
       {group.productionContext?.operationalNotes && <p className="notes-block">Notes: {group.productionContext.operationalNotes}</p>}
       {group.notes && <p className="notes-block">Notes: {group.notes}</p>}
       {group.attention.map((item) => <div className="attention-note" key={item}>⚠ {item}</div>)}
-      {assigning !== group.groupKey && <div className="inspector-actions"><button disabled={placementPending} onClick={() => { setAssigning(group.groupKey); setTargetRun(assignedDelivery ? group.requirementRefs.find(ref => ref.runId)?.runId || "" : runs.length === 1 ? runs[0].runId : ""); }}>{placementPending ? "Saving…" : assignedDelivery ? "Set delivery time" : collectionPending ? "Schedule collection" : "Assign to vehicle"}</button></div>}
+      {!pendingAddresses.length && assigning !== group.groupKey && <div className="inspector-actions"><button disabled={placementPending} onClick={() => { setAssigning(group.groupKey); setTargetRun(assignedDelivery ? group.requirementRefs.find(ref => ref.runId)?.runId || "" : runs.length === 1 ? runs[0].runId : ""); }}>{placementPending ? "Saving…" : assignedDelivery ? "Set delivery time" : collectionPending ? "Schedule collection" : "Assign to vehicle"}</button></div>}
       {assigning === group.groupKey && <RunChooser key={`${group.groupKey}-${collectionPending ? "collection" : "delivery"}`} runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} allowedLanes={collectionPending ? ["collection"] : ["delivery"]} onConfirm={(choice) => onAssignGroup(group, choice)} label={assignedDelivery ? "Set time" : collectionPending ? "Schedule collection" : "Assign eligible"} pending={placementPending} />}
     </>}
     {movement && <>

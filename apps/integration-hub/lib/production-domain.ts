@@ -1,4 +1,4 @@
-import type { MenuDestination } from "@fika/server-shared/menu-destination";
+import { assertOneOffMenuDestination, oneOffAddressPending, type MenuDestination, type OneOffMenuDestination } from "@fika/server-shared/menu-destination";
 import crypto from "node:crypto";
 import { catalogueProductionConversion } from "@fika/server-shared/hospitality-effective-offering";
 import { bookingNotificationRecord } from "./booking-notifications";
@@ -444,6 +444,18 @@ export function projectExternalProductionLine(input: ExternalProductionMateriali
   };
 }
 
+function productionDestinationAddress(destination: OneOffMenuDestination): ProductionDestinationAddress {
+  const { id, label, address, contact, deliveryInstructions } = destination;
+  return { identity: id, label, address, ...(contact ? { contact } : {}), ...(deliveryInstructions ? { deliveryInstructions } : {}) };
+}
+
+function resolvedExternalDestination(incoming: MenuDestination | undefined, previous: MenuDestination | undefined) {
+  if (incoming?.kind !== "one-off" || !oneOffAddressPending(incoming) || previous?.kind !== "one-off" ||
+      incoming.id !== previous.id || oneOffAddressPending(previous)) return incoming;
+  const { addressStatus: _, ...snapshot } = incoming;
+  return { ...snapshot, address: previous.address };
+}
+
 /** Converts an upstream production-bound record into the one canonical CPU order. */
 export async function materialiseExternalProductionOrder(actor: Actor, input: ExternalProductionMaterialisation) {
   input = parseExternalProductionMaterialisation(input);
@@ -466,6 +478,7 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
     if (previous && input.sourceDomain === "menu-planning" && previous.sourceVersion === input.sourceVersion && previous.status === "cancelled" && status !== "cancelled") return { created: false, duplicate: true, order: previous };
     if (previous && previous.sourceVersion === input.sourceVersion && previous.sourceContentHash === input.sourceContentHash && previous.status === status) return { created: false, duplicate: true, order: previous };
     const now = new Date().toISOString();
+    const destination = resolvedExternalDestination(input.destination, previous?.destination);
     const order: ProductionOrder = {
       ...(previous || {}), canonicalId, entityType: "Production Order", schemaVersion: PRODUCTION_SCHEMA_VERSION,
       version: (previous?.version || 0) + 1, currentRevision: (previous?.currentRevision || 0) + 1,
@@ -473,8 +486,8 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
       sourceEntityId: input.sourceEntityId, ...(input.publicationId ? { sourcePublicationId: input.publicationId } : {}), sourceVersion: input.sourceVersion, ...(input.sourceContentHash ? { sourceContentHash: input.sourceContentHash } : {}), ...(input.sourcePublicationDayId ? { sourcePublicationDayId: input.sourcePublicationDayId } : {}),
       productionLocationId: previous?.productionLocationId || CPU_PRODUCTION_LOCATION_ID,
       origin: input.sourceDomain === "grab-and-go" ? "grab_and_go" : "menu_planning", requiresDelivery: true, destinationOplocId: input.destinationOplocId, destinationLabel: input.destinationLabel || input.destinationOplocId,
-      ...(input.destination ? { destination: structuredClone(input.destination) } : {}),
-      ...(input.destination?.kind === "one-off" ? { destinationAddress: { identity: input.destination.id, label: input.destination.label, address: input.destination.address, ...(input.destination.contact ? { contact: input.destination.contact } : {}), ...(input.destination.deliveryInstructions ? { deliveryInstructions: input.destination.deliveryInstructions } : {}) } } : {}),
+      ...(destination ? { destination: structuredClone(destination) } : {}),
+      ...(destination?.kind === "one-off" && !oneOffAddressPending(destination) ? { destinationAddress: productionDestinationAddress(destination) } : {}),
       serviceType: input.sourceDomain === "grab-and-go" ? "Grab & Go" : "Delivered-In menu", serviceDate: input.serviceDate, requiredBy: input.requiredBy || `${input.serviceDate}T00:00`, ...(input.serviceWindow ? { serviceWindow: input.serviceWindow } : input.sourceDomain === "menu-planning" ? {} : { serviceWindow: { startTime: "00:00" } }),
       status, priority: previous?.priority || "normal", lines: input.lines.map((_, index) => projectExternalProductionLine(input, canonicalId, index, status)),
       exceptions: [], createdAt: previous?.createdAt || now, createdBy: previous?.createdBy || actor.uid, idempotencyKey: `materialise:${input.sourceDomain}:${input.sourceEntityId}:${input.destinationOplocId}`, externalReferences: previous?.externalReferences || [], audit: [...(previous?.audit || []), { action: previous ? "external-production-order-amended" : "external-production-order-created", at: now, by: actor.uid, previousState: previous?.status, newState: status, reason: `Materialised from ${input.sourceDomain}.` }],
@@ -484,6 +497,38 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
     transaction.set(ref, order);
     stageDomainEvent(transaction, event);
     return { created: !previous, duplicate: false, order };
+  });
+}
+
+/** Fill a missing routing detail without changing the immutable Menu publication or its version. */
+export async function confirmMenuOneOffProductionAddress(orderId: string, expectedVersion: number, address: string, actorId: string) {
+  address = address.trim();
+  if (!address || address.length > 500) throw Object.assign(new Error("Enter a delivery address of up to 500 characters."), { status: 422 });
+  return db.runTransaction(async transaction => {
+    const ref = orders().doc(stableDocumentId(orderId));
+    const current = (await transaction.get(ref)).data() as ProductionOrder | undefined;
+    const currentDestination = current?.destination;
+    if (!current || current.canonicalId !== orderId || current.origin !== "menu_planning" || currentDestination?.kind !== "one-off" ||
+        current.destinationOplocId !== currentDestination.id || current.supersededBy || current.status === "cancelled" || current.status === "rejected") {
+      throw conflict("This Menu one-off is no longer active. Refresh the planning queue.");
+    }
+    assertOneOffMenuDestination(currentDestination, current.sourceEntityId || "");
+    if (!oneOffAddressPending(currentDestination) && currentDestination.address === address) return current;
+    if (current.version !== expectedVersion || !oneOffAddressPending(currentDestination)) throw conflict("The one-off routing changed. Refresh the planning queue.");
+    const { addressStatus: _, ...snapshot } = currentDestination;
+    const destination = { ...snapshot, address };
+    const now = new Date().toISOString();
+    const next: ProductionOrder = {
+      ...current, destination, destinationAddress: productionDestinationAddress(destination),
+      version: current.version + 1, currentRevision: current.currentRevision + 1, updatedAt: now,
+      audit: [...current.audit, { action: "logistics-one-off-address-confirmed", at: now, by: actorId, previousState: "pending", newState: "confirmed" }],
+    };
+    const event = createDomainEvent({ eventType: "production.order.amended", sourceAggregateId: orderId, sourceVersion: next.version, occurredAt: now, payload: { canonicalId: orderId, version: next.version, status: next.status, actorId, productionOrder: next } });
+    const fulfilment = await stageFulfilmentEvent(transaction, event);
+    if (!fulfilment.applied) throw conflict("The current fulfilment requirement could not be updated. Refresh the planning queue.");
+    transaction.set(ref, next);
+    stageDomainEvent(transaction, event);
+    return next;
   });
 }
 

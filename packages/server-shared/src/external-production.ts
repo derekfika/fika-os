@@ -79,7 +79,7 @@ export const externalProductionMaterialisationInput = z.object({
   destinationOplocId: z.string().trim().min(1),
   destination: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("governed"), id: z.string().min(1), label: z.string().min(1) }).strict(),
-    z.object({ kind: z.literal("one-off"), id: z.string().min(1), sourceDayId: z.string().min(1), label: z.string().trim().min(1), address: z.string().trim().min(1), contact: z.string().optional(), deliveryInstructions: z.string().optional() }).strict(),
+    z.object({ kind: z.literal("one-off"), id: z.string().min(1), sourceDayId: z.string().min(1), label: z.string().trim().min(1), address: z.string().trim(), addressStatus: z.literal("pending").optional(), contact: z.string().optional(), deliveryInstructions: z.string().optional() }).strict(),
   ]).optional(),
   destinationLabel: z.string().optional(),
   serviceDate: z.string(),

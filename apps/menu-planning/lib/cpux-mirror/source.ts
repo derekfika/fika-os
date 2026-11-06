@@ -1,4 +1,4 @@
-import { assertOneOffMenuDestination } from "@fika/server-shared/menu-destination";
+import { assertOneOffMenuDestination, oneOffAddressPending } from "@fika/server-shared/menu-destination";
 import { calendarDate, nextCalendarDate, type MirrorDetails, type MirrorSource } from "../../../shared/cpux-calendar/contract";
 import type { MenuPublication, PublishedMenuDay } from "../menu-publication";
 
@@ -45,7 +45,7 @@ export function deliveredInMirrorSource(date: string, publications: readonly Men
       "Service date: " + date,
       "Publication: " + reference,
       "FIKA OS: https://delivered-in.fikacatering.com/",
-      ...rows.flatMap(([id, site]) => ["", site.label + " (" + id + ")", site.address,
+      ...rows.flatMap(([id, site]) => ["", site.label + " (" + id + ")", site.address || "Address pending in Logistics",
         ...(site.instructions ? [site.instructions] : []), ...site.lines.map(line => "• " + line.name + " — " + line.portions + " portions")]),
     ].join("\n"),
     start: { date }, end: { date: nextCalendarDate(date) },
@@ -53,7 +53,7 @@ export function deliveredInMirrorSource(date: string, publications: readonly Men
   const runSheetHtml = `<!doctype html><html lang="en"><meta charset="utf-8"><title>${html(title)}</title>
 <style>@page{size:A4;margin:15mm}body{font:11pt sans-serif;color:#111}h1{font-size:20pt}h2{font-size:14pt;break-after:avoid}table{width:100%;border-collapse:collapse}tr{break-inside:avoid}th,td{padding:5pt;border-bottom:1px solid #aaa;text-align:left}thead{display:table-header-group}</style>
 <h1>Delivered-In run sheet — ${html(date)}</h1><p>Publication: ${html(reference)}</p>
-${rows.map(([id, site]) => `<section><h2>${html(site.label)}</h2><p>${html(site.address)}<br>${html(id)}${site.instructions ? "<br>" + html(site.instructions) : ""}</p>
+${rows.map(([id, site]) => `<section><h2>${html(site.label)}</h2><p>${html(site.address || "Address pending in Logistics")}<br>${html(id)}${site.instructions ? "<br>" + html(site.instructions) : ""}</p>
 <table><thead><tr><th>Dish</th><th>Slot</th><th>Portions</th></tr></thead><tbody>
 ${site.lines.map(line => `<tr><td>${html(line.name)}</td><td>${html(line.slot)}</td><td>${html(line.portions)}</td></tr>`).join("")}</tbody></table></section>`).join("")}</html>`;
   return { source, title, details, runSheetHtml };
@@ -70,9 +70,9 @@ function addAllocations(groups: Map<string, Group>, day: PublishedMenuDay, oploc
     if (!id || !entry.dishName.trim() || !Number.isFinite(allocation.quantity) || allocation.quantity <= 0)
       throw new Error("A published allocation lacks stable identity, dish or portions.");
     if (target?.kind === "one-off") assertOneOffMenuDestination(target, day.sourceDayId);
-    const address = target?.kind === "one-off" ? target.address : allocation.destinationAddress || governed?.address;
+    const address = target?.kind === "one-off" ? target.address : allocation.destinationAddress || governed?.address || "";
     const label = governed?.label || target?.label || allocation.destinationLabel;
-    if (!label?.trim() || !address?.trim() || (target?.kind === "governed" && allocation.destinationId !== target.id))
+    if (!label?.trim() || (!address.trim() && !oneOffAddressPending(target)) || (target?.kind === "governed" && allocation.destinationId !== target.id))
       throw new Error("A published destination needs its authoritative address and matching OPLOC identity.");
     const existing = groups.get(id);
     if (existing && (existing.address !== address || existing.label !== label)) throw new Error("Published destination identity has conflicting addresses or labels.");

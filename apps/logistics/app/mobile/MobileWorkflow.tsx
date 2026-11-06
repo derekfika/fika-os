@@ -503,9 +503,9 @@ function StopDetail({ stop, lanes, visitNumber, isNext, data, busy, onClose, onA
     <button ref={closeRef} type="button" className={styles.back} aria-label="Close stop details" onClick={onClose}><ArrowLeftIcon size={18} /> Back to run</button>
     <div className={styles.headRow}><span className={styles.number}>{visitNumber}</span><span className={styles.pill}>{isNext && visitStatus !== "attention" ? "Next stop" : visitStatusText[visitStatus]}</span><span className={styles.timePill}>{timeFor(stop)}</span></div>
     <h2 id="stop-detail-title" className={styles.title}>{stopLabel(stop, data)}</h2>
-    <p className={styles.address}><PinIcon size={18} /> {address}</p>
+    <p className={styles.address}><PinIcon size={18} /> {address || "Address pending"}</p>
     <div className={styles.siteActions}>
-      <button type="button" className={`secondary-action navigate-action ${styles.outline}`} disabled={busy} onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, "_blank")}><MapIcon size={18} /> View on map</button>
+      <button type="button" className={`secondary-action navigate-action ${styles.outline}`} disabled={busy || !address} onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, "_blank")}><MapIcon size={18} /> View on map</button>
       {stop.notes && <button type="button" className={`secondary-action ${styles.outline}`} onClick={() => notesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}><NoteIcon size={18} /> Site notes</button>}
     </div>
     <div className={styles.summary}>
@@ -519,6 +519,7 @@ function StopDetail({ stop, lanes, visitNumber, isNext, data, busy, onClose, onA
 }
 
 function stopNavigationAddress(stop: DeliveryStop & { locationAddressSnapshot?: string }, oploc?: { address?: string; label?: string }) {
+  if (stop.oneOffEndpointId) return stop.locationAddressSnapshot?.trim() || "";
   return oploc?.address || stop.locationAddressSnapshot || oploc?.label || stop.locationLabelSnapshot;
 }
 function EmptyLane({ title, message, icon }: { title: string; message: string; icon: ReactNode }) {
