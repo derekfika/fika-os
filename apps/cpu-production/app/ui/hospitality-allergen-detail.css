@@ -31,7 +31,7 @@
 
 .allergen-checker .review-badge--blank,.allergen-checker .review-badge--legacy_no_key{color:#704800}
 
-/* Issue 251: readable binary Hospitality checker. Boxes carry no text: OFF is white, ON is black, a persisted legacy May Contain is hatched (no glyphs). */
+/* Issue 251: named cells are text-free: OFF is white, Contains is black, May Contain is hatched. No Key remains binary. */
 .allergen-checker .allergen-cell--off{background:#fff;color:#111}
 .allergen-checker .allergen-cell--may_contain{background:repeating-linear-gradient(135deg,#fff 0 5px,#000 5px 7px)}
 .allergen-checker .allergen-cell[aria-disabled="true"]{cursor:not-allowed}

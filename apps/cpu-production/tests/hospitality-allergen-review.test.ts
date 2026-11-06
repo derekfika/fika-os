@@ -197,21 +197,23 @@ type StateMap = Record<string, OperationalAllergenState>;
 const keysOf = (map: StateMap) => Object.keys(map).filter((key) => map[key] !== undefined).sort();
 const pendingDeclaration = { declaration: { declared: true as const, declaredBy: "pending-save", declaredAt: "" } };
 
-test("251: every named allergen is a binary ON/OFF box and May Contain is never reachable from a click", () => {
+test("251: every named allergen cycles OFF → CONTAINS → MAY CONTAIN → OFF", () => {
   assert.equal(named.length, 14);
   for (const key of named) {
     const on = applyHospitalityBinaryClick({}, key);
     assert.equal(on[key], "contains", `${key}: first click is ON (black)`);
     assert.equal(binaryCellView(on, key), "on");
-    const off = applyHospitalityBinaryClick(on, key);
-    assert.equal(off[key], undefined, `${key}: second click is OFF (white), not May Contain`);
+    const mayContain = applyHospitalityBinaryClick(on, key);
+    assert.equal(mayContain[key], "may_contain", `${key}: second click is MAY CONTAIN (hatched)`);
+    assert.equal(binaryCellView(mayContain, key), "may_contain");
+    const off = applyHospitalityBinaryClick(mayContain, key);
+    assert.equal(off[key], undefined, `${key}: third click returns to OFF/unrecorded`);
     assert.equal(binaryCellView(off, key), "off");
     assert.deepEqual(keysOf(off), [], `${key}: OFF returns the row to blank`);
-    for (const state of [...Object.values(on), ...Object.values(off)]) assert.notEqual(state, "may_contain");
   }
 });
 
-test("251: No Key Allergens is a deliberate binary box, exclusive with named allergens, and the last allergen OFF leaves the row blank", () => {
+test("251: No Key Allergens remains binary and exclusive; last named allergen OFF leaves the row blank", () => {
   const declared = applyHospitalityBinaryClick({}, "no_key_allergens");
   assert.equal(declared.no_key_allergens, "contains");
   assert.equal(binaryCellView(declared, "no_key_allergens", pendingDeclaration), "on");
@@ -223,13 +225,17 @@ test("251: No Key Allergens is a deliberate binary box, exclusive with named all
   assert.notEqual(selected.no_key_allergens, "contains", "a named allergen withdraws No Key");
   const cleared = applyHospitalityBinaryClick({ gluten: "contains", milk: "contains", eggs: "contains" }, "no_key_allergens");
   assert.deepEqual(keysOf(cleared), ["no_key_allergens"], "No Key clears every named allergen");
-  const last = applyHospitalityBinaryClick({ gluten: "contains" }, "gluten");
+  const last = applyHospitalityBinaryClick(applyHospitalityBinaryClick({ gluten: "contains" }, "gluten"), "gluten");
   assert.notEqual(last.no_key_allergens, "contains", "removing the last allergen never auto-ticks No Key");
   assert.deepEqual(keysOf(last), []);
+  const afterHatch = applyHospitalityBinaryClick({ gluten: "contains" }, "gluten");
+  assert.equal(afterHatch.gluten, "may_contain");
+  assert.equal(afterHatch.no_key_allergens, undefined, "May Contain is not the No Key declaration");
 });
 
 test("251: a blank row stays unverified and cannot be checked, signed or released", () => {
-  const blanks = [{}, applyHospitalityBinaryClick({ gluten: "contains" }, "gluten"), applyHospitalityBinaryClick(applyHospitalityBinaryClick({}, "no_key_allergens"), "no_key_allergens", pendingDeclaration)];
+  const namedOff = applyHospitalityBinaryClick(applyHospitalityBinaryClick(applyHospitalityBinaryClick({}, "gluten"), "gluten"), "gluten");
+  const blanks = [{}, namedOff, applyHospitalityBinaryClick(applyHospitalityBinaryClick({}, "no_key_allergens"), "no_key_allergens", pendingDeclaration)];
   for (const blank of blanks) {
     assert.equal(rowAttestation({ name: "R", allergens: blank, evidenceStatus: "not_completed" }), "blank");
     assert.equal(confirmAllergenReviewMap(blank).blocked, "blank");
@@ -241,19 +247,19 @@ test("251: a blank row stays unverified and cannot be checked, signed or release
   for (const state of Object.values(applyHospitalityBinaryClick({}, "no_key_allergens"))) assert.notEqual(state, "clear");
 });
 
-test("251: a persisted May Contain is preserved, discernible, never created, and only removed by a deliberate click on that box", () => {
+test("251: saved May Contain remains discernible and only changes through its named cell cycle", () => {
   const legacy = { gluten: "may_contain", eggs: "contains" } as StateMap;
-  assert.equal(binaryCellView(legacy, "gluten"), "legacy_may_contain");
-  assert.equal(binaryCellPressed("legacy_may_contain"), "mixed");
-  assert.match(binaryCellAriaLabel("Gluten", "Row", "legacy_may_contain"), /May Contain recorded/);
+  assert.equal(binaryCellView(legacy, "gluten"), "may_contain");
+  assert.equal(binaryCellPressed("may_contain"), "mixed");
+  assert.equal(binaryCellAriaLabel("Gluten", "Row", "may_contain"), "Gluten for Row: May Contain");
   const other = applyHospitalityBinaryClick(legacy, "milk");
   assert.equal(other.gluten, "may_contain", "clicking another box does not touch the legacy value");
   assert.equal(other.eggs, "contains");
   assert.equal(other.milk, "contains");
   const amended = applyHospitalityBinaryClick(legacy, "gluten");
-  assert.equal(amended.gluten, "contains", "a click on a legacy May Contain becomes Contains (stricter), never a silent deletion");
-  assert.equal(applyHospitalityBinaryClick(amended, "gluten").gluten, undefined, "the second click is OFF");
+  assert.equal(amended.gluten, undefined, "a click on May Contain deliberately returns that cell to OFF");
   assert.equal(amended.eggs, "contains");
+  assert.equal(applyHospitalityBinaryClick(applyHospitalityBinaryClick({}, "gluten"), "gluten").gluten, "may_contain");
   assert.equal(applyHospitalityCellClick(applyHospitalityCellClick({}, "fish"), "fish").fish, "may_contain", "the shared cycle used by other surfaces keeps May Contain");
   assert.equal(completeAllergenReviewMap(legacy).states.gluten, "may_contain", "the review round trip keeps it");
 });
@@ -269,6 +275,10 @@ test("251: accessible names and aria-pressed carry allergen, row and on/off stat
     assert.equal(binaryCellPressed(binaryCellView(on, key, key === "no_key_allergens" ? pendingDeclaration : {})), true);
     assert.equal(binaryCellPressed(binaryCellView({}, key)), false);
   }
+  const mayContain = applyHospitalityBinaryClick({}, "gluten");
+  const hatched = applyHospitalityBinaryClick(mayContain, "gluten");
+  assert.equal(binaryCellAriaLabel("Gluten", "Egg sandwich", binaryCellView(hatched, "gluten")), "Gluten for Egg sandwich: May Contain");
+  assert.equal(binaryCellPressed(binaryCellView(hatched, "gluten")), "mixed");
 });
 
 test("251: the boxes are text-free native buttons and the review status and helper text sit outside them", () => {
@@ -279,10 +289,10 @@ test("251: the boxes are text-free native buttons and the review status and help
   const cellSource = component.slice(start, end);
   assert.match(cellSource, /<button[\s\S]*type="button"[\s\S]*aria-pressed=\{binaryCellPressed\(view\)\}[\s\S]*toggleCell\(menuItem\.id, sub, key\)[\s\S]*\/>/, "a self-closing native button has no children, so no visible text or symbol");
   assert.doesNotMatch(cellSource, /cellLabel|"MC"|No Key Allergens|<input|<label|<small|no-key-status|title=/);
-  assert.match(cellSource, /allergen-cell allergen-cell--\$\{view === "on" \? "contains" : view === "legacy_may_contain" \? "may_contain" : "off"\}/);
+  assert.match(cellSource, /allergen-cell allergen-cell--\$\{view === "on" \? "contains" : view === "may_contain" \? "may_contain" : "off"\}/);
   assert.match(component, /data-testid=\{`review-badge-\$\{sub\.id\}`\}/, "row-level status stays in the Check column");
-  assert.match(component, /allergen box to turn it on \(black, contains\) or off \(white\)/);
-  assert.doesNotMatch(component, /white → contains → MC → white/);
+  assert.match(component, /first click \(black\) is Contains, the second[\s\S]{0,100}May Contain, and the third returns to white/);
+  assert.doesNotMatch(component, /May Contain is NOT part of this interaction/);
   const css = read("../app/ui/hospitality-allergen-detail.css");
   assert.match(css, /\.allergen-checker \.allergen-cell:focus-visible\{outline:3px solid #4f34c7/, "visible keyboard focus");
   assert.match(css, /allergen-checker thead th[^{]*\{[^}]*background:#4f34c7/, "purple heading row kept");
