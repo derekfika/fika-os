@@ -19,3 +19,18 @@ test("strict bulk route does not admit an item name or a global/unselected categ
   assert.doesNotMatch(bulkSchema, /itemName|allItemIds|unselectedItemIds/);
   assert.match(bulkSchema, /category: z\.string\(\)\.trim\(\)\.min\(1\)\.max\(160\)\.optional\(\)/);
 });
+
+test("bulk-create route delegates every row to the canonical create command and publishes once for touched products", () => {
+  assert.match(route, /const CreateItem = z\.object\(\{ action: z\.literal\("create-item"\)/);
+  assert.match(route, /const BulkCreateCommand = z\.object\(\{ action: z\.literal\("bulk-create"\), operationId: z\.string\(\)\.min\(8\)\.max\(80\), items: z\.array\(CreateItem\.omit\(\{ action: true \}\)\)\.min\(1\)\.max\(50\) \}\)\.strict\(\)/);
+  assert.match(route, /body\?\.action === "bulk-create"[\s\S]*?runBulkCatalogueCreate\(actor,[\s\S]*?republishAfterMutation\(\)/);
+  assert.match(route, /restrictToSelectedOplocs/);
+});
+
+test("category rename route is strict, bounded, versioned and reloads canonical catalogue plus service layout", () => {
+  assert.match(route, /action: z\.literal\("rename-category"\), operationId: z\.string\(\)\.min\(8\)\.max\(80\)/);
+  assert.match(route, /expectedItemVersions: z\.record\(z\.string\(\), Version\)\.refine\(value => Object\.keys\(value\)\.length <= 500/);
+  assert.match(route, /expectedLayoutVersions: z\.record\(z\.string\(\), z\.number\(\)\.int\(\)\.nonnegative\(\)\)\.refine\(value => Object\.keys\(value\)\.length <= 100/);
+  assert.match(route, /reason: z\.string\(\)\.trim\(\)\.min\(8\)\.max\(500\)/);
+  assert.match(route, /if \(result\.reload\) return NextResponse\.json\(\{ message: result\.message, package: pkg, payload: await attachServiceLayout\(await loadCataloguePayload\(actor\)\) \}/);
+});

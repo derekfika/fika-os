@@ -36,6 +36,7 @@ const revisions = () => db.collection("integrationHubCanonicalRevisions");
 const audit = () => db.collection("integrationHubGovernanceAudit");
 const routingCollection = () => db.collection("integrationHubHospitalityMenuProductionRouting");
 const mergeCollection = () => db.collection("integrationHubHospitalityMenuItemMerges");
+const categoryRenameReceipts = () => db.collection("integrationHubHospitalityCategoryRenameReceipts");
 export const REVIEW_DECISIONS_COLLECTION = "integrationHubHospitalityCatalogueReviewDecisions";
 const decisionCollection = () => db.collection(REVIEW_DECISIONS_COLLECTION);
 
@@ -80,7 +81,8 @@ export type CatalogueCommand =
   | SiteSettings & { action: "set-site-override"; itemId: string; expectedVersion: number; oplocId: string; price?: PriceInput | null; minimumQuantity?: number | null; displayName?: string | null; description?: string | null }
   | { action: "adopt-company-default"; itemId: string; expectedVersion: number; price: PriceInput; minimumQuantity?: number | null; confirmed: boolean }
   | { action: "merge-items"; survivorItemId: string; sourceItemIds: string[]; expectedVersions: Record<string, number>; groupId?: string }
-  | { action: "record-review-decision"; memberIds: string[]; decision: "keep_separate" | "defer" };
+  | { action: "record-review-decision"; memberIds: string[]; decision: "keep_separate" | "defer" }
+  | { action: "rename-category"; operationId: string; category: string; newCategory: string; expectedItemVersions: Record<string, number>; expectedLayoutVersions: Record<string, number>; reason: string };
 
 export type CatalogueCommandResult = { itemIds: string[]; reload: boolean; message: string };
 
@@ -566,6 +568,94 @@ async function setServiceCategories(ctx: Ctx, command: Extract<CatalogueCommand,
   return { itemIds: [], reload: false, message: clearing ? "Site override cleared; the company default applies." : `Categories saved for ${serviceId.replace(/_/g, " ")}.` };
 }
 
+/**
+ * Rename one exact category across current/archived canonical Items and every stored company/site service rule.
+ * The read set, version checks, Item revisions, layout revisions, audit evidence and idempotency receipt are one transaction.
+ * Historical booking snapshots and all unrelated Item fields remain untouched.
+ */
+async function renameCategory(ctx: Ctx, command: Extract<CatalogueCommand, { action: "rename-category" }>): Promise<CatalogueCommandResult> {
+  const category = text(command.category).trim();
+  const newCategory = text(command.newCategory).trim();
+  const reason = text(command.reason).trim();
+  if (!category || category.length > 160 || !newCategory || newCategory.length > 120) throw problem("Category names must be 1–120 characters so they fit every booking service setting.");
+  if (category === newCategory) throw problem("Choose a different category name.");
+  if (!command.operationId || command.operationId.length < 8 || command.operationId.length > 80) throw problem("A category rename needs a valid operation ID.");
+  if (reason.length < 8) throw problem("Record a reason of at least eight characters.");
+
+  const sortedObject = (value: Record<string, number>) => Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+  const requestHash = sha256(JSON.stringify({ category, newCategory, expectedItemVersions: sortedObject(command.expectedItemVersions), expectedLayoutVersions: sortedObject(command.expectedLayoutVersions), reason }));
+  const receiptRef = categoryRenameReceipts().doc(command.operationId);
+  const existingReceipt = await readDoc(ctx, receiptRef);
+  if (existingReceipt.exists) {
+    const receipt = existingReceipt.data() as { requestHash?: string; itemIds?: string[]; message?: string };
+    if (receipt.requestHash !== requestHash) throw problem("This category rename ID was already used for different changes. Reload and review before retrying.", 409);
+    return { itemIds: receipt.itemIds ?? [], reload: true, message: receipt.message ?? "Category rename already applied." };
+  }
+
+  const [items, layoutsSnapshot] = await Promise.all([
+    allItems(ctx),
+    readQuery(ctx, layoutCollection().limit(101)),
+  ]);
+  if (layoutsSnapshot.size > 100) throw problem("Service layout exceeds the bounded 100-document rename limit.");
+  const affectedItems = items.filter(item => text(item.record.category) === category);
+  const layouts = layoutsSnapshot.docs.map(doc => ({ id: doc.id, record: doc.data() as StoredServiceLayout }));
+  const layoutChanges = layouts.flatMap(({ id, record }) => {
+    const changedServiceIds = Object.entries(record.services ?? {})
+      .filter(([, rule]) => rule.categories.includes(category))
+      .map(([serviceId]) => serviceId);
+    return changedServiceIds.length ? [{ id, record, changedServiceIds }] : [];
+  });
+  // Each Item needs a canonical write, revision and audit entry; each layout needs a current
+  // record, revision and audit entry. Keep one rename below Firestore's transaction write cap.
+  const plannedWrites = affectedItems.length * 3 + layoutChanges.length * 3 + 2;
+  if (plannedWrites > 450) throw problem(`This rename would require ${plannedWrites} writes in one atomic transaction. Reduce the affected set or use a separately reviewed migration.`);
+  const categoryExists = items.some(item => text(item.record.category) === newCategory)
+    || layouts.some(({ record }) => Object.values(record.services ?? {}).some(rule => rule.categories.includes(newCategory)));
+  if (categoryExists) throw problem(`“${newCategory}” already exists in the catalogue or a booking service. Choose a new name or review a merge separately.`, 409);
+  if (!affectedItems.length && !layoutChanges.length) throw problem(`“${category}” is not used by any current or archived Item or stored booking service.`);
+
+  const expectedItemIds = Object.keys(command.expectedItemVersions).sort();
+  const actualItemIds = affectedItems.map(item => item.canonicalId).sort();
+  if (expectedItemIds.length !== actualItemIds.length || expectedItemIds.some((id, index) => id !== actualItemIds[index])) throw stale(`The “${category}” Item list`);
+  for (const item of affectedItems) expectVersion(item, command.expectedItemVersions[item.canonicalId], `Item “${text(item.record.name)}”`);
+
+  const expectedLayoutIds = Object.keys(command.expectedLayoutVersions).sort();
+  const layoutKey = (layout: { record: StoredServiceLayout }) => layout.record.scope === "company" ? "company" : `site:${layout.record.oplocId ?? ""}`;
+  const actualLayoutKeys = layoutChanges.map(layoutKey).sort();
+  const actualLayoutIds = layoutChanges.map(layout => layout.id).sort();
+  if (expectedLayoutIds.length !== actualLayoutKeys.length || expectedLayoutIds.some((id, index) => id !== actualLayoutKeys[index])) throw stale(`The “${category}” service layout`);
+  for (const layout of layoutChanges) {
+    if (Number(layout.record.version) !== Number(command.expectedLayoutVersions[layoutKey(layout)])) throw stale("A booking service layout");
+  }
+
+  for (const item of affectedItems) {
+    const before = text(item.record.category);
+    stage(ctx, "Hospitality Menu Item", bump(ctx, { ...item.record, category: newCategory }), item, `Category renamed from “${category}” to “${newCategory}”.`);
+    auditEvent(ctx, "Hospitality Catalogue category renamed on Item", item.canonicalId, reason, { itemId: item.canonicalId, name: text(item.record.name), before: { category: before }, after: { category: newCategory }, operationId: command.operationId });
+  }
+  for (const layout of layoutChanges) {
+    const services = { ...layout.record.services };
+    for (const serviceId of layout.changedServiceIds) {
+      const rule = services[serviceId as keyof typeof services];
+      if (!rule) continue;
+      services[serviceId as keyof typeof services] = { ...rule, categories: rule.categories.map(value => value === category ? newCategory : value) };
+    }
+    const next = { ...layout.record, services, version: layout.record.version + 1, updatedAt: ctx.now, updatedBy: ctx.actor.uid };
+    ctx.tx.set(layoutCollection().doc(layout.id), next);
+    ctx.tx.set(layoutRevisions().doc(`${layout.id}:${next.version}`), {
+      docId: layout.id, scope: layout.record.scope, ...(layout.record.oplocId ? { oplocId: layout.record.oplocId } : {}),
+      changedServiceIds: layout.changedServiceIds, version: next.version, previous: layout.record, current: next,
+      actorId: ctx.actor.uid, recordedAt: ctx.now, reason,
+    });
+    auditEvent(ctx, "Hospitality Catalogue category renamed in booking services", `service-layout:${layout.id}`, reason, { operationId: command.operationId, category, newCategory, oplocId: layout.record.oplocId ?? null, serviceIds: layout.changedServiceIds, version: next.version });
+  }
+  const itemIds = actualItemIds;
+  const message = `Renamed “${category}” to “${newCategory}” across ${affectedItems.length} current or archived Item${affectedItems.length === 1 ? "" : "s"} and ${layoutChanges.length} stored service layout${layoutChanges.length === 1 ? "" : "s"}. Historical bookings were not changed.`;
+  auditEvent(ctx, "Hospitality Catalogue category rename completed", `category:${category}`, reason, { operationId: command.operationId, before: category, after: newCategory, itemIds, layoutIds: actualLayoutIds });
+  ctx.tx.create(receiptRef, { operationId: command.operationId, requestHash, category, newCategory, itemIds, layoutIds: actualLayoutIds, message, actorId: ctx.actor.uid, actorName: ctx.actor.name, completedAt: ctx.now });
+  return { itemIds, reload: true, message };
+}
+
 export async function runCatalogueCommand(actor: Actor, command: CatalogueCommand): Promise<CatalogueCommandResult> {
   assertPermission(actor, "hospitality.catalogue.manage");
   return db.runTransaction(async tx => {
@@ -588,6 +678,7 @@ export async function runCatalogueCommand(actor: Actor, command: CatalogueComman
       case "set-routing": return setRouting(ctx, command);
       case "set-item-status": return setItemStatus(ctx, command);
       case "set-service-categories": case "clear-service-override": return setServiceCategories(ctx, command);
+      case "rename-category": return renameCategory(ctx, command);
       case "set-site-availability": return setSiteAvailability(ctx, command);
       case "set-site-override": return setSiteOverride(ctx, command);
       case "adopt-company-default": return adoptCompanyDefault(ctx, command);
@@ -595,6 +686,47 @@ export async function runCatalogueCommand(actor: Actor, command: CatalogueComman
       case "record-review-decision": return recordReviewDecision(ctx, command);
     }
   });
+}
+
+export type BulkCreateItem = Extract<CatalogueCommand, { action: "create-item" }>;
+export type BulkCreateSpec = { operationId: string; items: BulkCreateItem[] };
+export type BulkCreateItemResult = { requestId: string; name: string; itemId?: string; status: "applied" | "already_applied" | "failed"; message: string };
+export type BulkCreateResult = { operationId: string; results: BulkCreateItemResult[]; succeeded: number; failed: number; message: string };
+
+/** Validate the whole pasted batch before making any writes. The individual create command remains the authority for every row. */
+export function validateBulkCreateSpec(spec: BulkCreateSpec) {
+  if (!spec.operationId || spec.operationId.length < 8 || spec.operationId.length > 80) throw problem("A bulk create operation needs a valid operation ID.");
+  if (!Array.isArray(spec.items) || spec.items.length === 0) throw problem("Add at least one product row.");
+  if (spec.items.length > MAX_BULK_ITEMS) throw problem(`Bulk creation is limited to ${MAX_BULK_ITEMS} items at a time. Split the rows into smaller batches.`);
+  const requestIds = spec.items.map(item => item.requestId);
+  if (requestIds.some(id => !id || id.length < 8 || id.length > 80) || new Set(requestIds).size !== requestIds.length) throw problem("Every product row needs a distinct request ID. Reload the editor and try again.");
+  const names = spec.items.map(item => normaliseName(item.name));
+  if (names.some(name => !name) || new Set(names).size !== names.length) throw problem("Each product needs a distinct, non-empty name. Review duplicate rows before saving.");
+  return spec.items;
+}
+
+/** Each item keeps the regular transactional creation, permissions, audit and request-ID replay protection. */
+export async function runBulkCatalogueCreate(actor: Actor, spec: BulkCreateSpec): Promise<BulkCreateResult> {
+  assertPermission(actor, "hospitality.catalogue.manage");
+  const items = validateBulkCreateSpec(spec);
+  const results: BulkCreateItemResult[] = [];
+  for (const item of items) {
+    try {
+      const created = await runCatalogueCommand(actor, item);
+      const itemId = created.itemIds[0];
+      results.push({ requestId: item.requestId, name: item.name.trim(), itemId, status: /already created/i.test(created.message) ? "already_applied" : "applied", message: created.message });
+    } catch (error) {
+      results.push({ requestId: item.requestId, name: item.name.trim(), status: "failed", message: error instanceof Error ? error.message : "This product could not be created. Review the row and try again." });
+    }
+  }
+  const succeeded = results.filter(result => result.status !== "failed").length;
+  const failed = results.length - succeeded;
+  await audit().doc(`bulk-create-${spec.operationId}`).set({
+    action: "Hospitality Catalogue bulk create", entityReference: spec.operationId, actorId: actor.uid, actorName: actor.name, timestamp: new Date().toISOString(),
+    reason: `Created ${succeeded} of ${results.length} products; ${failed} failed.`,
+    details: JSON.parse(JSON.stringify({ operationId: spec.operationId, requestIds: items.map(item => item.requestId), itemIds: results.filter(result => result.itemId).map(result => result.itemId), succeeded, failed, results })),
+  }, { merge: true });
+  return { operationId: spec.operationId, results, succeeded, failed, message: failed ? `${succeeded} of ${results.length} products saved; ${failed} need review.` : `${succeeded} product${succeeded === 1 ? "" : "s"} saved.` };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
