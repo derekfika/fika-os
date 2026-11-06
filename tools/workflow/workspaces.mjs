@@ -5,35 +5,12 @@ import { execFileSync } from 'node:child_process';
 import { git, common, stateDir, save, jsonFile, lock, ancestor, inside, command, ref, ghApi } from './runtime.mjs';
 import { safeScope, partialPathOverlap, digest, REPO, APPS } from './policy.mjs';
 import { changelogPath } from './changelog.mjs';
-import { applyRevocations, diskRecords, leaseIdentity } from './workspace-state.mjs';
+import { committedReconciliationJournals, leaseIdentity, verifyRecoveryArtifact, workspaceRecords } from './workspace-state.mjs';
+export { verifyRecoveryArtifact, workspaceRecords } from './workspace-state.mjs';
 
 const leases = () => { const p = path.join(stateDir(), 'workspaces'); mkdirSync(p, { recursive: true }); return p; };
 const managedRoot = () => path.resolve(common(), '..', '..', 'agent-workspaces', 'fika-os');
 const validateName = name => { if (!/^[a-z][a-z0-9-]{2,60}$/.test(name || '')) throw Error('Use a 3–61 character lowercase workspace name'); return name; };
-export function workspaceRecords() {
-  leases(); const records = diskRecords();
-  for (const journal of committedReconciliationJournals()) {
-    const diskByName = new Map(records.map(x => [x.name, x]));
-    for (const snapshot of [journal.leaseTransition.source, journal.leaseTransition.replacement]) {
-      const disk = diskByName.get(snapshot.name);
-      if (!disk || disk.owner !== snapshot.owner) throw Error(`Committed reconciliation ${journal.id} has a missing or changed lease owner`);
-      if (snapshot.state === 'active' && !['reconciling','active','finished','retired','superseded'].includes(disk.state)) throw Error(`Committed reconciliation ${journal.id} replacement state is contradictory`);
-      if (snapshot.state === 'superseded' && !['active','superseded'].includes(disk.state)) throw Error(`Committed reconciliation ${journal.id} source state is contradictory`);
-      if (snapshot.state === 'active' && ['finished','retired'].includes(disk.state)) continue;
-      const index = records.findIndex(x => x.name === snapshot.name); if (index >= 0) records[index] = snapshot;
-    }
-  }
-  if (new Set(records.map(r => path.resolve(r.directory))).size !== records.length || new Set(records.map(r => r.branch)).size !== records.length) throw Error('Workspace registry has duplicated directories or branches');
-  return applyRevocations(records);
-}
-function committedReconciliationJournals() {
-  const transitions = path.join(stateDir(), 'reconciliations'); if (!existsSync(transitions)) return [];
-  return readdirSync(transitions, { withFileTypes: true }).filter(x => x.isDirectory()).map(dir => {
-    const file = path.join(transitions, dir.name, 'journal.json'); return existsSync(file) ? jsonFile(file) : undefined;
-  }).filter(x => x?.phase === 'committed' && x.leaseTransition).sort((a,b) => a.completedAt.localeCompare(b.completedAt)).map(journal => {
-    verifyRecoveryArtifact(journal.recoveryFile, journal.recoveryChecksum); return journal;
-  });
-}
 /**
  * Lease IDs are unique, with one historical exception: reconcileWorkspace once copied the source
  * lease (including leaseId) into its replacement. A shared ID is therefore accepted only for exactly
@@ -151,9 +128,6 @@ export function preserveWorkspace(record, reason) {
 }
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
-export function verifyRecoveryArtifact(file, expectedSha256) {
-  const actual = sha256(readFileSync(file)); if (actual !== expectedSha256) throw Error(`Recovery checksum mismatch: expected ${expectedSha256}, got ${actual}`); return actual;
-}
 const scoped = (file, scopes) => scopes.some(scope => file === scope || file.startsWith(`${scope}/`));
 function nulPaths(run, args) { const out = run(...args); return out ? out.split('\0').filter(Boolean) : []; }
 function repoCommand(cwd, ...args) { return command('git', args, { cwd }); }
@@ -249,7 +223,7 @@ export function reconcileWorkspace(name, options) {
     if (existsSync(directory) || ref(`refs/heads/${branch}`)) throw Error('Replacement path/branch exists; source and recovery remain intact');
     const portsBase = 13000 + (records.length + 1) * 10; if (portsBase > 65000) throw Error('Workspace port allocation exhausted');
     const ports = Object.fromEntries(Object.keys(APPS).map((app,i)=>[app,portsBase+i]));
-    const replacement = { ...source, name: replacementName, directory, branch, ports, baseline: targetSha, state: 'reconciling', createdAt: new Date().toISOString(), reconciles: { source: name, journal: journalFile, recoveryChecksum: journal.recoveryChecksum } };
+    const replacement = { ...source, leaseId: randomUUID(), name: replacementName, directory, branch, ports, baseline: targetSha, state: 'reconciling', createdAt: new Date().toISOString(), reconciles: { source: name, journal: journalFile, recoveryChecksum: journal.recoveryChecksum } };
     journal.preparedReplacement = replacement; save(journalFile, journal);
     save(path.join(leases(), `${replacementName}.json`), replacement); journal.phase = 'creating'; save(journalFile, journal);
     try {
