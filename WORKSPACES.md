@@ -1,6 +1,6 @@
 # FIKA OS workspace status
 
-Snapshot: 2026-11-06T09:53:17.351Z. The local governed registry remains authoritative.
+Snapshot: 2026-11-06T10:07:51.841Z. The local governed registry remains authoritative.
 
 | Workspace | Owner | Scope | Branch | PR | State | Last update |
 |---|---|---|---|---|---|---|
@@ -377,7 +377,7 @@ Snapshot: 2026-11-06T09:53:17.351Z. The local governed registry remains authorit
 | stacked-lease-integration | sol-workspace-integration | tools/workflow, docs/deployment/workspace-management.md, docs/deployment/workflow.md | codex/stacked-lease-integration | [#167](https://github.com/derekfika/fika-os/pull/167) | retired | 2026-10-30T09:20:57.232Z |
 | stacked-lease-recovery | sol-workspace-governance | tools/workflow, docs/deployment/workspace-management.md, docs/deployment/workflow.md | codex/stacked-lease-recovery | [#165](https://github.com/derekfika/fika-os/pull/165) | retired | 2026-10-30T07:44:59.666Z |
 | staging-artifact-identity-365 | codex-staging-artifact-365 | packages/server-shared/src/drive-owner.ts, packages/server-shared/tests/drive-owner-staging.test.ts, apps/cpu-production/app/lib/matrix-drive-config.ts, apps/cpu-production/app/api/production-plan/route.ts, apps/cpu-production/app/api/delivered-in/review/route.ts, apps/cpu-production/tests/matrix-drive-config.test.ts, apps/cpu-production/tests/drive-readiness-staging.test.ts, apps/cpu-production/tests/staging-artifact-containment.test.ts, apps/delivered-in/lib, apps/delivered-in/app/api, apps/delivered-in/tests | codex/staging-artifact-identity-365 | [#366](https://github.com/derekfika/fika-os/pull/366) | retired | 2026-11-04T23:02:54.332Z |
-| staging-hub-oidc-diagnostic | codex-staging-hub-oidc | .github/workflows/release.yml | codex/staging-hub-oidc-diagnostic | [#418](https://github.com/derekfika/fika-os/pull/418) | active | 2026-11-06T09:30:28.783Z |
+| staging-hub-oidc-diagnostic | codex-staging-hub-oidc | .github/workflows/release.yml | codex/staging-hub-oidc-diagnostic | [#418](https://github.com/derekfika/fika-os/pull/418) | retired | 2026-11-06T10:07:47.093Z |
 | staging-release-manager-2 | claude-staging-release | docs/deployment/staging-release-scoreboard.md | codex/staging-release-manager-2 | — | retired | 2026-10-31T08:04:08.933Z |
 | staging-release-manager-3 | claude-staging-release | docs/deployment/staging-release-scoreboard.md | codex/staging-release-manager-3 | — | retired | 2026-11-01T15:16:52.717Z |
 | staging-release-manager-4 | claude-staging-release | docs/deployment/staging-release-scoreboard-2.md | codex/staging-release-manager-4 | — | retired | 2026-10-31T13:51:35.530Z |
@@ -395,6 +395,7 @@ Snapshot: 2026-11-06T09:53:17.351Z. The local governed registry remains authorit
 | uat-report-2026-10-31-pass3 | claude-uat-qa | docs/agent-handbacks | codex/uat-report-2026-10-31-pass3 | [#205](https://github.com/derekfika/fika-os/pull/205) | retired | 2026-10-31T12:11:58.505Z |
 | uat-report-2026-10-31-queue | claude-uat-report | docs/agent-handbacks | codex/uat-report-2026-10-31-queue | [#204](https://github.com/derekfika/fika-os/pull/204) | retired | 2026-10-31T12:01:08.652Z |
 | workflow-proof | codex-workflow-modernisation | apps/hospitality-booking/docs | codex/workflow-proof | — | retired | 2026-10-22T17:27:37.642Z |
+| workspace-management-v2-b1-compat | luna-workspace-v2 | tools/workflow/workspace-lock.mjs, tools/workflow/workspace-lock.test.mjs, tools/workflow/runtime.mjs, tools/workflow/workspace-state.mjs, tools/workflow/workspaces.mjs, tools/workflow/reconcile-workspace.test.mjs, tools/workflow/workspace-admin.test.mjs, tools/workflow/workspace-lease-recovery.test.mjs, .github/workflows/validate.yml | codex/workspace-management-v2-b1-compat | [#421](https://github.com/derekfika/fika-os/pull/421) | active | 2026-11-06T09:58:04.540Z |
 | workspace-management-v2-b1 | luna-workspace-v2 | tools/workflow/workspace-lock.mjs, tools/workflow/workspace-lock.test.mjs, tools/workflow/runtime.mjs, tools/workflow/workspace-state.mjs, tools/workflow/workspaces.mjs, tools/workflow/workspace-fencing.mjs, tools/workflow/reconcile-workspace.test.mjs, tools/workflow/workspace-admin.test.mjs, .github/workflows/validate.yml | codex/workspace-management-v2-b1 | [#419](https://github.com/derekfika/fika-os/pull/419) | retired | 2026-11-06T09:52:59.547Z |
 | workspace-reconcile-tooling | uat-workspace-reconcile | tools/workflow | codex/workspace-reconcile-tooling | [#76](https://github.com/derekfika/fika-os/pull/76) | finished | 2026-10-28T06:56:42.242Z |
 | workspace-recovery-compat | claude-workspace-recovery-compat | tools/workflow/workspace-lease-recovery.mjs, tools/workflow/workspace-lease-recovery.test.mjs, tools/workflow/workspaces.mjs, docs/deployment/workspace-management.md | codex/workspace-recovery-compat | [#169](https://github.com/derekfika/fika-os/pull/169) | retired | 2026-10-30T09:48:53.322Z |
