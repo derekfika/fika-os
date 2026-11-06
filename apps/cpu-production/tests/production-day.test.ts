@@ -228,4 +228,8 @@ test("Day and Week allocation inspector orders dishes by published placement and
   ]);
   assert.equal(rows[0].quantity, 24);
   assert.equal(rows[2].menuSlots, undefined);
+  const day = aggregateDeliveredIn([site]);
+  assert.deepEqual(day.map(row => row.dishName), rows.map(row => row.name));
+  assert.deepEqual(day[0].menuSlots, rows[0].menuSlots);
+  assert.equal(day[0].total, rows[0].quantity);
 });

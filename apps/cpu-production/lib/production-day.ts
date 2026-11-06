@@ -4,7 +4,7 @@ import { CANONICAL_MENU_SLOTS, canonicalMenuSlotIdFor, orderMenuEntries } from "
 import { menuPlacementKey, publishedPlacementLabel } from "./menu-run-sheet-order";
 import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel, isAdHocProductionOrder, isCpuWithdrawn } from "./production-presentation";
 
-export type DeliveredInDishTotal = { key: string; dishName: string; total: number; destinations: Array<{ label: string; quantity: number }> };
+export type DeliveredInDishTotal = DishPlacement & { key: string; dishName: string; total: number; destinations: Array<{ label: string; quantity: number }> };
 type DishPlacement = { menuSlots?: Array<{ id: string; label: string; order: number; isCoreSalad?: boolean }>; menuOrderVersion?: string; slot?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; menuSortOrder?: number };
 export type DeliveredInDishRow = DishPlacement & { key: string; name: string; quantity: number; destinations: Array<{ label: string; quantity: number }>; snapshot?: NonNullable<ProductionLine["approvedAllergenSnapshot"]>; reviewed: boolean; snapshotMismatch?: { sources: string[]; detail: string } };
 export type AllergenReviewRow = DeliveredInDishRow & { sources: string[]; attention: boolean; dietaries: Record<string, unknown>; notes: string[] };
@@ -106,7 +106,7 @@ function retainMenuOrder(row: DishPlacement, line: ProductionLine) {
   }
 }
 
-function orderedMenuRows<T extends DeliveredInDishRow>(rows: T[]) {
+function orderedMenuRows<T extends DishPlacement & { key: string }>(rows: T[]) {
   return orderMenuEntries(rows.map((row, index) => ({ row, slot: row.canonicalSlotId || row.slot || "", originalIndex: row.canonicalOrderIndex ?? row.menuSortOrder ?? index, sourceEntryId: row.key }))).map(({ row }) => row);
 }
 
@@ -216,19 +216,23 @@ export function categorySummary(orders: ProductionOrder[]) {
 }
 
 export function aggregateDeliveredIn(orders: ProductionOrder[]): DeliveredInDishTotal[] {
-  const totals = new Map<string, { dishName: string; total: number; destinations: Map<string, number> }>();
+  const totals = new Map<string, Omit<DeliveredInDishTotal, "destinations"> & { destinations: Map<string, number> }>();
   for (const order of orders.filter(item => item.origin === "menu_planning")) {
     const label = destination(order);
     for (const line of order.lines) {
       const key = line.sourceMenuItemId || line.itemName.trim().toLowerCase();
-      const existing = totals.get(key) || { dishName: line.itemName, total: 0, destinations: new Map<string, number>() };
+      const existing = totals.get(key) || { key, dishName: line.itemName, total: 0, destinations: new Map<string, number>() };
+      if (line.slot || line.canonicalSlotId || line.menuOrderVersion) retainMenuOrder(existing, line);
       const quantity = line.customerQuantity;
       existing.total += quantity;
       existing.destinations.set(label, (existing.destinations.get(label) || 0) + quantity);
       totals.set(key, existing);
     }
   }
-  return [...totals.entries()].map(([key, value]) => ({ key, dishName: value.dishName, total: value.total, destinations: [...value.destinations.entries()].map(([label, quantity]) => ({ label, quantity })).sort((a, b) => a.label.localeCompare(b.label)) })).sort((a, b) => a.dishName.localeCompare(b.dishName));
+  return orderedMenuRows([...totals.values()].map(row => ({
+    ...row,
+    destinations: [...row.destinations.entries()].map(([label, quantity]) => ({ label, quantity })).sort((a, b) => a.label.localeCompare(b.label)),
+  })).sort((a, b) => a.dishName.localeCompare(b.dishName)));
 }
 
 export function groupByRequiredTime(orders: ProductionOrder[]) {

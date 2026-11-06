@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
-import { publishedPlacementLabel } from "../../lib/menu-run-sheet-order";
+import { PublishedPlacementLabels } from "./PublishedPlacementLabels";
 import { buildDeliveredInDishRows, deliveredInTotals } from "../../lib/production-day";
 import { cpuAttentionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime } from "../../lib/production-presentation";
 import "./delivered-in-production-detail.css";
@@ -31,14 +31,7 @@ export default function DeliveredInProductionDetail({ order, orders, close, onSa
             <tr key={row.key}>
               <th scope="row">
                 {row.name}
-                {row.menuSlots?.length
-                  ? row.menuSlots.map(slot => (
-                    <small className="kitchen-slot-label" key={slot.id}>
-                      {publishedPlacementLabel({ slot: slot.id })}
-                      {slot.isCoreSalad && <span className="cpu-core-salad-label" aria-label="Core Salad">CORE</span>}
-                    </small>
-                  ))
-                  : <small className="kitchen-slot-label">{publishedPlacementLabel(row)}</small>}
+                <PublishedPlacementLabels row={row} />
               </th>
               <td>{row.quantity.toLocaleString("en-GB")}</td>
             </tr>
