@@ -7,6 +7,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifyRecoveryArtifact } from './workspaces.mjs';
+import { withRepository } from './runtime.mjs';
+import { beginWorkspaceOperation } from './workspace-state.mjs';
+import { checkGitWorkspaceFence } from './workspace-fencing.mjs';
 
 const cli = fileURLToPath(new URL('./cli.mjs', import.meta.url));
 function fixture(scope = 'apps/cpu-production') {
@@ -60,6 +63,17 @@ test('successful reconciliation preserves staged, unstaged, untracked and mixed 
     writeFileSync(path.join(f.source, 'apps/cpu-production/new.bin'), Buffer.from([0, 1, 255]));
     const result = f.run(['workspace', 'reconcile', 'cpu-source', '--owner', 'fixture-owner', '--replacement', 'cpu-rebased', '--execute']);
     const rows = f.run(['workspace', 'list']); assert.equal(rows.find(x => x.name === 'cpu-source').state, 'superseded'); assert.equal(rows.find(x => x.name === 'cpu-rebased').state, 'active');
+    const raw = name => JSON.parse(readFileSync(path.join(f.repo, '.git/fika-workflow/workspaces', name + '.json'), 'utf8'));
+    assert.equal(raw('cpu-source').state, 'active');
+    assert.equal(raw('cpu-rebased').state, 'reconciling');
+    assert.notEqual(result.source.leaseId, result.replacement.leaseId);
+    assert.throws(() => withRepository(f.source, checkGitWorkspaceFence), /ownership is absent/);
+    assert.doesNotThrow(() => withRepository(result.replacement.directory, checkGitWorkspaceFence));
+    withRepository(f.repo, () => {
+      const select = workspace => ({ workspace, owner: 'fixture-owner' });
+      assert.throws(() => beginWorkspaceOperation('integrate', select('cpu-source')), /Selected workspace ownership/);
+      beginWorkspaceOperation('integrate', select('cpu-rebased')).end();
+    });
     assert.equal(readFileSync(path.join(result.replacement.directory, 'apps/cpu-production/task.txt'), 'utf8').replace(/\r\n/g, '\n'), 'ALPHA\nBETA\ngamma\n');
     assert.deepEqual([...readFileSync(path.join(result.replacement.directory, 'apps/cpu-production/new.bin'))], [0, 1, 255]);
     assert.deepEqual(f.gitAt(result.replacement.directory, 'diff', '--cached', '--name-only').split(/\r?\n/), ['apps/cpu-production/task.txt']);

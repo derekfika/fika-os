@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { existsSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { common, root, git, stateDir, lock, save, jsonFile } from './runtime.mjs';
 import { digest, safeScope } from './policy.mjs';
 
@@ -35,10 +35,37 @@ export function diskRecords() {
   if(new Set(records.map(r=>path.resolve(r.directory))).size!==records.length||new Set(records.map(r=>r.branch)).size!==records.length)throw Error('Workspace registry has duplicated directories or branches');
   return records;
 }
+export function workspaceRecords() {
+  const records = diskRecords();
+  for (const journal of committedReconciliationJournals()) {
+    const diskByName = new Map(records.map(x => [x.name, x]));
+    for (const snapshot of [journal.leaseTransition.source, journal.leaseTransition.replacement]) {
+      const disk = diskByName.get(snapshot.name);
+      if (!disk || disk.owner !== snapshot.owner) throw Error(`Committed reconciliation ${journal.id} has a missing or changed lease owner`);
+      if (snapshot.state === 'active' && !['reconciling','active','finished','retired','superseded'].includes(disk.state)) throw Error(`Committed reconciliation ${journal.id} replacement state is contradictory`);
+      if (snapshot.state === 'superseded' && !['active','superseded'].includes(disk.state)) throw Error(`Committed reconciliation ${journal.id} source state is contradictory`);
+      if (snapshot.state === 'active' && ['finished','retired'].includes(disk.state)) continue;
+      const index = records.findIndex(x => x.name === snapshot.name); if (index >= 0) records[index] = snapshot;
+    }
+  }
+  if (new Set(records.map(r => path.resolve(r.directory))).size !== records.length || new Set(records.map(r => r.branch)).size !== records.length) throw Error('Workspace registry has duplicated directories or branches');
+  return applyRevocations(records);
+}
+export function committedReconciliationJournals() {
+  const transitions = path.join(stateDir(), 'reconciliations'); if (!existsSync(transitions)) return [];
+  return readdirSync(transitions, { withFileTypes: true }).filter(x => x.isDirectory()).map(dir => {
+    const file = path.join(transitions, dir.name, 'journal.json'); return existsSync(file) ? jsonFile(file) : undefined;
+  }).filter(x => x?.phase === 'committed' && x.leaseTransition).sort((a,b) => a.completedAt.localeCompare(b.completedAt)).map(journal => {
+    verifyRecoveryArtifact(journal.recoveryFile, journal.recoveryChecksum); return journal;
+  });
+}
+export function verifyRecoveryArtifact(file, expectedSha256) {
+  const actual = createHash('sha256').update(readFileSync(file)).digest('hex'); if (actual !== expectedSha256) throw Error(`Recovery checksum mismatch: expected ${expectedSha256}, got ${actual}`); return actual;
+}
 export function authorityForCurrentWorkspace() {
   const cwd = path.resolve(root()); const canonical = path.resolve(common(), '..');
   if (cwd === canonical) return null; // Owner administration/integration checkout; never a displaced worktree.
-  const records = applyRevocations(diskRecords());
+  const records = workspaceRecords();
   const record = records.find(r => path.resolve(r.directory) === cwd);
   if (!record || record.state !== 'active' || git('branch', '--show-current') !== record.branch) throw Error('Workspace ownership is absent, finished or revoked. Stop governed validation, integration and releases; preserve the checkout and obtain a new lease.');
   return record;
@@ -47,7 +74,7 @@ export function beginWorkspaceOperation(kind, selection) {
   return lock('workspaces', () => {
     let record = authorityForCurrentWorkspace();
     if (selection?.workspace) {
-      const selected = applyRevocations(diskRecords()).find(r => r.name === selection.workspace);
+      const selected = workspaceRecords().find(r => r.name === selection.workspace);
       if (!selected || selected.state !== 'active' || selected.owner !== selection.owner || (record && record.name !== selected.name)) throw Error('Selected workspace ownership is absent or revoked');
       record = selected;
     }

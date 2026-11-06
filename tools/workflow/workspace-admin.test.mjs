@@ -4,7 +4,8 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync, unlink
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fixture } from './lifecycle-fixture.mjs';
-import { withRepository, stateDir, save } from './runtime.mjs';
+import { withRepository, stateDir, save, lock, workspaceMutex } from './runtime.mjs';
+import { installWorkspaceMutexSentinel } from './workspace-lock.mjs';
 import { createWorkspace, workspaceRecords, checkWorkspace, finishWorkspace } from './workspaces.mjs';
 import { beginWorkspaceOperation, authorityForCurrentWorkspace, governedOperation } from './workspace-state.mjs';
 import { previewReleaseAll, releaseAllWorkspaces, RELEASE_CONFIRMATION, completeWorkspace, previewSweep, sweepWorkspaces, publicWorkspaceReport, recoverValidationOperation } from './workspace-admin.mjs';
@@ -47,6 +48,21 @@ test('critical operations and release locks are protected, including interrupted
     writeFileSync(path.join(stateDir(),'release-cpu-staging.lock'),'fixture');
     p=previewReleaseAll(deps);assert.equal(p.eligibleCount,0);assert.match(p.entries[0].reasons.join(),/Never break/);
   });}finally{f.dispose();}
+});
+test('a fixture V2 sentinel leaves existing release lock behavior intact', () => {
+  const f = fixture();
+  try {
+    f.within(() => {
+      const releaseLock = path.join(stateDir(), 'release-cpu-staging.lock');
+      writeFileSync(releaseLock, 'fixture release holder');
+      installWorkspaceMutexSentinel(stateDir());
+      assert.equal(workspaceMutex(() => 'registry only'), 'registry only');
+      assert.throws(() => lock('release-cpu-staging', () => assert.fail()), /Another operation holds/);
+      assert.equal(readFileSync(releaseLock, 'utf8'), 'fixture release holder');
+    });
+  } finally {
+    f.dispose();
+  }
 });
 test('journal interruption before commit is a no-op; corrupt committed journals fail closed',()=>{
   const f=fixture();try{f.within(()=>{
