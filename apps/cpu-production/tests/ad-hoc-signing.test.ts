@@ -16,7 +16,7 @@ const order = (extra: Record<string, unknown> = {}) => ({
 
 test("committed Ad-Hoc materialization is repeat-safe and rechecks amendments/cancellation after upload", async () => {
   const saved = { env: { ...process.env }, fetch: globalThis.fetch };
-  Object.assign(process.env, { FIKA_CPU_PLAN_STORE: "memory", FIKA_RUNTIME_MODE: "production", FIKA_HUB_BASE_URL: "https://os.fikacatering.com", FIKA_PDF_RENDERER_URL: "https://renderer.test", FIKA_PDF_RENDERER_TOKEN: "test", HOSPITALITY_BOOKING_BASE_URL: "https://hospitality.test", GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON: "{}", GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION: "test-chef@example.test", GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID: "cpu-release-test-folder" });
+  Object.assign(process.env, { FIKA_CPU_PLAN_STORE: "memory", FIKA_RUNTIME_MODE: "production", FIKA_HUB_BASE_URL: "https://os.fikacatering.com", FIKA_PDF_RENDERER_URL: "https://renderer.test", FIKA_PDF_RENDERER_TOKEN: "test", HOSPITALITY_BOOKING_BASE_URL: "https://hospitality.fikacatering.com", GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON: "{}", GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION: "test-chef@example.test", GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID: "cpu-release-test-folder" });
   try {
     for (const scenario of ["ready", "lifecycle", "amended", "cancelled", "matrix-edit"] as const) {
       const sourceId = `${requestId}:${scenario}`;
@@ -118,7 +118,7 @@ test("signed Ad-Hoc release is PDF-only: one Drive PDF, no OPLOC needed, no Deli
   // This test covers successful signed-PDF delivery in production mode. Staging
   // DWD is intentionally denied until Drive isolation is verified; the staging
   // denial and zero-token/network behavior are covered by drive-readiness tests.
-  Object.assign(process.env, { FIKA_RUNTIME_MODE: "production", FIKA_PDF_RENDERER_URL: "https://renderer.test", FIKA_PDF_RENDERER_TOKEN: "t", HOSPITALITY_BOOKING_BASE_URL: "https://hospitality.test", GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON: "{}", GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION: "cpux@fikacatering.com", GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID: "cpu-release-test-folder" });
+  Object.assign(process.env, { FIKA_RUNTIME_MODE: "production", FIKA_PDF_RENDERER_URL: "https://renderer.test", FIKA_PDF_RENDERER_TOKEN: "t", HOSPITALITY_BOOKING_BASE_URL: "https://hospitality.fikacatering.com", GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON: "{}", GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION: "cpux@fikacatering.com", GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID: "cpu-release-test-folder" });
   const calls: string[] = []; let driveBody: Record<string, unknown> | undefined;
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
     const url = String(input); calls.push(url);
