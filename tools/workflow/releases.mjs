@@ -104,7 +104,7 @@ export async function releaseHealthProbe(app, backendUri, sourceSha, fetchImpl =
       return {ok,status:auth.status,url:`${origin}/api/me`,entryStatus:entry.status,authGate:ok?'unauthenticated_request_denied':undefined,...(ok?{}:{reason:'adhoc_auth_gate_not_fail_closed'})};
     }catch{return {ok:false,status:null,url:`${origin}/`,reason:'request_failed'};}
   }
-  if (app === 'hospitality' && environment === 'staging') {
+  if (app === 'hospitality') {
     const url = `${origin}/`;
     try {
       const options = { redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(30000) };
