@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chromium } from "playwright";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chromium, type Page } from "playwright";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
+  collectionPrintHtml,
   dayProductionPrintHtml,
   paginateDayProduction,
   runSheetProductionPrintHtml,
@@ -11,6 +12,22 @@ import {
 import { CANONICAL_MENU_SLOTS } from "../../../shared/menu-section-order";
 import type { ProductionOrder } from "../../lib/production-types";
 const day = "2026-10-23";
+const tokens = readFileSync(new URL("../../../../shared/fika/tokens.css", import.meta.url), "utf8");
+
+async function preparePrint(page: Page, html: string) {
+  await page.route("https://run-sheet.test/**", route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/") return route.fulfill({ contentType: "text/html", body: html });
+    if (url.pathname.startsWith("/fonts/")) return route.fulfill({ path: path.resolve("public", url.pathname.slice(1)) });
+    return route.abort();
+  });
+  await page.goto("https://run-sheet.test/");
+  await page.addStyleTag({ content: tokens });
+  await page.evaluate(async () => { await document.fonts.ready; });
+  await page.addScriptTag({ content: "const __name = (fn) => fn; (" + paginateDayProduction.toString() + ")()" });
+}
+
+const pdfOptions = { format: "A4", preferCSSPageSize: true, printBackground: true, displayHeaderFooter: true } as const;
 const collection = (id: string, rows: number, long = false) =>
   ({
     canonicalId: id,
@@ -32,7 +49,20 @@ const collection = (id: string, rows: number, long = false) =>
       customerUnit: "portions",
     })),
   }) as ProductionOrder;
+const hospitality = (id: number): ProductionOrder => ({
+  ...collection(`hospitality-${id}`, 2, true),
+  origin: "hospitality_booking",
+  sourceBookingId: `BK-100${id}`,
+  destinationOplocId: "oploc:fixture",
+  destinationLabel: "FIKA Xchange · Synthetic",
+  clientName: `Test Client ${id}`,
+  bookingNotes: `Event: Team briefing ${id}`,
+  serviceType: "Working lunch",
+  lines: collection(`hospitality-${id}`, 2, true).lines.map(line => ({ ...line, customerUnit: "tray" })),
+});
 const cases = [
+  { name: "hospitality-same-site", orders: [hospitality(1), hospitality(2)], pages: 1 },
+  { name: "grab-and-go", orders: [{ ...collection("grab", 2), origin: "grab_and_go" as const, serviceType: "Grab & Go", requiresDelivery: false }], pages: 1 },
   { name: "single", orders: [collection("single", 3)], pages: 1 },
   {
     name: "four-small",
@@ -67,13 +97,7 @@ for (const scenario of cases)
     try {
       const page = await browser.newPage();
       await page.emulateMedia({ media: "screen" });
-      await page.setContent(dayProductionPrintHtml(scenario.orders, day));
-      await page.addScriptTag({
-        content:
-          "const __name = (fn) => fn; (" +
-          paginateDayProduction.toString() +
-          ")()",
-      });
+      await preparePrint(page, dayProductionPrintHtml(scenario.orders, day));
       const result = await page.evaluate(() => {
         const pages = Array.from(
           document.querySelectorAll<HTMLElement>(".print-page"),
@@ -113,9 +137,20 @@ for (const scenario of cases)
           overlaps,
           empty: pages.some((p) => !p.querySelector(".collection")),
           continuations: output.querySelectorAll(".continuation").length,
+          handovers: output.querySelectorAll(".handover").length,
+          headingsKeepRows: Array.from(output.querySelectorAll(".menu-section-row")).every(row => row.nextElementSibling?.hasAttribute("data-line-id")),
+          text: output.innerText,
         };
       });
       assert.equal(result.empty, false);
+      assert.equal(result.handovers, scenario.orders.length);
+      assert.equal(result.headingsKeepRows, true);
+      if (scenario.name === "hospitality-same-site") {
+        assert.match(result.text, /Test Client 1 · Team briefing 1/);
+        assert.match(result.text, /Test Client 2 · Team briefing 2/);
+        assert.match(result.text, /BK-1001/);
+        assert.match(result.text, /1 tray/);
+      }
       assert.deepEqual(result.overflow, []);
       assert.equal(result.overlaps, false);
       assert.deepEqual(
@@ -141,9 +176,7 @@ for (const scenario of cases)
       await page.emulateMedia({ media: "print" });
       await page.pdf({
         path: path.join(output, scenario.name + ".pdf"),
-        format: "A4",
-        preferCSSPageSize: true,
-        printBackground: false,
+        ...pdfOptions,
       });
       await page.screenshot({
         path: path.join(output, scenario.name + ".png"),
@@ -190,15 +223,12 @@ test("Chromium A4 PDF: canonical 29-slot categories are boxed and ordered", asyn
       ...(index === 0 ? { isCoreSalad: true } : {}),
     })),
   } as ProductionOrder & { lines: Array<ProductionOrder["lines"][number] & { isCoreSalad?: boolean }> };
-  const html = dayProductionPrintHtml([order], day, "SYNTHETIC UAT FIXTURE - NOT FOR SERVICE");
+  const html = collectionPrintHtml(order, new Date(day + "T12:00:00Z"));
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
     await page.emulateMedia({ media: "screen" });
-    await page.setContent(html);
-    await page.addScriptTag({
-      content: "const __name = (fn) => fn; (" + paginateDayProduction.toString() + ")()",
-    });
+    await preparePrint(page, html);
     const result = await page.evaluate(() => {
       const output = document.getElementById("day-pages")!;
       const sections = Array.from(output.querySelectorAll<HTMLElement>(".menu-section-row th"));
@@ -244,7 +274,7 @@ test("Chromium A4 PDF: canonical 29-slot categories are boxed and ordered", asyn
     for (const section of result.sections) {
       assert.ok(section.borders.every((border) => border.width >= 0.5 && border.style === "solid"), `${section.label} should be visibly boxed on four sides`);
     }
-    assert.match(result.scope || "", /SYNTHETIC/);
+    assert.match(result.scope || "", /NOT FOR SERVICE/);
     assert.match(result.siteTitle || "", /NOT FOR SERVICE/);
     assert.equal(result.pageCount, 2, "29-slot canonical menu keeps its existing two-page A4 pagination");
 
@@ -253,9 +283,7 @@ test("Chromium A4 PDF: canonical 29-slot categories are boxed and ordered", asyn
     await page.emulateMedia({ media: "print" });
     await page.pdf({
       path: path.join(outputDir, "canonical-29-slot-boxed.pdf"),
-      format: "A4",
-      preferCSSPageSize: true,
-      printBackground: false,
+      ...pdfOptions,
     });
     await page.screenshot({
       path: path.join(outputDir, "canonical-29-slot-boxed.png"),
@@ -285,15 +313,15 @@ test("Chromium A4 print keeps every site/date group separate and labels continua
   try {
     const page = await browser.newPage();
     await page.emulateMedia({ media: "screen" });
-    await page.setContent(html);
-    await page.addScriptTag({ content: "const __name = (fn) => fn; (" + paginateDayProduction.toString() + ")()" });
+    await preparePrint(page, html);
     const result = await page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>(".print-page")).map((sheet) => ({
       siteKey: sheet.dataset.siteKey,
       day: sheet.dataset.day,
-      title: sheet.querySelector("h1")?.textContent,
+      date: sheet.querySelector(".heading-date")?.textContent,
       scope: sheet.querySelector(".page-scope")?.textContent,
       warning: sheet.querySelector(".print-warning")?.textContent,
-      handover: sheet.querySelector(".handover")?.textContent,
+      handovers: Array.from(sheet.querySelectorAll(".handover")).map(footer => footer.textContent),
+      continuation: sheet.querySelector(".continuation")?.textContent,
       cards: Array.from(sheet.querySelectorAll<HTMLElement>(".collection")).map((card) => ({ siteKey: card.dataset.siteKey, day: card.dataset.day, id: card.dataset.collectionId })),
       overflow: Array.from(sheet.querySelectorAll<HTMLElement>(".collection")).some((card) => card.getBoundingClientRect().bottom > sheet.querySelector(".page-cards")!.getBoundingClientRect().bottom + 0.5),
     })));
@@ -303,16 +331,18 @@ test("Chromium A4 print keeps every site/date group separate and labels continua
       new Set([["oploc:oploc:a", day], ["oploc:oploc:b", day], ["oploc:oploc:a", day2]].map((entry) => JSON.stringify(entry))),
     );
     assert.ok(result.every((sheet) => sheet.cards.length > 0 && sheet.cards.every((card) => card.siteKey === sheet.siteKey && card.day === sheet.day)));
-    assert.ok(result.every((sheet) => sheet.title?.includes(sheet.day!)));
+    assert.deepEqual(new Set(result.map(sheet => sheet.date)), new Set(["Friday, 23 October 2026", "Saturday, 24 October 2026"]));
     assert.ok(result.every((sheet) => sheet.scope?.includes("Printed 23 Oct 2026")));
     assert.ok(result.every((sheet) => sheet.warning?.includes("Paper-only checkboxes")));
-    assert.ok(result.every((sheet) => ["Packed by:", "Checked by:", "Driver / collected by:", "Departure time:", "Delivered time:", "Received by / signature:", "Notes / issues:"].every((field) => sheet.handover?.includes(field))));
+    const handovers = result.flatMap(sheet => sheet.handovers);
+    assert.equal(handovers.length, 4);
+    assert.ok(handovers.every(handover => ["Packed by:", "Checked by:", "Driver / collected by:", "Departure time:", "Delivered time:", "Received by / signature:", "Notes / issues:"].every(field => handover?.includes(field))));
     assert.ok(result.every((sheet) => !sheet.overflow));
-    assert.ok(result.some((sheet) => sheet.siteKey === "oploc:oploc:a" && sheet.day === day && sheet.scope?.includes("Continuation")));
+    assert.ok(result.some((sheet) => sheet.siteKey === "oploc:oploc:a" && sheet.day === day && sheet.continuation?.includes("Collection continued")));
     const artifacts = path.resolve(process.env.CPU_PRINT_EVIDENCE_DIR || "test-results/cpu-print");
     mkdirSync(artifacts, { recursive: true });
     await page.emulateMedia({ media: "print" });
-    await page.pdf({ path: path.join(artifacts, "site-date-continuations.pdf"), format: "A4", preferCSSPageSize: true, printBackground: false });
+    await page.pdf({ path: path.join(artifacts, "site-date-continuations.pdf"), ...pdfOptions });
     await page.screenshot({ path: path.join(artifacts, "site-date-continuations.png"), fullPage: true });
     writeFileSync(path.join(artifacts, "site-date-continuations.json"), JSON.stringify(result, null, 2));
   } finally {

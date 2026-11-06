@@ -9,7 +9,7 @@ import {
   type RunSheetPrintMode,
   runSheetPrintSiteOptions,
 } from "./run-sheet-printing";
-import { runSheetProductionPrintHtml, paginateDayProduction } from "./day-production-print";
+import { runSheetProductionPrintHtml, paginateDayProduction, type RunSheetLayout } from "./day-production-print";
 import { printKitchenDocument } from "./kitchen-print";
 import styles from "./RunSheetPrintDialog.module.css";
 
@@ -23,6 +23,7 @@ export function RunSheetPrintDialog({
   const today = europeLondonDate();
   const initialDate = isOperationalDate(productionDate) ? productionDate : today;
   const [open, setOpen] = useState(false);
+  const [layout, setLayout] = useState<RunSheetLayout>("compact");
   const [mode, setMode] = useState<RunSheetPrintMode>(initialDate === today ? "today" : "custom");
   const [customFrom, setCustomFrom] = useState(initialDate);
   const [customTo, setCustomTo] = useState(initialDate);
@@ -139,7 +140,7 @@ export function RunSheetPrintDialog({
       setSites(freshSites);
       const label = freshSelected.map((site) => site.displayLabel).join(", ");
       await printKitchenDocument(
-        runSheetProductionPrintHtml(freshOrders, days, selectedKeys, new Date(), label),
+        runSheetProductionPrintHtml(freshOrders, days, selectedKeys, new Date(), label, layout),
         paginateDayProduction,
       );
       setAnnouncement("Print dialog opened for " + freshSelected.length + " destination" + (freshSelected.length === 1 ? "" : "s") + " across " + days.length + " date" + (days.length === 1 ? "" : "s") + ".");
@@ -196,6 +197,11 @@ export function RunSheetPrintDialog({
               {printing ? "Refreshing production days" : "Loading eligible destinations"}: {progress.completed} of {progress.total}{progress.day ? " · " + progress.day : ""}
             </p>
           ) : null}
+          <fieldset className={styles.dateModes} disabled={printing}>
+            <legend>A4 layout</legend>
+            <label><input type="radio" name="run-sheet-layout" checked={layout === "compact"} onChange={() => setLayout("compact")} />Compact</label>
+            <label><input type="radio" name="run-sheet-layout" checked={layout === "full"} onChange={() => setLayout("full")} />Full width</label>
+          </fieldset>
           <fieldset className={styles.sites} disabled={loading || printing || !sites.length}>
             <legend>Destinations</legend>
             <div className={styles.siteActions}>

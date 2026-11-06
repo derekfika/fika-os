@@ -1,6 +1,7 @@
 import type { ProductionLine, ProductionOrder } from "./production-types";
 import type { OperationalAllergenState } from "../../shared/allergen-contract";
 import { CANONICAL_MENU_SLOTS, canonicalMenuSlotIdFor, orderMenuEntries } from "../../shared/menu-section-order";
+import { menuPlacementKey, publishedPlacementLabel } from "./menu-run-sheet-order";
 import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel, isAdHocProductionOrder, isCpuWithdrawn } from "./production-presentation";
 
 export type DeliveredInDishTotal = { key: string; dishName: string; total: number; destinations: Array<{ label: string; quantity: number }> };
@@ -15,7 +16,7 @@ export function isHospitalityDayOrder(order: Pick<ProductionOrder, "canonicalId"
   return order.origin === "hospitality_booking" || isAdHocProductionOrder(order);
 }
 export type ProductionTotalProgress = "not_started" | "in_progress" | "produced";
-export type ProductionTotalItem = { key: string; name: string; unit: string; quantity: number; progress: ProductionTotalProgress; menuOrder?: boolean; menuOrderVersion?: string; slot?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; menuSortOrder?: number };
+export type ProductionTotalItem = { key: string; name: string; unit: string; quantity: number; progress: ProductionTotalProgress; culinaryCategory?: string; menuOrder?: boolean; menuOrderVersion?: string; slot?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; menuSortOrder?: number };
 export type ProductionTotalsCategory = { category: string; orderCount: number; items: ProductionTotalItem[] };
 
 function productionLineCategory(order: ProductionOrder, line: ProductionLine) {
@@ -54,12 +55,12 @@ export function aggregateProductionTotals(orders: ProductionOrder[]): Production
       const category = productionLineCategory(order, line);
       categoriesForOrder.add(category);
       const bucket = categories.get(category) || { orderIds: new Set<string>(), items: new Map<string, ProductionTotalItem>() };
-      const canonicalSlotId = order.origin === "menu_planning" ? canonicalMenuSlotIdFor(line.canonicalSlotId || line.slot || "") : undefined;
-      const menuSlotKey = order.origin === "menu_planning" ? canonicalSlotId || line.slot || "legacy" : "";
+      const canonicalSlotId = order.origin === "menu_planning" ? canonicalMenuSlotIdFor(menuPlacementKey(line)) : undefined;
+      const menuSlotKey = order.origin === "menu_planning" ? menuPlacementKey(line) || "legacy" : "";
       const key = `${line.itemName} · ${line.customerUnit}${menuSlotKey ? ` · ${menuSlotKey}` : ""}`;
       const progress: ProductionTotalProgress = order.status === "complete" || line.status === "complete" ? "produced" : ["in_production", "partially_complete"].includes(order.status) ? "in_progress" : "not_started";
       const current = bucket.items.get(key);
-      bucket.items.set(key, { key: `${category}:${key}`, name: line.itemName, unit: line.customerUnit, quantity: (current?.quantity || 0) + line.customerQuantity, progress: current && rank[current.progress] > rank[progress] ? current.progress : progress, ...(order.origin === "menu_planning" ? { menuOrder: true, ...(line.menuOrderVersion ? { menuOrderVersion: line.menuOrderVersion } : {}), ...(line.slot ? { slot: line.slot } : {}), ...(canonicalSlotId ? { canonicalSlotId } : {}), ...(line.canonicalOrderIndex !== undefined ? { canonicalOrderIndex: line.canonicalOrderIndex } : {}), ...(line.sortOrder !== undefined ? { menuSortOrder: line.sortOrder } : {}) } : {}) });
+      bucket.items.set(key, { key: `${category}:${key}`, name: line.itemName, unit: line.customerUnit, quantity: (current?.quantity || 0) + line.customerQuantity, progress: current && rank[current.progress] > rank[progress] ? current.progress : progress, ...(order.origin === "menu_planning" ? { menuOrder: true, culinaryCategory: publishedPlacementLabel(line), ...(line.menuOrderVersion ? { menuOrderVersion: line.menuOrderVersion } : {}), ...(line.slot ? { slot: line.slot } : {}), ...(canonicalSlotId ? { canonicalSlotId } : {}), ...(line.canonicalOrderIndex !== undefined ? { canonicalOrderIndex: line.canonicalOrderIndex } : {}), ...(line.sortOrder !== undefined ? { menuSortOrder: line.sortOrder } : {}) } : {}) });
       categories.set(category, bucket);
     }
     for (const category of categoriesForOrder) categories.get(category)?.orderIds.add(order.canonicalId);
@@ -73,7 +74,7 @@ export function aggregateProductionTotals(orders: ProductionOrder[]): Production
 }
 
 function menuSlotLabel(line: ProductionLine) {
-  const id = canonicalMenuSlotIdFor(line.canonicalSlotId || line.slot || "");
+  const id = canonicalMenuSlotIdFor(menuPlacementKey(line));
   const slot = CANONICAL_MENU_SLOTS.find(candidate => candidate.id === id);
   if (!slot) return line.slot?.trim() || undefined;
   const repeats = CANONICAL_MENU_SLOTS.filter(candidate => candidate.sectionId === slot.sectionId && candidate.label === slot.label).length > 1;
@@ -82,7 +83,7 @@ function menuSlotLabel(line: ProductionLine) {
 }
 
 function retainMenuOrder(row: AllergenReviewRow, line: ProductionLine) {
-  const id = canonicalMenuSlotIdFor(line.canonicalSlotId || line.slot || "");
+  const id = canonicalMenuSlotIdFor(menuPlacementKey(line));
   const slotIndex = id ? CANONICAL_MENU_SLOTS.find(candidate => candidate.id === id)?.order : undefined;
   const index = line.canonicalOrderIndex ?? slotIndex ?? line.sortOrder;
   const label = menuSlotLabel(line);

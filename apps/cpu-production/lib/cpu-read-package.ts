@@ -2,7 +2,7 @@ import { decodeReadPackage, encodeReadPackage, publishReadPackage, retrieveReadP
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { CpuDayProjection, CpuWeekProjection } from "./cpu-projection";
 import { cpuPackageStore } from "./cpu-package-store";
-import { cpuProjectionContentHash, cpuProjectionPackageHeads, cpuProjections } from "./cpu-projection-repository";
+import { cpuProjectionContentHash, cpuProjectionPackageHeads, cpuProjections, previousMenuProjectionHash } from "./cpu-projection-repository";
 import { db } from "./firebase-admin";
 
 export type CpuProjectionPackage = CpuDayProjection | CpuWeekProjection;
@@ -126,7 +126,7 @@ function defaultHostedPublicationAdapters(key: string): CpuPackagePublicationAda
 }
 
 /** Hosted publisher exposed with adapters so stage failures can be tested without cloud access. */
-export async function publishHostedCpuPackage(store: ReadPackageStore, key: string, encoded: { manifest: ReadPackageManifest; bytes: Uint8Array }, sourceHash: string, adapters = defaultHostedPublicationAdapters(key), context: CpuPackagePublicationContext = {}) {
+export async function publishHostedCpuPackage(store: ReadPackageStore, key: string, encoded: { manifest: ReadPackageManifest; bytes: Uint8Array }, sourceHash: string, adapters = defaultHostedPublicationAdapters(key), context: CpuPackagePublicationContext = {}, previousMenuHash?: string) {
   const { manifest } = encoded;
   const headResource = adapters.headPath;
   const objectResource = manifest.objectName;
@@ -147,8 +147,8 @@ export async function publishHostedCpuPackage(store: ReadPackageStore, key: stri
         throw Object.assign(new Error("CPU package materialisation is superseded and has no current package."), { code: "CPU_PACKAGE_SUPERSEDED", status: 409 });
       }
       if (head?.state === "current" && incomingSequence === head.sourceSequence) {
-        if (head.sourceHash !== sourceHash) throw packageConflict(incomingSequence);
-        return { action: "idempotent" as const, manifest: head.manifest };
+        if (head.sourceHash === sourceHash) return { action: "idempotent" as const, manifest: head.manifest };
+        if (!previousMenuHash || head.sourceHash !== previousMenuHash) throw packageConflict(incomingSequence);
       }
       if (head?.pending && incomingSequence === head.pending.sourceSequence && (head.pending.sourceHash !== sourceHash || head.pending.manifest.contentHash !== manifest.contentHash)) throw packageConflict(incomingSequence);
       transaction.set(adapters.headRef, { state: "pending", sourceSequence: head?.sourceSequence ?? -1, sourceHash: head?.sourceHash || "", ...(head?.manifest ? { manifest: head.manifest } : {}), pending: { sourceSequence: incomingSequence, sourceHash, manifest }, updatedAt: new Date().toISOString() });
@@ -242,12 +242,12 @@ export async function publishHostedCpuPackage(store: ReadPackageStore, key: stri
   }
 }
 
-export async function publishMonotonicCpuPackage(store: ReadPackageStore, key: string, encoded: { manifest: ReadPackageManifest; bytes: Uint8Array }, sourceHash: string, adapters?: CpuPackagePublicationAdapters, context: CpuPackagePublicationContext = {}) {
-  if (hostedPackageRuntime()) return publishHostedCpuPackage(store, key, encoded, sourceHash, adapters || defaultHostedPublicationAdapters(key), context);
+export async function publishMonotonicCpuPackage(store: ReadPackageStore, key: string, encoded: { manifest: ReadPackageManifest; bytes: Uint8Array }, sourceHash: string, adapters?: CpuPackagePublicationAdapters, context: CpuPackagePublicationContext = {}, previousMenuHash?: string) {
+  if (hostedPackageRuntime()) return publishHostedCpuPackage(store, key, encoded, sourceHash, adapters || defaultHostedPublicationAdapters(key), context, previousMenuHash);
   const previous = await store.getManifest(key);
   const incomingSequence = sequenceOf(encoded.manifest);
   if (previous && incomingSequence < sequenceOf(previous)) return previous;
-  if (previous && incomingSequence === sequenceOf(previous) && previous.sourceHash && previous.sourceHash !== sourceHash) throw packageConflict(incomingSequence);
+  if (previous && incomingSequence === sequenceOf(previous) && previous.sourceHash && previous.sourceHash !== sourceHash && previous.sourceHash !== previousMenuHash) throw packageConflict(incomingSequence);
   if (previous && incomingSequence === sequenceOf(previous) && previous.sourceHash === sourceHash) {
     const bytes = await store.get(previous.objectName);
     if (!bytes) throw new Error(`Read package ${previous.objectName} was not persisted.`);
@@ -301,7 +301,7 @@ export async function publishCpuProjectionPackage(projection: CpuProjectionPacka
       sourceHash: cpuProjectionContentHash(projection),
       scope: scopeFor(projection),
     });
-    return publishMonotonicCpuPackage(store, key, encoded, cpuProjectionContentHash(projection), dependencies.adapters, context);
+    return publishMonotonicCpuPackage(store, key, encoded, cpuProjectionContentHash(projection), dependencies.adapters, context, previousMenuProjectionHash(projection));
   })().finally(() => publicationInFlight.delete(key));
   publicationInFlight.set(key, publication);
   return publication;

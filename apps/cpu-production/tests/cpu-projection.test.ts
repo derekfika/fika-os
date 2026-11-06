@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCpuDayProjection } from "../lib/cpu-projection";
-import { compareMonotonicProjectionWrite, cpuProjectionContentHash, repairLegacyCpuProjectionWorkstreams } from "../lib/cpu-projection-repository";
-import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, filterCpuProjectionForScope } from "../lib/cpu-dashboard-adapter";
+import { compareMonotonicProjectionWrite, cpuProjectionContentHash, previousMenuProjectionHash, repairLegacyCpuProjectionWorkstreams } from "../lib/cpu-projection-repository";
+import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionNeedsMenuMetadata, cpuProjectionToOrders, filterCpuProjectionForScope } from "../lib/cpu-dashboard-adapter";
 import type { ProductionOrder } from "../lib/production-types";
 import type { ProductionPlan } from "../app/lib/production-plan";
 import { allergenMatrixContentHash } from "../lib/cpu-allergen-release";
@@ -76,7 +76,29 @@ test("Core Salad and its slot survive the cached CPU dashboard projection", () =
   const [marked, unmarked] = cpuProjectionToOrders(projection);
   for (const [field, value] of Object.entries(metadata)) assert.equal(marked.lines[0][field as keyof typeof metadata], value);
   assert.equal(unmarked.lines[0].isCoreSalad, undefined);
-  assert.equal(unmarked.lines[0].slot, undefined, "existing projection content remains stable");
+  assert.equal(unmarked.lines[0].slot, "SOUP");
+  assert.equal(cpuProjectionNeedsMenuMetadata(projection), false);
+});
+
+test("same-sequence legacy projection upgrades only discarded Menu metadata", () => {
+  const source = order("order:ordinary-menu");
+  source.origin = "menu_planning";
+  Object.assign(source.lines[0], { slot: "SALAD 1", canonicalSlotId: "SALAD 1", canonicalOrderIndex: 0, menuOrderVersion: "fika.menu-order.v1" });
+  const incoming = buildCpuDayProjection("2026-08-24", [source], [], 9);
+  const legacy = structuredClone(incoming);
+  const row = legacy.orders[0];
+  delete row.menuMetadataComplete;
+  delete row.quantities[0].slot;
+  delete row.quantities[0].canonicalSlotId;
+  delete row.quantities[0].canonicalOrderIndex;
+  delete row.quantities[0].menuOrderVersion;
+  assert.equal(cpuProjectionNeedsMenuMetadata(legacy), true);
+  assert.equal(cpuProjectionContentHash(legacy), previousMenuProjectionHash(incoming));
+  assert.deepEqual(compareMonotonicProjectionWrite(legacy, incoming), { status: "advanced" });
+  assert.deepEqual(compareMonotonicProjectionWrite(incoming, incoming), { status: "idempotent" });
+  assert.throws(() => compareMonotonicProjectionWrite(incoming, legacy), /conflicting content/);
+  row.quantities[0].quantity += 1;
+  assert.throws(() => compareMonotonicProjectionWrite(legacy, incoming), /conflicting content/);
 });
 
 test("CPU projection preserves allergen review source identity and evidence", () => {

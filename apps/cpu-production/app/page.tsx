@@ -27,7 +27,7 @@ import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperat
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, isCpuWithdrawn, type CpuLifecycle } from "../lib/production-presentation";
 import { aggregateProductionTotals, orderDate, productionJobCount } from "../lib/production-day";
-import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionToOrders, dashboardInitialDate, dashboardInitialOrderId, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
+import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionNeedsMenuMetadata, cpuProjectionToOrders, dashboardInitialDate, dashboardInitialOrderId, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 import { calendarDateInputPatch, calendarWeekChangePatch } from "../lib/cpu-week-date-sync";
 import { addOperationalDays, filterProductionTotalsOrders, filterProductionTotalsOrdersToDates, formatProductionTotalsDateRange, formatProductionTotalsSelection, operationalWeekRange, productionTotalsWeekDates, resolveProductionTotalsRange } from "../lib/production-totals-range";
 import { loadProductionTotalsRange } from "../lib/cpu-totals-loader";
@@ -227,7 +227,7 @@ export default function CpuProduction() {
       const cached = await readCpuProjection<any>(cacheKey, cacheScope);
       if (!isCurrentRequest()) return [];
       if (cached?.value) {
-        const cachedNeedsRecovery = cpuProjectionHasAmbiguousWorkstreamMapping(cached.value);
+        const cachedNeedsRecovery = cpuProjectionHasAmbiguousWorkstreamMapping(cached.value) || cpuProjectionNeedsMenuMetadata(cached.value);
         if (cachedNeedsRecovery) {
           setOrders([]);
         } else {
@@ -828,7 +828,7 @@ function Totals({
       </header>
       {loading ? <p className="cpu-totals-state" role="status">Loading and verifying production totals…</p> : rangeError || loadError ? <><p className="cpu-totals-state" role="alert">{rangeError || loadError}</p>{!hasSelection && <div className="cpu-empty cpu-totals-empty-selection"><h3>No production days selected</h3><p>Select one or more days above to see production quantities and order counts.</p></div>}</> : !hasSelection ? <div className="cpu-empty cpu-totals-empty-selection"><h3>No production days selected</h3><p>Select one or more days above to see production quantities and order counts.</p></div> : categoryTotals.length ? categoryTotals.map(({ category, items }) => <section className="cpu-total-category" key={category}>
         <h3>{category}</h3>
-        <table className="cpu-total-list"><thead><tr><th scope="col">Production item</th><th scope="col">Total quantity</th><th scope="col">Unit</th></tr></thead><tbody>{items.map((total) => <tr key={total.key}><th scope="row">{total.name}</th><td>{total.quantity.toLocaleString("en-GB")}</td><td>{total.unit}</td></tr>)}</tbody></table>
+        <table className="cpu-total-list"><thead><tr><th scope="col">Production item</th><th scope="col">Total quantity</th><th scope="col">Unit</th></tr></thead><tbody>{items.map((total) => <tr key={total.key}><th scope="row">{total.name}{total.culinaryCategory && <small className="kitchen-slot-label">{total.culinaryCategory}</small>}</th><td>{total.quantity.toLocaleString("en-GB")}</td><td>{total.unit}</td></tr>)}</tbody></table>
       </section>) : (
         <div className="cpu-empty">
           <h3>No production items in this range.</h3>

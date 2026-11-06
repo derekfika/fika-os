@@ -39,10 +39,10 @@ test("unknown legacy placements remain visible after canonical sections without 
     line("canonical", "SALAD 1", 7, "Leaf Bowl"),
     line("unknown-first", "OLD EXTRA", 1, "Soup of the day", ""),
   ]));
-  assert.deepEqual(sections.map(section => section.label), ["SALADS", "OTHER"]);
+  assert.deepEqual(sections.map(section => section.label), ["SALADS", "OTHER PLACEMENTS"]);
   assert.deepEqual(sections[0].lines.map(item => item.line.canonicalId), ["order:line:canonical"]);
   assert.deepEqual(sections[1].lines.map(item => item.line.canonicalId), ["order:line:unknown-first", "order:line:unknown-later"]);
-  assert.deepEqual(sections[1].lines.map(item => item.slotLabel), ["OLD EXTRA", "Uncategorised"]);
+  assert.deepEqual(sections[1].lines.map(item => item.slotLabel), ["OLD EXTRA", "Published placement missing"]);
 });
 
 test("non-menu production lines retain upstream order and are not inferred into Menu categories", () => {
