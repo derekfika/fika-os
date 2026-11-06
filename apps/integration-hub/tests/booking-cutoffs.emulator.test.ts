@@ -16,7 +16,11 @@ import { executeBookingWorkflow, canonicalBookingId, amendHospitalityBookingGrou
 import { groupCommercialState } from "../lib/hospitality-group-commercial";
 import type { Actor } from "../lib/auth";
 import { FirestoreAuthModRepository } from "../lib/authmod-core/firestore-repository";
-import { V1_APPLICATIONS } from "../lib/authmod-core/model";
+import { HOSPITALITY_BOOKING_ADMIN, V1_APPLICATIONS } from "../lib/authmod-core/model";
+import { grantAuthority, revokeAuthority } from "../lib/authmod-core/authority";
+import { setFullAccess } from "../lib/authmod-core/identity";
+import { grantStandardApplicationAccess } from "../lib/authmod-core";
+import { groupAmendmentCommand } from "../lib/hospitality-group-amendment";
 import { requireHospitalityBookingAdmin } from "../lib/hospitality-booking-authorization";
 import { rebuildOplocReadPackage } from "../lib/oploc-read-package";
 import { addBusinessDate, ukBookingClock, deliveryWeekday, earliestSandwichDelivery } from "@fika/server-shared/hospitality-effective-offering";
@@ -126,8 +130,10 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   const appId = "hospitality-booking";
   const timestamp = new Date().toISOString();
   const active = { status: "active" as const, version: 1, createdAt: timestamp, updatedAt: timestamp };
+  const grantActor = { type: "interactive" as const, id: "identity:test-authmod-admin", displayName: "Fixture AUTHMOD administrator" };
   await repository.saveApplication(V1_APPLICATIONS.find(app => app.appId === appId)!);
   await repository.saveIdentity({ ...active, id: principal.id, displayName: principal.displayName, identityKind: "person", identityLinkStatus: "unmatched", fullAccess: true, provenance: "system" });
+  await grantStandardApplicationAccess(repository, { identityId: principal.id, appId, actor: grantActor, reason: "Fixture app admission" });
   await rebuildOplocReadPackage();
   const authorizeAdmin = (booking: CanonicalBooking, transaction: Transaction) =>
     requireHospitalityBookingAdmin(new FirestoreAuthModRepository("hospitality-admin", undefined, transaction), principal, booking.service.oplocId);
@@ -136,10 +142,30 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   const staffPatch = { client: standardCurrent.client, service: { eventDate: near, startTime: "09:00", guestCount: 11 },
     order: { eventType: "lunch", items: [{ itemId: standard, unitPrice: 0, quantity: 11 }, { itemId: sandwich, unitPrice: 0, quantity: 2, itemName: "Untrusted name" }] } };
   const staffCommand = { action: "amend" as const, reason: "Urgent guest increase", patch: staffPatch };
-  const beforeStaff = await snapshot();
+  const beforeGrant = await snapshot();
   const unauthenticated = await dashboardPost(new NextRequest("http://test/api/hospitality-bookings", { method: "POST", body: JSON.stringify({ ...staffCommand, canonicalId: standardCurrent.canonicalId, expectedVersion: standardCurrent.version, hospitalityAdmin: true }) }));
   assert.equal(unauthenticated.status, 401);
   await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, staffCommand), { code: "PRODUCT_NOTICE" });
+  await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, staffCommand, undefined, authorizeAdmin), { code: "AUTHMOD_HOSPITALITY_ADMIN_DENIED" });
+  assert.deepEqual(await snapshot(), beforeGrant, "Full Access and admin intent do not authorise a write without a direct grant");
+
+  const grant = await grantAuthority(repository, { subjectId: principal.id, subjectType: "interactive", actor: grantActor, appId, resource: HOSPITALITY_BOOKING_ADMIN, action: "Manage", scope: { kind: "organisation", ids: [] }, reason: "Fixture company Hospitality authority" });
+  await setFullAccess(repository, { identityId: principal.id, fullAccess: false, actor: grantActor, reason: "Fixture remove Superuser before authorised amendment" });
+  assert.deepEqual(await repository.listSiteAssignments(principal.id), []);
+
+  const inactiveSite = "oploc:inactive:" + tag;
+  await put(inactiveSite, "OPLOC", { approvedName: "Inactive fixture", lifecycleState: "inactive" });
+  const staffBookingRef = db.collection("fikaBookings").doc(standardCurrent.canonicalId);
+  await staffBookingRef.set({ ...standardCurrent, service: { ...standardCurrent.service, oplocId: inactiveSite } });
+  const beforeInactiveSite = await snapshot();
+  await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, staffCommand, undefined, authorizeAdmin), { code: "AUTHMOD_HOSPITALITY_ADMIN_DENIED" });
+  assert.deepEqual(await snapshot(), beforeInactiveSite);
+  await staffBookingRef.set({ ...standardCurrent, lifecycleStatus: "Cancelled" });
+  const beforeCancelled = await snapshot();
+  await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, staffCommand, undefined, authorizeAdmin), /Cancelled bookings cannot be reopened/);
+  assert.deepEqual(await snapshot(), beforeCancelled);
+  await staffBookingRef.set(standardCurrent);
+  const beforeStaff = await snapshot();
   await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, { ...staffCommand, patch: { ...staffPatch, service: { ...staffPatch.service, eventDate: "2020-01-06" } } }, undefined, authorizeAdmin), { code: "HOSPITALITY_ADMIN_SERVICE_TIME" });
   await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, { ...staffCommand, patch: { ...staffPatch, dietaries: { severeAllergyAcknowledged: true } } }, undefined, authorizeAdmin), { code: "HOSPITALITY_ADMIN_DIETARY_REVIEW" });
   await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, standardCurrent.version, { ...staffCommand, patch: { ...staffPatch, order: { ...staffPatch.order, eventType: "breakfast" } } }, undefined, authorizeAdmin), /not offered at this booking's OPLOC/);
@@ -150,10 +176,11 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   assert.equal(result.booking.order.netTotal, 13);
   const audit = await db.collection("fikaBookingAudit").where("canonicalId", "==", standardCurrent.canonicalId).get();
   const override = audit.docs.find(doc => doc.data().hospitalityAdmin)?.data().hospitalityAdmin;
-  assert.equal(override.source, "superuser");
-  assert.equal(override.grantId, undefined);
-  assert.equal(override.grantVersion, undefined);
-  assert.equal(override.identityVersion, 1);
+  assert.equal(override.source, "explicit-company-grant");
+  assert.equal(override.grantId, grant.id);
+  assert.equal(override.grantVersion, grant.version);
+  assert.equal(override.identityId, principal.id);
+  assert.equal(override.identityVersion, 2);
   assert.equal(override.beforePax, 10);
   assert.equal(override.afterPax, 11);
   assert.equal(override.noticeOverridden, true);
@@ -167,6 +194,9 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
     services: grouped.map(child => ({ bookingId: child.canonicalId, expectedVersion: child.version, patch: { ...staffPatch, client: child.client } })),
   };
   await assert.rejects(amendHospitalityBookingGroup(actor, staffGroup, async () => {}), { status: 403 });
+  const spoofedGroup = structuredClone(staffGroup);
+  Object.assign(spoofedGroup.services[0].patch.service, { oplocId: site });
+  assert.equal(groupAmendmentCommand.safeParse(spoofedGroup).success, false, "an amendment cannot supply its own OPLOC");
   const invalidGroup = structuredClone(staffGroup);
   invalidGroup.services[1].patch.order.items[1].itemId = "hospitality-menu-item:unauthorised";
   await assert.rejects(amendHospitalityBookingGroup(actor, invalidGroup, async () => {}, authorizeAdmin), { status: 422 });
@@ -174,8 +204,14 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   const savedGroup = await amendHospitalityBookingGroup(actor, staffGroup, async () => {}, authorizeAdmin);
   assert.deepEqual(savedGroup.bookings.map(booking => booking.service.guestCount), [11, 11]);
   assert.deepEqual(savedGroup.bookings.map(booking => booking.order.netTotal), [13, 13]);
-  await repository.saveIdentity({ ...active, id: principal.id, displayName: principal.displayName, identityKind: "person", identityLinkStatus: "unmatched", fullAccess: false, provenance: "system", version: 2 });
+  await setFullAccess(repository, { identityId: principal.id, fullAccess: true, actor: grantActor, reason: "Fixture restore Superuser before revocation" });
+  await revokeAuthority(repository, { grantId: grant.id, actor: grantActor, reason: "Fixture company cover ended" });
   const afterRevocation = await snapshot();
-  await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, result.booking.version, staffCommand, undefined, authorizeAdmin), { status: 403 });
+  await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, result.booking.version, staffCommand, undefined, authorizeAdmin), { code: "AUTHMOD_HOSPITALITY_ADMIN_DENIED" });
+  await assert.rejects(amendHospitalityBookingGroup(actor, {
+    ...staffGroup,
+    expectedSourceHash: groupCommercialState(groupId, savedGroup.bookings).sourceHash,
+    services: savedGroup.bookings.map(child => ({ bookingId: child.canonicalId, expectedVersion: child.version, patch: { ...staffPatch, client: child.client } })),
+  }, async () => {}, authorizeAdmin), { code: "AUTHMOD_HOSPITALITY_ADMIN_DENIED" });
   assert.deepEqual(await snapshot(), afterRevocation);
 });

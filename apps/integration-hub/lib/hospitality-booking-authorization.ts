@@ -21,12 +21,12 @@ export async function assertHospitalityBookingMutationAccess(
 }
 
 export type HospitalityAdminAuthority = {
-  source: "superuser" | "explicit-company-grant";
+  source: "explicit-company-grant";
   identityId: string;
   identityVersion: number;
   oplocId: string;
-  grantId?: string;
-  grantVersion?: number;
+  grantId: string;
+  grantVersion: number;
 };
 
 function isDirectCompanyGrant(grant: AuthorityGrant, identityId: string) {
@@ -41,8 +41,8 @@ function isDirectCompanyGrant(grant: AuthorityGrant, identityId: string) {
 /**
  * Resolve Hospitality Admin from the live AUTHMOD identity and direct company grant.
  * In amendment transactions, identity, app admission, site and grant reads use the
- * supplied transaction repository so disabling Superuser or revoking a grant takes
- * effect before the booking write can commit.
+ * supplied transaction repository so disabling the account, removing app
+ * admission or revoking the grant takes effect before the booking write can commit.
  */
 export async function resolveHospitalityBookingAdmin(
   repository: AuthModRepository,
@@ -66,10 +66,6 @@ export async function resolveHospitalityBookingAdmin(
   if (!identity || identity.id !== principal.id || identity.identityKind !== "person" || !isEffective(identity)) return;
   const app = await repository.getApplication("hospitality-booking");
   if (!app?.enabled || app.scopeModel === "none") return;
-
-  if (identity.fullAccess) {
-    return { source: "superuser", identityId: identity.id, identityVersion: identity.version, oplocId };
-  }
 
   // An explicit company grant does not replace normal Hospitality app admission.
   const appAssignmentId = idempotentId("app-assignment", identity.id, "hospitality-booking");
