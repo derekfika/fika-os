@@ -87,11 +87,11 @@ test("printed HTML keeps separate site identities and contains the paper handove
   const second = order("order:second", day, "oploc:second", "Same site");
   const map = new Map([[day, [first, second]]]);
   const html = runSheetProductionPrintHtml(map, [day], ["oploc:oploc:first", "oploc:oploc:second"], new Date("2026-10-30T09:00:00Z"));
-  assert.match(html, /Same site · oploc:first/);
-  assert.match(html, /Same site · oploc:second/);
+  assert.match(html, /Same site · Site [A-Z0-9]{7,10}/);
+  assert.equal(new Set([...html.matchAll(/Same site · Site [A-Z0-9]+/g)].map(match => match[0])).size, 2);
   assert.match(html, /4 portions/);
   assert.doesNotMatch(html, /12 pieces|Prep:/);
-  assert.match(html, /Category<\/th><th>Dish name<\/th><th class="quantity">Customer ordered quantity<\/th>/);
+  assert.match(html, /scope="col">Category<\/th>.*scope="col">Dish name<\/th>.*scope="col">Customer ordered quantity<\/th>/);
   assert.match(html, /data-site-key="oploc:oploc:first"/);
   assert.match(html, /data-site-key="oploc:oploc:second"/);
   for (const field of ["Packed by", "Checked by", "Driver / collected by", "Departure time", "Delivered time", "Received by / signature", "Notes / issues"]) {
@@ -128,7 +128,7 @@ test("day A4 renderer prints an explicit monochrome Core Salad label", () => {
   const source = order("order:core", day, "oploc:core", "Core Site");
   const coreLine = { ...source.lines[0], isCoreSalad: true };
   const html = dayProductionPrintHtml([{ ...source, origin: "menu_planning", lines: [coreLine] } as ProductionOrder], day);
-  assert.match(html, /<small class="core-salad-label">Core Salad<\/small>/);
+  assert.match(html, /<small class="core-salad-label" aria-label="Core Salad">CORE<\/small>/);
   assert.match(html, /class="core-salad"/);
-  assert.match(html, /border-top:1pt solid black/);
+  assert.match(html, /\.core-salad-label\{[^}]*border:\.6pt solid currentColor/);
 });

@@ -252,3 +252,25 @@ test("a newer current head winning during publication is returned without regres
   assert.deepEqual(await publishHostedCpuPackage(h.store, "test-race", older.encoded, older.sourceHash, h.adapter), newer);
   assert.equal((h.head as { sourceSequence: number }).sourceSequence, 9);
 });
+
+test("hosted package advances a verified legacy Menu projection at the same source sequence", async () => {
+  const h = harness();
+  const legacy = packageFor({ ...projection("2036-03-03"), orders: [{ id: "menu-order" }] });
+  const updated = packageFor({
+    ...projection("2036-03-03"),
+    orders: [{ id: "menu-order", menuMetadataComplete: true } as { id: string }],
+  }, 2);
+  const key = "cpu-production/projection/week:2036-03-03";
+  await publishHostedCpuPackage(h.store, key, legacy.encoded, legacy.sourceHash, h.adapter);
+  await assert.rejects(publishHostedCpuPackage(h.store, key, updated.encoded, updated.sourceHash, h.adapter), /conflicting content/);
+  assert.deepEqual(
+    await publishHostedCpuPackage(h.store, key, updated.encoded, updated.sourceHash, h.adapter, {}, legacy.sourceHash),
+    updated.encoded.manifest,
+  );
+  assert.deepEqual(
+    await publishHostedCpuPackage(h.store, key, updated.encoded, updated.sourceHash, h.adapter, {}, legacy.sourceHash),
+    updated.encoded.manifest,
+  );
+  assert.ok(h.objects.has(legacy.encoded.manifest.objectName));
+  assert.equal(h.createCount, 2);
+});

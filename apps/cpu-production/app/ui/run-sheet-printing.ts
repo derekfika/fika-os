@@ -3,7 +3,7 @@ import { addOperationalDays, inclusiveOperationalDays, isOperationalDate } from 
 import { cpuDestinationLabel, isCpuWithdrawn } from "../../lib/production-presentation";
 import { loadWholeDay } from "./whole-day-production";
 import { europeLondonDate } from "../../lib/operational-date";
-import { collectionTime } from "./kitchen-print";
+import { collectionTime, referenceAlias } from "./run-sheet-presentation";
 
 export const MAX_RUN_SHEET_PRINT_DAYS = 31;
 
@@ -70,7 +70,7 @@ export function runSheetPrintSiteOptions(
   return rows
     .map((row) => ({
       ...row,
-      displayLabel: labelCounts.get(row.label)! > 1 ? `${row.label} · ${row.key.replace(/^(oploc|snapshot|order):/, "")}` : row.label,
+      displayLabel: labelCounts.get(row.label)! > 1 ? `${row.label} · Site ${referenceAlias(row.key)}` : row.label,
     }))
     .sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
 }

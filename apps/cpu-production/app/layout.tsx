@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import "../../../shared/fika/tokens.css";
 import "./fika-tokens.css";
 import "./styles.css";
 import "./brand-overrides.css";

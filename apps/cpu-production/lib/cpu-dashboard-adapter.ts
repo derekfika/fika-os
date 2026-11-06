@@ -39,8 +39,8 @@ export function cpuProjectionToOrders(projection: CpuProjection): ProductionOrde
       itemName: quantity.name,
       customerQuantity: quantity.quantity,
       customerUnit: quantity.unit,
-      productionQuantity: quantity.productionQuantity ?? quantity.quantity,
-      productionUnit: quantity.productionUnit || quantity.unit,
+      ...(quantity.productionQuantity !== undefined ? { productionQuantity: quantity.productionQuantity } : {}),
+      ...(quantity.productionUnit ? { productionUnit: quantity.productionUnit } : {}),
       dietaries: quantity.dietaries || {},
       ...(quantity.allergenEvidenceStatus ? { allergenEvidenceStatus: quantity.allergenEvidenceStatus } : {}),
       ...(quantity.approvedAllergenSnapshot ? { approvedAllergenSnapshot: quantity.approvedAllergenSnapshot } : {}),
@@ -131,6 +131,11 @@ export function filterCpuProjectionForScope<T extends CpuProjection>(projection:
     return matchesOrigin(row) ? [{ ...row }] : [];
   });
   return { ...projection, orders, summary: { ...projection.summary, orders: orders.length, ready: orders.filter((order) => order.planningReadiness === "ready").length, attention: orders.filter((order) => order.attention.length > 0).length, planned: orders.filter((order) => order.workflowStatus === "planned").length, totalUnits: orders.reduce((sum, order) => sum + order.quantities.reduce((total, item) => total + item.quantity, 0), 0) } } as T;
+}
+
+/** Older Menu projections discarded slot evidence on orders without a Core Salad. */
+export function cpuProjectionNeedsMenuMetadata(projection: CpuProjection): boolean {
+  return projection.orders.some(row => row.origin === "menu_planning" && !row.menuMetadataComplete);
 }
 
 /** True when a legacy projection has lost the per-line workstream alignment. */

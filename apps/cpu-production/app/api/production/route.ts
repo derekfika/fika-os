@@ -6,7 +6,7 @@ import { cpuDestinationAllowed, requireCpuActor, requireCpuDestinationScope, res
 import { acknowledgeProductionCancellation, createCpuProductionOrder, productionOrderDetail, productionQueue, productionQueueForWeek, reportProductionAllergenDiscrepancy, transitionProductionOrder, updateProductionLines } from "../../../lib/production-http-client";
 import { ordersForScope } from "../../../lib/cpu-routing";
 import { withReadableDestinations } from "../../../lib/cpu-oploc-labels";
-import { cpuProjectionHasAmbiguousWorkstreamMapping, filterCpuProjectionForScope } from "../../../lib/cpu-dashboard-adapter";
+import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionNeedsMenuMetadata, filterCpuProjectionForScope } from "../../../lib/cpu-dashboard-adapter";
 // Scope filtering remains backed by the existing hospitalityMenuProductionRouting adapter.
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { normaliseProductionScope } from "../../../lib/production-scope";
@@ -264,6 +264,13 @@ async function handleGet(request: NextRequest) {
           packageReadComplete = true;
           if (packaged) {
             let projection = packaged.value.projection;
+            if (cpuProjectionNeedsMenuMetadata(projection)) {
+              const recovered = week
+                ? await recoverMissingCpuWeekProjection(request, week)
+                : await recoverMissingCpuDayProjection(request, projectionDate);
+              const filtered = await scopedProjection(request, filterCpuProjectionForScope(recovered.projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope"))), destinationScope);
+              return withServerTiming(NextResponse.json({ projection: filtered, package: recovered.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
+            }
             if (cpuProjectionHasAmbiguousWorkstreamMapping(projection)) {
               projection = week
                 ? await rebuildCpuWeekProjection(request, week)
@@ -311,7 +318,7 @@ async function handleGet(request: NextRequest) {
         .map((order) => order.canonicalId));
       const projectedIds = new Set((storedData?.orders || []).map((order) => order.id).filter(Boolean));
       const needsOrderRefresh = canonicalIds.size !== projectedIds.size || [...canonicalIds].some((id) => !projectedIds.has(id));
-      const requiresRefresh = !stored.exists || !packageCurrent || needsReadableDestinations || needsCancellationRefresh || needsOrderRefresh;
+      const requiresRefresh = !storedProjection || cpuProjectionNeedsMenuMetadata(storedProjection) || !packageCurrent || needsReadableDestinations || needsCancellationRefresh || needsOrderRefresh;
       const refreshedProjection = requiresRefresh ? week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuDayProjection(request, projectionDate) : stored.data();
       const packageManifest = await getCpuProjectionManifest(projectionDate, week || undefined);
       const response = NextResponse.json({ projection: refreshedProjection ? await scopedProjection(request, filterCpuProjectionForScope(refreshedProjection as CpuProjectionPackage, normaliseProductionScope(request.nextUrl.searchParams.get("scope"))), destinationScope) : undefined, package: packageManifest });
