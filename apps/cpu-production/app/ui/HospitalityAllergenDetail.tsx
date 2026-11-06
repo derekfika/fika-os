@@ -879,12 +879,13 @@ export default function HospitalityAllergenDetail({
               <small>Digital master allergen checker</small>
               <h3>Production menu and sub-items</h3>
               <p>
-                Each menu item can contain multiple sub-items. Click an
-                allergen box to turn it on (black, contains) or off (white).
+                Each menu item can contain multiple sub-items. For named
+                allergens, the first click (black) is Contains, the second
+                (hatched) is May Contain, and the third returns to white.
+                No Key Allergens remains a deliberate on/off declaration.
                 No Key Allergens is ticked deliberately by the chef and clears
                 the other boxes. A blank row is not verified and cannot be
-                marked checked. An existing May Contain shows hatched until
-                the box is clicked.
+                marked checked.
               </p>
             </div>
             <div className="checker-count">
@@ -1062,7 +1063,7 @@ export default function HospitalityAllergenDetail({
                                     aria-disabled={reviewLockedByAuthority || undefined}
                                     data-allergen-key={key}
                                     data-cell-state={view}
-                                    className={`allergen-cell allergen-cell--${view === "on" ? "contains" : view === "legacy_may_contain" ? "may_contain" : "off"}`}
+                                    className={`allergen-cell allergen-cell--${view === "on" ? "contains" : view === "may_contain" ? "may_contain" : "off"}`}
                                     onClick={() =>
                                       toggleCell(menuItem.id, sub, key)
                                     }
