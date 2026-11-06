@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {target,REPO} from './policy.mjs';
 import {backendPath} from './runtime.mjs';
 import {validateCpuAdoption,observeCpuAdoption,adoptCompletedCpu} from './cpu-prod-adoption.mjs';
-import {reconcile,executionAuthorization} from './releases.mjs';
+import {reconcile,executionEvidence} from './releases.mjs';
 
 const t=target('cpu','prod'),base=backendPath(t),sha='f'.repeat(40),rolloutId='rollout-fixture',buildName=`${base}/builds/build-fixture`;
 function fixture(){
@@ -13,7 +13,7 @@ function fixture(){
     traffic:{rolloutPolicy:{disabled:true},reconciling:false,current:{splits:[{build:buildName.replace('projects/fika-os/','projects/397503564317/'),percent:100}]}},build,rollout,builds:[structuredClone(build)],rollouts:[structuredClone(rollout)],operations:[]};
   const previous={commit:'a'.repeat(40),record:{schema:'fika.release.v1',...t,sourceSha:'b'.repeat(40),kind:'deploy',scopeHash:'prior',rollout:'build-prior',state:'SUCCEEDED',percent:100}};
   const provenance={integrated:true,preservesPrevious:true,validation:{sha,id:123,url:'https://github.com/fixture/check'},pr:{number:1,merged:true,merged_at:'2026-11-02T08:00:00Z',merge_commit_sha:sha,base:{ref:'main',repo:{full_name:REPO}}}};
-  const authorization={action:'reconcile:adopt-completed',app:'cpu',environment:'prod',sourceSha:sha,releaseId:previous.commit,explicitExecute:true,method:'owner-instruction',actor:'fixture-owner',instruction:'Adopt verified existing CPU release',authorisedAt:'2026-11-02T12:00:00Z'};
+  const authorization={action:'reconcile:adopt-completed',app:'cpu',environment:'prod',sourceSha:sha,releaseId:previous.commit,explicitExecute:true,method:'authenticated-repository-writer',actor:'fixture-owner',instruction:'Adopt verified existing CPU release',authorisedAt:'2026-11-02T12:00:00Z'};
   const input={t,sha,rolloutId,previous,provenance,authorization,execute:true},calls=[];
   let current=previous;
   const io={inspect:async()=>structuredClone(snapshot),smoke:async()=>({ok:true,status:200}),latest:async()=>current,assertJournal:async()=>{},scopeHash:async()=> 'scope-fixture',
@@ -105,10 +105,9 @@ test('observer follows distinct build ID, paginates and never retains build conf
   await assert.rejects(observeCpuAdoption(t,rolloutId,async url=>url.includes('/operations?')?{}:read(url)),/Missing operations/);
 });
 
-test('existing CLI reconcile dispatch restricts adoption target and production authority remains explicit',async()=>{
+test('existing CLI reconcile dispatch restricts adoption target and records authenticated execution evidence',async()=>{
   await assert.rejects(reconcile('menu','prod',{resolution:'adopt-completed'}),/restricted/);
   await assert.rejects(reconcile('cpu','staging',{resolution:'adopt-completed'}),/restricted/);
   const access={env:{},github:url=>url==='user'?{login:'fixture-owner',type:'User'}:{permissions:{push:true},owner:{login:'fixture-owner'}}};
-  assert.throws(()=>executionAuthorization(t,sha,{action:'reconcile:adopt-completed'},access),/Explicit owner/);
-  assert.equal(executionAuthorization(t,sha,{action:'reconcile:adopt-completed','owner-approved':true,reason:'Fixture approved adoption'},access).action,'reconcile:adopt-completed');
+  assert.equal(executionEvidence(t,sha,{action:'reconcile:adopt-completed'},access).action,'reconcile:adopt-completed');
 });

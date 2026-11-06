@@ -28,7 +28,7 @@ export function affected(paths, { rootRuntimeChanged = true } = {}) {
   return { apps: [...apps].sort(), shared, tooling };
 }
 export function risk(paths) {
-  // Only explicitly cosmetic paths qualify. JSX, scripts, routes, configs and contracts default to Standard.
+  // Advisory workspace risk only. JSX, scripts, routes, configs and contracts default to standard.
   return paths.every(p => p === 'CHANGELOG.md' || /\.md$/.test(p) || /^apps\/[^/]+\/.*\.(css|png|svg|jpg|webp)$/.test(p)) ? 'fast' : 'standard';
 }
 export function assertClean(status) { if (status.trim()) throw Error('Dirty workspace: commit/preserve changes before validation or deployment'); }
@@ -81,7 +81,7 @@ export function assertResume(intent, journal, plan) {
   if (intent.approval?.id !== plan.approval?.id || digest(intent.previousGood) !== digest(journal.before) || intent.previousGoodRecord !== journal.previousGoodRecord) throw Error('Resume approval/rollback baseline differs from original intent');
 }
 export function assertServingLineage(plan, current, containsCurrent, sameTree) {
-  if (plan.environment === 'prod' && !plan.rollback && !containsCurrent && !sameTree) throw Error('Candidate omits the currently deployed production lineage. Reconcile its approved changes into main first; only explicit verified rollback may go backwards.');
+  if (plan.environment === 'prod' && !plan.rollback && !containsCurrent && !sameTree) throw Error('Candidate omits the currently deployed production lineage. Integrate the deployed changes into main or use an explicit verified rollback.');
 }
 export function safeScope(scope) {
   if (!scope || scope.includes('..') || scope.includes('\\') || scope.startsWith('/') || scope.includes(':') || !/^[a-zA-Z0-9._/-]+$/.test(scope)) throw Error('Invalid workspace scope');

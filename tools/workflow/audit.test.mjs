@@ -22,6 +22,12 @@ test('Cloud audit reads scoped JSON with exhaustive pagination and never puts fi
 test('only an exhausted empty read proves no create calls',async()=>{
  assert.deepEqual(await readCreateAuditEvents(t,since,{token:()=>'',fetchImpl:async()=>response({})}),{readable:true,events:[]});
 });
+test('a create event without a backend identity cannot prove non-submission', async () => {
+ const result = await readCreateAuditEvents(t,since,{token:()=>'',fetchImpl:async()=>response({entries:[
+  {timestamp:'now',protoPayload:{methodName:'CreateRollout'}},
+ ]})});
+ assert.deepEqual(result,{readable:true,events:[{at:'now',method:'CreateRollout'}]});
+});
 test('unreadable, truncated, looping, malformed or unavailable audit never proves empty',async()=>{
  for(const fetchImpl of [async()=>({ok:false}),async()=>{throw Error('network');},async()=>response({entries:'bad'}),async()=>response({nextPageToken:'loop'}),async()=>({ok:true,json:async()=>{throw Error('invalid json');}})]) {
   assert.deepEqual(await readCreateAuditEvents(t,since,{token:()=>'',fetchImpl}),{readable:false,events:[]});

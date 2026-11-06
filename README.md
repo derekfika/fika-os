@@ -4,7 +4,7 @@ FIKA OS is FIKA Catering's internal operational software platform. It brings pla
 
 ## TL;DR
 
-FIKA OS is an operational platform connecting Menu Planning, CPU Production, Delivered-In, Hospitality Booking and Logistics. The solo owner directs AI agents; agents handle isolated workspaces, tests, CI and release mechanics. `main` is the sole integration branch. Production always needs an explicit owner release instruction. Normal staging reset preserves reusable `fikaMenuPlanningWeeks` history.
+FIKA OS is an operational platform connecting Menu Planning, CPU Production, Delivered-In, Hospitality Booking and Logistics. The solo owner directs AI agents; agents handle isolated workspaces, tests, CI and release mechanics. `main` is the sole integration branch. A protected main merge with green exact-source CI can deploy to production when requested. Normal staging reset preserves reusable `fikaMenuPlanningWeeks` history.
 
 ## Working with an agent
 
@@ -12,10 +12,10 @@ FIKA OS is an operational platform connecting Menu Planning, CPU Production, Del
 |---|---|
 | "Implement this" | Creates an isolated workspace, implements, tests and prepares the change. No production deployment. |
 | "Put it on staging" | Resolves the candidate and deploys only the selected staging application, then verifies it. |
-| "Ship it" | Records explicit production authorisation, validates the full change and required staging evidence, deploys the selected app and verifies the exact serving source. |
+| "Ship it" | Pins the eligible merged source, deploys the selected app and verifies the exact serving source. |
 | "Roll it back" | Selects the verified previous release automatically, performs the authorised rollback and verifies it. |
 
-No manual SHAs, GitHub approval comments or independent human PR approvals are required. PRs and required CI remain useful automated integration safeguards; agents can integrate a green PR when the owner authorises integration. Genuinely cosmetic releases can go from CI to production after owner approval; operational and data-sensitive changes must pass staging first. An ordinary coding request never authorises production deployment.
+No manual SHAs, GitHub approval comments or independent human PR approvals are required. PRs and required CI remain useful automated integration safeguards; agents can integrate a green PR when the owner authorises integration. The same software release workflow covers every app and change category. Staging and manual UAT are optional. Deployments start only on request.
 
 The existing authorised local deployment path works without hosted GCP workload identity. Release ledgers and recovery journals protect operations internally. See the [operator guide](docs/deployment/workflow.md) for agent commands and failure recovery.
 
@@ -56,7 +56,7 @@ Install dependencies in the app being changed and use its `package.json` scripts
 
 ## Staging and deployment
 
-Staging uses Firebase project `fika-os-dev` and Firebase App Hosting backends configured under each app. Friendly staging domains are configured where available. Never commit secret values. Production deployment, migrations and operational data changes require explicit authorisation.
+Staging uses Firebase project `fika-os-dev` and Firebase App Hosting backends configured under each app. Friendly staging domains are configured where available. Never commit secret values. Deployments start on request. Migrations and operational data changes require separate explicit authorisation.
 
 The normal staging reset preserves reusable `fikaMenuPlanningWeeks` history. If complete planning-history deletion is explicitly required, use the separate hard-reset flag and the approved rebuild command:
 

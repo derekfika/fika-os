@@ -19,7 +19,7 @@ export async function readCreateAuditEvents(t, sinceMs, { token = () => command(
       for (const row of data.entries || []) {
         const resource = String(row.protoPayload?.resourceName || '');
         const marker = `/backends/${t.backend}`;
-        if (resource.endsWith(marker) || resource.includes(`${marker}/`)) events.push({ at: row.timestamp, method: row.protoPayload?.methodName });
+        if (!resource.includes('/backends/') || resource.endsWith(marker) || resource.includes(`${marker}/`)) events.push({ at: row.timestamp, method: row.protoPayload?.methodName });
       }
       if (!data.nextPageToken) return { readable: true, events };
       if (typeof data.nextPageToken !== 'string' || seen.has(data.nextPageToken)) throw Error('Invalid audit pagination');

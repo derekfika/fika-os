@@ -76,7 +76,7 @@ function fixture() {
  const pointer={commit:'c'.repeat(40),record:{schema:'fika.release.v1',...plan,kind:'intent',state:'PENDING',releaseId:journal.releaseId,previousGood:before,previousGoodRecord:journal.previousGoodRecord}};
  const build={name:`${t.backend}/builds/build-new`,state:'FAILED',sourceSha,createTime:'2026-10-22T12:00:10Z'};
  const rollout={name:`${t.backend}/rollouts/build-new`,build:build.name,state:'FAILED',createTime:build.createTime,reconciling:false};
- const snapshot={builds:[build],rollouts:[rollout],operations:[],traffic:{current:[{build:`${t.backend}/builds/build-old`,percent:100}],target:[],reconciling:false,autoDisabled:true},current:structuredClone(before)};
+ const snapshot={builds:[build],rollouts:[rollout,{name:`${t.backend}/rollouts/build-old`,build:`${t.backend}/builds/build-old`,state:'SUCCEEDED'}],operations:[],traffic:{current:[{build:`${t.backend}/builds/build-old`,percent:100}],target:[],reconciling:false,autoDisabled:true},current:structuredClone(before)};
  const calls=[],smokeSources=[];const io={inspect:async()=>structuredClone(snapshot),smoke:async sourceSha=>{smokeSources.push(sourceSha);return {ok:true,status:200};},latest:async()=>pointer,scopeHash:async()=> 'scope',archive:async j=>calls.push(['archive',structuredClone(j)]),append:async(r,p)=>{calls.push(['append',r,p]);return 'e'.repeat(40);},finish:async j=>calls.push(['finish',j])};
  return {input:{t,pointer,journal,rolloutId:'build-new',resolution:'abandon',reason:'Confirmed failed build; previous release still serves',operator:{actor:'writer'}},snapshot,io,calls,smokeSources};
 }
