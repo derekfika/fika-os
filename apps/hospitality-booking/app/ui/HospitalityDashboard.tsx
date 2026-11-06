@@ -2156,7 +2156,7 @@ function KitchenNotesEditor({ booking, onSaved }: { booking: CanonicalBooking; o
     finally { setBusy(false); }
   };
   return <section aria-label="Internal kitchen notes" className="booking-detail__note">
-    <label>Kitchen-only notes <textarea value={value} maxLength={4000} rows={4} onChange={event => setValue(event.target.value)} /><small>Visible to CPU kitchen only — not included on customer quotes.</small></label>
+    <label>Kitchen-only notes <textarea value={value} maxLength={4000} rows={4} onChange={event => setValue(event.target.value)} /><small>Visible to CPU kitchen only — not included on customer quotes. Kitchen notes do not confirm allergen status or clearance. Record dietary needs in the booking&apos;s dietary fields and complete the formal CPU allergen matrix review.</small></label>
     <button type="button" className="additional-charges-summary__manage" disabled={busy || booking.lifecycleStatus === "Cancelled" || value === (booking.kitchenNotes || "") && !propagation} onClick={() => void save()}>{busy ? "Saving kitchen notes…" : propagation === "pending" ? "Retry kitchen notes to CPU" : "Save kitchen notes"}</button>
     {propagation === "pending" && <p role="status">Kitchen notes are saved in Hospitality and pending CPU delivery. Retry to check the canonical order again.</p>}
     {error && <p role="alert">{error}</p>}
