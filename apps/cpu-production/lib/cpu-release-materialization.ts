@@ -9,6 +9,7 @@ import { matrixDriveConfiguration } from "../app/lib/matrix-drive-config";
 import { allergenReleaseLineageMatchesOrder, matrixSignatureScope, signatureMatchesScope, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../app/lib/production-plan";
 import { allergenReviewProblems, describeAllergenReviewProblem, effectiveProductionPlanStatus, planRevisionToken } from "../app/lib/production-plan-state";
 import type { ProductionOrder } from "./production-types";
+import { approvedCredentialedUpstream, CredentialedUpstreamError } from "@fika/server-shared/credentialed-upstream";
 import { dailyBundleManifestKey, dailyBundleSha256, encodeDailySignedOplocBundlePackage, buildDailySignedOplocBundle, publishDailySignedOplocBundle, verifyDailySignedOplocBundleArtifacts, type DailyBundleDurableStore } from "@fika/server-shared/daily-signed-oploc-bundle";
 import { publishReadPackage } from "@fika/server-shared/read-package";
 import { cpuPackageStore } from "./cpu-package-store";
@@ -20,7 +21,18 @@ import { buildCpuPacketItems } from "./cpu-packet-identity";
 import { deliverCpuPropagation } from "./cpu-durable-outbox";
 
 const menuContentHash = (items: PlannedMenuItem[]) => allergenMatrixContentHash(items);
-const hospitalityBase = () => (process.env.HOSPITALITY_BOOKING_BASE_URL?.trim() || "http://localhost:3300").replace(/\/$/, "");
+export function getHospitalityMatrixBaseUrl(env: Record<string, string | undefined> = process.env) {
+  const mode = env.FIKA_RUNTIME_MODE || (env.NODE_ENV === "production" ? "production" : "local");
+  const configured = env.HOSPITALITY_BOOKING_BASE_URL?.trim();
+  if (mode === "local") return (configured || "http://localhost:3300").replace(/\/$/, "");
+  if (mode !== "staging" && mode !== "production") throw new CredentialedUpstreamError("The Hospitality upstream requires a recognised CPU runtime mode.");
+  if (!configured) throw new CredentialedUpstreamError("HOSPITALITY_BOOKING_BASE_URL is required in hosted CPU Production runtime.");
+  const approved = new URL(approvedCredentialedUpstream("hospitality", configured, mode));
+  if (approved.pathname !== "/" || (mode === "staging" && approved.origin !== "https://hospitality-staging.fikacatering.com")) {
+    throw new CredentialedUpstreamError("The Hospitality upstream is not an approved origin for this CPU runtime.");
+  }
+  return approved.origin;
+}
 export const CPU_RELEASE_RECONCILIATION_DELAY_MS = 60_000;
 
 const durableArtifact = (artifact: MatrixArtifact | undefined): artifact is MatrixArtifact => Boolean(artifact?.pdfStatus === "generated" && artifact.driveStatus === "saved" && artifact.driveFileId && artifact.contentHash);
@@ -46,6 +58,7 @@ export async function createCpuMasterArtifact(plan: ProductionPlan, order: Produ
   if (!matrixDriveConfiguration(order).enabled) throw Object.assign(new Error("A configured Drive workspace is required before signing the CPU allergen bundle."), { status: 503 });
   const signatures = plan.signatures || [];
   if (!signatures.some(signature => signature.role === "production_chef") || !signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures are required for release materialization."), { status: 422 });
+  const hospitalityBase = getHospitalityMatrixBaseUrl();
   const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
   const withSource = (item: PlannedMenuItem) => ({ ...item, id: `${order.canonicalId}:${item.id}`, name: item.name });
   const html = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, items.map(withSource), signatures);
@@ -55,7 +68,7 @@ export async function createCpuMasterArtifact(plan: ProductionPlan, order: Produ
   const contentHash = dailyBundleSha256(Buffer.from(pdfBase64, "base64"));
   const releaseToken = (plan.currentAllergenRelease?.releaseId || "uncommitted").replace(/[^A-Za-z0-9_-]+/g, "-");
   const fileName = `CPU-Master-${serviceDate}-${releaseToken}.pdf`;
-  const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), ...(request.headers.get("x-fika-internal-token") ? { "x-fika-internal-token": request.headers.get("x-fika-internal-token")! } : {}), ...(request.headers.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, productionOrderId: order.canonicalId, releaseId: plan.currentAllergenRelease?.releaseId, weekCommencing: serviceDate }) });
+  const response = await fetch(`${hospitalityBase}/api/allergen-matrix/drive`, { method: "POST", redirect: "error", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), ...(request.headers.get("x-fika-internal-token") ? { "x-fika-internal-token": request.headers.get("x-fika-internal-token")! } : {}), ...(request.headers.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, productionOrderId: order.canonicalId, releaseId: plan.currentAllergenRelease?.releaseId, weekCommencing: serviceDate }) });
   const body = await response.json().catch(() => undefined) as { saved?: { fileId?: string; driveUrl?: string }; error?: { message?: string } } | undefined;
   if (!response.ok || !body?.saved?.fileId) throw Object.assign(new Error(body?.error?.message || "The final allergen checker could not be durably persisted to the configured Drive workspace."), { status: response.status || 503 });
   return { id: `allergen-master:${serviceDate}:${contentHash.slice(0, 16)}`, bookingId: order.sourceBookingId, fileName, createdAt: timestamp, createdBy: actor, contentHash, html, pdfStatus: "generated" as const, driveFileId: body.saved.fileId, driveUrl: body.saved.driveUrl, driveStatus: "saved" as const } satisfies MatrixArtifact;
@@ -82,12 +95,13 @@ export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: Pro
   const adHoc = isAdHocProductionOrder(order);
   const persistPdf = async (kind: "master" | "site", fileName: string, html: string, existing?: MatrixArtifact): Promise<{ kind: "master" | "site"; artifact: MatrixArtifact }> => {
     if (durableArtifact(existing)) return { kind, artifact: existing };
+    const hospitalityBase = getHospitalityMatrixBaseUrl();
     const pdfPath = isHostedPdfRuntime() ? undefined : path.join(os.tmpdir(), `fika-cpu-matrix-${Date.now()}-${Math.random().toString(36).slice(2)}-${fileName}`);
     let pdfBase64: string | undefined;
     try { const pdf = await renderPdfToBuffer(html); if (pdfPath) await fs.writeFile(pdfPath, pdf); pdfBase64 = pdf.toString("base64"); } catch (error) { console.error("FIKA PDF renderer failure", { app: "cpu-production", operation: "allergen-pdf-generation", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message : String(error), productionOrderId: order.canonicalId, serviceDate, requestId: request.headers.get("x-request-id") || undefined, buildSha: process.env.FIKA_BUILD_SHA || undefined }); throw rendererFailure(error); }
     if (!pdfBase64) throw Object.assign(new Error("The final allergen checker PDF could not be generated."), { status: 503 });
     const contentHash = dailyBundleSha256(Buffer.from(pdfBase64, "base64"));
-    const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), ...(request.headers.get("x-fika-internal-token") ? { "x-fika-internal-token": request.headers.get("x-fika-internal-token")! } : {}), ...(request.headers.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, productionOrderId: order.canonicalId, releaseId: plan.currentAllergenRelease?.releaseId, weekCommencing: serviceDate }) });
+    const response = await fetch(`${hospitalityBase}/api/allergen-matrix/drive`, { method: "POST", redirect: "error", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), ...(request.headers.get("x-fika-internal-token") ? { "x-fika-internal-token": request.headers.get("x-fika-internal-token")! } : {}), ...(request.headers.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, productionOrderId: order.canonicalId, releaseId: plan.currentAllergenRelease?.releaseId, weekCommencing: serviceDate }) });
     const body = await response.json().catch(() => undefined) as { saved?: { fileId?: string; driveUrl?: string }; error?: { message?: string } } | undefined;
     if (!response.ok || !body?.saved?.fileId) throw Object.assign(new Error(body?.error?.message || "The final allergen checker could not be durably persisted to the configured Drive workspace."), { status: response.status || 503 });
     return { kind, artifact: { id: `allergen-${kind}:${serviceDate}:${contentHash.slice(0, 16)}`, bookingId: order.sourceBookingId, fileName, createdAt: timestamp, createdBy: actor, contentHash, html, ...(pdfPath ? { pdfPath, localUrl: `${(process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400").replace(/\/$/, "")}/api/production-plan?orderId=${encodeURIComponent(order.canonicalId)}&download=pdf` } : {}), pdfStatus: "generated" as const, driveFileId: body.saved.fileId, driveUrl: body.saved.driveUrl, driveStatus: "saved" as const } satisfies MatrixArtifact };
