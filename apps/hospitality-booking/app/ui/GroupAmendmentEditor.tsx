@@ -36,7 +36,7 @@ export function GroupAmendmentEditor({ group, site, oplocId, onCancel, onSaved, 
       if (!bookings?.length || !body.sourceHash || bookings.some(b => b.bookingGroup?.id !== group.id)) throw new Error("The current booking services could not be loaded. Refresh and try again.");
       if (cancelled) return;
       setSource({ group: { ...group, sourceHash: body.sourceHash }, bookings }); setDrafts(structuredClone(bookings));
-      const adminSite = typeof body.hospitalityAdminOplocId === "string" ? body.hospitalityAdminOplocId : undefined;
+      const adminSite = typeof body.hospitalityAdminAuthority?.oplocId === "string" ? body.hospitalityAdminAuthority.oplocId : undefined;
       setAdminOplocId(adminSite);
       const catalogue = await loadHospitalityPortalMenu(site as import("../../lib/portal-sites").PortalSiteKey, adminSite || oplocId, { signal: controller.signal });
       if (adminSite && catalogue.catalogue.source === "cache-unverified") throw new Error("Verify the current site catalogue before amending this booking.");

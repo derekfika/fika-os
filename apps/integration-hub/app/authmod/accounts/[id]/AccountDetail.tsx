@@ -101,22 +101,28 @@ function RetiredAuthorities({ account, options, mutate }: { account: Account; op
 }
 
 function HospitalityAdminControl({ account, options, mutate }: { account: Account; options: Options; mutate: (command: Record<string, unknown>) => Promise<void> }) {
-  const [selected, setSelected] = useState<string[]>([]);
   const grants = (account.temporaryAccess || []).filter(grant => grant.capability === (HOSPITALITY_BOOKING_ADMIN + " · Manage") && ["active", "scheduled"].includes(grant.status));
-  const sites = account.sites.filter(site => options.oplocs.some(option => option.id === site.id));
-  const ids = selected.filter(id => sites.some(site => site.id === id));
+  const companyGrants = grants.filter(grant => grant.scope.kind === "organisation");
+  const effectiveCompanyGrant = companyGrants.some(grant => ["active", "scheduled"].includes(grant.status));
+  const legacySiteGrants = grants.filter(grant => grant.scope.kind === "oploc");
+  const activePerson = account.identity.identityKind === "person" && account.identity.status === "active";
+  const includedWithSuperuser = activePerson && account.fullAccess;
   return <div className={styles.authority}>
     <div className={styles.authorityInfo}>
-      <strong>Hospitality Admin</strong><small>Amend existing bookings after the notice deadline at explicitly granted sites.</small>
-      {grants.map(grant => <div className={styles.authorityGrant} key={grant.id}>
-        <small>{grant.scope.ids.map(id => options.oplocs.find(site => site.id === id)?.label || id).join(", ")}</small>
+      <strong>Hospitality Admin</strong>
+      {includedWithSuperuser ? <small>Included with Superuser across all FIKA Hospitality sites, including after the normal notice deadline. This is computed access; no separate grant is stored.</small> : <small>Amend existing Hospitality bookings across all FIKA sites, including after the normal notice deadline.</small>}
+      {companyGrants.map(grant => <div className={styles.authorityGrant} key={grant.id}>
+        <small>Company-wide</small>
         <Chip value={grant.status === "active" ? "Granted" : "Scheduled"} tone={grant.status === "active" ? "green" : "grey"} />
         <button type="button" className={styles.secondary} onClick={() => void mutate({ action: "authority-revoke", grantId: grant.id })}>Revoke</button>
       </div>)}
-      {sites.length ? <fieldset><legend>Assigned OPLOCs</legend>{sites.map(site => <label key={site.id} className={styles.accessRow}>
-        <span>{site.label}</span><input type="checkbox" checked={ids.includes(site.id)} onChange={event => setSelected(event.target.checked ? [...ids, site.id] : ids.filter(id => id !== site.id))} />
-      </label>)}</fieldset> : <small>Assign an active OPLOC before granting this authority.</small>}
-      <button type="button" className={styles.secondary} disabled={!ids.length} onClick={() => void mutate({ action: "authority-grant", appId: "hospitality-booking", resource: HOSPITALITY_BOOKING_ADMIN, authorityAction: "Manage", scope: { kind: "oploc", ids } })}>Grant Hospitality Admin</button>
+      {legacySiteGrants.map(grant => <div className={styles.authorityGrant} key={grant.id}>
+        <small>Legacy site scope · {grant.scope.ids.map(id => options.oplocs.find(site => site.id === id)?.label || id).join(", ")} · does not include other sites</small>
+        <Chip value={grant.status === "active" ? "Legacy grant" : grant.status} tone="grey" />
+        <button type="button" className={styles.secondary} onClick={() => void mutate({ action: "authority-revoke", grantId: grant.id })}>Revoke</button>
+      </div>)}
+      {!includedWithSuperuser && <button type="button" className={styles.secondary} disabled={!activePerson || effectiveCompanyGrant} onClick={() => void mutate({ action: "authority-grant", appId: "hospitality-booking", resource: HOSPITALITY_BOOKING_ADMIN, authorityAction: "Manage", scope: { kind: "organisation", ids: [] } })}>{effectiveCompanyGrant ? "Company-wide grant active" : companyGrants.length ? "Renew company-wide Hospitality Admin" : "Grant company-wide Hospitality Admin"}</button>}
+      {!activePerson && <small>Requires an active person account.</small>}
     </div>
   </div>;
 }
