@@ -76,6 +76,9 @@ test("collection print has every long-list row, empty physical boxes, signatures
   assert.match(html, /Packed by/);
   assert.match(html, /Checked by/);
   assert.match(html, /size:A4/);
+  assert.match(html, /Packing<\/th><th>Category<\/th><th>Dish name<\/th><th class="quantity">Portions<\/th>/);
+  assert.match(html, /class="category"/);
+  assert.match(collectionPrintHtml({ ...o, origin: "menu_planning" }), /class="quantity">Portions<\/th>/);
   assert.match(html, /break-inside:avoid/);
   assert.match(html, /table-header-group/);
   assert.doesNotMatch(html, /checked=|<script/);
@@ -139,8 +142,8 @@ test("single-collection print retains Menu section and slot metadata", () => {
   ]);
   const html = collectionPrintHtml(menu);
   assert.ok(html.indexOf("SALADS</th>") < html.indexOf("DESSERTS</th>"));
-  assert.match(html, /Leaf Salad<\/small> Mixed leaves/);
-  assert.match(html, /Dessert<\/small> Pear crumble/);
+  assert.match(html, /class="category">Leaf Salad<\/td><th class="dish">Mixed leaves<\/th>/);
+  assert.match(html, /class="category">Dessert<\/td><th class="dish">Pear crumble<\/th>/);
 });
 
 test("daily and selected multi-day totals print reuse verified aggregation and never combine incompatible units", () => {

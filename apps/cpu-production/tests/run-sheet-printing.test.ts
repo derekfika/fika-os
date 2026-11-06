@@ -91,7 +91,7 @@ test("printed HTML keeps separate site identities and contains the paper handove
   assert.match(html, /Same site · oploc:second/);
   assert.match(html, /4 portions/);
   assert.doesNotMatch(html, /12 pieces|Prep:/);
-  assert.match(html, /Ordered quantity/);
+  assert.match(html, /Category<\/th><th>Dish name<\/th><th class="quantity">Customer ordered quantity<\/th>/);
   assert.match(html, /data-site-key="oploc:oploc:first"/);
   assert.match(html, /data-site-key="oploc:oploc:second"/);
   for (const field of ["Packed by", "Checked by", "Driver / collected by", "Departure time", "Delivered time", "Received by / signature", "Notes / issues"]) {
@@ -115,10 +115,10 @@ test("printed Menu run sheets use canonical section order, actual slot labels, a
     ],
   } as unknown as ProductionOrder;
   const html = runSheetProductionPrintHtml(new Map([[day, [menu]]]), [day], ["oploc:oploc:menu"], new Date("2026-10-30T09:00:00Z"));
-  const sectionPositions = ["SALADS", "HOT MAINS", "GARNISHES", "DESSERTS"].map(label => html.indexOf(`<th colspan="3">${label}</th>`));
+  const sectionPositions = ["SALADS", "HOT MAINS", "GARNISHES", "DESSERTS"].map(label => html.indexOf(`<th colspan="4">${label}</th>`));
   assert.ok(sectionPositions.every(position => position >= 0));
   assert.deepEqual(sectionPositions, [...sectionPositions].sort((a, b) => a - b));
-  assert.ok(html.indexOf("Leaf Salad</small> Mixed leaves") < html.indexOf("Fish</small> Baked salmon"));
-  assert.ok(html.indexOf("Garnish 1</small> Crispy onions") < html.indexOf("Dessert</small> Pear crumble"));
+  assert.ok(html.indexOf(">Leaf Salad</td>") < html.indexOf(">Fish</td>"));
+  assert.ok(html.indexOf(">Garnish 1</td>") < html.indexOf(">Dessert</td>"));
   assert.equal((html.match(/data-site-key="oploc:oploc:menu"/g) || []).length, 1);
 });
