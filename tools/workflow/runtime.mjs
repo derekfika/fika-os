@@ -4,6 +4,7 @@ import path from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { APPS, digest, exactSha } from './policy.mjs';
 import { discover } from './discovery.mjs';
+import { withWorkspaceMutex } from './workspace-lock.mjs';
 
 const repositoryContext = new AsyncLocalStorage();
 export const withRepository = (cwd, fn) => repositoryContext.run({ cwd: path.resolve(cwd) }, fn);
@@ -25,6 +26,10 @@ export function ancestor(a, b) { return spawnSync('git', ['merge-base', '--is-an
 export function ref(name) { const r = spawnSync('git', ['rev-parse', '--verify', name], { encoding: 'utf8', windowsHide: true, ...(repositoryContext.getStore() || {}) }); return r.status === 0 ? r.stdout.trim() : undefined; }
 export function jsonFile(file) { return JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); }
 export function save(file, value) { mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.${process.pid}.tmp`; writeFileSync(tmp, JSON.stringify(value, null, 2)); renameSync(tmp, file); }
+// Kept behind the compatibility sentinel until every registry writer can migrate.
+export function workspaceMutex(fn, options) {
+  return withWorkspaceMutex(stateDir(), fn, options);
+}
 export function lock(name, fn) {
   const file = path.join(stateDir(), `${name}.lock`); let fd;
   try { fd = openSync(file, 'wx'); } catch { throw Error(`Another operation holds ${file}; inspect it, never auto-break locks`); }

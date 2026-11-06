@@ -46,6 +46,17 @@ jobs:
       - run: git config --global user.name 'FIKA workflow tests' && git config --global user.email 'workflow-tests@example.invalid'
       - run: node --test tools/workflow/*.test.mjs
       - run: node --test tools/deploy-dashboard/dashboard.test.mjs
+  workspace-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - run: node --test tools/workflow/workspace-lock.test.mjs
+      - run: node --test --test-name-pattern "successful reconciliation preserves" tools/workflow/reconcile-workspace.test.mjs
   applications:
     needs: scope
     if: needs.scope.outputs.apps != '[]'
@@ -141,16 +152,17 @@ jobs:
   merge-gate:
     name: Workflow / merge-gate
     if: always()
-    needs: [scope, tooling, applications, hub-emulator]
+    needs: [scope, tooling, workspace-windows, applications, hub-emulator]
     runs-on: ubuntu-latest
     steps:
       - name: Explicit success, failure or intentional skip
         env:
           SCOPE: ${{ needs.scope.result }}
           TOOLING: ${{ needs.tooling.result }}
+          WINDOWS: ${{ needs.workspace-windows.result }}
           APPS: ${{ needs.applications.result }}
           EMULATOR: ${{ needs.hub-emulator.result }}
         run: |
-          test "$SCOPE" = success && test "$TOOLING" = success
+          test "$SCOPE" = success && test "$TOOLING" = success && test "$WINDOWS" = success
           case "$APPS" in success|skipped) ;; *) exit 1;; esac
           case "$EMULATOR" in success|skipped) ;; *) exit 1;; esac
