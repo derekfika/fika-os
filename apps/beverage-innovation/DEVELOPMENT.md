@@ -47,6 +47,22 @@ Start with local extraction from pasted plain text and human review. A source ca
 - The owner-authorized scope includes eligible preview PR merges and the restricted staging preview release through the existing gates. It does not authorize production deployment, live beverage publication, or functional staging writes before their individual safety checks pass.
 - Keep all source changes in a governed isolated workspace and branch; preserve Stage A evidence. Open a PR and merge only exact-source changes that pass required CI and remain within this preview/functional-staging boundary.
 
+## Local permission and site checks
+
+The Stage B fixture uses explicit, independent `View`, `Contribute`, `Manage` and `Approve` actions. View reads drafts and the permitted specials list. Contribute creates or edits draft recipes and imports. Manage controls lifecycle changes and monthly specials. Approve records review decisions. The server validates editable draft fields before persistence so recipe edits cannot set approval, lifecycle, asset, history or actor fields.
+
+Fixture storage requires explicit local mode, the fictional fixture auth setting and loopback emulator configuration. Missing or empty `FIKA_BEVERAGE_LOCAL_AUTH_ACTIONS` or `FIKA_BEVERAGE_LOCAL_OPLOC_IDS` grant no actions or no sites respectively. Configured site IDs must have the fictional `fixture-oploc:` prefix.
+
+Monthly specials are visible only when the actor covers every target OPLOC. Site changes require access to both the stored and proposed targets, and status changes and command retries check the current targets inside the transaction. An unassigned draft is private to its creator until it has a target. The emulator list still reads a bounded window of at most 100 recent plans and filters on the server. A hosted implementation needs a scope-aware indexed list so recent plans outside a reviewer's scope cannot crowd out permitted plans.
+
+## Canonical AUTHMOD dependency for functional staging
+
+[AUTHMOD architecture](../../docs/architecture/authmod-architecture.md) explicitly excludes Beverage. Hub's current registry has no enabled `beverage-innovation` entry and its evaluator denies an unregistered app. `/api/auth/session` supplies identity and the launcher supplies entry visibility. Authority endpoints currently serve their own registered apps. The Beverage local fixture is a development permission check.
+
+Before functional staging, Hub must govern registration of the stable `beverage-innovation` app ID with explicit admission and reviewed normal actions. The existing Full Access policy expands across enabled normal apps, so a default registry seed would widen grants. Approval must be a separate explicit authority. A Hub decision contract must require an already-bound, active Firebase UID, evaluate app admission and the requested action, and resolve requested site IDs through Hub OPLOC redirects before checking active assignments. Site actions require a non-empty scope. Recipe drafts need an explicitly reviewed organisation scope policy. Hub's current session resolver can bind a matching email and write audit evidence, so a read-only authority decision must require an existing binding.
+
+The restricted staging preview continues to use its existing reviewer allowlist. Functional staging remains gated on the canonical provider contract, exact staging persistence isolation and the external effect review. External Gmail access remains unverified. Stabilisation issues #423 and #429 remain open.
+
 ## Complexity routing
 
 - **Complexity:** High — persistence, authorization boundaries, audit/version semantics and multiple core workflows.
@@ -62,10 +78,12 @@ npm ci
 $env:FIKA_RUNTIME_MODE = "local"
 $env:FIREBASE_PROJECT_ID = "demo-fika-os"
 $env:FIKA_BEVERAGE_LOCAL_AUTH = "fixture"
+$env:FIKA_BEVERAGE_LOCAL_AUTH_ACTIONS = "View,Contribute,Manage,Approve"
+$env:FIKA_BEVERAGE_LOCAL_OPLOC_IDS = "fixture-oploc:london,fixture-oploc:munich,fixture-oploc:frankfurt,fixture-oploc:amsterdam"
 npm run dev -- --port 13617
 ```
 
-In another terminal, from this directory, set the same three environment values and run:
+In another terminal, from this directory, start the demo Firestore emulator:
 
 ```powershell
 firebase emulators:start --only firestore --project demo-fika-os --config firebase.emulator.json

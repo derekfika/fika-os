@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { BeverageActor } from "../../lib/runtime";
@@ -7,6 +7,7 @@ import type { LocalImportPreview, BeverageRecord } from "../../lib/contracts";
 process.env.FIREBASE_PROJECT_ID = "demo-fika-os";
 process.env.FIKA_RUNTIME_MODE = "local";
 process.env.FIKA_BEVERAGE_LOCAL_AUTH = "fixture";
+process.env.FIKA_BEVERAGE_LOCAL_AUTH_ACTIONS = "Contribute";
 
 const { createBeverage, createImportedBeverage, createSpecial, listBeverageAudit, recordApproval, setLifecycle, setSpecialStatus, createVersion, updateVersion } = await import("../../lib/store");
 const { commitBeverageCommand, getBeverage: fetchBeverage, listMonthlySpecials, beverageCollections } = await import("../../lib/repository");
@@ -15,6 +16,9 @@ const { previewPastedRecipes, requirePastedRecipeCandidate } = await import("../
 const { beverageDb } = await import("../../lib/firestore-admin");
 const { POST: previewImport } = await import("../../app/api/imports/preview/route");
 const { POST: commitImport } = await import("../../app/api/imports/commit/route");
+const { GET: readBeverages, POST: postBeverage, PATCH: patchBeverage } = await import("../../app/api/beverages/route");
+const { GET: readSpecials, POST: postSpecial } = await import("../../app/api/specials/route");
+const { PATCH: patchSpecial } = await import("../../app/api/specials/[id]/route");
 const actor: BeverageActor = { authmodIdentityId: "fixture:beverage-test-operator", identityKind: "person", displayName: "Fictional Beverage local test actor", action: "Contribute", scopeOplocIds: ["fixture-oploc:london"], synthetic: true };
 
 test("Firestore emulator persists versioned records and append-only idempotency audit", async () => {
@@ -55,7 +59,7 @@ test("imported local recipes, approved versions and monthly site assignments per
   const special = await createSpecial({ title: "Emulator Citrus Special", beverageId: versioned.id, beverageVersionId: versioned.currentVersionId!, month: "2026-12", startDate: "2026-12-01", endDate: "2026-12-31", notes: "Fictional emulator test.", targetSites: [{ oplocId: "fixture-oploc:london", siteLabelSnapshot: "Fixture London", assigned: true, blockers: [] }] }, actor, 0, `emulator-special:${randomUUID()}`);
   const scheduled = await setSpecialStatus(special.id, "scheduled", { ...actor, action: "Manage" }, special.aggregateVersion, `emulator-schedule:${randomUUID()}`);
   assert.equal(scheduled.status, "scheduled");
-  assert.equal((await listMonthlySpecials()).some(item => item.id === special.id), true);
+  assert.equal((await listMonthlySpecials(actor)).some(item => item.id === special.id), true);
   assert.equal((await fetchBeverage(imported.id))?.sourceEvidence?.sourceKey, parsed.sourceHash);
 });
 
@@ -137,4 +141,131 @@ test("actual import routes preview without writes and atomically commit the edit
   assert.equal(audit[0].summary.candidateHash, candidate.candidateHash);
   assert.equal(audit[0].summary.sourceHash, result.sourceHash);
   assert.match(String(audit[0].summary.commandFingerprint), /^[a-f0-9]{64}$/);
+});
+
+function fixturePermissions(t: TestContext, id: string) {
+  const keys = ["FIKA_BEVERAGE_LOCAL_ACTOR_ID", "FIKA_BEVERAGE_LOCAL_AUTH_ACTIONS", "FIKA_BEVERAGE_LOCAL_OPLOC_IDS"] as const;
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  t.after(() => {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  });
+  process.env.FIKA_BEVERAGE_LOCAL_ACTOR_ID = id;
+  return (actions: string, oplocIds = "") => {
+    process.env.FIKA_BEVERAGE_LOCAL_AUTH_ACTIONS = actions;
+    process.env.FIKA_BEVERAGE_LOCAL_OPLOC_IDS = oplocIds;
+  };
+}
+
+function localRequest(path: string, method: string, body?: unknown, key = `emulator-scope:${randomUUID()}`) {
+  return new Request(`http://localhost:13617/api/${path}`, {
+    method,
+    ...(body === undefined ? {} : {
+      headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+      body: JSON.stringify(body),
+    }),
+  });
+}
+
+test("Beverage routes separate View, Contribute, Manage and Approve and protect governed record fields", async t => {
+  const permissions = fixturePermissions(t, "fixture:beverage-permission-test");
+  permissions("Contribute");
+  const created = await postBeverage(localRequest("beverages", "POST", {
+    name: "Fictional permissions drink", description: "Fixture only.", beverageType: "Mocktail", expectedVersion: 0,
+  }));
+  assert.equal(created.status, 201);
+  const { record }: { record: BeverageRecord } = await created.json();
+  const command = (extra: Record<string, unknown>, expectedVersion = 1) =>
+    patchBeverage(localRequest("beverages", "PATCH", { id: record.id, expectedVersion, ...extra }));
+  assert.equal((await readBeverages(localRequest("beverages", "GET"))).status, 403);
+  assert.equal((await command({ lifecycle: "in_development" })).status, 403);
+  assert.equal((await command({ action: "approval", kind: "operational", decision: "approved" })).status, 403);
+  const injected = await command({ action: "update", patch: {
+    lifecycle: "approved", approvals: [], assets: [], versions: [], createdBy: "fixture:forged-actor",
+  } });
+  assert.equal(injected.status, 400);
+  assert.equal((await fetchBeverage(record.id))?.lifecycle, "idea");
+  assert.equal((await listBeverageAudit(record.id)).length, 1);
+  assert.equal((await command({ action: "update", patch: { name: "Reviewed fixture name" } })).status, 200);
+  const version = await command({ action: "version" }, 2);
+  assert.equal(version.status, 200);
+  assert.equal((await version.json()).record.versions.length, 1);
+
+  permissions("Manage");
+  assert.equal((await command({ action: "approval", kind: "operational", decision: "approved" }, 3)).status, 403);
+  assert.equal((await command({ action: "unknown", lifecycle: "ready_for_approval" }, 3)).status, 400);
+  assert.equal((await command({ lifecycle: "ready_for_approval" }, 3)).status, 200);
+  permissions("Approve");
+  assert.equal((await command({ action: "version" }, 4)).status, 403);
+  const approved = await command({ action: "approval", kind: "operational", decision: "approved" }, 4);
+  assert.equal(approved.status, 200);
+  assert.equal((await approved.json()).record.approvals[0].actorId, "fixture:beverage-permission-test");
+  permissions("View");
+  assert.equal((await readBeverages(localRequest("beverages", "GET"))).status, 200);
+  assert.equal((await command({ action: "update", patch: { name: "Blocked edit" } }, 5)).status, 403);
+});
+
+test("monthly special routes check current and proposed site scopes, including exact retries", async t => {
+  const permissions = fixturePermissions(t, "fixture:beverage-special-permission-test");
+  const london = "fixture-oploc:london";
+  const munich = "fixture-oploc:munich";
+  const fullScope = [london, munich].join(",");
+  const createdBeverage = await createBeverage({ name: "Fixture scoped launch", description: "Fixture only.", beverageType: "Mocktail" }, actor, 0, `fixture-scoped-launch:${randomUUID()}`);
+  const versioned = await createVersion(createdBeverage.id, actor, 1, `fixture-scoped-version:${randomUUID()}`);
+  const targets = (...ids: string[]) => ids.map(oplocId => ({ oplocId, siteLabelSnapshot: oplocId, assigned: true, blockers: [] }));
+  const post = (title: string, ...ids: string[]) => postSpecial(localRequest("specials", "POST", {
+    expectedVersion: 0, title, beverageId: versioned.id, beverageVersionId: versioned.currentVersionId,
+    month: "2026-12", startDate: "2026-12-01", endDate: "2026-12-31", targetSites: targets(...ids), notes: "",
+  }));
+  const edit = (id: string, body: unknown, key?: string) => patchSpecial(localRequest(`specials/${id}`, "PATCH", body, key), { params: Promise.resolve({ id }) });
+  const visibleIds = async () => {
+    const result = await readSpecials(localRequest("specials", "GET"));
+    assert.equal(result.status, 200);
+    return (await result.json()).specials.map((item: { id: string }) => item.id);
+  };
+  permissions("Manage", fullScope);
+  const londonResponse = await post("Fixture London only", london);
+  const mixedResponse = await post("Fixture London and Munich", london, munich);
+  const unassignedResponse = await post("Fixture unassigned draft");
+  assert.equal(londonResponse.status, 201);
+  assert.equal(mixedResponse.status, 201);
+  assert.equal(unassignedResponse.status, 201);
+  const londonId = (await londonResponse.json()).special.id;
+  const mixedId = (await mixedResponse.json()).special.id;
+  const unassignedId = (await unassignedResponse.json()).special.id;
+  const notesCommand = { expectedVersion: 1, patch: { notes: "Reviewed with access to both sites." } };
+  const replayKey = `fixture-special-replay:${randomUUID()}`;
+  const initialEdit = await edit(mixedId, notesCommand, replayKey);
+  assert.equal(initialEdit.status, 200);
+  assert.equal((await edit(mixedId, notesCommand, replayKey)).status, 200);
+  const beforeDenied = await listBeverageAudit(mixedId);
+  assert.equal(beforeDenied.length, 2);
+  permissions("View", london);
+  const narrowed = await visibleIds();
+  assert.ok(narrowed.includes(londonId));
+  assert.ok(narrowed.includes(unassignedId));
+  assert.ok(!narrowed.includes(mixedId));
+  assert.equal((await post("View cannot create", london)).status, 403);
+  permissions("Manage", london);
+  for (const response of [
+    await post("Outside fixture scope", munich),
+    await edit(londonId, { expectedVersion: 1, patch: { targetSites: targets(munich) } }),
+    await edit(mixedId, { expectedVersion: 2, patch: { targetSites: targets(london) } }),
+    await edit(mixedId, { expectedVersion: 2, status: "cancelled" }),
+    await edit(mixedId, notesCommand, replayKey),
+  ]) {
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error.code, "AUTHMOD_OPLOC_DENIED");
+  }
+  assert.deepEqual(await listBeverageAudit(mixedId), beforeDenied);
+  assert.equal((await edit(londonId, { expectedVersion: 1, status: "cancelled" })).status, 200);
+  process.env.FIKA_BEVERAGE_LOCAL_ACTOR_ID = "fixture:different-beverage-test";
+  permissions("View", fullScope);
+  const differentActor = await visibleIds();
+  assert.ok(differentActor.includes(mixedId));
+  assert.ok(!differentActor.includes(unassignedId));
+  permissions("Manage", fullScope);
+  assert.equal((await edit(unassignedId, { expectedVersion: 1, patch: { targetSites: targets(london) } })).status, 403);
 });

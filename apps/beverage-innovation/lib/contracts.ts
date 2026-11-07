@@ -122,24 +122,38 @@ export const beverageRecordSchema = z.object({
   if (record.currentVersionId && !ids.has(record.currentVersionId)) context.addIssue({ code: "custom", message: "Current version must exist in the version history.", path: ["currentVersionId"] });
 });
 
-export const monthlySpecialSchema = z.object({
-  id,
-  schemaVersion: z.literal(1),
-  aggregateVersion: z.number().int().positive(),
+export const editableBeveragePatchSchema = z.object({
+  name: beverageRecordSchema.shape.name,
+  description: beverageRecordSchema.shape.description,
+  beverageType: beverageRecordSchema.shape.beverageType,
+  season: beverageRecordSchema.shape.season,
+  concept: beverageRecordSchema.shape.concept,
+  classification: beverageRecordSchema.shape.classification,
+}).partial().strict();
+
+export const monthlySpecialDraftSchema = z.object({
   title: z.string().trim().min(1).max(160),
   beverageId: id,
   beverageVersionId: id,
   month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
   startDate: dateOnly,
   endDate: dateOnly,
-  status: z.enum(["draft", "scheduled", "live", "ended", "cancelled"]),
   targetSites: z.array(z.object({ oplocId: id, siteLabelSnapshot: z.string().trim().min(1).max(160), assigned: z.boolean(), blockers: z.array(z.string().max(500)).max(40) }).strict()).max(100),
   notes: z.string().max(4000),
+}).strict();
+
+export const editableMonthlySpecialPatchSchema = monthlySpecialDraftSchema.omit({ beverageId: true, beverageVersionId: true }).partial();
+
+export const monthlySpecialSchema = monthlySpecialDraftSchema.extend({
+  id,
+  schemaVersion: z.literal(1),
+  aggregateVersion: z.number().int().positive(),
+  status: z.enum(["draft", "scheduled", "live", "ended", "cancelled"]),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   createdBy: id,
   updatedBy: id,
-}).strict().superRefine((special, context) => {
+}).superRefine((special, context) => {
   if (special.startDate > special.endDate) context.addIssue({ code: "custom", message: "The launch start date must be on or before its end date.", path: ["endDate"] });
   if (special.startDate.slice(0, 7) !== special.month) context.addIssue({ code: "custom", message: "The launch month must match its start date.", path: ["month"] });
 });
