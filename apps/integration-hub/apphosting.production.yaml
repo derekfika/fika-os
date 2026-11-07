@@ -102,6 +102,23 @@ env:
   - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     availability: [RUNTIME]
+  # Shared Hospitality Calendar mirror: site mailboxes resolve from Hub's canonical identity map.
+  # Calendar writes remain off until the exact catch-up batch is approved.
+  - variable: FIKA_CPUX_MIRROR_RUNTIME_IDENTITY
+    value: fika-os-prod-hub-runtime@fika-os.iam.gserviceaccount.com
+    availability: [RUNTIME]
+  - variable: FIKA_CPUX_MIRROR_DWD_ISSUER
+    value: fika-prod-workspace-dwd@fika-os.iam.gserviceaccount.com
+    availability: [RUNTIME]
+  - variable: FIKA_CPUX_LOGISTICS_MAILBOX
+    value: logistics@fikacatering.com
+    availability: [RUNTIME]
+  - variable: FIKA_CPUX_MIRROR_PREVIEW_ENABLED
+    value: "true"
+    availability: [RUNTIME]
+  - variable: FIKA_CPUX_MIRROR_WRITES_ENABLED
+    value: "false"
+    availability: [RUNTIME]
   # Hub's only direct Drive publication path is Hospitality group quotes.
   # These are approved production operating folders and are scoped by OPLOC.
   - variable: GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_BE0BECBE_B6CF_4D7F_9C1E_F36E689FEAB2
