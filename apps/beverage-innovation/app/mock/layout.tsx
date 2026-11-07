@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { beveragePreviewCookieName, checkBeveragePreviewAccess } from "@/lib/preview-auth";
+import "./prototype.css";
+import "./empty-preview.css";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
