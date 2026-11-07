@@ -3,7 +3,8 @@ import { OAuth2Client } from "google-auth-library";
 import { getStorage } from "firebase-admin/storage";
 import { decideBeverageRequestAuthority } from "@/lib/beverage-admission-request";
 import { beverageReferenceConfig } from "@/lib/beverage-reference-config";
-import { collectBeverageFoodObject, handleBeverageReference } from "@/lib/beverage-reference";
+import { handleBeverageReference } from "@/lib/beverage-reference";
+import { readBoundedBeverageObject } from "@/lib/beverage-reference-object";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,9 +22,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ res
     async readFoodObject(name, maxBytes) {
       if (!config?.food) throw new Error("Beverage Food Data is disabled.");
       const stream = getStorage().bucket(config.food.bucket).file(config.food.prefix + name).createReadStream({ decompress: false });
-      const timer = setTimeout(() => stream.destroy(new Error("Beverage Food Data read timed out.")), 8000);
-      try { return await collectBeverageFoodObject(stream, maxBytes); }
-      finally { clearTimeout(timer); }
+      return readBoundedBeverageObject(stream, maxBytes);
     },
   });
 }

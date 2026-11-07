@@ -12,6 +12,21 @@ Every request carries an audience-bound Google ID token for the dedicated Bevera
 
 The adapter calls neither the general session resolver nor the existing OPLOC and Food Data GET routes. Missing or stale AUTHMOD or OPLOC evidence denies access without publishing a package. Food Data reads are limited to `manifest.json` and `ingredients.json.gz` at the exact v1 prefix derived from the configured version. The manifest is capped at 64 KiB, compressed data at 5 MiB and JSON at 40 MiB. The reader checks the compressed and JSON byte counts and SHA-256 hashes before returning raw gzip without a Content-Encoding header. The product data is source evidence and carries no recipe costing or allergen approval.
 
+## Operator-only current OPLOC inventory
+
+Before preparing an all-active grant, an authorised staging operator can run this command from `apps/integration-hub` at the reviewed merged revision. It uses existing Application Default Credentials with approved read access to the canonical staging OPLOC head and records and the staging read-package bucket. Confirm the credential and project before executing. The command operates outside the hosted HTTP surface and remains available with both application flags off.
+
+```powershell
+$env:FIKA_RUNTIME_MODE = "staging"
+$env:FIREBASE_PROJECT_ID = "fika-os-dev"
+$env:FIKA_SNAPSHOT_BUCKET = "fika-os-dev-staging-read-packages-europe-west4"
+npx --no-install tsx scripts/read-beverage-oploc-inventory.ts
+```
+
+The command opens one read-only Firestore snapshot, reads the canonical OPLOC head and two exact objects, validates the package contract, current source version, byte counts and SHA-256, then verifies each canonical ID against its active record using only identity and lifecycle fields. Each object stream has an eight-second time limit. Limits are 64 KiB for the manifest, 1 MiB compressed and 4 MiB decoded. The complete site list must contain 1–100 unique canonical IDs and fit the Beverage bridge's 4,096-character transport limit. Invalid, missing, stale or oversized evidence fails the command without a partial list.
+
+Keep only the returned project, source and package versions, count, sorted IDs and hashes as restricted operator evidence. Record the run time and reviewed source SHA outside the application and recheck the inventory immediately before the [audited grant procedure](beverage-oploc-entitlement.md). The command has no account resolution, grant, package publication or recovery path. It reads no Food Data, recipes or Beverage records.
+
 ## Hosted activation gates
 
 The code requires explicit staging mode and the `fika-os-dev` project, plus the following runtime settings. Food Data access also honors the Hub Food Data kill switch. This PR sets none of them.

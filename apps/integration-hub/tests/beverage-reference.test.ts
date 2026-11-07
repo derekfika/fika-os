@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { NextRequest } from "next/server";
 import { GET } from "../app/api/internal/beverage/reference/[resource]/route";
-import { collectBeverageFoodObject, handleBeverageReference, type BeverageReferenceDeps } from "../lib/beverage-reference";
+import { handleBeverageReference, type BeverageReferenceDeps } from "../lib/beverage-reference";
+import { collectBoundedBeverageObject } from "../lib/beverage-reference-object";
 import { beverageReferenceConfig } from "../lib/beverage-reference-config";
 import {
   BEVERAGE_AUTHMOD_APP_ID, BEVERAGE_AUTHMOD_NORMAL_BUNDLE,
@@ -218,6 +219,6 @@ test("Food Data streaming cap closes the raw source without returning partial da
     try { yield Uint8Array.of(1, 2); yield Uint8Array.of(3, 4); }
     finally { closed = true; }
   }
-  await assert.rejects(() => collectBeverageFoodObject(oversize(), 3), /byte limit/);
+  await assert.rejects(() => collectBoundedBeverageObject(oversize(), 3), /byte limit/);
   assert.equal(closed, true);
 });
