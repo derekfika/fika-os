@@ -8,6 +8,8 @@ body{margin:0;background:white;color:var(--fika-text-primary,black);font:10pt/1.
 .print-page{width:210mm;height:296.8mm;padding:8mm 10mm;display:flex;flex-direction:column;break-after:page}
 .print-page:last-child{break-after:auto}
 .day-heading{flex:none;border-bottom:1.5pt solid var(--fika-action-primary,currentColor);padding-bottom:2mm;margin-bottom:3mm}
+.staging-print-warning{display:none}
+html[data-fika-runtime="staging"] .staging-print-warning{display:block;margin:0 0 2mm;padding:1.2mm 2mm;border:.4mm solid #a61b1b;color:#a61b1b;text-align:center;font:700 8pt/1.1 Arial,sans-serif;letter-spacing:.12em}
 .brand-lockup{display:flex;align-items:center;gap:4mm}
 .wordmark{font:900 24pt/1 "FIKA Vim",Arial,sans-serif;letter-spacing:.01em;border-bottom:2pt solid var(--fika-action-primary,currentColor);padding-bottom:1mm}
 .brand{font-size:9pt;font-weight:700;letter-spacing:.07em;color:var(--fika-action-secondary,currentColor)}

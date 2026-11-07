@@ -110,6 +110,7 @@ export function dayProductionPrintHtml(orders: ProductionOrder[], day: string, s
 export function paginateDayProduction(doc: Document = document) {
   const source = doc.getElementById("collection-source")!;
   const output = doc.getElementById("day-pages")!;
+  const staging = doc.documentElement.dataset.fikaRuntime === "staging";
   output.replaceChildren();
   const grouped = new Map<string, { day: string; dateLabel: string; siteKey: string; siteLabel: string; cards: HTMLElement[] }>();
   for (const card of Array.from(source.children) as HTMLElement[]) {
@@ -136,7 +137,7 @@ export function paginateDayProduction(doc: Document = document) {
         page.dataset.day = group.day;
         const header = doc.createElement("header");
         header.className = "day-heading";
-        header.innerHTML = '<div class="brand-lockup"><span class="wordmark" aria-hidden="true">FIKA</span><div class="heading-copy"><p class="brand">FIKA · CPU PRODUCTION RUN SHEET</p><h1></h1></div><p class="heading-date"></p></div><p class="page-scope"></p><p class="print-warning">Paper-only checkboxes · Reprint after changes · Not electronic delivery or allergen confirmation.</p><p class="stale-warning">Cancelled or amended work may make this paper stale.</p>';
+        header.innerHTML = (staging ? '<p class="staging-print-warning">STAGING / NOT FOR OPERATIONAL USE</p>' : '') + '<div class="brand-lockup"><span class="wordmark" aria-hidden="true">FIKA</span><div class="heading-copy"><p class="brand">FIKA · CPU PRODUCTION RUN SHEET</p><h1></h1></div><p class="heading-date"></p></div><p class="page-scope"></p><p class="print-warning">Paper-only checkboxes · Reprint after changes · Not electronic delivery or allergen confirmation.</p><p class="stale-warning">Cancelled or amended work may make this paper stale.</p>';
         header.querySelector("h1")!.textContent = group.siteLabel;
         header.querySelector(".heading-date")!.textContent = group.dateLabel;
         const count = group.cards.length;

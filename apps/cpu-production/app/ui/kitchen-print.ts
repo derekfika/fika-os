@@ -20,7 +20,7 @@ export function totalsPrintHtml(
   period: string,
   filters: string,
 ) {
-  return doc(
+  return addStagingPrintWatermark(doc(
     "Production totals",
     "<h1>Production totals</h1><p><b>" +
       escape(period) +
@@ -50,7 +50,7 @@ export function totalsPrintHtml(
         )
         .join("") +
       "<footer>Prepared / checked by: __________________ &nbsp; Date: ______________</footer>",
-  );
+  ), process.env.FIKA_RUNTIME_MODE);
 }
 export function printKitchenDocument(
   html: string,
