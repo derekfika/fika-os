@@ -52,7 +52,7 @@ async function fixture({ registered = true, bound = true } = {}) {
     return { uid };
   };
   const decide = (action: AuthModAction, oplocIds: string[] = [site], sessionCookie = "fixture:verified-session") =>
-    decideBeverageSiteAuthority(repository, verify, { action, oplocIds, sessionCookie });
+    decideBeverageSiteAuthority(read => read(repository), verify, { action, oplocIds, sessionCookie });
   const grantNormal = () => grantStandardApplicationAccess(repository, { identityId: identity.id, appId: app.appId, actor });
   const grantSite = (oplocId = site) => assignSite(repository, { identityId: identity.id, oplocId, actor, reason: "Fictional assignment." });
   const grantApproval = (ids: string[] = [site]) => grantAuthority(repository, {
