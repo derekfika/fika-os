@@ -6,43 +6,38 @@
   "backend": "fika-beverage-staging",
   "region": "europe-west4",
   "branch": "release/staging/beverage",
-  "sourceSha": "3c4920e95b06e3352494e18202e56e760da060af",
-  "rollout": "build-2026-11-07-001",
-  "state": "FAILED",
-  "percent": 0,
-  "scopeHash": "0e3154e2a13aae33b5ab1ef37853526f88edd71446d9005e7e44a0735180d12e",
-  "kind": "abandoned",
+  "validation": {
+    "id": 128441964061,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/42385437768/job/128441964061",
+    "sha": "4b8bf19bd685411e689ec68ea587de319fc12195"
+  },
+  "provenance": {
+    "number": 459,
+    "url": "https://github.com/derekfika/fika-os/pull/459",
+    "head": "48a1ee659afba95136a0231e7d5a2bd5fcffc796"
+  },
+  "sourceSha": "4b8bf19bd685411e689ec68ea587de319fc12195",
+  "scopeHash": "2b558090a8d4d9b5f39e08868097f6798c471cd9ebe742c5992e729afd0cbda4",
+  "rollback": false,
+  "approval": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "app": "beverage",
+    "environment": "staging",
+    "sourceSha": "4b8bf19bd685411e689ec68ea587de319fc12195",
+    "action": "deploy",
+    "instruction": "Owner-authorized restricted Beverage visual preview; fixed app-root App Hosting bundle and removed emulator configuration",
+    "releaseId": null,
+    "id": "ee1377e16514e618de651001fddc2d0a57145aa309c4c707292de3b383b85ec8",
+    "explicitExecute": true,
+    "authorisedAt": "2026-11-07T15:16:25.279Z"
+  },
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "1cc52da0-ef06-4b65-afdc-94af0133d7df",
   "previousGood": null,
   "previousGoodRecord": null,
+  "firstRelease": true,
   "firstReleaseBaselineRecord": "9de43a20c41140c347a101e19769f3326d4a0f88",
-  "releaseId": "69ab75d9-ddb2-4d05-a02e-88db4bca157c",
-  "originalIntent": "2e9c52d009c8b20d32959ed1249fbad009ee6109",
-  "smoke": {
-    "ok": false,
-    "status": null,
-    "reason": "first_release_failed_without_serving_traffic"
-  },
-  "recovery": {
-    "resolution": "abandon",
-    "reason": "App Hosting build failed before serving because app-root standalone output was missing; backend remained empty",
-    "operator": {
-      "actor": "derekfika",
-      "method": "authenticated-repository-writer",
-      "app": "beverage",
-      "environment": "staging",
-      "sourceSha": "3c4920e95b06e3352494e18202e56e760da060af",
-      "action": "reconcile:abandon",
-      "instruction": "App Hosting build failed before serving because app-root standalone output was missing; backend remained empty",
-      "releaseId": "69ab75d9-ddb2-4d05-a02e-88db4bca157c",
-      "id": "f55803de99f16cf3a1b9cf59e1bb4b3274863893502e32344546053f3d7fd273",
-      "explicitExecute": true,
-      "authorisedAt": "2026-11-07T15:10:00.717Z"
-    },
-    "rollout": "build-2026-11-07-001",
-    "firstRelease": true,
-    "noPreviousRelease": true,
-    "evidenceHash": "194348b89351c2b5f5902dd53b3e9c4bc2ed1b3648f0933e5efbf11bb836fcc9",
-    "journalHash": "24ee1408dc032920002dffbdfcf4162387bd83a0de3233492e06fe330e3b53aa",
-    "at": "2026-11-07T15:10:02.796Z"
-  }
+  "createdAt": "2026-11-07T15:16:27.459Z"
 }
