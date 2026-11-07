@@ -51,7 +51,7 @@ The registry is FIKA-owned and keyed by stable IDs: integration-hub, cpu-product
 
 ### Beverage site authority foundation
 
-Hub owns a server-side decision foundation for the reserved `beverage-innovation` app ID. It uses the existing AUTHMOD application, identity, assignment and grant records with an explicit Beverage policy. It has no HTTP transport or live registry seed. The generic Hub admission and authority checks deny the reserved ID, so the v1 Full Access expansion cannot admit Beverage.
+Hub owns a server-side decision foundation for the reserved `beverage-innovation` app ID. It uses the existing AUTHMOD application, identity, assignment and grant records with an explicit Beverage policy. The [dedicated Hub transport](../../apps/integration-hub/docs/beverage-reference.md) is staging-only and disabled by default. Registry provisioning remains separate. The generic Hub admission and authority checks deny the reserved ID, so the v1 Full Access expansion cannot admit Beverage.
 
 The decision requires a revocation-checked Firebase session cookie and exactly one active, already-bound Firebase person. It never matches or binds an email. The registry entry must be enabled and hidden with OPLOC scope and the normal bundle `beverage-innovation-normal`. An active direct Beverage application assignment and an explicit Beverage OPLOC authority grant are both required. The decision accepts up to 100 site IDs, applies Hub's final historical ID redirects to requested IDs, and checks every resulting target is still active. A grant with a historical alias in its scope cannot follow that alias into a new location.
 
