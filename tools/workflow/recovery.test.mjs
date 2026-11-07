@@ -37,6 +37,16 @@ test('Beverage empty recovery is restricted to the exact staging backend identit
  assert.throws(()=>target('beverage','prod'),/Unknown application\/environment/);
 });
 
+test('custom domain certificate operations remain evidenced but do not masquerade as rollout operations',async()=>{
+ const t=target('beverage','staging'),base=backendPath(t),backend={name:base,environment:'staging',reconciling:false,codebase:{rootDirectory:'apps/beverage-innovation',repository:'projects/fika-os-dev/locations/europe-west4/connections/apphosting-github-conn-wz4o9sx/gitRepositoryLinks/derekfika-fika-os'}};
+ const domainOperation={name:'domain-cert',done:false,metadata:{target:`${base}/domains/beverage-staging.fikacatering.com`}};
+ const read=async resource=>resource===base?backend:resource.endsWith('/traffic')?{rolloutPolicy:{disabled:true},reconciling:false,current:{splits:[]},target:{splits:[]}}:resource.includes('/builds?')?{builds:[]}:resource.includes('/rollouts?')?{rollouts:[]}:resource.includes('/operations?')?{operations:[domainOperation]}:{operations:[]};
+ const snapshot=await recoverySnapshot(t,read,async()=>{throw Error('serving should not be queried for empty traffic');});
+ assert.equal(snapshot.current.state,'EMPTY');assert.deepEqual(snapshot.operations,[]);assert.deepEqual(snapshot.domainOperations,[{name:'domain-cert',done:false,target:`${t.backend}/domains/beverage-staging.fikacatering.com`}]);
+ const rolloutOperation={name:'rollout-op',done:false,metadata:{target:`${base}/rollouts/rollout-1`}};
+ await assert.rejects(recoverySnapshot(t,async resource=>resource.includes('/operations?')?{operations:[domainOperation,rolloutOperation]}:read(resource)),/100% revision/);
+});
+
 test('failed initial Ad-Hoc release can be abandoned only with exact terminal evidence and empty production traffic', async()=>{
  const t=target('adhoc','prod'), sourceSha='a'.repeat(40), releaseId='initial-123', started='2026-11-03T06:00:00Z', finished='2026-11-03T06:01:00Z';
  const plan={...t,sourceSha,scopeHash:'candidate',approval:{id:'owner-authorized'}};

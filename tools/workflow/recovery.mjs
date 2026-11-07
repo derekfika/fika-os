@@ -3,6 +3,16 @@ import { cloud, serving, backendPath } from './runtime.mjs';
 import { discover } from './discovery.mjs';
 
 const relative = name => String(name).split('/backends/')[1];
+export function isDomainOperationTarget(t, target) {
+  const value = String(target || '');
+  return value === `${t.backend}/domains` || value.startsWith(`${t.backend}/domains/`) ||
+    value === `${backendPath(t)}/domains` || value.startsWith(`${backendPath(t)}/domains/`);
+}
+export function isReleaseRelevantOperation(t, operation) {
+  if (operation.done || isDomainOperationTarget(t, operation.target)) return false;
+  const value = String(operation.target || '');
+  return !value || value === t.backend || value === backendPath(t) || value.startsWith(`${t.backend}/`) || value.startsWith(`${backendPath(t)}/`);
+}
 export async function recoverySnapshot(t, read = cloud, currentServing = serving) {
   const base = backendPath(t);
   const [backend, builds, rollouts, operations, traffic] = await Promise.all([
@@ -12,9 +22,12 @@ export async function recoverySnapshot(t, read = cloud, currentServing = serving
     discover(`projects/${t.project}/locations/${t.region}/operations`, 'operations', o => ({ name: o.name, done: o.done === true, target: relative(o.metadata?.target || o.response?.name || '') }), read),
     read(`${base}/traffic`),
   ]);
-  const relevantOperations = operations.filter(o => !o.done && (!o.target || o.target === t.backend || o.target.startsWith(`${t.backend}/`)));
+  // Domain ownership/certificate work does not mutate backend builds, rollouts or traffic.
+  // Keep it in the evidence digest while keeping the release gate specific to release operations.
+  const domainOperations = operations.filter(o => !o.done && isDomainOperationTarget(t, o.target));
+  const relevantOperations = operations.filter(o => isReleaseRelevantOperation(t, o));
   const split = s => (s?.splits || []).map(x => ({ build: relative(x.build), percent: x.percent })).sort((a,b) => a.build.localeCompare(b.build));
-  const snapshot = { backend: { name: backend.name, environment: backend.environment, reconciling: Boolean(backend.reconciling), rootDirectory: backend.codebase?.rootDirectory, repository: backend.codebase?.repository }, builds, rollouts, operations: relevantOperations, traffic: { current: split(traffic.current), target: split(traffic.target), reconciling: Boolean(traffic.reconciling), autoDisabled: traffic.rolloutPolicy?.disabled === true } };
+  const snapshot = { backend: { name: backend.name, environment: backend.environment, reconciling: Boolean(backend.reconciling), rootDirectory: backend.codebase?.rootDirectory, repository: backend.codebase?.repository }, builds, rollouts, operations: relevantOperations, domainOperations, traffic: { current: split(traffic.current), target: split(traffic.target), reconciling: Boolean(traffic.reconciling), autoDisabled: traffic.rolloutPolicy?.disabled === true } };
   // A first release has no serving revision. Represent that state only when the
   // backend is correctly mapped and Firebase proves there is no traffic,
   // target or in-flight operation. Any partial state remains an integrity error.
