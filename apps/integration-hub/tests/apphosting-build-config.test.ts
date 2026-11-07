@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import path from "node:path";
 import { readFileSync } from "node:fs";
-import nextConfig from "../next.config";
 
 test("App Hosting receives app-root standalone output while shared imports remain enabled", () => {
-  assert.equal(nextConfig.output, "standalone");
-  assert.equal(nextConfig.outputFileTracingRoot, path.resolve(process.cwd()));
-  assert.equal(nextConfig.experimental?.externalDir, true);
-  assert.equal(nextConfig.turbopack, undefined);
+  // Firebase's App Hosting adapter temporarily replaces next.config.ts during
+  // production builds. Keep this test source based so its typecheck does not
+  // depend on the adapter-generated module's exports.
+  const config = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
+  assert.match(config, /output:\s*["']standalone["']/);
+  assert.match(config, /outputFileTracingRoot:\s*appRoot/);
+  assert.match(config, /externalDir:\s*true/);
+  assert.doesNotMatch(config, /turbopack\s*:/);
 });
 
 test("effective App Hosting config enables staging data-source tracing", () => {
