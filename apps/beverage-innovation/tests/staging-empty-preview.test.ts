@@ -19,6 +19,31 @@ const checkEmptyMetrics = (root: ReactTestInstance) => {
   }
 };
 
+test("the opt-in Target sites panel requests only the local read and clears site names when access fails", async t => {
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls++;
+    assert.equal(input, "/api/preview/oplocs");
+    assert.deepEqual(init, { credentials: "same-origin", cache: "no-store", redirect: "error" });
+    return calls === 1
+      ? Response.json({ readOnly: true, oplocs: [{ id: "oploc:fixture-authorised", label: "Fictional authorised site" }] })
+      : Response.json({ error: { code: "BEVERAGE_OPLOC_REQUEST_DENIED" } }, { status: 403 });
+  });
+  let rendered!: ReactTestRenderer;
+  await act(async () => { rendered = create(createElement(EmptyPreview, { showHubSites: true })); });
+  t.after(async () => { await act(async () => rendered.unmount()); });
+  await act(async () => { button(rendered.root, "Monthly Specials").props.onClick(); });
+  assert.equal(calls, 0);
+  const check = () => button(rendered.root, "Check authorised sites").props.onClick();
+  await act(async () => { await check(); });
+  assert.match(JSON.stringify(rendered.toJSON()), /Fictional authorised site/);
+  assert.equal(button(rendered.root, "Schedule special").props.disabled, true);
+  await act(async () => { await check(); });
+  assert.doesNotMatch(JSON.stringify(rendered.toJSON()), /Fictional authorised site/);
+  assert.match(JSON.stringify(rendered.toJSON()), /Site access could not be authorised/);
+  assert.equal(calls, 2);
+});
+
 test("staging presentation has an empty state and local mock keeps the approved fixture reference", () => {
   const previous = process.env.FIKA_RUNTIME_MODE;
   try {

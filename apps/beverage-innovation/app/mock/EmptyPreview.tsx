@@ -26,8 +26,41 @@ function Icon({ page }: { page: Page }) { return <svg aria-hidden="true" viewBox
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <section className={`m-panel ${className}`}>{children}</section>; }
 function Empty({ title, children }: { title: string; children: React.ReactNode }) { return <div className="empty-preview-message"><span className="empty-preview-symbol" aria-hidden="true">◇</span><h2>{title}</h2><p>{children}</p></div>; }
 
-/** A presentation-only, empty state. Nothing here reads or writes a Beverage service. */
-export default function EmptyPreview() {
+type SiteResult = { status: "idle" | "loading" | "denied" | "unavailable" } |
+  { status: "ready"; sites: { id: string; label: string }[] };
+
+function ReadOnlySites() {
+  const [result, setResult] = useState<SiteResult>({ status: "idle" });
+  async function checkSites() {
+    setResult({ status: "loading" });
+    try {
+      const response = await fetch("/api/preview/oplocs", { credentials: "same-origin", cache: "no-store", redirect: "error" });
+      if (response.status === 401 || response.status === 403) {
+        setResult({ status: "denied" });
+        return;
+      }
+      if (!response.ok) throw new Error("Site lookup unavailable.");
+      const data = await response.json();
+      if (data.readOnly !== true || !Array.isArray(data.oplocs)) throw new Error("Site lookup unavailable.");
+      setResult({ status: "ready", sites: data.oplocs });
+    } catch {
+      setResult({ status: "unavailable" });
+    }
+  }
+
+  return <div className="empty-preview-site-check">
+    <p>Read-only Hub site reference.</p>
+    <button type="button" className="m-soft" disabled={result.status === "loading"} onClick={checkSites}>Check authorised sites</button>
+    <p role="status" aria-live="polite">{{
+      idle: "", loading: "Checking site access…", denied: "Site access could not be authorised.",
+      unavailable: "The site reference is unavailable. Try again.", ready: "Authorised sites from Hub",
+    }[result.status]}</p>
+    {result.status === "ready" && <ul aria-label="Authorised sites from Hub">{result.sites.map(site => <li key={site.id}>{site.label}</li>)}</ul>}
+  </div>;
+}
+
+/** Empty Beverage workspace with an optional read-only site reference. */
+export default function EmptyPreview({ showHubSites = false }: { showHubSites?: boolean }) {
   const [page, setPage] = useState<Page>("Overview");
   const [view, setView] = useState("Grid");
   const [launchView, setLaunchView] = useState("Calendar");
@@ -68,7 +101,7 @@ export default function EmptyPreview() {
           <Panel><div className="m-section-title"><span>3</span><h2>Method and service</h2><p>Define preparation and presentation.</p></div><div className="m-method"><label>Preparation method<textarea rows={6} value={method} onChange={event => setMethod(event.target.value)}/></label><div className="m-two"><label>Glassware<input value={glass} onChange={event => setGlass(event.target.value)}/></label><label>Ice<input value={ice} onChange={event => setIce(event.target.value)}/></label><label>Garnish<input value={garnish} onChange={event => setGarnish(event.target.value)}/></label><label>Equipment<input value={equipment} onChange={event => setEquipment(event.target.value)}/></label></div></div><label>Tasting notes<input value={notes} onChange={event => setNotes(event.target.value)}/></label></Panel></div>
           <aside className="m-side"><Panel className="empty-preview-photo"><span aria-hidden="true">▧</span><b>No photograph added</b><p>Approved drink photography is required for final assets.</p></Panel><Panel><h3><span className="m-iconbox" aria-hidden="true">▤</span> Drink summary</h3><p>{name.trim() || "Enter drink details to preview them here."}</p></Panel><Panel><h3><span className="m-iconbox" aria-hidden="true">◉</span> Financials</h3><div className="m-finance"><span>Total cost per drink</span><b>{cost === undefined ? "Incomplete" : `£${cost.toFixed(2)}`}</b><label htmlFor="empty-preview-price">Estimated selling price ex VAT</label><input id="empty-preview-price" type="number" min="0" step="0.01" value={price} onChange={event => setPrice(event.target.value)}/><span>Estimated GP</span><b>{gp === undefined ? "Incomplete" : `${gp.toFixed(1)}%`}</b></div></Panel><Panel><h3><span className="m-iconbox" aria-hidden="true">⌁</span> Readiness</h3><p>Saving and approval are unavailable in this preview.</p></Panel></aside></div></div>}
 
-        {page === "Monthly Specials" && <div className="m-layout"><div className="m-content"><div className="m-heading"><div><h1>Monthly Specials</h1><p>Plan launches, assign drinks to sites, and track rollout readiness.</p></div><button className="m-primary" disabled>Schedule special</button></div><div className="m-metrics">{[["▦", "Schedules", ""], ["▷", "Launches", "success"], ["♧", "Sites", "warning"], ["!", "Readiness", "danger"]].map(([symbol, label, kind]) => <div className="m-metric" key={label}><span className={`m-metric-icon ${kind}`} aria-hidden="true">{symbol}</span><div><b>{label}</b><span className="empty-preview-unavailable">Not connected</span></div></div>)}</div><div className="m-tabs m-launch-tabs">{["Calendar", "Launch list", "Site view"].map(item => <button key={item} aria-pressed={launchView === item} className={launchView === item ? "selected" : ""} onClick={() => setLaunchView(item)}>{item}</button>)}</div><Panel><Empty title={`No specials in ${launchView.toLowerCase()}`}>No Beverage records are connected to this preview.</Empty></Panel></div><aside className="m-side"><Panel><h3>Special details</h3><p>Select a special when records are available to see its readiness, details, assets and notes.</p></Panel><Panel><h3>Target sites</h3><p>Site assignments are unavailable in this preview.</p></Panel></aside></div>}
+        {page === "Monthly Specials" && <div className="m-layout"><div className="m-content"><div className="m-heading"><div><h1>Monthly Specials</h1><p>Plan launches, assign drinks to sites, and track rollout readiness.</p></div><button className="m-primary" disabled>Schedule special</button></div><div className="m-metrics">{[["▦", "Schedules", ""], ["▷", "Launches", "success"], ["♧", "Sites", "warning"], ["!", "Readiness", "danger"]].map(([symbol, label, kind]) => <div className="m-metric" key={label}><span className={`m-metric-icon ${kind}`} aria-hidden="true">{symbol}</span><div><b>{label}</b><span className="empty-preview-unavailable">Not connected</span></div></div>)}</div><div className="m-tabs m-launch-tabs">{["Calendar", "Launch list", "Site view"].map(item => <button key={item} aria-pressed={launchView === item} className={launchView === item ? "selected" : ""} onClick={() => setLaunchView(item)}>{item}</button>)}</div><Panel><Empty title={`No specials in ${launchView.toLowerCase()}`}>No Beverage records are connected to this preview.</Empty></Panel></div><aside className="m-side"><Panel><h3>Special details</h3><p>Select a special when records are available to see its readiness, details, assets and notes.</p></Panel><Panel><h3>Target sites</h3>{showHubSites ? <ReadOnlySites /> : <p>Site assignments are unavailable in this preview.</p>}</Panel></aside></div>}
         {(["Recipe Cards", "Rollout", "Settings"] as Page[]).includes(page) && <Panel className="m-placeholder"><h1>{page}</h1><p>This section is not connected in the preview.</p><button className="m-primary" onClick={() => setPage("Overview")}>Back to overview</button></Panel>}
       </main>
     </div>
