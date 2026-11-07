@@ -32,9 +32,10 @@
     "explicitExecute": true,
     "authorisedAt": "2026-11-07T16:36:18.712Z"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "0522bfc8-ee47-49c3-951a-eba68d782562",
+  "rollout": "build-2026-11-07-004",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "46b152f2ba781b942844d9e85068164f349eff77",
     "rollout": "build-2026-11-07-003",
@@ -42,5 +43,14 @@
     "percent": 100
   },
   "previousGoodRecord": "9aa855dd9fe98762c2c1355753f8905c487397da",
-  "createdAt": "2026-11-07T16:36:20.742Z"
+  "releaseId": "0522bfc8-ee47-49c3-951a-eba68d782562",
+  "completedAt": "2026-11-07T16:40:05.746Z",
+  "smoke": {
+    "ok": true,
+    "status": 307,
+    "url": "https://fika-beverage-staging--fika-os-dev.europe-west4.hosted.app/",
+    "buildInfoStatus": 200,
+    "buildSha": "276becbabe94660485b44e58ff8ba35379618d97",
+    "authGate": "FIKA_SESSION_MISSING"
+  }
 }
