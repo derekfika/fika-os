@@ -1,8 +1,14 @@
+import { createHash } from "node:crypto";
 import type { AuthPrincipal, AuthorityGrant, AuthModAction, DelegationRecord, EffectivePeriod } from "./model";
 import { assertValidEffectivePeriod, HOSPITALITY_BOOKING_ADMIN, idempotentId, isEffective, now } from "./model";
 import { auditEvent } from "./audit";
 import type { AuthModRepository } from "./repository";
 import { isLogisticsVehicleId } from "../../../shared/logistics-authority";
+import {
+  BEVERAGE_AUTHMOD_APP_ID, BEVERAGE_AUTHMOD_APPROVAL_RESOURCE, BEVERAGE_AUTHMOD_NORMAL_RESOURCE,
+  MAX_BEVERAGE_OPLOC_SCOPE, beverageApplicationAllowsAction, isBeverageApplication,
+  isEffectiveBeverageAccess, validBeverageOplocId,
+} from "./beverage-admission";
 
 export const PERSON_REQUIRED_AUTHORITIES = ["authmod", "authmod.admin", "menu.publish", "logistics.driver", HOSPITALITY_BOOKING_ADMIN] as const;
 export function isPersonRequiredAuthority(resource: string) { return (PERSON_REQUIRED_AUTHORITIES as readonly string[]).includes(resource); }
@@ -39,9 +45,35 @@ export async function grantAuthority(repository: AuthModRepository, input: { sub
       throw Object.assign(new Error("Company-wide Hospitality Admin requires an active person identity."), { status: 422, code: "AUTHMOD_PERSON_REQUIRED" });
     }
   }
-  const id = idempotentId("authority", input.subjectType, input.subjectId, input.appId, input.resource, input.action, input.scope.kind, ...input.scope.ids);
+  const beverage = input.appId === BEVERAGE_AUTHMOD_APP_ID;
+  let scope = input.scope;
+  if (beverage || input.resource === BEVERAGE_AUTHMOD_NORMAL_RESOURCE || input.resource === BEVERAGE_AUTHMOD_APPROVAL_RESOURCE) {
+    const reject = () => Object.assign(new Error("Beverage authority requires a direct person grant for an admitted action and explicit active canonical OPLOC IDs."), { status: 422, code: "AUTHMOD_BEVERAGE_SCOPE_INVALID" });
+    const resource = input.action === "Approve" ? BEVERAGE_AUTHMOD_APPROVAL_RESOURCE : BEVERAGE_AUTHMOD_NORMAL_RESOURCE;
+    if (!beverage || input.subjectType !== "interactive" || input.resource !== resource ||
+        (input.provenance && input.provenance !== "explicit-special-authority") || scope.kind !== "oploc" ||
+        !Array.isArray(scope.ids) || !scope.ids.length || scope.ids.length > MAX_BEVERAGE_OPLOC_SCOPE || !scope.ids.every(validBeverageOplocId) ||
+        [effectivePeriod?.effectiveFrom, effectivePeriod?.effectiveTo].some(value => value !== undefined && !Number.isFinite(Date.parse(value))) ||
+        new Set(scope.ids).size !== scope.ids.length) throw reject();
+    const [app, identity, assignments, sites] = await Promise.all([
+      repository.getApplication(input.appId), repository.getIdentity(input.subjectId), repository.listAppAssignments(input.subjectId),
+      Promise.all(scope.ids.map(id => repository.getActiveOploc(id))),
+    ]);
+    const at = new Date();
+    if (!isBeverageApplication(app) || !beverageApplicationAllowsAction(app, input.action) ||
+        identity?.identityKind !== "person" || identity.externalProvider !== "firebase" || !identity.externalUid || !isEffectiveBeverageAccess(identity, at) ||
+        !assignments.some(value => value.identityId === identity.id && value.appId === app.appId &&
+          value.accessType !== "delegated" && isEffectiveBeverageAccess(value, at)) ||
+        !sites.every((site, index) => site?.active === true && site.id === scope.ids[index])) throw reject();
+    const bindings = await repository.findIdentitiesByExternal("firebase", identity.externalUid, 2);
+    if (bindings.length !== 1 || bindings[0].id !== identity.id || bindings[0].version !== identity.version) throw reject();
+    scope = { kind: "oploc", ids: [...scope.ids].sort() };
+  }
+  const key = [input.subjectType, input.subjectId, input.appId, input.resource, input.action, scope.kind, ...scope.ids];
+  // A whole-inventory scope can exceed Firestore's document ID size limit.
+  const id = beverage ? `authority:beverage:${createHash("sha256").update(JSON.stringify(key)).digest("hex")}` : idempotentId("authority", ...key);
   const existing = (await repository.listAuthorityGrants(input.subjectId, input.subjectType)).find(value => value.id === id); const timestamp = now();
-  const grant: AuthorityGrant = { id, subjectType: input.subjectType, subjectId: input.subjectId, appId: input.appId, resource: input.resource, action: input.action, scope: input.scope, status: "active", provenance: input.provenance || "explicit-special-authority", effectiveFrom: effectivePeriod?.effectiveFrom, effectiveTo: effectivePeriod?.effectiveTo, reason: input.reason, grantedBy: input.actor.id, version: (existing?.version || 0) + 1, createdAt: existing?.createdAt || timestamp, updatedAt: timestamp };
+  const grant: AuthorityGrant = { id, subjectType: input.subjectType, subjectId: input.subjectId, appId: input.appId, resource: input.resource, action: input.action, scope, status: "active", provenance: input.provenance || "explicit-special-authority", effectiveFrom: effectivePeriod?.effectiveFrom, effectiveTo: effectivePeriod?.effectiveTo, reason: input.reason, grantedBy: input.actor.id, version: (existing?.version || 0) + 1, createdAt: existing?.createdAt || timestamp, updatedAt: timestamp };
   const audit = auditEvent({ actor: input.actor, targetType: "AuthorityGrant", targetId: grant.id, action: "authority-granted", beforeState: existing, afterState: grant, provenance: grant.provenance, outcome: "committed", scope: grant.scope });
   await repository.saveAuthorityGrantWithAudit(grant, audit, existing?.version);
   return grant;
@@ -52,6 +84,7 @@ export async function createDelegation(repository: AuthModRepository, input: { d
   assertValidEffectivePeriod({ effectiveFrom: input.effectiveFrom, effectiveTo: input.effectiveTo }, true); if (!input.reason?.trim()) throw Object.assign(new Error("A reason is required for delegation."), { status: 422, code: "AUTHMOD_REASON_REQUIRED" });
   const source = await repository.getAuthorityGrant(input.sourceGrantId); if (!source || source.id !== input.sourceGrantId || source.subjectId !== input.delegatorId || source.subjectType !== "interactive" || !isEffective(source)) throw Object.assign(new Error("Delegation source authority is not currently effective."), { status: 422, code: "AUTHMOD_DELEGATION_SOURCE_INVALID" });
   if (source.resource === HOSPITALITY_BOOKING_ADMIN) throw Object.assign(new Error("An AUTHMOD administrator must grant Hospitality Admin directly."), { status: 422, code: "AUTHMOD_DELEGATION_SOURCE_INVALID" });
+  if (source.appId === BEVERAGE_AUTHMOD_APP_ID) throw Object.assign(new Error("An AUTHMOD administrator must grant Beverage authority directly."), { status: 422, code: "AUTHMOD_DELEGATION_SOURCE_INVALID" });
   if (source.delegationSourceGrantId) throw Object.assign(new Error("Recursive delegation is not supported."), { status: 422, code: "AUTHMOD_DELEGATION_RECURSIVE" });
   if (isOrganisationAuthority(source.resource) && input.scope.kind !== "organisation") throw Object.assign(new Error("This authority is organisation-wide and cannot be OPLOC-scoped."), { status: 422, code: "AUTHMOD_ORGANISATION_SCOPE_REQUIRED" });
   assertAuthorityNotRetired(source.resource);

@@ -123,3 +123,90 @@ test("emulator: app-access HTTP save/revoke commits atomically, fences caches an
   assert.equal((await working.listAppAssignments(id))[0].status, "revoked");
   assert.equal((await evaluateAuthority(working, { principal: { ...principal, id }, appId, resource: appId, action: "View", scope: { kind: "organisation", ids: [] } })).allowed, false);
 });
+
+test("emulator: the AUTHMOD account command persists one audited Beverage View grant for a full explicit site inventory", { skip: !enabled }, async t => {
+  const root = await mkdtemp(path.join(tmpdir(), "authmod-beverage-sites-"));
+  const previousRoot = process.env.FIKA_SNAPSHOT_DIR;
+  process.env.FIKA_SNAPSHOT_DIR = root;
+  t.after(async () => {
+    if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot;
+    assert.equal(path.dirname(path.resolve(root)), path.resolve(tmpdir()));
+    assert.ok(path.basename(root).startsWith("authmod-beverage-sites-"));
+    await rm(root, { recursive: true, force: true });
+  });
+  const { db } = await import("../lib/firebase-admin");
+  const { FirestoreAuthModRepository } = await import("../lib/authmod-core/firestore-repository");
+  const { handleAccountAction } = await import("../app/api/authmod/accounts/[id]/actions/handler");
+  const { getAuthmodAccessReadPackage, readAuthmodAccessHead } = await import("../lib/authmod-access-read-package");
+  const { rebuildAuthmodReferenceReadPackage } = await import("../lib/authmod-reference-read-package");
+  const { canonicalDocumentId } = await import("../lib/canonical-oplocs");
+  const {
+    BEVERAGE_AUTHMOD_APP_ID: appId, BEVERAGE_AUTHMOD_NORMAL_BUNDLE: standardBundleId,
+    BEVERAGE_AUTHMOD_NORMAL_RESOURCE: resource, MAX_BEVERAGE_OPLOC_SCOPE,
+  } = await import("../lib/authmod-core/beverage-admission");
+  const fixture = randomUUID();
+  const id = `identity:fixture:${fixture}`;
+  const timestamp = new Date().toISOString();
+  const identity: AuthIdentity = {
+    id, displayName: "Fixture Beverage reviewer", externalProvider: "firebase", externalUid: `firebase-fixture:${fixture}`,
+    identityKind: "person", identityLinkStatus: "matched", status: "active", fullAccess: false, provenance: "system",
+    version: 1, createdAt: timestamp, updatedAt: timestamp,
+  };
+  const app: ApplicationRegistryEntry = {
+    appId, displayName: "Fixture Beverage", enabled: true, launchVisible: false, scopeModel: "oploc",
+    standardBundleId, standardResource: resource, standardActions: ["View"], version: 1, provenance: "system",
+    createdAt: timestamp, updatedAt: timestamp,
+  };
+  const ids = Array.from({ length: MAX_BEVERAGE_OPLOC_SCOPE }, (_, index) =>
+    `oploc:fixture:${fixture}:${String(index).padStart(3, "0")}:${"x".repeat(100)}`);
+  const batch = db.batch();
+  batch.set(db.collection("authmodIdentities").doc(id), identity);
+  batch.set(db.collection("authmodApplications").doc(appId), app);
+  for (const canonicalId of ids) {
+    batch.set(db.collection("integrationHubCanonical").doc(canonicalDocumentId(canonicalId)), {
+      canonicalId, entityType: "OPLOC", lifecycleStatus: "active", publicationStatus: "current",
+      record: { lifecycleState: "active", approvedName: "Fixture Beverage site" },
+    });
+  }
+  await batch.commit();
+  t.after(async () => {
+    const cleanup = db.batch();
+    cleanup.delete(db.collection("authmodApplications").doc(appId));
+    for (const canonicalId of ids) cleanup.delete(db.collection("integrationHubCanonical").doc(canonicalDocumentId(canonicalId)));
+    await cleanup.commit();
+  });
+  await rebuildAuthmodReferenceReadPackage();
+  const repository = new FirestoreAuthModRepository(`fixture:${fixture}`);
+  const principal: AuthPrincipal = { type: "interactive", id: "fixture:authmod-admin", displayName: "Fixture administrator" };
+  const invoke = (body: object) => handleAccountAction(
+    new NextRequest(`http://localhost/api/authmod/accounts/${id}/actions`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ id }) },
+    async () => ({ principal, repository }),
+  );
+  const common = { appId, expectedVersion: 1, reason: "Fictional owner-approved staging View scope." };
+  const command = { ...common, action: "authority-grant", resource, authorityAction: "View", scope: { kind: "oploc", ids: [...ids].reverse() } };
+  assert.equal((await invoke(command)).status, 422);
+  assert.equal((await invoke({ ...common, action: "app", enabled: true })).status, 200);
+  const admissionHead = await readAuthmodAccessHead(id);
+  assert.equal((await invoke({ ...command, expectedVersion: 99 })).status, 409);
+  assert.equal((await invoke({ ...command, scope: { kind: "oploc", ids: [...ids, "oploc:fixture-extra"] } })).status, 400);
+  assert.equal((await invoke({ ...command, authorityAction: "Manage" })).status, 422);
+  assert.equal(await readAuthmodAccessHead(id), admissionHead);
+
+  const response = await invoke(command);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).warning, undefined);
+  assert.ok(await readAuthmodAccessHead(id) > admissionHead);
+  const access = await getAuthmodAccessReadPackage(id);
+  assert.deepEqual(access.siteAssignments, []);
+  assert.equal(access.authorityGrants.length, 2);
+  const [grant] = access.authorityGrants.filter(candidate => candidate.provenance === "explicit-special-authority");
+  assert.match(grant.id, /^authority:beverage:[a-f0-9]{64}$/);
+  assert.deepEqual(grant.scope, { kind: "oploc", ids });
+  const audit = await db.collection("authmodAccessAudit").where("targetId", "==", grant.id).get();
+  assert.equal(audit.size, 1);
+  assert.equal(audit.docs[0].get("actorPrincipalId"), principal.id);
+  assert.deepEqual(audit.docs[0].get("scope"), grant.scope);
+});

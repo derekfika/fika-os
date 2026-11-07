@@ -18,6 +18,12 @@ The owner authorizes merging eligible Beverage PRs and deploying a dedicated, no
 - Functional staging writes require a separate verified staging database, AUTHMOD identity and permission contract, OPLOC enforcement, audit/persistence boundary and external-effect review. Do not enable those writes as part of the visual preview. External Gmail access is unverified until an authorized account signs in successfully.
 - Actual approved drink photographs remain required before final visual approval or production release. Placeholder imagery must stay labelled as provisional.
 
+## Owner-authorized isolated staging development
+
+The Beverage #115 staging sprint authorizes developing a dedicated, authenticated, read-only Hub/OPLOC journey and testing a separately configured functional staging environment once its individual safety checks pass. The deployed visual preview and local Stage B record APIs keep their existing boundaries. The proposed Hub reader starts disabled and requires a verified human session, a dedicated audience-bound workload credential, current canonical packages and a direct Beverage View entitlement for each requested site before activation. The reader uses the dedicated current-only boundary. The general Hub routes can bind identities or rebuild packages.
+
+Functional staging persistence needs verified isolation from production, server-side AUTHMOD and OPLOC enforcement, transactional audit and external-effect containment before enabling any writes. Hosted Food Data has a separate pinned-ingredient and object-reader review. Production access, live publication, notifications and other operational integrations remain outside this amendment. Stabilisation issues #423 and #429 remain open.
+
 ## Allowed Stage B work
 
 - Beverage domain models, schemas, recipe quantities and cost/GP calculations.
@@ -54,7 +60,7 @@ The PDF dependency is pinned to `pdfjs-dist` 6.5.438, above the patched version 
 - Local fixture actor IDs and OPLOC scopes must be fictional `fixture:` identities. Authorization checks are server-side and action-scoped; client-supplied role labels are not trusted.
 - Every material write uses an idempotency key, expected aggregate version and atomic entity-plus-audit event transaction. Audit events are append-only command receipts; records are schema-validated on read and fail closed on integrity errors.
 - Cost basis is GBP per serving ex VAT. Recipe quantity and cost units must match. Missing price, cost, quantity or unit stays incomplete; allergens are never inferred and remain unrecorded pending the canonical source.
-- No production datasets, operational integrations, outbound notifications, customer/supplier/staff messaging, operational publication, or external side effects. Preview auth may verify a session against staging Firebase Auth; no staging Firestore data is accessed.
+- No production datasets, operational integrations, outbound notifications, customer/supplier/staff messaging, operational publication, or external side effects. Preview auth may verify a session against staging Firebase Auth. Staging data reads are limited to the separately verified Hub boundary described above once enabled.
 - No Beverage operational record writes to staging while #429 containment is unverified. The owner-authorized read-only visual preview deployment is an explicit exception. Do not modify Menu Planning publication or allergen safety under Beverage scope. Do not claim #423 or #429 is complete.
 - The owner-authorized scope includes eligible preview PR merges and the restricted staging preview release through the existing gates. It does not authorize production deployment, live beverage publication, or functional staging writes before their individual safety checks pass.
 - Keep all source changes in a governed isolated workspace and branch; preserve Stage A evidence. Open a PR and merge only exact-source changes that pass required CI and remain within this preview/functional-staging boundary.
@@ -69,7 +75,7 @@ Monthly specials are visible only when the actor covers every target OPLOC. Site
 
 ## Canonical AUTHMOD dependency for functional staging
 
-Hub owns the [Beverage site decision and internal request adapter](../../docs/architecture/authmod-architecture.md#beverage-site-authority-foundation). The adapter uses the canonical, revocation-checked Firebase cookie and one read-only snapshot for the existing UID binding and current AUTHMOD and OPLOC packages. It requires an explicit app assignment and action grant, and a non-empty scope of active assigned canonical OPLOCs. Full Access does not extend to Beverage. Approval requires an explicit site-scoped grant separate from the normal bundle. The current evidence is from fictional fixtures.
+Hub owns the [Beverage site decision and internal request adapter](../../docs/architecture/authmod-architecture.md#beverage-site-authority-foundation). The adapter uses the canonical, revocation-checked Firebase cookie and one read-only snapshot for the existing UID binding and current AUTHMOD and OPLOC packages. It requires an explicit Beverage app assignment and a direct [Beverage entitlement](../integration-hub/docs/beverage-oploc-entitlement.md) for the exact action and every requested active canonical OPLOC. Generic SiteAssignments and Full Access do not extend to Beverage. Approval requires the separate approval resource. The current evidence is from fictional fixtures.
 
 Before functional staging, verify the dedicated transport and the exact Hub project, issuer, cookie origin and read-only package credentials. Verify the deployment's own registry entry and audited grant provisioning without changing the live launcher or default grants. Separately review organisation-scoped recipe access and the transactional OPLOC checks for current and proposed targets. Verify dedicated staging persistence, least-privilege credentials, audit and external-effect containment before enabling any functional data route.
 

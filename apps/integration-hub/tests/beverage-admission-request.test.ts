@@ -11,7 +11,8 @@ import {
   BEVERAGE_AUTHMOD_APP_ID, BEVERAGE_AUTHMOD_NORMAL_ACTIONS, BEVERAGE_AUTHMOD_NORMAL_BUNDLE,
   BEVERAGE_AUTHMOD_NORMAL_RESOURCE,
 } from "../lib/authmod-core/beverage-admission";
-import { assignSite, grantStandardApplicationAccess } from "../lib/authmod-core/grants";
+import { grantAuthority } from "../lib/authmod-core/authority";
+import { grantStandardApplicationAccess } from "../lib/authmod-core/grants";
 import { createAuthIdentity } from "../lib/authmod-core/identity";
 import { MemoryAuthModRepository } from "../lib/authmod-core/memory-repository";
 import type { ApplicationRegistryEntry, AuthPrincipal } from "../lib/authmod-core/model";
@@ -75,8 +76,11 @@ test("Beverage reads only the UID binding, current packages and canonical site w
   const memory = new MemoryAuthModRepository({ applications: [app], oplocs: [{ id: site, label: "Fixture site", active: true }] });
   const identity = await createAuthIdentity(memory, { actor, displayName: "Fixture reviewer", externalProvider: "firebase", externalUid: uid });
   const { assignment, grants } = await grantStandardApplicationAccess(memory, { actor, identityId: identity.id, appId: app.appId });
-  const siteAssignment = await assignSite(memory, { actor, identityId: identity.id, oplocId: site });
-  const access = { identity, appAssignments: [assignment], authorityGrants: grants, siteAssignments: [siteAssignment], delegations: [], custodians: [], securityVersion: 3 };
+  const entitlement = await grantAuthority(memory, {
+    actor, subjectId: identity.id, subjectType: "interactive", appId: app.appId, resource: app.standardResource,
+    action: "View", scope: { kind: "oploc", ids: [site] }, reason: "Fictional direct Beverage entitlement.",
+  });
+  const access = { identity, appAssignments: [assignment], authorityGrants: [...grants, entitlement], siteAssignments: [], delegations: [], custodians: [], securityVersion: 3 };
   const expectedReads = [
     "firebase-uid-query", `authmodApplications/${app.appId}`, `authmodAccessHeads/${identity.id}`,
     "integrationHubCacheManifests/oplocs", `integrationHubCanonical/${canonicalDocumentId(site)}`,
