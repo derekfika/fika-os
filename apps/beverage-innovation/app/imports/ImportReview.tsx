@@ -137,7 +137,7 @@ export default function ImportReview() {
             <label>Equipment <span className="ir-helper">One item per line</span><textarea rows={3} value={form.equipmentText} onChange={event => updateForm({ equipmentText: event.target.value })}/></label>
             <label className="ir-confirm"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)}/> I reviewed this candidate against the source and want to create a local draft.</label>
           </fieldset>
-          {pending && <p className="ir-warning">The result is unknown. Retry the same request; the review is locked to prevent duplicate drafts.</p>}
+          {pending && <p className="ir-warning">The result is unknown. Keep this page open and retry the same request. If you leave, check local records before starting a fresh review.</p>}
           {message && <p className="ir-inline-message" aria-hidden="true">{message}</p>}
           <div className="ir-actions"><button className="ir-primary" disabled={busy || saved || (!pending && (!confirmed || !nameCheckReady))} onClick={createDraft}>{busy && pending ? "Creating draft…" : pending ? "Retry same request" : saved ? "Draft created" : "Create local draft"}</button><span>No notification or operational publication will be sent.</span></div>
         </section>
