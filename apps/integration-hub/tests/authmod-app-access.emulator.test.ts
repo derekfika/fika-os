@@ -210,3 +210,120 @@ test("emulator: the AUTHMOD account command persists one audited Beverage View g
   assert.equal(audit.docs[0].get("actorPrincipalId"), principal.id);
   assert.deepEqual(audit.docs[0].get("scope"), grant.scope);
 });
+
+test("emulator: create the hidden Beverage registry and audit atomically without changing grants or other application authority", { skip: !enabled }, async t => {
+  const root = await mkdtemp(path.join(tmpdir(), "authmod-beverage-registry-"));
+  const previousRoot = process.env.FIKA_SNAPSHOT_DIR;
+  process.env.FIKA_SNAPSHOT_DIR = root;
+  t.after(async () => {
+    if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot;
+    assert.equal(path.dirname(path.resolve(root)), path.resolve(tmpdir()));
+    assert.ok(path.basename(root).startsWith("authmod-beverage-registry-"));
+    await rm(root, { recursive: true, force: true });
+  });
+  const { db } = await import("../lib/firebase-admin");
+  const { getAuthmodReferenceManifest, getAuthmodReferenceReadPackage, rebuildAuthmodReferenceReadPackage } =
+    await import("../lib/authmod-reference-read-package");
+  const { provisionBeverageStagingRegistry, publishBeverageRegistryReferences } = await import("../lib/beverage-staging-registry");
+  const { BEVERAGE_AUTHMOD_APP_ID: appId, decideBeverageSiteAuthority } = await import("../lib/authmod-core/beverage-admission");
+  const { idempotentId } = await import("../lib/authmod-core/model");
+  const { FirestoreAuthModRepository } = await import("../lib/authmod-core/firestore-repository");
+  const { evaluateAuthority } = await import("../lib/authmod-core/evaluator");
+  const fixture = randomUUID();
+  const id = `identity:registry-operator:${fixture}`;
+  const operator = { uid: `fixture:${fixture}`, email: "operator@example.test" };
+  const timestamp = new Date().toISOString();
+  const identity: AuthIdentity = {
+    id, displayName: "Fixture registry operator", externalProvider: "firebase", externalUid: operator.uid, normalizedEmail: operator.email,
+    identityKind: "person", identityLinkStatus: "matched", status: "active", fullAccess: true,
+    version: 1, createdAt: timestamp, updatedAt: timestamp, provenance: "system",
+  };
+  const identityRef = db.collection("authmodIdentities").doc(id);
+  const duplicateRef = db.collection("authmodIdentities").doc(`${id}:duplicate`);
+  const grantId = idempotentId("authority", "interactive", id, "integration-hub", "authmod", "Administer", "organisation");
+  const grantRef = db.collection("authmodAuthorityGrants").doc(grantId);
+  const appRef = db.collection("authmodApplications").doc(appId);
+  const headRef = db.collection("integrationHubCacheManifests").doc("applications");
+  const headBefore = (await headRef.get()).data();
+  let receiptId: string | undefined;
+  t.after(async () => {
+    const cleanup = db.batch();
+    cleanup.delete(appRef);
+    cleanup.delete(identityRef);
+    cleanup.delete(duplicateRef);
+    cleanup.delete(grantRef);
+    if (receiptId) cleanup.delete(db.collection("authmodAccessAudit").doc(receiptId));
+    if (headBefore) cleanup.set(headRef, headBefore); else cleanup.delete(headRef);
+    await cleanup.commit();
+  });
+  assert.equal((await appRef.get()).exists, false);
+  await identityRef.create(identity);
+  const activeGrant = {
+    id: grantId, subjectId: id, subjectType: "interactive", appId: "integration-hub", resource: "authmod",
+    action: "Administer", status: "active", provenance: "explicit-special-authority", scope: { kind: "organisation", ids: [] },
+    version: 1, createdAt: timestamp, updatedAt: timestamp,
+  };
+  await assert.rejects(provisionBeverageStagingRegistry(operator, true), /AUTHMOD Administer/);
+  await grantRef.create({ ...activeGrant, accessType: "delegated" });
+  await assert.rejects(provisionBeverageStagingRegistry(operator, true), /AUTHMOD Administer/);
+  assert.equal((await appRef.get()).exists, false);
+  await grantRef.set(activeGrant);
+  await duplicateRef.create({ ...identity, id: duplicateRef.id });
+  await assert.rejects(provisionBeverageStagingRegistry(operator, true), /AUTHMOD Administer/);
+  await duplicateRef.delete();
+  await rebuildAuthmodReferenceReadPackage();
+  const priorApplications = (await getAuthmodReferenceReadPackage()).applications;
+  const repository = new FirestoreAuthModRepository();
+  const unrelated = () => evaluateAuthority(repository, {
+    principal: { type: "interactive", id, displayName: identity.displayName }, appId: "logistics", resource: "logistics.driver",
+    action: "Manage", scope: { kind: "oploc", ids: ["oploc:fixture"] },
+  });
+  const unrelatedBefore = await unrelated();
+  assert.equal(unrelatedBefore.allowed, false);
+  const plan = await provisionBeverageStagingRegistry(operator, false);
+  assert.equal(plan.status, "planned");
+  receiptId = plan.auditId;
+  const auditRef = db.collection("authmodAccessAudit").doc(receiptId);
+  assert.equal((await appRef.get()).exists, false);
+  assert.equal((await auditRef.get()).exists, false);
+  assert.deepEqual((await headRef.get()).data(), headBefore);
+
+  const outcomes = await Promise.all([provisionBeverageStagingRegistry(operator, true), provisionBeverageStagingRegistry(operator, true)]);
+  assert.deepEqual(outcomes.map(result => result.status).sort(), ["already-registered", "created"]);
+  const registered = outcomes.find(result => result.status === "created");
+  assert.ok(registered && registered.status === "created");
+  assert.deepEqual((await appRef.get()).data(), registered.application);
+  const audit = (await auditRef.get()).data();
+  assert.equal(audit?.actorPrincipalId, identity.id);
+  assert.equal(audit?.actorSnapshot.email, operator.email);
+  assert.equal(audit?.action, "application-registered");
+  assert.match(audit?.reason, /#115 staging scope.*hidden View-only/);
+  assert.deepEqual(audit?.afterState, registered.application);
+  assert.equal((await db.collection("authmodAccessAudit").where("targetId", "==", appId).get()).size, 1);
+  await assert.rejects(getAuthmodReferenceReadPackage, { code: "AUTHMOD_REFERENCE_PACKAGE_STALE" });
+  await publishBeverageRegistryReferences(registered.application);
+  const packageVersion = (await getAuthmodReferenceManifest())?.packageVersion;
+  await publishBeverageRegistryReferences(registered.application);
+  assert.equal((await getAuthmodReferenceManifest())?.packageVersion, packageVersion);
+  const applications = (await getAuthmodReferenceReadPackage()).applications;
+  assert.deepEqual(applications.filter(value => value.appId !== appId), priorApplications);
+  assert.deepEqual(registered.application.standardActions, ["View"]);
+  assert.equal(registered.application.launchVisible, false);
+
+  assert.deepEqual(await unrelated(), unrelatedBefore);
+  assert.deepEqual(await repository.listAppAssignments(id), []);
+  assert.deepEqual(await repository.listSiteAssignments(id), []);
+  assert.deepEqual(await repository.listAuthorityGrants(id, "interactive"), [activeGrant]);
+  const beverage = await decideBeverageSiteAuthority(read => read({
+    findIdentitiesByExternal: () => Promise.resolve([identity]),
+    getApplication: () => Promise.resolve(registered.application),
+    readCurrentAccessPackage: () => Promise.resolve({ identity, appAssignments: [], authorityGrants: [] }),
+    getActiveOploc: () => Promise.resolve(undefined),
+    readCurrentOplocRedirects: () => Promise.resolve({}),
+  }), async () => ({ uid: operator.uid }), { sessionCookie: "fixture", action: "View", oplocIds: ["oploc:fixture"] });
+  assert.equal(beverage.reasonCode, "app-not-assigned");
+  await appRef.update({ launchVisible: true });
+  await assert.rejects(provisionBeverageStagingRegistry(operator, true), /differs from this command/);
+  assert.equal((await appRef.get()).get("launchVisible"), true);
+  assert.deepEqual((await auditRef.get()).data(), audit);
+});
