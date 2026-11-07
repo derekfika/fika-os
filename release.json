@@ -6,31 +6,38 @@
   "backend": "fika-beverage-staging",
   "region": "europe-west4",
   "branch": "release/staging/beverage",
-  "sourceSha": null,
-  "rollout": null,
-  "state": "EMPTY",
-  "percent": 0,
-  "builds": [],
-  "rollouts": [],
-  "operations": [],
-  "domainOperations": [
-    {
-      "name": "projects/fika-os-dev/locations/europe-west4/operations/operation-1794062883070-65fb0d0d9a38a-b24dafbb-2cd5116f",
-      "done": false,
-      "target": "projects/fika-os-dev/locations/europe-west4/backends/fika-beverage-staging/domains/beverage-staging.fikacatering.com"
-    }
-  ],
-  "traffic": {
-    "current": [],
-    "target": [],
-    "reconciling": false,
-    "autoDisabled": true
+  "validation": {
+    "id": 128438146319,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/42384185096/job/128438146319",
+    "sha": "3c4920e95b06e3352494e18202e56e760da060af"
   },
-  "kind": "empty-baseline",
-  "scopeHash": "a8caae063af0f4fbf2729ed5076f186856958479236f55175195f2a22b34533b",
-  "observedAt": "2026-11-07T15:01:12.575Z",
-  "recovery": {
-    "firstRelease": true,
-    "noPreviousRelease": true
-  }
+  "provenance": {
+    "number": 457,
+    "url": "https://github.com/derekfika/fika-os/pull/457",
+    "head": "cae60febdc095dfb121688acdf9e631d9c66e947"
+  },
+  "sourceSha": "3c4920e95b06e3352494e18202e56e760da060af",
+  "scopeHash": "0e3154e2a13aae33b5ab1ef37853526f88edd71446d9005e7e44a0735180d12e",
+  "rollback": false,
+  "approval": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "app": "beverage",
+    "environment": "staging",
+    "sourceSha": "3c4920e95b06e3352494e18202e56e760da060af",
+    "action": "deploy",
+    "instruction": "Owner-authorized isolated restricted Beverage visual preview; no operational integrations or data writes",
+    "releaseId": null,
+    "id": "475c510208115d531907e3b13a90a08d8003cd4c311bd42c8e6ad609e9bca6c1",
+    "explicitExecute": true,
+    "authorisedAt": "2026-11-07T15:01:09.339Z"
+  },
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "69ab75d9-ddb2-4d05-a02e-88db4bca157c",
+  "previousGood": null,
+  "previousGoodRecord": null,
+  "firstRelease": true,
+  "firstReleaseBaselineRecord": "9de43a20c41140c347a101e19769f3326d4a0f88",
+  "createdAt": "2026-11-07T15:01:19.363Z"
 }
