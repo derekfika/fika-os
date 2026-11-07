@@ -11,9 +11,17 @@ export const classificationSchema = z.enum(["classic_source", "fika_original", "
 export const approvalKindSchema = z.enum(["operational", "brand"]);
 export const approvalDecisionSchema = z.enum(["pending", "approved", "rejected", "changes_requested"]);
 export const MAX_PASTED_RECIPE_CANDIDATES = 20;
+export const MAX_RECIPE_DOCUMENT_BYTES = 4 * 1024 * 1024;
 const importHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const importIndexSchema = z.number().int().min(0).max(MAX_PASTED_RECIPE_CANDIDATES - 1);
 const importSourceCandidateSchema = z.object({ index: importIndexSchema, hash: importHashSchema }).strict();
+export const recipeDocumentFormatSchema = z.enum(["docx", "pptx", "pdf"]);
+const documentImportEvidenceSchema = z.object({
+  format: recipeDocumentFormatSchema,
+  byteLength: z.number().int().min(1).max(MAX_RECIPE_DOCUMENT_BYTES),
+  adapterVersion: z.string().min(1).max(40),
+  textHash: importHashSchema,
+}).strict();
 
 export const ingredientLineSchema = z.object({
   id,
@@ -107,6 +115,7 @@ export const beverageRecordSchema = z.object({
     importedAt: z.string().datetime(),
     sourceKey: z.string().max(240),
     candidate: importSourceCandidateSchema.optional(),
+    document: documentImportEvidenceSchema.optional(),
   }).strict().optional(),
   prototypes: z.array(z.object({ id, name: z.string().min(1).max(160), notes: z.string().max(2000), outcome: z.enum(["promising", "needs_work", "not_progressing"]).optional(), versionId: id.optional(), createdAt: z.string().datetime() }).strict()).max(200),
   rollouts: z.array(siteRolloutSchema).max(200),
@@ -193,17 +202,23 @@ export const reviewedImportRecipeSchema = z.object({
 }).strict().refine(recipe => recipe.equipment.length + Number(Boolean(recipe.glassware)) <= 40, { path: ["equipment"], message: "Use at most 40 equipment and glassware entries combined." });
 
 export const localImportPreviewRequestSchema = z.object({ text: z.string() }).strict();
-export const localImportCommitRequestSchema = localImportPreviewRequestSchema.extend({
+export const localImportReviewSchema = z.object({
   sourceHash: importHashSchema,
   candidateIndex: importIndexSchema,
   candidateHash: importHashSchema,
   classification: classificationSchema,
   reviewed: z.literal(true),
   reviewedCandidate: reviewedImportRecipeSchema,
-});
+}).strict();
+export const localImportCommitRequestSchema = localImportReviewSchema.extend(localImportPreviewRequestSchema.shape);
 
 export type ReviewedImportRecipe = z.infer<typeof reviewedImportRecipeSchema>;
 export type PastedRecipeProvenance = { sourceHash: string; candidate: z.infer<typeof importSourceCandidateSchema> };
+export type RecipeDocumentFormat = z.infer<typeof recipeDocumentFormatSchema>;
+export type DocumentImportEvidence = z.infer<typeof documentImportEvidenceSchema>;
+export type DocumentRecipeProvenance = PastedRecipeProvenance & { sourceLabel: string; document: DocumentImportEvidence };
+export type RecipeImportProvenance = PastedRecipeProvenance | DocumentRecipeProvenance;
+export type LocalImportReview = z.infer<typeof localImportReviewSchema>;
 export type LocalImportCandidate = {
   index: number;
   candidateHash: string;
@@ -212,3 +227,4 @@ export type LocalImportCandidate = {
   warnings: string[];
 };
 export type LocalImportPreview = { sourceHash: string; sourceLabel: string; candidates: LocalImportCandidate[] };
+export type LocalDocumentImportPreview = LocalImportPreview & { document: DocumentImportEvidence };

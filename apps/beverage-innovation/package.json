@@ -15,8 +15,11 @@
     "@fika/server-shared": "file:../../packages/server-shared",
     "firebase-admin": "^14.5.0",
     "next": "^16.2.12",
+    "pdfjs-dist": "6.5.438",
     "react": "19.2.6",
     "react-dom": "19.2.6",
+    "saxes": "6.0.0",
+    "yauzl": "3.4.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -24,6 +27,7 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@types/react-test-renderer": "19.3.1",
+    "@types/yauzl": "3.4.0",
     "react-test-renderer": "19.2.6",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
