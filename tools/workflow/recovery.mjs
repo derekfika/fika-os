@@ -112,7 +112,10 @@ export async function reconcileIntent(input, io) {
     previousGood: journal.firstRelease ? null : journal.before, previousGoodRecord: journal.firstRelease ? null : journal.previousGoodRecord, firstReleaseBaselineRecord:journal.firstReleaseBaselineRecord,
     releaseId: journal.releaseId, originalIntent: pointer.commit, smoke,
     recovery: { resolution, reason: note, operator, rollout: noRollout ? null : rolloutId, ...(journal.firstRelease ? { firstRelease: true, noPreviousRelease: true } : {}), ...(noRollout ? { noRolloutSubmitted:true, auditHash:digest(audit) } : {}), evidenceHash: digest(snapshot), journalHash: digest(journal), at: new Date().toISOString() } };
-  if (resolution === 'complete') validateRecord(record, t);
+  // Validate both terminal record shapes before any durable write. An abandoned
+  // attempt may retain the previous-good serving fields while its failed
+  // rollout ID lives in recovery.rollout.
+  validateRecord(record, t);
   // Persist an immutable original journal before appending the resolution; a failed CAS never discards evidence.
   await io.archive(journal);
   const commit = await io.append(record, pointer.commit);

@@ -30,6 +30,10 @@ test('abandoned releases require complete recovery evidence and preserve first-r
  const previous={sourceSha:'a'.repeat(40),rollout:'build-previous',state:'SUCCEEDED',percent:100};
  const nonFirst={...abandoned,...target('cpu','prod'),sourceSha:previous.sourceSha,rollout:previous.rollout,previousGood:previous,previousGoodRecord:'f'.repeat(40),firstReleaseBaselineRecord:undefined,smoke:{ok:true,status:200},recovery:{...abandoned.recovery,firstRelease:undefined,noPreviousRelease:undefined,rollout:previous.rollout,operator:{sourceSha:'b'.repeat(40)}}};
  validateRecord(nonFirst,{app:'cpu',environment:'prod'});
+ const retainedServing={...nonFirst,recovery:{...nonFirst.recovery,rollout:'build-abandoned'}};
+ validateRecord(retainedServing,{app:'cpu',environment:'prod'});
+ assert.throws(()=>validateRecord({...retainedServing,previousGood:{...previous,rollout:'different-serving-build'}},{app:'cpu',environment:'prod'}));
+ assert.throws(()=>validateRecord({...retainedServing,recovery:{...retainedServing.recovery,rollout:'bad ID'}},{app:'cpu',environment:'prod'}));
  const unhealthyCandidate={...nonFirst,sourceSha:'b'.repeat(40),rollout:'build-candidate',smoke:{ok:false,status:503},recovery:{...nonFirst.recovery,rollout:'build-candidate'}};validateRecord(unhealthyCandidate,{app:'cpu',environment:'prod'});
  assert.throws(()=>validateRecord({...nonFirst,previousGoodRecord:null},{app:'cpu',environment:'prod'}));
 });
