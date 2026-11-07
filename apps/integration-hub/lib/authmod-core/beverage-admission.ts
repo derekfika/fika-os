@@ -1,5 +1,5 @@
 import { isEffective, type AuthModAction, type AuthorizationDecision, type EffectivePeriod } from "./model";
-import type { AuthModRepository, AuthmodRuntimeAccessPackage } from "./repository";
+import type { AuthModRepository, AuthmodRuntimeAccessPackage, OplocReference } from "./repository";
 
 export const BEVERAGE_AUTHMOD_APP_ID = "beverage-innovation";
 export const BEVERAGE_AUTHMOD_NORMAL_RESOURCE = "beverage-innovation.normal";
@@ -16,7 +16,9 @@ export type ReadOnlyBeverageAuthority = Pick<AuthModRepository, "findIdentitiesB
 };
 
 type VerifySessionCookie = (cookie: string, checkRevoked: true) => Promise<{ uid: string }>;
-type WithAuthoritySnapshot = (read: (repository: ReadOnlyBeverageAuthority) => Promise<AuthorizationDecision>) => Promise<AuthorizationDecision>;
+export type BeverageSiteDecision = AuthorizationDecision & { activeOplocs?: readonly Pick<OplocReference, "id" | "label">[] };
+export type BeverageSiteRequest = { action: AuthModAction; oplocIds: readonly string[]; personOnly?: boolean };
+type WithAuthoritySnapshot = (read: (repository: ReadOnlyBeverageAuthority) => Promise<BeverageSiteDecision>) => Promise<BeverageSiteDecision>;
 
 function effective(record: EffectivePeriod & { status: string }, at: Date) {
   return [record.effectiveFrom, record.effectiveTo].every(value => value === undefined || Number.isFinite(Date.parse(value))) &&
@@ -40,8 +42,8 @@ function canonicalOplocId(redirects: Readonly<Record<string, string>>, id: strin
 export async function decideBeverageSiteAuthority(
   withAuthoritySnapshot: WithAuthoritySnapshot,
   verifySessionCookie: VerifySessionCookie,
-  input: { sessionCookie?: string; action: AuthModAction; oplocIds: readonly string[] },
-): Promise<AuthorizationDecision> {
+  input: BeverageSiteRequest & { sessionCookie?: string },
+): Promise<BeverageSiteDecision> {
   const decision: AuthorizationDecision = {
     allowed: false, principalId: "", principalType: "interactive", appId: BEVERAGE_AUTHMOD_APP_ID,
     action: input.action, matchedGrantIds: [], reasonCode: "unauthenticated",
@@ -65,8 +67,8 @@ export async function decideBeverageSiteAuthority(
 
 async function decideFromSnapshot(
   repository: ReadOnlyBeverageAuthority, uid: string,
-  input: { action: AuthModAction; oplocIds: readonly string[] }, decision: AuthorizationDecision,
-): Promise<AuthorizationDecision> {
+  input: BeverageSiteRequest, decision: AuthorizationDecision,
+): Promise<BeverageSiteDecision> {
   const deny = (reasonCode: AuthorizationDecision["reasonCode"]) => ({ ...decision, reasonCode });
   const action = input.action;
   const identities = await repository.findIdentitiesByExternal("firebase", uid, 2);
@@ -75,6 +77,7 @@ async function decideFromSnapshot(
   decision.principalId = identity.id;
   const at = new Date();
   if (!effective(identity, at)) return deny("identity-inactive");
+  if (input.personOnly && identity.identityKind !== "person") return deny("authority-not-granted");
 
   const app = await repository.getApplication(BEVERAGE_AUTHMOD_APP_ID);
   if (app?.appId !== BEVERAGE_AUTHMOD_APP_ID || app.enabled !== true || app.launchVisible !== false ||
@@ -89,6 +92,7 @@ async function decideFromSnapshot(
       current.id !== identity.id || current.externalProvider !== "firebase" || current.externalUid !== uid ||
       current.version !== identity.version) return deny("store-unavailable");
   if (!effective(current, at)) return deny("identity-inactive");
+  if (input.personOnly && current.identityKind !== "person") return deny("authority-not-granted");
   const assignment = access.appAssignments.find(value => value.identityId === identity.id &&
     value.appId === BEVERAGE_AUTHMOD_APP_ID && value.accessType !== "delegated" && effective(value, at));
   if (!assignment) return deny("app-not-assigned");
@@ -120,5 +124,9 @@ async function decideFromSnapshot(
   const validUntil = [current, assignment, ...ids.map(id => assigned.get(id)!), ...matched]
     .map(value => value.effectiveTo).filter((value): value is string => Boolean(value))
     .sort((left, right) => Date.parse(left) - Date.parse(right))[0];
-  return { ...decision, allowed: true, reasonCode: "allowed", matchedGrantIds: matched.map(value => value.id), ...(validUntil ? { validUntil } : {}) };
+  return {
+    ...decision, allowed: true, reasonCode: "allowed", matchedGrantIds: matched.map(value => value.id),
+    activeOplocs: sites.map(site => ({ id: site!.id, label: site!.label })),
+    ...(validUntil ? { validUntil } : {}),
+  };
 }

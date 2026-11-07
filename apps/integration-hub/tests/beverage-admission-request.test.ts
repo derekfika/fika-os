@@ -137,6 +137,7 @@ test("Beverage reads only the UID binding, current packages and canonical site w
   assert.equal(allowed.allowed, true);
   assert.equal(allowed.principalId, identity.id);
   assert.deepEqual(allowed.scope, { kind: "oploc", ids: [site] });
+  assert.deepEqual(allowed.activeOplocs, [{ id: site, label: site }]);
   assert.deepEqual(events.splice(0), ["verified", "snapshot", ...expectedReads]);
 
   securityHead++;
