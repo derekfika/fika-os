@@ -43,14 +43,19 @@ export type HospitalityEmailSiteIdentity = (typeof HOSPITALITY_EMAIL_SITE_IDENTI
 type Env = Record<string, string | undefined>;
 const address = (value: string) => /^[^\s<>@,;\r\n]+@fikacatering\.com$/i.test(value);
 
+/** Resolve the canonical Workspace mailbox identity for one approved Hospitality OPLOC. */
+export function hospitalityWorkspaceMailbox(oplocId: string): string {
+  if (!Object.hasOwn(HOSPITALITY_EMAIL_SITE_IDENTITIES, oplocId)) throw new Error("Booking OPLOC has no approved Workspace mail identity.");
+  return HOSPITALITY_EMAIL_SITE_IDENTITIES[oplocId as HospitalityEmailOplocId].primaryMailbox.toLowerCase();
+}
+
 /**
  * Each OPLOC can delegate only as its own mailbox by default. A different
  * authenticated account (for a verified Send As identity) must be explicitly
  * added to the server-side OPLOC keyed allowlist. All subjects remain in-domain.
  */
 export function authorizedHospitalityMailboxes(oplocId: string, env: Env = process.env): ReadonlySet<string> {
-  if (!Object.hasOwn(HOSPITALITY_EMAIL_SITE_IDENTITIES, oplocId)) throw new Error("Booking OPLOC has no approved Workspace mail identity.");
-  const identity = HOSPITALITY_EMAIL_SITE_IDENTITIES[oplocId as HospitalityEmailOplocId];
+  const primaryMailbox = hospitalityWorkspaceMailbox(oplocId);
 
   const raw = env.FIKA_HOSPITALITY_EMAIL_AUTHENTICATED_ACCOUNTS_JSON;
   let configured: Record<string, unknown> = {};
@@ -72,5 +77,5 @@ export function authorizedHospitalityMailboxes(oplocId: string, env: Env = proce
   }
 
   const extra = configured[oplocId] as string[] | undefined;
-  return new Set([identity.primaryMailbox, ...(extra || [])].map(value => value.trim().toLowerCase()));
+  return new Set([primaryMailbox, ...(extra || [])].map(value => value.trim().toLowerCase()));
 }

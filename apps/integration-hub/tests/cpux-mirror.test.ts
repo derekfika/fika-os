@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { backfillDates, documentUrl, londonServiceDate, londonTimestamp, mirrorEventId, TIME_ZONE } from "../../shared/cpux-calendar/contract";
-import { configuredMirrorTarget, openMirrorClient } from "../../shared/cpux-calendar/google";
+import { openMirrorClient } from "../../shared/cpux-calendar/google";
+import { resolveHospitalityCalendarTarget } from "../lib/hospitality-calendar-integration";
+import { HOSPITALITY_EMAIL_SITE_IDENTITIES } from "../lib/booking-email-site-identities";
 import { hasCurrentHospitalityHandoff, hospitalityMirrorSource } from "../lib/cpux-mirror/source";
 import type { CanonicalBooking } from "../lib/hospitality-booking-service";
 import type { ProductionOrder } from "../lib/production-domain";
@@ -12,7 +14,7 @@ const target = { calendarId: "site-test@group.calendar.google.com", subject: "or
 const env = {
   NODE_ENV: "production", FIKA_RUNTIME_MODE: "production", FIREBASE_PROJECT_ID: "fika-os", FIKA_CPUX_MIRROR_WRITES_ENABLED: "true",
   FIKA_CPUX_MIRROR_RUNTIME_IDENTITY: identity, FIKA_CPUX_MIRROR_DWD_ISSUER: issuer,
-  FIKA_CPUX_HOSPITALITY_CALENDARS_JSON: JSON.stringify({ "oploc:one": target }), FIKA_CPUX_LOGISTICS_MAILBOX: target.logistics,
+  FIKA_CPUX_HOSPITALITY_CALENDARS_JSON: "{}", FIKA_CPUX_LOGISTICS_MAILBOX: target.logistics,
 };
 
 const booking = {
@@ -34,8 +36,7 @@ const order = {
 test("Hospitality mirrors a successful handoff only, using customer ordered quantities, the canonical site Calendar and matching quote", () => {
   assert.equal(hospitalityMirrorSource({ ...booking, lifecycleStatus: "Quoted", statusHistory: [] }, order), undefined);
   const model = hospitalityMirrorSource(booking, order)!;
-  assert.equal(configuredMirrorTarget("hospitality", model.site, env).calendarId, target.calendarId);
-  assert.throws(() => configuredMirrorTarget("hospitality", "Fixture site", env), /not configured/);
+  assert.throws(() => resolveHospitalityCalendarTarget(model.site, env), /no approved Workspace mail identity/);
   assert.match(model.details!.description, /Chicken sandwich — 18 Per person/);
   assert.doesNotMatch(model.details!.description, /36 pieces/);
   assert.doesNotMatch(model.details!.description, /Coffee|crisps/);
@@ -44,6 +45,20 @@ test("Hospitality mirrors a successful handoff only, using customer ordered quan
   const cancelled = hospitalityMirrorSource({ ...booking, version: 4, lifecycleStatus: "Cancelled" }, undefined)!;
   assert.ok(cancelled.source.withdrawn);
   assert.equal(mirrorEventId(model.source.stream, model.source.identity), mirrorEventId(cancelled.source.stream, cancelled.source.identity));
+});
+
+test("Hospitality Calendar resolver reuses all five canonical site mailboxes and accepts only explicit binding overrides", () => {
+  const expected = ["cfc@fikacatering.com", "mnk@fikacatering.com", "seven@fikacatering.com", "rcoa@fikacatering.com", "munichre@fikacatering.com"];
+  const ids = Object.keys(HOSPITALITY_EMAIL_SITE_IDENTITIES);
+  assert.deepEqual(ids.map(id => resolveHospitalityCalendarTarget(id, env).calendarId), expected);
+  assert.deepEqual(ids.map(id => resolveHospitalityCalendarTarget(id, env).subject), expected);
+  assert.throws(() => resolveHospitalityCalendarTarget("oploc:unapproved", env), /no approved Workspace mail identity/);
+  assert.throws(() => resolveHospitalityCalendarTarget(ids[3], { ...env, FIKA_CPUX_HOSPITALITY_CALENDARS_JSON: "not-json" }), /override configuration is invalid/);
+  assert.throws(() => resolveHospitalityCalendarTarget(ids[3], { ...env, FIKA_CPUX_HOSPITALITY_CALENDARS_JSON: JSON.stringify({ "oploc:unapproved": { calendarId: "rcoa@fikacatering.com" } }) }), /unknown OPLOC/);
+  assert.throws(() => resolveHospitalityCalendarTarget(ids[3], { ...env, FIKA_CPUX_HOSPITALITY_CALENDARS_JSON: JSON.stringify({ [ids[3]]: { subject: "rcoa@fikacatering.com" } }) }), /override configuration is invalid/);
+  const override = resolveHospitalityCalendarTarget(ids[3], { ...env, FIKA_CPUX_HOSPITALITY_CALENDARS_JSON: JSON.stringify({ [ids[3]]: { calendarId: "group-calendar@group.calendar.google.com", delegatedOrganizerMailbox: "delegate@fikacatering.com" } }) });
+  assert.deepEqual({ calendarId: override.calendarId, subject: override.subject }, { calendarId: "group-calendar@group.calendar.google.com", subject: "delegate@fikacatering.com" });
+  assert.throws(() => resolveHospitalityCalendarTarget(ids[3], { ...env, FIKA_CPUX_HOSPITALITY_CALENDARS_JSON: JSON.stringify({ [ids[3]]: { delegatedOrganizerMailbox: "rcoa@fikacatering.com" } }) }), /redundant/);
 });
 
 test("completed grouped handoffs retain their live order and can use a saved commercial quote refresh", () => {
@@ -110,10 +125,10 @@ test("Hot Fork Buffet mirror displays 90 Per person without production quantity 
   await client.publish(model.source, model.details, quote);
   const eventWrite = fixture.calls.find(call => call.method === "POST");
   assert.ok(eventWrite);
-  assert.match(eventWrite.body.description, /Hot Fork Buffet — 90 Per person/);
-  assert.doesNotMatch(eventWrite.body.description, /Coffee|pieces|undefined/);
-  assert.deepEqual(eventWrite.body.attachments, [{ fileUrl: quote.attachmentUrl, title: quote.title, mimeType: "application/pdf" }]);
-  assert.ok(eventWrite.body.description.includes(quote.url));
+  assert.match(eventWrite.body!.description!, /Hot Fork Buffet — 90 Per person/);
+  assert.doesNotMatch(eventWrite.body!.description!, /Coffee|pieces|undefined/);
+  assert.deepEqual(eventWrite.body!.attachments, [{ fileUrl: quote.attachmentUrl, title: quote.title, mimeType: "application/pdf" }]);
+  assert.ok(eventWrite.body!.description!.includes(quote.url));
 });
 
 test("catch-up starts on 9 November inclusive and timed events handle UK clock changes", () => {
@@ -151,7 +166,12 @@ function harness() {
   let event: Record<string, unknown> | undefined;
   let failWrite = false;
   let blockedPdf = false;
-  const calls: Array<{ url: URL; method: string; body?: any; headers: Headers }> = [];
+  let calendarRole = "writer";
+  type RequestBody = Record<string, unknown> & {
+    id?: string; description?: string; attachments?: Array<{ fileUrl?: string; title?: string; mimeType?: string }>; attendees?: Array<{ email?: string }>; transparency?: string;
+    extendedProperties?: { shared?: Record<string, string> };
+  };
+  const calls: Array<{ url: URL; method: string; body?: RequestBody; headers: Headers }> = [];
   const response = (value: unknown, status = 200) => Response.json(value, { status });
   const fetcher: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
@@ -161,6 +181,7 @@ function harness() {
     if (identityResponse) return identityResponse;
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ url, method, body, headers });
+    if (url.pathname.includes("/calendar/v3/users/me/calendarList/")) return response({ id: target.calendarId, accessRole: calendarRole });
     if (url.pathname.includes("/drive/v2/"))
       return response({ id: "fixtureQuoteFile", mimeType: "application/pdf", alternateLink: "https://drive.google.com/open?id=fixtureQuoteFile" });
     if (url.pathname.includes("/drive/"))
@@ -170,11 +191,21 @@ function harness() {
     if (method === "GET") return event ? response(event) : response({}, 404);
     if (failWrite) return response({ message: "private diagnostic must not leak" }, 429);
     if (method === "PATCH") assert.equal(headers.get("if-match"), event?.etag);
-    event = { ...event, ...body, organizer: { self: true }, etag: '"next"' };
+    event = { ...event, ...body, organizer: { self: true, email: target.subject }, etag: '"next"' };
     return response(event);
   };
-  return { fetcher, calls, fail: () => { failWrite = true; }, denyPdf: () => { blockedPdf = true; }, setEvent: (value: Record<string, unknown>) => { event = value; } };
+  return { fetcher, calls, fail: () => { failWrite = true; }, denyPdf: () => { blockedPdf = true; }, setCalendarRole: (value: string) => { calendarRole = value; }, setEvent: (value: Record<string, unknown>) => { event = value; } };
 }
+
+test("Calendar identity is not inferred from mailbox: CalendarList permission must verify writer access before inspection", async () => {
+  const fixture = harness();
+  fixture.setCalendarRole("reader");
+  const client = await openMirrorClient(target, env, fixture.fetcher);
+  const model = hospitalityMirrorSource(booking, order)!;
+  await assert.rejects(client.inspect(model.source), /verified Calendar write access/);
+  assert.equal(fixture.calls.filter(call => call.url.pathname.includes("/events")).length, 0);
+  assert.equal(fixture.calls.filter(call => call.method !== "GET").length, 0);
+});
 
 test("Google delivery checks both PDF recipients, inserts once, preserves ID on amendment, and cancels without resurrecting on replay", async () => {
   const fixture = harness();
@@ -192,15 +223,15 @@ test("Google delivery checks both PDF recipients, inserts once, preserves ID on 
   assert.equal((await client.publish(amended, model.details, pdf)).disposition, "skip");
   const writes = fixture.calls.filter(call => call.method !== "GET");
   assert.deepEqual(writes.map(call => call.method), ["POST", "PATCH", "PATCH"]);
-  assert.deepEqual(writes[0].body.attendees, [{ email: "cpux@fikacatering.com" }, { email: target.logistics }]);
-  assert.equal(writes[0].body.attachments[0].fileUrl, "https://drive.google.com/open?id=fixtureQuoteFile");
-  assert.ok(writes[0].body.description.includes(pdf.url));
+  assert.deepEqual(writes[0].body!.attendees, [{ email: "cpux@fikacatering.com" }, { email: target.logistics }]);
+  assert.equal(writes[0].body!.attachments![0].fileUrl, "https://drive.google.com/open?id=fixtureQuoteFile");
+  assert.ok(writes[0].body!.description!.includes(pdf.url));
   assert.equal(writes[0].url.searchParams.get("supportsAttachments"), "true");
-  assert.match(writes[1].url.pathname, new RegExp(writes[0].body.id + "$"));
-  assert.equal(writes[2].body.transparency, "transparent");
-  assert.equal(writes[2].body.extendedProperties.shared.fikaMirrorWithdrawn, "true");
-  assert.deepEqual(writes[2].body.attendees, []);
-  assert.deepEqual(writes[2].body.attachments, []);
+  assert.match(writes[1].url.pathname, new RegExp(writes[0].body!.id + "$"));
+  assert.equal(writes[2].body!.transparency, "transparent");
+  assert.equal(writes[2].body!.extendedProperties!.shared!.fikaMirrorWithdrawn, "true");
+  assert.deepEqual(writes[2].body!.attendees, []);
+  assert.deepEqual(writes[2].body!.attachments, []);
 });
 
 test("staging or unverified runtime cannot request Google tokens; ambiguous identities and ACL failures write nothing", async () => {
