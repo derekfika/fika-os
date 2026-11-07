@@ -13,3 +13,21 @@ html:has(.mock){scrollbar-width:none}html:has(.mock)::-webkit-scrollbar{display:
 .m-editor{margin-top:-8px}.m-editor .m-heading{margin-bottom:4px}.m-editor .m-side{gap:10px}.m-editor .m-side dl{gap:3px}.m-editor .m-finance{gap:5px}.m-editor .m-finance input{padding:5px}.m-lifecycle{position:relative;min-height:76px}.m-lifecycle select{position:absolute;right:12px;top:12px;max-width:140px;padding:7px;font-size:12px}.m-lifecycle p{margin:0 0 0 48px!important}.m-editor .m-check{margin:3px 0}
 @media(min-width:901px) and (max-width:1200px){.m-layout{grid-template-columns:1fr}.m-sidebar{width:76px;padding:18px 8px}.m-sidebar button{font-size:0;justify-content:center;padding:0}.m-sidebar button span{font-size:24px}.m-demo-label{display:none}.m-top-chip{display:none}.m-workspace b{white-space:nowrap}.m-side{grid-template-columns:repeat(2,minmax(0,1fr))}.m-cards{grid-template-columns:repeat(3,minmax(0,1fr))}.m-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}.m-metric{min-height:110px}.m-filters{flex-wrap:wrap}.m-filters>label{flex:1 1 120px}.m-filters .m-search{flex:2 1 200px}.m-editor .m-side{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .m-editor{margin-top:-13px}.m-editor .m-side{gap:8px}.m-editor .m-side>.m-panel{padding:10px}.m-editor .m-photo>img{height:190px}.m-editor .m-finance{gap:2px;margin-top:4px}.m-editor .m-finance input{padding:3px}.m-editor .m-lifecycle{min-height:70px}.m-editor .m-check{font-size:12px;line-height:1.2;margin:2px 0}
+
+/* Preview shell: keep the approved proportions and make its temporary state explicit. */
+.m-top{background:linear-gradient(110deg,var(--color-brand-primary) 20%,var(--color-brand-dark) 200%)}
+.m-top-chip,.m-logo{border-color:color-mix(in srgb,var(--color-surface) 25%,transparent)}
+.m-preview-tag{border:1px solid var(--fika-status-info-surface);border-radius:var(--radius-sm);padding:11px 12px;white-space:nowrap;font-size:12px;font-weight:700}
+.m-sidebar button span{display:grid;place-items:center;flex:none}
+.m-sidebar svg{width:22px;height:22px}
+.m-workflow svg{width:24px;height:24px}
+.m-metric-value{font-family:var(--fika-font-body);font-weight:700}
+.m-side h3 .m-link{white-space:nowrap}
+.m-side h3.m-upcoming-heading,.m-selected-launch h3{font-size:14px}
+.m-cards.list .m-drink{flex-direction:row;align-items:flex-start}
+.m-photo-note{position:absolute;right:12px;bottom:14px;background:var(--fika-surface-card);color:var(--fika-text-primary);font-size:11px;font-weight:600;border-radius:var(--radius-sm);padding:6px 8px}
+.m-change:focus-within{outline:3px solid var(--fika-focus-ring);outline-offset:2px}
+.m-editor .m-content{grid-template-columns:minmax(0,1fr)}
+.m-table-wrap{position:relative}
+@media(max-width:900px){.m-preview-tag{margin-left:auto}.m-top-spacer{display:none}}
+@media(max-width:560px){.m-preview-tag{font-size:10px;padding:8px}.m-avatar{display:none}.m-sidebar button span{font-size:initial}.m-section-title{flex-wrap:wrap}.m-table-wrap table{min-width:640px}}

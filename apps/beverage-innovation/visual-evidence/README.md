@@ -1,5 +1,15 @@
 # Stage A visual review — 7 November 2026
 
+## Staging preview refinement — 7 November 2026
+
+`04-overview-comparison.png`, `05-monthly-specials-comparison.png`, and `06-new-drink-comparison.png` show the approved reference on the left and the local preview on the right, each at the original 1448 × 1086 viewport. `07-tablet-overview-preview.png` records the 1024 × 768 adaptation. These are local production-build captures; they do not establish what a deployed revision serves or constitute final visual sign-off.
+
+The refinement uses line icons for the sidebar and lifecycle, a brighter token-backed header, more compact KPI numerals and right-panel headings, and explicit staging-preview and provisional-image labels. Grid/list and planner selections expose their state. The import demonstration dialog now traps keyboard focus, closes with Escape, and returns focus to its trigger. The list view keeps its horizontal layout on tablet. Changes remain in page memory and disappear on reload; image and import actions have no backend effect.
+
+Remaining differences include the warmer token-backed canvas and muted status colours, some table and planner density, missing ingredient thumbnails, and illustrative image crops (including baked-in ellipses). Mixed-case page headings retain Gilroy Bold to match the approved reference because the supplied Vim Heavy face renders these headings in uppercase; this remains a documented display-heading deviation for brand review. Actual approved drink photography is still required before final approval or release.
+
+Automated Chromium review at the desktop viewport exercised planner selection, search and list view, ingredient cost recalculation, the save notice, and dialog focus, trapping, Escape and focus return. It checked page width at 1024, 768 and 390 pixels and observed no requests outside localhost during those journeys. The tablet capture is a review artifact, not an approved tablet mockup.
+
 The left half of each comparison is the supplied approved reference; the right half is the local prototype. Both halves use the original 1448 × 1086 desktop viewport. `00-first-render-comparison.png` records the initial Vim heading treatment; `01-overview-comparison.png` records the corrected Gilroy mixed-case heading. `02-monthly-specials-comparison.png` and `03-new-drink-comparison.png` cover the other approved surfaces. `tablet-overview.png` is a 1024 × 768 adaptation. Review these as visual evidence, not as owner signoff.
 
 ## Differences for owner review
@@ -15,4 +25,4 @@ The left half of each comparison is the supplied approved reference; the right h
 
 The local browser run at 1448 × 1086 exercised navigation, search by ingredient and category tag, type and collection filters, grid/list, card edit, classic variation, ingredient add/remove (6 → 7 → 6 rows), cost recalculation (£1.23 → £1.51), GP recalculation, draft, next version and demo submit feedback. It also exercised calendar/list/site view, Details and Assets tabs, target-site selection, blocker toggle, and import source → editable mapping → confirmation preview. Network observation during these interactions found no non-local requests. The 1024 × 768 overview uses a collapsed sidebar and stacked side panels, with document width equal to viewport width. Image upload, keyboard-only journeys, and the remaining placeholder destinations have not been independently exercised and remain for owner UAT.
 
-No owner visual approval has been recorded. Stage B–D and deployment remain outside this task.
+The original Stage A review stopped for owner approval. Subsequent owner direction approved the visual direction in principle and authorised Stage B and a separately gated staging preview; this historical evidence remains unchanged.
