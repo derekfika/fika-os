@@ -1,0 +1,15 @@
+.empty-preview .m-sidebar button svg { width: 22px; height: 22px; }
+.empty-preview button:disabled { cursor: not-allowed; opacity: 1; background: var(--fika-surface-subtle); border-color: var(--fika-border-default); color: var(--fika-text-secondary); }
+.empty-preview-unavailable { display: block; color: var(--fika-text-secondary); font-size: 13px; margin-top: 14px; }
+.empty-preview-message { padding: 48px 24px 12px; text-align: center; }
+.empty-preview-message h2 { margin-top: 14px; }
+.empty-preview-message p { margin: 8px auto 0; max-width: 440px; }
+.empty-preview-symbol { display: inline-grid; place-items: center; width: 56px; height: 56px; border-radius: var(--radius-md); background: var(--fika-status-info-surface); color: var(--fika-action-primary); font-size: 28px; }
+.empty-preview-action { padding: 0 24px 40px; text-align: center; }
+.empty-preview-workflow { border-top: 1px solid var(--m-border); margin-top: 14px; padding-top: 10px; }
+.empty-preview-workflow > div { display: flex; gap: 16px; min-height: 64px; }
+.empty-preview-workflow > div > span { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 50%; background: var(--fika-status-info-surface); color: var(--fika-action-primary); font-size: 22px; }
+.empty-preview-workflow p { font-size: 13px; }
+.empty-preview-photo { min-height: 190px; display: grid; align-content: center; justify-items: center; text-align: center; gap: 8px; color: var(--fika-text-secondary); }
+.empty-preview-photo > span { font-size: 32px; color: var(--fika-action-primary); }
+.empty-preview-photo p { max-width: 250px; }
