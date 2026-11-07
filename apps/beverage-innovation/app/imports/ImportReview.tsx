@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { LocalImportPreview } from "../../lib/contracts";
+import { MAX_RECIPE_DOCUMENT_BYTES, type LocalDocumentImportPreview, type LocalImportPreview } from "../../lib/contracts";
 import { initialReview, normalizeReviewedName, prepareImport, reviewCompleteness, type PendingImport, type ReviewForm, type ReviewSession } from "./review-model";
 
 const example = "Name: Winter Citrus Cooler\nType: Mocktail\nDescription: A bright citrus drink developed for winter service.\nIngredient: 20 ml orange juice\nIngredient: mint leaves\nMethod: Shake with ice and strain.\nGlassware: Highball glass\nGarnish: Orange wheel\nEquipment: Shaker\n\nName: Garden Fizz\nType: Mocktail\nIngredient: 30 ml apple juice\nIngredient: soda water\nMethod: Stir and serve chilled.\nEquipment: Spoon";
@@ -12,6 +12,8 @@ const messageOf = (body: unknown) => {
 
 export default function ImportReview() {
   const [text, setText] = useState(example);
+  const [sourceKind, setSourceKind] = useState<"text" | "document">("text");
+  const [file, setFile] = useState<File>();
   const [session, setSession] = useState<ReviewSession>();
   const [selected, setSelected] = useState(0);
   const [confirmed, setConfirmed] = useState(false);
@@ -31,6 +33,22 @@ export default function ImportReview() {
   const nameChanged = Boolean(candidate && normalizedName !== normalizeReviewedName(candidate.recipe.name));
   const nameCheck = candidate ? nameChecks[candidate.index] : undefined;
   const nameCheckReady = !nameChanged || Boolean(nameCheck?.status === "checked" && nameCheck.normalizedName === normalizedName);
+  const documentInfo = session && session.source.kind === "document" && "document" in session.preview ? session.preview.document : undefined;
+
+  function invalidateReview() {
+    setSession(undefined); setNameChecks({}); checkSequence.current = {}; inFlightChecks.current = {}; setConfirmed(false); setMessage("");
+  }
+
+  function chooseFile(chosen?: File) {
+    if (locked) return;
+    invalidateReview();
+    setFile(undefined);
+    if (!chosen) return;
+    if (!/\.(docx|pptx|pdf)$/i.test(chosen.name)) { setMessage("Choose a DOCX, PPTX or PDF document."); return; }
+    if (!chosen.size) { setMessage("Choose a non-empty recipe document."); return; }
+    if (chosen.size > MAX_RECIPE_DOCUMENT_BYTES) { setMessage("Recipe documents are limited to 4 MiB. Choose a smaller file."); return; }
+    setFile(chosen);
+  }
 
   function updateForm(patch: Partial<ReviewForm>) {
     if (locked || saved) return;
@@ -68,14 +86,22 @@ export default function ImportReview() {
   }
 
   async function previewSource() {
-    if (busyRef.current || pending) return;
-    busyRef.current = true; setBusy(true); setMessage(""); setSession(undefined); setNameChecks({}); checkSequence.current = {}; inFlightChecks.current = {}; setConfirmed(false);
+    if (busyRef.current || pending || (sourceKind === "document" && !file)) return;
+    const source = sourceKind === "document" && file ? { kind: "document" as const, file } : { kind: "text" as const, text };
+    busyRef.current = true; setBusy(true); invalidateReview();
     try {
-      const response = await fetch("/api/imports/preview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
+      let response: Response;
+      if (source.kind === "document") {
+        const form = new FormData(); form.set("file", source.file);
+        response = await fetch("/api/imports/documents/preview", { method: "POST", body: form });
+      } else {
+        response = await fetch("/api/imports/preview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: source.text }) });
+      }
       const body = await response.json();
       if (!response.ok) { setMessage(messageOf(body)); return; }
-      const result = body as LocalImportPreview;
-      setSession({ text, preview: result, forms: result.candidates.map(initialReview), saved: [] });
+      const result = body as LocalImportPreview | LocalDocumentImportPreview;
+      if (source.kind === "document" && (!("document" in result) || result.sourceLabel !== source.file.name || result.document.byteLength !== source.file.size)) throw new Error("Document preview does not match the selected file.");
+      setSession({ source, preview: result, forms: result.candidates.map(initialReview), saved: [] });
       setSelected(0);
       setMessage(result.candidates.length + " candidate" + (result.candidates.length === 1 ? "" : "s") + " found. No draft has been created.");
     } catch { setMessage("Could not preview the recipe. Check the local service and try again."); }
@@ -86,7 +112,13 @@ export default function ImportReview() {
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true); setPending(request); setMessage("");
     try {
-      const response = await fetch("/api/imports/commit", { method: "POST", headers: { "content-type": "application/json", "idempotency-key": request.key }, body: request.body });
+      let response: Response;
+      if (request.source.kind === "document") {
+        const form = new FormData(); form.set("file", request.source.file); form.set("review", request.body);
+        response = await fetch("/api/imports/documents/commit", { method: "POST", headers: { "idempotency-key": request.key }, body: form });
+      } else {
+        response = await fetch("/api/imports/commit", { method: "POST", headers: { "content-type": "application/json", "idempotency-key": request.key }, body: request.body });
+      }
       const body = await response.json();
       if (!response.ok) {
         if (response.status < 500 && !pending) { setPending(undefined); setConfirmed(false); setMessage(messageOf(body)); }
@@ -111,15 +143,16 @@ export default function ImportReview() {
 
   return <main className="import-review">
     <header className="ir-top"><a className="ir-brand" href="/"><img src="/fika-logo-white.png" alt="FIKA"/><span>OS</span></a><div><small>Innovation workspace</small><strong>Beverage Innovation</strong></div><span className="ir-local">LOCAL FIXTURE REVIEW</span><a className="ir-back" href="/">Back to drinks</a></header>
-    <div className="ir-workspace"><div className="ir-heading"><div><h1>Review recipe import</h1><p>Paste fictional recipe text, review each candidate and explicitly create a local draft.</p></div></div>
+    <div className="ir-workspace"><div className="ir-heading"><div><h1>Review recipe import</h1><p>Use a fictional or approved source, review each candidate and explicitly create a local draft.</p></div></div>
       {message && <div className="ir-message" role="status">{message}</div>}
-      <section className="ir-card ir-source" aria-labelledby="source-title"><div><h2 id="source-title">1. Add a source</h2><p>Use a Name: or Drink: label for each drink, or separate unlabelled recipes with ---. Up to 20 drinks and 20,000 characters.</p></div>
-        <label>Recipe source text<textarea rows={9} maxLength={20000} value={text} disabled={locked} onChange={event => { setText(event.target.value); setSession(undefined); setNameChecks({}); checkSequence.current = {}; inFlightChecks.current = {}; setConfirmed(false); setMessage(""); }} /></label>
-        <div className="ir-actions"><button className="ir-primary" disabled={locked || !text.trim()} onClick={() => void previewSource()}>{busy && !pending ? "Checking source…" : "Preview candidates"}</button><span>Plain text only. No file or Google document is read.</span></div>
+      <section className="ir-card ir-source" aria-labelledby="source-title"><div><h2 id="source-title">1. Add a source</h2><p>Use a Name: or Drink: label for each drink, or separate unlabelled recipes with ---. Up to 20 drinks and 20,000 extracted characters.</p></div>
+        <fieldset className="ir-source-choice" disabled={locked}><legend>Source type</legend><label><input type="radio" name="source-type" checked={sourceKind === "text"} onChange={() => { setSourceKind("text"); setFile(undefined); invalidateReview(); }}/> Paste text</label><label><input type="radio" name="source-type" checked={sourceKind === "document"} onChange={() => { setSourceKind("document"); setFile(undefined); invalidateReview(); }}/> Upload document</label></fieldset>
+        {sourceKind === "text" ? <label>Recipe source text<textarea rows={9} maxLength={20000} value={text} disabled={locked} onChange={event => { setText(event.target.value); invalidateReview(); }} /></label> : <><label>Recipe document<input type="file" accept=".docx,.pptx,.pdf" disabled={locked} aria-describedby="document-help" onChange={event => { const chosen = event.currentTarget.files?.[0]; chooseFile(chosen); if (chosen && (!/\.(docx|pptx|pdf)$/i.test(chosen.name) || !chosen.size || chosen.size > MAX_RECIPE_DOCUMENT_BYTES)) event.currentTarget.value = ""; }}/></label><p id="document-help">DOCX, PPTX or PDF, up to 4 MiB. Export Google Docs or Slides manually, or paste text. Selectable text only; images and OCR are not read.</p>{file && <p>Selected: <strong>{file.name}</strong> · {file.size.toLocaleString("en-GB")} bytes</p>}</>}
+        <div className="ir-actions"><button className="ir-primary" disabled={locked || (sourceKind === "text" ? !text.trim() : !file)} onClick={() => void previewSource()}>{busy && !pending ? "Checking source…" : "Preview candidates"}</button><span>The source stays in this page's memory during review.</span></div>
       </section>
       {session && candidate && form && <div className="ir-review-layout">
         <aside className="ir-card ir-candidates"><h2>2. Select a drink</h2><p>{session.preview.candidates.length} candidate{session.preview.candidates.length === 1 ? "" : "s"} found</p><fieldset disabled={locked}><legend>Parsed candidates</legend>{session.preview.candidates.map((item, index) => <label className="ir-candidate" key={item.index}><input type="radio" name="candidate" aria-label={"Candidate " + (index + 1) + ": " + (session.forms[index].name || "Unnamed drink")} checked={selected === index} onChange={() => { setSelected(index); setConfirmed(false); setMessage(""); }}/><span><strong>{session.forms[index].name || "Unnamed drink " + (index + 1)}</strong><small>{session.saved.includes(item.index) ? "Draft created" : item.confidence + " extraction confidence"} · {item.warnings.length} parser warning{item.warnings.length === 1 ? "" : "s"}</small></span></label>)}</fieldset>
-          <div className="ir-provenance"><h3>Source provenance</h3><p>{session.preview.sourceLabel}</p><p>Source fingerprint</p><code>{session.preview.sourceHash}</code><p>Selected candidate {candidate.index + 1} fingerprint</p><code>{candidate.candidateHash}</code><p>The source text is used for this review and is not stored with the draft.</p></div>
+          <div className="ir-provenance"><h3>Source provenance</h3><p>{session.preview.sourceLabel}</p>{documentInfo && <><p>Format: {documentInfo.format.toUpperCase()} · {documentInfo.byteLength.toLocaleString("en-GB")} bytes</p><p>Adapter version: {documentInfo.adapterVersion}</p><p>Extracted text fingerprint</p><code>{documentInfo.textHash}</code></>}<p>Source fingerprint</p><code>{session.preview.sourceHash}</code><p>Selected candidate {candidate.index + 1} fingerprint</p><code>{candidate.candidateHash}</code><p>{documentInfo ? "The original file and full extracted text are not stored with the draft." : "The source text is used for this review and is not stored with the draft."}</p></div>
         </aside>
         <section className="ir-card ir-editor" aria-labelledby="review-title"><div className="ir-editor-head"><div><h2 id="review-title">3. Review and edit</h2><p>Candidate {selected + 1} of {session.preview.candidates.length} · {candidate.confidence} extraction confidence</p></div>{saved && <span className="ir-badge">Draft created</span>}</div>
           <div className="ir-warning"><strong>Parser warnings</strong><ul>{candidate.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul><p>These warnings refer to the original extracted candidate.</p></div>

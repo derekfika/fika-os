@@ -1,4 +1,4 @@
-import { reviewedImportRecipeSchema, type LocalImportCandidate, type LocalImportPreview, type ReviewedImportRecipe } from "../../lib/contracts";
+import { reviewedImportRecipeSchema, type LocalDocumentImportPreview, type LocalImportCandidate, type LocalImportPreview, type ReviewedImportRecipe } from "../../lib/contracts";
 import type { BeverageClassification } from "../../lib/domain";
 
 export type ReviewForm = Omit<ReviewedImportRecipe, "ingredients" | "equipment"> & {
@@ -7,14 +7,15 @@ export type ReviewForm = Omit<ReviewedImportRecipe, "ingredients" | "equipment">
   classification: BeverageClassification;
 };
 
+export type ReviewSource = { kind: "text"; text: string } | { kind: "document"; file: File };
 export type ReviewSession = {
-  text: string;
-  preview: LocalImportPreview;
+  source: ReviewSource;
+  preview: LocalImportPreview | LocalDocumentImportPreview;
   forms: ReviewForm[];
   saved: number[];
 };
 
-export type PendingImport = { key: string; body: string; candidateIndex: number };
+export type PendingImport = { key: string; body: string; candidateIndex: number; source: ReviewSource };
 export type ReviewedNameCheck = { normalizedName: string; duplicate: boolean };
 export const normalizeReviewedName = (name: string) => name.trim().toLocaleLowerCase("en-GB");
 
@@ -52,5 +53,7 @@ export function prepareImport(session: ReviewSession, selection: number, confirm
     const field = issue.path.map(part => typeof part === "number" ? String(part + 1) : String(part)).join(" ");
     return { error: `${field || "Recipe"}: ${issue.message}` };
   }
-  return { pending: { key, candidateIndex: candidate.index, body: JSON.stringify({ text: session.text, sourceHash: session.preview.sourceHash, candidateIndex: candidate.index, candidateHash: candidate.candidateHash, classification: form.classification, reviewed: true, reviewedCandidate: result.data }) } };
+  const review = { sourceHash: session.preview.sourceHash, candidateIndex: candidate.index, candidateHash: candidate.candidateHash, classification: form.classification, reviewed: true, reviewedCandidate: result.data };
+  const body = session.source.kind === "text" ? { text: session.source.text, ...review } : review;
+  return { pending: { key, candidateIndex: candidate.index, body: JSON.stringify(body), source: session.source } };
 }
