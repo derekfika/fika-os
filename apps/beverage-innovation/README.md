@@ -1,40 +1,19 @@
 # FIKA OS Beverage Innovation
 
-Local development workspace for the governed beverage innovation journey. The app is intentionally separate from Menu Planning: Menu Planning owns delivered-in lunch plans, while this domain owns beverage concepts, development evidence, approvals and site rollout intent.
+Beverage Innovation owns beverage concepts, recipe development evidence, approvals and local launch plans. It is a distinct domain from Menu Planning, which remains the authority for operational menu publication.
 
-## Workflow implemented
+The approved Stage A presentation is preserved at `/mock`. The current AI-generated or illustrative drink imagery is placeholder content; actual photography of each drink is required before final visual approval or release. Stage B can record operational and brand review decisions, but the lifecycle cannot enter final `approved` until an approved photo asset reference is recorded. Since this increment does not source or upload real photos, final approval/release remain gated. See [the visual comparisons](visual-evidence/README.md).
 
-`Idea → In development → Ready for approval → Brand review → Approved → Asset generation → Rollout → Live → Review → Archived`
+## Stage B local application
 
-The detail workspace keeps concept, development/prototypes, immutable versions, recipe/method, costing, equipment, allergen status, assets, approvals, rollout readiness, feedback and audit history in separate tabs. Lifecycle commands validate the stage transition, require operational and brand approvals before approval, and block go-live while a rollout has blockers.
+Stage B adds local Firestore persistence and tested domain workflows behind a fail-closed development boundary. The app uses a dedicated Beverage collection set and a local Firebase emulator only. Firebase Admin is server-side; Firestore client rules deny access. Fixture actor and OPLOC identities are fictional. Every write is version-checked, idempotent, and committed with an append-only audit event.
 
-## Decisions applied
+The root pipeline at `/` supports concept creation, lifecycle changes, recipe editing, quantity/cost calculations, version history and approvals. `/specials` supports date windows, approved recipe selection and explicit fixture-site assignments. `/imports` parses pasted source text, shows warnings and a source fingerprint, then requires an explicit action to create a local draft. Allergens and costs are never inferred by the importer; unconfirmed ingredient sources remain deferred.
 
-- Beverage Innovation is a distinct domain.
-- Recipes and versions are distinct from Menu Planning dishes.
-- Administrator/role-based approval is the temporary authority for this increment.
-- Site rollout and beverage assets are owned here for now.
-- Ingredient/product sourcing, canonical allergen derivation and performance source remain explicitly deferred.
-- People are represented by roles, not named individuals.
+Stages C/D integrations and deployment are blocked pending stabilisation and separate owner authorization. In particular, this work does not clear #423 or #429. No production/staging data, notifications, external integration, Menu Planning publication, deployment or release is authorized by this implementation.
 
-## Local-only boundary
+See [Beverage development governance and preview instructions](DEVELOPMENT.md) for boundaries, local setup, emulator configuration and validation commands.
 
-The API is an in-memory development store (`/api/beverages`). It does not publish records, change Canon, call suppliers, create till items, replace training, send notifications, or connect to external asset/performance systems. Ingredient lines retain a `deferred` source status rather than inventing allergen or product truth.
+## Source recipes
 
-The first source import is `Cocktails Drinks Recipe.pptx`: Espresso Martini, Elderflower Fizz, Mojito, Strawberry Basil Lemonade and Butterfly Passion Cooler. These are source-evidence development records; the import is name-idempotent and does not create duplicates.
-
-## Verification
-
-Run from this directory:
-
-```text
-npm run typecheck
-npm test
-npm run build
-```
-
-## Stage A visual prototype
-
-The isolated `/mock` route is a visual demonstration for issue #115. It uses fixture data and React memory only. It does not call the existing beverage API or any external service, and all changes disappear on reload. The reference images and visual comparison report are in `visual-reference/` and `visual-evidence/`.
-
-From this app directory, install the locked dependencies with `npm ci`, then start an unused local port with `npm run dev -- --port 13615` and open `http://localhost:13615/mock`. If that port is occupied, select another unused port. The repository's `fika dev` command does not currently list Beverage Innovation as a supported app. Use Overview, Monthly Specials and New Drink to compare the three reference surfaces; Drinks Library contains the import demonstration. The mock dates, sites, recipes, prices and approvals are examples only.
+The prior in-memory cocktail examples are retained only in the Stage A mock presentation as fixture content. Stage B application records are created deliberately in the local emulator or through the reviewed import preview; no recipe deck is silently bulk-loaded into persistent storage.
