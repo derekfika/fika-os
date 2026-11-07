@@ -6,7 +6,7 @@ import { git, command, ancestor, ref, ghApi, scopeHash, asyncLock, save, stateDi
 import { assertHostedContext } from './hosted.mjs';
 import { discover } from './discovery.mjs';
 import { releaseBackend, verifiedReleaseServing, releasePrestate } from './release-prestate.mjs';
-import { recoverySnapshot, reconcileIntent, resubmitNeverSubmitted, submissionAttempts, describeSubmissionEvidence } from './recovery.mjs';
+import { recoverySnapshot, isDomainOperationTarget, isReleaseRelevantOperation, reconcileIntent, resubmitNeverSubmitted, submissionAttempts, describeSubmissionEvidence } from './recovery.mjs';
 import { readCreateAuditEvents } from './audit.mjs';
 import { assertCpuAdoptionTarget, observeCpuAdoption, adoptCompletedCpu } from './cpu-prod-adoption.mjs';
 
@@ -40,7 +40,8 @@ export async function inspectEmptyFirstReleaseState(t, read = cloud, { allowFail
     discover(`projects/${t.project}/locations/${t.region}/operations`, 'operations', o=>({name:o.name,done:o.done===true,target:o.metadata?.target||o.response?.name||''}), read),
   ]);
   const current=traffic.current?.splits||[], targetTraffic=traffic.target?.splits||[];
-  const active=operations.filter(o=>!o.done&&(!o.target||o.target===t.backend||String(o.target).includes(`/backends/${t.backend}`)));
+  const active=operations.filter(o=>isReleaseRelevantOperation(t,o));
+  const domainOperations=operations.filter(o=>!o.done&&isDomainOperationTarget(t,o.target));
   const repo=String(backend.codebase?.repository||'');
   const expectedEnvironment=t.environment==='prod'?'production':'staging';
   if (backend.name!==base || backend.reconciling!==false || backend.environment!==expectedEnvironment || ![`/${APPS[t.app].path}`,APPS[t.app].path].includes(backend.codebase?.rootDirectory) || !repo.endsWith('/gitRepositoryLinks/derekfika-fika-os')) throw Error('First-release backend identity, environment, repository or root is not verified');
@@ -51,13 +52,13 @@ export async function inspectEmptyFirstReleaseState(t, read = cloud, { allowFail
     const id=name=>String(name||'').split('/').at(-1);
     const build=builds.length===1?builds[0]:null, rollout=rollouts.length===1?rollouts[0]:null;
     if(current.length!==1 || current[0].percent!==100 || id(current[0].build)!==id(build?.name) || id(retry.rollout)!==id(rollout?.name) || id(rollout?.build)!==id(build?.name) || rollout?.state!=='SUCCEEDED' || rollout?.reconciling || build?.state!=='READY' || build?.reconciling || build?.sourceSha!==retry.sourceSha) throw Error('First-release retry does not match the exact recorded unhealthy serving attempt');
-    return {sourceSha:null,rollout:null,state:'EMPTY',percent:0,backend:base,builds,rollouts,operations:active,traffic:{current,target:targetTraffic,reconciling:Boolean(traffic.reconciling),autoDisabled:true},unhealthyFirstRelease:{sourceSha:retry.sourceSha,rollout:retry.rollout,baselineRecord:retry.firstReleaseBaselineRecord,smoke:retry.smoke}};
+    return {sourceSha:null,rollout:null,state:'EMPTY',percent:0,backend:base,builds,rollouts,operations:active,domainOperations,traffic:{current,target:targetTraffic,reconciling:Boolean(traffic.reconciling),autoDisabled:true},unhealthyFirstRelease:{sourceSha:retry.sourceSha,rollout:retry.rollout,baselineRecord:retry.firstReleaseBaselineRecord,smoke:retry.smoke}};
   }
   if(current.length) throw Error('First-release retry has unexpected serving traffic');
   if (allowFailedHistory) {
     if (builds.some(b=>!['FAILED','CANCELLED','DELETED'].includes(b.state)||b.reconciling) || rollouts.some(r=>!['FAILED','CANCELLED'].includes(r.state)||r.reconciling)) throw Error('First-release retry is blocked by a successful, active or unknown build/rollout');
   } else if (builds.length || rollouts.length) throw Error('Target has deployment history; the first-release empty baseline cannot be created');
-  return { sourceSha:null, rollout:null, state:'EMPTY', percent:0, backend:base, builds, rollouts, operations:active, traffic:{current,target:targetTraffic,reconciling:Boolean(traffic.reconciling),autoDisabled:true} };
+  return { sourceSha:null, rollout:null, state:'EMPTY', percent:0, backend:base, builds, rollouts, operations:active, domainOperations, traffic:{current,target:targetTraffic,reconciling:Boolean(traffic.reconciling),autoDisabled:true} };
 }
 export async function stableFirstReleaseState(t, read=cloud, options={}) {
   const first=await inspectEmptyFirstReleaseState(t,read,options),second=await inspectEmptyFirstReleaseState(t,read,options);
