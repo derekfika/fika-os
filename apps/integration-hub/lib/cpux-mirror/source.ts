@@ -8,6 +8,11 @@ function hasRecordedHandoff(booking: CanonicalBooking) {
   return booking.statusHistory.some(entry => entry.status === "Sent to CPU");
 }
 
+function safeClientDisplayName(booking: CanonicalBooking) {
+  const candidates = [booking.client.clientCompany, booking.client.clientName, booking.client.companyName];
+  return candidates.map(value => typeof value === "string" ? value.trim() : "").find(value => value && !value.includes("@"));
+}
+
 export function hasCurrentHospitalityHandoff(booking: CanonicalBooking) {
   return (booking.lifecycleStatus === "Sent to CPU" || booking.lifecycleStatus === "Completed") && hasRecordedHandoff(booking);
 }
@@ -29,8 +34,9 @@ export function hospitalityMirrorSource(booking: CanonicalBooking, order: Produc
   if (withdrawn || !order) return { source, site };
   const lines = order.lines.filter(line => cpu.has(line.workstream || ""));
   if (!lines.length) return { site, source: { ...source, withdrawn: true } };
-  if (lines.some(line => !line.itemName.trim() || typeof line.productionQuantity !== "number" || !Number.isFinite(line.productionQuantity) ||
-    line.productionQuantity <= 0 || !line.productionUnit?.trim())) throw new Error("CPU production quantities or units are unresolved.");
+  if (lines.some(line => !line.canonicalId?.trim() || !line.sourceBookingLineId?.trim() || !line.itemName?.trim() ||
+    typeof line.customerQuantity !== "number" || !Number.isFinite(line.customerQuantity) || line.customerQuantity <= 0 || !line.customerUnit?.trim()))
+    throw new Error("CPU customer quantities, units, or line identities are unresolved.");
   const quote = booking.quoteState?.revisions.find(item => item.id === booking.quoteState?.currentRevisionId);
   const priorQuote = booking.quoteState?.revisions.find(item => item.id === order.sourceQuoteRevisionId);
   // Completed bookings can refresh charges without replacing the CPU order. Menu changes reopen the booking.
@@ -45,18 +51,18 @@ export function hospitalityMirrorSource(booking: CanonicalBooking, order: Produc
   const end = service.endTime ? londonTimestamp(service.eventDate, service.endTime) : new Date(Date.parse(start) + 60 * 60_000).toISOString();
   if (end <= start) throw new Error("The booking service time is invalid.");
   const label = service.portalSiteLabel || order.destinationLabel || site;
-  const company = booking.client.companyName || "Hospitality";
-  const type = booking.order.eventType || "Hospitality";
+  const company = safeClientDisplayName(booking);
+  const type = (booking.order.eventType || "Hospitality").replace(/[_\s]+/g, " ").trim() || "Hospitality";
   const location = [label, service.roomOrArea, service.deliveryPoint].filter(Boolean).join(" · ");
   const details: MirrorDetails = {
-    summary: [label, company, type + " x " + service.guestCount].join("_"),
+    summary: [label, ...(company && company !== label ? [company] : []), type + " x " + service.guestCount].join("_"),
     description: [
       "Booking: " + booking.canonicalId,
       "Service: " + service.eventDate + " " + service.startTime + " (UK) · " + service.guestCount + " guests",
       "Delivery: " + location,
       "FIKA OS: https://cpu.fikacatering.com/?order=" + encodeURIComponent(order.canonicalId) + "&date=" + service.eventDate,
       "", "CPU production:",
-      ...lines.map(line => "• " + line.itemName + " — " + line.productionQuantity + " " + line.productionUnit),
+      ...lines.map(line => "• " + line.itemName + " — " + line.customerQuantity + " " + line.customerUnit.trim()),
     ].join("\n"),
     location, start: { dateTime: start, timeZone: TIME_ZONE }, end: { dateTime: end, timeZone: TIME_ZONE },
   };

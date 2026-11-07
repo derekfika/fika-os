@@ -25,18 +25,19 @@ const order = {
   canonicalId: "production:one", origin: "hospitality_booking", version: 2, status: "draft", sourceBookingId: booking.canonicalId,
   destinationOplocId: "oploc:one", serviceDate: booking.service.eventDate, sourceQuoteRevisionId: "quote:current",
   lines: [
-    { itemName: "Chicken sandwich", workstream: "sandwiches", productionQuantity: 36, productionUnit: "pieces", customerQuantity: 18 },
+    { canonicalId: "production:one:line:1", sourceBookingLineId: "booking:one:line:1", itemName: "Chicken sandwich", workstream: "sandwiches", productionQuantity: 36, productionUnit: "pieces", customerQuantity: 18, customerUnit: "Per person" },
     { itemName: "Coffee", workstream: "unassigned", customerQuantity: 18 },
     { itemName: "Bought-in crisps", workstream: "unassigned", customerQuantity: 18 },
   ],
 } as unknown as ProductionOrder;
 
-test("Hospitality mirrors a successful handoff only, using the canonical site's Calendar, production portions and matching quote", () => {
+test("Hospitality mirrors a successful handoff only, using customer ordered quantities, the canonical site Calendar and matching quote", () => {
   assert.equal(hospitalityMirrorSource({ ...booking, lifecycleStatus: "Quoted", statusHistory: [] }, order), undefined);
   const model = hospitalityMirrorSource(booking, order)!;
   assert.equal(configuredMirrorTarget("hospitality", model.site, env).calendarId, target.calendarId);
   assert.throws(() => configuredMirrorTarget("hospitality", "Fixture site", env), /not configured/);
-  assert.match(model.details!.description, /Chicken sandwich — 36 pieces/);
+  assert.match(model.details!.description, /Chicken sandwich — 18 Per person/);
+  assert.doesNotMatch(model.details!.description, /36 pieces/);
   assert.doesNotMatch(model.details!.description, /Coffee|crisps/);
   assert.equal(model.fileId, "fixtureQuoteFile");
   assert.throws(() => hospitalityMirrorSource(booking, { ...order, sourceQuoteRevisionId: "quote:old" }), /does not match/);
@@ -62,7 +63,57 @@ test("completed grouped handoffs retain their live order and can use a saved com
   assert.equal(hospitalityMirrorSource(refreshed, order)?.fileId, "newQuoteFile");
   assert.throws(() => hospitalityMirrorSource({ ...refreshed, commercialVersion: 3 }, order), /does not match/);
   assert.throws(() => hospitalityMirrorSource(refreshed, { ...order, sourceQuoteRevisionId: "unknown" }), /does not match/);
-  assert.throws(() => hospitalityMirrorSource(completed, { ...order, lines: [{ ...order.lines[0], productionQuantity: undefined }] }), /unresolved/);
+  assert.equal(hospitalityMirrorSource(completed, { ...order, lines: [{ ...order.lines[0], productionQuantity: undefined, productionUnit: undefined }] })?.source.withdrawn, false);
+});
+
+test("Hospitality mirror fails closed when a CPU line lacks customer quantity, unit, or stable identity", () => {
+  const cpuLine = order.lines[0];
+  const withLine = (line: Record<string, unknown>) => ({ ...order, lines: [{ ...cpuLine, ...line }] }) as unknown as ProductionOrder;
+  assert.throws(() => hospitalityMirrorSource(booking, withLine({ customerQuantity: undefined })), /customer quantities, units, or line identities/);
+  assert.throws(() => hospitalityMirrorSource(booking, withLine({ customerUnit: " " })), /customer quantities, units, or line identities/);
+  assert.throws(() => hospitalityMirrorSource(booking, withLine({ canonicalId: "" })), /customer quantities, units, or line identities/);
+  assert.throws(() => hospitalityMirrorSource(booking, withLine({ sourceBookingLineId: "" })), /customer quantities, units, or line identities/);
+});
+
+test("Calendar line text uses the customer order quantity rather than the CPU production multiplier", () => {
+  const tenPeople = { ...order, lines: [{ ...order.lines[0], customerQuantity: 10, customerUnit: "people", productionQuantity: 30, productionUnit: "pieces" }] } as unknown as ProductionOrder;
+  const model = hospitalityMirrorSource(booking, tenPeople)!;
+  assert.match(model.details!.description, /Chicken sandwich — 10 people/);
+  assert.doesNotMatch(model.details!.description, /30 pieces/);
+});
+
+test("Hot Fork Buffet mirror displays 90 Per person without production quantity and keeps the approved quote attachment", async () => {
+  const hotForkBooking = {
+    ...booking,
+    client: { ...booking.client, companyName: "bmaddix@rcoa.ac.uk", clientName: null, clientCompany: null },
+    service: { ...booking.service, portalSiteLabel: "RCoA Hospitality", guestCount: 94 },
+    order: { ...booking.order, eventType: "event_catering" },
+  } as unknown as CanonicalBooking;
+  const hotForkOrder = {
+    ...order,
+    lines: [
+      { canonicalId: "production:one:line:buffet", sourceBookingLineId: "booking:one:line:buffet", itemName: "Hot Fork Buffet", workstream: "hospitality", customerQuantity: 90, customerUnit: "Per person", productionQuantity: undefined, productionUnit: undefined },
+      { canonicalId: "production:one:line:coffee", sourceBookingLineId: "booking:one:line:coffee", itemName: "Coffee", workstream: "unassigned", customerQuantity: 90, customerUnit: "Per person", productionQuantity: 90, productionUnit: "cups" },
+    ],
+  } as unknown as ProductionOrder;
+  const model = hospitalityMirrorSource(hotForkBooking, hotForkOrder)!;
+  assert.equal(model.fileId, "fixtureQuoteFile");
+  assert.equal(model.details!.summary, "RCoA Hospitality_event catering x 94");
+  assert.doesNotMatch(model.details!.summary, /bmaddix@rcoa\.ac\.uk/i);
+  assert.match(model.details!.description, /94 guests/);
+  assert.match(model.details!.description, /Hot Fork Buffet — 90 Per person/);
+  assert.doesNotMatch(model.details!.description, /Coffee|pieces|undefined/);
+
+  const fixture = harness();
+  const client = await openMirrorClient(target, env, fixture.fetcher);
+  const quote = await client.verifiedPdf(model.fileId!, "Approved Hospitality quote.pdf");
+  await client.publish(model.source, model.details, quote);
+  const eventWrite = fixture.calls.find(call => call.method === "POST");
+  assert.ok(eventWrite);
+  assert.match(eventWrite.body.description, /Hot Fork Buffet — 90 Per person/);
+  assert.doesNotMatch(eventWrite.body.description, /Coffee|pieces|undefined/);
+  assert.deepEqual(eventWrite.body.attachments, [{ fileUrl: quote.attachmentUrl, title: quote.title, mimeType: "application/pdf" }]);
+  assert.ok(eventWrite.body.description.includes(quote.url));
 });
 
 test("catch-up starts on 9 November inclusive and timed events handle UK clock changes", () => {
