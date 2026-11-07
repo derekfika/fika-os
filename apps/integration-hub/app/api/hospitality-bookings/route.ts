@@ -12,6 +12,8 @@ import { bookingAdditionalChargesSchema, labourRateSettingsSchema } from "@/lib/
 import { bookingWorkspace, createProductionOrder, executeBookingWorkflow, getBookingByCanonicalId, getDashboardQuoteSettingsForBooking, saveDashboardQuoteSettings } from "@/lib/hospitality-booking-service";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { saveHospitalityKitchenNotes } from "@/lib/production-domain";
+import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
+import { redactHospitalityQuoteDriveLinks } from "@/lib/hospitality-quote-response";
 
 const Base = { canonicalId: z.string().min(8), expectedVersion: z.number().int().positive() };
 const Change = z.discriminatedUnion("action", [
@@ -27,6 +29,7 @@ const Change = z.discriminatedUnion("action", [
   z.object({ ...Base, action: z.literal("cancel"), reason: z.string().trim().min(3).max(1000), removeCalendar: z.boolean().optional(), cancelProduction: z.boolean().optional(), notify: z.boolean().optional() }).strict(),
 ]);
 const Settings = z.object({ action: z.literal("save-quote-settings"), dashboardId: z.string().min(3), managementFee: z.object({ mode: z.enum(["fixed", "percentage"]), value: z.number().min(0), label: z.string().trim().min(1).max(100) }).strict(), deliveryCharge: z.object({ enabled: z.boolean(), amount: z.number().min(0), label: z.string().trim().min(1).max(100) }).strict(), buildingCharges: z.object({ enabled: z.boolean(), housekeeping: z.object({ hourly: z.number().min(0), label: z.string().trim().min(1).max(100) }).strict(), security: z.object({ hourly: z.number().min(0), minimumHours: z.number().min(0), label: z.string().trim().min(1).max(100) }).strict(), aircon: z.object({ hourly: z.number().min(0), afterHour: z.number().min(0).max(23), label: z.string().trim().min(1).max(100) }).strict(), venueHire: z.object({ enabled: z.boolean(), amount: z.number().min(0), label: z.string().trim().min(1).max(100) }).strict() }).strict().optional(), labourRates: labourRateSettingsSchema.optional(), vatRate: z.number().min(0).max(1), googleDriveFolderId: z.string().trim().max(200).optional(), googleMenuTemplateId: z.string().trim().max(200).optional(), googleMenuFolderId: z.string().trim().max(200).optional(), googleQuoteFolderId: z.string().trim().max(200).optional(), googleMatrixFolderId: z.string().trim().max(200).optional() }).strict();
+const bookingJson = async (value: unknown) => NextResponse.json(redactHospitalityQuoteDriveLinks(value, await stagingDriveAccessBlocked()), { headers: { "Cache-Control": "no-store, max-age=0" } });
 export async function GET(request: NextRequest) { return withDataTrace({ app: "integration-hub", action: "integration-hub.hospitality-bookings.read", path: "/api/hospitality-bookings", requestId: request.headers.get("x-request-id") || undefined }, async () => { try {
   const actor = await requireActor(request);
   assertPermission(actor, "canonical.view");
@@ -37,7 +40,7 @@ export async function GET(request: NextRequest) { return withDataTrace({ app: "i
     const repository = new FirestoreAuthModRepository();
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
     await assertHospitalityBookingReadAccess(repository, principal, booking, actor.role === "integration-admin" || actor.role === "reviewer");
-    return NextResponse.json({ booking, quoteSettings: await getDashboardQuoteSettingsForBooking(booking) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    return bookingJson({ booking, quoteSettings: await getDashboardQuoteSettingsForBooking(booking) });
   }
   const site = request.nextUrl.searchParams.get("site") || undefined;
   const oploc = request.nextUrl.searchParams.get("oploc") || undefined;
@@ -52,14 +55,14 @@ export async function GET(request: NextRequest) { return withDataTrace({ app: "i
     hospitalityAdminAuthority = await resolveHospitalityBookingAdmin(repository, principal, oploc).catch(() => undefined);
     if (!decision.allowed && !hospitalityAdminAuthority) throw Object.assign(new Error("That Hospitality location is not authorised for your account."), { status: 403 });
   }
-  return NextResponse.json({ ...await bookingWorkspace(site, oploc, includeArchive), hospitalityAdminAuthority }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  return bookingJson({ ...await bookingWorkspace(site, oploc, includeArchive), hospitalityAdminAuthority });
 } catch (error) { return errorResponse(error); } }); }
 export async function POST(request: NextRequest) { return withDataTrace({ app: "integration-hub", action: "integration-hub.hospitality-bookings.mutate", path: "/api/hospitality-bookings", requestId: request.headers.get("x-request-id") || undefined }, async () => { try {
   const actor = await requireActor(request);
   const raw = await request.json();
   if (raw?.action === "save-quote-settings") {
     assertPermission(actor, "canonical.edit");
-    return NextResponse.json({ quoteSettings: await saveDashboardQuoteSettings(actor, Settings.parse(raw)) });
+    return bookingJson({ quoteSettings: await saveDashboardQuoteSettings(actor, Settings.parse(raw)) });
   }
   const change = Change.parse(raw);
   if (change.action === "cancel") assertPermission(actor, "canonical.edit");
@@ -68,12 +71,13 @@ export async function POST(request: NextRequest) { return withDataTrace({ app: "
   const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
   if (change.action === "amend" && change.hospitalityAdmin) {
     const { hospitalityAdmin: _intent, ...command } = change;
-    return NextResponse.json(await executeBookingWorkflow(actor, change.canonicalId, change.expectedVersion, command, "customer-cancellation",
+    return bookingJson(await executeBookingWorkflow(actor, change.canonicalId, change.expectedVersion, command, "customer-cancellation",
       (booking, transaction) => requireHospitalityBookingAdmin(new FirestoreAuthModRepository("hospitality-admin", undefined, transaction), principal, booking.service.oplocId)));
   }
   const booking = await getBookingByCanonicalId(change.canonicalId);
   await assertHospitalityBookingMutationAccess(repository, principal, booking, actor.role === "integration-admin" || actor.role === "reviewer");
-  if (change.action === "save-kitchen-notes") return NextResponse.json(await saveHospitalityKitchenNotes(actor, change.canonicalId, change.expectedVersion, change.kitchenNotes));
-  if (change.action === "production-handoff") return NextResponse.json(await createProductionOrder(actor, change.canonicalId, change.expectedVersion));
-  return NextResponse.json(await executeBookingWorkflow(actor, change.canonicalId, change.expectedVersion, change, "customer-cancellation"));
+  if (change.action === "quote-pdf-status" && await stagingDriveAccessBlocked()) return NextResponse.json({ error: { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED", message: "Quote PDF state cannot be changed until Drive isolation is verified for this environment." } }, { status: 404, headers: { "Cache-Control": "no-store, max-age=0" } });
+  if (change.action === "save-kitchen-notes") return bookingJson(await saveHospitalityKitchenNotes(actor, change.canonicalId, change.expectedVersion, change.kitchenNotes));
+  if (change.action === "production-handoff") return bookingJson(await createProductionOrder(actor, change.canonicalId, change.expectedVersion));
+  return bookingJson(await executeBookingWorkflow(actor, change.canonicalId, change.expectedVersion, change, "customer-cancellation"));
 } catch (error) { return errorResponse(error); } }); }

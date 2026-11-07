@@ -7,6 +7,10 @@ import { FirestoreAuthModRepository } from "@/lib/authmod-core";
 import { requireFikaSession } from "@/lib/fika-session";
 import { assertHospitalityBookingMutationAccess } from "@/lib/hospitality-booking-authorization";
 import { cancelHospitalityBookingGroup } from "@/lib/hospitality-booking-service";
+import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
+import { redactHospitalityQuoteDriveLinks } from "@/lib/hospitality-quote-response";
+
+const groupJson = async (value: unknown) => NextResponse.json(redactHospitalityQuoteDriveLinks(value, await stagingDriveAccessBlocked()), { headers: { "Cache-Control": "no-store, max-age=0" } });
 
 const Command = z.object({ bookingGroupId: z.string().min(8), expectedSourceHash: z.string().min(16), reason: z.string().trim().min(3).max(1000) }).strict();
 
@@ -21,6 +25,6 @@ export async function POST(request: NextRequest) {
     const result = await cancelHospitalityBookingGroup(actor, input, async children => {
       for (const child of new Map(children.map(booking => [booking.service.oplocId, booking])).values()) await assertHospitalityBookingMutationAccess(repository, principal, child, actor.role === "integration-admin" || actor.role === "reviewer");
     }, "customer-cancellation");
-    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+    return groupJson(result);
   } catch (error) { return errorResponse(error); }
 }
