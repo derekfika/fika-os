@@ -1,6 +1,6 @@
 # OAC legacy recovery — redacted evidence summary
 
-**Evidence date:** 2026-11-07  
+**Evidence date:** 2026-11-07
 **Status:** Preview only; no migration or downstream writes
 
 ## Inventory and exact-key lineage
