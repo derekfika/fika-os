@@ -15,7 +15,7 @@ const configuredRates = [{ id: "chef", label: "Chef", hourlyRate: 22 }];
 const NOW = "2026-10-05T10:00:00.000Z";
 const governedLine = (labour: Partial<Extract<BookingAdditionalChargeInput, { kind: "labour" }>["labour"]> = {}): BookingAdditionalChargeInput => ({
   id: "kp-line-0001", kind: "labour", category: "labour", label: "KP labour",
-  labour: { roleId: "kp", roleLabel: "KP", staffCount: 2, hoursPerPerson: 5, hourlyRate: 17.7, multiplier: 1, rateSource: "governed", ...labour },
+  labour: { roleId: "kp", roleLabel: "KP", staffCount: 2, hoursPerPerson: 5, hourlyRate: 17.7, multiplier: 1.5, rateSource: "governed", ...labour },
 });
 const laborLine: BookingAdditionalChargeInput = {
   id: "chef-line-0001",
@@ -39,25 +39,19 @@ test("booking charge persistence recalculates manual totals and adds actor times
 const storedLegacy = (input: BookingAdditionalChargeInput, quantity: number, unitNet: number, netTotal: number) =>
   ({ ...input, quantity, unitNet, netTotal, createdAt: "2026-09-01T10:00:00.000Z", createdBy: "manager-0", updatedAt: "2026-09-01T10:00:00.000Z", updatedBy: "manager-0" }) as BookingAdditionalCharge;
 
-test("governed labour derives staff hours, unit rate and rounded line total for Normal and Overtime", () => {
-  const [normal] = normalizeBookingAdditionalCharges([governedLine()], [], [], "manager-1", NOW);
-  assert.equal(normal.quantity, 10);
-  assert.equal(normal.unitNet, 17.7);
-  assert.equal(normal.netTotal, 177);
-  const [overtime] = normalizeBookingAdditionalCharges([governedLine({ multiplier: 1.5 })], [], [], "manager-1", NOW);
+test("governed labour derives staff hours and the approved overtime unit rate once", () => {
+  const [overtime] = normalizeBookingAdditionalCharges([governedLine()], [], [], "manager-1", NOW);
+  assert.equal(overtime.quantity, 10);
   assert.equal(Math.round(overtime.unitNet * 10000) / 10000, 26.55);
   assert.equal(overtime.netTotal, 265.5);
   if (overtime.kind === "labour") assert.equal(overtime.labour.rateSource, "governed");
 });
 
-test("every approved role is accepted at its exact normal rate with multiplier 1 or 1.5 (legacy sources tolerated during rollout)", () => {
+test("new charges require the approved base rate and exactly 1.5x for every approved role", () => {
   for (const role of APPROVED_LABOUR_ROLES) {
-    for (const multiplier of [1, 1.5]) {
-      for (const rateSource of ["governed", "custom"] as const) {
-        const out = normalizeBookingAdditionalCharges([governedLine({ roleId: role.id, roleLabel: role.label, hourlyRate: role.normalRate, multiplier, rateSource })], [], [], "m", NOW);
-        assert.equal(out.length, 1, `${role.id} x${multiplier} ${rateSource}`);
-      }
-    }
+    const out = normalizeBookingAdditionalCharges([governedLine({ roleId: role.id, roleLabel: role.label, hourlyRate: role.normalRate, multiplier: 1.5 })], [], [], "m", NOW);
+    assert.equal(out.length, 1, role.id);
+    assert.throws(() => normalizeBookingAdditionalCharges([governedLine({ roleId: role.id, roleLabel: role.label, hourlyRate: role.normalRate, multiplier: 1 })], [], [], "m", NOW), /Agency \/ overtime rate/);
   }
 });
 
@@ -70,9 +64,10 @@ test("the Hub rejects any new labour line that is not on the locked approved tab
   reject({ roleId: undefined }, /approved labour role|reference a role/, "missing governed role identity");
   reject({ roleId: undefined, rateSource: "custom" }, /approved labour role/, "missing role identity on a custom-sourced line");
   reject({ roleLabel: "Kitchen Porter" }, /must match the approved role/, "role label spoof");
-  reject({ multiplier: 2 }, /Normal .* or Overtime/, "multiplier 2");
-  reject({ multiplier: 1.25 }, /Normal .* or Overtime/, "arbitrary multiplier");
-  reject({ multiplier: 1.5000001 }, /Normal .* or Overtime/, "near-1.5 multiplier");
+  reject({ multiplier: 1 }, /Agency \/ overtime rate/, "new Normal line");
+  reject({ multiplier: 2 }, /Agency \/ overtime rate/, "multiplier 2");
+  reject({ multiplier: 1.25 }, /Agency \/ overtime rate/, "arbitrary multiplier");
+  reject({ multiplier: 1.5000001 }, /Agency \/ overtime rate/, "near-1.5 multiplier");
   reject({ rateSource: "custom", hourlyRate: 24 }, /locked/, "custom hourly rate");
   reject({ rateSource: "configured", hourlyRate: 22, roleId: "chef", roleLabel: "Chef" }, /locked|configured labour rate is unavailable/, "manager-configured rate");
 });
@@ -85,8 +80,24 @@ test("a manager-configured rate cannot override the locked table", () => {
 test("direct API payloads cannot bypass the lock: the route schema passes them but normalisation rejects them", () => {
   const payload = [governedLine({ rateSource: "custom", hourlyRate: 1, multiplier: 5 })];
   assert.equal(bookingAdditionalChargesSchema.safeParse(payload).success, true);
-  assert.throws(() => normalizeBookingAdditionalCharges(payload, [], [], "m", NOW), /locked|Normal/);
+  assert.throws(() => normalizeBookingAdditionalCharges(payload, [], [], "m", NOW), /locked|Agency/);
   assert.equal(bookingAdditionalChargesSchema.safeParse([governedLine()]).success, true);
+});
+
+test("an unchanged approved historical Normal snapshot remains byte-identical, but an edit reprices at 1.5x", () => {
+  const historical = governedLine({ multiplier: 1 });
+  const stored = storedLegacy(historical, 10, 17.7, 177);
+  const unchanged = normalizeBookingAdditionalCharges([historical], [stored], [], "manager-2", NOW);
+  assert.deepEqual(unchanged[0], stored);
+  const edited = governedLine({ multiplier: 1.5 });
+  const repriced = normalizeBookingAdditionalCharges([edited], [stored], [], "manager-2", NOW);
+  assert.equal(repriced[0].netTotal, 265.5);
+  assert.equal(repriced[0].updatedBy, "manager-2");
+});
+
+test("new or edited custom/unapproved 1x labour is rejected", () => {
+  assert.throws(() => normalizeBookingAdditionalCharges([governedLine({ roleId: "custom-role", multiplier: 1, rateSource: "custom" })], [], [], "m", NOW), /approved labour role/);
+  assert.throws(() => normalizeBookingAdditionalCharges([governedLine({ hourlyRate: 22, multiplier: 1, rateSource: "custom" })], [], [], "m", NOW), /locked/);
 });
 
 test("legacy custom and configured labour lines stay readable, quotable and byte-identical when resubmitted unchanged", () => {
