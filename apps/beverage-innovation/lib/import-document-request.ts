@@ -1,11 +1,11 @@
-import { MAX_RECIPE_DOCUMENT_BYTES, localImportReviewSchema } from "./contracts";
+import { MAX_RECIPE_DOCUMENT_BYTES, MAX_RECIPE_STANDARD_DOCUMENT_BYTES, localImportReviewSchema } from "./contracts";
 import { RecipeDocumentError, type RecipeDocumentUpload } from "./import-document";
 
 const MAX_REVIEW_BYTES = 128 * 1024;
 const MAX_MULTIPART_BYTES = MAX_RECIPE_DOCUMENT_BYTES + MAX_REVIEW_BYTES + 4096;
 const UPLOAD_TIMEOUT_MS = 10_000;
 const invalid = () => new RecipeDocumentError("Send one file and the required review fields as multipart form data.", 400, "BEVERAGE_IMPORT_DOCUMENT_FORM_INVALID");
-const tooLarge = () => new RecipeDocumentError("Recipe documents are limited to 4 MiB and review data to 128 KiB.", 413, "BEVERAGE_IMPORT_DOCUMENT_TOO_LARGE");
+const tooLarge = () => new RecipeDocumentError("PPTX documents are limited to 12 MiB; DOCX and PDF documents are limited to 4 MiB. Review data is limited to 128 KiB.", 413, "BEVERAGE_IMPORT_DOCUMENT_TOO_LARGE");
 
 async function boundedBody(request: Request) {
   if (Number(request.headers.get("content-length")) > MAX_MULTIPART_BYTES) throw tooLarge();
@@ -57,7 +57,8 @@ async function documentForm(request: Request, expectedParts: number) {
   if ([...form].length !== expectedParts) throw invalid();
   const file = form.get("file");
   if (!file || typeof file === "string" || form.getAll("file").length !== 1) throw invalid();
-  if (file.size > MAX_RECIPE_DOCUMENT_BYTES) throw tooLarge();
+  const fileLimit = file.name.toLowerCase().endsWith(".pptx") ? MAX_RECIPE_DOCUMENT_BYTES : MAX_RECIPE_STANDARD_DOCUMENT_BYTES;
+  if (file.size > fileLimit) throw tooLarge();
   const upload: RecipeDocumentUpload = { bytes: Buffer.from(await file.arrayBuffer()), fileName: file.name, mediaType: file.type };
   return { form, upload };
 }

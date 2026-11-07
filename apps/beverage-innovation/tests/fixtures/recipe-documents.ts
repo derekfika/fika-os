@@ -3,7 +3,7 @@ import type { RecipeDocumentUpload } from "../../lib/import-document";
 
 const first = [
   "Name: Fixture Citrus Cooler", "Type: Mocktail", "Ingredient: 12.5 ml lime juice", "Ingredient: mint leaves",
-  "Method: Stir gently.", "Glassware: Highball", "Allergens: None", "Cost: £4",
+  "Method: Stir gently.", "Glassware: Highball", "By Anne Knight", "Allergens: None", "Cost: £4",
 ];
 const second = [
   "Drink: Fixture Honey Fizz", "Type: Cold drink", "Ingredient: 2 dashes bitters",
@@ -18,13 +18,13 @@ const drawing = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const xmlText = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 // Deterministic ZIP fixture builder. Use real deflate streams and CRCs.
-export function zipFixture(files: Array<[string, string]>) {
+export function zipFixture(files: Array<[string, string | Buffer]>) {
   const local: Buffer[] = [];
   const central: Buffer[] = [];
   let offset = 0;
   for (const [name, text] of files) {
     const filename = Buffer.from(name);
-    const bytes = Buffer.from(text);
+    const bytes = Buffer.isBuffer(text) ? text : Buffer.from(text);
     const packed = deflateRawSync(bytes);
     const checksum = crc32(bytes);
     const header = Buffer.alloc(30);
@@ -75,16 +75,21 @@ export function docxFixture(options: { lines?: string[]; prefix?: string; extra?
   };
 }
 
-export function pptxFixture(external = false): RecipeDocumentUpload {
-  const slide = (lines: string[]) => `<p:sld xmlns:p="${presentation}" xmlns:a="${drawing}"><p:cSld><p:spTree><p:sp><p:txBody>${lines.map(line => `<a:p><a:r><a:t>${xmlText(line)}</a:t></a:r></a:p>`).join("")}</p:txBody></p:sp></p:spTree></p:cSld></p:sld>`;
+export function pptxFixture(external = false, imageOverride?: Buffer, imageTarget = "../media/image1.png", extra: Array<[string, string | Buffer]> = []): RecipeDocumentUpload {
+  const slide = (lines: string[], image?: string) => `<p:sld xmlns:p="${presentation}" xmlns:a="${drawing}" xmlns:r="${officeRelationships}"><p:cSld><p:spTree>${lines.map(line => `<p:sp><p:txBody><a:p><a:r><a:t>${xmlText(line)}</a:t></a:r></a:p></p:txBody></p:sp>`).join("")}${image ? `<p:pic><p:blipFill><a:blip r:embed="${image}"/></p:blipFill></p:pic>` : ""}</p:spTree></p:cSld></p:sld>`;
+  const png = imageOverride || Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/x9sAAAAASUVORK5CYII=", "base64");
+  const externalImage = /^[a-z]+:/i.test(imageTarget);
   return {
     fileName: "fictional-recipes.pptx", mediaType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     bytes: zipFixture([
       ["[Content_Types].xml", `<Types xmlns="${contentTypes}"><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>`],
       ["ppt/slides/slide1.xml", slide(second)],
-      ["ppt/slides/slide2.xml", slide(first)],
+      ["ppt/slides/slide2.xml", slide(first, "rIdImage")],
       ["ppt/presentation.xml", `<p:presentation xmlns:p="${presentation}" xmlns:r="${officeRelationships}"><p:sldIdLst><p:sldId id="257" r:id="rId2"/><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>`],
       ["ppt/_rels/presentation.xml.rels", `<Relationships xmlns="${packageRelationships}"><Relationship Id="rId1" Type="${officeRelationships}/slide" Target="slides/slide1.xml"/><Relationship Id="rId2" Type="${officeRelationships}/slide" ${external ? 'Target="https://example.test/slide.xml" TargetMode="External"' : 'Target="slides/slide2.xml"'}/></Relationships>`],
+      ["ppt/slides/_rels/slide2.xml.rels", `<Relationships xmlns="${packageRelationships}"><Relationship Id="rIdImage" Type="${officeRelationships}/image" Target="${imageTarget}"${externalImage ? ' TargetMode="External"' : ""}/></Relationships>`],
+      ["ppt/media/image1.png", png],
+      ...extra,
     ]),
   };
 }

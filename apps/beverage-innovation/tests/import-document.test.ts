@@ -25,6 +25,33 @@ test("DOCX, reordered PPTX, and text PDF extract multiple fictional recipes with
   }
 });
 
+test("PPTX preview preserves recipe slide provenance and exposes embedded photos as unpersisted review candidates", async () => {
+  const result = await previewRecipeDocument(pptxFixture());
+  assert.deepEqual(result.candidates.map(candidate => [candidate.recipe.name, candidate.sourcePage]), [["Fixture Citrus Cooler", 1], ["Fixture Honey Fizz", 2]]);
+  assert.equal(result.candidates[0].sourceAuthor, "Anne Knight");
+  assert.equal(result.candidates[0].recipe.glassware, "Highball");
+  assert.equal(result.imageCandidates.length, 1);
+  assert.equal(result.imageCandidates[0].mimeType, "image/png");
+  assert.match(result.imageCandidates[0].dataUrl, /^data:image\/png;base64,/);
+  assert.deepEqual(result.imageCandidates[0].references, [{ slideNumber: 1, objectIndex: 1, mediaPartName: "ppt/media/image1.png" }]);
+  assert.match(result.imageCandidates[0].sha256, /^[a-f0-9]{64}$/);
+  const candidate = result.candidates[0];
+  const provenance = await requireDocumentRecipeCandidate(pptxFixture(), { sourceHash: result.sourceHash, candidateIndex: 0, candidateHash: candidate.candidateHash });
+  assert.deepEqual(provenance.candidate, { index: 0, hash: candidate.candidateHash, slideNumber: 1, sourceAuthor: "Anne Knight", imageReferences: [{ sha256: result.imageCandidates[0].sha256, mediaPartName: "ppt/media/image1.png", objectIndex: 1 }] });
+  assert.ok(!JSON.stringify(provenance).includes("data:image"));
+});
+
+test("PPTX external image targets and oversized pixel dimensions are never fetched or previewed", async () => {
+  const external = await previewRecipeDocument(pptxFixture(false, undefined, "https://example.test/photo.png"));
+  assert.equal(external.imageCandidates.length, 0);
+  assert.equal(external.unsupportedImageCount, 1);
+  const oversized = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/x9sAAAAASUVORK5CYII=", "base64");
+  oversized.writeUInt32BE(50_000, 16);
+  const limited = await previewRecipeDocument(pptxFixture(false, oversized));
+  assert.equal(limited.imageCandidates.length, 0);
+  assert.equal(limited.unsupportedImageCount, 1);
+});
+
 test("candidate validation rejects changed original bytes even when the extracted text is identical", async () => {
   const file = docxFixture();
   const result = await previewRecipeDocument(file);
@@ -94,7 +121,7 @@ test("document routes authorise before parsing, bound multipart bodies and requi
   process.env.FIKA_BEVERAGE_LOCAL_AUTH_ACTIONS = "Contribute";
   assert.equal((await preview(documentRequest("preview", file, undefined, { Origin: "https://example.test" }))).status, 403);
   assert.equal((await preview(documentRequest("preview", file, { unexpected: true }))).status, 400);
-  assert.equal((await preview(documentRequest("preview", file, undefined, { "Content-Length": String(9 * 1024 * 1024) }))).status, 413);
+  assert.equal((await preview(documentRequest("preview", file, undefined, { "Content-Length": String(13 * 1024 * 1024) }))).status, 413);
   assert.equal((await preview(documentRequest("preview", { ...file, bytes: Buffer.alloc(MAX_RECIPE_DOCUMENT_BYTES + 1) }))).status, 413);
   const stream = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(MAX_RECIPE_DOCUMENT_BYTES + 200_000)); controller.close(); } });
   const streamRequest = new Request("http://localhost:13617/api/imports/documents/preview", {

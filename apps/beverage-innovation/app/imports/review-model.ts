@@ -4,7 +4,7 @@ import type { BeverageClassification } from "../../lib/domain";
 export type ReviewForm = Omit<ReviewedImportRecipe, "ingredients" | "equipment"> & {
   ingredients: { name: string; amount: string; unit: string }[];
   equipmentText: string;
-  classification: BeverageClassification;
+  classification: BeverageClassification | "";
 };
 
 export type ReviewSource = { kind: "text"; text: string } | { kind: "document"; file: File };
@@ -21,7 +21,7 @@ export const normalizeReviewedName = (name: string) => name.trim().toLocaleLower
 
 export function initialReview(candidate: LocalImportCandidate): ReviewForm {
   const { equipment, ingredients, ...fields } = candidate.recipe;
-  return { ...fields, equipmentText: equipment.join("\n"), classification: "draft_concept", ingredients: ingredients.map(line => ({ name: line.name, amount: line.amount === undefined ? "" : String(line.amount), unit: line.unit || "" })) };
+  return { ...fields, equipmentText: equipment.join("\n"), classification: "", ingredients: ingredients.map(line => ({ name: line.name, amount: line.amount === undefined ? "" : String(line.amount), unit: line.unit || "" })) };
 }
 
 export function reviewCompleteness(form: ReviewForm): string[] {
@@ -39,6 +39,7 @@ export function prepareImport(session: ReviewSession, selection: number, confirm
   const form = session.forms[selection];
   if (!candidate || !form || session.saved.includes(candidate.index)) return { error: "Select an unsaved candidate to review." };
   if (!confirmed) return { error: "Confirm that you have reviewed the selected recipe against its source." };
+  if (!form.classification) return { error: "Choose whether this source is a classic, a FIKA original or a draft concept." };
   const reviewedName = normalizeReviewedName(form.name);
   if (reviewedName !== normalizeReviewedName(candidate.recipe.name) && (!nameCheck || nameCheck.normalizedName !== reviewedName)) return { error: "Check the edited name for a local duplicate before creating a draft." };
   if (form.ingredients.some(line => line.amount.trim() && !/^\d+(?:\.\d{1,3})?$/.test(line.amount.trim()))) return { error: "Use a positive quantity with up to three decimal places, or leave it blank." };
