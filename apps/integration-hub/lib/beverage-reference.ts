@@ -1,4 +1,4 @@
-import { BEVERAGE_AUTHMOD_APP_ID, type BeverageSiteDecision, type BeverageSiteRequest } from "./authmod-core/beverage-admission";
+import { BEVERAGE_AUTHMOD_APP_ID, MAX_BEVERAGE_OPLOC_SCOPE, type BeverageSiteDecision, type BeverageSiteRequest } from "./authmod-core/beverage-admission";
 import type { BeverageReferenceConfig } from "./beverage-reference-config";
 import { decodeBundle } from "./food-data/bundle";
 import { datasetVersion, parseManifest } from "./food-data/manifest";
@@ -37,7 +37,7 @@ export async function collectBeverageFoodObject(stream: AsyncIterable<Uint8Array
 /** One server caller and one independently verified person control every request. */
 export async function handleBeverageReference(request: Request, resource: string, deps: BeverageReferenceDeps) {
   const { config } = deps;
-  if (!config || !["oplocs", "manifest", "ingredients"].includes(resource) || (resource !== "oplocs" && !config.food)) {
+  if (request.method !== "GET" || !config || !["oplocs", "manifest", "ingredients"].includes(resource) || (resource !== "oplocs" && !config.food)) {
     return refuse(404, "BEVERAGE_REFERENCE_DISABLED");
   }
   if (request.headers.has("origin") || request.headers.has("sec-fetch-site")) return refuse(403, "BEVERAGE_REFERENCE_SERVER_REQUIRED");
@@ -56,18 +56,18 @@ export async function handleBeverageReference(request: Request, resource: string
   const oplocIds = query.getAll("oploc");
   const versions = query.getAll("version");
   const ingredients = resource === "ingredients";
-  if (!oplocIds.length || oplocIds.length > 100 || [...query.keys()].some(key => key !== "oploc" && key !== "version") ||
+  if (!oplocIds.length || oplocIds.length > MAX_BEVERAGE_OPLOC_SCOPE || [...query.keys()].some(key => key !== "oploc" && key !== "version") ||
       versions.length !== (ingredients ? 1 : 0)) return refuse(400, "BEVERAGE_REFERENCE_REQUEST_INVALID");
 
   try {
-    const decision = await deps.decide({ action: "View", oplocIds, personOnly: true });
+    const decision = await deps.decide({ action: "View", oplocIds });
     if (!decision.allowed) {
       if (decision.reasonCode === "unauthenticated") return refuse(401, "BEVERAGE_REFERENCE_SESSION_REQUIRED");
       if (decision.reasonCode === "invalid-request") return refuse(400, "BEVERAGE_REFERENCE_REQUEST_INVALID");
       if (decision.reasonCode === "store-unavailable") return refuse(503, "BEVERAGE_REFERENCE_UNAVAILABLE");
       return refuse(403, "BEVERAGE_REFERENCE_DENIED");
     }
-    if (decision.appId !== BEVERAGE_AUTHMOD_APP_ID || decision.action !== "View" || !decision.principalId ||
+    if (decision.appId !== BEVERAGE_AUTHMOD_APP_ID || decision.action !== "View" || !decision.principalId || !decision.matchedGrantIds.length ||
         decision.scope?.kind !== "oploc" || !decision.activeOplocs?.length ||
         decision.scope.ids.length !== decision.activeOplocs.length ||
         !decision.activeOplocs.every((site, index) => site.id === decision.scope?.ids[index]) ||

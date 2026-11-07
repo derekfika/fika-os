@@ -5,9 +5,10 @@ import { GET } from "../app/api/internal/beverage/reference/[resource]/route";
 import { collectBeverageFoodObject, handleBeverageReference, type BeverageReferenceDeps } from "../lib/beverage-reference";
 import { beverageReferenceConfig } from "../lib/beverage-reference-config";
 import {
-  BEVERAGE_AUTHMOD_APP_ID, BEVERAGE_AUTHMOD_NORMAL_ACTIONS, BEVERAGE_AUTHMOD_NORMAL_BUNDLE,
+  BEVERAGE_AUTHMOD_APP_ID, BEVERAGE_AUTHMOD_NORMAL_BUNDLE,
   BEVERAGE_AUTHMOD_NORMAL_RESOURCE, decideBeverageSiteAuthority, type ReadOnlyBeverageAuthority,
 } from "../lib/authmod-core/beverage-admission";
+import { grantAuthority } from "../lib/authmod-core/authority";
 import { assignSite, grantStandardApplicationAccess } from "../lib/authmod-core/grants";
 import { createAuthIdentity } from "../lib/authmod-core/identity";
 import { MemoryAuthModRepository } from "../lib/authmod-core/memory-repository";
@@ -22,6 +23,7 @@ const caller = {
   email_verified: true, iss: "https://accounts.google.com", aud: audience, exp: Math.floor(Date.now() / 1000) + 3600,
 };
 const site = "oploc:fixture-current";
+const otherSite = "oploc:fixture-ungranted";
 const alias = "oploc:fixture-legacy";
 const uid = "fixture:firebase-person";
 const files = defaultFiles();
@@ -43,14 +45,19 @@ async function fixture() {
   const app: ApplicationRegistryEntry = {
     appId: BEVERAGE_AUTHMOD_APP_ID, displayName: "Fixture Beverage", enabled: true, launchVisible: false, scopeModel: "oploc",
     standardBundleId: BEVERAGE_AUTHMOD_NORMAL_BUNDLE, standardResource: BEVERAGE_AUTHMOD_NORMAL_RESOURCE,
-    standardActions: [...BEVERAGE_AUTHMOD_NORMAL_ACTIONS], version: 1, provenance: "migration",
+    standardActions: ["View"], version: 1, provenance: "migration",
     createdAt: "2026-11-07T00:00:00.000Z", updatedAt: "2026-11-07T00:00:00.000Z",
   };
   const actor: AuthPrincipal = { id: "fixture:authority-admin", type: "interactive", displayName: "Fixture admin" };
-  const repo = new MemoryAuthModRepository({ applications: [app], oplocs: [{ id: site, label: "Fixture approved name", active: true }] });
+  const repo = new MemoryAuthModRepository({ applications: [app], oplocs: [
+    { id: site, label: "Fixture approved name", active: true }, { id: otherSite, label: "Fixture ungranted site", active: true },
+  ] });
   const identity = await createAuthIdentity(repo, { actor, displayName: "Fixture reviewer", externalProvider: "firebase", externalUid: uid });
   await grantStandardApplicationAccess(repo, { actor, identityId: identity.id, appId: app.appId });
-  await assignSite(repo, { actor, identityId: identity.id, oplocId: site });
+  const grant = await grantAuthority(repo, {
+    actor, subjectId: identity.id, subjectType: "interactive", appId: app.appId, resource: app.standardResource,
+    action: "View", scope: { kind: "oploc", ids: [site] }, reason: "Fictional direct Beverage View grant.",
+  });
   repo.findIdentitiesByEmail = async () => { throw new Error("A reference request must not match by email."); };
   const authority: ReadOnlyBeverageAuthority = {
     findIdentitiesByExternal: (...args) => repo.findIdentitiesByExternal(...args),
@@ -59,9 +66,8 @@ async function fixture() {
     async readCurrentOplocRedirects() { return { [alias]: site }; },
     async readCurrentAccessPackage(id) {
       return {
-        identity: (await repo.getIdentity(id))!, securityVersion: 1,
-        appAssignments: await repo.listAppAssignments(id), siteAssignments: await repo.listSiteAssignments(id),
-        authorityGrants: await repo.listAuthorityGrants(id), delegations: [], custodians: [],
+        identity: (await repo.getIdentity(id))!, appAssignments: await repo.listAppAssignments(id),
+        authorityGrants: await repo.listAuthorityGrants(id),
       };
     },
   };
@@ -88,7 +94,7 @@ async function fixture() {
       return name === "manifest.json" ? Buffer.from(JSON.stringify(state.manifest)) : files.ingredients.gzip;
     },
   };
-  return { deps, repo, identity, reads, state };
+  return { deps, repo, identity, grant, actor, reads, state };
 }
 
 test("Beverage reference is disabled by default and rejects wrong environment or caller binding", async t => {
@@ -110,6 +116,7 @@ test("Beverage reference is disabled by default and rejects wrong environment or
   const { deps, reads, state } = await fixture();
   assert.equal((await handleBeverageReference(request(undefined, {}), "oplocs", deps)).status, 401);
   assert.equal((await handleBeverageReference(request(undefined, { origin: "https://example.test" }), "oplocs", deps)).status, 403);
+  assert.equal((await handleBeverageReference(new Request(request(), { method: "HEAD" }), "oplocs", deps)).status, 404);
   for (const claim of [{ ...caller, aud: "other" }, { ...caller, sub: "other" }, { ...caller, email_verified: false }, { ...caller, exp: 1 }]) {
     assert.equal((await handleBeverageReference(request(), "manifest", { ...deps, verifyCaller: async () => claim })).status, 401);
   }
@@ -118,8 +125,25 @@ test("Beverage reference is disabled by default and rejects wrong environment or
   assert.deepEqual(reads, []);
 });
 
+test("OPLOC-only configuration leaves both Food Data resources disabled before opening authority or storage", async () => {
+  const { deps, reads, state } = await fixture();
+  const oplocOnly = beverageReferenceConfig({
+    ...fixtureEnv, FIKA_BEVERAGE_FOOD_DATA_BUCKET: undefined, FIKA_BEVERAGE_FOOD_DATA_VERSION: undefined,
+  });
+  assert.ok(oplocOnly);
+  assert.equal(oplocOnly.food, undefined);
+  const enabled = { ...deps, config: oplocOnly };
+  assert.equal((await handleBeverageReference(request(), "manifest", enabled)).status, 404);
+  assert.equal((await handleBeverageReference(request(`oploc=${site}&version=${version}`), "ingredients", enabled)).status, 404);
+  assert.equal(state.snapshots, 0);
+  assert.equal((await handleBeverageReference(request(), "oplocs", enabled)).status, 200);
+  assert.equal(state.snapshots, 1);
+  assert.deepEqual(reads, []);
+});
+
 test("verified service identity cannot replace a current, explicitly granted person or active canonical OPLOC", async () => {
-  const { deps, repo, identity, reads, state } = await fixture();
+  const { deps, repo, identity, grant, actor, reads, state } = await fixture();
+  await assignSite(repo, { actor, identityId: identity.id, oplocId: site });
   const audits = repo.audits.length;
   state.cookie = "";
   assert.equal((await handleBeverageReference(request(), "manifest", deps)).status, 401);
@@ -130,15 +154,15 @@ test("verified service identity cannot replace a current, explicitly granted per
   state.uid = "fixture:unbound";
   assert.equal((await handleBeverageReference(request(), "manifest", deps)).status, 401);
   state.uid = uid;
-  const grant = [...repo.grants.values()].find(value => value.action === "View")!;
   repo.grants.set(grant.id, { ...grant, status: "revoked" });
   assert.equal((await handleBeverageReference(request(), "manifest", deps)).status, 403);
+  assert.equal((await handleBeverageReference(request(), "oplocs", deps)).status, 403);
   repo.grants.set(grant.id, grant);
   repo.identities.set(identity.id, { ...identity, identityKind: "operational" });
   assert.equal((await handleBeverageReference(request(), "manifest", deps)).status, 403);
   repo.identities.set(identity.id, identity);
   assert.equal((await handleBeverageReference(request(""), "oplocs", deps)).status, 400);
-  assert.equal((await handleBeverageReference(request("oploc=oploc:unassigned"), "oplocs", deps)).status, 403);
+  assert.equal((await handleBeverageReference(request(`oploc=${encodeURIComponent(otherSite)}`), "oplocs", deps)).status, 403);
   const allowed = await handleBeverageReference(request(), "oplocs", deps);
   assert.deepEqual(await allowed.json(), { readOnly: true, oplocs: [{ id: site, label: "Fixture approved name" }] });
   repo.oplocs.delete(site);

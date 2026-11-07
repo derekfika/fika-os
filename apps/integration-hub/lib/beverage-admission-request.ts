@@ -23,7 +23,10 @@ export function decideBeverageRequestAuthority(
         findIdentitiesByExternal: (provider, uid, limit) => repository.findIdentitiesByExternal(provider, uid, limit),
         getApplication: appId => repository.getApplication(appId),
         getActiveOploc: oplocId => repository.getActiveOploc(oplocId),
-        readCurrentAccessPackage: identityId => repository.getRuntimeAccessPackage(identityId),
+        async readCurrentAccessPackage(identityId) {
+          const { identity, appAssignments, authorityGrants } = await repository.getRuntimeAccessPackage(identityId);
+          return { identity, appAssignments, authorityGrants };
+        },
         readCurrentOplocRedirects: () => repository.listOplocRedirects(),
       });
     }, { readOnly: true }),

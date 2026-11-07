@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BEVERAGE_AUTHMOD_APP_ID, BEVERAGE_AUTHMOD_APPROVAL_RESOURCE, BEVERAGE_AUTHMOD_NORMAL_ACTIONS,
-  BEVERAGE_AUTHMOD_NORMAL_BUNDLE, BEVERAGE_AUTHMOD_NORMAL_RESOURCE, decideBeverageSiteAuthority,
+  BEVERAGE_AUTHMOD_NORMAL_BUNDLE, BEVERAGE_AUTHMOD_NORMAL_RESOURCE, MAX_BEVERAGE_OPLOC_SCOPE, decideBeverageSiteAuthority,
+  type ReadOnlyBeverageAuthority,
 } from "../lib/authmod-core/beverage-admission";
-import { grantAuthority } from "../lib/authmod-core/authority";
+import { createDelegation, grantAuthority } from "../lib/authmod-core/authority";
 import { evaluateAuthority, resolveUserAccess } from "../lib/authmod-core/evaluator";
 import { assignSite, grantStandardApplicationAccess } from "../lib/authmod-core/grants";
 import { createAuthIdentity, setFullAccess } from "../lib/authmod-core/identity";
 import { MemoryAuthModRepository } from "../lib/authmod-core/memory-repository";
 import { V1_APPLICATIONS, type ApplicationRegistryEntry, type AuthModAction, type AuthPrincipal } from "../lib/authmod-core/model";
-import type { AuthmodRuntimeAccessPackage } from "../lib/authmod-core/repository";
 
 const actor: AuthPrincipal = { type: "interactive", id: "fixture:authmod-operator", displayName: "Fixture operator" };
 const uid = "fixture:beverage-firebase-uid";
@@ -27,11 +27,10 @@ const app: ApplicationRegistryEntry = {
 class FixtureRepository extends MemoryAuthModRepository {
   redirects: Record<string, string> = { [legacySite]: site };
   async readCurrentOplocRedirects() { return this.redirects; }
-  async readCurrentAccessPackage(identityId: string): Promise<AuthmodRuntimeAccessPackage> {
+  async readCurrentAccessPackage(identityId: string): ReturnType<ReadOnlyBeverageAuthority["readCurrentAccessPackage"]> {
     return {
       identity: (await this.getIdentity(identityId))!, appAssignments: await this.listAppAssignments(identityId),
-      siteAssignments: await this.listSiteAssignments(identityId), authorityGrants: await this.listAuthorityGrants(identityId),
-      delegations: [], custodians: [], securityVersion: 1,
+      authorityGrants: await this.listAuthorityGrants(identityId),
     };
   }
   override async findIdentitiesByEmail(): Promise<never> { throw new Error("A decision must never look up email."); }
@@ -55,11 +54,12 @@ async function fixture({ registered = true, bound = true } = {}) {
     decideBeverageSiteAuthority(read => read(repository), verify, { action, oplocIds, sessionCookie });
   const grantNormal = () => grantStandardApplicationAccess(repository, { identityId: identity.id, appId: app.appId, actor });
   const grantSite = (oplocId = site) => assignSite(repository, { identityId: identity.id, oplocId, actor, reason: "Fictional assignment." });
-  const grantApproval = (ids: string[] = [site]) => grantAuthority(repository, {
-    subjectId: identity.id, subjectType: "interactive", actor, appId: app.appId, resource: BEVERAGE_AUTHMOD_APPROVAL_RESOURCE,
-    action: "Approve", scope: { kind: "oploc", ids }, reason: "Fictional approval grant.",
+  const grantScoped = (action: AuthModAction = "View", ids: string[] = [site]) => grantAuthority(repository, {
+    subjectId: identity.id, subjectType: "interactive", actor, appId: app.appId,
+    resource: action === "Approve" ? BEVERAGE_AUTHMOD_APPROVAL_RESOURCE : BEVERAGE_AUTHMOD_NORMAL_RESOURCE,
+    action, scope: { kind: "oploc", ids }, reason: "Fictional Beverage site entitlement.",
   });
-  return { repository, identity, decide, grantNormal, grantSite, grantApproval };
+  return { repository, identity, decide, grantNormal, grantSite, grantScoped };
 }
 
 test("the verified, unique existing Firebase binding is required and decisions never write", async () => {
@@ -73,7 +73,7 @@ test("the verified, unique existing Firebase binding is required and decisions n
 
   const bound = await fixture();
   await bound.grantNormal();
-  await bound.grantSite();
+  await bound.grantScoped();
   const auditBeforeRead = bound.repository.audits.length;
   assert.equal((await bound.decide("View")).allowed, true);
   assert.equal(bound.repository.audits.length, auditBeforeRead);
@@ -84,50 +84,56 @@ test("the verified, unique existing Firebase binding is required and decisions n
   assert.equal((await bound.decide("View")).reasonCode, "identity-inactive");
 });
 
-test("registration and explicit app and site assignments are required even with Full Access", async () => {
+test("generic sites, organisation grants and Full Access cannot replace an explicit Beverage entitlement", async () => {
   const unregistered = await fixture({ registered: false });
   assert.equal((await unregistered.decide("View")).reasonCode, "app-disabled");
 
-  const { repository, identity, decide, grantNormal, grantSite } = await fixture();
+  const { repository, identity, decide, grantNormal, grantSite, grantScoped } = await fixture();
+  await grantSite();
   await setFullAccess(repository, { identityId: identity.id, fullAccess: true, actor, reason: "Fictional legacy Full Access." });
   assert.equal((await decide("View")).reasonCode, "app-not-assigned");
   await grantNormal();
-  assert.equal((await decide("View")).reasonCode, "oploc-not-assigned");
-  await grantSite();
+  assert.equal((await decide("View")).reasonCode, "authority-not-granted");
+  await grantScoped();
   assert.equal((await decide("View")).allowed, true);
-  assert.equal((await decide("View", [site, otherSite])).reasonCode, "oploc-not-assigned");
+  assert.equal((await decide("View", [site, otherSite])).reasonCode, "authority-not-granted");
   for (const registry of [{ ...app, enabled: false }, { ...app, launchVisible: true }, { ...app, standardActions: [...app.standardActions, "Approve" as const] }]) {
     repository.applications.set(app.appId, registry);
     assert.equal((await decide("View")).reasonCode, "app-disabled");
   }
 });
 
-test("site scope is bounded, canonical and active, including historical assignments and grants", async () => {
-  const { repository, decide, grantNormal, grantSite, grantApproval } = await fixture();
+test("only requested aliases resolve; stale entitlement IDs, absent sites and inactive sites deny", async () => {
+  const { repository, decide, grantNormal, grantScoped } = await fixture();
   await grantNormal();
-  const assignment = await grantSite();
-  repository.siteAssignments.set(assignment.id, { ...assignment, oplocId: legacySite });
-  await grantApproval([legacySite]);
+  await assert.rejects(grantScoped("View", [legacySite]), { code: "AUTHMOD_BEVERAGE_SCOPE_INVALID" });
+  const grant = await grantScoped();
   assert.equal((await decide("View", [])).reasonCode, "invalid-request");
   assert.equal((await decide("View", Array(101).fill(site))).reasonCode, "invalid-request");
   assert.equal((await decide("View", [" "])).reasonCode, "invalid-request");
   assert.equal((await decide("View", ["Fixture A"])).reasonCode, "oploc-not-assigned");
-  assert.deepEqual((await decide("Approve", [legacySite, site])).scope, { kind: "oploc", ids: [site] });
-  assert.equal((await decide("Approve")).allowed, true);
+  const aliasDecision = await decide("View", [legacySite, site]);
+  assert.equal(aliasDecision.allowed, true);
+  assert.deepEqual(aliasDecision.scope, { kind: "oploc", ids: [site] });
+  repository.grants.set(grant.id, { ...grant, scope: { kind: "oploc", ids: [legacySite] } });
+  assert.equal((await decide("View", [legacySite])).reasonCode, "authority-not-granted");
+  repository.grants.set(grant.id, grant);
   repository.redirects = { [legacySite]: site, [site]: legacySite };
-  assert.equal((await decide("Approve", [legacySite])).reasonCode, "store-unavailable");
+  assert.equal((await decide("View", [legacySite])).reasonCode, "store-unavailable");
   repository.redirects = { [legacySite]: site };
+  repository.oplocs.set(site, { id: site, active: false, label: "Fixture A" });
+  assert.equal((await decide("View", [legacySite])).reasonCode, "oploc-not-assigned");
   repository.oplocs.delete(site);
-  assert.equal((await decide("Approve", [legacySite])).reasonCode, "oploc-not-assigned");
+  assert.equal((await decide("View", [legacySite])).reasonCode, "oploc-not-assigned");
 });
 
 test("actions are exact and approval requires separate, direct, site-scoped authority", async () => {
-  const { repository, decide, grantNormal, grantSite, grantApproval } = await fixture();
-  const { grants } = await grantNormal();
-  await grantSite();
-  await grantSite(otherSite);
+  const { repository, decide, grantNormal, grantScoped } = await fixture();
+  await grantNormal();
+  await grantScoped();
+  const contribute = await grantScoped("Contribute", [site, otherSite]);
+  await grantScoped("Manage");
   assert.equal((await decide("Contribute", [site, otherSite])).allowed, true);
-  const contribute = grants.find(grant => grant.action === "Contribute")!;
   repository.grants.set(contribute.id, { ...contribute, status: "revoked" });
   assert.equal((await decide("View")).allowed, true);
   assert.equal((await decide("Manage")).allowed, true);
@@ -135,7 +141,7 @@ test("actions are exact and approval requires separate, direct, site-scoped auth
   assert.equal((await decide("Approve")).reasonCode, "authority-not-granted");
   assert.equal((await decide("Publish")).reasonCode, "invalid-request");
   assert.equal((await decide("Administer")).reasonCode, "invalid-request");
-  const approval = await grantApproval();
+  const approval = await grantScoped("Approve");
   assert.deepEqual((await decide("Approve")).matchedGrantIds, [approval.id]);
   assert.equal((await decide("Approve", [site, otherSite])).reasonCode, "authority-not-granted");
   for (const invalid of [
@@ -152,14 +158,63 @@ test("actions are exact and approval requires separate, direct, site-scoped auth
 });
 
 test("unavailable and inconsistent authority packages fail closed", async () => {
-  const { repository, identity, decide, grantNormal, grantSite } = await fixture();
+  const { repository, identity, decide, grantNormal, grantScoped } = await fixture();
   await grantNormal();
-  await grantSite();
+  await grantScoped();
   const access = await repository.readCurrentAccessPackage(identity.id);
   repository.readCurrentAccessPackage = async () => ({ ...access, identity: { ...identity, version: identity.version - 1 } });
   assert.equal((await decide("View")).reasonCode, "store-unavailable");
   repository.readCurrentAccessPackage = async () => { throw new Error("Current package missing."); };
   assert.equal((await decide("View")).reasonCode, "store-unavailable");
+});
+
+test("a View-only app and direct Beverage grant cannot add sites or authority in another app", async () => {
+  const { repository, identity, decide, grantNormal, grantScoped } = await fixture();
+  repository.applications.set(app.appId, { ...app, standardActions: ["View"] });
+  await grantStandardApplicationAccess(repository, { identityId: identity.id, appId: "menu-planning", actor });
+  const principal: AuthPrincipal = { type: "interactive", id: identity.id, displayName: identity.displayName };
+  const menu = () => resolveUserAccess(repository, { principal, appId: "menu-planning", oplocId: site });
+  const before = await menu();
+  assert.equal(before.allowed, false);
+  const { grants } = await grantNormal();
+  assert.deepEqual(grants.map(grant => grant.action), ["View"]);
+  const view = await grantScoped();
+  assert.deepEqual((await decide("View")).matchedGrantIds, [view.id]);
+  for (const action of ["Contribute", "Manage", "Approve"] as const) {
+    assert.equal((await decide(action)).reasonCode, "authority-not-granted");
+    await assert.rejects(grantScoped(action), { code: "AUTHMOD_BEVERAGE_SCOPE_INVALID" });
+  }
+  assert.deepEqual(await menu(), before);
+  assert.deepEqual(await repository.listSiteAssignments(identity.id), []);
+});
+
+test("the audited grant accepts one full bounded inventory and rejects invalid or delegated scopes before writing", async () => {
+  const { repository, identity, decide, grantNormal, grantScoped } = await fixture();
+  const denied = { code: "AUTHMOD_BEVERAGE_SCOPE_INVALID" };
+  await assert.rejects(grantScoped(), denied);
+  await grantNormal();
+  const ids = Array.from({ length: MAX_BEVERAGE_OPLOC_SCOPE }, (_, index) => `oploc:fixture-${String(index).padStart(3, "0")}-${"x".repeat(130)}`);
+  for (const id of ids) repository.oplocs.set(id, { id, label: "Inventory fixture", active: true });
+  const auditCount = repository.audits.length;
+  for (const scope of [[], [site, site], [site, legacySite], [...ids, site]]) await assert.rejects(grantScoped("View", scope), denied);
+  assert.equal(repository.audits.length, auditCount);
+  const grant = await grantScoped("View", [...ids].reverse());
+  assert.match(grant.id, /^authority:beverage:[a-f0-9]{64}$/);
+  assert.deepEqual(grant.scope, { kind: "oploc", ids });
+  assert.equal(repository.audits.length, auditCount + 1);
+  const audit = repository.audits.at(-1);
+  assert.equal(audit?.targetId, grant.id);
+  assert.equal(audit?.actorPrincipalId, actor.id);
+  assert.deepEqual(audit?.scope, grant.scope);
+  assert.equal((await decide("View", ids)).allowed, true);
+  assert.equal((await decide("View", [otherSite])).allowed, false);
+  assert.equal((await grantScoped("View", ids)).id, grant.id);
+  assert.deepEqual(await repository.listSiteAssignments(identity.id), []);
+  await assert.rejects(createDelegation(repository, {
+    delegatorId: identity.id, delegateId: "fixture:delegate", sourceGrantId: grant.id, action: "View",
+    scope: { kind: "oploc", ids: [ids[0]] }, effectiveFrom: "2026-11-07T00:00:00Z", effectiveTo: "2026-11-08T00:00:00Z",
+    actor, reason: "Fictional prohibited delegation.",
+  }), { code: "AUTHMOD_DELEGATION_SOURCE_INVALID" });
 });
 
 test("generic Hub access keeps Beverage unavailable and preserves existing Full Access", async () => {
