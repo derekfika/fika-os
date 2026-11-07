@@ -19,6 +19,7 @@
 .ir-heading{margin-bottom:24px}.ir-heading p{margin-top:8px;font-size:16px}
 .ir-card{background:var(--fika-surface-card);border:1px solid var(--fika-border-default);border-radius:var(--radius-md);padding:20px}
 .ir-card p{margin-top:6px}.ir-source{display:grid;gap:16px}
+.ir-source-choice{display:flex;gap:20px;flex-wrap:wrap;margin:0;padding:0;border:0}.ir-source-choice legend{font-weight:700;margin-bottom:4px}.import-review .ir-source-choice label:not(.ir-candidate):not(.ir-confirm){display:flex;align-items:center;gap:8px;min-height:44px}.ir-source-choice input{width:18px;height:18px;accent-color:var(--fika-action-primary)}
 .import-review label{font-weight:600}
 .import-review label:not(.ir-candidate):not(.ir-confirm){display:grid;gap:6px;min-width:0}
 .import-review :is(input:not([type=radio]):not([type=checkbox]),select,textarea){display:block;width:100%;min-width:0;min-height:44px;border:1px solid var(--fika-border-default);border-radius:var(--radius-sm);padding:10px 12px;background:var(--fika-surface-card);color:var(--fika-text-primary)}

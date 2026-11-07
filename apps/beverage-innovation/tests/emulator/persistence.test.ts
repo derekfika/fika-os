@@ -115,7 +115,7 @@ test("actual import routes preview without writes and atomically commit the edit
   const key = `emulator-reviewed-import:${randomUUID()}`;
   const forms = result.candidates.map(initialReview);
   forms[1] = { ...forms[1], ...reviewedCandidate, ingredients: [{ name: "Mint sprig", amount: "1", unit: "each" }, { name: "Soda water", amount: "", unit: "" }], equipmentText: "Jigger\nSpoon" };
-  const prepared = prepareImport({ text, preview: result, forms, saved: [] }, 1, true, key, nameCheck);
+  const prepared = prepareImport({ source: { kind: "text", text }, preview: result, forms, saved: [] }, 1, true, key, nameCheck);
   assert.ok(prepared.pending);
   const body = JSON.parse(prepared.pending.body);
   const [firstResponse, replayResponse] = await Promise.all([
@@ -179,19 +179,24 @@ test("document routes preview all formats and commit one byte-bound draft and au
   assert.deepEqual(await counts(), before);
   assert.ok(preview);
   const candidate = preview.candidates[1];
-  const review = {
-    sourceHash: preview.sourceHash, candidateIndex: candidate.index, candidateHash: candidate.candidateHash,
-    classification: "draft_concept", reviewed: true,
-    reviewedCandidate: { ...candidate.recipe, name: "Fictional reviewed document drink", method: "Stir and serve." },
-  };
   const key = `fixture-document-commit:${randomUUID()}`;
+  const original = new File([new Uint8Array(file.bytes)], file.fileName, { type: file.mediaType });
+  const forms = preview.candidates.map(initialReview);
+  forms[1] = { ...forms[1], name: "Fictional reviewed document drink", method: "Stir and serve." };
+  const prepared = prepareImport({ source: { kind: "document", file: original }, preview, forms, saved: [] }, 1, true, key, { normalizedName: "fictional reviewed document drink", duplicate: false });
+  assert.ok(prepared.pending);
+  assert.ok(prepared.pending.source.kind === "document");
+  const held = prepared.pending.source.file;
+  const uiUpload = { bytes: Buffer.from(await held.arrayBuffer()), fileName: held.name, mediaType: held.type };
+  const review = JSON.parse(prepared.pending.body);
+  assert.equal("text" in review, false);
   const headers = { "Idempotency-Key": key };
   const mismatched = await commitDocument(documentRequest("commit", docxFixture({ extra: [["docProps/unselected.xml", "different original bytes"]] }), review, headers));
   assert.equal(mismatched.status, 409);
   assert.deepEqual(await counts(), before);
   const [response, repeated] = await Promise.all([
-    commitDocument(documentRequest("commit", file, review, headers)),
-    commitDocument(documentRequest("commit", file, review, headers)),
+    commitDocument(documentRequest("commit", uiUpload, review, headers)),
+    commitDocument(documentRequest("commit", uiUpload, review, headers)),
   ]);
   assert.equal(response.status, 201);
   assert.equal(repeated.status, 201);
@@ -201,13 +206,18 @@ test("document routes preview all formats and commit one byte-bound draft and au
   assert.equal(record.versions[0].method, review.reviewedCandidate.method);
   assert.equal(record.versions[0].costing?.costStatus, "incomplete");
   assert.equal(record.versions[0].allergenStatus, "awaiting_canonical_source");
-  assert.deepEqual((await fetchBeverage(record.id))?.sourceEvidence, {
+  const persisted = await fetchBeverage(record.id);
+  assert.deepEqual(persisted?.sourceEvidence, {
     fileName: file.fileName, importedAt: record.createdAt, sourceKey: preview.sourceHash,
     candidate: { index: candidate.index, hash: candidate.candidateHash }, document: preview.document,
   });
   assert.deepEqual(await counts(), before.map(value => value + 1));
   const audit = await listBeverageAudit(record.id);
   assert.equal(audit.length, 1);
+  const storedEvidence = JSON.stringify({ persisted, audit });
+  assert.ok(!storedEvidence.includes(file.bytes.toString("base64")));
+  assert.ok(!storedEvidence.includes("Allergens: None"));
+  assert.ok(!storedEvidence.includes("Cost: £4"));
   assert.equal(audit[0].summary.sourceHash, preview.sourceHash);
   assert.equal(audit[0].summary.textHash, preview.document.textHash);
   assert.equal(audit[0].summary.sourceFormat, "docx");
