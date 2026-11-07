@@ -50,14 +50,14 @@ test('custom domain certificate operations remain evidenced but do not masquerad
 test('failed initial Ad-Hoc release can be abandoned only with exact terminal evidence and empty production traffic', async()=>{
  const t=target('adhoc','prod'), sourceSha='a'.repeat(40), releaseId='initial-123', started='2026-11-03T06:00:00Z', finished='2026-11-03T06:01:00Z';
  const plan={...t,sourceSha,scopeHash:'candidate',approval:{id:'owner-authorized'}};
- const journal={releaseId,plan,before:null,observedBefore:{sourceSha:null,rollout:null,state:'EMPTY',percent:0},previousGoodRecord:null,firstRelease:true,submissionStartedAt:started,submissionFinishedAt:finished};
+ const journal={releaseId,plan,before:null,observedBefore:{sourceSha:null,rollout:null,state:'EMPTY',percent:0},previousGoodRecord:null,firstRelease:true,firstReleaseBaselineRecord:'d'.repeat(40),submissionStartedAt:started,submissionFinishedAt:finished};
  const pointer={commit:'c'.repeat(40),record:{schema:'fika.release.v1',...plan,kind:'intent',state:'PENDING',releaseId,previousGood:null,previousGoodRecord:null}};
  const build={name:`${t.backend}/builds/build-failed`,state:'FAILED',sourceSha,createTime:'2026-11-03T06:00:10Z',reconciling:false};
  const rollout={name:`${t.backend}/rollouts/build-failed`,build:build.name,state:'FAILED',createTime:build.createTime,reconciling:false};
  const snapshot={backend:{name:backendPath(t),environment:'production',rootDirectory:'/apps/ad-hoc-production',repository:'projects/123/locations/europe-west4/gitRepositoryLinks/derekfika-fika-os',reconciling:false},builds:[build],rollouts:[rollout],operations:[],traffic:{current:[],target:[],reconciling:false,autoDisabled:true},current:{sourceSha:null,rollout:null,state:'EMPTY',percent:0}};
  assert.deepEqual(assertRecoveryEvidence(pointer.record,journal,snapshot,'build-failed').firstReleaseEmpty,true);
  const calls=[];const io={inspect:async()=>structuredClone(snapshot),smoke:async()=>{throw Error('no serving smoke for empty backend')},scopeHash:async()=> 'candidate',latest:async()=>pointer,archive:async()=>calls.push('archive'),append:async record=>{calls.push(record);return 'e'.repeat(40)},finish:async()=>calls.push('finish')};
- const out=await reconcileIntent({t,pointer,journal,rolloutId:'build-failed',resolution:'abandon',reason:'Firebase confirmed failed initial rollout',operator:{actor:'owner'}},io);
+  const out=await reconcileIntent({t,pointer,journal,rolloutId:'build-failed',resolution:'abandon',reason:'Firebase confirmed failed initial rollout',operator:{actor:'owner',sourceSha}},io);
  assert.equal(out.record.kind,'abandoned');assert.equal(out.record.previousGoodRecord,null);assert.equal(out.record.recovery.noPreviousRelease,true);assert.equal(out.record.state,'FAILED');assert.deepEqual(calls.map(x=>typeof x==='string'?x:x.kind),['archive','abandoned','finish']);
  snapshot.traffic.current=[{build:`${t.backend}/builds/build-failed`,percent:100}];
  assert.throws(()=>assertRecoveryEvidence(pointer.record,journal,snapshot,'build-failed'),/not empty and quiescent/);
@@ -73,7 +73,7 @@ test('interrupted first-release submission with no rollout is reconciled only wi
  for(const badAudit of [{readable:false,events:[]},{readable:true,events:[{method:'CreateRollout'}]}])assert.throws(()=>assertRecoveryEvidence(pointer.record,journal,snapshot,'none',badAudit),/Audit Logs/);
  const withUnknownBuild=structuredClone(snapshot);withUnknownBuild.builds.push({name:'fika-os-prod-adhoc/builds/unknown',state:'FAILED',createTime:'not-a-time'});assert.throws(()=>assertRecoveryEvidence(pointer.record,journal,withUnknownBuild,'none',audit),/may have reached Firebase/);
  const calls=[],io={inspect:async()=>structuredClone(snapshot),smoke:async()=>{throw Error('no serving smoke')},scopeHash:async()=> 'candidate',latest:async()=>pointer,archive:async()=>calls.push('archive'),append:async record=>{calls.push(record);return 'e'.repeat(40)},finish:async()=>calls.push('finish')};
- const out=await reconcileIntent({t,pointer,journal,rolloutId:'none',resolution:'abandon',reason:'Returned submitter and audit confirm no Firebase rollout',operator:{actor:'owner'},audit},io);
+  const out=await reconcileIntent({t,pointer,journal,rolloutId:'none',resolution:'abandon',reason:'Returned submitter and audit confirm no Firebase rollout',operator:{actor:'owner',sourceSha},audit},io);
  assert.equal(out.record.kind,'abandoned');assert.equal(out.record.rollout,null);assert.equal(out.record.recovery.noRolloutSubmitted,true);assert.equal(out.record.recovery.auditHash.length,64);
 });
 
@@ -101,11 +101,12 @@ function fixture() {
  const rollout={name:`${t.backend}/rollouts/build-new`,build:build.name,state:'FAILED',createTime:build.createTime,reconciling:false};
  const snapshot={builds:[build],rollouts:[rollout,{name:`${t.backend}/rollouts/build-old`,build:`${t.backend}/builds/build-old`,state:'SUCCEEDED'}],operations:[],traffic:{current:[{build:`${t.backend}/builds/build-old`,percent:100}],target:[],reconciling:false,autoDisabled:true},current:structuredClone(before)};
  const calls=[],smokeSources=[];const io={inspect:async()=>structuredClone(snapshot),smoke:async sourceSha=>{smokeSources.push(sourceSha);return {ok:true,status:200};},latest:async()=>pointer,scopeHash:async()=> 'scope',archive:async j=>calls.push(['archive',structuredClone(j)]),append:async(r,p)=>{calls.push(['append',r,p]);return 'e'.repeat(40);},finish:async j=>calls.push(['finish',j])};
- return {input:{t,pointer,journal,rolloutId:'build-new',resolution:'abandon',reason:'Confirmed failed build; previous release still serves',operator:{actor:'writer'}},snapshot,io,calls,smokeSources};
+ return {input:{t,pointer,journal,rolloutId:'build-new',resolution:'abandon',reason:'Confirmed failed build; previous release still serves',operator:{actor:'writer',sourceSha}},snapshot,io,calls,smokeSources};
 }
 test('failed terminal intent is abandoned with original journal and rollback evidence preserved before resolution',async()=>{
  const f=fixture();const original=structuredClone(f.input.journal);const result=await reconcileIntent(f.input,f.io);
  assert.equal(result.record.kind,'abandoned');assert.equal(result.record.previousGoodRecord,original.previousGoodRecord);
+ assert.equal(result.record.rollout,original.before.rollout);assert.equal(result.record.recovery.rollout,'build-new');
  assert.deepEqual(f.calls.map(x=>x[0]),['archive','append','finish']);assert.deepEqual(f.smokeSources,[original.before.sourceSha]);assert.deepEqual(f.calls[0][1],original);assert.deepEqual(f.input.journal,original);assert.equal(f.calls[1][2],f.input.pointer.commit);assert.equal(result.record.sourceSha,original.before.sourceSha);
 });
 test('failed ledger CAS keeps archived journal and never reports the intent resolved',async()=>{
@@ -152,7 +153,7 @@ test('unhealthy exact-source first production rollout cannot complete but can be
  const writes=[],io={inspect:async()=>structuredClone(snapshot),smoke:async sha=>({ok:false,status:503,reason:sha===sourceSha?'adhoc_auth_gate_not_fail_closed':'wrong_source'}),scopeHash:async()=>plan.scopeHash,latest:async()=>pointer,archive:async original=>writes.push(['archive',original]),append:async record=>{writes.push(['append',record]);return 'e'.repeat(40)},finish:async record=>writes.push(['finish',record])};
  await assert.rejects(reconcileIntent({t,pointer,journal,rolloutId:'build-first',resolution:'complete',reason:'Health probe is failing',operator:{actor:'owner'}},io),/Cannot complete without healthy exact-source serving evidence/);
  assert.equal(writes.length,0,'unhealthy production evidence cannot be marked complete');
- const out=await reconcileIntent({t,pointer,journal,rolloutId:'build-first',resolution:'abandon',reason:'First rollout serves but auth health probe fails',operator:{actor:'owner'}},io);
+  const out=await reconcileIntent({t,pointer,journal,rolloutId:'build-first',resolution:'abandon',reason:'First rollout serves but auth health probe fails',operator:{actor:'owner',sourceSha}},io);
  assert.equal(out.record.kind,'abandoned');assert.equal(out.record.sourceSha,sourceSha);assert.equal(out.record.rollout,'build-first');assert.equal(out.record.state,'SUCCEEDED');assert.equal(out.record.percent,100);assert.equal(out.record.previousGood,null);assert.equal(out.record.previousGoodRecord,null);assert.equal(out.record.firstReleaseBaselineRecord,journal.firstReleaseBaselineRecord);assert.equal(out.record.smoke.ok,false);assert.equal(out.record.recovery.firstRelease,true);assert.equal(out.record.recovery.noPreviousRelease,true);assert.equal(out.record.recovery.evidenceHash.length,64);assert.equal(out.record.recovery.journalHash.length,64);
  assert.deepEqual(writes.map(x=>x[0]),['archive','append','finish']);assert.deepEqual(writes[0][1],journal);assert.equal(writes[1][1].rollout,'build-first');assert.equal(writes[2][1].state,'abandoned');
 });

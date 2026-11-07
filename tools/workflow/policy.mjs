@@ -59,8 +59,13 @@ export function validateRecord(record, { app, environment } = {}) {
     if (recovery?.resolution !== 'abandon' || !recovery.reason?.trim() || recovery.reason.length > 500 ||
         !/^[a-f0-9]{40}$/.test(recovery.operator?.sourceSha || '') || !/^[a-f0-9]{64}$/.test(recovery.evidenceHash || '') ||
         !/^[a-f0-9]{64}$/.test(recovery.journalHash || '') || !Number.isFinite(Date.parse(recovery.at)) ||
-        !/^[a-f0-9]{40}$/.test(record.originalIntent || '') || !record.scopeHash || !record.smoke || typeof record.smoke.ok !== 'boolean' ||
-        recovery.rollout !== (record.rollout || null)) throw Error('Invalid abandoned release evidence');
+        (recovery.rollout != null && !/^[a-z][a-z0-9-]{2,100}$/.test(recovery.rollout)) ||
+        !/^[a-f0-9]{40}$/.test(record.originalIntent || '') || !record.scopeHash || !record.smoke || typeof record.smoke.ok !== 'boolean') throw Error('Invalid abandoned release evidence');
+    const retainedPreviousGood = record.previousGood && record.previousGoodRecord &&
+      record.sourceSha === record.previousGood.sourceSha && record.rollout === record.previousGood.rollout &&
+      record.state === record.previousGood.state && record.percent === record.previousGood.percent &&
+      recovery.rollout && recovery.rollout !== record.rollout;
+    if (!retainedPreviousGood && recovery.rollout !== (record.rollout || null)) throw Error('Invalid abandoned release evidence');
     if (record.state === 'SUCCEEDED') {
       if (!record.rollout || record.percent !== 100) throw Error('Abandoned release does not identify its stable serving attempt');
     } else if (record.state === 'FAILED') {
