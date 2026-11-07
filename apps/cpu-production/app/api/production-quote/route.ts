@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
 import { errorResponse } from "../../../lib/api";
 import { hubJson } from "../../../lib/production-http-client";
 
@@ -10,6 +11,9 @@ export async function GET(request: NextRequest) {
     if (!request.headers.get("cookie")) throw Object.assign(new Error("Sign in to FIKA OS to open this quote."), { status: 401 });
     const bookingId = request.nextUrl.searchParams.get("bookingId") || "";
     if (!/^booking:[^\s]{1,200}$/.test(bookingId)) throw Object.assign(new Error("A canonical Booking ID is required."), { status: 400 });
+    if (await stagingDriveAccessBlocked()) {
+      return NextResponse.json({ error: { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED", message: "The saved quote PDF is unavailable in this environment." } }, { status: 404, headers: { "Cache-Control": "no-store, max-age=0" } });
+    }
     const interactive = new NextRequest(request.url, { headers: { cookie: request.headers.get("cookie")! } });
     const result = await hubJson(interactive, `/api/production/calendar-quote?bookingId=${encodeURIComponent(bookingId)}`, { method: "GET" },
       (value): value is { quote: { driveFileId: string; url: string } } => {
