@@ -96,8 +96,11 @@ test("wrong metadata caller or malformed Hub site evidence fails closed without 
   assert.equal((await handleBeveragePreviewOplocGet(request(), deps)).status, 503);
   assert.deepEqual(events.splice(0), ["verified", "metadata"]);
   setMetadata(() => new Response(jwt(), { headers: { "Metadata-Flavor": "Google" } }));
+  setHub(() => Response.json({ error: { code: "BEVERAGE_REFERENCE_DENIED", private: "not returned" } }, { status: 403 }));
+  const denied = await handleBeveragePreviewOplocGet(request(), deps);
+  assert.equal(denied.status, 403);
+  assert.deepEqual(await denied.json(), { error: { code: "BEVERAGE_OPLOC_REQUEST_DENIED" } });
   for (const response of [
-    () => Response.json({ error: { private: "not returned" } }, { status: 403 }),
     () => Response.json({ readOnly: true, oplocs: [sites[0], { id: "oploc:ungranted", label: "Not returned" }] }),
     () => Response.json({ readOnly: true, oplocs: sites, private: "not returned" }),
     () => Response.json({ readOnly: true, oplocs: [...sites, sites[0]] }),
@@ -106,7 +109,7 @@ test("wrong metadata caller or malformed Hub site evidence fails closed without 
   ]) {
     setHub(response);
     const result = await handleBeveragePreviewOplocGet(request(), deps);
-    assert.ok([403, 503].includes(result.status));
+    assert.equal(result.status, 503);
     assert.doesNotMatch(await result.text(), /not returned|Fictional|fixture.person.session/i);
   }
 });
