@@ -32,3 +32,9 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+## Stage A visual prototype
+
+The isolated `/mock` route is a visual demonstration for issue #115. It uses fixture data and React memory only. It does not call the existing beverage API or any external service, and all changes disappear on reload. The reference images and visual comparison report are in `visual-reference/` and `visual-evidence/`.
+
+From this app directory, install the locked dependencies with `npm ci`, then start an unused local port with `npm run dev -- --port 13615` and open `http://localhost:13615/mock`. If that port is occupied, select another unused port. The repository's `fika dev` command does not currently list Beverage Innovation as a supported app. Use Overview, Monthly Specials and New Drink to compare the three reference surfaces; Drinks Library contains the import demonstration. The mock dates, sites, recipes, prices and approvals are examples only.
