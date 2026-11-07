@@ -1,5 +1,6 @@
 import type { ProductionTotalsCategory } from "../../lib/production-day";
 import { escapePrintHtml as escape } from "./day-production-print";
+import { addStagingPrintWatermark } from "../../lib/staging-print-watermark";
 
 export { collectionOrders, collectionDate, collectionTime, collectionQuantity, collectionQuantityHeading, isCoreSaladLine } from "./run-sheet-presentation";
 export { collectionPrintHtml } from "./day-production-print";
@@ -92,7 +93,7 @@ export function printKitchenDocument(
         reject(error);
       }
     };
-    frame.srcdoc = html;
+    frame.srcdoc = addStagingPrintWatermark(html, document.documentElement.dataset.fikaRuntime);
     document.body.appendChild(frame);
   });
 }
