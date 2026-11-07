@@ -3,6 +3,7 @@ import type { Firestore } from "firebase-admin/firestore";
 import { beverageAuditEventSchema, beverageRecordSchema, monthlySpecialSchema, type BeverageAuditEvent, type BeverageRecord, type MonthlySpecialRecord } from "./contracts";
 import { beverageDb } from "./firestore-admin";
 import type { BeverageActor } from "./runtime";
+import { canAccessMonthlySpecial } from "./specials";
 
 const BEVERAGES = "beverageRecordsV2";
 const SPECIALS = "beverageMonthlySpecialsV1";
@@ -56,11 +57,15 @@ export async function findBeveragesByName(name: string, limit = 5): Promise<Beve
   });
 }
 
-export async function listMonthlySpecials(limit = 100): Promise<MonthlySpecialRecord[]> {
+export async function listMonthlySpecials(actor: BeverageActor, limit = 100): Promise<MonthlySpecialRecord[]> {
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIST) throw failure(`Specials list limit must be between 1 and ${MAX_LIST}.`, 400, "BEVERAGE_LIST_LIMIT_INVALID");
   const snapshot = await beverageDb().collection(SPECIALS).orderBy("updatedAt", "desc").limit(limit).get();
-  return snapshot.docs.map(document => {
-    try { const record = monthlySpecialSchema.parse(document.data()); if (record.id !== document.id) return schemaFailure(SPECIALS, new Error("Document ID mismatch.")); return record; } catch (error) { return schemaFailure(SPECIALS, error); }
+  return snapshot.docs.flatMap(document => {
+    try {
+      const record = monthlySpecialSchema.parse(document.data());
+      if (record.id !== document.id) return schemaFailure(SPECIALS, new Error("Document ID mismatch."));
+      return canAccessMonthlySpecial(record, actor) ? [record] : [];
+    } catch (error) { return schemaFailure(SPECIALS, error); }
   });
 }
 
@@ -85,6 +90,7 @@ export async function commitBeverageCommand<T extends VersionedEntity>(input: {
   commandFingerprint?: string;
   schema: { parse(value: unknown): T };
   create?: boolean;
+  authorizeCurrent?(current: T): void;
   mutate(current: T | undefined, at: string): T | Promise<T>;
 }): Promise<T> {
   if (!/^[A-Za-z0-9:_-]{8,160}$/.test(input.idempotencyKey)) throw failure("Supply a valid Idempotency-Key for this command.", 400, "BEVERAGE_IDEMPOTENCY_KEY_REQUIRED");
@@ -96,6 +102,14 @@ export async function commitBeverageCommand<T extends VersionedEntity>(input: {
 
   return db.runTransaction(async transaction => {
     const [eventSnapshot, entitySnapshot] = await Promise.all([transaction.get(eventRef), transaction.get(entityRef)]);
+    const current = entitySnapshot.exists ? (() => {
+      try {
+        const record = input.schema.parse(entitySnapshot.data());
+        if (record.id !== input.entityId) return schemaFailure(input.entityType, new Error("Document ID mismatch."));
+        return record;
+      } catch (error) { return schemaFailure(input.entityType, error); }
+    })() : undefined;
+    if (current) input.authorizeCurrent?.(current);
     if (eventSnapshot.exists) {
       const event = beverageAuditEventSchema.parse(eventSnapshot.data());
       if (event.entityId !== input.entityId || event.entityType !== input.entityType || event.action !== input.action ||
@@ -103,13 +117,10 @@ export async function commitBeverageCommand<T extends VersionedEntity>(input: {
           (input.commandFingerprint !== undefined && event.summary.commandFingerprint !== input.commandFingerprint)) {
         throw failure("Idempotency key was already used for a different Beverage command.", 409, "BEVERAGE_IDEMPOTENCY_KEY_REUSED");
       }
-      if (!entitySnapshot.exists) throw failure("A committed Beverage command is missing its authoritative record.", 503, "BEVERAGE_COMMAND_ENTITY_MISSING");
-      try { return input.schema.parse(entitySnapshot.data()); } catch (error) { return schemaFailure(input.entityType, error); }
+      if (!current) throw failure("A committed Beverage command is missing its authoritative record.", 503, "BEVERAGE_COMMAND_ENTITY_MISSING");
+      return current;
     }
 
-    const current = entitySnapshot.exists ? (() => {
-      try { return input.schema.parse(entitySnapshot.data()); } catch (error) { return schemaFailure(input.entityType, error); }
-    })() : undefined;
     if (!current && !input.create) throw failure("Beverage record was not found.", 404, "BEVERAGE_NOT_FOUND");
     const versionBefore = current?.aggregateVersion ?? 0;
     if (versionBefore !== input.expectedVersion) throw failure("This Beverage record changed since it was loaded. Refresh and review the latest version.", 409, "BEVERAGE_VERSION_CONFLICT");

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { approvalDecisionSchema, approvalKindSchema, classificationSchema, lifecycleSchema } from "@/lib/contracts";
+import { approvalDecisionSchema, approvalKindSchema, beverageRecordSchema, classificationSchema, lifecycleSchema } from "@/lib/contracts";
 import { beverageError, requireLocalBeverageActor } from "@/lib/runtime";
 import { createBeverage, createVersion, listBeverages, recordApproval, setLifecycle, updateBeverage, updateVersion } from "@/lib/store";
 
@@ -22,8 +22,11 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const body = await request.json(); const id = typeof body.id === "string" ? body.id : "";
-    if (!id) throw Object.assign(new Error("Beverage ID is required."), { status: 400, code: "BEVERAGE_ID_REQUIRED" });
+    const body = await request.json();
+    const id = beverageRecordSchema.shape.id.parse(body.id);
+    if (body.action !== undefined && !["approval", "version", "updateVersion", "update", "lifecycle"].includes(body.action)) {
+      throw Object.assign(new Error("Choose a supported Beverage command."), { status: 400, code: "BEVERAGE_COMMAND_INVALID" });
+    }
     const action = body.action === "approval" ? "Approve" : body.action === "version" || body.action === "updateVersion" || body.action === "update" ? "Contribute" : "Manage";
     const actor = requireLocalBeverageActor(request, action); const version = expected(body); const key = keyFor(request);
     if (body.action === "approval") {

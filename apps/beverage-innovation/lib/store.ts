@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { addApproval, cloneVersion, transition, updateVersion as updateVersionRecord, type BeverageInnovation, type IngredientLine, type Lifecycle, type ApprovalKind, type ApprovalDecision } from "./domain";
-import { beverageRecordSchema, monthlySpecialSchema, type BeverageRecord, type MonthlySpecialRecord, type PastedRecipeProvenance, type ReviewedImportRecipe } from "./contracts";
+import { beverageRecordSchema, editableBeveragePatchSchema, monthlySpecialSchema, type BeverageRecord, type MonthlySpecialRecord, type PastedRecipeProvenance, type ReviewedImportRecipe } from "./contracts";
 import { calculateCosting, normaliseIngredientLine, poundsToPence } from "./costing";
 import { commitBeverageCommand, entityIdForCommand, getBeverage, listBeverages, listMonthlySpecials, listBeverageAudit } from "./repository";
 import type { BeverageActor } from "./runtime";
-import { createMonthlySpecial, transitionMonthlySpecial, updateMonthlySpecial, type SpecialDraft } from "./specials";
+import { createMonthlySpecial, requireMonthlySpecialScope, transitionMonthlySpecial, updateMonthlySpecial, type SpecialDraft } from "./specials";
 import { importFingerprint, PASTED_RECIPE_SOURCE_LABEL } from "./import-preview";
 
 function asDomain(record: BeverageRecord): BeverageInnovation { return record as BeverageInnovation; }
@@ -23,7 +23,8 @@ export async function createBeverage(input: { name: string; description: string;
   const created = emptyRecord(id, actor, { ...input, name, description: input.description.trim(), classification: input.classification || "draft_concept" }, new Date().toISOString());
   return commitBeverageCommand({ entityType: "beverage", collection: "beverageRecordsV2", entityId: id, action: "beverage.created", expectedVersion, idempotencyKey, actor, summary: { name, classification: created.classification }, schema: beverageRecordSchema, create: true, mutate: () => created }).then(asDomain);
 }
-export async function updateBeverage(id: string, patch: Partial<Pick<BeverageRecord, "name" | "description" | "beverageType" | "season" | "concept" | "classification">>, actor: BeverageActor, expectedVersion: number, key: string) {
+export async function updateBeverage(id: string, input: unknown, actor: BeverageActor, expectedVersion: number, key: string) {
+  const patch = editableBeveragePatchSchema.parse(input);
   if (!Object.keys(patch).length) throw Object.assign(new Error("Supply at least one field to update."), { status: 400, code: "BEVERAGE_PATCH_EMPTY" });
   return commitBeverageCommand({ entityType: "beverage", collection: "beverageRecordsV2", entityId: id, action: "beverage.updated", expectedVersion, idempotencyKey: key, actor, summary: { fields: Object.keys(patch).join(",") }, schema: beverageRecordSchema, mutate: current => {
     if (!current) throw new Error("Beverage not found.");
@@ -64,11 +65,12 @@ export async function updateVersion(id: string, versionId: string, patch: { reci
 }
 
 export async function createSpecial(input: SpecialDraft, actor: BeverageActor, expectedVersion: number, key: string) {
+  requireMonthlySpecialScope({ targetSites: input.targetSites, createdBy: actor.authmodIdentityId }, actor);
   const id = entityIdForCommand("special", actor.authmodIdentityId, key);
   const beverage = await getBeverage(input.beverageId);
   if (!beverage) throw Object.assign(new Error("Beverage not found."), { status: 404, code: "BEVERAGE_NOT_FOUND" });
   const special = createMonthlySpecial(input, beverage, actor, id, new Date().toISOString());
-  return commitBeverageCommand({ entityType: "monthly_special", collection: "beverageMonthlySpecialsV1", entityId: id, action: "monthly_special.created", expectedVersion, idempotencyKey: key, actor, summary: { month: input.month, beverageId: input.beverageId }, schema: monthlySpecialSchema, create: true, mutate: () => special });
+  return commitBeverageCommand({ entityType: "monthly_special", collection: "beverageMonthlySpecialsV1", entityId: id, action: "monthly_special.created", expectedVersion, idempotencyKey: key, actor, summary: { month: input.month, beverageId: input.beverageId }, schema: monthlySpecialSchema, create: true, authorizeCurrent: current => requireMonthlySpecialScope(current, actor), mutate: () => special });
 }
 
 export async function createImportedBeverage(recipe: ReviewedImportRecipe, classification: BeverageRecord["classification"], source: PastedRecipeProvenance, actor: BeverageActor, key: string) {
@@ -102,15 +104,15 @@ export async function createImportedBeverage(recipe: ReviewedImportRecipe, class
   }).then(asDomain);
 }
 
-export async function editSpecial(id: string, patch: Partial<SpecialDraft>, actor: BeverageActor, expectedVersion: number, key: string) {
-  return commitBeverageCommand({ entityType: "monthly_special", collection: "beverageMonthlySpecialsV1", entityId: id, action: "monthly_special.updated", expectedVersion, idempotencyKey: key, actor, summary: { fields: Object.keys(patch).join(",") }, schema: monthlySpecialSchema, mutate: current => { if (!current) throw new Error("Monthly special not found."); return updateMonthlySpecial(current, patch, actor, new Date().toISOString()); } });
+export async function editSpecial(id: string, patch: Partial<Omit<SpecialDraft, "beverageId" | "beverageVersionId">>, actor: BeverageActor, expectedVersion: number, key: string) {
+  return commitBeverageCommand({ entityType: "monthly_special", collection: "beverageMonthlySpecialsV1", entityId: id, action: "monthly_special.updated", expectedVersion, idempotencyKey: key, actor, summary: { fields: Object.keys(patch).join(",") }, schema: monthlySpecialSchema, authorizeCurrent: current => requireMonthlySpecialScope(current, actor), mutate: (current, at) => { if (!current) throw new Error("Monthly special not found."); return updateMonthlySpecial(current, patch, actor, at); } });
 }
 
 export async function setSpecialStatus(id: string, status: MonthlySpecialRecord["status"], actor: BeverageActor, expectedVersion: number, key: string) {
-  return commitBeverageCommand({ entityType: "monthly_special", collection: "beverageMonthlySpecialsV1", entityId: id, action: "monthly_special.status", expectedVersion, idempotencyKey: key, actor, summary: { status }, schema: monthlySpecialSchema, mutate: async current => {
+  return commitBeverageCommand({ entityType: "monthly_special", collection: "beverageMonthlySpecialsV1", entityId: id, action: "monthly_special.status", expectedVersion, idempotencyKey: key, actor, summary: { status }, schema: monthlySpecialSchema, authorizeCurrent: current => requireMonthlySpecialScope(current, actor), mutate: async (current, at) => {
     if (!current) throw new Error("Monthly special not found.");
     const beverage = await getBeverage(current.beverageId);
     if (!beverage) throw Object.assign(new Error("Linked beverage was not found."), { status: 409, code: "BEVERAGE_LINK_MISSING" });
-    return transitionMonthlySpecial(current, beverage, status, actor, new Date().toISOString());
+    return transitionMonthlySpecial(current, beverage, status, actor, at);
   } });
 }
