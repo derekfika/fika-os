@@ -2,7 +2,22 @@
 
 The owner approved a Beverage View test across the active canonical staging OPLOC inventory. The site decision uses an explicit direct `AuthorityGrant` for one already-bound Firebase person. A separate Beverage `AppAssignment` establishes app admission. Generic `SiteAssignment` records also affect existing scoped apps, so this procedure leaves them alone. The entitlement is specific to Beverage View.
 
-This procedure records the required operator evidence for a later hosted activation. It uses the existing AUTHMOD administrator command and audit transaction. The current change provides no live registry seed, account enrollment, grant or hosted activation.
+This procedure records the required operator evidence for a later hosted activation. Registry provisioning and subsequent person-specific entitlement changes are separate reviewed operations.
+
+## Prepare the hidden staging registry
+
+Use the reviewed merged revision in `apps/integration-hub` and existing user Application Default Credentials for an authorised staging operator. The command verifies the ADC account through Google UserInfo and matches its verified email and Google subject to an existing verified Firebase user. It requires one active AUTHMOD person bound to that UID and a current direct organisation-scoped AUTHMOD Administer grant. A missing or ambiguous binding stops the command.
+
+```powershell
+$env:FIKA_RUNTIME_MODE = "staging"
+$env:FIREBASE_PROJECT_ID = "fika-os-dev"
+$env:FIKA_SNAPSHOT_BUCKET = "fika-os-dev-staging-read-packages-europe-west4"
+npx --no-install tsx scripts/provision-beverage-staging-registry.ts
+```
+
+Review the plan before running the same command with `--execute` in the isolated staging project. Use a quiet window for AUTHMOD reference package maintenance. Execution creates the fixed View-only entry, a canonical audit receipt and the applications cache head in one Firestore transaction. The receipt records the verified actor and the owner-approved staging scope. The command then rebuilds the existing AUTHMOD reference package if missing or stale and verifies the published entry. It does not assign Beverage access.
+
+An exact repeat reuses the receipt and verifies the current package. A conflicting registry or receipt stops without overwrite. If execution reports `references: "unverified"`, check the recorded receipt before retrying package publication. A package integrity failure requires separate governed recovery.
 
 ## Before making the two reviewed commands
 
