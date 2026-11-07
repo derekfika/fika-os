@@ -8,8 +8,7 @@ test("CPU production matrices use governed Drive ownership for each canonical so
   assert.equal((materializer.match(/\/api\/allergen-matrix\/drive/g) || []).length, 2);
   assert.match(materializer, /HOSPITALITY_BOOKING_BASE_URL/);
   assert.match(materializer, /productionOrderId: order\.canonicalId/);
-  assert.match(materializer, /matrixDriveConfiguration\(order\)\.enabled/);
-  assert.match(materializer, /if \(!matrixDriveConfiguration\(order\)\.enabled\) throw/);
+  assert.match(materializer, /if \(!\(await matrixDriveConfiguration\(order\)\)\.enabled\) throw/);
   assert.match(materializer, /CPU-Master-\$\{serviceDate\}-\$\{releaseToken\}\.pdf/);
   assert.match(materializer, /siteArtifact/);
   assert.match(materializer, /plan\.masterMatrixArtifact/);

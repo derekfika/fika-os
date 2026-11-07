@@ -102,15 +102,22 @@ test("both CPU materializers reject unsafe destinations before rendering or forw
 
 test("both CPU materializers forbid redirects on their credentialed PDF POST", async t => {
   setEnvironment(t, {
-    FIKA_RUNTIME_MODE: "staging",
-    HOSPITALITY_BOOKING_BASE_URL: staging,
+    FIKA_RUNTIME_MODE: "production",
+    FIREBASE_PROJECT_ID: "fika-os",
+    GOOGLE_CLOUD_PROJECT: undefined,
+    GCLOUD_PROJECT: undefined,
+    FIREBASE_CONFIG: undefined,
+    HOSPITALITY_BOOKING_BASE_URL: production,
     FIKA_PDF_RENDERER_URL: "https://renderer.example",
     FIKA_PDF_RENDERER_TOKEN: "test-renderer-token",
   });
   let uploads = 0;
   t.mock.method(globalThis, "fetch", async (url: string | URL, init?: RequestInit) => {
+    if (String(url) === "http://metadata.google.internal/computeMetadata/v1/project/project-id") {
+      return new Response("fika-os", { headers: { "Metadata-Flavor": "Google" } });
+    }
     if (String(url) === "https://renderer.example/render/pdf") return new Response("%PDF-1.4 inert test");
-    assert.equal(String(url), staging + "/api/allergen-matrix/drive");
+    assert.equal(String(url), production + "/api/allergen-matrix/drive");
     assert.equal(init?.method, "POST");
     assert.equal(init?.redirect, "error");
     const headers = new Headers(init?.headers);

@@ -1,6 +1,12 @@
+import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
+import { containArtifactLinks } from "@/lib/artifact-containment";
 import { NextRequest, NextResponse } from "next/server";
 import { deliveredInErrorBody, projectionHead, projectedWeeks } from "@/lib/server";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+
+async function safeJson(data: unknown, init?: ResponseInit) {
+  return NextResponse.json(containArtifactLinks(data, await stagingDriveAccessBlocked()), init);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -8,10 +14,11 @@ async function handleGet(request: NextRequest) {
   try {
     if (request.nextUrl.searchParams.get("head") === "1") {
       const result = await projectionHead(request, request.nextUrl.searchParams.get("oplocId") || undefined, request.nextUrl.searchParams.get("week") || undefined);
-      return NextResponse.json(result, { headers: { "Cache-Control": "no-store, max-age=0" } });
+      const driveBlocked = await stagingDriveAccessBlocked();
+      return NextResponse.json(containArtifactLinks({ ...result, artifactLinksAllowed: !driveBlocked }, driveBlocked), { headers: { "Cache-Control": "no-store, max-age=0" } });
     }
     const result = await projectedWeeks(request, request.nextUrl.searchParams.get("oplocId") || undefined, { requestedWeek: request.nextUrl.searchParams.get("week") || undefined });
-    return NextResponse.json(result, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    return safeJson(result, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     console.error("Delivered-In dashboard load failed", {
       app: "delivered-in",
@@ -26,7 +33,7 @@ async function handleGet(request: NextRequest) {
       requestId: request.headers.get("x-request-id") || undefined,
       buildSha: process.env.FIKA_BUILD_SHA || undefined,
     });
-    return NextResponse.json(deliveredInErrorBody(error, "Delivered-In could not be loaded."), { status: Number((error as { status?: number }).status) || 502 });
+    return safeJson(deliveredInErrorBody(error, "Delivered-In could not be loaded."), { status: Number((error as { status?: number }).status) || 502 });
   }
 }
 export async function GET(request: NextRequest) { return withDataTrace({ app: "delivered-in", action: "delivered-in.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }

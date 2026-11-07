@@ -55,10 +55,10 @@ export function assertCpuReleaseRowsAttested(menuItems: PlannedMenuItem[]) {
 export async function createCpuMasterArtifact(plan: ProductionPlan, order: ProductionOrder, actor: string, timestamp: string, request: NextRequest, items: PlannedMenuItem[] = plan.menuItems) {
   assertCpuReleaseRowsAttested(items);
   if (effectiveProductionPlanStatus(plan) !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
-  if (!matrixDriveConfiguration(order).enabled) throw Object.assign(new Error("A configured Drive workspace is required before signing the CPU allergen bundle."), { status: 503 });
+  const hospitalityBase = getHospitalityMatrixBaseUrl();
+  if (!(await matrixDriveConfiguration(order)).enabled) throw Object.assign(new Error("A configured Drive workspace is required before signing the CPU allergen bundle."), { status: 503 });
   const signatures = plan.signatures || [];
   if (!signatures.some(signature => signature.role === "production_chef") || !signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures are required for release materialization."), { status: 422 });
-  const hospitalityBase = getHospitalityMatrixBaseUrl();
   const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
   const withSource = (item: PlannedMenuItem) => ({ ...item, id: `${order.canonicalId}:${item.id}`, name: item.name });
   const html = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, items.map(withSource), signatures);
@@ -88,14 +88,14 @@ export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: Pro
   if (effectiveProductionPlanStatus(plan) !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
   const subItems = plan.menuItems.flatMap(item => item.subItems);
   if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before saving the matrix."), { status: 422 });
-  if (!matrixDriveConfiguration(order).enabled) throw Object.assign(new Error("A configured Drive workspace is required before signing the CPU allergen bundle."), { status: 503 });
+  const hospitalityBase = getHospitalityMatrixBaseUrl();
+  if (!(await matrixDriveConfiguration(order)).enabled) throw Object.assign(new Error("A configured Drive workspace is required before signing the CPU allergen bundle."), { status: 503 });
   const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
   const signatures = plan.signatures || [];
   if (!signatures.some(signature => signature.role === "production_chef") || !signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures are required for release materialization."), { status: 422 });
   const adHoc = isAdHocProductionOrder(order);
   const persistPdf = async (kind: "master" | "site", fileName: string, html: string, existing?: MatrixArtifact): Promise<{ kind: "master" | "site"; artifact: MatrixArtifact }> => {
     if (durableArtifact(existing)) return { kind, artifact: existing };
-    const hospitalityBase = getHospitalityMatrixBaseUrl();
     const pdfPath = isHostedPdfRuntime() ? undefined : path.join(os.tmpdir(), `fika-cpu-matrix-${Date.now()}-${Math.random().toString(36).slice(2)}-${fileName}`);
     let pdfBase64: string | undefined;
     try { const pdf = await renderPdfToBuffer(html); if (pdfPath) await fs.writeFile(pdfPath, pdf); pdfBase64 = pdf.toString("base64"); } catch (error) { console.error("FIKA PDF renderer failure", { app: "cpu-production", operation: "allergen-pdf-generation", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message : String(error), productionOrderId: order.canonicalId, serviceDate, requestId: request.headers.get("x-request-id") || undefined, buildSha: process.env.FIKA_BUILD_SHA || undefined }); throw rendererFailure(error); }
