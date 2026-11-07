@@ -57,7 +57,9 @@ The decision requires a revocation-checked Firebase session cookie and exactly o
 
 `beverage-innovation.normal` supports exact View, Contribute and Manage decisions. Standard grants must belong to the identity's current assignment bundle. Explicit OPLOC grants can narrow a normal action. Approve uses a direct, explicit `beverage-innovation.approval` grant covering every requested OPLOC. Full Access, service credentials and delegated grants supply no Beverage authority.
 
-A future transport must use current-only, read-only AUTHMOD and OPLOC packages. Existing non-transactional package readers can publish on a cache miss, and existing session resolution can bind an email and append audit evidence. Missing or inconsistent authority data denies the decision. Route wiring, organisation-wide recipe authority, identity enrollment, staging grant provisioning and functional data access each require separate verification. The decision currently runs only with fictional memory fixtures.
+The internal Hub request adapter reads the canonical FIKA session cookie and verifies revocation before opening a read-only Firestore snapshot. The bounded Firebase UID query, application record, AUTHMOD security head, OPLOC package head and active site checks share that snapshot. Package readers require current generations and refuse recovery or publication on this path. Missing or inconsistent authority data denies the decision. Tests use fictional identities and packages.
+
+Before exposing a route, verify the exact Hub project, issuer and cookie origin, the read-only Firestore and package access policy, and response redaction. Route wiring, organisation-wide recipe authority, audited staging registry and grant provisioning, identity enrollment and functional Beverage persistence each require separate verification.
 
 ## Special authority v1
 
