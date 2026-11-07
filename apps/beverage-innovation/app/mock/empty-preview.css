@@ -9,6 +9,7 @@
 .empty-preview-workflow { border-top: 1px solid var(--m-border); margin-top: 14px; padding-top: 10px; }
 .empty-preview-workflow > div { display: flex; gap: 16px; min-height: 64px; }
 .empty-preview-workflow > div > span { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 50%; background: var(--fika-status-info-surface); color: var(--fika-action-primary); font-size: 22px; }
+.empty-preview-workflow svg { width: 24px; height: 24px; }
 .empty-preview-workflow p { font-size: 13px; }
 .empty-preview-photo { min-height: 190px; display: grid; align-content: center; justify-items: center; text-align: center; gap: 8px; color: var(--fika-text-secondary); }
 .empty-preview-photo > span { font-size: 32px; color: var(--fika-action-primary); }
