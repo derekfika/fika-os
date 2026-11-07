@@ -75,6 +75,14 @@ Before functional staging, verify the dedicated transport and the exact Hub proj
 
 The restricted staging preview uses its existing reviewer allowlist. Beverage record APIs still require the local emulator and fixture auth. External Gmail access remains unverified until an authorised account completes a real sign-in. Stabilisation issues #423 and #429 remain open.
 
+## Local ingredient and product library
+
+`GET /api/ingredient-library?q=juniper&limit=10` searches a fictional in-memory ingredient catalogue. It requires the existing explicit local fixture runtime and View permission. The request accepts a search of up to 100 characters and a limit from 1 to 50, with a default of 20. Responses are private and uncached. The route makes zero network requests and zero Firestore reads or writes.
+
+The adapter consumes the ingredient portion of the [Hub Food Data v1 snapshot](../integration-hub/docs/food-data-library.md). It verifies the pinned `<snapshot>:<gzipSha256>` version, both byte counts and both hashes before projecting positional rows by column name. It caps gzip at 5 MiB, decoded JSON at 40 MiB, rows at 25,000 and columns at 160. Malformed or mismatched evidence fails closed. Each result has a zero-based source row index scoped to its exact dataset version. Product and supplier codes retain leading zeros, and duplicate rows stay separate. Purchase status is descriptive source text. This search supplies no recipe quantity, cost, allergen or approval evidence.
+
+Before hosted integration, verify a dedicated Hub transport that requires an already-bound UID and explicit Beverage admission with reviewed OPLOC scope. The current live Food Data GET uses the general session resolver, which can bind an email-matched UID and write an audit event. Use a pinned, authorised ingredient snapshot and a read-only object permission boundary with raw gzip delivery and integrity validation. Decide whether supplier and purchase fields may be exposed to each audience. Hosted recipe costing requires separate evidence for price-effective dates, units and an explicitly reviewed ex-VAT basis. Existing preview, external Gmail, persistence and external-effect gates still apply.
+
 ## Complexity routing
 
 - **Complexity:** High — persistence, authorization boundaries, audit/version semantics and multiple core workflows.
