@@ -7,7 +7,7 @@ import {
   type ReviewedImportRecipe,
 } from "./contracts";
 
-const MAX_SOURCE_LENGTH = 20_000;
+export const MAX_IMPORT_TEXT_LENGTH = 20_000;
 export const PASTED_RECIPE_SOURCE_LABEL = "Pasted fictional text";
 const ingredientUnits: Record<string, string> = {
   ml: "ml", g: "g", kg: "kg", each: "each", piece: "piece", pieces: "piece",
@@ -127,8 +127,8 @@ function parseRecipe(lines: string[]): Omit<LocalImportCandidate, "index" | "can
 }
 
 export function previewPastedRecipes(text: string): LocalImportPreview {
-  if (text.length > MAX_SOURCE_LENGTH) {
-    throw sourceError(`Text preview is limited to ${MAX_SOURCE_LENGTH} characters.`, 413, "BEVERAGE_IMPORT_SOURCE_TOO_LARGE");
+  if (text.length > MAX_IMPORT_TEXT_LENGTH) {
+    throw sourceError(`Text preview is limited to ${MAX_IMPORT_TEXT_LENGTH} characters.`, 413, "BEVERAGE_IMPORT_SOURCE_TOO_LARGE");
   }
   const source = text.replace(/\r\n?/g, "\n").trim();
   const sections = splitRecipes(source);
