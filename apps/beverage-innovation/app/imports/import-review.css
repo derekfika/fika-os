@@ -1,0 +1,52 @@
+@import "../../../../shared/fika/tokens.css";
+
+.import-review{min-height:100vh;background:var(--fika-surface-page);color:var(--fika-text-primary);font:14px/1.45 FikaGilroy,Arial,sans-serif}
+.import-review *{box-sizing:border-box}
+.import-review :is(button,input,select,textarea){font:inherit}
+.import-review :is(button,input,select,textarea,a):focus-visible{outline:3px solid var(--fika-focus-ring);outline-offset:2px}
+.import-review :is(h1,h2,h3,p){margin:0}
+.import-review :is(h1,h2,h3){color:var(--color-brand-dark)}
+.import-review h1{font:900 32px/1.15 FikaVim,FikaGilroy,Arial,sans-serif}
+.import-review h2{font-size:20px;line-height:1.3}
+.import-review h3{font-size:16px}
+.import-review p{color:var(--fika-text-secondary)}
+.ir-top{min-height:84px;padding:12px 32px;background:linear-gradient(110deg,var(--color-brand-primary) 20%,var(--color-brand-dark) 200%);color:var(--color-surface);display:flex;gap:20px;align-items:center}
+.ir-top>div{display:grid;gap:2px}.ir-top small{font-size:12px}.ir-top strong{font-size:18px}
+.ir-brand{display:flex;align-items:end;gap:4px;padding-right:20px;border-right:1px solid var(--fika-status-info-surface);color:var(--color-surface);text-decoration:none}
+.ir-brand img{width:100px}.ir-local{margin-left:auto;border:1px solid var(--fika-status-info-surface);border-radius:var(--radius-sm);padding:9px 12px;font-weight:700;font-size:12px}
+.ir-back{color:var(--color-surface);font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.ir-workspace{max-width:1264px;margin:0 auto;padding:32px}
+.ir-heading{margin-bottom:24px}.ir-heading p{margin-top:8px;font-size:16px}
+.ir-card{background:var(--fika-surface-card);border:1px solid var(--fika-border-default);border-radius:var(--radius-md);padding:20px}
+.ir-card p{margin-top:6px}.ir-source{display:grid;gap:16px}
+.import-review label{font-weight:600}
+.import-review label:not(.ir-candidate):not(.ir-confirm){display:grid;gap:6px;min-width:0}
+.import-review :is(input:not([type=radio]):not([type=checkbox]),select,textarea){display:block;width:100%;min-width:0;min-height:44px;border:1px solid var(--fika-border-default);border-radius:var(--radius-sm);padding:10px 12px;background:var(--fika-surface-card);color:var(--fika-text-primary)}
+.import-review textarea{resize:vertical}
+.import-review button{min-height:44px;border-radius:var(--radius-sm);padding:10px 16px;font-weight:600;cursor:pointer}
+.import-review button:disabled{opacity:.65;cursor:not-allowed}
+.ir-primary{border:1px solid var(--fika-action-primary);background:var(--fika-action-primary);color:var(--color-surface)}
+.ir-primary:hover:not(:disabled){background:var(--fika-action-primary-hover)}
+.ir-secondary,.ir-remove{border:1px solid var(--fika-border-default);background:var(--fika-surface-card);color:var(--fika-action-primary)}
+.ir-actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.ir-actions span,.ir-helper{color:var(--fika-text-secondary);font-size:13px;font-weight:400}
+.ir-message{margin:0 0 16px;border-left:4px solid var(--fika-action-primary);border-radius:var(--radius-sm);background:var(--fika-status-info-surface);padding:12px 16px}
+.ir-review-layout{display:grid;grid-template-columns:minmax(250px,300px) minmax(0,1fr);gap:16px;align-items:start;margin-top:16px}
+.ir-candidates fieldset,.ir-fields{border:0;padding:0;margin:16px 0 0;min-width:0}
+.ir-candidates legend{font-weight:700;margin-bottom:8px}
+.ir-candidate{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--fika-border-default);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px;cursor:pointer}
+.ir-candidate:has(input:checked){border-color:var(--fika-action-primary);background:var(--fika-status-info-surface)}
+.ir-candidate input,.ir-confirm input{accent-color:var(--fika-action-primary);width:18px;height:18px;flex:none;margin:2px 0}
+.ir-candidate span{min-width:0}.ir-candidate strong,.ir-candidate small{display:block}.ir-candidate small{font-weight:400;color:var(--fika-text-secondary);margin-top:4px}
+.ir-provenance{border-top:1px solid var(--fika-border-default);margin-top:20px;padding-top:16px}.ir-provenance p{font-size:13px;margin:8px 0 2px}.ir-provenance code{display:block;overflow-wrap:anywhere;font-size:12px}
+.ir-editor-head,.ir-section-head{display:flex;justify-content:space-between;align-items:start;gap:12px}
+.ir-badge{border-radius:var(--radius-pill);background:var(--fika-status-success-surface);color:var(--fika-status-success);padding:6px 10px;font-weight:700}
+.ir-warning,.ir-completeness{margin-top:16px;padding:12px 16px;border-radius:var(--radius-sm);background:var(--fika-status-warning-surface);border-left:4px solid var(--fika-status-warning)}
+.ir-completeness{background:var(--fika-surface-subtle);border-color:var(--fika-action-primary)}
+.ir-warning ul,.ir-completeness ul{padding-left:20px;margin:6px 0}.ir-warning p,.ir-completeness p{font-size:13px}
+.ir-fields{display:grid;gap:16px}.ir-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.ir-ingredient{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,.8fr) minmax(0,.8fr) auto;gap:8px;align-items:end}
+.ir-confirm{display:flex;gap:10px;align-items:flex-start;min-height:44px}.ir-editor>.ir-actions{margin-top:20px}
+.ir-inline-message{margin-top:16px!important;padding:12px;border-left:4px solid var(--fika-action-primary);background:var(--fika-status-info-surface);border-radius:var(--radius-sm);color:var(--fika-text-primary)!important}
+.ir-sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+@media(max-width:800px){.ir-workspace{padding:24px}.ir-review-layout{grid-template-columns:1fr}.ir-provenance code{max-width:100%}}
+@media(max-width:600px){.ir-top{padding:12px 16px;flex-wrap:wrap;gap:12px}.ir-brand img{width:80px}.ir-local{margin-left:auto}.ir-back{width:100%}.ir-workspace{padding:16px}.ir-card{padding:16px}.ir-two{grid-template-columns:1fr}.ir-ingredient{grid-template-columns:1fr 1fr}.ir-ingredient label:first-child{grid-column:1/-1}.ir-section-head{flex-wrap:wrap}}
