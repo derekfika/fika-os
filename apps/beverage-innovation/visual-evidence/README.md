@@ -1,5 +1,15 @@
 # Stage A visual review — 7 November 2026
 
+## Deployed empty-preview browser UAT — 7 November 2026
+
+The deployed staging build `006` (source `ac559c1a7525a103af7537e61ae82dfb125fd737`) was opened at the operator-facing custom domain in Chrome. The overview, blank New Drink editor and Monthly Specials screens rendered with the `PREVIEW / STAGING · No connected records` banner. Overview-to-editor and Monthly Specials navigation worked. Save draft, create next version, submit for approval and schedule special were disabled. No save, approval or publication action was attempted.
+
+Recorded browser captures: `09-deployed-overview-browser-uat.jpg`, `10-deployed-new-drink-browser-uat.jpg`, and `08-deployed-monthly-specials-browser-uat.jpg`. They are 938 × 1125 window captures and include Chrome's browser chrome. They document the exact served empty preview at the available browser viewport; they are not the original 1448 × 1086 mockup comparisons and do not establish visual sign-off or an authenticated Hub/OPLOC read. The established 1448 × 1086 side-by-side comparisons below remain local production-build evidence only.
+
+Full-width captures are also recorded as `13-deployed-overview-desktop-uat.jpg`, `11-deployed-new-drink-desktop-uat.jpg`, and `12-deployed-monthly-specials-desktop-uat.jpg` (1920 × 1152 Chrome window captures). The desktop review exercised the list-view toggle, which changed the selected control state. Search/filter behavior with zero records, list results, persistence, and tablet layout were not claimed as verified in the deployed build.
+
+This staging preview has no connected records and no data persistence. In particular, these screenshots do not prove that a Beverage identity was admitted by Hub or that OPLOC/Food Data reads succeeded.
+
 ## Staging preview refinement — 7 November 2026
 
 `04-overview-comparison.png`, `05-monthly-specials-comparison.png`, and `06-new-drink-comparison.png` show the approved reference on the left and the local preview on the right, each at the original 1448 × 1086 viewport. `07-tablet-overview-preview.png` records the 1024 × 768 adaptation. These are local production-build captures; they do not establish what a deployed revision serves or constitute final visual sign-off.
