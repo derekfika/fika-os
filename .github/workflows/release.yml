@@ -13,6 +13,10 @@ on:
       sha:
         description: Optional agent-pinned candidate; defaults to main. Never a ledger commit.
         required: false
+      diagnose_oidc:
+        description: Inspect staging-hub OIDC claims only (requires execute off and no resume)
+        type: boolean
+        default: false
       execute:
         description: Submit rollout; false is a read-only dry run
         type: boolean
@@ -34,7 +38,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release:
-    if: github.repository == 'derekfika/fika-os' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.workflow_ref == 'derekfika/fika-os/.github/workflows/release.yml@refs/heads/main'
+    if: github.repository == 'derekfika/fika-os' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.workflow_ref == 'derekfika/fika-os/.github/workflows/release.yml@refs/heads/main' && (!inputs.diagnose_oidc || (inputs.app == 'hub' && inputs.environment == 'staging' && !inputs.execute && inputs.resume_run_id == ''))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: ${{ inputs.environment }}-${{ inputs.app }}
@@ -45,6 +49,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
+          persist-credentials: ${{ !inputs.diagnose_oidc }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
@@ -58,14 +63,62 @@ jobs:
           PROVIDER: ${{ vars.FIKA_GCP_WORKLOAD_IDENTITY_PROVIDER }}
           SERVICE_ACCOUNT: ${{ vars.FIKA_GCP_RELEASE_SERVICE_ACCOUNT }}
         run: test -n "$PROVIDER" && test -n "$SERVICE_ACCOUNT" || { echo 'Configure a reviewed least-privilege GCP workload identity; local authorised fika deploy remains available. No rollout submitted.'; exit 1; }
+      - name: Compare staging-hub OIDC claims
+        if: inputs.diagnose_oidc
+        env:
+          PROVIDER: ${{ vars.FIKA_GCP_WORKLOAD_IDENTITY_PROVIDER }}
+        run: |
+          node --input-type=module <<'NODE'
+          const expected = {
+            repository_id: '1297704019',
+            repository_owner_id: '290282101',
+            ref: 'refs/heads/main',
+            workflow_ref: 'derekfika/fika-os/.github/workflows/release.yml@refs/heads/main',
+            event_name: 'workflow_dispatch',
+            sub: 'repo/fika-os:environment',
+          };
+          const providerSubject = 'repo:derekfika/fika-os:environment:staging-hub';
+          const immutableSubject = 'repo:derekfika@290282101/fika-os@1297704019:environment:staging-hub';
+
+          let claims;
+          try {
+            const url = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+            url.searchParams.set('audience', `https://iam.googleapis.com/${process.env.PROVIDER}`);
+            const response = await fetch(url, {
+              headers: { Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
+              redirect: 'error',
+              signal: AbortSignal.timeout(15000),
+            });
+            if (!response.ok) throw Error();
+            const { value } = await response.json();
+            const parts = value.split('.');
+            if (parts.length !== 3) throw Error();
+            claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+            if (!claims || typeof claims !== 'object' || Array.isArray(claims)) throw Error();
+          } catch {
+            console.log('OIDC claim inspection: FAIL');
+            process.exit(1);
+          }
+
+          const status = (check) => check ? 'PASS' : 'FAIL';
+          for (const [claim, value] of Object.entries(expected)) {
+            const present = Object.hasOwn(claims, claim);
+            console.log(`${claim} present=${status(present)} equals requested=${status(present && claims[claim] === value)}`);
+          }
+          console.log(`sub equals provider condition=${status(claims.sub === providerSubject)}`);
+          console.log(`sub equals immutable staging-hub subject=${status(claims.sub === immutableSubject)}`);
+          NODE
       - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
+        if: ${{ !inputs.diagnose_oidc }}
         with:
           workload_identity_provider: ${{ vars.FIKA_GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.FIKA_GCP_RELEASE_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
+        if: ${{ !inputs.diagnose_oidc }}
       - run: npm install --global firebase-tools@15.30.2
+        if: ${{ !inputs.diagnose_oidc }}
       - name: Restore plan-scoped recovery journal when requested
-        if: inputs.resume_run_id != ''
+        if: ${{ !inputs.diagnose_oidc && inputs.resume_run_id != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
           PREVIOUS_RUN: ${{ inputs.resume_run_id }}
@@ -77,6 +130,7 @@ jobs:
           mkdir -p .git/fika-workflow
           cp "$RUNNER_TEMP/fika-resume/release-$APP-$TARGET_ENV.json" ".git/fika-workflow/"
       - name: Exact selected-app plan / rollout
+        if: ${{ !inputs.diagnose_oidc }}
         env:
           GH_TOKEN: ${{ github.token }}
           APP: ${{ inputs.app }}
@@ -95,7 +149,7 @@ jobs:
           if [ -n "$PREVIOUS_RUN" ]; then args+=(--resume); fi
           node tools/workflow/cli.mjs "${args[@]}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
+        if: ${{ always() && !inputs.diagnose_oidc }}
         with:
           name: release-journal-${{ inputs.environment }}-${{ inputs.app }}
           path: .git/fika-workflow/release-${{ inputs.app }}-${{ inputs.environment }}.json
