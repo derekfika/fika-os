@@ -10,6 +10,10 @@ export const lifecycleSchema = z.enum(["idea", "in_development", "ready_for_appr
 export const classificationSchema = z.enum(["classic_source", "fika_original", "draft_concept"]);
 export const approvalKindSchema = z.enum(["operational", "brand"]);
 export const approvalDecisionSchema = z.enum(["pending", "approved", "rejected", "changes_requested"]);
+export const MAX_PASTED_RECIPE_CANDIDATES = 20;
+const importHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
+const importIndexSchema = z.number().int().min(0).max(MAX_PASTED_RECIPE_CANDIDATES - 1);
+const importSourceCandidateSchema = z.object({ index: importIndexSchema, hash: importHashSchema }).strict();
 
 export const ingredientLineSchema = z.object({
   id,
@@ -98,7 +102,12 @@ export const beverageRecordSchema = z.object({
   updatedAt: z.string().datetime(),
   createdBy: id,
   updatedBy: id,
-  sourceEvidence: z.object({ fileName: z.string().max(240), importedAt: z.string().datetime(), sourceKey: z.string().max(240) }).strict().optional(),
+  sourceEvidence: z.object({
+    fileName: z.string().max(240),
+    importedAt: z.string().datetime(),
+    sourceKey: z.string().max(240),
+    candidate: importSourceCandidateSchema.optional(),
+  }).strict().optional(),
   prototypes: z.array(z.object({ id, name: z.string().min(1).max(160), notes: z.string().max(2000), outcome: z.enum(["promising", "needs_work", "not_progressing"]).optional(), versionId: id.optional(), createdAt: z.string().datetime() }).strict()).max(200),
   rollouts: z.array(siteRolloutSchema).max(200),
   approvals: z.array(approvalSchema).max(200),
@@ -152,15 +161,40 @@ export const beverageAuditEventSchema = z.object({
 export type BeverageRecord = z.infer<typeof beverageRecordSchema>;
 export type MonthlySpecialRecord = z.infer<typeof monthlySpecialSchema>;
 export type BeverageAuditEvent = z.infer<typeof beverageAuditEventSchema>;
+const reviewedImportIngredientSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+  amount: z.number().min(0.001).max(1_000_000).refine(value => Number(value.toFixed(3)) === value).optional(),
+  unit: z.string().trim().min(1).max(24).optional(),
+}).strict().refine(line => line.amount === undefined || line.unit !== undefined, { path: ["unit"], message: "Select a unit for the entered quantity." });
+
+export const reviewedImportRecipeSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+  beverageType: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(2000),
+  ingredients: z.array(reviewedImportIngredientSchema).max(100),
+  method: z.string().trim().max(8000),
+  glassware: z.string().trim().max(160),
+  garnish: z.string().trim().max(3991),
+  equipment: z.array(z.string().trim().min(1).max(160)).max(40),
+}).strict().refine(recipe => recipe.equipment.length + Number(Boolean(recipe.glassware)) <= 40, { path: ["equipment"], message: "Use at most 40 equipment and glassware entries combined." });
+
+export const localImportPreviewRequestSchema = z.object({ text: z.string() }).strict();
+export const localImportCommitRequestSchema = localImportPreviewRequestSchema.extend({
+  sourceHash: importHashSchema,
+  candidateIndex: importIndexSchema,
+  candidateHash: importHashSchema,
+  classification: classificationSchema,
+  reviewed: z.literal(true),
+  reviewedCandidate: reviewedImportRecipeSchema,
+});
+
+export type ReviewedImportRecipe = z.infer<typeof reviewedImportRecipeSchema>;
+export type PastedRecipeProvenance = { sourceHash: string; candidate: z.infer<typeof importSourceCandidateSchema> };
 export type LocalImportCandidate = {
-  name: string;
-  beverageType: string;
-  description: string;
-  ingredients: Array<{ name: string; amount?: number; unit?: string; costPerUnit?: number }>;
-  method: string;
-  glassware?: string;
-  garnish?: string;
-  classification: "classic_source" | "fika_original" | "draft_concept";
-  sourceLabel: string;
+  index: number;
+  candidateHash: string;
+  recipe: ReviewedImportRecipe;
+  confidence: "low" | "medium" | "high";
   warnings: string[];
 };
+export type LocalImportPreview = { sourceHash: string; sourceLabel: string; candidates: LocalImportCandidate[] };

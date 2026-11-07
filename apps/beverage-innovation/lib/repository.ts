@@ -82,6 +82,7 @@ export async function commitBeverageCommand<T extends VersionedEntity>(input: {
   idempotencyKey: string;
   actor: BeverageActor;
   summary: Record<string, string | number | boolean | null>;
+  commandFingerprint?: string;
   schema: { parse(value: unknown): T };
   create?: boolean;
   mutate(current: T | undefined, at: string): T | Promise<T>;
@@ -97,7 +98,11 @@ export async function commitBeverageCommand<T extends VersionedEntity>(input: {
     const [eventSnapshot, entitySnapshot] = await Promise.all([transaction.get(eventRef), transaction.get(entityRef)]);
     if (eventSnapshot.exists) {
       const event = beverageAuditEventSchema.parse(eventSnapshot.data());
-      if (event.entityId !== input.entityId || event.entityType !== input.entityType || event.action !== input.action || event.actorId !== input.actor.authmodIdentityId) throw failure("Idempotency key was already used for a different Beverage command.", 409, "BEVERAGE_IDEMPOTENCY_KEY_REUSED");
+      if (event.entityId !== input.entityId || event.entityType !== input.entityType || event.action !== input.action ||
+          event.actorId !== input.actor.authmodIdentityId ||
+          (input.commandFingerprint !== undefined && event.summary.commandFingerprint !== input.commandFingerprint)) {
+        throw failure("Idempotency key was already used for a different Beverage command.", 409, "BEVERAGE_IDEMPOTENCY_KEY_REUSED");
+      }
       if (!entitySnapshot.exists) throw failure("A committed Beverage command is missing its authoritative record.", 503, "BEVERAGE_COMMAND_ENTITY_MISSING");
       try { return input.schema.parse(entitySnapshot.data()); } catch (error) { return schemaFailure(input.entityType, error); }
     }
@@ -129,7 +134,7 @@ export async function commitBeverageCommand<T extends VersionedEntity>(input: {
       sourceApp: "beverage-innovation",
       occurredAt: at,
       idempotencyKey: input.idempotencyKey,
-      summary: input.summary,
+      summary: { ...input.summary, ...(input.commandFingerprint ? { commandFingerprint: input.commandFingerprint } : {}) },
     });
     transaction.set(entityRef, after);
     transaction.create(eventRef, event);
