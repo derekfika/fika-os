@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { LocalImportPreview } from "../../lib/contracts";
-import { initialReview, prepareImport, reviewCompleteness, type PendingImport, type ReviewForm, type ReviewSession } from "./review-model";
+import { initialReview, normalizeReviewedName, prepareImport, reviewCompleteness, type PendingImport, type ReviewForm, type ReviewSession } from "./review-model";
 
 const example = "Name: Winter Citrus Cooler\nType: Mocktail\nDescription: A bright citrus drink developed for winter service.\nIngredient: 20 ml orange juice\nIngredient: mint leaves\nMethod: Shake with ice and strain.\nGlassware: Highball glass\nGarnish: Orange wheel\nEquipment: Shaker\n\nName: Garden Fizz\nType: Mocktail\nIngredient: 30 ml apple juice\nIngredient: soda water\nMethod: Stir and serve chilled.\nEquipment: Spoon";
 const messageOf = (body: unknown) => {
@@ -18,11 +18,19 @@ export default function ImportReview() {
   const [pending, setPending] = useState<PendingImport>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [nameChecks, setNameChecks] = useState<Record<number, { normalizedName: string; status: "checking" | "checked" | "error"; duplicate?: boolean }>>({});
   const busyRef = useRef(false);
+  const checkCounter = useRef(0);
+  const checkSequence = useRef<Record<number, number>>({});
+  const inFlightChecks = useRef<Record<number, { normalizedName: string; sequence: number }>>({});
   const locked = busy || Boolean(pending);
   const candidate = session?.preview.candidates[selected];
   const form = session?.forms[selected];
   const saved = Boolean(candidate && session?.saved.includes(candidate.index));
+  const normalizedName = form ? normalizeReviewedName(form.name) : "";
+  const nameChanged = Boolean(candidate && normalizedName !== normalizeReviewedName(candidate.recipe.name));
+  const nameCheck = candidate ? nameChecks[candidate.index] : undefined;
+  const nameCheckReady = !nameChanged || Boolean(nameCheck?.status === "checked" && nameCheck.normalizedName === normalizedName);
 
   function updateForm(patch: Partial<ReviewForm>) {
     if (locked || saved) return;
@@ -30,9 +38,38 @@ export default function ImportReview() {
     setConfirmed(false);
   }
 
+  function updateName(name: string) {
+    if (!candidate || locked || saved) return;
+    const index = candidate.index;
+    checkSequence.current[index] = ++checkCounter.current;
+    delete inFlightChecks.current[index];
+    setNameChecks(current => { const next = { ...current }; delete next[index]; return next; });
+    updateForm({ name });
+  }
+
+  async function checkEditedName() {
+    if (!candidate || !form || locked || saved || !nameChanged || !normalizedName) return;
+    const index = candidate.index;
+    if (inFlightChecks.current[index]?.normalizedName === normalizedName) return;
+    const sequence = ++checkCounter.current;
+    checkSequence.current[index] = sequence;
+    inFlightChecks.current[index] = { normalizedName, sequence };
+    setNameChecks(current => ({ ...current, [index]: { normalizedName, status: "checking" } }));
+    try {
+      const response = await fetch("/api/imports/name-check", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.name }) });
+      const body = await response.json();
+      if (!response.ok || body.normalizedName !== normalizedName || typeof body.duplicate !== "boolean") throw new Error("Name check unavailable");
+      if (checkSequence.current[index] === sequence) setNameChecks(current => ({ ...current, [index]: { normalizedName, status: "checked", duplicate: body.duplicate } }));
+    } catch {
+      if (checkSequence.current[index] === sequence) setNameChecks(current => ({ ...current, [index]: { normalizedName, status: "error" } }));
+    } finally {
+      if (inFlightChecks.current[index]?.sequence === sequence) delete inFlightChecks.current[index];
+    }
+  }
+
   async function previewSource() {
     if (busyRef.current || pending) return;
-    busyRef.current = true; setBusy(true); setMessage(""); setSession(undefined); setConfirmed(false);
+    busyRef.current = true; setBusy(true); setMessage(""); setSession(undefined); setNameChecks({}); checkSequence.current = {}; inFlightChecks.current = {}; setConfirmed(false);
     try {
       const response = await fetch("/api/imports/preview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
       const body = await response.json();
@@ -66,7 +103,8 @@ export default function ImportReview() {
   function createDraft() {
     if (!session || busyRef.current) return;
     if (pending) { void sendImport(pending); return; }
-    const result = prepareImport(session, selected, confirmed, "beverage-ui:" + crypto.randomUUID());
+    const verifiedName = nameCheck?.status === "checked" && typeof nameCheck.duplicate === "boolean" ? { normalizedName: nameCheck.normalizedName, duplicate: nameCheck.duplicate } : undefined;
+    const result = prepareImport(session, selected, confirmed, "beverage-ui:" + crypto.randomUUID(), verifiedName);
     if (!result.pending) { setMessage(result.error || "Review the selected candidate."); return; }
     void sendImport(result.pending);
   }
@@ -76,7 +114,7 @@ export default function ImportReview() {
     <div className="ir-workspace"><div className="ir-heading"><div><h1>Review recipe import</h1><p>Paste fictional recipe text, review each candidate and explicitly create a local draft.</p></div></div>
       {message && <div className="ir-message" role="status">{message}</div>}
       <section className="ir-card ir-source" aria-labelledby="source-title"><div><h2 id="source-title">1. Add a source</h2><p>Use a Name: or Drink: label for each drink, or separate unlabelled recipes with ---. Up to 20 drinks and 20,000 characters.</p></div>
-        <label>Recipe source text<textarea rows={9} maxLength={20000} value={text} disabled={locked} onChange={event => { setText(event.target.value); setSession(undefined); setConfirmed(false); setMessage(""); }} /></label>
+        <label>Recipe source text<textarea rows={9} maxLength={20000} value={text} disabled={locked} onChange={event => { setText(event.target.value); setSession(undefined); setNameChecks({}); checkSequence.current = {}; inFlightChecks.current = {}; setConfirmed(false); setMessage(""); }} /></label>
         <div className="ir-actions"><button className="ir-primary" disabled={locked || !text.trim()} onClick={() => void previewSource()}>{busy && !pending ? "Checking source…" : "Preview candidates"}</button><span>Plain text only. No file or Google document is read.</span></div>
       </section>
       {session && candidate && form && <div className="ir-review-layout">
@@ -84,10 +122,11 @@ export default function ImportReview() {
           <div className="ir-provenance"><h3>Source provenance</h3><p>{session.preview.sourceLabel}</p><p>Source fingerprint</p><code>{session.preview.sourceHash}</code><p>Selected candidate {candidate.index + 1} fingerprint</p><code>{candidate.candidateHash}</code><p>The source text is used for this review and is not stored with the draft.</p></div>
         </aside>
         <section className="ir-card ir-editor" aria-labelledby="review-title"><div className="ir-editor-head"><div><h2 id="review-title">3. Review and edit</h2><p>Candidate {selected + 1} of {session.preview.candidates.length} · {candidate.confidence} extraction confidence</p></div>{saved && <span className="ir-badge">Draft created</span>}</div>
-          <div className="ir-warning"><strong>Parser warnings</strong><ul>{candidate.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul><p>Duplicate warnings refer to the parsed source name. An edited name is not checked again here.</p></div>
+          <div className="ir-warning"><strong>Parser warnings</strong><ul>{candidate.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul><p>These warnings refer to the original extracted candidate.</p></div>
           <div className="ir-completeness"><strong>Review completeness</strong>{reviewCompleteness(form).length ? <ul>{reviewCompleteness(form).map(issue => <li key={issue}>{issue}</li>)}</ul> : <p>Core fields are filled. Confirm them against the source before saving.</p>}</div>
           <fieldset className="ir-fields" disabled={locked || saved}><legend className="ir-sr-only">Editable recipe fields</legend>
-            <div className="ir-two"><label>Drink name <input value={form.name} maxLength={160} onChange={event => updateForm({ name: event.target.value })}/></label><label>Drink type <input value={form.beverageType} maxLength={80} onChange={event => updateForm({ beverageType: event.target.value })}/></label></div>
+            <div className="ir-two"><label>Drink name <input value={form.name} maxLength={160} onChange={event => updateName(event.target.value)} onBlur={() => void checkEditedName()}/></label><label>Drink type <input value={form.beverageType} maxLength={80} onChange={event => updateForm({ beverageType: event.target.value })}/></label></div>
+            {nameChanged && <div className="ir-name-check" aria-live="polite"><p>{!normalizedName ? "Enter a drink name to check for a local duplicate." : nameCheck?.normalizedName !== normalizedName ? "Check this edited name before creating a draft." : nameCheck.status === "checking" ? "Checking the edited name…" : nameCheck.status === "error" ? "The name check is unavailable. Retry before creating a draft." : nameCheck.duplicate ? "Possible duplicate: a local Beverage record has this name. Review it before saving." : "No exact name match found in local Beverage records."}</p><button className="ir-secondary" type="button" disabled={!normalizedName || nameCheck?.status === "checking"} onClick={() => void checkEditedName()}>{nameCheck?.status === "error" ? "Retry name check" : "Check edited name"}</button></div>}
             <label>Classification<select value={form.classification} onChange={event => updateForm({ classification: event.target.value as ReviewForm["classification"] })}><option value="draft_concept">Draft concept</option><option value="classic_source">Classic source</option><option value="fika_original">FIKA original</option></select></label>
             <label>Description<textarea rows={3} maxLength={2000} value={form.description} onChange={event => updateForm({ description: event.target.value })}/></label>
             <div className="ir-section-head"><div><h3>Ingredients · per drink</h3><p>Leave an unknown amount or unit blank. Costs and allergens remain unconfirmed.</p></div><button className="ir-secondary" type="button" disabled={form.ingredients.length >= 100} onClick={() => updateForm({ ingredients: [...form.ingredients, { name: "", amount: "", unit: "" }] })}>Add ingredient</button></div>
@@ -100,7 +139,7 @@ export default function ImportReview() {
           </fieldset>
           {pending && <p className="ir-warning">The result is unknown. Retry the same request; the review is locked to prevent duplicate drafts.</p>}
           {message && <p className="ir-inline-message" aria-hidden="true">{message}</p>}
-          <div className="ir-actions"><button className="ir-primary" disabled={busy || saved || (!pending && !confirmed)} onClick={createDraft}>{busy && pending ? "Creating draft…" : pending ? "Retry same request" : saved ? "Draft created" : "Create local draft"}</button><span>No notification or operational publication will be sent.</span></div>
+          <div className="ir-actions"><button className="ir-primary" disabled={busy || saved || (!pending && (!confirmed || !nameCheckReady))} onClick={createDraft}>{busy && pending ? "Creating draft…" : pending ? "Retry same request" : saved ? "Draft created" : "Create local draft"}</button><span>No notification or operational publication will be sent.</span></div>
         </section>
       </div>}
     </div>

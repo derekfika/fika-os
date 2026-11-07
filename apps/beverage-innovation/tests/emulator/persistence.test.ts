@@ -15,6 +15,7 @@ const { previewPastedRecipes, requirePastedRecipeCandidate } = await import("../
 const { beverageDb } = await import("../../lib/firestore-admin");
 const { POST: previewImport } = await import("../../app/api/imports/preview/route");
 const { POST: commitImport } = await import("../../app/api/imports/commit/route");
+const { POST: checkImportName } = await import("../../app/api/imports/name-check/route");
 const { initialReview, prepareImport } = await import("../../app/imports/review-model");
 const actor: BeverageActor = { authmodIdentityId: "fixture:beverage-test-operator", identityKind: "person", displayName: "Fictional Beverage local test actor", action: "Contribute", scopeOplocIds: ["fixture-oploc:london"], synthetic: true };
 
@@ -88,6 +89,14 @@ test("actual import routes preview without writes and atomically commit the edit
   assert.ok(result.candidates[0].warnings.some(warning => warning.includes("local Beverage records")));
   assert.ok(result.candidates[1].warnings.some(warning => warning.includes("Quantity and unit")));
   assert.deepEqual([await count(beverageCollections.beverages), await count(beverageCollections.audit)], before);
+  const existingName = await checkImportName(request("name-check", { name: duplicateName.toUpperCase() }));
+  assert.equal(existingName.status, 200);
+  assert.equal((await existingName.json()).duplicate, true);
+  const editedName = await checkImportName(request("name-check", { name: "Reviewed and corrected fixture cooler" }));
+  assert.equal(editedName.status, 200);
+  const nameCheck = await editedName.json();
+  assert.deepEqual(nameCheck, { normalizedName: "reviewed and corrected fixture cooler", duplicate: false });
+  assert.deepEqual([await count(beverageCollections.beverages), await count(beverageCollections.audit)], before);
 
   const candidate = result.candidates[1];
   const reviewedCandidate = {
@@ -99,7 +108,7 @@ test("actual import routes preview without writes and atomically commit the edit
   const key = `emulator-reviewed-import:${randomUUID()}`;
   const forms = result.candidates.map(initialReview);
   forms[1] = { ...forms[1], ...reviewedCandidate, ingredients: [{ name: "Mint sprig", amount: "1", unit: "each" }, { name: "Soda water", amount: "", unit: "" }], equipmentText: "Jigger\nSpoon" };
-  const prepared = prepareImport({ text, preview: result, forms, saved: [] }, 1, true, key);
+  const prepared = prepareImport({ text, preview: result, forms, saved: [] }, 1, true, key, nameCheck);
   assert.ok(prepared.pending);
   const body = JSON.parse(prepared.pending.body);
   const [firstResponse, replayResponse] = await Promise.all([

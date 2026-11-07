@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { POST as preview } from "../app/api/imports/preview/route";
 import { POST as commit } from "../app/api/imports/commit/route";
+import { POST as nameCheck } from "../app/api/imports/name-check/route";
 import { MAX_PASTED_RECIPE_CANDIDATES } from "../lib/contracts";
 import { previewPastedRecipes } from "../lib/import-preview";
 
@@ -81,12 +82,16 @@ test("import routes retain local fixture gates and reject unreviewed, altered an
   }
   assert.ok((await preview(request({ text }, "preview"))).status >= 400);
   assert.ok((await commit(request({ text }))).status >= 400);
+  assert.ok((await nameCheck(request({ name: "Fixture" }, "name-check"))).status >= 400);
   process.env.FIKA_RUNTIME_MODE = "local";
   assert.equal((await preview(request({ text }, "preview", "example.test"))).status, 403);
+  assert.equal((await nameCheck(request({ name: "Fixture" }, "name-check", "example.test"))).status, 403);
   process.env.FIKA_BEVERAGE_LOCAL_AUTH_ACTIONS = "View";
   assert.equal((await commit(request({ text }))).status, 403);
+  assert.equal((await nameCheck(request({ name: "Fixture" }, "name-check"))).status, 403);
   process.env.FIKA_BEVERAGE_LOCAL_AUTH_ACTIONS = "Contribute";
   assert.equal((await preview(request({ text: 12 }, "preview"))).status, 400);
+  assert.equal((await nameCheck(request({ name: "" }, "name-check"))).status, 400);
 
   const result = previewPastedRecipes(text);
   const candidate = result.candidates[0];

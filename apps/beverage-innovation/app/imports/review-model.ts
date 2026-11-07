@@ -15,6 +15,8 @@ export type ReviewSession = {
 };
 
 export type PendingImport = { key: string; body: string; candidateIndex: number };
+export type ReviewedNameCheck = { normalizedName: string; duplicate: boolean };
+export const normalizeReviewedName = (name: string) => name.trim().toLocaleLowerCase("en-GB");
 
 export function initialReview(candidate: LocalImportCandidate): ReviewForm {
   const { equipment, ingredients, ...fields } = candidate.recipe;
@@ -31,11 +33,13 @@ export function reviewCompleteness(form: ReviewForm): string[] {
   return issues;
 }
 
-export function prepareImport(session: ReviewSession, selection: number, confirmed: boolean, key: string): { pending?: PendingImport; error?: string } {
+export function prepareImport(session: ReviewSession, selection: number, confirmed: boolean, key: string, nameCheck?: ReviewedNameCheck): { pending?: PendingImport; error?: string } {
   const candidate = session.preview.candidates[selection];
   const form = session.forms[selection];
   if (!candidate || !form || session.saved.includes(candidate.index)) return { error: "Select an unsaved candidate to review." };
   if (!confirmed) return { error: "Confirm that you have reviewed the selected recipe against its source." };
+  const reviewedName = normalizeReviewedName(form.name);
+  if (reviewedName !== normalizeReviewedName(candidate.recipe.name) && (!nameCheck || nameCheck.normalizedName !== reviewedName)) return { error: "Check the edited name for a local duplicate before creating a draft." };
   if (form.ingredients.some(line => line.amount.trim() && !/^\d+(?:\.\d{1,3})?$/.test(line.amount.trim()))) return { error: "Use a positive quantity with up to three decimal places, or leave it blank." };
   const result = reviewedImportRecipeSchema.safeParse({
     name: form.name, beverageType: form.beverageType, description: form.description,

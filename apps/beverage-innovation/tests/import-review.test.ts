@@ -18,13 +18,15 @@ test("review payload binds the selected fingerprint, preserves all edited fields
   const session = { text, preview, forms: preview.candidates.map(initialReview), saved: [] as number[] };
   assert.match(prepareImport(session, 1, false, "fixture:key").error!, /Confirm/);
   session.forms[1] = { ...form, name: "Corrected fixture", beverageType: "Cold drink", description: "Reviewed description", ingredients: [{ name: "Mint sprig", amount: "1", unit: "each" }], method: "Build over ice.", glassware: "Tall glass", garnish: "Mint", equipmentText: "Spoon\nJigger", classification: "classic_source" };
-  const pending = prepareImport(session, 1, true, "fixture:key").pending!;
+  assert.match(prepareImport(session, 1, true, "fixture:key").error!, /Check the edited name/);
+  const nameCheck = { normalizedName: "corrected fixture", duplicate: true };
+  const pending = prepareImport(session, 1, true, "fixture:key", nameCheck).pending!;
   assert.deepEqual(JSON.parse(pending.body), { text, sourceHash: preview.sourceHash, candidateIndex: 1, candidateHash: preview.candidates[1].candidateHash, classification: "classic_source", reviewed: true, reviewedCandidate: { name: "Corrected fixture", beverageType: "Cold drink", description: "Reviewed description", ingredients: [{ name: "Mint sprig", amount: 1, unit: "each" }], method: "Build over ice.", glassware: "Tall glass", garnish: "Mint", equipment: ["Spoon", "Jigger"] } });
   session.forms[1].ingredients[0].amount = "1.2345";
-  assert.match(prepareImport(session, 1, true, "fixture:key").error!, /three decimal/);
+  assert.match(prepareImport(session, 1, true, "fixture:key", nameCheck).error!, /three decimal/);
   session.forms[1].ingredients[0].amount = "1";
   session.forms[1].ingredients[0].unit = "";
-  assert.match(prepareImport(session, 1, true, "fixture:key").error!, /unit/i);
+  assert.match(prepareImport(session, 1, true, "fixture:key", nameCheck).error!, /unit/i);
   session.saved.push(1);
   assert.match(prepareImport(session, 1, true, "fixture:key").error!, /unsaved/);
 });
@@ -37,6 +39,7 @@ test("component reviews multiple candidates and retries an uncertain submission 
     const url = String(input);
     calls.push({ url, body: String(init?.body), key: (init?.headers as Record<string, string>)?.["idempotency-key"] });
     if (url.endsWith("/preview")) return Response.json(preview);
+    if (url.endsWith("/name-check")) return Response.json({ normalizedName: "corrected fixture", duplicate: true });
     commits++;
     if (commits === 1) throw new TypeError("network response lost");
     if (commits === 2) return Response.json({ error: { message: "Access unavailable" } }, { status: 403 });
@@ -56,6 +59,8 @@ test("component reviews multiple candidates and retries an uncertain submission 
   await act(async () => { rendered.root.findAllByProps({ name: "candidate" })[1].props.onChange(); });
   const change = async (label: string, type: "input" | "textarea" | "select", value: string) => { await act(async () => { findLabel(rendered.root, label).findByType(type).props.onChange({ target: { value } }); }); };
   await change("Drink name", "input", "Corrected fixture");
+  await act(async () => { findLabel(rendered.root, "Drink name").findByType("input").props.onBlur(); });
+  assert.ok(rendered.root.findAllByType("p").some(item => item.children.some(child => typeof child === "string" && child.includes("Possible duplicate"))));
   await change("Drink type", "input", "Cold drink");
   await change("Description", "textarea", "Reviewed description");
   await change("Ingredient 1", "input", "Mint sprig");
@@ -89,4 +94,32 @@ test("component reviews multiple candidates and retries an uncertain submission 
   assert.equal(findLabel(rendered.root, "Drink name").findByType("input").props.value, "First edited");
   await act(async () => { findLabel(rendered.root, "Recipe source text").findByType("textarea").props.onChange({ target: { value: text + "\nChanged source" } }); });
   assert.equal(rendered.root.findAllByProps({ name: "candidate" }).length, 0, "changing source requires a fresh preview");
+});
+
+test("name checks discard stale responses and fail closed when the lookup is unavailable", async t => {
+  const originalFetch = globalThis.fetch;
+  let finishFirst!: (response: Response) => void;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith("/preview")) return Response.json(preview);
+    const name = JSON.parse(String(init?.body)).name;
+    if (name === "First edit") return new Promise<Response>(resolve => { finishFirst = resolve; });
+    if (name === "Second edit") return Response.json({ normalizedName: "second edit", duplicate: false });
+    return Response.json({ error: { message: "Unavailable" } }, { status: 503 });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+  let rendered!: ReactTestRenderer;
+  await act(async () => { rendered = create(createElement(ImportReview)); });
+  t.after(() => { act(() => rendered.unmount()); });
+  await act(async () => { findLabel(rendered.root, "Recipe source text").findByType("textarea").props.onChange({ target: { value: text } }); });
+  await act(async () => { findButton(rendered.root, "Preview candidates").props.onClick(); });
+  const editName = async (name: string) => { await act(async () => { findLabel(rendered.root, "Drink name").findByType("input").props.onChange({ target: { value: name } }); }); };
+  const blurName = async () => { await act(async () => { findLabel(rendered.root, "Drink name").findByType("input").props.onBlur(); }); };
+  await editName("First edit"); await blurName();
+  await editName("Second edit"); await blurName();
+  await act(async () => { finishFirst(Response.json({ normalizedName: "first edit", duplicate: true })); });
+  assert.ok(rendered.root.findAllByType("p").some(item => item.children.includes("No exact name match found in local Beverage records.")));
+  await editName("Third edit"); await blurName();
+  assert.ok(rendered.root.findAllByType("p").some(item => item.children.includes("The name check is unavailable. Retry before creating a draft.")));
+  await act(async () => { rendered.root.findByProps({ type: "checkbox" }).props.onChange({ target: { checked: true } }); });
+  assert.equal(findButton(rendered.root, "Create local draft").props.disabled, true);
 });
