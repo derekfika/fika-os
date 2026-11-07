@@ -58,7 +58,11 @@ export class FirestoreAuthModRepository implements AuthModRepository {
   async listIdentities() { return readAll<AuthIdentity>(collections.identities); }
   async listLegendReferences(search = "", limit = 100) { const references = (await this.referencePackage()).legends; const needle = search.trim().toLowerCase(); return references.filter(value => !needle || value.label.toLowerCase().includes(needle)).slice(0, Math.min(limit, 1000)); }
   async findIdentityByExternal(provider: string, uid: string) { return (await this.findIdentitiesByExternal(provider, uid, 1))[0]; }
-  async findIdentitiesByExternal(provider: string, uid: string, limit = 2) { const snapshot = await firestoreRead("findIdentitiesByExternal", collections.identities, () => db.collection(collections.identities).where("externalProvider", "==", provider).where("externalUid", "==", uid).limit(Math.min(limit, 10)).get()); return snapshot.docs.map(document => document.data() as AuthIdentity); }
+  async findIdentitiesByExternal(provider: string, uid: string, limit = 2) {
+    const query = db.collection(collections.identities).where("externalProvider", "==", provider).where("externalUid", "==", uid).limit(Math.min(limit, 10));
+    const snapshot = await firestoreRead("findIdentitiesByExternal", collections.identities, () => this.transaction ? this.transaction.get(query) : query.get());
+    return snapshot.docs.map(document => document.data() as AuthIdentity);
+  }
   async findIdentityByEmail(email: string) { return (await this.findIdentitiesByEmail(email, 1))[0]; }
   async findIdentitiesByEmail(email: string, limit = 2) { const snapshot = await firestoreRead("findIdentitiesByEmail", collections.identities, () => db.collection(collections.identities).where("normalizedEmail", "==", email.trim().toLowerCase()).limit(Math.min(limit, 10)).get()); return snapshot.docs.map(document => document.data() as AuthIdentity); }
   async findIdentityByLegend(legendId: string) { const snapshot = await firestoreRead("findIdentityByLegend", collections.identities, () => db.collection(collections.identities).where("legendId", "==", legendId).limit(1).get()); return snapshot.empty ? undefined : snapshot.docs[0].data() as AuthIdentity; }
