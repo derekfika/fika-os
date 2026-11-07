@@ -1,3 +1,5 @@
+import type { BeverageRecord } from "./contracts";
+
 export type Lifecycle = "idea" | "in_development" | "ready_for_approval" | "brand_review" | "approved" | "asset_generation" | "rollout" | "live" | "review" | "archived" | "retired";
 export type RolloutState = "not_started" | "blocked" | "in_progress" | "ready" | "live" | "ended";
 export type ApprovalDecision = "pending" | "approved" | "rejected" | "changes_requested";
@@ -17,7 +19,7 @@ export type BeverageAsset = { id: string; type: "photo" | "recipe_card" | "servi
 export type SiteRollout = { id: string; oplocId: string; siteLabel: string; state: RolloutState; launchDate?: string; endDate?: string; localPrice?: number; blockers: string[]; readiness: { equipment: boolean; ingredients: "deferred" | "ready"; training: boolean; assets: boolean } };
 export type Feedback = { id: string; siteLabel: string; note: string; severity: "low" | "medium" | "high"; createdAt: string };
 export type BeverageConcept = { inspiration?: string; flavourDirection?: string; useCase?: string; serviceFormat?: string; seasonalContext?: string; notes?: string };
-export type SourceEvidence = { fileName: string; importedAt: string; sourceKey: string; candidate?: { index: number; hash: string } };
+export type SourceEvidence = NonNullable<BeverageRecord["sourceEvidence"]>;
 export type BeverageClassification = "classic_source" | "fika_original" | "draft_concept";
 export type DerivedFrom = { beverageId: string; versionId: string };
 export type BeverageInnovation = {

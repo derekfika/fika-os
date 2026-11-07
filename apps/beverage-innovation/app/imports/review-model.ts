@@ -1,26 +1,27 @@
-import { reviewedImportRecipeSchema, type LocalImportCandidate, type LocalImportPreview, type ReviewedImportRecipe } from "../../lib/contracts";
+import { reviewedImportRecipeSchema, type LocalDocumentImportPreview, type LocalImportCandidate, type LocalImportPreview, type ReviewedImportRecipe } from "../../lib/contracts";
 import type { BeverageClassification } from "../../lib/domain";
 
 export type ReviewForm = Omit<ReviewedImportRecipe, "ingredients" | "equipment"> & {
   ingredients: { name: string; amount: string; unit: string }[];
   equipmentText: string;
-  classification: BeverageClassification;
+  classification: BeverageClassification | "";
 };
 
+export type ReviewSource = { kind: "text"; text: string } | { kind: "document"; file: File };
 export type ReviewSession = {
-  text: string;
-  preview: LocalImportPreview;
+  source: ReviewSource;
+  preview: LocalImportPreview | LocalDocumentImportPreview;
   forms: ReviewForm[];
   saved: number[];
 };
 
-export type PendingImport = { key: string; body: string; candidateIndex: number };
+export type PendingImport = { key: string; body: string; candidateIndex: number; source: ReviewSource };
 export type ReviewedNameCheck = { normalizedName: string; duplicate: boolean };
 export const normalizeReviewedName = (name: string) => name.trim().toLocaleLowerCase("en-GB");
 
 export function initialReview(candidate: LocalImportCandidate): ReviewForm {
   const { equipment, ingredients, ...fields } = candidate.recipe;
-  return { ...fields, equipmentText: equipment.join("\n"), classification: "draft_concept", ingredients: ingredients.map(line => ({ name: line.name, amount: line.amount === undefined ? "" : String(line.amount), unit: line.unit || "" })) };
+  return { ...fields, equipmentText: equipment.join("\n"), classification: "", ingredients: ingredients.map(line => ({ name: line.name, amount: line.amount === undefined ? "" : String(line.amount), unit: line.unit || "" })) };
 }
 
 export function reviewCompleteness(form: ReviewForm): string[] {
@@ -38,6 +39,7 @@ export function prepareImport(session: ReviewSession, selection: number, confirm
   const form = session.forms[selection];
   if (!candidate || !form || session.saved.includes(candidate.index)) return { error: "Select an unsaved candidate to review." };
   if (!confirmed) return { error: "Confirm that you have reviewed the selected recipe against its source." };
+  if (!form.classification) return { error: "Choose whether this source is a classic, a FIKA original or a draft concept." };
   const reviewedName = normalizeReviewedName(form.name);
   if (reviewedName !== normalizeReviewedName(candidate.recipe.name) && (!nameCheck || nameCheck.normalizedName !== reviewedName)) return { error: "Check the edited name for a local duplicate before creating a draft." };
   if (form.ingredients.some(line => line.amount.trim() && !/^\d+(?:\.\d{1,3})?$/.test(line.amount.trim()))) return { error: "Use a positive quantity with up to three decimal places, or leave it blank." };
@@ -52,5 +54,7 @@ export function prepareImport(session: ReviewSession, selection: number, confirm
     const field = issue.path.map(part => typeof part === "number" ? String(part + 1) : String(part)).join(" ");
     return { error: `${field || "Recipe"}: ${issue.message}` };
   }
-  return { pending: { key, candidateIndex: candidate.index, body: JSON.stringify({ text: session.text, sourceHash: session.preview.sourceHash, candidateIndex: candidate.index, candidateHash: candidate.candidateHash, classification: form.classification, reviewed: true, reviewedCandidate: result.data }) } };
+  const review = { sourceHash: session.preview.sourceHash, candidateIndex: candidate.index, candidateHash: candidate.candidateHash, classification: form.classification, reviewed: true, reviewedCandidate: result.data };
+  const body = session.source.kind === "text" ? { text: session.source.text, ...review } : review;
+  return { pending: { key, candidateIndex: candidate.index, body: JSON.stringify(body), source: session.source } };
 }

@@ -15,8 +15,10 @@ const findLabel = (root: ReactTestInstance, label: string) => root.findAllByType
 test("review payload binds the selected fingerprint, preserves all edited fields and requires confirmation", () => {
   const form = initialReview(preview.candidates[1]);
   assert.ok(reviewCompleteness(form).some(issue => issue.includes("quantity")));
-  const session = { text, preview, forms: preview.candidates.map(initialReview), saved: [] as number[] };
+  const session = { source: { kind: "text" as const, text }, preview, forms: preview.candidates.map(initialReview), saved: [] as number[] };
   assert.match(prepareImport(session, 1, false, "fixture:key").error!, /Confirm/);
+  assert.equal(session.forms[1].classification, "", "classification must be explicitly selected during review");
+  assert.match(prepareImport(session, 1, true, "fixture:key").error!, /Choose whether this source/);
   session.forms[1] = { ...form, name: "Corrected fixture", beverageType: "Cold drink", description: "Reviewed description", ingredients: [{ name: "Mint sprig", amount: "1", unit: "each" }], method: "Build over ice.", glassware: "Tall glass", garnish: "Mint", equipmentText: "Spoon\nJigger", classification: "classic_source" };
   assert.match(prepareImport(session, 1, true, "fixture:key").error!, /Check the edited name/);
   const nameCheck = { normalizedName: "corrected fixture", duplicate: true };
