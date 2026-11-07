@@ -331,7 +331,7 @@
 .real-planner .collection-toggle { display:flex; align-items:center; gap:7px; margin:8px 12px; color:#4f34c7; font-size:10px; font-weight:800; }
 .real-planner .collection-toggle input { width:14px; height:14px; accent-color:#4f34c7; }
 .real-planner .inspector-collection-toggle { margin:10px 0; padding:8px 10px; border:1px solid #ded9ed; border-radius:6px; background:#faf9ff; }
-.real-planner .mock-inspector { box-sizing:border-box; width:min(390px, 92vw); padding:20px; overflow-y:auto; }
+.real-planner .mock-inspector { box-sizing:border-box; overflow-y:auto; }
 .real-planner .mock-inspector > header { position:sticky; top:-20px; z-index:2; margin:0 -20px 16px; padding:20px 20px 14px; background:#fff; }
 .real-planner .mock-inspector > header h2 { max-width:290px; line-height:1.1; }
 .real-planner .mock-inspector > h3 { margin:20px 0 8px; padding-top:14px; border-top:1px solid #ece8f4; }
@@ -532,6 +532,15 @@
 .real-planner .mock-inspector .attached-work > button:not(.subload-card) { align-self: center; }
 .real-planner .mock-inspector .stop-detail > select,
 .real-planner .mock-inspector .stop-detail select { width: 100%; margin-top: 12px; padding: 0 9px; background: #fff; }
+
+/* Inspector layout: one clear block for the collection toggle (no collision with the metadata rows below it), and assignment controls that shrink inside the panel instead of clipping at its edge. */
+.real-planner .mock-inspector .inspector-collection-toggle { display: flex; align-items: center; gap: 8px; box-sizing: border-box; min-height: 40px; margin: 12px 0 14px; padding: 8px 10px; }
+.real-planner .mock-inspector .inspector-meta { min-width: 0; }
+.real-planner .mock-inspector .run-chooser,
+.real-planner .mock-inspector .run-chooser label,
+.real-planner .mock-inspector .run-chooser select,
+.real-planner .mock-inspector .run-chooser input { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.real-planner .mock-inspector .run-chooser input[type="time"] { width: 100%; }
 
 /* Dispatch control tower: queue + driver timeline. */
 .control-tower {
