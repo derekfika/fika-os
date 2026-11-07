@@ -7,9 +7,6 @@ env:
   - variable: FIREBASE_PROJECT_ID
     value: fika-os-dev
     availability: [BUILD, RUNTIME]
-  - variable: FIRESTORE_EMULATOR_HOST
-    value: 127.0.0.1:8294
-    availability: [RUNTIME]
   - variable: FIKA_BEVERAGE_PREVIEW_ONLY
     value: "1"
     availability: [BUILD, RUNTIME]
