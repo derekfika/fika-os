@@ -1,6 +1,6 @@
 import { APPS } from './policy.mjs';
 
-export const CHANGELOG_APPS = [...Object.values(APPS).map(a => a.path.slice(5)), 'ad-hoc-production', 'beverage-innovation', 'events-dashboard'];
+export const CHANGELOG_APPS = [...new Set([...Object.values(APPS).map(a => a.path.slice(5)), 'ad-hoc-production', 'beverage-innovation', 'events-dashboard'])];
 export const changelogPath = p => p === 'CHANGELOG.md' || /^apps\/[^/]+\/CHANGELOG\.md$/.test(p) || /^\.changes\/(platform|[a-z0-9-]+)\/[a-z0-9][a-z0-9-]*\.md$/.test(p);
 const documentation = p => changelogPath(p) || /\.md$/.test(p) || /(^|\/)docs\//.test(p);
 

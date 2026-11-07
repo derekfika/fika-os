@@ -26,11 +26,12 @@ export function appendRecord(t, record, expected) {
   return commit;
 }
 
-/** Read-only, backend-specific proof for Ad-Hoc first release/retry. No missing
+/** Read-only, backend-specific proof for an explicitly allowed empty first target. No missing
  * serving revision is interpreted as empty unless Firebase independently proves
  * backend identity, disabled automatic rollouts, zero traffic and no live ops. */
-export async function inspectAdhocProductionState(t, read = cloud, { allowFailedHistory = false } = {}) {
-  if (t.app !== 'adhoc' || t.environment !== 'prod') throw Error('First-release state inspection is restricted to Ad-Hoc production');
+const allowedEmptyFirstTarget = t => (t.app === 'adhoc' && t.environment === 'prod') || (t.app === 'beverage' && t.environment === 'staging');
+export async function inspectEmptyFirstReleaseState(t, read = cloud, { allowFailedHistory = false } = {}) {
+  if (!allowedEmptyFirstTarget(t)) throw Error('First-release state inspection is restricted to Ad-Hoc production or Beverage staging');
   const base = backendPath(t);
   const [backend, traffic, builds, rollouts, operations] = await Promise.all([
     read(base), read(`${base}/traffic`),
@@ -41,8 +42,9 @@ export async function inspectAdhocProductionState(t, read = cloud, { allowFailed
   const current=traffic.current?.splits||[], targetTraffic=traffic.target?.splits||[];
   const active=operations.filter(o=>!o.done&&(!o.target||o.target===t.backend||String(o.target).includes(`/backends/${t.backend}`)));
   const repo=String(backend.codebase?.repository||'');
-  if (backend.name!==base || backend.reconciling!==false || backend.environment!=='production' || ![`/${APPS.adhoc.path}`,APPS.adhoc.path].includes(backend.codebase?.rootDirectory) || !repo.endsWith('/gitRepositoryLinks/derekfika-fika-os')) throw Error('Ad-Hoc production backend identity, environment, repository or root is not verified');
-  if (traffic.rolloutPolicy?.disabled!==true || traffic.reconciling || targetTraffic.length || active.length) throw Error('Ad-Hoc production traffic is unstable or automatic rollouts are enabled');
+  const expectedEnvironment=t.environment==='prod'?'production':'staging';
+  if (backend.name!==base || backend.reconciling!==false || backend.environment!==expectedEnvironment || ![`/${APPS[t.app].path}`,APPS[t.app].path].includes(backend.codebase?.rootDirectory) || !repo.endsWith('/gitRepositoryLinks/derekfika-fika-os')) throw Error('First-release backend identity, environment, repository or root is not verified');
+  if (traffic.rolloutPolicy?.disabled!==true || traffic.reconciling || targetTraffic.length || active.length) throw Error('First-release traffic is unstable or automatic rollouts are enabled');
   const retry=allowFailedHistory && typeof allowFailedHistory==='object' ? allowFailedHistory : null;
   const unhealthyServingRetry=Boolean(retry?.kind==='abandoned' && retry.recovery?.firstRelease===true && retry.recovery?.resolution==='abandon' && retry.smoke?.ok===false && retry.state==='SUCCEEDED' && retry.percent===100 && retry.previousGood==null && retry.previousGoodRecord==null && retry.firstReleaseBaselineRecord && retry.recovery?.rollout===retry.rollout && retry.rollout);
   if(unhealthyServingRetry){
@@ -51,26 +53,30 @@ export async function inspectAdhocProductionState(t, read = cloud, { allowFailed
     if(current.length!==1 || current[0].percent!==100 || id(current[0].build)!==id(build?.name) || id(retry.rollout)!==id(rollout?.name) || id(rollout?.build)!==id(build?.name) || rollout?.state!=='SUCCEEDED' || rollout?.reconciling || build?.state!=='READY' || build?.reconciling || build?.sourceSha!==retry.sourceSha) throw Error('First-release retry does not match the exact recorded unhealthy serving attempt');
     return {sourceSha:null,rollout:null,state:'EMPTY',percent:0,backend:base,builds,rollouts,operations:active,traffic:{current,target:targetTraffic,reconciling:Boolean(traffic.reconciling),autoDisabled:true},unhealthyFirstRelease:{sourceSha:retry.sourceSha,rollout:retry.rollout,baselineRecord:retry.firstReleaseBaselineRecord,smoke:retry.smoke}};
   }
-  if(current.length) throw Error('Ad-Hoc production first-release retry has unexpected serving traffic');
+  if(current.length) throw Error('First-release retry has unexpected serving traffic');
   if (allowFailedHistory) {
     if (builds.some(b=>!['FAILED','CANCELLED','DELETED'].includes(b.state)||b.reconciling) || rollouts.some(r=>!['FAILED','CANCELLED'].includes(r.state)||r.reconciling)) throw Error('First-release retry is blocked by a successful, active or unknown build/rollout');
-  } else if (builds.length || rollouts.length) throw Error('Ad-Hoc production has deployment history; the first-release empty baseline cannot be created');
+  } else if (builds.length || rollouts.length) throw Error('Target has deployment history; the first-release empty baseline cannot be created');
   return { sourceSha:null, rollout:null, state:'EMPTY', percent:0, backend:base, builds, rollouts, operations:active, traffic:{current,target:targetTraffic,reconciling:Boolean(traffic.reconciling),autoDisabled:true} };
-}export async function stableAdhocProductionState(t, read=cloud, options={}) {
-  const first=await inspectAdhocProductionState(t,read,options),second=await inspectAdhocProductionState(t,read,options);
-  if(digest(first)!==digest(second))throw Error('Ad-Hoc production prestate changed between independent snapshots');
+}
+export async function stableFirstReleaseState(t, read=cloud, options={}) {
+  const first=await inspectEmptyFirstReleaseState(t,read,options),second=await inspectEmptyFirstReleaseState(t,read,options);
+  if(digest(first)!==digest(second))throw Error('First-release prestate changed between independent snapshots');
   return first;
 }
-export function adhocEmptyBaselineRecord(t, current, observedAt = new Date().toISOString()) {
-  if (t.app !== 'adhoc' || t.environment !== 'prod') throw Error('Empty first-release baselines are restricted to Ad-Hoc production');
-  return {schema:'fika.release.v1',...t,...current,backend:t.backend,kind:'empty-baseline',scopeHash:digest({app:t.app,project:t.project,backend:t.backend,root:APPS.adhoc.path,state:'EMPTY'}),observedAt,recovery:{firstRelease:true,noPreviousRelease:true}};
+export const inspectAdhocProductionState=inspectEmptyFirstReleaseState;
+export const stableAdhocProductionState=stableFirstReleaseState;
+export function emptyFirstReleaseBaselineRecord(t, current, observedAt = new Date().toISOString()) {
+  if (!allowedEmptyFirstTarget(t)) throw Error('Empty first-release baselines are restricted to Ad-Hoc production or Beverage staging');
+  return {schema:'fika.release.v1',...t,...current,backend:t.backend,kind:'empty-baseline',scopeHash:digest({app:t.app,project:t.project,backend:t.backend,root:APPS[t.app].path,state:'EMPTY'}),observedAt,recovery:{firstRelease:true,noPreviousRelease:true}};
 }
+export const adhocEmptyBaselineRecord=emptyFirstReleaseBaselineRecord;
 export async function bootstrap(t, options = {}) {
   const existing = releaseRecord(t.branch);
   if (existing) { validateRecord(existing.record, t); return { status: 'existing', ...existing }; }
-  if (t.app==='adhoc' && t.environment==='prod') {
-    const current=await stableAdhocProductionState(t);
-    const record=adhocEmptyBaselineRecord(t,current);
+  if (allowedEmptyFirstTarget(t)) {
+    const current=await stableFirstReleaseState(t);
+    const record=emptyFirstReleaseBaselineRecord(t,current);
     if (!options.execute) return {status:'dry-run-empty-first-release',record};
     const commit=appendRecord(t,record,git('rev-parse','origin/main'));git('branch',t.branch,commit);return {status:'created-empty-first-release',commit,record};
   }
@@ -95,6 +101,28 @@ export function rolloutArguments(plan) {
 }
 export async function releaseHealthProbe(app, backendUri, sourceSha, fetchImpl = fetch, environment) {
   const origin = `https://${String(backendUri).replace(/^https?:\/\//, '').replace(/\/$/, '')}`;
+  if (app === 'beverage') {
+    const infoUrl = `${origin}/api/build-info`, url = `${origin}/`;
+    if (!/^[a-f0-9]{40}$/.test(sourceSha || '')) return { ok: false, status: null, url: infoUrl, reason: 'invalid_expected_source_sha' };
+    try {
+      const options = { redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(30000) };
+      const info = await fetchImpl(infoUrl, { ...options, headers: { accept: 'application/json' } });
+      if (info.status !== 200) return { ok: false, status: info.status, url: infoUrl, reason: 'unexpected_build_info_status' };
+      const body = await info.json();
+      if (body?.appId !== 'beverage-innovation' || body?.buildSha !== sourceSha || body?.previewOnly !== true) return { ok: false, status: info.status, url: infoUrl, reason: 'beverage_build_identity_mismatch', appId: body?.appId, buildSha: body?.buildSha };
+      const entry = await fetchImpl(url, options);
+      const location = entry.headers?.get?.('location');
+      if (entry.status !== 307 || !location) return { ok: false, status: entry.status, url, reason: 'beverage_preview_auth_gate_missing' };
+      const target = new URL(location, origin);
+      const keys = [...target.searchParams.keys()].sort();
+      const valid = target.protocol === 'https:' && target.origin === 'https://staging-os.fikacatering.com' && target.pathname === '/' &&
+        target.username === '' && target.password === '' && target.hash === '' &&
+        JSON.stringify(keys) === JSON.stringify(['appId', 'launchError']) &&
+        target.searchParams.get('appId') === 'beverage-innovation' && target.searchParams.get('launchError') === 'FIKA_SESSION_MISSING' &&
+        target.searchParams.size === 2;
+      return { ok: valid, status: entry.status, url, buildInfoStatus: info.status, buildSha: body.buildSha, authGate: valid ? 'FIKA_SESSION_MISSING' : undefined, ...(valid ? {} : { reason: 'beverage_preview_auth_redirect_mismatch' }) };
+    } catch { return { ok: false, status: null, url, reason: 'request_failed' }; }
+  }
   if(app==='adhoc'){
     const options={redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(30000)};
     try{

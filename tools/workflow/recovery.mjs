@@ -1,4 +1,4 @@
-import { digest, exactSha, assertResume, validateRecord } from './policy.mjs';
+import { digest, exactSha, assertResume, validateRecord, APPS } from './policy.mjs';
 import { cloud, serving, backendPath } from './runtime.mjs';
 import { discover } from './discovery.mjs';
 
@@ -14,7 +14,7 @@ export async function recoverySnapshot(t, read = cloud, currentServing = serving
   ]);
   const relevantOperations = operations.filter(o => !o.done && (!o.target || o.target === t.backend || o.target.startsWith(`${t.backend}/`)));
   const split = s => (s?.splits || []).map(x => ({ build: relative(x.build), percent: x.percent })).sort((a,b) => a.build.localeCompare(b.build));
-  const snapshot = { backend: { name: backend.name, reconciling: Boolean(backend.reconciling), rootDirectory: backend.codebase?.rootDirectory, repository: backend.codebase?.repository }, builds, rollouts, operations: relevantOperations, traffic: { current: split(traffic.current), target: split(traffic.target), reconciling: Boolean(traffic.reconciling), autoDisabled: traffic.rolloutPolicy?.disabled === true } };
+  const snapshot = { backend: { name: backend.name, environment: backend.environment, reconciling: Boolean(backend.reconciling), rootDirectory: backend.codebase?.rootDirectory, repository: backend.codebase?.repository }, builds, rollouts, operations: relevantOperations, traffic: { current: split(traffic.current), target: split(traffic.target), reconciling: Boolean(traffic.reconciling), autoDisabled: traffic.rolloutPolicy?.disabled === true } };
   // A first release has no serving revision. Represent that state only when the
   // backend is correctly mapped and Firebase proves there is no traffic,
   // target or in-flight operation. Any partial state remains an integrity error.
@@ -26,10 +26,12 @@ export async function recoverySnapshot(t, read = cloud, currentServing = serving
 }
 
 function assertFirstReleaseBackend(t, snapshot) {
-  const expectedRoot = `/${t.app === 'adhoc' ? 'apps/ad-hoc-production' : ''}`;
-  if (t.app !== 'adhoc' || t.environment !== 'prod' || snapshot.backend?.name !== backendPath(t) || snapshot.backend.reconciling !== false ||
+  const allowed = (t.app === 'adhoc' && t.environment === 'prod') || (t.app === 'beverage' && t.environment === 'staging');
+  const expectedEnvironment = t.environment === 'prod' ? 'production' : 'staging';
+  const expectedRoot = `/${APPS[t.app]?.path || ''}`;
+  if (!allowed || snapshot.backend?.name !== backendPath(t) || snapshot.backend.environment !== expectedEnvironment || snapshot.backend.reconciling !== false ||
       ![expectedRoot, expectedRoot.slice(1)].includes(snapshot.backend.rootDirectory) ||
-      !String(snapshot.backend.repository || '').endsWith('/gitRepositoryLinks/derekfika-fika-os')) throw Error('First-release recovery is restricted to the verified Ad-Hoc production backend');
+      !String(snapshot.backend.repository || '').endsWith('/gitRepositoryLinks/derekfika-fika-os')) throw Error('First-release recovery target does not match an explicitly allowed backend');
 }
 export function assertRecoveryEvidence(intent, journal, snapshot, rolloutId, audit) {
   assertResume(intent, journal, journal?.plan || {});
