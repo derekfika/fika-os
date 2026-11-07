@@ -15,6 +15,8 @@ const { previewPastedRecipes, requirePastedRecipeCandidate } = await import("../
 const { beverageDb } = await import("../../lib/firestore-admin");
 const { POST: previewImport } = await import("../../app/api/imports/preview/route");
 const { POST: commitImport } = await import("../../app/api/imports/commit/route");
+const { POST: checkImportName } = await import("../../app/api/imports/name-check/route");
+const { initialReview, prepareImport } = await import("../../app/imports/review-model");
 const actor: BeverageActor = { authmodIdentityId: "fixture:beverage-test-operator", identityKind: "person", displayName: "Fictional Beverage local test actor", action: "Contribute", scopeOplocIds: ["fixture-oploc:london"], synthetic: true };
 
 test("Firestore emulator persists versioned records and append-only idempotency audit", async () => {
@@ -87,18 +89,28 @@ test("actual import routes preview without writes and atomically commit the edit
   assert.ok(result.candidates[0].warnings.some(warning => warning.includes("local Beverage records")));
   assert.ok(result.candidates[1].warnings.some(warning => warning.includes("Quantity and unit")));
   assert.deepEqual([await count(beverageCollections.beverages), await count(beverageCollections.audit)], before);
+  const existingName = await checkImportName(request("name-check", { name: duplicateName.toUpperCase() }));
+  assert.equal(existingName.status, 200);
+  assert.equal((await existingName.json()).duplicate, true);
+  const editedName = await checkImportName(request("name-check", { name: "Reviewed and corrected fixture cooler" }));
+  assert.equal(editedName.status, 200);
+  const nameCheck = await editedName.json();
+  assert.deepEqual(nameCheck, { normalizedName: "reviewed and corrected fixture cooler", duplicate: false });
+  assert.deepEqual([await count(beverageCollections.beverages), await count(beverageCollections.audit)], before);
 
   const candidate = result.candidates[1];
   const reviewedCandidate = {
     ...candidate.recipe, name: "Reviewed and corrected fixture cooler",
+    beverageType: "Cold drink", description: "Reviewed local description",
     ingredients: [{ name: "Mint sprig", amount: 1, unit: "each" }, { name: "Soda water" }],
-    method: "Stir gently and serve chilled.", garnish: "Mint leaf",
-  };
-  const body = {
-    text, sourceHash: result.sourceHash, candidateIndex: candidate.index, candidateHash: candidate.candidateHash,
-    classification: "draft_concept", reviewed: true, reviewedCandidate,
+    method: "Stir gently and serve chilled.", glassware: "Tall glass", garnish: "Mint leaf", equipment: ["Jigger", "Spoon"],
   };
   const key = `emulator-reviewed-import:${randomUUID()}`;
+  const forms = result.candidates.map(initialReview);
+  forms[1] = { ...forms[1], ...reviewedCandidate, ingredients: [{ name: "Mint sprig", amount: "1", unit: "each" }, { name: "Soda water", amount: "", unit: "" }], equipmentText: "Jigger\nSpoon" };
+  const prepared = prepareImport({ text, preview: result, forms, saved: [] }, 1, true, key, nameCheck);
+  assert.ok(prepared.pending);
+  const body = JSON.parse(prepared.pending.body);
   const [firstResponse, replayResponse] = await Promise.all([
     commitImport(request("commit", body, key)),
     commitImport(request("commit", body, key)),
@@ -108,6 +120,8 @@ test("actual import routes preview without writes and atomically commit the edit
   const { record, sourceHash }: { record: BeverageRecord; sourceHash: string } = await firstResponse.json();
   assert.equal((await replayResponse.json()).record.id, record.id);
   assert.equal(record.name, reviewedCandidate.name);
+  assert.equal(record.beverageType, reviewedCandidate.beverageType);
+  assert.equal(record.description, reviewedCandidate.description);
   assert.equal(record.lifecycle, "in_development");
   assert.equal(record.classification, "draft_concept");
   assert.equal(sourceHash, result.sourceHash);
@@ -118,7 +132,7 @@ test("actual import routes preview without writes and atomically commit the edit
   assert.equal(record.concept.notes, "Garnish: Mint leaf");
   const version = record.versions[0];
   assert.equal(version.method, reviewedCandidate.method);
-  assert.deepEqual(version.equipment, ["Highball", "Spoon"]);
+  assert.deepEqual(version.equipment, ["Tall glass", "Jigger", "Spoon"]);
   assert.equal(version.ingredients[0].quantityMilli, 1000);
   assert.equal(version.ingredients[0].unitCostMicropounds, undefined);
   assert.equal(version.ingredients[1].quantityMilli, undefined);
