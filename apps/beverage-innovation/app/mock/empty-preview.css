@@ -14,3 +14,5 @@
 .empty-preview-photo { min-height: 190px; display: grid; align-content: center; justify-items: center; text-align: center; gap: 8px; color: var(--fika-text-secondary); }
 .empty-preview-photo > span { font-size: 32px; color: var(--fika-action-primary); }
 .empty-preview-photo p { max-width: 250px; }
+.empty-preview-site-check button { min-block-size: var(--fika-control-height); margin-block: 8px; }
+.empty-preview-site-check ul { margin-block: 8px 0; padding-inline-start: 16px; overflow-wrap: anywhere; }
