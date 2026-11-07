@@ -1,4 +1,4 @@
-# Hospitality Calendar production bindings
+# 2026-11-07 — Hospitality Calendar production bindings
 
 - Date: 2026-11-07
 - Task: #348 production Calendar bindings
