@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import ImportReview from "../app/imports/ImportReview";
-import { MAX_RECIPE_DOCUMENT_BYTES } from "../lib/contracts";
+import { MAX_RECIPE_DOCUMENT_BYTES, MAX_RECIPE_STANDARD_DOCUMENT_BYTES } from "../lib/contracts";
 import { previewRecipeDocument } from "../lib/import-document";
 import { docxFixture, pdfFixture, pptxFixture } from "./fixtures/recipe-documents";
 
@@ -45,7 +45,13 @@ test("document review supports all adapters and retains the exact file and revie
     assert.ok(visible.includes(parsed.document.format.toUpperCase()));
     assert.ok(visible.includes(file.size.toLocaleString("en-GB")));
     assert.equal(rendered.root.findAllByProps({ name: "candidate" }).length, 2);
+    if (parsed.document.format === "pptx") {
+      assert.ok(visible.includes("Embedded image layers"));
+      assert.ok(visible.includes("not attached to the recipe or retained with a draft"));
+      assert.ok(rendered.root.findAllByType("img").some(image => image.props.src === parsed.imageCandidates[0].dataUrl));
+    }
     await act(async () => { rendered.root.findAllByProps({ name: "candidate" })[1].props.onChange(); });
+    await act(async () => { label(rendered.root, "Classification").findByType("select").props.onChange({ target: { value: "draft_concept" } }); });
     await act(async () => { label(rendered.root, "Preparation method").findByType("textarea").props.onChange({ target: { value: "Reviewed method." } }); });
     await act(async () => { rendered.root.findByProps({ type: "checkbox" }).props.onChange({ target: { checked: true } }); });
     await act(async () => { button(rendered.root, "Create local draft").props.onClick(); });
@@ -101,7 +107,7 @@ test("document picker reports unsupported, empty, oversized and signature errors
   assert.ok(JSON.stringify(rendered.toJSON()).includes("Choose a DOCX, PPTX or PDF"));
   await selectFile(rendered.root, new File([], "empty.pdf"));
   assert.ok(JSON.stringify(rendered.toJSON()).includes("non-empty"));
-  await selectFile(rendered.root, new File([new Uint8Array(MAX_RECIPE_DOCUMENT_BYTES + 1)], "large.pdf"));
+  await selectFile(rendered.root, new File([new Uint8Array(MAX_RECIPE_STANDARD_DOCUMENT_BYTES + 1)], "large.pdf"));
   assert.ok(JSON.stringify(rendered.toJSON()).includes("limited to 4 MiB"));
   assert.equal(requests, 0);
   await selectFile(rendered.root, new File(["not a PDF"], "invalid.pdf", { type: "application/pdf" }));

@@ -114,7 +114,7 @@ test("actual import routes preview without writes and atomically commit the edit
   };
   const key = `emulator-reviewed-import:${randomUUID()}`;
   const forms = result.candidates.map(initialReview);
-  forms[1] = { ...forms[1], ...reviewedCandidate, ingredients: [{ name: "Mint sprig", amount: "1", unit: "each" }, { name: "Soda water", amount: "", unit: "" }], equipmentText: "Jigger\nSpoon" };
+  forms[1] = { ...forms[1], ...reviewedCandidate, ingredients: [{ name: "Mint sprig", amount: "1", unit: "each" }, { name: "Soda water", amount: "", unit: "" }], equipmentText: "Jigger\nSpoon", classification: "draft_concept" };
   const prepared = prepareImport({ source: { kind: "text", text }, preview: result, forms, saved: [] }, 1, true, key, nameCheck);
   assert.ok(prepared.pending);
   const body = JSON.parse(prepared.pending.body);
@@ -165,9 +165,9 @@ test("document routes preview all formats and commit one byte-bound draft and au
   const count = async (name: string) => (await beverageDb().collection(name).count().get()).data().count;
   const counts = async () => [await count(beverageCollections.beverages), await count(beverageCollections.audit)];
   const before = await counts();
-  const file = docxFixture();
+  const file = pptxFixture();
   let preview: LocalDocumentImportPreview | undefined;
-  for (const upload of [file, pptxFixture(), pdfFixture()]) {
+  for (const upload of [docxFixture(), file, pdfFixture()]) {
     const response = await previewDocument(documentRequest("preview", upload));
     assert.equal(response.status, 200);
     const result: LocalDocumentImportPreview = await response.json();
@@ -178,12 +178,12 @@ test("document routes preview all formats and commit one byte-bound draft and au
   }
   assert.deepEqual(await counts(), before);
   assert.ok(preview);
-  const candidate = preview.candidates[1];
+  const candidate = preview.candidates[0];
   const key = `fixture-document-commit:${randomUUID()}`;
   const original = new File([new Uint8Array(file.bytes)], file.fileName, { type: file.mediaType });
   const forms = preview.candidates.map(initialReview);
-  forms[1] = { ...forms[1], name: "Fictional reviewed document drink", method: "Stir and serve." };
-  const prepared = prepareImport({ source: { kind: "document", file: original }, preview, forms, saved: [] }, 1, true, key, { normalizedName: "fictional reviewed document drink", duplicate: false });
+  forms[0] = { ...forms[0], name: "Fictional reviewed document drink", method: "Stir and serve.", classification: "draft_concept" };
+  const prepared = prepareImport({ source: { kind: "document", file: original }, preview, forms, saved: [] }, 0, true, key, { normalizedName: "fictional reviewed document drink", duplicate: false });
   assert.ok(prepared.pending);
   assert.ok(prepared.pending.source.kind === "document");
   const held = prepared.pending.source.file;
@@ -191,7 +191,7 @@ test("document routes preview all formats and commit one byte-bound draft and au
   const review = JSON.parse(prepared.pending.body);
   assert.equal("text" in review, false);
   const headers = { "Idempotency-Key": key };
-  const mismatched = await commitDocument(documentRequest("commit", docxFixture({ extra: [["docProps/unselected.xml", "different original bytes"]] }), review, headers));
+  const mismatched = await commitDocument(documentRequest("commit", pptxFixture(false, undefined, "../media/image1.png", [["docProps/unselected.xml", "different original bytes"]]), review, headers));
   assert.equal(mismatched.status, 409);
   assert.deepEqual(await counts(), before);
   const [response, repeated] = await Promise.all([
@@ -209,7 +209,7 @@ test("document routes preview all formats and commit one byte-bound draft and au
   const persisted = await fetchBeverage(record.id);
   assert.deepEqual(persisted?.sourceEvidence, {
     fileName: file.fileName, importedAt: record.createdAt, sourceKey: preview.sourceHash,
-    candidate: { index: candidate.index, hash: candidate.candidateHash }, document: preview.document,
+    candidate: { index: candidate.index, hash: candidate.candidateHash, slideNumber: 1, sourceAuthor: "Anne Knight", imageReferences: [{ sha256: preview.imageCandidates[0].sha256, mediaPartName: "ppt/media/image1.png", objectIndex: 1 }] }, document: preview.document,
   });
   assert.deepEqual(await counts(), before.map(value => value + 1));
   const audit = await listBeverageAudit(record.id);
@@ -220,9 +220,12 @@ test("document routes preview all formats and commit one byte-bound draft and au
   assert.ok(!storedEvidence.includes("Cost: £4"));
   assert.equal(audit[0].summary.sourceHash, preview.sourceHash);
   assert.equal(audit[0].summary.textHash, preview.document.textHash);
-  assert.equal(audit[0].summary.sourceFormat, "docx");
+  assert.equal(audit[0].summary.sourceFormat, "pptx");
   assert.equal(audit[0].summary.sourceByteLength, file.bytes.length);
   assert.equal(audit[0].summary.candidateHash, candidate.candidateHash);
+  assert.equal(audit[0].summary.sourceSlide, 1);
+  assert.equal(audit[0].summary.sourceImageReferences, 1);
+  assert.ok(!storedEvidence.includes("data:image"));
 });
 
 function fixturePermissions(t: TestContext, id: string) {

@@ -88,6 +88,7 @@ export async function createImportedBeverage(recipe: ReviewedImportRecipe, class
     commandFingerprint: importFingerprint(JSON.stringify([source, classification, recipe])),
     summary: {
       name: recipe.name, classification, sourceHash: source.sourceHash, candidateIndex: source.candidate.index, candidateHash: source.candidate.hash,
+      sourceSlide: source.candidate.slideNumber ?? null, sourceAuthor: source.candidate.sourceAuthor ?? null, sourceImageReferences: source.candidate.imageReferences?.length ?? 0,
       ...(document ? { sourceFormat: document.format, sourceByteLength: document.byteLength, adapterVersion: document.adapterVersion, textHash: document.textHash } : {}),
     },
     schema: beverageRecordSchema, create: true,
