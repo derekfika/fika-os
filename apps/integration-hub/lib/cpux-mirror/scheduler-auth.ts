@@ -8,7 +8,7 @@ type Certs = Record<string, string>;
 let cached: { certs: Certs; expiresAt: number } | undefined;
 
 export const hospitalityMirrorSchedulerServiceAccountFor = (projectId: string) =>
-  `fika-hub-hospitality-calendar-scheduler@${projectId}.iam.gserviceaccount.com`;
+  `fika-hub-cal-scheduler@${projectId}.iam.gserviceaccount.com`;
 
 async function googleCerts(): Promise<Certs> {
   if (cached && cached.expiresAt > Date.now()) return cached.certs;

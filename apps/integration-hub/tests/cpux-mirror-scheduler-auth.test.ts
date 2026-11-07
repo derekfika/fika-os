@@ -28,6 +28,9 @@ const call = (authorization?: string, runtime = RUNTIME, certSource = certs) => 
 );
 
 test("accepts only a Google-signed token for the dedicated project Scheduler and fixed route audience", async () => {
+  const expectedIdentity = hospitalityMirrorSchedulerServiceAccountFor(PROJECT);
+  assert.equal(expectedIdentity, "fika-hub-cal-scheduler@fika-os-dev.iam.gserviceaccount.com");
+  assert.ok(expectedIdentity.split("@")[0].length <= 30, "the Google service account ID must be provisionable");
   assert.equal(await call(`Bearer ${token()}`), true);
   assert.equal(await call(`Bearer ${token()}`, { projectId: "fika-os", mode: "production" }), false);
   assert.equal(await call(`Bearer ${token({ aud: "https://other.example" })}`), false);
