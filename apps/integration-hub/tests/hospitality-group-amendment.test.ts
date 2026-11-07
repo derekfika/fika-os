@@ -403,30 +403,40 @@ test("group charges command accepts only stable-ID manual/labour lines and no cl
 });
 test("group charges change only the targeted service, reprice the group, stale its quote, replay safely and reload", { skip: !enabled }, async () => {
   const f = await fixture(); await f.quote(0); const before = await f.read();
-  const charges = [{ id: `charge_${randomUUID()}`, kind: "manual" as const, category: "equipment" as const, label: "AV hire", quantity: 2, unitNet: 15.5 }];
-  const command = { bookingGroupId: f.id, bookingId: before[1].canonicalId, expectedVersion: before[1].version, expectedSourceHash: groupCommercialState(f.id, before).sourceHash, charges };
-  const saved = await setHospitalityGroupServiceCharges(actor, command, async () => {});
+  const oldQuote = before[1].quoteState!.revisions.find(revision => revision.id === before[1].quoteState!.currentRevisionId)!;
+  const oldQuoteSnapshot = structuredClone(oldQuote.snapshot);
+  const normalLabour = { id: `charge_${randomUUID()}`, kind: "labour" as const, category: "labour" as const, label: "KP labour", labour: { roleId: "kp", roleLabel: "KP", staffCount: 2, hoursPerPerson: 5, hourlyRate: 17.7, multiplier: 1, rateSource: "governed" as const } };
+  const command = { bookingGroupId: f.id, bookingId: before[1].canonicalId, expectedVersion: before[1].version, expectedSourceHash: groupCommercialState(f.id, before).sourceHash };
+  await assert.rejects(setHospitalityGroupServiceCharges(actor, { ...command, charges: [normalLabour] }, async () => {}), /Agency \/ overtime rate/);
+  assert.deepEqual(await f.read(), before, "a rejected Normal line leaves bookings and quote history untouched");
+  const charges = [
+    { id: `charge_${randomUUID()}`, kind: "manual" as const, category: "equipment" as const, label: "AV hire", quantity: 2, unitNet: 15.5 },
+    { ...normalLabour, labour: { ...normalLabour.labour, multiplier: 1.5 } },
+  ];
+  const acceptedCommand = { ...command, charges };
+  const saved = await setHospitalityGroupServiceCharges(actor, acceptedCommand, async () => {});
   assert.equal(saved.changed, true);
   const after = await f.read();
   assert.deepEqual(after[0], before[0]); assert.deepEqual(after[2], before[2]);
   assert.equal(after[1].version, before[1].version + 1); assert.equal(after[1].commercialVersion, (before[1].commercialVersion || 1) + 1);
-  assert.equal(after[1].additionalCharges?.[0].netTotal, 31);
+  assert.deepEqual(after[1].additionalCharges?.map(charge => charge.netTotal), [31, 265.5]);
   assert.ok(after[1].quoteState?.revisions.every(q => q.stale));
   const state = groupCommercialState(f.id, after);
-  assert.equal(state.totals.chargesNet, 31); assert.notEqual(state.sourceHash, command.expectedSourceHash);
+  assert.equal(state.totals.chargesNet, 296.5); assert.notEqual(state.sourceHash, command.expectedSourceHash);
+  assert.deepEqual(after[1].quoteState?.revisions.find(revision => revision.id === oldQuote.id)?.snapshot, oldQuoteSnapshot);
   const baselineTotals = groupCommercialState(f.id, before).totals;
   const quote = before[1].quoteState!.revisions.find(revision => revision.id === before[1].quoteState!.currentRevisionId)!;
   const vatRate = (quote.snapshot as { totals: { vatRate: number } }).totals.vatRate;
   const cents = (value: number) => Math.round(value * 100);
-  assert.equal(cents(state.totals.net - baselineTotals.net), 3100);
-  assert.equal(cents(state.totals.vat - baselineTotals.vat), cents(31 * vatRate));
-  assert.equal(cents(state.totals.gross - baselineTotals.gross), 3100 + cents(31 * vatRate));
+  assert.equal(cents(state.totals.net - baselineTotals.net), 29650);
+  assert.equal(cents(state.totals.vat - baselineTotals.vat), cents(296.5 * vatRate));
+  assert.equal(cents(state.totals.gross - baselineTotals.gross), 29650 + cents(296.5 * vatRate));
   assert.equal((await db.collection("fikaBookingAudit").doc(`${after[1].canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${after[1].version}`).get()).data()?.action, "workflow-set-additional-charges");
   // A stale retry is rejected; re-sending the saved lines against the new version/hash is a no-op.
-  await assert.rejects(setHospitalityGroupServiceCharges(actor, command, async () => {}), /changed elsewhere/);
-  const replay = await setHospitalityGroupServiceCharges(actor, { ...command, expectedVersion: after[1].version, expectedSourceHash: state.sourceHash }, async () => {});
+  await assert.rejects(setHospitalityGroupServiceCharges(actor, acceptedCommand, async () => {}), /changed elsewhere/);
+  const replay = await setHospitalityGroupServiceCharges(actor, { ...acceptedCommand, expectedVersion: after[1].version, expectedSourceHash: state.sourceHash }, async () => {});
   assert.equal(replay.changed, false); assert.deepEqual(await f.read(), after);
-  const removed = await setHospitalityGroupServiceCharges(actor, { ...command, expectedVersion: after[1].version, expectedSourceHash: state.sourceHash, charges: [] }, async () => {});
+  const removed = await setHospitalityGroupServiceCharges(actor, { ...acceptedCommand, expectedVersion: after[1].version, expectedSourceHash: state.sourceHash, charges: [] }, async () => {});
   assert.equal(removed.changed, true); assert.equal(groupCommercialState(f.id, await f.read()).totals.chargesNet, 0);
 });
 

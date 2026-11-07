@@ -165,8 +165,8 @@ export function normalizeBookingAdditionalCharges(
     }
     const content = { ...calculated, ...(calculated.kind === "labour" ? { labour: structuredClone(calculated.labour) } : {}) };
     if (calculated.kind === "labour") {
-      // CEO-approved labour rates are locked. Only a NEW or CHANGED line is held to the governed table;
-      // an unchanged stored line (including a legacy custom/configured rate) is preserved exactly as saved.
+      // Approved Agency/overtime rates are locked for NEW or CHANGED lines. Unchanged historical lines,
+      // including Normal and legacy custom/configured rates, remain exactly as saved.
       const unchangedStored = existing?.kind === "labour" && JSON.stringify(labourContent(existing)) === JSON.stringify(content);
       const violation = unchangedStored ? null : governedLabourViolation(calculated.labour);
       if (violation) fail(violation);

@@ -117,3 +117,18 @@ test("a new governed labour line is quoted at the locked rate and overtime multi
   assert.equal(charge?.net.amount, 212.4);
   assert.equal(charge?.labour?.rateSource, "governed");
 });
+
+test("historical Normal labour stays at its saved amount in quote and PDF snapshots", () => {
+  const input: BookingAdditionalChargeInput = { id: "historical-kp", kind: "labour", category: "labour", label: "KP labour", labour: { roleId: "kp", roleLabel: "KP", staffCount: 2, hoursPerPerson: 5, hourlyRate: 17.7, multiplier: 1, rateSource: "governed" } };
+  const historical = { ...input, quantity: 10, unitNet: 17.7, netTotal: 177, createdAt: "2026-09-01T10:00:00.000Z", createdBy: "manager-0" } as BookingAdditionalCharge;
+  const before = structuredClone(historical);
+  const quote = calculateQuoteSnapshot({ ...booking, deliveryChargeRequired: false, additionalCharges: [historical] }, defaultDashboardQuoteSettings("mnk-hospitality"));
+  const charge = quote.charges.find((item) => item.code === "booking_additional");
+  assert.equal(charge?.net.amount, 177);
+  assert.equal(quote.totals.vat.amount, 53.4);
+  assert.equal(quote.totals.gross.amount, 320.4);
+  assert.equal(charge?.detail, "2 staff × 5.00 hrs × £17.70 × 1");
+  const html = brandedQuoteDocumentHtml(quote, { id: "quote:test:r4", revision: 4, createdAt: "2026-10-05T10:00:00Z" });
+  assert.match(html, /2 staff × 5\.00 hrs × £17\.70 × 1/);
+  assert.deepEqual(historical, before, "quote/PDF rendering never rewrites the stored historical line");
+});
