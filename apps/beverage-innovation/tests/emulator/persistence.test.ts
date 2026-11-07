@@ -206,13 +206,18 @@ test("document routes preview all formats and commit one byte-bound draft and au
   assert.equal(record.versions[0].method, review.reviewedCandidate.method);
   assert.equal(record.versions[0].costing?.costStatus, "incomplete");
   assert.equal(record.versions[0].allergenStatus, "awaiting_canonical_source");
-  assert.deepEqual((await fetchBeverage(record.id))?.sourceEvidence, {
+  const persisted = await fetchBeverage(record.id);
+  assert.deepEqual(persisted?.sourceEvidence, {
     fileName: file.fileName, importedAt: record.createdAt, sourceKey: preview.sourceHash,
     candidate: { index: candidate.index, hash: candidate.candidateHash }, document: preview.document,
   });
   assert.deepEqual(await counts(), before.map(value => value + 1));
   const audit = await listBeverageAudit(record.id);
   assert.equal(audit.length, 1);
+  const storedEvidence = JSON.stringify({ persisted, audit });
+  assert.ok(!storedEvidence.includes(file.bytes.toString("base64")));
+  assert.ok(!storedEvidence.includes("Allergens: None"));
+  assert.ok(!storedEvidence.includes("Cost: £4"));
   assert.equal(audit[0].summary.sourceHash, preview.sourceHash);
   assert.equal(audit[0].summary.textHash, preview.document.textHash);
   assert.equal(audit[0].summary.sourceFormat, "docx");
