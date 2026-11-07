@@ -6,49 +6,12 @@
   "backend": "fika-os-prod-hub",
   "region": "europe-west4",
   "branch": "release/prod/hub",
-  "validation": {
-    "id": 128501367823,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/42404812426/job/128501367823",
-    "sha": "c3b6e86f7c1132e326ed55913398768698133d1d"
-  },
-  "provenance": {
-    "number": 477,
-    "url": "https://github.com/derekfika/fika-os/pull/477",
-    "head": "e1f7ed697458dfbe166426eb9b3c58c7366f6b45"
-  },
-  "sourceSha": "c3b6e86f7c1132e326ed55913398768698133d1d",
-  "scopeHash": "215978b5e80104ad5971bf24a12ccd1d438830388b82a0faba7aab5d65207244",
-  "rollback": false,
-  "productionDelta": {
-    "from": "0fa57a589f339670a82c6e0531f1a60968ebd6f8",
-    "to": "c3b6e86f7c1132e326ed55913398768698133d1d",
-    "paths": [
-      ".changes/integration-hub/2026-11-07-beverage-next-critical-advisories.md",
-      ".changes/integration-hub/2026-11-07-hospitality-calendar-production-bindings.md",
-      "apps/integration-hub/apphosting.production.yaml",
-      "apps/integration-hub/next-env.d.ts",
-      "apps/integration-hub/package-lock.json",
-      "apps/integration-hub/package.json",
-      "docs/deployment/cpux-calendar-v1.md"
-    ],
-    "hash": "563f81a36c4582aa31b2708df53975d66175e8a62a1a79c7c8cd352a330dbaf8"
-  },
-  "approval": {
-    "actor": "derekfika",
-    "method": "authenticated-repository-writer",
-    "app": "hub",
-    "environment": "prod",
-    "sourceSha": "c3b6e86f7c1132e326ed55913398768698133d1d",
-    "action": "deploy",
-    "instruction": "Execute deploy",
-    "releaseId": null,
-    "id": "7d7953b24dee2f72d30c6327a7d966ade1530d81e0ccc5b5c401fc4b879b5a7b",
-    "explicitExecute": true,
-    "authorisedAt": "2026-11-07T19:14:53.021Z"
-  },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "1fe48d2e-c3d5-4067-ad7a-843f086cf81b",
+  "sourceSha": "0fa57a589f339670a82c6e0531f1a60968ebd6f8",
+  "rollout": "build-2026-11-07-003",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "scopeHash": "601789ebe534fb3b449fc6b5924e2fff0bcb1e5b7501fa66c2aea7abbe9f5708",
+  "kind": "abandoned",
   "previousGood": {
     "sourceSha": "0fa57a589f339670a82c6e0531f1a60968ebd6f8",
     "rollout": "build-2026-11-07-003",
@@ -56,5 +19,32 @@
     "percent": 100
   },
   "previousGoodRecord": "e31537e4c2066d74053ebf17e930332bc68dc42c",
-  "createdAt": "2026-11-07T19:14:55.344Z"
+  "releaseId": "1fe48d2e-c3d5-4067-ad7a-843f086cf81b",
+  "originalIntent": "0134c14e3a119af191703d165c9bf9b84aa298d9",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-os-prod-hub--fika-os.europe-west4.hosted.app/"
+  },
+  "recovery": {
+    "resolution": "abandon",
+    "reason": "Cloud Build failed: App Hosting adapter overwrote next.config.ts and production typecheck included tests/apphosting-build-config.test.ts importing its default export",
+    "operator": {
+      "actor": "derekfika",
+      "method": "authenticated-repository-writer",
+      "app": "hub",
+      "environment": "prod",
+      "sourceSha": "c3b6e86f7c1132e326ed55913398768698133d1d",
+      "action": "reconcile:abandon",
+      "instruction": "Cloud Build failed: App Hosting adapter overwrote next.config.ts and production typecheck included tests/apphosting-build-config.test.ts importing its default export",
+      "releaseId": "1fe48d2e-c3d5-4067-ad7a-843f086cf81b",
+      "id": "7a38840369e549705187d7dcd14d6ef30c641e4aba9a74b3034255cf94611aaf",
+      "explicitExecute": true,
+      "authorisedAt": "2026-11-07T19:19:12.047Z"
+    },
+    "rollout": "build-2026-11-07-004",
+    "evidenceHash": "63f3d23e26ceb46f1ab0eab229d02e1790720b929197d6458688a4505e70586e",
+    "journalHash": "8dc8c9608a2e44097b75d435363fade0133366246ad5712c591959241bcde1a9",
+    "at": "2026-11-07T19:19:14.127Z"
+  }
 }
