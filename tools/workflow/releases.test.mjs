@@ -5,8 +5,8 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { protection } from './cli.mjs';
-import { APPS, target, validateRecord } from './policy.mjs';
-import { rolloutArguments, executionEvidence, releaseHealthProbe, reconcile, validateServingBaselineSnapshot, servingBaselineRecord, inspectAdhocProductionState, stableAdhocProductionState, adhocEmptyBaselineRecord } from './releases.mjs';
+import { APPS, target, validateRecord, supportedTargets } from './policy.mjs';
+import { rolloutArguments, executionEvidence, releaseHealthProbe, reconcile, validateServingBaselineSnapshot, servingBaselineRecord, inspectAdhocProductionState, stableAdhocProductionState, adhocEmptyBaselineRecord, inspectEmptyFirstReleaseState, stableFirstReleaseState, emptyFirstReleaseBaselineRecord } from './releases.mjs';
 import { backendPath } from './runtime.mjs';
 
 for (const environment of ['staging', 'prod']) {
@@ -82,6 +82,18 @@ test('Ad-Hoc first-production prestate accepts only the exact quiescent empty ba
  ];
  for(const [label,mutate] of mutations){const bad=structuredClone(snapshot);mutate(bad);await assert.rejects(inspectAdhocProductionState(t,async resource=>{if(resource===base)return bad.backend;if(resource===`${base}/traffic`)return bad.traffic;if(resource.includes('/builds?'))return {builds:bad.builds};if(resource.includes('/rollouts?'))return {rollouts:bad.rollouts};return {operations:bad.operations};}),label);}
 });
+test('Beverage staging gets a staging-only empty-first-release proof and cannot target production',async()=>{
+ const t=target('beverage','staging'),base=backendPath(t);let backendReads=0;
+ const snapshot={backend:{name:base,environment:'staging',reconciling:false,codebase:{rootDirectory:'apps/beverage-innovation',repository:'projects/fika-os-dev/locations/europe-west4/connections/apphosting-github-conn-wz4o9sx/gitRepositoryLinks/derekfika-fika-os'}},traffic:{rolloutPolicy:{disabled:true},reconciling:false,current:{splits:[]},target:{splits:[]}},builds:[],rollouts:[],operations:[]};
+ const read=async resource=>{if(resource===base){backendReads++;return snapshot.backend;}if(resource===`${base}/traffic`)return snapshot.traffic;if(resource.includes('/builds?'))return {builds:snapshot.builds};if(resource.includes('/rollouts?'))return {rollouts:snapshot.rollouts};return {operations:snapshot.operations};};
+ const inspected=await inspectEmptyFirstReleaseState(t,read);assert.equal(inspected.state,'EMPTY');
+ const stable=await stableFirstReleaseState(t,read);assert.equal(stable.state,'EMPTY');assert.ok(backendReads>=3);
+ const record=emptyFirstReleaseBaselineRecord(t,stable,'2026-11-07T00:00:00.000Z');assert.equal(validateRecord(record,t),record);
+ assert.throws(()=>target('beverage','prod'),/Unknown application\/environment/);
+ assert.throws(()=>validateRecord({...record,environment:'prod',project:'fika-os',backend:'fika-beverage-staging' }),/Unknown application\/environment/);
+ for(const [label,mutate] of [['root',s=>s.backend.codebase.rootDirectory='apps/menu-planning'],['environment',s=>s.backend.environment='production'],['rollouts',s=>s.traffic.rolloutPolicy.disabled=false]]){const bad=structuredClone(snapshot);mutate(bad);await assert.rejects(inspectEmptyFirstReleaseState(t,async resource=>resource===base?bad.backend:resource===`${base}/traffic`?bad.traffic:resource.includes('/builds?')?{builds:bad.builds}:resource.includes('/rollouts?')?{rollouts:bad.rollouts}:{operations:bad.operations}),label);}
+ await assert.rejects(inspectEmptyFirstReleaseState(target('cpu','staging'),read),/restricted to Ad-Hoc production or Beverage staging/);
+});
 test('Logistics staging health accepts only its exact unauthenticated staging Hub gate redirect',async()=>{
  const backend='https://fika-logistics-staging--fika-os-dev.europe-west4.hosted.app',url=`${backend}/`;
  const response=(status,location)=>({status,headers:{get:name=>name==='location'?location:null}});
@@ -102,6 +114,21 @@ test('Logistics staging health accepts only its exact unauthenticated staging Hu
  }
  const notRedirect=await releaseHealthProbe('logistics',backend,'a'.repeat(40),async()=>response(200,null),'staging');
  assert.equal(notRedirect.ok,false);assert.equal(notRedirect.reason,'unexpected_logistics_auth_response');
+});
+test('Beverage preview health pins source identity and requires its exact owner sign-in gate',async()=>{
+ const backend='https://fika-beverage-staging--fika-os-dev.europe-west4.hosted.app',sha='a'.repeat(40),info=`${backend}/api/build-info`,url=`${backend}/`;
+ const redirect='https://staging-os.fikacatering.com/?launchError=FIKA_SESSION_MISSING&appId=beverage-innovation';
+ const response=(status,body={},location)=>({status,ok:status===200,headers:new Headers(location?{location}:{}),json:async()=>body});
+ const requests=[];
+ const ok=await releaseHealthProbe('beverage',backend,sha,async(target,options)=>{requests.push({target,options});return target===info?response(200,{appId:'beverage-innovation',buildSha:sha,previewOnly:true}):response(307,{},redirect);},'staging');
+ assert.deepEqual(ok,{ok:true,status:307,url,buildInfoStatus:200,buildSha:sha,authGate:'FIKA_SESSION_MISSING'});
+ assert.equal(requests[0].options.cache,'no-store');assert.equal(requests[1].options.redirect,'manual');
+ for(const body of [{appId:'beverage-innovation',buildSha:'b'.repeat(40),previewOnly:true},{appId:'beverage-innovation',buildSha:sha,previewOnly:false},{appId:'other',buildSha:sha,previewOnly:true}]){
+  const result=await releaseHealthProbe('beverage',backend,sha,async(target)=>target===info?response(200,body):response(307,{},redirect),'staging');assert.equal(result.ok,false);
+ }
+ for(const location of [redirect.replace('staging-os.fikacatering.com','evil.example'),redirect.replace('FIKA_SESSION_MISSING','FIKA_SESSION_INVALID'),redirect.replace('appId=beverage-innovation','appId=logistics'),`${redirect}&extra=1`]){
+  const result=await releaseHealthProbe('beverage',backend,sha,async(target)=>target===info?response(200,{appId:'beverage-innovation',buildSha:sha,previewOnly:true}):response(307,{},location),'staging');assert.equal(result.ok,false);
+ }
 });
 test('Logistics production health accepts only its exact unauthenticated production Hub gate redirect',async()=>{
  const backend='https://fika-os-prod-logistics--fika-os.europe-west4.hosted.app',url=`${backend}/`;
@@ -182,8 +209,8 @@ test('production execution evidence binds the authenticated writer to target, ac
  assert.equal(executionEvidence(t,sha,{reason:'Operator note'},access).instruction,'Operator note');
 });
 test('rollout command targets exactly one governed backend and pins the exact source',()=>{
- for(const app of Object.keys(APPS)) for(const env of ['staging','prod']) {
-  const t=target(app,env);const sourceSha='a'.repeat(40);const args=rolloutArguments({...t,sourceSha});
+ for(const t of supportedTargets()) {
+  const {app,environment:env}=t;const sourceSha='a'.repeat(40);const args=rolloutArguments({...t,sourceSha});
   assert.deepEqual(args,['apphosting:rollouts:create',t.backend,'--project',t.project,'--git-commit',sourceSha,'--non-interactive','--force']);
   assert.throws(()=>rolloutArguments({...t,sourceSha,backend:'unrelated-backend'}));assert.throws(()=>rolloutArguments({...t,sourceSha:'main'}));
  }

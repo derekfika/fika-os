@@ -2,7 +2,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
-import { APPS, REPO, MAIN_CHECK, affected, target } from './policy.mjs';
+import { APPS, REPO, MAIN_CHECK, affected, target, supportedEnvironments } from './policy.mjs';
 import { git, command, ghApi, save, jsonFile } from './runtime.mjs';
 import { workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
 import { checkSourceWorkspace, completeSourceWorkspace, createSourceWorkspace, devSourceWorkspace, integrateSourceWorkspace, sourceWorkspaceStatus } from './source-workspaces.mjs';
@@ -100,7 +100,7 @@ async function main() {
     else { git('fetch', 'origin'); result = cleanupPlan(); if (options.output) save(options.output, result); }
   } else if (verb === 'bootstrap') {
     git('fetch', 'origin'); result = [];
-    for (const app of arg ? [arg] : Object.keys(APPS)) for (const env of ['staging', 'prod']) result.push(await bootstrap(target(app, env), options));
+    for (const app of arg ? [arg] : Object.keys(APPS)) for (const env of supportedEnvironments(app)) result.push(await bootstrap(target(app, env), options));
     if (options.output) save(options.output, result);
   } else if (verb === 'deploy' || verb === 'rollback' || verb === 'reconcile') {
     if (!options.staging && !options.prod) throw Error('Specify --staging or --prod');
@@ -115,13 +115,13 @@ async function main() {
     const environment = options.prod ? 'prod' : 'staging';
     result = verb === 'trust' ? hostedTrust(arg, environment) : assertHostedContext(process.env, target(arg, environment));
   } else if (verb === 'protect') {
-    const branches = ['main', ...Object.keys(APPS).flatMap(app => ['staging', 'prod'].map(env => target(app, env).branch))];
+    const branches = ['main', ...Object.keys(APPS).flatMap(app => supportedEnvironments(app).map(env => target(app, env).branch))];
     result = branches.map(branch => ({ branch, policy: protection(branch !== 'main') }));
     if (options.execute) {
       // Preserve reviewed source ancestry and exact-head integration evidence.
       ghApi(`repos/${REPO}`, 'PATCH', { allow_merge_commit: true, allow_squash_merge: false, allow_rebase_merge: false, delete_branch_on_merge: false });
       for (const item of result) ghApi(`repos/${REPO}/branches/${encodeURIComponent(item.branch)}/protection`, 'PUT', item.policy);
-      for (const app of Object.keys(APPS)) for (const env of ['staging', 'prod']) {
+      for (const app of Object.keys(APPS)) for (const env of supportedEnvironments(app)) {
         const environment = `${env}-${app}`;
         ghApi(`repos/${REPO}/environments/${encodeURIComponent(environment)}`, 'PUT', {
           reviewers: [], prevent_self_review: false,

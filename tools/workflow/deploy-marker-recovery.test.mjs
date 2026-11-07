@@ -10,7 +10,7 @@ import { createWorkspace, workspaceRecords } from './workspaces.mjs';
 import { beginWorkspaceOperation } from './workspace-state.mjs';
 import { recoverDeployOperation } from './workspace-admin.mjs';
 import { parseArguments } from './deploy-marker-recovery.mjs';
-import { APPS, target } from './policy.mjs';
+import { APPS, target, supportedTargets } from './policy.mjs';
 
 const T0 = '2026-10-31T08:12:47.498Z';
 const at = (seconds) => new Date(Date.parse(T0) + seconds * 1000).toISOString();
@@ -110,7 +110,7 @@ test('happy path: preview is read-only; execution needs the approve-hash, audits
 
 test('canonical operator marker is recoverable only with terminal evidence and has no lease identity', () => run(async f => {
   standardLedger(f);
-  for (const app of Object.keys(APPS)) for (const environment of ['staging','prod']) if (!(app === 'hub' && environment === 'staging')) ledger(f, app, environment, [BASE]);
+  for (const {app,environment} of supportedTargets()) if (!(app === 'hub' && environment === 'staging')) ledger(f, app, environment, [BASE]);
   const { id, file, marker } = setup(f);
   const canonical = { ...marker, name: null, owner: 'canonical-operator', leaseId: null };
   save(file, canonical);

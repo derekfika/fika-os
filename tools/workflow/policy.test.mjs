@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { APPS, affected, risk, target, exactSha, assertClean, validateRecord, partialPathOverlap, safeScope, assertResume, assertServingLineage } from './policy.mjs';
+import { APPS, affected, risk, target, exactSha, assertClean, validateRecord, partialPathOverlap, safeScope, assertResume, assertServingLineage, supportedEnvironments, supportedTargets } from './policy.mjs';
 import { parse } from './cli.mjs';
 const sha = 'a'.repeat(40);
 test('registered apps have distinct staging/prod backends and explicit projects', () => {
   const backends = [];
-  for (const app of Object.keys(APPS)) for (const env of ['prod', 'staging']) { const t = target(app, env); assert.equal(t.project, env === 'prod' ? 'fika-os' : 'fika-os-dev'); backends.push(t.backend); }
-  assert.equal(new Set(backends).size, Object.keys(APPS).length * 2); assert.equal(target('cpu', 'prod').backend, 'fika-os-prod-cpu');
+  for (const t of supportedTargets()) { assert.equal(t.project, t.environment === 'prod' ? 'fika-os' : 'fika-os-dev'); backends.push(t.backend); }
+  assert.equal(new Set(backends).size, supportedTargets().length); assert.equal(target('cpu', 'prod').backend, 'fika-os-prod-cpu');
+  assert.deepEqual(supportedEnvironments('beverage'), ['staging']); assert.equal(target('beverage', 'staging').backend, 'fika-beverage-staging'); assert.throws(() => target('beverage', 'prod'), /Unknown application\/environment/);
   assert.deepEqual(target('adhoc','staging'),{app:'adhoc',environment:'staging',project:'fika-os-dev',backend:'fika-os-staging-adhoc',region:'europe-west4',branch:'release/staging/adhoc'});
   assert.deepEqual(target('adhoc','prod'),{app:'adhoc',environment:'prod',project:'fika-os',backend:'fika-os-prod-adhoc',region:'europe-west4',branch:'release/prod/adhoc'});
 });
