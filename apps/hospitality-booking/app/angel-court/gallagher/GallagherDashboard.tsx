@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { mayAutoRefreshDashboard } from "../../../../shared/passive-dashboard-refresh";
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { GallagherBooking } from "@/lib/gallagher-dashboard";
 import {
@@ -31,7 +32,6 @@ const dataPath = "/angel-court/gallagher/data";
 const sessionPath = "/angel-court/gallagher/session";
 const logoPath = "/brand/angel-court/angel-court-bank-logo.png";
 const pageSize = 25;
-const staleAfterMs = 10 * 60_000;
 const moneyFormat = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" });
 
 const formatPrice = (value: number | null) => (value === null ? "Price unavailable" : moneyFormat.format(value));
@@ -268,7 +268,7 @@ export default function GallagherDashboard() {
   useEffect(() => {
     if (phase !== "ready") return;
     const onVisible = () => {
-      if (document.visibilityState === "visible" && Date.now() - loadedAt > staleAfterMs) void loadBookings("refresh");
+      if (mayAutoRefreshDashboard({ now: Date.now(), lastAttemptAt: loadedAt, visible: document.visibilityState === "visible" })) void loadBookings("refresh");
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
