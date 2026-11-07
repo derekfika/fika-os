@@ -27,6 +27,14 @@ The owner authorizes merging eligible Beverage PRs and deploying a dedicated, no
 - Local persistence in the dedicated Beverage Firestore emulator and tests against it.
 - Fictional fixture data, unit/contract/integration tests and development documentation.
 
+## Stage B recipe import
+
+Start with local extraction from pasted plain text and human review. A source can contain up to 20 drinks and 20,000 characters. Use a new `Name:` or `Drink:` label for each recipe, or put `---` between blocks with unlabelled titles. The current local page supports one drink at a time. The API supports reviewing any candidate from a multi-drink preview. PPTX, PDF, DOCX, Google Slides and Google Docs extraction are pending separate adapters and authorisation where required.
+
+- `POST /api/imports/preview` accepts `{text}` and returns the source fingerprint and ordered candidates with a zero-based `index`, `candidateHash`, `recipe`, `confidence` and `warnings`. Confidence describes extraction completeness and every candidate requires review. Preview performs at most one indexed, limit-one read per distinct candidate name in the local emulator and makes zero writes.
+- `POST /api/imports/commit` requires `text`, `sourceHash`, `candidateIndex`, `candidateHash`, an explicit `classification`, `reviewed: true`, and the `reviewedCandidate` recipe fields. The server reparses the source and validates the selection before writing. Submit the same `Idempotency-Key` when retrying the same review. Changed review content with a reused key conflicts.
+- A successful commit atomically creates a local draft and one audit event with the source fingerprint and candidate evidence. The source text stays out of persistent storage. Reviewers may correct the recipe fields and supply explicit ingredient amounts and units. Missing quantities, costs and allergen declarations remain unconfirmed and cost, price, dietary and allergen claims in the source are omitted. Local AUTHMOD fixture and demo emulator rules apply to both endpoints.
+
 ## Enforced boundaries
 
 - Stage B record APIs accept only local development with `FIKA_RUNTIME_MODE=local`, project `demo-fika-os` or `fika-os-local`, loopback Firestore emulator and `FIKA_BEVERAGE_LOCAL_AUTH=fixture`. The separate Stage A preview runtime can use staging mode only for the restricted read-only route described above.

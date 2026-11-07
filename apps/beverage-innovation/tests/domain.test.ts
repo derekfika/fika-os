@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { canTransition, transition, addApproval, cloneVersion, updateVersion, type BeverageInnovation } from "../lib/domain";
 import { calculateCosting, normaliseIngredientLine, poundsToPence } from "../lib/costing";
-import { previewPastedRecipe } from "../lib/import-preview";
 import { createMonthlySpecial, transitionMonthlySpecial } from "../lib/specials";
 import { beverageRecordSchema, type BeverageRecord } from "../lib/contracts";
 
@@ -35,9 +34,9 @@ test("ingredient costs use explicit units and rounded GBP pence with gross profi
 });
 test("empty ingredient lists do not claim a complete cost", () => { assert.equal(calculateCosting([], 450).costStatus, "incomplete"); });
 test("rollout blockers prevent going live", () => { const blocked = { ...base, lifecycle: "rollout" as const, rollouts: [{ id: "r", oplocId: "fixture-oploc:london", siteLabel: "London", state: "blocked" as const, blockers: ["Equipment"], readiness: { equipment: false, ingredients: "deferred" as const, training: false, assets: false } }] }; assert.throws(() => transition(blocked, "live")); });
-test("recipe import parses and previews with quantity warnings, duplicate checks and no writes", () => {
-  const result = previewPastedRecipe({ text: "Name: Fika Cooler\nType: Mocktail\nIngredient: 12.5 mL lime juice\nIngredient: mint leaves\nMethod: Shake with ice", classification: "classic_source", existingNames: ["fika cooler"] });
-  assert.equal(result.candidate.ingredients[0].unit, "ml"); assert.equal(result.candidate.ingredients[1].amount, undefined); assert.ok(result.candidate.warnings.some(warning => warning.includes("duplicate"))); assert.match(result.sourceHash, /^[a-f0-9]{64}$/);
+test("existing import records remain readable with source evidence that predates candidate fingerprints", () => {
+  const sourceEvidence = { fileName: "Pasted fictional text", importedAt: at, sourceKey: "a".repeat(64) };
+  assert.deepEqual(beverageRecordSchema.parse({ ...validRecord(), sourceEvidence }).sourceEvidence, sourceEvidence);
 });
 test("monthly special site assignment is fixture scoped and scheduling requires approved recipe", () => {
   const record = validRecord(); const versioned = cloneVersion(record, actor.authmodIdentityId);

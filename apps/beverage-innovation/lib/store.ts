@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { addApproval, cloneVersion, transition, updateVersion as updateVersionRecord, type BeverageInnovation, type IngredientLine, type Lifecycle, type ApprovalKind, type ApprovalDecision } from "./domain";
-import { beverageRecordSchema, monthlySpecialSchema, type BeverageRecord, type MonthlySpecialRecord } from "./contracts";
+import { beverageRecordSchema, monthlySpecialSchema, type BeverageRecord, type MonthlySpecialRecord, type PastedRecipeProvenance, type ReviewedImportRecipe } from "./contracts";
 import { calculateCosting, normaliseIngredientLine, poundsToPence } from "./costing";
 import { commitBeverageCommand, entityIdForCommand, getBeverage, listBeverages, listMonthlySpecials, listBeverageAudit } from "./repository";
 import type { BeverageActor } from "./runtime";
 import { createMonthlySpecial, transitionMonthlySpecial, updateMonthlySpecial, type SpecialDraft } from "./specials";
+import { importFingerprint, PASTED_RECIPE_SOURCE_LABEL } from "./import-preview";
 
 function asDomain(record: BeverageRecord): BeverageInnovation { return record as BeverageInnovation; }
 const emptyRecord = (id: string, actor: BeverageActor, input: { name: string; description: string; beverageType: string; classification: BeverageRecord["classification"] }, at: string): BeverageRecord => beverageRecordSchema.parse({
@@ -70,14 +71,35 @@ export async function createSpecial(input: SpecialDraft, actor: BeverageActor, e
   return commitBeverageCommand({ entityType: "monthly_special", collection: "beverageMonthlySpecialsV1", entityId: id, action: "monthly_special.created", expectedVersion, idempotencyKey: key, actor, summary: { month: input.month, beverageId: input.beverageId }, schema: monthlySpecialSchema, create: true, mutate: () => special });
 }
 
-export async function createImportedBeverage(candidate: import("./contracts").LocalImportCandidate, sourceHash: string, actor: BeverageActor, key: string) {
-  if (!candidate.name.trim()) throw Object.assign(new Error("Review and enter the drink name before creating a local draft."), { status: 422, code: "BEVERAGE_IMPORT_NAME_REQUIRED" });
-  if (!/^[a-f0-9]{64}$/.test(sourceHash)) throw Object.assign(new Error("The import preview source fingerprint is invalid."), { status: 400, code: "BEVERAGE_IMPORT_HASH_INVALID" });
-  const id = entityIdForCommand("beverage", actor.authmodIdentityId, key); const at = new Date().toISOString(); const versionId = `${id}:version:1`;
-  const lines: IngredientLine[] = candidate.ingredients.map((ingredient, index) => normaliseIngredientLine({ id: `${versionId}:ingredient:${index + 1}`, name: ingredient.name, amount: ingredient.amount, unit: ingredient.unit, sourceStatus: "deferred" }));
-  const version = { id: versionId, number: 1, status: "prototype" as const, recipeNotes: candidate.description, method: candidate.method, ingredients: lines, equipment: candidate.glassware ? [candidate.glassware] : [], allergenStatus: "awaiting_canonical_source" as const, allergens: [], costing: calculateCosting(lines), createdAt: at, createdByRole: "Beverage developer", createdBy: actor.authmodIdentityId };
-  const created = beverageRecordSchema.parse({ id, name: candidate.name.trim(), normalizedName: candidate.name.trim().toLocaleLowerCase("en-GB"), description: candidate.description || `Imported draft from ${candidate.sourceLabel}.`, beverageType: candidate.beverageType || "Unclassified", lifecycle: "in_development", ownerRole: "Beverage developer", concept: candidate.garnish ? { notes: `Garnish: ${candidate.garnish}` } : {}, currentVersionId: versionId, versions: [version], schemaVersion: 2, aggregateVersion: 1, classification: candidate.classification, sourceEvidence: { fileName: candidate.sourceLabel, importedAt: at, sourceKey: sourceHash }, createdAt: at, updatedAt: at, createdBy: actor.authmodIdentityId, updatedBy: actor.authmodIdentityId, prototypes: [], rollouts: [], approvals: [], assets: [], feedback: [] });
-  return commitBeverageCommand({ entityType: "beverage", collection: "beverageRecordsV2", entityId: id, action: "beverage.imported_from_preview", expectedVersion: 0, idempotencyKey: key, actor, summary: { name: created.name, sourceHash }, schema: beverageRecordSchema, create: true, mutate: () => created }).then(asDomain);
+export async function createImportedBeverage(recipe: ReviewedImportRecipe, classification: BeverageRecord["classification"], source: PastedRecipeProvenance, actor: BeverageActor, key: string) {
+  const id = entityIdForCommand("beverage", actor.authmodIdentityId, key);
+  const versionId = `${id}:version:1`;
+  const lines = recipe.ingredients.map((ingredient, index) => normaliseIngredientLine({
+    id: `${versionId}:ingredient:${index + 1}`, name: ingredient.name, amount: ingredient.amount,
+    unit: ingredient.unit, sourceStatus: "deferred",
+  }));
+  return commitBeverageCommand({
+    entityType: "beverage", collection: "beverageRecordsV2", entityId: id,
+    action: "beverage.imported_from_preview", expectedVersion: 0, idempotencyKey: key, actor,
+    commandFingerprint: importFingerprint(JSON.stringify([source, classification, recipe])),
+    summary: { name: recipe.name, classification, sourceHash: source.sourceHash, candidateIndex: source.candidate.index, candidateHash: source.candidate.hash },
+    schema: beverageRecordSchema, create: true,
+    mutate: (_, at): BeverageRecord => {
+      const version = {
+        id: versionId, number: 1, status: "prototype" as const, recipeNotes: recipe.description, method: recipe.method,
+        ingredients: lines, equipment: recipe.glassware ? [recipe.glassware, ...recipe.equipment] : recipe.equipment,
+        allergenStatus: "awaiting_canonical_source" as const, allergens: [], costing: calculateCosting(lines),
+        createdAt: at, createdByRole: "Beverage developer", createdBy: actor.authmodIdentityId,
+      };
+      return {
+        ...emptyRecord(id, actor, { name: recipe.name, description: recipe.description, beverageType: recipe.beverageType, classification }, at),
+        lifecycle: "in_development",
+        concept: recipe.garnish ? { notes: `Garnish: ${recipe.garnish}` } : {},
+        currentVersionId: versionId, versions: [version],
+        sourceEvidence: { fileName: PASTED_RECIPE_SOURCE_LABEL, importedAt: at, sourceKey: source.sourceHash, candidate: source.candidate },
+      };
+    },
+  }).then(asDomain);
 }
 
 export async function editSpecial(id: string, patch: Partial<SpecialDraft>, actor: BeverageActor, expectedVersion: number, key: string) {

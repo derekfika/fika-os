@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { BeverageActor } from "../../lib/runtime";
+import type { LocalImportPreview, BeverageRecord } from "../../lib/contracts";
 
 process.env.FIREBASE_PROJECT_ID = "demo-fika-os";
 process.env.FIKA_RUNTIME_MODE = "local";
@@ -10,7 +11,10 @@ process.env.FIKA_BEVERAGE_LOCAL_AUTH = "fixture";
 const { createBeverage, createImportedBeverage, createSpecial, listBeverageAudit, recordApproval, setLifecycle, setSpecialStatus, createVersion, updateVersion } = await import("../../lib/store");
 const { commitBeverageCommand, getBeverage: fetchBeverage, listMonthlySpecials, beverageCollections } = await import("../../lib/repository");
 const { beverageRecordSchema } = await import("../../lib/contracts");
-const { previewPastedRecipe } = await import("../../lib/import-preview");
+const { previewPastedRecipes, requirePastedRecipeCandidate } = await import("../../lib/import-preview");
+const { beverageDb } = await import("../../lib/firestore-admin");
+const { POST: previewImport } = await import("../../app/api/imports/preview/route");
+const { POST: commitImport } = await import("../../app/api/imports/commit/route");
 const actor: BeverageActor = { authmodIdentityId: "fixture:beverage-test-operator", identityKind: "person", displayName: "Fictional Beverage local test actor", action: "Contribute", scopeOplocIds: ["fixture-oploc:london"], synthetic: true };
 
 test("Firestore emulator persists versioned records and append-only idempotency audit", async () => {
@@ -31,8 +35,11 @@ test("Firestore emulator persists versioned records and append-only idempotency 
 
 test("imported local recipes, approved versions and monthly site assignments persist in the emulator", async () => {
   const importKey = `emulator-import:${randomUUID()}`;
-  const parsed = previewPastedRecipe({ text: "Name: Emulator Citrus Recipe\nType: Mocktail\nIngredient: 20 ml orange juice\nMethod: Shake with ice", classification: "draft_concept" });
-  const imported = await createImportedBeverage(parsed.candidate, parsed.sourceHash, actor, importKey);
+  const text = "Name: Emulator Citrus Recipe\nType: Mocktail\nIngredient: 20 ml orange juice\nMethod: Shake with ice";
+  const parsed = previewPastedRecipes(text);
+  const candidate = parsed.candidates[0];
+  const source = requirePastedRecipeCandidate({ text, sourceHash: parsed.sourceHash, candidateIndex: candidate.index, candidateHash: candidate.candidateHash });
+  const imported = await createImportedBeverage(candidate.recipe, "draft_concept", source, actor, importKey);
   assert.equal(imported.sourceEvidence?.sourceKey, parsed.sourceHash);
   assert.equal(imported.versions[0].allergenStatus, "awaiting_canonical_source");
   const second = await createVersion(imported.id, actor, imported.aggregateVersion!, `emulator-version:${randomUUID()}`);
@@ -50,4 +57,84 @@ test("imported local recipes, approved versions and monthly site assignments per
   assert.equal(scheduled.status, "scheduled");
   assert.equal((await listMonthlySpecials()).some(item => item.id === special.id), true);
   assert.equal((await fetchBeverage(imported.id))?.sourceEvidence?.sourceKey, parsed.sourceHash);
+});
+
+test("actual import routes preview without writes and atomically commit the edited selected candidate once", async () => {
+  const duplicateName = `Existing fixture ${randomUUID()}`;
+  await createBeverage({ name: duplicateName, description: "A fictional local duplicate.", beverageType: "Mocktail" }, actor, 0, `emulator-duplicate:${randomUUID()}`);
+  const text = [
+    `Name: ${duplicateName}`,
+    "Type: Mocktail",
+    "Ingredient: 20 ml lime juice",
+    "Method: Stir.",
+    "Name: Fictional Reviewed Cooler",
+    "Type: Mocktail",
+    "Ingredient: mint leaves",
+    "Method: Serve.",
+    "Glassware: Highball",
+    "Equipment: Spoon",
+  ].join("\n");
+  const count = async (name: string) => (await beverageDb().collection(name).count().get()).data().count;
+  const before = [await count(beverageCollections.beverages), await count(beverageCollections.audit)];
+  const request = (action: string, body: unknown, key?: string) => new Request(`http://localhost:13617/api/imports/${action}`, {
+    method: "POST", headers: { "Content-Type": "application/json", ...(key ? { "Idempotency-Key": key } : {}) },
+    body: JSON.stringify(body),
+  });
+  const previewResponse = await previewImport(request("preview", { text }));
+  assert.equal(previewResponse.status, 200);
+  const result: LocalImportPreview = await previewResponse.json();
+  assert.equal(result.candidates.length, 2);
+  assert.ok(result.candidates[0].warnings.some(warning => warning.includes("local Beverage records")));
+  assert.ok(result.candidates[1].warnings.some(warning => warning.includes("Quantity and unit")));
+  assert.deepEqual([await count(beverageCollections.beverages), await count(beverageCollections.audit)], before);
+
+  const candidate = result.candidates[1];
+  const reviewedCandidate = {
+    ...candidate.recipe, name: "Reviewed and corrected fixture cooler",
+    ingredients: [{ name: "Mint sprig", amount: 1, unit: "each" }, { name: "Soda water" }],
+    method: "Stir gently and serve chilled.", garnish: "Mint leaf",
+  };
+  const body = {
+    text, sourceHash: result.sourceHash, candidateIndex: candidate.index, candidateHash: candidate.candidateHash,
+    classification: "draft_concept", reviewed: true, reviewedCandidate,
+  };
+  const key = `emulator-reviewed-import:${randomUUID()}`;
+  const [firstResponse, replayResponse] = await Promise.all([
+    commitImport(request("commit", body, key)),
+    commitImport(request("commit", body, key)),
+  ]);
+  assert.equal(firstResponse.status, 201);
+  assert.equal(replayResponse.status, 201);
+  const { record, sourceHash }: { record: BeverageRecord; sourceHash: string } = await firstResponse.json();
+  assert.equal((await replayResponse.json()).record.id, record.id);
+  assert.equal(record.name, reviewedCandidate.name);
+  assert.equal(record.lifecycle, "in_development");
+  assert.equal(record.classification, "draft_concept");
+  assert.equal(sourceHash, result.sourceHash);
+  assert.deepEqual(record.sourceEvidence, {
+    fileName: result.sourceLabel, importedAt: record.createdAt, sourceKey: result.sourceHash,
+    candidate: { index: 1, hash: candidate.candidateHash },
+  });
+  assert.equal(record.concept.notes, "Garnish: Mint leaf");
+  const version = record.versions[0];
+  assert.equal(version.method, reviewedCandidate.method);
+  assert.deepEqual(version.equipment, ["Highball", "Spoon"]);
+  assert.equal(version.ingredients[0].quantityMilli, 1000);
+  assert.equal(version.ingredients[0].unitCostMicropounds, undefined);
+  assert.equal(version.ingredients[1].quantityMilli, undefined);
+  assert.ok(version.ingredients.every(line => line.sourceStatus === "deferred"));
+  assert.equal(version.costing?.costStatus, "incomplete");
+  assert.equal(version.allergenStatus, "awaiting_canonical_source");
+  assert.deepEqual(version.allergens, []);
+
+  const changedReview = await commitImport(request("commit", { ...body, reviewedCandidate: { ...reviewedCandidate, name: "Different review" } }, key));
+  assert.equal(changedReview.status, 409);
+  assert.equal((await changedReview.json()).error.code, "BEVERAGE_IDEMPOTENCY_KEY_REUSED");
+  assert.deepEqual([await count(beverageCollections.beverages), await count(beverageCollections.audit)], before.map(value => value + 1));
+  const audit = await listBeverageAudit(record.id);
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0].summary.candidateIndex, 1);
+  assert.equal(audit[0].summary.candidateHash, candidate.candidateHash);
+  assert.equal(audit[0].summary.sourceHash, result.sourceHash);
+  assert.match(String(audit[0].summary.commandFingerprint), /^[a-f0-9]{64}$/);
 });
