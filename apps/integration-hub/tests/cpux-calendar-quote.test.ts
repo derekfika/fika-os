@@ -99,3 +99,39 @@ test("HTTP quote read rejects anonymous callers before any upstream request", as
   assert.equal(response.status, 401);
   assert.equal(externalCalls, 0);
 });
+
+test("Hub quote route blocks authenticated staging and unknown hosted reads before resolving stored artifacts", async t => {
+  const { NextRequest } = await import("next/server");
+  const { GET } = await import("../app/api/production/calendar-quote/route");
+  const saved = { ...process.env };
+  t.after(() => {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+  });
+  Object.assign(process.env, { FIKA_INTERNAL_API_TOKEN: "synthetic-quote-reader", FIREBASE_PROJECT_ID: "fika-os-dev", NODE_ENV: "production", K_SERVICE: "synthetic-hosted-hub" });
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => { throw Error("Quote lookup must be blocked"); });
+  // An invalid ID is a read-free control: reaching the quote resolver would return 400.
+  const request = () => new NextRequest("http://localhost/api/production/calendar-quote?bookingId=invalid", { headers: { "x-fika-internal-token": "synthetic-quote-reader" } });
+  for (const mode of ["staging", "unknown", "local", undefined]) {
+    if (mode === undefined) delete process.env.FIKA_RUNTIME_MODE;
+    else process.env.FIKA_RUNTIME_MODE = mode;
+    const response = await GET(request());
+    assert.equal(response.status, 404);
+    assert.match(response.headers.get("cache-control") || "", /no-store/);
+    const body = await response.json();
+    assert.equal(body.error.code, "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED");
+    assert.equal(body.quote, undefined);
+  }
+  assert.equal(fetchMock.mock.callCount(), 0);
+  Object.assign(process.env, { FIKA_RUNTIME_MODE: "local", NODE_ENV: "test" });
+  for (const key of ["K_SERVICE", "K_REVISION", "K_CONFIGURATION"]) delete process.env[key];
+  assert.equal((await GET(request())).status, 400, "explicit local mode reaches the existing quote validation");
+
+  Object.assign(process.env, { FIKA_RUNTIME_MODE: "production", NODE_ENV: "production", FIREBASE_PROJECT_ID: "fika-os" });
+  for (const key of ["FIREBASE_CONFIG", "GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT"]) delete process.env[key];
+  t.mock.method(globalThis, "fetch", async (url: string | URL) => {
+    assert.equal(String(url), "http://metadata.google.internal/computeMetadata/v1/project/project-id");
+    return new Response("fika-os", { headers: { "Metadata-Flavor": "Google" } });
+  });
+  assert.equal((await GET(request())).status, 400, "verified production reaches the existing quote validation");
+});

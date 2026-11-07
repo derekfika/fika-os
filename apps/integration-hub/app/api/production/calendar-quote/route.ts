@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
 import { errorResponse } from "@/lib/api";
 import { internalProductionRequestAllowed } from "@/lib/production-internal-auth";
 import { productionOrderDetail } from "@/lib/production-domain";
@@ -14,6 +15,9 @@ export async function GET(request: NextRequest) {
     const internal = Boolean(process.env.FIKA_INTERNAL_API_TOKEN?.trim()) && internalProductionRequestAllowed(request);
     // Authenticate before any business read. Interactive readers never inherit service authority.
     const session = internal ? undefined : await requireFikaSession(request);
+    if (await stagingDriveAccessBlocked()) {
+      return NextResponse.json({ error: { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED", message: "The saved quote PDF is unavailable in this environment." } }, { status: 404, headers: { "Cache-Control": "no-store, max-age=0" } });
+    }
     const context = await cpuXCalendarQuoteContext(request.nextUrl.searchParams.get("bookingId") || "", {
       order: productionOrderDetail, booking: getBookingByCanonicalId,
     });

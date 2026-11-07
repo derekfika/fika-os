@@ -114,3 +114,48 @@ test("the page waits for the cache under a bounded wait and checks the generatio
   const beforeDecision = page.slice(page.indexOf("awaitDeliveredInCacheWithin("), guardIndex);
   assert.match(beforeDecision, /if \(!current\(\)\) return;/);
 });
+
+
+test("artifact-bearing cached days require an affirmative link decision on the matching head", () => {
+  const unsafe = { ...day("2026-10-26"), cpuReview: { status: "signed", drivePdfUrl: "/api/review?download=pdf" }, siteMenu: { artifact: { driveFileId: "production-id", driveUrl: "https://drive.google.com/file/d/production-id" } } };
+  const safe = day("2026-10-27");
+  const decision = selectDeliveredInCachedDays({ entries: [entry("2026-10-26"), entry("2026-10-27")], projectionState: "current", cachedDays: [unsafe, safe] });
+  assert.equal(decision.matches, false, "the full filtered API must be fetched");
+  assert.deepEqual(decision.visibleCachedDays, [safe]);
+  assert.equal(unsafe.siteMenu.artifact.driveFileId, "production-id", "stored evidence is untouched");
+  const allowed = selectDeliveredInCachedDays({ entries: [entry("2026-10-26")], projectionState: "current", cachedDays: [unsafe], artifactLinksAllowed: true });
+  assert.equal(allowed.matches, true);
+  assert.deepEqual(allowed.visibleCachedDays, [unsafe]);
+});
+
+test("the page checks the authenticated head before reading or rendering cache and fetches on a miss", () => {
+  const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const fetchHead = page.indexOf("await withDeliveredInLoadTimeout(async () =>");
+  const authorised = page.indexOf("if (!headResponse.ok)", fetchHead);
+  const cacheRead = page.indexOf("readCachedDeliveredInDays(accountScope, nextSite)", authorised);
+  const decision = page.indexOf("selectDeliveredInCachedDays({", cacheRead);
+  const display = page.indexOf("weeksFromHeadAndCachedDays(head.weeks, visibleCachedDays)", decision);
+  const fallback = page.indexOf("if (!matches)", display);
+  assert.ok(fetchHead >= 0 && fetchHead < authorised && authorised < cacheRead && cacheRead < decision && decision < display && display < fallback);
+  assert.match(page.slice(decision, display), /artifactLinksAllowed: head\.artifactLinksAllowed/);
+});
+
+
+test("each known legacy artifact pointer forces a miss; filtered evidence does not", () => {
+  const pointers = [
+    { drivePdfUrl: "/local.pdf" },
+    { cpuReview: { drivePdfUrl: "https://drive.example/old" } },
+    { siteMenu: { artifact: { driveFileId: "old-id" } } },
+    { packet: { pdf: { url: "https://example.test/file" } } },
+    { driveArchive: { pdfDriveUrl: "https://drive.example/old" } },
+  ];
+  for (const pointer of pointers) {
+    const decision = selectDeliveredInCachedDays({ entries: [entry("2026-10-26")], projectionState: "current", cachedDays: [{ ...day("2026-10-26"), ...pointer }] });
+    assert.equal(decision.matches, false);
+    assert.deepEqual(decision.visibleCachedDays, []);
+  }
+  const filtered = { ...day("2026-10-26"), cpuReview: { status: "signed", signatures: [] }, siteMenu: { artifact: { status: "current", contentHash: "immutable-hash" } } };
+  const after = selectDeliveredInCachedDays({ entries: [entry("2026-10-26")], projectionState: "current", cachedDays: [filtered] });
+  assert.equal(after.matches, true);
+  assert.deepEqual(after.visibleCachedDays, [filtered]);
+});

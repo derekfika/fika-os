@@ -51,7 +51,7 @@ export async function retryCommittedCpuMaterialization(input: {
     ? "ready"
     : persistedRelease?.materializationStatus === "failed" || deliveryFailed
       ? "failed"
-      : !matrixDriveConfiguration(order).enabled
+      : !(await matrixDriveConfiguration(order)).enabled
         ? "not_configured"
         : "generating";
   return {

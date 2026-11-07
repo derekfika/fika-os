@@ -12,7 +12,7 @@ import { rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } 
 import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
 import { requireCpuActor } from "../../../lib/cpu-access-client";
 import { hubJson } from "../../../lib/production-http-client";
-import { matrixDriveConfiguration } from "../../lib/matrix-drive-config";
+import { containedMatrixReviewStatus, containedMatrixStatus, matrixDriveConfiguration, containArtifactLinks } from "../../lib/matrix-drive-config";
 import { loadDeliveredInReviewStatuses, parseDeliveredInReviewOrderIds } from "../../../lib/delivered-in-review";
 import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
@@ -24,7 +24,12 @@ import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRe
 import { releaseMaterializationDelivery, retryCommittedCpuMaterialization } from "../../../lib/cpu-retry-materialization";
 import { cpuMasterReviewId } from "../../../lib/cpu-master-review";
 import { ExpectedLineage, MasterReviewOperation, MasterSignCommand, MenuItem, SubItem } from "../../../lib/production-plan-command-schema";
+import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
 import { allergenMatrixHtml } from "../../ui/allergen-matrix";
+
+function safePlanJson(driveBlocked: boolean, data: unknown, init?: ResponseInit) {
+  return NextResponse.json(containArtifactLinks(data, driveBlocked), init);
+}
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
   return allergenMatrixContentHash(menuItems);
@@ -522,16 +527,17 @@ async function handleGet(request: NextRequest) {
   const orderId = request.nextUrl.searchParams.get("orderId");
   try {
     const actor = await actorFor(request);
+    const driveBlocked = await stagingDriveAccessBlocked();
     if (request.nextUrl.searchParams.get("reviewStatus") === "1") {
       const orderIds = parseDeliveredInReviewOrderIds(request.nextUrl.searchParams.get("orderIds"));
       const reviewStatuses = await loadDeliveredInReviewStatuses({ orderIds, repository: planRepository, loadOrder: (id) => loadOrder(request, id) });
-      return NextResponse.json({ reviewStatuses });
+      return safePlanJson(driveBlocked, { reviewStatuses: reviewStatuses.map(status => containedMatrixReviewStatus(status, driveBlocked)) });
     }
     if (request.nextUrl.searchParams.get("matrixStatus") === "1") {
       const orderIds = parseDeliveredInReviewOrderIds(request.nextUrl.searchParams.get("orderIds"));
       const matrixStatuses = await loadDeliveredInReviewStatuses({ orderIds, repository: planRepository, loadOrder: (id) => loadOrder(request, id), includeMatrix: true });
       recordDeliveredInReadBudget({ stage: "matrix_hydration", selectedIds: orderIds.length });
-      return NextResponse.json({ matrixStatuses });
+      return safePlanJson(driveBlocked, { matrixStatuses: matrixStatuses.map(status => containedMatrixReviewStatus(status, driveBlocked)) });
     }
     const serviceDate = request.nextUrl.searchParams.get("serviceDate");
     if (serviceDate) {
@@ -542,14 +548,18 @@ async function handleGet(request: NextRequest) {
         .filter(order => !(order.origin === "hospitality_booking" && order.requiresDelivery === false))
         .map(async order => mergeOriginalItems(request, planByOrderId.get(order.canonicalId) || await getPlan(request, order.canonicalId), order.canonicalId, order)));
       const entries = visiblePlans.filter(plan => plan.status === "planned");
-      return NextResponse.json({ plans: visiblePlans, notifications: entries.map(plan => ({ id: `notification:${plan.id}`, title: "New production plan ready for menu generation.", orderId: plan.orderId, plannedItemCount: plan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: plan.updatedAt })), menus: entries.map(plan => ({ planId: plan.id, orderId: plan.orderId, clientSite: sourceOrders.find(order => order.canonicalId === plan.orderId)?.destinationLabel || "Site not assigned", items: plan.menuItems.flatMap(item => item.subItems.map(subItem => ({ menuItem: item.name, name: subItem.name, quantity: subItem.quantity, allergens: Object.entries(subItem.allergens).filter(([, state]) => state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key) }))) })) });
+      return safePlanJson(driveBlocked, { plans: visiblePlans, notifications: entries.map(plan => ({ id: `notification:${plan.id}`, title: "New production plan ready for menu generation.", orderId: plan.orderId, plannedItemCount: plan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: plan.updatedAt })), menus: entries.map(plan => ({ planId: plan.id, orderId: plan.orderId, clientSite: sourceOrders.find(order => order.canonicalId === plan.orderId)?.destinationLabel || "Site not assigned", items: plan.menuItems.flatMap(item => item.subItems.map(subItem => ({ menuItem: item.name, name: subItem.name, quantity: subItem.quantity, allergens: Object.entries(subItem.allergens).filter(([, state]) => state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key) }))) })) });
     }
     if (orderId) {
       const selectedOrder = await loadOrder(request, orderId);
       const visible = Boolean(selectedOrder && !(selectedOrder.origin === "hospitality_booking" && selectedOrder.requiresDelivery === false));
       if (request.nextUrl.searchParams.get("download") === "pdf") {
-        const artifact = visible ? (await getPlan(request, orderId)).matrixArtifact : undefined;
-        if (!artifact?.pdfPath || !existsSync(artifact.pdfPath)) return NextResponse.json({ error: { message: "A local PDF has not been generated for this matrix." } }, { status: 404 });
+        const stored = visible ? await planRepository.get(orderId) : undefined;
+        const release = stored?.currentAllergenRelease;
+        const candidate = stored?.matrixArtifact;
+        const belongsToRelease = candidate && release && [release.masterArtifact, ...release.derivedArtifacts].some(item => item.id === candidate.id && item.contentHash === candidate.contentHash);
+        const artifact = !driveBlocked && stored && selectedOrder && release?.status === "current" && release.materializationStatus === "ready" && belongsToRelease && currentAllergenReleaseMatchesOrder(release, selectedOrder, stored.menuItems) ? candidate : undefined;
+        if (!artifact?.pdfPath || !existsSync(artifact.pdfPath)) return safePlanJson(driveBlocked, { error: { message: "A local PDF has not been generated for this matrix." } }, { status: 404 });
         return new NextResponse(await fs.readFile(artifact.pdfPath), { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${artifact.fileName}"` } });
       }
       // Read the persisted plan fresh so the revision handed to the browser is the real stored one (never a stale per-instance cache).
@@ -557,16 +567,16 @@ async function handleGet(request: NextRequest) {
       const selectedPlan = visible ? await mergeOriginalItems(request, await getPlan(request, orderId, storedForRevision), orderId, selectedOrder) : undefined;
       if (request.nextUrl.searchParams.get("download") === "html") {
         if (!selectedPlan || !selectedOrder || !signedAllergenReviewMatchesOrder(selectedPlan, selectedOrder, selectedPlan.menuItems)) {
-          return NextResponse.json({ error: { message: "The fully signed allergen matrix is not available for this production order." } }, { status: 404 });
+          return safePlanJson(driveBlocked, { error: { message: "The fully signed allergen matrix is not available for this production order." } }, { status: 404 });
         }
         const html = allergenMatrixHtml(selectedOrder, selectedPlan.menuItems, selectedPlan.signedSignatures?.length ? selectedPlan.signedSignatures : selectedPlan.signatures || []);
         return new NextResponse(html, { headers: { "content-type": "text/html; charset=utf-8", "content-disposition": `inline; filename="${orderId.replace(/[^a-zA-Z0-9_-]+/g, "-")}-signed-allergen-matrix.html"` } });
       }
       recordDeliveredInReadBudget({ stage: "selected_order_get", canonicalOrderDocs: selectedOrder ? 1 : 0, planDocs: selectedPlan ? 1 : 0, selectedIds: 1 });
-      const selectedMatrixStatus = selectedPlan?.matrixArtifact && selectedOrder && currentAllergenReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems) ? "ready" : selectedPlan?.currentAllergenRelease?.materializationStatus === "failed" ? "failed" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !matrixDriveConfiguration(selectedOrder).enabled ? "not_configured" : "generating" : undefined;
+      const selectedMatrixStatus = containedMatrixStatus(selectedPlan?.matrixArtifact && selectedOrder && currentAllergenReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems) ? "ready" : selectedPlan?.currentAllergenRelease?.materializationStatus === "failed" ? "failed" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !(await matrixDriveConfiguration(selectedOrder)).enabled ? "not_configured" : "generating" : undefined, driveBlocked);
       const signingLineage = selectedOrder && selectedPlan ? matrixSignatureScope(selectedOrder, menuContentHash(selectedPlan.menuItems)) : undefined;
       const signedMatrixAvailable = Boolean(selectedPlan && selectedOrder && signedAllergenReviewMatchesOrder(selectedPlan, selectedOrder, selectedPlan.menuItems));
-      return NextResponse.json({ plan: selectedPlan, revision: planRevisionToken(storedForRevision), ...(selectedPlan?.lifecycleSync?.status === "pending" ? { hubLifecycle: { status: "pending", error: selectedPlan.lifecycleSync.lastError ?? "The booking status update has not been confirmed." }, synchronised: false } : {}), signingLineage: signingLineage || null, matrixStatus: selectedMatrixStatus, ...(selectedPlan?.currentAllergenRelease?.materializationError ? { matrixError: selectedPlan.currentAllergenRelease.materializationError } : {}), signedMatrixAvailable, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
+      return safePlanJson(driveBlocked, { plan: selectedPlan, revision: planRevisionToken(storedForRevision), ...(selectedPlan?.lifecycleSync?.status === "pending" ? { hubLifecycle: { status: "pending", error: selectedPlan.lifecycleSync.lastError ?? "The booking status update has not been confirmed." }, synchronised: false } : {}), signingLineage: signingLineage || null, matrixStatus: selectedMatrixStatus, ...(selectedPlan?.currentAllergenRelease?.materializationError ? { matrixError: selectedPlan.currentAllergenRelease.materializationError } : {}), signedMatrixAvailable, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
     }
   } catch (error) {
     return errorResponse(error);
@@ -578,9 +588,10 @@ async function handleGet(request: NextRequest) {
 async function handlePost(request: NextRequest) {
   try {
     const actor = await actorFor(request);
+    const driveBlocked = await stagingDriveAccessBlocked();
     const raw = await request.json();
     if (raw?.action === "sign-master-matrix") {
-      return NextResponse.json(await applyMasterSignatureBatch(request, actor, MasterSignCommand.parse(raw)));
+      return safePlanJson(driveBlocked, await applyMasterSignatureBatch(request, actor, MasterSignCommand.parse(raw)));
     }
     if (raw?.action === "batch-plan") {
       const batch = MatrixBatchCommand.parse(raw);
@@ -615,7 +626,7 @@ async function handlePost(request: NextRequest) {
         }
       }
       recordDeliveredInReadBudget({ stage: "matrix_batch_mutation", planDocs: results.filter(result => result.ok).length, selectedIds: batch.operations.length, rebuildScopes: affectedDates.length + affectedWeeks.size });
-      return NextResponse.json({ results, partialFailure: results.some(result => !result.ok) && results.some(result => result.ok) });
+      return safePlanJson(driveBlocked, { results, partialFailure: results.some(result => !result.ok) && results.some(result => result.ok) });
     }
     const command = Command.parse(raw);
     const auditActor = actor.name || actor.uid;
@@ -638,7 +649,7 @@ async function handlePost(request: NextRequest) {
       const retried = await retryCommittedCpuMaterialization({ plan: normalisePlanAllergens(storedPlan), order: currentOrder, expectedLineage: command.expectedLineage, timestamp: now() });
       // Once signed the review is locked, so this retry is the operator's way to complete a Hub Planned sync that is still pending.
       const retriedHub = retried.plan.lifecycleSync?.status === "pending" ? await completeLifecycleSync(request, retried.plan) : undefined;
-      return NextResponse.json({ ...retried, ...(retriedHub ? { revision: planRevisionToken(retried.plan), hubLifecycle: retriedHub, synchronised: retriedHub.status === "synced" } : {}) });
+      return safePlanJson(driveBlocked, { ...retried, matrixStatus: containedMatrixStatus(retried.matrixStatus, driveBlocked), ...(retriedHub ? { revision: planRevisionToken(retried.plan), hubLifecycle: retriedHub, synchronised: retriedHub.status === "synced" } : {}) });
     }
     const plan = await getPlan(request, command.orderId, storedPlan);
     // Review saves are written against the exact revision the browser loaded; every other command against the revision this request read.
@@ -674,8 +685,8 @@ async function handlePost(request: NextRequest) {
       const effectiveNextStatus = effectiveProductionPlanStatus({ ...plan, menuItems: nextMenuItems });
       const noOpSave = Boolean(storedPlan && !contentChanged && plan.planningNotes === command.planningNotes && authorityMatches && plan.status === effectiveNextStatus);
       if (noOpSave) {
-        const matrixStatus = plan.matrixArtifact && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, currentOrder, plan.menuItems) ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? !matrixDriveConfiguration(currentOrder).enabled ? "not_configured" : "generating" : undefined;
-        return NextResponse.json({ plan, revision: planRevisionToken(storedPlan), signingLineage: matrixSignatureScope(currentOrder, menuContentHash(plan.menuItems)) || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus });
+        const matrixStatus = containedMatrixStatus(plan.matrixArtifact && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, currentOrder, plan.menuItems) ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? !(await matrixDriveConfiguration(currentOrder)).enabled ? "not_configured" : "generating" : undefined, driveBlocked);
+        return safePlanJson(driveBlocked, { plan, revision: planRevisionToken(storedPlan), signingLineage: matrixSignatureScope(currentOrder, menuContentHash(plan.menuItems)) || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus });
       }
       plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
@@ -701,7 +712,7 @@ async function handlePost(request: NextRequest) {
         // CPU already holds this exact planned review; only the Hub transition is outstanding. Retry it without touching CPU evidence.
         const retried = await completeLifecycleSync(request, plan);
         const retriedOrder = (await loadOrder(request, command.orderId, { fresh: true })) ?? currentOrder;
-        return NextResponse.json({ plan, revision: planRevisionToken(plan), hubLifecycle: retried, synchronised: retried.status === "synced", signingLineage: matrixSignatureScope(retriedOrder, menuContentHash(plan.menuItems)) || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null });
+        return safePlanJson(driveBlocked, { plan, revision: planRevisionToken(plan), hubLifecycle: retried, synchronised: retried.status === "synced", signingLineage: matrixSignatureScope(retriedOrder, menuContentHash(plan.menuItems)) || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null });
       }
        plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
@@ -771,7 +782,7 @@ async function handlePost(request: NextRequest) {
         // Nothing to materialise. If only the Hub Planned sync is outstanding, complete (and verify) that instead of refusing.
         if (plan.lifecycleSync?.status === "pending") {
           const onlyHub = await completeLifecycleSync(request, plan);
-          return NextResponse.json({ plan, revision: planRevisionToken(plan), hubLifecycle: onlyHub, synchronised: onlyHub.status === "synced", matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus: "ready" });
+          return safePlanJson(driveBlocked, { plan, revision: planRevisionToken(plan), hubLifecycle: onlyHub, synchronised: onlyHub.status === "synced", matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus: containedMatrixStatus("ready", driveBlocked) });
         }
         throw Object.assign(new Error("This CPU allergen release is already current."), { status: 409 });
       }
@@ -834,9 +845,9 @@ async function handlePost(request: NextRequest) {
       await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${plan.id}:v${event!.sequence}`, sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: event!.sequence, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false, ...(review ? { reviewManifest: review.manifest } : {}) });
     }
     const materializationFailed = materializationResult?.status === "failed";
-    const matrixStatus = plan.matrixArtifact && lineageOrder && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, lineageOrder, plan.menuItems) ? "ready" : plan.currentAllergenRelease?.materializationStatus === "failed" || materializationFailed ? "failed" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
+    const matrixStatus = containedMatrixStatus(plan.matrixArtifact && lineageOrder && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, lineageOrder, plan.menuItems) ? "ready" : plan.currentAllergenRelease?.materializationStatus === "failed" || materializationFailed ? "failed" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !(await matrixDriveConfiguration(changedOrder)).enabled ? "not_configured" : "generating" : undefined, driveBlocked);
     const signingLineage = lineageOrder ? matrixSignatureScope(lineageOrder, menuContentHash(plan.menuItems)) : undefined;
-    return NextResponse.json({ plan, revision: planRevisionToken(plan), ...(hubLifecycle ? { hubLifecycle, synchronised: hubLifecycle.status === "synced" } : {}), signingLineage: signingLineage || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, ...(plan.currentAllergenRelease?.materializationError || materializationResult?.error ? { matrixError: plan.currentAllergenRelease?.materializationError || materializationResult?.error } : {}), materializationDelivery: materializationResult || null, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
+    return safePlanJson(driveBlocked, { plan, revision: planRevisionToken(plan), ...(hubLifecycle ? { hubLifecycle, synchronised: hubLifecycle.status === "synced" } : {}), signingLineage: signingLineage || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, ...(plan.currentAllergenRelease?.materializationError || materializationResult?.error ? { matrixError: plan.currentAllergenRelease?.materializationError || materializationResult?.error } : {}), materializationDelivery: materializationResult || null, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return errorResponse(error); }
 }
 
