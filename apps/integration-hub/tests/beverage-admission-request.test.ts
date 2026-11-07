@@ -100,7 +100,7 @@ test("Beverage reads only the UID binding, current packages and canonical site w
         [expectedReads[1]]: app,
         [expectedReads[2]]: { version: securityHead },
         [expectedReads[3]]: { version: oplocHead },
-        [expectedReads[4]]: { canonicalId: site, entityType: "OPLOC", record: { lifecycleState: "active" } },
+        [expectedReads[4]]: { canonicalId: site, entityType: "OPLOC", record: { lifecycleState: "active", approvedName: "Fixture approved name" } },
       };
       assert.ok(Object.hasOwn(documents, ref.path), "Unexpected authority read");
       return { exists: true, data: () => documents[ref.path] };
@@ -141,6 +141,7 @@ test("Beverage reads only the UID binding, current packages and canonical site w
   assert.equal(allowed.allowed, true);
   assert.equal(allowed.principalId, identity.id);
   assert.deepEqual(allowed.scope, { kind: "oploc", ids: [site] });
+  assert.deepEqual(allowed.activeOplocs, [{ id: site, label: "Fixture approved name" }]);
   assert.deepEqual(events.splice(0), ["verified", "snapshot", ...expectedReads]);
 
   securityHead++;

@@ -1,7 +1,6 @@
 import type { Firestore } from "firebase-admin/firestore";
-import { decideBeverageSiteAuthority } from "./authmod-core/beverage-admission";
+import { decideBeverageSiteAuthority, type BeverageSiteRequest } from "./authmod-core/beverage-admission";
 import { FirestoreAuthModRepository } from "./authmod-core/firestore-repository";
-import type { AuthModAction } from "./authmod-core/model";
 import { auth, db } from "./firebase-admin";
 import { sessionCookieConfig } from "./runtime-config";
 
@@ -13,7 +12,7 @@ type Dependencies = {
 /** Internal Hub request adapter. Hosted routes and registry provisioning are separate. */
 export function decideBeverageRequestAuthority(
   request: { cookies: { get(name: string): { value?: string } | undefined } },
-  input: { action: AuthModAction; oplocIds: readonly string[] },
+  input: BeverageSiteRequest,
   dependencies: Dependencies = { auth, firestore: db },
 ) {
   const sessionCookie = request.cookies.get(sessionCookieConfig().name)?.value;
