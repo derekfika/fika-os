@@ -7,50 +7,40 @@
   "region": "europe-west4",
   "branch": "release/staging/beverage",
   "validation": {
-    "id": 128464544591,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/42392946325/job/128464544591",
-    "sha": "eea369f8158fbaf94dbc5e67be1534436a7aaf44"
+    "id": 128485498663,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/42399878204/job/128485498663",
+    "sha": "ac559c1a7525a103af7537e61ae82dfb125fd737"
   },
   "provenance": {
-    "number": 464,
-    "url": "https://github.com/derekfika/fika-os/pull/464",
-    "head": "636a6a293ed29a52e8fa77eb51509049f08bb1f5"
+    "number": 471,
+    "url": "https://github.com/derekfika/fika-os/pull/471",
+    "head": "e2d82ba8a94cf786fcbc99eca2c1ff20a01bc912"
   },
-  "sourceSha": "eea369f8158fbaf94dbc5e67be1534436a7aaf44",
-  "scopeHash": "dd59bfe89a1550fd2bf4f1f99d11f45adc3c3d8644f270004687f78779f87611",
+  "sourceSha": "ac559c1a7525a103af7537e61ae82dfb125fd737",
+  "scopeHash": "c83cad9f1bbc9d138b3c14db69029733824200e0068a619952500812b0f8a71d",
   "rollback": false,
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "beverage",
     "environment": "staging",
-    "sourceSha": "eea369f8158fbaf94dbc5e67be1534436a7aaf44",
+    "sourceSha": "ac559c1a7525a103af7537e61ae82dfb125fd737",
     "action": "deploy",
-    "instruction": "Refresh restricted preview after local document review UI merge",
+    "instruction": "Execute deploy",
     "releaseId": null,
-    "id": "3f474fd214ec76087ef8febe32695c39f4dac0b4c08f0dce64d541078e710d52",
+    "id": "398e1a44ef136854a0a528c26e3708ada19015736a63609a8ffc821f8d609f14",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-07T16:48:39.168Z"
+    "authorisedAt": "2026-11-07T18:11:42.532Z"
   },
-  "rollout": "build-2026-11-07-005",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "01facd12-5402-40d5-adc2-d8ce8b7f67b1",
   "previousGood": {
-    "sourceSha": "276becbabe94660485b44e58ff8ba35379618d97",
-    "rollout": "build-2026-11-07-004",
+    "sourceSha": "eea369f8158fbaf94dbc5e67be1534436a7aaf44",
+    "rollout": "build-2026-11-07-005",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "b56328384a362ab8138268b18ef5987a6a08b423",
-  "releaseId": "7ec09e1b-e3cc-4b30-b6ff-1b2c2a4b3316",
-  "completedAt": "2026-11-07T16:52:12.646Z",
-  "smoke": {
-    "ok": true,
-    "status": 307,
-    "url": "https://fika-beverage-staging--fika-os-dev.europe-west4.hosted.app/",
-    "buildInfoStatus": 200,
-    "buildSha": "eea369f8158fbaf94dbc5e67be1534436a7aaf44",
-    "authGate": "FIKA_SESSION_MISSING"
-  }
+  "previousGoodRecord": "4ded19cc69f623f397ea762880e8da8281bbee8c",
+  "createdAt": "2026-11-07T18:11:45.457Z"
 }
