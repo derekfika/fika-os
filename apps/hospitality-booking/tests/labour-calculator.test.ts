@@ -118,7 +118,11 @@ test("only approved unchanged historical Normal snapshots are editable legacy li
   const kp = { roleId: "kp", hourlyRate: 17.7, multiplier: 1 };
   assert.equal(isApprovedLabourLine(kp), true);
   assert.equal(isHistoricalNormalLabourLine(kp), true);
-  assert.equal(isHistoricalNormalLabourLine({ ...kp, rateSource: "custom" } as typeof kp), true, "historical source metadata does not invalidate an approved snapshot");
+  for (const rateSource of ["custom", "configured"] as const) {
+    const sourcedLegacy = { ...kp, rateSource };
+    assert.equal(isApprovedLabourLine(sourcedLegacy), true, `${rateSource} provenance does not invalidate the approved role/rate signature`);
+    assert.equal(isHistoricalNormalLabourLine(sourcedLegacy), true, `${rateSource} historical Normal snapshot remains editable`);
+  }
   assert.equal(isApprovedLabourLine({ ...kp, hourlyRate: 22 }), false);
   assert.equal(isHistoricalNormalLabourLine({ ...kp, hourlyRate: 22 }), false, "custom 1× price is not an approved historical signature");
   assert.equal(isApprovedLabourLine({ ...kp, roleId: "foh-assistant" }), false);

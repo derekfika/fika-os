@@ -95,6 +95,14 @@ test("an unchanged approved historical Normal snapshot remains byte-identical, b
   assert.equal(repriced[0].updatedBy, "manager-2");
 });
 
+test("exact-rate custom/configured historical Normal snapshots are preserved byte-for-byte", () => {
+  for (const rateSource of ["custom", "configured"] as const) {
+    const historical = governedLine({ multiplier: 1, rateSource });
+    const stored = storedLegacy(historical, 10, 17.7, 177);
+    assert.deepEqual(normalizeBookingAdditionalCharges([historical], [stored], [], "manager-2", NOW)[0], stored, `${rateSource} provenance`);
+  }
+});
+
 test("new or edited custom/unapproved 1x labour is rejected", () => {
   assert.throws(() => normalizeBookingAdditionalCharges([governedLine({ roleId: "custom-role", multiplier: 1, rateSource: "custom" })], [], [], "m", NOW), /approved labour role/);
   assert.throws(() => normalizeBookingAdditionalCharges([governedLine({ hourlyRate: 22, multiplier: 1, rateSource: "custom" })], [], [], "m", NOW), /locked/);
