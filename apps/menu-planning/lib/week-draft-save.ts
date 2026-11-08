@@ -128,5 +128,5 @@ export async function saveWeekDraft(raw: unknown, actor: string, allowedOplocIds
       }
     }
     return result;
-  }, undefined, { weekId: request.weekId, sourceWeekId: "__none__", includeEvents: false, includeTemplateSettings: Boolean(request.changes.templateAdditions?.length) });
+  }, undefined, { weekId: request.weekId, sourceWeekId: request.workingDraft ? request.weekId : "__none__", includeEvents: false, includeTemplateSettings: Boolean(request.changes.templateAdditions?.length) });
 }
