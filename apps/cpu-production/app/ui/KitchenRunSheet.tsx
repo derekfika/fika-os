@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
+import { DASHBOARD_REFRESH_CHECK_MS, mayAutoRefreshDashboard } from "../../../shared/passive-dashboard-refresh";
 import type {
   ProductionLine,
   ProductionOrder,
@@ -238,7 +239,11 @@ function SavedCollection({ order }: { order: ProductionOrder }) {
   const pending = useRef<Record<string, unknown> | undefined>(undefined);
   const serial = useRef(0);
   const sending = useRef(false);
+  const lastChecklistReadAt = useRef<number | undefined>(undefined);
+  const checklistReadsInFlight = useRef(0);
   const load = async () => {
+    lastChecklistReadAt.current = Date.now();
+    checklistReadsInFlight.current += 1;
     const version = ++serial.current;
     try {
       const response = await fetch(
@@ -259,6 +264,8 @@ function SavedCollection({ order }: { order: ProductionOrder }) {
           e instanceof Error ? e.message : "Checklist could not be loaded.",
         );
       }
+    } finally {
+      checklistReadsInFlight.current -= 1;
     }
   };
   useEffect(() => {
@@ -266,17 +273,19 @@ function SavedCollection({ order }: { order: ProductionOrder }) {
     setError("");
     pending.current = undefined;
     void load();
-    const focus = () => {
-      if (!sending.current) void load();
+    const passiveRefresh = () => {
+      const now = Date.now();
+      if (mayAutoRefreshDashboard({
+        now, lastAttemptAt: lastChecklistReadAt.current,
+        visible: document.visibilityState === "visible",
+        inFlight: sending.current || checklistReadsInFlight.current > 0,
+      })) void load();
     };
-    window.addEventListener("focus", focus);
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible" && !sending.current)
-        void load();
-    }, 300000);
+    window.addEventListener("focus", passiveRefresh);
+    const timer = window.setInterval(passiveRefresh, DASHBOARD_REFRESH_CHECK_MS);
     return () => {
       serial.current++;
-      window.removeEventListener("focus", focus);
+      window.removeEventListener("focus", passiveRefresh);
       clearInterval(timer);
     };
   }, [order]);
