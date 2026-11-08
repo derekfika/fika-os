@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireActor } from "@/lib/auth";
 import { requireFikaSession } from "@/lib/fika-session";
 import { FirestoreAuthModRepository } from "@/lib/authmod-core";
-import { assertHospitalityBookingMutationAccess, requireHospitalityBookingAdmin, resolveHospitalityBookingAdmin } from "@/lib/hospitality-booking-authorization";
+import { assertHospitalityBookingMutationAccess, assertHospitalityBookingReadAccess, requireHospitalityBookingAdmin, resolveHospitalityBookingAdmin } from "@/lib/hospitality-booking-authorization";
 import { amendHospitalityBookingGroup, getHospitalityBookingGroup } from "@/lib/hospitality-booking-service";
 import { groupAmendmentCommand } from "@/lib/hospitality-group-amendment";
 import { groupCommercialState } from "@/lib/hospitality-group-commercial";
 import { errorResponse } from "@/lib/api";
+import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
+import { redactHospitalityQuoteDriveLinks } from "@/lib/hospitality-quote-response";
+
+const groupJson = async (value: unknown) => NextResponse.json(redactHospitalityQuoteDriveLinks(value, await stagingDriveAccessBlocked()), { headers: { "Cache-Control": "no-store, max-age=0" } });
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,7 +23,7 @@ export async function POST(request: NextRequest) {
       if (input.hospitalityAdmin) return;
       for (const child of new Map(children.map(b => [b.service.oplocId, b])).values()) await assertHospitalityBookingMutationAccess(repository, principal, child, actor.role === "integration-admin" || actor.role === "reviewer");
     }, input.hospitalityAdmin ? (child, transaction) => requireHospitalityBookingAdmin(new FirestoreAuthModRepository("hospitality-admin", undefined, transaction), principal, child.service.oplocId) : undefined);
-    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+    return groupJson(result);
   } catch (error) { return errorResponse(error); }
 }
 
@@ -31,9 +35,9 @@ export async function GET(request: NextRequest) {
     const children = await getHospitalityBookingGroup(id);
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
     const repository = new FirestoreAuthModRepository();
-    for (const child of new Map(children.map(b => [b.service.oplocId, b])).values()) await assertHospitalityBookingMutationAccess(repository, principal, child, actor.role === "integration-admin" || actor.role === "reviewer");
     const sites = [...new Set(children.map(child => child.service.oplocId))];
+    for (const child of new Map(children.map(b => [b.service.oplocId, b])).values()) await assertHospitalityBookingReadAccess(repository, principal, child, actor.role === "integration-admin" || actor.role === "reviewer");
     const admin = sites.length === 1 ? await resolveHospitalityBookingAdmin(repository, principal, sites[0]).catch(() => undefined) : undefined;
-    return NextResponse.json({ bookings: children, sourceHash: groupCommercialState(id, children).sourceHash, hospitalityAdminOplocId: admin?.oplocId }, { headers: { "Cache-Control": "no-store" } });
+    return groupJson({ bookings: children, sourceHash: groupCommercialState(id, children).sourceHash, hospitalityAdminAuthority: admin });
   } catch (error) { return errorResponse(error); }
 }

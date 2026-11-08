@@ -3,6 +3,8 @@ import { z } from "zod";
 import { internalTokenAllowed } from "../../../../../shared/internal-auth";
 import { mirrorPreviewEnabled } from "../../../../../shared/cpux-calendar/google";
 import { hospitalityCatchUp, replayHospitalityMirror } from "../../../../lib/cpux-mirror/queue";
+import { getFikaRuntimeConfig } from "../../../../lib/runtime-config";
+import { hospitalityMirrorSchedulerRequestAllowed } from "../../../../lib/cpux-mirror/scheduler-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -12,7 +14,9 @@ const command = z.discriminatedUnion("action", [
 ]);
 
 export async function POST(request: Request) {
-  if (!internalTokenAllowed(request)) return NextResponse.json({ error: "Internal access required." }, { status: 403 });
+  let scheduler = false;
+  try { scheduler = await hospitalityMirrorSchedulerRequestAllowed(request, getFikaRuntimeConfig()); } catch { scheduler = false; }
+  if (!internalTokenAllowed(request) && !scheduler) return NextResponse.json({ error: "Internal access required." }, { status: 403 });
   if (!mirrorPreviewEnabled()) return NextResponse.json({ error: "Calendar mirror is disabled." }, { status: 503 });
   const parsed = command.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid Calendar mirror command." }, { status: 400 });

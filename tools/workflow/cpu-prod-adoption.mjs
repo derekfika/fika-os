@@ -76,7 +76,7 @@ export async function adoptCompletedCpu(input, io) {
   await io.assertJournal();
   if (!execute) return {dryRun:true, ...serving, build:first.build.name.split('/').at(-1), priorLedgerCommit:previous.commit, snapshotsStable:true, health, provenance};
   if (authorization?.action !== 'reconcile:adopt-completed' || authorization.app !== 'cpu' || authorization.environment !== 'prod' || authorization.sourceSha !== sha || authorization.releaseId !== previous.commit ||
-      authorization.explicitExecute !== true || authorization.method !== 'owner-instruction' || !authorization.actor || !authorization.instruction || !Number.isFinite(Date.parse(authorization.authorisedAt))) throw Error('Exact owner-authorised CPU adoption required');
+      authorization.explicitExecute !== true || !['authenticated-repository-writer','authorised-workflow-dispatch'].includes(authorization.method) || !authorization.actor || !authorization.instruction || !Number.isFinite(Date.parse(authorization.authorisedAt))) throw Error('Exact authenticated execution evidence is required for CPU adoption');
   const record = {schema:'fika.release.v1', ...t, ...serving, kind:'baseline', scopeHash:await io.scopeHash(sha), observedAt:new Date().toISOString(),
     previousGood:{sourceSha:previous.record.sourceSha, rollout:previous.record.rollout, state:previous.record.state, percent:previous.record.percent}, previousGoodRecord:previous.commit,
     approval:authorization, provenance, smoke:health,

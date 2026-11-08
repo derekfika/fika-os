@@ -25,6 +25,7 @@ test("the Menu Planning publisher payload, including publicationId, is accepted 
       slot: "SALAD 1",
       canonicalSlotId: "SALAD 1",
       canonicalOrderIndex: 0,
+      isCoreSalad: true,
       workstream: "delivered_in" as const,
       approvedAllergenSnapshot: {
         allergens: { milk: "clear" },
@@ -41,4 +42,8 @@ test("the Menu Planning publisher payload, including publicationId, is accepted 
   const parsed = parseExternalProductionMaterialisation(payload);
   const productionLine = projectExternalProductionLine(parsed, "production-order:menu", 0, "menu_available");
   assert.deepEqual([productionLine.menuOrderVersion, productionLine.slot, productionLine.canonicalSlotId, productionLine.canonicalOrderIndex, productionLine.sortOrder], ["fika.menu-order.v1", "SALAD 1", "SALAD 1", 0, 0]);
+  assert.equal(productionLine.isCoreSalad, true);
+  assert.deepEqual(productionLine.approvedAllergenSnapshot?.allergens, { milk: "clear" }, "Core metadata does not alter allergen evidence");
+  const legacy = { ...payload, lines: [{ ...payload.lines[0], isCoreSalad: undefined }] };
+  assert.equal(projectExternalProductionLine(parseExternalProductionMaterialisation(legacy), "production-order:legacy", 0, "menu_available").isCoreSalad, undefined);
 });

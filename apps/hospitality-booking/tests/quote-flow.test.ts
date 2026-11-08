@@ -51,7 +51,7 @@ test("additional-charge manager preserves unsaved edits and provides accessible 
   assert.match(dashboard, /aria-modal="true"/);
   assert.match(dashboard, /document\.addEventListener\("keydown"/);
   assert.match(dashboard, /additional-charge-editor__grid/);
-  // Labour calculator is now approved TCTE roles + Normal/Overtime only (tests/labour-calculator.test.ts).
+  // Labour calculator exposes only the approved Agency / overtime rate (tests/labour-calculator.test.ts).
   assert.match(dashboard, /APPROVED_LABOUR_ROLES/);
   assert.doesNotMatch(dashboard, /Custom multiplier|Use configured rate/);
 });

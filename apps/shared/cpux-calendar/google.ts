@@ -6,6 +6,7 @@ type Fetch = typeof fetch;
 const GOOGLE = "https://www.googleapis.com";
 const CALENDAR = "https://www.googleapis.com/auth/calendar.events";
 const CALENDAR_READ = "https://www.googleapis.com/auth/calendar.events.readonly";
+const CALENDAR_LIST_READ = "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 const DRIVE_READ = "https://www.googleapis.com/auth/drive.readonly";
 const DRIVE_WRITE = "https://www.googleapis.com/auth/drive.file";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
@@ -26,12 +27,8 @@ export function mirrorPreviewEnabled(env: Env = process.env) {
 }
 
 export function configuredMirrorTarget(stream: MirrorSource["stream"], site: string | undefined, env: Env = process.env): MirrorTarget {
-  // Owner-managed stable canonical OPLOC → calendar and delegated organiser mapping.
-  // This is configuration, not a guess from a site's display label or email.
-  const record: unknown = stream === "hospitality"
-    ? Object.entries(JSON.parse(env.FIKA_CPUX_HOSPITALITY_CALENDARS_JSON || "{}") as Record<string, unknown>).find(([key]) => key === site)?.[1]
-    : { calendarId: env.FIKA_CPUX_DELIVERED_IN_CALENDAR_ID, subject: env.FIKA_CPUX_DELIVERED_IN_CALENDAR_SUBJECT };
-  const values = record as { calendarId?: unknown; subject?: unknown } | undefined;
+  if (stream === "hospitality") throw new Error("Hospitality Calendars must use the canonical Workspace identity resolver.");
+  const values = { calendarId: env.FIKA_CPUX_DELIVERED_IN_CALENDAR_ID, subject: env.FIKA_CPUX_DELIVERED_IN_CALENDAR_SUBJECT };
   const logistics = env.FIKA_CPUX_LOGISTICS_MAILBOX || "";
   if (!allowedId(values?.calendarId) || !isWorkspaceEmail(values?.subject)) throw new Error("The approved Calendar organiser is not configured.");
   const result = { calendarId: values.calendarId, subject: values.subject, logistics };
@@ -42,7 +39,7 @@ export function configuredMirrorTarget(stream: MirrorSource["stream"], site: str
 
 export type MirrorObservation = { disposition: "create" | "update" | "cancel" | "unchanged" | "skip"; eventId: string };
 type Event = {
-  id?: string; etag?: string; status?: string; organizer?: { self?: boolean };
+  id?: string; etag?: string; status?: string; organizer?: { self?: boolean; email?: string };
   attendees?: Array<{ email?: string; responseStatus?: string; organizer?: boolean }>;
   attendeesOmitted?: boolean;
   extendedProperties?: { shared?: Record<string, string> };
@@ -107,6 +104,18 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
     headers.set("authorization", "Bearer " + await token(subject, scope));
     return fetcher(GOOGLE + path, { ...init, headers, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(8000) });
   }
+  let calendarBindingCheck: Promise<{ calendarId: string; subject: string; accessRole: "writer" | "owner" }> | undefined;
+  async function verifyCalendarBinding() {
+    return calendarBindingCheck ||= (async () => {
+      const path = "/calendar/v3/users/me/calendarList/" + encodeURIComponent(target.calendarId) + "?fields=id,accessRole";
+      const response = await request(path, CALENDAR_LIST_READ, target.subject);
+      if (!response.ok) throw new Error("The delegated organiser cannot access the configured Calendar (HTTP " + response.status + ").");
+      const binding = await response.json() as { id?: string; accessRole?: string };
+      if (binding.id !== target.calendarId || !(binding.accessRole === "writer" || binding.accessRole === "owner"))
+        throw new Error("The delegated organiser does not have verified Calendar write access.");
+      return { calendarId: target.calendarId, subject: target.subject, accessRole: binding.accessRole };
+    })();
+  }
   async function verifyFile(fileId: string, mime: string, subjects = recipients) {
     if (!isDriveId(fileId)) throw new Error("The current Drive file is missing.");
     await Promise.all(subjects.map(async (subject) => {
@@ -118,7 +127,7 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
   }
   const verifiedDocuments = new WeakSet<MirrorDocument>();
   async function verifiedPdf(fileId: string, title: string): Promise<MirrorDocument> {
-    await verifyFile(fileId, "application/pdf");
+    await verifyFile(fileId, "application/pdf", [...recipients, target.subject]);
     const response = await request("/drive/v2/files/" + encodeURIComponent(fileId) + "?supportsAllDrives=true&fields=id,mimeType,alternateLink", DRIVE_READ, target.subject);
     if (!response.ok) throw new Error("The Calendar organiser cannot access the approved PDF.");
     const { id, mimeType, alternateLink } = await response.json() as { id?: string; mimeType?: string; alternateLink?: string };
@@ -149,6 +158,7 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
     return await response.json() as Event;
   }
   async function findCanonicalEvent(id: string) {
+    await verifyCalendarBinding();
     const exact = await readEvent(id);
     if (exact) return exact;
     const params = new URLSearchParams({ sharedExtendedProperty: "fikaMirrorKey=" + id, maxResults: "2", showDeleted: "false" });
@@ -164,7 +174,7 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
     if (!event) return { eventId, disposition: source.withdrawn ? "skip" : "create" };
     const meta = event.extendedProperties?.shared;
     const revision = Number(meta?.fikaMirrorRevision);
-    if (event.id !== eventId || event.organizer?.self !== true || meta?.fikaMirrorOrigin !== MIRROR_ORIGIN ||
+    if (event.id !== eventId || event.organizer?.self !== true || event.organizer.email?.toLowerCase() !== target.subject.toLowerCase() || meta?.fikaMirrorOrigin !== MIRROR_ORIGIN ||
         meta?.fikaMirrorKey !== eventId || !Number.isSafeInteger(revision) || revision < 1 || !event.etag)
       throw new Error("An existing event has ambiguous identity or organiser; review is required.");
     const withdrawn = meta.fikaMirrorWithdrawn === "true" || event.status === "cancelled";
@@ -211,7 +221,12 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
     if (event?.etag) headers["if-match"] = event.etag;
     const response = await request(collection + (event ? "/" + id : "") + "?supportsAttachments=true&sendUpdates=all", CALENDAR, target.subject,
       { method: event ? "PATCH" : "POST", headers, body: JSON.stringify(resource) });
-    if (response.ok) return plan;
+    if (response.ok) {
+      const saved = await response.json() as Event;
+      if (saved.id !== id || saved.organizer?.self !== true || saved.organizer.email?.toLowerCase() !== target.subject.toLowerCase())
+        throw new Error("Calendar did not confirm the configured delegated organiser for the saved event.");
+      return plan;
+    }
     if (response.status === 409 || response.status === 412) {
       const after = await inspect(source);
       if (after.disposition === "unchanged" || after.disposition === "skip") return after;
@@ -251,5 +266,5 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
     await verifyStored(written.status === 409 ? await request(path, DRIVE_WRITE, target.subject) : written);
     return verifiedPdf(fileId, title);
   }
-  return { inspect, publish, verifiedPdf, allocatePdfId, storeRunSheet, verifyRunSheetFolder };
+  return { inspect, publish, verifiedPdf, allocatePdfId, storeRunSheet, verifyRunSheetFolder, verifyCalendarBinding };
 }

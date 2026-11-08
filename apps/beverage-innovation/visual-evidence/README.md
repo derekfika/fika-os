@@ -1,0 +1,38 @@
+# Stage A visual review — 7 November 2026
+
+## Deployed empty-preview browser UAT — 7 November 2026
+
+The deployed staging build `006` (source `ac559c1a7525a103af7537e61ae82dfb125fd737`) was opened at the operator-facing custom domain in Chrome. The overview, blank New Drink editor and Monthly Specials screens rendered with the `PREVIEW / STAGING · No connected records` banner. Overview-to-editor and Monthly Specials navigation worked. Save draft, create next version, submit for approval and schedule special were disabled. No save, approval or publication action was attempted.
+
+Recorded browser captures: `09-deployed-overview-browser-uat.jpg`, `10-deployed-new-drink-browser-uat.jpg`, and `08-deployed-monthly-specials-browser-uat.jpg`. They are 938 × 1125 window captures and include Chrome's browser chrome. They document the exact served empty preview at the available browser viewport; they are not the original 1448 × 1086 mockup comparisons and do not establish visual sign-off or an authenticated Hub/OPLOC read. The established 1448 × 1086 side-by-side comparisons below remain local production-build evidence only.
+
+Full-width captures are also recorded as `13-deployed-overview-desktop-uat.jpg`, `11-deployed-new-drink-desktop-uat.jpg`, and `12-deployed-monthly-specials-desktop-uat.jpg` (1920 × 1152 Chrome window captures). The desktop review exercised the list-view toggle, which changed the selected control state. Search/filter behavior with zero records, list results, persistence, and tablet layout were not claimed as verified in the deployed build.
+
+This staging preview has no connected records and no data persistence. In particular, these screenshots do not prove that a Beverage identity was admitted by Hub or that OPLOC/Food Data reads succeeded.
+
+## Staging preview refinement — 7 November 2026
+
+`04-overview-comparison.png`, `05-monthly-specials-comparison.png`, and `06-new-drink-comparison.png` show the approved reference on the left and the local preview on the right, each at the original 1448 × 1086 viewport. `07-tablet-overview-preview.png` records the 1024 × 768 adaptation. These are local production-build captures; they do not establish what a deployed revision serves or constitute final visual sign-off.
+
+The refinement uses line icons for the sidebar and lifecycle, a brighter token-backed header, more compact KPI numerals and right-panel headings, and explicit staging-preview and provisional-image labels. Grid/list and planner selections expose their state. The import demonstration dialog now traps keyboard focus, closes with Escape, and returns focus to its trigger. The list view keeps its horizontal layout on tablet. Changes remain in page memory and disappear on reload; image and import actions have no backend effect.
+
+Remaining differences include the warmer token-backed canvas and muted status colours, some table and planner density, missing ingredient thumbnails, and illustrative image crops (including baked-in ellipses). Mixed-case page headings retain Gilroy Bold to match the approved reference because the supplied Vim Heavy face renders these headings in uppercase; this remains a documented display-heading deviation for brand review. Actual approved drink photography is still required before final approval or release.
+
+Automated Chromium review at the desktop viewport exercised planner selection, search and list view, ingredient cost recalculation, the save notice, and dialog focus, trapping, Escape and focus return. It checked page width at 1024, 768 and 390 pixels and observed no requests outside localhost during those journeys. The tablet capture is a review artifact, not an approved tablet mockup.
+
+The left half of each comparison is the supplied approved reference; the right half is the local prototype. Both halves use the original 1448 × 1086 desktop viewport. `00-first-render-comparison.png` records the initial Vim heading treatment; `01-overview-comparison.png` records the corrected Gilroy mixed-case heading. `02-monthly-specials-comparison.png` and `03-new-drink-comparison.png` cover the other approved surfaces. `tablet-overview.png` is a 1024 × 768 adaptation. Review these as visual evidence, not as owner signoff.
+
+## Differences for owner review
+
+- The approved Vim Heavy font renders these headings as uppercase block letters. The first render demonstrates this. Page titles now use the approved Gilroy Bold face to reproduce the mixed-case reference, while KPI numerals use Vim Heavy. This is a Style Guide deviation for page headings requiring visual/brand review.
+- Canonical FIKA semantic tokens produce a warmer page background, borders and more muted status colours than the cooler reference. The header gradient uses canonical brand tokens. The symbol-based icons approximate the reference icon set; exact icon shapes and a few widths, line wraps and vertical gaps differ. The editor image begins at approximately y=200 in both captures; its first panel begins approximately 10px above the reference. The right-column panels and editor tables are denser or taller in places. The browser has no visible scrollbar at the comparison viewport.
+- Drink and site imagery is cropped from the supplied screenshots as local demonstration artwork. Embedded ellipsis marks in the crops are part of the image; the whole card opens the editor. Image rights and final production assets remain for later review.
+- The source images disagree on Strawberry Matcha cost: overview £0.72 versus editor £1.23. The initial overview fixture shows £0.72 for visual fidelity; the editor computes £1.23 from its fixture ingredient lines. Editing ingredient lines switches the card to the recalculated value. Unit prices in the editor are per entered unit and differ from the reference's inconsistent displayed arithmetic. This is not an approved business costing rule.
+- The latest preview header says “PREVIEW / STAGING · Placeholder images” and “Demo session”; the reference says “STAGING” and “Signed in”. The earlier 01–03 comparisons show “DEMO”. Site checkboxes, local session feedback, the import wizard and placeholders are deliberately explicit demo affordances absent from the three references. The schedule button leads to the demo list rather than creating an operational launch. Additional destinations are not owner-approved designs.
+- All dates, sites, categories and quantities are fictional visual fixtures. Photo change uses an in-memory browser data URL. Save, version and submit actions update only the session. The wizard uses mocked extraction, accepts a file name or pasted text without parsing, and ends in a confirmation preview without creating records.
+
+## Interaction checklist
+
+The local browser run at 1448 × 1086 exercised navigation, search by ingredient and category tag, type and collection filters, grid/list, card edit, classic variation, ingredient add/remove (6 → 7 → 6 rows), cost recalculation (£1.23 → £1.51), GP recalculation, draft, next version and demo submit feedback. It also exercised calendar/list/site view, Details and Assets tabs, target-site selection, blocker toggle, and import source → editable mapping → confirmation preview. Network observation during these interactions found no non-local requests. The 1024 × 768 overview uses a collapsed sidebar and stacked side panels, with document width equal to viewport width. Image upload, keyboard-only journeys, and the remaining placeholder destinations have not been independently exercised and remain for owner UAT.
+
+The original Stage A review stopped for owner approval. Subsequent owner direction approved the visual direction in principle and authorised Stage B and a separately gated staging preview; this historical evidence remains unchanged.

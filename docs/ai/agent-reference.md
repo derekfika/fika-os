@@ -3,7 +3,7 @@
 The detailed requirements formerly in the root AGENTS.md are retained here.
 Read the sections required by the root task-routing table and your app guide before changing those boundaries.
 Root and scoped AGENTS.md files supply the current solo-owner workflow; this reference does not replace them.
-The parallel-wave deployment wording below is aligned with the already-approved staging-candidate workflow; production still requires integrated main source.
+The [operator guide](../deployment/workflow.md) defines source eligibility and deployment recovery.
 
 ==================================================
 1. WHAT FIKA OS IS
@@ -392,7 +392,7 @@ For explicitly parallel waves:
 - record the shared `origin/main` baseline SHA;
 - start every temporary task branch from that same baseline;
 - do not allow concurrent edits to the same files;
-- do not deploy production from task branches; reviewed staging candidates follow the root release workflow;
+- deploy exact merged-main sources with passing required CI using the root release workflow;
 - integrate completed work sequentially back to `main`;
 - run a final integration/regression pass after the wave converges.
 
@@ -574,7 +574,7 @@ A source feature already present on `main` but absent on staging should trigger 
 
 10.2 Exact-SHA deployment rule
 
-Deploy only validated commits.
+Deploy the exact source merged through a protected main PR with passing required CI. Staging and manual UAT are optional. Use the governed CLI and verify the selected target and observed rollout.
 
 Do not deploy an ambiguous moving target such as “whatever is currently latest” when an exact validated SHA is available.
 

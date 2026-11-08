@@ -1,0 +1,11 @@
+# 2026-11-06 — RCoA catalogue bulk-create workflow
+
+Added an authorised, bounded paste-and-preview flow for creating Hospitality Catalogue products through the existing canonical create transactions. Rows are RCoA/site-scoped only when the operator explicitly selects sites, VAT-inclusive input is previewed as canonical ex-VAT, likely duplicate names are held, new categories require confirmation, and each item retains the normal audit and replay protections.
+
+Added a reviewed category rename operation for the existing shared category model. It updates current and archived canonical Item labels and every stored company/site service rule in one version-checked transaction, with per-record revisions, audit evidence, and an idempotency receipt. The UI previews the company-wide impact and requires an explicit review confirmation. Historical booking snapshots, Item identity, prices, site availability, minimums and routing remain unchanged.
+
+Source investigation confirmed the current canonical Item has one company-wide category, while service rules are site-overridable. The model has no product subgroup field, no per-site Item category, no service rename/create contract, and no item-specific service membership. The proposed source category migration therefore affects the shared catalogue; the RCoA category has not been renamed and no source products have been written. Grouping and service exposure remain separate from Item creation.
+
+Validation: changed-file ESLint PASS; focused catalogue/API tests PASS; Firestore emulator bulk suite 13/13 PASS; Hub typecheck PASS; production build PASS. Full Hub suite: 978 passed, 1 failed, 118 skipped (1,097 total). The remaining failure is the pre-existing checkout dependency on the absent `fika-platform-specs/docs/business-decisions/addr-001-canonical-address.md`. Full package lint remains red in unrelated existing files; changed files are clean. Authenticated staging browser was available at the operator-facing custom domain and used for read-only inspection of RCoA and the existing shared Wine items. The supplied approved Slides link returns Google Slides 404. Updated editor visual interaction and tablet viewport were not tested because this source is not deployed to staging.
+
+Deployment: none. No staging or production catalogue data changed.

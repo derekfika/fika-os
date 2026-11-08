@@ -14,15 +14,10 @@ The existing governed CLI accepts:
 node tools/workflow/cli.mjs reconcile cpu --prod --resolution adopt-completed --sha 22e2b5b672c8322137ded2d088d3c2bc2e89061c --rollout build-2026-11-02-002
 ```
 
-Dry-run is read-only. Execution adds `--execute --owner-approved --reason` with the
-actual owner instruction authorising this exact recovery. A request to implement
-tooling does not authorise release or operational data writes. Issue #272 requires
-independent review before integration/execution; record its evidence on the PR.
-No CLI registration edit is needed: `reconcile` dispatches the validated resolution
-through the existing governed operation and CPU production release lock.
+Dry-run is read-only. Add `--execute` to record the verified serving baseline. Use `--reason` to add an optional note. Routine deploys can adopt independently verified serving state directly through the [operator workflow](workflow.md).
 
 Execution requires clean, integrated tooling with exact-source merge-gate CI;
-authenticated repository-owner authority; a prior verified non-pending ledger;
+authenticated repository-write authority; a prior verified non-pending ledger;
 no pending/unknown/changed local CPU release journal; exact merged-main PR and CI
 provenance for the serving source; and ancestry preserving the previous release.
 Two matching authoritative observations verify project/backend/repository/root,
@@ -49,11 +44,7 @@ merge-gate; its CPU/shared/package tree has no changes from dc77dce5.
 
 The latest fetched main is `585f5411`, incorporating #271's actual row-level No Key
 and conflict-state repair. The staging ledger now records build 003 at that SHA;
-the older #272 candidate `218f92ad` must not be treated as the current fix. Before
-any new CPU production release, independently verify staging serving provenance,
-No Key/conflict behavior and required browser UAT, the entire serving-to-candidate
-delta, exact-source CI and explicit CPU production release authorization. Adoption
-alone does not satisfy these gates or deploy a new app. Post final evidence to #265.
+the older #272 candidate `218f92ad` must not be treated as the current fix. For current software release eligibility and target verification, follow the [operator guide](workflow.md).
 
 No production data, plans, allergens, signing state, workers or legacy platforms
 are modified. No recurring job or Firestore reads/writes are introduced; discovery

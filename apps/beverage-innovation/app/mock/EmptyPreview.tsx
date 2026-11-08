@@ -1,0 +1,109 @@
+"use client";
+
+import { useState } from "react";
+
+type Page = "Overview" | "Drinks Library" | "New Drink" | "Monthly Specials" | "Recipe Cards" | "Rollout" | "Settings";
+type Line = { name: string; quantity: string; unit: string; unitCost: string };
+const navigation: Page[] = ["Overview", "Drinks Library", "New Drink", "Monthly Specials", "Recipe Cards", "Rollout", "Settings"];
+const icons: Record<Page, React.ReactNode> = {
+  Overview: <><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/></>,
+  "Drinks Library": <><path d="M6 6h12l-1 13H7L6 6Z"/><path d="M8 3v3m8-3v3M5 21h14M4 9H2m20 0h-2"/></>,
+  "New Drink": <path d="M12 4v16M4 12h16"/>,
+  "Monthly Specials": <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></>,
+  "Recipe Cards": <><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v5h4M9 12h7m-7 4h7"/></>,
+  Rollout: <><path d="m3 11 18-8-7 18-3-7-8-3Z"/><path d="m11 14 10-11"/></>,
+  Settings: <><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M19 5l-1.5 1.5m-11 11L5 19"/><circle cx="12" cy="12" r="8"/></>,
+};
+const workflow = [
+  { title: "Idea", detail: "Capture ideas and trends", icon: <><path d="M9 18h6m-5 3h4M8.5 15c-.5-1.5-2.5-2.3-2.5-5a6 6 0 1 1 12 0c0 2.7-2 3.5-2.5 5z"/></> },
+  { title: "Development", detail: "Create and refine recipes", icon: <><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3M8 15h8"/></> },
+  { title: "Approval", detail: "Review the drink", icon: <><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></> },
+  { title: "Asset generation", detail: "Prepare recipe cards and imagery", icon: <><rect x="4" y="3" width="16" height="18" rx="1"/><circle cx="9" cy="8" r="1.5"/><path d="m6 18 5-5 3 3 2-2 2 4"/></> },
+  { title: "Rollout", detail: "Plan site launches", icon: icons.Rollout },
+  { title: "Live", detail: "Make available at sites", icon: <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2-5.5-3-5.5 3 1-6.2L3 9.6l6.2-.9L12 3Z"/> },
+];
+function Icon({ page }: { page: Page }) { return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{icons[page]}</svg>; }
+function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <section className={`m-panel ${className}`}>{children}</section>; }
+function Empty({ title, children }: { title: string; children: React.ReactNode }) { return <div className="empty-preview-message"><span className="empty-preview-symbol" aria-hidden="true">◇</span><h2>{title}</h2><p>{children}</p></div>; }
+
+type SiteResult = { status: "idle" | "loading" | "denied" | "unavailable" } |
+  { status: "ready"; sites: { id: string; label: string }[] };
+
+function ReadOnlySites() {
+  const [result, setResult] = useState<SiteResult>({ status: "idle" });
+  async function checkSites() {
+    setResult({ status: "loading" });
+    try {
+      const response = await fetch("/api/preview/oplocs", { credentials: "same-origin", cache: "no-store", redirect: "error" });
+      if (response.status === 401 || response.status === 403) {
+        setResult({ status: "denied" });
+        return;
+      }
+      if (!response.ok) throw new Error("Site lookup unavailable.");
+      const data = await response.json();
+      if (data.readOnly !== true || !Array.isArray(data.oplocs)) throw new Error("Site lookup unavailable.");
+      setResult({ status: "ready", sites: data.oplocs });
+    } catch {
+      setResult({ status: "unavailable" });
+    }
+  }
+
+  return <div className="empty-preview-site-check">
+    <p>Read-only Hub site reference.</p>
+    <button type="button" className="m-soft" disabled={result.status === "loading"} onClick={checkSites}>Check authorised sites</button>
+    <p role="status" aria-live="polite">{{
+      idle: "", loading: "Checking site access…", denied: "Site access could not be authorised.",
+      unavailable: "The site reference is unavailable. Try again.", ready: "Authorised sites from Hub",
+    }[result.status]}</p>
+    {result.status === "ready" && <ul aria-label="Authorised sites from Hub">{result.sites.map(site => <li key={site.id}>{site.label}</li>)}</ul>}
+  </div>;
+}
+
+/** Empty Beverage workspace with an optional read-only site reference. */
+export default function EmptyPreview({ showHubSites = false }: { showHubSites?: boolean }) {
+  const [page, setPage] = useState<Page>("Overview");
+  const [view, setView] = useState("Grid");
+  const [launchView, setLaunchView] = useState("Calendar");
+  const [query, setQuery] = useState("");
+  const [name, setName] = useState("");
+  const [drinkType, setDrinkType] = useState("");
+  const [season, setSeason] = useState("");
+  const [format, setFormat] = useState("");
+  const [description, setDescription] = useState("");
+  const [concept, setConcept] = useState("");
+  const [method, setMethod] = useState("");
+  const [glass, setGlass] = useState("");
+  const [ice, setIce] = useState("");
+  const [garnish, setGarnish] = useState("");
+  const [equipment, setEquipment] = useState("");
+  const [notes, setNotes] = useState("");
+  const [price, setPrice] = useState("");
+  const [lines, setLines] = useState<Line[]>([]);
+  const validNumber = (value: string) => value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) >= 0;
+  const hasCost = lines.length > 0 && lines.every(line => line.name.trim() && line.unit.trim() && validNumber(line.quantity) && validNumber(line.unitCost));
+  const cost = hasCost ? lines.reduce((sum, line) => sum + Number(line.quantity) * Number(line.unitCost), 0) : undefined;
+  const gp = cost !== undefined && validNumber(price) && Number(price) > 0 ? (Number(price) - cost) / Number(price) * 100 : undefined;
+  const editLine = (index: number, patch: Partial<Line>) => setLines(current => current.map((line, i) => i === index ? { ...line, ...patch } : line));
+
+  return <div className="mock empty-preview">
+    <header className="m-top"><div className="m-logo"><img src="/fika-logo-white.png" alt="Fika"/><span>OS</span></div><div className="m-workspace"><small>Innovation workspace</small><b>Beverage Innovation</b></div><div className="m-top-spacer"/><div className="m-preview-tag"><span className="m-dot"/> &nbsp; PREVIEW / STAGING <span className="m-preview-detail">· No connected records</span></div></header>
+    <div className="m-shell"><nav className="m-sidebar" aria-label="Beverage navigation">{navigation.map((item, index) => <button key={item} className={`${page === item ? "active" : ""} ${index === 6 ? "settings" : ""}`} onClick={() => setPage(item)} aria-current={page === item ? "page" : undefined}><span><Icon page={item}/></span>{item}</button>)}<div className="m-demo-label">Preview only · changes stay on this page and are not saved.</div></nav>
+      <main className="m-main">
+        {(page === "Overview" || page === "Drinks Library") && <div className="m-layout"><div className="m-content"><div className="m-heading"><div><h1>{page === "Overview" ? "Beverage Innovation" : "Drinks Library"}</h1><p>{page === "Overview" ? "Create, refine and launch drinks across FIKA." : "Explore classics, FIKA originals and concepts."}</p></div><button className="m-primary" onClick={() => setPage("New Drink")}>＋ &nbsp; New drink</button></div>
+          <div className="m-metrics">{[["▤", "Drink concepts", ""], ["✓", "Approval reviews", "success"], ["☆", "Monthly specials", "warning"], ["!", "Site readiness", "danger"]].map(([symbol, label, kind]) => <div className="m-metric" key={label}><span className={`m-metric-icon ${kind}`} aria-hidden="true">{symbol}</span><div><b>{label}</b><span className="empty-preview-unavailable">Not connected</span></div></div>)}</div>
+          <div className="m-filters"><label className="m-search"><span className="sr-only">Search drinks, ingredients or tags</span>⌕ <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search drinks, ingredients, or tags..."/></label><label>Type<select defaultValue="All types"><option>All types</option></select></label><label>Lifecycle<select defaultValue="All stages"><option>All stages</option></select></label><label>Season<select defaultValue="All seasons"><option>All seasons</option></select></label><div className="m-segment"><button aria-pressed={view === "Grid"} className={view === "Grid" ? "selected" : ""} onClick={() => setView("Grid")}>▦ &nbsp; Grid</button><button aria-pressed={view === "List"} className={view === "List" ? "selected" : ""} onClick={() => setView("List")}>☷ &nbsp; List</button></div></div>
+          <Panel><Empty title="No Beverage records yet">Records will appear here when the Beverage workspace is connected. You can explore the blank drink editor in this preview.</Empty><div className="empty-preview-action"><button className="m-soft" onClick={() => setPage("New Drink")}>Open drink editor</button></div></Panel>
+        </div><aside className="m-side"><Panel><h3><span className="m-iconbox" aria-hidden="true">▤</span> From idea to launch</h3><p>Our process for bringing new drinks to life across FIKA.</p><div className="empty-preview-workflow">{workflow.map(({title, detail, icon}) => <div key={title}><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{icon}</svg></span><div><b>{title}</b><p>{detail}</p></div></div>)}</div></Panel><Panel><h3><span className="m-iconbox" aria-hidden="true">▦</span> Upcoming monthly specials <button className="m-link" onClick={() => setPage("Monthly Specials")}>View all</button></h3><p>No specials are available in this preview.</p></Panel></aside></div>}
+
+        {page === "New Drink" && <div className="m-editor"><div className="m-back"><button className="m-link" onClick={() => setPage("Overview")}>← &nbsp; Back to drinks</button></div><div className="m-heading"><div><h1>Create new drink</h1><p>Explore the editor. Entries stay on this page and cannot be saved.</p></div><div className="m-actions"><button disabled>Save draft</button><button className="m-soft" disabled>Create next version</button><button className="m-primary" disabled>Submit for approval</button></div></div>
+          <div className="m-layout"><div className="m-content"><Panel><div className="m-section-title"><span>1</span><h2>Drink details</h2><p>Define the key information for your drink concept.</p></div><div className="m-form-grid"><label className="wide">Drink name<input value={name} onChange={event => setName(event.target.value)}/></label><label>Type<select value={drinkType} onChange={event => setDrinkType(event.target.value)}><option value="">Choose type</option><option>Cocktail</option><option>Mocktail</option><option>Coffee</option><option>Tea</option><option>Other</option></select></label><label>Season<select value={season} onChange={event => setSeason(event.target.value)}><option value="">Choose season</option><option>Spring / Summer</option><option>Autumn</option><option>Winter</option><option>Core</option></select></label><label>Service format<select value={format} onChange={event => setFormat(event.target.value)}><option value="">Choose format</option><option>In-house</option><option>Takeaway</option><option>In-house &amp; Takeaway</option></select></label></div><div className="m-two"><label>Short description<textarea value={description} onChange={event => setDescription(event.target.value)}/></label><label>Concept notes<textarea value={concept} onChange={event => setConcept(event.target.value)}/></label></div></Panel>
+          <Panel><div className="m-section-title"><span>2</span><h2>Recipe and ingredients</h2><p>Add ingredients and costs to explore the calculation.</p><button className="m-soft" onClick={() => setLines(current => [...current, { name: "", quantity: "", unit: "", unitCost: "" }])}>＋ &nbsp; Add ingredient</button></div><div className="m-table-wrap"><table><thead><tr><th scope="col">Ingredient</th><th scope="col">Quantity</th><th scope="col">Unit</th><th scope="col">Cost per unit</th><th scope="col">Total cost</th><th scope="col"><span className="sr-only">Remove</span></th></tr></thead><tbody>{lines.map((line, index) => <tr key={index}><td><input aria-label={`Ingredient ${index + 1} name`} value={line.name} onChange={event => editLine(index, { name: event.target.value })}/></td><td><input aria-label={`Ingredient ${index + 1} quantity`} type="number" min="0" step="any" value={line.quantity} onChange={event => editLine(index, { quantity: event.target.value })}/></td><td><input aria-label={`Ingredient ${index + 1} unit`} value={line.unit} onChange={event => editLine(index, { unit: event.target.value })}/></td><td><input aria-label={`Ingredient ${index + 1} cost per unit`} type="number" min="0" step="any" value={line.unitCost} onChange={event => editLine(index, { unitCost: event.target.value })}/></td><td>{validNumber(line.quantity) && validNumber(line.unitCost) ? `£${(Number(line.quantity) * Number(line.unitCost)).toFixed(2)}` : "Incomplete"}</td><td><button aria-label={`Remove ingredient ${index + 1}`} onClick={() => setLines(current => current.filter((_, i) => i !== index))}>×</button></td></tr>)}</tbody></table></div>{!lines.length && <p>No ingredients added.</p>}</Panel>
+          <Panel><div className="m-section-title"><span>3</span><h2>Method and service</h2><p>Define preparation and presentation.</p></div><div className="m-method"><label>Preparation method<textarea rows={6} value={method} onChange={event => setMethod(event.target.value)}/></label><div className="m-two"><label>Glassware<input value={glass} onChange={event => setGlass(event.target.value)}/></label><label>Ice<input value={ice} onChange={event => setIce(event.target.value)}/></label><label>Garnish<input value={garnish} onChange={event => setGarnish(event.target.value)}/></label><label>Equipment<input value={equipment} onChange={event => setEquipment(event.target.value)}/></label></div></div><label>Tasting notes<input value={notes} onChange={event => setNotes(event.target.value)}/></label></Panel></div>
+          <aside className="m-side"><Panel className="empty-preview-photo"><span aria-hidden="true">▧</span><b>No photograph added</b><p>Approved drink photography is required for final assets.</p></Panel><Panel><h3><span className="m-iconbox" aria-hidden="true">▤</span> Drink summary</h3><p>{name.trim() || "Enter drink details to preview them here."}</p></Panel><Panel><h3><span className="m-iconbox" aria-hidden="true">◉</span> Financials</h3><div className="m-finance"><span>Total cost per drink</span><b>{cost === undefined ? "Incomplete" : `£${cost.toFixed(2)}`}</b><label htmlFor="empty-preview-price">Estimated selling price ex VAT</label><input id="empty-preview-price" type="number" min="0" step="0.01" value={price} onChange={event => setPrice(event.target.value)}/><span>Estimated GP</span><b>{gp === undefined ? "Incomplete" : `${gp.toFixed(1)}%`}</b></div></Panel><Panel><h3><span className="m-iconbox" aria-hidden="true">⌁</span> Readiness</h3><p>Saving and approval are unavailable in this preview.</p></Panel></aside></div></div>}
+
+        {page === "Monthly Specials" && <div className="m-layout"><div className="m-content"><div className="m-heading"><div><h1>Monthly Specials</h1><p>Plan launches, assign drinks to sites, and track rollout readiness.</p></div><button className="m-primary" disabled>Schedule special</button></div><div className="m-metrics">{[["▦", "Schedules", ""], ["▷", "Launches", "success"], ["♧", "Sites", "warning"], ["!", "Readiness", "danger"]].map(([symbol, label, kind]) => <div className="m-metric" key={label}><span className={`m-metric-icon ${kind}`} aria-hidden="true">{symbol}</span><div><b>{label}</b><span className="empty-preview-unavailable">Not connected</span></div></div>)}</div><div className="m-tabs m-launch-tabs">{["Calendar", "Launch list", "Site view"].map(item => <button key={item} aria-pressed={launchView === item} className={launchView === item ? "selected" : ""} onClick={() => setLaunchView(item)}>{item}</button>)}</div><Panel><Empty title={`No specials in ${launchView.toLowerCase()}`}>No Beverage records are connected to this preview.</Empty></Panel></div><aside className="m-side"><Panel><h3>Special details</h3><p>Select a special when records are available to see its readiness, details, assets and notes.</p></Panel><Panel><h3>Target sites</h3>{showHubSites ? <ReadOnlySites /> : <p>Site assignments are unavailable in this preview.</p>}</Panel></aside></div>}
+        {(["Recipe Cards", "Rollout", "Settings"] as Page[]).includes(page) && <Panel className="m-placeholder"><h1>{page}</h1><p>This section is not connected in the preview.</p><button className="m-primary" onClick={() => setPage("Overview")}>Back to overview</button></Panel>}
+      </main>
+    </div>
+  </div>;
+}

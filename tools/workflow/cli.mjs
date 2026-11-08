@@ -2,7 +2,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
-import { APPS, REPO, MAIN_CHECK, affected, risk, target } from './policy.mjs';
+import { APPS, REPO, MAIN_CHECK, affected, target, supportedEnvironments } from './policy.mjs';
 import { git, command, ghApi, save, jsonFile } from './runtime.mjs';
 import { workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
 import { checkSourceWorkspace, completeSourceWorkspace, createSourceWorkspace, devSourceWorkspace, integrateSourceWorkspace, sourceWorkspaceStatus } from './source-workspaces.mjs';
@@ -16,7 +16,7 @@ import { installWorkspaceFences } from './workspace-fencing.mjs';
 
 export function parse(args) {
   const positional = []; const options = {};
-  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'owner-approved', 'cosmetic-only', 'standard', 'preserve']);
+  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'preserve']);
   const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement', 'confirm', 'pr', 'port', 'lease-id', 'predecessor', 'predecessor-lease-id']);
   for (let i = 0; i < args.length; i++) {
     if (!args[i].startsWith('--')) { positional.push(args[i]); continue; }
@@ -61,7 +61,7 @@ async function main() {
   const { positional: [verb, arg, name], options } = parse(process.argv.slice(2));
   let result;
   if (verb === 'affected') {
-    const paths = changePaths(options); result = { ...changeScope(paths, options), lane: risk(paths), paths };
+    const paths = changePaths(options); result = { ...changeScope(paths, options), paths };
     if (options.output) writeFileSync(options.output, JSON.stringify(result));
   } else if (verb === 'validate') {
     const paths = changePaths(options); const scope = changeScope(paths, options);
@@ -100,7 +100,7 @@ async function main() {
     else { git('fetch', 'origin'); result = cleanupPlan(); if (options.output) save(options.output, result); }
   } else if (verb === 'bootstrap') {
     git('fetch', 'origin'); result = [];
-    for (const app of arg ? [arg] : Object.keys(APPS)) for (const env of ['staging', 'prod']) result.push(await bootstrap(target(app, env), options));
+    for (const app of arg ? [arg] : Object.keys(APPS)) for (const env of supportedEnvironments(app)) result.push(await bootstrap(target(app, env), options));
     if (options.output) save(options.output, result);
   } else if (verb === 'deploy' || verb === 'rollback' || verb === 'reconcile') {
     if (!options.staging && !options.prod) throw Error('Specify --staging or --prod');
@@ -115,13 +115,13 @@ async function main() {
     const environment = options.prod ? 'prod' : 'staging';
     result = verb === 'trust' ? hostedTrust(arg, environment) : assertHostedContext(process.env, target(arg, environment));
   } else if (verb === 'protect') {
-    const branches = ['main', ...Object.keys(APPS).flatMap(app => ['staging', 'prod'].map(env => target(app, env).branch))];
+    const branches = ['main', ...Object.keys(APPS).flatMap(app => supportedEnvironments(app).map(env => target(app, env).branch))];
     result = branches.map(branch => ({ branch, policy: protection(branch !== 'main') }));
     if (options.execute) {
-      // Preserve reviewed/staged source ancestry; squash/rebase would invalidate exact-source promotion evidence.
+      // Preserve reviewed source ancestry and exact-head integration evidence.
       ghApi(`repos/${REPO}`, 'PATCH', { allow_merge_commit: true, allow_squash_merge: false, allow_rebase_merge: false, delete_branch_on_merge: false });
       for (const item of result) ghApi(`repos/${REPO}/branches/${encodeURIComponent(item.branch)}/protection`, 'PUT', item.policy);
-      for (const app of Object.keys(APPS)) for (const env of ['staging', 'prod']) {
+      for (const app of Object.keys(APPS)) for (const env of supportedEnvironments(app)) {
         const environment = `${env}-${app}`;
         ghApi(`repos/${REPO}/environments/${encodeURIComponent(environment)}`, 'PUT', {
           reviewers: [], prevent_self_review: false,
@@ -143,11 +143,11 @@ async function main() {
       'fika affected --base origin/main',
       'fika validate --base origin/main',
       'fika integrate --workspace <task> --pr <number>',
-      'fika deploy cpu --staging [--execute]',
-      'fika deploy cpu --prod [--execute --owner-approved --reason <owner release instruction>]',
-      'fika rollback cpu --prod [--execute --owner-approved --reason <owner rollback instruction>]',
-      'fika reconcile cpu --staging|--prod [--resolution abandon|complete --rollout <ID> --reason <text> --execute]',
-      'fika reconcile-serving-baseline hub --staging --sha <exact SHA> --rollout <build ID> --reason <owner instruction> [--execute]',
+      'fika deploy cpu --staging [--sha <merged SHA>] [--execute]',
+      'fika deploy cpu --prod [--sha <merged SHA>] [--execute] [--reason <note>]',
+      'fika rollback cpu --prod [--execute] [--reason <note>]',
+      'fika reconcile cpu --staging|--prod [--resolution abandon|complete --rollout <ID> --execute] [--reason <note>]',
+      'fika reconcile-serving-baseline hub --staging --sha <exact SHA> --rollout <rollout ID> [--execute] [--reason <note>]',
       'fika cleanup --output <plan.json>',
       'fika cleanup --execute --file <plan.json> --approve-hash <hash>',
     ] };

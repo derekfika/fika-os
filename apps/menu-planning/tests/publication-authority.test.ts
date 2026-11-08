@@ -44,6 +44,16 @@ test("publication binds to the supplied authoritative dish instead of bundled ca
   assert.equal(published.entries[0].allergens.sesame, "clear");
 });
 
+test("Core Salad publishes only as an explicit salad placement marker and legacy data stays unmarked", () => {
+  const source = baseSnapshot({ slot: "SALAD 2", isCoreSalad: true });
+  const published = buildPublishedDay(source, day, [dish()], strict);
+  assert.equal(published.entries[0].isCoreSalad, true);
+  const legacy = buildPublishedDay(baseSnapshot({ slot: "SALAD 2" }), day, [dish()], strict);
+  assert.equal(legacy.entries[0].isCoreSalad, undefined);
+  const invalid = buildPublishedDay(baseSnapshot({ slot: "SOUP", isCoreSalad: true }), day, [dish()], strict);
+  assert.equal(invalid.entries[0].isCoreSalad, undefined);
+});
+
 test("missing authoritative dish fails publication closed without all-clear output", () => {
   assert.throws(() => buildPublishedDay(baseSnapshot(), day, [], strict), (error: any) => error.status === 422 && error.code === "PUBLICATION_ALLERGEN_UNRESOLVED" && /authoritative catalogue/.test(error.message));
 });

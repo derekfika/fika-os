@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { validateBulkSpec, MAX_BULK_ITEMS, type BulkSpec } from "../lib/hospitality-catalogue-admin";
+import { validateBulkCreateSpec, validateBulkSpec, MAX_BULK_ITEMS, type BulkCreateSpec, type BulkSpec } from "../lib/hospitality-catalogue-admin";
 import { buildCataloguePayload } from "../lib/hospitality-catalogue-read-model";
 import { EMPTY_FILTERS, bulkImpact, categoryVisibilityCheck, pruneSelection, rowMatches, selectAllShown, selectableSites, sitesSummary, toggleSelection } from "../lib/hospitality-catalogue-view";
 import { buildServiceLayoutView, type CataloguePayload, type CatalogueRow } from "../lib/hospitality-catalogue-types";
@@ -90,6 +90,27 @@ test("bulk spec validation: every field opt-in, bounded, archive exclusive, no e
   assert.doesNotThrow(() => validateBulkSpec(spec({ minimum: { mode: "clear" } })));
   assert.doesNotThrow(() => validateBulkSpec(spec({ category: " New category " })), "category-only is a valid operation");
   assert.throws(() => validateBulkSpec(spec({ category: "   " })), /Category must be text/);
+});
+
+test("bulk create validates an entire paste before saving and keeps row request identities unique", () => {
+  const item = (requestId: string, name: string) => ({ action: "create-item" as const, requestId, name, category: "Drinks", routing: "in_house" as const, defaultPrice: { amount: 2.5, vatRate: 0.2 }, oplocIds: ["oploc:rcoa"], restrictToSelectedOplocs: true });
+  const spec = (items: BulkCreateSpec["items"]): BulkCreateSpec => ({ operationId: "bulk-create-123", items });
+  assert.equal(validateBulkCreateSpec(spec([item("row-request-1", "Peroni"), item("row-request-2", "Corona")])).length, 2);
+  assert.throws(() => validateBulkCreateSpec(spec([])), /at least one product row/);
+  assert.throws(() => validateBulkCreateSpec(spec(Array.from({ length: MAX_BULK_ITEMS + 1 }, (_, index) => item(`row-request-${index}`, `Drink ${index}`)))), /limited to 50/);
+  assert.throws(() => validateBulkCreateSpec(spec([item("row-request-1", "Peroni"), item("row-request-1", "Corona")])), /distinct request ID/);
+  assert.throws(() => validateBulkCreateSpec(spec([item("row-request-1", "Peroni"), item("row-request-2", " peroni ")])), /distinct, non-empty name/);
+});
+
+test("bulk create UI parses pasted rows, previews VAT conversion, requires site scope and keeps service visibility explicit", () => {
+  const ui = readFileSync(`${process.cwd()}/app/ui/HospitalityCatalogue.tsx`, "utf8");
+  assert.match(ui, /Papa\.parse<string\[]>\(paste, \{ delimiter: "\\t", skipEmptyLines: true \}\)/);
+  assert.match(ui, /const amount = Math\.round\(\(gross \/ \(1 \+ vatRate\) \+ Number\.EPSILON\) \* 100\) \/ 100/);
+  assert.match(ui, /restrictToSelectedOplocs: true/);
+  assert.match(ui, /value=\{siteIds\} onChange=\{setSiteIds\}/); // New rows have no implicit site scope.
+  assert.match(ui, /there is no per-item service switch/);
+  assert.match(ui, /Likely duplicate/);
+  assert.match(ui, /result\.status === "failed"/);
 });
 
 test("post-canonicalisation counts and copy: 47 active, 42 archived, no stale per-site-copy message", () => {

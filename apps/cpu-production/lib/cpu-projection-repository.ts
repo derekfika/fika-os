@@ -1,5 +1,6 @@
 import { db } from "./firebase-admin";
 import type { DocumentReference, Transaction } from "firebase-admin/firestore";
+import type { CpuDayProjection, CpuProjectionLine } from "./cpu-projection";
 import type { ProductionPlan } from "../app/lib/production-plan";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { canonicalJson, sha256 } from "@fika/server-shared/read-package";
@@ -74,6 +75,22 @@ export function cpuProjectionContentHash(projection: ProjectionRecord) {
   return sha256(canonicalJson(withoutProjectionMetadata(projection)));
 }
 
+/** Hash of exactly what the previous projector emitted at the same source sequence. */
+export function previousMenuProjectionHash(projection: ProjectionRecord) {
+  const orders = projection.orders as CpuDayProjection["orders"] | undefined;
+  if (!orders?.some(order => order.menuMetadataComplete)) return undefined;
+  return cpuProjectionContentHash({
+    ...projection,
+    orders: orders.map(order => {
+      const { menuMetadataComplete, ...legacyOrder } = order;
+      if (!menuMetadataComplete || order.quantities.some(line => line.isCoreSalad === true)) return legacyOrder;
+      return { ...legacyOrder, quantities: order.quantities.map(({
+        slot, canonicalSlotId, canonicalOrderIndex, menuOrderVersion, isCoreSalad, ...line
+      }: CpuProjectionLine) => line) };
+    }),
+  });
+}
+
 export function compareMonotonicProjectionWrite(current: ProjectionRecord | undefined, incoming: ProjectionRecord) {
   if (!current) return { status: "created" as const };
   const currentSequence = Number(current.lastChangeSequence || 0);
@@ -83,6 +100,7 @@ export function compareMonotonicProjectionWrite(current: ProjectionRecord | unde
   const currentHash = typeof current.projectionContentHash === "string" ? current.projectionContentHash : cpuProjectionContentHash(current);
   const incomingHash = typeof incoming.projectionContentHash === "string" ? incoming.projectionContentHash : cpuProjectionContentHash(incoming);
   if (currentHash !== incomingHash) {
+    if (currentHash === previousMenuProjectionHash(incoming)) return { status: "advanced" as const };
     const error = Object.assign(new Error(`CPU projection sequence ${incomingSequence} has conflicting content.`), { code: "CPU_PROJECTION_SEQUENCE_CONFLICT", status: 409 });
     throw error;
   }

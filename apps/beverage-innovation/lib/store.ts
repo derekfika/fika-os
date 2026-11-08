@@ -1,31 +1,124 @@
-import { addApproval, cloneVersion, transition, updateVersion as updateVersionRecord, type BeverageInnovation, type ApprovalDecision, type ApprovalKind, type Lifecycle, type IngredientLine } from "./domain";
-const now = "2026-08-10T09:00:00Z";
-const seed: BeverageInnovation[] = [
-  { id:"beverage:summer-strawberry-matcha", name:"Summer Strawberry Matcha", description:"A bright seasonal matcha concept for FIKA sites.", beverageType:"Signature drink", season:"Summer 2026", lifecycle:"in_development", ownerRole:"Beverage developer", concept:{ flavourDirection:"Fresh strawberry, creamy matcha", useCase:"Summer refreshment", serviceFormat:"Iced", seasonalContext:"Summer 2026" }, versions:[{ id:"beverage:summer-strawberry-matcha:version:1", number:1, status:"prototype", recipeNotes:"Matcha, coconut, strawberry and ice.", method:"Build over ice and finish with strawberry.", ingredients:[{id:"ingredient:matcha",name:"Matcha",sourceStatus:"deferred"},{id:"ingredient:strawberry",name:"Strawberry",sourceStatus:"deferred"}], equipment:["Shaker","Iced cup"], allergenStatus:"awaiting_canonical_source", allergens:[], createdAt:now, createdByRole:"Beverage developer"}], currentVersionId:"beverage:summer-strawberry-matcha:version:1", prototypes:[{id:"beverage:summer-strawberry-matcha:prototype:1",name:"First kitchen trial",notes:"Balance strawberry sweetness against matcha.",createdAt:now}], rollouts:[], approvals:[], assets:[{id:"asset:summer-strawberry-matcha:photo",type:"photo",status:"missing"},{id:"asset:summer-strawberry-matcha:guide",type:"service_guide",status:"missing"}], feedback:[], audit:[{at:now,action:"created",actorRole:"Beverage developer"}] },
-  { id:"beverage:autumn-spiced-cold-brew", name:"Autumn Spiced Cold Brew", description:"A warming seasonal cold brew direction for review.", beverageType:"Coffee", season:"Autumn 2026", lifecycle:"brand_review", ownerRole:"Beverage developer", concept:{flavourDirection:"Coffee, cinnamon and orange",useCase:"Autumn menu",serviceFormat:"Cold brew"}, versions:[], prototypes:[], rollouts:[], approvals:[{id:"approval:autumn:ops",kind:"operational",decision:"approved",actorRole:"Coffee and beverage leadership",createdAt:now}], assets:[{id:"asset:autumn:photo",type:"photo",status:"ready"}],feedback:[],audit:[{at:now,action:"created",actorRole:"Beverage developer"}] },
-  { id:"beverage:house-citrus-spritz", name:"House Citrus Spritz", description:"Approved concept awaiting a site-ready rollout plan.", beverageType:"Mocktail", season:"All year", lifecycle:"rollout", ownerRole:"Beverage developer", concept:{useCase:"Events and hospitality",serviceFormat:"Spritz"}, versions:[], prototypes:[], rollouts:[{id:"rollout:house-citrus:mnk",oplocId:"oploc:mnk",siteLabel:"MNK",state:"blocked",blockers:["Equipment confirmation required"],readiness:{equipment:false,ingredients:"deferred",training:false,assets:true}}],approvals:[{id:"approval:house:ops",kind:"operational",decision:"approved",actorRole:"Coffee and beverage leadership",createdAt:now},{id:"approval:house:brand",kind:"brand",decision:"approved",actorRole:"Marketing and brand approver",createdAt:now}],assets:[],feedback:[],audit:[{at:now,action:"created",actorRole:"Beverage developer"}] },
-];
-const cocktailSource = "Cocktails Drinks Recipe.pptx";
-const cocktailImportedAt = "2026-08-12T09:00:00Z";
-const cocktailRecipes: Array<{ key: string; name: string; ingredients: string[]; method: string; equipment: string }> = [
-  { key: "espresso-martini", name: "Espresso Martini", ingredients: ["50 mL vodka", "25 mL coffee liqueur", "25 mL cold espresso", "3 coffee beans for garnish"], method: "Shaker & double strain. Shake cold espresso, vodka and coffee liqueur vigorously with ice, then double strain into a chilled coupe. Garnish with coffee beans.", equipment: "Shaker; double strainer; coupe" },
-  { key: "elderflower-fizz", name: "Elderflower Fizz", ingredients: ["50 mL purple gin", "12.5 mL lime juice", "12.5 mL elderflower liqueur", "5–6 mint leaves", "Elderflower tonic"], method: "Build and stir. Add lime, elderflower liqueur and gin to an iced wine glass. Clap the mint, add it to the glass, stir gently and top with elderflower tonic.", equipment: "Wine glass; bar spoon" },
-  { key: "mojito", name: "Mojito", ingredients: ["6–7 mint leaves", "3–4 lime wedges", "50 mL rum", "12.5–25 mL brown sugar syrup", "Soda water"], method: "Build and stir. Muddle lime, clap the mint, then shake with rum, syrup and ice. Pour into an iced hi-ball and top with soda water.", equipment: "Shaker; muddler; hi-ball" },
-  { key: "strawberry-basil-lemonade", name: "Strawberry Basil Lemonade", ingredients: ["3 strawberries", "6 oz lemonade", "3–4 basil leaves", "Lemon wheel and basil sprig for garnish"], method: "Shake and double strain. Muddle the strawberries, clap the basil, add lemonade and ice, shake for 30–60 seconds and double strain over ice.", equipment: "Shaker; double strainer; rocks or cocktail glass" },
-  { key: "butterfly-passion-cooler", name: "Butterfly Passion Cooler", ingredients: ["12 mL lime juice", "12.5 mL passionfruit juice", "12.5 mL simple syrup", "Butterfly pea tea"], method: "Build. Stir lime, passionfruit juice and syrup in a cocktail glass. Add ice and top gently with butterfly pea tea to create a gradient.", equipment: "Cocktail glass; bar spoon" },
-];
-const importedCocktails: BeverageInnovation[] = cocktailRecipes.map((recipe) => {
-  const id = `beverage:${recipe.key}`;
-  const versionId = `${id}:version:1`;
-  return { id, name: recipe.name, description: `${recipe.name} recipe imported from the cocktail recipe source deck.`, beverageType: "Cocktail / mocktail", season: "Source recipe", lifecycle: "in_development", ownerRole: "Beverage developer", concept: { serviceFormat: "Cocktail service", useCase: "Beverage innovation catalogue", notes: "Imported as source evidence for deliberate review." }, versions: [{ id: versionId, number: 1, status: "prototype", recipeNotes: recipe.ingredients.join("; "), method: recipe.method, ingredients: recipe.ingredients.map((name, index) => ({ id: `${versionId}:ingredient:${index + 1}`, name, sourceStatus: "deferred" as const })), equipment: [recipe.equipment], allergenStatus: "awaiting_canonical_source", allergens: [], createdAt: cocktailImportedAt, createdByRole: "Beverage developer" }], currentVersionId: versionId, prototypes: [], rollouts: [], approvals: [], assets: [], feedback: [], audit: [{ at: cocktailImportedAt, action: "imported:cocktails-drinks-recipe", actorRole: "Beverage developer" }], sourceEvidence: { fileName: cocktailSource, importedAt: cocktailImportedAt, sourceKey: recipe.key } };
+import { createHash } from "node:crypto";
+import { addApproval, cloneVersion, transition, updateVersion as updateVersionRecord, type BeverageInnovation, type IngredientLine, type Lifecycle, type ApprovalKind, type ApprovalDecision } from "./domain";
+import { beverageRecordSchema, editableBeveragePatchSchema, monthlySpecialSchema, type BeverageRecord, type MonthlySpecialRecord, type RecipeImportProvenance, type ReviewedImportRecipe } from "./contracts";
+import { calculateCosting, normaliseIngredientLine, poundsToPence } from "./costing";
+import { commitBeverageCommand, entityIdForCommand, getBeverage, listBeverages, listMonthlySpecials, listBeverageAudit } from "./repository";
+import type { BeverageActor } from "./runtime";
+import { createMonthlySpecial, requireMonthlySpecialScope, transitionMonthlySpecial, updateMonthlySpecial, type SpecialDraft } from "./specials";
+import { importFingerprint, PASTED_RECIPE_SOURCE_LABEL } from "./import-preview";
+
+function asDomain(record: BeverageRecord): BeverageInnovation { return record as BeverageInnovation; }
+const emptyRecord = (id: string, actor: BeverageActor, input: { name: string; description: string; beverageType: string; classification: BeverageRecord["classification"] }, at: string): BeverageRecord => beverageRecordSchema.parse({
+  id, ...input, normalizedName: input.name.trim().toLocaleLowerCase("en-GB"), lifecycle: "idea", ownerRole: "Beverage developer", concept: {}, versions: [], schemaVersion: 2,
+  aggregateVersion: 1, createdAt: at, updatedAt: at, createdBy: actor.authmodIdentityId, updatedBy: actor.authmodIdentityId,
+  prototypes: [], rollouts: [], approvals: [], assets: [], feedback: [],
 });
-const byName = new Map<string, BeverageInnovation>();
-for (const record of [...seed, ...importedCocktails]) byName.set(record.name.trim().toLocaleLowerCase(), record);
-let records = structuredClone([...byName.values()]);
-export function listBeverages(){return structuredClone(records)}
-export function getBeverage(id:string){return structuredClone(records.find(x=>x.id===id))}
-export function createBeverage(input: Pick<BeverageInnovation,"name"|"description"|"beverageType">){const id=`beverage:${input.name.toLowerCase().replace(/[^a-z0-9]+/g,"-")}`;if(records.some(x=>x.id===id))throw new Error("A beverage with this name already exists.");const record:BeverageInnovation={...input,id,lifecycle:"idea",ownerRole:"Beverage developer",concept:{},versions:[],prototypes:[],rollouts:[],approvals:[],assets:[],feedback:[],audit:[{at:new Date().toISOString(),action:"created",actorRole:"Beverage developer"}]};records=[...records,record];return structuredClone(record)}
-export function setLifecycle(id:string,lifecycle:Lifecycle){const record=records.find(x=>x.id===id);if(!record)throw new Error("Beverage not found.");const next=transition(record,lifecycle);records=records.map(x=>x.id===id?next:x);return structuredClone(next)}
-export function recordApproval(id:string,kind:ApprovalKind,decision:ApprovalDecision,actorRole:string,notes?:string){const record=records.find(x=>x.id===id);if(!record)throw new Error("Beverage not found.");const next=addApproval(record,kind,decision,actorRole,notes);records=records.map(x=>x.id===id?next:x);return structuredClone(next)}
-export function createVersion(id:string){const record=records.find(x=>x.id===id);if(!record)throw new Error("Beverage not found.");const next=cloneVersion(record);records=records.map(x=>x.id===id?next:x);return structuredClone(next)}
-export function updateVersion(id:string, versionId:string, patch:{recipeNotes:string;method:string;ingredients:IngredientLine[];equipment:string[]}){const record=records.find(x=>x.id===id);if(!record)throw new Error("Beverage not found.");const next=updateVersionRecord(record,versionId,patch);records=records.map(x=>x.id===id?next:x);return structuredClone(next)}
+
+export { getBeverage, listBeverages, listMonthlySpecials, listBeverageAudit };
+
+export async function createBeverage(input: { name: string; description: string; beverageType: string; classification?: BeverageRecord["classification"] }, actor: BeverageActor, expectedVersion: number, idempotencyKey: string) {
+  const name = input.name.trim();
+  if (!name || !input.description.trim()) throw Object.assign(new Error("Name and description are required."), { status: 400, code: "BEVERAGE_REQUIRED_FIELDS" });
+  const id = entityIdForCommand("beverage", actor.authmodIdentityId, idempotencyKey);
+  const created = emptyRecord(id, actor, { ...input, name, description: input.description.trim(), classification: input.classification || "draft_concept" }, new Date().toISOString());
+  return commitBeverageCommand({ entityType: "beverage", collection: "beverageRecordsV2", entityId: id, action: "beverage.created", expectedVersion, idempotencyKey, actor, summary: { name, classification: created.classification }, schema: beverageRecordSchema, create: true, mutate: () => created }).then(asDomain);
+}
+export async function updateBeverage(id: string, input: unknown, actor: BeverageActor, expectedVersion: number, key: string) {
+  const patch = editableBeveragePatchSchema.parse(input);
+  if (!Object.keys(patch).length) throw Object.assign(new Error("Supply at least one field to update."), { status: 400, code: "BEVERAGE_PATCH_EMPTY" });
+  return commitBeverageCommand({ entityType: "beverage", collection: "beverageRecordsV2", entityId: id, action: "beverage.updated", expectedVersion, idempotencyKey: key, actor, summary: { fields: Object.keys(patch).join(",") }, schema: beverageRecordSchema, mutate: current => {
+    if (!current) throw new Error("Beverage not found.");
+    if (current.lifecycle === "archived" || current.lifecycle === "retired") throw Object.assign(new Error("Archived beverage records are read-only."), { status: 409, code: "BEVERAGE_RECORD_IMMUTABLE" });
+    const next = { ...current, ...patch, ...(patch.name ? { normalizedName: patch.name.trim().toLocaleLowerCase("en-GB") } : {}) };
+    if (patch.name && current.versions.some(version => version.status === "approved")) throw Object.assign(new Error("Create a new version or concept to preserve approved historical evidence; the name cannot be changed after approval."), { status: 409, code: "BEVERAGE_APPROVED_NAME_IMMUTABLE" });
+    return next;
+  } }).then(asDomain);
+}
+
+export async function setLifecycle(id: string, lifecycle: Lifecycle, actor: BeverageActor, expectedVersion: number, key: string) {
+  return commitBeverageCommand({ entityType: "beverage", collection: "beverageRecordsV2", entityId: id, action: "beverage.lifecycle", expectedVersion, idempotencyKey: key, actor, summary: { lifecycle }, schema: beverageRecordSchema, mutate: current => { if (!current) throw new Error("Beverage not found."); return transition(asDomain(current), lifecycle) as BeverageRecord; } }).then(asDomain);
+}
+
+export async function recordApproval(id: string, kind: ApprovalKind, decision: ApprovalDecision, actor: BeverageActor, expectedVersion: number, key: string, notes?: string) {
+  const approvalId = `approval:${createHash("sha256").update(`${actor.authmodIdentityId}\0${key}`).digest("hex").slice(0, 40)}`;
+  return commitBeverageCommand({ entityType: "beverage", collection: "beverageRecordsV2", entityId: id, action: "beverage.approval", expectedVersion, idempotencyKey: key, actor, summary: { kind, decision }, schema: beverageRecordSchema, mutate: (current, at) => { if (!current) throw new Error("Beverage not found."); return addApproval(asDomain(current), kind, decision, actor.authmodIdentityId, notes, { id: approvalId, at }) as BeverageRecord; } }).then(asDomain);
+}
+
+export async function createVersion(id: string, actor: BeverageActor, expectedVersion: number, key: string) {
+  return commitBeverageCommand({ entityType: "beverage", collection: "beverageRecordsV2", entityId: id, action: "beverage.version.created", expectedVersion, idempotencyKey: key, actor, summary: { change: "new_version" }, schema: beverageRecordSchema, mutate: current => { if (!current) throw new Error("Beverage not found."); return cloneVersion(asDomain(current), actor.authmodIdentityId) as BeverageRecord; } }).then(asDomain);
+}
+
+export async function updateVersion(id: string, versionId: string, patch: { recipeNotes: string; method: string; ingredients: IngredientLine[]; equipment: string[]; sellingPriceExVat?: string }, actor: BeverageActor, expectedVersion: number, key: string) {
+  const ingredients = patch.ingredients.map(normaliseIngredientLine);
+  const current = await getBeverage(id);
+  const version = current?.versions.find(item => item.id === versionId);
+  if (!version) throw Object.assign(new Error("Version not found."), { status: 404, code: "BEVERAGE_VERSION_NOT_FOUND" });
+  if (version.status === "approved" || version.status === "superseded") throw Object.assign(new Error("Approved and superseded recipe versions are immutable. Create a new version before editing."), { status: 409, code: "BEVERAGE_VERSION_IMMUTABLE" });
+  const priorPrice = version.costing?.sellingPriceExVatPence ?? undefined;
+  const price = patch.sellingPriceExVat === undefined || patch.sellingPriceExVat === "" ? priorPrice : poundsToPence(patch.sellingPriceExVat);
+  const costing = calculateCosting(ingredients, price);
+  return commitBeverageCommand({ entityType: "beverage", collection: "beverageRecordsV2", entityId: id, action: "beverage.version.updated", expectedVersion, idempotencyKey: key, actor, summary: { versionId, ingredientCount: ingredients.length, costStatus: costing.costStatus }, schema: beverageRecordSchema, mutate: record => {
+    if (!record) throw new Error("Beverage not found.");
+    const updated = updateVersionRecord(asDomain(record), versionId, { recipeNotes: patch.recipeNotes.trim(), method: patch.method.trim(), ingredients, equipment: patch.equipment.map(value => value.trim()).filter(Boolean) }, actor.authmodIdentityId);
+    return { ...updated, versions: updated.versions.map(item => item.id === versionId ? { ...item, costing } : item) } as BeverageRecord;
+  } }).then(asDomain);
+}
+
+export async function createSpecial(input: SpecialDraft, actor: BeverageActor, expectedVersion: number, key: string) {
+  requireMonthlySpecialScope({ targetSites: input.targetSites, createdBy: actor.authmodIdentityId }, actor);
+  const id = entityIdForCommand("special", actor.authmodIdentityId, key);
+  const beverage = await getBeverage(input.beverageId);
+  if (!beverage) throw Object.assign(new Error("Beverage not found."), { status: 404, code: "BEVERAGE_NOT_FOUND" });
+  const special = createMonthlySpecial(input, beverage, actor, id, new Date().toISOString());
+  return commitBeverageCommand({ entityType: "monthly_special", collection: "beverageMonthlySpecialsV1", entityId: id, action: "monthly_special.created", expectedVersion, idempotencyKey: key, actor, summary: { month: input.month, beverageId: input.beverageId }, schema: monthlySpecialSchema, create: true, authorizeCurrent: current => requireMonthlySpecialScope(current, actor), mutate: () => special });
+}
+
+export async function createImportedBeverage(recipe: ReviewedImportRecipe, classification: BeverageRecord["classification"], source: RecipeImportProvenance, actor: BeverageActor, key: string) {
+  const document = "document" in source ? source.document : undefined;
+  const sourceLabel = "sourceLabel" in source ? source.sourceLabel : PASTED_RECIPE_SOURCE_LABEL;
+  const id = entityIdForCommand("beverage", actor.authmodIdentityId, key);
+  const versionId = `${id}:version:1`;
+  const lines = recipe.ingredients.map((ingredient, index) => normaliseIngredientLine({
+    id: `${versionId}:ingredient:${index + 1}`, name: ingredient.name, amount: ingredient.amount,
+    unit: ingredient.unit, sourceStatus: "deferred",
+  }));
+  return commitBeverageCommand({
+    entityType: "beverage", collection: "beverageRecordsV2", entityId: id,
+    action: "beverage.imported_from_preview", expectedVersion: 0, idempotencyKey: key, actor,
+    commandFingerprint: importFingerprint(JSON.stringify([source, classification, recipe])),
+    summary: {
+      name: recipe.name, classification, sourceHash: source.sourceHash, candidateIndex: source.candidate.index, candidateHash: source.candidate.hash,
+      sourceSlide: source.candidate.slideNumber ?? null, sourceAuthor: source.candidate.sourceAuthor ?? null, sourceImageReferences: source.candidate.imageReferences?.length ?? 0,
+      ...(document ? { sourceFormat: document.format, sourceByteLength: document.byteLength, adapterVersion: document.adapterVersion, textHash: document.textHash } : {}),
+    },
+    schema: beverageRecordSchema, create: true,
+    mutate: (_, at): BeverageRecord => {
+      const version = {
+        id: versionId, number: 1, status: "prototype" as const, recipeNotes: recipe.description, method: recipe.method,
+        ingredients: lines, equipment: recipe.glassware ? [recipe.glassware, ...recipe.equipment] : recipe.equipment,
+        allergenStatus: "awaiting_canonical_source" as const, allergens: [], costing: calculateCosting(lines),
+        createdAt: at, createdByRole: "Beverage developer", createdBy: actor.authmodIdentityId,
+      };
+      return {
+        ...emptyRecord(id, actor, { name: recipe.name, description: recipe.description, beverageType: recipe.beverageType, classification }, at),
+        lifecycle: "in_development",
+        concept: recipe.garnish ? { notes: `Garnish: ${recipe.garnish}` } : {},
+        currentVersionId: versionId, versions: [version],
+        sourceEvidence: { fileName: sourceLabel, importedAt: at, sourceKey: source.sourceHash, candidate: source.candidate, ...(document ? { document } : {}) },
+      };
+    },
+  }).then(asDomain);
+}
+
+export async function editSpecial(id: string, patch: Partial<Omit<SpecialDraft, "beverageId" | "beverageVersionId">>, actor: BeverageActor, expectedVersion: number, key: string) {
+  return commitBeverageCommand({ entityType: "monthly_special", collection: "beverageMonthlySpecialsV1", entityId: id, action: "monthly_special.updated", expectedVersion, idempotencyKey: key, actor, summary: { fields: Object.keys(patch).join(",") }, schema: monthlySpecialSchema, authorizeCurrent: current => requireMonthlySpecialScope(current, actor), mutate: (current, at) => { if (!current) throw new Error("Monthly special not found."); return updateMonthlySpecial(current, patch, actor, at); } });
+}
+
+export async function setSpecialStatus(id: string, status: MonthlySpecialRecord["status"], actor: BeverageActor, expectedVersion: number, key: string) {
+  return commitBeverageCommand({ entityType: "monthly_special", collection: "beverageMonthlySpecialsV1", entityId: id, action: "monthly_special.status", expectedVersion, idempotencyKey: key, actor, summary: { status }, schema: monthlySpecialSchema, authorizeCurrent: current => requireMonthlySpecialScope(current, actor), mutate: async (current, at) => {
+    if (!current) throw new Error("Monthly special not found.");
+    const beverage = await getBeverage(current.beverageId);
+    if (!beverage) throw Object.assign(new Error("Linked beverage was not found."), { status: 409, code: "BEVERAGE_LINK_MISSING" });
+    return transitionMonthlySpecial(current, beverage, status, actor, at);
+  } });
+}

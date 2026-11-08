@@ -43,6 +43,22 @@ env:
     value: fika-os-dev-staging-read-packages-europe-west4
     availability:
       - RUNTIME
+  # Owner-authorized Beverage OPLOC reads only. Food Data remains explicitly closed.
+  - variable: FIKA_BEVERAGE_REFERENCE_ENABLED
+    value: "true"
+    availability: [RUNTIME]
+  - variable: FIKA_BEVERAGE_REFERENCE_AUDIENCE
+    value: https://staging-os.fikacatering.com/api/internal/beverage/reference
+    availability: [RUNTIME]
+  - variable: FIKA_BEVERAGE_REFERENCE_CALLER_SUBJECT
+    value: "104628272102873149105"
+    availability: [RUNTIME]
+  - variable: FIKA_BEVERAGE_REFERENCE_CALLER_EMAIL
+    value: beverage-preview-runtime@fika-os-dev.iam.gserviceaccount.com
+    availability: [RUNTIME]
+  - variable: FIKA_FOOD_DATA_ENABLED
+    value: "false"
+    availability: [RUNTIME]
   - variable: FIKA_ALLOWED_EMAIL_DOMAINS
     value: fikacatering.com
     availability:

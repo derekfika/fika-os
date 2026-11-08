@@ -6,7 +6,8 @@ import type { ProductionOrder } from "../production-domain";
 import type { CanonicalBooking } from "../hospitality-booking-service";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { backfillDates, digest, londonServiceDate, mirrorEventId, mirrorRecipients } from "../../../shared/cpux-calendar/contract";
-import { configuredMirrorTarget, mirrorEnabled, mirrorPreviewEnabled, openMirrorClient } from "../../../shared/cpux-calendar/google";
+import { mirrorEnabled, mirrorPreviewEnabled, openMirrorClient } from "../../../shared/cpux-calendar/google";
+import { resolveHospitalityCalendarTarget } from "../hospitality-calendar-integration";
 import { hasCurrentHospitalityHandoff, hospitalityMirrorSource } from "./source";
 import { resolveMirrorOplocs } from "./oplocs";
 
@@ -37,22 +38,26 @@ async function prepare(booking: CanonicalBooking, readOnly = false) {
   const model = hospitalityMirrorSource(booking, order);
   if (!model) return;
   const [site] = await resolveMirrorOplocs([model.site]);
-  const target = configuredMirrorTarget("hospitality", site.canonicalId);
+  const target = resolveHospitalityCalendarTarget(site.canonicalId);
   const key = mirrorEventId("hospitality", booking.canonicalId);
   const binding = db.collection("fikaCpuXMirrorBindingsV1").doc(key);
   const prior = await binding.get();
-  if (prior.exists && prior.get("calendarId") !== target.calendarId) throw new Error("Calendar organiser changed; the existing event requires operator review.");
   const api = await openMirrorClient(target, process.env, fetch, readOnly);
+  const verifiedBinding = await api.verifyCalendarBinding();
+  if (prior.exists && (prior.get("calendarId") !== target.calendarId || prior.get("organizerMailbox") !== target.subject || prior.get("accessRole") !== verifiedBinding.accessRole))
+    throw new Error("Calendar organiser binding changed or lacks historical verification; operator review is required.");
   const plan = await api.inspect(model.source);
+  if (!prior.exists && !model.source.withdrawn && plan.disposition !== "create")
+    throw new Error("An existing mirror event lacks a persisted verified Calendar binding; operator review is required.");
   const document = model.fileId ? await api.verifiedPdf(model.fileId, "Approved Hospitality quote.pdf") : undefined;
   return {
-    preview: { ...plan, identity: booking.canonicalId, revision: model.source.revision, referenceHash: digest(model.source.sourceReference), calendarId: target.calendarId, attendees: mirrorRecipients(target), fileId: document?.fileId || null },
+    preview: { ...plan, identity: booking.canonicalId, revision: model.source.revision, referenceHash: digest(model.source.sourceReference), calendarId: target.calendarId, organizerMailbox: target.subject, calendarAccessRole: verifiedBinding.accessRole, attendees: mirrorRecipients(target), fileId: document?.fileId || null },
     apply: async () => {
       if (plan.disposition === "skip" || plan.disposition === "unchanged") return plan;
       await db.runTransaction(async tx => {
         const current = await tx.get(binding);
-        if (current.exists && current.get("calendarId") !== target.calendarId) throw new Error("The Calendar organiser changed during delivery.");
-        if (!current.exists) tx.create(binding, { calendarId: target.calendarId, eventId: key, stream: "hospitality" });
+        if (current.exists && (current.get("calendarId") !== target.calendarId || current.get("organizerMailbox") !== target.subject || current.get("accessRole") !== verifiedBinding.accessRole)) throw new Error("The Calendar organiser binding changed during delivery.");
+        if (!current.exists) tx.create(binding, { calendarId: target.calendarId, organizerMailbox: target.subject, accessRole: verifiedBinding.accessRole, eventId: key, stream: "hospitality" });
       });
       const current = (await db.collection("fikaBookings").doc(booking.canonicalId).get()).data() as CanonicalBooking | undefined;
       if (!current || current.version !== booking.version) throw new Error("The booking changed after Calendar preparation.");
@@ -124,7 +129,7 @@ export async function hospitalityCatchUp(from: string, through: string, approveH
     }
   }
   const events = plans.map(plan => plan.preview).sort((a, b) => a.eventId.localeCompare(b.eventId));
-  const planHash = digest({ from, through, after: after || null, nextCursor, events: events.map(({ disposition: _disposition, ...event }) => event), skipped });
+  const planHash = digest({ from, through, after: after || null, nextCursor, events: events.map(event => Object.fromEntries(Object.entries(event).filter(([key]) => key !== "disposition"))), skipped });
   if (!approveHash) return { dryRun: true, scanned: batch.length, events, skipped, nextCursor, planHash };
   if (approveHash !== planHash || approveHash !== process.env.FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH)
     throw new Error("The current catch-up batch has no matching scoped approval.");

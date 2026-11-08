@@ -4,21 +4,32 @@ import type { ProductionLine, ProductionOrder } from "./production-types";
 export type RunSheetMenuLine = { line: ProductionLine; slotLabel: string };
 export type RunSheetMenuSection = { id: string; label: string; lines: RunSheetMenuLine[] };
 
-function canonicalSlotFor(line: ProductionLine) {
-  const id = canonicalMenuSlotIdFor(line.canonicalSlotId || line.slot || "");
+type PublishedPlacement = Pick<ProductionLine, "slot" | "canonicalSlotId" | "menuOrderVersion">;
+
+export function menuPlacementKey(line: PublishedPlacement) {
+  return canonicalMenuSlotIdFor(line.canonicalSlotId || "") || canonicalMenuSlotIdFor(line.slot || "") || line.slot?.trim() || "";
+}
+
+function canonicalSlotFor(line: PublishedPlacement) {
+  const id = menuPlacementKey(line);
   return CANONICAL_MENU_SLOTS.find(slot => slot.id === id);
 }
 
-function displaySlotLabel(line: ProductionLine, duplicateLabels: ReadonlySet<string>) {
+function displaySlotLabel(line: PublishedPlacement, duplicateLabels?: ReadonlySet<string>) {
   const slot = canonicalSlotFor(line);
   if (slot) {
-    if (duplicateLabels.has(`${slot.sectionId}:${slot.label}`)) {
+    if (duplicateLabels?.has(`${slot.sectionId}:${slot.label}`) ?? CANONICAL_MENU_SLOTS.some(other => other.id !== slot.id && other.sectionId === slot.sectionId && other.label === slot.label)) {
       const index = slot.id.match(/(\d+)$/)?.[1];
       return index ? `${slot.label} ${index}` : slot.label;
     }
     return slot.label;
   }
-  return line.slot || "Uncategorised";
+  return line.slot?.trim() || (line.menuOrderVersion ? "Published placement missing" : "Category not recorded");
+}
+
+export function publishedPlacementLabel(line: PublishedPlacement) {
+  const section = menuSectionForSlot(menuPlacementKey(line));
+  return [section.id === "other" ? "" : section.label, displaySlotLabel(line)].filter(Boolean).join(" · ");
 }
 
 /** Groups only Menu Planning orders by the published canonical contract. Other sources retain authored line order. */
@@ -37,14 +48,15 @@ export function runSheetMenuSections(order: ProductionOrder): RunSheetMenuSectio
 
   const lines = orderMenuEntries(order.lines.map((line, index) => ({
     line,
-    slot: canonicalMenuSlotIdFor(line.canonicalSlotId || "") || canonicalMenuSlotIdFor(line.slot || "") || line.slot || "",
+    slot: menuPlacementKey(line),
     originalIndex: line.canonicalOrderIndex ?? line.sortOrder ?? index,
     sourceEntryId: line.sourceBookingLineId || line.canonicalId,
   })));
   const sections = new Map<string, RunSheetMenuSection>();
   for (const ordered of lines) {
     const descriptor = menuSectionForSlot(ordered.slot);
-    const section = sections.get(descriptor.id) || { id: descriptor.id, label: descriptor.label, lines: [] };
+    const label = descriptor.id === "other" ? "OTHER PLACEMENTS" : descriptor.label;
+    const section = sections.get(descriptor.id) || { id: descriptor.id, label, lines: [] };
     section.lines.push({ line: ordered.line, slotLabel: displaySlotLabel(ordered.line, duplicateLabels) });
     sections.set(descriptor.id, section);
   }

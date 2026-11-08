@@ -44,6 +44,7 @@ type Dashboard = {
   unavailableServiceDates?: string[];
 };
 type ProjectionHead = Omit<Dashboard, "weeks"> & {
+  artifactLinksAllowed?: boolean;
   weeks: Array<
     Pick<ProjectedWeek, "publicationId" | "weekCommencing" | "weekEnding">
   >;
@@ -573,6 +574,7 @@ export default function Page() {
         entries: head.entries,
         projectionState: head.projectionState,
         cachedDays: cacheRead.value,
+        artifactLinksAllowed: head.artifactLinksAllowed,
       });
       if (visibleCachedDays.length || matches)
         setDashboard({

@@ -1,0 +1,31 @@
+# This backend is a read-only staging presentation. The data API remains
+# emulator-only and is also removed from preview routing in proxy.ts.
+env:
+  - variable: FIKA_RUNTIME_MODE
+    value: staging
+    availability: [BUILD, RUNTIME]
+  - variable: FIREBASE_PROJECT_ID
+    value: fika-os-dev
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_BEVERAGE_PREVIEW_ONLY
+    value: "1"
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_BEVERAGE_PREVIEW_REVIEWER_EMAILS
+    value: derek@fikacatering.com
+    availability: [RUNTIME]
+  - variable: FIKA_HUB_BASE_URL
+    value: https://staging-os.fikacatering.com
+    availability: [RUNTIME]
+  # Owner-authorized, exact current staging inventory only. This app has no production target.
+  # Inventory evidence: canonical-oplocs:1792231860872, package v4,
+  # content afca83868736b8f02dbdac31f410d43b832e66754abbb26c2eef38a318c6e32f,
+  # scope hash 45180f6f37be99a3f75ae80dd4e6aa445cbadbe0614cddb76ecdc7588151b5b6.
+  - variable: FIKA_BEVERAGE_HUB_OPLOC_READS
+    value: "1"
+    availability: [RUNTIME]
+  - variable: FIKA_BEVERAGE_HUB_OPLOC_IDS
+    value: "oploc:04209dc8-983a-4fbd-b750-410cb2145af9,oploc:0d8626f9-99bd-4dde-9471-191dd0abfb2e,oploc:15b4b9c3-9709-4906-a972-4ea0cbc602f4,oploc:190e3786-0619-4ff3-8c90-b4cec15d3e01,oploc:24a93500-d75d-4fe0-8beb-672d36f9da10,oploc:33c02c8c-9886-489c-aba1-d9d9bf5b66b7,oploc:4405b735-765a-4a87-87bd-196ed10ca00f,oploc:4e7b2838-95de-49c8-bf04-55200841d4cb,oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f,oploc:763d5a92-5c8b-4f2e-bd45-f867db453a84,oploc:83c79eb4-4033-408c-96d7-6c496ed6f6c9,oploc:8449a63b-4df8-42f7-8b73-1d2c8669f58c,oploc:9443be3d-d8ca-4567-99e5-762b2839b837,oploc:95c9de27-638c-4243-8227-816277bd4dfd,oploc:95d84de6-b3f5-4c8f-b3a7-6a313b17d701,oploc:a358ef5f-297b-4816-bbf5-7fef470e81d7,oploc:b835d8ee-b187-49d1-9072-7348b04bfd2d,oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b,oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2"
+    availability: [RUNTIME]
+  - variable: FIKA_SESSION_COOKIE_DOMAIN
+    value: .fikacatering.com
+    availability: [RUNTIME]

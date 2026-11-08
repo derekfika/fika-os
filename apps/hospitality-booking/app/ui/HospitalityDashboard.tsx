@@ -210,7 +210,7 @@ export default function HospitalityDashboard({
       const body = await response.json();
       if (!response.ok)
         throw Error(body.error?.message || "Could not load Bookings.");
-      setAdminOplocId(typeof body.hospitalityAdminOplocId === "string" ? body.hospitalityAdminOplocId : undefined);
+      setAdminOplocId(typeof body.hospitalityAdminAuthority?.oplocId === "string" ? body.hospitalityAdminAuthority.oplocId : undefined);
       setBookings(body.cpuRouting ? body.bookings.map((item: CanonicalBooking) => body.cpuRouting[item.canonicalId] ? { ...item, cpuRouting: body.cpuRouting[item.canonicalId] } : item) : body.bookings);
       setGroups(body.bookingGroups || []);
       setStandaloneIds(new Set((body.dashboardBookings || body.bookings).map((item: CanonicalBooking) => item.canonicalId)));
@@ -1314,6 +1314,7 @@ export default function HospitalityDashboard({
                   quoteBusy={actionBusy}
                   setPending={setPending}
                   amendment={amendment}
+                  onKitchenNotesSaved={(booking) => setSelected(booking)}
                   onAmend={openAmendment}
                   onChangeAmendment={setAmendment}
                   onCancelAmendment={() => setAmendment(null)}
@@ -1552,6 +1553,7 @@ function BookingPane({
   quoteBusy,
   setPending,
   amendment,
+  onKitchenNotesSaved,
   onAmend,
   onChangeAmendment,
   onCancelAmendment,
@@ -1591,6 +1593,7 @@ function BookingPane({
   quoteBusy: boolean;
   setPending: (status: WorkflowAction) => void;
   amendment: Amendment | null;
+  onKitchenNotesSaved: (booking: CanonicalBooking) => void;
   onAmend: (booking: CanonicalBooking) => void;
   onChangeAmendment: (value: Amendment) => void;
   onCancelAmendment: () => void;
@@ -1606,6 +1609,7 @@ function BookingPane({
     return (
       <BookingAmendmentPanel
         booking={booking}
+        onKitchenNotesSaved={onKitchenNotesSaved}
         siteKey={siteKey}
         amendment={amendment}
         onChange={onChangeAmendment}
@@ -1616,6 +1620,7 @@ function BookingPane({
   return (
     <BookingDetail
       booking={booking}
+      onKitchenNotesSaved={onKitchenNotesSaved}
       siteLabel={siteLabel}
       productionOrder={productionOrder}
       menuOutput={menuOutput}
@@ -1649,6 +1654,7 @@ function MatrixDiagnostics({ bookingId, detail }: { bookingId: string; detail?: 
 
 function BookingDetail({
   booking,
+  onKitchenNotesSaved,
   siteLabel,
   productionOrder,
   menuOutput,
@@ -1673,6 +1679,7 @@ function BookingDetail({
   productionPanel: ReactNode;
   cancellationPanel?: ReactNode;
   booking: CanonicalBooking;
+  onKitchenNotesSaved: (booking: CanonicalBooking) => void;
   siteLabel: string;
   productionOrder?: ProductionOrder;
   menuOutput?: MenuOutput;
@@ -1879,8 +1886,9 @@ function BookingDetail({
             <p className="muted">No dietary requirements recorded.</p>
           )}
           {booking.notes && (
-            <p className="booking-detail__note">{booking.notes}</p>
+            <p className="booking-detail__note"><strong>Customer notes</strong><br />{booking.notes}</p>
           )}
+          <KitchenNotesEditor booking={booking} onSaved={onKitchenNotesSaved} />
         </section>
         <section>
           <p className="eyebrow">Manager workspace</p>
@@ -2127,6 +2135,32 @@ function BookingDetail({
       )}
     </>
   );
+}
+
+function KitchenNotesEditor({ booking, onSaved }: { booking: CanonicalBooking; onSaved?: (booking: CanonicalBooking) => void }) {
+  const [value, setValue] = useState(booking.kitchenNotes || "");
+  const [version, setVersion] = useState(booking.version);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [propagation, setPropagation] = useState(booking.kitchenNotesPropagation?.status || "");
+  useEffect(() => { setValue(booking.kitchenNotes || ""); setVersion(booking.version); setPropagation(booking.kitchenNotesPropagation?.status || ""); }, [booking.canonicalId, booking.version]);
+  const save = async () => {
+    setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/dashboard-bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ canonicalId: booking.canonicalId, expectedVersion: version, action: "save-kitchen-notes", kitchenNotes: value }) });
+      const body = await readDashboardJson(response) as { error?: { message?: string }; booking?: CanonicalBooking; propagation?: string };
+      if (!response.ok || !body.booking) throw new Error(body.error?.message || "Kitchen notes could not be saved.");
+      setVersion(body.booking.version); setValue(body.booking.kitchenNotes || ""); setPropagation(body.propagation === "pending" ? "pending" : "");
+      onSaved?.(body.booking);
+    } catch (cause) { setError((cause as Error).message); }
+    finally { setBusy(false); }
+  };
+  return <section aria-label="Internal kitchen notes" className="booking-detail__note">
+    <label>Kitchen-only notes <textarea value={value} maxLength={4000} rows={4} onChange={event => setValue(event.target.value)} /><small>Visible to CPU kitchen only — not included on customer quotes. Kitchen notes do not confirm allergen status or clearance. Record dietary needs in the booking&apos;s dietary fields and complete the formal CPU allergen matrix review.</small></label>
+    <button type="button" className="additional-charges-summary__manage" disabled={busy || booking.lifecycleStatus === "Cancelled" || value === (booking.kitchenNotes || "") && !propagation} onClick={() => void save()}>{busy ? "Saving kitchen notes…" : propagation === "pending" ? "Retry kitchen notes to CPU" : "Save kitchen notes"}</button>
+    {propagation === "pending" && <p role="status">Kitchen notes are saved in Hospitality and pending CPU delivery. Retry to check the canonical order again.</p>}
+    {error && <p role="alert">{error}</p>}
+  </section>;
 }
 
 function CalendarView({
@@ -2470,7 +2504,7 @@ function AmendmentModal({
             Produced by CPU (No means the site will produce this booking internally)
         </label>
         <label>
-          Operational notes
+          Customer notes
           <textarea
             value={amendment.notes}
             onChange={(event) =>
@@ -2740,6 +2774,7 @@ function localDateKey(value: Date) {
 function BookingAmendmentPanel({
   siteKey,
   booking,
+  onKitchenNotesSaved,
   amendment,
   onChange,
   onCancel,
@@ -2747,6 +2782,7 @@ function BookingAmendmentPanel({
 }: {
   siteKey: PortalSiteKey;
   booking: CanonicalBooking;
+  onKitchenNotesSaved: (booking: CanonicalBooking) => void;
   amendment: Amendment;
   onChange: (value: Amendment) => void;
   onCancel: () => void;
@@ -2968,7 +3004,7 @@ function BookingAmendmentPanel({
           <label>Additional dietary notes<textarea value={String(amendment.dietaries?.additionalNotes || "")} onChange={event => onChange({ ...amendment, dietaries: { ...amendment.dietaries, additionalNotes: event.target.value } })} /></label>
         </div>}
         <label>
-          Operational notes
+          Customer notes
           <textarea
             value={amendment.notes}
             onChange={(event) =>
@@ -2976,6 +3012,7 @@ function BookingAmendmentPanel({
             }
           />
         </label>
+        <KitchenNotesEditor booking={booking} onSaved={onKitchenNotesSaved} />
         <label>
           Reason for amendment
           <textarea

@@ -22,6 +22,7 @@ export function GroupAmendmentEditor({ group, site, oplocId, onCancel, onSaved, 
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [savingKitchenNotes, setSavingKitchenNotes] = useState<string>();
   const lock = useRef(false);
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => {
@@ -36,7 +37,7 @@ export function GroupAmendmentEditor({ group, site, oplocId, onCancel, onSaved, 
       if (!bookings?.length || !body.sourceHash || bookings.some(b => b.bookingGroup?.id !== group.id)) throw new Error("The current booking services could not be loaded. Refresh and try again.");
       if (cancelled) return;
       setSource({ group: { ...group, sourceHash: body.sourceHash }, bookings }); setDrafts(structuredClone(bookings));
-      const adminSite = typeof body.hospitalityAdminOplocId === "string" ? body.hospitalityAdminOplocId : undefined;
+      const adminSite = typeof body.hospitalityAdminAuthority?.oplocId === "string" ? body.hospitalityAdminAuthority.oplocId : undefined;
       setAdminOplocId(adminSite);
       const catalogue = await loadHospitalityPortalMenu(site as import("../../lib/portal-sites").PortalSiteKey, adminSite || oplocId, { signal: controller.signal });
       if (adminSite && catalogue.catalogue.source === "cache-unverified") throw new Error("Verify the current site catalogue before amending this booking.");
@@ -46,9 +47,22 @@ export function GroupAmendmentEditor({ group, site, oplocId, onCancel, onSaved, 
   }, [group.id, site, oplocId]);
   useEffect(() => { if (source) form.current?.querySelector<HTMLInputElement>("input")?.focus(); }, [source]);
   const change = (index: number, update: (booking: CanonicalBooking) => CanonicalBooking) => setDrafts(rows => rows.map((b, i) => i === index ? update(b) : b));
+  const saveKitchenNotes = async (index: number) => {
+    if (!source || savingKitchenNotes) return;
+    const booking = drafts[index];
+    setSavingKitchenNotes(booking.canonicalId); setError(""); onBusyChange(true);
+    try {
+      const response = await fetch("/api/dashboard-bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ canonicalId: booking.canonicalId, expectedVersion: source.bookings[index].version, action: "save-kitchen-notes", kitchenNotes: booking.kitchenNotes || "" }) });
+      const body = await response.json();
+      if (!response.ok || !body.booking) throw new Error(body.error?.message || "Kitchen notes could not be saved.");
+      setSource(current => current ? { ...current, bookings: current.bookings.map((item, i) => i === index ? body.booking : item) } : current);
+      setDrafts(rows => rows.map((item, i) => i === index ? { ...item, version: body.booking.version, updatedAt: body.booking.updatedAt, updatedBy: body.booking.updatedBy, kitchenNotes: body.booking.kitchenNotes, kitchenNotesPropagation: body.booking.kitchenNotesPropagation } : item));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Kitchen notes could not be saved."); }
+    finally { setSavingKitchenNotes(undefined); onBusyChange(false); }
+  };
   const sharedClient = (key: keyof CanonicalBooking["client"], value: string) => setDrafts(rows => rows.map(b => ({ ...b, client: { ...b.client, [key]: value, ...(["name", "email", "phone", "companyName"].includes(key) && b.client.requester ? { requester: { ...b.client.requester, [key]: value } } : {}) } })));
   const save = async () => {
-    if (!source || lock.current || hospitalityAdmin && !menuReady) return;
+    if (!source || lock.current || savingKitchenNotes || hospitalityAdmin && !menuReady) return;
     lock.current = true; setSaving(true); onBusyChange(true); setError("");
     try {
       if (!hospitalityAdmin) for (const booking of drafts) for (const line of booking.order.items) {
@@ -91,11 +105,13 @@ export function GroupAmendmentEditor({ group, site, oplocId, onCancel, onSaved, 
       <h4 className={styles.subhead}>Dietary, notes and operational details</h4>
       <div className={styles.fields}>{Object.entries(b.dietaries).filter(([key, value]) => (typeof value === "number" || typeof value === "boolean" || typeof value === "string") && key !== "additionalNotes" && (!hospitalityAdmin || staffDietaryField(key))).map(([key, value]) => <label key={key} className={typeof value === "boolean" ? styles.check : undefined}>{key.replaceAll("_", " ")}{typeof value === "boolean" ? <input type="checkbox" checked={value} onChange={e => change(index, row => ({ ...row, dietaries: { ...row.dietaries, [key]: e.target.checked } }))} /> : <input type={typeof value === "number" ? "number" : "text"} min={typeof value === "number" ? "0" : undefined} value={String(value)} onChange={e => change(index, row => ({ ...row, dietaries: { ...row.dietaries, [key]: typeof value === "number" ? Number(e.target.value) : e.target.value } }))} />}</label>)}</div>
       <label className={styles.wide}>Additional dietary notes<textarea value={String(b.dietaries.additionalNotes || "")} onChange={e => change(index, row => ({ ...row, dietaries: { ...row.dietaries, additionalNotes: e.target.value } }))} /></label>
-      <label className={styles.wide}>Operational notes<textarea value={b.notes || ""} onChange={e => change(index, row => ({ ...row, notes: e.target.value }))} /></label>
+      <label className={styles.wide}>Customer notes<textarea value={b.notes || ""} onChange={e => change(index, row => ({ ...row, notes: e.target.value }))} /></label>
+      <label className={styles.wide}>Kitchen-only notes<textarea maxLength={4000} value={b.kitchenNotes || ""} onChange={e => change(index, row => ({ ...row, kitchenNotes: e.target.value }))} /><small>Visible to CPU kitchen only — not included on customer quotes. Kitchen notes do not confirm allergen status or clearance. Record dietary needs in the booking&apos;s dietary fields and complete the formal CPU allergen matrix review.</small></label>
+      <div className={styles.wide}><button type="button" disabled={saving || Boolean(savingKitchenNotes) || (b.kitchenNotes || "") === (source.bookings[index].kitchenNotes || "") && source.bookings[index].kitchenNotesPropagation?.status !== "pending"} onClick={() => void saveKitchenNotes(index)}>{savingKitchenNotes === b.canonicalId ? "Saving kitchen notes…" : source.bookings[index].kitchenNotesPropagation?.status === "pending" ? "Retry kitchen notes to CPU" : "Save kitchen notes only"}</button>{source.bookings[index].kitchenNotesPropagation?.status === "pending" && <p role="status">Saved in Hospitality; CPU delivery is pending. Retry notes without changing this service’s quote or menu quantities.</p>}</div>
     </fieldset>)}
     <label className={styles.reason}>Reason for amendment<textarea required minLength={3} maxLength={1000} disabled={saving} value={reason} onChange={e => setReason(e.target.value)} /></label>
     {error && <p role="alert" className={styles.error}>{error}</p>}<p role="status" aria-live="polite">{saving ? "Validating and saving all services together…" : ""}</p>
-    <div className={`${styles.actions} ${styles.footer}`}><button type="button" disabled={saving} onClick={onCancel}>Cancel edit</button><button type="submit" className="primary" disabled={saving || hospitalityAdmin && !menuReady} aria-busy={saving}>Save booking amendment</button></div>
+    <div className={`${styles.actions} ${styles.footer}`}><button type="button" disabled={saving || Boolean(savingKitchenNotes)} onClick={onCancel}>Cancel edit</button><button type="submit" className="primary" disabled={saving || Boolean(savingKitchenNotes) || hospitalityAdmin && !menuReady} aria-busy={saving}>Save booking amendment</button></div>
   </form>;
 }
 

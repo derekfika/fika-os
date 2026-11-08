@@ -12,6 +12,8 @@ import { resolveDriveOwner } from "@fika/server-shared/drive-owner";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { errorResponse } from "@/lib/api";
 import { queueGroupConfirmation } from "@/lib/booking-group-confirmation";
+import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
+import { redactHospitalityQuoteDriveLinks } from "@/lib/hospitality-quote-response";
 
 const Command = z.object({ bookingGroupId: z.string().trim().min(1).max(160), expectedVersion: z.number().int().nonnegative(), expectedSourceHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 export async function POST(request: NextRequest) {
@@ -19,6 +21,7 @@ export async function POST(request: NextRequest) {
     try {
       const actor = await requireActor(request);
       const session = await requireFikaSession(request);
+      if (await stagingDriveAccessBlocked()) return NextResponse.json({ error: { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED", message: "Group quote artifacts are unavailable until Drive isolation is verified for this environment." } }, { status: 404, headers: { "Cache-Control": "no-store, max-age=0" } });
       const command = Command.parse(await request.json());
       const repository = new FirestoreAuthModRepository();
       const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
@@ -39,7 +42,7 @@ export async function POST(request: NextRequest) {
       });
       // Reconciliation trigger: a completed group quote can be what makes the last in-house service eligible. Idempotent; never fails the quote.
       if (quote.status === "complete") { try { await queueGroupConfirmation(command.bookingGroupId); } catch (error) { console.error("hospitality.group-confirmation.reconcile-failed", { bookingGroupId: command.bookingGroupId, message: error instanceof Error ? error.message : String(error) }); } }
-      return NextResponse.json({ quote: { id: quote.id, revision: quote.revision, status: quote.status, ...(quote.status === "complete" ? { driveUrl: quote.artifact.driveUrl } : {}), ...(quote.error ? { error: quote.error } : {}) } }, { status: quote.status === "complete" ? 200 : 202 });
+      return NextResponse.json(redactHospitalityQuoteDriveLinks({ quote: { id: quote.id, revision: quote.revision, status: quote.status, ...(quote.status === "complete" ? { driveUrl: quote.artifact.driveUrl } : {}), ...(quote.error ? { error: quote.error } : {}) } }, await stagingDriveAccessBlocked()), { status: quote.status === "complete" ? 200 : 202, headers: { "Cache-Control": "no-store, max-age=0" } });
     } catch (error) { return errorResponse(error); }
   });
 }

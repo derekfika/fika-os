@@ -4,7 +4,7 @@ Status: Phase A design input. The staged Pack 2 ROLE documents and schemas are d
 
 ## Scope
 
-AUTHMOD covers Integration Hub, CPU Production, Logistics, Menu Planning, Hospitality internal management, Delivered-In including Grab & Go, and Ad-Hoc Production. Events Dashboard and Beverage Innovation are explicitly out of scope. Public Hospitality booking remains unauthenticated.
+Live AUTHMOD covers Integration Hub, CPU Production, Logistics, Menu Planning, Hospitality internal management, Delivered-In including Grab & Go, and Ad-Hoc Production. Events Dashboard and Beverage Innovation remain outside live admission. Public Hospitality booking remains unauthenticated.
 
 ## Design decisions
 
@@ -48,6 +48,18 @@ The result should contain the immutable principal, active user status, matched g
 ## App registry
 
 The registry is FIKA-owned and keyed by stable IDs: integration-hub, cpu-production, logistics, menu-planning, hospitality-booking, delivered-in, and ad-hoc-production. Each record contains display name, canonical URL/route, enabled/launch-visible status, scope model (none, oploc, mixed), and optional icon metadata. Events and Beverage are absent from the v1 launch registry. App definitions are consumed by the Hub launcher and access checks rather than duplicated in each frontend.
+
+### Beverage site authority foundation
+
+Hub owns a server-side decision foundation for the reserved `beverage-innovation` app ID. It uses the existing AUTHMOD application, identity, assignment and grant records with an explicit Beverage policy. The [dedicated Hub transport](../../apps/integration-hub/docs/beverage-reference.md) is staging-only and disabled by default. Registry provisioning remains separate. The generic Hub admission and authority checks deny the reserved ID, so the v1 Full Access expansion cannot admit Beverage.
+
+The decision requires a revocation-checked Firebase session cookie and exactly one active, already-bound Firebase person. It never matches or binds an email. The registry entry must be enabled and hidden with OPLOC scope and the normal bundle `beverage-innovation-normal`. An active direct Beverage application assignment and an explicit Beverage OPLOC authority grant are both required. The decision accepts up to 100 site IDs, applies Hub's final historical ID redirects to requested IDs, and checks every resulting target is still active. A grant with a historical alias in its scope cannot follow that alias into a new location.
+
+`beverage-innovation.normal` supports exact View, Contribute and Manage decisions. A View-only hidden registry limits an initial review to View. Each decision requires one effective, direct, person grant for the exact Beverage resource and action covering every requested canonical ID. Approve uses the separate `beverage-innovation.approval` resource. Generic SiteAssignments, organisation grants, Full Access, service credentials and delegated grants supply no Beverage authority. See the [staging entitlement procedure](../../apps/integration-hub/docs/beverage-oploc-entitlement.md) for review and audit evidence.
+
+The internal Hub request adapter reads the canonical FIKA session cookie and verifies revocation before opening a read-only Firestore snapshot. The bounded Firebase UID query, application record, AUTHMOD security head, OPLOC package head and active site checks share that snapshot. Package readers require current generations and refuse recovery or publication on this path. Missing or inconsistent authority data denies the decision. Tests use fictional identities and packages.
+
+Before exposing a route, verify the exact Hub project, issuer and cookie origin, the read-only Firestore and package access policy, and response redaction. Route wiring, organisation-wide recipe authority, audited staging registry and grant provisioning, identity enrollment and functional Beverage persistence each require separate verification.
 
 ## Special authority v1
 

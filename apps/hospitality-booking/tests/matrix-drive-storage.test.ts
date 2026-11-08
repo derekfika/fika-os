@@ -29,13 +29,25 @@ test.afterEach(() => {
 const context = (site = sites[0]) => ({ kind: "hospitality-site" as const, oplocId: site.oplocId, googleMatrixFolderId: site.folder });
 const request = () => new NextRequest("https://hospitality.test/api/allergen-matrix/drive", { method: "POST", headers: { "content-type": "application/json", "x-fika-internal-token": "internal-test" }, body: JSON.stringify({ name: "matrix.pdf", html: "<p>matrix</p>", pdfBase64: "cGRm", productionOrderId: "production:test", releaseId: "release:unchanged:v2", weekCommencing: "2026-10-12", owner: "attacker", oplocId: sites[1].oplocId, folderId: "attacker" }) });
 
+const productionHub = "https://os.fikacatering.com";
+const metadataUrl = "http://metadata.google.internal/computeMetadata/v1/project/project-id";
+const productionMetadata = () => new Response("fika-os", { headers: { "Metadata-Flavor": "Google" } });
+function useProductionFixture() {
+  Object.assign(process.env, { FIKA_RUNTIME_MODE: "production", FIKA_HUB_BASE_URL: productionHub, FIREBASE_PROJECT_ID: "fika-os" });
+  delete process.env.GOOGLE_CLOUD_PROJECT;
+  delete process.env.GCLOUD_PROJECT;
+  delete process.env.FIREBASE_CONFIG;
+}
+
 for (const site of sites) test(`${site.name} route uses its governed owner/folder and preserves release bytes and weekly storage`, async () => {
+  useProductionFixture();
   const subjects: string[] = [];
   const queries: string[] = [];
   let uploaded = "";
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
-    if (url.hostname === "hub.test") {
+    if (url.href === metadataUrl) return productionMetadata();
+    if (url.origin === productionHub) {
       assert.equal(url.searchParams.get("canonicalId"), "production:test");
       assert.equal(url.searchParams.get("includeMatrixStorage"), "true");
       assert.equal(new Headers(init?.headers).get("x-fika-internal-token"), "internal-test");
@@ -98,16 +110,31 @@ test("explicit site folder with absent/placeholder owner fails before any Drive 
 });
 
 test("an inaccessible site folder never retries with CPU identity or global folder", async () => {
+  useProductionFixture();
   const calls: string[] = [];
   globalThis.fetch = async (input) => {
-    const url = String(input); calls.push(url);
-    if (url.startsWith("https://hub.test")) return Response.json({ order: { origin: "hospitality_booking" }, matrixStorage: context() });
+    const url = String(input);
+    if (url === metadataUrl) return productionMetadata();
+    calls.push(url);
+    if (new URL(url).origin === productionHub) return Response.json({ order: { origin: "hospitality_booking" }, matrixStorage: context() });
     if (url.startsWith("https://oauth2.googleapis.com")) return Response.json({ access_token: "site-only" });
     assert.ok(url.includes(sites[0].folder));
     return Response.json({ error: "not found" }, { status: 404 });
   };
   assert.equal((await POST(request())).status, 503);
   assert.equal(calls.length, 3);
+});
+
+test("a staging matrix request cannot acquire Drive credentials or touch a configured folder", async () => {
+  const calls: string[] = [];
+  globalThis.fetch = async input => {
+    const url = new URL(String(input));
+    calls.push(url.origin);
+    assert.equal(url.origin, "https://hub.test");
+    return Response.json({ order: { origin: "hospitality_booking" }, matrixStorage: context() });
+  };
+  assert.equal((await POST(request())).status, 503);
+  assert.deepEqual(calls, ["https://hub.test"]);
 });
 
 test("site destination requires DWD and never switches to local OAuth", () => {

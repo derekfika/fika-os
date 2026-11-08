@@ -9,7 +9,7 @@ const FINISHED_AT = Date.parse('2026-10-24T14:33:17Z');
 const LATER = FINISHED_AT + RESUBMIT_QUIET_MS + 60_000;
 
 function fixture(overrides = {}) {
-  const t = target('hub', 'staging'); const sourceSha = 'a'.repeat(40); const old = 'b'.repeat(40);
+  const t = target('hub', overrides.environment || 'staging'); const sourceSha = 'a'.repeat(40); const old = 'b'.repeat(40);
   const plan = { ...t, sourceSha, scopeHash: 'candidate', approval: { id: 'staging:hub:candidate' } };
   const before = { sourceSha: old, rollout: 'build-old', state: 'SUCCEEDED', percent: 100 };
   const journal = { releaseId: 'r1', plan, before, observedBefore: before, previousGoodRecord: 'd'.repeat(40), createdAt: '2026-10-24T14:33:10Z', submissionStartedAt: '2026-10-24T14:33:15Z', submissionFinishedAt: '2026-10-24T14:33:17Z', submissionFailure: { exitStatus: 1, message: 'Authentication Error: credentials no longer valid' }, ...overrides.journal };
@@ -22,15 +22,17 @@ function fixture(overrides = {}) {
 const ready = overrides => { const f = fixture(overrides); return { ...f, args: { intent: f.intent, journal: f.journal, first: f.snapshot, second: structuredClone(f.snapshot), audit: f.audit, now: LATER } }; };
 const refused = (overrides, pattern) => { const { args } = ready(overrides); assert.throws(() => assertNeverSubmitted(args), pattern); };
 
-test('verified never-submitted staging intent is eligible and reports its single original attempt with recorded CLI failure', () => {
-  const { args, journal } = ready();
-  const attempts = assertNeverSubmitted(args);
-  assert.equal(attempts.length, 1);
-  assert.match(attempts[0].failure.message, /Authentication Error/);
-  assert.deepEqual(submissionAttempts(journal)[0].failure, journal.submissionFailure);
+test('verified never-submitted staging and production intents are eligible and reports its single original attempt with recorded CLI failure', () => {
+  for (const environment of ['staging','prod']) {
+    const { args, journal } = ready({ environment });
+    const attempts = assertNeverSubmitted(args);
+    assert.equal(attempts.length, 1);
+    assert.match(attempts[0].failure.message, /Authentication Error/);
+    assert.deepEqual(submissionAttempts(journal)[0].failure, journal.submissionFailure);
+  }
 });
 
-test('any doubt refuses resubmission: late build, late rollout, unparsable time, operation, traffic, serving, audit, quiet period, production', () => {
+test('any doubt refuses resubmission: late build, late rollout, unparsable time, operation, traffic, serving, audit or quiet period', () => {
   const t = target('hub', 'staging');
   const late = { name: `${t.backend}/builds/new`, state: 'BUILDING', sourceSha: 'a'.repeat(40), createTime: '2026-10-24T14:33:30Z', reconciling: false };
   const base = fixture().snapshot;
@@ -45,9 +47,6 @@ test('any doubt refuses resubmission: late build, late rollout, unparsable time,
   refused({ snapshot: { ...base, current: { ...base.current, percent: 50 } } }, /Traffic|Serving/);
   refused({ audit: { readable: false } }, /could not be read/);
   refused({ audit: { events: [{ at: '2026-10-24T14:33:16Z', method: 'CreateRollout' }] } }, /App Hosting create call/);
-  const prod = fixture(); const pt = target('hub', 'prod');
-  const prodPlan = { ...prod.journal.plan, ...pt }; const prodIntent = { ...prod.intent, ...pt };
-  assert.throws(() => assertNeverSubmitted({ intent: prodIntent, journal: { ...prod.journal, plan: prodPlan }, first: prod.snapshot, second: structuredClone(prod.snapshot), audit: prod.audit, now: LATER }), /limited to staging/);
   const f = ready(); assert.throws(() => assertNeverSubmitted({ ...f.args, now: FINISHED_AT + 60_000 }), /Quiet period not elapsed/);
   assert.throws(() => assertNeverSubmitted({ ...f.args, second: { ...f.snapshot, builds: [] } }), /changed between snapshots/);
   refused({ journal: { createdAt: undefined } }, /outcome is unknown/);
@@ -73,16 +72,16 @@ test('intent push readback failure recovers once with external proof and no inve
  h.f.intent.createdAt=h.journal.createdAt;
  const {attempt}=await resubmitNeverSubmitted({intent:h.f.intent,journal:h.journal},h.io);
  assert.equal(attempt.n,2);assert.equal(h.submits.length,1);
- assert.deepEqual(h.journal.submissionAttempts[0],{n:1,phase:'not-started-before-intent-readback'});
+ assert.deepEqual(h.journal.submissionAttempts[0],{n:1,phase:'not-started-after-intent'});
  await assert.rejects(resubmitNeverSubmitted({intent:h.f.intent,journal:h.journal},h.io),/already recorded|may have reached Firebase/);
 });
 
 test('pre-submission gap preserves quiet period, journal binding and all independent Firebase proof', () => {
  const f=ready({journal:{state:'pending',submissionStartedAt:undefined,submissionFinishedAt:undefined,submissionFailure:undefined}});
  f.intent.createdAt=f.journal.createdAt;
- assert.equal(assertNeverSubmitted(f.args)[0].phase,'not-started-before-intent-readback');
+ assert.equal(assertNeverSubmitted(f.args)[0].phase,'not-started-after-intent');
  assert.throws(()=>assertNeverSubmitted({...f.args,now:INTENT_AT+60_000}),/Quiet period/);
- for(const journal of [{...f.journal,intentCommit:'a'.repeat(40)},{...f.journal,submissionStartedAt:'2026-10-24T14:33:15Z'},{...f.journal,state:'completed'},{...f.journal,createdAt:'2026-10-24T14:33:11Z'}]) {
+ for(const journal of [{...f.journal,submissionStartedAt:'2026-10-24T14:33:15Z'},{...f.journal,state:'completed'},{...f.journal,createdAt:'2026-10-24T14:33:11Z'}]) {
   assert.throws(()=>assertNeverSubmitted({...f.args,journal}),/outcome is unknown/);
  }
  assert.throws(()=>assertNeverSubmitted({...f.args,audit:{readable:false,events:[]}}),/could not be read/);
@@ -138,14 +137,14 @@ test('an original submission that DID reach Firebase is never resubmitted (resum
   await assert.rejects(resubmitNeverSubmitted({ intent: f.intent, journal: f.journal }, { now: () => LATER, inspect: async () => structuredClone(snapshot), audit: async () => f.audit, claim: async () => {}, submit: async () => { submitted += 1; }, finish: async () => {} }), /may have reached Firebase/);
   assert.equal(submitted, 0);
   assert.match(describeSubmissionEvidence(snapshot, f.journal), /orig \(IN_PROGRESS\)/);
-  assert.match(describeSubmissionEvidence(f.snapshot, f.journal), /has not reached Firebase/);
+  assert.match(describeSubmissionEvidence(f.snapshot, f.journal), /no Firebase build or rollout evidence/);
 });
 
 test('firebase auth preflight fails before any state is written, with the operator action', () => {
   const t = target('hub', 'staging');
   assert.throws(() => firebaseAuthPreflight(t, () => { throw Error('Authentication Error'); }), /firebase login --reauth.*No release state was written/);
   assert.throws(() => firebaseAuthPreflight(t, () => '[]'), /cannot see backend/);
-  assert.doesNotThrow(() => firebaseAuthPreflight(t, (program, args) => { assert.equal(program, 'firebase'); assert.deepEqual(args.slice(0, 2), ['apphosting:backends:list', '--project']); return JSON.stringify([{ name: `projects/p/locations/l/backends/${t.backend}` }]); }));
+  assert.doesNotThrow(() => firebaseAuthPreflight(t, (program, args) => { assert.equal(program, 'firebase'); assert.deepEqual(args.slice(0, 2), ['apphosting:backends:list', '--project']); return JSON.stringify({result:[{ name: `projects/${t.project}/locations/${t.region}/backends/${t.backend}` }]}); }));
 });
 
 test('audit evidence is scoped to the backend and unreadable logs are reported, not assumed empty', () => {

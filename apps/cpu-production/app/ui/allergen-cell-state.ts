@@ -1,7 +1,6 @@
 import { isCompleteOperationalAllergenMap, type OperationalAllergenState } from "../../../shared/allergen-contract";
 import { readExplicitAllergens } from "../../../shared/allergen-declaration";
-import { namedPositives, selectNamedAllergen } from "../../../shared/allergen-declaration";
-import { cycleNamedAllergen, editableAllergens, isNoKeyTicked, rowAttestation, toggleNoKey, type RowAllergenContext } from "../lib/allergen-explicit";
+import { cycleNamedAllergen, isNoKeyTicked, rowAttestation, toggleNoKey, type RowAllergenContext } from "../lib/allergen-explicit";
 
 /** A row with no recorded assessment carries no allergen values; every cell then renders neutral. */
 export function emptyAllergens(): Record<string, OperationalAllergenState> {
@@ -43,25 +42,17 @@ export function applyHospitalityCellClick(allergens: Record<string, OperationalA
 }
 
 /**
- * Issue 251: the Hospitality order-detail checker is strictly binary. A named allergen box is OFF (white) or ON (black, Contains);
- * a click flips it. May Contain is NOT part of this interaction and can never be created by a click here (the shared
- * `applyHospitalityCellClick` cycle used by other surfaces is untouched). A persisted legacy May Contain is preserved verbatim until
- * the chef deliberately clicks that very box, which makes it Contains (the stricter value, never a silent deletion); a second click switches it OFF. Either is a normal edit (the edit reopens the row's review, so the
- * confirmation, signatures and releases are revoked/re-reviewed by the existing rules). Selecting a named allergen withdraws a No
- * Key tick; the last named allergen going OFF leaves the row BLANK (unverified), never No Key. No Key is exclusive with named
- * allergens and keeps its own toggle.
+ * Issue 251: named allergens cycle OFF (white/unrecorded) → CONTAINS (black) → MAY CONTAIN (hatched) → OFF. Reusing the
+ * shared explicit cycle preserves the allergen contract on this edit path. No Key remains a separate binary chef declaration,
+ * exclusive with named allergens. Every edit reopens review through the existing edit handler; the last named allergen going OFF
+ * leaves the row BLANK (unverified), never No Key.
  */
 export function applyHospitalityBinaryClick(allergens: Record<string, OperationalAllergenState>, key: string, context: RowAllergenContext = {}): Record<string, OperationalAllergenState> {
-  if (key === "no_key_allergens") return toggleNoKey(allergens, context);
-  const base = editableAllergens(allergens, context);
-  const current = namedPositives(base)[key];
-  const result = selectNamedAllergen(base, key as never, current === "contains" ? null : "contains", { acknowledgeNoKeyWithdrawal: true });
-  if (!result.ok) throw new Error("Unexpected refusal while acknowledging the No Key withdrawal.");
-  return result.allergens;
+  return applyHospitalityCellClick(allergens, key, context);
 }
 
-/** The state of one box on the binary Hospitality checker. `legacy_may_contain` is persisted evidence, shown distinctly and never creatable here. */
-export type BinaryCellView = "on" | "off" | "legacy_may_contain";
+/** Named cells have three visible states; No Key deliberately has only on/off. */
+export type BinaryCellView = "on" | "off" | "may_contain";
 
 /** No Key is "on" only for a deliberate declaration (or a conflict, which must stay visible so it can be resolved). */
 export function binaryCellView(allergens: Record<string, OperationalAllergenState> | undefined, key: string, context: RowAllergenContext = {}): BinaryCellView {
@@ -70,12 +61,12 @@ export function binaryCellView(allergens: Record<string, OperationalAllergenStat
     return attestation === "declared" || attestation === "conflict" ? "on" : "off";
   }
   const state = cellState(allergens, key);
-  return state === "contains" ? "on" : state === "may_contain" ? "legacy_may_contain" : "off";
+  return state === "contains" ? "on" : state === "may_contain" ? "may_contain" : "off";
 }
 
 /** Non-visible accessible name for a box: allergen name, sub-item and on/off state. */
 export function binaryCellAriaLabel(label: string, rowName: string, view: BinaryCellView): string {
-  return `${label} for ${rowName || "sub-item"}: ${view === "on" ? "on" : view === "off" ? "off" : "May Contain recorded (existing value)"}`;
+  return `${label} for ${rowName || "sub-item"}: ${view === "on" ? "on" : view === "off" ? "off" : "May Contain"}`;
 }
 
 /** aria-pressed for the box; a persisted May Contain is "mixed" so assistive tech does not report it as plainly on or off. */

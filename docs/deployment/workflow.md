@@ -7,10 +7,10 @@ The owner directs AI coding agents in ordinary language. Agents handle workspace
 | Implement this | Creates an isolated workspace, implements, tests and prepares integration. No deployment is implied. |
 | Integrate it | Integrates the authorised change through a green PR and preserves main history. |
 | Put it on staging | Resolves the candidate, deploys only the selected staging app and verifies it. |
-| Ship it | Records explicit production authorisation, checks the full change and staging requirements, deploys only the selected app and verifies it. |
+| Ship it | Pins a green merged source, deploys only the selected app and verifies it. |
 | Roll it back | Selects the verified previous release automatically, performs the authorised selected-app rollback and verifies it. |
 
-An ordinary coding request never authorises production. Clarify genuinely ambiguous app/environment scope, not Git mechanics. The agent pins the intended validated source before execution and does not silently include unrelated new changes. The owner need not operate GitHub or copy hashes.
+A deployment request names an app and environment. A merge alone never starts a rollout. Clarify genuinely ambiguous app/environment scope, not Git mechanics. The agent pins the intended validated source before execution and does not silently include unrelated new changes. The owner need not operate GitHub or copy hashes.
 
 ## Development and integration
 
@@ -26,7 +26,7 @@ Run `fika workspace check <task>` for source and advisory overlap. From the task
 
 Use `fika workspace complete <task> --owner <agent-task>` from the canonical checkout to record final Git/PR evidence. The checkout remains in place. Record unpushed or dirty work explicitly with `--preserve --reason`. See [workspace management](workspace-management.md) for historical records, migration and interrupted-operation recovery.
 
-PRs are agent-managed CI/integration tools. Main requires strict `Workflow / merge-gate`, with zero mandatory human approvals and admin-enforced force-push/deletion protection. After CI passes and integration is authorised, the agent can use a merge-commit PR merge pinned to its verified head. GitHub rechecks protected-branch requirements. Do not merge when the owner explicitly said to stop before merging. Squash/rebase merging and automatic branch deletion remain disabled to preserve staged ancestry and unfinished work.
+PRs are agent-managed CI/integration tools. Main requires strict `Workflow / merge-gate`, with zero mandatory human approvals and admin-enforced force-push/deletion protection. After CI passes and integration is authorised, the agent can use a merge-commit PR merge pinned to its verified head. GitHub rechecks protected-branch requirements. Do not merge when the owner explicitly said to stop before merging. Squash/rebase merging and automatic branch deletion remain disabled to preserve integrated ancestry and unfinished work.
 
 Use `fika integrate --workspace <task> --pr <number>` to verify the exact head and current main base before merging. If main advances, merge it into the task branch, review the resulting diff and rerun CI.
 
@@ -38,16 +38,13 @@ Use the existing authorised local GitHub/gcloud/Firebase login. Hosted GCP workl
 fika deploy hospitality --staging
 fika deploy hospitality --staging --execute
 fika deploy hospitality --prod
-fika deploy hospitality --prod --execute --owner-approved --reason "Ship the validated Hospitality change"
-fika rollback hospitality --prod --execute --owner-approved --reason "Roll Hospitality back"
+fika deploy hospitality --prod --execute
+fika rollback hospitality --prod --execute
 ```
 
-These are internal agent commands. The agent sets `--owner-approved` only after an actual owner production instruction and records that instruction verbatim or with a faithful scoped summary. Authenticated production execution must be by the solo owner. Authorisation is bound to app, environment, action and resolved source in the existing journal/ledger; there is no approval registry, GitHub comment or reviewer exception.
+For either environment, the CLI defaults to fetched `origin/main`. Use `--sha` to pin an earlier eligible merge. The exact SHA must be the result of a protected PR merged into main and have a successful GitHub Actions `Workflow / merge-gate` check. Local execution requires a GitHub repository writer and Firebase/GCP credentials for the mapped target. Use `--reason` to add an optional operator note.
 
-Staging defaults to the task workspace's committed HEAD; production defaults to fetched main. The agent can internally pin `--sha` to the intended candidate. Production source must be integrated, exact-source CI must pass, the workspace must be clean and deployed lineage must be preserved. The complete Git delta from actual serving source to candidate determines release treatment, including intervening PRs:
-
-- Cosmetic CSS/assets/docs can use the fast CI-to-production path after explicit owner release authorisation. Reviewed rendering-only JSX can use agent `--cosmetic-only`; operational/backend/shared changes cannot be forced through it.
-- Operational, pricing, quantities, allergens, permissions, shared contracts and other data-sensitive changes require verified staging of the same app/dependency tree. `--standard` deliberately requires staging when uncertain. Owner approval never bypasses this check.
+The production serving-to-candidate diff is informational. Staging and manual UAT are optional for all change categories, including security, shared contracts and backend changes. A security hotfix follows the same PR, CI, merge and deploy steps. Forward production releases preserve deployed source lineage. Use the explicit rollback command to select an earlier verified release.
 
 Exactly one mapped backend is deployed in region `europe-west4`:
 
@@ -59,35 +56,30 @@ Exactly one mapped backend is deployed in region `europe-west4`:
 | cpu | fika-cpu-production-staging | fika-os-prod-cpu |
 | delivered-in | fika-delivered-in-staging | fika-os-prod-deliveredin |
 | logistics | fika-logistics-staging | fika-os-prod-logistics |
+| adhoc | fika-os-staging-adhoc | fika-os-prod-adhoc |
+| beverage | fika-beverage-staging | — (staging-only visual preview; no production target) |
+
+Beverage staging is limited to an authenticated, no-write Stage A visual preview. Its separate `fika deploy beverage --staging` target uses the standard exact-main-source and verification gates; do not create a Beverage production target through this mapping. Functional Beverage persistence requires a separately verified staging authority and is not enabled by this preview configuration.
 
 Logistics staging's unauthenticated root intentionally redirects to the staging Hub sign-in with `FIKA_SESSION_MISSING`; its build-info route is authentication-protected. The governed post-rollout probe accepts only an exact HTTP 307 to `https://staging-os.fikacatering.com/` carrying the `logistics` app ID, `FIKA_SESSION_MISSING`, and the exact backend root as `returnTo`. Firebase serving source, READY/SUCCEEDED rollout and 100% traffic remain independently verified. Other app probes and production Logistics probe behavior are unchanged.
 
-Automatic rollouts remain disabled. The CLI verifies target/provenance, submits an exact SHA, waits for READY/SUCCEEDED and 100% serving, and performs non-destructive HTTP smoke. Report app-specific acceptance separately: an HTTP 200 is not business UAT. Release approval never authorises migrations, real customer bookings, emails or operational test writes.
+Automatic rollouts remain disabled. The CLI verifies target/provenance, submits an exact SHA, waits for READY/SUCCEEDED and 100% serving, and performs non-destructive HTTP smoke. Report app-specific acceptance separately. Migrations, real customer bookings, emails and operational test writes require separate authorisation.
 
 ## Rollback and interrupted releases
 
-Rollback resolves the recorded verified previous-good source automatically. It never guesses old builds, rewrites history or reverts business data. If no earlier verified target exists, hold and explain the missing evidence. Advanced record/SHA overrides remain available to the agent when necessary, not to the ordinary owner workflow.
+Rollback selects a verified earlier release record and checks its exact integrated source and CI. Historical records that pinned a PR head can roll back to that head once its PR has merged and the exact commit is in main. Use `--record` to select another verified record from the same target's history. If history has no eligible rollback target, investigate the missing evidence before proceeding.
 
-Twelve append-only `release/staging/<app>` and `release/prod/<app>` ledgers remain internal implementation details. They contain records, not deployable source; never deploy a ledger SHA. A remote pending intent and local plan-scoped journal prevent competing/duplicate rollout submission. Known-good targets and original recovery evidence are preserved.
+Append-only `release/staging/<app>` and `release/prod/<app>` ledgers retain historical records. A normal deployment can append a baseline automatically when the ledger is missing or differs from verified Firebase serving state. The recorded previous state comes from the selected backend and its exact build, rollout and traffic. If the serving source cannot be identified, the backend is actively reconciling, or another attempt has an unknown outcome, stop for diagnosis. A pending intent is a technical safeguard against competing submissions. Restore its matching journal before continuing.
 
-`fika deploy <app> --prod --resume --execute` reuses the original bounded authorisation and source. It only verifies that attempt and never submits a duplicate rollout. No repeated owner comment or manually entered SHA is needed. A killed process's lock requires inspection, not automatic deletion.
+`fika deploy <app> --prod --resume --execute` checks the original pinned source and intent against the journal, then verifies Firebase and smoke. A killed process's lock requires inspection. Resume can submit the same intent at most once if the original submission was proven never to have reached Firebase. This requires a 10-minute quiet period, two matching snapshots, no build or rollout created after the intent, quiescent traffic unchanged from the pre-submission state, no relevant operation in flight and no create events in readable Cloud Audit Logs. The candidate must still meet the merged-source CI requirements. The CLI claims the retry in the shared ledger before submission so a second runner cannot submit it. A legacy intent that does not meet those requirements can still be verified. Any ambiguous or active outcome stays pending.
 
-For terminal failures the agent inspects `fika reconcile <app> --prod`, then uses `--resolution abandon|complete --rollout <observed-ID> --execute --owner-approved --reason <owner recovery/rollback instruction>`. The agent resolves attempt IDs internally. Reconciliation requires a returned submitter, positive terminal identity, paginated build/rollout/operation discovery, two stable snapshots and original journal/rollback lineage. Active or unknown outcomes cannot be abandoned. The original journal is archived before a non-force resolution; no deployment is submitted. Healthy successes must be completed. Abandoned unhealthy releases permit only verified rollback and are never themselves known-good targets. There is no force-abandon option.
+For terminal failures inspect `fika reconcile <app> --prod`, then use `--resolution abandon|complete --rollout <observed-ID> --execute`. Reconciliation requires a returned submitter, positive terminal identity, paginated build/rollout/operation discovery, two stable snapshots and original journal/rollback lineage. The CLI archives the original journal before appending a non-force resolution. Healthy successes must be completed. An abandoned unhealthy release is never a rollback target.
 
-### Forward adoption of an externally serving staging baseline
-
-Only when the owner explicitly authorises it, `fika reconcile-serving-baseline hub|menu --staging --sha <exact SHA> --rollout <actual rollout ID> --reason <owner instruction> --execute` may append a prospective baseline when the release ledger is behind an already-serving staging release. This path is restricted to Hub and Menu staging; all production and other app targets remain closed. It requires two identical authoritative App Hosting snapshots, the exact Firebase project/backend and source repository/root, a READY build at the exact commit, a SUCCEEDED rollout linked to that build, one current 100% traffic split, automatic rollouts disabled, no reconciliation in progress, and a non-redirecting HTTP 200 serving probe. Menu additionally requires `/api/build-info` to prove the exact expected SHA and `menu-planning` app ID. Build and rollout IDs may differ; observation follows the verified rollout's build link. It binds the authenticated repository writer, explicit owner instruction, actual UTC authorization/observation times, exact source/build/rollout, and prior ledger commit. The existing entry remains the first parent; ordinary non-force push provides compare-and-swap protection. It does not assert that an earlier rollout was governed and does not designate unverified intervening builds as rollback candidates. It cannot resolve a pending intent or operate on production. This is a ledger reconciliation only; it does not deploy or alter Firebase state.
-
-
-### Pre-submission failures (staging)
-
-`deploy --execute` first proves the Firebase CLI is authenticated (a read of the target backend) and only then writes the release intent, so an expired login stops with `firebase login --reauth` and writes nothing. The original submission's CLI exit status and an attempts list are recorded in the journal.
-
-If a staging submission fails and Firebase holds no build or rollout for it, `deploy <app> --staging --resume --execute` resubmits the SAME intent (same release ID, pinned SHA and authorisation) exactly once, only when all of these hold: the original submitter returned, a 10-minute quiet period has passed, two identical recovery snapshots show no build or rollout created after the intent, no operation is in flight, traffic is quiescent and serving equals the pre-submission state, and Cloud Audit Logs are readable and show no `CreateRollout`/`CreateBuild` for the backend since the intent. The attempt is claimed durably before submitting, so a second or concurrent resume can never submit again; a failed resubmission is recorded and never retried automatically. Any doubt (including a build or rollout in any state) leaves the intent pending and resume verifies as before, now reporting what Firebase holds. Production never resubmits automatically.
+The specialised Hub/Menu serving-baseline and CPU completed-rollout reconciliation commands remain available for explicit record repair. They verify the selected Firebase evidence and append a new ledger entry. Routine deploys can record observed baselines without a separate command.
 
 ## Optional hosted runner
 
-Local releases need no new cloud identity. Optional `workflow_dispatch` uses the same owner-instruction inputs and CLI, without manual environment review. Pre-credential checks require the exact repository numeric IDs, main ref, release workflow, dispatch event and app/environment. Production also checks the owner actor and explicit authorisation input.
+Local releases need no new cloud identity. Optional `workflow_dispatch` uses the same CLI and source checks. Pre-credential checks require the exact repository numeric IDs, main ref, release workflow, dispatch event and app/environment. The workflow records the dispatch actor and uses the configured app/environment identity.
 
 Only if hosted execution is wanted, separately authorise environment-scoped `FIKA_GCP_WORKLOAD_IDENTITY_PROVIDER` and `FIKA_GCP_RELEASE_SERVICE_ACCOUNT`. `fika trust <app> --prod|--staging` generates restricted exact-subject/ref/workflow conditions. Use dedicated least-privilege identities and correct issuer/audience, without broad principalSet bindings. Hosted journals persist for 30 days; the agent restores the original artifact for resume/reconciliation and preserves evidence before expiry. Missing hosted identity does not block the local CLI.
 
@@ -95,4 +87,4 @@ Only if hosted execution is wanted, separately authorise environment-scoped `FIK
 
 Finish/retire only your own completed workspace. `--preserve-generated` moves allowlisted ignored dependencies/build outputs into recovery archives without deleting their contents. `.env`, other unique ignored files, changed HEADs and unpreserved commits block removal. `--archive` separately creates a recovery ref and verified Git bundle for unique clean commits. Ambiguous worktrees, seven existing stashes, recovery archives, rollback refs and unfinished Logistics work remain protected. Bounded cleanup retires only positively redundant unattached local refs after preservation.
 
-CPU lineage baseline: production source `94287ecf98504cc67ba6c09a0de32dcfe8d949da` came from PR #2. Preserve that deployed commit as an ancestor during reconciliation; never squash or cherry-pick away its identity. For each subsequent promotion, compare the actual serving source and release ledger against the candidate rather than relying on this historical SHA. Integration removes a missing-ancestry blocker, not the exact-source CI, staging, owner-authorisation or runtime verification gates.
+CPU lineage baseline: production source `94287ecf98504cc67ba6c09a0de32dcfe8d949da` came from PR #2. Preserve that deployed commit as an ancestor during reconciliation; never squash or cherry-pick away its identity. For each subsequent promotion, compare the actual serving source and release ledger against the candidate rather than relying on this historical SHA. Exact-source CI and runtime verification apply to subsequent deployments.

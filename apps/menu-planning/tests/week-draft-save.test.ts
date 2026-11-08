@@ -63,12 +63,15 @@ test("explicit published working-draft save persists rolling rows only and prese
   assert.deepEqual(afterPublication.publications, beforePublication.publications); assert.deepEqual(afterPublication.events, beforePublication.events);
   assert.equal(beforeRolling.entries[0].itemLabel, "Almonds");
 });
-test("canonical creation is retained, not deleted/recreated, and forged review evidence is rejected", async () => {
-  const dish = await createCanonicalMenuItem({ displayName: "Fixture soup 337", category: "Soup" }, "fixture-actor");
+test("a newly marked Core Salad survives the first save and forged review evidence is rejected", async () => {
+  const dish = await createCanonicalMenuItem({ displayName: "Fixture salad 378", category: "Salad" }, "fixture-actor");
   const source = await getWeek("rolling-week:2099-01-05");
-  const draft = editWeek(source, "create-entry", { id: `${source.week.id}:entry:new-soup`, dayId: source.days[0].id, slot: "SOUP", itemId: dish.canonicalId, itemLabel: dish.displayName });
+  const entryId = `${source.week.id}:entry:new-salad`;
+  const placed = editWeek(source, "create-entry", { id: entryId, dayId: source.days[0].id, slot: "SALAD 1", itemId: dish.canonicalId, itemLabel: dish.displayName });
+  const draft = editWeek(placed, "update-entry", { entryId, patch: { isCoreSalad: true } });
   const request = { weekId: source.week.id, expectedWeekVersion: source.week.version, requestId: "request-create-entry", changes: weekChanges(source, draft) };
   const saved = await saveWeekDraft(request, "person:1", allowed); assert.equal(saved.snapshot.entries[0].id, source.entries[0].id); assert.equal(saved.snapshot.entries[1].itemId, dish.canonicalId); assert.deepEqual(saved.snapshot.entries[1].allergens, {});
+  assert.equal((await getWeek(source.week.id)).entries.find(entry => entry.id === entryId)?.isCoreSalad, true);
   const forged = { ...request, changes: { ...request.changes, updates: [{ entryId: source.entries[0].id, dayId: source.days[0].id, patch: { allergenReview: { by: "fake" } } }] } };
   await assert.rejects(saveWeekDraft(forged, "person:1", allowed), /invalid entries/);
 });

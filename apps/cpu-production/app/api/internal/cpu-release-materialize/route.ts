@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
+import { containArtifactLinks } from "../../../lib/matrix-drive-config";
 import { materializeCommittedCpuRelease } from "../../../../lib/cpu-release-materialization";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +39,7 @@ export async function POST(request: NextRequest) {
     if (!body || typeof body.orderId !== "string" || typeof body.releaseId !== "string") return NextResponse.json({ error: { message: "A bounded CPU release materialization command is required." } }, { status: 422 });
     try {
       const result = await materializeCommittedCpuRelease(request, body.orderId, body.releaseId);
-      return NextResponse.json({ status: result.alreadyMaterialized ? "already_materialized" : "materialized", plan: result.plan });
+      return NextResponse.json({ status: result.alreadyMaterialized ? "already_materialized" : "materialized", plan: containArtifactLinks(result.plan, await stagingDriveAccessBlocked()) });
     } catch (error) {
       return NextResponse.json({ error: { message: error instanceof Error ? error.message : "CPU release materialization failed." } }, { status: Number((error as { status?: number }).status) || 502 });
     }
