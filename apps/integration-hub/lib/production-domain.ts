@@ -1,4 +1,4 @@
-import type { MenuDestination } from "@fika/server-shared/menu-destination";
+import { assertOneOffMenuDestination, oneOffAddressPending, type MenuDestination, type OneOffMenuDestination } from "@fika/server-shared/menu-destination";
 import crypto from "node:crypto";
 import { catalogueProductionConversion } from "@fika/server-shared/hospitality-effective-offering";
 import { bookingNotificationRecord } from "./booking-notifications";
@@ -18,6 +18,7 @@ import { adHocProductionOrderId } from "../../shared/ad-hoc-production-contract"
 import { adaptCpuProductionWorkstreams } from "../../shared/production-workstreams";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import { parseExternalProductionMaterialisation, type ExternalProductionMaterialisation, type MenuOrderMetadata } from "@fika/server-shared/external-production";
+import { deliverKitchenNotesPropagation, kitchenNotesEventId, stageKitchenNotesPropagation } from "./hospitality-kitchen-notes-outbox";
 export type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
 
 
@@ -26,12 +27,12 @@ export type ProductionStatus = "received" | "draft" | "needs_review" | "accepted
 export type ProductionException = { canonicalId: string; severity: "info" | "warning" | "blocking"; status: "open" | "resolved"; description: string; createdAt: string; createdBy: string; resolvedAt?: string; resolvedBy?: string; resolutionNotes?: string; audit: ProductionAuditEvent[] };
 export type ProductionAuditEvent = { action: string; at: string; by: string; previousState?: string; newState?: string; reason?: string; correlationId?: string; causationId?: string; idempotencyKey?: string };
 export type ProductionWorkstream = "sandwiches" | "hospitality" | "delivered_in" | "grab_and_go" | "unassigned";
-export type ProductionLine = { canonicalId: string; sourceBookingLineId: string; sourceMenuItemId?: string; sourceOfferingId?: string; itemName: string; description?: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; actualQuantity?: number; shortfallQuantity?: number; substitution?: string; wasteQuantity?: number; conversionSnapshot?: { quantity: number; unit: string; rule: string }; choices?: unknown[]; servingGuidance?: string; productionInstructions?: string; dietaries: Record<string, unknown>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; approvedAllergenSnapshot?: import("@fika/server-shared/external-production").SourceAllergenSnapshot; status: "pending" | "ready" | "complete" | "exception"; sortOrder: number; exceptions?: string[]; workstream?: ProductionWorkstream } & MenuOrderMetadata;
+export type ProductionLine = { canonicalId: string; sourceBookingLineId: string; sourceMenuItemId?: string; sourceOfferingId?: string; itemName: string; description?: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; actualQuantity?: number; shortfallQuantity?: number; substitution?: string; wasteQuantity?: number; conversionSnapshot?: { quantity: number; unit: string; rule: string }; choices?: unknown[]; servingGuidance?: string; productionInstructions?: string; dietaries: Record<string, unknown>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; approvedAllergenSnapshot?: import("@fika/server-shared/external-production").SourceAllergenSnapshot; isCoreSalad?: boolean; status: "pending" | "ready" | "complete" | "exception"; sortOrder: number; exceptions?: string[]; workstream?: ProductionWorkstream } & MenuOrderMetadata;
 export type ProductionRequirement = { canonicalId: string; entityType: "Production Requirement"; schemaVersion: string; version: number; sourceBookingId: string; sourceBookingRevision: number; sourceQuoteRevisionId: string; productionLocationId?: string; requestedServiceDate: string; serviceWindow: { startTime: string; endTime?: string }; requiredBy: string; status: "draft" | "needs_review" | "accepted" | "cancelled"; sourceSnapshot: { booking: CanonicalBooking; quote: unknown }; createdAt: string; createdBy: string; updatedAt: string; updatedBy: string; audit: ProductionAuditEvent[] };
 export type ProductionOrigin = "hospitality_booking" | "cpu_created" | "legacy_import" | "menu_planning" | "grab_and_go";
 export type ProductionCategory = "delivered_in" | "fine_dining" | "hospitality" | "events" | "grab_and_go" | "other";
 export type ProductionDestinationAddress = { identity: string; label: string; address: string; deliveryInstructions?: string; contact?: string };
-export type ProductionOrder = { canonicalId: string; entityType: "Production Order"; schemaVersion: string; version: number; requirementIds: string[]; sourceBookingId: string; sourceQuoteRevisionId: string; sourceEntityId?: string; sourcePublicationId?: string; sourceVersion?: number; sourceContentHash?: string; sourcePublicationDayId?: string; productionLocationId?: string; productionCategory?: ProductionCategory; requiresDelivery?: boolean; destinationOplocId?: string; destinationLabel?: string; destinationAddress?: ProductionDestinationAddress; destination?: MenuDestination; clientName?: string; serviceType?: string; serviceDate?: string; guestCount?: number; requiredBy: string; serviceWindow?: { startTime: string; endTime?: string }; status: ProductionStatus; /** Local planning projection, kept separate from the governed Production lifecycle. */ workflowStatus?: ProductionStatus; priority: "normal" | "high" | "urgent"; lines: ProductionLine[]; exceptions: ProductionException[]; bookingDietaries?: Record<string, unknown>; bookingNotes?: string; operationalNotes?: string; amendmentNotice?: string; cancellationNotice?: string; cpuDismissedAt?: string; origin: ProductionOrigin; currentRevision: number; createdAt: string; createdBy: string; updatedAt?: string; acceptedAt?: string; startedAt?: string; completedAt?: string; supersededBy?: string; idempotencyKey: string; externalReferences: string[]; audit: ProductionAuditEvent[] };
+export type ProductionOrder = { canonicalId: string; entityType: "Production Order"; schemaVersion: string; version: number; requirementIds: string[]; sourceBookingId: string; sourceQuoteRevisionId: string; sourceEntityId?: string; sourcePublicationId?: string; sourceVersion?: number; sourceContentHash?: string; sourcePublicationDayId?: string; productionLocationId?: string; productionCategory?: ProductionCategory; requiresDelivery?: boolean; destinationOplocId?: string; destinationLabel?: string; destinationAddress?: ProductionDestinationAddress; destination?: MenuDestination; clientName?: string; serviceType?: string; serviceDate?: string; guestCount?: number; requiredBy: string; serviceWindow?: { startTime: string; endTime?: string }; status: ProductionStatus; /** Local planning projection, kept separate from the governed Production lifecycle. */ workflowStatus?: ProductionStatus; priority: "normal" | "high" | "urgent"; lines: ProductionLine[]; exceptions: ProductionException[]; bookingDietaries?: Record<string, unknown>; bookingNotes?: string; kitchenNotes?: string; operationalNotes?: string; amendmentNotice?: string; cancellationNotice?: string; cpuDismissedAt?: string; origin: ProductionOrigin; currentRevision: number; createdAt: string; createdBy: string; updatedAt?: string; acceptedAt?: string; startedAt?: string; completedAt?: string; supersededBy?: string; idempotencyKey: string; externalReferences: string[]; audit: ProductionAuditEvent[] };
 
 const requirements = () => db.collection("fikaProductionRequirements");
 const orders = () => db.collection("fikaProductionOrdersV1");
@@ -164,7 +165,7 @@ export async function createProductionFromApprovedBookingTransaction(actor: Acto
       ? `Booking amended: ${existingBase.guestCount ?? "?"} pax → ${booking.service.guestCount} pax; ${existingBase.lines.map(line => `${line.itemName} ${line.customerQuantity}`).join(", ")} → ${lines.map(line => `${line.itemName} ${line.customerQuantity}`).join(", ")}.`
       : undefined;
     const status: ProductionStatus = existingBase?.status === "amended" ? "needs_review" : exceptions.length ? "needs_review" : "draft";
-    const order: ProductionOrder = { canonicalId: orderId, entityType: "Production Order", schemaVersion: PRODUCTION_SCHEMA_VERSION, version: 1, requirementIds: [requirementId], sourceBookingId: bookingId, sourceQuoteRevisionId: quote.id, productionLocationId: process.env.CPU_PRODUCTION_LOCATION_ID, requiresDelivery: true, destinationOplocId: booking.service.oplocId, destinationLabel: [booking.service.portalSiteLabel, booking.service.roomOrArea || booking.service.deliveryPoint].filter(Boolean).join(" · ") || booking.service.oplocId, clientName: booking.client.companyName, ...(booking.order.eventType ? { serviceType: booking.order.eventType } : {}), serviceDate: booking.service.eventDate, guestCount: booking.service.guestCount, requiredBy: requirement.requiredBy, serviceWindow: requirement.serviceWindow, status, priority: "normal", lines, exceptions, ...(existingBase?.status === "amended" ? { workflowStatus: "amended" as const } : {}), ...(amendmentNotice ? { amendmentNotice, operationalNotes: amendmentNotice } : {}), ...(Object.keys(booking.dietaries || {}).length ? { bookingDietaries: structuredClone(booking.dietaries) } : {}), ...(booking.notes ? { bookingNotes: booking.notes } : {}), origin: "hospitality_booking", currentRevision: 1, createdAt: now, createdBy: actor.uid, idempotencyKey, externalReferences: [], audit: [{ action: "production-order-created", at: now, by: actor.uid, newState: status, reason: amendmentNotice || "Internal Production Order created without external CPU or Calendar side effects.", idempotencyKey }] };
+    const order: ProductionOrder = { canonicalId: orderId, entityType: "Production Order", schemaVersion: PRODUCTION_SCHEMA_VERSION, version: 1, requirementIds: [requirementId], sourceBookingId: bookingId, sourceQuoteRevisionId: quote.id, productionLocationId: process.env.CPU_PRODUCTION_LOCATION_ID, requiresDelivery: true, destinationOplocId: booking.service.oplocId, destinationLabel: [booking.service.portalSiteLabel, booking.service.roomOrArea || booking.service.deliveryPoint].filter(Boolean).join(" · ") || booking.service.oplocId, clientName: booking.client.companyName, ...(booking.order.eventType ? { serviceType: booking.order.eventType } : {}), serviceDate: booking.service.eventDate, guestCount: booking.service.guestCount, requiredBy: requirement.requiredBy, serviceWindow: requirement.serviceWindow, status, priority: "normal", lines, exceptions, ...(existingBase?.status === "amended" ? { workflowStatus: "amended" as const } : {}), ...(amendmentNotice ? { amendmentNotice, operationalNotes: amendmentNotice } : {}), ...(Object.keys(booking.dietaries || {}).length ? { bookingDietaries: structuredClone(booking.dietaries) } : {}), ...(booking.notes ? { bookingNotes: booking.notes } : {}), ...(booking.kitchenNotes ? { kitchenNotes: booking.kitchenNotes } : {}), origin: "hospitality_booking", currentRevision: 1, createdAt: now, createdBy: actor.uid, idempotencyKey, externalReferences: [], audit: [{ action: "production-order-created", at: now, by: actor.uid, newState: status, reason: amendmentNotice || "Internal Production Order created without external CPU or Calendar side effects.", idempotencyKey }] };
     const event = createDomainEvent({ eventType: "production.order.created", sourceAggregateId: order.canonicalId, sourceVersion: order.version, occurredAt: now, correlationId: idempotencyKey, payload: { canonicalId: order.canonicalId, version: order.version, status: order.status, sourceBookingId: order.sourceBookingId, serviceDate: order.serviceDate, productionLocationId: order.productionLocationId, destinationOplocId: order.destinationOplocId, destinationLabel: order.destinationLabel, lineIds: order.lines.map(line => line.canonicalId), productionOrder: order } });
     if (productionOrderRequiresFulfilment(order)) await stageFulfilmentEvent(transaction, event);
     if (existingBase?.status === "amended") transaction.set(baseOrderRef, { supersededBy: orderId }, { merge: true });
@@ -174,6 +175,84 @@ export async function createProductionFromApprovedBookingTransaction(actor: Acto
     stageDomainEvent(transaction, event);
     return { created: true, status: "created" as const, requirement, order };
   });
+}
+
+/** Save internal kitchen instructions without changing commercial evidence or kitchen quantities. */
+export async function saveHospitalityKitchenNotes(actor: Actor, bookingId: string, expectedVersion: number, value: string) {
+  const kitchenNotes = value.trim();
+  if (kitchenNotes.length > 4000) throw Object.assign(new Error("Kitchen notes must be 4,000 characters or fewer."), { status: 422 });
+  const result = await db.runTransaction(async transaction => {
+    const bookingRef = bookings().doc(bookingId);
+    const bookingSnapshot = await transaction.get(bookingRef);
+    if (!bookingSnapshot.exists) throw Object.assign(new Error("Booking was not found."), { status: 404 });
+    const booking = bookingSnapshot.data() as CanonicalBooking;
+    if (booking.version !== expectedVersion) throw Object.assign(new Error("Booking changed elsewhere. Refresh before saving kitchen notes."), { status: 409 });
+    if (booking.lifecycleStatus === "Cancelled") throw Object.assign(new Error("Cancelled bookings cannot receive kitchen notes."), { status: 409 });
+
+    const orderQuery = orders().where("sourceBookingId", "==", bookingId).limit(20);
+    const orderSnapshot = await transaction.get(orderQuery);
+    const activeOrders = orderSnapshot.docs.map(doc => ({ ref: doc.ref, order: doc.data() as ProductionOrder }))
+      .filter(({ order }) => !order.supersededBy && order.status !== "cancelled")
+      .sort((a, b) => (b.order.version - a.order.version) || b.order.createdAt.localeCompare(a.order.createdAt));
+    const order = activeOrders[0];
+    const handedOff = ["Sent to CPU", "Approved", "Completed"].includes(booking.lifecycleStatus);
+    const now = new Date().toISOString();
+    const unchanged = (booking.kitchenNotes || "") === kitchenNotes;
+    if (unchanged && !handedOff) return { booking, propagation: "not_required" as const, unchanged: true, order: undefined, sourceVersion: booking.version };
+    if (unchanged && handedOff && booking.kitchenNotesPropagation?.status !== "pending" && order?.order.kitchenNotes === kitchenNotes) return { booking, propagation: "delivered" as const, unchanged: true, order: undefined, sourceVersion: booking.version };
+    if (unchanged && handedOff && booking.kitchenNotesPropagation?.status === "pending" && !order) return { booking, propagation: "pending" as const, unchanged: true, order: undefined, sourceVersion: booking.kitchenNotesPropagation.sourceVersion };
+    if (unchanged && handedOff && booking.kitchenNotesPropagation?.status === "pending" && order?.order.kitchenNotes === kitchenNotes) {
+      const eventId = kitchenNotesEventId(bookingId, booking.kitchenNotesPropagation.sourceVersion);
+      if (!(await transaction.get(db.collection("fikaHospitalityKitchenNotesOutboxV1").doc(eventId))).exists) stageKitchenNotesPropagation(transaction, bookingId, booking.kitchenNotesPropagation.sourceVersion, order.order, now);
+      return { booking, propagation: "pending" as const, unchanged: true, sourceVersion: booking.kitchenNotesPropagation.sourceVersion, eventId };
+    }
+
+    const nextVersion = booking.version + 1;
+    const pending = handedOff && !order;
+    const nextBooking: CanonicalBooking = {
+      ...booking,
+      kitchenNotes,
+      version: nextVersion,
+      updatedAt: now,
+      updatedBy: actor.uid,
+      ...(handedOff ? { kitchenNotesPropagation: { status: "pending" as const, attemptedAt: now, sourceVersion: nextVersion } } : {}),
+      audit: [...(booking.audit || []), { action: "booking-kitchen-notes-updated", at: now, by: actor.uid, reason: `Kitchen notes ${kitchenNotes ? "updated" : "cleared"}.` }],
+    };
+    let orderForPropagation: ProductionOrder | undefined;
+    if (order) {
+      const prior = order.order;
+      orderForPropagation = (prior.kitchenNotes || "") !== kitchenNotes ? {
+        ...prior,
+        kitchenNotes,
+        version: Number(prior.version || 1) + 1,
+        updatedAt: now,
+        audit: [...(prior.audit || []), { action: "hospitality-kitchen-notes-updated", at: now, by: actor.uid, reason: `Source Booking ${bookingId} v${nextVersion}; notes-only update.`, idempotencyKey: `booking-kitchen-notes:${bookingId}:v${nextVersion}` }],
+      } : prior;
+    }
+    const eventId = handedOff && orderForPropagation ? stageKitchenNotesPropagation(transaction, bookingId, nextVersion, orderForPropagation, now) : undefined;
+    transaction.set(bookingRef, nextBooking);
+    transaction.create(db.collection("fikaBookingAudit").doc(`${bookingId.replace(/[^A-Za-z0-9_-]/g, "_")}:kitchen-notes:v${nextVersion}`), {
+      canonicalId: bookingId, action: "booking-kitchen-notes-updated", at: now, actorId: actor.uid, version: nextVersion,
+      before: booking.kitchenNotes || "", after: kitchenNotes, sourceApplication: "hospitality-booking",
+      ...(order ? { productionOrderId: order.order.canonicalId } : {}), propagation: pending || handedOff ? "pending" : "not_required",
+    });
+    if (orderForPropagation && orderForPropagation !== order?.order) transaction.set(order!.ref, orderForPropagation);
+    return { booking: nextBooking, propagation: pending || handedOff ? "pending" as const : "not_required" as const, unchanged: false, sourceVersion: nextVersion, eventId };
+  });
+  if (result.propagation !== "pending" || !result.eventId) return result;
+  const delivered = await deliverKitchenNotesPropagation(result.eventId);
+  if (delivered?.delivery.status === "delivered") {
+    await db.runTransaction(async transaction => {
+      const ref = bookings().doc(bookingId);
+      const currentSnapshot = await transaction.get(ref);
+      if (!currentSnapshot.exists) return;
+      const current = currentSnapshot.data() as CanonicalBooking;
+      if (current.kitchenNotesPropagation?.sourceVersion !== result.sourceVersion || (current.kitchenNotes || "") !== kitchenNotes) return;
+      transaction.set(ref, { kitchenNotesPropagation: { status: "delivered", attemptedAt: current.kitchenNotesPropagation.attemptedAt, sourceVersion: result.sourceVersion, deliveredAt: new Date().toISOString() } }, { merge: true });
+    });
+    return { ...result, propagation: "delivered" as const };
+  }
+  return { ...result, propagation: "pending" as const };
 }
 
 /**
@@ -440,8 +519,29 @@ export function projectExternalProductionLine(input: ExternalProductionMateriali
     ...(line.menuOrderVersion ? { menuOrderVersion: line.menuOrderVersion } : {}),
     ...(line.slot ? { slot: line.slot } : {}),
     ...(line.canonicalSlotId ? { canonicalSlotId: line.canonicalSlotId, canonicalOrderIndex: line.canonicalOrderIndex } : {}),
+    ...(input.sourceDomain === "menu-planning" && line.isCoreSalad === true && /^SALAD [1-6]$/i.test(line.slot || "") ? { isCoreSalad: true } : {}),
     workstream: line.workstream || (input.sourceDomain === "grab-and-go" ? "grab_and_go" : "delivered_in"),
   };
+}
+
+function productionDestinationAddress(destination: OneOffMenuDestination): ProductionDestinationAddress {
+  const { id, label, address, contact, deliveryInstructions } = destination;
+  return { identity: id, label, address, ...(contact ? { contact } : {}), ...(deliveryInstructions ? { deliveryInstructions } : {}) };
+}
+
+function resolvedExternalDestination(incoming: MenuDestination | undefined, previous: MenuDestination | undefined) {
+  if (incoming?.kind !== "one-off" || !oneOffAddressPending(incoming) || previous?.kind !== "one-off" ||
+      incoming.id !== previous.id || oneOffAddressPending(previous)) return incoming;
+  const { addressStatus: _, ...snapshot } = incoming;
+  return { ...snapshot, address: previous.address };
+}
+
+function menuPublicationRevision(publicationId: string, publicationDayId: string) {
+  if (!publicationDayId.startsWith(`${publicationId}:`)) return undefined;
+  const suffix = publicationDayId.slice(publicationId.length);
+  // Current week publications use :vN:day:I; older day publications use :day:I:vN.
+  const match = /^:v([1-9]\d*):day:\d+$/.exec(suffix) || /^:day:[^:]+:v([1-9]\d*)$/.exec(suffix);
+  return match ? Number(match[1]) : undefined;
 }
 
 /** Converts an upstream production-bound record into the one canonical CPU order. */
@@ -464,8 +564,38 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
     // Menu withdrawal retains the published content version. Cancellation is
     // terminal for that version; only a newer publication may restore work.
     if (previous && input.sourceDomain === "menu-planning" && previous.sourceVersion === input.sourceVersion && previous.status === "cancelled" && status !== "cancelled") return { created: false, duplicate: true, order: previous };
-    if (previous && previous.sourceVersion === input.sourceVersion && previous.sourceContentHash === input.sourceContentHash && previous.status === status) return { created: false, duplicate: true, order: previous };
+    if (previous && previous.sourceVersion === input.sourceVersion && previous.sourceContentHash === input.sourceContentHash && previous.status === status) {
+      // Republishing a week can replace an unchanged day's immutable publication ID
+      // without increasing its content version. Logistics checks this current ID on
+      // the canonical order, so record the newer pointer as an order amendment.
+      const publicationId = input.publicationId;
+      const priorDayId = previous.sourcePublicationDayId;
+      const incomingDayId = input.sourcePublicationDayId;
+      const priorRevision = publicationId && priorDayId ? menuPublicationRevision(publicationId, priorDayId) : undefined;
+      const incomingRevision = publicationId && incomingDayId ? menuPublicationRevision(publicationId, incomingDayId) : undefined;
+      if (input.sourceDomain !== "menu-planning" || status !== "menu_available" || !input.sourceContentHash ||
+          !publicationId || previous.sourcePublicationId !== publicationId || previous.sourceEntityId !== input.sourceEntityId ||
+          previous.serviceDate !== input.serviceDate || !incomingDayId || priorRevision === undefined || incomingRevision === undefined ||
+          incomingRevision <= priorRevision) return { created: false, duplicate: true, order: previous };
+      const now = new Date().toISOString();
+      const order: ProductionOrder = {
+        ...previous, sourcePublicationDayId: incomingDayId, version: previous.version + 1,
+        currentRevision: previous.currentRevision + 1, updatedAt: now,
+        audit: [...previous.audit, { action: "menu-publication-pointer-advanced", at: now, by: actor.uid,
+          previousState: priorDayId, newState: incomingDayId,
+          reason: `Same-content Menu publication revision ${priorRevision} advanced to ${incomingRevision}.` }],
+      };
+      const event = createDomainEvent({ eventType: "production.order.amended", sourceAggregateId: canonicalId,
+        sourceVersion: order.version, occurredAt: now, correlationId: order.idempotencyKey,
+        payload: { canonicalId, version: order.version, status: order.status, productionOrder: order } });
+      const fulfilment = await stageFulfilmentEvent(transaction, event);
+      if (!fulfilment.applied) throw conflict("The current fulfilment requirement could not be updated. Refresh the planning queue.");
+      transaction.set(ref, order);
+      stageDomainEvent(transaction, event);
+      return { created: false, duplicate: false, order };
+    }
     const now = new Date().toISOString();
+    const destination = resolvedExternalDestination(input.destination, previous?.destination);
     const order: ProductionOrder = {
       ...(previous || {}), canonicalId, entityType: "Production Order", schemaVersion: PRODUCTION_SCHEMA_VERSION,
       version: (previous?.version || 0) + 1, currentRevision: (previous?.currentRevision || 0) + 1,
@@ -473,8 +603,8 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
       sourceEntityId: input.sourceEntityId, ...(input.publicationId ? { sourcePublicationId: input.publicationId } : {}), sourceVersion: input.sourceVersion, ...(input.sourceContentHash ? { sourceContentHash: input.sourceContentHash } : {}), ...(input.sourcePublicationDayId ? { sourcePublicationDayId: input.sourcePublicationDayId } : {}),
       productionLocationId: previous?.productionLocationId || CPU_PRODUCTION_LOCATION_ID,
       origin: input.sourceDomain === "grab-and-go" ? "grab_and_go" : "menu_planning", requiresDelivery: true, destinationOplocId: input.destinationOplocId, destinationLabel: input.destinationLabel || input.destinationOplocId,
-      ...(input.destination ? { destination: structuredClone(input.destination) } : {}),
-      ...(input.destination?.kind === "one-off" ? { destinationAddress: { identity: input.destination.id, label: input.destination.label, address: input.destination.address, ...(input.destination.contact ? { contact: input.destination.contact } : {}), ...(input.destination.deliveryInstructions ? { deliveryInstructions: input.destination.deliveryInstructions } : {}) } } : {}),
+      ...(destination ? { destination: structuredClone(destination) } : {}),
+      ...(destination?.kind === "one-off" && !oneOffAddressPending(destination) ? { destinationAddress: productionDestinationAddress(destination) } : {}),
       serviceType: input.sourceDomain === "grab-and-go" ? "Grab & Go" : "Delivered-In menu", serviceDate: input.serviceDate, requiredBy: input.requiredBy || `${input.serviceDate}T00:00`, ...(input.serviceWindow ? { serviceWindow: input.serviceWindow } : input.sourceDomain === "menu-planning" ? {} : { serviceWindow: { startTime: "00:00" } }),
       status, priority: previous?.priority || "normal", lines: input.lines.map((_, index) => projectExternalProductionLine(input, canonicalId, index, status)),
       exceptions: [], createdAt: previous?.createdAt || now, createdBy: previous?.createdBy || actor.uid, idempotencyKey: `materialise:${input.sourceDomain}:${input.sourceEntityId}:${input.destinationOplocId}`, externalReferences: previous?.externalReferences || [], audit: [...(previous?.audit || []), { action: previous ? "external-production-order-amended" : "external-production-order-created", at: now, by: actor.uid, previousState: previous?.status, newState: status, reason: `Materialised from ${input.sourceDomain}.` }],
@@ -484,6 +614,38 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
     transaction.set(ref, order);
     stageDomainEvent(transaction, event);
     return { created: !previous, duplicate: false, order };
+  });
+}
+
+/** Fill a missing routing detail without changing the immutable Menu publication or its version. */
+export async function confirmMenuOneOffProductionAddress(orderId: string, expectedVersion: number, address: string, actorId: string) {
+  address = address.trim();
+  if (!address || address.length > 500) throw Object.assign(new Error("Enter a delivery address of up to 500 characters."), { status: 422 });
+  return db.runTransaction(async transaction => {
+    const ref = orders().doc(stableDocumentId(orderId));
+    const current = (await transaction.get(ref)).data() as ProductionOrder | undefined;
+    const currentDestination = current?.destination;
+    if (!current || current.canonicalId !== orderId || current.origin !== "menu_planning" || currentDestination?.kind !== "one-off" ||
+        current.destinationOplocId !== currentDestination.id || current.supersededBy || current.status === "cancelled" || current.status === "rejected") {
+      throw conflict("This Menu one-off is no longer active. Refresh the planning queue.");
+    }
+    assertOneOffMenuDestination(currentDestination, current.sourceEntityId || "");
+    if (!oneOffAddressPending(currentDestination) && currentDestination.address === address) return current;
+    if (current.version !== expectedVersion || !oneOffAddressPending(currentDestination)) throw conflict("The one-off routing changed. Refresh the planning queue.");
+    const { addressStatus: _, ...snapshot } = currentDestination;
+    const destination = { ...snapshot, address };
+    const now = new Date().toISOString();
+    const next: ProductionOrder = {
+      ...current, destination, destinationAddress: productionDestinationAddress(destination),
+      version: current.version + 1, currentRevision: current.currentRevision + 1, updatedAt: now,
+      audit: [...current.audit, { action: "logistics-one-off-address-confirmed", at: now, by: actorId, previousState: "pending", newState: "confirmed" }],
+    };
+    const event = createDomainEvent({ eventType: "production.order.amended", sourceAggregateId: orderId, sourceVersion: next.version, occurredAt: now, payload: { canonicalId: orderId, version: next.version, status: next.status, actorId, productionOrder: next } });
+    const fulfilment = await stageFulfilmentEvent(transaction, event);
+    if (!fulfilment.applied) throw conflict("The current fulfilment requirement could not be updated. Refresh the planning queue.");
+    transaction.set(ref, next);
+    stageDomainEvent(transaction, event);
+    return next;
   });
 }
 

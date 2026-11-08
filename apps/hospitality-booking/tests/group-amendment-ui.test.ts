@@ -27,3 +27,20 @@ test("group form saves once, includes every service version, and never offers in
   assert.doesNotMatch(source, /production-handoff|window\.(alert|prompt|confirm)/);
   assert.match(source, /lock.current/); assert.match(source, /disabled=\{saving\}/);
 });
+
+test("internal kitchen-note editors direct allergen review to the formal matrix", () => {
+  const dashboard = readFileSync(new URL("../app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8");
+  const grouped = readFileSync(new URL("../app/ui/GroupAmendmentEditor.tsx", import.meta.url), "utf8");
+  const detail = dashboard.slice(dashboard.indexOf("function BookingDetail("), dashboard.indexOf("function KitchenNotesEditor("));
+  const notesEditor = dashboard.slice(dashboard.indexOf("function KitchenNotesEditor("), dashboard.indexOf("function CalendarView("));
+  const amendment = dashboard.slice(dashboard.indexOf("function BookingAmendmentPanel("), dashboard.indexOf("function DashboardSettingsModal("));
+  const guidance = "Kitchen notes do not confirm allergen status or clearance.";
+  const review = "complete the formal CPU allergen matrix review.";
+  assert.match(detail, /<KitchenNotesEditor booking=\{booking\}/);
+  assert.match(amendment, /<KitchenNotesEditor booking=\{booking\}/);
+  for (const surface of [notesEditor, grouped]) {
+    assert.ok(surface.includes(guidance));
+    assert.ok(surface.includes(review));
+    assert.ok(surface.includes("not included on customer quotes"));
+  }
+});

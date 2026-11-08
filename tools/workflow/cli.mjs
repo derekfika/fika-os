@@ -2,21 +2,22 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
-import { APPS, REPO, MAIN_CHECK, affected, risk, target, digest } from './policy.mjs';
-import { git, root, command, ghApi, save, stateDir, jsonFile } from './runtime.mjs';
-import { createWorkspace, checkWorkspace, finishWorkspace, retireWorkspace, reconcileWorkspace, workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
-import { bootstrap, deploy, reconcile, reconcileServingBaseline, planRelease, successfulValidation } from './releases.mjs';
+import { APPS, REPO, MAIN_CHECK, affected, target, supportedEnvironments } from './policy.mjs';
+import { git, command, ghApi, save, jsonFile } from './runtime.mjs';
+import { workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
+import { checkSourceWorkspace, completeSourceWorkspace, createSourceWorkspace, devSourceWorkspace, integrateSourceWorkspace, sourceWorkspaceStatus } from './source-workspaces.mjs';
+import { migrateSourceHistory } from './source-migration.mjs';
+import { bootstrap, deploy, reconcile, reconcileServingBaseline } from './releases.mjs';
 import { hostedTrust, assertHostedContext } from './hosted.mjs';
 import { assertChangelogs, assertChangelogContent } from './changelog.mjs';
-import { governedOperation } from './workspace-state.mjs';
-import { completeWorkspace, previewReleaseAll, releaseAllWorkspaces, previewSweep, sweepWorkspaces, workspaceStatus, publishWorkspaceStatus, recoverValidationOperation, recoverDevOperation } from './workspace-admin.mjs';
+import { governedReleaseOperation } from './workspace-state.mjs';
+import { recoverValidationOperation, recoverDevOperation, recoverDeployOperation } from './workspace-admin.mjs';
 import { installWorkspaceFences } from './workspace-fencing.mjs';
-import { recoverStackedLease } from './workspace-lease-recovery.mjs';
 
 export function parse(args) {
   const positional = []; const options = {};
-  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'owner-approved', 'cosmetic-only', 'standard', 'preserve']);
-  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement', 'confirm', 'pr', 'lease-id', 'predecessor', 'predecessor-lease-id']);
+  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'preserve']);
+  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement', 'confirm', 'pr', 'port', 'lease-id', 'predecessor', 'predecessor-lease-id']);
   for (let i = 0; i < args.length; i++) {
     if (!args[i].startsWith('--')) { positional.push(args[i]); continue; }
     const key = args[i].slice(2); if (Object.hasOwn(options, key)) throw Error(`Duplicate --${key}`);
@@ -60,7 +61,7 @@ async function main() {
   const { positional: [verb, arg, name], options } = parse(process.argv.slice(2));
   let result;
   if (verb === 'affected') {
-    const paths = changePaths(options); result = { ...changeScope(paths, options), lane: risk(paths), paths };
+    const paths = changePaths(options); result = { ...changeScope(paths, options), paths };
     if (options.output) writeFileSync(options.output, JSON.stringify(result));
   } else if (verb === 'validate') {
     const paths = changePaths(options); const scope = changeScope(paths, options);
@@ -78,48 +79,28 @@ async function main() {
   } else if (verb === 'changelog' && arg === 'check') {
     result = checkChangelogEntries(changePaths(options), options);
   } else if (verb === 'workspace') {
-    if (arg === 'create') result = createWorkspace(name, options);
-    else if (arg === 'check') result = checkWorkspace(name, options);
-    else if (arg === 'finish') result = finishWorkspace(name, options);
-    else if (arg === 'reconcile') result = reconcileWorkspace(name, options);
-    else if (arg === 'retire') result = retireWorkspace(name, options);
-    else if (arg === 'complete') {
-      result = completeWorkspace(name, options);
-      try { result.publication = publishWorkspaceStatus({ execute: true }); }
-      catch (error) { result.publication = { outcome: 'pending', reason: error.message.split('\n')[0], retry: 'fika workspace publish --execute' }; }
-    }
-    else if (arg === 'release-all') result = options.execute ? releaseAllWorkspaces(options) : previewReleaseAll();
-    else if (arg === 'sweep') result = options.execute ? sweepWorkspaces(options) : previewSweep();
-    else if (arg === 'status') result = workspaceStatus();
-    else if (arg === 'publish') result = publishWorkspaceStatus(options);
+    if (arg === 'create') result = createSourceWorkspace(name, options);
+    else if (arg === 'check') result = checkSourceWorkspace(name);
+    else if (arg === 'complete') result = completeSourceWorkspace(name, options);
+    else if (arg === 'status' || arg === 'list') result = sourceWorkspaceStatus();
+    else if (arg === 'history') result = workspaceRecords();
+    else if (arg === 'migrate') result = migrateSourceHistory(options);
     else if (arg === 'install-fences') result = installWorkspaceFences();
     else if (arg === 'recover-validation') result = recoverValidationOperation(name,options);
     else if (arg === 'recover-dev') result = await recoverDevOperation(name,options);
-    else if (arg === 'recover-stacked') result = recoverStackedLease(name, options);
-    else if (arg === 'list') result = workspaceRecords();
-    else throw Error('workspace create|check|reconcile|finish|retire|complete <name> --owner <task>; recover-stacked <name> --owner <owner> --lease-id <id> --predecessor <retired-task> --predecessor-lease-id <id> --head <sha> --pr <number> --scope <paths> --reason <reason> [--execute --approve-hash <hash>]; status|publish|release-all|sweep.');
+    else if (arg === 'recover-deploy') result = recoverDeployOperation(name, options);
+    else throw Error('workspace create|check|complete <name>; status|list|history|migrate|install-fences; recover-validation|recover-dev|recover-deploy <operation-id>. Legacy lease mutations are retired.');
   } else if (verb === 'integrate') {
-    const lease = workspaceRecords().find(r => r.name === options.workspace && r.owner === options.owner && r.state === 'active');
-    if (!lease || !/^\d+$/.test(options.pr || '')) throw Error('Integration requires an active --workspace, --owner and --pr');
-    checkWorkspace(lease.name, options);
-    const sha = command('git', ['rev-parse', 'HEAD'], { cwd: lease.directory });
-    const pr = ghApi(`repos/${REPO}/pulls/${options.pr}`);
-    if (pr.head.sha !== sha || pr.head.ref !== lease.branch || pr.base.ref !== 'main' || pr.state !== 'open') throw Error('PR does not match the active workspace branch and exact final SHA');
-    const validation=successfulValidation(sha);
-    if (command('git', ['status', '--porcelain'], { cwd: lease.directory }) || command('git', ['rev-parse','HEAD'], {cwd:lease.directory})!==sha) throw Error('Workspace changed during integration checks');
-    command('gh', ['pr', 'merge', options.pr, '--repo', REPO, '--merge', '--match-head-commit', sha]);
-    result = { pr: pr.html_url, sourceSha: sha, validation, merged: true, branchPreserved: true };
+    result = integrateSourceWorkspace(options.workspace, options.pr);
   } else if (verb === 'dev') {
-    const lease = workspaceRecords().find(x=>x.name===options.workspace && x.owner===options.owner && x.state==='active');
-    if (!lease || !APPS[arg] || !lease.scopes.some(s=>s===APPS[arg].path || s.startsWith(`${APPS[arg].path}/`))) throw Error('dev requires the active workspace owner and app scope');
-    command('npm',['--prefix',APPS[arg].path,'run','dev','--','--port',String(lease.ports[arg])],{cwd:lease.directory,env:{...process.env,FIKA_RUNTIME_MODE:'local'},stdio:['inherit','inherit','inherit']});
-    result={stopped:true};
+    if (!Object.hasOwn(APPS, arg)) throw Error('Select a supported app');
+    result = devSourceWorkspace(options.workspace, APPS[arg], options.port);
   } else if (verb === 'cleanup') {
     if (options.execute) result = applyCleanup(jsonFile(options.file), options['approve-hash']);
     else { git('fetch', 'origin'); result = cleanupPlan(); if (options.output) save(options.output, result); }
   } else if (verb === 'bootstrap') {
     git('fetch', 'origin'); result = [];
-    for (const app of arg ? [arg] : Object.keys(APPS)) for (const env of ['staging', 'prod']) result.push(await bootstrap(target(app, env), options));
+    for (const app of arg ? [arg] : Object.keys(APPS)) for (const env of supportedEnvironments(app)) result.push(await bootstrap(target(app, env), options));
     if (options.output) save(options.output, result);
   } else if (verb === 'deploy' || verb === 'rollback' || verb === 'reconcile') {
     if (!options.staging && !options.prod) throw Error('Specify --staging or --prod');
@@ -134,13 +115,13 @@ async function main() {
     const environment = options.prod ? 'prod' : 'staging';
     result = verb === 'trust' ? hostedTrust(arg, environment) : assertHostedContext(process.env, target(arg, environment));
   } else if (verb === 'protect') {
-    const branches = ['main', ...Object.keys(APPS).flatMap(app => ['staging', 'prod'].map(env => target(app, env).branch))];
+    const branches = ['main', ...Object.keys(APPS).flatMap(app => supportedEnvironments(app).map(env => target(app, env).branch))];
     result = branches.map(branch => ({ branch, policy: protection(branch !== 'main') }));
     if (options.execute) {
-      // Preserve reviewed/staged source ancestry; squash/rebase would invalidate exact-source promotion evidence.
+      // Preserve reviewed source ancestry and exact-head integration evidence.
       ghApi(`repos/${REPO}`, 'PATCH', { allow_merge_commit: true, allow_squash_merge: false, allow_rebase_merge: false, delete_branch_on_merge: false });
       for (const item of result) ghApi(`repos/${REPO}/branches/${encodeURIComponent(item.branch)}/protection`, 'PUT', item.policy);
-      for (const app of Object.keys(APPS)) for (const env of ['staging', 'prod']) {
+      for (const app of Object.keys(APPS)) for (const env of supportedEnvironments(app)) {
         const environment = `${env}-${app}`;
         ghApi(`repos/${REPO}/environments/${encodeURIComponent(environment)}`, 'PUT', {
           reviewers: [], prevent_self_review: false,
@@ -153,13 +134,28 @@ async function main() {
     }
     if (options.output) save(options.output, { applied: Boolean(options.execute), protections: result });
   } else {
-    result = { usage: ['fika workspace create <task> --owner <agent> --scope apps/cpu-production', 'fika workspace reconcile <old> --owner <agent> --replacement <new> [--dry-run|--execute]', 'fika workspace retire <task> --owner <agent> [--preserve-generated] [--archive]', 'fika affected --base origin/main', 'fika validate --base origin/main', 'fika deploy cpu --staging [--execute]', 'fika deploy cpu --prod [--execute --owner-approved --reason <owner release instruction>]', 'fika rollback cpu --prod [--execute --owner-approved --reason <owner rollback instruction>]', 'fika reconcile cpu --staging|--prod [--resolution abandon|complete --rollout <ID> --reason <text> --execute]', 'fika reconcile-serving-baseline hub --staging --sha <exact SHA> --rollout <build ID> --reason <owner instruction> [--execute]', 'fika cleanup --output <plan.json>', 'fika cleanup --execute --file <plan.json> --approve-hash <hash>'], safety: 'Workspace reconciliation preserves the original checkout and checksummed recovery journal, transfers only leased dirty changes to current origin/main, and commits the ownership transition under the workspace lock. Dry run is default; --execute applies. Owner gives ordinary language instructions; agent pins exact source, CI and deployment safeguards remain mandatory.' };
+    result = { usage: [
+      'fika workspace create <task> --owner <agent> [--scope <advisory paths>]',
+      'fika workspace check <task>',
+      'fika workspace complete <task> --owner <agent> [--preserve --reason <why>]',
+      'fika workspace history|status|migrate',
+      'fika dev cpu --workspace <task> --port <unused port>',
+      'fika affected --base origin/main',
+      'fika validate --base origin/main',
+      'fika integrate --workspace <task> --pr <number>',
+      'fika deploy cpu --staging [--sha <merged SHA>] [--execute]',
+      'fika deploy cpu --prod [--sha <merged SHA>] [--execute] [--reason <note>]',
+      'fika rollback cpu --prod [--execute] [--reason <note>]',
+      'fika reconcile cpu --staging|--prod [--resolution abandon|complete --rollout <ID> --execute] [--reason <note>]',
+      'fika reconcile-serving-baseline hub --staging --sha <exact SHA> --rollout <rollout ID> [--execute] [--reason <note>]',
+      'fika cleanup --output <plan.json>',
+      'fika cleanup --execute --file <plan.json> --approve-hash <hash>',
+    ] };
   }
   console.log(JSON.stringify(result, null, 2));
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const verb = process.argv[2];
-  const { options } = parse(process.argv.slice(2));
-  const action = ['validate','integrate','dev','deploy','rollback','reconcile','reconcile-serving-baseline','bootstrap'].includes(verb) ? () => governedOperation(verb, main, options) : main;
+  const action = ['deploy','rollback','reconcile','reconcile-serving-baseline','bootstrap'].includes(verb) ? () => governedReleaseOperation(verb, main) : main;
   action().catch(error => { console.error(`FIKA HOLD: ${error.message}`); process.exitCode = 1; });
 }

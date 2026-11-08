@@ -273,28 +273,25 @@ test('deployment adapters have no separate lock, lease or pending-intent mechani
     assert.ok(!/openSync\([^)]*['"]wx['"]|\.lock\b|flag:\s*['"]wx['"]|lease|mutex|pendingIntent/i.test(code), `${f} must not create locks or leases`);
   }
   const server=readFileSync(path.join(here,'server.mjs'),'utf8');
-  assert.match(server,/workspace-admin\.mjs/);assert.match(server,/workspace-state\.mjs/);
+  assert.match(server,/source-workspaces\.mjs/);assert.match(server,/workspace-state\.mjs/);
   assert.ok(!/openSync|mkdirSync|workspaces\.json|\.lock'/.test(server),'server delegates registry/concurrency to the governed implementation');
 });
 
-test('workspace dashboard uses admin identity, token, origin, exact confirmation, fresh preview and shared audit',async()=>{
+test('workspace dashboard exposes authenticated advisory inventory and refuses historical mutations',async()=>{
   const f=fixture();const {file,dir}=copyConfig();
-  f.within(()=>createWorkspace('dashboard-task',{owner:'fixture-owner',scope:'src'}));
-  let isAdmin=false;
-  const dash=createDashboard({port:0,root:f.repo,config:file,history:path.join(dir,'history.jsonl'),read:async()=>{throw Error('Cloud is not used for workspace management');},deps:{workspaces:{authorize:()=>({login:'fixture-owner',administrator:isAdmin})}}});
+  const record=f.within(()=>createWorkspace('dashboard-task',{owner:'fixture-owner',scope:'src'}));
+  const dash=createDashboard({port:0,root:f.repo,config:file,history:path.join(dir,'history.jsonl'),read:async()=>{throw Error('Cloud is not used for worktree inventory');}});
   const port=await dash.listen();const base=`http://127.0.0.1:${port}`;
-  const post=(suffix,body={},extra={})=>fetch(`${base}/api/workspaces/${suffix}`,{method:'POST',headers:{'content-type':'application/json','x-dashboard-token':dash.token,origin:base,...extra},body:JSON.stringify(body)});
   try{
-    assert.equal((await fetch(`${base}/api/workspaces`)).status,403);
-    assert.equal((await post('release-all/preview')).status,400,'non-administrator cannot preview');isAdmin=true;
-    assert.equal((await post('release-all/preview',{}, {'x-dashboard-token':'wrong'})).status,403);
-    assert.equal((await post('release-all/preview',{}, {origin:'https://evil.example'})).status,403);
-    assert.equal((await post('release-all/preview',{}, {'sec-fetch-site':'cross-site'})).status,403);
-    assert.equal((await post('release-all/preview',{}, {origin:''})).status,403);
-    const plan=await (await post('release-all/preview')).json();assert.equal(plan.eligibleCount,1);
-    assert.equal((await post('release-all/execute',{'approve-hash':plan.planHash,confirm:'yes',reason:'Owner recovery'})).status,400);
-    const result=await (await post('release-all/execute',{'approve-hash':plan.planHash,confirm:'RELEASE ALL LEASES',reason:'Owner approved fixture recovery'})).json();assert.equal(result.released.length,1);
-    assert.equal(f.within(()=>workspaceRecords()[0].state),'revoked');
-    const page=await(await fetch(base)).text();assert.match(page,/<dialog[^>]+workspace-dialog/);assert.match(page,/Type RELEASE ALL LEASES/);assert.match(page,/workspace-reason/);assert.ok(page.includes('Preview safe cleanup'));
+    assert.equal((await fetch(`${base}/api/workspaces`,{headers:{connection:'close'}})).status,403);
+    const headers={'x-dashboard-token':dash.token,connection:'close'};
+    const inventory=await (await fetch(`${base}/api/workspaces`,{headers})).json();
+    assert.deepEqual(inventory.entries,[{name:record.name,branch:record.branch,head:record.baseline,owner:null,protected:false}]);
+    for (const route of ['release-all/preview','release-all/execute','sweep/execute']) {
+      assert.equal((await fetch(`${base}/api/workspaces/${route}`,{method:'POST',headers:{...headers,origin:base},body:'{}'})).status,404);
+    }
+    assert.equal(f.within(()=>workspaceRecords()[0].state),'active');
+    const page=await(await fetch(base,{headers:{connection:'close'}})).text();
+    assert.match(page,/Load task worktrees/);assert.doesNotMatch(page,/RELEASE ALL LEASES/);
   }finally{await dash.close();f.dispose();}
 });

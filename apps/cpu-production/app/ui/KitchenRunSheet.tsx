@@ -4,16 +4,12 @@ import type {
   ProductionLine,
   ProductionOrder,
 } from "../../lib/production-types";
-import {
-  cpuDestinationLabel,
-  cpuSourceLabel,
-  cpuServiceWindow,
-} from "../../lib/production-presentation";
+import { cpuDestinationLabel, cpuServiceWindow } from "../../lib/production-presentation";
 import {
   CANONICAL_ALLERGEN_COLUMNS,
   normaliseOperationalAllergens,
 } from "../../../shared/allergen-contract";
-import { collectionOrders, collectionQuantity, collectionDate, collectionTime } from "./kitchen-print";
+import { collectionOrders, collectionQuantity, collectionQuantityHeading, collectionDate, collectionDetails, isCoreSaladLine } from "./run-sheet-presentation";
 import { RunSheetPrintDialog } from "./RunSheetPrintDialog";
 import { runSheetMenuSections } from "../../lib/menu-run-sheet-order";
 export type PackingView = {
@@ -60,34 +56,28 @@ export function CollectionCard({
     (!snapshot.allergenEvidenceStatus ||
       snapshot.allergenEvidenceStatus === "confirmed");
   const allergens = normaliseOperationalAllergens(snapshot?.allergens);
+  const details = collectionDetails(order);
   return (
     <article
       className="kitchen-collection"
       aria-label={cpuDestinationLabel(order) + " collection"}
     >
-      <header>
-        <div>
-          <h3>{cpuDestinationLabel(order)}</h3>
-          <p>
-            <strong>
-              {collectionDate(order)} · {collectionTime(order)}
-            </strong>
-          </p>
-          <p className="kitchen-meta">
-            {[
-              cpuSourceLabel(order),
-              order.serviceType,
-              order.sourcePublicationDayId ||
-                order.sourceEntityId ||
-                order.sourceBookingId,
-              order.sourceVersion !== undefined
-                ? "v" + order.sourceVersion
-                : "",
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
+      <header className="kitchen-sheet-header">
+        <div className="kitchen-sheet-title">
+          <div>
+            <small>FIKA · CPU PRODUCTION RUN SHEET</small>
+            <h3>{cpuDestinationLabel(order)}</h3>
+          </div>
+          <strong>{collectionDate(order)}</strong>
         </div>
+        {(details.client || details.event) && <p className="kitchen-event">{[details.client, details.event].filter(Boolean).join(" · ")}</p>}
+        <dl className="kitchen-sheet-details">
+          <div><dt>Service type</dt><dd>{details.service}</dd></div>
+          <div><dt>Ready By</dt><dd>{details.readyBy}</dd></div>
+          <div><dt>Collection Time</dt><dd>{details.collection}</dd></div>
+          <div><dt>Order ref</dt><dd>{details.reference}</dd></div>
+          {details.serviceWindow && details.serviceWindow !== "TBC" && <div><dt>Service / delivery window</dt><dd>{details.serviceWindow}</dd></div>}
+        </dl>
       </header>
       <p className="kitchen-progress" role="status">
         {inactive
@@ -121,13 +111,14 @@ export function CollectionCard({
         {runSheetMenuSections(order).map((section) => (
           <section className="kitchen-menu-section" key={section.id} aria-label={section.label}>
             <h4>{section.label}</h4>
+            <div className="kitchen-dish-columns" aria-hidden="true"><span>Pack</span><span>Category</span><span>Dish name</span><span>{collectionQuantityHeading(order)}</span></div>
             <ul className="kitchen-dishes">
         {section.lines.map(({ line, slotLabel }) => {
           const saved = packing?.view?.lines.find(
             (x) => x.lineId === line.canonicalId,
           );
           return (
-            <li key={line.canonicalId}>
+            <li key={line.canonicalId} className={isCoreSaladLine(line) ? "kitchen-core-salad" : undefined}>
               <label className="kitchen-check">
                 <input
                   type="checkbox"
@@ -139,8 +130,8 @@ export function CollectionCard({
                 />
                 <span className="sr-only">Packed: {line.itemName}</span>
               </label>
-              <div>
-                {slotLabel && <span className="kitchen-slot-label">{slotLabel}</span>}
+              <span className="kitchen-category">{slotLabel || "—"}</span>
+              <div className="kitchen-dish-cell">
                 <button
                   type="button"
                   className="kitchen-dish-name"
@@ -151,6 +142,7 @@ export function CollectionCard({
                 >
                   {line.itemName}
                 </button>
+                {isCoreSaladLine(line) && <span className="kitchen-core-salad-label" aria-label="Core Salad">CORE</span>}
                 {saved?.changed && (
                   <small className="kitchen-warning">
                     Changed since packing — check again

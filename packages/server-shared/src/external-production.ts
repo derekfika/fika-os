@@ -39,6 +39,8 @@ export type ExternalProductionMaterialisation = {
     slot?: string;
     canonicalSlotId?: string;
     canonicalOrderIndex?: number;
+    /** Manual presentation marker on the specific published placement; legacy lines omit it. */
+    isCoreSalad?: boolean;
     approvedAllergenSnapshot?: {
       allergens: Record<string, string>;
       allergenReview?: { status: "confirmed"; semantics: 2 | 3; confirmedBy: string; confirmedAt: string; statement: "recipe-ingredients-allergens-verified"; inputFingerprint: string };
@@ -79,7 +81,7 @@ export const externalProductionMaterialisationInput = z.object({
   destinationOplocId: z.string().trim().min(1),
   destination: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("governed"), id: z.string().min(1), label: z.string().min(1) }).strict(),
-    z.object({ kind: z.literal("one-off"), id: z.string().min(1), sourceDayId: z.string().min(1), label: z.string().trim().min(1), address: z.string().trim().min(1), contact: z.string().optional(), deliveryInstructions: z.string().optional() }).strict(),
+    z.object({ kind: z.literal("one-off"), id: z.string().min(1), sourceDayId: z.string().min(1), label: z.string().trim().min(1), address: z.string().trim(), addressStatus: z.literal("pending").optional(), contact: z.string().optional(), deliveryInstructions: z.string().optional() }).strict(),
   ]).optional(),
   destinationLabel: z.string().optional(),
   serviceDate: z.string(),
@@ -97,10 +99,14 @@ export const externalProductionMaterialisationInput = z.object({
     slot: z.string().trim().min(1).max(160).optional(),
     canonicalSlotId: z.string().trim().min(1).max(160).optional(),
     canonicalOrderIndex: z.number().int().nonnegative().optional(),
+    isCoreSalad: z.boolean().optional(),
     approvedAllergenSnapshot: approvedAllergenSnapshotSchema.optional(),
   })).min(1),
 }).strict().superRefine((input, context) => {
   input.lines.forEach((line, index) => {
+    if (line.isCoreSalad === true && (input.sourceDomain !== "menu-planning" || !/^SALAD [1-6]$/i.test(line.slot || ""))) {
+      context.addIssue({ code: "custom", message: "Core Salad metadata is valid only for a Menu Planning salad placement.", path: ["lines", index, "isCoreSalad"] });
+    }
     if (line.canonicalSlotId && (!line.menuOrderVersion || !line.slot || line.canonicalOrderIndex === undefined)) {
       context.addIssue({ code: "custom", message: "Canonical menu slot metadata requires its version, original slot label, and order index.", path: ["lines", index, "canonicalSlotId"] });
     }

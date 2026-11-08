@@ -1,5 +1,44 @@
 import { NextResponse } from "next/server";
-import { createBeverage, listBeverages, setLifecycle, recordApproval, createVersion, updateVersion } from "@/lib/store";
-export async function GET(){return NextResponse.json({records:listBeverages()});}
-export async function POST(request:Request){const body=await request.json() as {name?:string;description?:string;beverageType?:string}; if(!body.name?.trim()||!body.description?.trim()) return NextResponse.json({error:"Name and description are required."},{status:400}); return NextResponse.json({record:createBeverage({name:body.name.trim(),description:body.description.trim(),beverageType:body.beverageType?.trim()||"Signature drink"})},{status:201});}
-export async function PATCH(request:Request){const body=await request.json() as {id?:string;versionId?:string;lifecycle?:any;action?:"approval"|"version"|"updateVersion";kind?:"operational"|"brand";decision?:any;actorRole?:string;notes?:string;recipeNotes?:string;method?:string;ingredients?:any[];equipment?:string[]}; if(!body.id) return NextResponse.json({error:"Beverage ID is required."},{status:400}); try { if(body.action==="approval") { if(!body.kind||!body.decision) throw new Error("Approval type and decision are required."); return NextResponse.json({record:recordApproval(body.id,body.kind,body.decision,body.actorRole||"Administrator",body.notes)}); } if(body.action==="version") return NextResponse.json({record:createVersion(body.id)}); if(body.action==="updateVersion") { if(!body.versionId||!Array.isArray(body.ingredients)||!body.recipeNotes?.trim()||!body.method?.trim()) throw new Error("Recipe, method and version ingredients are required."); return NextResponse.json({record:updateVersion(body.id,body.versionId,{recipeNotes:body.recipeNotes.trim(),method:body.method.trim(),ingredients:body.ingredients,equipment:body.equipment??[]})}); } if(!body.lifecycle) throw new Error("Lifecycle is required."); return NextResponse.json({record:setLifecycle(body.id,body.lifecycle)}); } catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Unable to update beverage."},{status:422});}}
+import { approvalDecisionSchema, approvalKindSchema, beverageRecordSchema, classificationSchema, lifecycleSchema } from "@/lib/contracts";
+import { beverageError, requireLocalBeverageActor } from "@/lib/runtime";
+import { createBeverage, createVersion, listBeverages, recordApproval, setLifecycle, updateBeverage, updateVersion } from "@/lib/store";
+
+export const runtime = "nodejs";
+const keyFor = (request: Request) => request.headers.get("idempotency-key") || "";
+const expected = (body: Record<string, unknown>) => typeof body.expectedVersion === "number" ? body.expectedVersion : -1;
+
+export async function GET(request: Request) {
+  try { requireLocalBeverageActor(request, "View"); return NextResponse.json({ records: await listBeverages() }); }
+  catch (error) { const result = beverageError(error); return NextResponse.json(result.body, { status: result.status }); }
+}
+
+export async function POST(request: Request) {
+  try {
+    const actor = requireLocalBeverageActor(request, "Contribute"); const body = await request.json();
+    const created = await createBeverage({ name: body.name, description: body.description, beverageType: body.beverageType || "Signature drink", classification: classificationSchema.parse(body.classification || "draft_concept") }, actor, expected(body), keyFor(request));
+    return NextResponse.json({ record: created }, { status: 201 });
+  } catch (error) { const result = beverageError(error); return NextResponse.json(result.body, { status: result.status }); }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const id = beverageRecordSchema.shape.id.parse(body.id);
+    if (body.action !== undefined && !["approval", "version", "updateVersion", "update", "lifecycle"].includes(body.action)) {
+      throw Object.assign(new Error("Choose a supported Beverage command."), { status: 400, code: "BEVERAGE_COMMAND_INVALID" });
+    }
+    const action = body.action === "approval" ? "Approve" : body.action === "version" || body.action === "updateVersion" || body.action === "update" ? "Contribute" : "Manage";
+    const actor = requireLocalBeverageActor(request, action); const version = expected(body); const key = keyFor(request);
+    if (body.action === "approval") {
+      const record = await recordApproval(id, approvalKindSchema.parse(body.kind), approvalDecisionSchema.parse(body.decision), actor, version, key, body.notes);
+      return NextResponse.json({ record });
+    }
+    if (body.action === "version") return NextResponse.json({ record: await createVersion(id, actor, version, key) });
+    if (body.action === "updateVersion") {
+      if (!body.versionId || !Array.isArray(body.ingredients) || !Array.isArray(body.equipment)) throw Object.assign(new Error("Recipe ingredients and equipment are required."), { status: 400, code: "BEVERAGE_RECIPE_REQUIRED" });
+      return NextResponse.json({ record: await updateVersion(id, body.versionId, { recipeNotes: body.recipeNotes || "", method: body.method || "", ingredients: body.ingredients, equipment: body.equipment, sellingPriceExVat: body.sellingPriceExVat }, actor, version, key) });
+    }
+    if (body.action === "update") return NextResponse.json({ record: await updateBeverage(id, body.patch || {}, actor, version, key) });
+    return NextResponse.json({ record: await setLifecycle(id, lifecycleSchema.parse(body.lifecycle), actor, version, key) });
+  } catch (error) { const result = beverageError(error); return NextResponse.json(result.body, { status: result.status }); }
+}

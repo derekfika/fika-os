@@ -1,73 +1,12 @@
-import type {
-  ProductionLine,
-  ProductionOrder,
-} from "../../lib/production-types";
 import type { ProductionTotalsCategory } from "../../lib/production-day";
-import {
-  cpuDestinationLabel,
-  cpuServiceWindow,
-  cpuSourceLabel,
-} from "../../lib/production-presentation";
-import { orderedQuantityLabel } from "../../lib/ordered-quantity";
-import { runSheetMenuSections } from "../../lib/menu-run-sheet-order";
-export function collectionOrders(orders: ProductionOrder[]) {
-  const unique = new Map<string, ProductionOrder>();
-  for (const order of orders)
-    if (!unique.has(order.canonicalId) || unique.get(order.canonicalId)!.version < order.version)
-      unique.set(order.canonicalId, order);
-  return [...unique.values()].sort(
-    (a, b) => a.requiredBy.localeCompare(b.requiredBy) || a.canonicalId.localeCompare(b.canonicalId),
-  );
-}
-export function collectionQuantity(line: ProductionLine) {
-  return orderedQuantityLabel(line);
-}
+import { escapePrintHtml as escape } from "./day-production-print";
+import { addStagingPrintWatermark } from "../../lib/staging-print-watermark";
 
-export function collectionTime(order: ProductionOrder) {
-  if (
-    order.serviceWindow?.startTime &&
-    order.serviceWindow.startTime !== "00:00"
-  )
-    return cpuServiceWindow(order);
-  const date = new Date(order.requiredBy);
-  return Number.isFinite(date.getTime()) && !order.requiredBy.includes("T00:00")
-    ? new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Europe/London",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(date)
-    : "Time TBC";
-}
-export function collectionDate(order: ProductionOrder) {
-  const date = new Date(order.requiredBy);
-  return (
-    order.serviceDate ||
-    (Number.isFinite(date.getTime())
-      ? new Intl.DateTimeFormat("en-GB", {
-          timeZone: "Europe/London",
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }).format(date)
-      : "Date TBC")
-  );
-}
-function collectionLineRows(order: ProductionOrder, escape: (value: unknown) => string) {
-  return runSheetMenuSections(order).flatMap(section => [
-    '<tr class="menu-section-row"><th colspan="3">' + escape(section.label) + '</th></tr>',
-    ...section.lines.map(({ line, slotLabel }) => '<tr><td class="check"><i class="box"></i></td><th>' + (slotLabel ? '<small class="slot-label">' + escape(slotLabel) + '</small> ' : '') + escape(line.itemName) + '</th><td class="quantity"><strong>' + escape(collectionQuantity(line)) + '</strong></td></tr>'),
-  ]).join("");
-}
-const escape = (s: unknown) =>
-  String(s ?? "").replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ]!,
-  );
+export { collectionOrders, collectionDate, collectionTime, collectionQuantity, collectionQuantityHeading, isCoreSaladLine } from "./run-sheet-presentation";
+export { collectionPrintHtml } from "./day-production-print";
+
 const css =
-  "@page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;background:white;color:black;font:11pt/1.35 Arial,sans-serif}h1{font-size:22pt;margin:0 0 4mm}p{margin:2mm 0}article{border:1pt dashed black;padding:5mm}table{width:100%;border-collapse:collapse;margin-top:5mm}th,td{text-align:left;padding:3mm 2mm;border-bottom:.5pt solid #999;vertical-align:top;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid}.menu-section-row th{padding-top:3mm;border-bottom:1pt solid black;font-size:9pt;font-weight:bold;letter-spacing:.04em}.slot-label{font-size:8pt;font-weight:bold}th.quantity,td.quantity{width:28%;text-align:right}td.quantity strong{display:block}th.check,td.check{width:16mm;white-space:nowrap}i.box{display:inline-block;width:5mm;height:5mm;border:1pt solid black}footer{break-inside:avoid;margin-top:10mm;display:flex;gap:10mm;flex-wrap:wrap}.notes{height:13mm;border-bottom:.5pt solid #999}caption{text-align:left;font-weight:bold;margin-top:4mm}";
+  "@page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;background:white;color:black;font:11pt/1.35 Arial,sans-serif}h1{font-size:22pt;margin:0 0 4mm}p{margin:2mm 0}article{border:1pt dashed black;padding:5mm}table{width:100%;border-collapse:collapse;margin-top:5mm;table-layout:fixed}th,td{text-align:left;padding:3mm 2mm;border-bottom:.5pt solid #999;vertical-align:top;overflow-wrap:anywhere;white-space:normal}thead{display:table-header-group}tr{break-inside:avoid}.menu-section-row th{padding-top:3mm;border-bottom:1pt solid black;font-size:9pt;font-weight:bold;letter-spacing:.04em}th.quantity,td.quantity{width:20%;text-align:right}td.quantity strong{display:block}th.check,td.check{width:18mm;white-space:nowrap}td.category{width:22%}.core-salad-label{display:inline-block;margin-left:4pt;padding:1pt 3pt;border:1pt solid black;border-radius:2pt;font-size:8pt;font-weight:bold;white-space:nowrap}tr.core-salad td,tr.core-salad th{border-top:1pt solid black;border-bottom:1pt solid black}i.box{display:inline-block;width:5mm;height:5mm;border:1pt solid black}footer{break-inside:avoid;margin-top:10mm;display:flex;gap:10mm;flex-wrap:wrap}.notes{height:13mm;border-bottom:.5pt solid #999}caption{text-align:left;font-weight:bold;margin-top:4mm}";
 const doc = (title: string, body: string) =>
   '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>' +
   escape(title) +
@@ -76,39 +15,12 @@ const doc = (title: string, body: string) =>
   "</style></head><body>" +
   body +
   "</body></html>";
-export function collectionPrintHtml(order: ProductionOrder) {
-  return doc(
-    "Collection sheet",
-    "<article><h1>" +
-      escape(cpuDestinationLabel(order)) +
-      "</h1><p><b>" +
-      escape(collectionDate(order)) +
-      " · Ready / collection " +
-      escape(collectionTime(order)) +
-      "</b></p><p>" +
-      escape(
-        [
-          cpuSourceLabel(order),
-          order.serviceType,
-          order.sourcePublicationDayId ||
-            order.sourceEntityId ||
-            order.sourceBookingId,
-          order.sourceVersion !== undefined ? "v" + order.sourceVersion : "",
-        ]
-          .filter(Boolean)
-          .join(" · "),
-      ) +
-      '</p><table><thead><tr><th class="check">Check</th><th>Dish</th><th class="quantity">Customer ordered quantity</th></tr></thead><tbody>' +
-      collectionLineRows(order, escape) +
-      "</tbody></table><footer><span>Packed by: __________________</span><span>Checked by: __________________</span><span>Date / time: ________________</span></footer></article>",
-  );
-}
 export function totalsPrintHtml(
   categories: ProductionTotalsCategory[],
   period: string,
   filters: string,
 ) {
-  return doc(
+  return addStagingPrintWatermark(doc(
     "Production totals",
     "<h1>Production totals</h1><p><b>" +
       escape(period) +
@@ -126,6 +38,7 @@ export function totalsPrintHtml(
                 (t) =>
                   "<tr><th>" +
                   escape(t.name) +
+                  (t.culinaryCategory ? '<br><small>' + escape(t.culinaryCategory) + '</small>' : "") +
                   '</th><td class="quantity">' +
                   escape(t.quantity.toLocaleString("en-GB")) +
                   "</td><td>" +
@@ -137,7 +50,7 @@ export function totalsPrintHtml(
         )
         .join("") +
       "<footer>Prepared / checked by: __________________ &nbsp; Date: ______________</footer>",
-  );
+  ), process.env.FIKA_RUNTIME_MODE);
 }
 export function printKitchenDocument(
   html: string,
@@ -152,7 +65,22 @@ export function printKitchenDocument(
       "position:fixed;left:-10000px;top:0;width:210mm;height:297mm;border:0";
     frame.onload = async () => {
       try {
-        await frame.contentDocument?.fonts.ready;
+        if (frame.contentDocument) {
+          const printRoot = frame.contentDocument.documentElement;
+          const tokens = getComputedStyle(document.documentElement);
+          for (const name of ["text-primary", "text-secondary", "action-primary", "action-secondary", "border-default", "surface-subtle", "status-info-surface", "status-success", "status-success-surface"]) {
+            const token = "--fika-" + name;
+            printRoot.style.setProperty(token, tokens.getPropertyValue(token));
+          }
+          if (prepare) {
+            await Promise.all([
+              frame.contentDocument.fonts.load('900 22pt "FIKA Vim"'),
+              frame.contentDocument.fonts.load('400 10pt "FIKA Gilroy"'),
+              frame.contentDocument.fonts.load('700 10pt "FIKA Gilroy"'),
+            ].map(font => font.catch(() => [])));
+          }
+          await frame.contentDocument.fonts.ready;
+        }
         if (prepare && frame.contentDocument) prepare(frame.contentDocument);
         const win = frame.contentWindow;
         if (!win) return;
@@ -165,7 +93,7 @@ export function printKitchenDocument(
         reject(error);
       }
     };
-    frame.srcdoc = html;
+    frame.srcdoc = addStagingPrintWatermark(html, document.documentElement.dataset.fikaRuntime);
     document.body.appendChild(frame);
   });
 }

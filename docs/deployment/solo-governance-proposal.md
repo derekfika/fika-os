@@ -1,6 +1,6 @@
 # Solo Worker Governance Proposal
 
-**Status:** Design proposal only. Not active policy. Solo Mode remains opt-in until the current P0 recovery is complete and the owner approves cutover.
+**Status:** Superseded design proposal. [Owner directive #422](https://github.com/derekfika/fika-os/issues/422) replaces the source-lease model with independent Git worktrees. This document is retained as historical design evidence. See [current workspace management](workspace-management.md).
 **Prepared:** 2026-11-05
 **Baseline:** `origin/main a9ec82397653300f4ec6523bf7ec5354797e072d`
 

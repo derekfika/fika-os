@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { draftStorageKey, editWeek, isWeekDirty, parseRecoveredDraft, reconcileWeek, weekChanges } from "../lib/week-draft";
 import type { RollingSnapshot } from "../lib/rolling-menu-types";
+import { applyRollingEntryPatch } from "../lib/rolling-command";
 
 export const fixture = (): RollingSnapshot => ({
   week: { id: "rolling-week:2099-01-05", weekCommencing: "2099-01-05", weekEnding: "2099-01-11", version: 96, status: "draft", dayIds: ["day:1"], entryIds: ["entry:1"], templateSlots: ["GARNISH 1", "SOUP"], sourceFiles: [], audit: [] },
@@ -14,6 +15,24 @@ test("twenty edits are immediate, retain immutable baseline, identity, portions 
   assert.equal(JSON.stringify(base), before); assert.equal(draft.week.version, 96); assert.equal(draft.entries[0].itemLabel, "Draft name 19");
   assert.equal(draft.entries[0].itemId, base.entries[0].itemId); assert.deepEqual(draft.entries[0].allocations, base.entries[0].allocations); assert.equal(draft.entries[0].portions, 12);
   assert.equal(isWeekDirty(base, draft), true); assert.equal(weekChanges(base, draft).updates.length, 1); assert.deepEqual(draft.week.audit, []);
+});
+test("Core Salad is a local draft placement field, persists through save diff and can be toggled off", () => {
+  const base = fixture(); base.entries[0].slot = "SALAD 1";
+  const draft = editWeek(base, "update-entry", { entryId: "entry:1", patch: { isCoreSalad: true } });
+  assert.equal(isWeekDirty(base, draft), true);
+  assert.equal(weekChanges(base, draft).updates[0].patch.isCoreSalad, true);
+  assert.equal(base.entries[0].isCoreSalad, undefined);
+  const cleared = editWeek(draft, "update-entry", { entryId: "entry:1", patch: { isCoreSalad: false } });
+  assert.equal(isWeekDirty(base, cleared), false);
+});
+test("changing Core presentation metadata preserves explicit allergen review and No Key evidence", () => {
+  const entry = fixture().entries[0]; entry.slot = "SALAD 1";
+  entry.noKeyDeclaration = { declared: true, declaredBy: "actor:reviewer", declaredAt: "2099-01-01T10:00:00Z" };
+  entry.allergenReview = { status: "confirmed", semantics: 3, confirmedBy: "actor:reviewer", confirmedAt: "2099-01-01T10:00:00Z", statement: "recipe-ingredients-allergens-verified", inputFingerprint: "fingerprint" };
+  const review = structuredClone(entry.allergenReview), noKey = structuredClone(entry.noKeyDeclaration);
+  applyRollingEntryPatch(entry, { isCoreSalad: true });
+  assert.deepEqual(entry.allergenReview, review);
+  assert.deepEqual(entry.noKeyDeclaration, noKey);
 });
 test("clear and restore original content returns to an unchanged draft; review evidence is never sent", () => {
   const base = fixture(); let draft = editWeek(base, "update-entry", { entryId: "entry:1", patch: { itemId: "", itemLabel: "", portions: 0, allocations: [] } });

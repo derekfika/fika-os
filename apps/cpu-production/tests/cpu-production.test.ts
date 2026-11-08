@@ -153,7 +153,7 @@ test("CPU read paths use bounded and targeted Firestore shapes", () => {
   assert.doesNotMatch(route, /cpuPlans\(\)\.get\(\)/);
   assert.match(planRoute, /loadDeliveredInReviewStatuses/);
   assert.match(planRoute, /parseDeliveredInReviewOrderIds/);
-  assert.match(planRoute, /if \(orderId\)[\s\S]*?return NextResponse\.json/);
+  assert.match(planRoute, /if \(orderId\)[\s\S]*?return safePlanJson/);
   assert.doesNotMatch(allergenPage, /\/api\/production\?serviceDate=/);
   assert.match(allergenPage, /loadCpuAllergenProjection\(selectedDate, "delivered_in"\)/);
   assert.match(allergenProjectionLoader, /cacheScope=1/);
@@ -410,7 +410,7 @@ test("Liana production view captures nested menu items and sub-item allergen evi
 test("CPU planning seeds real canonical hand-offs before local fixture fallback", () => {
   assert.match(planRoute, /productionOrderDetail\(request, orderId\)/);
   assert.match(planRoute, /order \|\| \(isLocalRuntime\(\) \? localFixtureOrders/);
-  assert.match(planRoute, /await getPlan\(request, orderId\)/);
+  assert.match(planRoute, /await getPlan\(request, orderId, storedForRevision\)/);
   assert.match(planRoute, /production-http-client/);
 });
 

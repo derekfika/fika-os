@@ -1,4 +1,5 @@
 "use client";
+import { HOSPITALITY_BOOKING_ADMIN } from "@/lib/authmod-core/model";
 
 import Link from "next/link";
 import { ArrowLeft, Check, ChevronRight, History, LockKeyhole, ServerCog, ShieldCheck, UserRound } from "lucide-react";
@@ -46,7 +47,7 @@ export default function AccountDetail({ id }: { id: string }) {
   useEffect(() => { void load(); }, [id]);
 
   async function mutate(command: Record<string, unknown>) {
-    if (!command.reason && !command.reasonCode) { const period = command.action === "site" || command.action === "app"; const reasonSelector = period || command.action === "legend"; setPendingCommand(command); setPendingTitle(String(command.action || "Confirm AUTHMOD change").replaceAll("-", " ")); setPendingReasonCode(reasonSelector ? (command.action === "legend" ? "access_correction" : "role_requirement") : "other"); setPendingReasonNote(""); setPendingPeriod(period && command.enabled === true); setPendingAccessType("permanent"); setPendingFrom(""); setPendingTo(""); return; }
+    if (!command.reason && !command.reasonCode) { const period = command.action === "site" || command.action === "app"; const hospitalityGrant = command.action === "authority-grant" && command.resource === HOSPITALITY_BOOKING_ADMIN; const reasonSelector = period || command.action === "legend"; setPendingCommand(command); setPendingTitle(hospitalityGrant ? "Grant Hospitality Admin" : String(command.action || "Confirm AUTHMOD change").replaceAll("-", " ")); setPendingReasonCode(reasonSelector ? (command.action === "legend" ? "access_correction" : "role_requirement") : "other"); setPendingReasonNote(""); setPendingPeriod(hospitalityGrant || period && command.enabled === true); setPendingAccessType("permanent"); setPendingFrom(""); setPendingTo(""); return; }
     try {
       const result = await readAccountActionResponse<Account>(await fetch(`/api/authmod/accounts/${id}/actions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...command, expectedVersion: account?.identity.version }) }));
       if (result.account) setAccount(result.account);
@@ -83,7 +84,7 @@ export default function AccountDetail({ id }: { id: string }) {
     </div><div className={styles.secondaryColumn}>
       {person ? <Card title="Legend" subtitle="Personal identity linkage is explicit."><Fact label="Linked Legend" value={account.identity.legendLabel || "Unresolved"} /></Card> : <Card title="Primary Custodian" subtitle="Custodianship does not grant authorization."><select className={styles.custodianSelect} value={account.custodian?.legendId || ""} onChange={event => { if (event.target.value) void mutate({ action: "custodian", custodianLegendId: event.target.value }); }}><option value="">Select active custodian…</option>{account.custodian && !options.legends.some(legend => legend.id === account.custodian?.legendId) && <option value={account.custodian.legendId}>{account.custodian.label}</option>}{options.legends.map(legend => <option key={legend.id} value={legend.id}>{legend.label}</option>)}</select><div className={styles.notice}><ShieldCheck size={17} /><span>The custodian does not grant access. The operational account remains the actor.</span></div></Card>}
       {person && <Card title="Superuser" subtitle="All current and future FIKA OS applications and active OPLOCs. Existing assignments are preserved."><div className={styles.fullAccess}><strong>{account.fullAccess ? "Superuser enabled" : "Standard access"}</strong><span>Crosses normal app/site assignment boundaries. It does not include Menu Publish, allergen approval, or AUTHMOD Admin.</span><button className={styles.toggle} onClick={() => void mutate({ action: "full-access", fullAccess: !account.fullAccess })}>{account.fullAccess ? "Remove Superuser" : "Grant Superuser"}</button></div></Card>}
-      <Card title="Special Authority" subtitle="Explicit authority, separate from normal site access."><div className={styles.authorityList}>{[["menu.publish", "Menu Publish", "Publish approved menus across the organisation", "menu-planning", "person"], ["authmod", "AUTHMOD Admin", "Administer AUTHMOD", "integration-hub", "person"]].filter(([, , , , audience]) => audience === "all" || person).map(([resource, label, detail, appId]) => <AuthorityControl key={resource} account={account} options={options} resource={resource} label={label} detail={detail} appId={appId} mutate={mutate} />)}</div></Card>
+      <Card title="Special Authority" subtitle="Explicit authority, separate from normal site access."><div className={styles.authorityList}>{[["menu.publish", "Menu Publish", "Publish approved menus across the organisation", "menu-planning", "person"], ["authmod", "AUTHMOD Admin", "Administer AUTHMOD", "integration-hub", "person"]].filter(([, , , , audience]) => audience === "all" || person).map(([resource, label, detail, appId]) => <AuthorityControl key={resource} account={account} options={options} resource={resource} label={label} detail={detail} appId={appId} mutate={mutate} />)}{person && <HospitalityAdminControl account={account} options={options} mutate={mutate} />}</div></Card>
       <RetiredAuthorities account={account} options={options} mutate={mutate} />
       <Card title="Recent Changes" subtitle="Bounded account history."><div className={styles.auditList}>{audit.length ? audit.map(event => <div key={event.id}><strong>{event.action.replaceAll("-", " ")}</strong><small>{date(event.timestamp)} · {event.actorSnapshot?.displayName || "AUTHMOD administrator"}</small></div>) : <span className={styles.muted}>No recent changes.</span>}</div><Link className={styles.historyLink} href={`/authmod?tab=audit&targetId=${encodeURIComponent(id)}`}>View full audit history <ChevronRight size={15} /></Link></Card>
     </div></div>
@@ -97,6 +98,31 @@ function RetiredAuthorities({ account, options, mutate }: { account: Account; op
   const retired = account.specialAuthority.filter(value => value.resource in RETIRED_AUTHORITY_LABELS);
   if (!retired.length) return null;
   return <Card title="Retired authority" subtitle="No longer used. CPU allergen sign-off needs normal CPU access, a printed name and a drawn signature. Revoke to tidy; history is kept."><div className={styles.authorityList}>{retired.map(grant => <div className={styles.authority} key={grant.id}><div className={styles.authorityInfo}><strong>{RETIRED_AUTHORITY_LABELS[grant.resource]}</strong><small>Scope · {grant.scope.kind === "oploc" ? grant.scope.ids.map(value => options.oplocs.find(site => site.id === value)?.label || value).join(", ") : "Organisation"}</small></div><div className={styles.authorityActions}><Chip value="Retired" tone="grey" /><button className={styles.secondary} onClick={() => void mutate({ action: "authority-revoke", grantId: grant.id })}>Revoke</button></div></div>)}</div></Card>;
+}
+
+function HospitalityAdminControl({ account, options, mutate }: { account: Account; options: Options; mutate: (command: Record<string, unknown>) => Promise<void> }) {
+  const grants = (account.temporaryAccess || []).filter(grant => grant.capability === (HOSPITALITY_BOOKING_ADMIN + " · Manage") && ["active", "scheduled"].includes(grant.status));
+  const companyGrants = grants.filter(grant => grant.scope.kind === "organisation");
+  const legacySiteGrants = grants.filter(grant => grant.scope.kind === "oploc");
+  const activePerson = account.identity.identityKind === "person" && account.identity.status === "active";
+  return <div className={styles.authority}>
+    <div className={styles.authorityInfo}>
+      <strong>Hospitality Admin</strong>
+      <small>This separate company-wide grant allows late amendments to existing Hospitality bookings at all active FIKA Hospitality sites.</small>
+      {companyGrants.map(grant => <div className={styles.authorityGrant} key={grant.id}>
+        <small>Company-wide</small>
+        <Chip value={grant.status === "active" ? "Granted" : "Scheduled"} tone={grant.status === "active" ? "green" : "grey"} />
+        <button type="button" className={styles.secondary} onClick={() => void mutate({ action: "authority-revoke", grantId: grant.id })}>Revoke</button>
+      </div>)}
+      {legacySiteGrants.map(grant => <div className={styles.authorityGrant} key={grant.id}>
+        <small>Legacy site scope · {grant.scope.ids.map(id => options.oplocs.find(site => site.id === id)?.label || id).join(", ")} · does not include other sites</small>
+        <Chip value={grant.status === "active" ? "Legacy grant" : grant.status} tone="grey" />
+        <button type="button" className={styles.secondary} onClick={() => void mutate({ action: "authority-revoke", grantId: grant.id })}>Revoke</button>
+      </div>)}
+      {!companyGrants.length && <button type="button" className={styles.secondary} disabled={!activePerson} onClick={() => void mutate({ action: "authority-grant", appId: "hospitality-booking", resource: HOSPITALITY_BOOKING_ADMIN, authorityAction: "Manage", scope: { kind: "organisation", ids: [] } })}>Grant company-wide Hospitality Admin</button>}
+      {!activePerson && <small>Requires an active person account.</small>}
+    </div>
+  </div>;
 }
 
 function AuthorityControl({ account, options, resource, label, detail, appId, mutate }: { account: Account; options: Options; resource: string; label: string; detail: string; appId: string; mutate: (command: Record<string, unknown>) => Promise<void> }) {

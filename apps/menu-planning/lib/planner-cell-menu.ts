@@ -4,7 +4,7 @@
  * a deliberate long press. No React and no writes; the planner owns what each action does.
  */
 
-export type CellMenuActionId = "edit" | "change" | "copy" | "clear" | "select";
+export type CellMenuActionId = "edit" | "change" | "copy" | "clear" | "select" | "toggle-core";
 
 export type CellMenuAction = {
   id: CellMenuActionId;
@@ -18,7 +18,7 @@ export type CellMenuAction = {
 
 export type CellMenuInput = {
   /** The planner entry in the cell, if any. */
-  entry?: { id: string; itemId?: string; itemLabel: string };
+  entry?: { id: string; itemId?: string; itemLabel: string; slot?: string; isCoreSalad?: boolean };
   /** Whether the entry's dish ID resolves to an active canonical Dish Library record. */
   dishResolved: boolean;
   /** Where Copy to another day can currently go. */
@@ -43,6 +43,7 @@ export function cellMenuActions(input: CellMenuInput): CellMenuAction[] {
     ...(canEdit ? {} : { disabledReason: input.entry.itemId ? "This dish is not in the Dish Library any more, so it cannot be edited." : "This entry is not linked to a Dish Library dish, so it cannot be edited." }),
   });
   actions.push({ id: "change", label: "Change dish" });
+  if (/^SALAD [1-6]$/i.test(input.entry.slot || "")) actions.push({ id: "toggle-core", label: input.entry.isCoreSalad ? "Remove Core Salad" : "Mark as Core Salad" });
   actions.push({
     id: "copy",
     label: "Copy to another day",

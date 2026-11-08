@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "beverageAuditEventsV1",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "entityId", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

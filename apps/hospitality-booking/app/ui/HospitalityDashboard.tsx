@@ -17,6 +17,8 @@ import { mnkMenuHtml } from "../../lib/mnk-menu-output";
 import type { MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";
 import { HospitalityGroupDetail } from "./HospitalityGroupDetail";
+import { GroupItemChoices } from "./GroupAmendmentEditor";
+import { HospitalityAdminAddItem, HospitalityAdminAmendmentReview, hospitalityAdminMenu, staffDietaryField, type AmendmentCatalogue } from "./HospitalityAdminAmendmentReview";
 import { BookingProductionPanel } from "./BookingProductionPanel";
 import panelStyles from "./BookingProductionPanel.module.css";
 import { isBookingQuoteStale, planServiceProduction, standaloneStatusLabel, productionOrderMatchesCurrentQuote, quoteReadyForCpu, serviceCpuRequirement, sendPendingServices, type ServiceProductionRow, type ServiceResult } from "../../lib/cpu-production-plan";
@@ -47,12 +49,15 @@ type Amendment = {
   notes: string;
   deliveryChargeRequired: boolean;
   reason: string;
+  adminOplocId?: string;
+  dietaries?: CanonicalBooking["dietaries"];
 };
 type InboxScanPhase = "connecting" | "messages" | "attachments" | "staging" | "complete" | "error";
 type AmendmentProgress = {
   status: "running" | "complete" | "error";
   currentStep: number;
   error?: string;
+  staffOverride?: boolean;
   steps: Array<{ label: string; state: "pending" | "active" | "complete" | "error"; detail?: string }>;
 };
 const inboxScanSteps: Array<{ key: Exclude<InboxScanPhase, "complete" | "error">; label: string }> = [
@@ -113,6 +118,7 @@ export default function HospitalityDashboard({
   const currentSiteLabel = siteLabel.trim() || site.theme.shortLabel;
   const themeStyle = hospitalitySiteThemeStyle(site) as CSSProperties;
   const [bookings, setBookings] = useState<CanonicalBooking[]>([]);
+  const [adminOplocId, setAdminOplocId] = useState<string>();
   const [groups, setGroups] = useState<HospitalityBookingGroup[]>([]);
   const [standaloneIds, setStandaloneIds] = useState<Set<string>>(new Set());
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -204,6 +210,7 @@ export default function HospitalityDashboard({
       const body = await response.json();
       if (!response.ok)
         throw Error(body.error?.message || "Could not load Bookings.");
+      setAdminOplocId(typeof body.hospitalityAdminAuthority?.oplocId === "string" ? body.hospitalityAdminAuthority.oplocId : undefined);
       setBookings(body.cpuRouting ? body.bookings.map((item: CanonicalBooking) => body.cpuRouting[item.canonicalId] ? { ...item, cpuRouting: body.cpuRouting[item.canonicalId] } : item) : body.bookings);
       setGroups(body.bookingGroups || []);
       setStandaloneIds(new Set((body.dashboardBookings || body.bookings).map((item: CanonicalBooking) => item.canonicalId)));
@@ -798,6 +805,7 @@ export default function HospitalityDashboard({
     openPrintSheet(dailyRunSheetHtml(matching));
   };
   const openAmendment = (booking: CanonicalBooking) => {
+    if (booking.lifecycleStatus === "Cancelled") return;
     const order = structuredClone(booking.order);
     setAmendment({
       client: structuredClone(booking.client),
@@ -806,6 +814,7 @@ export default function HospitalityDashboard({
       notes: booking.notes || "",
       deliveryChargeRequired: booking.deliveryChargeRequired !== false,
       reason: "",
+      ...(adminOplocId ? { adminOplocId, dietaries: structuredClone(booking.dietaries) } : {}),
     });
   };
   const saveAmendment = async () => {
@@ -814,7 +823,8 @@ export default function HospitalityDashboard({
       setError("Explain why this Booking is being amended.");
       return;
     }
-    const steps = [
+    const staffOverride = Boolean(amendment.adminOplocId);
+    const steps = staffOverride ? ["Save amended booking"] : [
       "Save amended booking",
       "Regenerate quote",
       "Save quote PDF",
@@ -825,6 +835,7 @@ export default function HospitalityDashboard({
     setAmendmentProgress({
       status: "running",
       currentStep: 0,
+      staffOverride,
       steps: steps.map((label, index) => ({ label, state: index === 0 ? "active" : "pending" })),
     });
     const setStep = (index: number, state: AmendmentProgress["steps"][number]["state"], detail?: string) => {
@@ -840,7 +851,7 @@ export default function HospitalityDashboard({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       }, "The booking workflow timed out. Check its saved state before retrying.");
-      const parsed = await readDashboardJson(response) as { error?: { message?: string }; booking?: CanonicalBooking; productionOrder?: ProductionOrder };
+      const parsed = await readDashboardJson(response) as { error?: { message?: string }; booking?: CanonicalBooking; productionOrder?: ProductionOrder; projectionPropagation?: { status?: string }; unchanged?: boolean };
       if (!response.ok) throw new Error(parsed.error?.message || "The booking workflow could not be completed.");
       return parsed;
     };
@@ -850,11 +861,19 @@ export default function HospitalityDashboard({
         expectedVersion: selected.version,
         action: "amend",
         reason: amendment.reason,
-        patch: amendmentPatchDto(amendment),
+        ...(staffOverride ? { hospitalityAdmin: true } : {}),
+        patch: { ...amendmentPatchDto(amendment), ...(staffOverride && amendment.dietaries ? { dietaries: amendment.dietaries } : {}) },
       });
       if (!amended.booking) throw new Error("The amendment was saved but no updated booking was returned.");
       setSelected(amended.booking);
       setStep(0, "complete");
+      if (staffOverride) {
+        setStep(0, "complete", amended.unchanged ? "No changes were needed." : amended.projectionPropagation?.status === "pending" ? "The booking was saved. A downstream update is still pending." : undefined);
+        await load(false);
+        setAmendment(null);
+        setAmendmentProgress(current => current ? { ...current, status: "complete" } : current);
+        return;
+      }
 
       setStep(1, "active");
       const quoted = await post({
@@ -1277,7 +1296,7 @@ export default function HospitalityDashboard({
                   </p>
                 )}
               </div>
-              {selectedGroup && <HospitalityGroupDetail group={selectedGroup} onBusyChange={busy => { actionInFlight.current = busy; setActionBusy(busy); }} site={site.key} oplocId={bookings.find(b => b.canonicalId === selectedGroup.services[0]?.bookingId)?.service.oplocId || ""} onAmended={async () => { setServiceResults({}); setMatrixArtifacts({}); setMenuReadiness({}); await load(); }} busy={actionBusy} production={productionPanel} onQuote={() => void generateGroupQuote()} />}
+              {selectedGroup && <HospitalityGroupDetail group={selectedGroup} onBusyChange={busy => { actionInFlight.current = busy; setActionBusy(busy); }} site={site.key} oplocId={bookings.find(b => b.canonicalId === selectedGroup.services[0]?.bookingId)?.service.oplocId || ""} hospitalityAdmin={Boolean(adminOplocId)} onAmended={async () => { setServiceResults({}); setMatrixArtifacts({}); setMenuReadiness({}); await load(); }} busy={actionBusy} production={productionPanel} onQuote={() => void generateGroupQuote()} />}
               {selected ? (
                 <fieldset className={styles.actionControls} disabled={actionBusy} aria-busy={actionBusy} aria-label="Booking details and actions">
                 <BookingPane
@@ -1295,6 +1314,7 @@ export default function HospitalityDashboard({
                   quoteBusy={actionBusy}
                   setPending={setPending}
                   amendment={amendment}
+                  onKitchenNotesSaved={(booking) => setSelected(booking)}
                   onAmend={openAmendment}
                   onChangeAmendment={setAmendment}
                   onCancelAmendment={() => setAmendment(null)}
@@ -1407,15 +1427,15 @@ export default function HospitalityDashboard({
               <p className="eyebrow">Amendment workflow</p>
               <h2 id="amendment-progress-title">
                 {amendmentProgress.status === "complete"
-                  ? "Booking updated across FIKA OS"
+                  ? amendmentProgress.staffOverride ? "Booking amendment saved" : "Booking updated across FIKA OS"
                   : amendmentProgress.status === "error"
                     ? "Amendment needs attention"
-                    : "Updating booking everywhere"}
+                    : amendmentProgress.staffOverride ? "Saving booking amendment" : "Updating booking everywhere"}
               </h2>
               <p>
                 {amendmentProgress.status === "complete"
-                  ? "The amended quote, CPU order and Logistics timing are now aligned."
-                  : "The amended booking is being reissued through the operational workflow."}
+                  ? amendmentProgress.staffOverride ? "Review the booking, generate an updated quote and explicitly resend changed work to CPU." : "The amended quote, CPU order and Logistics timing are now aligned."
+                  : amendmentProgress.staffOverride ? "The Hub is validating the booking, site catalogue and your Hospitality Admin grant." : "The amended booking is being reissued through the operational workflow."}
               </p>
               <div className={styles.amendmentProgressTrack} aria-hidden="true">
                 <span style={{ width: `${((amendmentProgress.steps.filter((step) => step.state === "complete").length + (amendmentProgress.status === "running" ? 0.35 : 0)) / amendmentProgress.steps.length) * 100}%` }} />
@@ -1533,6 +1553,7 @@ function BookingPane({
   quoteBusy,
   setPending,
   amendment,
+  onKitchenNotesSaved,
   onAmend,
   onChangeAmendment,
   onCancelAmendment,
@@ -1572,6 +1593,7 @@ function BookingPane({
   quoteBusy: boolean;
   setPending: (status: WorkflowAction) => void;
   amendment: Amendment | null;
+  onKitchenNotesSaved: (booking: CanonicalBooking) => void;
   onAmend: (booking: CanonicalBooking) => void;
   onChangeAmendment: (value: Amendment) => void;
   onCancelAmendment: () => void;
@@ -1587,6 +1609,7 @@ function BookingPane({
     return (
       <BookingAmendmentPanel
         booking={booking}
+        onKitchenNotesSaved={onKitchenNotesSaved}
         siteKey={siteKey}
         amendment={amendment}
         onChange={onChangeAmendment}
@@ -1597,6 +1620,7 @@ function BookingPane({
   return (
     <BookingDetail
       booking={booking}
+      onKitchenNotesSaved={onKitchenNotesSaved}
       siteLabel={siteLabel}
       productionOrder={productionOrder}
       menuOutput={menuOutput}
@@ -1630,6 +1654,7 @@ function MatrixDiagnostics({ bookingId, detail }: { bookingId: string; detail?: 
 
 function BookingDetail({
   booking,
+  onKitchenNotesSaved,
   siteLabel,
   productionOrder,
   menuOutput,
@@ -1654,6 +1679,7 @@ function BookingDetail({
   productionPanel: ReactNode;
   cancellationPanel?: ReactNode;
   booking: CanonicalBooking;
+  onKitchenNotesSaved: (booking: CanonicalBooking) => void;
   siteLabel: string;
   productionOrder?: ProductionOrder;
   menuOutput?: MenuOutput;
@@ -1694,8 +1720,8 @@ function BookingDetail({
   return (
     <>
       <div className="booking-detail__actions">
-        {!booking.bookingGroup && <button type="button" onClick={() => onAmend(booking)}>
-          {["Completed", "Cancelled"].includes(booking.lifecycleStatus)
+        {!booking.bookingGroup && <button type="button" onClick={() => onAmend(booking)} disabled={booking.lifecycleStatus === "Cancelled"}>
+          {booking.lifecycleStatus === "Completed"
             ? "Reopen and amend booking"
             : "Edit booking"}
         </button>}
@@ -1860,8 +1886,9 @@ function BookingDetail({
             <p className="muted">No dietary requirements recorded.</p>
           )}
           {booking.notes && (
-            <p className="booking-detail__note">{booking.notes}</p>
+            <p className="booking-detail__note"><strong>Customer notes</strong><br />{booking.notes}</p>
           )}
+          <KitchenNotesEditor booking={booking} onSaved={onKitchenNotesSaved} />
         </section>
         <section>
           <p className="eyebrow">Manager workspace</p>
@@ -2108,6 +2135,32 @@ function BookingDetail({
       )}
     </>
   );
+}
+
+function KitchenNotesEditor({ booking, onSaved }: { booking: CanonicalBooking; onSaved?: (booking: CanonicalBooking) => void }) {
+  const [value, setValue] = useState(booking.kitchenNotes || "");
+  const [version, setVersion] = useState(booking.version);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [propagation, setPropagation] = useState(booking.kitchenNotesPropagation?.status || "");
+  useEffect(() => { setValue(booking.kitchenNotes || ""); setVersion(booking.version); setPropagation(booking.kitchenNotesPropagation?.status || ""); }, [booking.canonicalId, booking.version]);
+  const save = async () => {
+    setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/dashboard-bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ canonicalId: booking.canonicalId, expectedVersion: version, action: "save-kitchen-notes", kitchenNotes: value }) });
+      const body = await readDashboardJson(response) as { error?: { message?: string }; booking?: CanonicalBooking; propagation?: string };
+      if (!response.ok || !body.booking) throw new Error(body.error?.message || "Kitchen notes could not be saved.");
+      setVersion(body.booking.version); setValue(body.booking.kitchenNotes || ""); setPropagation(body.propagation === "pending" ? "pending" : "");
+      onSaved?.(body.booking);
+    } catch (cause) { setError((cause as Error).message); }
+    finally { setBusy(false); }
+  };
+  return <section aria-label="Internal kitchen notes" className="booking-detail__note">
+    <label>Kitchen-only notes <textarea value={value} maxLength={4000} rows={4} onChange={event => setValue(event.target.value)} /><small>Visible to CPU kitchen only — not included on customer quotes. Kitchen notes do not confirm allergen status or clearance. Record dietary needs in the booking&apos;s dietary fields and complete the formal CPU allergen matrix review.</small></label>
+    <button type="button" className="additional-charges-summary__manage" disabled={busy || booking.lifecycleStatus === "Cancelled" || value === (booking.kitchenNotes || "") && !propagation} onClick={() => void save()}>{busy ? "Saving kitchen notes…" : propagation === "pending" ? "Retry kitchen notes to CPU" : "Save kitchen notes"}</button>
+    {propagation === "pending" && <p role="status">Kitchen notes are saved in Hospitality and pending CPU delivery. Retry to check the canonical order again.</p>}
+    {error && <p role="alert">{error}</p>}
+  </section>;
 }
 
 function CalendarView({
@@ -2451,7 +2504,7 @@ function AmendmentModal({
             Produced by CPU (No means the site will produce this booking internally)
         </label>
         <label>
-          Operational notes
+          Customer notes
           <textarea
             value={amendment.notes}
             onChange={(event) =>
@@ -2721,6 +2774,7 @@ function localDateKey(value: Date) {
 function BookingAmendmentPanel({
   siteKey,
   booking,
+  onKitchenNotesSaved,
   amendment,
   onChange,
   onCancel,
@@ -2728,6 +2782,7 @@ function BookingAmendmentPanel({
 }: {
   siteKey: PortalSiteKey;
   booking: CanonicalBooking;
+  onKitchenNotesSaved: (booking: CanonicalBooking) => void;
   amendment: Amendment;
   onChange: (value: Amendment) => void;
   onCancel: () => void;
@@ -2735,15 +2790,21 @@ function BookingAmendmentPanel({
 }) {
   const now = useBookingClock();
   const [cutoffMenu, setCutoffMenu] = useState<PortalMenuItem[]>([]);
+  const [amendmentCatalogue, setAmendmentCatalogue] = useState<AmendmentCatalogue>();
   const [cutoffWarning, setCutoffWarning] = useState("Checking current catalogue constraints…");
+  const catalogueOplocId = amendment.adminOplocId || booking.service.oplocId;
   useEffect(() => {
     const controller = new AbortController();
     setCutoffWarning("Checking current catalogue constraints…");
-    void loadHospitalityPortalMenu(siteKey, booking.service.oplocId, { signal: controller.signal }).then(result => {
-      if (!controller.signal.aborted) { setCutoffMenu(result.menu); setCutoffWarning(""); }
+    void loadHospitalityPortalMenu(siteKey, catalogueOplocId, { signal: controller.signal }).then(result => {
+      if (amendment.adminOplocId && result.catalogue.source === "cache-unverified") throw new Error("Verify the current site catalogue first.");
+      if (!controller.signal.aborted) { setCutoffMenu(result.menu); setAmendmentCatalogue(result); setCutoffWarning(""); }
     }).catch(() => { if (!controller.signal.aborted) setCutoffWarning("Current catalogue constraints could not be verified. Refresh before changing the date."); });
     return () => controller.abort();
-  }, [siteKey, booking.service.oplocId]);
+  }, [siteKey, catalogueOplocId, amendment.adminOplocId]);
+  const adminMenu = hospitalityAdminMenu(amendmentCatalogue, amendment, amendment.adminOplocId);
+  const dateItems = amendment.order.items.filter(line => line.quantity > 0).map(line =>
+    (amendment.adminOplocId ? adminMenu : cutoffMenu).find(item => [item.id, item.canonicalId].includes(line.menuItemId || line.itemId)) || { id: line.menuItemId || line.itemId });
   const changeClient = (key: keyof Amendment["client"], value: string) =>
     onChange({ ...amendment, client: { ...amendment.client, [key]: value } });
   const changeService = (
@@ -2757,7 +2818,7 @@ function BookingAmendmentPanel({
       order: {
         ...amendment.order,
         items: amendment.order.items.map((item, itemIndex) =>
-          itemIndex === index ? { ...item, quantity: /rice paper rolls?/i.test(String(item.itemName || "")) && quantity > 0 ? Math.max(3, quantity) : quantity } : item,
+          itemIndex === index ? { ...item, quantity: !amendment.adminOplocId && /rice paper rolls?/i.test(String(item.itemName || "")) && quantity > 0 ? Math.max(3, quantity) : quantity } : item,
         ),
       },
     });
@@ -2766,7 +2827,7 @@ function BookingAmendmentPanel({
       className="booking-amendment-panel"
       onSubmit={(event) => {
         event.preventDefault();
-        onSave();
+        if (!amendment.adminOplocId || !cutoffWarning) onSave();
       }}
     >
       <header className="booking-detail__header">
@@ -2819,7 +2880,7 @@ function BookingAmendmentPanel({
               onChange={(event) => changeClient("phone", event.target.value)}
             />
           </label>
-          {siteKey === "angel-court" && (
+          {(siteKey === "angel-court" || amendment.adminOplocId) && (
             <label className="wide">
               Invoice / PO reference <small>(optional)</small>
               <input
@@ -2831,7 +2892,13 @@ function BookingAmendmentPanel({
               />
             </label>
           )}
-          <BookingDatePicker value={amendment.service.eventDate} onChange={eventDate => changeService("eventDate", eventDate)} items={amendment.order.items.filter(line => line.quantity > 0).map(line => cutoffMenu.find(item => [item.id, item.canonicalId].includes(line.itemId)) || { id: line.itemId })} context={{ site: siteKey, occasion: amendment.order.eventType, startTime: amendment.service.startTime }} now={now} unavailableReason={cutoffWarning || undefined} />
+          {amendment.adminOplocId && <>
+            <label>Client name<input value={amendment.client.clientName || ""} onChange={event => changeClient("clientName", event.target.value)} /></label>
+            <label>Client company<input value={amendment.client.clientCompany || ""} onChange={event => changeClient("clientCompany", event.target.value)} /></label>
+            <label>Event name<input value={amendment.notes.match(/^Event: (.+)$/m)?.[1] || ""} onChange={event => onChange({ ...amendment, notes: `Event: ${event.target.value}\n${amendment.notes.replace(/^Event: .*\n?/m, "")}` })} /></label>
+            <label>Service type<input value={amendment.order.eventType || ""} onChange={event => onChange({ ...amendment, order: { ...amendment.order, eventType: event.target.value } })} /></label>
+          </>}
+          <BookingDatePicker hospitalityAdminAmendment={Boolean(amendment.adminOplocId)} value={amendment.service.eventDate} onChange={eventDate => changeService("eventDate", eventDate)} items={dateItems} context={{ site: siteKey, occasion: amendment.order.eventType, startTime: amendment.service.startTime }} now={now} unavailableReason={cutoffWarning || undefined} />
           <label>
             Service time
             <input
@@ -2855,6 +2922,11 @@ function BookingAmendmentPanel({
               }
             />
           </label>
+          {amendment.adminOplocId && <>
+            <label>End time<input type="time" value={amendment.service.endTime || ""} onChange={event => changeService("endTime", event.target.value)} /></label>
+            {([["floorLevel", "Floor"], ["deliveryPoint", "Delivery point"], ["onsiteContactName", "On-site contact"], ["onsiteContactPhone", "On-site telephone"]] as const).map(([key, label]) =>
+              <label key={key}>{label}<input value={amendment.service[key] || ""} onChange={event => changeService(key, event.target.value)} /></label>)}
+          </>}
           <label>
             Floor, room or delivery point
             <input
@@ -2874,9 +2946,7 @@ function BookingAmendmentPanel({
       <section className="booking-amendment-panel__section">
         <p className="eyebrow">Service order</p>
         <p className="amendment-help">
-          Change quantities or set a line to zero to remove it. Prices remain
-          the submitted commercial evidence; adding new menu lines is a separate
-          controlled catalogue action.
+          {amendment.adminOplocId ? "The Hub checks current offerings, quantities and pricing for this booking’s OPLOC." : "Change quantities or set a line to zero to remove it. Prices remain the submitted commercial evidence; adding new menu lines is a separate controlled catalogue action."}
         </p>
         <div className="amendment-lines">
           {amendment.order.items.map((item, index) => (
@@ -2889,7 +2959,7 @@ function BookingAmendmentPanel({
                 Quantity
                 <input
                   type="number"
-                  min={/rice paper rolls?/i.test(String(item.itemName || "")) ? 3 : 0}
+                  min={!amendment.adminOplocId && /rice paper rolls?/i.test(String(item.itemName || "")) ? 3 : 0}
                   value={item.quantity}
                   onFocus={(event) => event.currentTarget.select()}
                   onChange={(event) =>
@@ -2901,13 +2971,19 @@ function BookingAmendmentPanel({
                 />
               </label>
               <strong>£{(item.unitPrice * item.quantity).toFixed(2)}</strong>
+              {amendment.adminOplocId && <>
+                <GroupItemChoices item={item} menuItem={adminMenu.find(menuItem => menuItem.id === (item.menuItemId || item.itemId))} onChange={choices => onChange({ ...amendment, order: { ...amendment.order, items: amendment.order.items.map((line, n) => n === index ? { ...line, choices } : line) } })} />
+                <label>Item notes<input value={item.comments || ""} onChange={event => onChange({ ...amendment, order: { ...amendment.order, items: amendment.order.items.map((line, n) => n === index ? { ...line, comments: event.target.value } : line) } })} /></label>
+                <button type="button" onClick={() => onChange({ ...amendment, order: { ...amendment.order, items: amendment.order.items.filter((_, n) => n !== index) } })}>Remove item</button>
+              </>}
             </div>
           ))}
         </div>
+        {amendment.adminOplocId && !cutoffWarning && <HospitalityAdminAddItem menu={adminMenu} order={amendment.order} onAdd={line => onChange({ ...amendment, order: { ...amendment.order, items: [...amendment.order.items, line] } })} />}
       </section>
       <section className="booking-amendment-panel__section">
         <p className="eyebrow">Commercial and operational notes</p>
-        <label className="booking-amendment-panel__check">
+        {!amendment.adminOplocId && <label className="booking-amendment-panel__check">
           <input
             type="checkbox"
             checked={amendment.deliveryChargeRequired}
@@ -2919,9 +2995,16 @@ function BookingAmendmentPanel({
             }
           />
             Produced by CPU (No means the site will produce this booking internally)
-        </label>
+        </label>}
+        {amendment.adminOplocId && <div className="amendment-grid">
+          {Object.entries(amendment.dietaries || {}).filter(([key, value]) => staffDietaryField(key) && ["number", "string"].includes(typeof value)).map(([key, value]) => <label key={key}>{key.replaceAll("_", " ")}
+            {typeof value === "boolean" ? <input type="checkbox" checked={value} onChange={event => onChange({ ...amendment, dietaries: { ...amendment.dietaries, [key]: event.target.checked } })} /> :
+              <input type={typeof value === "number" ? "number" : "text"} min={typeof value === "number" ? 0 : undefined} value={String(value)} onChange={event => onChange({ ...amendment, dietaries: { ...amendment.dietaries, [key]: typeof value === "number" ? Number(event.target.value) : event.target.value } })} />}
+          </label>)}
+          <label>Additional dietary notes<textarea value={String(amendment.dietaries?.additionalNotes || "")} onChange={event => onChange({ ...amendment, dietaries: { ...amendment.dietaries, additionalNotes: event.target.value } })} /></label>
+        </div>}
         <label>
-          Operational notes
+          Customer notes
           <textarea
             value={amendment.notes}
             onChange={(event) =>
@@ -2929,10 +3012,12 @@ function BookingAmendmentPanel({
             }
           />
         </label>
+        <KitchenNotesEditor booking={booking} onSaved={onKitchenNotesSaved} />
         <label>
           Reason for amendment
           <textarea
             required
+            minLength={3}
             autoFocus
             value={amendment.reason}
             onChange={(event) =>
@@ -2941,11 +3026,12 @@ function BookingAmendmentPanel({
           />
         </label>
       </section>
+      {amendment.adminOplocId && <HospitalityAdminAmendmentReview before={booking} after={amendment} items={dateItems} now={now} />}
       <footer className="booking-amendment-panel__footer">
         <button type="button" onClick={onCancel}>
           Discard changes
         </button>
-        <button className="primary">Save amendment and reopen review</button>
+        <button className="primary" disabled={Boolean(amendment.adminOplocId && cutoffWarning)}>Save amendment and reopen review</button>
       </footer>
     </form>
   );

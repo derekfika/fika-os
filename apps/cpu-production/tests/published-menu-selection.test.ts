@@ -29,6 +29,15 @@ test("production totals aggregate canonical dishes across sites and slots in fir
   ]);
 });
 
+test("Core status stays placement-scoped when canonical dish totals combine placements", () => {
+  const ordinary = entry("HOT FISH", "Mixed leaves", 5, "dish:salad");
+  const core = { ...entry("SALAD 1", "Mixed leaves", 3, "dish:salad"), isCoreSalad: true };
+  const [total] = aggregateProductionTotals([ordinary, core]);
+  assert.deepEqual(total.slots.map(slot => [slot.slot, Boolean(slot.isCoreSalad)]), [["SALAD 1", true], ["HOT FISH", false]]);
+  assert.equal(groupEntriesByDestination([core])[0].entries[0].isCoreSalad, true);
+  assert.equal(groupEntriesByDestination([ordinary])[0].entries[0].isCoreSalad, undefined);
+});
+
 test("legacy unknown slots remain after canonical entries in stable source order", () => {
   const canonical = entry("SALAD 1", "Dish Z", 1);
   const unknown = (id: string, slot: string, dishName: string): PublishedMenuEntrySummary => ({ sourceEntryId: id, slot, dishName, portions: 1, allocations: [{ destinationLabel: "Site A", quantity: 1 }] });

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { createServer } from 'node:net';
 import { existsSync, readdirSync, readFileSync, lstatSync, unlinkSync } from 'node:fs';
-import { git, command, common, root, stateDir, jsonFile, save, lock, asyncLock, ancestor, ref, ghApi } from './runtime.mjs';
+import { git, command, common, root, stateDir, jsonFile, save, lock, operationMarkerLock, ancestor, ref, ghApi } from './runtime.mjs';
 import { REPO, digest, safeScope } from './policy.mjs';
 import { workspaceRecords, worktrees, checkWorkspace, finishWorkspace, retireWorkspace, retireWorkspaceUnderLock } from './workspaces.mjs';
 import { leaseIdentity, registryFingerprint } from './workspace-state.mjs';
@@ -14,7 +14,7 @@ function administrator(authorize) { const actor = authorize(); if (!actor?.admin
 export function recoverValidationOperation(id, options, { authorize=repositoryAdministrator, processAlive=pid=>{try{process.kill(pid,0);return true;}catch(error){return error.code!=='ESRCH';}} }={}) {
   const actor=administrator(authorize);
   if(!/^[a-f0-9-]{36}$/.test(id||'')||!options.reason?.trim())throw Error('A validation operation id and explicit recovery reason are required');
-  return lock('workspaces',()=>{
+  return operationMarkerLock(()=>{
     const file=path.join(stateDir(),'workspace-operations',`${id}.json`);const op=jsonFile(file);
     if(op.id!==id||op.kind!=='validate'||!Number.isInteger(op.pid)||processAlive(op.pid))throw Error('Only a confirmed exited validation process may be recovered; releases and live processes remain protected');
     const event={schema:'fika.workspace-operation-recovery.v1',at:now(),actor,reason:options.reason,operation:op};
@@ -38,15 +38,21 @@ export async function assertDevPortsIdle(ports) {
 export async function recoverDevOperation(id, options, { authorize=repositoryAdministrator, processAlive=pid=>{try{process.kill(pid,0);return true;}catch(error){return error.code!=='ESRCH';}}, portsIdle=assertDevPortsIdle }={}) {
   const actor = administrator(authorize);
   if (!/^[a-f0-9-]{36}$/.test(id || '') || !options.reason?.trim()) throw Error('A dev operation id and explicit recovery reason are required');
-  return asyncLock('workspaces', async () => {
+  const inspect = () => {
     const file = path.join(stateDir(), 'workspace-operations', `${id}.json`);
     const op = jsonFile(file);
     if (op.id !== id || op.kind !== 'dev' || !Number.isInteger(op.pid) || op.pid < 1 || processAlive(op.pid)) throw Error('Only a confirmed exited dev process may be recovered; releases, integration and live processes remain protected');
     const record = workspaceRecords().find(record => record.name === op.name);
     if (!record || record.owner !== op.owner || leaseIdentity(record) !== op.leaseId) throw Error('Dev operation does not match the recorded workspace lease');
     const ports = Object.values(record.ports || {});
-    await portsIdle(ports);
-    if (processAlive(op.pid)) throw Error('Dev process is live; preserve its operation marker');
+    return { file, op, ports };
+  };
+  const before = operationMarkerLock(inspect);
+  await portsIdle(before.ports);
+  return operationMarkerLock(() => {
+    if (processAlive(before.op.pid)) throw Error('Dev process is live; preserve its operation marker');
+    const { file, op, ports } = inspect();
+    if (digest([op, ports]) !== digest([before.op, before.ports])) throw Error('Dev operation changed; obtain fresh evidence');
     const event = { schema: 'fika.workspace-operation-recovery.v1', at: now(), actor, reason: options.reason, operation: op, verifiedIdlePorts: ports };
     save(path.join(stateDir(), 'workspace-audit', `dev-recovery-${id}.json`), event);
     unlinkSync(file);

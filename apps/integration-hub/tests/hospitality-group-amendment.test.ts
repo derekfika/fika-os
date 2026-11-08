@@ -41,7 +41,7 @@ async function cpuFixture(failEntityId?: string) {
 async function fixture(governedAmendment = false) {
   assert.equal(process.env.FIREBASE_PROJECT_ID, "demo-fika-os");
   assert.match(process.env.FIRESTORE_EMULATOR_HOST || "", /^(127\.0\.0\.1|localhost):\d+$/);
-  const key = randomUUID(), id = `group:${key}`, item = `hospitality-menu-item:canonical:${key}`, other = `${item}:other`, inHouse = `${item}:in-house`;
+  const key = randomUUID(), id = `group:${key}`, item = `hospitality-menu-item:canonical:${key}`, other = `${item}:other`, inHouse = `${item}:in-house`, unresolved = `${item}:unresolved`;
   for (const [menuItemId, workstreams] of [[item, ["hospitality"]], [other, ["sandwiches"]], [inHouse, []]] as Array<[string, string[]]>) await db.collection("integrationHubHospitalityMenuProductionRouting").doc(stableDocumentId(menuItemId)).set({ menuItemId, workstreams });
   const now = new Date().toISOString();
   let date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -51,8 +51,8 @@ async function fixture(governedAmendment = false) {
     date = future.toISOString().slice(0, 10);
     const put = async (id: string, entityType: string, record: Record<string, unknown>) => db.collection("integrationHubCanonical").doc(stableDocumentId(id)).set({ canonicalId: id, entityType, lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active", ...record } });
     await put(`oploc:${key}`, "OPLOC", { approvedName: "Fixture site" });
-    for (const menuId of [item, other, inHouse]) {
-      await put(menuId, "Hospitality Menu Item", { name: "Fixture menu item", category: "Food", defaultMinimumQuantity: 1 });
+    for (const menuId of [item, other, inHouse, unresolved]) {
+      await put(menuId, "Hospitality Menu Item", { name: "Fixture menu item", category: "Lunch", defaultMinimumQuantity: 1 });
       await put(menuId + ":price", "Hospitality Menu Price", { hospitalityMenuItemId: menuId, amount: 2, vatRate: 0, effectiveFrom: "2020-01-01" });
     }
   }
@@ -65,7 +65,7 @@ async function fixture(governedAmendment = false) {
   const read = async () => Promise.all(children.map(async b => (await bookings().doc(b.canonicalId).get()).data() as CanonicalBooking));
   const command = (rows: CanonicalBooking[]): GroupAmendmentCommand => ({ bookingGroupId: id, expectedSourceHash: groupCommercialState(id, rows).sourceHash, reason: "UAT amendment", services: rows.map(b => ({ bookingId: b.canonicalId, expectedVersion: b.version, patch: { client: structuredClone(b.client), service: { eventDate: b.service.eventDate, startTime: b.service.startTime, guestCount: b.service.guestCount, roomOrArea: b.service.roomOrArea }, order: { eventType: b.order.eventType, items: b.order.items.map(({ lineTotal: _, ...line }) => line) }, notes: b.notes, dietaries: structuredClone(b.dietaries), deliveryChargeRequired: true } })) });
   const quote = async (version: number) => generateHospitalityGroupQuote({ bookingGroupId: id, expectedVersion: version, expectedSourceHash: groupCommercialState(id, await read()).sourceHash }, { actorId: actor.uid, authorize: async () => {}, target: async b => ({ oplocId: b.service.oplocId!, folderId: "test-folder" }), store: firestoreGroupQuoteStore, artifact: { reserve: async () => `test-file-${randomUUID()}`, ensure: async q => ({ fileId: q.artifact.fileId!, driveUrl: "https://example.test/fixture.pdf" }) } });
-  return { children, read, command, quote, id, item, other, inHouse };
+  return { children, read, command, quote, id, item, other, inHouse, unresolved };
 }
 test("group service date validation handles invalid dates, London DST gap and end-before-start", () => {
   assert.equal(validLondonServiceTime("2026-03-29", "01:30"), false);
@@ -340,7 +340,7 @@ test("stale versions, unresolved routing, authorization failure, missing members
   const f = await fixture(true), before = await f.read();
   const stale = f.command(before); stale.services[1].expectedVersion = 99; stale.services[0].patch.notes = "must roll back";
   await assert.rejects(amendHospitalityBookingGroup(actor, stale, async () => {}), /changed elsewhere/);
-  const unresolved = f.command(before); unresolved.services[0].patch.notes = "must roll back"; unresolved.services[1].patch.order.items[0].itemId = "hospitality-menu-item:canonical:unresolved";
+  const unresolved = f.command(before); unresolved.services[0].patch.notes = "must roll back"; unresolved.services[1].patch.order.items[0].itemId = f.unresolved;
   await assert.rejects(amendHospitalityBookingGroup(actor, unresolved, async () => {}), /routing|catalogue identity/);
   await assert.rejects(amendHospitalityBookingGroup(actor, f.command(before), async () => { throw Error("not authorized"); }), /not authorized/);
   const missing = f.command(before); missing.services.pop(); await assert.rejects(amendHospitalityBookingGroup(actor, missing, async () => {}), /exactly the current/);
@@ -403,30 +403,40 @@ test("group charges command accepts only stable-ID manual/labour lines and no cl
 });
 test("group charges change only the targeted service, reprice the group, stale its quote, replay safely and reload", { skip: !enabled }, async () => {
   const f = await fixture(); await f.quote(0); const before = await f.read();
-  const charges = [{ id: `charge_${randomUUID()}`, kind: "manual" as const, category: "equipment" as const, label: "AV hire", quantity: 2, unitNet: 15.5 }];
-  const command = { bookingGroupId: f.id, bookingId: before[1].canonicalId, expectedVersion: before[1].version, expectedSourceHash: groupCommercialState(f.id, before).sourceHash, charges };
-  const saved = await setHospitalityGroupServiceCharges(actor, command, async () => {});
+  const oldQuote = before[1].quoteState!.revisions.find(revision => revision.id === before[1].quoteState!.currentRevisionId)!;
+  const oldQuoteSnapshot = structuredClone(oldQuote.snapshot);
+  const normalLabour = { id: `charge_${randomUUID()}`, kind: "labour" as const, category: "labour" as const, label: "KP labour", labour: { roleId: "kp", roleLabel: "KP", staffCount: 2, hoursPerPerson: 5, hourlyRate: 17.7, multiplier: 1, rateSource: "governed" as const } };
+  const command = { bookingGroupId: f.id, bookingId: before[1].canonicalId, expectedVersion: before[1].version, expectedSourceHash: groupCommercialState(f.id, before).sourceHash };
+  await assert.rejects(setHospitalityGroupServiceCharges(actor, { ...command, charges: [normalLabour] }, async () => {}), /Agency \/ overtime rate/);
+  assert.deepEqual(await f.read(), before, "a rejected Normal line leaves bookings and quote history untouched");
+  const charges = [
+    { id: `charge_${randomUUID()}`, kind: "manual" as const, category: "equipment" as const, label: "AV hire", quantity: 2, unitNet: 15.5 },
+    { ...normalLabour, labour: { ...normalLabour.labour, multiplier: 1.5 } },
+  ];
+  const acceptedCommand = { ...command, charges };
+  const saved = await setHospitalityGroupServiceCharges(actor, acceptedCommand, async () => {});
   assert.equal(saved.changed, true);
   const after = await f.read();
   assert.deepEqual(after[0], before[0]); assert.deepEqual(after[2], before[2]);
   assert.equal(after[1].version, before[1].version + 1); assert.equal(after[1].commercialVersion, (before[1].commercialVersion || 1) + 1);
-  assert.equal(after[1].additionalCharges?.[0].netTotal, 31);
+  assert.deepEqual(after[1].additionalCharges?.map(charge => charge.netTotal), [31, 265.5]);
   assert.ok(after[1].quoteState?.revisions.every(q => q.stale));
   const state = groupCommercialState(f.id, after);
-  assert.equal(state.totals.chargesNet, 31); assert.notEqual(state.sourceHash, command.expectedSourceHash);
+  assert.equal(state.totals.chargesNet, 296.5); assert.notEqual(state.sourceHash, command.expectedSourceHash);
+  assert.deepEqual(after[1].quoteState?.revisions.find(revision => revision.id === oldQuote.id)?.snapshot, oldQuoteSnapshot);
   const baselineTotals = groupCommercialState(f.id, before).totals;
   const quote = before[1].quoteState!.revisions.find(revision => revision.id === before[1].quoteState!.currentRevisionId)!;
   const vatRate = (quote.snapshot as { totals: { vatRate: number } }).totals.vatRate;
   const cents = (value: number) => Math.round(value * 100);
-  assert.equal(cents(state.totals.net - baselineTotals.net), 3100);
-  assert.equal(cents(state.totals.vat - baselineTotals.vat), cents(31 * vatRate));
-  assert.equal(cents(state.totals.gross - baselineTotals.gross), 3100 + cents(31 * vatRate));
+  assert.equal(cents(state.totals.net - baselineTotals.net), 29650);
+  assert.equal(cents(state.totals.vat - baselineTotals.vat), cents(296.5 * vatRate));
+  assert.equal(cents(state.totals.gross - baselineTotals.gross), 29650 + cents(296.5 * vatRate));
   assert.equal((await db.collection("fikaBookingAudit").doc(`${after[1].canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${after[1].version}`).get()).data()?.action, "workflow-set-additional-charges");
   // A stale retry is rejected; re-sending the saved lines against the new version/hash is a no-op.
-  await assert.rejects(setHospitalityGroupServiceCharges(actor, command, async () => {}), /changed elsewhere/);
-  const replay = await setHospitalityGroupServiceCharges(actor, { ...command, expectedVersion: after[1].version, expectedSourceHash: state.sourceHash }, async () => {});
+  await assert.rejects(setHospitalityGroupServiceCharges(actor, acceptedCommand, async () => {}), /changed elsewhere/);
+  const replay = await setHospitalityGroupServiceCharges(actor, { ...acceptedCommand, expectedVersion: after[1].version, expectedSourceHash: state.sourceHash }, async () => {});
   assert.equal(replay.changed, false); assert.deepEqual(await f.read(), after);
-  const removed = await setHospitalityGroupServiceCharges(actor, { ...command, expectedVersion: after[1].version, expectedSourceHash: state.sourceHash, charges: [] }, async () => {});
+  const removed = await setHospitalityGroupServiceCharges(actor, { ...acceptedCommand, expectedVersion: after[1].version, expectedSourceHash: state.sourceHash, charges: [] }, async () => {});
   assert.equal(removed.changed, true); assert.equal(groupCommercialState(f.id, await f.read()).totals.chargesNet, 0);
 });
 

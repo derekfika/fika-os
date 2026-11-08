@@ -83,6 +83,8 @@ export type PublishedMenuEntry = {
   canonicalSlotId?: string;
   canonicalOrderIndex?: number;
   canonicalDishId?: string;
+  /** Manual placement marker; legacy publications omit it and are not Core. */
+  isCoreSalad?: boolean;
   dishName: string;
   portions: number;
   allocations: Array<{
@@ -274,6 +276,7 @@ const publishedEntry = (
     sourceEntryId: entry.id,
     slot: entry.slot,
     menuOrderVersion: MENU_ORDER_VERSION,
+    ...(entry.isCoreSalad && /^SALAD [1-6]$/i.test(entry.slot) ? { isCoreSalad: true } : {}),
     ...(canonicalSlotId && canonicalOrderIndex >= 0 ? { canonicalSlotId, canonicalOrderIndex } : {}),
     ...(canonicalDish?.canonicalId
       ? { canonicalDishId: canonicalDish.canonicalId }
@@ -289,7 +292,7 @@ const publishedEntry = (
         destination,
         ...(destination.kind === "governed" ? { destinationId: destination.id } : {}),
         destinationLabel: destination.label,
-        ...(destination.kind === "one-off" ? { destinationAddress: destination.address } : allocation.destinationAddress ? { destinationAddress: allocation.destinationAddress } : {}),
+        ...(destination.kind === "one-off" ? (destination.address ? { destinationAddress: destination.address } : {}) : allocation.destinationAddress ? { destinationAddress: allocation.destinationAddress } : {}),
         quantity: allocation.quantity,
       };
     }),
@@ -632,6 +635,7 @@ function appendPublicationEvents(
                       ...(entry.menuOrderVersion ? { menuOrderVersion: entry.menuOrderVersion } : {}),
                       ...(entry.slot ? { slot: entry.slot } : {}),
                       ...(entry.canonicalSlotId ? { canonicalSlotId: entry.canonicalSlotId } : {}),
+                      ...(entry.isCoreSalad ? { isCoreSalad: true } : {}),
                       ...(entry.canonicalOrderIndex !== undefined ? { canonicalOrderIndex: entry.canonicalOrderIndex } : {}),
                       itemName: entry.dishName,
                       quantity: allocation.quantity,

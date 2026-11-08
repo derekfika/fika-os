@@ -3,7 +3,7 @@
 The detailed requirements formerly in the root AGENTS.md are retained here.
 Read the sections required by the root task-routing table and your app guide before changing those boundaries.
 Root and scoped AGENTS.md files supply the current solo-owner workflow; this reference does not replace them.
-The parallel-wave deployment wording below is aligned with the already-approved staging-candidate workflow; production still requires integrated main source.
+The [operator guide](../deployment/workflow.md) defines source eligibility and deployment recovery.
 
 ==================================================
 1. WHAT FIKA OS IS
@@ -392,7 +392,7 @@ For explicitly parallel waves:
 - record the shared `origin/main` baseline SHA;
 - start every temporary task branch from that same baseline;
 - do not allow concurrent edits to the same files;
-- do not deploy production from task branches; reviewed staging candidates follow the root release workflow;
+- deploy exact merged-main sources with passing required CI using the root release workflow;
 - integrate completed work sequentially back to `main`;
 - run a final integration/regression pass after the wave converges.
 
@@ -574,7 +574,7 @@ A source feature already present on `main` but absent on staging should trigger 
 
 10.2 Exact-SHA deployment rule
 
-Deploy only validated commits.
+Deploy the exact source merged through a protected main PR with passing required CI. Staging and manual UAT are optional. Use the governed CLI and verify the selected target and observed rollout.
 
 Do not deploy an ambiguous moving target such as “whatever is currently latest” when an exact validated SHA is available.
 
@@ -629,7 +629,7 @@ The root README.md may describe older repository structure and must not be treat
 
 A coding task is not complete merely because the page renders or TypeScript compiles.
 
-All normal terminal returns must run `fika workspace complete <task> --owner <agent-task>` from the canonical checkout after final validation and push, or explicitly preserve unfinished work with `--preserve --reason`. Report lease release, branch/PR/final SHA, retirement/protection, recovery and status-publication results. Interrupted/ongoing work keeps its lease. Follow root AGENTS.md and [workspace management](../deployment/workspace-management.md); use the current canonical tooling after revocation fencing is installed. Application entries belong in the app changelog or unique `.changes/<app>/` fragments; platform changes use the root log or `.changes/platform/`. Read-only work needs no entry.
+Record implementation completion with `fika workspace complete <task> --owner <agent-task>` after validation and push. Use `--preserve --reason` for unfinished work. Report the branch, PR, final SHA and retained checkout. Follow root AGENTS.md and [workspace management](../deployment/workspace-management.md). Application changes go in the app changelog or a unique `.changes/<app>/` fragment. Platform changes go in the root log or `.changes/platform/`. Read-only work needs no entry.
 
 A strong completion report states:
 - what changed;

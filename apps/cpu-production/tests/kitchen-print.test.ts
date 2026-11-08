@@ -8,11 +8,13 @@ import {
   totalsPrintHtml,
   collectionQuantity,
   collectionTime,
+  isCoreSaladLine,
 } from "../app/ui/kitchen-print";
 import { eventGuestCountLabel, orderedQuantityLabel } from "../lib/ordered-quantity";
 
 import { aggregateProductionTotals } from "../lib/production-day";
 
+import { collectionDetails, collectionReadyBy } from "../app/ui/run-sheet-presentation";
 import type { ProductionOrder, ProductionLine } from "../lib/production-types";
 
 const line = (id: string, quantity = 4, unit = "portions") =>
@@ -76,6 +78,9 @@ test("collection print has every long-list row, empty physical boxes, signatures
   assert.match(html, /Packed by/);
   assert.match(html, /Checked by/);
   assert.match(html, /size:A4/);
+  assert.match(html, /scope="col">Pack<\/th>.*scope="col">Category<\/th>.*scope="col">Dish name<\/th>.*scope="col">Portions<\/th>/);
+  assert.match(html, /class="category"/);
+  assert.match(collectionPrintHtml({ ...o, origin: "menu_planning" }), /class="quantity" scope="col">Portions<\/th>/);
   assert.match(html, /break-inside:avoid/);
   assert.match(html, /table-header-group/);
   assert.doesNotMatch(html, /checked=|<script/);
@@ -97,7 +102,7 @@ test("print escapes labels and omits internal recipe multipliers", () => {
     "4 portions",
   );
   assert.equal(
-    collectionTime({
+    collectionReadyBy({
       ...o,
       serviceWindow: undefined,
       requiredBy: "2026-07-10T10:00:00Z",
@@ -139,8 +144,19 @@ test("single-collection print retains Menu section and slot metadata", () => {
   ]);
   const html = collectionPrintHtml(menu);
   assert.ok(html.indexOf("SALADS</th>") < html.indexOf("DESSERTS</th>"));
-  assert.match(html, /Leaf Salad<\/small> Mixed leaves/);
-  assert.match(html, /Dessert<\/small> Pear crumble/);
+  assert.match(html, /class="category">Leaf Salad<\/td><td class="dish">Mixed leaves<\/td>/);
+  assert.match(html, /class="category">Dessert<\/td><td class="dish">Pear crumble<\/td>/);
+});
+
+test("Core Salad is explicitly labeled while ordinary and legacy rows remain unchanged", () => {
+  const core = { ...line("core"), isCoreSalad: true } as ProductionLine & { isCoreSalad: boolean };
+  const ordinary = line("ordinary");
+  const html = collectionPrintHtml(order("core-menu", [core, ordinary]));
+  assert.equal(isCoreSaladLine(core), true);
+  assert.equal(isCoreSaladLine(ordinary), false);
+  assert.match(html, /class="core-salad"/);
+  assert.match(html, /<small class="core-salad-label" aria-label="Core Salad">CORE<\/small>/);
+  assert.doesNotMatch(html, /Dish ordinary <small class="core-salad-label">/);
 });
 
 test("daily and selected multi-day totals print reuse verified aggregation and never combine incompatible units", () => {
@@ -168,4 +184,25 @@ test("daily and selected multi-day totals print reuse verified aggregation and n
   assert.match(html, /Test site/);
   assert.match(html, /Prep \/ order notes/);
   assert.deepEqual(aggregateProductionTotals([a]), daily);
+});
+
+test("collection details use recorded service data and stable readable references", () => {
+  const hospitality = {
+    ...order("internal-order"),
+    origin: "hospitality_booking" as const,
+    sourceBookingId: "BK-1266",
+    clientName: "Synthetic client",
+    bookingNotes: "Access via reception\nEvent: Operations briefing",
+    requiredBy: "2026-07-10T10:00:00Z",
+    serviceWindow: { startTime: "12:30", endTime: "13:00" },
+    requiresDelivery: true,
+  };
+  assert.deepEqual(collectionDetails(hospitality), {
+    service: "Hospitality booking", readyBy: "11:00", collection: "TBC",
+    serviceWindow: "12:30–13:00", reference: "BK-1266 · v3",
+    client: "Synthetic client", event: "Operations briefing",
+  });
+  assert.equal(collectionDetails({ ...hospitality, requiresDelivery: false }).collection, "12:30–13:00");
+  assert.equal(collectionQuantity(line("one", 1, "portions")), "1 portion");
+  assert.equal(collectionQuantity(line("many", 1234.0625, "portion")), "1,234.0625 portions");
 });

@@ -1,3 +1,4 @@
+import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
 import { NextRequest, NextResponse } from "next/server";
 import { productionQueue } from "../../../../lib/production-http-client";
 import { loadPlansForOrders } from "../../../../lib/cpu-projection-repository";
@@ -43,6 +44,8 @@ async function handleGet(request: NextRequest) {
     await requireCpuActor(request);
     const destinationScope = await resolveCpuDestinationScope(request, [oplocId]);
     if (!cpuDestinationAllowed(destinationScope, oplocId)) return NextResponse.json({ error: { message: "This destination is outside your CPU Production access scope." } }, { status: 403 });
+    const driveBlocked = await stagingDriveAccessBlocked();
+    if (driveBlocked && request.nextUrl.searchParams.get("download") === "pdf") return NextResponse.json({ error: { message: "The PDF is unavailable while Drive isolation is unverified." } }, { status: 404 });
     const reconcile = request.nextUrl.searchParams.get("reconcile") === "1";
     if (!reconcile) {
       try {
@@ -73,7 +76,7 @@ async function handleGet(request: NextRequest) {
                 entries[key] = { allergens: Object.fromEntries(Object.entries(item.allergens).filter(([, value]) => value !== "unrecorded")) as Record<string, ReviewState>, ...(item.mayContainNotes ? { mayContainNotes: item.mayContainNotes } : {}) };
               }
               const artifact = sourceOrders.find(order => order.matrixArtifact)?.matrixArtifact;
-              const sitePdfUrl = artifact?.driveUrl || artifact?.localUrl;
+              const sitePdfUrl = driveBlocked ? undefined : artifact?.driveUrl || artifact?.localUrl;
               return NextResponse.json({ status: "signed", signatures: signatureList, ...(sitePdfUrl ? { drivePdfUrl: sitePdfUrl } : {}), entries, package: packaged.manifest }, { headers: { "Cache-Control": "no-store, max-age=0" } });
             }
           } else {
@@ -111,7 +114,7 @@ async function handleGet(request: NextRequest) {
       if (!signed) return NextResponse.json({ error: { message: "The site matrix is unavailable until CPU sign-off is complete." } }, { status: 409 });
       return await sitePdf(request, serviceDate, oplocId, orders, plans, signatureList);
     }
-    const sitePdfUrl = signed ? `${request.nextUrl.pathname}?serviceDate=${encodeURIComponent(serviceDate)}&oplocId=${encodeURIComponent(oplocId)}&download=pdf` : undefined;
+    const sitePdfUrl = signed && !driveBlocked ? `${request.nextUrl.pathname}?serviceDate=${encodeURIComponent(serviceDate)}&oplocId=${encodeURIComponent(oplocId)}&download=pdf` : undefined;
     await rebuildCpuReviewPackage(request, serviceDate, oplocId);
     return NextResponse.json({ status: signed ? "signed" : "pending", signatures: signatureList, ...(sitePdfUrl ? { drivePdfUrl: sitePdfUrl } : {}), entries }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {

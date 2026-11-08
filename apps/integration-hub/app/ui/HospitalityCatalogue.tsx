@@ -2,22 +2,25 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Plus, Search, X } from "lucide-react";
+import Papa from "papaparse";
 import { SERVICE_IDS } from "@fika/server-shared/hospitality-service-layout";
 import ConfirmationModal from "./ConfirmationModal";
 import HospitalityCatalogueOverview from "./HospitalityCatalogueOverview";
 import HospitalityCatalogueServices from "./HospitalityCatalogueServices";
+import HospitalityCatalogueManager from "./HospitalityCatalogueManager";
 import { CATALOGUE_TABS, itemServiceVisibility, manageServicesContext, type CatalogueTab, type ServicesContext } from "./hospitality-catalogue-ux/model";
 import "./HospitalityCatalogue.css";
 import {
-  ROUTING_CHOICES, ROUTING_CHOICE_LABELS, ROUTING_STATE_LABELS,
+  ROUTING_CHOICES, ROUTING_CHOICE_LABELS, ROUTING_STATE_LABELS, SERVICE_LABELS,
   type CatalogueOfferingView, type CataloguePayload, type CatalogueRow, type ReviewGroupView, type RoutingChoice, type ServiceLayoutView,
 } from "../../lib/hospitality-catalogue-types";
 import { EMPTY_FILTERS, bulkImpact, categoriesOf, categoryVisibilityCheck, formatMoney, oplocLabel, pruneSelection, rowMatches, selectAllShown, selectableRows, selectableSites, sitesSummary, sortRows, summariseCounts, toggleSelection, withDuplicateFlag, type BulkDraft, type CatalogueFilters, type Sort, type SortKey } from "../../lib/hospitality-catalogue-view";
 
 type Command = Record<string, unknown> & { action: string };
-type ApiBody = { error?: { message?: string }; message?: string; rows?: CatalogueRow[]; payload?: CataloguePayload; bulk?: BulkResultView; serviceLayoutStored?: Pick<ServiceLayoutView, "company" | "sites"> } & Partial<CataloguePayload>;
+type ApiBody = { error?: { message?: string }; message?: string; rows?: CatalogueRow[]; payload?: CataloguePayload; bulk?: BulkResultView; bulkCreate?: BulkCreateResultView; serviceLayoutStored?: Pick<ServiceLayoutView, "company" | "sites"> } & Partial<CataloguePayload>;
 type BulkResultView = { operationId: string; results: Array<{ itemId: string; status: "applied" | "unchanged" | "already_applied" | "failed"; message: string }>; succeeded: number; failed: number; message: string };
-type Send = (command: Command) => Promise<{ message: string; bulk?: BulkResultView }>;
+type BulkCreateResultView = { operationId: string; results: Array<{ requestId: string; itemId?: string; name: string; status: "applied" | "already_applied" | "failed"; message: string }>; succeeded: number; failed: number; message: string };
+type Send = (command: Command) => Promise<{ message: string; bulk?: BulkResultView; bulkCreate?: BulkCreateResultView }>;
 
 const sentence = (value: string) => value.charAt(0).toLocaleUpperCase("en-GB") + value.slice(1);
 const newRequestId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -44,7 +47,8 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
   const [filters, setFilters] = useState<CatalogueFilters>(EMPTY_FILTERS);
   const [sort, setSort] = useState<Sort>({ key: "name", direction: "asc" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<false | "single" | "bulk">(false);
+  const [managingCategories, setManagingCategories] = useState(false);
   const [reviewing, setReviewing] = useState<ReviewGroupView | null>(null);
   const [notice, setNotice] = useState("");
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -59,7 +63,7 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     url.searchParams.set("catalogueTab", nextTab);
-    if (nextTab === "services" || nextTab === "locations") {
+    if (nextTab === "services" || nextTab === "locations" || nextTab === "manager") {
       if (context.oplocId) url.searchParams.set("site", context.oplocId); else url.searchParams.delete("site");
       if (context.serviceId) url.searchParams.set("service", context.serviceId); else url.searchParams.delete("service");
       if (context.category) url.searchParams.set("category", context.category); else url.searchParams.delete("category");
@@ -123,7 +127,7 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
       return { ...current, rows, counts: summariseCounts(rows) };
     });
     setNotice(body.message ?? "");
-    return { message: body.message ?? "", ...(body.bulk ? { bulk: body.bulk } : {}) };
+    return { message: body.message ?? "", ...(body.bulk ? { bulk: body.bulk } : {}), ...(body.bulkCreate ? { bulkCreate: body.bulkCreate } : {}) };
   }, [request]);
 
   const rows = useMemo(() => payload?.rows ?? [], [payload]);
@@ -150,7 +154,7 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
   return <section className="hc" aria-labelledby="hc-title">
     <header className="hc-header">
       <div><h1 id="hc-title">Hospitality Catalogue</h1><p>One company-wide list of hospitality products. Each product has one production route, company default price and minimum, and sites can override price or minimum where needed.</p></div>
-      {canManage && <button type="button" className="hc-btn hc-btn--primary" onClick={() => setAdding(true)}><Plus size={16} aria-hidden="true" /> Add item</button>}
+      {canManage && <div className="hc-header__actions"><button type="button" className="hc-btn" onClick={() => setManagingCategories(true)}>Manage categories</button><button type="button" className="hc-btn" onClick={() => setAdding("bulk")}>Paste multiple items</button><button type="button" className="hc-btn hc-btn--primary" onClick={() => setAdding("single")}><Plus size={16} aria-hidden="true" /> Add item</button></div>}
     </header>
 
     <div className="scg-tabs" role="tablist" aria-label="Catalogue sections">{CATALOGUE_TABS.map(entry => <button key={entry.id} type="button" role="tab" id={`hc-tab-${entry.id}`} aria-selected={tab === entry.id} aria-controls={`hc-panel-${entry.id}`} tabIndex={tab === entry.id ? 0 : -1} className="scg-tab"
@@ -169,6 +173,8 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
     {tab === "overview" ? <div role="tabpanel" id="hc-panel-overview" aria-labelledby="hc-tab-overview" className="hc-overview-tab">
       <h2 className="hc-overview-title">Catalogue at a glance</h2>
       <HospitalityCatalogueOverview payload={payload} onNavigate={next => writeLocation(next)} />
+    </div> : tab === "manager" ? <div role="tabpanel" id="hc-panel-manager" aria-labelledby="hc-tab-manager" className="hc-manager-tab">
+      <HospitalityCatalogueManager payload={payload} context={servicesContext} onContextChange={context => writeLocation("manager", context, "replace")} onOpenItem={itemId => { setSelectedId(itemId); writeLocation("items"); }} />
     </div> : tab === "services" || tab === "locations" ? <div role="tabpanel" id={`hc-panel-${tab}`} aria-labelledby={`hc-tab-${tab}`} className={`hc-${tab}-tab`}>
       <HospitalityCatalogueServices payload={payload} canManage={canManage} send={send} reload={load} view={tab} initialContext={servicesContext} onContextChange={context => writeLocation(tab, context, "replace")} />
     </div> : <div role="tabpanel" id="hc-panel-items" aria-labelledby="hc-tab-items" className="hc-items-tab">
@@ -244,7 +250,9 @@ export default function HospitalityCatalogue({ refreshSession }: { refreshSessio
     </div>}
 
     {selected && <ItemPanel key={selected.itemId} row={selected} payload={payload} canManage={canManage} send={send} onClose={() => setSelectedId(null)} onManageServices={manageServices} />}
-    {adding && <AddItemModal payload={payload} send={send} onClose={() => setAdding(false)} />}
+    {managingCategories && <CategoryRenameModal payload={payload} send={send} onClose={() => setManagingCategories(false)} />}
+    {adding === "single" && <AddItemModal payload={payload} send={send} onClose={() => setAdding(false)} />}
+    {adding === "bulk" && <BulkAddModal payload={payload} send={send} onClose={() => setAdding(false)} />}
     {bulk && <BulkModal mode={bulk} rows={chosenRows} payload={payload} send={send} onClose={() => setBulk(null)} onFinished={report => { setBulkReport(report); setSelectedIds(new Set(report.results.filter(result => result.status === "failed").map(result => result.itemId))); }} />}
     {bulkReport && bulkReport.failed > 0 && !bulk && <div className="hc-alert" role="alert"><strong>{bulkReport.message}</strong><ul>{bulkReport.results.filter(result => result.status === "failed").map(result => <li key={result.itemId}>{rows.find(row => row.itemId === result.itemId)?.name || "Unknown item"}: {result.message}</li>)}</ul><button type="button" className="hc-btn" onClick={() => setBulkReport(null)}>Dismiss</button></div>}
     {reviewing && <ReviewGroupModal group={reviewing} payload={payload} canManage={canManage} send={send} onClose={() => setReviewing(null)} />}
@@ -507,6 +515,74 @@ function ItemPanel({ row, payload, canManage, send, onClose, onManageServices }:
   </div>;
 }
 
+function CategoryRenameModal({ payload, send, onClose }: { payload: CataloguePayload; send: Send; onClose: () => void }) {
+  const categories = useMemo(() => {
+    const values = new Set(categoriesOf(payload.rows));
+    const layout = payload.serviceLayout;
+    if (layout) {
+      for (const serviceId of SERVICE_IDS) for (const category of layout.company.services[serviceId]?.categories ?? []) values.add(category);
+      for (const site of Object.values(layout.sites)) for (const serviceId of SERVICE_IDS) for (const category of site.services[serviceId]?.categories ?? []) values.add(category);
+    }
+    return [...values].filter(Boolean).sort((a, b) => a.localeCompare(b, "en-GB"));
+  }, [payload.rows, payload.serviceLayout]);
+  const [category, setCategory] = useState(() => categories[0] ?? "");
+  const [newCategory, setNewCategory] = useState("Wine, Beer & Non-Alc");
+  const [reason, setReason] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const [error, setError] = useState("");
+  const [operationId] = useState(newRequestId);
+  const { busy, run } = useAction(send);
+  const dialog = useDialog(onClose, busy);
+  const affectedItems = payload.rows.filter(row => row.category === category);
+  const targetExists = payload.rows.some(row => row.category === newCategory.trim()) || Boolean(payload.serviceLayout && (
+    SERVICE_IDS.some(id => payload.serviceLayout!.company.services[id]?.categories.includes(newCategory.trim()))
+    || Object.values(payload.serviceLayout.sites).some(site => SERVICE_IDS.some(id => site.services[id]?.categories.includes(newCategory.trim())))
+  ));
+  const companyServices = payload.serviceLayout ? SERVICE_IDS.filter(id => payload.serviceLayout!.company.services[id]?.categories.includes(category)).map(id => SERVICE_LABELS[id]) : [];
+  const siteServices = payload.serviceLayout ? Object.entries(payload.serviceLayout.sites).flatMap(([oplocId, layout]) => {
+    const labels = SERVICE_IDS.filter(id => layout.services[id]?.categories.includes(category)).map(id => SERVICE_LABELS[id]);
+    return labels.length ? [{ oplocId, site: oplocLabel(payload.oplocs, oplocId), labels }] : [];
+  }) : [];
+  const expectedItemVersions = Object.fromEntries(affectedItems.map(row => [row.itemId, row.version]));
+  const expectedLayoutVersions: Record<string, number> = {};
+  if (payload.serviceLayout && companyServices.length) expectedLayoutVersions.company = payload.serviceLayout.company.version;
+  if (payload.serviceLayout) for (const { oplocId, labels } of siteServices) {
+    if (labels.length) expectedLayoutVersions[`site:${oplocId}`] = payload.serviceLayout.sites[oplocId]?.version ?? 0;
+  }
+  const ready = category && newCategory.trim() && category !== newCategory.trim() && !targetExists && reason.trim().length >= 8 && confirmed && !busy && (affectedItems.length > 0 || companyServices.length > 0 || siteServices.length > 0);
+
+  async function submit() {
+    setError("");
+    if (targetExists) { setError(`“${newCategory.trim()}” already exists. Choose another name or review a separate category merge.`); return; }
+    const result = await run({ action: "rename-category", operationId, category, newCategory: newCategory.trim(), expectedItemVersions, expectedLayoutVersions, reason: reason.trim() });
+    if (result) onClose();
+  }
+
+  return <div className="hc-modal-backdrop" role="presentation">
+    <section className="hc-modal" role="dialog" aria-modal="true" aria-labelledby="hc-category-title" ref={dialog}>
+      <header><h2 id="hc-category-title">Rename category</h2><button type="button" className="hc-icon" aria-label="Close category manager" onClick={onClose} disabled={busy}><X size={18} aria-hidden="true" /></button></header>
+      <div className="hc-modal__body">
+        <p className="hc-hint">Categories are shared across the catalogue. This renames every current and archived Item with this exact category and updates each stored service layout that includes it. Site availability, prices, minimums, routing, Item identity and historical booking snapshots stay unchanged.</p>
+        <Field label="Current category"><select value={category} onChange={event => { setCategory(event.target.value); setConfirmed(false); }} disabled={busy}><option value="">Choose a category…</option>{categories.map(value => <option key={value} value={value}>{value}</option>)}</select></Field>
+        <Field label="New category name"><input value={newCategory} maxLength={120} onChange={event => { setNewCategory(event.target.value); setConfirmed(false); }} disabled={busy} /></Field>
+        <section className="hc-section" aria-labelledby="hc-category-impact-title">
+          <h3 id="hc-category-impact-title">Review the impact</h3>
+          <p><strong>{affectedItems.filter(row => row.status === "active").length}</strong> active Items and <strong>{affectedItems.filter(row => row.status === "archived").length}</strong> archived Items will change from “{category || "—"}” to “{newCategory.trim() || "—"}”.</p>
+          <p><strong>Company services:</strong> {companyServices.join(", ") || "No company service includes this category."}</p>
+          {siteServices.length ? <ul>{siteServices.map(({ site, labels }) => <li key={site}><strong>{site}:</strong> {labels.join(", ")}</li>)}</ul> : <p><strong>Location overrides:</strong> none include this category.</p>}
+          {affectedItems.length > 0 && <ul className="hc-results">{affectedItems.slice(0, 20).map(row => <li key={row.itemId}><strong>{row.name}</strong> <span>{row.status === "active" ? "Active" : "Archived"} · {row.availableAt.length} sites</span></li>)}</ul>}
+          {affectedItems.length > 20 && <p>Showing 20 of {affectedItems.length} affected Items. All will be updated in one governed operation.</p>}
+          {targetExists && <p className="hc-error" role="alert">This category name is already in use. Choose another name or review a separate category merge.</p>}
+        </section>
+        <Field label="Reason for change" hint="Recorded with the category change. Enter at least 8 characters."><input value={reason} maxLength={500} onChange={event => setReason(event.target.value)} disabled={busy} /></Field>
+        <label className="hc-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} disabled={busy} /><span>I reviewed the company-wide Item and service impact above.</span></label>
+        {error && <p className="hc-error" role="alert">{error}</p>}
+      </div>
+      <footer><button type="button" className="hc-btn" onClick={onClose} disabled={busy}>Cancel</button><button type="button" className="hc-btn hc-btn--primary" onClick={() => void submit()} disabled={!ready}>{busy ? "Saving category…" : "Rename category"}</button></footer>
+    </section>
+  </div>;
+}
+
 function AddItemModal({ payload, send, onClose }: { payload: CataloguePayload; send: Send; onClose: () => void }) {
   const [requestId] = useState(newRequestId);
   const [form, setForm] = useState({ name: "", category: "", description: "", price: "", minimum: "" });
@@ -540,6 +616,119 @@ function AddItemModal({ payload, send, onClose }: { payload: CataloguePayload; s
       </div>
       <footer><button type="button" className="hc-btn" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" className="hc-btn hc-btn--primary" disabled={busy || !ready}>{busy ? "Creating…" : "Create item"}</button></footer>
     </form>
+  </div>;
+}
+
+type BulkAddRow = { requestId: string; name: string; category: string; grossPrice: string; vatRate: string; description: string; routing: RoutingChoice | "" };
+const emptyBulkAddRow = (): BulkAddRow => ({ requestId: newRequestId(), name: "", category: "", grossPrice: "", vatRate: "20", description: "", routing: "" });
+const normalisedCatalogueName = (name: string) => name.trim().toLocaleLowerCase("en-GB").replace(/\s+/g, " ");
+
+function BulkAddModal({ payload, send, onClose }: { payload: CataloguePayload; send: Send; onClose: () => void }) {
+  const [operationId] = useState(newRequestId);
+  const [paste, setPaste] = useState("");
+  const [rows, setRows] = useState<BulkAddRow[]>([]);
+  const [siteIds, setSiteIds] = useState<string[]>([]);
+  const [confirmedCategories, setConfirmedCategories] = useState<ReadonlySet<string>>(new Set());
+  const [report, setReport] = useState<BulkCreateResultView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const dialog = useDialog(onClose, busy);
+  const existingCategories = categoriesOf(payload.rows);
+  const newCategories = [...new Set(rows.map(row => row.category.trim()).filter(category => category && !existingCategories.includes(category)))];
+  const duplicateRows = new Set<string>();
+  const namesSeen = new Set<string>();
+  for (const row of rows) {
+    const key = normalisedCatalogueName(row.name);
+    if (key && (namesSeen.has(key) || payload.rows.some(item => normalisedCatalogueName(item.name) === key))) duplicateRows.add(row.requestId);
+    if (key) namesSeen.add(key);
+  }
+  const invalidRows = rows.filter(row => !row.name.trim() || !row.category.trim() || !row.routing || Number.isNaN(Number(row.grossPrice)) || Number(row.grossPrice) <= 0 || Number.isNaN(Number(row.vatRate)) || Number(row.vatRate) < 0 || Number(row.vatRate) > 100 || duplicateRows.has(row.requestId));
+
+  function parseRows() {
+    setError(""); setReport(null);
+    const parsed = Papa.parse<string[]>(paste, { delimiter: "\t", skipEmptyLines: true });
+    if (parsed.errors.length) { setError(`The pasted rows could not be read: ${parsed.errors[0].message}`); return; }
+    const values = parsed.data.filter(cells => cells.some(cell => String(cell ?? "").trim()));
+    if (values.length && /^(item name|name)$/i.test(String(values[0][0] ?? "").trim()) && /category/i.test(String(values[0][1] ?? ""))) values.shift();
+    if (!values.length) { setError("Paste at least one product row, with columns: item name, category, VAT-inclusive price, VAT %, description, production route."); return; }
+    if (values.length > 50) { setError("Paste up to 50 rows at a time. The rows are still in the text area; split them into smaller batches."); return; }
+    if (values.some(cells => cells.length > 6)) { setError("Each row can have up to six tab-separated columns. Extra columns were not loaded."); return; }
+    setRows(values.map(cells => {
+      const routeText = String(cells[5] ?? "").trim();
+      const route = ROUTING_CHOICES.find(option => option === routeText) || ROUTING_CHOICES.find(option => ROUTING_CHOICE_LABELS[option].toLocaleLowerCase("en-GB") === routeText.toLocaleLowerCase("en-GB")) || "";
+      return { requestId: newRequestId(), name: String(cells[0] ?? "").trim(), category: String(cells[1] ?? "").trim(), grossPrice: String(cells[2] ?? "").trim().replace(/^£/, ""), vatRate: String(cells[3] ?? "20").trim().replace(/%$/, ""), description: String(cells[4] ?? "").trim(), routing: route };
+    }));
+    setConfirmedCategories(new Set());
+  }
+
+  const editRow = (requestId: string, patch: Partial<BulkAddRow>) => setRows(current => current.map(row => row.requestId === requestId ? { ...row, ...patch } : row));
+  const toggleCategoryConfirmation = (category: string) => setConfirmedCategories(current => {
+    const next = new Set(current); if (next.has(category)) next.delete(category); else next.add(category); return next;
+  });
+  async function saveRows() {
+    setError("");
+    if (!rows.length) { setError("Load product rows before saving."); return; }
+    if (invalidRows.length) { setError("Fix the highlighted name, category, price, route and duplicate issues before saving."); return; }
+    if (!siteIds.length) { setError("Choose at least one site. New products are restricted to exactly the sites you select."); return; }
+    const unconfirmed = newCategories.filter(category => !confirmedCategories.has(category));
+    if (unconfirmed.length) { setError(`Confirm the new category name${unconfirmed.length === 1 ? "" : "s"}: ${unconfirmed.join(", ")}. New categories are not enabled for booking services automatically.`); return; }
+    setBusy(true);
+    try {
+      const result = await send({ action: "bulk-create", operationId, items: rows.map(row => {
+        const gross = Number(row.grossPrice); const vatRate = Number(row.vatRate) / 100;
+        const amount = Math.round((gross / (1 + vatRate) + Number.EPSILON) * 100) / 100;
+        return { action: "create-item", requestId: row.requestId, name: row.name.trim(), category: row.category.trim(), routing: row.routing, defaultPrice: { amount, vatRate }, ...(row.description.trim() ? { description: row.description.trim() } : {}), oplocIds: siteIds, restrictToSelectedOplocs: true };
+      }) });
+      if (result.bulkCreate) setReport(result.bulkCreate);
+      else setError("The catalogue service returned no row-level result. Your rows remain here; retrying is safe.");
+    } catch (caught) { setError((caught as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  return <div className="hc-modal-backdrop" role="presentation">
+    <section className="hc-modal hc-modal--wide" role="dialog" aria-modal="true" aria-labelledby="hc-bulk-add-title" ref={dialog}>
+      <header><h2 id="hc-bulk-add-title">{report ? "Bulk add result" : "Paste multiple products"}</h2><button type="button" className="hc-icon" onClick={onClose} disabled={busy} aria-label="Close bulk add"><X size={18} aria-hidden="true" /></button></header>
+      <div className="hc-modal__body">
+        {report ? <>
+          <p className={report.failed ? "hc-warning hc-warning--danger" : "hc-success"} role="status">{report.message}</p>
+          <ul className="hc-results">{report.results.map(result => <li key={result.requestId} className={result.status === "failed" ? "is-failed" : ""}><strong>{result.name || "Product row"}</strong> <span>{result.status === "failed" ? "Not saved" : result.status === "already_applied" ? "Already saved" : "Saved"}</span>{result.status === "failed" && <small>{result.message}</small>}</li>)}</ul>
+        </> : <>
+          <p className="hc-hint">Paste tab-separated rows from a spreadsheet. Columns: <strong>Item name, Category, Selling price including VAT, VAT rate %, Description, Production route.</strong> The preview calculates the canonical ex-VAT amount; it does not change existing records.</p>
+          <p className="hc-hint">Booking service availability is configured by category in the Services section; there is no per-item service switch. New categories stay unavailable to services until an authorised operator explicitly configures that category. Display subgroups are not stored by the current canonical item model.</p>
+          {!rows.length && <>
+            <Field label="Product rows" hint="A header row is optional. Use a 20 VAT rate for the RCoA sheet's proposed VAT-inclusive prices, or enter the source's approved rate."><textarea rows={8} value={paste} onChange={event => setPaste(event.target.value)} placeholder={'Item name\tCategory\tSelling price (inc VAT)\tVAT rate %\tDescription\tProduction route\nHouse red\tWine, Beer & Non-Alc\t20.00\t20\t\tNo CPU / In house'} /></Field>
+            <button type="button" className="hc-btn" onClick={parseRows}>Load rows for review</button>
+          </>}
+          {rows.length > 0 && <>
+            <fieldset className="hc-bulk-group"><legend>Available at</legend><p className="hc-hint">No sites are selected by default. These new products will be restricted to the selected sites.</p><SitePicker legend="Sites" sites={selectableSites(payload.oplocs)} value={siteIds} onChange={setSiteIds} disabled={busy} /></fieldset>
+            {newCategories.length > 0 && <section className="hc-bulk-group"><h3>New categories</h3><p className="hc-hint">Confirm each new category name. Category visibility for booking services remains a separate explicit setting.</p>{newCategories.map(category => <label className="hc-check" key={category}><input type="checkbox" checked={confirmedCategories.has(category)} onChange={() => toggleCategoryConfirmation(category)} /><span>Create “{category}”</span></label>)}</section>}
+            <div className="hc-compare-wrap"><table className="hc-compare hc-bulk-create-table"><thead><tr><th scope="col">Item name</th><th scope="col">Category</th><th scope="col">Price inc VAT</th><th scope="col">VAT</th><th scope="col">Canonical price ex VAT</th><th scope="col">Production route</th><th scope="col">Description</th><th scope="col">Status</th><th scope="col"><span className="hc-sr">Row actions</span></th></tr></thead><tbody>
+              {rows.map(row => {
+                const gross = Number(row.grossPrice), rate = Number(row.vatRate);
+                const exVat = Number.isFinite(gross) && Number.isFinite(rate) && rate >= 0 ? Math.round((gross / (1 + rate / 100) + Number.EPSILON) * 100) / 100 : undefined;
+                const invalid = !row.name.trim() || !row.category.trim() || !row.routing || !(gross > 0) || !Number.isFinite(rate) || rate < 0 || rate > 100 || duplicateRows.has(row.requestId);
+                return <tr key={row.requestId} className={invalid ? "is-diff" : ""}>
+                  <td><input aria-label={`Item name for row ${row.name || "new"}`} value={row.name} maxLength={240} onChange={event => editRow(row.requestId, { name: event.target.value })} /></td>
+                  <td><input aria-label={`Category for ${row.name || "new item"}`} list="hc-bulk-add-categories" value={row.category} maxLength={160} onChange={event => editRow(row.requestId, { category: event.target.value })} /></td>
+                  <td><input aria-label={`VAT-inclusive price for ${row.name || "new item"}`} inputMode="decimal" value={row.grossPrice} onChange={event => editRow(row.requestId, { grossPrice: event.target.value })} /></td>
+                  <td><input aria-label={`VAT rate for ${row.name || "new item"}`} inputMode="decimal" value={row.vatRate} onChange={event => editRow(row.requestId, { vatRate: event.target.value })} /></td>
+                  <td>{exVat === undefined ? "Review price" : formatMoney(exVat)}</td>
+                  <td><select aria-label={`Production route for ${row.name || "new item"}`} value={row.routing} onChange={event => editRow(row.requestId, { routing: event.target.value as RoutingChoice | "" })}><option value="">Choose route…</option>{ROUTING_CHOICES.map(route => <option key={route} value={route}>{ROUTING_CHOICE_LABELS[route]}</option>)}</select></td>
+                  <td><input aria-label={`Description for ${row.name || "new item"}`} value={row.description} maxLength={4000} onChange={event => editRow(row.requestId, { description: event.target.value })} /></td>
+                  <td>Active</td>
+                  <td><button type="button" className="hc-btn hc-btn--text" onClick={() => setRows(current => current.filter(item => item.requestId !== row.requestId))} disabled={busy}>Remove</button>{duplicateRows.has(row.requestId) && <small role="alert">Likely duplicate. Review the existing item.</small>}</td>
+                </tr>;
+              })}
+            </tbody></table></div>
+            <datalist id="hc-bulk-add-categories">{existingCategories.map(category => <option key={category} value={category} />)}</datalist>
+            <div className="hc-bulk-create-footer"><button type="button" className="hc-btn" onClick={() => setRows(current => [...current, emptyBulkAddRow()])} disabled={busy || rows.length >= 50}>Add row</button><button type="button" className="hc-btn hc-btn--text" onClick={() => { setRows([]); setConfirmedCategories(new Set()); }} disabled={busy}>Paste different rows</button></div>
+            {duplicateRows.size > 0 && <p className="hc-warning" role="alert">{duplicateRows.size} row{duplicateRows.size === 1 ? "is" : "s are"} likely to duplicate an existing or pasted item. No matching item will be edited by this workflow.</p>}
+          </>}
+        </>}
+        {error && <p role="alert" className="hc-error">{error}</p>}
+      </div>
+      <footer>{report ? <button type="button" className="hc-btn hc-btn--primary" onClick={onClose}>Close</button> : <><button type="button" className="hc-btn" onClick={onClose} disabled={busy}>Cancel</button>{rows.length > 0 && <button type="button" className="hc-btn hc-btn--primary" onClick={() => void saveRows()} disabled={busy || invalidRows.length > 0 || !siteIds.length || newCategories.some(category => !confirmedCategories.has(category))}>{busy ? "Saving products…" : `Save ${rows.length} product${rows.length === 1 ? "" : "s"}`}</button>}</>}</footer>
+    </section>
   </div>;
 }
 

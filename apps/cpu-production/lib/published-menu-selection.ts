@@ -3,9 +3,9 @@ import { canonicalMenuSlotIdFor, orderMenuEntries } from "../../shared/menu-sect
 export type PublishedMenuDaySummary = { date: string; version: number; status: string };
 export type PublishedMenuPublicationSummary = { weekCommencing: string };
 export type PublishedMenuAllocation = { destinationLabel: string; quantity: number };
-export type PublishedMenuEntrySummary = { slot: string; dishName: string; portions: number; canonicalDishId?: string; sourceEntryId?: string; menuOrderVersion?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; allocations: PublishedMenuAllocation[] };
-export type DestinationProductionGroup = { destinationLabel: string; total: number; entries: Array<{ slot: string; dishName: string; quantity: number; sourceEntryId?: string; canonicalSlotId?: string; canonicalOrderIndex?: number }> };
-export type ProductionTotal = { slot: string; dishName: string; quantity: number; canonicalDishId?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; menuOrderVersion?: string; slots: Array<{ slot: string; canonicalSlotId?: string; canonicalOrderIndex?: number }> };
+export type PublishedMenuEntrySummary = { slot: string; dishName: string; portions: number; canonicalDishId?: string; sourceEntryId?: string; menuOrderVersion?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; isCoreSalad?: boolean; allocations: PublishedMenuAllocation[] };
+export type DestinationProductionGroup = { destinationLabel: string; total: number; entries: Array<{ slot: string; dishName: string; quantity: number; sourceEntryId?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; isCoreSalad?: boolean }> };
+export type ProductionTotal = { slot: string; dishName: string; quantity: number; canonicalDishId?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; menuOrderVersion?: string; isCoreSalad?: boolean; slots: Array<{ slot: string; canonicalSlotId?: string; canonicalOrderIndex?: number; isCoreSalad?: boolean }> };
 export function publishedMatrixUrl(publicationId: string, publicationDayId: string) { return `/api/menu-publications?publicationId=${encodeURIComponent(publicationId)}&publicationDayId=${encodeURIComponent(publicationDayId)}&format=matrix`; }
 
 export function currentPublishedDays<T extends PublishedMenuDaySummary>(days: T[] = []) {
@@ -30,7 +30,7 @@ export function groupEntriesByDestination(entries: PublishedMenuEntrySummary[] =
       const key = allocation.destinationLabel.trim() || "Unassigned destination";
       const group = groups.get(key) || { destinationLabel: key, total: 0, entries: [] };
       group.total += allocation.quantity;
-      group.entries.push({ slot: entry.slot, dishName: entry.dishName, quantity: allocation.quantity, ...(entry.sourceEntryId ? { sourceEntryId: entry.sourceEntryId } : {}), ...(entry.canonicalSlotId ? { canonicalSlotId: entry.canonicalSlotId } : {}), ...(entry.canonicalOrderIndex !== undefined ? { canonicalOrderIndex: entry.canonicalOrderIndex } : {}) });
+      group.entries.push({ slot: entry.slot, dishName: entry.dishName, quantity: allocation.quantity, ...(entry.sourceEntryId ? { sourceEntryId: entry.sourceEntryId } : {}), ...(entry.canonicalSlotId ? { canonicalSlotId: entry.canonicalSlotId } : {}), ...(entry.canonicalOrderIndex !== undefined ? { canonicalOrderIndex: entry.canonicalOrderIndex } : {}), ...(entry.isCoreSalad ? { isCoreSalad: true } : {}) });
       groups.set(key, group);
     }
   }
@@ -55,7 +55,7 @@ export function aggregateProductionTotals(entries: PublishedMenuEntrySummary[] =
     // its position; destination rows retain the distinct slot occurrences.
     const key = entry.canonicalDishId ? `id:${entry.canonicalDishId}` : `name:${normalizedName}`;
     const existing = totals.get(key);
-    const slot = { slot: entry.slot, ...(entry.canonicalSlotId ? { canonicalSlotId: entry.canonicalSlotId } : {}), ...(entry.canonicalOrderIndex !== undefined ? { canonicalOrderIndex: entry.canonicalOrderIndex } : {}) };
+    const slot = { slot: entry.slot, ...(entry.canonicalSlotId ? { canonicalSlotId: entry.canonicalSlotId } : {}), ...(entry.canonicalOrderIndex !== undefined ? { canonicalOrderIndex: entry.canonicalOrderIndex } : {}), ...(entry.isCoreSalad ? { isCoreSalad: true } : {}) };
     if (existing) {
       existing.quantity += quantity;
       if (!existing.slots.some(item => (item.canonicalSlotId || item.slot) === (slot.canonicalSlotId || slot.slot))) existing.slots.push(slot);

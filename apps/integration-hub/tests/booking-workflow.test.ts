@@ -53,8 +53,8 @@ test("stale expected versions return 409 for charge saves before transaction wri
   assert.doesNotThrow(() => assertBookingExpectedVersion(8, 8, "set-additional-charges"));
 });
 
-test("saving additional charges bumps both versions and stales the current quote without changing its snapshot", () => {
-  const snapshot = { totals: { net: { currency: "GBP", amount: 150 } }, charges: [{ label: "Old charge", amount: 25 }] };
+test("saving additional charges bumps both versions and stales the quote without changing its historical Normal labour snapshot", () => {
+  const snapshot = { totals: { net: { currency: "GBP", amount: 267 }, vat: { currency: "GBP", amount: 53.4 }, gross: { currency: "GBP", amount: 320.4 } }, charges: [{ label: "KP labour", amount: 177, hourlyRate: 17.7, multiplier: 1 }] };
   const current = { version: 8, commercialVersion: 3, additionalCharges: [], quoteState: { currentRevisionId: quote.id, revisions: [{ ...quote, snapshot }] } };
   const beforeSnapshot = structuredClone(snapshot);
   const next = applyBookingAdditionalCharges(current, []);

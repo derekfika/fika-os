@@ -68,15 +68,15 @@ test("item inspector shows effective services per permitted site", () => {
 });
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
-test("catalogue exposes Overview, Items, Services and Locations as first-class tabs", () => {
+test("catalogue exposes Overview, Catalogue Manager, Items, Services and Locations as first-class tabs", () => {
   const source = read("app/ui/HospitalityCatalogue.tsx");
   const styles = read("app/ui/HospitalityCatalogue.css");
-  assert.deepEqual(CATALOGUE_TABS.map(t => t.id), ["overview", "items", "services", "locations"]);
-  assert.deepEqual(CATALOGUE_TABS.map(t => t.label), ["Overview", "Items", "Services", "Locations"]);
+  assert.deepEqual(CATALOGUE_TABS.map(t => t.id), ["overview", "manager", "items", "services", "locations"]);
+  assert.deepEqual(CATALOGUE_TABS.map(t => t.label), ["Overview", "Catalogue Manager", "Items", "Services", "Locations"]);
   assert.match(source, /role="tablist"/); assert.match(source, /role="tab"/); assert.match(source, /role="tabpanel"/);
   assert.match(source, /useState<CatalogueTab>\("overview"\)/);
   assert.match(source, /catalogueTab/); assert.match(source, /popstate/);
-  assert.match(source, /HospitalityCatalogueOverview/); assert.match(source, /HospitalityCatalogueServices/);
+  assert.match(source, /HospitalityCatalogueOverview/); assert.match(source, /HospitalityCatalogueManager/); assert.match(source, /HospitalityCatalogueServices/);
   assert.match(source, /onManageServices/);
   assert.match(source, /Manage booking services for/);
   assert.match(styles, /\.hc \.scg-tabs\s*\{/);

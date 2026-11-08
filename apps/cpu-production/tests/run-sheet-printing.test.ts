@@ -10,7 +10,7 @@ import {
   runSheetPrintSiteOptions,
   selectedRunSheetPrintOrders,
 } from "../app/ui/run-sheet-printing";
-import { paginateDayProduction, runSheetProductionPrintHtml } from "../app/ui/day-production-print";
+import { dayProductionPrintHtml, paginateDayProduction, runSheetProductionPrintHtml } from "../app/ui/day-production-print";
 
 const order = (id: string, day: string, siteId: string, label: string, version = 1) => ({
   canonicalId: id,
@@ -87,11 +87,11 @@ test("printed HTML keeps separate site identities and contains the paper handove
   const second = order("order:second", day, "oploc:second", "Same site");
   const map = new Map([[day, [first, second]]]);
   const html = runSheetProductionPrintHtml(map, [day], ["oploc:oploc:first", "oploc:oploc:second"], new Date("2026-10-30T09:00:00Z"));
-  assert.match(html, /Same site · oploc:first/);
-  assert.match(html, /Same site · oploc:second/);
+  assert.match(html, /Same site · Site [A-Z0-9]{7,10}/);
+  assert.equal(new Set([...html.matchAll(/Same site · Site [A-Z0-9]+/g)].map(match => match[0])).size, 2);
   assert.match(html, /4 portions/);
   assert.doesNotMatch(html, /12 pieces|Prep:/);
-  assert.match(html, /Ordered quantity/);
+  assert.match(html, /scope="col">Category<\/th>.*scope="col">Dish name<\/th>.*scope="col">Customer ordered quantity<\/th>/);
   assert.match(html, /data-site-key="oploc:oploc:first"/);
   assert.match(html, /data-site-key="oploc:oploc:second"/);
   for (const field of ["Packed by", "Checked by", "Driver / collected by", "Departure time", "Delivered time", "Received by / signature", "Notes / issues"]) {
@@ -115,10 +115,28 @@ test("printed Menu run sheets use canonical section order, actual slot labels, a
     ],
   } as unknown as ProductionOrder;
   const html = runSheetProductionPrintHtml(new Map([[day, [menu]]]), [day], ["oploc:oploc:menu"], new Date("2026-10-30T09:00:00Z"));
-  const sectionPositions = ["SALADS", "HOT MAINS", "GARNISHES", "DESSERTS"].map(label => html.indexOf(`<th colspan="3">${label}</th>`));
+  const sectionPositions = ["SALADS", "HOT MAINS", "GARNISHES", "DESSERTS"].map(label => html.indexOf(`<th colspan="4">${label}</th>`));
   assert.ok(sectionPositions.every(position => position >= 0));
   assert.deepEqual(sectionPositions, [...sectionPositions].sort((a, b) => a - b));
-  assert.ok(html.indexOf("Leaf Salad</small> Mixed leaves") < html.indexOf("Fish</small> Baked salmon"));
-  assert.ok(html.indexOf("Garnish 1</small> Crispy onions") < html.indexOf("Dessert</small> Pear crumble"));
+  assert.ok(html.indexOf(">Leaf Salad</td>") < html.indexOf(">Fish</td>"));
+  assert.ok(html.indexOf(">Garnish 1</td>") < html.indexOf(">Dessert</td>"));
   assert.equal((html.match(/data-site-key="oploc:oploc:menu"/g) || []).length, 1);
+});
+
+test("day A4 renderer prints an explicit monochrome Core Salad label", () => {
+  const day = "2026-10-30";
+  const source = order("order:core", day, "oploc:core", "Core Site");
+  const coreLine = { ...source.lines[0], isCoreSalad: true };
+  const html = dayProductionPrintHtml([{ ...source, origin: "menu_planning", lines: [coreLine] } as ProductionOrder], day);
+  assert.match(html, /<small class="core-salad-label" aria-label="Core Salad">CORE<\/small>/);
+  assert.match(html, /class="core-salad"/);
+  assert.match(html, /\.core-salad-label\{[^}]*border:\.6pt solid currentColor/);
+});
+
+test("internal run-sheet print escapes and preserves multiline kitchen notes", () => {
+  const day = "2026-10-30";
+  const source = { ...order("order:kitchen-notes", day, "oploc:notes", "Notes Site"), kitchenNotes: "Keep warm\n<script>alert(1)</script>" } as ProductionOrder;
+  const html = runSheetProductionPrintHtml(new Map([[day, [source]]]), [day], ["oploc:oploc:notes"], new Date("2026-10-30T09:00:00Z"));
+  assert.match(html, /<strong>Kitchen notes<\/strong><p>Keep warm<br>&lt;script&gt;alert\(1\)&lt;\/script&gt;<\/p>/);
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
 });

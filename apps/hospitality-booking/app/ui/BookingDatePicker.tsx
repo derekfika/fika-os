@@ -45,7 +45,7 @@ export const ukLongBookingDate = (date: string) => ISO.test(date) ? new Intl.Dat
  * Date field with a compact calendar popover (modal bottom sheet on narrow screens). All availability rules come from the
  * governed booking policy (bookingDateIssue); this component only presents them.
  */
-export function BookingDatePicker({ value, onChange, items, context = {}, now, field = "eventDate", unavailableReason }: { value: string; onChange: (date: string) => void; items: readonly CutoffItem[]; context?: CutoffContext; now: string; field?: string; unavailableReason?: string }) {
+export function BookingDatePicker({ value, onChange, items, context = {}, now, field = "eventDate", unavailableReason, hospitalityAdminAmendment }: { value: string; onChange: (date: string) => void; items: readonly CutoffItem[]; context?: CutoffContext; now: string; field?: string; unavailableReason?: string; hospitalityAdminAmendment?: boolean }) {
   const id = useId();
   const today = ukBookingClock(now).date;
   const valid = ISO.test(value);
@@ -67,7 +67,11 @@ export function BookingDatePicker({ value, onChange, items, context = {}, now, f
   /** Narrow screens use a bottom sheet rendered in <body>: an animated ancestor would otherwise become the containing block of a fixed element. */
   const [sheet, setSheet] = useState(false);
   const month = focusDate.slice(0, 7), first = `${month}-01`, offset = (utc(first).getUTCDay() + 6) % 7;
-  const issueFor = useCallback((date: string) => unavailableReason ? { message: unavailableReason, code: undefined as string | undefined } : bookingDateIssue(items, date, now, context), [unavailableReason, items, now, context]);
+  const issueFor = useCallback((date: string) => {
+    if (unavailableReason) return { message: unavailableReason, code: undefined as string | undefined };
+    const issue = bookingDateIssue(items, date, now, context);
+    return hospitalityAdminAmendment && (issue?.code === "BOOKING_NOTICE" || issue?.code === "PRODUCT_NOTICE") ? undefined : issue;
+  }, [unavailableReason, items, now, context, hospitalityAdminAmendment]);
   const selectedIssue = value && valid ? issueFor(value) : undefined;
   const dates: string[] = [];
   for (let date = first; date.startsWith(month); date = addBusinessDate(date)) dates.push(date);

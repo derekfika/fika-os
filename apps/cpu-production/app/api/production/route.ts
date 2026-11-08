@@ -6,7 +6,7 @@ import { cpuDestinationAllowed, requireCpuActor, requireCpuDestinationScope, res
 import { acknowledgeProductionCancellation, createCpuProductionOrder, productionOrderDetail, productionQueue, productionQueueForWeek, reportProductionAllergenDiscrepancy, transitionProductionOrder, updateProductionLines } from "../../../lib/production-http-client";
 import { ordersForScope } from "../../../lib/cpu-routing";
 import { withReadableDestinations } from "../../../lib/cpu-oploc-labels";
-import { cpuProjectionHasAmbiguousWorkstreamMapping, filterCpuProjectionForScope } from "../../../lib/cpu-dashboard-adapter";
+import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionNeedsMenuMetadata, filterCpuProjectionForScope } from "../../../lib/cpu-dashboard-adapter";
 // Scope filtering remains backed by the existing hospitalityMenuProductionRouting adapter.
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { normaliseProductionScope } from "../../../lib/production-scope";
@@ -264,6 +264,13 @@ async function handleGet(request: NextRequest) {
           packageReadComplete = true;
           if (packaged) {
             let projection = packaged.value.projection;
+            if (cpuProjectionNeedsMenuMetadata(projection)) {
+              const recovered = week
+                ? await recoverMissingCpuWeekProjection(request, week)
+                : await recoverMissingCpuDayProjection(request, projectionDate);
+              const filtered = await scopedProjection(request, filterCpuProjectionForScope(recovered.projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope"))), destinationScope);
+              return withServerTiming(NextResponse.json({ projection: filtered, package: recovered.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
+            }
             if (cpuProjectionHasAmbiguousWorkstreamMapping(projection)) {
               projection = week
                 ? await rebuildCpuWeekProjection(request, week)
@@ -311,7 +318,7 @@ async function handleGet(request: NextRequest) {
         .map((order) => order.canonicalId));
       const projectedIds = new Set((storedData?.orders || []).map((order) => order.id).filter(Boolean));
       const needsOrderRefresh = canonicalIds.size !== projectedIds.size || [...canonicalIds].some((id) => !projectedIds.has(id));
-      const requiresRefresh = !stored.exists || !packageCurrent || needsReadableDestinations || needsCancellationRefresh || needsOrderRefresh;
+      const requiresRefresh = !storedProjection || cpuProjectionNeedsMenuMetadata(storedProjection) || !packageCurrent || needsReadableDestinations || needsCancellationRefresh || needsOrderRefresh;
       const refreshedProjection = requiresRefresh ? week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuDayProjection(request, projectionDate) : stored.data();
       const packageManifest = await getCpuProjectionManifest(projectionDate, week || undefined);
       const response = NextResponse.json({ projection: refreshedProjection ? await scopedProjection(request, filterCpuProjectionForScope(refreshedProjection as CpuProjectionPackage, normaliseProductionScope(request.nextUrl.searchParams.get("scope"))), destinationScope) : undefined, package: packageManifest });
@@ -389,12 +396,13 @@ async function handlePost(request: NextRequest) {
       const changeType = z.string().min(1).parse(raw.changeType);
       const changedAt = z.string().min(1).parse(raw.changedAt || new Date().toISOString());
       const changedOrder = await productionOrderDetail(request, entityId);
-      if (changedOrder?.serviceDate) await revokeWithdrawnMenuAuthority(changedOrder, changedAt);
-      const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId, revision, changeType, actorId: z.string().min(1).parse(raw.actorId || "integration-hub"), changedAt, idempotencyKey: z.string().min(1).parse(raw.idempotencyKey), propagation: { sourceEntityId: entityId, serviceDate, sourceVersion: revision, changedAt, changeType: eventTypeForConsumers(changeType), order: { origin: "menu_planning" }, logistics: true } });
+      const kitchenNotesOnly = changeType === "kitchen-notes-updated";
+      if (!kitchenNotesOnly && changedOrder?.serviceDate) await revokeWithdrawnMenuAuthority(changedOrder, changedAt);
+      const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId, revision, changeType, actorId: z.string().min(1).parse(raw.actorId || "integration-hub"), changedAt, idempotencyKey: z.string().min(1).parse(raw.idempotencyKey), propagation: { sourceEntityId: entityId, serviceDate, sourceVersion: revision, changedAt, changeType: eventTypeForConsumers(changeType), order: changedOrder || { origin: "menu_planning" }, logistics: !kitchenNotesOnly } });
       const dayProjection = await rebuildCpuProjection(request, serviceDate, event.sequence);
       const weekProjection = await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
-      const review = changedOrder?.destinationOplocId ? await rebuildCpuReviewPackage(request, serviceDate, changedOrder.destinationOplocId, event.sequence) : undefined;
-      await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.entityId}:v${event.sequence}`, sourceEntityId: event.entityId, serviceDate, sourceVersion: event.sequence, changedAt: event.changedAt, changeType: eventTypeForConsumers(event.changeType), order: changedOrder || { origin: "menu_planning" }, ...(changedOrder ? { calendarOrder: changedOrder } : {}), logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
+      const review = !kitchenNotesOnly && changedOrder?.destinationOplocId ? await rebuildCpuReviewPackage(request, serviceDate, changedOrder.destinationOplocId, event.sequence) : undefined;
+      await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.entityId}:v${event.sequence}`, sourceEntityId: event.entityId, serviceDate, sourceVersion: event.sequence, changedAt: event.changedAt, changeType: eventTypeForConsumers(event.changeType), order: changedOrder || { origin: "menu_planning" }, ...(!kitchenNotesOnly && changedOrder ? { calendarOrder: changedOrder } : {}), logistics: !kitchenNotesOnly, ...(review ? { reviewManifest: review.manifest } : {}) });
       return NextResponse.json({ applied: true, duplicate: event.sequence < Number(raw.sequence || event.sequence), event, dayProjection, weekProjection });
     }
     const actor = await actorFor(request);

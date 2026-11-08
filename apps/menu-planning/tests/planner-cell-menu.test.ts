@@ -47,6 +47,14 @@ test("Copy explains why it is unavailable, matching the existing copy button", (
   assert.match(cellMenuActions({ ...base, copyPending: true }).find((action) => action.id === "copy")?.disabledReason || "", /already in progress/);
 });
 
+test("Core Salad toggle is offered only on canonical salad placements and is reversible", () => {
+  const salad = cellMenuActions({ ...base, entry: { id: "salad", itemLabel: "Leaves", slot: "SALAD 3" } });
+  assert.equal(salad.find(action => action.id === "toggle-core")?.label, "Mark as Core Salad");
+  const core = cellMenuActions({ ...base, entry: { id: "salad", itemLabel: "Leaves", slot: "SALAD 3", isCoreSalad: true } });
+  assert.equal(core.find(action => action.id === "toggle-core")?.label, "Remove Core Salad");
+  assert.ok(!ids({ ...base, entry: { id: "soup", itemLabel: "Soup", slot: "SOUP" } }).includes("toggle-core"));
+});
+
 test("View dish details is not offered because the Dish Library has no read-only view openable by dish ID", () => {
   assert.ok(!ids(base).includes("details" as never));
   assert.ok(!cellMenuActions(base).some((action) => /details/i.test(action.label)));

@@ -35,6 +35,19 @@ export async function asyncLock(name, fn) {
   try { fd = openSync(file, 'wx'); } catch { throw Error(`Another operation holds ${file}; inspect it, never auto-break locks`); }
   try { return await fn(); } finally { closeSync(fd); unlinkSync(file); }
 }
+export const SOURCE_HISTORY_BARRIER = 'fika.source-workspace-history.v1\n';
+export function operationMarkerLock(fn) {
+  const dir = stateDir();
+  const legacy = path.join(dir, 'workspaces.lock');
+  if (!existsSync(legacy) || readFileSync(legacy, 'utf8') !== SOURCE_HISTORY_BARRIER) return lock('workspaces', fn);
+  const { DatabaseSync } = process.getBuiltinModule?.('node:sqlite') || {};
+  if (!DatabaseSync) throw Error('Operation marker writes require Node 22.13 or later after source history migration');
+  const db = new DatabaseSync(path.join(dir, 'operation-markers.sqlite'));
+  try {
+    db.exec('PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE');
+    try { return fn(); } finally { db.exec('ROLLBACK'); }
+  } finally { db.close(); }
+}
 export function inside(parent, child) {
   const r = path.relative(realpathSync(parent), realpathSync(child));
   if (!r || r.startsWith('..') || path.isAbsolute(r)) throw Error('Target must be a strict descendant of the managed workspace root');
@@ -67,21 +80,26 @@ export async function cloud(resource) {
 }
 export const backendPath = t => `projects/${t.project}/locations/${t.region}/backends/${t.backend}`;
 const servingRolloutNames = new WeakMap();
-export async function serving(t, read = cloud) {
+export async function serving(t, read = cloud, { projectNumber, repository } = {}) {
   const base = backendPath(t);
   const traffic = await read(`${base}/traffic`);
   if (traffic.rolloutPolicy?.disabled !== true) throw Error(`Automatic rollouts must remain disabled for ${t.backend}`);
   const splits = traffic.current?.splits || [];
   if (splits.length !== 1 || splits[0].percent !== 100 || traffic.reconciling) throw Error('Backend is not quiescent at a single 100% revision');
+  const target = traffic.target?.splits || [];
+  if (repository && target.length && (target.length !== 1 || target[0].build !== splits[0].build || target[0].percent !== 100)) throw Error('Backend traffic is moving to another revision');
   const parts = String(splits[0].build).split('/');
-  if (parts.length !== 8 || parts[0] !== 'projects' || !(parts[1] === t.project || /^\d+$/.test(parts[1])) || parts.slice(2,7).join('/') !== `locations/${t.region}/backends/${t.backend}/builds` || !/^[\w-]+$/.test(parts[7])) throw Error('Traffic build is outside the selected backend');
-  const projects = new Set([t.project, parts[1]]);
+  if (parts.length !== 8 || parts[0] !== 'projects' || !(parts[1] === t.project || (projectNumber ? parts[1] === projectNumber : /^\d+$/.test(parts[1]))) || parts.slice(2,7).join('/') !== `locations/${t.region}/backends/${t.backend}/builds` || !/^[\w-]+$/.test(parts[7])) throw Error('Traffic build is outside the selected backend');
+  const projects = new Set([t.project, parts[1], projectNumber].filter(Boolean));
   const matchesBuild = name => {
     const ref = String(name).split('/');
     return ref.length === 8 && ref[0] === 'projects' && projects.has(ref[1]) && ref.slice(2).join('/') === parts.slice(2).join('/');
   };
   const build = await read(splits[0].build);
   if (!matchesBuild(build.name) || build.state !== 'READY' || build.reconciling) throw Error('Serving build is not the selected READY build');
+  const codebase = build.source?.codebase;
+  const sourceSha = exactSha(codebase?.hash);
+  if (repository && (codebase.commit !== sourceSha || codebase.uri !== `https://github.com/${repository}/commit/${sourceSha}`)) throw Error('Serving build source does not match the exact FIKA repository commit');
   const names = servingRolloutNames.get(read) || new Map();
   servingRolloutNames.set(read, names);
   const key = `${base}:${splits[0].build}`;
@@ -101,5 +119,5 @@ export async function serving(t, read = cloud) {
   // Cache only its verified resource name; traffic, build and rollout state are
   // still reread on every check. Avoid repeated historical discovery while polling.
   names.set(key, rollout.name);
-  return { sourceSha: exactSha(build.source?.codebase?.hash), rollout: rolloutParts[7], state: rollout.state, percent: 100 };
+  return { sourceSha, rollout: rolloutParts[7], state: rollout.state, percent: 100 };
 }

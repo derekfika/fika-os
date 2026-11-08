@@ -15,6 +15,7 @@ export const OPLOC_MANIFEST_KEY = "integration-hub/oplocs";
 export type OplocReadRecord = { canonicalId: string; label: string; lifecycleStatus?: string; publicationStatus?: string; locationType?: string; address?: string; legacyIds?: string[] };
 export type OplocReadPackage = { oplocs: OplocReadRecord[]; redirects?: Record<string, string> };
 const recoveryInFlight = new Map<string, Promise<ReadPackageManifest>>();
+const staleTransactionPackage = () => Object.assign(new Error("Current OPLOC redirects are unavailable. Refresh and try again."), { status: 503, code: "OPLOC_PACKAGE_STALE" });
 
 const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
 const localRoot = () => process.env.FIKA_SNAPSHOT_DIR || path.join(process.cwd(), "local-data", "read-packages");
@@ -69,7 +70,7 @@ export async function rebuildOplocReadPackage(storeOverride?: ReadPackageStore):
   return publishReadPackage<OplocReadPackage>(store, OPLOC_MANIFEST_KEY, encoded);
 }
 
-export async function getOplocReadPackage() {
+export async function getOplocReadPackage(transaction?: FirebaseFirestore.Transaction) {
   const store = oplocPackageStore();
   let result;
   try {
@@ -79,14 +80,16 @@ export async function getOplocReadPackage() {
     throw Object.assign(new Error("OPLOC read package integrity validation failed. Rebuild the package before serving traffic."), { status: 503, code: "OPLOC_PACKAGE_INTEGRITY_FAILURE", cause: error });
   }
   if (!result) {
+    if (transaction) throw staleTransactionPackage();
     const existing = recoveryInFlight.get(OPLOC_MANIFEST_KEY);
     const recovery = existing || rebuildOplocReadPackage();
     if (!existing) recoveryInFlight.set(OPLOC_MANIFEST_KEY, recovery.finally(() => recoveryInFlight.delete(OPLOC_MANIFEST_KEY)));
     await recovery;
     return getOplocReadPackage();
   }
-  const cacheManifest = await readCacheManifest("oplocs");
+  const cacheManifest = await readCacheManifest("oplocs", transaction);
   if (result.manifest.sourceVersion !== `canonical-oplocs:${cacheManifest.version}`) {
+    if (transaction) throw staleTransactionPackage();
     const existing = recoveryInFlight.get(OPLOC_MANIFEST_KEY);
     const recovery = existing || rebuildOplocReadPackage();
     if (!existing) recoveryInFlight.set(OPLOC_MANIFEST_KEY, recovery.finally(() => recoveryInFlight.delete(OPLOC_MANIFEST_KEY)));

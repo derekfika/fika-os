@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { existsSync, mkdirSync, renameSync, openSync, writeSync, fsyncSync, closeSync, readdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { git, ref, stateDir, jsonFile, lock } from './runtime.mjs';
-import { APPS, digest, target, validateRecord } from './policy.mjs';
+import { git, ref, stateDir, jsonFile, operationMarkerLock } from './runtime.mjs';
+import { APPS, digest, target, validateRecord, supportedEnvironments } from './policy.mjs';
 import { workspaceRecords } from './workspaces.mjs';
 import { leaseIdentity } from './workspace-state.mjs';
 import { recoverDeployOperation as governed } from './workspace-admin.mjs';
@@ -43,7 +43,7 @@ export function ledgerEvidence(marker, { requireAll = false } = {}) {
   const startSeconds = Math.floor(Date.parse(marker.startedAt) / 1000);
   if (!Number.isFinite(startSeconds)) throw Error('Marker startedAt is missing or invalid; refusing');
   const candidates = []; const heads = [];
-  for (const app of Object.keys(APPS)) for (const environment of ['staging', 'prod']) {
+  for (const app of Object.keys(APPS)) for (const environment of supportedEnvironments(app)) {
     const t = target(app, environment);
     const chain = ledgerChain(t.branch);
     if (!chain) { if (requireAll) throw Error(`Expected release ledger ${t.branch} is missing or unreadable; refusing`); else continue; }
@@ -147,7 +147,7 @@ export function recoverDeployOperation(id, options = {}, { authorize, processAli
   const execute = Boolean(options.execute);
   if (execute && !/^[a-f0-9]{64}$/.test(options['approve-hash'] || '')) throw Error('Execution requires the --approve-hash from a fresh preview');
   fetchLedgers();
-  return lock('workspaces', () => {
+  return operationMarkerLock(() => {
     const auditFile = path.join(stateDir(), 'workspace-audit', `deploy-recovery-${id}.json`);
     const archiveFile = path.join(stateDir(), 'workspace-operations-archive', `${id}.json`);
     const plan = build(id, { processAlive });

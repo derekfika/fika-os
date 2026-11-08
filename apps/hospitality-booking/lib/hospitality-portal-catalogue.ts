@@ -66,8 +66,8 @@ export async function loadHospitalityPortalMenu(site: PortalSiteKey, requestedOp
   return { menu: portalMenuFromCatalogue(catalogue.catalogue, oplocId, hospitalityCatalogueServiceDate(), site === "angel-court"), catalogue, ...(visibility ? { visibility } : {}) };
 }
 
-export function portalMenuFromCatalogue(pkg: Parameters<typeof resolveSiteCatalogue>[0], oplocId: string, serviceDate: string, includeQuoteEnquiries = false): PortalMenuItem[] {
-  return resolveSiteCatalogue(pkg, oplocId, { serviceDate }).flatMap(offering => {
+export function portalMenuFromCatalogue(pkg: Parameters<typeof resolveSiteCatalogue>[0], oplocId: string, serviceDate: string, includeQuoteEnquiries = false, operationalAreaId?: string): PortalMenuItem[] {
+  return resolveSiteCatalogue(pkg, oplocId, { serviceDate, operationalAreaId }).flatMap(offering => {
     const item = portalMenuItem(offering);
     return item && (!item.quoteRequired || includeQuoteEnquiries) ? [item] : [];
   });

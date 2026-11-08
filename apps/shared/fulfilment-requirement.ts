@@ -1,4 +1,4 @@
-import { assertOneOffMenuDestination, menuDestinationKey, type MenuDestination } from "../../packages/server-shared/src/menu-destination";
+import { assertOneOffMenuDestination, menuDestinationKey, oneOffAddressPending, type MenuDestination } from "../../packages/server-shared/src/menu-destination";
 import crypto from "node:crypto";
 import { CPU_SITE_OPLOC_ID } from "./production-location";
 import { fulfilmentWorkstream, type FulfilmentWorkstream } from "./fulfilment-workstream";
@@ -265,7 +265,8 @@ export function materialiseFulfilmentRequirement(source: SourceProjection, previ
   const idempotencyKey = `${source.sourceDomain}:${source.sourceEntityId}:${source.destinationOplocId}:v${source.sourceVersion}:${source.sourceContentHash || sourceContentHash(source.lines.map(operationalLine))}`;
   const deliveryContentChanged = previous ? !sourceDeliveryContentEqual(source, previous) : false;
   const resetLegacyReconciliationAmendment = Boolean(previous && isLegacyReconciliationAmendment(previous, source));
-  const status = materialiseFulfilmentStatus(previous, source.status, deliveryContentChanged, resetLegacyReconciliationAmendment);
+  const sourceStatus = source.status !== "withdrawn" && oneOffAddressPending(source.destination) ? "pending" : source.status;
+  const status = materialiseFulfilmentStatus(previous, sourceStatus, deliveryContentChanged, resetLegacyReconciliationAmendment);
   const materialisationEqual = previous && previous.sourceVersion === source.sourceVersion && previous.sourceContentHash === source.sourceContentHash && previous.status === status && (previous.workstream || fulfilmentWorkstream({ sourceDomain: previous.sourceDomain })) === source.workstream && stable({ destinationLabelSnapshot: previous.destinationLabelSnapshot, delivery: requirementDeliveryProjection(previous) }) === stable({ destinationLabelSnapshot: source.destinationLabelSnapshot, delivery: sourceDeliveryProjection(source) });
   if (previous && materialisationEqual) return previous;
   const version = previous ? previous.version + 1 : 1;

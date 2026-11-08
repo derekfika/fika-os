@@ -47,7 +47,7 @@ test("whole-day print deduplicates latest versions before excluding inactive wor
     result.map((o) => o.canonicalId),
     ["b"],
   );
-  assert.equal(collectionTime(a), "Time TBC");
+  assert.equal(collectionTime(a), "TBC");
   assert.equal(dayCollections([b, a], day)[0].canonicalId, "a");
 });
 test("print HTML preserves every line and empty checkbox and has no interactive collection print buttons", () => {
@@ -62,10 +62,10 @@ test("print HTML preserves every line and empty checkbox and has no interactive 
   const html = dayProductionPrintHtml([big], day);
   assert.equal((html.match(/data-line-id=/g) || []).length, 100);
   assert.match(html, /Dish 99/);
-  assert.match(html, /dashed/);
-  assert.match(html, /\.collection \.menu-section-row th\{[^}]*border:\.6pt solid #111/);
+  assert.match(html, /@page\{size:A4 portrait;margin:0\}/);
+  assert.match(html, /\.collection \.menu-section-row th\{[^}]*border:\.7pt solid var\(--fika-action-secondary/);
   assert.match(html, /\.collection tr\{break-inside:avoid\}/);
-  assert.match(paginateDayProduction.toString(), /Packed by/);
+  assert.match(html, /Packed by/);
   assert.doesNotMatch(html, /<button|<script/);
   assert.match(html, /data-site-key="order:long"/);
   assert.match(paginateDayProduction.toString(), /Paper-only checkboxes/);
@@ -115,6 +115,7 @@ test("whole-day reader ignores filters, requests exact date/all scopes afresh an
   for (const invalid of [
     { projection: { ...projection, serviceDate: "2026-10-24" } },
     { projection: { ...projection, summary: { orders: 2 } } },
+    { projection: { ...projection, orders: projection.orders.map(row => ({ ...row, origin: "menu_planning" })) } },
     { projection, partial: true },
     { projection, nextPageToken: "more" },
   ])

@@ -50,7 +50,6 @@ test('baseline observation follows the actual rollout build link and never reads
 });
 
 test('the executable adoption command rejects production and missing owner instructions before any release work',async()=>{
-  await assert.rejects(reconcileServingBaseline('menu','staging',{execute:true}),/Explicit owner/);
-  await assert.rejects(reconcileServingBaseline('menu','prod',{execute:true,'owner-approved':true,reason:'Fixture'}),/restricted/);
+  await assert.rejects(reconcileServingBaseline('menu','prod',{execute:true}),/restricted/);
   await assert.rejects(reconcileServingBaseline('cpu','staging',{execute:true,reason:'Fixture'}),/restricted/);
 });

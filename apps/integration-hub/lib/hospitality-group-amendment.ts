@@ -16,6 +16,7 @@ export const groupAmendmentCommand = z.object({
   bookingGroupId: z.string().trim().min(1).max(160),
   expectedSourceHash: z.string().regex(/^[a-f0-9]{64}$/),
   reason: z.string().trim().min(3).max(1000),
+  hospitalityAdmin: z.literal(true).optional(),
   services: z.array(z.object({ bookingId: z.string().min(8), expectedVersion: z.number().int().positive(), patch: groupPatch }).strict()).min(1).max(12),
 }).strict().superRefine((command, context) => {
   command.services.forEach((entry, index) => {

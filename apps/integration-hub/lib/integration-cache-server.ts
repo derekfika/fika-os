@@ -17,8 +17,9 @@ const entityTypes: Record<CacheDataset, string[]> = {
 
 export function cacheManifestRef(dataset: CacheDataset) { return manifestCollection().doc(dataset); }
 
-export async function readCacheManifest(dataset: CacheDataset): Promise<CacheManifest> {
-  const snapshot = await cacheManifestRef(dataset).get();
+export async function readCacheManifest(dataset: CacheDataset, transaction?: FirebaseFirestore.Transaction): Promise<CacheManifest> {
+  const ref = cacheManifestRef(dataset);
+  const snapshot = await (transaction ? transaction.get(ref) : ref.get());
   recordDataAccess({ app: "integration-hub", operation: `cache-manifest.${dataset}`, source: "FIRESTORE", documents: snapshot.exists ? 1 : 0 });
   return snapshot.exists ? snapshot.data() as CacheManifest : {
     schemaVersion: INTEGRATION_CACHE_SCHEMA_VERSION, dataset, version: 0, updatedAt: "", recordCount: 0,

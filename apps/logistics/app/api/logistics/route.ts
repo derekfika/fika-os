@@ -1,4 +1,5 @@
 import { processDriverNotificationsSafely } from "@/lib/driver-notification-store";
+import { oneOffAddressPending } from "@fika/server-shared/menu-destination";
 import { driverCaptureFor, finishCapture, runCapturedTransaction, type CaptureContext } from "@/lib/driver-change-capture";
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
@@ -11,6 +12,7 @@ import { isLogisticsVehicleId, logisticsVehicleLabel } from "../../../../shared/
 import { hostedRuntime } from "@/lib/runtime";
 import {
   assertMenuProductionAuthority,
+  confirmOneOffAddress,
   fetchOplocs,
   fetchProductionContexts,
   fetchRequirements,
@@ -723,6 +725,7 @@ async function handlePost(request: NextRequest) {
       movement?: MovementRequest;
       requirementId?: string;
       expectedSourceVersion?: number;
+      address?: string;
       runId?: string;
       expectedRunVersion?: number;
       expectedTargetRunVersion?: number;
@@ -855,6 +858,22 @@ async function handlePost(request: NextRequest) {
     if (body.action === "reconcile-logistics-day" && body.serviceDate) {
       const result = await materialiseLogisticsDay(body.serviceDate, by, actorId, request.headers.get("cookie") || undefined);
       return NextResponse.json({ ...result, warning: result.requirements.some((item) => !item.productionLocationId) ? "Some jobs have no canonical origin OPLOC and remain safely unassigned." : undefined });
+    }
+    if (body.action === "confirm-menu-one-off-address") {
+      const address = typeof body.address === "string" ? body.address.trim() : "";
+      if (!body.jobId || !Number.isInteger(body.expectedSourceVersion) || !address || address.length > 500) {
+        throw new HttpError(422, "Select the current one-off delivery and enter an address of up to 500 characters.");
+      }
+      const job = await getLogisticsJob(body.jobId);
+      if (!job || job.sourceType !== "cpu-production" || job.destination?.kind !== "one-off" || job.sourceStatus === "withdrawn") {
+        throw new HttpError(409, "The one-off delivery is no longer in the planning queue.");
+      }
+      if (!oneOffAddressPending(job.destination) && job.destination.address === address) return NextResponse.json({ projected: true });
+      if (job.sourceVersion !== body.expectedSourceVersion || !oneOffAddressPending(job.destination)) {
+        throw new HttpError(409, "The one-off routing changed. Refresh the planning queue.");
+      }
+      const result = await confirmOneOffAddress(job.sourceId, body.expectedSourceVersion!, address, request.headers.get("cookie") || undefined);
+      return NextResponse.json(result, { status: result.projected ? 200 : 202 });
     }
     if (body.action === "save-logistics-job" && body.job) {
       if (!body.job.originOplocId || !body.job.destinationOplocId)

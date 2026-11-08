@@ -1,4 +1,5 @@
 import type { Transaction } from "firebase-admin/firestore";
+import { oneOffAddressPending } from "@fika/server-shared/menu-destination";
 import { collectionPreferences, deliveryLoads, logisticsAssignments, logisticsJobs, runs, stops } from "./store";
 import { assignJob, aggregateDelivery, assertLoadVersion, compatibleAssignedLoad, compatibleLoad, createLoad } from "./delivery-loads";
 import { HttpError } from "./http-error";
@@ -45,6 +46,7 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
   if (intent.sourceJob && current && (current.sourceVersion || 0) > (intent.sourceJob.sourceVersion || 0)) throw new HttpError(409, "Source changed. Refresh planning.", "LOGISTICS_ASSIGN_JOB_SOURCE_VERSION_CONFLICT");
   const job = intent.sourceJob ? { ...intent.sourceJob, id: intent.jobId, deliveryStatus: current?.deliveryStatus || "pending", ...(current?.deliveredAt ? { deliveredAt: current.deliveredAt } : {}), collectionStatus: current?.collectionStatus || intent.sourceJob.collectionStatus, activeLoadId: current?.activeLoadId, version: current?.version || 0, audit: current?.audit || [] } : current!;
   if (!job.originOplocId || !job.destinationOplocId || job.sourceStatus === "withdrawn") throw new HttpError(422, "Job has no active canonical delivery authority.");
+  if (oneOffAddressPending(job.destination)) throw new HttpError(422, "Confirm the one-off delivery address before assigning this work.");
   if (job.requirementId) {
     let nativeIds = batch?.nativeRequirements;
     if (!nativeIds) {
