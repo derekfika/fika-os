@@ -11,7 +11,7 @@ env:
     value: "1"
     availability: [BUILD, RUNTIME]
   - variable: FIKA_BEVERAGE_PREVIEW_REVIEWER_EMAILS
-    value: derek@fikacatering.com
+    value: derek@fikacatering.com,shericebanya@gmail.com
     availability: [RUNTIME]
   - variable: FIKA_HUB_BASE_URL
     value: https://staging-os.fikacatering.com
