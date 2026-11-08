@@ -745,7 +745,99 @@ export type PublicationDayState = {
 export type WorkingPublicationComparison = {
   hasUnpublishedChanges: boolean;
   dayHasUnpublishedChanges: Record<string, boolean>;
+  changeSet: PublishedWeekDemandChangeSet;
 };
+export type PublishedDemandEvidence = Pick<PublishedMenuEntry,
+  "sourceEntryId" | "canonicalDishId" | "dishName" | "allergens" | "allergenReview" |
+  "noKeyDeclaration" | "allergenEvidenceStatus" | "allergenEvidenceReason" |
+  "mayContainNotes" | "allergenDetailNotes"
+>;
+export type PublishedWeekDemandOperation = {
+  kind: "added" | "removed" | "replaced" | "quantity_changed";
+  sourceDayId: string;
+  date: string;
+  dayName: string;
+  siteId: string;
+  siteLabel: string;
+  slot: string;
+  before?: { dishId: string; dishName: string; quantity: number; entries: PublishedDemandEvidence[] };
+  after?: { dishId: string; dishName: string; quantity: number; entries: PublishedDemandEvidence[] };
+};
+/** A read-only, source-version-pinned description for a future scoped publisher. */
+export type PublishedWeekDemandChangeSet = {
+  publicationId?: string;
+  publicationVersion: number;
+  sourceWeekId: string;
+  sourceWeekVersion: number;
+  days: Array<{ sourceDayId: string; publicationDayId: string; publicationDayVersion: number; contentHash: string }>;
+  operations: PublishedWeekDemandOperation[];
+};
+type DemandLine = {
+  sourceDayId: string; date: string; dayName: string; siteId: string; siteLabel: string;
+  slot: string; dishId: string; dishName: string; quantity: number; entries: PublishedDemandEvidence[];
+};
+const publishedDishIdentity = (entry: PublishedMenuEntry) => entry.canonicalDishId || `legacy-name:${entry.dishName.trim().toLocaleLowerCase()}`;
+const publishedSiteIdentity = (entry: PublishedMenuEntry["allocations"][number]) => {
+  const id = menuDestinationKey(entry);
+  return id ? `${entry.destination?.kind || "governed"}:${id}` : `unresolved:${entry.destinationLabel.trim().toLocaleLowerCase()}|${(entry.destinationAddress || "").trim().toLocaleLowerCase()}`;
+};
+const demandSort = (left: DemandLine, right: DemandLine) =>
+  compareStableText(left.sourceDayId, right.sourceDayId) || compareStableText(left.siteId, right.siteId) ||
+  compareStableText(left.slot, right.slot) || compareStableText(left.dishId, right.dishId);
+function demandLines(sourceDayId: string, date: string, dayName: string, entries: readonly PublishedMenuEntry[] = []): DemandLine[] {
+  const grouped = new Map<string, DemandLine>();
+  for (const entry of entries) for (const allocation of entry.allocations) {
+    if (!(Number.isFinite(allocation.quantity) && allocation.quantity > 0)) continue;
+    const siteId = publishedSiteIdentity(allocation);
+    const dishId = publishedDishIdentity(entry);
+    const key = JSON.stringify([sourceDayId, siteId, entry.slot, dishId]);
+    const current = grouped.get(key);
+    const evidence: PublishedDemandEvidence = normalizePublicationValue({
+      sourceEntryId: entry.sourceEntryId,
+      ...(entry.canonicalDishId ? { canonicalDishId: entry.canonicalDishId } : {}),
+      dishName: entry.dishName, allergens: entry.allergens,
+      ...(entry.allergenReview ? { allergenReview: entry.allergenReview } : {}),
+      ...(entry.noKeyDeclaration ? { noKeyDeclaration: entry.noKeyDeclaration } : {}),
+      ...(entry.allergenEvidenceStatus ? { allergenEvidenceStatus: entry.allergenEvidenceStatus } : {}),
+      ...(entry.allergenEvidenceReason ? { allergenEvidenceReason: entry.allergenEvidenceReason } : {}),
+      ...(entry.mayContainNotes !== undefined ? { mayContainNotes: entry.mayContainNotes } : {}),
+      ...(entry.allergenDetailNotes !== undefined ? { allergenDetailNotes: entry.allergenDetailNotes } : {}),
+    });
+    if (current) { current.quantity += allocation.quantity; current.entries.push(evidence); }
+    else grouped.set(key, { sourceDayId, date, dayName, siteId, siteLabel: allocation.destinationLabel, slot: entry.slot, dishId, dishName: entry.dishName, quantity: allocation.quantity, entries: [evidence] });
+  }
+  return [...grouped.values()].map(line => ({ ...line, entries: line.entries.sort((a, b) => compareStableText(a.sourceEntryId, b.sourceEntryId)) })).sort(demandSort);
+}
+function demandPayload(line: DemandLine) { return { dishId: line.dishId, dishName: line.dishName, quantity: line.quantity, entries: line.entries }; }
+function makeDemandOperations(before: DemandLine[], after: DemandLine[]): PublishedWeekDemandOperation[] {
+  const oldByKey = new Map(before.map(line => [JSON.stringify([line.sourceDayId, line.siteId, line.slot, line.dishId]), line]));
+  const newByKey = new Map(after.map(line => [JSON.stringify([line.sourceDayId, line.siteId, line.slot, line.dishId]), line]));
+  const removed = before.filter(line => !newByKey.has(JSON.stringify([line.sourceDayId, line.siteId, line.slot, line.dishId])));
+  const added = after.filter(line => !oldByKey.has(JSON.stringify([line.sourceDayId, line.siteId, line.slot, line.dishId])));
+  const replacedOld = new Set<DemandLine>();
+  const replacedNew = new Set<DemandLine>();
+  const operations: PublishedWeekDemandOperation[] = [];
+  for (const oldLine of removed) {
+    const oldSlotKey = JSON.stringify([oldLine.sourceDayId, oldLine.siteId, oldLine.slot]);
+    const oldAtSlot = removed.filter(value => JSON.stringify([value.sourceDayId, value.siteId, value.slot]) === oldSlotKey);
+    const newAtSlot = added.filter(value => JSON.stringify([value.sourceDayId, value.siteId, value.slot]) === oldSlotKey);
+    if (oldAtSlot.length === 1 && newAtSlot.length === 1) {
+      const next = newAtSlot[0];
+      replacedOld.add(oldLine);
+      replacedNew.add(next);
+      operations.push({ kind: "replaced", sourceDayId: oldLine.sourceDayId, date: oldLine.date, dayName: oldLine.dayName, siteId: oldLine.siteId, siteLabel: next.siteLabel, slot: oldLine.slot, before: demandPayload(oldLine), after: demandPayload(next) });
+    }
+  }
+  for (const [key, oldLine] of oldByKey) {
+    const next = newByKey.get(key);
+    if (next && oldLine.quantity !== next.quantity) operations.push({ kind: "quantity_changed", sourceDayId: next.sourceDayId, date: next.date, dayName: next.dayName, siteId: next.siteId, siteLabel: next.siteLabel, slot: next.slot, before: demandPayload(oldLine), after: demandPayload(next) });
+  }
+  for (const line of removed) if (!replacedOld.has(line)) {
+    operations.push({ kind: "removed", sourceDayId: line.sourceDayId, date: line.date, dayName: line.dayName, siteId: line.siteId, siteLabel: line.siteLabel, slot: line.slot, before: demandPayload(line) });
+  }
+  for (const line of added) if (!replacedNew.has(line)) operations.push({ kind: "added", sourceDayId: line.sourceDayId, date: line.date, dayName: line.dayName, siteId: line.siteId, siteLabel: line.siteLabel, slot: line.slot, after: demandPayload(line) });
+  return operations.sort((a, b) => compareStableText(a.sourceDayId, b.sourceDayId) || compareStableText(a.siteId, b.siteId) || compareStableText(a.slot, b.slot) || compareStableText(a.kind, b.kind) || compareStableText(a.after?.dishId || a.before?.dishId || "", b.after?.dishId || b.before?.dishId || ""));
+}
 /** Compare the exact normalized publication preview used by both reads and writes. */
 export function compareWorkingWeekToPublication(
   snapshot: RollingSnapshot,
@@ -772,9 +864,22 @@ export function compareWorkingWeekToPublication(
       return [day.id, changed];
     }),
   );
+  const baselineDays = (publication?.days || []).filter(day => day.status === "published").sort((a, b) => compareStableText(a.sourceDayId, b.sourceDayId));
+  const candidateDays = normalized.days.slice(0, 5).map(day => ({ day, preview: buildPublishedDay(normalized, day, canonicalDishes) }));
+  const before = baselineDays.flatMap(day => demandLines(day.sourceDayId, day.date, day.dayName, day.entries || []));
+  const after = candidateDays.flatMap(({ day, preview }) => demandLines(day.id, preview.date, preview.dayName, preview.entries));
+  const changeSet: PublishedWeekDemandChangeSet = {
+    ...(publication?.publicationId ? { publicationId: publication.publicationId } : {}),
+    publicationVersion: publication?.publicationVersion || 0,
+    sourceWeekId: normalized.week.id,
+    sourceWeekVersion: normalized.week.version,
+    days: baselineDays.map(day => ({ sourceDayId: day.sourceDayId, publicationDayId: day.publicationDayId, publicationDayVersion: day.version, contentHash: day.contentHash })),
+    operations: makeDemandOperations(before, after),
+  };
   return {
     hasUnpublishedChanges: Object.values(dayHasUnpublishedChanges).some(Boolean),
     dayHasUnpublishedChanges,
+    changeSet,
   };
 }
 export async function publicationState(
