@@ -22,12 +22,14 @@ test("desktop uses a throttled visible-tab head check before full projection rea
 
 test("desktop passive refresh policy blocks chatter inside the 15-minute window", () => {
   assert.equal(PASSIVE_REFRESH_INTERVAL_MS, 15 * 60_000);
-  const base = { now: 15 * 60_000, visible: true, requestsBlocked: false, inFlight: false };
+  const now = Date.parse("2026-11-05T12:00:00Z"); // Thursday, UK core hours
+  const base = { now, visible: true, requestsBlocked: false, inFlight: false };
   assert.equal(mayRequestPassiveRefresh({ ...base, lastAttemptAt: undefined }), true);
-  assert.equal(mayRequestPassiveRefresh({ ...base, lastAttemptAt: 0 }), true);
-  assert.equal(mayRequestPassiveRefresh({ ...base, lastAttemptAt: 0, now: PASSIVE_REFRESH_INTERVAL_MS - 1 }), false);
-  assert.equal(mayRequestPassiveRefresh({ ...base, lastAttemptAt: 0, now: PASSIVE_REFRESH_INTERVAL_MS }), true);
+  assert.equal(mayRequestPassiveRefresh({ ...base, lastAttemptAt: now - PASSIVE_REFRESH_INTERVAL_MS }), true);
+  assert.equal(mayRequestPassiveRefresh({ ...base, lastAttemptAt: now - PASSIVE_REFRESH_INTERVAL_MS + 1 }), false);
   assert.equal(mayRequestPassiveRefresh({ ...base, visible: false }), false);
+  assert.equal(mayRequestPassiveRefresh({ ...base, now: Date.parse("2026-11-07T12:00:00Z") }), false);
+  assert.equal(mayRequestPassiveRefresh({ ...base, now: Date.parse("2026-11-05T21:00:00Z"), lastAttemptAt: Date.parse("2026-11-05T20:45:00Z") }), false);
   assert.equal(mayRequestPassiveRefresh({ ...base, requestsBlocked: true }), false);
   assert.equal(mayRequestPassiveRefresh({ ...base, inFlight: true }), false);
 });

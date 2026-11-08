@@ -45,6 +45,7 @@ import { readCachedProjection, writeCachedProjection } from "../lib/logistics-ca
 import { fetchPlannerGet } from "../lib/planner-fetch";
 import { fetchProjectionWithRecovery } from "../lib/projection-fetch";
 import { mayRequestPassiveRefresh, PASSIVE_REFRESH_INTERVAL_MS } from "../lib/passive-refresh";
+import { DASHBOARD_REFRESH_CHECK_MS, mayAutoRefreshDashboard } from "../../shared/passive-dashboard-refresh";
 import { ScopedRequestCoordinator, scopedRequestKey, type ScopedRequestContext } from "../lib/scoped-request-coordinator";
 import {
   canStartPlacement,
@@ -515,15 +516,18 @@ function PlannerContents() {
   };
 
   const requestPassiveRefresh = (reason: string) => {
-    void reason;
-    if (!mayRequestPassiveRefresh({
-      now: Date.now(),
-      lastAttemptAt: lastPassiveSyncAt.current,
-      visible: document.visibilityState === "visible",
-      requestsBlocked: requestsBlocked.current,
-      inFlight: Boolean(activeDayContext.current && syncCheckInFlight.current.has(scopedRequestKey(activeDayContext.current))),
+    const now = Date.now();
+    const visible = document.visibilityState === "visible";
+    const inFlight = Boolean(activeDayContext.current && syncCheckInFlight.current.has(scopedRequestKey(activeDayContext.current)));
+    // Broadcasts indicate actual changes, so bypass the passive timetable.
+    // In-flight deduplication still prevents overlapping reads.
+    if (reason === "broadcast") {
+      if (!visible || requestsBlocked.current || inFlight) return;
+    } else if (!mayRequestPassiveRefresh({
+      now, lastAttemptAt: lastPassiveSyncAt.current, visible,
+      requestsBlocked: requestsBlocked.current, inFlight,
     })) return;
-    lastPassiveSyncAt.current = Date.now();
+    lastPassiveSyncAt.current = now;
     void checkForUpdates();
   };
   const ensureVehicleDayRuns = async (context: ScopedRequestContext, summaryContext: ScopedRequestContext | undefined) => {
@@ -540,7 +544,7 @@ function PlannerContents() {
   };
   useEffect(() => {
     if (!viewPreferencesReady) return;
-    lastPassiveSyncAt.current = undefined;
+    lastPassiveSyncAt.current = Date.now(); // Bootstrap counts as the first read; avoid a duplicate one minute later.
     const context = activeDayContext.current;
     const summaryContext = activeWeekContext.current;
     if (!context || context.scope !== date) return;
@@ -560,7 +564,7 @@ function PlannerContents() {
     document.addEventListener("visibilitychange", onVisibilityChange);
     const timer = window.setInterval(() => {
       requestPassiveRefresh("interval");
-    }, PASSIVE_REFRESH_INTERVAL_MS);
+    }, DASHBOARD_REFRESH_CHECK_MS);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisibilityChange); liveChannel?.removeEventListener("message", onLiveChange); liveChannel?.close(); };
   }, [date, viewPreferencesReady]);
   useEffect(() => {
@@ -574,19 +578,29 @@ function PlannerContents() {
       await loadWeekForContext(context);
     })();
   }, [weekCommencing, viewPreferencesReady]);
-  const checkPlanningAttention = async (_passive = false) => {
+  const lastPlanningAttentionAt = useRef<number | undefined>(undefined);
+  const planningAttentionInFlight = useRef(false);
+  const checkPlanningAttention = async (passive = false) => {
     const context = activeDayContext.current;
-    if (requestsBlocked.current || document.visibilityState !== "visible") return;
+    const now = Date.now();
+    if (requestsBlocked.current || document.visibilityState !== "visible" || planningAttentionInFlight.current) return;
+    if (passive && !mayAutoRefreshDashboard({
+      now, lastAttemptAt: lastPlanningAttentionAt.current, visible: true,
+      minimumIntervalMs: PASSIVE_REFRESH_INTERVAL_MS,
+    })) return;
+    lastPlanningAttentionAt.current = now;
+    planningAttentionInFlight.current = true;
     try {
       const response = await fetchPlannerGet(`/api/logistics?planningAttention=1&serviceDate=${operationalDate()}&days=14`, { cache: "no-store" });
       const body = await requireSuccessfulResponse(response, "Planning attention could not be checked.");
       if (context) dayRequests.commit(context, () => setPlanningAttention((body.attention || []) as Array<{ serviceDate: string; count: number }>));
     } catch (cause) { if (context) dayRequests.commit(context, () => recordPassiveError(cause, "Planning attention could not be checked.")); }
+    finally { planningAttentionInFlight.current = false; }
   };
   useEffect(() => {
     if (!viewPreferencesReady) return;
-    void checkPlanningAttention(true);
-    const timer = window.setInterval(() => { void checkPlanningAttention(true); }, PASSIVE_REFRESH_INTERVAL_MS);
+    void checkPlanningAttention();
+    const timer = window.setInterval(() => { void checkPlanningAttention(true); }, DASHBOARD_REFRESH_CHECK_MS);
     return () => window.clearInterval(timer);
   }, [viewPreferencesReady]);
 
