@@ -578,7 +578,7 @@ function PlannerContents() {
       await loadWeekForContext(context);
     })();
   }, [weekCommencing, viewPreferencesReady]);
-  const lastPlanningAttentionAt = useRef<number | undefined>();
+  const lastPlanningAttentionAt = useRef<number | undefined>(undefined);
   const planningAttentionInFlight = useRef(false);
   const checkPlanningAttention = async (passive = false) => {
     const context = activeDayContext.current;

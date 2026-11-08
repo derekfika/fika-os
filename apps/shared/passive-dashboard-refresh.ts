@@ -5,7 +5,6 @@
  */
 export const DASHBOARD_REFRESH_CHECK_MS = 60_000;
 export const DASHBOARD_CORE_REFRESH_MS = 5 * 60_000;
-export const DASHBOARD_OVERNIGHT_REFRESH_MS = 60 * 60_000;
 
 const ukClock = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Europe/London",
@@ -14,18 +13,18 @@ const ukClock = new Intl.DateTimeFormat("en-GB", {
   hourCycle: "h23",
 });
 
-export type DashboardRefreshPeriod = "core" | "overnight" | "weekend";
+export type DashboardRefreshPeriod = "core" | "inactive" | "weekend";
 
 export function dashboardRefreshPeriod(at: number | Date): DashboardRefreshPeriod {
   const parts = Object.fromEntries(ukClock.formatToParts(at).map(({ type, value }) => [type, value]));
   if (parts.weekday === "Sat" || parts.weekday === "Sun") return "weekend";
   const hour = Number(parts.hour);
-  return hour >= 6 && hour < 18 ? "core" : "overnight";
+  return hour >= 6 && hour < 16 ? "core" : "inactive";
 }
 
 export function dashboardPassiveRefreshIntervalMs(at: number | Date): number | null {
   const period = dashboardRefreshPeriod(at);
-  return period === "weekend" ? null : period === "core" ? DASHBOARD_CORE_REFRESH_MS : DASHBOARD_OVERNIGHT_REFRESH_MS;
+  return period === "core" ? DASHBOARD_CORE_REFRESH_MS : null;
 }
 
 export type DashboardPassiveRefreshGate = {

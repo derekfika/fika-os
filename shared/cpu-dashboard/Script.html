@@ -1145,7 +1145,8 @@
     const parts = Object.fromEntries(UK_DASHBOARD_CLOCK.formatToParts(new Date()).map(function(part) { return [part.type, part.value]; }));
     if (parts.weekday === "Sat" || parts.weekday === "Sun") return null;
     const hour = Number(parts.hour);
-    return hour >= 6 && hour < 18 ? 5 * 60 * 1000 : 60 * 60 * 1000;
+    if (hour < 6 || hour >= 16) return null;
+    return 5 * 60 * 1000;
   }
 
   function startKitchenAutoRefresh_() {
