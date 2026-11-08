@@ -43,5 +43,10 @@
     "percent": 100
   },
   "previousGoodRecord": "a31b9d733c660ea3bff33d9ef50ccc92cdd4065e",
-  "createdAt": "2026-11-08T15:56:49.364Z"
+  "createdAt": "2026-11-08T15:56:49.364Z",
+  "retryClaim": {
+    "originalIntent": "39a4b77a3ad8589d3923346b9b865987fffcb422",
+    "attempt": 2,
+    "startedAt": "2026-11-08T17:53:50.766Z"
+  }
 }
