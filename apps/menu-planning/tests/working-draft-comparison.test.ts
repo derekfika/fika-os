@@ -65,3 +65,16 @@ test("removals and additions are independent at each site", () => {
     ["added", "governed:oploc:a", undefined, "dish:soup"],
   ]);
 });
+
+test("allergen and routing evidence changes produce scoped site amendment operations", () => {
+  const baseline = [entry("entry:soup", "dish:soup", "SOUP", [["oploc:a", 10], ["oploc:b", 6]])];
+  const beforeDish = { ...dishes[1], allergenEvidence: [{ allergen: "milk", value: "contains", source: "review", reviewedBy: "chef", reviewedAt: "2026-11-01T10:00:00Z" }] } as MenuItem;
+  const afterDish = { ...beforeDish, revision: 2, allergenEvidence: [{ allergen: "milk", value: "may_contain", source: "review", reviewedBy: "chef", reviewedAt: "2026-11-02T10:00:00Z" }] } as MenuItem;
+  const source = snapshot(baseline);
+  const published = buildPublishedDay(source, source.days[0], [beforeDish]);
+  const publication: MenuPublication = { publicationId: "publication:week", sourceWeekId: "week", weekCommencing: date, weekEnding: "2026-11-08", publicationVersion: 4, days: [{ publicationDayId: "publication:week:day:monday:v3", sourceDayId: day.id, date, dayName: "Monday", version: 3, status: "published", contentHash: published.contentHash, publishedAt: "2026-11-01T12:00:00.000Z", publishedBy: "test", entries: published.entries }], audit: [] };
+  const comparison = compareWorkingWeekToPublication(snapshot(baseline), publication, [], [afterDish]);
+  assert.deepEqual(comparison.changeSet.operations.map(value => [value.kind, value.siteId]), [["details_changed", "governed:oploc:a"], ["details_changed", "governed:oploc:b"]]);
+  assert.equal(comparison.changeSet.operations[0].before?.entries[0].allergens.milk, "contains");
+  assert.equal(comparison.changeSet.operations[0].after?.entries[0].allergens.milk, "may_contain");
+});
