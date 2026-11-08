@@ -268,7 +268,7 @@ export default function GallagherDashboard() {
   useEffect(() => {
     if (phase !== "ready") return;
     const onVisible = () => {
-      if (mayAutoRefreshDashboard({ now: Date.now(), lastAttemptAt: loadedAt, visible: document.visibilityState === "visible" })) void loadBookings("refresh");
+      if (mayAutoRefreshDashboard({ now: Date.now(), lastAttemptAt: loadedAt, visible: document.visibilityState === "visible", minimumIntervalMs: 10 * 60_000 })) void loadBookings("refresh");
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
