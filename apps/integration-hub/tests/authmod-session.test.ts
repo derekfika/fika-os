@@ -111,6 +111,14 @@ test("recent verified Workspace identity policy rejects stale, unverified, and n
   assert.throws(() => assertRecentVerifiedFirebaseIdentity(decoded({ auth_time: Math.floor(Date.now() / 1000) - 301 })), /too old/);
 });
 
+test("explicit external email admission is exact and leaves the FIKA domain rule intact", () => {
+  const now = Math.floor(Date.now() / 1000);
+  const staging = { ...process.env, FIKA_ALLOWED_EMAIL_DOMAINS: "fikacatering.com", FIKA_ALLOWED_EMAIL_ADDRESSES: "ShericeBanya@gmail.com" };
+  assert.doesNotThrow(() => assertRecentVerifiedFirebaseIdentity(decoded({ email: "shericebanya@gmail.com" }), now, staging));
+  assert.doesNotThrow(() => assertRecentVerifiedFirebaseIdentity(decoded({ email: "user@fikacatering.com" }), now, staging));
+  assert.throws(() => assertRecentVerifiedFirebaseIdentity(decoded({ email: "another.person@gmail.com" }), now, staging), /not eligible/);
+});
+
 test("exact enrolled email binds the first Firebase UID and records audit evidence", async () => {
   const repository = new MemoryAuthModRepository();
   const identity = await createAuthIdentity(repository, { actor, displayName: "Imported User", email: "USER@fikacatering.com", provenance: "import" });

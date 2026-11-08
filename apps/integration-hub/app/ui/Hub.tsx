@@ -455,7 +455,7 @@ function Login({
     try {
       const auth = getFikaFirebaseAuth();
       const provider = getFikaGoogleProvider();
-      provider.setCustomParameters({ hd: "fikacatering.com" });
+      if (runtime?.mode !== "staging") provider.setCustomParameters({ hd: "fikacatering.com" });
       try {
         const result = await signInWithPopup(auth, provider);
         await exchangeGoogleUser(result.user, auth, done);

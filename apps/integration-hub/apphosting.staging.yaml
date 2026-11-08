@@ -39,6 +39,12 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  # Keep Firebase's redirect helper on the same origin as the staging Hub.
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: staging-os.fikacatering.com
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: FIKA_SNAPSHOT_BUCKET
     value: fika-os-dev-staging-read-packages-europe-west4
     availability:
@@ -63,6 +69,11 @@ env:
     value: fikacatering.com
     availability:
       - BUILD
+      - RUNTIME
+  # External staging access is admitted by exact address, never by the Gmail domain.
+  - variable: FIKA_ALLOWED_EMAIL_ADDRESSES
+    value: shericebanya@gmail.com
+    availability:
       - RUNTIME
   - variable: FIKA_APP_HOSPITALITY_URL
     value: https://hospitality-staging.fikacatering.com/manage

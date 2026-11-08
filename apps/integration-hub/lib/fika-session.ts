@@ -19,13 +19,15 @@ export type FikaSessionPrincipal = {
 export class FikaSessionError extends Error { constructor(message: string, public status: 401 | 403 = 401, public code = "FIKA_SESSION_INVALID") { super(message); } }
 type SessionAuth = { verifySessionCookie(cookie: string, checkRevoked?: boolean): Promise<DecodedIdToken>; createSessionCookie(idToken: string, options: { expiresIn: number }): Promise<string> };
 
-function isAllowedEmail(email: unknown, domains = allowedEmailDomains()) {
+function isAllowedEmail(email: unknown, env: NodeJS.ProcessEnv = process.env) {
   const normalized = String(email || "").trim().toLowerCase();
-  return Boolean(normalized && domains.some(domain => normalized.endsWith(`@${domain}`)));
+  if (!normalized) return false;
+  const exactAddresses = new Set((env.FIKA_ALLOWED_EMAIL_ADDRESSES || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
+  return exactAddresses.has(normalized) || allowedEmailDomains(env).some(domain => normalized.endsWith(`@${domain}`));
 }
 
-export function assertRecentVerifiedFirebaseIdentity(decoded: Pick<DecodedIdToken, "email" | "email_verified" | "auth_time">, nowSeconds = Math.floor(Date.now() / 1000)) {
-  if (!decoded.email || decoded.email_verified !== true || !isAllowedEmail(decoded.email)) throw new FikaSessionError("This Google Workspace identity is not eligible for FIKA OS.", 403, "FIKA_EMAIL_NOT_ELIGIBLE");
+export function assertRecentVerifiedFirebaseIdentity(decoded: Pick<DecodedIdToken, "email" | "email_verified" | "auth_time">, nowSeconds = Math.floor(Date.now() / 1000), env: NodeJS.ProcessEnv = process.env) {
+  if (!decoded.email || decoded.email_verified !== true || !isAllowedEmail(decoded.email, env)) throw new FikaSessionError("This Google identity is not eligible for FIKA OS.", 403, "FIKA_EMAIL_NOT_ELIGIBLE");
   if (!decoded.auth_time || nowSeconds - decoded.auth_time > 5 * 60) throw new FikaSessionError("Sign-in is too old. Authenticate again to create a FIKA OS session.", 401, "FIKA_RECENT_AUTH_REQUIRED");
 }
 

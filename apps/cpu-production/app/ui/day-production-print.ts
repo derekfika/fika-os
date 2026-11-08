@@ -17,6 +17,8 @@ import {
   runSheetDestinationKey,
   runSheetPrintSiteOptions,
   selectedRunSheetPrintOrders,
+  type RunSheetServiceKey,
+  type RunSheetServiceOverrides,
 } from "./run-sheet-printing";
 export const escapePrintHtml = (value: unknown) =>
   String(value ?? "").replace(
@@ -83,10 +85,12 @@ export function runSheetProductionPrintHtml(
   printedAt = new Date(),
   selectionLabel = "Selected sites",
   layout: RunSheetLayout = "compact",
+  selectedServiceKeys?: readonly RunSheetServiceKey[],
+  siteServiceOverrides: RunSheetServiceOverrides = {},
 ) {
-  const selectedByDay = selectedRunSheetPrintOrders(ordersByDay, days, selectedSiteKeys);
+  const selectedByDay = selectedRunSheetPrintOrders(ordersByDay, days, selectedSiteKeys, selectedServiceKeys, siteServiceOverrides);
   const allSelected = [...selectedByDay.values()].flat();
-  if (!allSelected.length) throw Error("No eligible collections were found for the selected site and dates.");
+  if (!allSelected.length) throw Error("No eligible collections were found for the selected services, sites and dates.");
   const sites = runSheetPrintSiteOptions(ordersByDay, days);
   const labels = new Map(sites.map((site) => [site.key, site.displayLabel]));
   const source = days.flatMap((day) => (selectedByDay.get(day) || []).map((order) => {
