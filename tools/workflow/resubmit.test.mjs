@@ -140,11 +140,31 @@ test('an original submission that DID reach Firebase is never resubmitted (resum
   assert.match(describeSubmissionEvidence(f.snapshot, f.journal), /no Firebase build or rollout evidence/);
 });
 
-test('firebase auth preflight fails before any state is written, with the operator action', () => {
+test('firebase auth preflight accepts a locally interactive Firebase CLI session', () => {
   const t = target('hub', 'staging');
-  assert.throws(() => firebaseAuthPreflight(t, () => { throw Error('Authentication Error'); }), /firebase login --reauth.*No release state was written/);
+  assert.doesNotThrow(() => firebaseAuthPreflight(t, (program, args) => {
+    assert.equal(program, 'firebase'); assert.deepEqual(args, ['apphosting:backends:list', '--project', t.project, '--json']);
+    return JSON.stringify({result:[{ name: `projects/${t.project}/locations/${t.region}/backends/${t.backend}` }]});
+  }));
+});
+
+test('firebase auth preflight accepts hosted keyless ADC credentials', () => {
+  const t = target('hub', 'staging');
+  // Firebase CLI's GoogleAuth ADC path consumes the WIF credentials exported by google-github-actions/auth.
+  assert.doesNotThrow(() => firebaseAuthPreflight(t, () => JSON.stringify({result:[{ name: `projects/${t.project}/locations/${t.region}/backends/${t.backend}` }]})));
+});
+
+test('firebase auth preflight preserves actionable CLI errors without exposing credentials', () => {
+  const t = target('hub', 'staging');
+  const failure = Object.assign(new Error('command failed'), { stderr: Buffer.from('PERMISSION_DENIED: permission required; {"refresh_token":"secret-refresh"}; access_token=ya29.secret Bearer abc.def.ghi; -----BEGIN PRIVATE KEY-----secret-key-----END PRIVATE KEY-----') });
+  assert.throws(() => firebaseAuthPreflight(t, () => { throw failure; }), error => {
+    assert.match(error.message, /PERMISSION_DENIED/);
+    assert.match(error.message, /No release state was written/);
+    assert.doesNotMatch(error.message, /firebase login --reauth|ya29\.secret|abc\.def\.ghi|secret-refresh|secret-key/);
+    assert.match(error.message, /\[redacted\]/);
+    return true;
+  });
   assert.throws(() => firebaseAuthPreflight(t, () => '[]'), /cannot see backend/);
-  assert.doesNotThrow(() => firebaseAuthPreflight(t, (program, args) => { assert.equal(program, 'firebase'); assert.deepEqual(args.slice(0, 2), ['apphosting:backends:list', '--project']); return JSON.stringify({result:[{ name: `projects/${t.project}/locations/${t.region}/backends/${t.backend}` }]}); }));
 });
 
 test('audit evidence is scoped to the backend and unreadable logs are reported, not assumed empty', () => {

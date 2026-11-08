@@ -337,11 +337,26 @@ export function rollbackSelection(t, current, options = {}, before) {
   }
   throw Error('No earlier verified rollback target is recorded; preserve the current release and investigate rather than guessing a SHA');
 }
-/** Fails before any release state is written when the Firebase CLI cannot make an authenticated call. */
+function firebaseCliErrorDetails(error) {
+  const output = [error?.stderr, error?.stdout]
+    .map(value => Buffer.isBuffer(value) ? value.toString('utf8') : String(value || ''))
+    .find(value => value.trim());
+  let details = output || error?.message || String(error || 'Unknown Firebase CLI error');
+  details = details
+    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, 'Bearer [redacted]')
+    .replace(/(["']?\b(?:access_token|refresh_token|id_token|subject_token|client_secret)\b["']?\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi, '$1[redacted]')
+    .replace(/\bya29\.[A-Za-z0-9._-]+/g, '[redacted]')
+    .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[redacted JWT]')
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, '[redacted private key]')
+    .trim();
+  return (details || 'Unknown Firebase CLI error').slice(0, 1200);
+}
+
+/** Fails before any release state is written and preserves sanitized Firebase CLI diagnostics. */
 export function firebaseAuthPreflight(t, run = command) {
   let listing;
   try { listing = JSON.parse(run('firebase', ['apphosting:backends:list', '--project', t.project, '--json'])); }
-  catch { throw Error(`Firebase CLI is not authenticated for ${t.project}; operator action: run 'firebase login --reauth'. No release state was written.`); }
+  catch (error) { throw Error(`Firebase CLI preflight failed for ${t.project}: ${firebaseCliErrorDetails(error)}. No release state was written.`); }
   if (!Array.isArray(listing?.result) || !listing.result.some(backend => backend.name === backendPath(t))) throw Error(`Firebase CLI cannot see backend ${t.backend} in ${t.project}; no release state was written.`);
 }
 /** Cloud Audit Log evidence of App Hosting create calls for this backend since a time. Unreadable logs are reported, never assumed empty. */
