@@ -2,6 +2,7 @@
   const CLIENT_BUILD = "2026.06.21.9";
   const PREP_CHEF_KEY = "cpu-dashboard-last-prep-chef";
   const PREFS_KEY = "cpu-dashboard-preferences-v1";
+  const UK_DASHBOARD_CLOCK = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "short", hour: "2-digit", hourCycle: "h23" });
   const state = {
     weekStart: startOfWeek(new Date()),
     orders: [],
@@ -17,6 +18,7 @@
     hideCompleted: false,
     kitchenMode: false,
     autoRefreshTimer: null,
+    lastDashboardReadAt: 0,
     preferencesRestored: false,
     editingOrderId: "",
     prepCameraStream: null,
@@ -36,6 +38,7 @@
   });
 
   function loadDashboard() {
+    state.lastDashboardReadAt = Date.now();
     setBusyState_(true);
     updatePeriodHeading();
     const request = weekRequest();
@@ -90,11 +93,7 @@
     document.body.classList.toggle("kitchen-mode", state.kitchenMode);
     document.getElementById("kitchenModeButton").textContent =
       state.kitchenMode ? "Exit kitchen mode" : "Kitchen mode";
-    if (state.kitchenMode && !state.autoRefreshTimer) {
-      state.autoRefreshTimer = window.setInterval(function() {
-        if (!state.scanRunning && !state.loading) reloadSheet();
-      }, 120000);
-    }
+    if (state.kitchenMode) startKitchenAutoRefresh_();
     renderAll();
     setView(state.view);
     if (diagnostics && diagnostics.sheetRows > 0 && diagnostics.ordersLoaded === 0) {
@@ -1141,6 +1140,23 @@
     });
   }
 
+  // Standalone Apps Script dashboard uses the same policy as FIKA OS native dashboards.
+  function kitchenRefreshInterval_() {
+    const parts = Object.fromEntries(UK_DASHBOARD_CLOCK.formatToParts(new Date()).map(function(part) { return [part.type, part.value]; }));
+    if (parts.weekday === "Sat" || parts.weekday === "Sun") return null;
+    const hour = Number(parts.hour);
+    return hour >= 6 && hour < 18 ? 5 * 60 * 1000 : 60 * 60 * 1000;
+  }
+
+  function startKitchenAutoRefresh_() {
+    if (state.autoRefreshTimer) return;
+    state.autoRefreshTimer = window.setInterval(function() {
+      const interval = kitchenRefreshInterval_();
+      if (interval === null || document.visibilityState !== "visible" || state.scanRunning || state.loading) return;
+      if (Date.now() - state.lastDashboardReadAt >= interval) reloadSheet();
+    }, 60000);
+  }
+
   function toggleKitchenMode() {
     state.kitchenMode = !state.kitchenMode;
     document.body.classList.toggle("kitchen-mode", state.kitchenMode);
@@ -1151,11 +1167,7 @@
       if (document.documentElement.requestFullscreen) {
         document.documentElement.requestFullscreen().catch(function() {});
       }
-      if (!state.autoRefreshTimer) {
-        state.autoRefreshTimer = window.setInterval(function() {
-          if (!state.scanRunning && !state.loading) reloadSheet();
-        }, 120000);
-      }
+      startKitchenAutoRefresh_();
     } else if (state.autoRefreshTimer) {
       window.clearInterval(state.autoRefreshTimer);
       state.autoRefreshTimer = null;
@@ -1370,6 +1382,7 @@
   }
 
   function reloadSheet(reopenOrderId) {
+    state.lastDashboardReadAt = Date.now();
     setBusyState_(true);
     const button = document.getElementById("reloadButton");
     button.disabled = true;

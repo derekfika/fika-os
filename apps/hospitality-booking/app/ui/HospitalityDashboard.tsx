@@ -6,6 +6,7 @@ import type { PortalMenuItem } from "../../lib/mnk-contract";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { MailSearch, RefreshCw, Settings } from "lucide-react";
+import { DASHBOARD_REFRESH_CHECK_MS, mayAutoRefreshDashboard } from "../../../shared/passive-dashboard-refresh";
 import type { BookingAdditionalChargeInput, CanonicalBooking, ProductionOrder, DashboardQuoteSettings, LabourRateSetting } from "@/lib/canonical-types";
 import { dailyRunSheetHtml } from "../../lib/run-sheet";
 import { bookingRequestedItems } from "../../lib/booking-presentation";
@@ -199,8 +200,12 @@ export default function HospitalityDashboard({
   // Menu outputs change only when a menu is regenerated. Avoid rereading the
   // whole output collection on every dashboard refresh.
   const menuCacheLoadedAt = useRef(0);
+  const dashboardLastAttemptAt = useRef<number | undefined>();
+  const dashboardLoadsInFlight = useRef(0);
 
   const load = async (clearError = true) => {
+    dashboardLastAttemptAt.current = Date.now();
+    dashboardLoadsInFlight.current += 1;
     setLoading(true);
     try {
       const response = await fetch(
@@ -246,6 +251,7 @@ export default function HospitalityDashboard({
     } catch (cause) {
       setError((cause as Error).message);
     } finally {
+      dashboardLoadsInFlight.current -= 1;
       setLoading(false);
     }
   };
@@ -385,11 +391,15 @@ export default function HospitalityDashboard({
   // while the production team is working without requiring a manual refresh.
   useEffect(() => {
     if (!selected && !selectedGroupId) return;
-    // Keep the manager view reasonably fresh without turning every open tab
-    // into a high-frequency Firestore read loop.
+    // Business-hours passive policy; explicit refresh and confirmed actions bypass it.
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
-    }, 30_000);
+      const now = Date.now();
+      if (mayAutoRefreshDashboard({
+        now, lastAttemptAt: dashboardLastAttemptAt.current,
+        visible: document.visibilityState === "visible",
+        inFlight: dashboardLoadsInFlight.current > 0,
+      })) void load();
+    }, DASHBOARD_REFRESH_CHECK_MS);
     return () => window.clearInterval(timer);
   }, [selected?.canonicalId, selectedGroupId, site.key]);
 
