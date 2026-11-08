@@ -1,0 +1,8 @@
+# 2026-11-08 — Published-menu working drafts and scoped comparison (#423)
+
+Adds an explicit Week Planner working-draft mode for currently published days. Saves update rolling working rows and server-stamp the current publication-day lineage while leaving immutable publication snapshots and outbox events unchanged. Legacy single-day and whole-week republish paths reject only when a saved working-draft marker still matches current published lineage. Superseded/withdrawn days and shared row/template edits remain locked. Scoped day-and-site publication is not implemented; saved changes remain unpublished.
+
+Adds a deterministic, read-only comparison of the active published snapshot and current working week. Its version-pinned change set reports added, removed, replaced and quantity-changed demand by source day, site and stable dish identity, retaining before/after allergen evidence. The whole-week saved-draft publication guard remains in place; this comparison does not publish or mutate operational data.
+
+Validation: previous focused working-draft/comparison/guard tests (23 passed); previous `npm run typecheck` and `npm run build` passed. The serial full package suite reported 535 passed, 1 existing single-day republish assertion failure at `tests/rolling-menu.test.ts:580`, and 4 skipped. `fika validate` was stopped after more than six minutes in repository workflow tests without reaching app checks. Follow-up: `week-draft-save.test.ts` passed (7/7), `npm --prefix apps/menu-planning run typecheck` passed, and `git diff --check` passed after published working-draft saves were scoped to load their current publication record. Scoped publication remains unimplemented.
+Deployment: none.

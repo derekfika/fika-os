@@ -208,7 +208,7 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
           weeksRef.current = nextWeeks;
         }
       } else setDishReferences(undefined);
-      setMessage(action === "publish" ? `Published · downstream handoff ${body.handoff?.status || "pending"}` : action === "batch-update-entries" ? "Changes saved" : "Saved");
+      setMessage(action === "publish" || action === "publish-amendment" ? `Published · downstream handoff ${body.handoff?.status || "pending"}` : action === "batch-update-entries" ? "Changes saved" : "Saved");
       window.setTimeout(() => setMessage(""), 1200);
       return true;
     } catch (cause) {

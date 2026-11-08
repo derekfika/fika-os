@@ -25,6 +25,8 @@ import {
 import {
   createPublishedMenuWeek,
   getMenuPublication,
+  previewPublishedWeekAmendment,
+  publishScopedPublishedWeekAmendment,
   publicationDayBlockers,
   publicationPreview,
   publicationState,
@@ -227,6 +229,8 @@ async function handleGet(request: NextRequest) {
     const previewDayId = request.nextUrl.searchParams.get("dayId") || undefined;
     const publicationPreviewRequested =
       request.nextUrl.searchParams.get("publicationPreview") === "true";
+    const amendmentPreviewRequested =
+      request.nextUrl.searchParams.get("amendmentPreview") === "true";
     // All rolling reads use the live Hub redirect projection so an old explicit
     // destination ID is canonicalised before it reaches the UI or cache.
     const governedOplocs = (await readDeliveredInOplocs(request)).filter(
@@ -253,6 +257,9 @@ async function handleGet(request: NextRequest) {
     const catalogueMs = performance.now() - catalogueStarted;
     const publicationStateMs = performance.now() - publicationStarted;
     const resolved = await resolvedSnapshot(snapshot, catalogue, actor);
+    const amendmentPreview = amendmentPreviewRequested
+      ? (assertSnapshotScope(snapshot, actor), await previewPublishedWeekAmendment(snapshot.week.id, governedOplocs))
+      : undefined;
     const activeCanonicalDishIds = new Set(catalogue.map((entry) => entry.id));
     console.info("Menu Planning rolling-menu GET timings", {
       rollingStateMs,
@@ -276,6 +283,7 @@ async function handleGet(request: NextRequest) {
             weekBlockers: publicationWeekBlockers(snapshot, governedOplocIds, activeCanonicalDishIds),
           }
         : {}),
+      ...(amendmentPreview ? { amendmentPreview } : {}),
     });
   } catch (error) {
     const status =
@@ -307,6 +315,30 @@ async function handlePost(request: NextRequest) {
     const liveOplocs = (await readDeliveredInOplocs(request)).filter((oploc) =>
       actorCanAccessOploc(actor, oploc.canonicalId),
     );
+    if (action === "publish-amendment") {
+      requirePublicationActor(actor);
+      const weekId = String(body.weekId || "");
+      const oplocs = liveOplocs;
+      const sourceSnapshot = normaliseRollingSnapshotDestinations(await getWeek(weekId), oplocs);
+      assertSnapshotScope(sourceSnapshot, actor);
+      const publication = await publishScopedPublishedWeekAmendment(weekId, {
+        sourceWeekVersion: Number(body.sourceWeekVersion),
+        publicationVersion: Number(body.publicationVersion),
+        changeSetHash: String(body.changeSetHash || ""),
+        requestId: String(body.requestId || ""),
+      }, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)), oplocs);
+      const handoff = queuedPublicationHandoff(publication);
+      const saved = await getWeek(weekId);
+      const published = await getMenuPublication(publication.publicationId);
+      return NextResponse.json({
+        snapshot: await resolvedSnapshot(saved, undefined, actor),
+        publication: published ? scopeMenuPublication(published, actor) : undefined,
+        handoff,
+        weeks: await listWeeks(),
+        blockers: await validateWeekAuthoritative(scopedSnapshot(saved, actor)),
+        publicationState: await publicationState(saved, oplocs),
+      });
+    }
     if (action === "save-week") {
       const { action: _action, ...saveRequest } = body;
       const result = await saveWeekDraft(saveRequest, actor.uid, new Set(liveOplocs.map(oploc => oploc.canonicalId)), new Map(liveOplocs.flatMap(oploc => (oploc.legacyIds || []).map(alias => [alias, oploc.canonicalId] as const))));
