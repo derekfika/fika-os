@@ -7,7 +7,9 @@ import {
   loadRunSheetPrintDays,
   runSheetDestinationKey,
   runSheetPrintDates,
+  runSheetPrintServiceOptions,
   runSheetPrintSiteOptions,
+  runSheetServiceKey,
   selectedRunSheetPrintOrders,
 } from "../app/ui/run-sheet-printing";
 import { dayProductionPrintHtml, paginateDayProduction, runSheetProductionPrintHtml } from "../app/ui/day-production-print";
@@ -61,6 +63,35 @@ test("latest inactive versions are excluded and selected sites remain distinct a
   assert.deepEqual([...selected.values()].flat().map((row) => row.canonicalId), ["order:a2"]);
 });
 
+test("service selection uses canonical routing evidence and per-OPLOC overrides are exact", () => {
+  const day = "2026-10-30";
+  const mnkGrab = { ...order("order:mnk-grab", day, "oploc:mnk", "MNK"), productionCategory: "grab_and_go", origin: "grab_and_go", serviceType: "Hospitality" } as ProductionOrder;
+  const mnkHospitality = { ...order("order:mnk-hospitality", day, "oploc:mnk", "MNK"), productionCategory: "hospitality", origin: "hospitality_booking", serviceType: "Grab & Go" } as ProductionOrder;
+  const events = { ...order("order:event", day, "oploc:hall", "Example Hall"), productionCategory: "events", origin: "hospitality_booking" } as ProductionOrder;
+  const adHoc = { ...order("production-order:v1:ad-hoc:request-1", day, "oploc:hall", "Example Hall"), origin: "cpu_created", productionCategory: undefined } as ProductionOrder;
+  const loaded = new Map([[day, [mnkGrab, mnkHospitality, events, adHoc]]]);
+  const sites = runSheetPrintSiteOptions(loaded, [day]);
+  const mnk = sites.find((site) => site.key === "oploc:oploc:mnk")!;
+  assert.equal(mnk.serviceCounts.grab_and_go, 1);
+  assert.equal(mnk.serviceCounts.hospitality, 1);
+  assert.equal(runSheetServiceKey(mnkGrab), "grab_and_go");
+  assert.equal(runSheetServiceKey(mnkHospitality), "hospitality");
+  assert.equal(runSheetServiceKey(events), "events");
+  assert.equal(runSheetServiceKey(adHoc), "direct_cpu");
+  assert.deepEqual(runSheetPrintServiceOptions(loaded, [day]).map((service) => service.key), ["grab_and_go", "hospitality", "direct_cpu", "events"]);
+
+  const inheritedGrabOnly = selectedRunSheetPrintOrders(loaded, [day], [mnk.key], ["grab_and_go"]);
+  assert.deepEqual([...inheritedGrabOnly.values()].flat().map((row) => row.canonicalId), [mnkGrab.canonicalId]);
+  const localHospitalityInclude = selectedRunSheetPrintOrders(loaded, [day], [mnk.key], ["grab_and_go"], {
+    [mnk.key]: { hospitality: true },
+  });
+  assert.deepEqual([...localHospitalityInclude.values()].flat().map((row) => row.canonicalId).sort(), [mnkGrab.canonicalId, mnkHospitality.canonicalId].sort());
+  const localGrabExclude = selectedRunSheetPrintOrders(loaded, [day], [mnk.key], ["grab_and_go", "hospitality"], {
+    [mnk.key]: { grab_and_go: false },
+  });
+  assert.deepEqual([...localGrabExclude.values()].flat().map((row) => row.canonicalId), [mnkHospitality.canonicalId]);
+});
+
 test("each requested day is verified and any partial projection rejects the whole print set", async () => {
   const days = ["2026-10-30", "2026-10-31"];
   const progress: string[] = [];
@@ -99,6 +130,22 @@ test("printed HTML keeps separate site identities and contains the paper handove
   }
   assert.match(paginateDayProduction.toString(), /Printed /);
   assert.match(paginateDayProduction.toString(), /Paper-only checkboxes/);
+});
+
+test("run sheet HTML contains only globally and locally selected services", () => {
+  const day = "2026-10-30";
+  const mnkGrab = { ...order("order:mnk-grab", day, "oploc:mnk", "MNK"), productionCategory: "grab_and_go", origin: "grab_and_go" } as ProductionOrder;
+  const mnkHospitality = { ...order("order:mnk-hospitality", day, "oploc:mnk", "MNK"), productionCategory: "hospitality", origin: "hospitality_booking" } as ProductionOrder;
+  const map = new Map([[day, [mnkGrab, mnkHospitality]]]);
+  const key = "oploc:oploc:mnk";
+  const grabOnlyHtml = runSheetProductionPrintHtml(map, [day], [key], new Date("2026-10-30T09:00:00Z"), "Grab only", "compact", ["grab_and_go"]);
+  assert.match(grabOnlyHtml, /data-collection-id="order:mnk-grab"/);
+  assert.doesNotMatch(grabOnlyHtml, /data-collection-id="order:mnk-hospitality"/);
+  const siteOverrideHtml = runSheetProductionPrintHtml(map, [day], [key], new Date("2026-10-30T09:00:00Z"), "MNK selected services", "compact", ["grab_and_go"], {
+    [key]: { hospitality: true },
+  });
+  assert.match(siteOverrideHtml, /data-collection-id="order:mnk-grab"/);
+  assert.match(siteOverrideHtml, /data-collection-id="order:mnk-hospitality"/);
 });
 
 test("printed Menu run sheets use canonical section order, actual slot labels, and retain one site per page", () => {
