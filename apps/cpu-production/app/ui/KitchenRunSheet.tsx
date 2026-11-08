@@ -239,7 +239,7 @@ function SavedCollection({ order }: { order: ProductionOrder }) {
   const pending = useRef<Record<string, unknown> | undefined>(undefined);
   const serial = useRef(0);
   const sending = useRef(false);
-  const lastChecklistReadAt = useRef<number | undefined>();
+  const lastChecklistReadAt = useRef<number | undefined>(undefined);
   const checklistReadsInFlight = useRef(0);
   const load = async () => {
     lastChecklistReadAt.current = Date.now();

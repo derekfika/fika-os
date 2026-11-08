@@ -200,7 +200,7 @@ export default function HospitalityDashboard({
   // Menu outputs change only when a menu is regenerated. Avoid rereading the
   // whole output collection on every dashboard refresh.
   const menuCacheLoadedAt = useRef(0);
-  const dashboardLastAttemptAt = useRef<number | undefined>();
+  const dashboardLastAttemptAt = useRef<number | undefined>(undefined);
   const dashboardLoadsInFlight = useRef(0);
 
   const load = async (clearError = true) => {
