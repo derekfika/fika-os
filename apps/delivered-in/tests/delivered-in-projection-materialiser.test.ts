@@ -39,13 +39,16 @@ test("pending or unsigned CPU review does not suppress the operational menu", as
 });
 
 test("a valid signed CPU review overlays allergens on the same Menu Planning projection", async () => {
-  const review = { entries: new Map([["dish:1", { allergens: { milk: "contains" as const }, allergenState: "contains" as const }]]), cpuReview: { status: "signed" as const, signatures: [{ role: "production_chef", printedName: "Chef", signedAt: "2026-09-14T08:00:00Z" }, { role: "head_chef_site_manager", printedName: "Manager", signedAt: "2026-09-14T08:01:00Z" }], drivePdfUrl: "https://example.test/signed.pdf" }, orderIds: ["order:1"], package: { sourceBundleHash: "menu-day-hash", sourceStatus: "current" as const, sourceCompleteness: "complete" as const } };
+  const review = { entries: new Map([["dish:1", { allergens: { milk: "contains" as const }, allergenState: "contains" as const }]]), cpuReview: { status: "signed" as const, signatures: [{ role: "production_chef", printedName: "Chef", signedAt: "2026-09-14T08:00:00Z" }, { role: "head_chef_site_manager", printedName: "Manager", signedAt: "2026-09-14T08:01:00Z" }], drivePdfUrl: "https://example.test/signed.pdf" }, orderIds: ["order:1"], package: { sourceBundleHash: "menu-day-hash", sourceStatus: "current" as const, sourceCompleteness: "complete" as const, releaseId: "release:1", releaseVersion: "r1", signedAt: "2026-09-14T08:01:00Z" } };
   const projection = await buildDeliveredInDayProjection({ request, site, day: { ...day, allergenSignoff: { productionChef: { printedName: "Menu author", signedAt: "2026-09-14T07:00:00Z" } } }, governed: true, loadReview: async () => review });
   assert.equal(projection.entries[0].allergens.milk, "contains");
   assert.equal(projection.entries[0].allergensVisible, true);
   assert.deepEqual(projection.cpuReview, review.cpuReview);
   assert.equal(projection.drivePdfUrl, "https://example.test/signed.pdf");
   assert.equal(projection.sourceLineage.menu.contentHash, "menu-day-hash");
+  assert.equal(projection.sourceLineage.cpu.releaseId, "release:1");
+  assert.equal(projection.sourceLineage.cpu.releaseVersion, "r1");
+  assert.equal(projection.sourceLineage.cpu.signedAt, "2026-09-14T08:01:00Z");
   assert.equal(projection.state.cpu, "present");
 });
 
