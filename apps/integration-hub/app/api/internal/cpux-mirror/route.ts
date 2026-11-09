@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { internalTokenAllowed } from "../../../../../shared/internal-auth";
-import { mirrorPreviewEnabled } from "../../../../../shared/cpux-calendar/google";
+import { mirrorEnabled, mirrorPreviewEnabled } from "../../../../../shared/cpux-calendar/google";
 import { hospitalityCatchUp, replayHospitalityMirror } from "../../../../lib/cpux-mirror/queue";
 import { getFikaRuntimeConfig } from "../../../../lib/runtime-config";
 import { hospitalityMirrorSchedulerRequestAllowed } from "../../../../lib/cpux-mirror/scheduler-auth";
@@ -20,8 +20,11 @@ export async function POST(request: Request) {
   if (!mirrorPreviewEnabled()) return NextResponse.json({ error: "Calendar mirror is disabled." }, { status: 503 });
   const parsed = command.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid Calendar mirror command." }, { status: 400 });
+  const input = parsed.data;
+  if ((input.action === "deliver" || input.approveHash) && !mirrorEnabled()) {
+    return NextResponse.json({ error: "Calendar mirror writes are disabled." }, { status: 503 });
+  }
   try {
-    const input = parsed.data;
     const result = input.action === "deliver"
       ? await replayHospitalityMirror(input.limit)
       : await hospitalityCatchUp(input.from, input.through, input.approveHash, input.after);

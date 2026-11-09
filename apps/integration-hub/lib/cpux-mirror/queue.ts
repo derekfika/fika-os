@@ -7,7 +7,7 @@ import type { CanonicalBooking } from "../hospitality-booking-service";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { backfillDates, digest, londonServiceDate, mirrorEventId, mirrorRecipients } from "../../../shared/cpux-calendar/contract";
 import { mirrorEnabled, mirrorPreviewEnabled, openMirrorClient } from "../../../shared/cpux-calendar/google";
-import { resolveHospitalityCalendarTarget } from "../hospitality-calendar-integration";
+import { hospitalityCalendarSiteEnabled, resolveHospitalityCalendarTarget } from "../hospitality-calendar-integration";
 import { hasCurrentHospitalityHandoff, hospitalityMirrorSource } from "./source";
 import { resolveMirrorOplocs } from "./oplocs";
 
@@ -18,6 +18,7 @@ export function stageHospitalityMirrorIntent(transaction: Transaction, event: Du
   if (!mirrorEnabled() || !["production.order.created", "production.order.amended", "production.order.withdrawn", "production.order.cancelled"].includes(event.eventType)) return;
   const order = (event.payload as { productionOrder?: ProductionOrder }).productionOrder;
   if (order?.origin !== "hospitality_booking" || !order.sourceBookingId || !order.canonicalId) return;
+  if (!hospitalityCalendarSiteEnabled(order.destinationOplocId)) return;
   const today = londonServiceDate(new Date(event.occurredAt));
   if (!today || !order.serviceDate || order.serviceDate < today) return;
   const obligation: Event = {
@@ -38,6 +39,7 @@ async function prepare(booking: CanonicalBooking, readOnly = false) {
   const model = hospitalityMirrorSource(booking, order);
   if (!model) return;
   const [site] = await resolveMirrorOplocs([model.site]);
+  if (!hospitalityCalendarSiteEnabled(site.canonicalId)) throw new Error("Hospitality Calendar delivery is disabled for this site.");
   const target = resolveHospitalityCalendarTarget(site.canonicalId);
   const key = mirrorEventId("hospitality", booking.canonicalId);
   const binding = db.collection("fikaCpuXMirrorBindingsV1").doc(key);

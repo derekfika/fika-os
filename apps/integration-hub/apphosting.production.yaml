@@ -103,7 +103,10 @@ env:
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     availability: [RUNTIME]
   # Shared Hospitality Calendar mirror: site mailboxes resolve from Hub's canonical identity map.
-  # Calendar writes remain off until the exact catch-up batch is approved.
+  # Owner-approved RCoA-only Calendar activation after delegation and quote access verification.
+  - variable: FIKA_CPUX_HOSPITALITY_ALLOWED_OPLOC
+    value: oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2
+    availability: [RUNTIME]
   - variable: FIKA_CPUX_MIRROR_RUNTIME_IDENTITY
     value: fika-os-prod-hub-runtime@fika-os.iam.gserviceaccount.com
     availability: [RUNTIME]
@@ -117,7 +120,11 @@ env:
     value: "true"
     availability: [RUNTIME]
   - variable: FIKA_CPUX_MIRROR_WRITES_ENABLED
-    value: "false"
+    value: "true"
+    availability: [RUNTIME]
+  # Reviewed 12 November RCoA catch-up for one booking. Remove after reconciliation.
+  - variable: FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH
+    value: "9a78937d1d282743baa3b599bff5cd8dbbc64f972b7ae0f7f10941c815811a98"
     availability: [RUNTIME]
   # Hub's only direct Drive publication path is Hospitality group quotes.
   # These are approved production operating folders and are scoped by OPLOC.
