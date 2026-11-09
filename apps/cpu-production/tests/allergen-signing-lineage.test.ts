@@ -261,8 +261,10 @@ test("master retry reports partial OPLOC completion and hides after all are read
 test("release polling stops at terminal statuses and cleans up on date changes", async () => {
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   const poll = page.slice(page.indexOf("const pollReleaseStatus"), page.indexOf("const pendingReleaseOrders"));
-  assert.match(poll, /setTimeout\(\(\) => void refresh\(\)\.catch\(\(\) => undefined\), 2500\)/);
+  assert.match(poll, /materializationPollWait\(completedPolls\+\+, startedAt\)/);
+  assert.match(poll, /materializationPollingExpired\(startedAt\)/);
   assert.match(poll, /\["ready", "failed", "not_configured"\]/);
+  assert.match(poll, /document\.addEventListener\("visibilitychange"/);
   assert.match(page, /releasePollTimerRef\.current\) clearTimeout/);
   assert.match(page, /releasePollRunRef\.current \+= 1/);
 });
