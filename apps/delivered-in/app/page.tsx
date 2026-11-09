@@ -15,6 +15,7 @@ import {
 import { deliveredInHref, readDeliveredInLocation } from "../lib/navigation";
 import AllergenSafetyNotice from "./allergen-safety-notice";
 import { cpuReviewStatusLabel } from "./lib/cpu-review-status";
+import { currentAllergenDocument } from "../lib/allergen-documentation";
 import { publicHubBase } from "../lib/upstream-config";
 import {
   DELIVERED_IN_DASHBOARD_LOAD_TIMEOUT_MS,
@@ -135,18 +136,33 @@ function StatusChip({
 }) {
   return <span className={`ops-chip ops-chip-${tone}`}>{children}</span>;
 }
-function SignedCheckerLink({ day }: { day: ProjectedDay }) {
-  return day.cpuReview?.status === "signed" && day.drivePdfUrl ? (
-    <a
-      className="ops-link"
-      href={day.drivePdfUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      View signed CPU checker PDF <span aria-hidden="true">↗</span>
-    </a>
-  ) : (
-    <span className="ops-muted">Available after CPU sign-off</span>
+function AllergenDocumentation({ day }: { day: ProjectedDay }) {
+  const document = currentAllergenDocument(day);
+  const status = document
+    ? "Current signed release"
+    : day.cpuReview?.status === "signed"
+      ? "Signed document is unavailable or no longer current"
+      : "Awaiting CPU sign-off";
+  return (
+    <section className="ops-panel ops-panel-compact" aria-labelledby="allergen-documentation-title" aria-live="polite">
+      <div className="ops-panel-heading">
+        <div>
+          <p className="ops-eyebrow">Food safety</p>
+          <h2 id="allergen-documentation-title">Allergen documentation</h2>
+        </div>
+        <StatusChip tone={document ? "good" : "warning"}>{status}</StatusChip>
+      </div>
+      {document ? (
+        <dl className="ops-details">
+          <div><dt>CPU release</dt><dd>{document.releaseVersion} · {document.releaseId}</dd></div>
+          <div><dt>Signed</dt><dd>{new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/London" }).format(new Date(document.signedAt))} UK time</dd></div>
+          <div><dt>Service date</dt><dd>{formatDate(day.date, { day: "numeric", month: "short", year: "numeric" })}</dd></div>
+          <div><dt>Document</dt><dd><a className="ops-link" href={document.href} target="_blank" rel="noopener noreferrer">View signed allergen checker <span aria-hidden="true">↗</span></a></dd></div>
+        </dl>
+      ) : (
+        <p className="ops-muted" role="status">{status === "Awaiting CPU sign-off" ? "The signed checker will appear after CPU completes and publishes the current release." : "The signed record cannot be verified against the current menu revision. Contact CPU before relying on a PDF."}</p>
+      )}
+    </section>
   );
 }
 function SiteMenuControls({
@@ -382,13 +398,8 @@ function Sidebar({ day }: { day: ProjectedDay }) {
               </StatusChip>
             </dd>
           </div>
-          <div>
-            <dt>Signed checker</dt>
-            <dd>
-              <SignedCheckerLink day={day} />
-            </dd>
-          </div>
         </dl>
+        <AllergenDocumentation day={day} />
       </section>
     </aside>
   );

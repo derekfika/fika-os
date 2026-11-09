@@ -21,7 +21,8 @@ test("Delivered-In UI exposes navigation, browser history and conditional Grab &
   assert.match(page, /addEventListener\(\"popstate\"/);
   assert.match(page, /selectedSite\?\.services\?\.grabAndGo/);
   assert.doesNotMatch(page, /AllergenView|Allergens<|view === "allergens"/);
-  assert.match(page, /View signed CPU checker PDF/);
+  assert.match(page, /Allergen documentation/);
+  assert.match(page, /View signed allergen checker/);
   assert.match(grab, /requested\.oplocId/);
   assert.match(grab, /oplocId: nextSiteId/);
   assert.doesNotMatch(grab, /view=allergens|Allergens/);
