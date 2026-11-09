@@ -2,17 +2,14 @@ import { INITIAL_ROTATION_CATEGORIES, INITIAL_ROTATION_CYCLE_WEEKS, ROTATIONS_SC
 
 export type RotationOption = { id: string; name: string; category: string; revision?: number };
 
-/** Build a real first draft only after the manager has selected canonical records. */
+/** Start an unsaved six-week configuration with a mapped row and independent empty weeks. */
 export function initialRotationConfiguration(input: {
   label: string;
   anchorMonday: string;
   groupLabel: string;
   categoryId: string;
   itemId: string;
-  dishes: RotationOption[];
 }): RotationConfiguration {
-  const bank = input.dishes.map((dish) => ({ dishId: dish.id, recipeRevision: dish.revision || 1 }));
-  const firstDish = bank[0]?.dishId;
   return {
     schema: ROTATIONS_SCHEMA,
     label: input.label.trim(),
@@ -20,8 +17,8 @@ export function initialRotationConfiguration(input: {
     categories: INITIAL_ROTATION_CATEGORIES.map((category) => ({ ...category })),
     groups: [{
       id: crypto.randomUUID(), label: input.groupLabel.trim(), categoryId: input.categoryId, itemId: input.itemId,
-      dishBank: bank,
-      weeks: Array.from({ length: INITIAL_ROTATION_CYCLE_WEEKS }, (_, index) => ({ week: index + 1, dishIds: firstDish ? [firstDish] : [] })),
+      dishBank: [],
+      weeks: Array.from({ length: INITIAL_ROTATION_CYCLE_WEEKS }, (_, index) => ({ week: index + 1, dishIds: [] })),
       rules: { guests: { minimum: 6, maximum: 120, increment: 1 }, distinctDishes: { minimum: 1, maximum: 3 }, quantityPerDish: { minimum: 6, maximum: 60, increment: 6 }, unit: "pieces" },
     }],
   };
