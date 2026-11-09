@@ -103,7 +103,10 @@ env:
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     availability: [RUNTIME]
   # Shared Hospitality Calendar mirror: site mailboxes resolve from Hub's canonical identity map.
-  # Calendar writes remain off until the exact catch-up batch is approved.
+  # Calendar writes remain off until delegation, quote access, and the approved recovery scope are verified.
+  - variable: FIKA_CPUX_HOSPITALITY_ALLOWED_OPLOC
+    value: oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2
+    availability: [RUNTIME]
   - variable: FIKA_CPUX_MIRROR_RUNTIME_IDENTITY
     value: fika-os-prod-hub-runtime@fika-os.iam.gserviceaccount.com
     availability: [RUNTIME]

@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { backfillDates, documentUrl, londonServiceDate, londonTimestamp, mirrorEventId, TIME_ZONE } from "../../shared/cpux-calendar/contract";
 import { openMirrorClient } from "../../shared/cpux-calendar/google";
-import { resolveHospitalityCalendarTarget } from "../lib/hospitality-calendar-integration";
-import { HOSPITALITY_EMAIL_SITE_IDENTITIES } from "../lib/booking-email-site-identities";
+import { hospitalityCalendarSiteEnabled, resolveHospitalityCalendarTarget } from "../lib/hospitality-calendar-integration";
+import { HOSPITALITY_EMAIL_SITE_IDENTITIES, RCOA_HOSPITALITY_OPLOC_ID } from "../lib/booking-email-site-identities";
 import { hasCurrentHospitalityHandoff, hospitalityMirrorSource } from "../lib/cpux-mirror/source";
 import type { CanonicalBooking } from "../lib/hospitality-booking-service";
 import type { ProductionOrder } from "../lib/production-domain";
@@ -16,6 +16,16 @@ const env = {
   FIKA_CPUX_MIRROR_RUNTIME_IDENTITY: identity, FIKA_CPUX_MIRROR_DWD_ISSUER: issuer,
   FIKA_CPUX_HOSPITALITY_CALENDARS_JSON: "{}", FIKA_CPUX_LOGISTICS_MAILBOX: target.logistics,
 };
+
+test("Calendar recovery is limited to the explicitly configured canonical site", () => {
+  const scoped = { FIKA_CPUX_HOSPITALITY_ALLOWED_OPLOC: RCOA_HOSPITALITY_OPLOC_ID };
+  assert.equal(hospitalityCalendarSiteEnabled(RCOA_HOSPITALITY_OPLOC_ID, scoped), true);
+  for (const other of Object.keys(HOSPITALITY_EMAIL_SITE_IDENTITIES).filter(id => id !== RCOA_HOSPITALITY_OPLOC_ID)) {
+    assert.equal(hospitalityCalendarSiteEnabled(other, scoped), false);
+  }
+  assert.equal(hospitalityCalendarSiteEnabled(RCOA_HOSPITALITY_OPLOC_ID, {}), false);
+  assert.equal(hospitalityCalendarSiteEnabled("rcoa", { FIKA_CPUX_HOSPITALITY_ALLOWED_OPLOC: "rcoa" }), false);
+});
 
 const booking = {
   canonicalId: "booking:one", version: 3, lifecycleStatus: "Sent to CPU", statusHistory: [{ status: "Sent to CPU" }],

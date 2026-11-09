@@ -24,6 +24,11 @@ function calendarOverrides(env: Env): Record<string, CalendarOverride> {
   return value as Record<string, CalendarOverride>;
 }
 
+export function hospitalityCalendarSiteEnabled(oplocId: string | undefined, env: Env = process.env) {
+  return Boolean(oplocId && Object.hasOwn(HOSPITALITY_EMAIL_SITE_IDENTITIES, oplocId) &&
+    env.FIKA_CPUX_HOSPITALITY_ALLOWED_OPLOC?.trim() === oplocId);
+}
+
 /**
  * Resolve site mail identity from the canonical booking-email source. Runtime JSON contains only
  * explicit Calendar/organiser overrides; a mailbox address by itself never proves Calendar access.
