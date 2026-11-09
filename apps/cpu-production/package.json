@@ -9,6 +9,7 @@
     "start": "next start -p 3400",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
+    "test:dialog": "tsx --test tests/browser/run-sheet-dialog.spec.ts",
     "worker:durable-outbox": "tsx scripts/cpu-durable-outbox-worker.ts",
     "test:print": "tsx --test tests/print/*.test.ts"
   },

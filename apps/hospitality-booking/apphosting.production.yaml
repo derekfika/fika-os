@@ -85,6 +85,12 @@ env:
   - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     availability: [RUNTIME]
+  - variable: GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION
+    value: derek@fikacatering.com
+    availability: [RUNTIME]
+  - variable: GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID
+    value: 1YAa7t8OEvySdxwBQBlTf2IjQBoLS-s-9
+    availability: [RUNTIME]
   # Approved OAC tablet menu template. Site output folders remain dashboard
   # settings so quote, allergen, and menu artifacts cannot share one root.
   - variable: GOOGLE_MENU_TEMPLATE_ID_ANGEL_COURT
