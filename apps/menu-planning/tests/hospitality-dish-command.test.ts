@@ -46,6 +46,30 @@ test("an Item that already has a dish is reused, not duplicated", async () => {
   assert.deepEqual(result, { status: 200, dishId: "hospitality-dish:item:one", outcome: "already_linked" });
 });
 
+test("independent rotation dish creation requires Manage and leaves catalogue links untouched", async () => {
+  const input = { requestId: "standalone-1", classification: "finger-food" as const, displayName: "Chicken skewer" };
+  const denied = hub({ manage: false });
+  await assert.rejects(createAndLinkHospitalityDish("cookie", input, { fetchHub: denied.fetchHub, createDish: async () => { throw new Error("must not create"); } }), { status: 403 });
+  const { fetchHub, calls } = hub();
+  const created = new Map<string, MenuItem>();
+  const createDish = (async ({ dishId, displayName, classification }) => {
+    const existing = created.get(dishId);
+    if (existing) return { item: existing, outcome: "matched_existing" };
+    const item = { canonicalId: dishId, displayName, hospitalityClass: classification } as MenuItem;
+    created.set(dishId, item);
+    return { item, outcome: "created_new" };
+  }) satisfies typeof import("../lib/canonical-menu-repository").createHospitalityDish;
+  const first = await createAndLinkHospitalityDish("cookie", input, { fetchHub, createDish });
+  const retry = await createAndLinkHospitalityDish("cookie", input, { fetchHub, createDish });
+  const second = await createAndLinkHospitalityDish("cookie", { ...input, requestId: "standalone-2", displayName: "Mushroom skewer" }, { fetchHub, createDish });
+  assert.equal(retry.dishId, first.dishId);
+  assert.equal(retry.outcome, "matched_existing");
+  assert.notEqual(second.dishId, first.dishId);
+  assert.equal(created.size, 2);
+  assert.ok(calls.every(call => call.path.includes("mode=access")));
+  await assert.rejects(createAndLinkHospitalityDish("cookie", { ...input, displayName: "Changed recipe" }, { fetchHub, createDish }), { status: 409 });
+});
+
 test("unknown Items, bad input and Hub mapping failures are surfaced, not masked", async () => {
   await assert.rejects(createAndLinkHospitalityDish("c", { ...base, itemId: "item:missing" }, { fetchHub: hub().fetchHub, createDish: async () => fakeDish("x") }), error => (error as { status?: number }).status === 422);
   await assert.rejects(createAndLinkHospitalityDish("c", { ...base, classification: "main-course" }, { fetchHub: hub().fetchHub, createDish: async () => fakeDish("x") }), ZodError);
@@ -76,4 +100,15 @@ test("week dish order can be moved within bounds and survives re-selection", asy
   assert.deepEqual(moveWithin(["a", "b", "c"], 2, 1), ["a", "b", "c"]);
   assert.deepEqual(mergeSelectionOrder(["c", "a"], ["a", "b", "c"]), ["c", "a", "b"]);
   assert.deepEqual(mergeSelectionOrder(["c", "a"], ["a"]), ["a"]);
+});
+
+test("the first mapped row starts with six independent empty weeks", async () => {
+  const { initialRotationConfiguration } = await import("../lib/rotations-ui-model");
+  const configuration = initialRotationConfiguration({ label: "Autumn", anchorMonday: "2026-11-09", groupLabel: "Bowl Food", categoryId: "bowl-food", itemId: "item:one" });
+  const row = configuration.groups[0]!;
+  assert.equal(row.itemId, "item:one");
+  assert.deepEqual(row.dishBank, []);
+  assert.deepEqual(row.weeks.map(week => [week.week, week.dishIds.length]), [[1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0]]);
+  row.weeks[2]!.dishIds.push("dish:one");
+  assert.deepEqual(row.weeks.map(week => week.dishIds), [[], [], ["dish:one"], [], [], []]);
 });
