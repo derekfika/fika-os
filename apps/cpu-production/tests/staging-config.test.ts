@@ -40,8 +40,10 @@ test("CPU and Delivered-In staging configs converge on shared runtime contracts"
   assert.match(cpuStaging, /GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON[\s\S]*secret:\s*GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON/);
 });
 
-test("CPU production configuration has no Drive owner or DWD secret", () => {
-  assert.doesNotMatch(cpuProduction, /GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION|GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON/);
+test("CPU production binds the approved CPU Drive owner, folder and existing DWD secret at runtime", () => {
+  assert.match(cpuProduction, /variable:\s*GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION[\s\S]*?value:\s*derek@fikacatering\.com[\s\S]*?availability:\s*\[RUNTIME\]/);
+  assert.match(cpuProduction, /variable:\s*GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID[\s\S]*?value:\s*1YAa7t8OEvySdxwBQBlTf2IjQBoLS-s-9[\s\S]*?availability:\s*\[RUNTIME\]/);
+  assert.match(cpuProduction, /variable:\s*GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON[\s\S]*?secret:\s*GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON[\s\S]*?availability:\s*\[RUNTIME\]/);
   assert.match(cpuProduction, /FIKA_CPUX_CALENDAR_WRITES_ENABLED[\s\S]*value: "false"/);
   assert.match(cpuProduction, /FIKA_CPUX_CALENDAR_BACKFILL_ENABLED[\s\S]*value: "false"/);
   assert.doesNotMatch(cpuProduction, /FIKA_CPUX_CALENDAR_ID/);

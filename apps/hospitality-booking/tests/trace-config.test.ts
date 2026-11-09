@@ -17,6 +17,14 @@ test("Hospitality staging declares the server-side Hub and CPU clients without e
   assert.doesNotMatch(config, /private_key|client_secret|token:\s*[^\s]/i);
 });
 
+test("Hospitality production binds the approved CPU-default matrix destination and existing DWD secret", () => {
+  const config = readFileSync(new URL("../apphosting.production.yaml", import.meta.url), "utf8");
+  assert.match(config, /variable:\s*GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON[\s\S]*?secret:\s*GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON[\s\S]*?availability:\s*\[RUNTIME\]/);
+  assert.match(config, /variable:\s*GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION[\s\S]*?value:\s*derek@fikacatering\.com[\s\S]*?availability:\s*\[RUNTIME\]/);
+  assert.match(config, /variable:\s*GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID[\s\S]*?value:\s*1YAa7t8OEvySdxwBQBlTf2IjQBoLS-s-9[\s\S]*?availability:\s*\[RUNTIME\]/);
+  assert.doesNotMatch(config, /private_key|client_secret|token:\s*[^\s]/i);
+});
+
 test("Hospitality proxy boundaries classify upstream calls without payload logging", () => {
   const source = readFileSync(new URL("../app/api/dashboard-bookings/route.ts", import.meta.url), "utf8");
   assert.match(source, /withDataTrace/);
