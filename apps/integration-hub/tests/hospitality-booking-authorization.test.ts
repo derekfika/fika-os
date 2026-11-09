@@ -26,14 +26,19 @@ test("ordinary Hospitality access remains site scoped for reads and mutations", 
   await assert.rejects(() => assertHospitalityBookingMutationAccess(repository, principal, { service: { oplocId: "oploc:angel" } as never }), { status: 403, code: "AUTHMOD_HOSPITALITY_BOOKING_DENIED" });
 });
 
-test("Superuser still needs an explicit company grant", async () => {
+test("Superuser app admission works without an assignment but still needs the explicit company grant", async () => {
   const repository = new MemoryAuthModRepository({ applications: [...V1_APPLICATIONS], oplocs: locations });
   const identity = await createAuthIdentity(repository, { actor: admin, displayName: "Staff superuser", externalProvider: "firebase", externalUid: "uid:superuser", provenance: "migration" });
   const principal = { type: "interactive" as const, id: identity.id, displayName: identity.displayName };
   await setFullAccess(repository, { identityId: identity.id, fullAccess: true, actor: admin, reason: "Approved Superuser test" });
 
-  await grantStandardApplicationAccess(repository, { identityId: identity.id, appId: "hospitality-booking", actor: admin, reason: "Hospitality application admission" });
+  assert.deepEqual(await repository.listAppAssignments(identity.id), []);
   await assertHospitalityBookingReadAccess(repository, principal, { service: { oplocId: "oploc:angel" } as never });
+  await assert.rejects(() => requireHospitalityBookingAdmin(repository, principal, "oploc:mnk"), { status: 403, code: "AUTHMOD_HOSPITALITY_ADMIN_DENIED" });
+  const grant = await grantAuthority(repository, { actor: admin, subjectType: "interactive", subjectId: identity.id, appId: "hospitality-booking", resource: HOSPITALITY_BOOKING_ADMIN, action: "Manage", scope: { kind: "organisation", ids: [] }, reason: "Central management booking cover" });
+  assert.equal((await requireHospitalityBookingAdmin(repository, principal, "oploc:mnk")).grantId, grant.id);
+
+  await setFullAccess(repository, { identityId: identity.id, fullAccess: false, actor: admin, reason: "End Superuser access" });
   await assert.rejects(() => requireHospitalityBookingAdmin(repository, principal, "oploc:mnk"), { status: 403, code: "AUTHMOD_HOSPITALITY_ADMIN_DENIED" });
 });
 
