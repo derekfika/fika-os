@@ -1,9 +1,10 @@
-.dialog {
+.dialog[open] {
   display: flex;
   flex-direction: column;
   width: min(1120px, calc(100vw - 32px));
   max-width: calc(100vw - 32px);
   max-height: min(90vh, 1000px);
+  max-height: min(90dvh, 1000px);
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--fika-border-default);
@@ -132,7 +133,7 @@
 }
 
 @media (max-width: 600px) {
-  .dialog { width: calc(100vw - 20px); max-width: calc(100vw - 20px); max-height: 94vh; border-radius: 12px; }
+  .dialog[open] { width: calc(100vw - 20px); max-width: calc(100vw - 20px); max-height: 94vh; max-height: 94dvh; border-radius: 12px; }
   .header { padding: 17px 16px; }
   .header h2 { font-size: 1.55rem; }
   .body { gap: 14px; padding: 16px; }
