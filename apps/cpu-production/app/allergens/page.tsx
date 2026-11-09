@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
 import { cpuProjectionToOrders } from "../../lib/cpu-dashboard-adapter";
 import { loadCpuAllergenProjection } from "../lib/cpu-allergen-projection-loader";
@@ -10,6 +10,7 @@ import { buildAllergenReviewRows, deliveredInMenuOrdersForServiceDate, destinati
 import { captureSigningLineage, signingLineageUnavailableMessage } from "./signing-lineage";
 import { europeLondonDate } from "../../lib/operational-date";
 import { allergenPageState } from "./allergen-page-state";
+import { materializationPollWait, materializationPollingExpired } from "./materialization-polling";
 import "./page.css";
 
 type SignatureRole = "production_chef" | "head_chef_site_manager";
@@ -81,6 +82,16 @@ export default function CpuAllergenReviewPage() {
   const signingAttemptRef = useRef<{ role: SignatureRole; id: string } | undefined>(undefined);
   const releasePollTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const releasePollRunRef = useRef(0);
+  const releasePollVisibilityRef = useRef<(() => void) | undefined>(undefined);
+
+  const stopReleaseStatusPolling = useCallback(() => {
+    if (releasePollTimerRef.current) clearTimeout(releasePollTimerRef.current);
+    releasePollTimerRef.current = undefined;
+    if (releasePollVisibilityRef.current && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", releasePollVisibilityRef.current);
+      releasePollVisibilityRef.current = undefined;
+    }
+  }, []);
 
   const newSigningAttemptId = () => {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -107,7 +118,7 @@ export default function CpuAllergenReviewPage() {
     signingReviewRef.current = undefined;
     saveReviewRef.current = undefined;
     signingAttemptRef.current = undefined;
-    if (releasePollTimerRef.current) clearTimeout(releasePollTimerRef.current);
+    stopReleaseStatusPolling();
     releasePollRunRef.current += 1;
     try {
       const loaded = await loadCpuAllergenProjection(selectedDate, "delivered_in");
@@ -126,7 +137,7 @@ export default function CpuAllergenReviewPage() {
 
   useEffect(() => {
     if (date) void load(date);
-  }, [date]);
+  }, [date, stopReleaseStatusPolling]);
 
   useEffect(() => {
     if (!reviewDirty) return;
@@ -139,9 +150,9 @@ export default function CpuAllergenReviewPage() {
   }, [reviewDirty]);
 
   useEffect(() => () => {
-    if (releasePollTimerRef.current) clearTimeout(releasePollTimerRef.current);
+    stopReleaseStatusPolling();
     releasePollRunRef.current += 1;
-  }, [date]);
+  }, [date, stopReleaseStatusPolling]);
 
   const dateOrders = useMemo(
     () => orders.filter(order => !date || orderDate(order) === date),
@@ -195,31 +206,83 @@ export default function CpuAllergenReviewPage() {
   const pollReleaseStatus = async () => {
     const run = ++releasePollRunRef.current;
     const startedAt = Date.now();
-    const refresh = async (): Promise<void> => {
-      if (run !== releasePollRunRef.current) return;
-      const refreshed = await refreshReviewStatus();
-      if (run !== releasePollRunRef.current) return;
-      const currentCount = refreshed.statuses.filter(status => status.matrixStatus === "ready").length;
-      const allReady = refreshed.statuses.length === masterOrders.length && currentCount === masterOrders.length;
-      const hasFailure = refreshed.statuses.some(status => status.matrixStatus === "failed");
-      const hasUnconfigured = refreshed.statuses.some(status => status.matrixStatus === "not_configured");
-      if (allReady) {
-        setRetryEligible(false);
-        setSignatureMessage(`${currentCount} OPLOC release${currentCount === 1 ? "" : "s"} current.`);
-      } else {
-        const eligible = hasFailure || (!hasUnconfigured && Date.now() - startedAt >= MATERIALIZATION_GRACE_MS);
-        setRetryEligible(eligible);
-        if (eligible && hasFailure) setSignatureMessage("One or more OPLOC releases need materialisation retry.");
-      }
-      const terminal = refreshed.statuses.length === masterOrders.length && refreshed.statuses.every(status => ["ready", "failed", "not_configured"].includes(status.matrixStatus || ""));
-      if (!terminal) releasePollTimerRef.current = setTimeout(() => void refresh().catch(() => undefined), 2500);
+    let completedPolls = 0;
+    let readyCount = 0;
+    let refreshRunning = false;
+    const stopAtDeadline = () => {
+      setRetryEligible(true);
+      setSignatureMessage(`${readyCount} OPLOC release${readyCount === 1 ? "" : "s"} current. Automatic status checks stopped after two minutes; select Retry to recheck the current release lineage.`);
+      stopReleaseStatusPolling();
     };
+    const reportPollingError = (cause: unknown) => {
+      const message = cause instanceof Error ? cause.message : "Release status could not be refreshed.";
+      setRetryEligible(true);
+      setSignatureMessage(`${message} Select Retry to recheck the current release lineage.`);
+      stopReleaseStatusPolling();
+    };
+    const refresh = async (): Promise<void> => {
+      if (refreshRunning || run !== releasePollRunRef.current) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      if (materializationPollingExpired(startedAt)) {
+        stopAtDeadline();
+        return;
+      }
+      refreshRunning = true;
+      try {
+        const refreshed = await refreshReviewStatus();
+        if (run !== releasePollRunRef.current) return;
+        const currentCount = refreshed.statuses.filter(status => status.matrixStatus === "ready").length;
+        readyCount = currentCount;
+        const allReady = refreshed.statuses.length === masterOrders.length && currentCount === masterOrders.length;
+        const failedCount = refreshed.statuses.filter(status => status.matrixStatus === "failed").length;
+        const hasFailure = failedCount > 0;
+        const hasUnconfigured = refreshed.statuses.some(status => status.matrixStatus === "not_configured");
+        if (allReady) {
+          setRetryEligible(false);
+          setSignatureMessage(`${currentCount} OPLOC release${currentCount === 1 ? "" : "s"} current.`);
+          stopReleaseStatusPolling();
+        } else {
+          const eligible = hasFailure || (!hasUnconfigured && Date.now() - startedAt >= MATERIALIZATION_GRACE_MS);
+          setRetryEligible(eligible);
+          if (eligible && hasFailure) setSignatureMessage(`${failedCount} OPLOC release${failedCount === 1 ? "" : "s"} failed materialisation. Select Retry to recheck the current release lineage.`);
+        }
+        const terminal = refreshed.statuses.length === masterOrders.length && refreshed.statuses.every(status => ["ready", "failed", "not_configured"].includes(status.matrixStatus || ""));
+        if (terminal) {
+          if (!allReady) stopReleaseStatusPolling();
+          return;
+        }
+        if (materializationPollingExpired(startedAt)) {
+          stopAtDeadline();
+          return;
+        }
+        if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+        const delay = materializationPollWait(completedPolls++, startedAt);
+        releasePollTimerRef.current = setTimeout(() => void refresh().catch(reportPollingError), delay);
+      } finally {
+        refreshRunning = false;
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        if (releasePollTimerRef.current) clearTimeout(releasePollTimerRef.current);
+        releasePollTimerRef.current = undefined;
+      } else if (run === releasePollRunRef.current) {
+        if (materializationPollingExpired(startedAt)) stopAtDeadline();
+        else void refresh().catch(reportPollingError);
+      }
+    };
+    releasePollVisibilityRef.current = onVisibilityChange;
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibilityChange);
     await refresh();
   };
 
   useEffect(() => {
     if (!bothSigned || fullySigned || !masterOrders.length) return;
-    void pollReleaseStatus().catch(() => undefined);
+    void pollReleaseStatus().catch(cause => {
+      setRetryEligible(true);
+      setSignatureMessage(`${cause instanceof Error ? cause.message : "Release status could not be refreshed."} Select Retry to recheck the current release lineage.`);
+      stopReleaseStatusPolling();
+    });
   }, [bothSigned, fullySigned, masterOrders.length]);
 
   const pendingReleaseOrders = useMemo(
