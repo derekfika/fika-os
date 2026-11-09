@@ -56,6 +56,15 @@ test("new service categories remain drafts until the scoped versioned save", () 
   assert.match(source, /setServiceCategoriesCommand\(currentLayout, target, serviceId, shownRule, reason\)/);
 });
 
+test("services and locations use a full-width responsive editing pane", () => {
+  const css = readFileSync(new URL("../app/ui/HospitalityCatalogueServices.css", import.meta.url), "utf8");
+  assert.match(css, /\.hcs-layout\s*\{\s*display: grid; grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(css, /\.hcs-list ul\s*\{[^}]*grid-template-columns: repeat\(auto-fill/);
+  assert.match(css, /@media \(max-width: 960px\)\s*\{\s*\.hcs-list ul\s*\{\s*grid-template-columns: repeat\(2/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.hcs-list ul\s*\{\s*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(css, /:where\(button, input, select\):focus-visible/);
+});
+
 test("service selection stays explicit unless a deep link names a service", () => {
   const source = readFileSync(new URL("../app/ui/HospitalityCatalogueServices.tsx", import.meta.url), "utf8");
   assert.match(source, /const \[oplocId, setOplocId\].*initialContext\?\.oplocId/);
