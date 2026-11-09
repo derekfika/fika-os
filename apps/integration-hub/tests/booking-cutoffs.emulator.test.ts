@@ -18,8 +18,6 @@ import type { Actor } from "../lib/auth";
 import { FirestoreAuthModRepository } from "../lib/authmod-core/firestore-repository";
 import { HOSPITALITY_BOOKING_ADMIN, V1_APPLICATIONS } from "../lib/authmod-core/model";
 import { grantAuthority, revokeAuthority } from "../lib/authmod-core/authority";
-import { setFullAccess } from "../lib/authmod-core/identity";
-import { grantStandardApplicationAccess } from "../lib/authmod-core";
 import { groupAmendmentCommand } from "../lib/hospitality-group-amendment";
 import { requireHospitalityBookingAdmin } from "../lib/hospitality-booking-authorization";
 import { rebuildOplocReadPackage } from "../lib/oploc-read-package";
@@ -133,7 +131,7 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   const grantActor = { type: "interactive" as const, id: "identity:test-authmod-admin", displayName: "Fixture AUTHMOD administrator" };
   await repository.saveApplication(V1_APPLICATIONS.find(app => app.appId === appId)!);
   await repository.saveIdentity({ ...active, id: principal.id, displayName: principal.displayName, identityKind: "person", identityLinkStatus: "unmatched", fullAccess: true, provenance: "system" });
-  await grantStandardApplicationAccess(repository, { identityId: principal.id, appId, actor: grantActor, reason: "Fixture app admission" });
+  assert.deepEqual(await repository.listAppAssignments(principal.id), [], "Superuser admission does not require a separate app assignment");
   await rebuildOplocReadPackage();
   const authorizeAdmin = (booking: CanonicalBooking, transaction: Transaction) =>
     requireHospitalityBookingAdmin(new FirestoreAuthModRepository("hospitality-admin", undefined, transaction), principal, booking.service.oplocId);
@@ -150,7 +148,6 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   assert.deepEqual(await snapshot(), beforeGrant, "Full Access and admin intent do not authorise a write without a direct grant");
 
   const grant = await grantAuthority(repository, { subjectId: principal.id, subjectType: "interactive", actor: grantActor, appId, resource: HOSPITALITY_BOOKING_ADMIN, action: "Manage", scope: { kind: "organisation", ids: [] }, reason: "Fixture company Hospitality authority" });
-  await setFullAccess(repository, { identityId: principal.id, fullAccess: false, actor: grantActor, reason: "Fixture remove Superuser before authorised amendment" });
   assert.deepEqual(await repository.listSiteAssignments(principal.id), []);
 
   const inactiveSite = "oploc:inactive:" + tag;
@@ -180,7 +177,7 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   assert.equal(override.grantId, grant.id);
   assert.equal(override.grantVersion, grant.version);
   assert.equal(override.identityId, principal.id);
-  assert.equal(override.identityVersion, 2);
+  assert.equal(override.identityVersion, 1);
   assert.equal(override.beforePax, 10);
   assert.equal(override.afterPax, 11);
   assert.equal(override.noticeOverridden, true);
@@ -204,7 +201,6 @@ test("emulator: real Hub POST rejects prohibited dates before any persistence; c
   const savedGroup = await amendHospitalityBookingGroup(actor, staffGroup, async () => {}, authorizeAdmin);
   assert.deepEqual(savedGroup.bookings.map(booking => booking.service.guestCount), [11, 11]);
   assert.deepEqual(savedGroup.bookings.map(booking => booking.order.netTotal), [13, 13]);
-  await setFullAccess(repository, { identityId: principal.id, fullAccess: true, actor: grantActor, reason: "Fixture restore Superuser before revocation" });
   await revokeAuthority(repository, { grantId: grant.id, actor: grantActor, reason: "Fixture company cover ended" });
   const afterRevocation = await snapshot();
   await assert.rejects(executeBookingWorkflow(actor, standardCurrent.canonicalId, result.booking.version, staffCommand, undefined, authorizeAdmin), { code: "AUTHMOD_HOSPITALITY_ADMIN_DENIED" });

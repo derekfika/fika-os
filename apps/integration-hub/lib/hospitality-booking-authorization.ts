@@ -67,10 +67,13 @@ export async function resolveHospitalityBookingAdmin(
   const app = await repository.getApplication("hospitality-booking");
   if (!app?.enabled || app.scopeModel === "none") return;
 
-  // An explicit company grant does not replace normal Hospitality app admission.
-  const appAssignmentId = idempotentId("app-assignment", identity.id, "hospitality-booking");
-  const appAssignment = await repository.getAppAssignment(appAssignmentId);
-  if (!appAssignment || appAssignment.identityId !== identity.id || appAssignment.appId !== "hospitality-booking" || !isEffective(appAssignment)) return;
+  // Normal app admission includes Superuser access. The separate grant below
+  // is still required for late amendments.
+  if (identity.fullAccess !== true) {
+    const appAssignmentId = idempotentId("app-assignment", identity.id, "hospitality-booking");
+    const appAssignment = await repository.getAppAssignment(appAssignmentId);
+    if (!appAssignment || appAssignment.identityId !== identity.id || appAssignment.appId !== "hospitality-booking" || !isEffective(appAssignment)) return;
+  }
 
   // Resolve the deterministic company-grant ID directly, avoiding a collection scan
   // and ensuring transaction-backed callers recheck current authority, not a package cache.
