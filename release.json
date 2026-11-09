@@ -7,67 +7,50 @@
   "region": "europe-west4",
   "branch": "release/prod/hub",
   "validation": {
-    "id": 129364992609,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/42677574354/job/129364992609",
-    "sha": "1c86e3165932c1177b268d59a0bb0369f8e87fc5"
+    "id": 129375731637,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/42680288254/job/129375731637",
+    "sha": "fbe6308e4ef88e3fd66f3a4d931e2c6abbfe7869"
   },
   "provenance": {
-    "number": 498,
-    "url": "https://github.com/derekfika/fika-os/pull/498",
-    "head": "bec407e6b3c261c479a9daaacf404b7429b2d3da"
+    "number": 499,
+    "url": "https://github.com/derekfika/fika-os/pull/499",
+    "head": "bb64c3b19780028e2f3528d2c8e16f8b0acae848"
   },
-  "sourceSha": "1c86e3165932c1177b268d59a0bb0369f8e87fc5",
-  "scopeHash": "9855dd521420407d09bd7ef5d9b38a4e5e9641ea4011fa67e6122ee9f0e880a8",
+  "sourceSha": "fbe6308e4ef88e3fd66f3a4d931e2c6abbfe7869",
+  "scopeHash": "5d8e3c6c072128a7fc59fc1883257f0c5ab1e7adda62b4a1f5b6b53253facc84",
   "rollback": false,
   "productionDelta": {
-    "from": "b1ca49107cee3f26cf99fdc4bfb717c5602299d3",
-    "to": "1c86e3165932c1177b268d59a0bb0369f8e87fc5",
+    "from": "1c86e3165932c1177b268d59a0bb0369f8e87fc5",
+    "to": "fbe6308e4ef88e3fd66f3a4d931e2c6abbfe7869",
     "paths": [
-      ".changes/integration-hub/2026-11-09-rcoa-calendar-recovery.md",
-      ".changes/menu-planning/2026-11-09-hospitality-rotations-authoring.md",
-      "apps/integration-hub/app/api/internal/cpux-mirror/route.ts",
+      ".changes/integration-hub/2026-11-09-rcoa-calendar-approval-retirement.md",
       "apps/integration-hub/apphosting.production.yaml",
-      "apps/integration-hub/lib/cpux-mirror/queue.ts",
-      "apps/integration-hub/lib/hospitality-calendar-integration.ts",
-      "apps/integration-hub/tests/cpux-mirror.test.ts",
-      "apps/menu-planning/app/rotations/HospitalityDishMapping.tsx",
-      "apps/menu-planning/app/rotations/RotationsManager.tsx",
-      "apps/menu-planning/lib/hospitality-dish-command.ts",
-      "apps/menu-planning/lib/rotations-ui-model.ts",
-      "apps/menu-planning/tests/hospitality-dish-command.test.ts",
       "docs/deployment/cpux-calendar-v1.md"
     ],
-    "hash": "0b21f04c2024bdf4595e8cd1e7c3be23549eab59a8e3747e97d6b232f42212ce"
+    "hash": "8e678e49a9b6dfba820eab0d1935cbf239aefa0acd55f28dcb082a442efab700"
   },
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "hub",
     "environment": "prod",
-    "sourceSha": "1c86e3165932c1177b268d59a0bb0369f8e87fc5",
+    "sourceSha": "fbe6308e4ef88e3fd66f3a4d931e2c6abbfe7869",
     "action": "deploy",
-    "instruction": "Restore approved RCoA Hospitality Calendar delivery for issue 348",
+    "instruction": "Retire the spent one-time RCoA Calendar catch-up approval",
     "releaseId": null,
-    "id": "d52eef17eb114cea63ff86e36d104f8f0d85bdc76f8d9c221102a21ce8453540",
+    "id": "7aee23f4798a7fb83b76122c1326a7cf0b7e896714e330753c23d29fef675f17",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-09T18:55:02.028Z"
+    "authorisedAt": "2026-11-09T19:14:18.063Z"
   },
-  "rollout": "build-2026-11-09-002",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "4e39d6d4-b19f-4308-90a4-21a04eac981f",
   "previousGood": {
-    "sourceSha": "b1ca49107cee3f26cf99fdc4bfb717c5602299d3",
-    "rollout": "build-2026-11-09-001",
+    "sourceSha": "1c86e3165932c1177b268d59a0bb0369f8e87fc5",
+    "rollout": "build-2026-11-09-002",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "e3dd0f09f6a59939b7ce5ab9a2e5970b85807e60",
-  "releaseId": "dce6067e-96bb-41e1-8430-8cd832175249",
-  "completedAt": "2026-11-09T18:59:53.408Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-prod-hub--fika-os.europe-west4.hosted.app/"
-  }
+  "previousGoodRecord": "fa33da9572b03e84e5039161111b1bad408f726f",
+  "createdAt": "2026-11-09T19:14:20.799Z"
 }
