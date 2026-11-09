@@ -45,6 +45,17 @@ test("the UI uses governed service-layout commands and does not claim portal ava
   assert.equal(SERVICE_IDS.length, 8);
 });
 
+test("new service categories remain drafts until the scoped versioned save", () => {
+  const source = readFileSync(new URL("../app/ui/HospitalityCatalogueServices.tsx", import.meta.url), "utf8");
+  assert.match(source, /function addCategory\(\)/);
+  assert.match(source, /category\.length > 160/);
+  assert.match(source, /toLocaleLowerCase\("en-GB"\) === category\.toLocaleLowerCase\("en-GB"\)/);
+  assert.match(source, /categories: \[\.\.\.base\.categories, category\]/);
+  assert.match(source, /Add a category to \{currentService\}/);
+  assert.match(source, /stays a draft until you review and save the scoped service change below/);
+  assert.match(source, /setServiceCategoriesCommand\(currentLayout, target, serviceId, shownRule, reason\)/);
+});
+
 test("service selection stays explicit unless a deep link names a service", () => {
   const source = readFileSync(new URL("../app/ui/HospitalityCatalogueServices.tsx", import.meta.url), "utf8");
   assert.match(source, /const \[oplocId, setOplocId\].*initialContext\?\.oplocId/);
