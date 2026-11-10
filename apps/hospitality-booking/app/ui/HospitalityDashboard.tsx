@@ -12,6 +12,7 @@ import { dailyRunSheetHtml } from "../../lib/run-sheet";
 import { bookingRequestedItems } from "../../lib/booking-presentation";
 import { bookingLocation } from "../../lib/booking-location";
 import { quoteHtml } from "../../lib/quote-document";
+import { quoteBuffetMenu } from "../../lib/quote-buffet-menu";
 import { fetchQuoteRequest } from "../../lib/quote-request";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
 import { mnkMenuHtml } from "../../lib/mnk-menu-output";
@@ -489,7 +490,7 @@ export default function HospitalityDashboard({
   };
 
   const persistQuotePdf = async (booking: CanonicalBooking, quote: { id: string; revision: number }) => {
-    const saved = await saveQuoteDocument({ name: quoteFilename(booking.canonicalId, booking.client.companyName, "pdf"), html: quoteHtml(booking), canonicalId: booking.canonicalId });
+    const saved = await saveQuoteDocument({ name: quoteFilename(booking.canonicalId, booking.client.companyName, "pdf"), html: quoteHtml(booking, await quoteBuffetMenu(booking)), canonicalId: booking.canonicalId });
     const statusResponse = await fetchQuoteRequest("/api/dashboard-bookings", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -600,7 +601,7 @@ export default function HospitalityDashboard({
             revision.id === body.booking.quoteState?.currentRevisionId,
         );
         if (quote) {
-          const saved = await saveQuoteDocument({ name: quoteFilename(body.booking.canonicalId, body.booking.client.companyName, "pdf"), html: quoteHtml(body.booking), canonicalId: body.booking.canonicalId });
+          const saved = await saveQuoteDocument({ name: quoteFilename(body.booking.canonicalId, body.booking.client.companyName, "pdf"), html: quoteHtml(body.booking, await quoteBuffetMenu(body.booking)), canonicalId: body.booking.canonicalId });
           setActionStage("Recording quote status…");
           const statusResponse = await fetchQuoteRequest("/api/dashboard-bookings", {
             method: "POST",

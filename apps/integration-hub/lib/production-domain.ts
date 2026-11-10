@@ -1,7 +1,8 @@
 import { assertOneOffMenuDestination, oneOffAddressPending, type MenuDestination, type OneOffMenuDestination } from "@fika/server-shared/menu-destination";
 import crypto from "node:crypto";
 import { catalogueProductionConversion } from "@fika/server-shared/hospitality-effective-offering";
-import { bookingNotificationRecord } from "./booking-notifications";
+import { bookingNotificationRecord, buffetNotificationRecord } from "./booking-notifications";
+import { isHotForkBuffetBooking } from "../../shared/hot-fork-buffet";
 import { evaluateGroupConfirmation, loadGroupConfirmationContext, queueGroupConfirmation } from "./booking-group-confirmation";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
@@ -110,6 +111,7 @@ export async function createProductionFromApprovedBookingTransaction(actor: Acto
     // created in this same transaction when this hand-off completes the group.
     const groupContext = booking.bookingGroup?.id ? await loadGroupConfirmationContext(transaction, booking.bookingGroup.id, bookingId) : undefined;
     const markBookingSentToCpu = () => {
+      if (["Sent to CPU", "Approved", "Completed"].includes(booking.lifecycleStatus)) return booking;
       const nextBooking: CanonicalBooking = {
         ...booking,
         version: booking.version + 1,
@@ -134,6 +136,11 @@ export async function createProductionFromApprovedBookingTransaction(actor: Acto
         const notification = bookingNotificationRecord(nextBooking, "confirmed", nextBooking.version, now);
         transaction.create(db.collection("fikaBookingNotifications").doc(notification.notificationId), notification);
       }
+      if (isHotForkBuffetBooking(nextBooking)) {
+        const buffetNotice = buffetNotificationRecord(nextBooking, "buffet-handoff", nextBooking.version, now, orderId);
+        transaction.create(db.collection("fikaBookingNotifications").doc(buffetNotice.notificationId), buffetNotice);
+      }
+      return nextBooking;
     };
     const orderId = existingBase?.status === "amended"
       ? productionOrderV1Id(bookingId, booking.version)
