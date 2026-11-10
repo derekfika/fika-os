@@ -3,7 +3,7 @@ import { claimEvent, eventIsDue, markEventDeadLetter, markEventDelivered, markEv
 import type { BookingNotificationRecord } from "./booking-notifications";
 import type { OutboundDecision } from "@fika/server-shared/outbound-environment";
 import type { CanonicalBooking } from "./hospitality-booking-service";
-import { bookingGmailToken, GmailSendFailure, gmailRawMessage, notificationIsCurrent, resolveBookingOutbound, resolveBookingSender, routeBookingMessage, sendBookingGmail, type BookingSender, type TrustedStagingDriveVerifier } from "./booking-email-delivery";
+import { bookingGmailToken, GmailSendFailure, gmailRawMessage, notificationIsCurrent, resolveBookingOutbound, resolveBookingSender, resolveBrianBuffetRecipient, routeBookingMessage, sendBookingGmail, type BookingSender, type TrustedStagingDriveVerifier } from "./booking-email-delivery";
 
 export function notificationEvent(message: BookingNotificationRecord): DurableDomainEvent<BookingNotificationRecord> {
   return { eventId: message.notificationId, eventType: `hospitality.email.${message.kind}`, sourceAggregateId: message.bookingId, sourceVersion: message.bookingVersion || 0, occurredAt: message.createdAt, schemaVersion: "fika.booking-email.v2", payload: message, delivery: message.delivery || { status: message.status === "sent" ? "delivered" : "pending", attempts: message.attempts } };
@@ -17,28 +17,30 @@ export function notificationWithEvent(message: BookingNotificationRecord, event:
 export type EmailOutboxStore = {
   candidates(limit: number, at: string): Promise<string[]>;
   claim(id: string, claimId: string, at: string): Promise<BookingNotificationRecord | undefined>;
-  arm(id: string, claimId: string, at: string, evidence?: { from: string; replyTo: string; displayName: string; authenticatedAccount: string; messageHash: string }): Promise<boolean>;
+  arm(id: string, claimId: string, at: string, evidence?: { from: string; replyTo: string; displayName: string; authenticatedAccount: string; messageHash: string; recipientIdentityId?: string; recipientEmail?: string }): Promise<boolean>;
   finish(id: string, claimId: string, event: DurableDomainEvent<BookingNotificationRecord>, receipt?: string): Promise<void>;
 };
 
-type WorkerDeps = { sender: (oplocId: string | undefined, kind: BookingNotificationRecord["kind"]) => BookingSender; token: (sender: BookingSender) => Promise<string>; send: (raw: string, token: string) => Promise<string>; outbound?: () => OutboundDecision | undefined };
+type WorkerDeps = { sender: (oplocId: string | undefined, kind: BookingNotificationRecord["kind"]) => BookingSender; token: (sender: BookingSender) => Promise<string>; send: (raw: string, token: string) => Promise<string>; resolveBuffetRecipient?: () => Promise<{ identityId: string; email: string }>; outbound?: () => OutboundDecision | undefined };
 /**
  * Real transport + the outbound gate (fails closed on unset/unknown/local/staging-without-proof). A staging Drive proof can only
  * come from the trusted `driveVerifier` passed here by code, never from env. Callers that inject their own deps without
  * `outbound` (tests) bypass the gate; production routes use this default.
  */
 export function bookingEmailDeps(driveVerifier?: TrustedStagingDriveVerifier): WorkerDeps {
-  return { sender: resolveBookingSender, token: bookingGmailToken, send: sendBookingGmail, outbound: () => resolveBookingOutbound(process.env, driveVerifier) };
+  return { sender: (oplocId, kind) => resolveBookingSender(oplocId, kind.startsWith("buffet-") ? "confirmed" : kind as import("./booking-notifications").BookingNotificationKind), token: bookingGmailToken, send: sendBookingGmail, resolveBuffetRecipient: resolveBrianBuffetRecipient, outbound: () => resolveBookingOutbound(process.env, driveVerifier) };
 }
 
 /** The send barrier is durable before network I/O. Expired armed claims never auto-send again. */
 export async function runBookingEmailWorker(store: EmailOutboxStore, limit = 25, deps: WorkerDeps = bookingEmailDeps()) {
   const at = new Date().toISOString();
   const ids = await store.candidates(Math.max(1, Math.min(25, Math.floor(limit) || 25)), at);
+  let buffetRecipient: { identityId: string; email: string } | undefined;
+  let buffetRecipientResolved = false;
   let attempted = 0;
   for (const id of ids) {
     const claimId = crypto.randomUUID();
-    const message = await store.claim(id, claimId, new Date().toISOString());
+    let message = await store.claim(id, claimId, new Date().toISOString());
     if (!message) continue;
     attempted++;
     const event = notificationEvent(message);
@@ -46,8 +48,15 @@ export async function runBookingEmailWorker(store: EmailOutboxStore, limit = 25,
       await store.finish(id, claimId, markEventDeadLetter(event, "Expired send barrier: acceptance uncertain; operator review required.", at));
       continue;
     }
-    let raw: string, token: string, evidence: { from: string; replyTo: string; displayName: string; authenticatedAccount: string; messageHash: string };
-    try { const decision = (deps.outbound ?? (() => undefined))(); const sender = deps.sender(message.oplocId, message.kind); raw = gmailRawMessage(routeBookingMessage(message, decision), sender, { omitReplyTo: Boolean(decision) }); token = await deps.token(sender); evidence = { from: sender.from, replyTo: decision ? "" : sender.replyTo, displayName: sender.displayName, authenticatedAccount: sender.authenticatedAccount, messageHash: crypto.createHash("sha256").update(raw).digest("hex") }; }
+    let raw: string, token: string, evidence: { from: string; replyTo: string; displayName: string; authenticatedAccount: string; messageHash: string; recipientIdentityId?: string; recipientEmail?: string };
+    try {
+      if (message.kind.startsWith("buffet-")) {
+        if (!buffetRecipientResolved) { buffetRecipient = await deps.resolveBuffetRecipient?.(); buffetRecipientResolved = true; }
+        if (!buffetRecipient) throw new Error("The verified Brian AUTHMOD recipient is unavailable.");
+        message = { ...message, to: [buffetRecipient.email], cc: [] };
+      }
+      const decision = (deps.outbound ?? (() => undefined))(); const sender = deps.sender(message.oplocId, message.kind); raw = gmailRawMessage(routeBookingMessage(message, decision), sender, { omitReplyTo: Boolean(decision) }); token = await deps.token(sender); evidence = { from: sender.from, replyTo: decision ? "" : sender.replyTo, displayName: sender.displayName, authenticatedAccount: sender.authenticatedAccount, messageHash: crypto.createHash("sha256").update(raw).digest("hex"), ...(message.kind.startsWith("buffet-") && buffetRecipient ? { recipientIdentityId: buffetRecipient.identityId, recipientEmail: buffetRecipient.email } : {}) };
+    }
     catch { await store.finish(id, claimId, markEventFailed(event, "Sender configuration or Gmail authentication unavailable before send.", new Date().toISOString())); continue; }
     if (!await store.arm(id, claimId, new Date().toISOString(), evidence)) continue;
     try {

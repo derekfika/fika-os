@@ -9,14 +9,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, createEntry, createOrReuseBlankWeek, createWeekSnapshot, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, resetWeek, saveSnapshot, saveSnapshotsCreateOnly, slotsForWeek, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, confirmHospitalityDemandAllocation, createEntry, createOrReuseBlankWeek, createWeekSnapshot, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, resetWeek, saveSnapshot, saveSnapshotsCreateOnly, setWeekAvailableToHospitality, slotsForWeek, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, createCanonicalMenuItems, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { buildCompiledPublicationSnapshot, buildPublishedDay, compareWorkingWeekToPublication, contentHash, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
 import { decodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
-import { getWeekSnapshot } from "../lib/operational-store";
+import { getWeekSnapshot, readPublicationState } from "../lib/operational-store";
 import { readDeliveredInOplocs } from "../lib/oploc-authority";
 
 const isolatedDatabaseDirectory = mkdtempSync(join(tmpdir(), "fika-menu-planning-test-"));
@@ -944,4 +944,38 @@ test("exact imported dish names receive their existing canonical identity before
   } finally {
     if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
   }
+});
+
+test("Hospitality availability is an audited metadata toggle with no CPU publication or outbox effects", async () => {
+  const snapshot = emptyWeek("2099-04-05", "availability-test");
+  await saveSnapshot(snapshot);
+  const before = await readPublicationState();
+  const exposed = await setWeekAvailableToHospitality(snapshot.week.id, 1, true, "person:menu-manager");
+  assert.equal(exposed.changed, true);
+  assert.equal(exposed.week.availableToHospitality, true);
+  assert.equal(exposed.week.version, 2);
+  assert.equal(exposed.week.status, "draft");
+  assert.equal(exposed.week.audit.at(-1)?.by, "person:menu-manager");
+  assert.deepEqual(await readPublicationState(), before);
+  const retry = await setWeekAvailableToHospitality(snapshot.week.id, 2, true, "person:menu-manager");
+  assert.equal(retry.changed, false);
+  assert.equal(retry.week.version, 2);
+  await assert.rejects(setWeekAvailableToHospitality(snapshot.week.id, 1, false, "person:menu-manager"), /changed/);
+});
+
+test("Hospitality demand review snapshots live guest counts and saved portions without changing quantities", async () => {
+  const snapshot = emptyWeek("2099-04-12", "availability-test");
+  await saveSnapshot(snapshot);
+  const day = snapshot.days[0];
+  const created = await createEntry(snapshot.week.id, day.id, "HOT MEAT", "Roast chicken", "person:menu-manager", "menu-item:test-dish", 1);
+  const entry = created.entries[0];
+  await batchUpdateEntries(snapshot.week.id, 2, [{ entryId: entry.id, dayId: day.id, allocations: [{ destinationId: "oploc:test", destinationLabel: "Test Site", quantity: 8 }] }], "person:menu-manager");
+  const before = await getWeek(snapshot.week.id);
+  const confirmed = await confirmHospitalityDemandAllocation(snapshot.week.id, 3, day.date, "oploc:test", [{ bookingId: "booking:test:1", guestCount: 94 }], "person:menu-manager");
+  const after = await getWeek(snapshot.week.id);
+  assert.equal(confirmed.changed, true);
+  assert.deepEqual(after.entries.find(value => value.id === entry.id)?.allocations, before.entries.find(value => value.id === entry.id)?.allocations);
+  assert.deepEqual(after.week.hospitalityDemandAllocations?.[0].bookings, [{ bookingId: "booking:test:1", guestCount: 94 }]);
+  assert.deepEqual(after.week.hospitalityDemandAllocations?.[0].entryQuantities, [{ entryId: entry.id, quantity: 8 }]);
+  assert.equal(after.week.audit.at(-1)?.action, "hospitality-buffet-demand-allocation-confirmed");
 });

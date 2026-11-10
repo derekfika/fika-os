@@ -49,6 +49,20 @@ test("staging routes every lifecycle path only to the sink; customer To/Cc/Bcc/R
   assert.deepEqual(h.armed.map(e => (e as { replyTo: string }).replyTo), kinds.map(() => ""));
 });
 
+test("buffet notices use only the resolved AUTHMOD recipient and persist its identity evidence", async () => {
+  const source = customer("confirmed");
+  const messages = [1, 2].map(version => ({ ...source, kind: "buffet-handoff" as const, notificationId: `booking:test:buffet-handoff:v${version}`, bookingVersion: version, to: [], cc: [], text: "Hot Fork Buffet handoff", html: "<p>Hot Fork Buffet handoff</p>" }));
+  const h = harness(messages);
+  let resolved = 0;
+  const dependencies = { ...h.deps(() => undefined), resolveBuffetRecipient: async () => { resolved++; return { identityId: "authmod:person-brian", email: "brian@example.test" }; } };
+  await runBookingEmailWorker(h.store, 25, dependencies);
+  assert.equal(resolved, 1);
+  assert.equal(h.sent.length, 2);
+  for (const raw of h.sent) assert.deepEqual(header(raw, "To"), ["To: brian@example.test"]);
+  assert.deepEqual(h.armed.map(e => (e as { recipientIdentityId: string; recipientEmail: string }).recipientIdentityId), ["authmod:person-brian", "authmod:person-brian"]);
+  assert.deepEqual(h.armed.map(e => (e as { recipientEmail: string }).recipientEmail), ["brian@example.test", "brian@example.test"]);
+});
+
 test("cancellation notification path (single and consolidated group) reroutes to the sink", async () => {
   const group = { ...customer("cancelled"), notificationId: "group:cancel:1", bookingGroupId: "group:1", groupBookingIds: ["a", "b"] };
   const h = harness([customer("cancelled"), group]);

@@ -121,7 +121,48 @@ export async function createOrReuseBlankWeek(weekCommencing: string, actor = "lo
     return candidate;
   }, undefined, { weekId: candidate.week.id, sourceWeekId: "__none__", includeEvents: false });
 }
-export async function listWeeks(): Promise<RollingWeek[]> { return (await listWeekSummaries<RollingWeek>()).slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
+/** Hospitality visibility is menu intent metadata only; it creates no publication or CPU handoff. */
+export async function setWeekAvailableToHospitality(weekId: string, expectedWeekVersion: number, available: boolean, actor: string) {
+  if (!actor.trim()) throw Object.assign(new Error("A verified Menu Planning actor is required."), { status: 401 });
+  return withMenuPlanningTransaction(state => {
+    const rolling = state.rolling as unknown as Stored;
+    const week = rolling.weeks.find(candidate => candidate.id === weekId);
+    if (!week) throw Object.assign(new Error("The planning week was not found."), { status: 404 });
+    if (week.version !== expectedWeekVersion) throw Object.assign(new Error("This week changed. Refresh before changing Hospitality visibility."), { status: 409 });
+    if (week.weekEnding < operationalDateLondon()) throw Object.assign(new Error("Past menus cannot be made available to Hospitality."), { status: 409 });
+    if (week.availableToHospitality === available) return { week, changed: false };
+    const at = now();
+    week.availableToHospitality = available;
+    week.version += 1;
+    week.audit.push({ action: available ? "hospitality-menu-made-available" : "hospitality-menu-availability-removed", at, by: actor });
+    return { week, changed: true };
+  }, undefined, { weekId, sourceWeekId: "__none__", includeEvents: false });
+}
+/** Records which live Hospitality guest counts were considered after existing portions were saved. It never changes a quantity. */
+export async function confirmHospitalityDemandAllocation(weekId: string, expectedWeekVersion: number, serviceDate: string, oplocId: string, bookings: Array<{ bookingId: string; guestCount: number }>, actor: string) {
+  if (!actor.trim()) throw Object.assign(new Error("A verified Menu Planning actor is required."), { status: 401 });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(serviceDate) || !oplocId || !bookings.length || bookings.some(booking => !booking.bookingId || !Number.isInteger(booking.guestCount) || booking.guestCount < 1) || new Set(bookings.map(booking => booking.bookingId)).size !== bookings.length)
+    throw Object.assign(new Error("Current active booking demand is required before confirming allocation review."), { status: 422 });
+  return withMenuPlanningTransaction(state => {
+    const rolling = state.rolling as unknown as Stored;
+    const week = rolling.weeks.find(candidate => candidate.id === weekId);
+    if (!week) throw Object.assign(new Error("The planning week was not found."), { status: 404 });
+    if (week.version !== expectedWeekVersion) throw Object.assign(new Error("This week changed. Refresh before confirming portion review."), { status: 409 });
+    if (serviceDate < week.weekCommencing || serviceDate > week.weekEnding) throw Object.assign(new Error("The booking date is outside this planning week."), { status: 422 });
+    const entries = rolling.entries.filter(entry => entry.date === serviceDate && entry.itemId && entry.allocations.some(allocation => allocation.destinationId === oplocId && allocation.quantity > 0));
+    if (!entries.length) throw Object.assign(new Error("Save existing portions for this date and OPLOC before confirming demand review."), { status: 409 });
+    const entryQuantities = entries.map(entry => ({ entryId: entry.id, quantity: entry.allocations.filter(allocation => allocation.destinationId === oplocId).reduce((sum, allocation) => sum + allocation.quantity, 0) })).sort((a, b) => a.entryId.localeCompare(b.entryId));
+    const sortedBookings = bookings.map(booking => ({ ...booking })).sort((a, b) => a.bookingId.localeCompare(b.bookingId));
+    const previous = (week.hospitalityDemandAllocations || []).find(item => item.serviceDate === serviceDate && item.oplocId === oplocId);
+    if (previous && JSON.stringify(previous.bookings) === JSON.stringify(sortedBookings) && JSON.stringify(previous.entryQuantities) === JSON.stringify(entryQuantities)) return { week, changed: false };
+    const at = now();
+    week.hospitalityDemandAllocations = [...(week.hospitalityDemandAllocations || []).filter(item => item.serviceDate !== serviceDate || item.oplocId !== oplocId), { serviceDate, oplocId, confirmedAt: at, confirmedBy: actor, bookings: sortedBookings, entryQuantities }];
+    week.version += 1;
+    week.audit.push({ action: "hospitality-buffet-demand-allocation-confirmed", at, by: actor });
+    return { week, changed: true };
+  }, undefined, { weekId, sourceWeekId: "__none__", includeEvents: false });
+}
+export async function listWeeks(): Promise<RollingWeek[]> { return (await listWeekSummaries<RollingWeek>()).map(week => { const { hospitalityDemandAllocations: _demand, ...summary } = week; return summary as RollingWeek; }).sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
 export async function listWeeksByCommencing(weekCommencings: string[]): Promise<RollingWeek[]> { return (await listWeekSummariesByCommencing<RollingWeek>(weekCommencings)).slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
 export { getWeekSnapshot };
 /** A week head is not an authoritative planning week until all declared child records exist. */

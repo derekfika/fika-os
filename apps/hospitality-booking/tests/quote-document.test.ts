@@ -54,6 +54,27 @@ test("quoteHtml renders a self-contained branded immutable quote snapshot", () =
   assert.doesNotMatch(html, /stylesheet|globals\.css|tailwind|font-family:Arial|font-family:sans-serif/i);
 });
 
+test("a client-safe buffet menu is labelled provisional and excludes operational fields", () => {
+  const booking = {
+    canonicalId: "booking-buffet-preview",
+    client: { name: "Alex Client", companyName: "Example Company", email: "alex@example.test" },
+    service: { eventDate: "2026-11-12", startTime: "12:00", guestCount: 94 },
+    order: { eventType: "hot_fork_buffet", lines: [] },
+    dietaries: {},
+    quoteState: { currentRevisionId: "quote-1", revisions: [{ id: "quote-1", revision: 1, createdAt: "2026-11-01T10:00:00.000Z", snapshot: {
+      client: { name: "Alex Client", companyName: "Example Company", email: "alex@example.test" }, service: { eventDate: "2026-11-12", startTime: "12:00", guestCount: 94 }, order: { eventType: "hot_fork_buffet", lines: [] }, charges: [], dietaries: {},
+      totals: { itemsNet: { amount: 0 }, chargesNet: { amount: 0 }, net: { amount: 0 }, vat: { amount: 0 }, gross: { amount: 0 }, vatRate: 0.2 },
+    } }] },
+  } as never;
+  const html = quoteHtml(booking, { label: "Provisional menu", dishes: [{ name: "Slow cooked beef", category: "Main", description: "With herbs" }] });
+  assert.match(html, /Hot Fork Buffet menu · Provisional menu/);
+  assert.match(html, /Slow cooked beef/);
+  assert.match(html, /With herbs/);
+  assert.doesNotMatch(html, /kitchenNotes|portion|cost|allergenReview/);
+  const unavailable = quoteHtml(booking, { label: "Menu to be confirmed", dishes: [] });
+  assert.match(unavailable, /Menu to be confirmed/);
+});
+
 test("the rendered quote stays on its saved customer snapshot when internal kitchen notes change", () => {
   const booking = {
     canonicalId: "booking-kitchen-notes",

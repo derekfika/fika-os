@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { bookingNotificationId, bookingNotificationRecord, buildBookingCancelledEmail, buildBookingConfirmedEmail, buildBookingEmail, buildBookingSubmittedEmail } from "../lib/booking-notifications";
+import { bookingNotificationId, bookingNotificationRecord, buffetNotificationRecord, buildBookingCancelledEmail, buildBookingConfirmedEmail, buildBookingEmail, buildBookingSubmittedEmail } from "../lib/booking-notifications";
 import { gmailRawMessage } from "../lib/booking-email-delivery";
 import { createRcoaEmailTestFixture } from "../lib/booking-email-test-fixture";
 import { emailInlineImages } from "../lib/booking-email-template";
@@ -56,6 +56,26 @@ test("requested, confirmed, amended and cancelled states are visibly distinct an
 test("notification identity is deterministic per booking event version", () => {
   assert.equal(bookingNotificationId(booking, "confirmed", 2), bookingNotificationId(booking, "confirmed", 2));
   assert.notEqual(bookingNotificationId(booking, "confirmed", 2), bookingNotificationId(booking, "confirmed", 3));
+});
+
+test("RCoA Hot Fork Buffet handoff notices are deterministic per version and contain the operational handoff details", () => {
+  const buffet = {
+    ...booking,
+    source: { ...booking.source, provider: "rcoa-booking-platform", sourceBookingId: "RCOA-20261112090000-AB12" },
+    client: { ...booking.client, companyName: "RCoA Client" },
+    service: { ...booking.service, eventDate: "2026-11-12", startTime: "12:30", guestCount: 94, oplocId: "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2", portalSiteId: "rcoa", portalSiteLabel: "RCoA" },
+    order: { ...booking.order, items: [{ ...booking.order.items[0], itemId: "hospitality-menu-item:rcoa:hot_fork_buffet_gold", menuItemId: "hospitality-menu-item:rcoa:hot_fork_buffet_gold" }] },
+  } as CanonicalBooking;
+  const first = buffetNotificationRecord(buffet, "buffet-handoff", 3, "2026-11-01T10:00:00.000Z", "production-order-v1");
+  const retry = buffetNotificationRecord(buffet, "buffet-handoff", 3, "2026-11-01T10:00:00.000Z", "production-order-v1");
+  const amendment = buffetNotificationRecord({ ...buffet, service: { ...buffet.service, eventDate: "2026-11-13", guestCount: 96 } } as CanonicalBooking, "buffet-change", 4, "2026-11-02T10:00:00.000Z", "booking-1", buffet);
+  assert.equal(first.notificationId, retry.notificationId);
+  assert.notEqual(first.notificationId, amendment.notificationId);
+  assert.match(first.text, /2026-11-12[\s\S]*12:30[\s\S]*RCoA Client[\s\S]*94[\s\S]*RCOA-20261112090000-AB12/);
+  assert.deepEqual(first.to, []);
+  assert.equal(first.sourceReference, "production-order-v1");
+  assert.match(amendment.text, /Changed booking date: 2026-11-12 → 2026-11-13/);
+  assert.match(amendment.text, /Changed guest count: 94 → 96/);
 });
 
 test("RCoA emails carry the FIKA logo left and the RCoA logo right with the quote palette, and use only email-safe images", () => {

@@ -3,6 +3,8 @@ import { workspaceGmailToken } from "./workspace-gmail-dwd";
 import { authorizedHospitalityMailboxes, HOSPITALITY_EMAIL_SITE_IDENTITIES, RCOA_HOSPITALITY_OPLOC_ID, type HospitalityEmailOplocId } from "./booking-email-site-identities";
 import { readGmailOAuthFiles, refreshGmailAccessToken } from "./gmail-client";
 import type { BookingNotificationKind, BookingNotificationRecord } from "./booking-notifications";
+import type { AuthIdentity } from "./authmod-core/model";
+import { db } from "./firebase-admin";
 import type { CanonicalBooking } from "./hospitality-booking-service";
 import { EMAIL_FOOTER_MARKER, emailInlineImages } from "./booking-email-template";
 import { applyStagingMailRouting, decideOutboundRouting, OutboundGateError, PRODUCTION_PROJECT_ID, type DriveVerification, type OutboundDecision, type StagingDriveDestinations } from "@fika/server-shared/outbound-environment";
@@ -86,6 +88,10 @@ export function routeBookingMessage(message: BookingNotificationRecord, decision
 }
 
 export function notificationIsCurrent(message: BookingNotificationRecord, booking: CanonicalBooking) {
+  if (message.kind.startsWith("buffet-")) {
+    const expectedAction = message.kind === "buffet-handoff" ? "booking-sent-to-cpu" : message.kind === "buffet-cancellation" ? "workflow-cancel" : "workflow-amend";
+    return message.bookingId === booking.canonicalId && Number.isSafeInteger(message.bookingVersion) && booking.audit.some(event => event.action === expectedAction && event.at === message.createdAt);
+  }
   if (message.kind === "confirmed") {
     if (message.bookingId !== booking.canonicalId || !Number.isSafeInteger(message.bookingVersion) || message.bookingVersion! < 1 || !Number.isSafeInteger(booking.version) || message.bookingVersion! > booking.version || message.commercialVersion !== (booking.commercialVersion || 1) || !message.oplocId || message.oplocId !== booking.service.oplocId) return false;
     if (!["Sent to CPU", "Approved", "Completed"].includes(booking.lifecycleStatus)) return false;
@@ -113,6 +119,19 @@ export function notificationIsCurrent(message: BookingNotificationRecord, bookin
   if (message.kind === "cancelled") return booking.lifecycleStatus === "Cancelled";
   if (booking.lifecycleStatus === "Cancelled" || booking.lifecycleStatus === "Completed") return false;
   return true;
+}
+
+/** Resolve Brian from the governed AUTHMOD directory; ambiguity or an unlinked/inactive identity fails closed. */
+export async function resolveBrianBuffetRecipient(): Promise<{ identityId: string; email: string }> {
+  const configuredId = process.env.FIKA_HOT_FORK_BUFFET_BRIAN_IDENTITY_ID?.trim();
+  const snapshot = configuredId ? await db.collection("authmodIdentities").doc(configuredId).get() : undefined;
+  const candidates = snapshot
+    ? snapshot.exists ? [{ ...(snapshot.data() as AuthIdentity), id: snapshot.id }] : []
+    : (await db.collection("authmodIdentities").where("displayName", ">=", "Brian").where("displayName", "<=", "Brian\uf8ff").limit(21).get()).docs.map(document => ({ ...(document.data() as AuthIdentity), id: document.id }));
+  if (!snapshot && candidates.length === 21) throw new Error("AUTHMOD Brian identity lookup exceeded its review bound; configure the verified Brian identity ID.");
+  const matches = candidates.filter(identity => identity.identityKind === "person" && identity.status === "active" && identity.identityLinkStatus === "matched" && /^brian(?:\s|$)/i.test(identity.displayName.trim()) && typeof identity.normalizedEmail === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identity.normalizedEmail));
+  if (matches.length !== 1) throw new Error(matches.length ? "AUTHMOD has multiple active matched Brian identities; notification recipient is ambiguous." : "AUTHMOD has no active matched Brian identity with a verified email address.");
+  return { identityId: matches[0].id, email: matches[0].normalizedEmail!.trim().toLowerCase() };
 }
 
 /** `omitReplyTo` (staging) drops the Reply-To header and the reply-to contact line so no customer-facing reply route remains. */
