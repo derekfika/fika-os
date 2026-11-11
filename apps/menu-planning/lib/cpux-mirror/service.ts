@@ -39,7 +39,8 @@ async function prepare(date: string, publications: Awaited<ReturnType<typeof loa
   if (!model) return;
   const target = configuredMirrorTarget("delivered-in", undefined);
   const api = await openMirrorClient(target, process.env, fetch, readOnly);
-  const observation = await api.inspect(model.source);
+  const inspected = readOnly ? await api.inspectEvent(model.source) : undefined;
+  const observation = inspected?.observation || await api.inspect(model.source);
   const revision = digest(model.source.sourceReference);
   const folderId = process.env.FIKA_CPUX_DELIVERED_IN_RUN_SHEET_FOLDER_ID;
   if (model.runSheetHtml) {
@@ -57,7 +58,11 @@ async function prepare(date: string, publications: Awaited<ReturnType<typeof loa
     await api.verifiedPdf(pdfId, model.title);
   }
   return {
-    preview: { ...observation, serviceDate: date, sourceRevision: model.source.revision, revision, calendarId: target.calendarId, attendees: mirrorRecipients(target), folderId: folderId || null, fileId: isDriveId(pdfId) ? pdfId : null, runSheet: model.runSheetHtml ? "current-published-revision" : "not-required" },
+    preview: { ...observation, serviceDate: date, sourceRevision: model.source.revision, revision, calendarId: target.calendarId,
+      attendees: mirrorRecipients(target), folderId: folderId || null, folderAccessVerified: Boolean(model.runSheetHtml && folderId),
+      fileId: isDriveId(pdfId) ? pdfId : null, runSheet: model.runSheetHtml ? "current-published-revision" : "not-required",
+      ...(readOnly ? { identityStatus: inspected?.identityStatus, currentEvent: inspected?.currentEvent || null,
+        conflictingEvents: inspected?.conflictingEvents || [], attendeeCopies: await api.inspectAttendeeCopies(model.source) } : {}) },
     apply: async () => {
       if (observation.disposition === "skip" || observation.disposition === "unchanged") return observation;
       // A recorded reservation, not a title/search, is the document idempotency key.
@@ -100,18 +105,37 @@ export async function deliveredInCatchUp(from: string, through: string, approveH
   const dates = backfillDates(from, through);
   if (!(approveHash ? mirrorEnabled() : mirrorPreviewEnabled())) throw new Error("Delivered-In Calendar mirror delivery is disabled.");
   const publications = await loadPublications(from, through);
+  const outboxSnapshot = await db().collection("fikaMenuPlanningOutbox").where("payload.serviceDate", ">=", dates[0])
+    .where("payload.serviceDate", "<=", dates.at(-1)!).limit(200).get();
+  if (outboxSnapshot.size >= 200) throw new Error("Calendar outbox inventory is incomplete; use a smaller date range.");
+  const outboxByDate = new Map<string, Array<Record<string, unknown>>>();
+  for (const row of outboxSnapshot.docs) {
+    const event = row.data() as DurableDomainEvent & { payload?: { serviceDate?: string } };
+    const serviceDate = event.payload?.serviceDate;
+    if (!serviceDate) continue;
+    const error = event.delivery.lastError;
+    const errorCode = error && /^[A-Z0-9_]{3,80}$/.test(error) ? error : error ? "ERROR_REDACTED" : undefined;
+    const records = outboxByDate.get(serviceDate) || [];
+    records.push({ eventId: event.eventId, eventType: event.eventType, sourceAggregateId: event.sourceAggregateId,
+      sourceVersion: event.sourceVersion, status: event.delivery.status, attempts: event.delivery.attempts,
+      lastAttemptAt: event.delivery.lastAttemptAt || null, deliveredAt: event.delivery.deliveredAt || null,
+      nextEligibleAt: event.delivery.nextEligibleAt || event.delivery.nextAttemptAt || null, leaseExpiresAt: event.delivery.leaseExpiresAt || null,
+      ...(errorCode ? { errorCode } : {}) });
+    outboxByDate.set(serviceDate, records);
+  }
   const plans: Array<NonNullable<Awaited<ReturnType<typeof prepare>>>> = [];
   const skipped: Array<{ serviceDate: string; reason: string }> = [];
   for (const date of dates) {
     try {
       const plan = await prepare(date, publications, !approveHash);
-      if (plan && plan.preview.runSheet !== "not-required") plans.push(plan);
+      if (plan && (plan.preview.runSheet !== "not-required" || ["cancel", "unchanged", "skip"].includes(plan.preview.disposition)))
+        plans.push(plan);
       else skipped.push({ serviceDate: date, reason: "no current published demand" });
     } catch (error) {
       skipped.push({ serviceDate: date, reason: error instanceof Error ? error.message : "publication or mapping unavailable" });
     }
   }
-  const events = plans.map(plan => plan.preview);
+  const events = plans.map(plan => ({ ...plan.preview, outbox: outboxByDate.get(plan.preview.serviceDate) || [] }));
   const planHash = digest({ from, through, events: events.map(({ disposition: _disposition, fileId: _reservedFileId, ...event }) => event), skipped });
   if (!approveHash) return { dryRun: true, scanned: dates.length, events, skipped, planHash };
   if (approveHash !== planHash || approveHash !== process.env.FIKA_CPUX_DELIVERED_IN_CATCH_UP_APPROVAL_HASH)

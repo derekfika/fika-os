@@ -4,7 +4,7 @@ import type { ProductionOrder } from "../production-domain";
 
 const cpu = new Set(["sandwiches", "hospitality", "delivered_in"]);
 
-function hasRecordedHandoff(booking: CanonicalBooking) {
+export function hasRecordedHospitalityHandoff(booking: CanonicalBooking) {
   return booking.statusHistory.some(entry => entry.status === "Sent to CPU");
 }
 
@@ -14,11 +14,11 @@ function safeClientDisplayName(booking: CanonicalBooking) {
 }
 
 export function hasCurrentHospitalityHandoff(booking: CanonicalBooking) {
-  return (booking.lifecycleStatus === "Sent to CPU" || booking.lifecycleStatus === "Completed") && hasRecordedHandoff(booking);
+  return (booking.lifecycleStatus === "Sent to CPU" || booking.lifecycleStatus === "Completed") && hasRecordedHospitalityHandoff(booking);
 }
 
 export function hospitalityMirrorSource(booking: CanonicalBooking, order: ProductionOrder | undefined) {
-  if (!hasRecordedHandoff(booking)) return undefined;
+  if (!hasRecordedHospitalityHandoff(booking)) return undefined;
   if (order && (order.origin !== "hospitality_booking" || order.sourceBookingId !== booking.canonicalId))
     throw new Error("The Production Order does not belong to this Hospitality booking.");
   const handedOff = hasCurrentHospitalityHandoff(booking);
