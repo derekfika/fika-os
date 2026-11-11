@@ -48,6 +48,19 @@ test("recovery is scoped by identity, environment and week, with original baseli
   assert.notEqual(draftStorageKey("person:1", "stage", base.week.id), draftStorageKey("person:2", "stage", base.week.id));
   assert.equal(parseRecoveredDraft("broken", "person:1", "https://stage", base.week.id), undefined);
 });
+test("a full 95-dish draft serializes and reloads intact from browser recovery data", () => {
+  const base = fixture();
+  base.entries = Array.from({ length: 95 }, (_, index) => ({ ...base.entries[0], id: `entry:${index}`, itemId: `dish:${index}`, itemLabel: `Dish ${index}` }));
+  base.week.entryIds = base.entries.map(entry => entry.id);
+  base.days[0].entryIds = base.entries.map(entry => entry.id);
+  const draft = editWeek(base, "update-entry", { entryId: "entry:94", patch: { itemLabel: "Friday copied dish" } });
+  const stored = JSON.stringify({ schema: 1, identity: "person:1", environment: "https://stage", base, draft, savedAt: 2 });
+  const recovered = parseRecoveredDraft(stored, "person:1", "https://stage", base.week.id)!;
+  assert.equal(recovered.base.entries.length, 95);
+  assert.equal(recovered.draft.entries.length, 95);
+  assert.equal(recovered.draft.entries.find(entry => entry.id === "entry:94")?.itemLabel, "Friday copied dish");
+  assert.equal(recovered.base.entries.find(entry => entry.id === "entry:94")?.itemLabel, "Dish 94");
+});
 test("two editors combine independent fields and expose competing edits without overwriting either", () => {
   const base = fixture(); const mine = editWeek(base, "update-entry", { entryId: "entry:1", patch: { itemLabel: "My name" } });
   const remote = structuredClone(base); remote.week.version++; remote.entries[0].portions = 15;

@@ -8,7 +8,7 @@ import { editWeek, weekChanges } from "../lib/week-draft";
 
 const directory = mkdtempSync(join(tmpdir(), "fika-week-draft-337-"));
 process.chdir(directory); process.env.MENU_PLANNING_DB_PATH = join(directory, "isolated.sqlite"); process.env.MENU_PLANNING_TEST_MODE = "1";
-const { applyWeekSave, saveWeekDraft } = await import("../lib/week-draft-save");
+const { applyWeekSave, requestValidationErrors, saveWeekDraft } = await import("../lib/week-draft-save");
 const { createCanonicalMenuItem } = await import("../lib/canonical-menu-repository");
 const { emptyWeek, saveSnapshot, getWeek } = await import("../lib/rolling-menu");
 const { readPublicationState, updatePublicationState } = await import("../lib/operational-store");
@@ -74,6 +74,66 @@ test("a newly marked Core Salad survives the first save and forged review eviden
   assert.equal((await getWeek(source.week.id)).entries.find(entry => entry.id === entryId)?.isCoreSalad, true);
   const forged = { ...request, changes: { ...request.changes, updates: [{ entryId: source.entries[0].id, dayId: source.days[0].id, patch: { allergenReview: { by: "fake" } } }] } };
   await assert.rejects(saveWeekDraft(forged, "person:1", allowed), /invalid entries/);
+});
+test("a full-week save preserves all 95 planned dishes", () => {
+  const source = emptyWeek("2099-04-06", "fixture-actor");
+  const slots = source.week.templateSlots!.slice(0, 14);
+  assert.equal(slots.length, 14);
+  const creates = Array.from({ length: 95 }, (_, index) => {
+    const day = source.days[Math.floor(index / 14)];
+    const slot = slots[index % 14];
+    const copiedNoodleSalad = index === 80;
+    return { id: `${source.week.id}:entry:fixture-${index}`, dayId: day.id, slot, itemId: `dish:fixture-${index}`, itemLabel: copiedNoodleSalad ? "Noodle Salad with Edamame Beans" : `Fixture dish ${index}`, portions: 0, allocations: [] };
+  });
+  // The copied salad remains a valid placement in the target's selected governed row.
+  const request = { weekId: source.week.id, expectedWeekVersion: 1, requestId: "request-full-week-95", changes: { updates: [], creates } };
+  const saved = applyWeekSave(source, request, "person:1", allowed).snapshot;
+  assert.equal(saved.entries.length, 95);
+  assert.equal(saved.entries[80].dayId, source.days[5].id);
+  assert.equal(saved.entries[80].slot, creates[80].slot);
+  assert.equal(saved.entries[80].itemLabel, "Noodle Salad with Edamame Beans");
+  assert.equal(saved.week.version, 2);
+});
+test("copying a dish to another day keeps the selected governed slot without rewriting its category", () => {
+  const source = emptyWeek("2099-04-13", "fixture-actor");
+  const sourceEntry = { id: `${source.week.id}:entry:monday-noodles`, dayId: source.days[0].id, date: source.days[0].date, slot: "VEG MAIN", itemId: "dish:noodle-salad", itemLabel: "Noodle Salad with Edamame Beans", portions: 0, allocations: [], allergens: {}, audit: [] };
+  sourceEntry.slot = "SALAD 4";
+  source.entries.push(sourceEntry); source.days[0].entryIds.push(sourceEntry.id); source.week.entryIds.push(sourceEntry.id);
+  const draft = editWeek(source, "create-entry", { id: `${source.week.id}:entry:friday-copy`, dayId: source.days[4].id, slot: "SALAD 4", itemId: sourceEntry.itemId, itemLabel: sourceEntry.itemLabel });
+  const request = { weekId: source.week.id, expectedWeekVersion: 1, requestId: "request-copy-friday", changes: weekChanges(source, draft) };
+  const saved = applyWeekSave(source, request, "person:1", allowed).snapshot;
+  assert.equal(saved.entries.find(entry => entry.dayId === source.days[4].id)?.slot, "SALAD 4");
+  assert.equal(saved.entries.find(entry => entry.dayId === source.days[4].id)?.itemId, "dish:noodle-salad");
+  assert.equal(saved.entries.find(entry => entry.dayId === source.days[0].id)?.itemLabel, sourceEntry.itemLabel);
+});
+test("Core Salad slot relationship errors name the affected field and row", () => {
+  const source = emptyWeek("2099-04-20", "fixture-actor");
+  const request = { weekId: source.week.id, expectedWeekVersion: 1, requestId: "request-invalid-core-slot", changes: { updates: [], creates: [{ id: `${source.week.id}:entry:bad-core`, dayId: source.days[4].id, slot: "HOT VEGAN", itemId: "dish:salad", itemLabel: "Noodle Salad", portions: 0, allocations: [], isCoreSalad: true }] } };
+  assert.throws(() => applyWeekSave(source, request, "person:1", allowed), error => {
+    const value = error as { message?: string; validationErrors?: Array<{ field?: string; dayId?: string; slot?: string; itemLabel?: string }> };
+    assert.match(value.message || "", /Core Salad can only be marked/);
+    assert.deepEqual(value.validationErrors?.[0], { path: "isCoreSalad", field: "isCoreSalad", message: "Core Salad can only be marked on one of the six salad placements.", dayId: source.days[4].id, slot: "HOT VEGAN", itemLabel: "Noodle Salad", itemId: "dish:salad" });
+    return true;
+  });
+});
+test("a working allocation with its governed destination snapshot passes strict save validation", async () => {
+  const source = emptyWeek("2099-04-27", "fixture-actor");
+  const entry = { id: `${source.week.id}:entry:destination`, dayId: source.days[0].id, date: source.days[0].date, slot: "GARNISH 1", itemId: "dish:fixture", itemLabel: "Almonds", portions: 12, allocations: [{ destinationId: "site:1", destinationLabel: "Fixture site", quantity: 12 }], allergens: {}, audit: [] };
+  source.entries.push(entry); source.days[0].entryIds.push(entry.id); source.week.entryIds.push(entry.id);
+  source.entries[0].allocations[0].destination = { kind: "governed", id: "site:1", label: "Fixture site" };
+  await saveSnapshot(source);
+  const draft = structuredClone(source);
+  draft.entries[0].portions = 13;
+  draft.entries[0].allocations[0].quantity = 13;
+  const request = { weekId: source.week.id, expectedWeekVersion: 1, requestId: "request-destination-snapshot", changes: weekChanges(source, draft) };
+  const saved = await saveWeekDraft(request, "person:1", allowed);
+  assert.equal(saved.snapshot.entries[0].allocations[0].destination?.kind, "governed");
+  assert.equal(saved.snapshot.entries[0].allocations[0].quantity, 13);
+});
+test("validation details identify the affected day, slot, dish and rejected allocation field", () => {
+  const row = { entryId: "entry:1", dayId: "day:friday", patch: { allocations: [{ destination: { kind: "governed" } }] } };
+  const errors = requestValidationErrors({ changes: { updates: [row] } }, [{ path: ["changes", "updates", 0, "patch", "allocations", 0, "destination"], message: "Unrecognized key", code: "unrecognized_keys", keys: ["destination"] }]);
+  assert.deepEqual(errors[0], { path: "changes.updates.0.patch.allocations.0.destination", field: "destination", message: "Unsupported field: destination.", entryKind: "update", entryIndex: 0, dayId: "day:friday" });
 });
 test("governed aliases resolve before scope checks, and invalid allocations roll back without partial writes", () => {
   const source = base(); source.entries[0].allocations[0].destinationId = "legacy:site";

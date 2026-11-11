@@ -610,6 +610,9 @@ async function handlePost(request: NextRequest) {
             error instanceof Error
               ? error.message
               : "Rolling menu command failed.",
+          ...(error && typeof error === "object" && "validationErrors" in error
+            ? { validationErrors: (error as { validationErrors: unknown }).validationErrors }
+            : {}),
         },
       },
       { status },
