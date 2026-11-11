@@ -4,6 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RollingSnapshot } from "../lib/rolling-menu-types";
+import { CANONICAL_MENU_SLOTS } from "../../shared/menu-section-order";
 import { editWeek, weekChanges } from "../lib/week-draft";
 
 const directory = mkdtempSync(join(tmpdir(), "fika-week-draft-337-"));
@@ -12,6 +13,8 @@ const { applyWeekSave, requestValidationErrors, saveWeekDraft } = await import("
 const { createCanonicalMenuItem } = await import("../lib/canonical-menu-repository");
 const { emptyWeek, saveSnapshot, getWeek } = await import("../lib/rolling-menu");
 const { readPublicationState, updatePublicationState } = await import("../lib/operational-store");
+const { categoriesForMenuSlot } = await import("../lib/dish-categories");
+const { isGovernedMenuSlot } = await import("../lib/menu-template");
 const allowed = new Set(["site:1"]);
 const base = (): RollingSnapshot => { const snapshot = emptyWeek("2099-01-05", "fixture-actor"); const entry = { id: `${snapshot.week.id}:entry:one`, dayId: snapshot.days[0].id, date: snapshot.days[0].date, slot: "GARNISH 1", itemId: "dish:fixture", itemLabel: "Almonds", portions: 12, allocations: [{ destinationId: "site:1", destinationLabel: "Fixture site", quantity: 12 }], allergens: { nuts: "contains" as const }, audit: [] }; snapshot.entries.push(entry); snapshot.days[0].entryIds.push(entry.id); snapshot.week.entryIds.push(entry.id); return snapshot; };
 test("atomic save preserves identities, portions and audits; replay is idempotent and reused IDs reject drift", () => {
@@ -93,6 +96,75 @@ test("a full-week save preserves all 95 planned dishes", () => {
   assert.equal(saved.entries[80].slot, creates[80].slot);
   assert.equal(saved.entries[80].itemLabel, "Noodle Salad with Edamame Beans");
   assert.equal(saved.week.version, 2);
+});
+test("all 18 affected canonical slot placements save and reload without changing publication or outbox state", async () => {
+  const source = emptyWeek("2099-05-04", "fixture-actor");
+  const weekdaySlots = [
+    ["COLD PROTEIN MEAT", "HOT FISH", "HOT VEGAN", "COLD PROTEIN FISH"],
+    ["COLD PROTEIN MEAT", "HOT FISH", "HOT VEGAN"],
+    ["COLD PROTEIN MEAT", "HOT FISH", "HOT VEGAN", "COLD PROTEIN FISH"],
+    ["COLD PROTEIN MEAT", "HOT FISH", "HOT VEGAN", "COLD PROTEIN FISH"],
+    ["COLD PROTEIN MEAT", "HOT VEGAN", "COLD PROTEIN FISH"],
+  ];
+  const dishes = new Map<string, Awaited<ReturnType<typeof createCanonicalMenuItem>>>();
+  for (const slot of [...new Set(weekdaySlots.flat())]) {
+    const category = categoriesForMenuSlot(slot)[0];
+    if (!dishes.has(category)) dishes.set(category, await createCanonicalMenuItem({ displayName: `Slot validation ${category}`, category }, "fixture-actor"));
+  }
+  // Build after fixture dishes exist so the requests carry active canonical IDs.
+  const entries = weekdaySlots.flatMap((slots, dayIndex) => slots.map(slot => {
+    const dish = dishes.get(categoriesForMenuSlot(slot)[0])!;
+    const day = source.days[dayIndex];
+    return { id: `${source.week.id}:entry:canonical-${dayIndex}-${slot.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, dayId: day.id, slot, itemId: dish.canonicalId, itemLabel: dish.displayName, portions: 0, allocations: [] };
+  }));
+  assert.equal(entries.length, 18);
+  await saveSnapshot(source);
+  const beforePublication = await readPublicationState();
+  const request = { weekId: source.week.id, expectedWeekVersion: 1, requestId: "request-canonical-slots", changes: { updates: [], creates: entries } };
+  const saved = await saveWeekDraft(request, "person:1", allowed);
+  const reloaded = await getWeek(source.week.id);
+  assert.deepEqual(saved.snapshot.entries.map(({ dayId, slot, itemId, itemLabel }) => ({ dayId, slot, itemId, itemLabel })), entries.map(({ dayId, slot, itemId, itemLabel }) => ({ dayId, slot, itemId, itemLabel })));
+  assert.deepEqual(reloaded.entries.map(({ dayId, slot, itemId, itemLabel }) => ({ dayId, slot, itemId, itemLabel })), entries.map(({ dayId, slot, itemId, itemLabel }) => ({ dayId, slot, itemId, itemLabel })));
+  assert.equal(reloaded.week.version, 2);
+  assert.deepEqual(await readPublicationState(), beforePublication);
+});
+test("a full 95-dish week using the governed canonical slot contract saves and reloads intact", async () => {
+  const source = emptyWeek("2099-05-11", "fixture-actor");
+  const slots = CANONICAL_MENU_SLOTS.slice(0, 19).map(item => item.id);
+  const dishes = new Map<string, Awaited<ReturnType<typeof createCanonicalMenuItem>>>();
+  for (const slot of slots) {
+    const category = categoriesForMenuSlot(slot)[0];
+    if (!dishes.has(category)) dishes.set(category, await createCanonicalMenuItem({ displayName: `Full-week ${category}`, category }, "fixture-actor"));
+  }
+  const entries = Array.from({ length: 95 }, (_, index) => {
+    const dayIndex = Math.floor(index / slots.length);
+    const slot = slots[index % slots.length];
+    const dish = dishes.get(categoriesForMenuSlot(slot)[0])!;
+    return { id: `${source.week.id}:entry:full-${index}`, dayId: source.days[dayIndex].id, slot, itemId: dish.canonicalId, itemLabel: dish.displayName, portions: 0, allocations: [] };
+  });
+  await saveSnapshot(source);
+  const beforePublication = await readPublicationState();
+  const request = { weekId: source.week.id, expectedWeekVersion: 1, requestId: "request-canonical-full-week", changes: { updates: [], creates: entries } };
+  await saveWeekDraft(request, "person:1", allowed);
+  const reloaded = await getWeek(source.week.id);
+  assert.equal(reloaded.entries.length, 95);
+  assert.deepEqual(reloaded.entries.map(entry => entry.id), entries.map(entry => entry.id));
+  assert.deepEqual(reloaded.entries.map(entry => entry.slot), entries.map(entry => entry.slot));
+  assert.deepEqual(await readPublicationState(), beforePublication);
+});
+test("canonical slot validation stays strict for identities outside the governed rows", async () => {
+  assert.deepEqual(CANONICAL_MENU_SLOTS.filter(slot => !isGovernedMenuSlot(slot.id)), []);
+  assert.equal(isGovernedMenuSlot("HOT FISH EXTRA"), false);
+  const source = emptyWeek("2099-05-18", "fixture-actor");
+  await saveSnapshot(source);
+  await assert.rejects(saveWeekDraft({ weekId: source.week.id, expectedWeekVersion: 1, requestId: "request-invalid-slot", changes: { updates: [], creates: [{ id: `${source.week.id}:entry:invalid-slot`, dayId: source.days[0].id, slot: "HOT FISH EXTRA", itemLabel: "", portions: 0, allocations: [] }] } }, "person:1", allowed), error => {
+    const value = error as { status?: number; validationErrors?: Array<{ field?: string; message?: string }> };
+    assert.equal(value.status, 422);
+    assert.equal(value.validationErrors?.[0]?.field, "slot");
+    assert.match(value.validationErrors?.[0]?.message || "", /Choose a governed menu row/);
+    return true;
+  });
+  assert.equal((await getWeek(source.week.id)).week.version, 1);
 });
 test("copying a dish to another day keeps the selected governed slot without rewriting its category", () => {
   const source = emptyWeek("2099-04-13", "fixture-actor");
