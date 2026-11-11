@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { RotationCalendar, RotationConfiguration as RotationConfigurationSchema, INITIAL_ROTATION_CATEGORIES, type RotationConfiguration, type RotationHead, type RotationRevision } from "../../../shared/hospitality-rotations";
+import { RotationCalendar, RotationDraftConfiguration as RotationDraftConfigurationSchema, INITIAL_ROTATION_CATEGORIES, type RotationConfiguration, type RotationHead, type RotationRevision } from "../../../shared/hospitality-rotations";
 import { initialRotationConfiguration, moveWithin, mergeSelectionOrder, rotationActivationStatus, type RotationOption } from "../../lib/rotations-ui-model";
 import HospitalityDishMapping, { type MappingClassification, type MappingDish, type MappingItem } from "./HospitalityDishMapping";
 
@@ -121,15 +121,7 @@ export default function RotationsManager({ styles, permissions, initialHead, ini
 
   function saveDraft() {
     if (!configuration || !permissions.Manage) return;
-    for (const group of configuration.groups) {
-      const week = group.weeks.find(week => week.dishIds.length < group.rules.distinctDishes.minimum);
-      if (week) {
-        setSelectedGroupId(group.id);
-        setError(`${group.label}: select at least ${group.rules.distinctDishes.minimum} dish(es) in Week ${week.week} before saving.`);
-        return;
-      }
-    }
-    const parsed = RotationConfigurationSchema.safeParse(configuration);
+    const parsed = RotationDraftConfigurationSchema.safeParse(configuration);
     if (!parsed.success) { setError(parsed.error.issues.map((issue) => issue.message).join(" ")); return; }
     void sendCommand("save-draft", { expectedVersion: head.version, configuration: parsed.data });
   }
@@ -179,7 +171,7 @@ export default function RotationsManager({ styles, permissions, initialHead, ini
 
       <div className={styles.workspace}>
         {!configuration && <section className={styles.panel} aria-labelledby="initial-title"><div className={styles.panelHeading}><div><p className={styles.eyebrow}>First configuration</p><h2 id="initial-title">Create the shared rotation</h2></div></div>
-          {head.activations.length > 0 ? <p className={styles.helper}>Choose a published revision below and create a seasonal draft from it. The published version remains unchanged.</p> : <InitialDraftForm styles={styles} disabled={!permissions.Manage || busy} onCreate={(input) => { try { const next = initialRotationConfiguration(input); RotationCalendar.parse(next.calendar); setConfiguration(next); setSelectedGroupId(next.groups[0]!.id); setMessage("First row added. Add Hospitality dishes to its bank and fill each week before saving."); setError(""); } catch (cause) { setError((cause as Error).message); } }} categories={INITIAL_ROTATION_CATEGORIES} items={items} />}
+          {head.activations.length > 0 ? <p className={styles.helper}>Choose a published revision below and create a seasonal draft from it. The published version remains unchanged.</p> : <InitialDraftForm styles={styles} disabled={!permissions.Manage || busy} onCreate={(input) => { try { const next = initialRotationConfiguration(input); RotationCalendar.parse(next.calendar); setConfiguration(next); setSelectedGroupId(next.groups[0]!.id); setMessage("First row added. Add Hospitality dishes and build the six weeks when ready; you can save progress at any time."); setError(""); } catch (cause) { setError((cause as Error).message); } }} categories={INITIAL_ROTATION_CATEGORIES} items={items} />}
           {head.activations.length > 0 && <ul className={styles.historyList}>{head.activations.slice().reverse().map((activation) => <li key={activation.revision}><strong>Revision {activation.revision}</strong><span>Effective {activation.effectiveFrom} · {rotationActivationStatus(head, activation.revision, todayLondon())}<button className={styles.textButton} type="button" disabled={!permissions.Manage || busy} onClick={() => void startDraft(activation.revision)}>Create seasonal draft from this revision</button></span></li>)}</ul>}
         </section>}
 

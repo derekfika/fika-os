@@ -10,9 +10,9 @@ import {
   isEffectiveBeverageAccess, validBeverageOplocId,
 } from "./beverage-admission";
 
-export const PERSON_REQUIRED_AUTHORITIES = ["authmod", "authmod.admin", "menu.publish", "logistics.driver", HOSPITALITY_BOOKING_ADMIN] as const;
+export const PERSON_REQUIRED_AUTHORITIES = ["authmod", "authmod.admin", "menu.publish", "hospitality.rotations", "logistics.driver", HOSPITALITY_BOOKING_ADMIN] as const;
 export function isPersonRequiredAuthority(resource: string) { return (PERSON_REQUIRED_AUTHORITIES as readonly string[]).includes(resource); }
-export const ORGANISATION_AUTHORITIES = ["authmod", "menu.publish"] as const;
+export const ORGANISATION_AUTHORITIES = ["authmod", "menu.publish", "hospitality.rotations"] as const;
 export function isOrganisationAuthority(resource: string) { return (ORGANISATION_AUTHORITIES as readonly string[]).includes(resource); }
 /**
  * Retired authorities. CPU allergen sign-off is no longer gated by AUTHMOD special authority: it needs normal
