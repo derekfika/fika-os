@@ -14,6 +14,7 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
   const [latest, setLatest] = useState<RollingSnapshot>();
   const [status, setStatus] = useState<"saved" | "editing" | "saving" | "failed" | "conflict">("saved");
   const [error, setError] = useState("");
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [storageError, setStorageError] = useState("");
   const [navigation, setNavigation] = useState<{ href?: string; weekId?: string }>();
   const saving = useRef(false);
@@ -87,16 +88,34 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
     if (!current || saving.current || recovered || latest || !identity) return false;
     if (!isWeekDirty(current.base, current.draft) && !current.pending) return true;
     const pending = current.pending || { request: { weekId: current.base.week.id, expectedWeekVersion: current.base.week.version, requestId: crypto.randomUUID(), ...(workingDraftMode ? { workingDraft: true } : {}), changes: { ...weekChanges(current.base, current.draft), ...(current.templateAdditions.length ? { templateAdditions: current.templateAdditions } : {}) } } satisfies WeekSaveRequest, submitted: structuredClone(current.draft) };
-    saving.current = true; setStatus("saving"); setError(""); replace({ ...current, pending });
+    saving.current = true; setStatus("saving"); setError(""); setValidationErrors([]); replace({ ...current, pending });
     try {
       const response = await fetch("/api/rolling-menu", { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30_000), body: JSON.stringify({ action: "save-week", ...pending.request }) });
       const body = await response.json();
       if (!response.ok) {
+        if (Array.isArray(body.error?.validationErrors)) {
+          const errors = body.error.validationErrors as Array<{ field?: string; message?: string; dayId?: string; slot?: string; itemLabel?: string; itemId?: string; entryKind?: "create" | "update"; entryIndex?: number }>;
+          setValidationErrors(errors.map(issue => {
+            const row = issue.entryKind && issue.entryIndex !== undefined
+              ? pending.request.changes[issue.entryKind === "create" ? "creates" : "updates"][issue.entryIndex]
+              : undefined;
+            const entryId = row && "entryId" in row ? row.entryId : row && "id" in row ? row.id : undefined;
+            const existing = entryId ? current.draft.entries.find(entry => entry.id === entryId) : undefined;
+            const dayName = current.draft.days.find(day => day.id === issue.dayId || day.id === row?.dayId)?.dayName;
+            const slot = issue.slot || existing?.slot || (row && "slot" in row ? row.slot : undefined);
+            const dish = issue.itemLabel || existing?.itemLabel || (row && "itemLabel" in row ? row.itemLabel : undefined) || issue.itemId || (row && "patch" in row ? row.patch.itemId : undefined);
+            const context = [dayName || issue.dayId, slot, dish].filter(Boolean).join(" · ");
+            return `${context ? `${context} — ` : ""}${issue.field || "field"}: ${issue.message || "invalid value"}`;
+          }));
+        }
         if (response.status === 409) {
           try { setLatest(await getLatest(current.base.week.id)); } catch (cause) { setError(cause instanceof Error ? cause.message : "The latest week could not be loaded."); }
           setStatus("conflict");
           // A rejected save has a known outcome, so it can be reconciled under a new request ID.
           replace({ ...stateRef.current!, pending: undefined });
+        } else if (response.status >= 400 && response.status < 500) {
+          // A non-5xx response confirms the command was rejected; corrected edits need a fresh ID.
+          replace({ ...stateRef.current!, pending: undefined }); setStatus("failed");
         } else setStatus("failed");
         throw Error(body.error?.message || "Save Week failed. Your draft is retained.");
       }
@@ -138,6 +157,6 @@ export function useWeekDraft(source: RollingSnapshot | undefined, identity: stri
   };
   const applyReview = () => { if (!review || review.conflicts.length || !stateRef.current) return; replace({ base: structuredClone(review.latest), draft: review.merged, templateAdditions: stateRef.current.templateAdditions }); applySaved(review.latest); setReview(undefined); setLatest(undefined); setStatus("editing"); setError(""); };
   const leave = (selectWeek: (weekId: string) => void) => { if (!navigation || saving.current) return; const target = navigation; leaving.current = true; setNavigation(undefined); protect.current = false; if (target.weekId) selectWeek(target.weekId); else if (target.href) window.location.assign(target.href); };
-  return { snapshot: state?.base.week.id === source?.week.id ? state?.draft : source, dirty, status, error, storageError, recovered, review, latest, navigation, command, save, restore, discardRecovered, discard, reviewLatest, resolveConflict, applyReview, leave, cancelNavigation: () => setNavigation(undefined), setError, saving: saving.current, workingDraftMode };
+  return { snapshot: state?.base.week.id === source?.week.id ? state?.draft : source, dirty, status, error, validationErrors, storageError, recovered, review, latest, navigation, command, save, restore, discardRecovered, discard, reviewLatest, resolveConflict, applyReview, leave, cancelNavigation: () => setNavigation(undefined), setError, saving: saving.current, workingDraftMode };
 }
 function editableDayForReview(snapshot: RollingSnapshot, entryId: string) { const entry = snapshot.entries.find(entry => entry.id === entryId); return entry && snapshot.week.status !== "published" && snapshot.week.status !== "archived" && snapshot.week.dayStatuses?.[entry.dayId] !== "published"; }

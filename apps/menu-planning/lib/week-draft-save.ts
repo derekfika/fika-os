@@ -9,11 +9,44 @@ import { isGovernedMenuSlot } from "./menu-template";
 import type { Stored } from "./rolling-menu";
 
 const id = z.string().trim().min(1).max(300).refine(value => !value.includes("/"), "Invalid identity");
-const allocation = z.object({ destinationId: id.optional(), oneOffDestinationId: id.optional(), destinationLabel: z.string().min(1).max(300), destinationAddress: z.string().max(1000).optional(), quantity: z.number().finite().nonnegative(), sourceLabel: z.string().max(300).optional() }).strict();
+const destination = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("governed"), id, label: z.string().min(1).max(300) }).strict(),
+  z.object({ kind: z.literal("one-off"), id, sourceDayId: id, label: z.string().min(1).max(300), address: z.string().max(1000), addressStatus: z.literal("pending").optional(), contact: z.string().max(300).optional(), deliveryInstructions: z.string().max(1000).optional() }).strict(),
+]);
+const allocation = z.object({ destinationId: id.optional(), oneOffDestinationId: id.optional(), destination: destination.optional(), destinationLabel: z.string().min(1).max(300), destinationAddress: z.string().max(1000).optional(), quantity: z.number().finite().nonnegative(), sourceLabel: z.string().max(300).optional() }).strict();
 const slot = z.string().min(1).max(80).refine(isGovernedMenuSlot, "Choose a governed menu row");
 const patch = z.object({ itemId: z.string().max(300).optional(), itemLabel: z.string().max(500).optional(), slot: slot.optional(), portions: z.number().finite().nonnegative().optional(), allocations: z.array(allocation).max(100).optional(), isCoreSalad: z.boolean().optional() }).strict();
 const requestSchema = z.object({ weekId: id, expectedWeekVersion: z.number().int().positive(), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/), workingDraft: z.boolean().optional(), changes: z.object({ updates: z.array(z.object({ entryId: id, dayId: id, patch }).strict()).max(350), creates: z.array(z.object({ id, dayId: id, slot, itemId: id.optional(), itemLabel: z.string().trim().max(500), portions: z.number().finite().nonnegative(), allocations: z.array(allocation).max(100), isCoreSalad: z.boolean().optional() }).strict()).max(350), customSlots: z.array(slot).max(100).optional(), removedSlots: z.array(slot).max(100).optional(), templateAdditions: z.array(slot).max(50).optional() }).strict().refine(changes => changes.updates.length + changes.creates.length <= 350) }).strict();
+const safeLogFields = new Set(["weekId", "expectedWeekVersion", "requestId", "changes", "updates", "creates", "dayId", "entryId", "slot", "itemId", "itemLabel", "portions", "allocations", "destinationId", "oneOffDestinationId", "destination", "destinationLabel", "destinationAddress", "quantity", "sourceLabel", "isCoreSalad", "customSlots", "removedSlots", "templateAdditions", "workingDraft"]);
 function fail(message: string, status = 422): never { throw Object.assign(new Error(message), { status }); }
+export type WeekSaveValidationError = { path: string; field: string; message: string; entryKind?: "create" | "update"; entryIndex?: number; dayId?: string; slot?: string; itemLabel?: string; itemId?: string };
+function failEntry(message: string, field: string, entry: RollingSnapshot["entries"][number], status = 422): never {
+  const validationError: WeekSaveValidationError = { path: field, field, message, dayId: entry.dayId, slot: entry.slot, itemLabel: entry.itemLabel, itemId: entry.itemId };
+  throw Object.assign(new Error(message), { status, validationErrors: [validationError] });
+}
+export function requestValidationErrors(raw: unknown, issues: Array<{ path: PropertyKey[]; message: string; code?: string; keys?: string[] }>): WeekSaveValidationError[] {
+  const body = raw && typeof raw === "object" ? raw as Record<string, any> : {};
+  const changes = body.changes && typeof body.changes === "object" ? body.changes : {};
+  return issues.map(issue => {
+    const path = issue.path.map(String);
+    const collectionIndex = path.findIndex(part => part === "creates" || part === "updates");
+    const entryKind = collectionIndex >= 0 ? (path[collectionIndex] === "creates" ? "create" : "update") : undefined;
+    const entryIndex = collectionIndex >= 0 && typeof issue.path[collectionIndex + 1] === "number" ? issue.path[collectionIndex + 1] as number : undefined;
+    const row = entryKind && entryIndex !== undefined ? changes[entryKind === "create" ? "creates" : "updates"]?.[entryIndex] : undefined;
+    const fieldPath = path.slice(collectionIndex >= 0 ? collectionIndex + 2 : 0);
+    const unknownFields = issue.code === "unrecognized_keys" ? issue.keys || [] : [];
+    const field = unknownFields.length ? unknownFields.join(", ") : fieldPath.join(".") || "changes";
+    return {
+      path: path.join("."), field,
+      message: unknownFields.length ? `Unsupported field: ${unknownFields.join(", ")}.` : issue.message,
+      ...(entryKind ? { entryKind } : {}), ...(entryIndex !== undefined ? { entryIndex } : {}),
+      ...(typeof row?.dayId === "string" ? { dayId: row.dayId } : {}),
+      ...(typeof row?.slot === "string" ? { slot: row.slot } : {}),
+      ...(typeof row?.itemLabel === "string" ? { itemLabel: row.itemLabel } : typeof row?.patch?.itemLabel === "string" ? { itemLabel: row.patch.itemLabel } : {}),
+      ...(typeof row?.itemId === "string" ? { itemId: row.itemId } : typeof row?.patch?.itemId === "string" ? { itemId: row.patch.itemId } : {}),
+    };
+  });
+}
 type WorkingDraftLineage = { dayId: string; publicationDayId: string; publicationVersion: number };
 type Receipt = RollingWeek["audit"][number] & { requestId?: string; fingerprint?: string; baseVersion?: number; savedVersion?: number; workingDraftLineage?: WorkingDraftLineage[] };
 const fingerprint = (request: WeekSaveRequest) => createHash("sha256").update(JSON.stringify(request)).digest("hex");
@@ -38,8 +71,8 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
   const audit: Receipt = { action: "week-draft-saved", at, by: actor, requestId: request.requestId, fingerprint: hash, baseVersion: snapshot.week.version, savedVersion: snapshot.week.version + 1, ...(request.workingDraft ? { workingDraftLineage: structuredClone(workingDraftLineage) } : {}) };
   const touched = new Set<string>();
   const checkAllocations = (entry: RollingSnapshot["entries"][number]) => {
-    if (entry.allocations.some(value => value.destinationId && !allowedOplocIds.has(oplocAliases.get(value.destinationId) || value.destinationId))) fail("This save contains a destination outside your permitted scope.", 403);
-    if (entry.portions !== entry.allocations.reduce((sum, value) => sum + value.quantity, 0) && entry.allocations.length) fail("Portions must match destination allocations.");
+    if (entry.allocations.some(value => value.destinationId && !allowedOplocIds.has(oplocAliases.get(value.destinationId) || value.destinationId))) failEntry("This save contains a destination outside your permitted scope.", "allocations.destinationId", entry, 403);
+    if (entry.portions !== entry.allocations.reduce((sum, value) => sum + value.quantity, 0) && entry.allocations.length) failEntry("Portions must match destination allocations.", "portions/allocations", entry);
   };
   for (const update of request.changes.updates) {
     if (touched.has(update.entryId)) fail("A save cannot change the same entry twice.");
@@ -47,7 +80,8 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
     const entry = next.entries.find(entry => entry.id === update.entryId && entry.dayId === update.dayId && next.week.entryIds.includes(entry.id));
     if (!entry || !(workingDraft ? editableWorkingDraftDay(next, entry.dayId) : editableDay(next, entry.dayId)) || !next.days.find(day => day.id === entry.dayId)?.entryIds.includes(entry.id)) fail("A changed menu entry is missing or locked.", 409);
     checkAllocations(entry);
-    applyRollingEntryPatch(entry, update.patch, { actor, at });
+    try { applyRollingEntryPatch(entry, update.patch, { actor, at }); }
+    catch (error) { failEntry(error instanceof Error ? error.message : "The entry is invalid.", "patch", entry, error && typeof error === "object" && "status" in error && typeof error.status === "number" ? error.status : 422); }
     if (update.patch.allocations) entry.allocations = entry.allocations.map(value => value.destinationId && oplocAliases.has(value.destinationId) ? { ...value, destinationId: oplocAliases.get(value.destinationId) } : value);
     checkAllocations(entry);
     entry.audit.push(audit);
@@ -59,7 +93,10 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
     if (!day || !(workingDraft ? editableWorkingDraftDay(next, day.id) : editableDay(next, day.id))) fail("A new menu entry belongs to a missing or locked day.", 409);
     if (created.itemLabel.trim() && !created.itemId) fail("Choose an existing canonical dish for each new named entry.");
     const entry = { ...created, date: day.date, allocations: created.allocations.map(value => value.destinationId && oplocAliases.has(value.destinationId) ? { ...value, destinationId: oplocAliases.get(value.destinationId) } : value), allergens: {}, allergenReviewInvalidated: true, audit: [audit] };
-    if (created.isCoreSalad) applyRollingEntryPatch(entry, { isCoreSalad: true }, { actor, at });
+    if (created.isCoreSalad) {
+      try { applyRollingEntryPatch(entry, { isCoreSalad: true }, { actor, at }); }
+      catch (error) { failEntry(error instanceof Error ? error.message : "The entry is invalid.", "isCoreSalad", entry, error && typeof error === "object" && "status" in error && typeof error.status === "number" ? error.status : 422); }
+    }
     checkAllocations(entry); next.entries.push(entry);
     next.week.entryIds.push(created.id); day.entryIds.push(created.id);
   }
@@ -77,8 +114,8 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
   for (const entry of next.entries) {
     const key = JSON.stringify([entry.dayId, entry.slot]);
     // Existing legacy duplicate cells remain intact; no new duplicate cell may be introduced.
-    if (touched.has(entry.id) && !slots.has(entry.slot)) fail("A changed entry refers to a missing menu row.");
-    if (occupied.has(key) && next.entries.filter(value => value.dayId === entry.dayId && value.slot === entry.slot).some(value => touched.has(value.id))) fail("Two dishes cannot occupy the same menu cell.", 409);
+    if (touched.has(entry.id) && !slots.has(entry.slot)) failEntry("The selected slot is not part of this week's menu rows.", "slot", entry);
+    if (occupied.has(key) && next.entries.filter(value => value.dayId === entry.dayId && value.slot === entry.slot).some(value => touched.has(value.id))) failEntry("Two dishes cannot occupy the same menu cell.", "slot", entry, 409);
     occupied.add(key);
   }
   if (touched.size + (request.changes.customSlots ? 1 : 0) + (request.changes.removedSlots ? 1 : 0) === 0) return { snapshot, replayed: false };
@@ -89,7 +126,11 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
 /** A bounded week transaction; the existing adapter persists diffs and leaves publications/outboxes untouched. */
 export async function saveWeekDraft(raw: unknown, actor: string, allowedOplocIds: ReadonlySet<string>, oplocAliases: ReadonlyMap<string, string> = new Map()) {
   const parsed = requestSchema.safeParse(raw);
-  if (!parsed.success) fail("The week save contains invalid entries or relationships.");
+  if (!parsed.success) {
+    const validationErrors = requestValidationErrors(raw, parsed.error.issues);
+    console.warn("[MENU_WEEK_SAVE_VALIDATION]", JSON.stringify({ issueCount: validationErrors.length, fields: validationErrors.map(issue => safeLogFields.has(issue.field) ? issue.field : "unknown") }));
+    throw Object.assign(new Error("The week save contains invalid entries or relationships."), { status: 422, validationErrors });
+  }
   const request = parsed.data as WeekSaveRequest;
   const dishIds = [...new Set([...request.changes.creates.map(entry => entry.itemId), ...request.changes.updates.map(update => update.patch.itemId)].filter((id): id is string => Boolean(id)))];
   const dishes = await listCanonicalMenuItemsByIds(dishIds);
