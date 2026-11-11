@@ -1,6 +1,10 @@
 # Firebase App Hosting staging configuration for the Integration Hub.
 # Configure the backend root directory as apps/integration-hub.
 env:
+  - variable: RCOA_DASHBOARD_BRIDGE_TOKEN
+    secret: RCOA_DASHBOARD_BRIDGE_TOKEN
+    availability:
+      - RUNTIME
   # Read-only canonical booking contract consumed by Hospitality after the
   # Gallagher PIN gate. Same per-environment value in both runtimes.
   - variable: GALLAGHER_DASHBOARD_BRIDGE_TOKEN

@@ -49,7 +49,13 @@
 .brand { min-width: 0; display: flex; align-items: center; gap: 16px; }
 .brand img { width: 150px; height: 48px; object-fit: contain; object-position: left center; }
 .brand span { padding-left: 16px; border-left: 1px solid var(--fika-border-default); color: var(--fika-text-secondary); font-size: 14px; }
+.headerNav { display: flex; align-items: center; gap: 20px; }
+.headerNav a { color: inherit; text-decoration: none; font-weight: 700; }
+.headerNav a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.headerNav a:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 4px; }
 .headerActions { display: flex; gap: 8px; }
+.heroActions { display: flex; gap: 10px; margin-top: 18px; }
+.heroActions .primaryButton, .heroActions .secondaryButton { width: auto; }
 
 /* ── Buttons & inputs ───────────────────────────────────── */
 .primaryButton, .secondaryButton, .textButton, .viewButton, .sortButton, .iconButton {
@@ -279,4 +285,56 @@
 
 @media (prefers-reduced-motion: reduce) {
   .page *, .page *::before, .page *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+/* RCoA customer dashboard: same ledger interactions, using the existing portal brand tokens. */
+.rcoaPage {
+  --rcoa-ink: #1e1e1f;
+  --rcoa-muted: #655d70;
+  --rcoa-paper: #f4f1f7;
+  --rcoa-line: #d9d3e2;
+  --rcoa-accent: #2c1951;
+  --rcoa-accent-dark: #20113d;
+  --rcoa-violet: #8e73b8;
+  background: var(--rcoa-paper);
+  color: var(--rcoa-ink);
+  font-family: "Semplicita Pro", Arial, "Helvetica Neue", Helvetica, sans-serif;
+}
+.rcoaPage .header { min-height: 70px; padding-inline: clamp(18px, 3vw, 44px); border: 0; background: var(--rcoa-accent-dark); color: #fff; }
+.rcoaPage .brand img { width: 138px; height: 42px; }
+.rcoaPage .brand span { color: #fff; border-color: #ffffff66; }
+.rcoaPage .headerActions { flex-wrap: wrap; align-items: center; }
+.rcoaPage .headerNav { color: #fff; }
+.rcoaPage .headerNav a[aria-current="page"] { padding: 8px 14px; border-radius: 8px; background: #8e73b8; color: #fff; }
+.rcoaPage .headerActions .primaryButton { width: auto; min-height: 42px; background: var(--rcoa-violet); color: #fff; }
+.rcoaPage .headerActions .secondaryButton { min-height: 42px; border-color: #ffffff80; background: transparent; color: #fff; }
+.rcoaPage .headerActions .secondaryButton:hover:not(:disabled) { background: #ffffff1a; border-color: #fff; }
+.rcoaPage .content { max-width: 1530px; }
+.rcoaPage .hero { position: relative; margin: 0 calc(clamp(18px, 3vw, 44px) * -1) 24px; padding: clamp(28px, 4vw, 48px) clamp(18px, 3vw, 44px); border: 0; border-radius: 0; background: linear-gradient(110deg, #fff 0%, #f4f1f7 70%, #e5dceb 100%); }
+.rcoaPage .hero::after { position: absolute; content: ""; z-index: 0; inset: 0 0 0 auto; width: 28%; pointer-events: none; background: linear-gradient(125deg, transparent 28%, #8e73b826 28% 48%, transparent 48% 56%, #2c195126 56% 78%, transparent 78%); }
+.rcoaPage .hero > * { position: relative; z-index: 1; }
+.rcoaPage .hero h1 { color: var(--rcoa-accent-dark); }
+.rcoaPage .eyebrow { color: var(--rcoa-accent); }
+.rcoaPage .summary { gap: 12px; }
+.rcoaPage .tile { min-height: 98px; border-color: var(--rcoa-line); border-radius: 11px; box-shadow: 0 1px 2px #20113d12; }
+.rcoaPage .tile strong { color: var(--rcoa-accent-dark); }
+.rcoaPage .tabs { border-color: var(--rcoa-line); }
+.rcoaPage .activeTab { color: var(--rcoa-accent-dark); border-bottom-color: var(--rcoa-violet); }
+.rcoaPage .activeTab span { background: #ebe4f2; color: var(--rcoa-accent-dark); }
+.rcoaPage .panel { border-color: var(--rcoa-line); border-radius: 11px; }
+.rcoaPage .table thead { background: #f4f1f7; }
+.rcoaPage .table tbody tr:hover { background: #f7f4fa; }
+.rcoaPage .primaryButton { background: var(--rcoa-accent); }
+.rcoaPage .primaryButton:hover:not(:disabled) { background: var(--rcoa-accent-dark); }
+.rcoaPage .secondaryButton:hover:not(:disabled) { border-color: var(--rcoa-violet); }
+.rcoaPage .drawer { border-left-color: var(--rcoa-line); }
+.rcoaPage .drawerHead { background: #f8f5fa; }
+.rcoaPage .status { border-radius: 7px; }
+
+@media (max-width: 760px) {
+  .rcoaPage .header { align-items: flex-start; flex-wrap: wrap; }
+  .rcoaPage .headerNav { order: 3; width: 100%; justify-content: space-between; }
+  .rcoaPage .headerActions { width: 100%; justify-content: flex-end; }
+  .rcoaPage .hero { margin-inline: -18px; }
+  .rcoaPage .hero::after { width: 20%; opacity: .5; }
 }

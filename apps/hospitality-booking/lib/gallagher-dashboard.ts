@@ -25,6 +25,22 @@ export type GallagherBooking = {
   notes: string;
   createdAt: string;
   updatedAt: string;
+  /** Optional site-specific persisted lifecycle label for the shared ledger UI. */
+  displayStatus?: string;
+  persistedCompleted?: boolean;
+  persistedCancelled?: boolean;
+  services?: Array<{
+    reference: string;
+    eventType: string;
+    eventDate: string;
+    startTime: string;
+    endTime: string;
+    location: string;
+    guestCount: number | null;
+    lifecycleStatus: string;
+    amended: boolean;
+    items: Array<{ name: string; quantity: number | null }>;
+  }>;
   /** Internal lineage only. The UI never renders this field. */
   supersededLegacyBookingId?: string;
 };

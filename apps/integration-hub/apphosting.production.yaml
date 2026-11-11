@@ -1,6 +1,9 @@
 # Firebase App Hosting production environment for the Integration Hub.
 # Production backend root: apps/integration-hub.
 env:
+  - variable: RCOA_DASHBOARD_BRIDGE_TOKEN
+    secret: RCOA_DASHBOARD_BRIDGE_TOKEN
+    availability: [RUNTIME]
   - variable: FIKA_RUNTIME_MODE
     value: production
     availability: [BUILD, RUNTIME]

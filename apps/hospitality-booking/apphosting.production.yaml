@@ -73,6 +73,16 @@ env:
   - variable: GALLAGHER_DASHBOARD_SESSION_SECRET
     secret: GALLAGHER_DASHBOARD_SESSION_SECRET
     availability: [RUNTIME]
+  # RCoA customer dashboard uses a distinct PIN, signing key and Hub bridge token.
+  - variable: RCOA_DASHBOARD_PIN_HASH
+    secret: RCOA_DASHBOARD_PIN_HASH
+    availability: [RUNTIME]
+  - variable: RCOA_DASHBOARD_SESSION_SECRET
+    secret: RCOA_DASHBOARD_SESSION_SECRET
+    availability: [RUNTIME]
+  - variable: RCOA_DASHBOARD_BRIDGE_TOKEN
+    secret: RCOA_DASHBOARD_BRIDGE_TOKEN
+    availability: [RUNTIME]
   - variable: GALLAGHER_DASHBOARD_BRIDGE_TOKEN
     secret: GALLAGHER_DASHBOARD_BRIDGE_TOKEN
     availability: [RUNTIME]
