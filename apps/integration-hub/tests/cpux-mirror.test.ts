@@ -194,8 +194,12 @@ function harness() {
     if (url.pathname.includes("/calendar/v3/users/me/calendarList/")) return response({ id: target.calendarId, accessRole: calendarRole });
     if (url.pathname.includes("/drive/v2/"))
       return response({ id: "fixtureQuoteFile", mimeType: "application/pdf", alternateLink: "https://drive.google.com/open?id=fixtureQuoteFile" });
+    if (url.pathname.endsWith("/permissions")) return response({ permissions: [
+      { type: "user", emailAddress: target.subject, role: "owner", permissionDetails: [{ inherited: false, permissionType: "file" }] },
+      { type: "user", emailAddress: "cpux@fikacatering.com", role: "reader", permissionDetails: [{ inherited: false, permissionType: "file" }] },
+    ] });
     if (url.pathname.includes("/drive/"))
-      return blockedPdf && headers.get("authorization")?.endsWith(target.logistics) ? response({}, 403)
+      return blockedPdf && headers.get("authorization")?.endsWith(target.logistics) ? response({ error: { errors: [{ reason: "insufficientFilePermissions" }] } }, 403)
         : response({ id: "fixtureQuoteFile", mimeType: "application/pdf", capabilities: { canDownload: true } });
     if (method === "GET" && url.searchParams.has("sharedExtendedProperty")) {
       const wanted = url.searchParams.get("sharedExtendedProperty")?.split("=").slice(1).join("=");
@@ -246,6 +250,34 @@ test("Google delivery checks both PDF recipients, inserts once, preserves ID on 
   assert.equal(writes[2].body!.extendedProperties!.shared!.fikaMirrorWithdrawn, "true");
   assert.deepEqual(writes[2].body!.attendees, []);
   assert.deepEqual(writes[2].body!.attachments, []);
+});
+
+test("read-only PDF diagnostics distinguish delegated Drive access by principal without exposing tokens or file contents", async () => {
+  const fixture = harness();
+  fixture.denyPdf();
+  const client = await openMirrorClient(target, env, fixture.fetcher, true);
+  const result = await client.inspectPdfAccess("fixtureQuoteFile");
+  assert.equal(result.readableByAll, false);
+  assert.deepEqual(result.principals.map(({ principal, tokenStatus, grantedScope, driveHttpStatus, readable }) => ({ principal, tokenStatus, grantedScope, driveHttpStatus, readable })), [
+    { principal: "cpux@fikacatering.com", tokenStatus: "ok", grantedScope: "https://www.googleapis.com/auth/drive.readonly", driveHttpStatus: 200, readable: true },
+    { principal: target.logistics, tokenStatus: "ok", grantedScope: "https://www.googleapis.com/auth/drive.readonly", driveHttpStatus: 403, readable: false },
+    { principal: target.subject, tokenStatus: "ok", grantedScope: "https://www.googleapis.com/auth/drive.readonly", driveHttpStatus: 200, readable: true },
+  ]);
+  assert.equal(result.principals[0].canDownload, true);
+  assert.equal(result.principals[1].driveErrorCode, "insufficientFilePermissions");
+  assert.doesNotMatch(JSON.stringify(result), /fixture:|Bearer|access_token|privateQuoteContent/);
+  assert.ok(fixture.calls.every(call => call.method === "GET"));
+});
+
+test("read-only PDF diagnostics report IAM delegation failure separately from Drive ACL responses", async () => {
+  const fixture = harness();
+  const fetcher: typeof fetch = async (input, init) => new URL(String(input)).hostname === "iamcredentials.googleapis.com"
+    ? Response.json({ error: { message: "private IAM response" } }, { status: 403 }) : fixture.fetcher(input, init);
+  const client = await openMirrorClient(target, env, fetcher, true);
+  const result = await client.inspectPdfAccess("fixtureQuoteFile");
+  assert.equal(result.readableByAll, false);
+  assert.ok(result.principals.every(principal => principal.tokenStatus === "failed" && principal.tokenStage === "iam-sign-jwt" && principal.tokenHttpStatus === 403));
+  assert.doesNotMatch(JSON.stringify(result), /private IAM response|fixture:|Bearer|access_token/);
 });
 
 test("staging or unverified runtime cannot request Google tokens; ambiguous identities and ACL failures write nothing", async () => {
