@@ -1,5 +1,6 @@
 "use client";
 import { HOSPITALITY_BOOKING_ADMIN } from "@/lib/authmod-core/model";
+import { ROTATIONS_AUTHORITY } from "../../../../../shared/hospitality-rotations";
 
 import Link from "next/link";
 import { ArrowLeft, Check, ChevronRight, History, LockKeyhole, ServerCog, ShieldCheck, UserRound } from "lucide-react";
@@ -84,7 +85,7 @@ export default function AccountDetail({ id }: { id: string }) {
     </div><div className={styles.secondaryColumn}>
       {person ? <Card title="Legend" subtitle="Personal identity linkage is explicit."><Fact label="Linked Legend" value={account.identity.legendLabel || "Unresolved"} /></Card> : <Card title="Primary Custodian" subtitle="Custodianship does not grant authorization."><select className={styles.custodianSelect} value={account.custodian?.legendId || ""} onChange={event => { if (event.target.value) void mutate({ action: "custodian", custodianLegendId: event.target.value }); }}><option value="">Select active custodian…</option>{account.custodian && !options.legends.some(legend => legend.id === account.custodian?.legendId) && <option value={account.custodian.legendId}>{account.custodian.label}</option>}{options.legends.map(legend => <option key={legend.id} value={legend.id}>{legend.label}</option>)}</select><div className={styles.notice}><ShieldCheck size={17} /><span>The custodian does not grant access. The operational account remains the actor.</span></div></Card>}
       {person && <Card title="Superuser" subtitle="All current and future FIKA OS applications and active OPLOCs. Existing assignments are preserved."><div className={styles.fullAccess}><strong>{account.fullAccess ? "Superuser enabled" : "Standard access"}</strong><span>Crosses normal app/site assignment boundaries. It does not include Menu Publish, allergen approval, or AUTHMOD Admin.</span><button className={styles.toggle} onClick={() => void mutate({ action: "full-access", fullAccess: !account.fullAccess })}>{account.fullAccess ? "Remove Superuser" : "Grant Superuser"}</button></div></Card>}
-      <Card title="Special Authority" subtitle="Explicit authority, separate from normal site access."><div className={styles.authorityList}>{[["menu.publish", "Menu Publish", "Publish approved menus across the organisation", "menu-planning", "person"], ["authmod", "AUTHMOD Admin", "Administer AUTHMOD", "integration-hub", "person"]].filter(([, , , , audience]) => audience === "all" || person).map(([resource, label, detail, appId]) => <AuthorityControl key={resource} account={account} options={options} resource={resource} label={label} detail={detail} appId={appId} mutate={mutate} />)}{person && <HospitalityAdminControl account={account} options={options} mutate={mutate} />}</div></Card>
+      <Card title="Special Authority" subtitle="Explicit authority, separate from normal site access."><div className={styles.authorityList}>{person && <HospitalityRotationsControl account={account} mutate={mutate} />}{[["menu.publish", "Menu Publish", "Publish approved menus across the organisation", "menu-planning", "person"], ["authmod", "AUTHMOD Admin", "Administer AUTHMOD", "integration-hub", "person"]].filter(([, , , , audience]) => audience === "all" || person).map(([resource, label, detail, appId]) => <AuthorityControl key={resource} account={account} options={options} resource={resource} label={label} detail={detail} appId={appId} mutate={mutate} />)}{person && <HospitalityAdminControl account={account} options={options} mutate={mutate} />}</div></Card>
       <RetiredAuthorities account={account} options={options} mutate={mutate} />
       <Card title="Recent Changes" subtitle="Bounded account history."><div className={styles.auditList}>{audit.length ? audit.map(event => <div key={event.id}><strong>{event.action.replaceAll("-", " ")}</strong><small>{date(event.timestamp)} · {event.actorSnapshot?.displayName || "AUTHMOD administrator"}</small></div>) : <span className={styles.muted}>No recent changes.</span>}</div><Link className={styles.historyLink} href={`/authmod?tab=audit&targetId=${encodeURIComponent(id)}`}>View full audit history <ChevronRight size={15} /></Link></Card>
     </div></div>
@@ -120,6 +121,28 @@ function HospitalityAdminControl({ account, options, mutate }: { account: Accoun
         <button type="button" className={styles.secondary} onClick={() => void mutate({ action: "authority-revoke", grantId: grant.id })}>Revoke</button>
       </div>)}
       {!companyGrants.length && <button type="button" className={styles.secondary} disabled={!activePerson} onClick={() => void mutate({ action: "authority-grant", appId: "hospitality-booking", resource: HOSPITALITY_BOOKING_ADMIN, authorityAction: "Manage", scope: { kind: "organisation", ids: [] } })}>Grant company-wide Hospitality Admin</button>}
+      {!activePerson && <small>Requires an active person account.</small>}
+    </div>
+  </div>;
+}
+
+function HospitalityRotationsControl({ account, mutate }: { account: Account; mutate: (command: Record<string, unknown>) => Promise<void> }) {
+  const grants = account.specialAuthority.filter(value => value.resource === ROTATIONS_AUTHORITY.resource);
+  const organisationGrants = grants.filter(value => value.scope.kind === "organisation");
+  const activePerson = account.identity.identityKind === "person" && account.identity.status === "active";
+  return <div className={styles.authority}>
+    <div className={styles.authorityInfo}>
+      <strong>Hospitality Rotations</strong>
+      <small>Organisation-wide authoring access. View and Manage are separate grants; this control does not grant Publish.</small>
+      {(["View", "Manage"] as const).map(action => {
+        const grant = organisationGrants.find(value => value.action === action);
+        return <div className={styles.authorityGrant} key={action}>
+          <small>{action} · Organisation</small>
+          <div className={styles.authorityActions}>
+            {grant ? <><Chip value="Granted" tone="green" /><button type="button" className={styles.secondary} onClick={() => void mutate({ action: "authority-revoke", grantId: grant.id })}>Revoke {action}</button></> : <><Chip value="Not granted" /><button type="button" className={styles.secondary} disabled={!activePerson} onClick={() => void mutate({ action: "authority-grant", ...ROTATIONS_AUTHORITY, authorityAction: action, scope: { kind: "organisation", ids: [] } })}>Grant {action}</button></>}
+          </div>
+        </div>;
+      })}
       {!activePerson && <small>Requires an active person account.</small>}
     </div>
   </div>;

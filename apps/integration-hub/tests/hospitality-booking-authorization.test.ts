@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { HOSPITALITY_BOOKING_ADMIN, MemoryAuthModRepository, V1_APPLICATIONS, assignSite, createAuthIdentity, grantAuthority, grantStandardApplicationAccess, idempotentId, revokeAuthority, setFullAccess } from "../lib/authmod-core";
 import { assertHospitalityBookingMutationAccess, assertHospitalityBookingReadAccess, requireHospitalityBookingAdmin } from "../lib/hospitality-booking-authorization";
+import { ROTATIONS_AUTHORITY } from "../../shared/hospitality-rotations";
 
 const admin = { type: "interactive" as const, id: "actor:admin", displayName: "AUTHMOD Operator", email: "operator@example.test" };
 const locations = [
@@ -104,4 +105,14 @@ test("operational and inactive identities cannot use a company grant", async () 
   const grantId = idempotentId("authority", "interactive", operational.id, "hospitality-booking", HOSPITALITY_BOOKING_ADMIN, "Manage", "organisation");
   repository.grants.set(grantId, { ...grant, id: grantId, subjectId: operational.id });
   await assert.rejects(() => requireHospitalityBookingAdmin(repository, { type: "interactive", id: operational.id, displayName: operational.displayName }, "oploc:mnk"), { status: 403 });
+});
+
+test("Hospitality Rotations grants require an interactive person and organisation scope", async () => {
+  const repository = new MemoryAuthModRepository({ applications: [...V1_APPLICATIONS], oplocs: locations });
+  const identity = await person(repository, "rotation-author");
+  const base = { actor: admin, subjectType: "interactive" as const, subjectId: identity.id, ...ROTATIONS_AUTHORITY, action: "Manage" as const, reason: "Hospitality rotation authoring" };
+  const grant = await grantAuthority(repository, { ...base, scope: { kind: "organisation", ids: [] } });
+  assert.equal(grant.resource, "hospitality.rotations");
+  await assert.rejects(() => grantAuthority(repository, { ...base, subjectType: "service", scope: { kind: "organisation", ids: [] } }), { code: "AUTHMOD_PERSON_REQUIRED" });
+  await assert.rejects(() => grantAuthority(repository, { ...base, scope: { kind: "oploc", ids: ["oploc:mnk"] } }), { code: "AUTHMOD_ORGANISATION_SCOPE_REQUIRED" });
 });
