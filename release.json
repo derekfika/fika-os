@@ -6,12 +6,35 @@
   "backend": "fika-os-staging",
   "region": "europe-west4",
   "branch": "release/staging/hub",
-  "sourceSha": "53cc2026e61108ff09a281782bc5e0ff89a66f60",
-  "rollout": "build-2026-11-10-001",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "scopeHash": "4a7549b6bc8b801c392182753b4187ea6a01539b44473f3fce291156875647fc",
-  "kind": "abandoned",
+  "validation": {
+    "id": 130470392706,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/43004987524/job/130470392706",
+    "sha": "316fa7ccfab1745b7c0a992cf08a8aeb186876d4"
+  },
+  "provenance": {
+    "number": 505,
+    "url": "https://github.com/derekfika/fika-os/pull/505",
+    "head": "686b0270db029c7bd1090e7b2d3c7085157a1e86"
+  },
+  "sourceSha": "316fa7ccfab1745b7c0a992cf08a8aeb186876d4",
+  "scopeHash": "6fccf0ccaa22a8105c8ac65fd10b99ea026f8b0fc9e39b1b55381ae7672adec3",
+  "rollback": false,
+  "approval": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "app": "hub",
+    "environment": "staging",
+    "sourceSha": "316fa7ccfab1745b7c0a992cf08a8aeb186876d4",
+    "action": "deploy",
+    "instruction": "Execute deploy",
+    "releaseId": null,
+    "id": "bf8b9b9f6acf3d832848e6a2f72e5c0951afebede5168e70b4f1897a6d18da50",
+    "explicitExecute": true,
+    "authorisedAt": "2026-11-11T12:20:12.277Z"
+  },
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "432d96ef-0fb9-4b19-a0ba-9d613ed7df62",
   "previousGood": {
     "sourceSha": "53cc2026e61108ff09a281782bc5e0ff89a66f60",
     "rollout": "build-2026-11-10-001",
@@ -19,32 +42,5 @@
     "percent": 100
   },
   "previousGoodRecord": "f62e88061cf74a35bf20980926371402cf4a72f1",
-  "releaseId": "508a6658-4083-4dfc-b167-e21c08c21eb6",
-  "originalIntent": "61be3df4e0801a5ba1c70f9d5a0bd5939585ad71",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-staging--fika-os-dev.europe-west4.hosted.app/"
-  },
-  "recovery": {
-    "resolution": "abandon",
-    "reason": "Terminal failed build due staging backend secret bindings; exact secret access restored before retry",
-    "operator": {
-      "actor": "derekfika",
-      "method": "authenticated-repository-writer",
-      "app": "hub",
-      "environment": "staging",
-      "sourceSha": "316fa7ccfab1745b7c0a992cf08a8aeb186876d4",
-      "action": "reconcile:abandon",
-      "instruction": "Terminal failed build due staging backend secret bindings; exact secret access restored before retry",
-      "releaseId": "508a6658-4083-4dfc-b167-e21c08c21eb6",
-      "id": "0bf1bdcdb75163b5a7b114477fa88b90565ae87610d1f079a8240fbd50bb26eb",
-      "explicitExecute": true,
-      "authorisedAt": "2026-11-11T12:19:32.797Z"
-    },
-    "rollout": "build-2026-11-11-001",
-    "evidenceHash": "b41e62e5c91efac3f0a46da819e08454c62fa8e0d36e082fe5072239019c46e0",
-    "journalHash": "57d3f5180785f5414e49bacbefea410e0986a71759940bd13d0c18bb9932d33b",
-    "at": "2026-11-11T12:19:36.964Z"
-  }
+  "createdAt": "2026-11-11T12:20:14.434Z"
 }
