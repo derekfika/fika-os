@@ -1,4 +1,4 @@
-import { CANONICAL_MENU_SLOTS } from "../../shared/menu-section-order";
+import { CANONICAL_MENU_SLOTS, canonicalMenuSlotIdFor } from "../../shared/menu-section-order";
 
 /** New weeks use the versioned canonical 29-slot order. */
 export const ROLLING_SLOTS = CANONICAL_MENU_SLOTS.map(item => item.id) as readonly string[];
@@ -7,6 +7,19 @@ export const PERMANENT_DESSERT_SLOTS = ["DESSERT 1", "DESSERT 2", "DESSERT 3"] a
 const NEVER_REMOVABLE_DESSERT_SLOTS = [...PERMANENT_DESSERT_SLOTS, "DESSERT 4"] as const;
 /** Slots found in older saved weeks remain readable and retain their historical ordering. */
 export const LEGACY_ROLLING_SLOTS = ["SALAD 1", "SALAD 2", "SALAD 3", "SALAD 4", "SALAD 5", "SALAD 6", "COLD PROTEIN", "SOUP", "HOT MEAT", "VEGAN MAIN", "HOT VEG VEGAN", "EXTRAS 1", "EXTRAS 2", "EXTRAS 3", "EXTRAS 4", "EXTRAS 5", "EXTRAS 6"] as const;
+/**
+ * Seed the canonical row contract into new weeks. Permanent template additions
+ * that are legacy aliases of canonical rows remain stored and continue to render
+ * in already-created weeks, but are not duplicated in newly-created weeks.
+ */
+export function newWeekTemplateSlots(templateAdditions: readonly string[] = []) {
+  const canonicalIds = new Set(ROLLING_SLOTS);
+  const additions = templateAdditions.filter(slot => {
+    const canonicalId = canonicalMenuSlotIdFor(slot);
+    return !canonicalId || !canonicalIds.has(canonicalId) || canonicalId === slot;
+  });
+  return [...new Set([...ROLLING_SLOTS, ...additions])];
+}
 export type RollingSlot = typeof CANONICAL_MENU_SLOTS[number]["id"];
 export type RollingWeekStatus = "draft" | "imported" | "needs_review" | "ready" | "partially_published" | "published" | "archived";
 export type RollingDayPublicationStatus = "draft" | "ready" | "published" | "superseded";

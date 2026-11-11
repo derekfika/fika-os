@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { emptyWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { newWeekTemplateSlots } from "../lib/rolling-menu-types";
 import { assertMenuSlotCanBeRemoved } from "../lib/rolling-menu-types";
 import { groupedSlots } from "../lib/week-planner-layout";
 import { weekPlannerSlotLabel } from "../lib/week-planner-slot-label";
@@ -63,6 +64,28 @@ test("new templates include all six salad positions while saved historical plans
   const before = structuredClone(published.week);
   assert.deepEqual(groupedSlots(published).flatMap(([, slots]) => slots), before.templateSlots);
   assert.deepEqual(published.week, before);
+});
+
+test("newly opened weeks omit legacy template aliases superseded by canonical rows", () => {
+  const template = newWeekTemplateSlots(["FISH 1", "SALAD 5", "SALAD 6", "COLD PROTEIN 3", "VEGAN MAIN 1", "STARCH/SIDE 7"]);
+  const newlyOpened = emptyWeek("2026-11-16", "test", template);
+  const renderedSlots = groupedSlots(newlyOpened).flatMap(([, slots]) => slots);
+
+  assert.deepEqual(newlyOpened.week.templateSlots, [...ROLLING_SLOTS, "STARCH/SIDE 7"]);
+  assert.equal(renderedSlots.length, 30);
+  assert.equal(renderedSlots.filter(slot => slot === "FISH 1").length, 0);
+  assert.equal(renderedSlots.filter(slot => slot === "COLD PROTEIN 3").length, 0);
+  assert.equal(renderedSlots.filter(slot => slot === "VEGAN MAIN 1").length, 0);
+  assert.equal(renderedSlots.filter(slot => slot === "HOT FISH").length, 1);
+  assert.equal(renderedSlots.filter(slot => slot === "COLD PROTEIN MEAT").length, 1);
+  assert.ok(renderedSlots.includes("STARCH/SIDE 7"), "genuine additional capacity remains available");
+});
+
+test("already-created weeks keep persisted legacy template rows visible", () => {
+  const historical = emptyWeek("2026-10-19");
+  historical.week.templateSlots = [...ROLLING_SLOTS, "FISH 1", "COLD PROTEIN 3"];
+  assert.ok(groupedSlots(historical).flatMap(([, slots]) => slots).includes("FISH 1"));
+  assert.ok(groupedSlots(historical).flatMap(([, slots]) => slots).includes("COLD PROTEIN 3"));
 });
 
 test("standard Dessert rows are permanent and cannot be removed from a draft week", () => {

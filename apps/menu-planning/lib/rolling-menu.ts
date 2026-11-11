@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { appDataPath, resolveGovernedOploc } from "./fika-contracts";
 import * as XLSX from "xlsx";
 export * from "./rolling-menu-types";
-import { assertMenuSlotCanBeRemoved, LEGACY_ROLLING_SLOTS, plannerSlotsForWeek, ROLLING_SLOTS, type RollingAllocation, type RollingDay, type RollingEntry, type RollingSnapshot, type RollingWeek, type RollingWeekStatus } from "./rolling-menu-types";
+import { assertMenuSlotCanBeRemoved, LEGACY_ROLLING_SLOTS, newWeekTemplateSlots, plannerSlotsForWeek, ROLLING_SLOTS, type RollingAllocation, type RollingDay, type RollingEntry, type RollingSnapshot, type RollingWeek, type RollingWeekStatus } from "./rolling-menu-types";
 import { normaliseDishName, titleCase } from "./text";
 import type { MenuItem } from "./domain";
 import { listCanonicalMenuItemsByIds } from "./canonical-menu-repository";
@@ -93,7 +93,7 @@ export function emptyWeek(weekCommencing: string, actor = "local-menu-planner", 
 }
 export const slotsForWeek = (week: RollingWeek) => plannerSlotsForWeek(week);
 export async function createWeekSnapshot(weekCommencing: string, actor = "local-menu-planner") {
-  return emptyWeek(weekCommencing, actor, [...ROLLING_SLOTS, ...(await getMenuTemplateSlots())]);
+  return emptyWeek(weekCommencing, actor, newWeekTemplateSlots(await getMenuTemplateSlots()));
 }
 const weekConflict = (weekCommencing: string) => Object.assign(new Error(`A menu already exists for WC ${new Date(`${weekCommencing}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}.`), { status: 409 });
 export async function assertWeekDateAvailable(weekCommencing: string) {

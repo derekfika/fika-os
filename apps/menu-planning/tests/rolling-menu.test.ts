@@ -306,7 +306,8 @@ test("week-only and permanent menu rows persist at their intended scope", async 
   const permanent = await addMenuSlot(current.week.id, "Vegan/Veggie Main", "template", "test");
   assert.equal(permanent.slot, "VEGAN MAIN 1");
   const future = await createWeekSnapshot("2031-05-19");
-  assert.ok(future.week.templateSlots?.includes("VEGAN MAIN 1"));
+  assert.ok(!future.week.templateSlots?.includes("VEGAN MAIN 1"), "a legacy permanent alias is superseded by canonical HOT VEGAN in newly opened weeks");
+  assert.ok(future.week.templateSlots?.includes("HOT VEGAN"));
   assert.ok(!future.week.templateSlots?.includes("STARCH/SIDE 5"));
 
   const existing = await getWeek(preexisting.week.id);
