@@ -8,7 +8,7 @@ import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { backfillDates, digest, londonServiceDate, mirrorEventId, mirrorRecipients } from "../../../shared/cpux-calendar/contract";
 import { mirrorEnabled, mirrorPreviewEnabled, openMirrorClient } from "../../../shared/cpux-calendar/google";
 import { hospitalityCalendarSiteEnabled, resolveHospitalityCalendarTarget } from "../hospitality-calendar-integration";
-import { hasCurrentHospitalityHandoff, hospitalityMirrorSource } from "./source";
+import { hasRecordedHospitalityHandoff, hospitalityMirrorSource } from "./source";
 import { resolveMirrorOplocs } from "./oplocs";
 
 const queue = () => db.collection("fikaCpuXHospitalityMirrorOutboxV1");
@@ -48,12 +48,27 @@ async function prepare(booking: CanonicalBooking, readOnly = false) {
   const verifiedBinding = await api.verifyCalendarBinding();
   if (prior.exists && (prior.get("calendarId") !== target.calendarId || prior.get("organizerMailbox") !== target.subject || prior.get("accessRole") !== verifiedBinding.accessRole))
     throw new Error("Calendar organiser binding changed or lacks historical verification; operator review is required.");
-  const plan = await api.inspect(model.source);
-  if (!prior.exists && !model.source.withdrawn && plan.disposition !== "create")
+  const inspected = readOnly ? await api.inspectEvent(model.source) : undefined;
+  const plan = inspected?.observation || await api.inspect(model.source);
+  if (!prior.exists && !readOnly && !model.source.withdrawn && plan.disposition !== "create")
     throw new Error("An existing mirror event lacks a persisted verified Calendar binding; operator review is required.");
   const document = model.fileId ? await api.verifiedPdf(model.fileId, "Approved Hospitality quote.pdf") : undefined;
+  const cpuLines = order?.lines.filter(line => ["sandwiches", "hospitality", "delivered_in"].includes(line.workstream || "")) || [];
   return {
-    preview: { ...plan, identity: booking.canonicalId, revision: model.source.revision, referenceHash: digest(model.source.sourceReference), calendarId: target.calendarId, organizerMailbox: target.subject, calendarAccessRole: verifiedBinding.accessRole, attendees: mirrorRecipients(target), fileId: document?.fileId || null },
+    preview: {
+      ...plan, identity: booking.canonicalId, revision: model.source.revision, referenceHash: digest(model.source.sourceReference),
+      calendarId: target.calendarId, organizerMailbox: target.subject, calendarAccessRole: verifiedBinding.accessRole,
+      bindingStatus: prior.exists ? "verified" : "missing", attendees: mirrorRecipients(target), fileId: document?.fileId || null,
+      ...(document ? { quote: { fileId: document.fileId, title: document.title, url: document.url, attachmentUrl: document.attachmentUrl, accessVerified: true } } : {}),
+      ...(readOnly ? { identityStatus: inspected?.identityStatus, currentEvent: inspected?.currentEvent || null,
+        conflictingEvents: inspected?.conflictingEvents || [], attendeeCopies: await api.inspectAttendeeCopies(model.source) } : {}),
+      service: { date: booking.service.eventDate, time: booking.service.startTime, guestCount: booking.service.guestCount, oplocId: site.canonicalId, site: booking.service.portalSiteLabel || order?.destinationLabel || site.canonicalId },
+      handoff: { status: booking.lifecycleStatus, currentOrderId: order?.canonicalId || null, currentOrderVersion: order?.version ?? null, currentOrderStatus: order?.status || null,
+        missingProductionQuantity: cpuLines.filter(line => typeof line.productionQuantity !== "number" || !Number.isFinite(line.productionQuantity) || line.productionQuantity <= 0).length,
+        missingProductionUnit: cpuLines.filter(line => !line.productionUnit?.trim()).length,
+        cpuLines: cpuLines.map(line => ({ canonicalId: line.canonicalId || null, itemName: line.itemName || null, workstream: line.workstream || null,
+          productionQuantity: line.productionQuantity ?? null, productionUnit: line.productionUnit || null, customerQuantity: line.customerQuantity ?? null, customerUnit: line.customerUnit || null })) },
+    },
     apply: async () => {
       if (plan.disposition === "skip" || plan.disposition === "unchanged") return plan;
       await db.runTransaction(async tx => {
@@ -118,19 +133,43 @@ export async function hospitalityCatchUp(from: string, through: string, approveH
   const batch = rows.docs.slice(0, 10);
   const nextCursor = rows.size > batch.length ? { serviceDate: batch.at(-1)!.get("service.eventDate") as string, bookingId: batch.at(-1)!.id } : null;
   const plans: Array<NonNullable<Awaited<ReturnType<typeof prepare>>>> = [];
-  const skipped: Array<{ identity: string; reason: string }> = [];
-  for (const row of batch) {
-    const booking = row.data() as CanonicalBooking;
-    if (!hasCurrentHospitalityHandoff(booking)) continue;
-    try {
-      const plan = await prepare(booking, !approveHash);
-      if (plan && plan.preview.fileId) plans.push(plan);
-      else skipped.push({ identity: booking.canonicalId, reason: "no eligible CPU production lines" });
-    } catch (error) {
-      skipped.push({ identity: booking.canonicalId, reason: error instanceof Error ? error.message : "source or mapping unavailable" });
+  const skipped: Array<{ identity: string; eventId: string; serviceDate: string; oplocId: string | null; lifecycleStatus: string; outbox: Array<Record<string, unknown>>; reason: string }> = [];
+  const bookingIds = batch.map(row => row.id);
+  const outboxByBooking = new Map<string, Array<Record<string, unknown>>>();
+  for (let offset = 0; offset < bookingIds.length; offset += 30) {
+    const snapshot = await queue().where("payload.bookingId", "in", bookingIds.slice(offset, offset + 30)).limit(300).get();
+    for (const row of snapshot.docs) {
+      const event = row.data() as Event;
+      const bookingId = event.payload?.bookingId;
+      if (!bookingId) continue;
+      const delivery = event.delivery;
+      const error = delivery.lastError;
+      const safeErrorCode = error && /^[A-Z0-9_]{3,80}$/.test(error) ? error : error ? "ERROR_REDACTED" : undefined;
+      const entries = outboxByBooking.get(bookingId) || [];
+      entries.push({ eventId: event.eventId, eventType: event.eventType, orderId: event.payload.orderId, occurredAt: event.occurredAt,
+        status: delivery.status, attempts: delivery.attempts, lastAttemptAt: delivery.lastAttemptAt || null, deliveredAt: delivery.deliveredAt || null,
+        nextEligibleAt: delivery.nextEligibleAt || delivery.nextAttemptAt || null, leaseExpiresAt: delivery.leaseExpiresAt || null, ...(safeErrorCode ? { errorCode: safeErrorCode } : {}) });
+      outboxByBooking.set(bookingId, entries);
     }
   }
-  const events = plans.map(plan => plan.preview).sort((a, b) => a.eventId.localeCompare(b.eventId));
+  for (const row of batch) {
+    const booking = row.data() as CanonicalBooking;
+    if (!hasRecordedHospitalityHandoff(booking)) {
+      skipped.push({ identity: booking.canonicalId, eventId: mirrorEventId("hospitality", booking.canonicalId), serviceDate: booking.service.eventDate, oplocId: booking.service.oplocId || null, lifecycleStatus: booking.lifecycleStatus,
+        outbox: outboxByBooking.get(row.id) || [], reason: "ineligible or awaiting successful CPU handoff" });
+      continue;
+    }
+    try {
+      const plan = await prepare(booking, !approveHash);
+      if (plan && (plan.preview.fileId || ["cancel", "unchanged", "skip"].includes(plan.preview.disposition))) plans.push(plan);
+      else skipped.push({ identity: booking.canonicalId, eventId: mirrorEventId("hospitality", booking.canonicalId), serviceDate: booking.service.eventDate, oplocId: booking.service.oplocId || null, lifecycleStatus: booking.lifecycleStatus,
+        outbox: outboxByBooking.get(row.id) || [], reason: "no eligible CPU production lines or current approved quote PDF" });
+    } catch (error) {
+      skipped.push({ identity: booking.canonicalId, eventId: mirrorEventId("hospitality", booking.canonicalId), serviceDate: booking.service.eventDate, oplocId: booking.service.oplocId || null, lifecycleStatus: booking.lifecycleStatus,
+        outbox: outboxByBooking.get(row.id) || [], reason: error instanceof Error ? error.message : "source or mapping unavailable" });
+    }
+  }
+  const events = plans.map(plan => ({ ...plan.preview, outbox: outboxByBooking.get(plan.preview.identity) || [] })).sort((a, b) => a.eventId.localeCompare(b.eventId));
   const planHash = digest({ from, through, after: after || null, nextCursor, events: events.map(event => Object.fromEntries(Object.entries(event).filter(([key]) => key !== "disposition"))), skipped });
   if (!approveHash) return { dryRun: true, scanned: batch.length, events, skipped, nextCursor, planHash };
   if (approveHash !== planHash || approveHash !== process.env.FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH)
