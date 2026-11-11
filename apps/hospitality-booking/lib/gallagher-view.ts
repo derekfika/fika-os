@@ -3,7 +3,7 @@ import type { GallagherBooking } from "@/lib/gallagher-dashboard";
 /** Pure, client-safe view logic for the read-only Gallagher ledger. */
 
 export type LedgerView = "upcoming" | "history";
-export type StatusFilter = "all" | GallagherBooking["status"];
+export type StatusFilter = string;
 export type DateSort = "asc" | "desc";
 export type LedgerFilters = { query: string; from: string; to: string; status: StatusFilter };
 
@@ -37,7 +37,9 @@ function haystack(booking: GallagherBooking) {
   return [
     booking.bookingReference, booking.poReference, booking.company, booking.bookingCompany, booking.endClientCompany, booking.requesterName, booking.requesterEmail,
     booking.location, booking.notes, booking.status,
+    booking.displayStatus,
     ...booking.items.map((item) => item.name),
+    ...(booking.services || []).flatMap(service => [service.reference, service.eventType, service.eventDate, service.location, service.lifecycleStatus]),
   ].join(" ").toLocaleLowerCase("en-GB");
 }
 
@@ -53,7 +55,7 @@ export function filterBookings(bookings: GallagherBooking[], filters: LedgerFilt
   const terms = filters.query.toLocaleLowerCase("en-GB").split(/\s+/).filter(Boolean);
   if (invalidDateRange(filters)) return [];
   return bookings.filter((booking) => {
-    if (filters.status !== "all" && booking.status !== filters.status) return false;
+    if (filters.status !== "all" && (booking.displayStatus || booking.status) !== filters.status) return false;
     if (filters.from && (!booking.date || booking.date < filters.from)) return false;
     if (filters.to && (!booking.date || booking.date > filters.to)) return false;
     if (!terms.length) return true;
@@ -64,13 +66,13 @@ export function filterBookings(bookings: GallagherBooking[], filters: LedgerFilt
 
 /** Headline figures. Cancelled bookings never count as upcoming or completed. */
 export function summarise(bookings: GallagherBooking[], today: string) {
-  const live = bookings.filter((booking) => booking.status !== "Cancelled");
+  const live = bookings.filter((booking) => booking.persistedCancelled === undefined ? booking.status !== "Cancelled" : !booking.persistedCancelled);
   const upcoming = live.filter((booking) => viewOf(booking, today) === "upcoming");
   const next = sortBookings(upcoming, "asc")[0] ?? null;
   return {
     upcoming: upcoming.length,
-    completed: live.filter((booking) => viewOf(booking, today) === "history").length,
-    cancelled: bookings.length - live.length,
+    completed: bookings.filter((booking) => booking.persistedCompleted === undefined ? booking.status !== "Cancelled" && viewOf(booking, today) === "history" : booking.persistedCompleted).length,
+    cancelled: bookings.filter((booking) => booking.persistedCancelled === undefined ? booking.status === "Cancelled" : booking.persistedCancelled).length,
     total: bookings.length,
     next,
   };

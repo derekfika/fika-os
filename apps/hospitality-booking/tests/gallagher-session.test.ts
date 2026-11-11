@@ -168,7 +168,7 @@ test("correct PIN creates a secure session and sign out clears it", async () => 
 test("customer data route exposes only GET and client bundle contains no Google credentials", async () => {
   const fs = await import("node:fs");
   const dataRoute = fs.readFileSync(new URL("../app/angel-court/gallagher/data/route.ts", import.meta.url), "utf8");
-  const client = fs.readFileSync(new URL("../app/angel-court/gallagher/GallagherDashboard.tsx", import.meta.url), "utf8");
+  const client = fs.readFileSync(new URL("../lib/rcoa-dashboard/CustomerBookingsDashboard.tsx", import.meta.url), "utf8");
   assert.match(dataRoute, /export async function GET/);
   assert.doesNotMatch(dataRoute, /export async function (POST|PUT|PATCH)/);
   assert.doesNotMatch(client, /GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON|GALLAGHER_DASHBOARD_SESSION_SECRET|GALLAGHER_DASHBOARD_PIN_HASH|sheets\.googleapis\.com/);
@@ -176,10 +176,13 @@ test("customer data route exposes only GET and client bundle contains no Google 
 
 test("customer header uses the approved wording and never says read-only (presentation only; data route stays GET-only)", async () => {
   const fs = await import("node:fs");
-  const client = fs.readFileSync(new URL("../app/angel-court/gallagher/GallagherDashboard.tsx", import.meta.url), "utf8");
+  const client = fs.readFileSync(new URL("../lib/rcoa-dashboard/CustomerBookingsDashboard.tsx", import.meta.url), "utf8");
+  const config = fs.readFileSync(new URL("../lib/rcoa-dashboard/config.ts", import.meta.url), "utf8");
   const hero = client.slice(client.indexOf('<section className={styles.hero}'), client.indexOf("{hasData ? <SummaryTiles"));
-  assert.match(hero, /Gallagher bookings/);
-  assert.match(hero, /Your hospitality bookings, upcoming and past\./);
+  assert.match(config, /title: "Gallagher bookings"/);
+  assert.match(config, /lead: "Your hospitality bookings, upcoming and past\."/);
+  assert.match(hero, /\{config\.title\}/);
+  assert.match(hero, /\{config\.lead\}/);
   assert.doesNotMatch(hero, /read-only|read only|readonly/i);
   assert.doesNotMatch(client, /A read-only record of your hospitality bookings/);
 });
