@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { buildRcoaDashboardRows, rcoaServiceDisplayName, type RcoaDashboardService } from "../lib/rcoa-dashboard/model";
 
@@ -54,6 +55,13 @@ test("a group with one repeated guest count retains that count without adding it
     service("RCOA-SAME-2", { guestCount: 24, groupId: "same", groupSize: 2, groupSequence: 2 }),
   ]);
   assert.equal(rows[0].guestCount, 24);
+});
+
+test("RCoA keeps a wide desktop table and uses booking cards before the table becomes cramped", () => {
+  const css = readFileSync(new URL("../app/angel-court/gallagher/GallagherDashboard.module.css", import.meta.url), "utf8");
+  assert.match(css, /\.rcoaPage \.table\s*\{[^}]*min-width:\s*1200px/);
+  assert.match(css, /@media\s*\(max-width:\s*1100px\)\s*\{\s*\.rcoaPage \.tableWrap\s*\{\s*display:\s*none/);
+  assert.match(css, /\.rcoaPage \.cards\s*\{\s*display:\s*grid/);
 });
 
 test("persisted lifecycle and amendment evidence remain distinct from upcoming/history tabs", () => {
