@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BusinessDate, RotationConfiguration, ROTATIONS_SCHEMA, ROTATIONS_AUTHORITY, rotationWeek, londonDate, publishedRevisionFor, freezeRotationSelection, type RotationRevision } from "../../shared/hospitality-rotations";
+import { BusinessDate, RotationConfiguration, RotationDraftConfiguration, RotationCommand, ROTATIONS_SCHEMA, ROTATIONS_AUTHORITY, rotationWeek, londonDate, publishedRevisionFor, freezeRotationSelection, type RotationRevision } from "../../shared/hospitality-rotations";
 import { authoriseRotation } from "../lib/hospitality-rotations/auth";
 import { MemoryAuthModRepository } from "../lib/authmod-core/memory-repository";
 import { V1_APPLICATIONS, type AuthPrincipal } from "../lib/authmod-core/model";
@@ -32,6 +32,14 @@ test("groups cannot drift, duplicate Item mappings, or schedule unbanked dishes"
   assert.equal(RotationConfiguration.safeParse(four).success, true);
   const custom = structuredClone(config); custom.categories.push({ id: "new", label: "New category" }); custom.groups[0].categoryId = "new";
   assert.equal(RotationConfiguration.safeParse(custom).success, true);
+});
+test("incomplete rotations save as drafts and remain ineligible for publication", () => {
+  const incomplete = rotationFixture();
+  incomplete.groups[0].dishBank = [];
+  incomplete.groups[0].weeks.forEach(week => { week.dishIds = []; });
+  assert.equal(RotationDraftConfiguration.safeParse(incomplete).success, true);
+  assert.equal(RotationConfiguration.safeParse(incomplete).success, false);
+  assert.equal(RotationCommand.safeParse({ action: "save-draft", requestId: "incomplete-draft", expectedVersion: 0, configuration: incomplete }).success, true);
 });
 test("dated publication resolves the whole company and booking references stay frozen", () => {
   const head = { schema: ROTATIONS_SCHEMA, version: 4, activations: [{ effectiveFrom: "2026-10-28", revision: 2 }, { effectiveFrom: "2026-12-01", revision: 4 }] };

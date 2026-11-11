@@ -66,18 +66,19 @@ export const RotationRules = z.object({
   unit: z.string().trim().min(1).max(60),
 }).strict();
 export const DishReference = z.object({ dishId: Id, recipeRevision: z.number().int().positive() }).strict();
-const Group = z.object({
+const DraftGroup = z.object({
   id: Id, label: z.string().trim().min(1).max(160), categoryId: Id, itemId: Id,
-  dishBank: z.array(DishReference).min(1).max(100),
-  weeks: z.array(z.object({ week: z.number().int().positive(), dishIds: z.array(Id).min(1).max(100) }).strict()).min(1).max(52),
+  dishBank: z.array(DishReference).max(100),
+  weeks: z.array(z.object({ week: z.number().int().positive(), dishIds: z.array(Id).max(100) }).strict()).min(1).max(52),
   rules: RotationRules,
 }).strict();
-export const RotationConfiguration = z.object({
+const DraftConfiguration = z.object({
   schema: z.literal(ROTATIONS_SCHEMA), label: z.string().trim().min(1).max(160),
   calendar: RotationCalendar,
   categories: z.array(z.object({ id: Id, label: z.string().trim().min(1).max(160) }).strict()).min(1).max(50),
-  groups: z.array(Group).min(1).max(30),
-}).strict().superRefine((value, ctx) => {
+  groups: z.array(DraftGroup).min(1).max(30),
+}).strict();
+function validateConfigurationStructure(value: z.infer<typeof DraftConfiguration>, ctx: z.RefinementCtx) {
   const issue = (message: string) => ctx.addIssue({ code: "custom", message });
   const unique = (values: unknown[]) => new Set(values).size === values.length;
   if (!unique(value.categories.map(category => category.id))) issue("Duplicate category IDs");
@@ -89,16 +90,28 @@ export const RotationConfiguration = z.object({
     if (group.weeks.length !== value.calendar.cycleWeeks || !unique(group.weeks.map(week => week.week)) || group.weeks.some(week => week.week > value.calendar.cycleWeeks)) issue("Every group must cover every week of the global calendar exactly once");
     for (const week of group.weeks) {
       if (!unique(week.dishIds) || week.dishIds.some(id => !group.dishBank.some(dish => dish.dishId === id))) issue("Week dishes must be distinct bank members");
-      if (week.dishIds.length < group.rules.distinctDishes.minimum) issue("Week cannot satisfy minimum distinct dishes");
     }
   }
   const refs = value.groups.flatMap(group => group.dishBank);
   if (new Set(refs.map(ref => ref.dishId)).size > 150) issue("Maximum 150 canonical dishes per version");
   for (const ref of refs) if (refs.some(other => other.dishId === ref.dishId && other.recipeRevision !== ref.recipeRevision)) issue("Conflicting recipe revisions");
+}
+/** Structural validation for authored drafts; unfinished banks and weeks remain saveable. */
+export const RotationDraftConfiguration = DraftConfiguration.superRefine(validateConfigurationStructure);
+export type RotationDraftConfiguration = z.infer<typeof RotationDraftConfiguration>;
+/** Publication-ready configuration retains the complete selection requirements. */
+export const RotationConfiguration = DraftConfiguration.superRefine((value, ctx) => {
+  validateConfigurationStructure(value, ctx);
+  value.groups.forEach(group => {
+    if (group.dishBank.length === 0) ctx.addIssue({ code: "custom", message: "Each published rotation row needs at least one dish" });
+    group.weeks.forEach(week => {
+      if (week.dishIds.length < group.rules.distinctDishes.minimum) ctx.addIssue({ code: "custom", message: "Week cannot satisfy minimum distinct dishes" });
+    });
+  });
 });
 export type RotationConfiguration = z.infer<typeof RotationConfiguration>;
 export const RotationCommand = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("save-draft"), requestId: Id, expectedVersion: z.number().int().nonnegative(), configuration: RotationConfiguration }).strict(),
+  z.object({ action: z.literal("save-draft"), requestId: Id, expectedVersion: z.number().int().nonnegative(), configuration: RotationDraftConfiguration }).strict(),
   z.object({ action: z.literal("publish"), requestId: Id, expectedVersion: z.number().int().positive(), draftRevision: z.number().int().positive(), effectiveFrom: BusinessDate, reason: z.string().trim().min(1).max(500) }).strict(),
 ]);
 export type RotationCommand = z.infer<typeof RotationCommand>;
