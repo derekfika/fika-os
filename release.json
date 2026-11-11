@@ -7,94 +7,49 @@
   "region": "europe-west4",
   "branch": "release/prod/hub",
   "validation": {
-    "id": 130483467812,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/43008375493/job/130483467812",
-    "sha": "ceb60761891628a73d9414f13706a9c6d1cedd5e"
+    "id": 130517274106,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/43018229011/job/130517274106",
+    "sha": "1c44c4f156925e8a2e96eda4b77e5e78fb4f777d"
   },
   "provenance": {
-    "number": 506,
-    "url": "https://github.com/derekfika/fika-os/pull/506",
-    "head": "6731686e0e241e4873537f4fcaa968aec4b0df92"
+    "number": 507,
+    "url": "https://github.com/derekfika/fika-os/pull/507",
+    "head": "76ecec0d774284bcab7a6b17349698a40ee89716"
   },
-  "sourceSha": "ceb60761891628a73d9414f13706a9c6d1cedd5e",
-  "scopeHash": "cb78c264c41f59c4b64e3cf9177bc97630f23cbe2a7821181a287ddb0d88c8ac",
+  "sourceSha": "1c44c4f156925e8a2e96eda4b77e5e78fb4f777d",
+  "scopeHash": "07192e11ccc2376f4b5adc616f6082d9e814a5f2c530aa6d3438aa7e718bfea9",
   "rollback": false,
   "productionDelta": {
-    "from": "594cfbf120010f39be24b742c09070fcfa53bd80",
-    "to": "ceb60761891628a73d9414f13706a9c6d1cedd5e",
+    "from": "ceb60761891628a73d9414f13706a9c6d1cedd5e",
+    "to": "1c44c4f156925e8a2e96eda4b77e5e78fb4f777d",
     "paths": [
-      ".changes/hospitality-booking/2026-11-11-rcoa-customer-dashboard.md",
-      ".changes/integration-hub/2026-11-11-hospitality-rotations-incomplete-drafts.md",
-      ".changes/integration-hub/2026-11-11-rcoa-customer-dashboard.md",
-      ".changes/integration-hub/2026-11-11-rcoa-drive-access-diagnostics.md",
-      ".changes/menu-planning/2026-11-11-hospitality-rotations-incomplete-drafts.md",
-      ".changes/platform/2026-11-11-hospitality-rotation-draft-schema.md",
-      ".changes/platform/2026-11-11-rcoa-drive-access-diagnostics.md",
-      "apps/hospitality-booking/app/angel-court/gallagher/GallagherDashboard.module.css",
-      "apps/hospitality-booking/app/angel-court/gallagher/GallagherDashboard.tsx",
-      "apps/hospitality-booking/app/api/rcoa-dashboard/route.ts",
-      "apps/hospitality-booking/app/api/rcoa-dashboard/session/route.ts",
-      "apps/hospitality-booking/app/rcoa/bookings/layout.tsx",
-      "apps/hospitality-booking/app/rcoa/bookings/page.tsx",
-      "apps/hospitality-booking/apphosting.production.yaml",
-      "apps/hospitality-booking/apphosting.staging.yaml",
-      "apps/hospitality-booking/docs/rcoa-customer-dashboard.md",
-      "apps/hospitality-booking/lib/gallagher-dashboard.ts",
-      "apps/hospitality-booking/lib/gallagher-view.ts",
-      "apps/hospitality-booking/lib/rcoa-dashboard/CustomerBookingsDashboard.tsx",
-      "apps/hospitality-booking/lib/rcoa-dashboard/config.ts",
-      "apps/hospitality-booking/lib/rcoa-dashboard/data-service.ts",
-      "apps/hospitality-booking/lib/rcoa-dashboard/model.ts",
-      "apps/hospitality-booking/lib/rcoa-dashboard/session.ts",
-      "apps/hospitality-booking/tests/gallagher-session.test.ts",
-      "apps/hospitality-booking/tests/rcoa-dashboard-session.test.ts",
-      "apps/hospitality-booking/tests/rcoa-dashboard.test.ts",
-      "apps/integration-hub/app/api/rcoa-bookings/route.ts",
-      "apps/integration-hub/app/authmod/accounts/[id]/AccountDetail.tsx",
-      "apps/integration-hub/apphosting.production.yaml",
-      "apps/integration-hub/apphosting.staging.yaml",
-      "apps/integration-hub/lib/authmod-core/authority.ts",
-      "apps/integration-hub/lib/cpux-mirror/queue.ts",
-      "apps/integration-hub/lib/rcoa-dashboard-bookings.ts",
-      "apps/integration-hub/tests/cpux-mirror.test.ts",
-      "apps/integration-hub/tests/hospitality-booking-authorization.test.ts",
-      "apps/integration-hub/tests/hospitality-rotations.test.ts",
-      "apps/integration-hub/tests/rcoa-bookings.test.ts",
-      "apps/menu-planning/app/rotations/RotationsManager.tsx",
-      "apps/shared/cpux-calendar/google.ts",
-      "apps/shared/hospitality-rotations.ts"
+      ".changes/integration-hub/2026-11-11-rcoa-catch-up.md",
+      "apps/integration-hub/apphosting.production.yaml"
     ],
-    "hash": "8e4898c2c950195d466cae8df5ca66d0c96fd2efbea0016db22d5eacfe69a8fa"
+    "hash": "ec728590920c7942db4450cccc25f2f0488cd64f25fb410c2242d2cefaa2e04d"
   },
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "hub",
     "environment": "prod",
-    "sourceSha": "ceb60761891628a73d9414f13706a9c6d1cedd5e",
+    "sourceSha": "1c44c4f156925e8a2e96eda4b77e5e78fb4f777d",
     "action": "deploy",
-    "instruction": "Owner approved Hub-only source and bridge secret provisioning for issue 348 diagnostics; no Calendar or Drive data writes.",
+    "instruction": "Temporary exact-hash binding required to execute the owner-approved RCoA 12 November catch-up; Scheduler paused to prevent out-of-scope Calendar writes.",
     "releaseId": null,
-    "id": "8886352f472da7e4c858901bb781f69acefb63720f07221186a9a954a01beebf",
+    "id": "50dcb209afc7fe28f003ff13fedb110418da70bffc8d65c6bba6193199de5a9f",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-11T11:29:58.250Z"
+    "authorisedAt": "2026-11-11T12:18:09.303Z"
   },
-  "rollout": "build-2026-11-11-003",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "24d961bf-a3b3-4f36-9bad-fc1528637982",
   "previousGood": {
-    "sourceSha": "594cfbf120010f39be24b742c09070fcfa53bd80",
-    "rollout": "build-2026-11-11-001",
+    "sourceSha": "ceb60761891628a73d9414f13706a9c6d1cedd5e",
+    "rollout": "build-2026-11-11-003",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "e4b567125a5fee8068b0166f8ab8c682a6f2db60",
-  "releaseId": "aaa26b72-28a9-4abd-98ee-8e20f552d9b7",
-  "completedAt": "2026-11-11T11:35:06.937Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-prod-hub--fika-os.europe-west4.hosted.app/"
-  }
+  "previousGoodRecord": "a8d83a3269adb6072e7958538958b80793b95000",
+  "createdAt": "2026-11-11T12:18:11.847Z"
 }
