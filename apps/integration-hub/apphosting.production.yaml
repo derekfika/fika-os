@@ -125,6 +125,10 @@ env:
   - variable: FIKA_CPUX_MIRROR_WRITES_ENABLED
     value: "true"
     availability: [RUNTIME]
+  # One-time owner-approved 12 November RCoA catch-up. Remove after execution.
+  - variable: FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH
+    value: 10c4c257637b4a691cae9db710e1940b780fb9ab2b3ea89678ed879ac57ba6ee
+    availability: [RUNTIME]
   # Hub's only direct Drive publication path is Hospitality group quotes.
   # These are approved production operating folders and are scoped by OPLOC.
   - variable: GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_BE0BECBE_B6CF_4D7F_9C1E_F36E689FEAB2
