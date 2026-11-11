@@ -6,35 +6,12 @@
   "backend": "fika-hospitality-staging",
   "region": "europe-west4",
   "branch": "release/staging/hospitality",
-  "validation": {
-    "id": 130464998481,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/43002697374/job/130464998481",
-    "sha": "533d11291e45f1ca2aed4ecaa30754e7c8522415"
-  },
-  "provenance": {
-    "number": 504,
-    "url": "https://github.com/derekfika/fika-os/pull/504",
-    "head": "8ec97158a22e64d994977a9569a1c3c43d50f42b"
-  },
-  "sourceSha": "533d11291e45f1ca2aed4ecaa30754e7c8522415",
-  "scopeHash": "4cf639ff67895024cb539f3115133be67c0a5635ebb891a6c9d359406613cf64",
-  "rollback": false,
-  "approval": {
-    "actor": "derekfika",
-    "method": "authenticated-repository-writer",
-    "app": "hospitality",
-    "environment": "staging",
-    "sourceSha": "533d11291e45f1ca2aed4ecaa30754e7c8522415",
-    "action": "deploy",
-    "instruction": "Issue #284 staging validation",
-    "releaseId": null,
-    "id": "fdc5c1dd9ebe8c2038777f63aff8f2c4857ff0d188169d598a7c5cb2a0934828",
-    "explicitExecute": true,
-    "authorisedAt": "2026-11-11T10:25:59.520Z"
-  },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "0ccdc0ca-fdbe-4ab0-bb07-e6ccb11ac764",
+  "sourceSha": "53cc2026e61108ff09a281782bc5e0ff89a66f60",
+  "rollout": "build-2026-11-10-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "scopeHash": "bfe8edccf7ab9795605da84b94fe9434a21f4a1b336ff23eda36328288a88f48",
+  "kind": "abandoned",
   "previousGood": {
     "sourceSha": "53cc2026e61108ff09a281782bc5e0ff89a66f60",
     "rollout": "build-2026-11-10-001",
@@ -42,5 +19,33 @@
     "percent": 100
   },
   "previousGoodRecord": "00d6ecafbcfc6db5c59eab8c4b208255bbfcaed1",
-  "createdAt": "2026-11-11T10:26:01.292Z"
+  "releaseId": "0ccdc0ca-fdbe-4ab0-bb07-e6ccb11ac764",
+  "originalIntent": "4319a3a56bef7beeda070ace73dc7de221018650",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-hospitality-staging--fika-os-dev.europe-west4.hosted.app/",
+    "entryRedirect": "/workspace"
+  },
+  "recovery": {
+    "resolution": "abandon",
+    "reason": "Verified failed staging build: missing RCOA_DASHBOARD_PIN_HASH secret; no staging release or UAT",
+    "operator": {
+      "actor": "derekfika",
+      "method": "authenticated-repository-writer",
+      "app": "hospitality",
+      "environment": "staging",
+      "sourceSha": "533d11291e45f1ca2aed4ecaa30754e7c8522415",
+      "action": "reconcile:abandon",
+      "instruction": "Verified failed staging build: missing RCOA_DASHBOARD_PIN_HASH secret; no staging release or UAT",
+      "releaseId": "0ccdc0ca-fdbe-4ab0-bb07-e6ccb11ac764",
+      "id": "45204b3695e0e8fa1cc68d4b79b0be6858cdcefd5e805a7f292b98eb488ce0ee",
+      "explicitExecute": true,
+      "authorisedAt": "2026-11-11T10:29:18.881Z"
+    },
+    "rollout": "build-2026-11-11-001",
+    "evidenceHash": "c76642b2142d9d5506ad14d1a6ae500d06bb1be0ba24c4e27e882463cdcd0e56",
+    "journalHash": "5a2c51f16434b5e18942b35bdb59c716f91339e42c580e9d3650614d249ef61e",
+    "at": "2026-11-11T10:29:24.225Z"
+  }
 }
