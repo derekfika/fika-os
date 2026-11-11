@@ -7,56 +7,51 @@
   "region": "europe-west4",
   "branch": "release/prod/hub",
   "validation": {
-    "id": 130517274106,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/43018229011/job/130517274106",
-    "sha": "1c44c4f156925e8a2e96eda4b77e5e78fb4f777d"
+    "id": 130534588785,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/43023427924/job/130534588785",
+    "sha": "59b3a3a8f58a61f2e513c3ea1cbc0bf9c8a7a388"
   },
   "provenance": {
-    "number": 507,
-    "url": "https://github.com/derekfika/fika-os/pull/507",
-    "head": "76ecec0d774284bcab7a6b17349698a40ee89716"
+    "number": 508,
+    "url": "https://github.com/derekfika/fika-os/pull/508",
+    "head": "6f8200a665af74350dc2d73ae5b8be11de619d19"
   },
-  "sourceSha": "1c44c4f156925e8a2e96eda4b77e5e78fb4f777d",
-  "scopeHash": "07192e11ccc2376f4b5adc616f6082d9e814a5f2c530aa6d3438aa7e718bfea9",
+  "sourceSha": "59b3a3a8f58a61f2e513c3ea1cbc0bf9c8a7a388",
+  "scopeHash": "0ffad3b6993fefe6f7467df9031b44bd2731a1832fe42e69070bfa7b511b28c0",
   "rollback": false,
   "productionDelta": {
-    "from": "ceb60761891628a73d9414f13706a9c6d1cedd5e",
-    "to": "1c44c4f156925e8a2e96eda4b77e5e78fb4f777d",
+    "from": "1c44c4f156925e8a2e96eda4b77e5e78fb4f777d",
+    "to": "59b3a3a8f58a61f2e513c3ea1cbc0bf9c8a7a388",
     "paths": [
-      ".changes/integration-hub/2026-11-11-rcoa-catch-up.md",
-      "apps/integration-hub/apphosting.production.yaml"
+      ".changes/integration-hub/2026-11-11-catchup-approval-revalidation.md",
+      "apps/integration-hub/lib/cpux-mirror/approval.ts",
+      "apps/integration-hub/lib/cpux-mirror/queue.ts",
+      "apps/integration-hub/tests/cpux-mirror.test.ts"
     ],
-    "hash": "ec728590920c7942db4450cccc25f2f0488cd64f25fb410c2242d2cefaa2e04d"
+    "hash": "315b73b162ff6c30f95d8a35761df72c1bec36e325607ed9da66faee273355a9"
   },
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "hub",
     "environment": "prod",
-    "sourceSha": "1c44c4f156925e8a2e96eda4b77e5e78fb4f777d",
+    "sourceSha": "59b3a3a8f58a61f2e513c3ea1cbc0bf9c8a7a388",
     "action": "deploy",
-    "instruction": "Temporary exact-hash binding required to execute the owner-approved RCoA 12 November catch-up; Scheduler paused to prevent out-of-scope Calendar writes.",
+    "instruction": "Approved exact RCoA Calendar catch-up was blocked by preview/apply hash shape mismatch; deploy scoped fail-closed revalidation fix before rechecking approved hash",
     "releaseId": null,
-    "id": "50dcb209afc7fe28f003ff13fedb110418da70bffc8d65c6bba6193199de5a9f",
+    "id": "9fb281a2b9522c49a6e768b946954b29d8824094b20a0c2aa4b7edbb49acdbb5",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-11T12:18:09.303Z"
+    "authorisedAt": "2026-11-11T12:53:25.437Z"
   },
-  "rollout": "build-2026-11-11-004",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "4a1dc1fe-bde0-4e90-a300-f6f8a624aca5",
   "previousGood": {
-    "sourceSha": "ceb60761891628a73d9414f13706a9c6d1cedd5e",
-    "rollout": "build-2026-11-11-003",
+    "sourceSha": "1c44c4f156925e8a2e96eda4b77e5e78fb4f777d",
+    "rollout": "build-2026-11-11-004",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "a8d83a3269adb6072e7958538958b80793b95000",
-  "releaseId": "24d961bf-a3b3-4f36-9bad-fc1528637982",
-  "completedAt": "2026-11-11T12:23:03.918Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-prod-hub--fika-os.europe-west4.hosted.app/"
-  }
+  "previousGoodRecord": "8f9bce1a1f6ab6aed694c756fd3af37cedc2bcef",
+  "createdAt": "2026-11-11T12:53:28.303Z"
 }
