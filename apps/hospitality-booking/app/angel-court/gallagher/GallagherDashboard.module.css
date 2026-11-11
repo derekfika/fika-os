@@ -324,6 +324,30 @@
 .rcoaPage .panel { border-color: var(--rcoa-line); border-radius: 11px; }
 .rcoaPage .table thead { background: #f4f1f7; }
 .rcoaPage .table tbody tr:hover { background: #f7f4fa; }
+.rcoaPage .table { table-layout: fixed; min-width: 900px; }
+.rcoaPage .table th, .rcoaPage .table td { min-width: 0; }
+.rcoaPage .table th:nth-child(1) { width: 11%; }
+.rcoaPage .table th:nth-child(2) { width: 10%; }
+.rcoaPage .table th:nth-child(3) { width: 14%; }
+.rcoaPage .table th:nth-child(4) { width: 8%; }
+.rcoaPage .table th:nth-child(5) { width: 13%; }
+.rcoaPage .table th:nth-child(6) { width: 13%; }
+.rcoaPage .table th:nth-child(7) { width: 12%; }
+.rcoaPage .table th:nth-child(8) { width: 11%; }
+.rcoaPage .table th:nth-child(9) { width: 8%; }
+.rcoaPage .clientCell { overflow-wrap: normal; word-break: normal; hyphens: none; }
+.rcoaPage .guestCell { text-align: left; font-variant-numeric: normal; }
+.rcoaPage .rcoaIncludedServices li { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px; border: 1px solid var(--fika-border-default); border-radius: 10px; background: var(--fika-surface-card); }
+.rcoaPage .rcoaIncludedServices li + li { margin-top: 10px; }
+.rcoaPage .rcoaServiceHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; }
+.rcoaPage .rcoaServiceHead > strong { min-width: 0; overflow-wrap: normal; word-break: normal; }
+.rcoaPage .rcoaServiceStatus { flex: none; border-radius: 6px; padding: 3px 8px; background: var(--fika-surface-subtle); color: var(--fika-text-primary); font-size: 12px; line-height: 16px; font-weight: 700; }
+.rcoaPage .rcoaServiceStatus[data-status="approved"], .rcoaPage .rcoaServiceStatus[data-status="completed"] { background: var(--fika-status-success-surface); color: var(--fika-status-success); }
+.rcoaPage .rcoaServiceStatus[data-status="amended"] { background: var(--fika-status-warning-surface); color: var(--fika-status-warning); }
+.rcoaPage .rcoaServiceDetails { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; min-width: 0; }
+.rcoaPage .rcoaServiceDetails > div { min-width: 0; }
+.rcoaPage .rcoaServiceDetails dt { margin-bottom: 2px; color: var(--fika-text-secondary); font-size: 12px; font-weight: 700; }
+.rcoaPage .rcoaServiceDetails dd { overflow-wrap: anywhere; }
 .rcoaPage .primaryButton { background: var(--rcoa-accent); }
 .rcoaPage .primaryButton:hover:not(:disabled) { background: var(--rcoa-accent-dark); }
 .rcoaPage .secondaryButton:hover:not(:disabled) { border-color: var(--rcoa-violet); }
@@ -335,6 +359,8 @@
   .rcoaPage .header { align-items: flex-start; flex-wrap: wrap; }
   .rcoaPage .headerNav { order: 3; width: 100%; justify-content: space-between; }
   .rcoaPage .headerActions { width: 100%; justify-content: flex-end; }
-  .rcoaPage .hero { margin-inline: -18px; }
+  .rcoaPage .hero { margin-inline: -16px; }
   .rcoaPage .hero::after { width: 20%; opacity: .5; }
+  .rcoaPage .table { min-width: 880px; }
+  .rcoaPage .rcoaServiceDetails { grid-template-columns: 1fr; gap: 8px; }
 }

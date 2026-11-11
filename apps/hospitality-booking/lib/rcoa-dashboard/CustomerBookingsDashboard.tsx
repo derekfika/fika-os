@@ -21,6 +21,7 @@ import {
 } from "@/lib/gallagher-view";
 import type { DateSort, LedgerFilters, LedgerView, StatusFilter } from "@/lib/gallagher-view";
 import type { CustomerDashboardConfig } from "./config";
+import { rcoaServiceDisplayName } from "./model";
 import styles from "../../app/angel-court/gallagher/GallagherDashboard.module.css";
 
 type DashboardData = {
@@ -34,6 +35,22 @@ const moneyFormat = new Intl.NumberFormat("en-GB", { style: "currency", currency
 
 const formatPrice = (value: number | null) => (value === null ? "Price unavailable" : moneyFormat.format(value));
 const bookingKey = (booking: GallagherBooking) => `${booking.source}-${booking.sourceBookingId}`;
+
+function serviceSummary(booking: GallagherBooking, config: CustomerDashboardConfig) {
+  if (config.brandClass === "rcoa") {
+    if (booking.services && booking.services.length > 1) return `All Day Hospitality · ${booking.services.length} services`;
+    return rcoaServiceDisplayName(booking.services?.[0]?.eventType || booking.company || "Hospitality booking");
+  }
+  return clientLabel(booking) || "—";
+}
+
+function guestSummary(booking: GallagherBooking, config: CustomerDashboardConfig) {
+  if (config.brandClass === "rcoa" && booking.services && booking.services.length > 1) {
+    const counts = new Set(booking.services.map(service => service.guestCount).filter((count): count is number => typeof count === "number"));
+    if (counts.size > 1) return "Varies by service";
+  }
+  return booking.guestCount === null ? "Not recorded" : String(booking.guestCount);
+}
 
 function Icon({ name }: { name: "lock" | "refresh" | "search" | "check" | "clock" | "cross" | "close" | "chevron" | "calendar" | "alert" }) {
   const paths: Record<string, string> = {
@@ -126,7 +143,8 @@ function BookingDetails({ booking, onClose, config }: { booking: GallagherBookin
             <div><dt>Date</dt><dd>{formatBusinessDate(booking.date, "long")}</dd></div>
             <div><dt>Time</dt><dd>{formatTimeRange(booking)}</dd></div>
             <div><dt>Room / location</dt><dd>{booking.location || config.siteName}</dd></div>
-            <div><dt>Guests</dt><dd>{booking.guestCount ?? "Not recorded"}</dd></div>
+            {config.brandClass === "rcoa" ? <div><dt>Service</dt><dd>{serviceSummary(booking, config)}</dd></div> : null}
+            <div><dt>Guests</dt><dd>{guestSummary(booking, config)}</dd></div>
             <div><dt>Booking reference</dt><dd className={styles.mono}>{booking.bookingReference || "Not recorded"}</dd></div>
           </dl>
         </section>
@@ -141,11 +159,21 @@ function BookingDetails({ booking, onClose, config }: { booking: GallagherBookin
           </dl>
         </section> : null}
         {booking.services && booking.services.length > 1 ? <section aria-labelledby="detail-services">
-          <h3 id="detail-services">Included services</h3>
-          <ul className={styles.itemList}>{booking.services.map(service => <li key={service.reference}>
-            <span><strong>{service.eventType}</strong><small>{formatBusinessDate(service.eventDate, "long")} · {formatTimeRange(service)} · {service.location || "Location not recorded"} · {service.guestCount ?? "Guests not recorded"} guests</small></span>
-            <strong>{service.lifecycleStatus}</strong>
-            {service.amended ? <small>Amended</small> : null}
+          <h3 id="detail-services">{config.brandClass === "rcoa" ? `Included Services (${booking.services.length})` : "Included services"}</h3>
+          <ul className={`${styles.itemList} ${config.brandClass === "rcoa" ? styles.rcoaIncludedServices : ""}`}>{booking.services.map(service => <li key={service.reference}>
+            {config.brandClass === "rcoa" ? <>
+              <div className={styles.rcoaServiceHead}><strong>{rcoaServiceDisplayName(service.eventType)}</strong><span className={styles.rcoaServiceStatus} data-status={service.lifecycleStatus.toLocaleLowerCase("en-GB")}>{service.lifecycleStatus}</span></div>
+              <dl className={styles.rcoaServiceDetails}>
+              <div><dt>Time</dt><dd>{formatTimeRange(service)}</dd></div>
+              <div><dt>Room</dt><dd>{service.location || "Location not recorded"}</dd></div>
+              <div><dt>Guests</dt><dd>{service.guestCount === null ? "Not recorded" : service.guestCount}</dd></div>
+              {service.amended ? <div><dt>Change</dt><dd>Amended</dd></div> : null}
+              </dl>
+            </> : <>
+              <span><strong>{service.eventType}</strong><small>{formatBusinessDate(service.eventDate, "long")} · {formatTimeRange(service)} · {service.location || "Location not recorded"} · {service.guestCount ?? "Guests not recorded"} guests</small></span>
+              <strong>{service.lifecycleStatus}</strong>
+              {service.amended ? <small>Amended</small> : null}
+            </>}
           </li>)}</ul>
         </section> : null}
         <section aria-labelledby="detail-items">
@@ -198,8 +226,8 @@ function BookingList({ bookings, onSelect, sort, onToggleSort, config }: { booki
         <tbody>{bookings.map((booking) => <tr key={bookingKey(booking)} className={booking.status === "Cancelled" ? styles.rowCancelled : undefined}>
           <th scope="row" className={styles.dateCell}>{formatBusinessDate(booking.date)}</th>
           <td className={styles.timeCell}>{booking.startTime ? formatTimeRange(booking) : "—"}</td>
-          <td className={styles.clientCell}>{clientLabel(booking) || "—"}</td>
-          <td className={styles.num}>{booking.guestCount ?? "—"}</td>
+          <td className={styles.clientCell} title={serviceSummary(booking, config)}>{serviceSummary(booking, config)}</td>
+          <td className={`${styles.num} ${config.brandClass === "rcoa" ? styles.guestCell : ""}`}>{config.brandClass === "rcoa" ? guestSummary(booking, config) : booking.guestCount ?? "—"}</td>
           <td className={styles.itemsCell} title={booking.items.map((item) => item.name).join(", ") || undefined}>{summariseItems(booking.items)}</td>
           <td className={styles.locationCell}>{booking.location || "—"}</td>
           {config.allowCommercial ? <td className={styles.num}>{formatPrice(booking.totalPrice)}</td> : null}
@@ -212,8 +240,8 @@ function BookingList({ bookings, onSelect, sort, onToggleSort, config }: { booki
     <ul className={styles.cards}>{bookings.map((booking) => <li key={bookingKey(booking)}>
       <button className={`${styles.bookingCard} ${booking.status === "Cancelled" ? styles.rowCancelled : ""}`} type="button" onClick={() => onSelect(booking)} aria-label={`View details for ${formatBusinessDate(booking.date)}, ${booking.status}`}>
         <span className={styles.cardTop}><strong>{formatBusinessDate(booking.date)}</strong><StatusBadge booking={booking} /></span>
-        <span className={styles.cardMeta}>{formatTimeRange(booking)} · {booking.guestCount === null ? "Guests not recorded" : `${booking.guestCount} guests`}</span>
-        {clientLabel(booking) ? <span className={styles.cardClient}>{clientLabel(booking)}</span> : null}
+        <span className={styles.cardMeta}>{formatTimeRange(booking)} · {guestSummary(booking, config) === "Not recorded" ? "Guests not recorded" : `${guestSummary(booking, config)}${guestSummary(booking, config) === "Varies by service" ? "" : " guests"}`}</span>
+        {config.brandClass === "rcoa" ? <span className={styles.cardClient}>{serviceSummary(booking, config)}</span> : clientLabel(booking) ? <span className={styles.cardClient}>{clientLabel(booking)}</span> : null}
         <span className={styles.cardItems}>{summariseItems(booking.items)}</span>
         <span className={styles.cardBottom}><span className={styles.mono}>{booking.bookingReference || "No reference"}</span>{config.allowCommercial ? <strong>{formatPrice(booking.totalPrice)}</strong> : null}</span>
       </button>
