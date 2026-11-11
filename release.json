@@ -6,12 +6,35 @@
   "backend": "fika-os-staging",
   "region": "europe-west4",
   "branch": "release/staging/hub",
-  "sourceSha": "53cc2026e61108ff09a281782bc5e0ff89a66f60",
-  "rollout": "build-2026-11-10-001",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "scopeHash": "4a7549b6bc8b801c392182753b4187ea6a01539b44473f3fce291156875647fc",
-  "kind": "abandoned",
+  "validation": {
+    "id": 130470392706,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/43004987524/job/130470392706",
+    "sha": "316fa7ccfab1745b7c0a992cf08a8aeb186876d4"
+  },
+  "provenance": {
+    "number": 505,
+    "url": "https://github.com/derekfika/fika-os/pull/505",
+    "head": "686b0270db029c7bd1090e7b2d3c7085157a1e86"
+  },
+  "sourceSha": "316fa7ccfab1745b7c0a992cf08a8aeb186876d4",
+  "scopeHash": "6fccf0ccaa22a8105c8ac65fd10b99ea026f8b0fc9e39b1b55381ae7672adec3",
+  "rollback": false,
+  "approval": {
+    "actor": "derekfika",
+    "method": "authenticated-repository-writer",
+    "app": "hub",
+    "environment": "staging",
+    "sourceSha": "316fa7ccfab1745b7c0a992cf08a8aeb186876d4",
+    "action": "deploy",
+    "instruction": "Execute deploy",
+    "releaseId": null,
+    "id": "bf8b9b9f6acf3d832848e6a2f72e5c0951afebede5168e70b4f1897a6d18da50",
+    "explicitExecute": true,
+    "authorisedAt": "2026-11-11T12:26:44.564Z"
+  },
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "136efa47-cfe7-4d7e-8ca5-6f2acf44acfb",
   "previousGood": {
     "sourceSha": "53cc2026e61108ff09a281782bc5e0ff89a66f60",
     "rollout": "build-2026-11-10-001",
@@ -19,32 +42,5 @@
     "percent": 100
   },
   "previousGoodRecord": "f62e88061cf74a35bf20980926371402cf4a72f1",
-  "releaseId": "432d96ef-0fb9-4b19-a0ba-9d613ed7df62",
-  "originalIntent": "99a76898f520204dd061c44fda69914f86fc45e9",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-staging--fika-os-dev.europe-west4.hosted.app/"
-  },
-  "recovery": {
-    "resolution": "abandon",
-    "reason": "Terminal build failure before Firebase backend-specific secret grants; exact per-backend grants now applied",
-    "operator": {
-      "actor": "derekfika",
-      "method": "authenticated-repository-writer",
-      "app": "hub",
-      "environment": "staging",
-      "sourceSha": "316fa7ccfab1745b7c0a992cf08a8aeb186876d4",
-      "action": "reconcile:abandon",
-      "instruction": "Terminal build failure before Firebase backend-specific secret grants; exact per-backend grants now applied",
-      "releaseId": "432d96ef-0fb9-4b19-a0ba-9d613ed7df62",
-      "id": "8a4562176b01c9af326579e849451808f1b44354251c6a60890b12bb97e8e1f1",
-      "explicitExecute": true,
-      "authorisedAt": "2026-11-11T12:24:23.188Z"
-    },
-    "rollout": "build-2026-11-11-002",
-    "evidenceHash": "7f1237b36696c40186683c55950cdf0883be0e41eaad7b3d4749fa5a0adb146d",
-    "journalHash": "19b6085c2eb16cd0e2e9cc37a06f7226ab3f3b6e80ca0d3a9c55ff5794ac7d98",
-    "at": "2026-11-11T12:24:26.488Z"
-  }
+  "createdAt": "2026-11-11T12:26:46.757Z"
 }
