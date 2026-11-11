@@ -9,13 +9,15 @@ import {
   createRcoaSession,
   hasRcoaSession,
   rcoaPinAttemptRateLimited,
+  RCOA_COOKIE_PATH,
   rcoaSessionCookie,
   recordRcoaFailedPinAttempt,
   verifyRcoaPin,
 } from "../lib/rcoa-dashboard/session";
 import { rcoaDashboardDataResponse } from "../lib/rcoa-dashboard/data-service";
 import type { RcoaDashboardService } from "../lib/rcoa-dashboard/model";
-import { DELETE as signOut, POST as signIn } from "../app/api/rcoa-dashboard/session/route";
+import { DELETE as signOut, POST as signIn } from "../app/rcoa/bookings/api/session/route";
+import { rcoaDashboardConfig } from "../lib/rcoa-dashboard/config";
 
 const env = process.env;
 const original = {
@@ -34,6 +36,8 @@ function rcoaRequest(token: string, forwarded = "198.51.100.8, 203.0.113.9") {
 }
 
 test("RCoA PIN/session settings are isolated from Gallagher and cookies are route-scoped", async () => {
+  assert.ok(rcoaDashboardConfig.dataPath.startsWith(`${RCOA_COOKIE_PATH}/`));
+  assert.ok(rcoaDashboardConfig.sessionPath.startsWith(`${RCOA_COOKIE_PATH}/`));
   env.RCOA_DASHBOARD_PIN_HASH = createRcoaPinHash("123456", Buffer.alloc(16, 1));
   env.RCOA_DASHBOARD_SESSION_SECRET = "rcoa-session-secret-which-is-independent-0123456789";
   env.GALLAGHER_DASHBOARD_PIN_HASH = createGallagherPinHash("1234", Buffer.alloc(16, 2));
@@ -75,17 +79,17 @@ test("RCoA session route fails closed, rate limits bad PINs, and issues an isola
   clearRcoaFailureBucketsForTests();
   delete env.RCOA_DASHBOARD_PIN_HASH;
   delete env.RCOA_DASHBOARD_SESSION_SECRET;
-  const unconfigured = await signIn(new NextRequest("https://hospitality.fikacatering.com/api/rcoa-dashboard/session", { method: "POST", body: JSON.stringify({ pin: "123456" }) }));
+  const unconfigured = await signIn(new NextRequest("https://hospitality.fikacatering.com/rcoa/bookings/api/session", { method: "POST", body: JSON.stringify({ pin: "123456" }) }));
   assert.equal(unconfigured.status, 503);
   env.RCOA_DASHBOARD_PIN_HASH = createRcoaPinHash("123456", Buffer.alloc(16, 3));
   env.RCOA_DASHBOARD_SESSION_SECRET = "rcoa-session-secret-which-is-independent-0123456789";
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const response = await signIn(new NextRequest("https://hospitality.fikacatering.com/api/rcoa-dashboard/session", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": `spoof-${attempt}, trusted-login-hop` }, body: JSON.stringify({ pin: "000000" }) }));
+    const response = await signIn(new NextRequest("https://hospitality.fikacatering.com/rcoa/bookings/api/session", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": `spoof-${attempt}, trusted-login-hop` }, body: JSON.stringify({ pin: "000000" }) }));
     assert.equal(response.status, 401);
   }
-  const limited = await signIn(new NextRequest("https://hospitality.fikacatering.com/api/rcoa-dashboard/session", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": "new-spoof, trusted-login-hop" }, body: JSON.stringify({ pin: "123456" }) }));
+  const limited = await signIn(new NextRequest("https://hospitality.fikacatering.com/rcoa/bookings/api/session", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": "new-spoof, trusted-login-hop" }, body: JSON.stringify({ pin: "123456" }) }));
   assert.equal(limited.status, 429);
-  const signedIn = await signIn(new NextRequest("https://hospitality.fikacatering.com/api/rcoa-dashboard/session", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": "trusted-new-hop" }, body: JSON.stringify({ pin: "123456" }) }));
+  const signedIn = await signIn(new NextRequest("https://hospitality.fikacatering.com/rcoa/bookings/api/session", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": "trusted-new-hop" }, body: JSON.stringify({ pin: "123456" }) }));
   assert.equal(signedIn.status, 200);
   assert.match(signedIn.headers.get("set-cookie") || "", /fika_rcoa_dashboard_session=.*Path=\/rcoa\/bookings;.*HttpOnly; Secure; SameSite=Lax/);
   const signedOut = await signOut();
@@ -96,7 +100,7 @@ test("RCoA session route fails closed, rate limits bad PINs, and issues an isola
 test("RCoA dashboard data requires a session and returns only grouped safe fields", async () => {
   env.RCOA_DASHBOARD_SESSION_SECRET = "rcoa-session-secret-which-is-independent-0123456789";
   const unsafeRead = async () => { throw new Error("must not read without a session"); };
-  const denied = await rcoaDashboardDataResponse(new NextRequest("https://hospitality.fikacatering.com/api/rcoa-dashboard"), { readBookings: unsafeRead });
+  const denied = await rcoaDashboardDataResponse(new NextRequest("https://hospitality.fikacatering.com/rcoa/bookings/api"), { readBookings: unsafeRead });
   assert.equal(denied.status, 401);
   const token = createRcoaSession();
   const fixture: RcoaDashboardService[] = [
