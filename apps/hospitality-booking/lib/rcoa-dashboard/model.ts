@@ -1,4 +1,5 @@
 import type { GallagherBooking } from "../gallagher-dashboard";
+import { rcoaEventTypes } from "../rcoa-event-types";
 
 export type RcoaDashboardService = {
   reference: string;
@@ -29,6 +30,14 @@ const cancelled = (service: RcoaDashboardService) => /^cancelled$/i.test(service
 const completed = (service: RcoaDashboardService) => /^completed$/i.test(service.lifecycleStatus);
 const compareService = (a: RcoaDashboardService, b: RcoaDashboardService) => a.eventDate.localeCompare(b.eventDate) || a.startTime.localeCompare(b.startTime) || (a.groupSequence || 0) - (b.groupSequence || 0) || a.reference.localeCompare(b.reference);
 
+/** Reuse the governed RCoA offering names instead of exposing canonical IDs. */
+export function rcoaServiceDisplayName(value: string) {
+  const normalized = value.trim().toLocaleLowerCase("en-GB");
+  const governed = rcoaEventTypes.find(event => event.id === normalized)?.label;
+  const readable = governed || value.trim().replace(/[_-]+/g, " ");
+  return readable.replace(/\b\p{L}/gu, letter => letter.toLocaleUpperCase("en-GB"));
+}
+
 function displayStatus(services: RcoaDashboardService[]) {
   const cancelledCount = services.filter(cancelled).length;
   if (cancelledCount === services.length) return "Cancelled";
@@ -45,7 +54,8 @@ function dashboardRow(servicesInput: RcoaDashboardService[]): RcoaDashboardBooki
   const status = displayStatus(services);
   const group = Boolean(first.groupId);
   const reference = group ? first.reference : first.reference;
-  const items = services.flatMap(service => service.items.map(item => ({ ...item, ...(group ? { notes: service.eventType } : {}) })));
+  const items = services.flatMap(service => service.items.map(item => ({ ...item, ...(group ? { notes: rcoaServiceDisplayName(service.eventType) } : {}) })));
+  const knownGuestCounts = [...new Set(services.map(service => service.guestCount).filter((count): count is number => typeof count === "number"))];
   return {
     source: "fika-os",
     sourceBookingId: reference,
@@ -53,10 +63,10 @@ function dashboardRow(servicesInput: RcoaDashboardService[]): RcoaDashboardBooki
     date: first.eventDate,
     startTime: group ? services.map(service => service.startTime).filter(Boolean).sort()[0] || "" : first.startTime,
     endTime: group ? services.map(service => service.endTime).filter(Boolean).sort().at(-1) || "" : first.endTime,
-    guestCount: group ? null : first.guestCount,
+    guestCount: group ? (knownGuestCounts.length === 1 && services.every(service => service.guestCount !== null) ? knownGuestCounts[0] : null) : first.guestCount,
     items,
     totalPrice: null,
-    company: first.eventType || "Hospitality booking",
+    company: group ? "All Day Hospitality" : rcoaServiceDisplayName(first.eventType || "Hospitality booking"),
     bookingCompany: "",
     endClientCompany: "",
     requesterName: "",
