@@ -1,4 +1,5 @@
 import { dishCategoryForWrite, type CanonicalDishCategory } from "./dish-categories";
+import { CANONICAL_MENU_SLOTS } from "../../shared/menu-section-order";
 
 const prefixForCategory: Record<CanonicalDishCategory, string> = {
   Salad: "SALAD",
@@ -13,6 +14,7 @@ const prefixForCategory: Record<CanonicalDishCategory, string> = {
   "Cold Protein": "COLD PROTEIN",
   Dessert: "DESSERT",
 };
+const canonicalSlotIds = new Set<string>(CANONICAL_MENU_SLOTS.map(slot => slot.id));
 
 export function menuSlotPrefix(category: string) {
   return prefixForCategory[dishCategoryForWrite(category)];
@@ -34,5 +36,6 @@ export function suggestMenuRowSlot(category: string, occupiedSlots: readonly str
 }
 
 export function isGovernedMenuSlot(slot: string) {
-  return Object.values(prefixForCategory).some(prefix => new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?: \\d+)?$`, "i").test(slot.trim()));
+  const value = slot.trim();
+  return canonicalSlotIds.has(value) || Object.values(prefixForCategory).some(prefix => new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?: \\d+)?$`, "i").test(value));
 }
