@@ -49,6 +49,20 @@ export type MirrorAttendeeCopy = {
   email: string; status: "found" | "missing" | "duplicate" | "unavailable"; responseStatus?: string;
   event?: MirrorEventEvidence; errorCode?: string;
 };
+export type MirrorPdfPrincipalAccess = {
+  principal: string; requestedScope: string; tokenStatus: "ok" | "failed";
+  grantedScope?: string | null; tokenStage?: "iam-sign-jwt" | "oauth-exchange" | "scope-check";
+  tokenHttpStatus?: number; tokenErrorCode?: string; driveHttpStatus?: number; driveErrorCode?: string;
+  fileIdMatches?: boolean; mimeType?: string; trashed?: boolean; canDownload?: boolean;
+  owners?: string[]; sharedDrive?: boolean; readable?: boolean;
+};
+export type MirrorPdfAccessEvidence = {
+  fileId: string; expectedMimeType: string; readableByAll: boolean;
+  principals: MirrorPdfPrincipalAccess[];
+  permissionListHttpStatus?: number;
+  permissions?: Array<{ type?: string; emailAddress?: string; role?: string; deleted?: boolean; inherited?: boolean; permissionType?: string }>;
+  permissionsErrorCode?: string;
+};
 type Event = {
   id?: string; etag?: string; iCalUID?: string; htmlLink?: string; summary?: string; description?: string; location?: string;
   start?: { date?: string; dateTime?: string; timeZone?: string }; end?: { date?: string; dateTime?: string; timeZone?: string };
@@ -59,6 +73,11 @@ type Event = {
   extendedProperties?: { shared?: Record<string, string> };
 };
 const privacySafeError = (response: Response) => new Error("Google Calendar or Drive refused the operation (HTTP " + response.status + ").");
+const SAFE_GOOGLE_ERROR_CODES = new Set(["insufficientFilePermissions", "insufficientAuthenticationScopes", "authError", "notFound", "accessNotConfigured", "invalid_grant", "unauthorized_client", "forbidden", "invalid_credential"]);
+const safeGoogleErrorCode = (value: unknown) => typeof value === "string" && SAFE_GOOGLE_ERROR_CODES.has(value) ? value : "PROVIDER_ERROR";
+class MirrorTokenError extends Error {
+  constructor(readonly stage: "iam-sign-jwt" | "oauth-exchange" | "scope-check", readonly httpStatus?: number, readonly providerCode?: string) { super("Calendar/Drive delegation failed."); }
+}
 
 export async function openMirrorClient(target: MirrorTarget, env: Env = process.env, fetcher: Fetch = fetch, readOnly = false) {
   if (!(readOnly ? mirrorPreviewEnabled(env) : mirrorEnabled(env))) throw new Error("Calendar mirror delivery is disabled for this runtime.");
@@ -85,7 +104,7 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
     if (!access_token) throw new Error("The verified runtime could not authenticate to IAM.");
     return access_token;
   }
-  const tokens = new Map<string, Promise<string>>();
+  const tokens = new Map<string, Promise<{ accessToken: string; grantedScope?: string }>>();
   function token(subject: string, scope: string) {
     const key = subject + ":" + scope;
     const existing = tokens.get(key);
@@ -97,17 +116,21 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
         method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + await (signerAccess ||= signerToken()) },
         body: JSON.stringify({ payload: JSON.stringify(claims) }), redirect: "error", signal: AbortSignal.timeout(8000),
       });
-      if (!signed.ok) throw new Error("IAM refused to sign the Calendar delegation request.");
+      if (!signed.ok) throw new MirrorTokenError("iam-sign-jwt", signed.status);
       const { signedJwt: assertion } = await signed.json() as { signedJwt?: string };
       if (!assertion) throw new Error("IAM returned no signed Calendar delegation request.");
       const result = await fetcher("https://oauth2.googleapis.com/token", {
         method: "POST", body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion }),
         redirect: "error", signal: AbortSignal.timeout(8000),
       });
-      if (!result.ok) throw new Error("Calendar/Drive delegation failed.");
+      if (!result.ok) {
+        let providerCode: string | undefined;
+        try { const body = await result.clone().json() as { error?: unknown }; providerCode = safeGoogleErrorCode(body.error); } catch { /* keep only safe status evidence */ }
+        throw new MirrorTokenError("oauth-exchange", result.status, providerCode);
+      }
       const { access_token, scope: grantedScope } = await result.json() as { access_token?: string; scope?: string };
-      if (!access_token || (grantedScope !== undefined && grantedScope !== scope)) throw new Error("Calendar/Drive delegation returned invalid token evidence.");
-      return access_token;
+      if (!access_token || (grantedScope !== undefined && grantedScope !== scope)) throw new MirrorTokenError("scope-check", undefined, "SCOPE_MISMATCH");
+      return { accessToken: access_token, grantedScope };
     })();
     tokens.set(key, pending);
     return pending;
@@ -115,7 +138,7 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
 
   async function request(path: string, scope: string, subject: string, init: RequestInit = {}) {
     const headers = new Headers(init.headers);
-    headers.set("authorization", "Bearer " + await token(subject, scope));
+    headers.set("authorization", "Bearer " + (await token(subject, scope)).accessToken);
     return fetcher(GOOGLE + path, { ...init, headers, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(8000) });
   }
   let calendarBindingCheck: Promise<{ calendarId: string; subject: string; accessRole: "writer" | "owner" }> | undefined;
@@ -138,6 +161,71 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
       const file = await response.json() as { id?: string; mimeType?: string; trashed?: boolean; capabilities?: { canDownload?: boolean } };
       if (file.id !== fileId || file.mimeType !== mime || file.trashed === true || (mime === "application/pdf" && file.capabilities?.canDownload !== true)) throw new Error("The Drive document is not a current readable PDF.");
     }));
+  }
+  async function inspectPdfAccess(fileId: string): Promise<MirrorPdfAccessEvidence> {
+    if (!readOnly) throw new Error("PDF access diagnostics are read-only.");
+    if (!isDriveId(fileId)) throw new Error("The current Drive file is missing.");
+    const subjects = [...new Set([...recipients, target.subject])];
+    const fields = "id,mimeType,trashed,capabilities(canDownload),owners(emailAddress),driveId";
+    const path = "/drive/v3/files/" + encodeURIComponent(fileId) + "?supportsAllDrives=true&fields=" + encodeURIComponent(fields);
+    const principals = await Promise.all(subjects.map(async (principal): Promise<MirrorPdfPrincipalAccess> => {
+      const evidence: MirrorPdfPrincipalAccess = { principal, requestedScope: DRIVE_READ, tokenStatus: "failed" };
+      let delegated: { accessToken: string; grantedScope?: string };
+      try { delegated = await token(principal, DRIVE_READ); }
+      catch (error) {
+        if (error instanceof MirrorTokenError) {
+          evidence.tokenStage = error.stage; evidence.tokenHttpStatus = error.httpStatus;
+          evidence.tokenErrorCode = error.providerCode || "DELEGATION_FAILED";
+        } else evidence.tokenErrorCode = "DELEGATION_FAILED";
+        return evidence;
+      }
+      evidence.tokenStatus = "ok";
+      evidence.grantedScope = delegated.grantedScope ?? null;
+      try {
+        const response = await fetcher(GOOGLE + path, { headers: { authorization: "Bearer " + delegated.accessToken }, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(8000) });
+        evidence.driveHttpStatus = response.status;
+        if (!response.ok) {
+          try { const body = await response.json() as { error?: { errors?: Array<{ reason?: unknown }>; status?: unknown } }; const code = body.error?.errors?.[0]?.reason || body.error?.status; evidence.driveErrorCode = safeGoogleErrorCode(code); }
+          catch { evidence.driveErrorCode = "PROVIDER_ERROR"; }
+          evidence.readable = false;
+          return evidence;
+        }
+        const file = await response.json() as { id?: string; mimeType?: string; trashed?: boolean; capabilities?: { canDownload?: boolean }; owners?: Array<{ emailAddress?: string }>; driveId?: string };
+        evidence.fileIdMatches = file.id === fileId;
+        evidence.mimeType = file.mimeType;
+        evidence.trashed = file.trashed === true;
+        evidence.canDownload = file.capabilities?.canDownload === true;
+        evidence.owners = (file.owners || []).map(owner => owner.emailAddress).filter((email): email is string => Boolean(email));
+        evidence.sharedDrive = Boolean(file.driveId);
+        evidence.readable = evidence.fileIdMatches && file.mimeType === "application/pdf" && file.trashed !== true && file.capabilities?.canDownload === true;
+        return evidence;
+      } catch {
+        evidence.driveErrorCode = "PROVIDER_REQUEST_FAILED";
+        evidence.readable = false;
+        return evidence;
+      }
+    }));
+    const organiser = principals.find(item => item.principal.toLowerCase() === target.subject.toLowerCase());
+    let permissionListHttpStatus: number | undefined;
+    let permissions: MirrorPdfAccessEvidence["permissions"];
+    let permissionsErrorCode: string | undefined;
+    if (organiser?.tokenStatus === "ok") {
+      const delegated = await token(organiser.principal, DRIVE_READ);
+      const permissionPath = "/drive/v3/files/" + encodeURIComponent(fileId) + "/permissions?supportsAllDrives=true&pageSize=100&fields=" + encodeURIComponent("nextPageToken,permissions(type,emailAddress,role,deleted,permissionDetails(inherited,permissionType))");
+      try {
+        const response = await fetcher(GOOGLE + permissionPath, { headers: { authorization: "Bearer " + delegated.accessToken }, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(8000) });
+        permissionListHttpStatus = response.status;
+        if (response.ok) {
+          const body = await response.json() as { nextPageToken?: string; permissions?: Array<{ type?: string; emailAddress?: string; role?: string; deleted?: boolean; permissionDetails?: Array<{ inherited?: boolean; permissionType?: string }> }> };
+          const approved = new Set(subjects.map(subject => subject.toLowerCase()));
+          permissions = (body.permissions || []).filter(permission => !permission.emailAddress || approved.has(permission.emailAddress.toLowerCase()))
+            .flatMap(permission => (permission.permissionDetails?.length ? permission.permissionDetails.map(detail => ({ type: permission.type, emailAddress: permission.emailAddress, role: permission.role, deleted: permission.deleted, inherited: detail.inherited, permissionType: detail.permissionType })) : [{ type: permission.type, emailAddress: permission.emailAddress, role: permission.role, deleted: permission.deleted }]));
+          if (body.nextPageToken) permissionsErrorCode = "PERMISSION_LIST_TRUNCATED";
+        } else permissionsErrorCode = "PERMISSION_LIST_FAILED";
+      } catch { permissionsErrorCode = "PERMISSION_LIST_FAILED"; }
+    }
+    return { fileId, expectedMimeType: "application/pdf", readableByAll: principals.every(principal => principal.readable === true), principals,
+      ...(permissionListHttpStatus !== undefined ? { permissionListHttpStatus } : {}), ...(permissions ? { permissions } : {}), ...(permissionsErrorCode ? { permissionsErrorCode } : {}) };
   }
   const verifiedDocuments = new WeakSet<MirrorDocument>();
   async function verifiedPdf(fileId: string, title: string): Promise<MirrorDocument> {
@@ -336,5 +424,5 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
     await verifyStored(written.status === 409 ? await request(path, DRIVE_WRITE, target.subject) : written);
     return verifiedPdf(fileId, title);
   }
-  return { inspect, inspectEvent, inspectAttendeeCopies, publish, verifiedPdf, allocatePdfId, storeRunSheet, verifyRunSheetFolder, verifyCalendarBinding };
+  return { inspect, inspectEvent, inspectAttendeeCopies, inspectPdfAccess, publish, verifiedPdf, allocatePdfId, storeRunSheet, verifyRunSheetFolder, verifyCalendarBinding };
 }

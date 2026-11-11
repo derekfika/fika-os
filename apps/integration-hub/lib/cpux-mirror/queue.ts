@@ -38,6 +38,7 @@ async function prepare(booking: CanonicalBooking, readOnly = false) {
   const order = active[0] || currentOrders[0];
   const model = hospitalityMirrorSource(booking, order);
   if (!model) return;
+  const currentQuote = booking.quoteState?.revisions.find(quote => quote.id === booking.quoteState?.currentRevisionId);
   const [site] = await resolveMirrorOplocs([model.site]);
   if (!hospitalityCalendarSiteEnabled(site.canonicalId)) throw new Error("Hospitality Calendar delivery is disabled for this site.");
   const target = resolveHospitalityCalendarTarget(site.canonicalId);
@@ -52,13 +53,19 @@ async function prepare(booking: CanonicalBooking, readOnly = false) {
   const plan = inspected?.observation || await api.inspect(model.source);
   if (!prior.exists && !readOnly && !model.source.withdrawn && plan.disposition !== "create")
     throw new Error("An existing mirror event lacks a persisted verified Calendar binding; operator review is required.");
-  const document = model.fileId ? await api.verifiedPdf(model.fileId, "Approved Hospitality quote.pdf") : undefined;
+  const pdfAccess = readOnly && model.fileId ? await api.inspectPdfAccess(model.fileId) : undefined;
+  const document = model.fileId && (!pdfAccess || pdfAccess.readableByAll)
+    ? await api.verifiedPdf(model.fileId, "Approved Hospitality quote.pdf") : undefined;
   const cpuLines = order?.lines.filter(line => ["sandwiches", "hospitality", "delivered_in"].includes(line.workstream || "")) || [];
   return {
     preview: {
       ...plan, identity: booking.canonicalId, revision: model.source.revision, referenceHash: digest(model.source.sourceReference),
       calendarId: target.calendarId, organizerMailbox: target.subject, calendarAccessRole: verifiedBinding.accessRole,
       bindingStatus: prior.exists ? "verified" : "missing", attendees: mirrorRecipients(target), fileId: document?.fileId || null,
+      ...(readOnly ? { quoteRevision: currentQuote ? { id: currentQuote.id, revision: currentQuote.revision,
+        commercialVersion: currentQuote.commercialVersion, stale: currentQuote.stale, pdfStatus: currentQuote.pdfStatus || null,
+        driveFileId: currentQuote.driveFileId || null } : null,
+        quoteAccess: !model.fileId ? { status: "missing" as const } : { status: pdfAccess?.readableByAll ? "verified" as const : "blocked" as const, ...pdfAccess } } : {}),
       ...(document ? { quote: { fileId: document.fileId, title: document.title, url: document.url, attachmentUrl: document.attachmentUrl, accessVerified: true } } : {}),
       ...(readOnly ? { identityStatus: inspected?.identityStatus, currentEvent: inspected?.currentEvent || null,
         conflictingEvents: inspected?.conflictingEvents || [], attendeeCopies: await api.inspectAttendeeCopies(model.source) } : {}),
@@ -133,7 +140,7 @@ export async function hospitalityCatchUp(from: string, through: string, approveH
   const batch = rows.docs.slice(0, 10);
   const nextCursor = rows.size > batch.length ? { serviceDate: batch.at(-1)!.get("service.eventDate") as string, bookingId: batch.at(-1)!.id } : null;
   const plans: Array<NonNullable<Awaited<ReturnType<typeof prepare>>>> = [];
-  const skipped: Array<{ identity: string; eventId: string; serviceDate: string; oplocId: string | null; lifecycleStatus: string; outbox: Array<Record<string, unknown>>; reason: string }> = [];
+  const skipped: Array<{ identity: string; eventId: string; serviceDate: string; oplocId: string | null; lifecycleStatus: string; outbox: Array<Record<string, unknown>>; reason: string; diagnostics?: Record<string, unknown> }> = [];
   const bookingIds = batch.map(row => row.id);
   const outboxByBooking = new Map<string, Array<Record<string, unknown>>>();
   for (let offset = 0; offset < bookingIds.length; offset += 30) {
@@ -162,6 +169,8 @@ export async function hospitalityCatchUp(from: string, through: string, approveH
     try {
       const plan = await prepare(booking, !approveHash);
       if (plan && (plan.preview.fileId || ["cancel", "unchanged", "skip"].includes(plan.preview.disposition))) plans.push(plan);
+      else if (plan && !approveHash && "quoteAccess" in plan.preview && plan.preview.quoteAccess?.status === "blocked") skipped.push({ identity: booking.canonicalId, eventId: mirrorEventId("hospitality", booking.canonicalId), serviceDate: booking.service.eventDate, oplocId: booking.service.oplocId || null, lifecycleStatus: booking.lifecycleStatus,
+        outbox: outboxByBooking.get(row.id) || [], reason: "current approved quote access is blocked for one or more intended principals", diagnostics: plan.preview });
       else skipped.push({ identity: booking.canonicalId, eventId: mirrorEventId("hospitality", booking.canonicalId), serviceDate: booking.service.eventDate, oplocId: booking.service.oplocId || null, lifecycleStatus: booking.lifecycleStatus,
         outbox: outboxByBooking.get(row.id) || [], reason: "no eligible CPU production lines or current approved quote PDF" });
     } catch (error) {
