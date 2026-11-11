@@ -38,9 +38,23 @@ export function configuredMirrorTarget(stream: MirrorSource["stream"], site: str
 }
 
 export type MirrorObservation = { disposition: "create" | "update" | "cancel" | "unchanged" | "skip"; eventId: string };
+export type MirrorEventEvidence = {
+  id: string; iCalUID?: string; status?: string; summary?: string; description?: string; location?: string;
+  start?: { date?: string; dateTime?: string; timeZone?: string }; end?: { date?: string; dateTime?: string; timeZone?: string };
+  htmlLink?: string; organizer?: { email?: string; self?: boolean };
+  attendees: Array<{ email?: string; responseStatus?: string; self?: boolean; organizer?: boolean }>;
+  attachments: Array<{ fileId?: string; title?: string; fileUrl?: string }>;
+};
+export type MirrorAttendeeCopy = {
+  email: string; status: "found" | "missing" | "duplicate" | "unavailable"; responseStatus?: string;
+  event?: MirrorEventEvidence; errorCode?: string;
+};
 type Event = {
-  id?: string; etag?: string; status?: string; organizer?: { self?: boolean; email?: string };
-  attendees?: Array<{ email?: string; responseStatus?: string; organizer?: boolean }>;
+  id?: string; etag?: string; iCalUID?: string; htmlLink?: string; summary?: string; description?: string; location?: string;
+  start?: { date?: string; dateTime?: string; timeZone?: string }; end?: { date?: string; dateTime?: string; timeZone?: string };
+  status?: string; organizer?: { self?: boolean; email?: string };
+  attendees?: Array<{ email?: string; responseStatus?: string; organizer?: boolean; self?: boolean }>;
+  attachments?: Array<{ fileId?: string; title?: string; fileUrl?: string }>;
   attendeesOmitted?: boolean;
   extendedProperties?: { shared?: Record<string, string> };
 };
@@ -194,6 +208,62 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
   async function inspect(source: MirrorSource) {
     return classify(source, await findCanonicalEvent(mirrorEventId(source.stream, source.identity)));
   }
+  function eventEvidence(event: Event): MirrorEventEvidence {
+    return {
+      id: event.id || "",
+      ...(event.iCalUID ? { iCalUID: event.iCalUID } : {}),
+      ...(event.status ? { status: event.status } : {}),
+      ...(event.summary ? { summary: event.summary } : {}),
+      ...(event.description ? { description: event.description } : {}),
+      ...(event.location ? { location: event.location } : {}),
+      ...(event.start ? { start: event.start } : {}),
+      ...(event.end ? { end: event.end } : {}),
+      ...(event.htmlLink ? { htmlLink: event.htmlLink } : {}),
+      ...(event.organizer ? { organizer: event.organizer } : {}),
+      attendees: (event.attendees || []).map(({ email, responseStatus, self, organizer }) => ({ email, responseStatus, self, organizer })),
+      attachments: (event.attachments || []).map(({ fileId, title, fileUrl }) => ({ fileId, title, fileUrl })),
+    };
+  }
+  async function inspectEvent(source: MirrorSource) {
+    const eventId = mirrorEventId(source.stream, source.identity);
+    await verifyCalendarBinding();
+    const exact = await readEvent(eventId);
+    const params = new URLSearchParams({ sharedExtendedProperty: "fikaMirrorKey=" + eventId, maxResults: "3", showDeleted: "false" });
+    const response = await request(collection + "?" + params, readScope, target.subject);
+    if (!response.ok) throw privacySafeError(response);
+    const list = await response.json() as { items?: Event[]; nextPageToken?: string };
+    const matches = [...new Map([...(exact ? [exact] : []), ...(list.items || [])].filter((item): item is Event & { id: string } => Boolean(item.id)).map(item => [item.id, item])).values()];
+    const identityStatus = list.nextPageToken || matches.length > 1 || matches.some(item => item.id !== eventId) ? "duplicate-or-conflicting" : "unique";
+    if (identityStatus !== "unique") return {
+      observation: { eventId, disposition: "skip" as const }, identityStatus,
+      currentEvent: exact ? eventEvidence(exact) : null, conflictingEvents: matches.map(eventEvidence),
+    };
+    const event = exact || matches[0];
+    return { observation: classify(source, event), identityStatus, currentEvent: event ? eventEvidence(event) : null, conflictingEvents: [] };
+  }
+  async function inspectAttendeeCopies(source: MirrorSource): Promise<MirrorAttendeeCopy[]> {
+    if (!readOnly) throw new Error("Attendee Calendar diagnostics are read-only.");
+    const mirrorKey = mirrorEventId(source.stream, source.identity);
+    const organizerEvent = await readEvent(mirrorKey);
+    const attendees = mirrorRecipients(target);
+    return Promise.all(attendees.map(async email => {
+      try {
+        const fields = "items(id,iCalUID,status,summary,description,location,start,end,htmlLink,organizer(email,self),attendees(email,responseStatus,self,organizer),attachments(fileId,title,fileUrl))";
+        const params = new URLSearchParams({ maxResults: "2", showDeleted: "true", fields,
+          ...(organizerEvent?.iCalUID ? { iCalUID: organizerEvent.iCalUID } : { sharedExtendedProperty: "fikaMirrorKey=" + mirrorKey }) });
+        const response = await request("/calendar/v3/calendars/primary/events?" + params, CALENDAR_READ, email);
+        if (!response.ok) return { email, status: "unavailable" as const, errorCode: "ATTENDEE_CALENDAR_READ_FAILED" };
+        const events = ((await response.json()) as { items?: Event[] }).items || [];
+        if (!events.length) return { email, status: "missing" as const };
+        if (events.length > 1) return { email, status: "duplicate" as const };
+        const event = events[0];
+        if (organizerEvent?.iCalUID && event.iCalUID !== organizerEvent.iCalUID) return { email, status: "unavailable" as const, errorCode: "ATTENDEE_ICALUID_MISMATCH" };
+        return { email, status: "found" as const, responseStatus: event.attendees?.find(attendee => attendee.self || attendee.email?.toLowerCase() === email)?.responseStatus, event: eventEvidence(event) };
+      } catch {
+        return { email, status: "unavailable" as const, errorCode: "ATTENDEE_CALENDAR_READ_FAILED" };
+      }
+    }));
+  }
   async function publish(source: MirrorSource, details?: MirrorDetails, document?: MirrorDocument): Promise<MirrorObservation> {
     assertWrite();
     if (!source.identity || !Number.isSafeInteger(source.revision) || source.revision < 1) throw new Error("Valid canonical source identity and revision are required.");
@@ -266,5 +336,5 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
     await verifyStored(written.status === 409 ? await request(path, DRIVE_WRITE, target.subject) : written);
     return verifiedPdf(fileId, title);
   }
-  return { inspect, publish, verifiedPdf, allocatePdfId, storeRunSheet, verifyRunSheetFolder, verifyCalendarBinding };
+  return { inspect, inspectEvent, inspectAttendeeCopies, publish, verifiedPdf, allocatePdfId, storeRunSheet, verifyRunSheetFolder, verifyCalendarBinding };
 }

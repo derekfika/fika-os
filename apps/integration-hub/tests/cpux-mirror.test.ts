@@ -197,7 +197,11 @@ function harness() {
     if (url.pathname.includes("/drive/"))
       return blockedPdf && headers.get("authorization")?.endsWith(target.logistics) ? response({}, 403)
         : response({ id: "fixtureQuoteFile", mimeType: "application/pdf", capabilities: { canDownload: true } });
-    if (method === "GET" && url.searchParams.has("sharedExtendedProperty")) return response({ items: [] });
+    if (method === "GET" && url.searchParams.has("sharedExtendedProperty")) {
+      const wanted = url.searchParams.get("sharedExtendedProperty")?.split("=").slice(1).join("=");
+      const storedMirrorKey = (event?.extendedProperties as { shared?: Record<string, string> } | undefined)?.shared?.fikaMirrorKey;
+      return response({ items: event && storedMirrorKey === wanted ? [event] : [] });
+    }
     if (method === "GET") return event ? response(event) : response({}, 404);
     if (failWrite) return response({ message: "private diagnostic must not leak" }, 429);
     if (method === "PATCH") assert.equal(headers.get("if-match"), event?.etag);
@@ -278,6 +282,27 @@ test("production preview cannot publish or allocate files even with write creden
   assert.equal((await preview.inspect(model.source)).disposition, "create");
   await assert.rejects(preview.publish(model.source), /preview cannot write/);
   await assert.rejects(preview.allocatePdfId(), /preview cannot write/);
+  assert.ok(fixture.calls.every(call => call.method === "GET"));
+});
+
+test("read-only diagnostics expose deterministic organiser identity and attendee-copy status without writes", async () => {
+  const fixture = harness();
+  const preview = await openMirrorClient(target, { ...env, FIKA_CPUX_MIRROR_WRITES_ENABLED: "false", FIKA_CPUX_MIRROR_PREVIEW_ENABLED: "true" }, fixture.fetcher, true);
+  const model = hospitalityMirrorSource(booking, order)!;
+  const inspected = await preview.inspectEvent(model.source);
+  assert.equal(inspected.observation.disposition, "create");
+  assert.equal(inspected.identityStatus, "unique");
+  assert.equal(inspected.currentEvent, null);
+  const copies = await preview.inspectAttendeeCopies(model.source);
+  assert.deepEqual(copies.map(copy => [copy.email, copy.status]), [["cpux@fikacatering.com", "missing"], [target.logistics, "missing"]]);
+  assert.ok(fixture.calls.every(call => call.method === "GET"));
+  assert.ok(fixture.calls.some(call => call.url.pathname.includes("/calendars/primary/events")));
+  const eventId = mirrorEventId("hospitality", booking.canonicalId);
+  fixture.setEvent({ id: "conflicting-event-id", status: "confirmed", extendedProperties: { shared: { fikaMirrorKey: eventId } } });
+  const duplicate = await preview.inspectEvent(model.source);
+  assert.equal(duplicate.identityStatus, "duplicate-or-conflicting");
+  assert.equal(duplicate.observation.disposition, "skip");
+  assert.equal(duplicate.conflictingEvents[0]?.id, "conflicting-event-id");
   assert.ok(fixture.calls.every(call => call.method === "GET"));
 });
 
