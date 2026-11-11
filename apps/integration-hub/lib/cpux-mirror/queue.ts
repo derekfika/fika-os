@@ -10,6 +10,7 @@ import { mirrorEnabled, mirrorPreviewEnabled, openMirrorClient } from "../../../
 import { hospitalityCalendarSiteEnabled, resolveHospitalityCalendarTarget } from "../hospitality-calendar-integration";
 import { hasRecordedHospitalityHandoff, hospitalityMirrorSource } from "./source";
 import { resolveMirrorOplocs } from "./oplocs";
+import { hospitalityCatchUpWriteIntent } from "./approval";
 
 const queue = () => db.collection("fikaCpuXHospitalityMirrorOutboxV1");
 type Intent = { bookingId: string; orderId: string };
@@ -49,8 +50,8 @@ async function prepare(booking: CanonicalBooking, readOnly = false) {
   const verifiedBinding = await api.verifyCalendarBinding();
   if (prior.exists && (prior.get("calendarId") !== target.calendarId || prior.get("organizerMailbox") !== target.subject || prior.get("accessRole") !== verifiedBinding.accessRole))
     throw new Error("Calendar organiser binding changed or lacks historical verification; operator review is required.");
-  const inspected = readOnly ? await api.inspectEvent(model.source) : undefined;
-  const plan = inspected?.observation || await api.inspect(model.source);
+  const inspected = await api.inspectEvent(model.source);
+  const plan = inspected.observation;
   if (!prior.exists && !readOnly && !model.source.withdrawn && plan.disposition !== "create")
     throw new Error("An existing mirror event lacks a persisted verified Calendar binding; operator review is required.");
   const pdfAccess = readOnly && model.fileId ? await api.inspectPdfAccess(model.fileId) : undefined;
@@ -58,6 +59,7 @@ async function prepare(booking: CanonicalBooking, readOnly = false) {
     ? await api.verifiedPdf(model.fileId, "Approved Hospitality quote.pdf") : undefined;
   const cpuLines = order?.lines.filter(line => ["sandwiches", "hospitality", "delivered_in"].includes(line.workstream || "")) || [];
   return {
+    inspectionState: { identityStatus: inspected.identityStatus, currentEvent: inspected.currentEvent, conflictingEvents: inspected.conflictingEvents },
     preview: {
       ...plan, identity: booking.canonicalId, revision: model.source.revision, referenceHash: digest(model.source.sourceReference),
       calendarId: target.calendarId, organizerMailbox: target.subject, calendarAccessRole: verifiedBinding.accessRole,
@@ -67,8 +69,8 @@ async function prepare(booking: CanonicalBooking, readOnly = false) {
         driveFileId: currentQuote.driveFileId || null } : null,
         quoteAccess: !model.fileId ? { status: "missing" as const } : { status: pdfAccess?.readableByAll ? "verified" as const : "blocked" as const, ...pdfAccess } } : {}),
       ...(document ? { quote: { fileId: document.fileId, title: document.title, url: document.url, attachmentUrl: document.attachmentUrl, accessVerified: true } } : {}),
-      ...(readOnly ? { identityStatus: inspected?.identityStatus, currentEvent: inspected?.currentEvent || null,
-        conflictingEvents: inspected?.conflictingEvents || [], attendeeCopies: await api.inspectAttendeeCopies(model.source) } : {}),
+      ...(readOnly ? { identityStatus: inspected.identityStatus, currentEvent: inspected.currentEvent || null,
+        conflictingEvents: inspected.conflictingEvents || [], attendeeCopies: await api.inspectAttendeeCopies(model.source) } : {}),
       service: { date: booking.service.eventDate, time: booking.service.startTime, guestCount: booking.service.guestCount, oplocId: site.canonicalId, site: booking.service.portalSiteLabel || order?.destinationLabel || site.canonicalId },
       handoff: { status: booking.lifecycleStatus, currentOrderId: order?.canonicalId || null, currentOrderVersion: order?.version ?? null, currentOrderStatus: order?.status || null,
         missingProductionQuantity: cpuLines.filter(line => typeof line.productionQuantity !== "number" || !Number.isFinite(line.productionQuantity) || line.productionQuantity <= 0).length,
@@ -139,6 +141,7 @@ export async function hospitalityCatchUp(from: string, through: string, approveH
   const rows = await (after ? query.startAfter(after.serviceDate, after.bookingId) : query).limit(11).get();
   const batch = rows.docs.slice(0, 10);
   const nextCursor = rows.size > batch.length ? { serviceDate: batch.at(-1)!.get("service.eventDate") as string, bookingId: batch.at(-1)!.id } : null;
+  const previewPlans: Array<NonNullable<Awaited<ReturnType<typeof prepare>>>> = [];
   const plans: Array<NonNullable<Awaited<ReturnType<typeof prepare>>>> = [];
   const skipped: Array<{ identity: string; eventId: string; serviceDate: string; oplocId: string | null; lifecycleStatus: string; outbox: Array<Record<string, unknown>>; reason: string; diagnostics?: Record<string, unknown> }> = [];
   const bookingIds = batch.map(row => row.id);
@@ -167,9 +170,18 @@ export async function hospitalityCatchUp(from: string, through: string, approveH
       continue;
     }
     try {
-      const plan = await prepare(booking, !approveHash);
-      if (plan && (plan.preview.fileId || ["cancel", "unchanged", "skip"].includes(plan.preview.disposition))) plans.push(plan);
-      else if (plan && !approveHash && "quoteAccess" in plan.preview && plan.preview.quoteAccess?.status === "blocked") skipped.push({ identity: booking.canonicalId, eventId: mirrorEventId("hospitality", booking.canonicalId), serviceDate: booking.service.eventDate, oplocId: booking.service.oplocId || null, lifecycleStatus: booking.lifecycleStatus,
+      const plan = await prepare(booking, true);
+      if (plan && (plan.preview.fileId || ["cancel", "unchanged", "skip"].includes(plan.preview.disposition))) {
+        previewPlans.push(plan);
+        if (approveHash) {
+          const writable = await prepare(booking, false);
+          if (!writable || digest(hospitalityCatchUpWriteIntent(plan.preview)) !== digest(hospitalityCatchUpWriteIntent(writable.preview)) ||
+            digest(plan.inspectionState) !== digest(writable.inspectionState))
+            throw new Error("Catch-up source or write intent changed during approval verification.");
+          plans.push(writable);
+        } else plans.push(plan);
+      }
+      else if (plan && "quoteAccess" in plan.preview && plan.preview.quoteAccess?.status === "blocked") skipped.push({ identity: booking.canonicalId, eventId: mirrorEventId("hospitality", booking.canonicalId), serviceDate: booking.service.eventDate, oplocId: booking.service.oplocId || null, lifecycleStatus: booking.lifecycleStatus,
         outbox: outboxByBooking.get(row.id) || [], reason: "current approved quote access is blocked for one or more intended principals", diagnostics: plan.preview });
       else skipped.push({ identity: booking.canonicalId, eventId: mirrorEventId("hospitality", booking.canonicalId), serviceDate: booking.service.eventDate, oplocId: booking.service.oplocId || null, lifecycleStatus: booking.lifecycleStatus,
         outbox: outboxByBooking.get(row.id) || [], reason: "no eligible CPU production lines or current approved quote PDF" });
@@ -178,7 +190,7 @@ export async function hospitalityCatchUp(from: string, through: string, approveH
         outbox: outboxByBooking.get(row.id) || [], reason: error instanceof Error ? error.message : "source or mapping unavailable" });
     }
   }
-  const events = plans.map(plan => ({ ...plan.preview, outbox: outboxByBooking.get(plan.preview.identity) || [] })).sort((a, b) => a.eventId.localeCompare(b.eventId));
+  const events = previewPlans.map(plan => ({ ...plan.preview, outbox: outboxByBooking.get(plan.preview.identity) || [] })).sort((a, b) => a.eventId.localeCompare(b.eventId));
   const planHash = digest({ from, through, after: after || null, nextCursor, events: events.map(event => Object.fromEntries(Object.entries(event).filter(([key]) => key !== "disposition"))), skipped });
   if (!approveHash) return { dryRun: true, scanned: batch.length, events, skipped, nextCursor, planHash };
   if (approveHash !== planHash || approveHash !== process.env.FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH)

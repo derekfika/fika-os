@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { backfillDates, documentUrl, londonServiceDate, londonTimestamp, mirrorEventId, TIME_ZONE } from "../../shared/cpux-calendar/contract";
+import { hospitalityCatchUpWriteIntent } from "../lib/cpux-mirror/approval";
 import { openMirrorClient } from "../../shared/cpux-calendar/google";
 import { hospitalityCalendarSiteEnabled, resolveHospitalityCalendarTarget } from "../lib/hospitality-calendar-integration";
 import { HOSPITALITY_EMAIL_SITE_IDENTITIES, RCOA_HOSPITALITY_OPLOC_ID } from "../lib/booking-email-site-identities";
@@ -16,6 +17,20 @@ const env = {
   FIKA_CPUX_MIRROR_RUNTIME_IDENTITY: identity, FIKA_CPUX_MIRROR_DWD_ISSUER: issuer,
   FIKA_CPUX_HOSPITALITY_CALENDARS_JSON: "{}", FIKA_CPUX_LOGISTICS_MAILBOX: target.logistics,
 };
+
+test("catch-up approval compares write intent while retaining read-only diagnostics in the approval hash", () => {
+  const reviewed = { eventId: "fika-event", disposition: "update", identity: "booking-1", revision: 4,
+    referenceHash: "source-4", calendarId: "rcoa-calendar", organizerMailbox: "rcoa@fikacatering.com",
+    attendees: ["cpux@fikacatering.com", "logistics@fikacatering.com"], fileId: "approved-pdf-id",
+    service: { date: "2026-11-12", time: "17:30", guestCount: 35 }, quoteRevision: { id: "r4" },
+    quoteAccess: { status: "verified" }, identityStatus: "unique", currentEvent: { status: "cancelled" },
+    conflictingEvents: [], attendeeCopies: [{ email: "cpux@fikacatering.com", status: "cancelled" }] };
+  const writable = { ...reviewed, quoteRevision: undefined, quoteAccess: undefined, identityStatus: undefined,
+    currentEvent: undefined, conflictingEvents: undefined, attendeeCopies: undefined };
+  assert.deepEqual(hospitalityCatchUpWriteIntent(reviewed), hospitalityCatchUpWriteIntent(writable));
+  assert.notDeepEqual(hospitalityCatchUpWriteIntent(reviewed), hospitalityCatchUpWriteIntent({ ...writable,
+    service: { ...reviewed.service, guestCount: 94 } }));
+});
 
 test("Calendar recovery is limited to the explicitly configured canonical site", () => {
   const scoped = { FIKA_CPUX_HOSPITALITY_ALLOWED_OPLOC: RCOA_HOSPITALITY_OPLOC_ID };
