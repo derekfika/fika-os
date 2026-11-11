@@ -2,5 +2,5 @@
 
 Move the RCoA dashboard data and session endpoints under `/rcoa/bookings` so the host-only session cookie scoped to that dashboard is sent to both endpoints. This fixes authentication succeeding while the dashboard data request was rejected as unauthenticated.
 
-Validation: focused RCoA dashboard session tests (5 passed), full Hospitality suite (447 passed), workflow checks (163 passed), typecheck, production build, changelog check and diff check passed; governed PR CI and authenticated staging UAT pending.
-Deployment: staging redeployment pending; production unchanged.
+Validation: focused RCoA dashboard session tests (5 passed), full Hospitality suite (447 passed), workflow checks (163 passed), typecheck, production build, changelog and diff checks passed. PR CI passed. Authenticated staging UAT confirmed the session/data round-trip, grouped All Day child services, Gallagher session isolation and `/rcoa` New booking target. At 390px the mobile cards and detail drawer rendered; a 2px horizontal overflow was measured. Visual comparison found the implementation omits the mockup's spend and recorded-price fields, which remain excluded by the customer-safe projection.
+Deployment: Hospitality staging build `build-2026-11-11-003`, source `40570e61a9d367d995b110f26fe3c4f68915c9af`; Hub staging build `build-2026-11-11-003`, source `316fa7ccfab1745b7c0a992cf08a8aeb186876d4`. Production unchanged. Issue #284 remains open pending owner acceptance and production verification.
