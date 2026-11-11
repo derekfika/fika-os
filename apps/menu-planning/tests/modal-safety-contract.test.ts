@@ -27,7 +27,7 @@ test("targeted production files contain no native browser dialogs", async () => 
   assert.doesNotMatch(source, /window\.(alert|confirm|prompt)\s*\(/);
 });
 
-test("Duplicate Planning uses a viewport-bound two-column workspace layout with a pinned footer (#254)", async () => {
+test("Duplicate Planning uses a viewport-bound large modal with accessible selection and a pinned footer (#254)", async () => {
   const [duplicate, css] = await Promise.all([read("duplicate-planning-modal.tsx"), read("final-tightening.css")]);
   // Structure: scrolling body holds form + preview; footer stays a direct child of the dialog.
   assert.match(duplicate, /className="duplicate-body"[\s\S]*className="duplicate-form"[\s\S]*className="duplicate-preview"[\s\S]*<footer className="form-actions">/);
@@ -35,14 +35,20 @@ test("Duplicate Planning uses a viewport-bound two-column workspace layout with 
   assert.match(duplicate, /aria-live="polite" aria-label="Duplicate preview"/);
   assert.match(duplicate, /Published days are protected/);
   assert.match(duplicate, /expectedVersions/);
+  assert.match(duplicate, /Destination weeks, \$\{destinationOffsets\.length\} selected/);
+  assert.match(duplicate, /aria-describedby="duplicate-destinations-help"/);
+  assert.match(duplicate, /dismissible=\{!saving\}/);
   // Dialog is bound to the viewport and never scrolls the page; only the body scrolls, never sideways.
-  assert.match(css, /\.planner-modal\.duplicate-planning-dialog\s*\{[^}]*width: min\(1040px, calc\(100vw - 32px\)\)[^}]*max-height: calc\(100dvh - 32px\)[^}]*overflow: hidden/);
+  assert.match(css, /\.planner-modal\.duplicate-planning-dialog\s*\{[^}]*width: min\(760px, calc\(100vw - 32px\)\)[^}]*max-height: calc\(100dvh - 32px\)[^}]*overflow: hidden/);
   assert.match(css, /\.duplicate-body\s*\{[^}]*min-height: 0[^}]*overflow-x: hidden[^}]*overflow-y: auto/);
-  assert.match(css, /@media \(min-width: 980px\)\s*\{\s*\.duplicate-body\s*\{[^}]*grid-template-columns/);
+  assert.match(css, /\.duplicate-segment--weeks\s*\{[^}]*max-height: 196px[^}]*overflow-y: auto/);
+  assert.match(css, /@media \(min-width: 760px\)\s*\{\s*\.duplicate-body\s*\{[^}]*grid-template-columns/);
   assert.match(css, /@media \(max-width: 560px\)/);
-  // Choice controls are chips with native inputs, a visible focus ring and 40px+ targets, not full-width grid labels.
-  assert.match(css, /\.duplicate-planning-dialog \.duplicate-segment > label:has\(input:focus-visible\)/);
-  assert.match(css, /accent-color: var\(--mp-purple\)/);
+  // Native choices keep a visible semantic-token focus ring and 44px touch targets.
+  assert.match(css, /\.duplicate-planning-dialog \.duplicate-segment > label:focus-within/);
+  assert.match(css, /outline: 3px solid var\(--fika-focus-ring\)/);
+  assert.match(css, /accent-color: var\(--fika-action-primary\)/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   // Light operational surface: no dark background or hard-coded dark islands in the dialog block.
   const block = css.slice(css.indexOf("Duplicate Planning (#254)"));
   assert.doesNotMatch(block, /background:\s*(#0|#1|#2|black|var\(--deep\))/i);
