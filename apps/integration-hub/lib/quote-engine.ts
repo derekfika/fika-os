@@ -58,7 +58,7 @@ export type DashboardQuoteSettings = {
 export type QuoteBookingInput = {
   canonicalId: string;
   client: { name: string; companyName: string; email: string; phone?: string };
-  service: { eventDate: string; startTime: string; endTime?: string; portalSiteLabel?: string; floorLevel?: string; roomOrArea?: string; deliveryPoint?: string; guestCount: number };
+  service: { eventDate: string; startTime: string; endTime?: string; portalSiteId?: string; portalSiteLabel?: string; floorLevel?: string; roomOrArea?: string; deliveryPoint?: string; guestCount: number };
   order: { eventType?: string; items: Array<{ itemId: string; itemName?: string; description?: string; quantity: number; unitPrice: number; lineTotal?: number; servingInfo?: string; choices?: unknown[]; comments?: string }> };
   dietaries: Record<string, unknown>;
   notes?: string;
@@ -178,7 +178,9 @@ export function quoteDocumentHtml(snapshot: QuoteCommercialSnapshot, reference: 
   return compactBrandedQuoteDocumentHtml(snapshot, reference, logoUrl);
   const esc = (value: unknown) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   const gbp = (value: number) => `£${value.toFixed(2)}`;
-  const serviceLocation = snapshot.service.roomOrArea || snapshot.service.floorLevel || snapshot.service.deliveryPoint || "Location to confirm";
+  const serviceLocation = snapshot.service.portalSiteId === "rcoa"
+    ? [snapshot.service.floorLevel, snapshot.service.roomOrArea].filter(Boolean).join(" · ") || snapshot.service.deliveryPoint || "Location to confirm"
+    : snapshot.service.roomOrArea || snapshot.service.floorLevel || snapshot.service.deliveryPoint || "Location to confirm";
   const rows = snapshot.order.lines.map(line => `<tr><td><strong>${esc(line.quantity)} × ${esc(line.name)}</strong>${line.servingInfo ? `<small>${esc(line.servingInfo)}</small>` : ""}${line.description ? `<small>${esc(line.description)}</small>` : ""}</td><td>${gbp(line.lineNet.amount)}</td></tr>`).join("");
   const chargeRows = snapshot.charges.map(charge => `<tr class="charge"><td>${esc(charge.label)}</td><td>${gbp(charge.net.amount)}</td></tr>`).join("");
   const dietaries = Object.entries(snapshot.dietaries).filter(([, value]) => value !== 0 && value !== "" && value !== false).map(([key, value]) => `${esc(key)}: ${esc(value)}`).join(" · ") || "None recorded";

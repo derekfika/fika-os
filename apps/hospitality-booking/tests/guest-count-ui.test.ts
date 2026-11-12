@@ -35,7 +35,7 @@ const acks = { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, die
 const future = new Date(); future.setUTCHours(12, 0, 0, 0); future.setUTCDate(future.getUTCDate() + 60);
 while ([0, 6].includes(future.getUTCDay())) future.setUTCDate(future.getUTCDate() + 1);
 const serviceDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(future);
-const details = { eventDate: serviceDate, startTime: "09:00", endTime: "10:00", guestCount: 11, floorLevel: "1", roomOrArea: "Room", deliveryPoint: "" };
+const details = { eventDate: serviceDate, startTime: "09:00", endTime: "10:00", guestCount: 11, floorLevel: "Ground Floor", roomOrArea: "Conference Suite", deliveryPoint: "" };
 const sharedDraft = (step = 1, guests = 11, lines = selected()) => ({ step, occasion: "breakfast", category: "Breakfast", contact, details: { ...details, guestCount: guests }, lines, acks });
 const rcoaDraft = (step = 2, guests = 11) => ({ ...createEmptyRcoaDraft(), step, occasion: "breakfast", contact: { name: "Test", email: "test@example.invalid", phone: "1", companyName: "Test", invoiceReference: "" }, event: { ...createEmptyRcoaDraft().event, ...details, guestCount: guests }, lines: selected(), acknowledgements: acks });
 const guest = (surface = "booking", field = "guestCount") => document.querySelector<HTMLInputElement>(`[data-${surface}-field="${field}"]`)!;
@@ -124,9 +124,9 @@ for (const step of [4, 5]) test(`RCoA step ${step}: restored invalid count canno
 });
 
 test("RCoA All Day: service minima/counts stay independent; default 100 cannot mask failure and menu edit focuses its own row", async () => {
-  const day = { ...createEmptyAllDay(), contact: rcoaDraft().contact, eventDate: details.eventDate, floorLevel: "1", defaultGuests: 100, acknowledgements: acks,
-    services: [{ id: "one", category: "breakfast", startTime: "09:00", guestCount: 1, location: "Room A", lines: selected(product), notes: "" },
-      { id: "two", category: "breakfast", startTime: "12:00", guestCount: 11, location: "Room B", lines: selected(), notes: "" }] };
+  const day = { ...createEmptyAllDay(), contact: rcoaDraft().contact, eventDate: details.eventDate, floorLevel: "Ground Floor", defaultLocation: "Conference Suite", defaultGuests: 100, acknowledgements: acks,
+    services: [{ id: "one", category: "breakfast", startTime: "09:00", guestCount: 1, location: "Conference Suite", lines: selected(product), notes: "" },
+      { id: "two", category: "breakfast", startTime: "12:00", guestCount: 11, location: "Conference Suite", lines: selected(), notes: "" }] };
   dom.window.localStorage.setItem("fika-rcoa-booking-draft:v1", JSON.stringify({ flow: "all-day", allDay: day, step: 2 })); render(React.createElement(RcoaBookingPortal, { configured: true }));
   await waitFor(() => assert.equal(guest("rcoa", "guestCount:two")?.min, "12")); assert.equal(guest("rcoa", "guestCount:one").getAttribute("aria-invalid"), null); assert.equal(guest("rcoa", "guestCount:two").value, "11");
   fireEvent.click(screen.getByRole("button", { name: "Continue" })); await waitFor(() => assert.ok(document.activeElement === guest("rcoa", "guestCount:two")));
@@ -137,9 +137,9 @@ test("RCoA All Day: service minima/counts stay independent; default 100 cannot m
 });
 
 test("RCoA All Day: blank event default shows a linked error, blocks progression, then preserves service counts", async () => {
-  const day = { ...createEmptyAllDay(), contact: rcoaDraft().contact, eventDate: details.eventDate, floorLevel: "1", defaultGuests: 0, acknowledgements: acks,
-    services: [{ id: "one", category: "breakfast", startTime: "09:00", guestCount: 1, location: "Room A", lines: selected(product), notes: "" },
-      { id: "two", category: "breakfast", startTime: "12:00", guestCount: 12, location: "Room B", lines: selected(guestItem), notes: "" }] };
+  const day = { ...createEmptyAllDay(), contact: rcoaDraft().contact, eventDate: details.eventDate, floorLevel: "Ground Floor", defaultLocation: "Conference Suite", defaultGuests: 0, acknowledgements: acks,
+    services: [{ id: "one", category: "breakfast", startTime: "09:00", guestCount: 1, location: "Conference Suite", lines: selected(product), notes: "" },
+      { id: "two", category: "breakfast", startTime: "12:00", guestCount: 12, location: "Conference Suite", lines: selected(guestItem), notes: "" }] };
   dom.window.localStorage.setItem("fika-rcoa-booking-draft:v1", JSON.stringify({ flow: "all-day", allDay: day, step: 1 })); render(React.createElement(RcoaBookingPortal, { configured: true }));
   const input = guest("rcoa", "defaultGuests");
   assert.equal(input.value, ""); assert.equal(input.getAttribute("aria-invalid"), null);
@@ -206,9 +206,9 @@ test("RCoA standard recomputes Gallagher's guest policy from company/email and p
 });
 
 test("RCoA All Day applies the current shared Gallagher identity to each row without using the event count", async () => {
-  const day = { ...createEmptyAllDay(), contact: { ...rcoaDraft().contact, companyName: "Gallagher" }, eventDate: details.eventDate, floorLevel: "1", defaultGuests: 100, acknowledgements: acks,
-    services: [{ id: "one", category: "breakfast", startTime: "09:00", guestCount: 5, location: "Room A", lines: selected(product), notes: "" },
-      { id: "two", category: "breakfast", startTime: "12:00", guestCount: 1, location: "Room B", lines: selected(product), notes: "" }] };
+  const day = { ...createEmptyAllDay(), contact: { ...rcoaDraft().contact, companyName: "Gallagher" }, eventDate: details.eventDate, floorLevel: "Ground Floor", defaultLocation: "Conference Suite", defaultGuests: 100, acknowledgements: acks,
+    services: [{ id: "one", category: "breakfast", startTime: "09:00", guestCount: 5, location: "Conference Suite", lines: selected(product), notes: "" },
+      { id: "two", category: "breakfast", startTime: "12:00", guestCount: 1, location: "Conference Suite", lines: selected(product), notes: "" }] };
   dom.window.localStorage.setItem("fika-rcoa-booking-draft:v1", JSON.stringify({ flow: "all-day", allDay: day, step: 2 })); render(React.createElement(RcoaBookingPortal, { configured: true }));
   await waitFor(() => assert.equal(guest("rcoa", "guestCount:two")?.min, "5")); assert.equal(guest("rcoa", "guestCount:one").getAttribute("aria-invalid"), null);
   assert.equal(guest("rcoa", "guestCount:two").getAttribute("aria-invalid"), "true"); assert.equal(guest("rcoa", "guestCount:two").value, "1");

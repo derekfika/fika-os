@@ -12,6 +12,7 @@ import {
   type RcoaEventType,
   type RcoaLine,
 } from "./rcoa-portal";
+import { isRcoaFloor, isValidRcoaLocationPair, rcoaFloorChange } from "@fika/server-shared/rcoa-locations";
 
 /**
  * All Day Hospitality: one customer request for an event that runs all day. The event details are entered ONCE; the day is a list
@@ -64,6 +65,15 @@ export function createAllDayDraftForSite(siteId: string): AllDayDraft {
 /** Event-level defaults fill the BLANKS of existing rows (never overriding a row the customer already set) and seed new rows. */
 export function applyAllDayDefaults(draft: AllDayDraft): AllDayDraft {
   return { ...draft, services: draft.services.map((service) => ({ ...service, guestCount: service.guestCount > 0 ? service.guestCount : draft.defaultGuests, location: service.location.trim() ? service.location : draft.defaultLocation })) };
+}
+
+export function changeAllDayFloor(draft: AllDayDraft, floorLevel: string): AllDayDraft {
+  return {
+    ...draft,
+    floorLevel,
+    defaultLocation: rcoaFloorChange(floorLevel, draft.defaultLocation).location,
+    services: draft.services.map(service => ({ ...service, location: rcoaFloorChange(floorLevel, service.location).location })),
+  };
 }
 
 export function addAllDayService(draft: AllDayDraft, id?: string): AllDayDraft {
@@ -144,7 +154,8 @@ export function validateAllDay(draft: AllDayDraft, menu: readonly PortalMenuItem
   const dateErrors: Record<string, string> = isValidRcoaLondonWallTime(draft.eventDate, "12:00") ? {} : { eventDate: "Choose a valid event date." };
   const defaultGuestMessage = guestCountMessage(draft.defaultGuests, 1);
   const defaultGuestErrors: Record<string, string> = defaultGuestMessage ? { defaultGuests: defaultGuestMessage } : {};
-  const floorErrors: Record<string, string> = draft.floorLevel.trim() ? {} : { floorLevel: "Enter the floor level." };
+  const floorErrors: Record<string, string> = draft.floorLevel.trim() && isRcoaFloor(draft.floorLevel) ? {} : { floorLevel: "Choose a listed floor." };
+  if (draft.defaultLocation && !isValidRcoaLocationPair(draft.floorLevel, draft.defaultLocation)) floorErrors.defaultLocation = `Choose a location available on ${draft.floorLevel || "the selected floor"}.`;
   const eventErrors = { ...contactErrors, ...dateErrors, ...defaultGuestErrors, ...floorErrors };
   if (Object.keys(eventErrors).length) return { step: 1, errors: eventErrors };
   for (const service of draft.services) {

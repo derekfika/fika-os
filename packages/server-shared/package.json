@@ -34,5 +34,6 @@
     ,"./hospitality-catalogue-client": "./src/hospitality-catalogue-client.ts"
     ,"./credentialed-upstream": "./src/credentialed-upstream.ts"
     ,"./outbound-environment": "./src/outbound-environment.ts"
+    ,"./rcoa-locations": "./src/rcoa-locations.ts"
   }
 }

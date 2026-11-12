@@ -156,6 +156,13 @@ test("Hot Fork Buffet mirror displays 90 Per person without production quantity 
   assert.ok(eventWrite.body!.description!.includes(quote.url));
 });
 
+test("RCoA Calendar event location includes its assigned floor and room", () => {
+  const located = { ...booking, service: { ...booking.service, portalSiteId: "rcoa", floorLevel: "Second Floor", roomOrArea: "Meeting Room 4", deliveryPoint: "" } } as unknown as CanonicalBooking;
+  const model = hospitalityMirrorSource(located, order)!;
+  assert.equal(model.details!.location, "Fixture site · Second Floor · Meeting Room 4");
+  assert.match(model.details!.description, /Delivery: Fixture site · Second Floor · Meeting Room 4/);
+});
+
 test("catch-up starts on 9 November inclusive and timed events handle UK clock changes", () => {
   assert.deepEqual(backfillDates("2026-11-09", "2026-11-10"), ["2026-11-09", "2026-11-10"]);
   assert.throws(() => backfillDates("2026-11-08", "2026-11-09"), /inclusive range/);

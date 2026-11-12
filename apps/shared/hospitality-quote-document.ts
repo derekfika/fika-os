@@ -90,7 +90,9 @@ export type HospitalityQuoteDocumentOptions = {
 };
 
 export function renderHospitalityQuoteDocument(snapshot: QuoteDocumentSnapshot, reference: { createdAt: string }, options: HospitalityQuoteDocumentOptions = {}) {
-  const location = snapshot.service.roomOrArea || snapshot.service.floorLevel || snapshot.service.deliveryPoint || "Location to confirm";
+  const location = snapshot.service.portalSiteId === "rcoa"
+    ? [snapshot.service.floorLevel, snapshot.service.roomOrArea].filter(Boolean).join(" · ") || snapshot.service.deliveryPoint || "Location to confirm"
+    : snapshot.service.roomOrArea || snapshot.service.floorLevel || snapshot.service.deliveryPoint || "Location to confirm";
   const dietaries = Object.entries(snapshot.dietaries).filter(([, value]) => value !== 0 && value !== "" && value !== false).map(([key, value]) => `<span>${quoteEsc(key)}: ${quoteEsc(value)}</span>`).join("") || `<span class="muted">None recorded</span>`;
   const branding = resolveQuoteBranding(snapshot.service);
   const body = options.bodyHtml ?? `<div class="section-title"><h2>Your hospitality service</h2><span class="small">Prices shown net of VAT</span></div>${quoteOrderTableHtml(snapshot.order.lines, snapshot.charges)}`;

@@ -12,7 +12,7 @@ import type { CanonicalRecord } from "../lib/types";
 import { randomUUID } from "node:crypto";
 
 const RCOA_OPLOC = "oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2";
-const rcoaPayload = { bookingId: "RCOA-INGEST-1", siteId: "rcoa" } as unknown as MnkBookingPayload;
+const rcoaPayload = { bookingId: "RCOA-INGEST-1", siteId: "rcoa", event: { floorLevel: "Second Floor", roomOrArea: "Meeting Room 1" } } as unknown as MnkBookingPayload;
 
 /** Records every Firestore access and outbound request attempted while `run` executes. */
 async function withSideEffectSpies<T>(run: (attempts: string[]) => Promise<T>) {
@@ -91,6 +91,17 @@ test("an authenticated but invalid RCoA payload is rejected with a client error 
   });
 });
 
+test("RCoA ingestion rejects a room that is not on the selected floor without business writes", async () => {
+  await withInertIngestion(undefined, async (writes, reads) => {
+    await assert.rejects(
+      ingestMnkBooking({ ...rcoaPayload, event: { ...rcoaPayload.event, floorLevel: "Ground Floor", roomOrArea: "Meeting Room 1" } }, RCOA_OPLOC),
+      (error: Error & { status?: number }) => error.status === 422 && /listed RCoA floor/.test(error.message),
+    );
+    assert.deepEqual(writes, []);
+    assert.equal(reads.length, 1, "the authoritative existing-id check precedes payload validation");
+  });
+});
+
 test("neither Hub nor production configuration carries an RCoA rollout flag", async () => {
   const { readFileSync } = await import("node:fs");
   for (const path of ["../apphosting.production.yaml", "../apphosting.staging.yaml", "../../hospitality-booking/apphosting.production.yaml", "../../hospitality-booking/apphosting.staging.yaml", "../lib/hospitality-booking-service.ts"]) {
@@ -98,7 +109,7 @@ test("neither Hub nor production configuration carries an RCoA rollout flag", as
   }
 });
 
-const fixturePayload = (): MnkBookingPayload => ({ bookingId: "RCOA-VISIBILITY-FIXTURE", submittedAt: "2026-10-31T20:00:00Z", siteId: "rcoa", site: "RCoA Hospitality", client: { name: "Fixture", email: "fixture@example.invalid", companyName: "Fixture" }, event: { eventDate: "2030-12-02", startTime: "12:00", guestCount: 12, floorLevel: "1", roomOrArea: "Room" }, order: { eventType: "breakfast", items: [{ itemId: "specialty_tea_coffee", category: "Wine", unitPrice: 0, quantity: 12, lineTotal: 0 }], netTotal: 0 } });
+const fixturePayload = (): MnkBookingPayload => ({ bookingId: "RCOA-VISIBILITY-FIXTURE", submittedAt: "2026-10-31T20:00:00Z", siteId: "rcoa", site: "RCoA Hospitality", client: { name: "Fixture", email: "fixture@example.invalid", companyName: "Fixture" }, event: { eventDate: "2030-12-02", startTime: "12:00", guestCount: 12, floorLevel: "Second Floor", roomOrArea: "Meeting Room 1" }, order: { eventType: "breakfast", items: [{ itemId: "specialty_tea_coffee", category: "Wine", unitPrice: 0, quantity: 12, lineTotal: 0 }], netTotal: 0 } });
 const company = (breakfast = ["Wine"]): StoredServiceLayout => ({ schema: 1, scope: "company", version: 1, services: { ...effectiveServiceLayout().company, breakfast: { categories: breakfast } }, createdAt: "fixture", createdBy: "test:fixture", updatedAt: "fixture", updatedBy: "test:fixture" });
 const bookingFixture = (): CanonicalBooking => ({ canonicalId: "booking:rcoa:historical", service: { ...fixturePayload().event, portalSiteId: "rcoa", oplocId: RCOA_OPLOC }, order: { eventType: "breakfast", items: [{ itemId: "hospitality-menu-item:fixture-wine", category: "Wine", quantity: 2, unitPrice: 3, lineTotal: 6 }], netTotal: 6, vatTotal: 0, grossTotal: 6, currency: "GBP" } } as CanonicalBooking);
 
@@ -129,7 +140,7 @@ test("category validation uses canonical authority, not the category text in an 
 
 test("unchanged historical lines survive non-line amendments; added/increased lines and changed service/site use current visibility", async () => {
   const current = bookingFixture(), next = structuredClone(current);
-  next.service.eventDate = "2030-12-03"; next.service.startTime = "13:00"; next.service.guestCount = 25; next.service.roomOrArea = "Another room"; next.notes = "Contact correction";
+  next.service.eventDate = "2030-12-03"; next.service.startTime = "13:00"; next.service.guestCount = 25; next.service.roomOrArea = "Meeting Room 2"; next.notes = "Contact correction";
   assert.deepEqual(rcoaVisibilityAmendmentLines(current, next), []);
   const idle = layoutTransaction();
   await assertRcoaBookingServiceVisibility(idle.transaction, next, [], current);

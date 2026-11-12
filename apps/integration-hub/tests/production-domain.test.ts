@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createCpuProductionOrder, externalProductionStatus, materialiseExternalProductionOrder, materialisedProductionId, productionOrderV1Id, productionRequirementId, saveHospitalityKitchenNotes } from "../lib/production-domain";
+import { createCpuProductionOrder, externalProductionStatus, hospitalityCpuDestinationLabel, materialiseExternalProductionOrder, materialisedProductionId, productionOrderV1Id, productionRequirementId, saveHospitalityKitchenNotes } from "../lib/production-domain";
 import { transitionProductionOrder } from "../lib/production-domain";
 import { db } from "../lib/firebase-admin";
 import type { ProductionLine } from "../lib/production-domain";
@@ -11,6 +11,12 @@ import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requi
 import { kitchenNotesEventId } from "../lib/hospitality-kitchen-notes-outbox";
 
 const emulatorEnabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os" && process.env.FIRESTORE_EMULATOR_HOST === "127.0.0.1:8292" && (process.env.FIKA_RUNTIME_MODE || "local") === "local";
+
+test("RCoA CPU handoff destination includes floor and room; other sites keep their current label", () => {
+  const booking = { service: { portalSiteId: "rcoa", portalSiteLabel: "RCoA Hospitality", oplocId: "oploc:rcoa", floorLevel: "Second Floor", roomOrArea: "Meeting Room 4" } } as never;
+  assert.equal(hospitalityCpuDestinationLabel(booking), "RCoA Hospitality · Second Floor · Meeting Room 4");
+  assert.equal(hospitalityCpuDestinationLabel({ service: { portalSiteId: "mnk", portalSiteLabel: "MNK", oplocId: "oploc:mnk", floorLevel: "Level 2", roomOrArea: "Boardroom" } } as never), "MNK · Boardroom");
+});
 
 test("emulator: kitchen notes update only the canonical order note and retry CPU projection durably", { skip: !emulatorEnabled }, async () => {
   const actor = { uid: "integration-test", name: "Integration Test", role: "integration-admin" as const, synthetic: true as const };

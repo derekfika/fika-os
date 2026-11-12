@@ -26,17 +26,17 @@ const menu: PortalMenuItem[] = localRcoaMenuCatalogue.items.filter((item) => ite
 const GROUP_ID = "RCOA-20261201090000-AB12";
 const AT = "2026-12-01T09:00:00.000Z";
 
-/** Event entered once; then 09:00 tea/coffee (40, Lecture Hall) · 13:00 lunch (35, Dining Room) · 17:00 drinks (60, Reception). */
+/** Event entered once; then each service uses a separate second-floor meeting room. */
 function threeServiceDay(): AllDayDraft {
   let day = createEmptyAllDay();
-  day = { ...day, contact: { name: "Casey Guest", email: "Casey@Example.test", phone: "020 0000 0000", companyName: "The College", invoiceReference: "PO-4411" }, eventName: "Annual Lecture", eventDate: "2026-12-10", defaultGuests: 50, defaultLocation: "Lecture Hall", floorLevel: "2", specialInstructions: "Set up from 08:30.", acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } };
+  day = { ...day, contact: { name: "Casey Guest", email: "Casey@Example.test", phone: "020 0000 0000", companyName: "The College", invoiceReference: "PO-4411" }, eventName: "Annual Lecture", eventDate: "2026-12-10", defaultGuests: 50, defaultLocation: "Meeting Room 1", floorLevel: "Second Floor", specialInstructions: "Set up from 08:30.", acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } };
   day = applyAllDayDefaults(day);
   const first = day.services[0].id;
   day = updateAllDayService(day, first, { category: "breakfast", startTime: "09:00", guestCount: 40, lines: [{ itemId: "specialty_tea_coffee", quantity: 40, choices: {} }] });
   day = addAllDayService(day, "s2");
-  day = updateAllDayService(day, "s2", { category: "lunch", startTime: "13:00", guestCount: 35, location: "Dining Room", lines: [{ itemId: "deli_sandwich_lunch", quantity: 35, choices: {} }] });
+  day = updateAllDayService(day, "s2", { category: "lunch", startTime: "13:00", guestCount: 35, location: "Meeting Room 2", lines: [{ itemId: "deli_sandwich_lunch", quantity: 35, choices: {} }] });
   day = addAllDayService(day, "s3");
-  day = updateAllDayService(day, "s3", { category: "meeting_hospitality", startTime: "17:00", guestCount: 60, location: "Reception", lines: [{ itemId: "canned_drinks", quantity: 60, choices: {} }] });
+  day = updateAllDayService(day, "s3", { category: "meeting_hospitality", startTime: "17:00", guestCount: 60, location: "Meeting Room 3", lines: [{ itemId: "canned_drinks", quantity: 60, choices: {} }] });
   return day;
 }
 // The route validates against the governed catalogue (stable Item IDs); the client logic under test builds from the legacy snapshot menu and is remapped at the route boundary.
@@ -62,7 +62,7 @@ test("1+2. the existing offerings are unchanged and All Day Hospitality is a fir
   assert.ok(portal.includes("buildRcoaClientRequest(draft, menu"));
   assert.ok(portal.includes('"/api/bookings/rcoa"'));
   const standard = createEmptyRcoaDraft();
-  const request = buildRcoaClientRequest({ ...standard, occasion: "breakfast", contact: { name: "A", email: "a@example.test", phone: "1", companyName: "C", invoiceReference: "" }, event: { ...standard.event, eventDate: "2026-12-10", startTime: "09:00", guestCount: 10, floorLevel: "1", roomOrArea: "R" }, lines: [{ itemId: "specialty_tea_coffee", quantity: 10, choices: {} }], acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } }, menu, { bookingId: GROUP_ID, submittedAt: AT });
+  const request = buildRcoaClientRequest({ ...standard, occasion: "breakfast", contact: { name: "A", email: "a@example.test", phone: "1", companyName: "C", invoiceReference: "" }, event: { ...standard.event, eventDate: "2026-12-10", startTime: "09:00", guestCount: 10, floorLevel: "First Floor", roomOrArea: "Boardroom 1" }, lines: [{ itemId: "specialty_tea_coffee", quantity: 10, choices: {} }], acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } }, menu, { bookingId: GROUP_ID, submittedAt: AT });
   assert.equal("bookingGroup" in request, false);
   assert.equal("bookingGroup" in buildTrustedRcoaHubPayload(request, undefined, seedVisibility), false);
 });
@@ -87,23 +87,23 @@ test("3-7. event details are entered once; rows have independent times, guest co
     assert.equal(request.client.companyName, "The College");
     assert.equal(request.client.invoiceReference, "PO-4411");
     assert.equal(request.event.eventDate, "2026-12-10");
-    assert.equal(request.event.floorLevel, "2");
+    assert.equal(request.event.floorLevel, "Second Floor");
   }
   assert.deepEqual(requests.map((r) => r.event.startTime), ["09:00", "13:00", "17:00"]);
   assert.deepEqual(requests.map((r) => r.event.guestCount), [40, 35, 60]);
-  assert.deepEqual(requests.map((r) => r.event.roomOrArea), ["Lecture Hall", "Dining Room", "Reception"]);
+  assert.deepEqual(requests.map((r) => r.event.roomOrArea), ["Meeting Room 1", "Meeting Room 2", "Meeting Room 3"]);
 });
 
 test("event-level guest count and location pre-populate NEW rows and fill blanks; a row can override and is never overwritten", () => {
   let day = createEmptyAllDay();
-  day = { ...day, defaultGuests: 50, defaultLocation: "Lecture Hall" };
+  day = { ...day, floorLevel: "Second Floor", defaultGuests: 50, defaultLocation: "Meeting Room 1" };
   day = applyAllDayDefaults(day);
-  assert.deepEqual([day.services[0].guestCount, day.services[0].location], [50, "Lecture Hall"]);
-  day = updateAllDayService(day, day.services[0].id, { guestCount: 35, location: "Dining Room" });
-  day = applyAllDayDefaults({ ...day, defaultGuests: 99, defaultLocation: "Elsewhere" });
-  assert.deepEqual([day.services[0].guestCount, day.services[0].location], [35, "Dining Room"]);
+  assert.deepEqual([day.services[0].guestCount, day.services[0].location], [50, "Meeting Room 1"]);
+  day = updateAllDayService(day, day.services[0].id, { guestCount: 35, location: "Meeting Room 2" });
+  day = applyAllDayDefaults({ ...day, defaultGuests: 99, defaultLocation: "Meeting Room 3" });
+  assert.deepEqual([day.services[0].guestCount, day.services[0].location], [35, "Meeting Room 2"]);
   const added = addAllDayService(day);
-  assert.deepEqual([added.services[1].guestCount, added.services[1].location], [99, "Elsewhere"]);
+  assert.deepEqual([added.services[1].guestCount, added.services[1].location], [99, "Meeting Room 3"]);
 });
 
 test("8. Add items uses the existing category-specific catalogue: the row is an ordinary draft for its service type", () => {
@@ -144,7 +144,7 @@ test("11. duplicate copies service type, guests, location and items (deep) and c
   assert.equal(duplicated.services.length, 4);
   const copy = duplicated.services[2];
   assert.equal(copy.id, "dup");
-  assert.deepEqual([copy.category, copy.guestCount, copy.location, copy.startTime, copy.notes], ["lunch", 35, "Dining Room", "", ""]);
+  assert.deepEqual([copy.category, copy.guestCount, copy.location, copy.startTime, copy.notes], ["lunch", 35, "Meeting Room 2", "", ""]);
   assert.deepEqual(copy.lines, day.services[1].lines);
   assert.notEqual(copy.lines, day.services[1].lines);
   copy.lines[0].quantity = 99;
@@ -257,7 +257,7 @@ test("14+19. three service rows create exactly three canonical bookings, each wi
     assert.deepEqual(result.body.group?.bookings.map((b) => b.startTime), ["09:00", "13:00", "17:00"]);
     const stored = [...hub.bookings.values()].map((entry) => entry.payload as { event: { startTime: string; guestCount: number; roomOrArea: string }; order: { items: Array<{ itemId: string }> }; bookingGroup: { sequence: number } });
     assert.equal(stored.length, 3);
-    assert.deepEqual(stored.map((p) => [p.event.startTime, p.event.guestCount, p.event.roomOrArea, p.order.items.map((i) => i.itemId).join("+"), p.bookingGroup.sequence]), [["09:00", 40, "Lecture Hall", legacyToGovernedId.get("specialty_tea_coffee"), 1], ["13:00", 35, "Dining Room", legacyToGovernedId.get("deli_sandwich_lunch"), 2], ["17:00", 60, "Reception", legacyToGovernedId.get("canned_drinks"), 3]]);
+    assert.deepEqual(stored.map((p) => [p.event.startTime, p.event.guestCount, p.event.roomOrArea, p.order.items.map((i) => i.itemId).join("+"), p.bookingGroup.sequence]), [["09:00", 40, "Meeting Room 1", legacyToGovernedId.get("specialty_tea_coffee"), 1], ["13:00", 35, "Meeting Room 2", legacyToGovernedId.get("deli_sandwich_lunch"), 2], ["17:00", 60, "Meeting Room 3", legacyToGovernedId.get("canned_drinks"), 3]]);
   } finally { restore(); }
 });
 
@@ -325,7 +325,7 @@ test("the shared event view feeds the existing contact, dietaries and notes scre
   assert.equal(view.occasion, "");
   assert.equal(view.contact.companyName, "The College");
   assert.equal(view.event.guestCount, 50);
-  assert.equal(view.event.roomOrArea, "Lecture Hall");
+  assert.equal(view.event.roomOrArea, "Meeting Room 1");
 });
 
 
