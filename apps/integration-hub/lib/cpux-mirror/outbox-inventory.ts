@@ -9,6 +9,7 @@ import { RCOA_HOSPITALITY_OPLOC_ID } from "../booking-email-site-identities";
 import { mirrorEnabled } from "../../../shared/cpux-calendar/google";
 import { inspectMirrorOplocs } from "./oplocs";
 import { dueHospitalityMirrorQuery } from "./outbox-query";
+import { outboxInventoryRead } from "./outbox-inventory-errors";
 
 export const HOSPITALITY_MIRROR_SCHEDULER_BATCH_LIMIT = 3;
 const OUTBOX_COLLECTION = "fikaCpuXHospitalityMirrorOutboxV1";
@@ -117,8 +118,8 @@ function sourceRows(document: DocumentSnapshot[], asOf: string, schedulerRanks: 
   const bookingRefs = bookingIds.map(id => db.collection("fikaBookings").doc(id));
   const orderRefs = orderIds.map(id => db.collection("fikaProductionOrdersV1").doc(stableDocumentId(id)));
   return Promise.all([
-    bookingRefs.length ? db.getAll(...bookingRefs) : Promise.resolve([]),
-    orderRefs.length ? db.getAll(...orderRefs) : Promise.resolve([]),
+    bookingRefs.length ? outboxInventoryRead("booking-source-join", () => db.getAll(...bookingRefs)) : Promise.resolve([]),
+    orderRefs.length ? outboxInventoryRead("production-order-source-join", () => db.getAll(...orderRefs)) : Promise.resolve([]),
   ]).then(async ([bookingSnapshots, orderSnapshots]) => {
     const bookings = new Map(bookingSnapshots.map(row => [row.id, row.exists ? row.data() as CanonicalBooking : undefined]));
     const orders = new Map<string, ProductionOrder | undefined>();
@@ -127,7 +128,7 @@ function sourceRows(document: DocumentSnapshot[], asOf: string, schedulerRanks: 
       ...[...bookings.values()].map(booking => booking?.service?.oplocId),
       ...[...orders.values()].map(order => order?.destinationOplocId),
     ].filter((id): id is string => typeof id === "string" && id.length > 0))];
-    const inspections = await inspectMirrorOplocs(rawOplocIds);
+    const inspections = await outboxInventoryRead("oploc-verification", () => inspectMirrorOplocs(rawOplocIds));
     const oplocMap = new Map(inspections.map(row => [row.sourceId, row.status === "verified" ? row.canonicalId : null]));
     const make = (row: DocumentSnapshot) => {
       const raw = row.data();
@@ -195,8 +196,8 @@ export async function readHospitalityMirrorOutboxInventory(input: OutboxInventor
   const base = db.collection(OUTBOX_COLLECTION).orderBy(FieldPath.documentId());
   const pageQuery = input.after ? base.startAfter(input.after.documentId) : base;
   const [pageSnapshot, schedulerSnapshot] = await Promise.all([
-    pageQuery.limit(input.limit + 1).get(),
-    dueHospitalityMirrorQuery(db.collection(OUTBOX_COLLECTION), asOf, HOSPITALITY_MIRROR_SCHEDULER_BATCH_LIMIT).get(),
+    outboxInventoryRead("outbox-page-query", () => pageQuery.limit(input.limit + 1).get()),
+    outboxInventoryRead("scheduler-candidate-query", () => dueHospitalityMirrorQuery(db.collection(OUTBOX_COLLECTION), asOf, HOSPITALITY_MIRROR_SCHEDULER_BATCH_LIMIT).get()),
   ]);
   const pageRows = pageSnapshot.docs.slice(0, input.limit);
   const nextCursor: OutboxCursor | null = pageSnapshot.docs.length > input.limit && pageRows.length
