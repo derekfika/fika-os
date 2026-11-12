@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { europeLondonDate } from "../../lib/operational-date";
 import { isOperationalDate } from "../../lib/production-totals-range";
 import type { ProductionOrder } from "../../lib/production-types";
+import { aggregateProductionTotals } from "../../lib/production-day";
 import {
   loadRunSheetPrintDays,
   runSheetDestinationKey,
@@ -13,11 +14,12 @@ import {
   type RunSheetPrintMode,
   runSheetPrintSiteOptions,
   selectedRunSheetPrintOrders,
+  selectedRunSheetPrintManifestKey,
   type RunSheetServiceKey,
   type RunSheetServiceOverrides,
 } from "./run-sheet-printing";
-import { runSheetProductionPrintHtml, paginateDayProduction, type RunSheetLayout } from "./day-production-print";
-import { printKitchenDocument } from "./kitchen-print";
+import { runSheetProductionPrintHtml, paginateDayProduction, paginateProductionTotals, type RunSheetLayout } from "./day-production-print";
+import { printKitchenDocument, totalsPrintHtml } from "./kitchen-print";
 import styles from "./RunSheetPrintDialog.module.css";
 
 type PrintOrders = Map<string, ProductionOrder[]>;
@@ -26,10 +28,13 @@ type ServiceOption = ReturnType<typeof runSheetPrintServiceOptions>[number];
 export function RunSheetPrintDialog({
   productionDate,
   selectedSiteIds,
+  printType = "run-sheet",
 }: {
   productionDate: string;
   selectedSiteIds: readonly string[];
+  printType?: "run-sheet" | "totals";
 }) {
+  const isTotals = printType === "totals";
   const today = europeLondonDate();
   const initialDate = isOperationalDate(productionDate) ? productionDate : today;
   const [open, setOpen] = useState(false);
@@ -64,6 +69,10 @@ export function RunSheetPrintDialog({
     [ordersByDay, days, selectedKeys, selectedServices, siteServiceOverrides],
   );
   const selectedOrders = useMemo(() => [...selectedOrdersByDay.values()].flat(), [selectedOrdersByDay]);
+  const selectedManifestKey = useMemo(
+    () => selectedRunSheetPrintManifestKey(ordersByDay, days, selectedKeys, selectedServices, siteServiceOverrides),
+    [ordersByDay, days, selectedKeys, selectedServices, siteServiceOverrides],
+  );
   const selectedOrderCount = selectedOrders.length;
   const selectedDestinationKeys = useMemo(() => new Set(selectedOrders.map(runSheetDestinationKey)), [selectedOrders]);
   const selectedServiceSet = useMemo(() => new Set(selectedOrders.map((order) => {
@@ -196,6 +205,13 @@ export function RunSheetPrintDialog({
       }
       const freshSelectedByDay = selectedRunSheetPrintOrders(freshOrders, days, selectedKeys, selectedServices, siteServiceOverrides);
       const freshSelected = [...freshSelectedByDay.values()].flat();
+      const freshManifestKey = selectedRunSheetPrintManifestKey(freshOrders, days, selectedKeys, selectedServices, siteServiceOverrides);
+      if (freshManifestKey !== selectedManifestKey) {
+        setOrdersByDay(freshOrders);
+        setSites(freshSites);
+        setError("Production changed while this preview was open. Review the refreshed dates, services and destinations before printing again.");
+        return;
+      }
       if (!freshSelected.length) {
         setOrdersByDay(freshOrders);
         setSites(freshSites);
@@ -208,10 +224,20 @@ export function RunSheetPrintDialog({
       const serviceLabel = freshServices.filter((service) => selectedServices.includes(service.key)).map((service) => service.label).join(", ");
       const label = `${freshSelected.length} selected orders${serviceLabel ? ` · ${serviceLabel}` : ""}`;
       const freshDestinationCount = new Set(freshSelected.map(runSheetDestinationKey)).size;
-      await printKitchenDocument(
-        runSheetProductionPrintHtml(freshOrders, days, selectedKeys, new Date(), label, layout, selectedServices, siteServiceOverrides),
-        paginateDayProduction,
-      );
+      if (isTotals) {
+        const totals = aggregateProductionTotals(freshSelected);
+        const filterSummary = `${freshDestinationCount} destination${freshDestinationCount === 1 ? "" : "s"} · ${serviceLabel || "all eligible services"}`;
+        await printKitchenDocument(
+          totalsPrintHtml(totals, dateSummary, filterSummary, layout, freshSelected),
+          paginateProductionTotals,
+          layout === "full" ? "landscape" : "portrait",
+        );
+      } else {
+        await printKitchenDocument(
+          runSheetProductionPrintHtml(freshOrders, days, selectedKeys, new Date(), label, layout, selectedServices, siteServiceOverrides),
+          paginateDayProduction,
+        );
+      }
       setAnnouncement(`Print dialog opened for ${freshDestinationCount} destination${freshDestinationCount === 1 ? "" : "s"} across ${days.length} date${days.length === 1 ? "" : "s"}.`);
     } catch (cause) {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "The selected production dates could not be verified. Nothing was printed.");
@@ -226,8 +252,8 @@ export function RunSheetPrintDialog({
 
   return (
     <>
-      <button ref={triggerRef} type="button" className="kitchen-button kitchen-print-primary" aria-haspopup="dialog" onClick={openDialog}>
-        Print run sheets
+      <button ref={triggerRef} type="button" className={`kitchen-button kitchen-print-primary${isTotals ? " kitchen-totals-print" : ""}`} aria-haspopup="dialog" onClick={openDialog}>
+        {isTotals ? "Print totals" : "Print run sheets"}
       </button>
       <dialog
         ref={dialogRef}
@@ -243,9 +269,9 @@ export function RunSheetPrintDialog({
       >
         <header className={styles.header}>
           <div>
-            <p className={styles.eyebrow}>CPU Production · Paper handover</p>
-            <h2 id="run-sheet-print-title">Build your run sheets</h2>
-            <p>Choose dates, services and destinations. Only checked work will print.</p>
+            <p className={styles.eyebrow}>CPU Production · {isTotals ? "Aggregated totals" : "Paper handover"}</p>
+            <h2 id="run-sheet-print-title">{isTotals ? "Build production totals" : "Build your run sheets"}</h2>
+            <p>{isTotals ? "Choose dates, services and destinations. Quantities aggregate across the selected work." : "Choose dates, services and destinations. Only checked work will print."}</p>
           </div>
           <button type="button" className={styles.closeButton} onClick={close} aria-label="Close print run sheets">×</button>
         </header>
@@ -343,12 +369,12 @@ export function RunSheetPrintDialog({
                 <div><dt>Destinations</dt><dd>{selectedSiteCount} selected{selectedDestinationKeys.size ? ` · ${sites.filter((site) => selectedDestinationKeys.has(site.key)).map((site) => site.displayLabel).join(", ")}` : ""}</dd></div>
               </dl>
               <div className={styles.metrics}>
-                <div><strong>{selectedOrderCount}</strong><span>eligible orders</span></div>
-                <div><strong>{expectedMinimumSheets}{expectedMinimumSheets ? "+" : ""}</strong><span>{expectedMinimumSheets ? "minimum A4 sheets · final pages measured from content" : "A4 sheets"}</span></div>
+                <div><strong>{selectedOrderCount}</strong><span>{isTotals ? "orders included" : "eligible orders"}</span></div>
+                <div><strong>{isTotals ? selectedOrders.reduce((count, order) => count + order.lines.length, 0) : expectedMinimumSheets}{!isTotals && expectedMinimumSheets ? "+" : ""}</strong><span>{isTotals ? "source lines aggregated" : expectedMinimumSheets ? "minimum A4 sheets · final pages measured from content" : "A4 sheets"}</span></div>
               </div>
-              <p className={styles.summaryNote}><strong>Selection is exact.</strong> Only checked work prints. Each sheet starts with one OPLOC and date; larger selections continue on same-site pages.</p>
+              <p className={styles.summaryNote}><strong>Selection is exact.</strong> {isTotals ? "Selected customer-ordered quantities are aggregated; unlike units and canonical menu slots remain separate." : "Only checked work prints. Each sheet starts with one OPLOC and date; larger selections continue on same-site pages."}</p>
               <div className={styles.summaryActions}>
-                <button type="button" className="kitchen-button kitchen-print-primary" disabled={loading || printing || !selectedOrderCount || !days.length} onClick={() => void print()}>{printing ? "Verifying and preparing…" : `Print ${selectedOrderCount} selected order${selectedOrderCount === 1 ? "" : "s"}`}</button>
+                <button type="button" className="kitchen-button kitchen-print-primary" disabled={loading || printing || !selectedOrderCount || !days.length} onClick={() => void print()}>{printing ? "Verifying and preparing…" : `Print ${isTotals ? "totals for " : ""}${selectedOrderCount} selected order${selectedOrderCount === 1 ? "" : "s"}`}</button>
                 <button type="button" className={styles.cancelButton} onClick={close}>Cancel</button>
                 <p>Selected dates are refreshed before printing. Paper marks never update order, allergen, packing or delivery status.</p>
               </div>
@@ -357,7 +383,7 @@ export function RunSheetPrintDialog({
         </div>
         <footer className={styles.mobileFooter}>
           <button type="button" className={styles.cancelButton} onClick={close}>Cancel</button>
-          <button type="button" className="kitchen-button kitchen-print-primary" disabled={loading || printing || !selectedOrderCount || !days.length} onClick={() => void print()}>{printing ? "Verifying…" : `Print · ${selectedOrderCount} orders`}</button>
+          <button type="button" className="kitchen-button kitchen-print-primary" disabled={loading || printing || !selectedOrderCount || !days.length} onClick={() => void print()}>{printing ? "Verifying…" : `Print ${isTotals ? "totals · " : "· "}${selectedOrderCount} orders`}</button>
         </footer>
       </dialog>
     </>

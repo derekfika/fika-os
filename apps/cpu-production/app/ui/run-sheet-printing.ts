@@ -178,3 +178,39 @@ export function selectedRunSheetPrintOrders(
   }
   return output;
 }
+
+/** A stable snapshot of precisely the selected print demand, including canonical versions and quantities. */
+export function selectedRunSheetPrintManifestKey(
+  ordersByDay: ReadonlyMap<string, readonly ProductionOrder[]>,
+  days: readonly string[],
+  selectedSiteKeys: readonly string[],
+  selectedServiceKeys?: readonly RunSheetServiceKey[],
+  siteServiceOverrides: RunSheetServiceOverrides = {},
+) {
+  return JSON.stringify(days.flatMap((day) => {
+    const orders = selectedRunSheetPrintOrders(ordersByDay, [day], selectedSiteKeys, selectedServiceKeys, siteServiceOverrides).get(day) || [];
+    return orders.map((order) => ({
+      day,
+      id: order.canonicalId,
+      version: order.version,
+      serviceDate: order.serviceDate,
+      requiredBy: order.requiredBy,
+      status: order.status,
+      destinationOplocId: order.destinationOplocId,
+      destinationIdentity: order.destinationAddress?.identity,
+      origin: order.origin,
+      productionCategory: order.productionCategory,
+      guestCount: order.guestCount,
+      lines: [...order.lines].map((line) => ({
+        id: line.canonicalId,
+        name: line.itemName,
+        customerQuantity: line.customerQuantity,
+        customerUnit: line.customerUnit,
+        workstream: line.workstream,
+        slot: line.canonicalSlotId || line.slot,
+        order: line.canonicalOrderIndex ?? line.sortOrder,
+        isCoreSalad: line.isCoreSalad,
+      })).sort((a, b) => a.id.localeCompare(b.id)),
+    }));
+  }).sort((a, b) => a.day.localeCompare(b.day) || a.id.localeCompare(b.id)));
+}

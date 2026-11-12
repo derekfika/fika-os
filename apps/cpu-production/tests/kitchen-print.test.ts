@@ -15,6 +15,7 @@ import { eventGuestCountLabel, orderedQuantityLabel } from "../lib/ordered-quant
 import { aggregateProductionTotals } from "../lib/production-day";
 
 import { collectionDetails, collectionReadyBy } from "../app/ui/run-sheet-presentation";
+import { paginateProductionTotals } from "../app/ui/day-production-print";
 import type { ProductionOrder, ProductionLine } from "../lib/production-types";
 
 const line = (id: string, quantity = 4, unit = "portions") =>
@@ -178,12 +179,34 @@ test("daily and selected multi-day totals print reuse verified aggregation and n
     "Fri + Mon",
     "Test site · Published menu · Delivered-In",
   );
-  assert.match(html, />10<\/td>/);
+  assert.match(html, /class="totals-quantity"><strong>10<\/strong>/);
   assert.match(html, /boxes/);
   assert.match(html, /Fri \+ Mon/);
   assert.match(html, /Test site/);
-  assert.match(html, /Prep \/ order notes/);
+  assert.match(html, /Prep \/ notes/);
+  assert.match(html, /Dish name/);
+  assert.match(html, /Subcategory/);
+  assert.match(html, /Unit/);
+  assert.match(html, /@page\{size:A4 portrait/);
+  assert.ok(paginateProductionTotals.toString().includes("Page ${index+1} of ${pages.length}"));
+  assert.doesNotMatch(html, /productionQuantity|productionUnit|12 pieces/);
+  const landscape = totalsPrintHtml(weekly, "Fri + Mon", "Test site", "full");
+  assert.match(landscape, /@page\{size:A4 landscape/);
+  assert.match(landscape, /data-layout="full"/);
   assert.deepEqual(aggregateProductionTotals([a]), daily);
+});
+
+test("totals print follows canonical order and marks Core Salad without changing aggregated quantities", () => {
+  const core = { ...line("core", 5), itemName: "Mixed leaves", slot: "SALAD 1", canonicalSlotId: "SALAD 1", isCoreSalad: true } as ProductionLine;
+  const dessert = { ...line("dessert", 5), itemName: "Pear crumble", slot: "DESSERT 1", canonicalSlotId: "DESSERT 1", canonicalOrderIndex: 25 } as ProductionLine;
+  const saladOrder = { ...order("core-menu", [dessert, core]), origin: "menu_planning" as const };
+  const categories = aggregateProductionTotals([saladOrder]);
+  const totals = categories.find((category) => category.category === "Delivered-In")!;
+  const html = totalsPrintHtml(categories, "Thursday 12 November 2026", "Site A", "compact", [saladOrder]);
+  assert.ok(totals.items.findIndex((item) => item.name === "Mixed leaves") < totals.items.findIndex((item) => item.name === "Pear crumble"));
+  assert.match(html, /Mixed leaves <small class="core-salad-label" aria-label="Core Salad">CORE SALAD<\/small>/);
+  assert.match(html, /<strong>5<\/strong>/);
+  assert.doesNotMatch(html, /Dish dessert <small class="core-salad-label"/);
 });
 
 test("collection details use recorded service data and stable readable references", () => {
