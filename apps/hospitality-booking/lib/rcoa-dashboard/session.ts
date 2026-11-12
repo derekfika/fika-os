@@ -31,7 +31,7 @@ function scryptAsync(pin: string, salt: Buffer) {
 }
 
 export function createRcoaPinHash(pin: string, salt = randomBytes(16)) {
-  if (!/^\d{6,12}$/.test(pin)) throw new Error("Use a 6–12 digit RCoA dashboard PIN.");
+  if (!/^\d{4,12}$/.test(pin)) throw new Error("Use a 4–12 digit RCoA dashboard PIN.");
   const derived = scryptSync(pin, salt, 64, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
   return `scrypt$16384$8$1$${salt.toString("hex")}$${derived.toString("hex")}`;
 }
@@ -39,7 +39,7 @@ export function createRcoaPinHash(pin: string, salt = randomBytes(16)) {
 export function rcoaSessionReady() { return Boolean(hashConfig() && secret()); }
 export async function verifyRcoaPin(pin: string) {
   const config = hashConfig();
-  if (!config || !/^\d{6,12}$/.test(pin)) return false;
+  if (!config || !/^\d{4,12}$/.test(pin)) return false;
   const actual = await scryptAsync(pin, config.salt);
   return timingSafeEqual(actual, config.expected);
 }

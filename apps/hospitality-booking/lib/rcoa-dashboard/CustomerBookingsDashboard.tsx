@@ -377,10 +377,10 @@ export function CustomerBookingsDashboard({ config }: { config: CustomerDashboar
       {notice ? <p className={styles.noticePanel} role="status">{notice}</p> : null}
       <form onSubmit={unlock} className={styles.pinForm} noValidate>
         <label htmlFor={pinId}>Dashboard PIN</label>
-        <input id={pinId} name="pin" type="password" inputMode="numeric" autoComplete="off" autoFocus pattern="[0-9]{4,12}" minLength={config.brandClass === "rcoa" ? 6 : 4} maxLength={12} value={pin} aria-invalid={pinError ? true : undefined} aria-describedby={pinError ? `${pinId}-error` : `${pinId}-help`} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 12))} required />
-        <p id={`${pinId}-help`} className={styles.helper}>Numbers only.</p>
+        <input id={pinId} name="pin" type="password" inputMode="numeric" autoComplete="off" autoFocus pattern="[0-9]{4,12}" minLength={4} maxLength={12} value={pin} aria-invalid={pinError ? true : undefined} aria-describedby={pinError ? `${pinId}-error` : `${pinId}-help`} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 12))} required />
+        <p id={`${pinId}-help`} className={styles.helper}>Enter your 4–12 digit PIN.</p>
         {pinError ? <p id={`${pinId}-error`} className={styles.error} role="alert">{pinError}</p> : null}
-        <button className={styles.primaryButton} type="submit" disabled={submitting || pin.length < (config.brandClass === "rcoa" ? 6 : 4)}>{submitting ? "Checking…" : "Open dashboard"}</button>
+        <button className={styles.primaryButton} type="submit" disabled={submitting || pin.length < 4}>{submitting ? "Checking…" : "Open dashboard"}</button>
       </form>
       <p className={styles.helper}>{config.readOnlyMessage}</p>
     </section>
