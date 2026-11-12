@@ -222,12 +222,9 @@ test("manifest and Allergen Checker paths avoid unnecessary full catalogue reads
   assert.match(checker, /Save allergen changes/);
 });
 
-test("allergen checker uses quiet state cells without changing semantic state labels", () => {
+test("allergen checker shows explicit state cells without changing semantic state labels", () => {
   const checker = readFileSync(new URL("../app/allergen-checker.tsx", import.meta.url), "utf8");
-  assert.match(checker, /const stateMark: Record<string, string> = \{\s*may_contain: "MC"/);
-  assert.doesNotMatch(checker, /stateMark[\s\S]*unrecorded: "\?"/);
-  assert.doesNotMatch(checker, /stateMark[\s\S]*clear: "✓"/);
-  assert.doesNotMatch(checker, /stateMark[\s\S]*contains: "C"/);
+  assert.match(checker, /const stateMark: Record<string, string> = \{\s*unrecorded: "NR", clear: "✓", contains: "C", may_contain: "MC"/);
   assert.match(checker, /aria-label=\{`\$\{entry\.itemLabel\}, \$\{label\}: \$\{stateLabel\[displayState\]\}`\}/);
   assert.doesNotMatch(checker, /disabled=\{saving \|\| key === "no_key_allergens"\}/);
   assert.match(checker, /toggleExplicitAllergen/);
