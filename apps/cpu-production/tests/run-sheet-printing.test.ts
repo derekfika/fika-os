@@ -10,6 +10,7 @@ import {
   runSheetPrintServiceOptions,
   runSheetPrintSiteOptions,
   runSheetServiceKey,
+  selectedRunSheetPrintManifestKey,
   selectedRunSheetPrintOrders,
 } from "../app/ui/run-sheet-printing";
 import { dayProductionPrintHtml, paginateDayProduction, runSheetProductionPrintHtml } from "../app/ui/day-production-print";
@@ -146,6 +147,22 @@ test("run sheet HTML contains only globally and locally selected services", () =
   });
   assert.match(siteOverrideHtml, /data-collection-id="order:mnk-grab"/);
   assert.match(siteOverrideHtml, /data-collection-id="order:mnk-hospitality"/);
+});
+
+test("selected print manifest changes when an included canonical order or customer quantity changes", () => {
+  const day = "2026-10-30";
+  const base = { ...order("order:menu", day, "oploc:menu", "Menu Site"), origin: "menu_planning", productionCategory: "delivered_in" } as ProductionOrder;
+  const days = [day];
+  const sites = ["oploc:oploc:menu"];
+  const initial = new Map([[day, [base]]]);
+  const initialKey = selectedRunSheetPrintManifestKey(initial, days, sites, ["delivered_in"]);
+  assert.equal(initialKey, selectedRunSheetPrintManifestKey(new Map([[day, [{ ...base }]]]), days, sites, ["delivered_in"]));
+  const changedQuantity = { ...base, lines: [{ ...base.lines[0], customerQuantity: base.lines[0].customerQuantity + 1 }] };
+  assert.notEqual(initialKey, selectedRunSheetPrintManifestKey(new Map([[day, [changedQuantity]]]), days, sites, ["delivered_in"]));
+  const changedVersion = { ...base, version: base.version + 1 };
+  assert.notEqual(initialKey, selectedRunSheetPrintManifestKey(new Map([[day, [changedVersion]]]), days, sites, ["delivered_in"]));
+  const otherSite = order("order:other", day, "oploc:other", "Other site");
+  assert.equal(initialKey, selectedRunSheetPrintManifestKey(new Map([[day, [base, otherSite]]]), days, sites, ["delivered_in"]));
 });
 
 test("printed Menu run sheets use canonical section order, actual slot labels, and retain one site per page", () => {

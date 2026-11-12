@@ -284,3 +284,75 @@ export function paginateDayProduction(doc: Document = document) {
     measure.remove();
   }
 }
+
+/** Paginate aggregate Totals on the same FIKA A4 print surface as Run Sheets. */
+export function paginateProductionTotals(doc: Document = document) {
+  const source = doc.getElementById("totals-source");
+  const output = doc.getElementById("totals-pages");
+  if (!source || !output) throw Error("Production totals print source is unavailable.");
+  const staging = doc.documentElement.dataset.fikaRuntime === "staging";
+  const title = output.dataset.title || "PRODUCTION TOTALS";
+  const period = output.dataset.period || "Selected production dates";
+  const filters = output.dataset.filters || "All eligible work";
+  const printedAt = output.dataset.printedAt || "";
+  output.replaceChildren();
+  const pages: HTMLElement[] = [];
+  const newPage = () => {
+    const page = doc.createElement("section");
+    page.className = "totals-page";
+    const header = doc.createElement("header");
+    header.className = "day-heading";
+    header.innerHTML = `${staging ? '<p class="staging-print-warning">STAGING / NOT FOR OPERATIONAL USE</p>' : ""}<div class="brand-lockup"><span class="wordmark" aria-hidden="true">FIKA</span><div class="heading-copy"><p class="brand">FIKA · CPU PRODUCTION TOTALS</p><h1></h1></div><p class="heading-date"></p></div><p class="page-scope"></p><p class="print-warning">Customer-ordered quantities · Units remain separate · Review recent amendments before using this paper.</p>`;
+    header.querySelector("h1")!.textContent = title;
+    header.querySelector(".heading-date")!.textContent = period;
+    header.querySelector(".page-scope")!.textContent = `${filters} · Printed ${printedAt}`;
+    const content = doc.createElement("div");
+    content.className = "page-cards";
+    const footer = doc.createElement("footer");
+    footer.className = "handover totals-handover";
+    footer.innerHTML = '<span>Prepared by:</span><span>Checked by:</span><span class="notes">Notes:</span>';
+    const number = doc.createElement("p");
+    number.className = "page-number";
+    number.textContent = "Page";
+    page.append(header, content, footer, number);
+    output.append(page);
+    pages.push(page);
+    return content;
+  };
+  const categoryFrame = (original: HTMLElement) => {
+    const frame = original.cloneNode(false) as HTMLElement;
+    const heading = original.querySelector("h2")?.cloneNode(true);
+    const table = original.querySelector("table")?.cloneNode(false) as HTMLTableElement | undefined;
+    const thead = original.querySelector("thead")?.cloneNode(true);
+    const tbody = doc.createElement("tbody");
+    if (!table || !heading || !thead) throw Error("A Production Totals category is incomplete.");
+    table.append(thead, tbody);
+    frame.append(heading, table);
+    return { frame, tbody };
+  };
+  let content = newPage();
+  for (const original of Array.from(source.children) as HTMLElement[]) {
+    let current = categoryFrame(original);
+    content.append(current.frame);
+    const rows = Array.from(original.querySelectorAll("tbody tr"));
+    for (const row of rows) {
+      current.tbody.append(row.cloneNode(true));
+      if (content.scrollHeight <= content.clientHeight + 0.5) continue;
+      current.tbody.lastElementChild?.remove();
+      current.frame.remove();
+      content = newPage();
+      current = categoryFrame(original);
+      content.append(current.frame);
+      current.tbody.append(row.cloneNode(true));
+      if (content.scrollHeight > content.clientHeight + 0.5) {
+        current.frame.remove();
+        throw Error("A dish name or category is too large for readable A4 output. Review the selected production items before printing.");
+      }
+    }
+  }
+  if (!source.children.length) throw Error("No production totals match the selected work.");
+  pages.forEach((page, index) => {
+    const number = page.querySelector(".page-number");
+    if (number) number.textContent = `Page ${index + 1} of ${pages.length}`;
+  });
+}

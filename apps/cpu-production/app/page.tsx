@@ -17,10 +17,10 @@ import DeliveredMenuPlanner from "./ui/DeliveredMenuPlanner";
 import PublishedMenuView from "./ui/PublishedMenuView";
 import GrabAndGoProductionView from "./ui/GrabAndGoProductionView";
 import GrabAndGoOrderDetail from "./ui/GrabAndGoOrderDetail";
+import { RunSheetPrintDialog } from "./ui/RunSheetPrintDialog";
 import "./totals.css";
 import "./kitchen.css";
 import KitchenRunSheet from "./ui/KitchenRunSheet";
-import { printKitchenDocument, totalsPrintHtml } from "./ui/kitchen-print";
 import HospitalityProductionDetail from "./ui/HospitalityProductionDetail";
 import ProductionOrderDetail from "./ui/ProductionOrderDetail";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
@@ -657,7 +657,7 @@ export default function CpuProduction() {
         {view === "day" && <ProductionDayView orders={visible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDate(nextDate); setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
         {view === "run-sheet" && <KitchenRunSheet orders={visible} productionDate={date} selectedSiteIds={sites} siteFilterLabel={sites.length ? sites.map(id => siteLabels.current.get(id) || "selected site").join(", ") : "All sites"} />}
-        {view === "totals" && <Totals allSitesOrderCount={sites.length ? distinct(totalsAllSitesOrders) : undefined} filters={[sites.length ? `${sites.length} selected site${sites.length === 1 ? "" : "s"}` : "All sites", origin === "all" ? "All origins" : origin, productionScope === "all" ? "All production scopes" : productionScope].join(" · ")} orders={totalsSelectedOrders} range={totalsRange} selectedPeriod={totalsCustomRange ? "Custom date range" : formatProductionTotalsSelection(weekCommencing, totalsSelectedDays)} hasSelection={totalsCustomRange || selectedTotalsDates.length > 0} rangeError={totalsRangeResolution.error} loadError={error} loading={totalsLoading} />}
+        {view === "totals" && <Totals allSitesOrderCount={sites.length ? distinct(totalsAllSitesOrders) : undefined} filters={[sites.length ? `${sites.length} selected site${sites.length === 1 ? "" : "s"}` : "All sites", origin === "all" ? "All origins" : origin, productionScope === "all" ? "All production scopes" : productionScope].join(" · ")} orders={totalsSelectedOrders} range={totalsRange} productionDate={date} selectedSiteIds={sites} selectedPeriod={totalsCustomRange ? "Custom date range" : formatProductionTotalsSelection(weekCommencing, totalsSelectedDays)} hasSelection={totalsCustomRange || selectedTotalsDates.length > 0} rangeError={totalsRangeResolution.error} loadError={error} loading={totalsLoading} />}
         </section>
         {view !== "totals" && <OperationsRail orders={visible} date={date || todayKey} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} />}
         </div>
@@ -800,6 +800,8 @@ function Totals({
   filters,
   orders,
   range,
+  productionDate,
+  selectedSiteIds,
   selectedPeriod,
   hasSelection,
   rangeError,
@@ -810,6 +812,8 @@ function Totals({
   filters: string;
   orders: ProductionOrder[];
   range?: { from: string; to: string };
+  productionDate: string;
+  selectedSiteIds: readonly string[];
   selectedPeriod: string;
   hasSelection: boolean;
   rangeError?: string;
@@ -821,7 +825,7 @@ function Totals({
     <section className="cpu-totals">
       <header>
         <small>Read-only production planning · customer ordered quantities</small>
-        <button type="button" className="kitchen-button kitchen-totals-print" disabled={loading || !!rangeError || !!loadError || !hasSelection || !categoryTotals.length} onClick={()=>printKitchenDocument(totalsPrintHtml(categoryTotals, selectedPeriod + (range ? " · " + formatProductionTotalsDateRange(range) : ""), filters))}>Print Totals</button>
+        <RunSheetPrintDialog productionDate={range?.from || productionDate} selectedSiteIds={selectedSiteIds} printType="totals" />
         <h2>{selectedPeriod === "No days selected" ? "Select production days" : selectedPeriod}</h2>
         {range && <p className="cpu-totals-range-label">{formatProductionTotalsDateRange(range)}</p>}
         {range && !loading && !rangeError && !loadError && <p>{orders.length} production order{orders.length === 1 ? "" : "s"} included{allSitesOrderCount !== undefined ? ` for the selected sites (all sites: ${allSitesOrderCount} order${allSitesOrderCount === 1 ? "" : "s"})` : ""} · units remain grouped separately</p>}
