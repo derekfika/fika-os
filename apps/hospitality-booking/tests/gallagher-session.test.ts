@@ -181,6 +181,7 @@ test("customer header uses the approved wording and never says read-only (presen
   const hero = client.slice(client.indexOf('<section className={styles.hero}'), client.indexOf("{hasData ? <SummaryTiles"));
   assert.match(config, /title: "Gallagher bookings"/);
   assert.match(config, /lead: "Your hospitality bookings, upcoming and past\."/);
+  assert.match(client, /config\.brandClass === "rcoa" \? "Enter your 4–12 digit PIN\." : "Numbers only\."/);
   assert.match(hero, /\{config\.title\}/);
   assert.match(hero, /\{config\.lead\}/);
   assert.doesNotMatch(hero, /read-only|read only|readonly/i);
