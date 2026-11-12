@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { CollectionReference, DocumentData } from "firebase-admin/firestore";
 import { eventIsDue, markEventDelivered, outboxRecord, type DurableDomainEvent } from "@fika/server-shared/durable-outbox";
@@ -87,6 +88,27 @@ test("Calendar worker query excludes terminal rows before its three-record limit
   assert.equal(result.docs.length, batchLimit);
   assert.deepEqual(result.docs.map(row => row.id), ["failed-1", "failed-2", "failed-3"]);
   assert.ok(result.docs.every(row => ["pending", "failed"].includes(row.data().outboxStatus)));
+});
+
+test("empty Calendar outbox query resolves to an empty batch", async () => {
+  const fake = fixtureCollection([]);
+  const result = await dueHospitalityMirrorQuery(fake.collection, asOf, batchLimit).get();
+  assert.deepEqual(result.docs, []);
+  assert.equal(fake.batch, batchLimit);
+});
+
+test("Firestore config contains the exact composite index for the Calendar scheduler query", () => {
+  const config = JSON.parse(readFileSync(new URL("../firestore.indexes.json", import.meta.url), "utf8")) as {
+    indexes: Array<{ collectionGroup: string; queryScope: string; fields: Array<{ fieldPath: string; order?: string }> }>;
+  };
+  const index = config.indexes.find(row => row.collectionGroup === "fikaCpuXHospitalityMirrorOutboxV1");
+  assert.ok(index, "the Hospitality Mirror outbox must have a dedicated composite index");
+  assert.equal(index.queryScope, "COLLECTION");
+  assert.deepEqual(index.fields.map(field => [field.fieldPath, field.order]), [
+    ["outboxStatus", "ASCENDING"],
+    ["nextEligibleAt", "ASCENDING"],
+    ["__name__", "ASCENDING"],
+  ]);
 });
 
 test("a realistic 12-record queue drains due work in fair batches while leased and terminal rows do not starve it", async () => {

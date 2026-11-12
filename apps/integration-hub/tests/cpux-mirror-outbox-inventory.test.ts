@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { classifyHospitalityMirrorOutboxRecord } from "../lib/cpux-mirror/outbox-inventory";
 import { handleHospitalityOutboxInventoryPost } from "../lib/cpux-mirror/outbox-inventory-http";
+import { OutboxInventoryReadError, classifyOutboxInventoryError } from "../lib/cpux-mirror/outbox-inventory-errors";
 
 const asOf = "2026-11-12T12:00:00.000Z";
 function event(delivery: Record<string, unknown>, top: Record<string, unknown> = {}) {
@@ -95,6 +96,36 @@ test("outbox inventory endpoint requires same-origin AUTHMOD admin and accepts o
   assert.equal(inspected, 1);
   assert.equal(authorized, 2);
   assert.deepEqual((await allowed.json() as { received: unknown }).received, { limit: 25 });
+});
+
+test("outbox inventory failures expose safe operation and error codes without provider messages", async () => {
+  const logCalls: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => { logCalls.push(args); };
+  try {
+    const response = await handleHospitalityOutboxInventoryPost(new Request("https://hub.test/api/internal/cpux-mirror/outbox", {
+      method: "POST", headers: { origin: "https://hub.test", "content-type": "application/json" }, body: "{}",
+    }), {
+      async authorize() { return { principal: { id: "fixture:admin" } }; },
+      async inspect() {
+        throw new OutboxInventoryReadError("scheduler-candidate-query", "FIRESTORE_INDEX_REQUIRED");
+      },
+    });
+    const body = await response.json() as { error: string; diagnostic: { operation: string; errorCode: string } };
+    assert.equal(response.status, 409);
+    assert.deepEqual(body.diagnostic, { operation: "scheduler-candidate-query", errorCode: "FIRESTORE_INDEX_REQUIRED" });
+    assert.doesNotMatch(JSON.stringify(body), /booking:rcoa|https?:\/\/|token|credential/i);
+    assert.deepEqual(logCalls, [["cpux.calendar.hospitality.outbox_inventory_failed", body.diagnostic]]);
+  } finally {
+    console.error = originalError;
+  }
+});
+
+test("Firestore inventory error classification distinguishes index, IAM, auth and application failures", () => {
+  assert.equal(classifyOutboxInventoryError(Object.assign(new Error("query requires an index: https://sensitive.example/?token=x"), { code: 9 })), "FIRESTORE_INDEX_REQUIRED");
+  assert.equal(classifyOutboxInventoryError(Object.assign(new Error("denied"), { code: 7 })), "FIRESTORE_PERMISSION_DENIED");
+  assert.equal(classifyOutboxInventoryError(Object.assign(new Error("auth"), { code: 16 })), "FIRESTORE_UNAUTHENTICATED");
+  assert.equal(classifyOutboxInventoryError(Object.assign(new Error("other"), { code: 13 })), "FIRESTORE_READ_FAILED");
 });
 
 test("route wires only the interactive AUTHMOD administrator guard and read-only inventory", () => {

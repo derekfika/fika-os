@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { assertSameOrigin } from "../csrf";
 import type { readHospitalityMirrorOutboxInventory } from "./outbox-inventory";
+import { safeOutboxInventoryDiagnostic } from "./outbox-inventory-errors";
 
 const cursorSchema = z.object({
   documentId: z.string().min(1).max(200).regex(/^[^/]+$/),
@@ -32,7 +33,9 @@ export async function handleHospitalityOutboxInventoryPost(request: Request, dep
       actorId, scanned: result.page.scanned, cursor: parsed.data.after ? "present" : "none", asOf: result.asOf,
     });
     return Response.json(result, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
-  } catch {
-    return Response.json({ error: "Calendar outbox inventory could not complete the bounded read." }, { status: 409 });
+  } catch (error) {
+    const diagnostic = safeOutboxInventoryDiagnostic(error);
+    console.error("cpux.calendar.hospitality.outbox_inventory_failed", diagnostic);
+    return Response.json({ error: "Calendar outbox inventory could not complete the bounded read.", diagnostic }, { status: 409 });
   }
 }
