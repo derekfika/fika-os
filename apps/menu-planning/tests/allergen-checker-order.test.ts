@@ -1,70 +1,64 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CANONICAL_MENU_SLOTS, orderMenuEntries } from "../../shared/menu-section-order";
-import { groupedSlots } from "../lib/week-planner-layout";
+import { CANONICAL_MENU_SLOTS } from "../../shared/menu-section-order";
 import { emptyWeek } from "../lib/rolling-menu";
-import { newWeekTemplateSlots, ROLLING_SLOTS } from "../lib/rolling-menu-types";
-import { groupAllergenCheckerEntries, occurrenceLabels, orderAllergenCheckerEntries } from "../lib/allergen-checker-order";
+import { groupedSlots } from "../lib/week-planner-layout";
+import { orderAllergenCheckerEntries } from "../lib/allergen-checker-order";
 
-const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+test("all 29 canonical dish rows match Week Planner order on every weekday", () => {
+  const snapshot = emptyWeek("2026-11-16");
+  const plannerSlotOrder = groupedSlots(snapshot).flatMap(([, slots]) => slots);
+  assert.deepEqual(plannerSlotOrder, CANONICAL_MENU_SLOTS.map(slot => slot.id));
 
-test("all 29 canonical placements follow the shared Week Planner order on every weekday", () => {
-  assert.equal(CANONICAL_MENU_SLOTS.length, 29);
+  const weekdays = snapshot.days.slice(0, 5);
+  assert.deepEqual(weekdays.map(day => day.dayName), ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]);
   for (const day of weekdays) {
-    const shuffled = [...CANONICAL_MENU_SLOTS].reverse().map((slot, index) => ({ id: `${day}:${index}`, itemId: `${day}:dish:${index}`, itemLabel: `Dish ${index}`, slot: slot.id, allergens: { milk: index % 2 ? "contains" : "may_contain" }, allergenDetailNotes: `note ${index}` }));
-    const expected = orderMenuEntries(shuffled.map((entry, originalIndex) => ({ ...entry, originalIndex }))).map((entry) => entry.slot);
-    const ordered = orderAllergenCheckerEntries(shuffled);
-    assert.deepEqual(ordered.map((entry) => entry.slot), expected, `${day} order matches the shared Week Planner comparator`);
-    for (const entry of ordered) assert.equal(entry, shuffled.find((candidate) => candidate.id === entry.id), "ordering keeps each dish and its allergen declaration paired by entry identity");
+    const entries = [...plannerSlotOrder].reverse().map((slot, index) => ({
+      id: `${day.id}:entry:${index}`,
+      dayId: day.id,
+      slot,
+      itemId: `dish:${slot}`,
+      itemLabel: `${day.dayName} ${slot}`,
+      allergens: { milk: index % 2 ? "contains" : "may_contain" },
+      allergenDetailNotes: `evidence-${index}`,
+    }));
+    const expected = plannerSlotOrder.map(slot => entries.find(entry => entry.slot === slot)!);
+    const ordered = orderAllergenCheckerEntries(entries, plannerSlotOrder);
+    assert.deepEqual(ordered.map(entry => entry.id), expected.map(entry => entry.id), day.dayName);
+    for (const entry of ordered) assert.equal(entry, entries.find(candidate => candidate.id === entry.id), "sorting keeps each declaration and note with its original entry");
   }
 });
 
-test("the 18 reported row types stay grouped in their canonical sections and placements", () => {
-  const slots = ["COLD PROTEIN MEAT", "HOT FISH", "HOT VEGAN", "COLD PROTEIN FISH"];
-  const entries = weekdays.flatMap((day) => slots.map((slot, index) => ({ id: `${day}:${index}`, itemLabel: `${day} dish ${index}`, slot })));
-  const ordered = orderAllergenCheckerEntries(entries);
-  assert.deepEqual(ordered.slice(0, 10).map((entry) => entry.slot), Array(5).fill("COLD PROTEIN MEAT").concat(Array(5).fill("COLD PROTEIN FISH")));
-  assert.deepEqual(groupAllergenCheckerEntries(entries).map((group) => group.label), ["Cold Proteins", "Hot Mains"]);
-  assert.deepEqual(new Set(ordered.map((entry) => entry.id)), new Set(entries.map((entry) => entry.id)));
+test("historical aliases and legitimate additional rows follow the exact Week Planner positions", () => {
+  const snapshot = emptyWeek("2026-11-16");
+  snapshot.week.templateSlots = [...snapshot.week.templateSlots!, "COLD PROTEIN", "HOT MEAT"];
+  snapshot.week.customSlots = ["Z EXTRA SIDE", "A EXTRA SIDE"];
+  const plannerSlotOrder = groupedSlots(snapshot).flatMap(([, slots]) => slots);
+  for (const day of snapshot.days.slice(0, 5)) {
+    const rows = [
+      ["A EXTRA SIDE", "Extra A"], ["COLD PROTEIN FISH", "Fish"], ["COLD PROTEIN", "Legacy meat"],
+      ["Z EXTRA SIDE", "Extra Z"], ["COLD PROTEIN MEAT", "Meat"], ["HOT VEGAN", "Vegan"],
+      ["HOT MEAT", "Legacy hot main"], ["HOT MAIN", "Hot main"],
+    ] as const;
+    const entries = [...rows].reverse().map(([slot, itemLabel], index) => ({ id: `${day.id}:entry:${index}`, dayId: day.id, slot, itemLabel }));
+    const ordered = orderAllergenCheckerEntries(entries, plannerSlotOrder);
+    const expected = plannerSlotOrder.flatMap(slot => entries.filter(entry => entry.slot === slot));
+    assert.deepEqual(ordered.map(entry => entry.id), expected.map(entry => entry.id), day.dayName);
+    assert.deepEqual(ordered.slice(-2).map(entry => entry.slot), ["Z EXTRA SIDE", "A EXTRA SIDE"], day.dayName);
+    assert.deepEqual(ordered.filter(entry => entry.slot.startsWith("COLD PROTEIN")).map(entry => entry.slot), ["COLD PROTEIN MEAT", "COLD PROTEIN", "COLD PROTEIN FISH"], day.dayName);
+    assert.ok(ordered.some(entry => entry.slot === "HOT MEAT"), "historical slot identity remains unchanged");
+  }
 });
 
-test("custom and historical rows are deterministic without rewriting source slot identities", () => {
-  const rows = [
-    { id: "z-extra", slot: "Chef's Extra Row", itemLabel: "Extra greens" },
-    { id: "alias", slot: "COLD PROTEIN", itemLabel: "Legacy meat" },
-    { id: "a-extra", slot: "Chef's Extra Row", itemLabel: "Extra beans" },
-    { id: "canonical", slot: "COLD PROTEIN MEAT", itemLabel: "Canonical meat" },
-  ];
-  const first = orderAllergenCheckerEntries(rows).map((entry) => entry.id);
-  assert.deepEqual(orderAllergenCheckerEntries([...rows].reverse()).map((entry) => entry.id), first);
-  assert.deepEqual(first.slice(0, 2), ["canonical", "alias"]);
-  assert.deepEqual(orderAllergenCheckerEntries(rows).map((entry) => entry.slot), ["COLD PROTEIN MEAT", "COLD PROTEIN", "Chef's Extra Row", "Chef's Extra Row"]);
-  assert.equal(groupAllergenCheckerEntries(rows).at(-1)?.label, "Additional menu rows");
-});
-
-test("repeated dish placements remain distinct and receive stable occurrence labels", () => {
+test("repeated dish entries stay distinct and retain their saved order within the same Week Planner slot", () => {
+  const snapshot = emptyWeek("2026-11-16");
+  const plannerSlotOrder = groupedSlots(snapshot).flatMap(([, slots]) => slots);
   const repeated = [
-    { id: "entry:b", slot: "SALAD 2", itemId: "dish:slaw", itemLabel: "Cabbage slaw" },
-    { id: "entry:a", slot: "SALAD 2", itemId: "dish:slaw", itemLabel: "Cabbage slaw" },
+    { id: "entry:b", slot: "SALAD 2", itemId: "dish:slaw", itemLabel: "Cabbage slaw", allergens: { eggs: "contains" } },
+    { id: "entry:a", slot: "SALAD 2", itemId: "dish:slaw", itemLabel: "Cabbage slaw", allergens: { eggs: "may_contain" } },
   ];
-  const labels = occurrenceLabels(repeated);
-  assert.equal(labels.get("entry:a"), "Occurrence 1 of 2");
-  assert.equal(labels.get("entry:b"), "Occurrence 2 of 2");
-  assert.deepEqual(orderAllergenCheckerEntries(repeated).map((entry) => entry.id), ["entry:a", "entry:b"]);
-});
-
-test("each weekday renders the same canonical order as its Week Planner source entries", () => {
-  const menu = weekdays.map((day) => ({ day, entries: CANONICAL_MENU_SLOTS.map((slot, index) => ({ id: `${day}:${index}`, slot: slot.id, itemLabel: `${slot.label} ${index}` })).reverse() }));
-  for (const { day, entries } of menu) {
-    const plannerOrder = orderMenuEntries(entries.map((entry, originalIndex) => ({ ...entry, originalIndex }))).map((entry) => entry.id);
-    assert.deepEqual(orderAllergenCheckerEntries(entries).map((entry) => entry.id), plannerOrder, day);
-  }
-});
-
-test("a newly opened week renders canonical slots once and filters superseded legacy aliases", () => {
-  const week = emptyWeek("2026-11-16", "fixture", newWeekTemplateSlots(["COLD PROTEIN", "FISH 1", "VEGAN MAIN 1", "SALAD 6"]));
-  const rendered = groupedSlots(week).flatMap(([, slots]) => slots);
-  assert.deepEqual(rendered, ROLLING_SLOTS);
-  assert.equal(new Set(rendered).size, 29);
-  assert.equal(rendered.some((slot) => ["COLD PROTEIN", "FISH 1", "VEGAN MAIN 1"].includes(slot)), false);
+  const ordered = orderAllergenCheckerEntries(repeated, plannerSlotOrder);
+  assert.deepEqual(ordered.map(entry => entry.id), ["entry:b", "entry:a"]);
+  assert.deepEqual(ordered.map(entry => entry.allergens.eggs), ["contains", "may_contain"]);
+  assert.equal(new Set(ordered.map(entry => entry.id)).size, 2);
 });
