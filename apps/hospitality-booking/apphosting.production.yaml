@@ -31,6 +31,10 @@ env:
   - variable: FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED
     value: "false"
     availability: [RUNTIME]
+  # Hot Fork Buffet authoring and quote preview remain staging-only until separately approved.
+  - variable: NEXT_PUBLIC_FIKA_HOT_FORK_BUFFET_ENABLED
+    value: "false"
+    availability: [BUILD, RUNTIME]
   - variable: FIKA_RCOA_OPLOC_ID
     value: oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2
     availability: [RUNTIME]
