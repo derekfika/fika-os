@@ -25,12 +25,15 @@ test("inventory uses the durable worker eligibility and lease rules, not status 
   assert.equal(pendingDue.eventIsDueAtSnapshot, true);
   assert.equal(pendingDue.workerEligibleAtSnapshot, true);
   assert.equal(pendingDue.wouldBeClaimedIfUnchanged, true);
+  assert.equal(pendingDue.operationalClass, "pending-eligible");
 
   const failedDue = classifyHospitalityMirrorOutboxRecord("production.order.created:production-order:v1:booking:rcoa:fixture:r1:v1", event({ status: "failed", attempts: 4, nextAttemptAt: asOf, nextEligibleAt: asOf }, { nextEligibleAt: asOf, outboxStatus: "failed" }), asOf, 1);
   assert.equal(failedDue.workerEligibleAtSnapshot, true);
+  assert.equal(failedDue.operationalClass, "retry-eligible");
 
   const leased = classifyHospitalityMirrorOutboxRecord("production.order.created:production-order:v1:booking:rcoa:fixture:r1:v1", event({ status: "pending", claimId: "claim", leaseExpiresAt: "2026-11-12T12:03:00.000Z", nextEligibleAt: "2026-11-12T12:03:00.000Z" }, { nextEligibleAt: "2026-11-12T12:03:00.000Z" }), asOf, 1);
   assert.equal(leased.leaseState, "active");
+  assert.equal(leased.operationalClass, "leased");
   assert.equal(leased.eventIsDueAtSnapshot, false);
   assert.equal(leased.wouldBeClaimedIfUnchanged, false);
 
@@ -38,6 +41,7 @@ test("inventory uses the durable worker eligibility and lease rules, not status 
     const terminal = classifyHospitalityMirrorOutboxRecord("production.order.created:production-order:v1:booking:rcoa:fixture:r1:v1", event({ status, deliveredAt: asOf }, { nextEligibleAt: asOf }), asOf, 1);
     assert.equal(terminal.eventIsDueAtSnapshot, false);
     assert.equal(terminal.wouldBeClaimedIfUnchanged, false);
+    assert.equal(terminal.operationalClass, status);
   }
 });
 
