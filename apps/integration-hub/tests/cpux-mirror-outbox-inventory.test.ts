@@ -104,5 +104,5 @@ test("route wires only the interactive AUTHMOD administrator guard and read-only
   assert.doesNotMatch(route, /internalTokenAllowed|hospitalityMirrorSchedulerRequestAllowed|replayHospitalityMirror|mirrorEnabled/);
   const inventory = readFileSync(new URL("../lib/cpux-mirror/outbox-inventory.ts", import.meta.url), "utf8");
   assert.doesNotMatch(inventory, /db\.runTransaction|db\.batch\(|transaction\.|ref\.(set|create|delete|update)\(/);
-  assert.match(inventory, /\.where\("nextEligibleAt", "<=", asOf\)\.orderBy\("nextEligibleAt"\)/);
+  assert.match(inventory, /dueHospitalityMirrorQuery\(db\.collection\(OUTBOX_COLLECTION\), asOf, HOSPITALITY_MIRROR_SCHEDULER_BATCH_LIMIT\)/);
 });
