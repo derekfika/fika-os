@@ -7,49 +7,40 @@
   "region": "europe-west4",
   "branch": "release/staging/menu",
   "validation": {
-    "id": 131130802346,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/43202768597/job/131130802346",
-    "sha": "557c8737f723896234aff97f070972cc9c99dfe1"
+    "id": 131356346090,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/43267568542/job/131356346090",
+    "sha": "ea7f535a5d978ec154d19ffd1ed42af79321a264"
   },
   "provenance": {
-    "number": 517,
-    "url": "https://github.com/derekfika/fika-os/pull/517",
-    "head": "8426417bf6b68f2d9cfc361a49d5888ada41410a"
+    "number": 528,
+    "url": "https://github.com/derekfika/fika-os/pull/528",
+    "head": "7077b04044dc9a6600f417b130cd57e9d585ba25"
   },
-  "sourceSha": "557c8737f723896234aff97f070972cc9c99dfe1",
-  "scopeHash": "5b0c99720d46b97f3a9b52403aae84cb3cad908685c511eb8c1b1ae71432a27e",
+  "sourceSha": "ea7f535a5d978ec154d19ffd1ed42af79321a264",
+  "scopeHash": "1d2deea7d448a83c0ad31dadc2bfede1924f48760558752be8461ce1cd504c82",
   "rollback": false,
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "menu",
     "environment": "staging",
-    "sourceSha": "557c8737f723896234aff97f070972cc9c99dfe1",
+    "sourceSha": "ea7f535a5d978ec154d19ffd1ed42af79321a264",
     "action": "deploy",
-    "instruction": "Deploy merged PR #517 Allergen Checker redesign for authenticated staging UAT",
+    "instruction": "Owner-requested staging deployment for Allergen Checker original UI restoration with Week Planner dish ordering only",
     "releaseId": null,
-    "id": "023f086d00179e0e694e02637f24dfeaa42444a72aa250e1c8b1a1de439309e8",
+    "id": "797642e573c7a9465ed3458acadb58f614ecaccb5a9030e6966858ef4de97b7c",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-12T16:44:51.536Z"
+    "authorisedAt": "2026-11-12T17:18:53.022Z"
   },
-  "rollout": "build-2026-11-12-001",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "d3677131-0447-4458-9bd4-b037b59df8f5",
   "previousGood": {
-    "sourceSha": "2d5d4f77483ab5c6d45aba70a1e5fe4942eb8706",
-    "rollout": "build-2026-11-11-003",
+    "sourceSha": "557c8737f723896234aff97f070972cc9c99dfe1",
+    "rollout": "build-2026-11-12-001",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "b7fa57a15e4765f43e652b690e89eaf74122902d",
-  "releaseId": "a5a4e098-11e7-4404-b57b-cbf225c62b69",
-  "completedAt": "2026-11-12T16:48:36.196Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-menu-planning-staging--fika-os-dev.europe-west4.hosted.app/api/build-info",
-    "appId": "menu-planning",
-    "buildSha": "557c8737f723896234aff97f070972cc9c99dfe1"
-  }
+  "previousGoodRecord": "bfb519ab399afad280680a0a0ff16b279778fbc3",
+  "createdAt": "2026-11-12T17:18:55.931Z"
 }
