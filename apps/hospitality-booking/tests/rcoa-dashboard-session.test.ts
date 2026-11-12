@@ -43,8 +43,11 @@ test("RCoA PIN/session settings are isolated from Gallagher and cookies are rout
   env.GALLAGHER_DASHBOARD_PIN_HASH = createGallagherPinHash("1234", Buffer.alloc(16, 2));
   env.GALLAGHER_DASHBOARD_SESSION_SECRET = "gallagher-session-secret-which-is-independent-0123456789";
   assert.equal(await verifyRcoaPin("123456"), true);
-  assert.equal(await verifyRcoaPin("1234"), false);
-  assert.throws(() => createRcoaPinHash("12345", Buffer.alloc(16, 1)), /6–12 digit/);
+  assert.equal(await verifyRcoaPin("8462"), false);
+  env.RCOA_DASHBOARD_PIN_HASH = createRcoaPinHash("7394", Buffer.alloc(16, 4));
+  assert.equal(await verifyRcoaPin("7394"), true);
+  assert.equal(await verifyRcoaPin("739"), false);
+  assert.throws(() => createRcoaPinHash("739", Buffer.alloc(16, 1)), /4–12 digit/);
   const token = createRcoaSession();
   assert.equal(hasRcoaSession(rcoaRequest(token)), true);
   assert.equal(hasGallagherSession(rcoaRequest(token)), false);
@@ -81,15 +84,15 @@ test("RCoA session route fails closed, rate limits bad PINs, and issues an isola
   delete env.RCOA_DASHBOARD_SESSION_SECRET;
   const unconfigured = await signIn(new NextRequest("https://hospitality.fikacatering.com/rcoa/bookings/api/session", { method: "POST", body: JSON.stringify({ pin: "123456" }) }));
   assert.equal(unconfigured.status, 503);
-  env.RCOA_DASHBOARD_PIN_HASH = createRcoaPinHash("123456", Buffer.alloc(16, 3));
+  env.RCOA_DASHBOARD_PIN_HASH = createRcoaPinHash("7394", Buffer.alloc(16, 3));
   env.RCOA_DASHBOARD_SESSION_SECRET = "rcoa-session-secret-which-is-independent-0123456789";
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const response = await signIn(new NextRequest("https://hospitality.fikacatering.com/rcoa/bookings/api/session", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": `spoof-${attempt}, trusted-login-hop` }, body: JSON.stringify({ pin: "000000" }) }));
     assert.equal(response.status, 401);
   }
-  const limited = await signIn(new NextRequest("https://hospitality.fikacatering.com/rcoa/bookings/api/session", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": "new-spoof, trusted-login-hop" }, body: JSON.stringify({ pin: "123456" }) }));
+  const limited = await signIn(new NextRequest("https://hospitality.fikacatering.com/rcoa/bookings/api/session", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": "new-spoof, trusted-login-hop" }, body: JSON.stringify({ pin: "7394" }) }));
   assert.equal(limited.status, 429);
-  const signedIn = await signIn(new NextRequest("https://hospitality.fikacatering.com/rcoa/bookings/api/session", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": "trusted-new-hop" }, body: JSON.stringify({ pin: "123456" }) }));
+  const signedIn = await signIn(new NextRequest("https://hospitality.fikacatering.com/rcoa/bookings/api/session", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": "trusted-new-hop" }, body: JSON.stringify({ pin: "7394" }) }));
   assert.equal(signedIn.status, 200);
   assert.match(signedIn.headers.get("set-cookie") || "", /fika_rcoa_dashboard_session=.*Path=\/rcoa\/bookings;.*HttpOnly; Secure; SameSite=Lax/);
   const signedOut = await signOut();
