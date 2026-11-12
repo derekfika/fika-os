@@ -46,7 +46,7 @@ async function fixture(page: Page, portions = false) {
   return { weeks, writes, connection };
 }
 
-test("manual No Key is exclusive, survives saved reload and never clears an untouched row", async ({ page }) => {
+test("manual No Key preserves named allergens on conflict and survives saved reload", async ({ page }) => {
   const server = await fixture(page);
   const noKey = () => page.getByRole("button", { name: /Synthetic soup, No key allergens:/ });
   await expect(noKey()).toHaveAttribute("aria-label", /Not recorded$/);
@@ -54,8 +54,17 @@ test("manual No Key is exclusive, survives saved reload and never clears an unto
   await expect(noKey()).toHaveAttribute("aria-label", /Contains$/);
   await page.getByRole("button", { name: /Synthetic soup, Milk:/ }).click();
   await expect(noKey()).toHaveAttribute("aria-label", /Not recorded$/);
+  const milk = page.locator('button[aria-label^="Synthetic soup, Milk:"]');
+  await expect(milk).toHaveAttribute("aria-label", /Contains$/);
   await noKey().click();
-  await expect(page.getByRole("button", { name: /Synthetic soup, Milk:/ })).toHaveAttribute("aria-label", /Not recorded$/);
+  await expect(page.getByRole("alert").filter({ hasText: "No Key Allergens conflicts with recorded" })).toBeVisible();
+  await expect(milk).toHaveAttribute("aria-label", /Contains$/);
+  await milk.click();
+  await expect(milk).toHaveAttribute("aria-label", /May contain$/);
+  await milk.click();
+  await expect(milk).toHaveAttribute("aria-label", /Not recorded$/);
+  await noKey().click();
+  await expect(noKey()).toHaveAttribute("aria-label", /Contains$/);
   await page.getByRole("button", { name: "Mark reviewed", exact: true }).click();
   await page.getByRole("button", { name: "Save allergen changes", exact: true }).click();
   await expect(page.getByRole("button", { name: "Save allergen changes", exact: true })).toBeDisabled();
@@ -65,6 +74,18 @@ test("manual No Key is exclusive, survives saved reload and never clears an unto
   expect(server.weeks[0].entries[1].allergens).toEqual({});
   await page.reload();
   await expect(noKey()).toHaveAttribute("aria-label", /Contains$/);
+});
+
+test("allergen declarations are keyboard reachable and never save until explicitly submitted", async ({ page }) => {
+  const server = await fixture(page);
+  const milk = page.locator('button[aria-label^="Synthetic soup, Milk:"]');
+  await expect(page.getByRole("status", { name: "Needs review" })).toBeVisible();
+  await milk.focus();
+  await expect(milk).toHaveAttribute("aria-label", "Synthetic soup, Milk: Not recorded");
+  await page.keyboard.press("Enter");
+  await expect(milk).toHaveAttribute("aria-label", "Synthetic soup, Milk: Contains");
+  await expect(page.getByRole("status", { name: "0 of 1 dishes reviewed" })).toBeVisible();
+  expect(server.writes).toHaveLength(0);
 });
 
 test("day and week navigation preserve separate drafts, and typing performs no remote mutation", async ({ page }) => {
