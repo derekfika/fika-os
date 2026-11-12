@@ -5,6 +5,7 @@ type ClientMenuPreview = { available: boolean; date: string; version?: number; w
 
 /** A failed or absent preview is always rendered as the explicit confirmation state in the quote. */
 export async function quoteBuffetMenu(booking: CanonicalBooking, fetcher: typeof fetch = fetch): Promise<{ label: string; dishes: ClientMenuPreview["dishes"] } | undefined> {
+  if (process.env.NEXT_PUBLIC_FIKA_HOT_FORK_BUFFET_ENABLED !== "true") return undefined;
   if (!isHotForkBuffetBooking(booking)) return undefined;
   const confirmed = { label: "Menu to be confirmed", dishes: [] as ClientMenuPreview["dishes"] };
   if (!booking.service.oplocId) return confirmed;

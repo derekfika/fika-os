@@ -16,6 +16,9 @@ env:
   - variable: FIKA_SESSION_COOKIE_DOMAIN
     value: .fikacatering.com
     availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIKA_HOT_FORK_BUFFET_ENABLED
+    value: "true"
+    availability: [BUILD, RUNTIME]
   - variable: FIKA_HUB_BASE_URL
     value: https://staging-os.fikacatering.com
     availability: [BUILD, RUNTIME]

@@ -5,6 +5,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  if (process.env.NEXT_PUBLIC_FIKA_HOT_FORK_BUFFET_ENABLED !== "true") {
+    return new Response(null, { status: 404, headers: { "Cache-Control": "private, no-store" } });
+  }
   const date = request.nextUrl.searchParams.get("date") || "";
   const oplocId = request.nextUrl.searchParams.get("oplocId") || "";
   if (!date || !oplocId) return NextResponse.json({ error: { message: "A booking service date and canonical OPLOC are required." } }, { status: 422, headers: { "Cache-Control": "private, no-store" } });
