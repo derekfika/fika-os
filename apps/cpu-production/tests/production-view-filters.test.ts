@@ -205,7 +205,7 @@ test("filtering never mutates orders or touches printing, eligibility or handoff
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
     assert.doesNotMatch(source, /fetch\(|localStorage|sessionStorage|method:\s*"(POST|PUT|PATCH|DELETE)"/);
   }
-  assert.match(page, /printKitchenDocument\(totalsPrintHtml\(categoryTotals/, "totals print path is unchanged");
+  assert.match(page, /<RunSheetPrintDialog productionDate=\{range\?\.from \|\| productionDate\} selectedSiteIds=\{selectedSiteIds\} printType="totals" \/>/, "totals printing uses the shared Run Sheet options workflow");
 });
 
 test("the site control is a labelled, keyboard operable group with counts and a reset", () => {
