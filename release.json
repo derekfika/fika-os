@@ -83,9 +83,10 @@
     "explicitExecute": true,
     "authorisedAt": "2026-11-12T17:25:27.448Z"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "39dde5b6-53fc-4d44-b565-821de04d9ea3",
+  "rollout": "build-2026-11-12-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "2d5d4f77483ab5c6d45aba70a1e5fe4942eb8706",
     "rollout": "build-2026-11-11-002",
@@ -93,5 +94,13 @@
     "percent": 100
   },
   "previousGoodRecord": "9da792fe541e1e6d7a217929b031e680f6304951",
-  "createdAt": "2026-11-12T17:25:29.819Z"
+  "releaseId": "39dde5b6-53fc-4d44-b565-821de04d9ea3",
+  "completedAt": "2026-11-12T17:29:21.227Z",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-os-prod-menu--fika-os.europe-west4.hosted.app/api/build-info",
+    "appId": "menu-planning",
+    "buildSha": "ea7f535a5d978ec154d19ffd1ed42af79321a264"
+  }
 }
