@@ -24,7 +24,7 @@ const menu = portalMenuFromCatalogue(pkg, OPLOC, "2030-12-02");
 const visibility = rcoaVisibilityFromCatalogue(pkg, OPLOC);
 const requestFor = (itemId = "hospitality-menu-item:wine", eventType = "dining", bookingId = "RCOA-VISIBILITY-ABCDEFG") => ({
   bookingId, submittedAt: "2026-10-31T20:00:00.000Z", client: { name: "Fixture", email: "fixture@example.invalid", phone: "1", companyName: "Fixture" },
-  event: { eventDate: "2030-12-02", startTime: "12:00", guestCount: 3, floorLevel: "1", roomOrArea: "Fixture room" }, order: { eventType, items: [{ itemId, quantity: 2 }] },
+  event: { eventDate: "2030-12-02", startTime: "12:00", guestCount: 3, floorLevel: "First Floor", roomOrArea: "Boardroom 1" }, order: { eventType, items: [{ itemId, quantity: 2 }] },
   dietaries: { hasDietaries: false, vegetarian: 0, vegan: 0, glutenFree: 0, coeliac: 0, dairyFree: 0, halal: 0, otherCount: 0, allergyDetails: "", severeAllergyAcknowledged: false, freeText: "" },
   acknowledgements: { quoteSubjectToConfirmation: true as const, noticePolicyAccepted: true as const, dietaryResponsibilityAccepted: true as const },
 });

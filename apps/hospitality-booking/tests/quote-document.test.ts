@@ -54,6 +54,21 @@ test("quoteHtml renders a self-contained branded immutable quote snapshot", () =
   assert.doesNotMatch(html, /stylesheet|globals\.css|tailwind|font-family:Arial|font-family:sans-serif/i);
 });
 
+test("RCoA quote PDF shows the assigned floor and room together", () => {
+  const booking = {
+    canonicalId: "booking-rcoa-location",
+    client: { name: "RCoA client", companyName: "RCoA", email: "client@example.test" },
+    service: { portalSiteId: "rcoa", portalSiteLabel: "RCoA Hospitality", eventDate: "2026-11-12", startTime: "12:30", floorLevel: "Second Floor", roomOrArea: "Meeting Room 4", guestCount: 94 },
+    order: { eventType: "hot_fork_buffet", items: [], netTotal: 0, vatTotal: 0, grossTotal: 0, currency: "GBP" },
+    dietaries: {}, quoteState: { currentRevisionId: "quote-rcoa-room", revisions: [{ id: "quote-rcoa-room", revision: 1, createdAt: "2026-11-01T10:00:00.000Z", snapshot: {
+      client: { name: "RCoA client", companyName: "RCoA", email: "client@example.test" },
+      service: { portalSiteId: "rcoa", portalSiteLabel: "RCoA Hospitality", eventDate: "2026-11-12", startTime: "12:30", floorLevel: "Second Floor", roomOrArea: "Meeting Room 4", guestCount: 94 },
+      order: { eventType: "hot_fork_buffet", lines: [] }, charges: [], totals: { itemsNet: { amount: 0 }, chargesNet: { amount: 0 }, net: { amount: 0 }, vat: { amount: 0 }, gross: { amount: 0 }, vatRate: 0.2 }, dietaries: {},
+    } }] },
+  } as never;
+  assert.match(quoteHtml(booking), /Second Floor · Meeting Room 4/);
+});
+
 test("a client-safe buffet menu is labelled provisional and excludes operational fields", () => {
   const booking = {
     canonicalId: "booking-buffet-preview",

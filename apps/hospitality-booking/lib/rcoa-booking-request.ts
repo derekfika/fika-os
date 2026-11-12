@@ -3,6 +3,7 @@ import { localRcoaMenuCatalogue } from "./local-rcoa-menu";
 import type { PortalMenuItem } from "./mnk-contract";
 import { isValidRcoaLondonWallTime, RCOA_MAX_SERVICES, rcoaAllowsEmptyOrder, rcoaChildReference, rcoaEventTypes, rcoaVatNote } from "./rcoa-portal";
 import { rcoaServiceCategories, RCOA_SERVICE_SETTINGS_UNAVAILABLE, type RcoaServiceVisibility } from "./rcoa-service-visibility";
+import { isValidRcoaLocationPair } from "@fika/server-shared/rcoa-locations";
 
 const eventTypeIds = rcoaEventTypes.map((event) => event.id) as [string, ...string[]];
 
@@ -136,8 +137,7 @@ export function buildTrustedRcoaHubPayload(value: unknown, governedMenu: readonl
   if (request.event.endTime && request.event.endTime <= request.event.startTime) {
     throw new Error("End time must be after the start time.");
   }
-  if (!request.event.floorLevel?.trim()) throw new Error("Enter the floor level.");
-  if (!request.event.roomOrArea?.trim()) throw new Error("Enter the room or area.");
+  if (!request.event.floorLevel?.trim() || !request.event.roomOrArea?.trim() || !isValidRcoaLocationPair(request.event.floorLevel, request.event.roomOrArea)) throw new Error("Choose a listed RCoA floor and a location on that floor.");
   const categories = rcoaServiceCategories(visibility, request.order.eventType);
   if (!categories) throw new Error(visibility ? "This service is no longer offered. Refresh the menu and choose another occasion." : RCOA_SERVICE_SETTINGS_UNAVAILABLE);
   if (!request.order.items.length && !rcoaAllowsEmptyOrder(request.order.eventType)) {

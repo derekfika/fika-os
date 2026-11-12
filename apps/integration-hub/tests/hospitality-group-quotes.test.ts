@@ -211,4 +211,6 @@ test("grouped RCoA quote uses the canonical Hospitality quote branding, not FIKA
   const times = q.snapshots.map(s => html.indexOf(`${s.service.startTime} —`)); assert.ok(times.every(i => i > 0)); assert.deepEqual([...times].sort((a, b) => a - b), times);
   assert.equal((html.match(/Service subtotal \(net\)/g) || []).length, q.snapshots.length);
   assert.equal(hospitalityGroupQuoteHtml(q), html, "rendering is deterministic for the immutable group quote");
+  const located = { ...q, snapshots: q.snapshots.map((snapshot, index) => index === 0 ? { ...snapshot, service: { ...snapshot.service, portalSiteId: "rcoa", floorLevel: "Third Floor", roomOrArea: "Executive Boardroom" } } : snapshot) };
+  assert.match(hospitalityGroupQuoteHtml(located), /Third Floor · Executive Boardroom/);
 });

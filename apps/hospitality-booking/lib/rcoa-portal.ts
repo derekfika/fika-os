@@ -4,6 +4,7 @@ import { effectiveGuestMinimum, guestCountMessage } from "./guest-count";
 import { GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 import { rcoaServiceCategories, rcoaServiceIsOffered, RCOA_SERVICE_SETTINGS_UNAVAILABLE, type RcoaServiceVisibility } from "./rcoa-service-visibility";
 import { rcoaEventTypes, type RcoaEventType } from "./rcoa-event-types";
+import { isRcoaFloor, isValidRcoaLocationPair } from "@fika/server-shared/rcoa-locations";
 export { rcoaEventTypes } from "./rcoa-event-types";
 
 /**
@@ -204,8 +205,10 @@ export function validateRcoaStep(step: number, draft: RcoaBookingDraft, menu: re
     if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(draft.event.startTime)) errors.startTime = "Choose a valid start time.";
     else if (!isValidRcoaLondonWallTime(draft.event.eventDate, draft.event.startTime)) errors.startTime = "This time does not occur in Europe/London on the selected date.";
     if (draft.event.endTime && (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(draft.event.endTime) || draft.event.endTime <= draft.event.startTime)) errors.endTime = "End time must be after the start time.";
-    if (!draft.event.floorLevel.trim()) errors.floorLevel = "Enter the floor level.";
-    if (!draft.event.roomOrArea.trim()) errors.roomOrArea = "Enter the room or area.";
+    if (!draft.event.floorLevel.trim()) errors.floorLevel = "Choose the floor.";
+    else if (!isRcoaFloor(draft.event.floorLevel)) errors.floorLevel = "Choose a listed floor.";
+    if (!draft.event.roomOrArea.trim()) errors.roomOrArea = "Choose the room or area.";
+    else if (!isValidRcoaLocationPair(draft.event.floorLevel, draft.event.roomOrArea)) errors.roomOrArea = `Choose a location available on ${draft.event.floorLevel || "the selected floor"}.`;
   }
   if (step >= 2) {
     const message = guestCountMessage(draft.event.guestCount, rcoaGuestMinimum(draft, menu));

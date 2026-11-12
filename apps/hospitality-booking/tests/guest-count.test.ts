@@ -41,7 +41,7 @@ test("blank editing is allowed; blank, zero, negative, decimal, NaN and unknown 
 
 const validDraft = () => ({ ...createEmptyRcoaDraft(), occasion: "breakfast" as const,
   contact: { name: "Test", email: "test@example.invalid", phone: "1", companyName: "Test", invoiceReference: "" },
-  event: { ...createEmptyRcoaDraft().event, eventDate: "2099-12-10", startTime: "10:00", guestCount: 11, floorLevel: "1", roomOrArea: "Room" },
+  event: { ...createEmptyRcoaDraft().event, eventDate: "2099-12-10", startTime: "10:00", guestCount: 11, floorLevel: "Ground Floor", roomOrArea: "Conference Suite" },
   lines: [line(guestItem.id)], acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } });
 
 test("RCoA event, menu, dietary/review and direct server request enforce the selected guest minimum", () => {
@@ -54,10 +54,10 @@ test("RCoA event, menu, dietary/review and direct server request enforce the sel
 
 test("All Day requirements use only that service's selected items and own count, never the event default or another service", () => {
   const shared = validDraft();
-  const day = { ...createEmptyAllDay(), contact: shared.contact, eventDate: shared.event.eventDate, floorLevel: "1", defaultGuests: 100,
+  const day = { ...createEmptyAllDay(), contact: shared.contact, eventDate: shared.event.eventDate, floorLevel: "Ground Floor", defaultLocation: "Conference Suite", defaultGuests: 100,
     acknowledgements: shared.acknowledgements, services: [
-      { id: "first", category: "breakfast" as const, startTime: "09:00", guestCount: 1, location: "Room A", lines: [line(product.id)], notes: "" },
-      { id: "second", category: "breakfast" as const, startTime: "12:00", guestCount: 11, location: "Room B", lines: [line(guestItem.id)], notes: "" },
+      { id: "first", category: "breakfast" as const, startTime: "09:00", guestCount: 1, location: "Conference Suite", lines: [line(product.id)], notes: "" },
+      { id: "second", category: "breakfast" as const, startTime: "12:00", guestCount: 11, location: "Conference Suite", lines: [line(guestItem.id)], notes: "" },
     ] };
   assert.equal(composeServiceDraft(day, "first").event.guestCount, 1);
   const failure = validateAllDay(day, [product, guestItem], seedVisibility);
@@ -70,10 +70,10 @@ test("All Day requirements use only that service's selected items and own count,
 
 test("All Day requires a positive event default independently of valid service counts and item quantities", () => {
   const shared = validDraft();
-  const day = { ...createEmptyAllDay(), contact: shared.contact, eventDate: shared.event.eventDate, floorLevel: "1", defaultGuests: 0,
+  const day = { ...createEmptyAllDay(), contact: shared.contact, eventDate: shared.event.eventDate, floorLevel: "Ground Floor", defaultLocation: "Conference Suite", defaultGuests: 0,
     acknowledgements: shared.acknowledgements, services: [
-      { id: "one", category: "breakfast" as const, startTime: "09:00", guestCount: 1, location: "Room A", lines: [line(product.id)], notes: "" },
-      { id: "two", category: "breakfast" as const, startTime: "12:00", guestCount: 12, location: "Room B", lines: [line(guestItem.id)], notes: "" },
+      { id: "one", category: "breakfast" as const, startTime: "09:00", guestCount: 1, location: "Conference Suite", lines: [line(product.id)], notes: "" },
+      { id: "two", category: "breakfast" as const, startTime: "12:00", guestCount: 12, location: "Conference Suite", lines: [line(guestItem.id)], notes: "" },
     ] };
   const failure = validateAllDay(day, [product, guestItem], seedVisibility);
   assert.equal(failure?.step, 1);
@@ -97,9 +97,9 @@ test("RCoA applies Hub's explicit Gallagher floor while retaining its trusted ad
   }
   const derived = { ...guestItem, rules: { guestMinimumKind: "product" as const } };
   assert.equal(rcoaGuestMinimum({ ...draft, contact: { ...draft.contact, companyName: "Gallagher" }, lines: [line(derived.id)] }, [derived]), 12, "the RCoA trusted adapter independently enforces the raw item floor");
-  const day = { ...createEmptyAllDay(), contact: { ...draft.contact, companyName: "Gallagher" }, eventDate: draft.event.eventDate, floorLevel: "1", defaultGuests: 100, acknowledgements: draft.acknowledgements,
-    services: [{ id: "one", category: "breakfast" as const, startTime: "09:00", guestCount: 5, location: "Room A", lines: [line(product.id)], notes: "" },
-      { id: "two", category: "breakfast" as const, startTime: "12:00", guestCount: 1, location: "Room B", lines: [line(product.id)], notes: "" }] };
+  const day = { ...createEmptyAllDay(), contact: { ...draft.contact, companyName: "Gallagher" }, eventDate: draft.event.eventDate, floorLevel: "Ground Floor", defaultLocation: "Conference Suite", defaultGuests: 100, acknowledgements: draft.acknowledgements,
+    services: [{ id: "one", category: "breakfast" as const, startTime: "09:00", guestCount: 5, location: "Conference Suite", lines: [line(product.id)], notes: "" },
+      { id: "two", category: "breakfast" as const, startTime: "12:00", guestCount: 1, location: "Conference Suite", lines: [line(product.id)], notes: "" }] };
   assert.equal(validateAllDay(day, [product], seedVisibility)?.serviceId, "two");
   assert.match(validateAllDay(day, [product], seedVisibility)?.errors["guestCount:two"] || "", /5/);
 });

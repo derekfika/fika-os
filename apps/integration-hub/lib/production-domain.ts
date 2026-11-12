@@ -50,6 +50,14 @@ function withoutAutomaticQuantityBlockers(order: ProductionOrder): ProductionOrd
   return { ...order, lines, exceptions, status };
 }
 
+export function hospitalityCpuDestinationLabel(booking: CanonicalBooking) {
+  const service = booking.service;
+  const parts = service.portalSiteId === "rcoa"
+    ? [service.portalSiteLabel, service.floorLevel, service.roomOrArea || service.deliveryPoint]
+    : [service.portalSiteLabel, service.roomOrArea || service.deliveryPoint];
+  return parts.filter(Boolean).join(" · ") || service.oplocId;
+}
+
 /** Explicit, reviewed production rules. These are configuration, not inference from names. */
 const explicitMnkConversions: Record<string, { multiplier: number; unit: string; rule: string }> = {
   deli_sandwich_lunch: { multiplier: 3, unit: "piece", rule: "MNK catalogue serving rule: three pieces per person." },
@@ -172,7 +180,8 @@ export async function createProductionFromApprovedBookingTransaction(actor: Acto
       ? `Booking amended: ${existingBase.guestCount ?? "?"} pax → ${booking.service.guestCount} pax; ${existingBase.lines.map(line => `${line.itemName} ${line.customerQuantity}`).join(", ")} → ${lines.map(line => `${line.itemName} ${line.customerQuantity}`).join(", ")}.`
       : undefined;
     const status: ProductionStatus = existingBase?.status === "amended" ? "needs_review" : exceptions.length ? "needs_review" : "draft";
-    const order: ProductionOrder = { canonicalId: orderId, entityType: "Production Order", schemaVersion: PRODUCTION_SCHEMA_VERSION, version: 1, requirementIds: [requirementId], sourceBookingId: bookingId, sourceQuoteRevisionId: quote.id, productionLocationId: process.env.CPU_PRODUCTION_LOCATION_ID, requiresDelivery: true, destinationOplocId: booking.service.oplocId, destinationLabel: [booking.service.portalSiteLabel, booking.service.roomOrArea || booking.service.deliveryPoint].filter(Boolean).join(" · ") || booking.service.oplocId, clientName: booking.client.companyName, ...(booking.order.eventType ? { serviceType: booking.order.eventType } : {}), serviceDate: booking.service.eventDate, guestCount: booking.service.guestCount, requiredBy: requirement.requiredBy, serviceWindow: requirement.serviceWindow, status, priority: "normal", lines, exceptions, ...(existingBase?.status === "amended" ? { workflowStatus: "amended" as const } : {}), ...(amendmentNotice ? { amendmentNotice, operationalNotes: amendmentNotice } : {}), ...(Object.keys(booking.dietaries || {}).length ? { bookingDietaries: structuredClone(booking.dietaries) } : {}), ...(booking.notes ? { bookingNotes: booking.notes } : {}), ...(booking.kitchenNotes ? { kitchenNotes: booking.kitchenNotes } : {}), origin: "hospitality_booking", currentRevision: 1, createdAt: now, createdBy: actor.uid, idempotencyKey, externalReferences: [], audit: [{ action: "production-order-created", at: now, by: actor.uid, newState: status, reason: amendmentNotice || "Internal Production Order created without external CPU or Calendar side effects.", idempotencyKey }] };
+    const destinationLabel = hospitalityCpuDestinationLabel(booking);
+    const order: ProductionOrder = { canonicalId: orderId, entityType: "Production Order", schemaVersion: PRODUCTION_SCHEMA_VERSION, version: 1, requirementIds: [requirementId], sourceBookingId: bookingId, sourceQuoteRevisionId: quote.id, productionLocationId: process.env.CPU_PRODUCTION_LOCATION_ID, requiresDelivery: true, destinationOplocId: booking.service.oplocId, destinationLabel: destinationLabel || booking.service.oplocId, clientName: booking.client.companyName, ...(booking.order.eventType ? { serviceType: booking.order.eventType } : {}), serviceDate: booking.service.eventDate, guestCount: booking.service.guestCount, requiredBy: requirement.requiredBy, serviceWindow: requirement.serviceWindow, status, priority: "normal", lines, exceptions, ...(existingBase?.status === "amended" ? { workflowStatus: "amended" as const } : {}), ...(amendmentNotice ? { amendmentNotice, operationalNotes: amendmentNotice } : {}), ...(Object.keys(booking.dietaries || {}).length ? { bookingDietaries: structuredClone(booking.dietaries) } : {}), ...(booking.notes ? { bookingNotes: booking.notes } : {}), ...(booking.kitchenNotes ? { kitchenNotes: booking.kitchenNotes } : {}), origin: "hospitality_booking", currentRevision: 1, createdAt: now, createdBy: actor.uid, idempotencyKey, externalReferences: [], audit: [{ action: "production-order-created", at: now, by: actor.uid, newState: status, reason: amendmentNotice || "Internal Production Order created without external CPU or Calendar side effects.", idempotencyKey }] };
     const event = createDomainEvent({ eventType: "production.order.created", sourceAggregateId: order.canonicalId, sourceVersion: order.version, occurredAt: now, correlationId: idempotencyKey, payload: { canonicalId: order.canonicalId, version: order.version, status: order.status, sourceBookingId: order.sourceBookingId, serviceDate: order.serviceDate, productionLocationId: order.productionLocationId, destinationOplocId: order.destinationOplocId, destinationLabel: order.destinationLabel, lineIds: order.lines.map(line => line.canonicalId), productionOrder: order } });
     if (productionOrderRequiresFulfilment(order)) await stageFulfilmentEvent(transaction, event);
     if (existingBase?.status === "amended") transaction.set(baseOrderRef, { supersededBy: orderId }, { merge: true });
@@ -310,7 +319,9 @@ async function enrichOrder(order: ProductionOrder): Promise<ProductionOrder> {
     ...order,
     lines: linesWithSourceIdentity,
     ...(order.clientName ? {} : { clientName: booking.client?.companyName || booking.client?.name }),
-    ...(order.destinationLabel ? {} : { destinationLabel: booking.service?.portalSiteLabel || booking.service?.roomOrArea || booking.service?.deliveryPoint }),
+    ...(order.destinationLabel ? {} : { destinationLabel: booking.service?.portalSiteId === "rcoa"
+      ? [booking.service.floorLevel, booking.service.roomOrArea].filter(Boolean).join(" · ") || booking.service.portalSiteLabel || booking.service.deliveryPoint
+      : booking.service?.portalSiteLabel || booking.service?.roomOrArea || booking.service?.deliveryPoint }),
     ...(order.serviceDate ? {} : { serviceDate: booking.service?.eventDate }),
     ...(order.guestCount !== undefined ? {} : { guestCount: booking.service?.guestCount }),
     ...(order.serviceType ? {} : (booking.order?.eventType ? { serviceType: booking.order.eventType } : {})),

@@ -17,6 +17,7 @@ import type { Actor } from "./auth";
 import type { CanonicalRecord } from "./types";
 import { generateCanonicalId } from "./canonical-identities";
 import { stableDocumentId } from "./canonical-editor";
+import { isValidRcoaLocationPair } from "@fika/server-shared/rcoa-locations";
 import { sha256 } from "./profiler";
 import { parseCanonical } from "./schemas";
 import {
@@ -720,6 +721,7 @@ export function ingestMnkBookingFromExisting(
   if (existing)
     return { booking: existing, created: false, validationWarnings: [] };
   const portalSiteId = portalSiteKeyForPayload(payload);
+  if (portalSiteId === "rcoa" && (!payload.event.floorLevel?.trim() || !payload.event.roomOrArea?.trim() || !isValidRcoaLocationPair(payload.event.floorLevel, payload.event.roomOrArea))) throw conflict("Choose a listed RCoA floor and a location on that floor.");
   const resolvedRecords = portalSiteId === "angel-court" && destinationOplocId
     ? angelCourtBookingConstraintRecords(menuRecords, payload, destinationOplocId, now)
     : portalSiteId === "rcoa" && destinationOplocId
@@ -748,6 +750,7 @@ export async function ingestMnkBooking(
       recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.transaction-reads", source: "FIRESTORE", dataset: "hospitality-ingest", documents: 1, estimatedBillableReads: 1, firestoreReadKind: "transaction" });
       return ingestMnkBookingFromExisting(existingSnapshot.data() as CanonicalBooking, payload, []);
     }
+    if (isRcoa && (!payload.event.floorLevel?.trim() || !payload.event.roomOrArea?.trim() || !isValidRcoaLocationPair(payload.event.floorLevel, payload.event.roomOrArea))) throw conflict("Choose a listed RCoA floor and a location on that floor.");
     if (existingOnly) throw conflict("The existing RCoA service could not be found. No booking was created; refresh and retry the original request.");
     const mappingIdentifiers = portalSourceIdentifiers(payload);
     if (!mappingIdentifiers.length) mappingIdentifiers.push("__missing__");
@@ -1332,6 +1335,8 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
   if (ricePaperLine) throw conflict("Rice paper rolls require a minimum quantity of 3 boxes.");
   next.client = structuredClone(patch.client);
   next.service = { ...next.service, ...structuredClone(patch.service) };
+  const rcoaLocationChanged = (current.service.floorLevel || "") !== (next.service.floorLevel || "") || (current.service.roomOrArea || "") !== (next.service.roomOrArea || "");
+  if (current.service.portalSiteId === "rcoa" && rcoaLocationChanged && !isValidRcoaLocationPair(next.service.floorLevel, next.service.roomOrArea)) throw Object.assign(new Error("Choose a listed RCoA floor and a location on that floor, or leave both fields blank for an existing unassigned booking."), { status: 422, code: "RCOA_LOCATION_INVALID" });
   if (
     next.service.portalSiteId === "angel-court" &&
     next.service.guestCount >= 100 &&

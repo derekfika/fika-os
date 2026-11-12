@@ -19,7 +19,8 @@ export function hospitalityGroupQuoteHtml(q: HospitalityGroupQuote) {
   const sections = q.snapshots.map(s => {
     const notes = (s.notes || "").split(/\n\n/).filter(note => note && !/^(Event:|All Day Hospitality request )/.test(note) && !commonNotes.includes(note));
     const details = `${notes.length ? `<p>${notes.map(esc).join("<br>")}</p>` : ""}${!sharedDietaries ? `<p>Dietary requirements: ${esc(Object.entries(s.dietaries).map(([key, value]) => `${key}: ${String(value)}`).join(" · ") || "None recorded")}</p>` : ""}`;
-    return `<section class="schedule-service"><div class="section-title"><h2>${esc(s.service.startTime)} — ${esc(humaniseQuoteLabel(s.order.eventType || "Hospitality"))}</h2><span class="small">${esc(s.service.guestCount)} guests · ${esc(s.service.roomOrArea || s.service.deliveryPoint || s.service.floorLevel || "Location to confirm")}</span></div>${quoteOrderTableHtml(s.order.lines, s.charges)}${details}<p class="service-subtotal">Service subtotal (net): <strong>${gbp(s.totals.net.amount)}</strong></p></section>`;
+    const location = s.service.portalSiteId === "rcoa" ? [s.service.floorLevel, s.service.roomOrArea].filter(Boolean).join(" · ") || s.service.deliveryPoint || "Location to confirm" : s.service.roomOrArea || s.service.deliveryPoint || s.service.floorLevel || "Location to confirm";
+    return `<section class="schedule-service"><div class="section-title"><h2>${esc(s.service.startTime)} — ${esc(humaniseQuoteLabel(s.order.eventType || "Hospitality"))}</h2><span class="small">${esc(s.service.guestCount)} guests · ${esc(location)}</span></div>${quoteOrderTableHtml(s.order.lines, s.charges)}${details}<p class="service-subtotal">Service subtotal (net): <strong>${gbp(s.totals.net.amount)}</strong></p></section>`;
   }).join("");
   return renderHospitalityQuoteDocument(summary, { createdAt: q.createdAt }, {
     bodyHtml: `${headerDetails}${sections}`,

@@ -45,7 +45,7 @@ function requestFor(item?: PortalMenuItem, eventType: "breakfast" | "lunch" = "b
     bookingId: "RCOA-20261005103000-AB12",
     submittedAt: "2026-10-05T10:30:00.000Z",
     client: { name: "Casey Guest", email: "casey@example.test", phone: "020 0000 0000", companyName: "College" },
-    event: { eventDate: "2026-10-20", startTime: "10:00", guestCount: 12, floorLevel: "First floor", roomOrArea: "Boardroom" },
+    event: { eventDate: "2026-10-20", startTime: "10:00", guestCount: 12, floorLevel: "First Floor", roomOrArea: "Boardroom 1" },
     order: {
       eventType,
       items: item ? [{
@@ -160,7 +160,7 @@ test("request construction uses stable RCoA identity and the server reprices fro
   const draft = createEmptyRcoaDraft();
   draft.occasion = "breakfast";
   draft.contact = { name: "Casey Guest", email: "casey@example.test", phone: "020 0000 0000", companyName: "College", invoiceReference: "" };
-  draft.event = { eventDate: "2026-10-20", guestCount: 12, startTime: "10:00", endTime: "", floorLevel: "First floor", roomOrArea: "Boardroom", deliveryPoint: "", onsiteContactName: "", onsiteContactPhone: "" };
+  draft.event = { eventDate: "2026-10-20", guestCount: 12, startTime: "10:00", endTime: "", floorLevel: "First Floor", roomOrArea: "Boardroom 1", deliveryPoint: "", onsiteContactName: "", onsiteContactPhone: "" };
   draft.lines = [{ itemId: item.id, quantity: Math.max(1, item.minimumQuantity || 1), choices: Object.fromEntries((item.optionGroups || []).filter((group) => group.required).map((group) => [group.id, group.options[0]?.label || ""])) }];
   draft.acknowledgements = { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true };
   const clientRequest = buildRcoaClientRequest(draft, menu, { bookingId: "RCOA-20261005103000-AB12", submittedAt: "2026-10-05T10:30:00.000Z" });
@@ -231,8 +231,8 @@ test("notice rules compare London wall time across the spring BST transition", (
 
 test("RCoA Event step requires a floor level and room, trimming whitespace-only values", () => {
   const withEvent = (overrides: Partial<RcoaBookingDraft["event"]>) => ({ ...createEmptyRcoaDraft(), event: { ...createEmptyRcoaDraft().event, eventDate: "2026-10-20", startTime: "10:00", guestCount: 12, ...overrides } });
-  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "", roomOrArea: "Boardroom" }), menu, seedVisibility).floorLevel, "Enter the floor level.");
-  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "7", roomOrArea: "   " }), menu, seedVisibility).roomOrArea, "Enter the room or area.");
-  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: " 7 ", roomOrArea: " Boardroom ", deliveryPoint: "" }), menu, seedVisibility).floorLevel, undefined);
-  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "7", roomOrArea: "Boardroom", deliveryPoint: "" }), menu, seedVisibility).roomOrArea, undefined);
+  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "", roomOrArea: "Boardroom 1" }), menu, seedVisibility).floorLevel, "Choose the floor.");
+  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "Second Floor", roomOrArea: "   " }), menu, seedVisibility).roomOrArea, "Choose the room or area.");
+  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "First Floor", roomOrArea: "Boardroom 1", deliveryPoint: "" }), menu, seedVisibility).floorLevel, undefined);
+  assert.equal(validateRcoaStep(2, withEvent({ floorLevel: "First Floor", roomOrArea: "Boardroom 1", deliveryPoint: "" }), menu, seedVisibility).roomOrArea, undefined);
 });

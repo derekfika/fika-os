@@ -53,7 +53,7 @@ export function hospitalityMirrorSource(booking: CanonicalBooking, order: Produc
   const label = service.portalSiteLabel || order.destinationLabel || site;
   const company = safeClientDisplayName(booking);
   const type = (booking.order.eventType || "Hospitality").replace(/[_\s]+/g, " ").trim() || "Hospitality";
-  const location = [label, service.roomOrArea, service.deliveryPoint].filter(Boolean).join(" · ");
+  const location = [label, ...(service.portalSiteId === "rcoa" ? [service.floorLevel] : []), service.roomOrArea, service.deliveryPoint].filter(Boolean).join(" · ");
   const details: MirrorDetails = {
     summary: [label, ...(company && company !== label ? [company] : []), type + " x " + service.guestCount].join("_"),
     description: [

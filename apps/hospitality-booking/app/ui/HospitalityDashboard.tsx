@@ -1,6 +1,8 @@
 "use client";
 
 import { BookingDatePicker, useBookingClock } from "./BookingDatePicker";
+import { RcoaLocationFields } from "./RcoaLocationFields";
+import { rcoaFloorChange } from "@fika/server-shared/rcoa-locations";
 import { loadHospitalityPortalMenu } from "../../lib/hospitality-portal-catalogue";
 import type { PortalMenuItem } from "../../lib/mnk-contract";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -1313,6 +1315,7 @@ export default function HospitalityDashboard({
                 <BookingPane
                   booking={selected}
                   siteKey={site.key}
+                  oplocId={oplocId}
                   siteLabel={currentSiteLabel}
                   productionOrder={selectedProductionOrder}
                   menuOutput={selectedMenuOutput}
@@ -1552,6 +1555,7 @@ export default function HospitalityDashboard({
 function BookingPane({
   booking,
   siteKey,
+  oplocId,
   siteLabel,
   productionOrder,
   menuOutput,
@@ -1582,6 +1586,7 @@ function BookingPane({
   cancellationPanel?: ReactNode;
   booking: CanonicalBooking;
   siteKey: PortalSiteKey;
+  oplocId: string;
   siteLabel: string;
   productionOrder?: ProductionOrder;
   menuOutput?: MenuOutput;
@@ -1622,6 +1627,7 @@ function BookingPane({
         booking={booking}
         onKitchenNotesSaved={onKitchenNotesSaved}
         siteKey={siteKey}
+        oplocId={oplocId}
         amendment={amendment}
         onChange={onChangeAmendment}
         onCancel={onCancelAmendment}
@@ -2486,20 +2492,7 @@ function AmendmentModal({
               }
             />
           </label>
-          <label>
-            Floor, room or delivery point
-            <input
-              value={
-                amendment.service.roomOrArea ||
-                amendment.service.floorLevel ||
-                amendment.service.deliveryPoint ||
-                ""
-              }
-              onChange={(event) =>
-                changeService("roomOrArea", event.target.value)
-              }
-            />
-          </label>
+          <label>Floor, room or delivery point<input value={amendment.service.roomOrArea || amendment.service.floorLevel || amendment.service.deliveryPoint || ""} onChange={event => changeService("roomOrArea", event.target.value)} /></label>
         </div>
         <label className="workflow-checks">
           <input
@@ -2784,6 +2777,7 @@ function localDateKey(value: Date) {
 
 function BookingAmendmentPanel({
   siteKey,
+  oplocId,
   booking,
   onKitchenNotesSaved,
   amendment,
@@ -2792,6 +2786,7 @@ function BookingAmendmentPanel({
   onSave,
 }: {
   siteKey: PortalSiteKey;
+  oplocId: string;
   booking: CanonicalBooking;
   onKitchenNotesSaved: (booking: CanonicalBooking) => void;
   amendment: Amendment;
@@ -2935,23 +2930,10 @@ function BookingAmendmentPanel({
           </label>
           {amendment.adminOplocId && <>
             <label>End time<input type="time" value={amendment.service.endTime || ""} onChange={event => changeService("endTime", event.target.value)} /></label>
-            {([["floorLevel", "Floor"], ["deliveryPoint", "Delivery point"], ["onsiteContactName", "On-site contact"], ["onsiteContactPhone", "On-site telephone"]] as const).map(([key, label]) =>
+            {([["floorLevel", "Floor"], ["deliveryPoint", "Delivery point"], ["onsiteContactName", "On-site contact"], ["onsiteContactPhone", "On-site telephone"]] as const).filter(([key]) => !(siteKey === "rcoa" && booking.service.portalSiteId === "rcoa" && booking.service.oplocId === oplocId && key === "floorLevel")).map(([key, label]) =>
               <label key={key}>{label}<input value={amendment.service[key] || ""} onChange={event => changeService(key, event.target.value)} /></label>)}
           </>}
-          <label>
-            Floor, room or delivery point
-            <input
-              value={
-                amendment.service.roomOrArea ||
-                amendment.service.floorLevel ||
-                amendment.service.deliveryPoint ||
-                ""
-              }
-              onChange={(event) =>
-                changeService("roomOrArea", event.target.value)
-              }
-            />
-          </label>
+          {siteKey === "rcoa" && booking.service.portalSiteId === "rcoa" && booking.service.oplocId === oplocId ? <RcoaLocationFields floor={amendment.service.floorLevel || ""} location={amendment.service.roomOrArea || ""} onFloorChange={value => { const next = rcoaFloorChange(value, amendment.service.roomOrArea || ""); onChange({ ...amendment, service: { ...amendment.service, floorLevel: next.floor, roomOrArea: next.location } }); }} onLocationChange={value => changeService("roomOrArea", value)} /> : <label>Floor, room or delivery point<input value={amendment.service.roomOrArea || amendment.service.floorLevel || amendment.service.deliveryPoint || ""} onChange={event => changeService("roomOrArea", event.target.value)} /></label>}
         </div>
       </section>
       <section className="booking-amendment-panel__section">

@@ -5,7 +5,9 @@ import { quantityFromInput, quantityMinimumMessage, stepQuantityDown, stepQuanti
 import { portalBookingId, type PortalMenuItem } from "@/lib/mnk-contract";
 import { hospitalitySiteThemeStyle, portalSite } from "@/lib/portal-sites";
 import { BookingDatePicker, useBookingClock } from "./BookingDatePicker";
+import { RcoaLocationFields } from "./RcoaLocationFields";
 import { bookingPolicyFor } from "@fika/server-shared/hospitality-effective-offering";
+import { rcoaFloorChange } from "@fika/server-shared/rcoa-locations";
 import { BOOKING_NOTICE_SHORT } from "../../lib/booking-notice";
 import StartAgainButton from "./StartAgainButton";
 import GuestCountInput, { GuestCountNotice } from "./GuestCountInput";
@@ -16,6 +18,7 @@ import {
   applyServiceItems,
   applySharedView,
   changeAllDayServiceCategory,
+  changeAllDayFloor as changeAllDayFloorDraft,
   composeServiceDraft,
   composeSharedView,
   createEmptyAllDay,
@@ -300,6 +303,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   /** A newly chosen date supersedes any earlier date error; it is re-validated on Continue. */
   const clearEventDateError = () => setErrors(current => { if (!("eventDate" in current)) return current; const next = { ...current }; delete next.eventDate; return next; });
   const updateEvent = (key: keyof RcoaBookingDraft["event"], value: string | number) => setDraft((current) => ({ ...current, event: { ...current.event, [key]: value } }));
+  const changeAllDayFloor = (floorLevel: string) => setAllDay(current => changeAllDayFloorDraft(current, floorLevel));
   // Text shown while a dietary count is being edited (so "01" never appears and the field can be cleared); the stored value is numeric.
   const [dietaryText, setDietaryText] = useState<Record<string, string>>({});
   const updateDietary = (key: keyof RcoaBookingDraft["dietaries"], value: string | number | boolean) => setDraft((current) => ({ ...current, dietaries: { ...current.dietaries, [key]: value, ...(key !== "hasDietaries" ? { hasDietaries: true } : {}) } }));
@@ -646,8 +650,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                   <label className={`${styles.field} ${styles.fieldWide}`}><span>Event, lecture or meeting name <small>(optional)</small></span><input value={allDay.eventName} onChange={(event) => setAllDay((current) => ({ ...current, eventName: event.target.value }))} /></label>
                   <div className={styles.field}><BookingDatePicker value={allDay.eventDate} onChange={eventDate => { setAllDay(current => ({ ...current, eventDate })); clearEventDateError(); }} items={allDay.services.flatMap(service => service.lines.flatMap(line => menu.filter(item => item.id === line.itemId && line.quantity > 0)))} context={{ site: "rcoa", occasion: allDay.services.some(service => ["event_catering", "dining", "bespoke"].includes(service.category)) ? "event_catering" : "" }} now={now} /><ErrorMessage field="eventDate" errors={errors} /></div>
                   <label className={styles.field}><span>Usual number of guests</span><GuestCountInput value={allDay.defaultGuests} minimum={1} field="defaultGuests" surface="rcoa" submittedError={errors.defaultGuests} onChange={(value) => setAllDay((current) => ({ ...current, defaultGuests: value }))} /></label>
-                  <label className={styles.field}><span>Usual room or location</span><input value={allDay.defaultLocation} onChange={(event) => setAllDay((current) => ({ ...current, defaultLocation: event.target.value }))} placeholder="e.g. Lecture Hall" /></label>
-                  <label className={styles.field}><span>Floor level *</span><input {...fieldProps("floorLevel", errors)} data-rcoa-field="floorLevel" aria-required="true" value={allDay.floorLevel} onChange={(event) => setAllDay((current) => ({ ...current, floorLevel: event.target.value }))} placeholder="e.g. 7" /><ErrorMessage field="floorLevel" errors={errors} /></label>
+                  <RcoaLocationFields className={styles.field} floor={allDay.floorLevel} location={allDay.defaultLocation} floorLabel="Floor level" locationLabel="Usual location" floorRequired floorField="floorLevel" floorError={errors.floorLevel} locationId="all-day-default-location" locationError={errors.defaultLocation} onFloorChange={changeAllDayFloor} onLocationChange={value => setAllDay(current => ({ ...current, defaultLocation: value }))} />
                   <label className={styles.field}><span>Onsite contact name</span><input value={allDay.onsiteContactName} onChange={(event) => setAllDay((current) => ({ ...current, onsiteContactName: event.target.value }))} /></label>
                   <label className={styles.field}><span>Onsite contact phone</span><input type="tel" value={allDay.onsiteContactPhone} onChange={(event) => setAllDay((current) => ({ ...current, onsiteContactPhone: event.target.value }))} /></label>
                 </div>
@@ -694,7 +697,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                                 {availableEvents.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
                               </select><ErrorMessage field={`service:${service.id}`} errors={errors} /></label>
                             <label className={styles.dayCell}><span className={styles.cellLabel}>Guests</span><GuestCountInput value={service.guestCount} minimum={rcoaGuestMinimum({ contact: allDay.contact, lines: service.lines }, menu)} field={`guestCount:${service.id}`} surface="rcoa" submittedError={errors[`guestCount:${service.id}`]} onChange={guestCount => setAllDay(current => updateAllDayService(current, service.id, { guestCount }))} /></label>
-                            <label className={styles.dayCell}><span className={styles.cellLabel}>Location</span><input {...fieldProps(`location:${service.id}`, errors)} data-rcoa-field={`location:${service.id}`} value={service.location} onChange={(event) => setAllDay((current) => updateAllDayService(current, service.id, { location: event.target.value }))} placeholder="e.g. Lecture Hall" /><ErrorMessage field={`location:${service.id}`} errors={errors} /></label>
+                            <RcoaLocationFields className={styles.dayCell} floor={allDay.floorLevel} location={service.location} floorLabel="Floor" locationLabel="Location" locationRequired locationField={`location:${service.id}`} locationId={`location-${service.id}`} locationError={errors[`location:${service.id}`]} onFloorChange={changeAllDayFloor} onLocationChange={value => setAllDay(current => updateAllDayService(current, service.id, { location: value }))} />
                           </div>
                         </div>
                         <div className={styles.serviceItems}>
@@ -740,8 +743,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                   <fieldset className={`${styles.field} ${styles.fieldWide}`}>
                     <legend>Delivery location</legend>
                     <p>These details help the Hospitality team find the correct room. * Required</p>
-                    <label className={styles.field}><span>Floor level *</span><input {...fieldProps("floorLevel", errors)} data-rcoa-field="floorLevel" aria-required="true" value={draft.event.floorLevel} onChange={(event) => updateEvent("floorLevel", event.target.value)} placeholder="e.g. 7" /><ErrorMessage field="floorLevel" errors={errors} /></label>
-                    <label className={styles.field}><span>Room or area *</span><input {...fieldProps("roomOrArea", errors)} data-rcoa-field="roomOrArea" aria-required="true" value={draft.event.roomOrArea} onChange={(event) => updateEvent("roomOrArea", event.target.value)} placeholder="e.g. Boardroom" /><ErrorMessage field="roomOrArea" errors={errors} /></label>
+                    <RcoaLocationFields className={styles.field} floor={draft.event.floorLevel} location={draft.event.roomOrArea} floorLabel="Floor level" locationLabel="Room or area" floorRequired locationRequired floorField="floorLevel" locationField="roomOrArea" floorError={errors.floorLevel} locationError={errors.roomOrArea} onFloorChange={value => setDraft(current => { const next = rcoaFloorChange(value, current.event.roomOrArea); return { ...current, event: { ...current.event, floorLevel: next.floor, roomOrArea: next.location } }; })} onLocationChange={value => updateEvent("roomOrArea", value)} />
                     <label className={styles.field}><span>Delivery point, if different <small>(optional)</small></span><input value={draft.event.deliveryPoint} onChange={(event) => updateEvent("deliveryPoint", event.target.value)} /></label>
                   </fieldset>
                   <label className={styles.field}><span>Onsite contact name</span><input value={draft.event.onsiteContactName} onChange={(event) => updateEvent("onsiteContactName", event.target.value)} /></label>

@@ -20,7 +20,7 @@ const constrained = orderable.find(record => Number(price(record).minimumQuantit
 const payloadFor = (itemId: string, quantity: number, bookingId = "RCOA-20261201090000-GOV"): MnkBookingPayload => ({
   bookingId, submittedAt: NOW, siteId: "rcoa", site: "RCoA Hospitality",
   client: { name: "T", email: "t@example.invalid", companyName: "T" },
-  event: { eventDate: "2026-12-01", startTime: "10:00", guestCount: 40 },
+  event: { eventDate: "2026-12-01", startTime: "10:00", guestCount: 40, floorLevel: "First Floor", roomOrArea: "Boardroom 1" },
   // Client-supplied prices must never win.
   order: { items: [{ itemId, quantity, unitPrice: 0.01, lineTotal: 0.01 }], netTotal: 0.01 },
 }) as MnkBookingPayload;
