@@ -11,6 +11,7 @@ import { hospitalityCalendarSiteEnabled, resolveHospitalityCalendarTarget } from
 import { hasRecordedHospitalityHandoff, hospitalityMirrorSource } from "./source";
 import { resolveMirrorOplocs } from "./oplocs";
 import { hospitalityCatchUpWriteIntent } from "./approval";
+import { dueHospitalityMirrorQuery } from "./outbox-query";
 
 const queue = () => db.collection("fikaCpuXHospitalityMirrorOutboxV1");
 type Intent = { bookingId: string; orderId: string };
@@ -99,7 +100,7 @@ async function prepare(booking: CanonicalBooking, readOnly = false) {
 
 export async function replayHospitalityMirror(limit: number) {
   if (!mirrorEnabled()) throw new Error("Calendar mirror delivery is disabled.");
-  const candidates = await queue().where("nextEligibleAt", "<=", new Date().toISOString()).orderBy("nextEligibleAt").limit(limit).get();
+  const candidates = await dueHospitalityMirrorQuery(queue(), new Date().toISOString(), limit).get();
   const results: Array<{ eventId: string; status: string }> = [];
   for (const { ref, id } of candidates.docs) {
     const claimId = randomUUID();

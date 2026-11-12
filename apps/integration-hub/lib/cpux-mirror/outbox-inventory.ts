@@ -8,6 +8,7 @@ import type { ProductionOrder } from "../production-domain";
 import { RCOA_HOSPITALITY_OPLOC_ID } from "../booking-email-site-identities";
 import { mirrorEnabled } from "../../../shared/cpux-calendar/google";
 import { inspectMirrorOplocs } from "./oplocs";
+import { dueHospitalityMirrorQuery } from "./outbox-query";
 
 export const HOSPITALITY_MIRROR_SCHEDULER_BATCH_LIMIT = 3;
 const OUTBOX_COLLECTION = "fikaCpuXHospitalityMirrorOutboxV1";
@@ -195,8 +196,7 @@ export async function readHospitalityMirrorOutboxInventory(input: OutboxInventor
   const pageQuery = input.after ? base.startAfter(input.after.documentId) : base;
   const [pageSnapshot, schedulerSnapshot] = await Promise.all([
     pageQuery.limit(input.limit + 1).get(),
-    db.collection(OUTBOX_COLLECTION).where("nextEligibleAt", "<=", asOf).orderBy("nextEligibleAt")
-      .limit(HOSPITALITY_MIRROR_SCHEDULER_BATCH_LIMIT).get(),
+    dueHospitalityMirrorQuery(db.collection(OUTBOX_COLLECTION), asOf, HOSPITALITY_MIRROR_SCHEDULER_BATCH_LIMIT).get(),
   ]);
   const pageRows = pageSnapshot.docs.slice(0, input.limit);
   const nextCursor: OutboxCursor | null = pageSnapshot.docs.length > input.limit && pageRows.length
