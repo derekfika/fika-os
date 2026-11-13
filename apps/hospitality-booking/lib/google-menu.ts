@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { menuDriveResourceId, publishMenuArtifact, resolveMenuTemplate, type NormalizedMenu, type PublishedMenuArtifact } from "@fika/server-shared/menu-artifact";
-import { driveAccessToken, driveFolderPath, resolveDriveOwner, type DriveOwner, type ResolvedDriveOwner } from "./drive-owner";
+import { assertStagingDriveResource, driveAccessToken, driveFolderPath, resolveDriveOwner, type DriveOwner, type ResolvedDriveOwner } from "./drive-owner";
 
 const json = async <T>(response: Response): Promise<T> => {
   const text = await response.text();
@@ -13,7 +13,7 @@ const json = async <T>(response: Response): Promise<T> => {
 async function googleFetch(input: string, init: RequestInit, label: string, timeoutMs = 30000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try { return await fetch(input, { ...init, signal: controller.signal }); }
+  try { return await fetch(input, { ...init, redirect: "error", signal: controller.signal }); }
   catch (error) { if ((error as { name?: string }).name === "AbortError") throw new Error(`${label} timed out after 30 seconds.`); throw new Error(`${label} failed: ${(error as Error).message}`); }
   finally { clearTimeout(timer); }
 }
@@ -63,6 +63,7 @@ async function resolveChildFolder(parentFolderId: string, folderName: string | u
 async function resolveArtifactFolder(owner: ResolvedDriveOwner, configuredFolderId: string | undefined, artifactType: "quote" | "menu" | "production", headers: Record<string, string>, operation: string) {
   const configured = driveResourceId(configuredFolderId || owner.configuredRootFolderId);
   if (configured) {
+    await assertStagingDriveResource(configured, headers.Authorization);
     await assertDriveFolder(configured, headers, operation);
     return configured;
   }

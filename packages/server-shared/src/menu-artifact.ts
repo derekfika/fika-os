@@ -1,3 +1,4 @@
+import { assertStagingDriveResource } from "./staging-drive";
 import { createHash } from "node:crypto";
 import { canonicalOplocId } from "./governed-oplocs";
 
@@ -371,12 +372,15 @@ export async function publishMenuArtifact(input: {
   assertNormalizedMenu(input.menu);
   const fetchImpl: FetchLike = input.fetch || ((url, init) => fetch(url, init));
   const headers = { ...input.headers, "content-type": "application/json" };
+  const authorization = input.headers.Authorization || input.headers.authorization;
+  await assertStagingDriveResource(input.folderId, authorization, fetchImpl as typeof fetch);
+  await assertStagingDriveResource(input.template.templateId, authorization, fetchImpl as typeof fetch);
   const artifactKey = menuArtifactKey(input.menu, input.template.key);
   const sourceKey = menuArtifactSourceKey(input.menu);
   const fileName = menuArtifactFileName(input.menu);
   const drive = "https://www.googleapis.com/drive/v3/files";
   const find = (property: string, value: string) => api<{ files?: Array<{ id: string; webViewLink?: string; appProperties?: Record<string, string> }> }>(fetchImpl,
-    `${drive}?q=${encodeURIComponent(`appProperties has { key='${property}' and value='${value}' } and trashed = false`)}&spaces=drive&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=${encodeURIComponent("files(id,webViewLink,appProperties)")}&pageSize=50`,
+    `${drive}?q=${encodeURIComponent(`${process.env.FIKA_RUNTIME_MODE === 'staging' ? `'${input.folderId}' in parents and ` : ''}appProperties has { key='${property}' and value='${value}' } and trashed = false`)}&spaces=drive&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=${encodeURIComponent("files(id,webViewLink,appProperties)")}&pageSize=50`,
     { headers }, "Google Drive menu lookup");
   const existing = (await find("fikaMenuArtifactKey", artifactKey)).files?.[0];
   let file = existing;
@@ -385,6 +389,7 @@ export async function publishMenuArtifact(input: {
       `${drive}/${encodeURIComponent(input.template.templateId)}/copy?supportsAllDrives=true&fields=id,webViewLink`,
       { method: "POST", headers, body: JSON.stringify({ name: fileName, parents: [input.folderId], appProperties: { fikaMenuArtifactKey: artifactKey, fikaMenuSourceKey: sourceKey } }) }, "Google Drive template copy");
   }
+  await assertStagingDriveResource(file.id, authorization, fetchImpl as typeof fetch);
   if (file.appProperties?.fikaMenuMaterialised !== "ready") {
     const presentation = await api<SlidesPresentation>(fetchImpl, `https://slides.googleapis.com/v1/presentations/${encodeURIComponent(file.id)}`, { headers }, "Google Slides template read");
     const requests = buildMenuSlidesRequests(input.menu, input.template, presentation);
@@ -394,6 +399,7 @@ export async function publishMenuArtifact(input: {
   const retired: string[] = [];
   for (const earlier of (await find("fikaMenuSourceKey", sourceKey)).files || []) {
     if (earlier.id === file.id) continue;
+    await assertStagingDriveResource(earlier.id, authorization, fetchImpl as typeof fetch);
     await api(fetchImpl, `${drive}/${encodeURIComponent(earlier.id)}?supportsAllDrives=true`, { method: "PATCH", headers, body: JSON.stringify({ trashed: true }) }, "Google Drive superseded menu retire");
     retired.push(earlier.id);
   }
