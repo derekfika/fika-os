@@ -5,7 +5,7 @@ import { driveAccessToken, resolveDriveOwner, stagingDriveAccessBlocked, staging
 const original = { ...process.env };
 const originalFetch = globalThis.fetch;
 const scope = "https://www.googleapis.com/auth/drive";
-const config = () => ({ FIKA_RUNTIME_MODE: "staging", FIREBASE_PROJECT_ID: "fika-os-dev", FIKA_STAGING_DRIVE_ENABLED: "true", FIKA_STAGING_DRIVE_EMAIL: "sandbox@example.test", FIKA_STAGING_DRIVE_PERMISSION_ID: "stage-user", FIKA_STAGING_DRIVE_ROOT_ID: root, FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS: "owner,stage-user", FIKA_STAGING_DRIVE_PRODUCTION_SENTINEL_IDS: "production-sentinel", FIKA_STAGING_DRIVE_OAUTH_JSON: JSON.stringify({ client_id: "client", client_secret: "secret", refresh_token: "refresh" }) });
+const config = () => ({ FIKA_RUNTIME_MODE: "staging", FIKA_STAGING_DRIVE_AUTH_MODE: "user-oauth", FIREBASE_PROJECT_ID: "fika-os-dev", FIKA_STAGING_DRIVE_ENABLED: "true", FIKA_STAGING_DRIVE_EMAIL: "sandbox@example.test", FIKA_STAGING_DRIVE_PERMISSION_ID: "stage-user", FIKA_STAGING_DRIVE_ROOT_ID: root, FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS: "owner,stage-user", FIKA_STAGING_DRIVE_PRODUCTION_SENTINEL_IDS: "production-sentinel", FIKA_STAGING_DRIVE_OAUTH_JSON: JSON.stringify({ client_id: "client", client_secret: "secret", refresh_token: "refresh" }) });
 function fake(overrides: Record<string, unknown> = {}) {
   const requests: string[] = [];
   const fetcher = (async (input: unknown, init?: RequestInit) => {
@@ -32,7 +32,7 @@ test("verified dev runtime uses user OAuth and fixed root for every app and OPLO
   assert.equal(await stagingDriveOperationsBlocked(), false);
   for (const owner of [{ type: "app-workspace", appId: "cpu-production" }, { type: "oploc-workspace", oplocId: "oploc:test" }] as const) {
     const resolved = resolveDriveOwner(owner);
-    assert.equal(resolved.workspaceEmail, "sandbox@example.test"); assert.equal(resolved.configuredRootFolderId, root); assert.equal(resolved.authMode, "staging-oauth");
+    assert.equal(resolved.workspaceEmail, "sandbox@example.test"); assert.equal(resolved.configuredRootFolderId, root); assert.equal(resolved.authMode, "staging-isolated");
     assert.equal(await driveAccessToken(resolved), "token");
   }
 });
@@ -56,6 +56,30 @@ test("file ancestry permits root descendants and rejects outside files, shortcut
 });
 test("production cannot select staging OAuth and malformed credential errors do not disclose secret text", async () => {
   Object.assign(process.env, config(), { FIKA_RUNTIME_MODE: "production", FIREBASE_PROJECT_ID: "fika-os-dev" });
-  await assert.rejects(driveAccessToken({ type: "app-workspace", appId: "cpu-production", authMode: "staging-oauth" }));
+  await assert.rejects(driveAccessToken({ type: "app-workspace", appId: "cpu-production", authMode: "staging-isolated" }));
   await assert.rejects(stagingDriveSession({ ...config(), FIKA_STAGING_DRIVE_OAUTH_JSON: "SECRET-CONTENT" }, fake().fetcher), error => !String(error).includes("SECRET-CONTENT"));
+});
+
+
+test("Shared Drive service-account mode is keyless, has no Workspace subject, and verifies drive membership", async () => {
+  const env = { ...config(), FIKA_STAGING_DRIVE_AUTH_MODE: "shared-drive", FIKA_STAGING_DRIVE_SHARED_DRIVE_ID: "staging-drive", FIKA_STAGING_DRIVE_EMAIL: "drive-stage@fika-os-dev.iam.gserviceaccount.com", FIKA_STAGING_DRIVE_OAUTH_JSON: undefined };
+  const base = fake();
+  let minted = 0;
+  const fetcher = (async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/default/token")) return Response.json({ access_token: "runtime-token" });
+    if (url.includes("iamcredentials.googleapis.com")) {
+      assert.match(url, /drive-stage%40fika-os-dev.iam.gserviceaccount.com:generateAccessToken$/);
+      assert.deepEqual(JSON.parse(String(init?.body)), { scope: [scope], lifetime: "300s" });
+      minted++; return Response.json({ accessToken: "direct-sa-token" });
+    }
+    if (url.includes("/about?")) return Response.json({ user: { emailAddress: env.FIKA_STAGING_DRIVE_EMAIL, permissionId: "stage-user" } });
+    if (url.includes(`/files/${root}?`)) return Response.json({ id: root, driveId: "staging-drive", mimeType: "application/vnd.google-apps.folder", capabilities: { canAddChildren: true } });
+    if (url.includes("staging-drive/permissions?") || url.includes(`${root}/permissions?`)) return Response.json({ permissions: [{ id: "owner", type: "user", role: "organizer" }, { id: "stage-user", type: "user", role: "fileOrganizer" }] });
+    assert.notEqual(url, "https://oauth2.googleapis.com/token");
+    return base.fetcher(input as string, init);
+  }) as typeof fetch;
+  assert.equal((await stagingDriveSession(env, fetcher)).token, "direct-sa-token"); assert.equal(minted, 1);
+  await assert.rejects(stagingDriveSession({ ...env, FIKA_STAGING_DRIVE_SHARED_DRIVE_ID: "other-drive" }, fetcher));
+  await assert.rejects(stagingDriveSession({ ...env, FIKA_STAGING_DRIVE_EMAIL: "production@fika-os.iam.gserviceaccount.com" }, fetcher));
 });

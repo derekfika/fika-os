@@ -185,6 +185,6 @@ test("Hospitality order without Hub storage context fails closed during rollout 
 
 test("enabled isolated staging matrix storage uses the approved root for site and CPU contexts without DWD", () => {
   delete process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON;
-  Object.assign(process.env, { FIREBASE_PROJECT_ID: "fika-os-dev", FIKA_STAGING_DRIVE_ENABLED: "true", FIKA_STAGING_DRIVE_EMAIL: "stage@example.test", FIKA_STAGING_DRIVE_PERMISSION_ID: "stage", FIKA_STAGING_DRIVE_ROOT_ID: "1B3oV4dmb3UpwTPRDjJ4B0hES1rRL1M5z", FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS: "owner,stage", FIKA_STAGING_DRIVE_PRODUCTION_SENTINEL_IDS: "production-file" });
+  Object.assign(process.env, { FIREBASE_PROJECT_ID: "fika-os-dev", FIKA_STAGING_DRIVE_ENABLED: "true", FIKA_STAGING_DRIVE_AUTH_MODE: "user-oauth", FIKA_STAGING_DRIVE_EMAIL: "stage@example.test", FIKA_STAGING_DRIVE_PERMISSION_ID: "stage", FIKA_STAGING_DRIVE_ROOT_ID: "1B3oV4dmb3UpwTPRDjJ4B0hES1rRL1M5z", FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS: "owner,stage", FIKA_STAGING_DRIVE_PRODUCTION_SENTINEL_IDS: "production-file" });
   for (const input of [context(), { kind: "cpu-default" as const }]) assert.equal(resolveMatrixDriveStorage(input).folderId, "1B3oV4dmb3UpwTPRDjJ4B0hES1rRL1M5z");
 });

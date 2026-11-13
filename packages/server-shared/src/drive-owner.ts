@@ -4,7 +4,7 @@ export { assertStagingDriveResource } from "./staging-drive";
 import { promises as fs } from "node:fs";
 
 export type DriveOwner = { type: "oploc-workspace"; oplocId: string } | { type: "app-workspace"; appId: "cpu-production" | "delivered-in" };
-export type ResolvedDriveOwner = DriveOwner & { workspaceEmail?: string; configuredRootFolderId?: string; authMode: "dwd" | "local-oauth" | "staging-oauth" };
+export type ResolvedDriveOwner = DriveOwner & { workspaceEmail?: string; configuredRootFolderId?: string; authMode: "dwd" | "local-oauth" | "staging-isolated" };
 const hosted = () => process.env.FIKA_RUNTIME_MODE !== "local" && process.env.NODE_ENV === "production";
 const key = (owner: DriveOwner) => (owner.type === "oploc-workspace" ? owner.oplocId : owner.appId).replace(/^oploc:/, "").replace(/[^A-Za-z0-9]+/g, "_").toUpperCase();
 export function driveOwnerEnvKey(owner: DriveOwner) { return owner.type === "oploc-workspace" ? `OPLOC_${key(owner)}` : `APP_${key(owner)}`; }
@@ -12,7 +12,7 @@ export function driveOwnerLabel(owner: DriveOwner) { return owner.type === "oplo
 export function resolveDriveOwner(owner: DriveOwner): ResolvedDriveOwner {
   if (process.env.FIKA_RUNTIME_MODE === "staging" && process.env.FIKA_STAGING_DRIVE_ENABLED === "true") {
     const config = stagingDriveSettings();
-    return { ...owner, workspaceEmail: config.email, configuredRootFolderId: config.root, authMode: "staging-oauth" };
+    return { ...owner, workspaceEmail: config.email, configuredRootFolderId: config.root, authMode: "staging-isolated" };
   }
   const ownerKey = driveOwnerEnvKey(owner);
   const workspaceEmail = process.env[`GOOGLE_DRIVE_OWNER_EMAIL_${ownerKey}`]?.trim();
@@ -88,7 +88,7 @@ export async function stagingDriveOperationsBlocked() {
 }
 export async function driveAccessToken(owner: ResolvedDriveOwner) {
   if (process.env.FIKA_RUNTIME_MODE === "staging") {
-    if (owner.authMode !== "staging-oauth") throw Object.assign(new Error("Staging cannot use DWD or local OAuth."), { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED" });
+    if (owner.authMode !== "staging-isolated") throw Object.assign(new Error("Staging cannot use DWD or local OAuth."), { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED" });
     const session = await stagingDriveSession();
     if (owner.workspaceEmail !== session.email || owner.configuredRootFolderId !== session.root) throw Error("Staging Drive owner does not match the verified identity.");
     return session.token;
