@@ -6,6 +6,7 @@ import { assertAuthorisedOploc } from "@/lib/projection";
 import { createGoogleSiteMenu, retireGoogleSiteMenu } from "@/lib/google-site-menu";
 import { latestSiteMenuArtifactHosted, saveSiteMenuArtifactHosted } from "@/lib/site-menu-store";
 import { siteMenuState } from "@/lib/site-menu";
+import { reconcileDeliveredInDay } from "@/lib/delivered-in-reconciliation";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 async function safeJson(data: unknown, init?: ResponseInit) {
@@ -45,6 +46,7 @@ async function handlePost(request: NextRequest) {
     const artifact = await createGoogleSiteMenu(day, day.site, access.access.email, previous?.driveFileId);
     await saveSiteMenuArtifactHosted(artifact);
     if (previous?.driveFileId && previous.driveFileId !== artifact.driveFileId) await retireGoogleSiteMenu(previous.driveFileId, body.oplocId);
+    await reconcileDeliveredInDay(request, body.oplocId, day.date);
     return safeJson({ siteMenu: siteMenuState(day, artifact), artifact }, { status: 201 });
   } catch (error) {
     return safeJson({ error: { message: error instanceof Error ? error.message : "The site menu could not be generated." } }, { status: Number((error as { status?: number }).status) || 502 });

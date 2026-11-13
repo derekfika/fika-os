@@ -23,6 +23,7 @@ test("site menu generation uses existing scoped site access while maintenance re
   assert.match(siteMenu, /access\.sites\.some\(site => site\.oplocId === body\.oplocId && !site\.destination\)/);
   assert.match(siteMenu, /day\.cpuReview\?\.status !== "signed"/);
   assert.match(siteMenu, /createGoogleSiteMenu\(day, day\.site, access\.access\.email/);
+  assert.match(siteMenu, /saveSiteMenuArtifactHosted\(artifact\)[\s\S]*await reconcileDeliveredInDay\(request, body\.oplocId, day\.date\)[\s\S]*status: 201/);
 
   const mnk = "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f";
   const oac = "oploc:24a93500-d75d-4fe0-8beb-672d36f9da10";

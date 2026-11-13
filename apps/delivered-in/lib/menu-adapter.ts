@@ -47,7 +47,8 @@ export function deliveredInMenuFromDay(day: ProjectedDay, site: Site): Normalize
       // Stable site+day identity; each published version/release is a distinct revision of it.
       id: `${site.oplocId}:${day.sourceDayId}`,
       version: day.version,
-      revisionStamp: [day.contentHash, release?.releaseId || day.allergenSafety?.releaseVersion || "", release?.contentHash || ""].join("|"),
+      // A renderer correction creates a new artifact without rewriting prior evidence.
+      revisionStamp: [day.contentHash, release?.releaseId || day.allergenSafety?.releaseVersion || "", release?.contentHash || "", "sections-v2"].join("|"),
     },
   };
 }

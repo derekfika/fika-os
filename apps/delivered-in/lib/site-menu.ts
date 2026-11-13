@@ -33,7 +33,7 @@ export const SITE_MENU_SECTIONS: Array<{ key: SiteMenuSectionKey; title: string 
 export function siteMenuSectionForSlot(slot: string): SiteMenuSectionKey {
   const value = slot.trim().toLocaleLowerCase("en-GB");
   if (/^salad\b/.test(value)) return "salads";
-  if (/hot\s+meat|hot\s+veg|vegan|cold\s+protein/.test(value)) return "hot_mains";
+  if (/hot\s+main|hot\s+meat|hot\s+veg|vegan|cold\s+protein/.test(value)) return "hot_mains";
   return "sides_extras";
 }
 

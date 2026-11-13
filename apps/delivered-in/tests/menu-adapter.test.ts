@@ -14,7 +14,7 @@ const sourceDay = (over: Partial<SourceDay> = {}): SourceDay => ({
   publicationDayId: "publication:day:v1", sourceDayId: "day:tue", date: "2026-08-25", dayName: "Tuesday", version: 1, status: "published", contentHash: "hash-v1",
   entries: [
     entry("e1", "SALAD 1", "Mixed Fika Leaf Salad", { mustard: "contains", milk: "clear" }),
-    entry("e2", "HOT MEAT 1", "Roast Chicken Breast", { gluten: "contains", milk: "may_contain" }),
+    entry("e2", "HOT MAIN", "Roast Chicken Breast", { gluten: "contains", milk: "may_contain" }),
     entry("e3", "SIDE 1", "Roasted Potatoes", { no_key_allergens: "contains" }),
   ] as never,
   allergenSignoff: { productionChef: { printedName: "PC", signedAt: "2026-08-25T08:00:00Z" }, headChefSiteManager: { printedName: "HC", signedAt: "2026-08-25T08:01:00Z" } },
@@ -34,6 +34,8 @@ test("Delivered-In MNK day converts to the shared normalized model in Delivered-
   assert.deepEqual(menu.sections[1].items[0].mayContain, ["milk"]);
   assert.equal(menu.source.workflow, "delivered-in");
   assert.equal(menu.fileName, "Delivered-In_MNK_2026-08-25_v1_Menu", "Delivered-In keeps its governed file name");
+  const legacy = { ...menu, source: { ...menu.source, revisionStamp: menu.source.revisionStamp?.replace(/\|sections-v2$/, "") } };
+  assert.notEqual(menuArtifactKey(menu, "mnk"), menuArtifactKey(legacy, "mnk"), "The corrected renderer must create a revision rather than reuse the old ready artifact");
 });
 
 test("the MNK template is selected by site and the rendered menu carries names and allergens under each dish", () => {
