@@ -5,6 +5,7 @@ import type { ProductionOrder } from "../../lib/production-types";
 import { cpuProjectionToOrders } from "../../lib/cpu-dashboard-adapter";
 import { loadCpuAllergenProjection } from "../lib/cpu-allergen-projection-loader";
 import AllergenReviewMatrix from "../ui/AllergenReviewMatrix";
+import MasterAllergenPdfAction from "../ui/MasterAllergenPdfAction";
 import { SignatureModal } from "../ui/HospitalityAllergenDetail";
 import { buildAllergenReviewRows, deliveredInMenuOrdersForServiceDate, destination, orderDate } from "../../lib/production-day";
 import { captureSigningLineage, signingLineageUnavailableMessage } from "./signing-lineage";
@@ -37,6 +38,7 @@ function formatDate(date: string) {
     weekday: "long",
     day: "numeric",
     month: "long",
+    year: "numeric",
   });
 }
 
@@ -600,6 +602,7 @@ export default function CpuAllergenReviewPage() {
               <option value="pending">Unchecked</option>
             </select>
           </label>
+          <MasterAllergenPdfAction key={`${date}:${fullySigned}`} serviceDate={date} />
         </div>
 
         {site && (
