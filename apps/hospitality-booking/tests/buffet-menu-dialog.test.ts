@@ -85,6 +85,6 @@ test("switching package keeps focus on the new basket item and saves notes", asy
   fireEvent.change(screen.getByRole("spinbutton", { name: "Fixture meat" }), { target: { value: "16" } }); fireEvent.change(screen.getByRole("spinbutton", { name: "Fixture vegetable" }), { target: { value: "14" } });
   for (const name of ["Fixture salad one", "Fixture salad two", "Fixture salad three", "Fixture dessert one"]) fireEvent.click(screen.getByRole("checkbox", { name: new RegExp(name) }));
   fireEvent.change(screen.getByLabelText(/Dietary notes/), { target: { value: "One dairy-free guest" } }); fireEvent.click(screen.getByRole("button", { name: "Save selection" }));
-  await waitFor(() => assert.equal(document.activeElement, screen.getByRole("button", { name: "Edit menu" })));
+  await waitFor(() => assert.equal(document.activeElement === screen.getByRole("button", { name: "Edit menu" }), true));
   assert.equal(savedNotes, "One dairy-free guest"); assert.ok(document.querySelector('[data-buffet-item-id="silver-item"]'));
 });
