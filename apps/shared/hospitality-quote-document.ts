@@ -7,7 +7,7 @@
  * "FIKA OS" is internal product branding and must never appear on a customer-facing quotation.
  */
 import { FIKA_LOGO_DATA_URI, SITE_LOGO_DATA_URIS, GILROY_BLACK_DATA_URI, GILROY_REGULAR_DATA_URI, VIM_HEAVY_DATA_URI } from "./hospitality-quote-brand-assets.generated";
-import { HOT_FORK_BUFFET_SELECTION_CONTRACT, hotForkBuffetChoice, hotForkBuffetDish } from "../../packages/server-shared/src/hospitality-buffet-selection";
+import { HOT_FORK_BUFFET_MENU_VERSION, HOT_FORK_BUFFET_SELECTION_CONTRACT, HotForkBuffetChoiceSchema, hotForkBuffetChoice, hotForkBuffetDish } from "../../packages/server-shared/src/hospitality-buffet-selection";
 
 type Money = { amount: number; currency?: string };
 export type QuoteDocumentLine = { itemId?: string; name: string; description?: string; quantity: number; unitNet?: Money; lineNet: Money; servingInfo?: string; choices?: unknown[]; comments?: string };
@@ -75,13 +75,16 @@ export function quoteOrderTableHtml(lines: QuoteDocumentLine[], charges: QuoteDo
     const buffet = hotForkBuffetChoice(line.choices);
     let choices = "";
     if (buffet) {
-      const selection = buffet.value;
-      if (selection?.contract !== HOT_FORK_BUFFET_SELECTION_CONTRACT || !Array.isArray(selection.mains) || !Array.isArray(selection.saladIds) || !Array.isArray(selection.desserts)) throw new Error("The stored buffet menu selection is invalid.");
-      const name = (id: string) => hotForkBuffetDish(id)?.name || id;
+      const parsed = HotForkBuffetChoiceSchema.safeParse(buffet);
+      if (!parsed.success) throw new Error("The stored buffet menu selection is invalid.");
+      const selection = parsed.data.value;
+      const name = (id: string) => selection.menuVersion === HOT_FORK_BUFFET_MENU_VERSION ? hotForkBuffetDish(id)?.name || id : id;
       const mains = selection.mains.map(main => `${main.portions} × ${name(main.dishId)}`);
       const salads = selection.saladIds.map(name);
-      const desserts = selection.desserts.map(dessert => dessert.portions === null ? `${name(dessert.dishId)} (portions to confirm)` : `${dessert.portions} × ${name(dessert.dishId)}`);
-      choices = `<small>Selected mains: ${quoteEsc(mains.join("; "))}</small><small>Selected salads (portions to confirm): ${quoteEsc(salads.join("; "))}</small><small>Selected desserts: ${quoteEsc(desserts.join("; "))}</small><small class="muted">Dish allergen and dietary information has not been verified.</small>`;
+      const currentRules = selection.contract === HOT_FORK_BUFFET_SELECTION_CONTRACT;
+      const desserts = currentRules ? selection.dessertIds.map(name) : selection.desserts.map(dessert => dessert.portions === null ? `${name(dessert.dishId)} (portions to confirm)` : `${dessert.portions} × ${name(dessert.dishId)}`);
+      const dessertLabel = currentRules ? selection.packageId === "gold" ? "Selected desserts (50/50 intent; chef allocates portions)" : "Selected dessert (chef allocates portions)" : "Selected desserts";
+      choices = `<small>Selected mains: ${quoteEsc(mains.join("; "))}</small><small>Selected salads (chef allocates portions): ${quoteEsc(salads.join("; "))}</small><small>${dessertLabel}: ${quoteEsc(desserts.join("; "))}</small><small class="muted">Dish allergen and dietary information has not been verified.</small>`;
     } else if (line.choices?.length) {
       choices = `<small>${quoteEsc(line.choices.map(choice => typeof choice === "object" && choice ? Object.values(choice as Record<string, unknown>).join(": ") : String(choice)).join(" · "))}</small>`;
     }

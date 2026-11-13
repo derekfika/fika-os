@@ -1,4 +1,4 @@
-import { HOT_FORK_BUFFET_CHOICE_ID, HOT_FORK_BUFFET_MENU_VERSION, HotForkBuffetChoiceSchema, hotForkBuffetDish } from "@fika/server-shared/hospitality-buffet-selection";
+import { HOT_FORK_BUFFET_CHOICE_ID, HOT_FORK_BUFFET_MENU_VERSION, HOT_FORK_BUFFET_SELECTION_CONTRACT, HotForkBuffetChoiceSchema, hotForkBuffetDish } from "@fika/server-shared/hospitality-buffet-selection";
 import { formatCatalogueChoices } from "@fika/server-shared/hospitality-effective-offering";
 
 export function isBuffetChoice(value: unknown): boolean {
@@ -14,15 +14,16 @@ export default function BuffetOrderChoice({ choices }: { choices: readonly unkno
   if (!parsed.success) return <small role="status">Buffet menu selection needs review: stored choice is invalid.</small>;
   const selection = parsed.data.value;
   const current = selection.menuVersion === HOT_FORK_BUFFET_MENU_VERSION;
-  const dishName = (id: string) => current ? hotForkBuffetDish(id)?.name || id : id;
+  const dishName = (id: string) => current ? `${hotForkBuffetDish(id)?.name || id} [${id}]` : id;
   const mains = selection.mains.map(main => `${main.portions} × ${dishName(main.dishId)}`).join("; ");
   const salads = selection.saladIds.map(dishName).join("; ");
-  const desserts = selection.desserts.map(dessert => `${dishName(dessert.dishId)} · ${dessert.portions === null ? "portions to confirm" : `${dessert.portions} portions`}`).join("; ");
+  const currentRules = selection.contract === HOT_FORK_BUFFET_SELECTION_CONTRACT;
+  const desserts = currentRules ? selection.dessertIds.map(dishName).join("; ") : selection.desserts.map(dessert => `${dishName(dessert.dishId)} · ${dessert.portions === null ? "portions to confirm" : `${dessert.portions} portions`}`).join("; ");
   return <>
-    <small>Selected Hot Fork Buffet {selection.packageId} menu · version {selection.menuVersion}</small>
+    <small>Selected Hot Fork Buffet {selection.packageId} menu · version {selection.menuVersion}{currentRules ? ` · rules ${selection.rulesVersion}` : " · historical rules"}</small>
     <small>Main choices: {mains}</small>
-    <small>Salad choices (portions to confirm): {salads}</small>
-    <small>Dessert choices: {desserts}</small>
+    <small>Salad choices (chef allocates portions): {salads}</small>
+    <small>Dessert choices{currentRules ? selection.packageId === "gold" ? " (50/50 intent; chef allocates portions)" : " (chef allocates portions)" : ""}: {desserts}</small>
     {!current && <small role="status">Historical menu names need review against the original version.</small>}
     <small>Dish allergen and dietary information is unrecorded; verify before production.</small>
   </>;

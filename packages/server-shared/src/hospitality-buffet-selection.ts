@@ -2,9 +2,11 @@ import { z } from "zod";
 import source from "./hospitality-buffet-menu.v1.json";
 
 export const HOT_FORK_BUFFET_CHOICE_ID = "hot-fork-buffet-selection";
-export const HOT_FORK_BUFFET_SELECTION_CONTRACT = "fika.hot-fork-buffet-selection.v1";
+export const HOT_FORK_BUFFET_SELECTION_CONTRACT = "fika.hot-fork-buffet-selection.v2";
+export const HOT_FORK_BUFFET_LEGACY_SELECTION_CONTRACT = "fika.hot-fork-buffet-selection.v1";
 export const HOT_FORK_BUFFET_MENU_CONTRACT = "fika.hot-fork-buffet-menu.v1";
 export const HOT_FORK_BUFFET_MENU_VERSION = source.version;
+export const HOT_FORK_BUFFET_RULES_VERSION = "sam-2026-11-13-final";
 
 export type BuffetCategory = "meat" | "fish" | "vegetarian" | "vegan" | "salad" | "dessert";
 export type BuffetDish = {
@@ -19,12 +21,17 @@ export type BuffetPackageId = "gold" | "silver";
 export type BuffetSelection = {
   contract: typeof HOT_FORK_BUFFET_SELECTION_CONTRACT;
   menuVersion: string;
+  rulesVersion: string;
   packageId: BuffetPackageId;
   mains: [{ dishId: string; portions: number }, { dishId: string; portions: number }];
   saladIds: [string, string, string];
+  dessertIds: string[];
+};
+export type LegacyBuffetSelection = Omit<BuffetSelection, "contract" | "rulesVersion" | "dessertIds"> & {
+  contract: typeof HOT_FORK_BUFFET_LEGACY_SELECTION_CONTRACT;
   desserts: Array<{ dishId: string; portions: number | null }>;
 };
-export type BuffetChoice = { id: typeof HOT_FORK_BUFFET_CHOICE_ID; value: BuffetSelection };
+export type BuffetChoice = { id: typeof HOT_FORK_BUFFET_CHOICE_ID; value: BuffetSelection | LegacyBuffetSelection };
 
 const menuDishes = source.dishes as BuffetDish[];
 const dishById = new Map(menuDishes.map(dish => [dish.id, dish]));
@@ -37,13 +44,13 @@ const packageItems = {
     id: "gold",
     catalogueItemIds: { rcoa: "hospitality-menu-item:rcoa:hot_fork_buffet_gold", mnk: "hospitality-menu-item:mnk:hot_fork_buffet_gold" },
     canonicalItemIds: ["hospitality-menu-item:rcoa:hot_fork_buffet_gold", "hospitality-menu-item:mnk:hot_fork_buffet_gold"],
-    rules: { mainChoices: 2, mainMinimumPortions: 12, mainPortionsMustEqualGuests: true, saladChoices: 3, dessertChoices: 2, dessertAllocation: "equal-split", dessertMinimumPortions: "unconfirmed", oddGuestRounding: "unconfirmed" },
+    rules: { mainChoices: 2, mainMinimumPortions: 12, mainPortionsMustEqualGuests: true, saladChoices: 3, saladAllocation: "chef-discretion", dessertChoices: 2, dessertAllocation: "chef-discretion", dessertIntent: "equal-split", dessertMinimumPortions: null, sides: "included-in-mains", dietaryPortions: "within-guest-count" },
   },
   silver: {
     id: "silver",
     catalogueItemIds: { rcoa: "hospitality-menu-item:rcoa:hot_fork_buffet_silver", mnk: "hospitality-menu-item:mnk:hot_fork_buffet_silver" },
     canonicalItemIds: ["hospitality-menu-item:rcoa:hot_fork_buffet_silver", "hospitality-menu-item:mnk:hot_fork_buffet_silver"],
-    rules: { mainChoices: 2, mainMinimumPortions: 12, mainPortionsMustEqualGuests: true, saladChoices: 3, dessertChoices: 1, dessertAllocation: "unconfirmed", dessertMinimumPortions: "unconfirmed", oddGuestRounding: "not_applicable" },
+    rules: { mainChoices: 2, mainMinimumPortions: 12, mainPortionsMustEqualGuests: true, saladChoices: 3, saladAllocation: "chef-discretion", dessertChoices: 1, dessertAllocation: "chef-discretion", dessertIntent: "one-choice", dessertMinimumPortions: null, sides: "included-in-mains", dietaryPortions: "within-guest-count" },
   },
 } as const;
 
@@ -55,24 +62,19 @@ const packageItems = {
 export const hotForkBuffetMenu = {
   contract: HOT_FORK_BUFFET_MENU_CONTRACT,
   menuVersion: HOT_FORK_BUFFET_MENU_VERSION,
+  rulesVersion: HOT_FORK_BUFFET_RULES_VERSION,
   source: { documentUrl: source.source.documentUrl, revisionId: source.source.revisionId, dishCount: 44 },
   readiness: {
     customerSubmission: false,
-    status: "pending_rules",
-    pendingRules: [
-      "Salad portions and production conversion",
-      "Gold dessert rounding for odd guest counts",
-      "Dessert minimum portion application",
-      "Silver dessert portion allocation",
-    ],
+    status: "rules_confirmed",
+    pendingRules: [],
+    liveOrderingApprovalRequired: true,
   },
   packages: [packageItems.gold, packageItems.silver],
   dishes: menuDishes,
 } as const;
 
-/** Transport accepts historical versions for exact idempotent replay; writes validate the current version below. */
-export const HotForkBuffetTransportSelectionSchema = z.object({
-  contract: z.literal(HOT_FORK_BUFFET_SELECTION_CONTRACT),
+const selectionCore = {
   menuVersion: z.string().trim().min(1).max(100),
   packageId: z.enum(["gold", "silver"]),
   mains: z.tuple([
@@ -80,9 +82,25 @@ export const HotForkBuffetTransportSelectionSchema = z.object({
     z.object({ dishId: z.string(), portions: z.number().int().positive() }).strict(),
   ]),
   saladIds: z.tuple([z.string(), z.string(), z.string()]),
+};
+/** Transport accepts historical versions for exact idempotent replay; current writes use both current versions. */
+export const HotForkBuffetSelectionSchema = z.object({
+  contract: z.literal(HOT_FORK_BUFFET_SELECTION_CONTRACT),
+  ...selectionCore,
+  menuVersion: z.literal(HOT_FORK_BUFFET_MENU_VERSION),
+  rulesVersion: z.literal(HOT_FORK_BUFFET_RULES_VERSION),
+  dessertIds: z.array(z.string()).min(1).max(2),
+}).strict();
+const currentTransportSelectionSchema = HotForkBuffetSelectionSchema.extend({
+  menuVersion: z.string().trim().min(1).max(100),
+  rulesVersion: z.string().trim().min(1).max(100),
+});
+export const LegacyHotForkBuffetSelectionSchema = z.object({
+  contract: z.literal(HOT_FORK_BUFFET_LEGACY_SELECTION_CONTRACT),
+  ...selectionCore,
   desserts: z.array(z.object({ dishId: z.string(), portions: z.number().int().positive().nullable() }).strict()).min(1).max(2),
 }).strict();
-export const HotForkBuffetSelectionSchema = HotForkBuffetTransportSelectionSchema.extend({ menuVersion: z.literal(HOT_FORK_BUFFET_MENU_VERSION) });
+export const HotForkBuffetTransportSelectionSchema = z.union([currentTransportSelectionSchema, LegacyHotForkBuffetSelectionSchema]);
 export const HotForkBuffetChoiceSchema = z.object({
   id: z.literal(HOT_FORK_BUFFET_CHOICE_ID),
   value: HotForkBuffetTransportSelectionSchema,
@@ -96,11 +114,7 @@ export function buffetPackageForItem(itemId: string): BuffetPackageId | undefine
   return undefined;
 }
 
-/** Validate the confirmed selection constraints without implying that pending rules are approved. */
-export function validateHotForkBuffetDraft(raw: unknown, itemId: string, guestCount: number): BuffetSelection {
-  const parsed = HotForkBuffetSelectionSchema.safeParse(raw);
-  if (!parsed.success) return invalid("The Hot Fork Buffet selection is malformed or from an older menu. Reopen Choose Menu.");
-  const selection = parsed.data as BuffetSelection;
+function validateSelectionRules(selection: BuffetSelection | LegacyBuffetSelection, itemId: string, guestCount: number): void {
   const expectedPackage = buffetPackageForItem(itemId);
   if (!expectedPackage || expectedPackage !== selection.packageId) return invalid("The selected buffet package does not match its booking item.");
   if (!Number.isSafeInteger(guestCount) || guestCount < 1) return invalid("Enter a valid guest count for the buffet.");
@@ -110,19 +124,43 @@ export function validateHotForkBuffetDraft(raw: unknown, itemId: string, guestCo
   if (mainDishes.some(dish => dish?.selectionStatus !== "source_listed")) return invalid("A selected buffet dish requires dietary review.");
   if (selection.mains.some(main => main.portions < 12)) return invalid("Each selected main requires at least 12 portions.");
   if (first.portions + second.portions !== guestCount) return invalid("Main portions must add up to the guest count.");
-  if (new Set(selection.saladIds).size !== 3 || selection.saladIds.some(id => dishById.get(id)?.category !== "salad")) return invalid("Choose exactly three different salads from Sam's menu.");
+  if (new Set(selection.saladIds).size !== 3 || selection.saladIds.some(id => { const dish = dishById.get(id); return dish?.category !== "salad" || dish.selectionStatus !== "source_listed"; })) return invalid("Choose exactly three different salads from Sam's menu.");
+  const dessertIds = selection.contract === HOT_FORK_BUFFET_SELECTION_CONTRACT ? selection.dessertIds : selection.desserts.map(dessert => dessert.dishId);
   const requiredDesserts = selection.packageId === "gold" ? 2 : 1;
-  if (selection.desserts.length !== requiredDesserts || new Set(selection.desserts.map(dessert => dessert.dishId)).size !== requiredDesserts || selection.desserts.some(dessert => dishById.get(dessert.dishId)?.category !== "dessert")) return invalid(`Choose exactly ${requiredDesserts} dessert${requiredDesserts === 1 ? "" : "s"} from Sam's menu.`);
-  if (selection.packageId === "gold" && guestCount % 2 !== 0) return invalid("Gold dessert portions for an odd guest count require an approved rounding rule.");
-  if (selection.packageId === "gold" && selection.desserts.some(dessert => dessert.portions !== null && dessert.portions !== guestCount / 2)) return invalid("Gold dessert portions must be split equally.");
+  if (dessertIds.length !== requiredDesserts || new Set(dessertIds).size !== requiredDesserts || dessertIds.some(id => { const dish = dishById.get(id); return dish?.category !== "dessert" || dish.selectionStatus !== "source_listed"; })) return invalid(`Choose exactly ${requiredDesserts} dessert${requiredDesserts === 1 ? "" : "s"} from Sam's menu.`);
+}
+
+/** Validate current confirmed rules; salad and dessert quantities are deliberately absent. */
+export function validateHotForkBuffetDraft(raw: unknown, itemId: string, guestCount: number): BuffetSelection {
+  const parsed = HotForkBuffetSelectionSchema.safeParse(raw);
+  if (!parsed.success) return invalid("The Hot Fork Buffet selection is malformed or from an older menu or rules version. Reopen Choose Menu.");
+  const selection = parsed.data as BuffetSelection;
+  validateSelectionRules(selection, itemId, guestCount);
   return selection;
 }
 
-/** The production catalogue remains closed until every allocation rule is approved. */
+/** Existing historical selection evidence may be read and replayed without rewriting its contract. */
+export function validateHotForkBuffetStoredSelection(raw: unknown, itemId: string, guestCount: number): BuffetSelection | LegacyBuffetSelection {
+  const parsed = HotForkBuffetTransportSelectionSchema.safeParse(raw);
+  if (!parsed.success) return invalid("The stored Hot Fork Buffet selection is malformed.");
+  const selection = parsed.data as BuffetSelection | LegacyBuffetSelection;
+  validateSelectionRules(selection, itemId, guestCount);
+  return selection;
+}
+
+/** Dietary categories may overlap, but no recorded count can add meals beyond the guests. */
+export function validateBuffetDietaryCounts(dietaries: Record<string, unknown> | undefined, guestCount: number): void {
+  for (const key of ["vegetarian", "vegan", "glutenFree", "coeliac", "dairyFree", "halal", "otherCount"]) {
+    const count = dietaries?.[key];
+    if (count !== undefined && count !== null && count !== "" && (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0 || count > guestCount))
+      return invalid("Buffet dietary guest counts must be whole numbers within the guest count.");
+  }
+}
+
+/** Confirmed package rules do not grant live customer-ordering activation. */
 export function assertHotForkBuffetCustomerSubmission(raw: unknown, itemId: string, guestCount: number): BuffetSelection {
   const selection = validateHotForkBuffetDraft(raw, itemId, guestCount);
-  if (!hotForkBuffetMenu.readiness.customerSubmission) return invalid("Hot Fork Buffet menu ordering is awaiting package rule approval.");
-  if (selection.desserts.some(dessert => dessert.portions === null)) return invalid("Dessert portions must be confirmed before ordering.");
+  if (!hotForkBuffetMenu.readiness.customerSubmission) return invalid("Hot Fork Buffet menu ordering is awaiting live customer-ordering approval.");
   return selection;
 }
 

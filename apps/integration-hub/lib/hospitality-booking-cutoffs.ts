@@ -1,6 +1,6 @@
 import type { Transaction } from "firebase-admin/firestore";
 import { assertBookingDate, bookingPolicyFor, catalogueProductionConversion, validateCatalogueRules, type CutoffItem, type RuleItem, type RuleLine } from "@fika/server-shared/hospitality-effective-offering";
-import { HOT_FORK_BUFFET_CHOICE_ID, hotForkBuffetChoice, validateHotForkBuffetDraft } from "@fika/server-shared/hospitality-buffet-selection";
+import { HOT_FORK_BUFFET_CHOICE_ID, hotForkBuffetChoice, validateHotForkBuffetStoredSelection } from "@fika/server-shared/hospitality-buffet-selection";
 import { hospitalityCatalogues } from "@fika/server-shared/hospitality-catalogue";
 import { stableDocumentId } from "./canonical-editor";
 import { db } from "./firebase-admin";
@@ -106,7 +106,7 @@ export async function prepareHospitalityAdminOrder(transaction: Transaction, boo
       return { id, ...(selected !== undefined ? { value: selected } : {}), ...(values !== undefined ? { values } : {}), ...(quantities !== undefined ? { quantities } : {}) };
     });
     const buffetSelection = hotForkBuffetChoice(choices);
-    if (buffetSelection) validateHotForkBuffetDraft(buffetSelection.value, offering.itemId, booking.service.guestCount);
+    if (buffetSelection) validateHotForkBuffetStoredSelection(buffetSelection.value, offering.itemId, booking.service.guestCount);
     ruleLines.push({ itemId: offering.itemId, quantity: line.quantity, choices: choices.filter(choice => choice.id !== HOT_FORK_BUFFET_CHOICE_ID) });
     const lineTotal = money(offering.price.amount * line.quantity);
     if (!Number.isFinite(lineTotal)) throw Object.assign(new Error("The ordered quantity is outside the supported price range."), { status: 422 });

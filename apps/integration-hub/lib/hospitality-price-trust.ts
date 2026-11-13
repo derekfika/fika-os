@@ -1,7 +1,7 @@
 import { hospitalityCatalogues } from "@fika/server-shared/hospitality-catalogue";
 import { validateCatalogueRules, type RuleItem, type CatalogueRules } from "@fika/server-shared/hospitality-effective-offering";
 import { isGallagherBooking } from "./gallagher-rules";
-import { HOT_FORK_BUFFET_CHOICE_ID, assertHotForkBuffetCustomerSubmission, hotForkBuffetChoice } from "@fika/server-shared/hospitality-buffet-selection";
+import { HOT_FORK_BUFFET_CHOICE_ID, assertHotForkBuffetCustomerSubmission, hotForkBuffetChoice, validateBuffetDietaryCounts } from "@fika/server-shared/hospitality-buffet-selection";
 import type { CanonicalRecord } from "./types";
 import type { MnkBookingPayload } from "./hospitality-booking-service";
 
@@ -21,7 +21,10 @@ export function trustedPublicOrder(payload: MnkBookingPayload, records: Canonica
     // An absent selection is the established menu-on-request purchase. Only a
     // submitted structured menu enters the new selector rules boundary.
     if (selection && line.quantity !== payload.event.guestCount) return refuse("Buffet package quantity must equal the guest count.");
-    if (selection) assertHotForkBuffetCustomerSubmission(selection.value, record?.canonicalId || line.itemId, payload.event.guestCount);
+    if (selection) {
+      validateBuffetDietaryCounts(payload.dietaries, payload.event.guestCount);
+      assertHotForkBuffetCustomerSubmission(selection.value, record?.canonicalId || line.itemId, payload.event.guestCount);
+    }
   }
   const catalogueChoices = (choices: unknown[] | undefined) => choices?.filter(choice => !(choice && typeof choice === "object" && (choice as { id?: unknown }).id === HOT_FORK_BUFFET_CHOICE_ID));
   if (governed.some(x => { const c = x.record?.record.configuration as RuleItem["configuration"]; return c?.rules || c?.choices?.some(g => g.controlType === "quantities"); })) {
