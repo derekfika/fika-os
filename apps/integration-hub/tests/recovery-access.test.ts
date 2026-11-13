@@ -13,6 +13,7 @@ function handler(options: { role?: string; all?: boolean; failure?: "session" | 
     "@/lib/auth": { actorFromSession: async () => ({ role: options.role || "integration-admin" }) },
     "@/lib/authmod": { assertPermission: () => { if (options.failure === "permission") denied(); } },
     "@/lib/authmod-core": { FirestoreAuthModRepository: class {} },
+    "@/lib/authmod-core/evaluator": { createAuthModEvaluationContext: () => ({}), evaluateAuthority: async () => ({ allowed: false, reasonCode: "denied" }) },
     "@/lib/fika-session": { requireFikaSession: async () => { if (options.failure === "session") denied(); return { email: "synthetic@example.invalid", authmodIdentityId: "synthetic" }; } },
     "@/lib/oploc-authorization": { resolvePermittedOplocIds: async () => { if (options.failure === "scope") denied(); return { all: options.all ?? true, ids: new Set(["oploc:allowed"]) }; } },
     "@/lib/oploc-read-package": {

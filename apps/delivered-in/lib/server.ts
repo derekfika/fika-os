@@ -105,13 +105,15 @@ export function oneOffSitesFromPackets(packets: MenuPlanningWeekPacket[]): Site[
   return [...oneOffs.values()].map(destination => ({ oplocId: destination.id, label: `${destination.label} (one-off)`, destination }));
 }
 
-export async function resolveAccess(request: NextRequest, service: DeliveredInService = "delivered-in", context: { serviceDate?: string } = {}): Promise<{ access: SiteAccess; sites: Site[] }> {
+export async function resolveAccess(request: NextRequest, service: DeliveredInService = "delivered-in", context: { serviceDate?: string; siteMenuGenerationFor?: string } = {}): Promise<{ access: SiteAccess; sites: Site[]; siteMenuGeneration?: { oplocId: string; allowed: boolean } }> {
   // Keep the default route URL compatible with older local Hub processes;
   // only Grab & Go needs the explicit service selector.
-  const accessUrl = service === "grab-and-go" ? `${hubBase()}/api/delivered-in/access?service=grab-and-go` : `${hubBase()}/api/delivered-in/access`;
+  const accessUrl = new URL(`${hubBase()}/api/delivered-in/access`);
+  if (service === "grab-and-go") accessUrl.searchParams.set("service", service);
+  if (context.siteMenuGenerationFor) accessUrl.searchParams.set("siteMenuGenerationFor", context.siteMenuGenerationFor);
   const response = await fetch(accessUrl, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store", redirect: "error" });
   recordDataAccess({ app: "delivered-in", operation: "hub.authmod.access", source: "NETWORK_UPSTREAM", dataset: "integration-hub/delivered-in-access", documents: 0, cacheResult: "BYPASS" });
-  const body = await readJson<{ access?: SiteAccess; sites?: Site[]; error?: { code?: string; message?: string; requestId?: string }; requestId?: string }>(response, "Integration Hub access service");
+  const body = await readJson<{ access?: SiteAccess; sites?: Site[]; siteMenuGeneration?: { oplocId: string; allowed: boolean }; error?: { code?: string; message?: string; requestId?: string }; requestId?: string }>(response, "Integration Hub access service");
   if (!response.ok || !body.access || !body.sites) throw failure(body.error?.message || "Delivered-In access could not be resolved.", response.status || 502, body.error?.code, body.error?.requestId || body.requestId);
   if (body.access.canViewOneOffDestinations && service === "delivered-in") {
     const requested = context.serviceDate || request.nextUrl.searchParams.get("week") || request.nextUrl.searchParams.get("serviceDate");
@@ -122,9 +124,10 @@ export async function resolveAccess(request: NextRequest, service: DeliveredInSe
     return {
       access: { ...body.access, oneOffDestinationIds: oneOffSites.map(site => site.oplocId) },
       sites: [...body.sites, ...oneOffSites],
+      ...(body.siteMenuGeneration ? { siteMenuGeneration: body.siteMenuGeneration } : {}),
     };
   }
-  return { access: body.access, sites: body.sites };
+  return { access: body.access, sites: body.sites, ...(body.siteMenuGeneration ? { siteMenuGeneration: body.siteMenuGeneration } : {}) };
 }
 
 const weekRecovery = new Map<string, Promise<void>>();

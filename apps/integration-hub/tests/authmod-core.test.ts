@@ -228,6 +228,23 @@ test("operational authority fails closed when OPLOC scope is omitted", async () 
   assert.equal((await resolveUserAccess(repository, { principal, appId: "hospitality-booking" })).allowed, true);
 });
 
+test("Delivered-In site-menu generation requires existing Manage authority and the assigned OPLOC", async () => {
+  const repository = makeRepo();
+  const mnkAccount = await operationalIdentity(repository, "mnk@example.test", { representedOplocId: "oploc:mnk", operationalPurpose: "MNK site operations" });
+  const mnkPrincipal: AuthPrincipal = { type: "interactive", id: mnkAccount.id, displayName: mnkAccount.displayName, identityKind: "operational" };
+  await assignSite(repository, { identityId: mnkAccount.id, oplocId: "oploc:mnk", actor: admin, reason: "MNK site access." });
+  await grantStandardApplicationAccess(repository, { identityId: mnkAccount.id, appId: "delivered-in", actor: admin, reason: "Existing Delivered-In access." });
+  assert.equal((await evaluateAuthority(repository, { principal: mnkPrincipal, appId: "delivered-in", resource: "delivered-in.normal", action: "Manage", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, true);
+  assert.equal((await evaluateAuthority(repository, { principal: mnkPrincipal, appId: "delivered-in", resource: "delivered-in.normal", action: "Manage", scope: { kind: "oploc", ids: ["oploc:munich"] } })).allowed, false);
+
+  const viewOnly = await operationalIdentity(repository, "viewer@example.test");
+  const deliveredIn = repository.applications.get("delivered-in")!;
+  repository.applications.set("delivered-in", { ...deliveredIn, standardActions: ["View"] });
+  await assignSite(repository, { identityId: viewOnly.id, oplocId: "oploc:mnk", actor: admin, reason: "MNK view access." });
+  await grantStandardApplicationAccess(repository, { identityId: viewOnly.id, appId: "delivered-in", actor: admin, reason: "View-only Delivered-In access." });
+  assert.equal((await evaluateAuthority(repository, { principal: { type: "interactive", id: viewOnly.id, displayName: viewOnly.displayName, identityKind: "operational" }, appId: "delivered-in", resource: "delivered-in.normal", action: "Manage", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
+});
+
 test("canonical OPLOC lifecycle is required for assignments and Full Access", async () => {
   const repository = makeRepo(); const person = await identity(repository); const principal: AuthPrincipal = { type: "interactive", id: person.id, displayName: person.displayName };
   await assignSite(repository, { identityId: person.id, oplocId: "oploc:mnk", actor: admin, reason: "Active site." });
