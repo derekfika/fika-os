@@ -1,5 +1,7 @@
 "use client";
 
+import { BuffetMenuPicker, BuffetSelectionSummary, useBuffetConfig } from "./BuffetMenuPicker";
+import { buffetChoice, buffetPackageForItem, buffetPreviewIssue, type BuffetPreview } from "../../lib/buffet-menu-client";
 import { BookingDatePicker, useBookingClock } from "./BookingDatePicker";
 import { BOOKING_NOTICE_SHORT } from "../../lib/booking-notice";
 import { assertBookingDate, bookingDateIssue, bookingPolicyFor, type CutoffItem } from "@fika/server-shared/hospitality-effective-offering";
@@ -24,6 +26,7 @@ type Line = {
   itemId: string;
   quantity: number;
   choices: Record<string, ChoiceValue>;
+  buffetPreview?: BuffetPreview;
 };
 const steps = ["Choose", "Details", "Plan", "Dietaries", "One last look"];
 const occasions = [
@@ -157,6 +160,7 @@ export default function BookingPortal({
   const currentSiteLabel = siteLabel?.trim() || site.theme.shortLabel;
   const themeStyle = hospitalitySiteThemeStyle(site) as CSSProperties;
   const [menu, setMenu] = useState<PortalMenuItem[]>([]);
+  const buffet = useBuffetConfig(site.key === "mnk");
   const [catalogueWarning, setCatalogueWarning] = useState("");
   const [occasion, setOccasion] = useState("");
   const [step, setStep] = useState(0);
@@ -337,6 +341,7 @@ export default function BookingPortal({
         ? [
             ...current.filter((line) => line.itemId !== item.id),
             {
+              ...current.find((line) => line.itemId === item.id),
               itemId: item.id,
               quantity: nextQuantity,
               choices:
@@ -439,6 +444,8 @@ export default function BookingPortal({
     if (step === 4 && !explicitSendRef.current && !submitter) return;
     explicitSendRef.current = false;
     if (sendingRef.current) return;
+    const buffetIssue = buffetPreviewIssue(lines, details.guestCount, buffet.config);
+    if (buffetIssue) return showValidation({ menu: { field: "menu", message: buffetIssue, step: 2 } }, buffetIssue, 2);
     setFieldErrors({});
     const belowMinimum = selected.find(
       (value) => value.quantity < minimumQuantityFor(value.item, minimumContext),
@@ -541,7 +548,7 @@ export default function BookingPortal({
           lineTotal: Number(
             (value.item.unitPrice * value.quantity).toFixed(2),
           ),
-          choices: Object.entries(value.choices).map(([id, value]) => typeof value === "object" && !Array.isArray(value) ? { id, quantities: value } : { id, value }),
+          choices: [...Object.entries(value.choices).map(([id, value]) => typeof value === "object" && !Array.isArray(value) ? { id, quantities: value } : { id, value }), ...(value.buffetPreview ? [buffetChoice(value.buffetPreview)] : [])],
         })),
         netTotal: total,
         vatNote:
@@ -742,6 +749,10 @@ export default function BookingPortal({
               gallagher={gallagher}
               minimumContext={minimumContext}
               errors={fieldErrors}
+              buffet={buffet}
+              menu={menu}
+              dietaryNotes={dietaries.freeText}
+              onSaveBuffet={(oldId: string, target: PortalMenuItem, preview: BuffetPreview, notes: string) => { setLines(current => current.map(line => line.itemId === oldId ? { ...line, itemId: target.id, quantity: details.guestCount, choices: oldId === target.id ? line.choices : {}, buffetPreview: preview } : line)); setDietaries(current => ({ ...current, freeText: notes })); }}
             />
           )}
           {step === 3 && (
@@ -756,7 +767,7 @@ export default function BookingPortal({
               clearError={clearValidation}
             />
           )}
-          {step === 4 && <FinalReview site={site} contact={contact} details={details} selected={selected} total={total} dietaries={dietaries} acks={acks} />}
+          {step === 4 && <FinalReview site={site} contact={contact} details={details} selected={selected} total={total} dietaries={dietaries} acks={acks} buffetConfig={buffet.config} buffetIssue={buffetPreviewIssue(lines, details.guestCount, buffet.config)} />}
           <footer>
             <button
               type="button"
@@ -775,7 +786,7 @@ export default function BookingPortal({
             )}
           </footer>
         </form>
-        <Summary occasion={occasion} selected={selected} total={total} details={details} />
+        <Summary occasion={occasion} selected={selected} total={total} details={details} buffetConfig={buffet.config} />
       </div>
     </main>
   );
@@ -1039,12 +1050,18 @@ function Plan({
   gallagher,
   minimumContext,
   errors,
+  details,
+  buffet,
+  menu,
+  onSaveBuffet,
+  dietaryNotes,
 }: any) {
   const [touched, setTouched] = useState<string[]>([]);
   return (
     <section>
       <p className="eyebrow">Build your menu</p>
       <h2>Choose what feels right.</h2>
+      {buffet.error && <p role="status">{buffet.error}</p>}
       <div className="category-tabs">
         {categories.map((value: string) => (
           <button
@@ -1065,7 +1082,7 @@ function Plan({
             <article key={item.canonicalId}>
               <span>{item.servingInfo}</span>
               <h3>{item.name}</h3>
-              <p>{item.description}</p>
+              {(!buffet.config || !buffetPackageForItem(buffet.config, item.id)) && <p>{item.description}</p>}
               {typeof item.unitPrice === "number" && Number.isFinite(item.unitPrice) ? <strong>£{item.unitPrice.toFixed(2)}</strong> : <strong>Price unavailable</strong>}
               {item.optionGroups?.map((group) => {
                 const isMulti = ["multi", "checkbox", "checkboxes"].includes(
@@ -1157,6 +1174,7 @@ function Plan({
                   </>
                 );
               })()}
+              {line?.quantity > 0 && <BuffetMenuPicker config={buffet.config} item={item} catalogue={menu} selectedItemIds={lines.filter((value: Line) => value.quantity > 0).map((value: Line) => value.itemId)} guestCount={details.guestCount} preview={line.buffetPreview} dietaryNotes={dietaryNotes} onSave={(target, preview, notes) => onSaveBuffet(item.id, target, preview, notes)} />}
               {minimumQuantityFor(item, minimumContext) > 1 && (
                 <p className="minimum-quantity-note">
                   Minimum {minimumQuantityFor(item, minimumContext)} boxes
@@ -1275,7 +1293,7 @@ function Submit({
   );
 }
 
-function FinalReview({ site, contact, details, selected, total, dietaries, acks }: any) {
+function FinalReview({ site, contact, details, selected, total, dietaries, acks, buffetConfig, buffetIssue }: any) {
   const client = site.key === "angel-court" ? `${contact.clientName} · ${contact.clientCompany}` : `${contact.requesterName} · ${contact.requesterCompany}`;
   return <section className="submit final-review">
     <p className="eyebrow">One last look</p>
@@ -1284,8 +1302,8 @@ function FinalReview({ site, contact, details, selected, total, dietaries, acks 
     <div className="final-review__facts">
       {[['Booking for', client], ['When', `${humanDate(details.eventDate)} · ${humanTime(details.startTime)}`], ['Guests', `${details.guestCount} pax`], ['Where', details.roomOrArea || details.floorLevel || details.deliveryPoint]].map(([label, value]) => <div key={label as string}><small>{label}</small><strong>{value}</strong></div>)}
     </div>
-    <div className="final-review__order"><div className="final-review__order-head"><span>Order summary</span><span>Net estimate</span></div>{selected.map((value: any) => <div className="final-review__line" key={value.item.id}><span><strong>{value.quantity} × {value.item.name}</strong>{value.item.servingInfo && <small>{value.item.servingInfo}</small>}</span><b>£{(value.quantity * value.item.unitPrice).toFixed(2)}</b></div>)}<div className="final-review__total"><span>Menu total</span><strong>£{total.toFixed(2)}</strong></div></div>
-    <div className={`final-review__notice ${Object.values(acks).every(Boolean) ? "" : "final-review__notice--attention"}`}><strong>{Object.values(acks).every(Boolean) ? "Ready to send" : "One more step"}</strong><span>{Object.values(acks).every(Boolean) ? (Object.entries(dietaries).filter(([, value]) => value && value !== false).length ? "Dietary information is included with this request." : "No dietary requirements recorded.") + " Your request will be reviewed before anything is confirmed." : "Please go back to Dietaries and confirm each acknowledgement before sending."}</span></div>
+    <div className="final-review__order"><div className="final-review__order-head"><span>Order summary</span><span>Net estimate</span></div>{selected.map((value: any) => <div className="final-review__line" key={value.item.id}><div style={{ display: "grid", gap: 4 }}><strong>{value.quantity} × {value.item.name}</strong>{value.item.servingInfo && <small>{value.item.servingInfo}</small>}<BuffetSelectionSummary config={buffetConfig} preview={value.buffetPreview} /></div><b>£{(value.quantity * value.item.unitPrice).toFixed(2)}</b></div>)}<div className="final-review__total"><span>Menu total</span><strong>£{total.toFixed(2)}</strong></div></div>
+    <div className={`final-review__notice ${Object.values(acks).every(Boolean) ? "" : "final-review__notice--attention"}`}><strong>{buffetIssue ? "Menu preview" : Object.values(acks).every(Boolean) ? "Ready to send" : "One more step"}</strong><span>{buffetIssue || (Object.values(acks).every(Boolean) ? (Object.entries(dietaries).filter(([, value]) => value && value !== false).length ? "Dietary information is included with this request." : "No dietary requirements recorded.") + " Your request will be reviewed before anything is confirmed." : "Please go back to Dietaries and confirm each acknowledgement before sending.")}</span></div>
   </section>;
 }
 function humanDate(value: string) {
@@ -1296,7 +1314,7 @@ function humanTime(value: string) {
   const match = /^([0-9]{2}):([0-9]{2})$/.exec(value);
   return match ? `${match[1]}:${match[2]}` : value;
 }
-function Summary({ occasion, selected, total, details }: any) {
+function Summary({ occasion, selected, total, details, buffetConfig }: any) {
   return (
     <aside className="summary">
       <p className="eyebrow">Your request</p>
@@ -1310,9 +1328,10 @@ function Summary({ occasion, selected, total, details }: any) {
         <ul>
           {selected.map((value: any) => (
             <li key={value.item.id}>
-              <span>
+              <div>
                 {value.quantity} × {value.item.name}
-              </span>
+                <BuffetSelectionSummary config={buffetConfig} preview={value.buffetPreview} />
+              </div>
               {typeof value.item.unitPrice === "number" && Number.isFinite(value.item.unitPrice) ? <b>£{(value.quantity * value.item.unitPrice).toFixed(2)}</b> : <b>Price unavailable</b>}
             </li>
           ))}

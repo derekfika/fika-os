@@ -69,25 +69,19 @@ test("RCoA quote PDF shows the assigned floor and room together", () => {
   assert.match(quoteHtml(booking), /Second Floor · Meeting Room 4/);
 });
 
-test("a client-safe buffet menu is labelled provisional and excludes operational fields", () => {
+test("legacy buffet quote retains its package description without a menu preview", () => {
   const booking = {
-    canonicalId: "booking-buffet-preview",
-    client: { name: "Alex Client", companyName: "Example Company", email: "alex@example.test" },
-    service: { eventDate: "2026-11-12", startTime: "12:00", guestCount: 94 },
-    order: { eventType: "hot_fork_buffet", lines: [] },
-    dietaries: {},
     quoteState: { currentRevisionId: "quote-1", revisions: [{ id: "quote-1", revision: 1, createdAt: "2026-11-01T10:00:00.000Z", snapshot: {
-      client: { name: "Alex Client", companyName: "Example Company", email: "alex@example.test" }, service: { eventDate: "2026-11-12", startTime: "12:00", guestCount: 94 }, order: { eventType: "hot_fork_buffet", lines: [] }, charges: [], dietaries: {},
-      totals: { itemsNet: { amount: 0 }, chargesNet: { amount: 0 }, net: { amount: 0 }, vat: { amount: 0 }, gross: { amount: 0 }, vatRate: 0.2 },
+      client: { name: "Guest", companyName: "Customer", email: "guest@example.test" },
+      service: { eventDate: "2026-11-12", startTime: "12:00", guestCount: 24 },
+      order: { eventType: "hot_fork_buffet", lines: [{ name: "Hot Fork Buffet", description: "Menu on request", quantity: 24, lineNet: { amount: 480 } }] },
+      charges: [], dietaries: {}, totals: { itemsNet: { amount: 480 }, chargesNet: { amount: 0 }, net: { amount: 480 }, vat: { amount: 96 }, gross: { amount: 576 }, vatRate: 0.2 },
     } }] },
   } as never;
-  const html = quoteHtml(booking, { label: "Provisional menu", dishes: [{ name: "Slow cooked beef", category: "Main", description: "With herbs" }] });
-  assert.match(html, /Hot Fork Buffet menu · Provisional menu/);
-  assert.match(html, /Slow cooked beef/);
-  assert.match(html, /With herbs/);
-  assert.doesNotMatch(html, /kitchenNotes|portion|cost|allergenReview/);
-  const unavailable = quoteHtml(booking, { label: "Menu to be confirmed", dishes: [] });
-  assert.match(unavailable, /Menu to be confirmed/);
+  const html = quoteHtml(booking);
+  assert.match(html, /Hot Fork Buffet/);
+  assert.match(html, /Menu on request/);
+  assert.doesNotMatch(html, /Provisional menu/);
 });
 
 test("the rendered quote stays on its saved customer snapshot when internal kitchen notes change", () => {

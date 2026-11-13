@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { HOT_FORK_BUFFET_CHOICE_ID, HotForkBuffetChoiceSchema } from "@fika/server-shared/hospitality-buffet-selection";
 import { localRcoaMenuCatalogue } from "./local-rcoa-menu";
 import type { PortalMenuItem } from "./mnk-contract";
 import { isValidRcoaLondonWallTime, RCOA_MAX_SERVICES, rcoaAllowsEmptyOrder, rcoaChildReference, rcoaEventTypes, rcoaVatNote } from "./rcoa-portal";
@@ -42,10 +43,10 @@ export const RcoaBookingRequestSchema = z.object({
     items: z.array(z.object({
       itemId: z.string().trim().min(1).max(200),
       quantity: z.number().int().positive(),
-      choices: z.array(z.object({
-        id: z.string().trim().min(1).max(100),
-        value: z.union([z.string().max(1000), z.array(z.string().max(1000)).max(30)]),
-      }).strict()).max(30).optional(),
+      choices: z.array(z.union([
+        HotForkBuffetChoiceSchema,
+        z.object({ id: z.string().trim().min(1).max(100), value: z.union([z.string().max(1000), z.array(z.string().max(1000)).max(30)]) }).strict().refine(choice => choice.id !== HOT_FORK_BUFFET_CHOICE_ID),
+      ])).max(30).optional(),
     }).strict()).max(100),
   }).strict(),
   dietaries: z.object({
@@ -104,9 +105,9 @@ function selectedChoices(
   const byId = new Map(supplied.map((choice) => [choice.id, choice.value]));
   if (byId.size !== supplied.length) throw new Error(`Choose each option only once for ${item.name}.`);
   const knownGroups = new Set(item.optionGroups.map((group) => group.id));
-  if (supplied.some((choice) => !knownGroups.has(choice.id))) throw new Error(`An option is not available for ${item.name}.`);
+  if (supplied.some((choice) => choice.id !== HOT_FORK_BUFFET_CHOICE_ID && !knownGroups.has(choice.id))) throw new Error(`An option is not available for ${item.name}.`);
 
-  return item.optionGroups.map((group) => {
+  const catalogueChoices = item.optionGroups.map((group) => {
     const raw = byId.get(group.id);
     const values = Array.isArray(raw) ? raw : typeof raw === "string" && raw ? [raw] : [];
     const selected = [...new Set(values.map((value) => value.trim()).filter(Boolean))];
@@ -120,6 +121,7 @@ function selectedChoices(
     if (selected.length > 1) throw new Error(`Choose one option for ${item.name}.`);
     return { id: group.id, label: group.label, value: selected[0] || "" };
   });
+  return [...catalogueChoices, ...supplied.filter(choice => choice.id === HOT_FORK_BUFFET_CHOICE_ID)];
 }
 
 export function buildTrustedRcoaHubPayload(value: unknown, governedMenu: readonly PortalMenuItem[] | undefined, visibility: RcoaServiceVisibility | undefined) {

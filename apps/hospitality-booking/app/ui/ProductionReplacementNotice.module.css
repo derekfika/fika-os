@@ -1,0 +1,2 @@
+.notice { margin: 16px 0; padding: 12px 16px; border: 1px solid var(--color-status-warning, #8a4d00); border-left-width: 4px; border-radius: var(--radius-sm, 8px); background: var(--color-status-warning-bg, #fff4db); color: var(--color-text-primary, #24163b); line-height: 1.45; }
+.notice p { margin: 4px 0 0; }

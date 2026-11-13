@@ -17,7 +17,7 @@ export function integerFieldText(raw: string) {
 
 export type { RcoaEventType } from "./rcoa-event-types";
 export type RcoaChoiceValue = string | string[];
-export type RcoaLine = { itemId: string; quantity: number; choices: Record<string, RcoaChoiceValue> };
+export type RcoaLine = { itemId: string; quantity: number; choices: Record<string, RcoaChoiceValue>; buffetPreview?: import("./buffet-menu-client").BuffetPreview };
 export type RcoaDietaries = {
   hasDietaries: boolean;
   vegetarian: number;

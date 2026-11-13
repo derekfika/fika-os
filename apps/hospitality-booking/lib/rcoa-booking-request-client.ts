@@ -1,3 +1,4 @@
+import { buffetChoice } from "./buffet-menu-client";
 import type { PortalMenuItem } from "./mnk-contract";
 import type { RcoaBookingDraft } from "./rcoa-portal";
 
@@ -32,7 +33,7 @@ export function buildRcoaClientRequest(
       items: draft.lines.filter((line) => line.quantity > 0).map((line) => ({
         itemId: line.itemId,
         quantity: line.quantity,
-        choices: Object.entries(line.choices).map(([id, value]) => ({ id, value })),
+        choices: [...Object.entries(line.choices).map(([id, value]) => ({ id, value })), ...(line.buffetPreview ? [buffetChoice(line.buffetPreview)] : [])],
       })),
     },
     dietaries: draft.dietaries,

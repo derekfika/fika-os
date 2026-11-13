@@ -12,10 +12,10 @@ function fallbackSnapshot(booking: CanonicalBooking): QuoteCommercialSnapshot {
   return { bookingId: booking.canonicalId, client: booking.client, service: booking.service, order: { eventType: booking.order.eventType, lines }, charges, totals: { itemsNet: { amount: items }, chargesNet: { amount: chargesNet }, net: { amount: net }, vat: { amount: vat }, gross: { amount: net + vat }, vatRate: 0.2 }, dietaries: booking.dietaries, notes: booking.notes };
 }
 
-export function quoteHtml(booking: CanonicalBooking, buffetMenu?: { label: string; dishes: Array<{ name: string; category?: string; description?: string }> }) {
+export function quoteHtml(booking: CanonicalBooking) {
   const quote = booking.quoteState?.revisions.find(item => item.id === booking.quoteState?.currentRevisionId);
   if (!quote || quote.stale) throw new Error("No current quote revision is available.");
   const raw = quote.snapshot as Partial<QuoteCommercialSnapshot> & Pick<CanonicalBooking, "client" | "service" | "order" | "dietaries" | "notes">;
   const snapshot = raw.totals && raw.charges && raw.order?.lines ? raw as QuoteCommercialSnapshot : fallbackSnapshot(booking);
-  return renderHospitalityQuoteDocument(snapshot as QuoteDocumentSnapshot, { createdAt: quote.createdAt }, { ...(buffetMenu ? { buffetMenu } : {}) });
+  return renderHospitalityQuoteDocument(snapshot as QuoteDocumentSnapshot, { createdAt: quote.createdAt });
 }
