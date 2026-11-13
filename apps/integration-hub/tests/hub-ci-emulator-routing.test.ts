@@ -15,11 +15,11 @@ test("Hub CI keeps unit tests isolated and runs Firestore coverage in the emulat
   assert.match(workflow, /id: app[\s\S]*?cache: npm[\s\S]*?cache-dependency-path:[\s\S]*?\$\{\{ steps\.app\.outputs\.path \}\}\/package-lock\.json/);
   assert.match(workflow, /hub-emulator:[\s\S]*?cache: npm[\s\S]*?apps\/integration-hub\/package-lock\.json/);
   assert.match(workflow, /application-tests:[\s\S]*?npm --prefix '\$\{\{ steps\.app\.outputs\.path \}\}' test/);
-  assert.match(workflow, /if: matrix\.app != 'hub'[\s\S]*?run typecheck[\s\S]*?Build exact checked-out application source/);
-  assert.match(workflow, /hub-validation:[\s\S]*?needs: scope[\s\S]*?outputs\.hub == 'true'[\s\S]*?app: \[hub\][\s\S]*?run typecheck[\s\S]*?Build exact checked-out application source/);
+  assert.match(workflow, /run typecheck\r?\n        if: matrix\.app != 'hub'[\s\S]*?Build exact checked-out application source[\s\S]*?if: matrix\.app != 'hub'/);
+  assert.match(workflow, /hub-validation:[\s\S]*?needs: scope[\s\S]*?outputs\.hub == 'true'[\s\S]*?app: \[hub\][\s\S]*?Typecheck and build in parallel[\s\S]*?run typecheck[\s\S]*?run build[\s\S]*?wait "\$typecheck_pid"/);
   assert.match(workflow, /merge-gate:[\s\S]*?needs: \[[^\]]*application-tests[^\]]*hub-validation/);
   // Node's test runner isolates test files in separate processes by default; do not disable that default.
-  assert.doesNotMatch(packageJson.scripts.test, /--test-isolation=/);
+  assert.doesNotMatch(packageJson.scripts.test, /--(?:experimental-)?test-isolation=none/);
   assert.match(packageJson.scripts.test, /--test-concurrency=(?:[2-9]|[1-9][0-9]+)/);
   assert.match(packageJson.scripts["test:emulator"], /--test-concurrency=1/);
   assert.match(packageJson.scripts["test:emulator"], /--test-name-pattern=emulator:/);

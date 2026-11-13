@@ -198,14 +198,24 @@ jobs:
           path: fika-platform-specs
       - run: npm ci
       - run: npm ci --prefix '${{ steps.app.outputs.path }}'
-      - run: npm --prefix '${{ steps.app.outputs.path }}' run typecheck
-      - name: Build exact checked-out application source
+      - name: Typecheck and build in parallel
         env:
-          NODE_ENV: production
+          APP_PATH: ${{ steps.app.outputs.path }}
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          GITHUB_SHA="$SOURCE_SHA" npm --prefix '${{ steps.app.outputs.path }}' run build
+          NODE_ENV=test npm --prefix "$APP_PATH" run typecheck &
+          typecheck_pid=$!
+          set +e
+          build_status=0
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA" || build_status=$?
+          if [ "$build_status" -eq 0 ]; then
+            NODE_ENV=production GITHUB_SHA="$SOURCE_SHA" npm --prefix "$APP_PATH" run build
+            build_status=$?
+          fi
+          wait "$typecheck_pid"
+          typecheck_status=$?
+          if [ "$build_status" -ne 0 ]; then exit "$build_status"; fi
+          exit "$typecheck_status"
   hub-emulator:
     needs: scope
     if: needs.scope.outputs.hub == 'true'
