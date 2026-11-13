@@ -122,6 +122,10 @@ export async function createProductionFromApprovedBookingTransaction(actor: Acto
       if (["Sent to CPU", "Approved", "Completed"].includes(booking.lifecycleStatus)) return booking;
       const nextBooking: CanonicalBooking = {
         ...booking,
+        dashboardWorkflow: (() => {
+          const { productionReplacement: _resolved, ...workflow } = booking.dashboardWorkflow || {};
+          return workflow;
+        })(),
         version: booking.version + 1,
         lifecycleStatus: "Sent to CPU",
         updatedAt: now,

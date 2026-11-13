@@ -7,6 +7,7 @@
  * "FIKA OS" is internal product branding and must never appear on a customer-facing quotation.
  */
 import { FIKA_LOGO_DATA_URI, SITE_LOGO_DATA_URIS, GILROY_BLACK_DATA_URI, GILROY_REGULAR_DATA_URI, VIM_HEAVY_DATA_URI } from "./hospitality-quote-brand-assets.generated";
+import { HOT_FORK_BUFFET_SELECTION_CONTRACT, hotForkBuffetChoice, hotForkBuffetDish } from "../../packages/server-shared/src/hospitality-buffet-selection";
 
 type Money = { amount: number; currency?: string };
 export type QuoteDocumentLine = { itemId?: string; name: string; description?: string; quantity: number; unitNet?: Money; lineNet: Money; servingInfo?: string; choices?: unknown[]; comments?: string };
@@ -70,7 +71,22 @@ export function quoteMastheadHtml(branding: ResolvedQuoteBranding) {
 
 /** Canonical item/charge table, shared by single-service quotes and each grouped service section. */
 export function quoteOrderTableHtml(lines: QuoteDocumentLine[], charges: QuoteDocumentCharge[]) {
-  const rows = lines.map(line => { const choices = line.choices?.length ? `<small>${quoteEsc(line.choices.map(choice => typeof choice === "object" && choice ? Object.values(choice as Record<string, unknown>).join(": ") : String(choice)).join(" · "))}</small>` : ""; return `<tr><td><div class="item-name">${quoteEsc(line.name)}</div>${line.description ? `<small>${quoteEsc(line.description)}</small>` : ""}${line.servingInfo ? `<small class="muted">${quoteEsc(line.servingInfo)}</small>` : ""}${choices}${line.comments ? `<small class="note">${quoteEsc(line.comments)}</small>` : ""}</td><td class="qty">${quoteEsc(line.quantity)}</td><td class="money">${quoteGbp(line.unitNet?.amount ?? 0)}</td><td class="money strong">${quoteGbp(line.lineNet.amount)}</td></tr>`; }).join("");
+  const rows = lines.map(line => {
+    const buffet = hotForkBuffetChoice(line.choices);
+    let choices = "";
+    if (buffet) {
+      const selection = buffet.value;
+      if (selection?.contract !== HOT_FORK_BUFFET_SELECTION_CONTRACT || !Array.isArray(selection.mains) || !Array.isArray(selection.saladIds) || !Array.isArray(selection.desserts)) throw new Error("The stored buffet menu selection is invalid.");
+      const name = (id: string) => hotForkBuffetDish(id)?.name || id;
+      const mains = selection.mains.map(main => `${main.portions} × ${name(main.dishId)}`);
+      const salads = selection.saladIds.map(name);
+      const desserts = selection.desserts.map(dessert => dessert.portions === null ? `${name(dessert.dishId)} (portions to confirm)` : `${dessert.portions} × ${name(dessert.dishId)}`);
+      choices = `<small>Selected mains: ${quoteEsc(mains.join("; "))}</small><small>Selected salads (portions to confirm): ${quoteEsc(salads.join("; "))}</small><small>Selected desserts: ${quoteEsc(desserts.join("; "))}</small><small class="muted">Dish allergen and dietary information has not been verified.</small>`;
+    } else if (line.choices?.length) {
+      choices = `<small>${quoteEsc(line.choices.map(choice => typeof choice === "object" && choice ? Object.values(choice as Record<string, unknown>).join(": ") : String(choice)).join(" · "))}</small>`;
+    }
+    return `<tr><td><div class="item-name">${quoteEsc(line.name)}</div>${!buffet && line.description ? `<small>${quoteEsc(line.description)}</small>` : ""}${line.servingInfo ? `<small class="muted">${quoteEsc(line.servingInfo)}</small>` : ""}${choices}${line.comments ? `<small class="note">${quoteEsc(line.comments)}</small>` : ""}</td><td class="qty">${quoteEsc(line.quantity)}</td><td class="money">${quoteGbp(line.unitNet?.amount ?? 0)}</td><td class="money strong">${quoteGbp(line.lineNet.amount)}</td></tr>`;
+  }).join("");
   const chargeRows = charges.map(charge => `<tr class="charge"><td colspan="3">${quoteEsc(charge.label)}${charge.detail ? `<small>${quoteEsc(charge.detail)}</small>` : ""}</td><td class="money strong">${quoteGbp(charge.net.amount)}</td></tr>`).join("");
   return `<table class="order"><thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Net</th></tr></thead><tbody>${rows}${chargeRows}</tbody></table>`;
 }
