@@ -193,10 +193,22 @@ function SiteMenuControls({
           action: state.status === "none" ? "generate" : "regenerate",
         }),
       });
-      if (!response.ok) throw new Error();
+      const result = (await response.json().catch(() => undefined)) as
+        | { error?: { message?: string } }
+        | undefined;
+      if (!response.ok) {
+        throw new Error(
+          result?.error?.message ||
+            `Site menu generation failed (HTTP ${response.status}).`,
+        );
+      }
       onGenerated();
-    } catch {
-      setError("Site menu could not be generated.");
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Site menu generation failed. Please try again or contact support.",
+      );
     } finally {
       setBusy(false);
     }

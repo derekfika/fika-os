@@ -2,11 +2,11 @@ import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
 import { containArtifactLinks } from "@/lib/artifact-containment";
 import { NextRequest, NextResponse } from "next/server";
 import { projectedAllergenDay, resolveAccess } from "@/lib/server";
+import { assertAuthorisedOploc } from "@/lib/projection";
 import { createGoogleSiteMenu, retireGoogleSiteMenu } from "@/lib/google-site-menu";
 import { latestSiteMenuArtifactHosted, saveSiteMenuArtifactHosted } from "@/lib/site-menu-store";
 import { siteMenuState } from "@/lib/site-menu";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
-import { requireDeliveredInMaintenance } from "@/lib/maintenance-auth";
 
 async function safeJson(data: unknown, init?: ResponseInit) {
   return NextResponse.json(containArtifactLinks(data, await stagingDriveAccessBlocked()), init);
@@ -28,13 +28,19 @@ async function handleGet(request: NextRequest) {
 
 async function handlePost(request: NextRequest) {
   try {
-    requireDeliveredInMaintenance(request);
     const body = await request.json() as { oplocId?: string; publicationDayId?: string; action?: "generate" | "regenerate" };
     if (!body.oplocId || !body.publicationDayId) return safeJson({ error: { message: "A site and published day are required." } }, { status: 422 });
+    const access = await resolveAccess(request, "delivered-in", { siteMenuGenerationFor: body.oplocId });
+    if (access.siteMenuGeneration?.oplocId !== body.oplocId || !access.siteMenuGeneration.allowed) {
+      return safeJson({ error: { message: "You need existing Delivered-In Manage access for this active site to generate its menu." } }, { status: 403 });
+    }
+    assertAuthorisedOploc(access.access, body.oplocId);
+    if (!access.sites.some(site => site.oplocId === body.oplocId && !site.destination)) {
+      return safeJson({ error: { message: "Site menu generation is available only for an active Delivered-In site." } }, { status: 403 });
+    }
     const day = await projectedAllergenDay(request, body.oplocId, body.publicationDayId, { authoritative: true });
     if (!day.site) return safeJson({ error: { message: "The selected Delivered-In site was not found." } }, { status: 404 });
     if (day.cpuReview?.status !== "signed") return safeJson({ error: { message: "The site menu is locked until CPU has signed the allergen matrix." } }, { status: 409 });
-    const access = await resolveAccess(request);
     const previous = await latestSiteMenuArtifactHosted(body.oplocId, day.sourceDayId);
     const artifact = await createGoogleSiteMenu(day, day.site, access.access.email, previous?.driveFileId);
     await saveSiteMenuArtifactHosted(artifact);
