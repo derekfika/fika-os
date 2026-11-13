@@ -5,8 +5,9 @@ import test from "node:test";
 test("Hub CI keeps unit tests isolated and runs Firestore coverage in the emulator", () => {
   const workflow = readFileSync("../../.github/workflows/validate.yml", "utf8");
   const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
-  assert.match(workflow, /npm --prefix '\$\{\{ steps\.app\.outputs\.path \}\}' test/);
-  assert.doesNotMatch(workflow, /if: matrix\.app != 'hub'/);
+  const applicationTests = workflow.match(/  application-tests:[\s\S]*?(?=\n  hub-validation:)/)?.[0];
+  assert.ok(applicationTests, "the affected-application test lane must remain present");
+  assert.match(applicationTests, /- run: npm --prefix '\$\{\{ steps\.app\.outputs\.path \}\}' test\r?\n      - name: Shared contract tests/);
   assert.match(workflow, /firebase emulators:exec --only firestore --project demo-fika-os[^\n]+cd apps\/integration-hub && npm run test:emulator/);
   assert.match(workflow, /FIRESTORE_EMULATOR_HOST: 127\.0\.0\.1:8292/);
   assert.match(workflow, /Resolve pinned platform specs gitlink[\s\S]*?git ls-tree HEAD fika-platform-specs/);
@@ -14,8 +15,9 @@ test("Hub CI keeps unit tests isolated and runs Firestore coverage in the emulat
   assert.match(workflow, /id: app[\s\S]*?cache: npm[\s\S]*?cache-dependency-path:[\s\S]*?\$\{\{ steps\.app\.outputs\.path \}\}\/package-lock\.json/);
   assert.match(workflow, /hub-emulator:[\s\S]*?cache: npm[\s\S]*?apps\/integration-hub\/package-lock\.json/);
   assert.match(workflow, /application-tests:[\s\S]*?npm --prefix '\$\{\{ steps\.app\.outputs\.path \}\}' test/);
-  assert.match(workflow, /application-validation:[\s\S]*?run typecheck[\s\S]*?Build exact checked-out application source/);
-  assert.match(workflow, /merge-gate:[\s\S]*?needs: \[[^\]]*application-tests[^\]]*application-validation/);
+  assert.match(workflow, /if: matrix\.app != 'hub'[\s\S]*?run typecheck[\s\S]*?Build exact checked-out application source/);
+  assert.match(workflow, /hub-validation:[\s\S]*?needs: scope[\s\S]*?outputs\.hub == 'true'[\s\S]*?app: \[hub\][\s\S]*?run typecheck[\s\S]*?Build exact checked-out application source/);
+  assert.match(workflow, /merge-gate:[\s\S]*?needs: \[[^\]]*application-tests[^\]]*hub-validation/);
   // Node's test runner isolates test files in separate processes by default; do not disable that default.
   assert.doesNotMatch(packageJson.scripts.test, /--test-isolation=/);
   assert.match(packageJson.scripts.test, /--test-concurrency=(?:[2-9]|[1-9][0-9]+)/);

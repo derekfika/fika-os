@@ -133,14 +133,24 @@ jobs:
         env:
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8292
           FIKA_RUNTIME_MODE: local
-  application-validation:
+      - run: npm --prefix '${{ steps.app.outputs.path }}' run typecheck
+        if: matrix.app != 'hub'
+      - name: Build exact checked-out application source
+        if: matrix.app != 'hub'
+        env:
+          NODE_ENV: production
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          GITHUB_SHA="$SOURCE_SHA" npm --prefix '${{ steps.app.outputs.path }}' run build
+  hub-validation:
     needs: scope
-    if: needs.scope.outputs.apps != '[]'
+    if: needs.scope.outputs.hub == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        app: ${{ fromJSON(needs.scope.outputs.apps) }}
+        app: [hub]
     env:
       NODE_ENV: test
       FIREBASE_PROJECT_ID: demo-fika-os
@@ -226,7 +236,7 @@ jobs:
   merge-gate:
     name: Workflow / merge-gate
     if: always()
-    needs: [scope, tooling, source-workspaces-windows, application-tests, application-validation, hub-emulator]
+    needs: [scope, tooling, source-workspaces-windows, application-tests, hub-validation, hub-emulator]
     runs-on: ubuntu-latest
     steps:
       - name: Explicit success, failure or intentional skip
@@ -235,12 +245,12 @@ jobs:
           TOOLING: ${{ needs.tooling.result }}
           WINDOWS: ${{ needs.source-workspaces-windows.result }}
           APP_TESTS: ${{ needs.application-tests.result }}
-          APP_VALIDATION: ${{ needs.application-validation.result }}
+          HUB_VALIDATION: ${{ needs.hub-validation.result }}
           EMULATOR: ${{ needs.hub-emulator.result }}
         run: |
           test "$SCOPE" = success
           test "$TOOLING" = success
           test "$WINDOWS" = success
           case "$APP_TESTS" in success|skipped) ;; *) exit 1;; esac
-          case "$APP_VALIDATION" in success|skipped) ;; *) exit 1;; esac
+          case "$HUB_VALIDATION" in success|skipped) ;; *) exit 1;; esac
           case "$EMULATOR" in success|skipped) ;; *) exit 1;; esac
