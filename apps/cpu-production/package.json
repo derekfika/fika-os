@@ -8,7 +8,9 @@
     "build": "next build --webpack",
     "start": "next start -p 3400",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --test --test-concurrency=4 tests/*.test.ts tests/*.emulator.ts",
+    "test:unit": "tsx --test --test-concurrency=4 tests/*.test.ts",
+    "test:emulator": "tsx --test --test-concurrency=1 tests/production-plan-route-concurrency.emulator.ts",
     "test:dialog": "tsx --test tests/browser/run-sheet-dialog.spec.ts",
     "worker:durable-outbox": "tsx scripts/cpu-durable-outbox-worker.ts",
     "test:print": "tsx --test tests/print/*.test.ts"

@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       apps: ${{ steps.scope.outputs.apps }}
+      cpu: ${{ steps.scope.outputs.cpu }}
       hub: ${{ steps.scope.outputs.hub }}
       logistics: ${{ steps.scope.outputs.logistics }}
     steps:
@@ -30,7 +31,7 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           node tools/workflow/cli.mjs affected --base "$BASE" --head "$HEAD" --output /tmp/fika-scope.json
-          node --input-type=module -e 'import fs from "node:fs"; const v=JSON.parse(fs.readFileSync("/tmp/fika-scope.json")); const apps=v.apps; fs.appendFileSync(process.env.GITHUB_OUTPUT,`apps=${JSON.stringify(apps)}\nhub=${apps.includes("hub")}\nlogistics=${apps.includes("logistics")}\n`);'
+          node --input-type=module -e 'import fs from "node:fs"; const v=JSON.parse(fs.readFileSync("/tmp/fika-scope.json")); const apps=v.apps; fs.appendFileSync(process.env.GITHUB_OUTPUT,`apps=${JSON.stringify(apps)}\ncpu=${apps.includes("cpu")}\nhub=${apps.includes("hub")}\nlogistics=${apps.includes("logistics")}\n`);'
           git diff --check "$BASE" "$HEAD"
           node tools/workflow/cli.mjs changelog check --base "$BASE" --head "$HEAD"
   tooling:
@@ -108,14 +109,14 @@ jobs:
           repository: derekfika/fika-platform-specs
           ref: ${{ steps.platform-specs.outputs.sha }}
           path: fika-platform-specs
-      - name: Java for CPU and Ad-Hoc emulator tests
-        if: matrix.app == 'cpu' || matrix.app == 'adhoc'
+      - name: Java for Ad-Hoc emulator tests
+        if: matrix.app == 'adhoc'
         uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin
           java-version: '21'
-      - name: Firebase CLI for CPU and Ad-Hoc emulator tests
-        if: matrix.app == 'cpu' || matrix.app == 'adhoc'
+      - name: Firebase CLI for Ad-Hoc emulator tests
+        if: matrix.app == 'adhoc'
         run: npm install --global firebase-tools@15.30.2
       - name: Remove Integration Hub source so Ad-Hoc is proven independent of it
         if: matrix.app == 'adhoc'
@@ -123,6 +124,10 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix '${{ steps.app.outputs.path }}'
       - run: npm --prefix '${{ steps.app.outputs.path }}' test
+        if: matrix.app != 'cpu'
+      - name: CPU unit tests
+        if: matrix.app == 'cpu'
+        run: npm --prefix apps/cpu-production run test:unit
       - name: Shared contract tests (apps/shared/*.test.ts)
         if: matrix.app == 'cpu'
         run: find apps/shared -maxdepth 1 -name '*.test.ts' -print0 | sort -z | xargs -0 -r npm --prefix apps/cpu-production exec -- tsx --test
@@ -133,15 +138,69 @@ jobs:
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8292
           FIKA_RUNTIME_MODE: local
       - run: npm --prefix '${{ steps.app.outputs.path }}' run typecheck
-        if: matrix.app != 'hub' && matrix.app != 'logistics'
+        if: matrix.app != 'hub' && matrix.app != 'logistics' && matrix.app != 'cpu'
       - name: Build exact checked-out application source
-        if: matrix.app != 'hub' && matrix.app != 'logistics'
+        if: matrix.app != 'hub' && matrix.app != 'logistics' && matrix.app != 'cpu'
         env:
           NODE_ENV: production
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           GITHUB_SHA="$SOURCE_SHA" npm --prefix '${{ steps.app.outputs.path }}' run build
+  cpu-validation:
+    needs: scope
+    if: needs.scope.outputs.cpu == 'true'
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      FIREBASE_PROJECT_ID: demo-fika-os
+      FIKA_CPU_PLAN_STORE: memory
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/cpu-production/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix apps/cpu-production
+      - run: npm --prefix apps/cpu-production run typecheck
+      - name: Build exact checked-out CPU source
+        env:
+          NODE_ENV: production
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          GITHUB_SHA="$SOURCE_SHA" npm --prefix apps/cpu-production run build
+  cpu-emulator:
+    needs: scope
+    if: needs.scope.outputs.cpu == 'true'
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      FIREBASE_PROJECT_ID: demo-fika-os
+      FIKA_CPU_PLAN_STORE: memory
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/cpu-production/package-lock.json
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci && npm ci --prefix apps/cpu-production && npm install --global firebase-tools@15.30.2
+      - run: npm --prefix apps/cpu-production run test:emulator
   logistics-validation:
     needs: scope
     if: needs.scope.outputs.logistics == 'true'
@@ -273,7 +332,7 @@ jobs:
   merge-gate:
     name: Workflow / merge-gate
     if: always()
-    needs: [scope, tooling, source-workspaces-windows, application-tests, logistics-validation, hub-validation, hub-emulator]
+    needs: [scope, tooling, source-workspaces-windows, application-tests, cpu-validation, cpu-emulator, logistics-validation, hub-validation, hub-emulator]
     runs-on: ubuntu-latest
     steps:
       - name: Explicit success, failure or intentional skip
@@ -282,6 +341,8 @@ jobs:
           TOOLING: ${{ needs.tooling.result }}
           WINDOWS: ${{ needs.source-workspaces-windows.result }}
           APP_TESTS: ${{ needs.application-tests.result }}
+          CPU_VALIDATION: ${{ needs.cpu-validation.result }}
+          CPU_EMULATOR: ${{ needs.cpu-emulator.result }}
           LOGISTICS_VALIDATION: ${{ needs.logistics-validation.result }}
           HUB_VALIDATION: ${{ needs.hub-validation.result }}
           EMULATOR: ${{ needs.hub-emulator.result }}
@@ -290,6 +351,8 @@ jobs:
           test "$TOOLING" = success
           test "$WINDOWS" = success
           case "$APP_TESTS" in success|skipped) ;; *) exit 1;; esac
+          case "$CPU_VALIDATION" in success|skipped) ;; *) exit 1;; esac
+          case "$CPU_EMULATOR" in success|skipped) ;; *) exit 1;; esac
           case "$LOGISTICS_VALIDATION" in success|skipped) ;; *) exit 1;; esac
           case "$HUB_VALIDATION" in success|skipped) ;; *) exit 1;; esac
           case "$EMULATOR" in success|skipped) ;; *) exit 1;; esac
