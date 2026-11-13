@@ -1,5 +1,7 @@
 "use client";
 
+import { BuffetMenuPicker, BuffetSelectionSummary, useBuffetConfig } from "./BuffetMenuPicker";
+import { buffetPackageForItem, buffetPreviewIssue } from "../../lib/buffet-menu-client";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { quantityFromInput, quantityMinimumMessage, stepQuantityDown, stepQuantityUp } from "@/lib/quantity-entry";
 import { portalBookingId, type PortalMenuItem } from "@/lib/mnk-contract";
@@ -149,6 +151,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   const labels = flow === "all-day" ? allDayStepLabels : stepLabels;
   const [step, setStep] = useState(0);
   const [menu, setMenu] = useState<PortalMenuItem[]>([]);
+  const buffet = useBuffetConfig();
   const [menuLoading, setMenuLoading] = useState(true);
   const [visibility, setVisibility] = useState<RcoaServiceVisibility>();
   const [catalogueRefresh, setCatalogueRefresh] = useState(0);
@@ -314,7 +317,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
       const quantity = quantityFromInput(requested);
       const existing = current.lines.find((line) => line.itemId === item.id);
       const lines = quantity > 0
-        ? [...current.lines.filter((line) => line.itemId !== item.id), { itemId: item.id, quantity, choices: existing?.choices || {} }]
+        ? [...current.lines.filter((line) => line.itemId !== item.id), { ...existing, itemId: item.id, quantity, choices: existing?.choices || {} }]
         : current.lines.filter((line) => line.itemId !== item.id);
       return { ...current, lines };
     });
@@ -423,6 +426,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
   };
 
   const submitAllDay = async () => {
+    const buffetIssue = allDay.services.map(service => buffetPreviewIssue(service.lines, service.guestCount, buffet.config)).find(Boolean);
+    if (buffetIssue) { setMessage(buffetIssue); return; }
     if (!rcoaConfigured) { setMessage("RCoA booking is not available until the governed site mapping is configured."); return; }
     // Every service row is validated BEFORE anything is created.
     const failure = validateAllDay(allDay, menu, visibility);
@@ -482,6 +487,8 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
     if (!submitIntentRef.current) return;
     submitIntentRef.current = false;
     if (flow === "all-day") { await submitAllDay(); return; }
+    const buffetIssue = buffetPreviewIssue(draft.lines, draft.event.guestCount, buffet.config);
+    if (buffetIssue) { setMessage(buffetIssue); return; }
     const validation = validateRcoaStep(5, draft, menu, visibility);
     if (Object.keys(validation).length) {
       setErrors(validation);
@@ -759,6 +766,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
             {view === "menu" && (
               <section aria-labelledby="rcoa-menu-title">
                 {editingService && <div className={styles.pickerBanner} role="status"><strong>Choosing items for {editingService.startTime || "this service"} · {rcoaEventTypes.find((type) => type.id === editingService.category)?.label} · {editingService.guestCount} guests</strong>{warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}
+                {buffet.error && <p className={styles.formMessage} role="status">{buffet.error}</p>}
                 <div className={styles.menuHeading}>
                   <div className={styles.sectionHeading}><p className={styles.eyebrow}>Build your menu</p><h2 id="rcoa-menu-title">Choose what feels right.</h2></div>
                   <label className={styles.searchBox}><span>Search menu</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Try fruit, sushi or canapes" /></label>
@@ -781,11 +789,12 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                         <article key={item.canonicalId} className={styles.menuItem}>
                           <div className={styles.menuItemCopy}>
                             <p className={styles.eyebrow}>{item.category}</p><h3>{item.name}</h3>
-                            {item.description && <p>{item.description}</p>}
+                            {item.description && (!buffet.config || !buffetPackageForItem(buffet.config, item.id)) && <p>{item.description}</p>}
                             {item.servingInfo && <small>{item.servingInfo}</small>}
                             {item.unitPrice > 0 ? <strong>{money.format(item.unitPrice)} <small>{item.priceType === "per_item" ? "per item / stated serving" : ""}</small></strong> : <strong>Price on request</strong>}
                           </div>
                           <div className={styles.menuItemActions}>
+                            {line && line.quantity > 0 && <BuffetMenuPicker config={buffet.config} item={item} catalogue={menu} selectedItemIds={draft.lines.filter(value => value.quantity > 0).map(value => value.itemId)} guestCount={draft.event.guestCount} preview={line.buffetPreview} dietaryNotes={draft.dietaries.freeText} onSave={(target, preview, notes) => { setDraft(current => ({ ...current, lines: current.lines.map(value => value.itemId === item.id ? { ...value, itemId: target.id, quantity: current.event.guestCount, choices: item.id === target.id ? value.choices : {}, buffetPreview: preview } : value), dietaries: { ...current.dietaries, freeText: notes, hasDietaries: current.dietaries.hasDietaries || Boolean(notes.trim()) } })); if (flow === "all-day") setAllDay(current => ({ ...current, dietaries: { ...current.dietaries, freeText: notes, hasDietaries: current.dietaries.hasDietaries || Boolean(notes.trim()) } })); }} />}
                             {item.optionGroups?.map((group) => {
                               if (!line) return null;
                               const value = line.choices[group.id];
@@ -859,7 +868,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                         <div className={styles.reviewBlock} key={service.id}>
                           <h3>{service.startTime || "Time not set"} — {rcoaEventTypes.find((type) => type.id === service.category)?.label || "Service"}</h3>
                           <p>{service.guestCount || 0} guests · {service.location || "Location not set"}</p>
-                          {items.length ? items.map(({ line, item }) => <p key={item.id}>{line.quantity} × {item.name} · {money.format(item.unitPrice * line.quantity)}</p>) : <p>No menu items selected</p>}
+                          {items.length ? items.map(({ line, item }) => <div key={item.id}><p>{line.quantity} × {item.name} · {money.format(item.unitPrice * line.quantity)}</p><BuffetSelectionSummary config={buffet.config} preview={line.buffetPreview} /></div>) : <p>No menu items selected</p>}
                           {service.notes.trim() && <p>Note: {service.notes.trim()}</p>}
                         </div>
                       );
@@ -883,7 +892,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                 </div>
                 <div className={styles.reviewBlock}>
                   <h3>Menu selection</h3>
-                  {selected.length ? selected.map(({ line, item }) => <p key={item.id}>{line.quantity} × {item.name} · {money.format(item.unitPrice * line.quantity)}{item.optionGroups?.flatMap((group) => { const value = line.choices[group.id]; return Array.isArray(value) ? value : value ? [value] : []; }).length ? ` · ${item.optionGroups?.flatMap((group) => { const value = line.choices[group.id]; return Array.isArray(value) ? value : value ? [value] : []; }).join(", ")}` : ""}</p>) : <p>{currentEvent?.id === "bespoke" ? "Menu to be developed with the team." : "No menu items selected."}</p>}
+                  {selected.length ? selected.map(({ line, item }) => <div key={item.id}><p>{line.quantity} × {item.name} · {money.format(item.unitPrice * line.quantity)}{item.optionGroups?.flatMap((group) => { const value = line.choices[group.id]; return Array.isArray(value) ? value : value ? [value] : []; }).length ? ` · ${item.optionGroups?.flatMap((group) => { const value = line.choices[group.id]; return Array.isArray(value) ? value : value ? [value] : []; }).join(", ")}` : ""}</p><BuffetSelectionSummary config={buffet.config} preview={line.buffetPreview} /></div>) : <p>{currentEvent?.id === "bespoke" ? "Menu to be developed with the team." : "No menu items selected."}</p>}
                   <button type="button" className={styles.textButton} onClick={() => goToStep(3)}>Edit menu</button>
                 </div>
                 <div className={styles.reviewBlock}>
@@ -934,7 +943,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
               <>
             <div className={styles.summaryMeta}>{currentEvent?.label || "No occasion selected yet."}{draft.event.eventDate ? ` · ${draft.event.eventDate}` : ""}{draft.event.guestCount ? ` · ${draft.event.guestCount} guests` : ""}</div>
             <div className={styles.summaryItems}>
-              {selected.map(({ line, item }) => <div className={styles.summaryItem} key={item.id}><span>{line.quantity} × {item.name}</span><strong>{money.format(item.unitPrice * line.quantity)}</strong></div>)}
+              {selected.map(({ line, item }) => <div className={styles.summaryItem} key={item.id}><div>{line.quantity} × {item.name}<BuffetSelectionSummary config={buffet.config} preview={line.buffetPreview} /></div><strong>{money.format(item.unitPrice * line.quantity)}</strong></div>)}
               {!selected.length && <p>{draft.occasion === "bespoke" ? "Menu to be discussed with the team." : "Your menu choices will appear here."}</p>}
             </div>
             <div className={styles.summaryTotal}><span>Estimated total</span><strong>{money.format(total)}</strong></div>

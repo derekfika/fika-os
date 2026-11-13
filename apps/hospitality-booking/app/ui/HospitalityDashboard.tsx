@@ -14,12 +14,12 @@ import { dailyRunSheetHtml } from "../../lib/run-sheet";
 import { bookingRequestedItems } from "../../lib/booking-presentation";
 import { bookingLocation } from "../../lib/booking-location";
 import { quoteHtml } from "../../lib/quote-document";
-import { quoteBuffetMenu } from "../../lib/quote-buffet-menu";
 import { fetchQuoteRequest } from "../../lib/quote-request";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
 import { mnkMenuHtml } from "../../lib/mnk-menu-output";
 import type { MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";
+import { ProductionReplacementNotice } from "./ProductionReplacementNotice";
 import { HospitalityGroupDetail } from "./HospitalityGroupDetail";
 import { GroupItemChoices } from "./GroupAmendmentEditor";
 import { HospitalityAdminAddItem, HospitalityAdminAmendmentReview, hospitalityAdminMenu, staffDietaryField, type AmendmentCatalogue } from "./HospitalityAdminAmendmentReview";
@@ -492,7 +492,7 @@ export default function HospitalityDashboard({
   };
 
   const persistQuotePdf = async (booking: CanonicalBooking, quote: { id: string; revision: number }) => {
-    const saved = await saveQuoteDocument({ name: quoteFilename(booking.canonicalId, booking.client.companyName, "pdf"), html: quoteHtml(booking, await quoteBuffetMenu(booking)), canonicalId: booking.canonicalId });
+    const saved = await saveQuoteDocument({ name: quoteFilename(booking.canonicalId, booking.client.companyName, "pdf"), html: quoteHtml(booking), canonicalId: booking.canonicalId });
     const statusResponse = await fetchQuoteRequest("/api/dashboard-bookings", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -603,7 +603,7 @@ export default function HospitalityDashboard({
             revision.id === body.booking.quoteState?.currentRevisionId,
         );
         if (quote) {
-          const saved = await saveQuoteDocument({ name: quoteFilename(body.booking.canonicalId, body.booking.client.companyName, "pdf"), html: quoteHtml(body.booking, await quoteBuffetMenu(body.booking)), canonicalId: body.booking.canonicalId });
+          const saved = await saveQuoteDocument({ name: quoteFilename(body.booking.canonicalId, body.booking.client.companyName, "pdf"), html: quoteHtml(body.booking), canonicalId: body.booking.canonicalId });
           setActionStage("Recording quote status…");
           const statusResponse = await fetchQuoteRequest("/api/dashboard-bookings", {
             method: "POST",
@@ -1309,7 +1309,7 @@ export default function HospitalityDashboard({
                   </p>
                 )}
               </div>
-              {selectedGroup && <HospitalityGroupDetail group={selectedGroup} onBusyChange={busy => { actionInFlight.current = busy; setActionBusy(busy); }} site={site.key} oplocId={bookings.find(b => b.canonicalId === selectedGroup.services[0]?.bookingId)?.service.oplocId || ""} hospitalityAdmin={Boolean(adminOplocId)} onAmended={async () => { setServiceResults({}); setMatrixArtifacts({}); setMenuReadiness({}); await load(); }} busy={actionBusy} production={productionPanel} onQuote={() => void generateGroupQuote()} />}
+              {selectedGroup && <>{selectedGroup.services.map(service => { const booking = bookings.find(candidate => candidate.canonicalId === service.bookingId); return booking ? <ProductionReplacementNotice key={service.bookingId} booking={booking} serviceLabel={`${service.time} · ${service.serviceType.replaceAll("_", " ")}`} /> : null; })}<HospitalityGroupDetail group={selectedGroup} onBusyChange={busy => { actionInFlight.current = busy; setActionBusy(busy); }} site={site.key} oplocId={bookings.find(b => b.canonicalId === selectedGroup.services[0]?.bookingId)?.service.oplocId || ""} hospitalityAdmin={Boolean(adminOplocId)} onAmended={async () => { setServiceResults({}); setMatrixArtifacts({}); setMenuReadiness({}); await load(); }} busy={actionBusy} production={productionPanel} onQuote={() => void generateGroupQuote()} /></>}
               {selected ? (
                 <fieldset className={styles.actionControls} disabled={actionBusy} aria-busy={actionBusy} aria-label="Booking details and actions">
                 <BookingPane
@@ -1623,6 +1623,8 @@ function BookingPane({
 }) {
   if (amendment)
     return (
+      <>
+      <ProductionReplacementNotice booking={booking} />
       <BookingAmendmentPanel
         booking={booking}
         onKitchenNotesSaved={onKitchenNotesSaved}
@@ -1633,6 +1635,7 @@ function BookingPane({
         onCancel={onCancelAmendment}
         onSave={() => void onSaveAmendment()}
       />
+      </>
     );
   return (
     <BookingDetail
@@ -1805,6 +1808,7 @@ function BookingDetail({
           <StatusPill status={booking.lifecycleStatus} label={standaloneStatusLabel(booking, productionOrder)} />
         </div>
       </header>
+      <ProductionReplacementNotice booking={booking} />
       <section className="booking-detail__location" aria-labelledby={`booking-location-${booking.canonicalId}`}>
         <p id={`booking-location-${booking.canonicalId}`} className="booking-detail__location-title">Location</p>
         <dl className="booking-detail__location-grid">
