@@ -204,7 +204,7 @@ test("historical v1 quote retains its frozen dessert quantities", () => {
   assert.match(html, /Selected desserts: 30 ×/);
 });
 
-const emulatorEnabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os" && ["127.0.0.1:8085", "127.0.0.1:8292"].includes(process.env.FIRESTORE_EMULATOR_HOST || "") && (process.env.FIKA_RUNTIME_MODE || "local") === "local";
+const emulatorEnabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os" && process.env.FIRESTORE_EMULATOR_HOST === "127.0.0.1:8292" && (process.env.FIKA_RUNTIME_MODE || "local") === "local";
 test("emulator: explicit buffet handoff freezes choice, quote, dietaries and one event across replay", { skip: !emulatorEnabled }, async () => {
   const suffix = crypto.randomUUID();
   const bookingId = `booking:buffet-rules:${suffix}`;
