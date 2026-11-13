@@ -1,7 +1,7 @@
 import { hospitalityCatalogues } from "@fika/server-shared/hospitality-catalogue";
 import { validateCatalogueRules, type RuleItem, type CatalogueRules } from "@fika/server-shared/hospitality-effective-offering";
 import { isGallagherBooking } from "./gallagher-rules";
-import { HOT_FORK_BUFFET_CHOICE_ID, assertHotForkBuffetCustomerSubmission, buffetPackageForItem, hotForkBuffetChoice } from "@fika/server-shared/hospitality-buffet-selection";
+import { HOT_FORK_BUFFET_CHOICE_ID, assertHotForkBuffetCustomerSubmission, hotForkBuffetChoice } from "@fika/server-shared/hospitality-buffet-selection";
 import type { CanonicalRecord } from "./types";
 import type { MnkBookingPayload } from "./hospitality-booking-service";
 
@@ -18,9 +18,8 @@ export function trustedPublicOrder(payload: MnkBookingPayload, records: Canonica
   // identities while the server owns its validation and approval state.
   for (const { line, record } of governed) {
     const selection = hotForkBuffetChoice(line.choices);
-    const packageId = buffetPackageForItem(record?.canonicalId || line.itemId);
-    if (packageId && ["rcoa", "mnk"].includes(site) && process.env.FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED === "true" && !selection)
-      return refuse("Choose Menu is required for this Hot Fork Buffet package; ordering is awaiting package rule approval.");
+    // An absent selection is the established menu-on-request purchase. Only a
+    // submitted structured menu enters the new selector rules boundary.
     if (selection && line.quantity !== payload.event.guestCount) return refuse("Buffet package quantity must equal the guest count.");
     if (selection) assertHotForkBuffetCustomerSubmission(selection.value, record?.canonicalId || line.itemId, payload.event.guestCount);
   }

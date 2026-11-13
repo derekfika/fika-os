@@ -126,7 +126,7 @@ export function assertHotForkBuffetCustomerSubmission(raw: unknown, itemId: stri
   return selection;
 }
 
-/** Historical lines may receive contact-only edits; a new or changed package needs an approved selection. */
+/** Keep menu-on-request amendments available while protecting saved selector evidence. */
 export function assertHotForkBuffetAmendment(input: {
   itemId: string;
   selection?: BuffetChoice;
@@ -136,11 +136,9 @@ export function assertHotForkBuffetAmendment(input: {
   previousQuantity?: number;
   guestCount: number;
   previousGuestCount: number;
-  selectorEnabled: boolean;
 }): void {
   if (input.priorSelection && !input.selection) return invalid("An existing buffet selection cannot be silently removed from its package line.");
   const changed = !input.previousItemExists || input.quantity !== input.previousQuantity || input.guestCount !== input.previousGuestCount;
-  if (input.selectorEnabled && buffetPackageForItem(input.itemId) && !input.selection && changed) return invalid("Choose a Hot Fork Buffet menu before changing its guest count or package line.");
   if (input.selection && (changed || JSON.stringify(input.selection) !== JSON.stringify(input.priorSelection))) {
     if (input.quantity !== input.guestCount) return invalid("Buffet package quantity must equal the guest count.");
     assertHotForkBuffetCustomerSubmission(input.selection.value, input.itemId, input.guestCount);
@@ -154,19 +152,3 @@ export function hotForkBuffetChoice(choices: readonly unknown[] | undefined): Bu
 }
 
 export function hotForkBuffetDish(id: string): BuffetDish | undefined { return dishById.get(id); }
-
-/** Read-only booking evidence for planners; this never allocates Menu Planning portions. */
-export function hotForkBuffetSelectionDetails(raw: unknown) {
-  const parsed = HotForkBuffetTransportSelectionSchema.safeParse(raw);
-  if (!parsed.success) return undefined;
-  const selection = parsed.data;
-  const currentMenu = selection.menuVersion === HOT_FORK_BUFFET_MENU_VERSION;
-  const label = (dishId: string) => currentMenu ? dishById.get(dishId)?.name || dishId : dishId;
-  return {
-    menuVersion: selection.menuVersion,
-    menuStatus: currentMenu ? "current" as const : "historical-menu-unavailable" as const,
-    mains: selection.mains.map(main => ({ dishId: main.dishId, name: label(main.dishId), portions: main.portions })),
-    salads: selection.saladIds.map(dishId => ({ dishId, name: label(dishId), portionStatus: "manual-confirmation-required" as const })),
-    desserts: selection.desserts.map(dessert => ({ dishId: dessert.dishId, name: label(dessert.dishId), portions: dessert.portions })),
-  };
-}

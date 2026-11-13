@@ -9,7 +9,6 @@ import {
   assertHotForkBuffetAmendment,
   assertHotForkBuffetCustomerSubmission,
   hotForkBuffetMenu,
-  hotForkBuffetSelectionDetails,
   validateHotForkBuffetDraft,
   type BuffetSelection,
 } from "@fika/server-shared/hospitality-buffet-selection";
@@ -88,16 +87,6 @@ test("confirmed main, salad and dessert draft rules validate exact source IDs an
   assert.equal(HotForkBuffetChoiceSchema.safeParse({ id: HOT_FORK_BUFFET_CHOICE_ID, value: { ...gold(), dietaryRequirements: "duplicate free text" } }).success, false);
 });
 
-test("planner demand detail resolves source names without allocating salad or pending dessert portions", () => {
-  const details = hotForkBuffetSelectionDetails(gold());
-  assert.equal(details?.mains[0].name, dishes.find(dish => dish.id === gold().mains[0].dishId)?.name);
-  assert.equal(details?.mains[0].portions, 36);
-  assert.equal(details?.salads[0].portionStatus, "manual-confirmation-required");
-  const pending = { ...gold(), packageId: "silver" as const, desserts: [{ dishId: id("dessert", 0), portions: null }] };
-  assert.equal(hotForkBuffetSelectionDetails(pending)?.desserts[0].portions, null);
-  assert.equal(hotForkBuffetSelectionDetails({ ...gold(), menuVersion: "historical-version" })?.menuStatus, "historical-menu-unavailable");
-});
-
 function bookingPayload(choices?: unknown[]): MnkBookingPayload {
   return {
     bookingId: "buffet-test-1", submittedAt: "2026-11-13T12:00:00.000Z", siteId: "rcoa",
@@ -107,31 +96,36 @@ function bookingPayload(choices?: unknown[]): MnkBookingPayload {
   };
 }
 
-test("selector-enabled Hub blocks missing and unapproved menu choices before a booking write", () => {
+test("staging keeps menu-on-request ordering and rejects unapproved structured choices", () => {
   const previous = process.env.FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED;
   process.env.FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED = "true";
   try {
-    assert.throws(() => trustedPublicOrder(bookingPayload(), [], "rcoa"), /Choose Menu is required/);
+    const legacyGold = trustedPublicOrder(bookingPayload(), [], "rcoa");
+    assert.equal(legacyGold.items[0].unitPrice, 28);
+    assert.equal(legacyGold.items[0].choices, undefined);
+    const silverPayload = bookingPayload(); silverPayload.order.items[0].itemId = silverItem;
+    assert.equal(trustedPublicOrder(silverPayload, [], "rcoa").items[0].unitPrice, 20);
     assert.throws(() => trustedPublicOrder(bookingPayload([{ id: HOT_FORK_BUFFET_CHOICE_ID, value: gold() }]), [], "rcoa"), /awaiting package rule approval/);
+    assert.throws(() => trustedPublicOrder(bookingPayload([{ id: HOT_FORK_BUFFET_CHOICE_ID, value: { ...gold(), mains: [] } }]), [], "rcoa"), /malformed/);
   } finally {
     if (previous === undefined) delete process.env.FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED;
     else process.env.FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED = previous;
   }
 });
 
-test("amendment gate rejects new or increased buffet lines without a menu", () => {
-  const unchanged = { itemId: goldItem, previousItemExists: true, quantity: 60, previousQuantity: 60, guestCount: 60, previousGuestCount: 60, selectorEnabled: true };
+test("menu-on-request amendments remain available without accepting a new selector choice", () => {
+  const unchanged = { itemId: goldItem, previousItemExists: true, quantity: 60, previousQuantity: 60, guestCount: 60, previousGuestCount: 60 };
   assert.doesNotThrow(() => assertHotForkBuffetAmendment(unchanged));
-  assert.throws(() => assertHotForkBuffetAmendment({ ...unchanged, previousItemExists: false, previousQuantity: undefined }), /Choose a Hot Fork Buffet menu/);
-  assert.throws(() => assertHotForkBuffetAmendment({ ...unchanged, quantity: 72 }), /Choose a Hot Fork Buffet menu/);
-  assert.throws(() => assertHotForkBuffetAmendment({ ...unchanged, guestCount: 72 }), /Choose a Hot Fork Buffet menu/);
+  assert.doesNotThrow(() => assertHotForkBuffetAmendment({ ...unchanged, previousItemExists: false, previousQuantity: undefined }));
+  assert.doesNotThrow(() => assertHotForkBuffetAmendment({ ...unchanged, quantity: 72 }));
+  assert.doesNotThrow(() => assertHotForkBuffetAmendment({ ...unchanged, guestCount: 72 }));
   assert.doesNotThrow(() => assertHotForkBuffetAmendment({ ...unchanged, itemId: "standard-lunch", quantity: 72 }));
-  assert.doesNotThrow(() => assertHotForkBuffetAmendment({ ...unchanged, selectorEnabled: false, quantity: 72 }));
+  assert.throws(() => assertHotForkBuffetAmendment({ ...unchanged, selection: { id: HOT_FORK_BUFFET_CHOICE_ID, value: gold() } }), /awaiting package rule approval/);
 });
 
 test("amendment gate preserves a historical menu but requires approval for material changes", () => {
   const choice = { id: HOT_FORK_BUFFET_CHOICE_ID, value: gold() } as const;
-  const prior = { itemId: goldItem, previousItemExists: true, quantity: 60, previousQuantity: 60, guestCount: 60, previousGuestCount: 60, selectorEnabled: true, selection: choice, priorSelection: choice };
+  const prior = { itemId: goldItem, previousItemExists: true, quantity: 60, previousQuantity: 60, guestCount: 60, previousGuestCount: 60, selection: choice, priorSelection: choice };
   assert.doesNotThrow(() => assertHotForkBuffetAmendment(prior));
   assert.throws(() => assertHotForkBuffetAmendment({ ...prior, selection: undefined }), /cannot be silently removed/);
   assert.throws(() => assertHotForkBuffetAmendment({ ...prior, quantity: 72 }), /quantity must equal the guest count/);

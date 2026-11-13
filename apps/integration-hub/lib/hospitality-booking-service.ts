@@ -12,7 +12,7 @@ import { trustedPublicOrder } from "./hospitality-price-trust";
 import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, loadRcoaBookingCatalogue, mnkBookingPricingRecords, rcoaBookingConstraintRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
 import { isHotForkBuffetBooking } from "../../shared/hot-fork-buffet";
-import { assertHotForkBuffetAmendment, hotForkBuffetChoice, hotForkBuffetSelectionDetails } from "@fika/server-shared/hospitality-buffet-selection";
+import { assertHotForkBuffetAmendment, hotForkBuffetChoice } from "@fika/server-shared/hospitality-buffet-selection";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
 import type { CanonicalRecord } from "./types";
@@ -1085,38 +1085,6 @@ async function productionOrdersForBookings(bookingIds: string[]) {
   return latest;
 }
 
-export async function hotForkBuffetDemand(fromDate: string, toDateExclusive: string, oplocIds: readonly string[]) {
-  const validDate = (value: string) => { const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00Z`) : undefined; return Boolean(date && !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value); };
-  if (!validDate(fromDate) || !validDate(toDateExclusive) || toDateExclusive <= fromDate || (Date.parse(`${toDateExclusive}T00:00:00Z`) - Date.parse(`${fromDate}T00:00:00Z`)) > 7 * 86_400_000)
-    throw Object.assign(new Error("Demand must use a valid service-date range of seven days or fewer."), { status: 422 });
-  const allowedOplocs = new Set(oplocIds.filter(Boolean));
-  if (!allowedOplocs.size) return { bookings: [] };
-  const snapshot = await bookings().where("service.eventDate", ">=", fromDate).where("service.eventDate", "<", toDateExclusive).orderBy("service.eventDate", "asc").limit(501).get();
-  recordDataAccess({ app: "integration-hub", operation: "hospitality.hot-fork-buffet.demand", source: "FIRESTORE", dataset: "fikaBookings", documents: snapshot.size, estimatedBillableReads: snapshot.size, firestoreReadKind: "query" });
-  if (snapshot.size > 500) throw Object.assign(new Error("The selected menu week has too many bookings for a complete demand view."), { status: 503 });
-  const bookingsForDemand = snapshot.docs.map(document => document.data() as CanonicalBooking)
-    .filter(booking => allowedOplocs.has(booking.service.oplocId || "") && isHotForkBuffetBooking(booking))
-    .sort((left, right) => left.service.eventDate.localeCompare(right.service.eventDate) || left.service.startTime.localeCompare(right.service.startTime) || left.canonicalId.localeCompare(right.canonicalId));
-  return { bookings: bookingsForDemand.map(booking => ({
-    bookingId: booking.canonicalId,
-    bookingReference: booking.source.sourceBookingId,
-    serviceDate: booking.service.eventDate,
-    serviceTime: booking.service.startTime,
-    oplocId: booking.service.oplocId,
-    siteName: booking.service.portalSiteLabel || booking.service.portalSiteId || booking.service.oplocId,
-    clientName: booking.client.companyName || booking.client.clientName || booking.client.requester?.name || "Client",
-    guestCount: booking.service.guestCount,
-    bookingStatus: booking.lifecycleStatus,
-    cancelled: booking.lifecycleStatus === "Cancelled",
-    alreadyHandedToCpu: ["Sent to CPU", "Approved", "Completed"].includes(booking.lifecycleStatus),
-    portionAllocationStatus: "manual-review-required" as const,
-    ...(booking.order.items.flatMap(item => {
-      const choice = hotForkBuffetChoice(item.choices);
-      return choice ? [{ selectedMenu: structuredClone(choice.value), selectedMenuDetails: hotForkBuffetSelectionDetails(choice.value) }] : [];
-    })[0] || {}),
-  })) };
-}
-
 export async function bookingWorkspace(siteId?: string, authorisedOplocId?: string, includeArchive = false) {
   const today = londonBusinessDate();
   if (siteId && authorisedOplocId) {
@@ -1342,7 +1310,6 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
       itemId: prior?.menuItemId || item.itemId, selection, priorSelection,
       previousItemExists: Boolean(prior), quantity: item.quantity, previousQuantity: prior?.quantity,
       guestCount: patch.service.guestCount, previousGuestCount: current.service.guestCount,
-      selectorEnabled: process.env.FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED === "true" && ["rcoa", "mnk"].includes(current.service.portalSiteId || ""),
     });
   }
   if (!items.length && current.order.items.length > 0)

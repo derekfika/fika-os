@@ -74,6 +74,7 @@ test("RCoA Hot Fork Buffet handoff notices are deterministic per version and con
   assert.match(first.text, /2026-11-12[\s\S]*12:30[\s\S]*RCoA Client[\s\S]*94[\s\S]*RCOA-20261112090000-AB12/);
   assert.deepEqual(first.to, []);
   assert.equal(first.sourceReference, "production-order-v1");
+  assert.doesNotMatch(first.text + first.html, /hospitality-menu-preview|Menu preview|Preview client menu/);
   assert.match(amendment.text, /Changed booking date: 2026-11-12 → 2026-11-13/);
   assert.match(amendment.text, /Changed guest count: 94 → 96/);
 });

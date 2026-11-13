@@ -4,7 +4,6 @@ import {
   addMenuSlot,
   addOneOffDestination,
   batchUpdateEntries,
-  confirmHospitalityDemandAllocation,
   cleanDuplicateEntries,
   createEntry,
   createOrReuseBlankWeek,
@@ -89,7 +88,10 @@ function scopedSnapshot(
           snapshot.entries.find((candidate) => candidate.id === entry.id)
             ?.allocations.length,
     );
-  return { ...snapshot, week: { ...snapshot.week, hospitalityDemandAllocations: snapshot.week.hospitalityDemandAllocations?.filter(item => actor.allOplocs || actorCanAccessOploc(actor, item.oplocId)) }, entries };
+  // Historical demand review evidence remains in stored weeks but is no longer
+  // projected into Menu Planning's active API after buffet moved directly to CPU.
+  const { hospitalityDemandAllocations: _historicalDemand, ...week } = snapshot.week as typeof snapshot.week & { hospitalityDemandAllocations?: unknown };
+  return { ...snapshot, week, entries };
 }
 
 function assertSnapshotScope(
@@ -348,23 +350,6 @@ async function handlePost(request: NextRequest) {
     }
     if (action === "set-hospitality-availability") {
       const result = await setWeekAvailableToHospitality(String(body.weekId || ""), Number(body.expectedWeekVersion), body.available === true, actor.uid);
-      const snapshot = await getWeek(result.week.id);
-      return NextResponse.json({ snapshot: scopedSnapshot(snapshot, actor), weeks: await listWeeks(), changed: result.changed, publicationState: await publicationState(snapshot, liveOplocs) });
-    }
-    if (action === "confirm-hospitality-demand-allocation") {
-      const serviceDate = String(body.serviceDate || "");
-      const oplocId = String(body.oplocId || "");
-      assertActorCanAccessOploc(actor, oplocId);
-      const end = new Date(`${serviceDate}T00:00:00Z`);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(serviceDate) || Number.isNaN(end.getTime())) throw Object.assign(new Error("A valid booking service date is required."), { status: 422 });
-      end.setUTCDate(end.getUTCDate() + 1);
-      const query = new URLSearchParams({ from: serviceDate, to: end.toISOString().slice(0, 10), oplocId });
-      const response = await fetch(`${request.nextUrl.origin}/api/hospitality-buffet-demand?${query}`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(8_000) });
-      if (!response.ok) throw Object.assign(new Error("Live Hospitality demand could not be verified."), { status: response.status });
-      const demand = await response.json() as { bookings?: Array<{ bookingId: string; guestCount: number; serviceDate: string; oplocId: string; cancelled: boolean; alreadyHandedToCpu: boolean }> };
-      const bookings = (demand.bookings || []).filter(booking => booking.serviceDate === serviceDate && booking.oplocId === oplocId && !booking.cancelled);
-      if (!bookings.length || bookings.some(booking => booking.alreadyHandedToCpu)) throw Object.assign(new Error("Active, not-yet-handed-off bookings are required. Review any CPU handoffs separately."), { status: 409 });
-      const result = await confirmHospitalityDemandAllocation(String(body.weekId || ""), Number(body.expectedWeekVersion), serviceDate, oplocId, bookings.map(booking => ({ bookingId: booking.bookingId, guestCount: booking.guestCount })), actor.uid);
       const snapshot = await getWeek(result.week.id);
       return NextResponse.json({ snapshot: scopedSnapshot(snapshot, actor), weeks: await listWeeks(), changed: result.changed, publicationState: await publicationState(snapshot, liveOplocs) });
     }
