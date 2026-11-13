@@ -6,6 +6,7 @@ import { driveAccessToken, resolveDriveOwner } from "@fika/server-shared/drive-o
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { MenuArtifactError, publishMenuArtifact, resolveMenuTemplate } from "@fika/server-shared/menu-artifact";
 import { deliveredInMenuFromDay, deliveredInMenuSiteKey } from "./menu-adapter";
+import { siteMenuDriveConfig } from "./site-menu-drive-config";
 
 type OAuthClient = { installed?: { client_id: string; client_secret: string; token_uri?: string } };
 type OAuthToken = { access_token?: string; refresh_token?: string; expiry_date?: number; token_type?: string };
@@ -68,9 +69,8 @@ export function buildDeliveredInMenuRequests(day: ProjectedDay, site: Site, pres
 async function createSharedSiteMenu(day: ProjectedDay, site: Site, generatedBy: string, deliveryId?: string): Promise<SiteMenuArtifact> {
   const menu = deliveredInMenuFromDay(day, site);
   const template = resolveMenuTemplate({ siteKey: menu.siteKey, oplocId: site.oplocId });
-  const folderId = resourceId(process.env.GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID_APP_DELIVERED_IN);
-  if (!folderId) throw new MenuArtifactError("MENU_OUTPUT_FOLDER_NOT_CONFIGURED", "The Delivered-In menu output folder is not configured (GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID).", 409);
-  const token = await accessToken(); const headers = { Authorization: `Bearer ${token}` };
+  const { owner, folderId } = siteMenuDriveConfig(site.oplocId);
+  const token = await driveAccessToken(resolveDriveOwner(owner)); const headers = { Authorization: `Bearer ${token}` };
   const outputFolderId = await weekFolderId(folderId, day.weekCommencing || "", { ...headers, "content-type": "application/json" });
   const published = await publishMenuArtifact({ menu, template, folderId: outputFolderId, headers });
   const release = (day as ProjectedDay & { sourceLineage?: { cpu?: { releaseId?: string; releaseVersion?: string; contentHash?: string } } }).sourceLineage?.cpu;
