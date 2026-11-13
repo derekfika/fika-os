@@ -2,7 +2,7 @@
 export const APPROVED_STAGING_DRIVE_ROOT = "1B3oV4dmb3UpwTPRDjJ4B0hES1rRL1M5z";
 const scope = "https://www.googleapis.com/auth/drive";
 const id = /^[A-Za-z0-9_-]{1,200}$/;
-export function stagingDriveSettings(env: NodeJS.ProcessEnv = process.env) {
+export function stagingDriveSettings(env: Readonly<Record<string, string | undefined>> = process.env) {
   if (env.FIKA_RUNTIME_MODE !== "staging" || env.FIKA_STAGING_DRIVE_ENABLED !== "true") throw Error("Staging Drive is disabled.");
   const projects = [env.FIREBASE_PROJECT_ID, env.GOOGLE_CLOUD_PROJECT, env.GCLOUD_PROJECT].filter(Boolean);
   if (env.FIREBASE_CONFIG) projects.push(JSON.parse(env.FIREBASE_CONFIG).projectId);
@@ -21,7 +21,7 @@ async function json<T>(response: Response): Promise<T> {
   if (!response.ok) throw Error(`Staging Drive verification failed (${response.status}).`);
   return response.json() as Promise<T>;
 }
-export async function stagingDriveSession(env: NodeJS.ProcessEnv = process.env, fetcher: typeof fetch = fetch) {
+export async function stagingDriveSession(env: Readonly<Record<string, string | undefined>> = process.env, fetcher: typeof fetch = fetch) {
   const settings = stagingDriveSettings(env);
   const options = { redirect: "error" as const, signal: AbortSignal.timeout(5000), cache: "no-store" as const };
   const metadata = await fetcher("http://metadata.google.internal/computeMetadata/v1/project/project-id", { ...options, headers: { "Metadata-Flavor": "Google" } });
