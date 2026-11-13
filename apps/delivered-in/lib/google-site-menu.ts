@@ -6,6 +6,7 @@ import { driveAccessToken, resolveDriveOwner } from "@fika/server-shared/drive-o
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { MenuArtifactError, publishMenuArtifact, resolveMenuTemplate } from "@fika/server-shared/menu-artifact";
 import { deliveredInMenuFromDay, deliveredInMenuSiteKey } from "./menu-adapter";
+import { siteMenuDriveConfig } from "./site-menu-drive-config";
 
 type OAuthClient = { installed?: { client_id: string; client_secret: string; token_uri?: string } };
 type OAuthToken = { access_token?: string; refresh_token?: string; expiry_date?: number; token_type?: string };
@@ -22,7 +23,7 @@ async function assertFolder(folderId: string, headers: Record<string, string>) {
 export function weekFolderName(weekCommencing?: string) { return weekCommencing ? `WC_${weekCommencing}` : undefined; }
 async function weekFolderId(rootFolderId: string, weekCommencing: string, headers: Record<string, string>) { const name = weekFolderName(weekCommencing); if (!name) return rootFolderId; await assertFolder(rootFolderId, headers); const query = `'${rootFolderId}' in parents and name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`; const existing = await json<{ files?: Array<{ id: string }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id)&pageSize=1`, { headers }, "Delivered-In week folder lookup")); if (existing.files?.[0]?.id) return existing.files[0].id; const created = await json<{ id: string }>(await googleFetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id", { method: "POST", headers, body: JSON.stringify({ name, parents: [rootFolderId], mimeType: "application/vnd.google-apps.folder" }) }, "Delivered-In week folder creation")); return created.id; }
 async function trashDriveFile(fileId: string, headers: Record<string, string>) { await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?supportsAllDrives=true`, { method: "PATCH", headers, body: JSON.stringify({ trashed: true }) }, "Delivered-In previous menu replacement"); }
-export async function retireGoogleSiteMenu(fileId?: string) { if (!fileId) return; const token = await accessToken(); await trashDriveFile(fileId, { Authorization: `Bearer ${token}`, "content-type": "application/json" }); }
+export async function retireGoogleSiteMenu(fileId?: string, oplocId?: string) { if (!fileId) return; const token = oplocId ? await driveAccessToken(resolveDriveOwner(siteMenuDriveConfig(oplocId).owner)) : await accessToken(); await trashDriveFile(fileId, { Authorization: `Bearer ${token}`, "content-type": "application/json" }); }
 function slideText(slide: NonNullable<Presentation["slides"]>[number]) { return (slide.pageElements || []).flatMap(element => element.shape?.text?.textElements || []).map(element => element.textRun?.content || "").join(""); }
 function titleCase(value: string) { return value.trim().toLocaleLowerCase("en-GB").replace(/(^|[^A-Za-zÀ-ÿ])([a-zà-ÿ])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toLocaleUpperCase("en-GB")}`); }
 function declaredAllergens(dayEntry: ProjectedDay["entries"][number]) { return [...CANONICAL_ALLERGEN_COLUMNS.filter(([key]) => key !== "no_key_allergens" && (dayEntry.allergens[key] === "contains" || dayEntry.allergens[key] === "may_contain")).map(([, label]) => String(label)), ...(dayEntry.allergenDetailNotes?.trim() ? [`Specific allergens: ${dayEntry.allergenDetailNotes.trim()}`] : []), ...(dayEntry.mayContainNotes?.trim() ? [`May contain: ${dayEntry.mayContainNotes.trim()}`] : [])]; }
@@ -68,9 +69,8 @@ export function buildDeliveredInMenuRequests(day: ProjectedDay, site: Site, pres
 async function createSharedSiteMenu(day: ProjectedDay, site: Site, generatedBy: string, deliveryId?: string): Promise<SiteMenuArtifact> {
   const menu = deliveredInMenuFromDay(day, site);
   const template = resolveMenuTemplate({ siteKey: menu.siteKey, oplocId: site.oplocId });
-  const folderId = resourceId(process.env.GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID_APP_DELIVERED_IN);
-  if (!folderId) throw new MenuArtifactError("MENU_OUTPUT_FOLDER_NOT_CONFIGURED", "The Delivered-In menu output folder is not configured (GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID).", 409);
-  const token = await accessToken(); const headers = { Authorization: `Bearer ${token}` };
+  const { owner, folderId } = siteMenuDriveConfig(site.oplocId);
+  const token = await driveAccessToken(resolveDriveOwner(owner)); const headers = { Authorization: `Bearer ${token}` };
   const outputFolderId = await weekFolderId(folderId, day.weekCommencing || "", { ...headers, "content-type": "application/json" });
   const published = await publishMenuArtifact({ menu, template, folderId: outputFolderId, headers });
   const release = (day as ProjectedDay & { sourceLineage?: { cpu?: { releaseId?: string; releaseVersion?: string; contentHash?: string } } }).sourceLineage?.cpu;
