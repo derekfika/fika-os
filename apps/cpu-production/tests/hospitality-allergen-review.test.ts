@@ -164,14 +164,15 @@ test("an outstanding Hub synchronisation is shown from the stored plan on load, 
   assert.match(component, /role="alert" aria-labelledby="matrix-hub-pending-title"/);
 });
 
-test("the Hospitality production panel links to this order's own signed allergen checker, found by stable order ID", () => {
+test("the Hospitality production panel exposes its own signed allergen checker through the scoped PDF route", () => {
   const panel = read("../app/ui/HospitalityProductionDetail.tsx");
-  assert.match(panel, /\/api\/production-plan\?orderId=\$\{encodeURIComponent\(orderId\)\}/);
-  assert.match(panel, /body\.matrixStatus === "ready" && url/);
-  assert.match(panel, /Open signed allergen checker \(PDF\)/);
-  assert.match(panel, /rel="noopener noreferrer"/);
-  assert.match(panel, /could not be saved to Drive/);
-  assert.match(panel, /Not signed yet/);
+  assert.match(panel, /<SignedAllergenPdfAction orderId=\{order\.canonicalId\} \/>/);
+  const action = read("../app/ui/SignedAllergenPdfAction.tsx");
+  assert.match(action, /\/api\/signed-allergen-pdf\?orderId=\$\{encodeURIComponent\(orderId\)\}/);
+  assert.match(action, /View \/ Print signed allergens \(PDF\)/);
+  assert.match(action, /rel="noopener noreferrer"/);
+  assert.match(action, /role="status"/);
+  assert.match(action, /unavailable/);
 });
 
 test("once signed, the retry actions also complete a pending Hub Planned sync (idempotent, verified by completeLifecycleSync)", () => {
