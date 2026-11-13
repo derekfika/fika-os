@@ -1,4 +1,6 @@
 "use client";
+import { BuffetAmendmentSelector, buffetAmendmentIssue, hasBuffetLine, BuffetDietaryFields, isBuffetDietaryField } from "./BuffetAmendmentSelector";
+import { useBuffetConfig } from "./BuffetMenuPicker";
 
 import { BookingDatePicker, useBookingClock } from "./BookingDatePicker";
 import { RcoaLocationFields } from "./RcoaLocationFields";
@@ -62,6 +64,7 @@ type AmendmentProgress = {
   currentStep: number;
   error?: string;
   staffOverride?: boolean;
+  manualHandoff?: boolean;
   steps: Array<{ label: string; state: "pending" | "active" | "complete" | "error"; detail?: string }>;
 };
 const inboxScanSteps: Array<{ key: Exclude<InboxScanPhase, "complete" | "error">; label: string }> = [
@@ -827,7 +830,8 @@ export default function HospitalityDashboard({
       notes: booking.notes || "",
       deliveryChargeRequired: booking.deliveryChargeRequired !== false,
       reason: "",
-      ...(adminOplocId ? { adminOplocId, dietaries: structuredClone(booking.dietaries) } : {}),
+      ...(adminOplocId ? { adminOplocId } : {}),
+      ...(adminOplocId || hasBuffetLine(order.items) ? { dietaries: structuredClone(booking.dietaries) } : {}),
     });
   };
   const saveAmendment = async () => {
@@ -837,7 +841,8 @@ export default function HospitalityDashboard({
       return;
     }
     const staffOverride = Boolean(amendment.adminOplocId);
-    const steps = staffOverride ? ["Save amended booking"] : [
+    const manualBuffetHandoff = hasBuffetLine(selected.order.items) || hasBuffetLine(amendment.order.items);
+    const steps = staffOverride || manualBuffetHandoff ? ["Save amended booking"] : [
       "Save amended booking",
       "Regenerate quote",
       "Save quote PDF",
@@ -849,6 +854,7 @@ export default function HospitalityDashboard({
       status: "running",
       currentStep: 0,
       staffOverride,
+      manualHandoff: manualBuffetHandoff,
       steps: steps.map((label, index) => ({ label, state: index === 0 ? "active" : "pending" })),
     });
     const setStep = (index: number, state: AmendmentProgress["steps"][number]["state"], detail?: string) => {
@@ -875,12 +881,12 @@ export default function HospitalityDashboard({
         action: "amend",
         reason: amendment.reason,
         ...(staffOverride ? { hospitalityAdmin: true } : {}),
-        patch: { ...amendmentPatchDto(amendment), ...(staffOverride && amendment.dietaries ? { dietaries: amendment.dietaries } : {}) },
+        patch: { ...amendmentPatchDto(amendment), ...(amendment.dietaries ? { dietaries: amendment.dietaries } : {}) },
       });
       if (!amended.booking) throw new Error("The amendment was saved but no updated booking was returned.");
       setSelected(amended.booking);
       setStep(0, "complete");
-      if (staffOverride) {
+      if (staffOverride || manualBuffetHandoff) {
         setStep(0, "complete", amended.unchanged ? "No changes were needed." : amended.projectionPropagation?.status === "pending" ? "The booking was saved. A downstream update is still pending." : undefined);
         await load(false);
         setAmendment(null);
@@ -1441,15 +1447,15 @@ export default function HospitalityDashboard({
               <p className="eyebrow">Amendment workflow</p>
               <h2 id="amendment-progress-title">
                 {amendmentProgress.status === "complete"
-                  ? amendmentProgress.staffOverride ? "Booking amendment saved" : "Booking updated across FIKA OS"
+                  ? (amendmentProgress.staffOverride || amendmentProgress.manualHandoff) ? "Booking amendment saved" : "Booking updated across FIKA OS"
                   : amendmentProgress.status === "error"
                     ? "Amendment needs attention"
-                    : amendmentProgress.staffOverride ? "Saving booking amendment" : "Updating booking everywhere"}
+                    : (amendmentProgress.staffOverride || amendmentProgress.manualHandoff) ? "Saving booking amendment" : "Updating booking everywhere"}
               </h2>
               <p>
                 {amendmentProgress.status === "complete"
-                  ? amendmentProgress.staffOverride ? "Review the booking, generate an updated quote and explicitly resend changed work to CPU." : "The amended quote, CPU order and Logistics timing are now aligned."
-                  : amendmentProgress.staffOverride ? "The Hub is validating the booking, site catalogue and your Hospitality Admin grant." : "The amended booking is being reissued through the operational workflow."}
+                  ? (amendmentProgress.staffOverride || amendmentProgress.manualHandoff) ? "Review the booking and generate an updated quote. If CPU production is needed, use Send to CPU for the replacement order." : "The amended quote, CPU order and Logistics timing are now aligned."
+                  : amendmentProgress.staffOverride ? "The Hub is validating the booking, site catalogue and your Hospitality Admin grant." : amendmentProgress.manualHandoff ? "The Hub is validating the booking and buffet choices." : "The amended booking is being reissued through the operational workflow."}
               </p>
               <div className={styles.amendmentProgressTrack} aria-hidden="true">
                 <span style={{ width: `${((amendmentProgress.steps.filter((step) => step.state === "complete").length + (amendmentProgress.status === "running" ? 0.35 : 0)) / amendmentProgress.steps.length) * 100}%` }} />
@@ -2779,7 +2785,7 @@ function localDateKey(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 }
 
-function BookingAmendmentPanel({
+export function BookingAmendmentPanel({
   siteKey,
   oplocId,
   booking,
@@ -2799,6 +2805,8 @@ function BookingAmendmentPanel({
   onSave: () => void;
 }) {
   const now = useBookingClock();
+  const buffet = useBuffetConfig(siteKey === "rcoa" || siteKey === "mnk");
+  const [buffetIssue, setBuffetIssue] = useState("");
   const [cutoffMenu, setCutoffMenu] = useState<PortalMenuItem[]>([]);
   const [amendmentCatalogue, setAmendmentCatalogue] = useState<AmendmentCatalogue>();
   const [cutoffWarning, setCutoffWarning] = useState("Checking current catalogue constraints…");
@@ -2837,6 +2845,9 @@ function BookingAmendmentPanel({
       className="booking-amendment-panel"
       onSubmit={(event) => {
         event.preventDefault();
+        const issue = buffetAmendmentIssue(amendment.order.items, amendment.service.guestCount, booking);
+        if (issue) { setBuffetIssue(issue); return; }
+        setBuffetIssue("");
         if (!amendment.adminOplocId || !cutoffWarning) onSave();
       }}
     >
@@ -2968,6 +2979,7 @@ function BookingAmendmentPanel({
                 />
               </label>
               <strong>£{(item.unitPrice * item.quantity).toFixed(2)}</strong>
+              <BuffetAmendmentSelector config={buffet.config} line={item} catalogue={amendment.adminOplocId ? adminMenu : cutoffMenu} selectedItemIds={amendment.order.items.filter((_, n) => n !== index).map(line => line.itemId)} guestCount={amendment.service.guestCount} dietaryNotes={String(amendment.dietaries?.freeText || "")} onSave={(next, notes) => onChange({ ...amendment, order: { ...amendment.order, items: amendment.order.items.map((line, n) => n === index ? next : line) }, dietaries: { ...amendment.dietaries, freeText: notes, ...(notes.trim() ? { hasDietaries: true } : {}) } })} />
               {amendment.adminOplocId && <>
                 <GroupItemChoices item={item} menuItem={adminMenu.find(menuItem => menuItem.id === (item.menuItemId || item.itemId))} onChange={choices => onChange({ ...amendment, order: { ...amendment.order, items: amendment.order.items.map((line, n) => n === index ? { ...line, choices } : line) } })} />
                 <label>Item notes<input value={item.comments || ""} onChange={event => onChange({ ...amendment, order: { ...amendment.order, items: amendment.order.items.map((line, n) => n === index ? { ...line, comments: event.target.value } : line) } })} /></label>
@@ -2993,11 +3005,12 @@ function BookingAmendmentPanel({
           />
             Produced by CPU (No means the site will produce this booking internally)
         </label>}
-        {amendment.adminOplocId && <div className="amendment-grid">
-          {Object.entries(amendment.dietaries || {}).filter(([key, value]) => staffDietaryField(key) && ["number", "string"].includes(typeof value)).map(([key, value]) => <label key={key}>{key.replaceAll("_", " ")}
+        {(amendment.adminOplocId || hasBuffetLine(amendment.order.items)) && <div className="amendment-grid">
+          {Object.entries(amendment.dietaries || {}).filter(([key, value]) => staffDietaryField(key) && !(hasBuffetLine(amendment.order.items) && isBuffetDietaryField(key)) && ["number", "string"].includes(typeof value)).map(([key, value]) => <label key={key}>{key.replaceAll("_", " ")}
             {typeof value === "boolean" ? <input type="checkbox" checked={value} onChange={event => onChange({ ...amendment, dietaries: { ...amendment.dietaries, [key]: event.target.checked } })} /> :
               <input type={typeof value === "number" ? "number" : "text"} min={typeof value === "number" ? 0 : undefined} value={String(value)} onChange={event => onChange({ ...amendment, dietaries: { ...amendment.dietaries, [key]: typeof value === "number" ? Number(event.target.value) : event.target.value } })} />}
           </label>)}
+          {hasBuffetLine(amendment.order.items) && <BuffetDietaryFields dietaries={amendment.dietaries || {}} onChange={dietaries => onChange({ ...amendment, dietaries })} />}
           <label>Additional dietary notes<textarea value={String(amendment.dietaries?.additionalNotes || "")} onChange={event => onChange({ ...amendment, dietaries: { ...amendment.dietaries, additionalNotes: event.target.value } })} /></label>
         </div>}
         <label>
@@ -3023,6 +3036,8 @@ function BookingAmendmentPanel({
           />
         </label>
       </section>
+      {buffetIssue && <p role="alert">{buffetIssue}</p>}
+      {hasBuffetLine(amendment.order.items) && <p>If CPU production is needed, create a current quote and use Send to CPU to send the replacement order.</p>}
       {amendment.adminOplocId && <HospitalityAdminAmendmentReview before={booking} after={amendment} items={dateItems} now={now} />}
       <footer className="booking-amendment-panel__footer">
         <button type="button" onClick={onCancel}>
