@@ -10,6 +10,7 @@ import { orderedQuantityLabel } from "../lib/ordered-quantity";
 import type { AllergenCellState } from "./lib/production-plan";
 import { matrixColumns } from "./ui/allergen-matrix";
 import HospitalityAllergenDetail from "./ui/HospitalityAllergenDetail";
+import MasterAllergenPdfAction from "./ui/MasterAllergenPdfAction";
 import ProductionCalendar from "./ui/ProductionCalendar";
 import ProductionDayView from "./ui/ProductionDayView";
 import DeliveredInProductionDetail from "./ui/DeliveredInProductionDetail";
@@ -642,6 +643,7 @@ export default function CpuProduction() {
           unscopedCount={unscopedOrderCount(allSitesList.filter((order) => !isCpuWithdrawn(order)))}
           siteFiltered={sites.length > 0}
         />}
+        {(view === "calendar" || view === "day") && <MasterAllergenPdfAction serviceDate={view === "day" ? dayDate : date} />}
         {error && view !== "totals" && <p role="alert">{error}</p>}
         {view === "published-menus" ? <PublishedMenuView /> : view === "grab-and-go" ? <GrabAndGoProductionView /> : view === "menu-planning" ? <DeliveredMenuPlanner /> : showCreate && (
           <CpuCreate

@@ -44,3 +44,11 @@ test("signed PDF route rejects a Production Order outside the caller's OPLOC sco
   assert.equal(paths.some(path => path.includes("signed-allergen") || path.includes("drive")), false, "scope denial occurs before plan or Drive access");
   assert.match(response.headers.get("cache-control") || "", /no-store/);
 });
+
+
+test("master date PDF requires all-site CPU authority before order or Drive reads", async t => {
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => { calls++; return Response.json({ principal: { id: "scoped-chef" }, allOplocs: false, oplocs: [{ id: "oploc:one" }] }); });
+  const response = await GET(new NextRequest("https://cpu.fikacatering.com/api/signed-allergen-pdf?document=master&serviceDate=2026-11-13&download=pdf", { headers: { cookie: "fika_session=valid" } }));
+  assert.equal(response.status, 403); assert.ok(calls <= 2); assert.match(response.headers.get("cache-control") || "", /no-store/);
+});
