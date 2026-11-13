@@ -71,7 +71,7 @@ async function handleMasterGet(request: NextRequest) {
     const date = request.nextUrl.searchParams.get("serviceDate") || "";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T12:00:00Z`)) || new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) !== date) throw Object.assign(new Error("Choose a valid service date."), { status: 422 });
     const load = async () => {
-      const orders = (await productionQueue(request, date)).filter(order => order.origin === "menu_planning" && order.status !== "cancelled" && !order.supersededBy && (order.serviceDate || order.requiredBy.slice(0, 10)) === date);
+      const orders = (await productionQueue(request, date)).filter(order => order.origin === "menu_planning" && order.status !== "cancelled" && !order.supersededBy && order.serviceDate === date);
       if (!orders.length || orders.length > 200) throw Object.assign(new Error("No bounded current service-date master is available."), { status: 409 });
       const plans = [];
       // Bound concurrent authoritative reads; no projection rebuild or materialization.

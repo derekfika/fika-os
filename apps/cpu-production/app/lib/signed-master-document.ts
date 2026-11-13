@@ -12,7 +12,7 @@ export function masterReviewIdentity(serviceDate: string, orders: ProductionOrde
 export function currentSignedMasterDocument(serviceDate: string, orders: ProductionOrder[], plans: ProductionPlan[], review?: CpuMasterReview): { artifact: MatrixArtifact; identity: string } {
   const reject = () => { throw Object.assign(new Error("No current, fully signed master allergen checker is available for this service date."), { status: 409 }); };
   if (!orders.length || orders.length > 200 || new Set(orders.map(order => order.canonicalId)).size !== orders.length) return reject();
-  if (orders.some(order => order.origin !== "menu_planning" || order.status === "cancelled" || order.supersededBy || (order.serviceDate || order.requiredBy.slice(0, 10)) !== serviceDate)) return reject();
+  if (orders.some(order => order.origin !== "menu_planning" || order.status === "cancelled" || order.supersededBy || order.serviceDate !== serviceDate)) return reject();
   const identity = masterReviewIdentity(serviceDate, orders, plans);
   const ids = orders.map(order => order.canonicalId).sort();
   if (!review || review.id !== identity.id || review.serviceDate !== serviceDate || review.semanticMatrixHash !== identity.hash || review.status !== "signed" || review.finalization.state !== "completed" || JSON.stringify([...review.orderIds].sort()) !== JSON.stringify(ids)) return reject();
