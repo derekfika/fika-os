@@ -15,6 +15,7 @@ jobs:
     outputs:
       apps: ${{ steps.scope.outputs.apps }}
       hub: ${{ steps.scope.outputs.hub }}
+      logistics: ${{ steps.scope.outputs.logistics }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -29,7 +30,7 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           node tools/workflow/cli.mjs affected --base "$BASE" --head "$HEAD" --output /tmp/fika-scope.json
-          node --input-type=module -e 'import fs from "node:fs"; const v=JSON.parse(fs.readFileSync("/tmp/fika-scope.json")); const apps=v.apps; fs.appendFileSync(process.env.GITHUB_OUTPUT,`apps=${JSON.stringify(apps)}\nhub=${apps.includes("hub")}\n`);'
+          node --input-type=module -e 'import fs from "node:fs"; const v=JSON.parse(fs.readFileSync("/tmp/fika-scope.json")); const apps=v.apps; fs.appendFileSync(process.env.GITHUB_OUTPUT,`apps=${JSON.stringify(apps)}\nhub=${apps.includes("hub")}\nlogistics=${apps.includes("logistics")}\n`);'
           git diff --check "$BASE" "$HEAD"
           node tools/workflow/cli.mjs changelog check --base "$BASE" --head "$HEAD"
   tooling:
@@ -132,15 +133,43 @@ jobs:
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8292
           FIKA_RUNTIME_MODE: local
       - run: npm --prefix '${{ steps.app.outputs.path }}' run typecheck
-        if: matrix.app != 'hub'
+        if: matrix.app != 'hub' && matrix.app != 'logistics'
       - name: Build exact checked-out application source
-        if: matrix.app != 'hub'
+        if: matrix.app != 'hub' && matrix.app != 'logistics'
         env:
           NODE_ENV: production
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           GITHUB_SHA="$SOURCE_SHA" npm --prefix '${{ steps.app.outputs.path }}' run build
+  logistics-validation:
+    needs: scope
+    if: needs.scope.outputs.logistics == 'true'
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      FIREBASE_PROJECT_ID: demo-fika-os
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/logistics/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix apps/logistics
+      - run: npm --prefix apps/logistics run typecheck
+      - name: Build exact checked-out Logistics source
+        env:
+          NODE_ENV: production
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          GITHUB_SHA="$SOURCE_SHA" npm --prefix apps/logistics run build
   hub-validation:
     needs: scope
     if: needs.scope.outputs.hub == 'true'
@@ -244,7 +273,7 @@ jobs:
   merge-gate:
     name: Workflow / merge-gate
     if: always()
-    needs: [scope, tooling, source-workspaces-windows, application-tests, hub-validation, hub-emulator]
+    needs: [scope, tooling, source-workspaces-windows, application-tests, logistics-validation, hub-validation, hub-emulator]
     runs-on: ubuntu-latest
     steps:
       - name: Explicit success, failure or intentional skip
@@ -253,6 +282,7 @@ jobs:
           TOOLING: ${{ needs.tooling.result }}
           WINDOWS: ${{ needs.source-workspaces-windows.result }}
           APP_TESTS: ${{ needs.application-tests.result }}
+          LOGISTICS_VALIDATION: ${{ needs.logistics-validation.result }}
           HUB_VALIDATION: ${{ needs.hub-validation.result }}
           EMULATOR: ${{ needs.hub-emulator.result }}
         run: |
@@ -260,5 +290,6 @@ jobs:
           test "$TOOLING" = success
           test "$WINDOWS" = success
           case "$APP_TESTS" in success|skipped) ;; *) exit 1;; esac
+          case "$LOGISTICS_VALIDATION" in success|skipped) ;; *) exit 1;; esac
           case "$HUB_VALIDATION" in success|skipped) ;; *) exit 1;; esac
           case "$EMULATOR" in success|skipped) ;; *) exit 1;; esac
