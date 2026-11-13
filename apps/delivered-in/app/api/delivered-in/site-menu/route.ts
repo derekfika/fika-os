@@ -44,7 +44,7 @@ async function handlePost(request: NextRequest) {
     const previous = await latestSiteMenuArtifactHosted(body.oplocId, day.sourceDayId);
     const artifact = await createGoogleSiteMenu(day, day.site, access.access.email, previous?.driveFileId);
     await saveSiteMenuArtifactHosted(artifact);
-    if (previous?.driveFileId && previous.driveFileId !== artifact.driveFileId) await retireGoogleSiteMenu(previous.driveFileId);
+    if (previous?.driveFileId && previous.driveFileId !== artifact.driveFileId) await retireGoogleSiteMenu(previous.driveFileId, body.oplocId);
     return safeJson({ siteMenu: siteMenuState(day, artifact), artifact }, { status: 201 });
   } catch (error) {
     return safeJson({ error: { message: error instanceof Error ? error.message : "The site menu could not be generated." } }, { status: Number((error as { status?: number }).status) || 502 });
