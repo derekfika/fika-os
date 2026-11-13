@@ -40,9 +40,29 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - id: app
+        env:
+          APP: ${{ matrix.app }}
+        run: |
+          case "$APP" in
+            hub) path=apps/integration-hub ;;
+            cpu) path=apps/cpu-production ;;
+            hospitality) path=apps/hospitality-booking ;;
+            menu) path=apps/menu-planning ;;
+            delivered-in) path=apps/delivered-in ;;
+            logistics) path=apps/logistics ;;
+            adhoc|ad-hoc) path=apps/ad-hoc-production ;;
+            beverage) path=apps/beverage-innovation ;;
+            *) echo "Unknown app: $APP" >&2; exit 1 ;;
+          esac
+          echo "path=$path" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ${{ steps.app.outputs.path }}/package-lock.json
       - run: git config --global user.name 'FIKA workflow tests' && git config --global user.email 'workflow-tests@example.invalid'
       - run: node --test tools/workflow/*.test.mjs
       - run: node --test tools/deploy-dashboard/dashboard.test.mjs
@@ -98,10 +118,6 @@ jobs:
       - name: Firebase CLI for CPU and Ad-Hoc emulator tests
         if: matrix.app == 'cpu' || matrix.app == 'ad-hoc'
         run: npm install --global firebase-tools@15.30.2
-      - id: app
-        env:
-          APP: ${{ matrix.app }}
-        run: node --input-type=module -e 'import fs from "node:fs";import {APPS} from "./tools/workflow/policy.mjs";const extra={"ad-hoc":"apps/ad-hoc-production"};fs.appendFileSync(process.env.GITHUB_OUTPUT,`path=${extra[process.env.APP]??APPS[process.env.APP].path}\n`);'
       - name: Remove Integration Hub source so Ad-Hoc is proven independent of it
         if: matrix.app == 'ad-hoc'
         run: rm -rf apps/integration-hub
@@ -136,6 +152,10 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/integration-hub/package-lock.json
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin

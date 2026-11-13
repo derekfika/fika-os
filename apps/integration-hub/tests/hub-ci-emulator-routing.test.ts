@@ -11,7 +11,11 @@ test("Hub CI keeps unit tests isolated and runs Firestore coverage in the emulat
   assert.match(workflow, /FIRESTORE_EMULATOR_HOST: 127\.0\.0\.1:8292/);
   assert.match(workflow, /Resolve pinned platform specs gitlink[\s\S]*?git ls-tree HEAD fika-platform-specs/);
   assert.match(workflow, /repository: derekfika\/fika-platform-specs[\s\S]*?ref: \$\{\{ steps\.platform-specs\.outputs\.sha \}\}[\s\S]*?path: fika-platform-specs/);
-  assert.match(packageJson.scripts.test, /--test-concurrency=1/);
+  assert.match(workflow, /id: app[\s\S]*?cache: npm[\s\S]*?cache-dependency-path:[\s\S]*?\$\{\{ steps\.app\.outputs\.path \}\}\/package-lock\.json/);
+  assert.match(workflow, /hub-emulator:[\s\S]*?cache: npm[\s\S]*?apps\/integration-hub\/package-lock\.json/);
+  assert.match(packageJson.scripts.test, /--test-isolation=process/);
+  assert.match(packageJson.scripts.test, /--test-concurrency=(?:[2-9]|[1-9][0-9]+)/);
+  assert.match(packageJson.scripts["test:emulator"], /--test-concurrency=1/);
   assert.match(packageJson.scripts["test:emulator"], /--test-name-pattern=emulator:/);
   assert.match(packageJson.scripts["test:emulator"], /verify-test-firestore-emulator\.mjs/);
   assert.match(packageJson.scripts["test:emulator"], /booking-cutoffs\.emulator\.test\.ts tests\/booking-email-firestore\.test\.ts tests\/fulfilment-projection\.test\.ts tests\/hospitality-buffet-selection\.test\.ts tests\/logistics-event-identity\.test\.ts tests\/menu-order-delivery-window\.test\.ts tests\/ordered-quantity-backfill\.test\.ts tests\/production-domain\.test\.ts tests\/production-fulfilment-reconciliation\.test\.ts/);
