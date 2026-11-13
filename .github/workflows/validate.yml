@@ -91,7 +91,7 @@ jobs:
           esac
           echo "path=$path" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        if: matrix.app != 'hospitality' && matrix.app != 'menu'
+        if: matrix.app != 'hospitality' && matrix.app != 'menu' && matrix.app != 'beverage'
         with:
           node-version: '22'
           cache: npm
@@ -110,6 +110,12 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: apps/menu-planning/package-lock.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        if: matrix.app == 'beverage'
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/beverage-innovation/package-lock.json
       - name: Resolve pinned platform specs gitlink
         if: matrix.app == 'hub'
         id: platform-specs
@@ -137,7 +143,7 @@ jobs:
         if: matrix.app == 'adhoc'
         run: rm -rf apps/integration-hub
       - run: npm ci
-        if: matrix.app != 'hospitality' && matrix.app != 'menu'
+        if: matrix.app != 'hospitality' && matrix.app != 'menu' && matrix.app != 'beverage'
       - run: npm ci --prefix '${{ steps.app.outputs.path }}'
       - run: npm --prefix '${{ steps.app.outputs.path }}' test
         if: matrix.app != 'cpu'
