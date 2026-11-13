@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/authmod";
 import { FirestoreAuthModRepository } from "@/lib/authmod-core";
 import { requireFikaSession } from "@/lib/fika-session";
 import { resolvePermittedOplocIds } from "@/lib/oploc-authorization";
+import { createAuthModEvaluationContext, evaluateAuthority } from "@/lib/authmod-core/evaluator";
 import { getOplocReadPackage, validateOplocReadPackage } from "@/lib/oploc-read-package";
 import { getServiceArrangementsReadPackage, validateServiceArrangementsReadPackage } from "@/lib/service-arrangements-read-package";
 import { DELIVERED_IN_PERMISSIONS } from "@fika/server-shared/delivered-in-access";
@@ -17,6 +18,7 @@ export async function GET(request: NextRequest) {
     const actor = await actorFromSession(session);
     assertPermission(actor, "canonical.view");
     const service = request.nextUrl.searchParams.get("service") === "grab-and-go" ? "grab-and-go" : "delivered-in";
+    const siteMenuGenerationFor = request.nextUrl.searchParams.get("siteMenuGenerationFor") || undefined;
     const repository = new FirestoreAuthModRepository();
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
     const [scope, packageResult, servicePackageResult] = await Promise.all([
@@ -39,7 +41,24 @@ export async function GET(request: NextRequest) {
     const deliveredIn = enabledFor("delivered-in");
     const grabAndGo = enabledFor("grab-and-go");
     const authorized = packageValue.oplocs.filter(oploc => (scope.all || scope.ids.has(oploc.canonicalId)) && enabled.has(oploc.canonicalId));
-    return NextResponse.json({ access: { email: session.email || "", canViewOneOffDestinations: service === "delivered-in" && scope.all && actor.role === "integration-admin", oplocIds: authorized.map(oploc => oploc.canonicalId), permissions: [...DELIVERED_IN_PERMISSIONS] }, sites: authorized.map(oploc => ({ oplocId: oploc.canonicalId, label: oploc.label, services: { deliveredIn: deliveredIn.has(oploc.canonicalId), grabAndGo: grabAndGo.has(oploc.canonicalId) } })) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    let siteMenuGeneration: { oplocId: string; allowed: boolean } | undefined;
+    if (siteMenuGenerationFor) {
+      const isVisibleActiveDeliveredInSite = service === "delivered-in" && authorized.some(oploc => oploc.canonicalId === siteMenuGenerationFor) && deliveredIn.has(siteMenuGenerationFor);
+      let allowed = false;
+      if (isVisibleActiveDeliveredInSite) {
+        const decision = await evaluateAuthority(repository, {
+          principal,
+          appId: "delivered-in",
+          resource: "delivered-in.normal",
+          action: "Manage",
+          scope: { kind: "oploc", ids: [siteMenuGenerationFor] },
+        }, createAuthModEvaluationContext(repository, principal));
+        if (decision.reasonCode === "store-unavailable") throw Object.assign(new Error("AUTHMOD authorization data is unavailable."), { status: 503, code: "AUTHMOD_STORE_UNAVAILABLE" });
+        allowed = decision.allowed;
+      }
+      siteMenuGeneration = { oplocId: siteMenuGenerationFor, allowed };
+    }
+    return NextResponse.json({ access: { email: session.email || "", canViewOneOffDestinations: service === "delivered-in" && scope.all && actor.role === "integration-admin", oplocIds: authorized.map(oploc => oploc.canonicalId), permissions: [...DELIVERED_IN_PERMISSIONS] }, sites: authorized.map(oploc => ({ oplocId: oploc.canonicalId, label: oploc.label, services: { deliveredIn: deliveredIn.has(oploc.canonicalId), grabAndGo: grabAndGo.has(oploc.canonicalId) } })), ...(siteMenuGeneration ? { siteMenuGeneration } : {}) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     const requestId = request.headers.get("x-request-id") || undefined;
     const status = Number((error as { status?: number }).status) || 403;
