@@ -225,6 +225,10 @@ test("material selector amendments are accepted in staging and denied in product
   const amendment = { itemId: goldItem, previousItemExists: true, quantity: 72, previousQuantity: 60, guestCount: 72, previousGuestCount: 60, selection: { id: HOT_FORK_BUFFET_CHOICE_ID, value: expanded } as const, priorSelection: original };
   await withRuntime(stageEnv, () => assert.doesNotThrow(() => assertHotForkBuffetAmendment(amendment)));
   await withRuntime({ ...stageEnv, FIKA_RUNTIME_MODE: "production", FIREBASE_PROJECT_ID: "fika-os" }, () => assert.throws(() => assertHotForkBuffetAmendment(amendment), /awaiting live customer-ordering approval/));
+  const silver = { ...gold(), packageId: "silver" as const, mains: [{ dishId: id("meat", 0), portions: 30 }, { dishId: id("vegan", 0), portions: 30 }] as BuffetSelection["mains"], dessertIds: [id("dessert", 2)] };
+  const switched = { itemId: silverItem, previousItemExists: false, quantity: 60, guestCount: 60, previousGuestCount: 60, selection: { id: HOT_FORK_BUFFET_CHOICE_ID, value: silver } as const };
+  await withRuntime(stageEnv, () => assert.doesNotThrow(() => assertHotForkBuffetAmendment(switched)));
+  await withRuntime({ ...stageEnv, FIKA_RUNTIME_MODE: "production", FIREBASE_PROJECT_ID: "fika-os" }, () => assert.throws(() => assertHotForkBuffetAmendment(switched), /awaiting live customer-ordering approval/));
 });
 
 test("production-disabled selector preserves the old RCoA menu-on-request price path", () => {
