@@ -13,6 +13,9 @@ test("Hub CI keeps unit tests isolated and runs Firestore coverage in the emulat
   assert.match(workflow, /repository: derekfika\/fika-platform-specs[\s\S]*?ref: \$\{\{ steps\.platform-specs\.outputs\.sha \}\}[\s\S]*?path: fika-platform-specs/);
   assert.match(workflow, /id: app[\s\S]*?cache: npm[\s\S]*?cache-dependency-path:[\s\S]*?\$\{\{ steps\.app\.outputs\.path \}\}\/package-lock\.json/);
   assert.match(workflow, /hub-emulator:[\s\S]*?cache: npm[\s\S]*?apps\/integration-hub\/package-lock\.json/);
+  assert.match(workflow, /application-tests:[\s\S]*?npm --prefix '\$\{\{ steps\.app\.outputs\.path \}\}' test/);
+  assert.match(workflow, /application-validation:[\s\S]*?run typecheck[\s\S]*?Build exact checked-out application source/);
+  assert.match(workflow, /merge-gate:[\s\S]*?needs: \[[^\]]*application-tests[^\]]*application-validation/);
   // Node's test runner isolates test files in separate processes by default; do not disable that default.
   assert.doesNotMatch(packageJson.scripts.test, /--test-isolation=/);
   assert.match(packageJson.scripts.test, /--test-concurrency=(?:[2-9]|[1-9][0-9]+)/);

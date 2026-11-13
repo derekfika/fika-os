@@ -56,7 +56,7 @@ jobs:
         with:
           node-version: '22'
       - run: node --test tools/workflow/source-workspaces.test.mjs
-  applications:
+  application-tests:
     needs: scope
     if: needs.scope.outputs.apps != '[]'
     runs-on: ubuntu-latest
@@ -133,6 +133,61 @@ jobs:
         env:
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8292
           FIKA_RUNTIME_MODE: local
+  application-validation:
+    needs: scope
+    if: needs.scope.outputs.apps != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.scope.outputs.apps) }}
+    env:
+      NODE_ENV: test
+      FIREBASE_PROJECT_ID: demo-fika-os
+      FIKA_CPU_PLAN_STORE: memory
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - id: app
+        env:
+          APP: ${{ matrix.app }}
+        run: |
+          case "$APP" in
+            hub) path=apps/integration-hub ;;
+            hospitality) path=apps/hospitality-booking ;;
+            menu) path=apps/menu-planning ;;
+            cpu) path=apps/cpu-production ;;
+            delivered-in) path=apps/delivered-in ;;
+            logistics) path=apps/logistics ;;
+            adhoc|ad-hoc) path=apps/ad-hoc-production ;;
+            beverage) path=apps/beverage-innovation ;;
+            *) echo "Unknown app: $APP" >&2; exit 1 ;;
+          esac
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ${{ steps.app.outputs.path }}/package-lock.json
+      - name: Resolve pinned platform specs gitlink
+        if: matrix.app == 'hub'
+        id: platform-specs
+        run: |
+          specs_sha="$(git ls-tree HEAD fika-platform-specs | awk '{print $3}')"
+          if ! [[ "$specs_sha" =~ ^[0-9a-f]{40}$ ]]; then echo 'Hub requires a full pinned fika-platform-specs gitlink'; exit 1; fi
+          echo "sha=$specs_sha" >> "$GITHUB_OUTPUT"
+      - name: Checkout pinned platform business specifications
+        if: matrix.app == 'hub'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: derekfika/fika-platform-specs
+          ref: ${{ steps.platform-specs.outputs.sha }}
+          path: fika-platform-specs
+      - run: npm ci
+      - run: npm ci --prefix '${{ steps.app.outputs.path }}'
       - run: npm --prefix '${{ steps.app.outputs.path }}' run typecheck
       - name: Build exact checked-out application source
         env:
@@ -171,7 +226,7 @@ jobs:
   merge-gate:
     name: Workflow / merge-gate
     if: always()
-    needs: [scope, tooling, source-workspaces-windows, applications, hub-emulator]
+    needs: [scope, tooling, source-workspaces-windows, application-tests, application-validation, hub-emulator]
     runs-on: ubuntu-latest
     steps:
       - name: Explicit success, failure or intentional skip
@@ -179,11 +234,13 @@ jobs:
           SCOPE: ${{ needs.scope.result }}
           TOOLING: ${{ needs.tooling.result }}
           WINDOWS: ${{ needs.source-workspaces-windows.result }}
-          APPS: ${{ needs.applications.result }}
+          APP_TESTS: ${{ needs.application-tests.result }}
+          APP_VALIDATION: ${{ needs.application-validation.result }}
           EMULATOR: ${{ needs.hub-emulator.result }}
         run: |
           test "$SCOPE" = success
           test "$TOOLING" = success
           test "$WINDOWS" = success
-          case "$APPS" in success|skipped) ;; *) exit 1;; esac
+          case "$APP_TESTS" in success|skipped) ;; *) exit 1;; esac
+          case "$APP_VALIDATION" in success|skipped) ;; *) exit 1;; esac
           case "$EMULATOR" in success|skipped) ;; *) exit 1;; esac
