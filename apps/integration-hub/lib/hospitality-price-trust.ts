@@ -1,6 +1,7 @@
 import { hospitalityCatalogues } from "@fika/server-shared/hospitality-catalogue";
 import { validateCatalogueRules, type RuleItem, type CatalogueRules } from "@fika/server-shared/hospitality-effective-offering";
 import { isGallagherBooking } from "./gallagher-rules";
+import { HOT_FORK_BUFFET_CHOICE_ID, assertHotForkBuffetCustomerSubmission, hotForkBuffetChoice } from "@fika/server-shared/hospitality-buffet-selection";
 import type { CanonicalRecord } from "./types";
 import type { MnkBookingPayload } from "./hospitality-booking-service";
 
@@ -13,8 +14,18 @@ export function trustedPublicOrder(payload: MnkBookingPayload, records: Canonica
   if (!catalogue) return refuse("Unknown Hospitality catalogue.");
   const provider = site === "mnk" ? "mnk-booking-platform" : site === "munich-re" ? "munich-re-generic-brochure" : `${site}-hospitality-brochure`;
   const governed = payload.order.items.map(line => ({ line, record: records.find(record => record.entityType === "Hospitality Menu Item" && Array.isArray(record.record.providerMappings) && record.record.providerMappings.some(raw => { const m = raw as Record<string, unknown>; return m.provider === provider && (m.sourceItemId === line.itemId || record.canonicalId === line.itemId); })) }));
+  // The submitted menu is a versioned line choice. Keep the existing quote and production
+  // identities while the server owns its validation and approval state.
+  for (const { line, record } of governed) {
+    const selection = hotForkBuffetChoice(line.choices);
+    // An absent selection is the established menu-on-request purchase. Only a
+    // submitted structured menu enters the new selector rules boundary.
+    if (selection && line.quantity !== payload.event.guestCount) return refuse("Buffet package quantity must equal the guest count.");
+    if (selection) assertHotForkBuffetCustomerSubmission(selection.value, record?.canonicalId || line.itemId, payload.event.guestCount);
+  }
+  const catalogueChoices = (choices: unknown[] | undefined) => choices?.filter(choice => !(choice && typeof choice === "object" && (choice as { id?: unknown }).id === HOT_FORK_BUFFET_CHOICE_ID));
   if (governed.some(x => { const c = x.record?.record.configuration as RuleItem["configuration"]; return c?.rules || c?.choices?.some(g => g.controlType === "quantities"); })) {
-    try { validateCatalogueRules(governed.map(({ line, record }) => ({ id: record?.canonicalId || line.itemId, bookingPolicy: record?.record.bookingPolicy as RuleItem["bookingPolicy"], name: String(record?.record.name || line.itemName || line.itemId), minimumQuantity: record?.record.minimumQuantity as number | undefined, minimumGuests: record?.record.minimumGuests as number | undefined, configuration: record?.record.configuration as RuleItem["configuration"] })), governed.map(({ line, record }) => ({ ...line, itemId: record?.canonicalId || line.itemId, choices: line.choices as never })), { gallagher: isGallagherBooking({ companyName: payload.client.companyName, email: payload.client.email }), siteId: site, guestCount: payload.event.guestCount, eventDate: payload.event.eventDate, startTime: payload.event.startTime, now }); } catch (error) { return refuse((error as Error).message); }
+    try { validateCatalogueRules(governed.map(({ line, record }) => ({ id: record?.canonicalId || line.itemId, bookingPolicy: record?.record.bookingPolicy as RuleItem["bookingPolicy"], name: String(record?.record.name || line.itemName || line.itemId), minimumQuantity: record?.record.minimumQuantity as number | undefined, minimumGuests: record?.record.minimumGuests as number | undefined, configuration: record?.record.configuration as RuleItem["configuration"] })), governed.map(({ line, record }) => ({ ...line, itemId: record?.canonicalId || line.itemId, choices: catalogueChoices(line.choices) as never })), { gallagher: isGallagherBooking({ companyName: payload.client.companyName, email: payload.client.email }), siteId: site, guestCount: payload.event.guestCount, eventDate: payload.event.eventDate, startTime: payload.event.startTime, now }); } catch (error) { return refuse((error as Error).message); }
   }
   const items = payload.order.items.map(item => {
     const matches = records.filter(record => record.entityType === "Hospitality Menu Item" && (
@@ -34,7 +45,7 @@ export function trustedPublicOrder(payload: MnkBookingPayload, records: Canonica
     if (!Number.isFinite(item.quantity) || item.quantity <= 0) return refuse("Invalid catalogue quantity.");
     const optionGroups = canonical ? canonical.record.optionGroups : local!.optionGroups;
     if (Array.isArray(optionGroups)) {
-      const supplied = (item.choices || []) as Array<{ id?: unknown; value?: unknown; values?: unknown }>;
+      const supplied = (catalogueChoices(item.choices) || []) as Array<{ id?: unknown; value?: unknown; values?: unknown }>;
       if (new Set(supplied.map(value => value.id)).size !== supplied.length) return refuse("Choose each option only once.");
       for (const choice of supplied) {
         const group = optionGroups.find(value => (value as { id: string }).id === choice.id) as { options?: Array<{ label: string }>; selectionType?: string } | undefined;

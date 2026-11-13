@@ -12,6 +12,7 @@ import { trustedPublicOrder } from "./hospitality-price-trust";
 import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, loadRcoaBookingCatalogue, mnkBookingPricingRecords, rcoaBookingConstraintRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
 import { isHotForkBuffetBooking } from "../../shared/hot-fork-buffet";
+import { assertHotForkBuffetAmendment, hotForkBuffetChoice } from "@fika/server-shared/hospitality-buffet-selection";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
 import type { CanonicalRecord } from "./types";
@@ -1084,34 +1085,6 @@ async function productionOrdersForBookings(bookingIds: string[]) {
   return latest;
 }
 
-export async function hotForkBuffetDemand(fromDate: string, toDateExclusive: string, oplocIds: readonly string[]) {
-  const validDate = (value: string) => { const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00Z`) : undefined; return Boolean(date && !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value); };
-  if (!validDate(fromDate) || !validDate(toDateExclusive) || toDateExclusive <= fromDate || (Date.parse(`${toDateExclusive}T00:00:00Z`) - Date.parse(`${fromDate}T00:00:00Z`)) > 7 * 86_400_000)
-    throw Object.assign(new Error("Demand must use a valid service-date range of seven days or fewer."), { status: 422 });
-  const allowedOplocs = new Set(oplocIds.filter(Boolean));
-  if (!allowedOplocs.size) return { bookings: [] };
-  const snapshot = await bookings().where("service.eventDate", ">=", fromDate).where("service.eventDate", "<", toDateExclusive).orderBy("service.eventDate", "asc").limit(501).get();
-  recordDataAccess({ app: "integration-hub", operation: "hospitality.hot-fork-buffet.demand", source: "FIRESTORE", dataset: "fikaBookings", documents: snapshot.size, estimatedBillableReads: snapshot.size, firestoreReadKind: "query" });
-  if (snapshot.size > 500) throw Object.assign(new Error("The selected menu week has too many bookings for a complete demand view."), { status: 503 });
-  const bookingsForDemand = snapshot.docs.map(document => document.data() as CanonicalBooking)
-    .filter(booking => allowedOplocs.has(booking.service.oplocId || "") && isHotForkBuffetBooking(booking))
-    .sort((left, right) => left.service.eventDate.localeCompare(right.service.eventDate) || left.service.startTime.localeCompare(right.service.startTime) || left.canonicalId.localeCompare(right.canonicalId));
-  return { bookings: bookingsForDemand.map(booking => ({
-    bookingId: booking.canonicalId,
-    bookingReference: booking.source.sourceBookingId,
-    serviceDate: booking.service.eventDate,
-    serviceTime: booking.service.startTime,
-    oplocId: booking.service.oplocId,
-    siteName: booking.service.portalSiteLabel || booking.service.portalSiteId || booking.service.oplocId,
-    clientName: booking.client.companyName || booking.client.clientName || booking.client.requester?.name || "Client",
-    guestCount: booking.service.guestCount,
-    bookingStatus: booking.lifecycleStatus,
-    cancelled: booking.lifecycleStatus === "Cancelled",
-    alreadyHandedToCpu: ["Sent to CPU", "Approved", "Completed"].includes(booking.lifecycleStatus),
-    portionAllocationStatus: "manual-review-required" as const,
-  })) };
-}
-
 export async function bookingWorkspace(siteId?: string, authorisedOplocId?: string, includeArchive = false) {
   const today = londonBusinessDate();
   if (siteId && authorisedOplocId) {
@@ -1329,6 +1302,16 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
           (item.unitPrice * item.quantity + Number.EPSILON) * 100,
         ) / 100,
     }));
+  for (const item of items) {
+    const prior = current.order.items.find(line => line.itemId === item.itemId);
+    const selection = hotForkBuffetChoice(item.choices);
+    const priorSelection = hotForkBuffetChoice(prior?.choices);
+    assertHotForkBuffetAmendment({
+      itemId: prior?.menuItemId || item.itemId, selection, priorSelection,
+      previousItemExists: Boolean(prior), quantity: item.quantity, previousQuantity: prior?.quantity,
+      guestCount: patch.service.guestCount, previousGuestCount: current.service.guestCount,
+    });
+  }
   if (!items.length && current.order.items.length > 0)
     throw conflict("Keep at least one menu line on the Booking.");
   const ricePaperLine = items.find((item) => /rice paper rolls?/i.test(String(item.itemName || "")) && item.quantity < 3);
@@ -1413,6 +1396,17 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
   const priorRequirements = await transaction.get(grouped || admin ? priorRequirementQuery.limit(51) : priorRequirementQuery);
   if ((grouped || admin) && (priorOrders.size > 50 || priorRequirements.size > 50)) throw conflict("Booking history exceeds the safe amendment limit; reconciliation is required.");
   const retiringOrders = priorOrders.docs.filter(prior => !["cancelled", "amended"].includes((prior.data() as ProductionOrderV1).status));
+  if (isHotForkBuffetBooking(current) && retiringOrders.length) {
+    next.dashboardWorkflow = {
+      ...next.dashboardWorkflow,
+      productionReplacement: {
+        status: "send_to_cpu_required",
+        retiredOrderIds: retiringOrders.map(prior => (prior.data() as ProductionOrderV1).canonicalId),
+        recordedAt: now,
+        sourceBookingVersion: next.version,
+      },
+    };
+  }
   if (admin && hospitalityCancellationRequiresCpuReview(retiringOrders.map(prior => (prior.data() as ProductionOrderV1).status))) throw conflict("CPU must review advanced production before this booking can be amended.");
   if (grouped && (retiringOrders.length > 3 || priorRequirements.docs.filter(d => d.data().status !== "cancelled").length > 3)) throw conflict("Multiple active handoffs require reconciliation before amendment.");
   for (const prior of retiringOrders) {
@@ -1664,8 +1658,9 @@ export async function executeBookingWorkflow(
       // A real customer cancellation queues once with the Booking transaction;
       // notify is a legacy UI option and cannot opt in/out of this server policy.
       notificationKind = cancellationNotificationKind(next, cancellationEvent);
+      const { productionReplacement: _closedReplacement, ...workflow } = next.dashboardWorkflow || {};
       next.dashboardWorkflow = {
-        ...next.dashboardWorkflow,
+        ...workflow,
         cancellation: {
           reason: command.reason,
           calendarOutcome: command.removeCalendar

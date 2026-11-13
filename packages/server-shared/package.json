@@ -35,5 +35,6 @@
     ,"./credentialed-upstream": "./src/credentialed-upstream.ts"
     ,"./outbound-environment": "./src/outbound-environment.ts"
     ,"./rcoa-locations": "./src/rcoa-locations.ts"
+    ,"./hospitality-buffet-selection": "./src/hospitality-buffet-selection.ts"
   }
 }

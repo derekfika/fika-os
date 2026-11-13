@@ -1,0 +1,364 @@
+{
+  "schemaVersion": 1,
+  "contract": "fika.hot-fork-buffet-menu.v1",
+  "version": "sam-2026-11-12",
+  "source": {
+    "documentUrl": "https://docs.google.com/document/d/1Tf5bdiNIass02pbRXWpZA-55juKWpmWAFfL3-2VmQlU",
+    "revisionId": "AHj4eMRb-fw97kC-Dr5RjX7YIuVmUkai3bfugY04IgTO4ug9UPTnelrWByd6k9rEaVJa12Yh00UJOoyVh8lINOYiB4WUo4wp6tMKtwJKqsg",
+    "verifiedCount": 44
+  },
+  "dishes": [
+    {
+      "id": "buffet-dish:sam-2026-11-12:meat:01",
+      "category": "meat",
+      "name": "Slow-Cooked Salt Marsh Lamb Shoulder, Apricot, Chickpeas, Roasted Squash & Preserved Lemon Yoghurt with Herby Cous Cous",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:meat:02",
+      "category": "meat",
+      "name": "Suffolk Chicken Supreme & Thyme Pave Potato, Confit Roscoff & Crispy Onion, Chicken Jus & Roasted Heritage Carrots",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:meat:03",
+      "category": "meat",
+      "name": "Crispy Pressed Belly of Dingley Dell Pork, Parsnip Purre, Purple Sprouting Broccoli, Jerusalem Artichoke Crisps & Sherry Vinegar Jus",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:meat:04",
+      "category": "meat",
+      "name": "Braised Denham Vale Beef, Dark Ale, Fresh Thyme & Horseradish Potato Purée & Oyster Mushrooms",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:meat:05",
+      "category": "meat",
+      "name": "Corn Fed Chicken Breast Strips, Chanterell Mushroom, Roasted Squash & Pearl Barley, Crispy Sage & Roast Jus",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:fish:01",
+      "category": "fish",
+      "name": "Pan Fried Chalk Stream Trout, Brixham Crab Ravioli, Braised Fennel, Shellfish Bisque & Watercress Oil",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:fish:02",
+      "category": "fish",
+      "name": "Pan-Fried Hake, White Bean Cassoulet, Confit Tomato, Parsley, Crispy Capers & Crushed Cornish New Potatoes",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:fish:03",
+      "category": "fish",
+      "name": "Scottish Blue Chip Salmon Asian Glaze, Udon Noodles & Miso Broth with Ginger &  Sesame Greens.",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:fish:04",
+      "category": "fish",
+      "name": "Chunky Smoked Haddock, Salmon, Tiger Prawn, Dill & Chive Pie Topped with Buttered Scalloped Potatoes & Fried Capers",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:fish:05",
+      "category": "fish",
+      "name": "Thai Red Curry, Sea Bass Coconut Curry, Seasonal Greens, Ginger & Jasmine Rice.",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:vegetarian:01",
+      "category": "vegetarian",
+      "name": "Roasted Butter Squash, Blue Cheese & Pecan Pumpkin Gnocchi with Rocket Pesto",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:vegetarian:02",
+      "category": "vegetarian",
+      "name": "Wild Mushroom, Spinach & Ricotta, Fresh Egg Lasagna Served with Rocket, Sun Blush Tomato & Garlic Mozzarella Focaccia",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:vegetarian:03",
+      "category": "vegetarian",
+      "name": "Beetroot & Goats Cheese Tart, WaterCress Pistou & Baby Leaf",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:vegetarian:04",
+      "category": "vegetarian",
+      "name": "Bombay Potato Pie, Cumin Roasted Roots, Masala Onion Gravy",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:vegetarian:05",
+      "category": "vegetarian",
+      "name": "Paneer, Spinach Saag, Saffron Scented Rice, Toasted Coconut & Mint Yoghurt",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:vegan:01",
+      "category": "vegan",
+      "name": "Shiitake Mushroom Bourguignon, Creamy Truffle Potato & Chantany Carrots",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:vegan:02",
+      "category": "vegan",
+      "name": "BBQ Cauliflower Steak, Cavolo Nero, Pearl Barley, Shaved Autumn Truffle",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:vegan:03",
+      "category": "vegan",
+      "name": "Root Vegetable & Puy Lentil Gatin topped with Pickled Shallots",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:vegan:04",
+      "category": "vegan",
+      "name": "Pan Fried Polenta Steak, Ratatouille of Winter Roots, Red Pesto",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:vegan:05",
+      "category": "vegan",
+      "name": "Plant-based Meat Ball, Giant Bean and Feta Shakshuka, Toasted Focaccia Soldiers",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "review_required"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:01",
+      "category": "salad",
+      "name": "Smacked cucumber salad with sumac onions and radishes",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:02",
+      "category": "salad",
+      "name": "Roasted Cauliflower, Giant Cous Cous, Zhoug & Crispy Shallots",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:03",
+      "category": "salad",
+      "name": "Green Beans with Chilli Roasted Carrots, Peanuts & Miso",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:04",
+      "category": "salad",
+      "name": "Grilled Artichoke, Cannellini Bean & Baby Spinach",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:05",
+      "category": "salad",
+      "name": "Roasted Aubergine, Tomato, Rocket & Mozzarella Pearls",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:06",
+      "category": "salad",
+      "name": "Avocado, Broccoli, Edamme Bean, Quinoa, Toasted Seeds",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:07",
+      "category": "salad",
+      "name": "Honey Roasted Butternut Squash, Baby Spinach and Dried Cranberries",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:08",
+      "category": "salad",
+      "name": "Tomato and cucumber salad with tahini and spicy dukkah oil",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:09",
+      "category": "salad",
+      "name": "Grilled radicchio and kale salad with orange and hazelnuts",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:10",
+      "category": "salad",
+      "name": "Beetroot, Apple, Watercress & Walnut",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:11",
+      "category": "salad",
+      "name": "Roasted Roots, Puy Lentil & Herby Carrot Top Yoghurt",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:12",
+      "category": "salad",
+      "name": "Cajun Roasted Sweet Potato, Red Kidney Bean & Avocado",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:13",
+      "category": "salad",
+      "name": "Celeriac and lentils with hazelnuts and mint",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:salad:14",
+      "category": "salad",
+      "name": "Autumn Brassica Slaw",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:dessert:01",
+      "category": "dessert",
+      "name": "Vegan Cheesecake, Apple, Cinnamon & Maple Compote",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:dessert:02",
+      "category": "dessert",
+      "name": "Lemon Posset with Blackberry Gel",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:dessert:03",
+      "category": "dessert",
+      "name": "Tiramisu",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:dessert:04",
+      "category": "dessert",
+      "name": "Gluten Free & Vegan Chocolate Torte",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:dessert:05",
+      "category": "dessert",
+      "name": "Opera Coffee Mousse Bar",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:dessert:06",
+      "category": "dessert",
+      "name": "Vegan Raspberry Mousse",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:dessert:07",
+      "category": "dessert",
+      "name": "Triple Chocolate Calypso Mousse",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:dessert:08",
+      "category": "dessert",
+      "name": "Buttermilk Panna Cota, Passion Fruit",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:dessert:09",
+      "category": "dessert",
+      "name": "Black Forest Cigar Roll",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    },
+    {
+      "id": "buffet-dish:sam-2026-11-12:dessert:10",
+      "category": "dessert",
+      "name": "Lemon Tart with Fresh Raspberries",
+      "allergenStatus": "unrecorded",
+      "dietaryStatus": "unrecorded",
+      "selectionStatus": "source_listed"
+    }
+  ]
+}
