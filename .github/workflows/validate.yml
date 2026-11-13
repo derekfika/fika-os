@@ -29,9 +29,7 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           node tools/workflow/cli.mjs affected --base "$BASE" --head "$HEAD" --output /tmp/fika-scope.json
-          # Ad-Hoc Production is validated here but has no governed deployment target, so it is not in tools/workflow APPS.
-          # It joins the matrix on its own (non-doc) paths and, like every app, on shared/package changes.
-          node --input-type=module -e 'import fs from "node:fs"; const v=JSON.parse(fs.readFileSync("/tmp/fika-scope.json")); const adHoc=v.shared||v.paths.some(p=>p.startsWith("apps/ad-hoc-production/")&&!/\/(docs\/|[^/]+\.md$)/.test(p)); const apps=adHoc?[...v.apps,"ad-hoc"].sort():v.apps; fs.appendFileSync(process.env.GITHUB_OUTPUT,`apps=${JSON.stringify(apps)}\nhub=${v.apps.includes("hub")}\n`);'
+          node --input-type=module -e 'import fs from "node:fs"; const v=JSON.parse(fs.readFileSync("/tmp/fika-scope.json")); const apps=v.apps; fs.appendFileSync(process.env.GITHUB_OUTPUT,`apps=${JSON.stringify(apps)}\nhub=${apps.includes("hub")}\n`);'
           git diff --check "$BASE" "$HEAD"
           node tools/workflow/cli.mjs changelog check --base "$BASE" --head "$HEAD"
   tooling:
@@ -56,7 +54,7 @@ jobs:
         with:
           node-version: '22'
       - run: node --test tools/workflow/source-workspaces.test.mjs
-  applications:
+  application-tests:
     needs: scope
     if: needs.scope.outputs.apps != '[]'
     runs-on: ubuntu-latest
@@ -72,9 +70,29 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - id: app
+        env:
+          APP: ${{ matrix.app }}
+        run: |
+          case "$APP" in
+            hub) path=apps/integration-hub ;;
+            hospitality) path=apps/hospitality-booking ;;
+            menu) path=apps/menu-planning ;;
+            cpu) path=apps/cpu-production ;;
+            delivered-in) path=apps/delivered-in ;;
+            logistics) path=apps/logistics ;;
+            adhoc) path=apps/ad-hoc-production ;;
+            beverage) path=apps/beverage-innovation ;;
+            *) echo "Unknown app: $APP" >&2; exit 1 ;;
+          esac
+          echo "path=$path" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ${{ steps.app.outputs.path }}/package-lock.json
       - name: Resolve pinned platform specs gitlink
         if: matrix.app == 'hub'
         id: platform-specs
@@ -90,20 +108,16 @@ jobs:
           ref: ${{ steps.platform-specs.outputs.sha }}
           path: fika-platform-specs
       - name: Java for CPU and Ad-Hoc emulator tests
-        if: matrix.app == 'cpu' || matrix.app == 'ad-hoc'
+        if: matrix.app == 'cpu' || matrix.app == 'adhoc'
         uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin
           java-version: '21'
       - name: Firebase CLI for CPU and Ad-Hoc emulator tests
-        if: matrix.app == 'cpu' || matrix.app == 'ad-hoc'
+        if: matrix.app == 'cpu' || matrix.app == 'adhoc'
         run: npm install --global firebase-tools@15.30.2
-      - id: app
-        env:
-          APP: ${{ matrix.app }}
-        run: node --input-type=module -e 'import fs from "node:fs";import {APPS} from "./tools/workflow/policy.mjs";const extra={"ad-hoc":"apps/ad-hoc-production"};fs.appendFileSync(process.env.GITHUB_OUTPUT,`path=${extra[process.env.APP]??APPS[process.env.APP].path}\n`);'
       - name: Remove Integration Hub source so Ad-Hoc is proven independent of it
-        if: matrix.app == 'ad-hoc'
+        if: matrix.app == 'adhoc'
         run: rm -rf apps/integration-hub
       - run: npm ci
       - run: npm ci --prefix '${{ steps.app.outputs.path }}'
@@ -112,19 +126,94 @@ jobs:
         if: matrix.app == 'cpu'
         run: find apps/shared -maxdepth 1 -name '*.test.ts' -print0 | sort -z | xargs -0 -r npm --prefix apps/cpu-production exec -- tsx --test
       - name: Ad-Hoc service tests on the Firestore emulator
-        if: matrix.app == 'ad-hoc'
+        if: matrix.app == 'adhoc'
         run: firebase emulators:exec --only firestore --project demo-fika-os --config tools/workflow/emulator.json 'npm --prefix apps/ad-hoc-production run test:emulator'
         env:
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8292
           FIKA_RUNTIME_MODE: local
       - run: npm --prefix '${{ steps.app.outputs.path }}' run typecheck
+        if: matrix.app != 'hub'
       - name: Build exact checked-out application source
+        if: matrix.app != 'hub'
         env:
           NODE_ENV: production
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           GITHUB_SHA="$SOURCE_SHA" npm --prefix '${{ steps.app.outputs.path }}' run build
+  hub-validation:
+    needs: scope
+    if: needs.scope.outputs.hub == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [hub]
+    env:
+      NODE_ENV: test
+      FIREBASE_PROJECT_ID: demo-fika-os
+      FIKA_CPU_PLAN_STORE: memory
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - id: app
+        env:
+          APP: ${{ matrix.app }}
+        run: |
+          case "$APP" in
+            hub) path=apps/integration-hub ;;
+            hospitality) path=apps/hospitality-booking ;;
+            menu) path=apps/menu-planning ;;
+            cpu) path=apps/cpu-production ;;
+            delivered-in) path=apps/delivered-in ;;
+            logistics) path=apps/logistics ;;
+            adhoc) path=apps/ad-hoc-production ;;
+            beverage) path=apps/beverage-innovation ;;
+            *) echo "Unknown app: $APP" >&2; exit 1 ;;
+          esac
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ${{ steps.app.outputs.path }}/package-lock.json
+      - name: Resolve pinned platform specs gitlink
+        if: matrix.app == 'hub'
+        id: platform-specs
+        run: |
+          specs_sha="$(git ls-tree HEAD fika-platform-specs | awk '{print $3}')"
+          if ! [[ "$specs_sha" =~ ^[0-9a-f]{40}$ ]]; then echo 'Hub requires a full pinned fika-platform-specs gitlink'; exit 1; fi
+          echo "sha=$specs_sha" >> "$GITHUB_OUTPUT"
+      - name: Checkout pinned platform business specifications
+        if: matrix.app == 'hub'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: derekfika/fika-platform-specs
+          ref: ${{ steps.platform-specs.outputs.sha }}
+          path: fika-platform-specs
+      - run: npm ci
+      - run: npm ci --prefix '${{ steps.app.outputs.path }}'
+      - name: Typecheck and build in parallel
+        env:
+          APP_PATH: ${{ steps.app.outputs.path }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          NODE_ENV=test npm --prefix "$APP_PATH" run typecheck &
+          typecheck_pid=$!
+          set +e
+          build_status=0
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA" || build_status=$?
+          if [ "$build_status" -eq 0 ]; then
+            NODE_ENV=production GITHUB_SHA="$SOURCE_SHA" npm --prefix "$APP_PATH" run build
+            build_status=$?
+          fi
+          wait "$typecheck_pid"
+          typecheck_status=$?
+          if [ "$build_status" -ne 0 ]; then exit "$build_status"; fi
+          exit "$typecheck_status"
   hub-emulator:
     needs: scope
     if: needs.scope.outputs.hub == 'true'
@@ -136,6 +225,10 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/integration-hub/package-lock.json
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin
@@ -151,7 +244,7 @@ jobs:
   merge-gate:
     name: Workflow / merge-gate
     if: always()
-    needs: [scope, tooling, source-workspaces-windows, applications, hub-emulator]
+    needs: [scope, tooling, source-workspaces-windows, application-tests, hub-validation, hub-emulator]
     runs-on: ubuntu-latest
     steps:
       - name: Explicit success, failure or intentional skip
@@ -159,11 +252,13 @@ jobs:
           SCOPE: ${{ needs.scope.result }}
           TOOLING: ${{ needs.tooling.result }}
           WINDOWS: ${{ needs.source-workspaces-windows.result }}
-          APPS: ${{ needs.applications.result }}
+          APP_TESTS: ${{ needs.application-tests.result }}
+          HUB_VALIDATION: ${{ needs.hub-validation.result }}
           EMULATOR: ${{ needs.hub-emulator.result }}
         run: |
           test "$SCOPE" = success
           test "$TOOLING" = success
           test "$WINDOWS" = success
-          case "$APPS" in success|skipped) ;; *) exit 1;; esac
+          case "$APP_TESTS" in success|skipped) ;; *) exit 1;; esac
+          case "$HUB_VALIDATION" in success|skipped) ;; *) exit 1;; esac
           case "$EMULATOR" in success|skipped) ;; *) exit 1;; esac
