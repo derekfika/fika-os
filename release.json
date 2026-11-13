@@ -45,9 +45,10 @@
     "explicitExecute": true,
     "authorisedAt": "2026-11-13T11:18:16.235Z"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "1b5214b5-55d2-43c0-b0dc-9d60a7335128",
+  "rollout": "build-2026-11-13-002",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "dbd922b461335dec0c486e7d83e77962c7c4b14e",
     "rollout": "build-2026-11-13-001",
@@ -55,5 +56,11 @@
     "percent": 100
   },
   "previousGoodRecord": "5cba9e77886656e0620e2769eca5f15cad087860",
-  "createdAt": "2026-11-13T11:18:19.614Z"
+  "releaseId": "1b5214b5-55d2-43c0-b0dc-9d60a7335128",
+  "completedAt": "2026-11-13T11:21:30.740Z",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-os-prod-deliveredin--fika-os.europe-west4.hosted.app/"
+  }
 }
