@@ -18,6 +18,7 @@ jobs:
       hospitality: ${{ steps.scope.outputs.hospitality }}
       hub: ${{ steps.scope.outputs.hub }}
       logistics: ${{ steps.scope.outputs.logistics }}
+      menu: ${{ steps.scope.outputs.menu }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -32,7 +33,7 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           node tools/workflow/cli.mjs affected --base "$BASE" --head "$HEAD" --output /tmp/fika-scope.json
-          node --input-type=module -e 'import fs from "node:fs"; const v=JSON.parse(fs.readFileSync("/tmp/fika-scope.json")); const apps=v.apps; fs.appendFileSync(process.env.GITHUB_OUTPUT,`apps=${JSON.stringify(apps)}\ncpu=${apps.includes("cpu")}\nhospitality=${apps.includes("hospitality")}\nhub=${apps.includes("hub")}\nlogistics=${apps.includes("logistics")}\n`);'
+          node --input-type=module -e 'import fs from "node:fs"; const v=JSON.parse(fs.readFileSync("/tmp/fika-scope.json")); const apps=v.apps; fs.appendFileSync(process.env.GITHUB_OUTPUT,`apps=${JSON.stringify(apps)}\ncpu=${apps.includes("cpu")}\nhospitality=${apps.includes("hospitality")}\nhub=${apps.includes("hub")}\nlogistics=${apps.includes("logistics")}\nmenu=${apps.includes("menu")}\n`);'
           git diff --check "$BASE" "$HEAD"
           node tools/workflow/cli.mjs changelog check --base "$BASE" --head "$HEAD"
   tooling:
@@ -90,7 +91,7 @@ jobs:
           esac
           echo "path=$path" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        if: matrix.app != 'hospitality'
+        if: matrix.app != 'hospitality' && matrix.app != 'menu'
         with:
           node-version: '22'
           cache: npm
@@ -103,6 +104,12 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: apps/hospitality-booking/package-lock.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        if: matrix.app == 'menu'
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/menu-planning/package-lock.json
       - name: Resolve pinned platform specs gitlink
         if: matrix.app == 'hub'
         id: platform-specs
@@ -130,7 +137,7 @@ jobs:
         if: matrix.app == 'adhoc'
         run: rm -rf apps/integration-hub
       - run: npm ci
-        if: matrix.app != 'hospitality'
+        if: matrix.app != 'hospitality' && matrix.app != 'menu'
       - run: npm ci --prefix '${{ steps.app.outputs.path }}'
       - run: npm --prefix '${{ steps.app.outputs.path }}' test
         if: matrix.app != 'cpu'
@@ -147,15 +154,40 @@ jobs:
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8292
           FIKA_RUNTIME_MODE: local
       - run: npm --prefix '${{ steps.app.outputs.path }}' run typecheck
-        if: matrix.app != 'hub' && matrix.app != 'logistics' && matrix.app != 'cpu' && matrix.app != 'hospitality'
+        if: matrix.app != 'hub' && matrix.app != 'logistics' && matrix.app != 'cpu' && matrix.app != 'hospitality' && matrix.app != 'menu'
       - name: Build exact checked-out application source
-        if: matrix.app != 'hub' && matrix.app != 'logistics' && matrix.app != 'cpu' && matrix.app != 'hospitality'
+        if: matrix.app != 'hub' && matrix.app != 'logistics' && matrix.app != 'cpu' && matrix.app != 'hospitality' && matrix.app != 'menu'
         env:
           NODE_ENV: production
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           GITHUB_SHA="$SOURCE_SHA" npm --prefix '${{ steps.app.outputs.path }}' run build
+  menu-validation:
+    needs: scope
+    if: needs.scope.outputs.menu == 'true'
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      FIREBASE_PROJECT_ID: demo-fika-os
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/menu-planning/package-lock.json
+      - run: npm ci --prefix apps/menu-planning
+      - run: npm --prefix apps/menu-planning run typecheck
+      - name: Build exact checked-out Menu Planning source
+        env:
+          NODE_ENV: production
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          GITHUB_SHA="$SOURCE_SHA" npm --prefix apps/menu-planning run build
   hospitality-validation:
     needs: scope
     if: needs.scope.outputs.hospitality == 'true'
@@ -366,7 +398,7 @@ jobs:
   merge-gate:
     name: Workflow / merge-gate
     if: always()
-    needs: [scope, tooling, source-workspaces-windows, application-tests, hospitality-validation, cpu-validation, cpu-emulator, logistics-validation, hub-validation, hub-emulator]
+    needs: [scope, tooling, source-workspaces-windows, application-tests, menu-validation, hospitality-validation, cpu-validation, cpu-emulator, logistics-validation, hub-validation, hub-emulator]
     runs-on: ubuntu-latest
     steps:
       - name: Explicit success, failure or intentional skip
@@ -375,6 +407,7 @@ jobs:
           TOOLING: ${{ needs.tooling.result }}
           WINDOWS: ${{ needs.source-workspaces-windows.result }}
           APP_TESTS: ${{ needs.application-tests.result }}
+          MENU_VALIDATION: ${{ needs.menu-validation.result }}
           HOSPITALITY_VALIDATION: ${{ needs.hospitality-validation.result }}
           CPU_VALIDATION: ${{ needs.cpu-validation.result }}
           CPU_EMULATOR: ${{ needs.cpu-emulator.result }}
@@ -386,6 +419,7 @@ jobs:
           test "$TOOLING" = success
           test "$WINDOWS" = success
           case "$APP_TESTS" in success|skipped) ;; *) exit 1;; esac
+          case "$MENU_VALIDATION" in success|skipped) ;; *) exit 1;; esac
           case "$HOSPITALITY_VALIDATION" in success|skipped) ;; *) exit 1;; esac
           case "$CPU_VALIDATION" in success|skipped) ;; *) exit 1;; esac
           case "$CPU_EMULATOR" in success|skipped) ;; *) exit 1;; esac

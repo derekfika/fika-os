@@ -9,9 +9,14 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const isolatedDatabaseDirectory = mkdtempSync(join(tmpdir(), "fika-menu-duplicate-test-"));
+const previousCwd = process.cwd();
+process.chdir(isolatedDatabaseDirectory);
 process.env.MENU_PLANNING_DB_PATH = join(isolatedDatabaseDirectory, "operational.sqlite");
 process.env.MENU_PLANNING_TEST_MODE = "1";
-process.on("exit", () => rmSync(isolatedDatabaseDirectory, { recursive: true, force: true }));
+process.on("exit", () => {
+  process.chdir(previousCwd);
+  rmSync(isolatedDatabaseDirectory, { recursive: true, force: true });
+});
 
 const { createCanonicalMenuItem } = await import("../lib/canonical-menu-repository");
 const { duplicateMenuPlanning } = await import("../lib/menu-duplicate-command");
