@@ -41,6 +41,32 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  # Drive access is isolated to the dedicated keyless staging service account
+  # and Shared Drive. Production sentinel IDs are denial probes only.
+  - variable: FIKA_STAGING_DRIVE_ENABLED
+    value: "true"
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_AUTH_MODE
+    value: shared-drive
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_SHARED_DRIVE_ID
+    value: 0ALgY_Zkd_k3cUk9PVA
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_EMAIL
+    value: fika-staging-drive@fika-os-dev.iam.gserviceaccount.com
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_PERMISSION_ID
+    value: "110289228770833757986"
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_ROOT_ID
+    value: 1B3oV4dmb3UpwTPRDjJ4B0hES1rRL1M5z
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS
+    value: "110453433265748456567,110289228770833757986"
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_PRODUCTION_SENTINEL_IDS
+    value: "1uOdUgHQD7O3Op6DzgyslXG3-_aeYRm08,1go9l-3iDEY_g22C_EFsl0GzVIpX9tSyx,1-2Uo7Z3pYNlXvlIBby7qYGGZMtG2ABag,1b1hSZHJMcwCXXwG3wETO9sVcSayCfxVd"
+    availability: [RUNTIME]
   - variable: FIREBASE_PROJECT_ID
     value: fika-os-dev
     availability:
@@ -149,10 +175,6 @@ env:
       - RUNTIME
   - variable: FIKA_INTERNAL_API_TOKEN
     secret: FIKA_INTERNAL_API_TOKEN@3
-    availability:
-      - RUNTIME
-  - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON_MAILER
-    secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON_MAILER
     availability:
       - RUNTIME
   - variable: FIKA_DEV_DASHBOARD_GITHUB_TOKEN
