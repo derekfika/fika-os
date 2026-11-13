@@ -129,5 +129,3 @@ export function BuffetMenuDialog({ menu, guestCount, initialPackageId, selection
     </section>
   </div>, document.body);
 }
-
-

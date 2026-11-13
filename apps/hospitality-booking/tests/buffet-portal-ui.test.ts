@@ -58,4 +58,3 @@ test("RCoA keeps the saved preview visible and blocks sending", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Send booking request" }));
   assert.match(screen.getAllByText(/preview.*remove it or wait/i)[0].textContent!, /preview/i); assert.equal(posts, 0);
 });
-
