@@ -1,4 +1,4 @@
-import { driveAccessToken, resolveDriveOwner } from "@fika/server-shared/drive-owner";
+import { assertStagingDriveResource, driveAccessToken, resolveDriveOwner } from "@fika/server-shared/drive-owner";
 import { createHash } from "node:crypto";
 import { renderPdfToBuffer } from "@fika/server-shared/pdf-renderer";
 import { hospitalityGroupQuoteHtml } from "./hospitality-group-quote-document";
@@ -29,6 +29,7 @@ export function groupQuoteDriveArtifact(fetcher = fetch, render = renderPdfToBuf
       const id = q.artifact.fileId;
       if (!id) throw new Error("The group quote artifact ID must be persisted before upload.");
       const auth = await authHeaders(q.artifact.oplocId);
+      await assertStagingDriveResource(q.artifact.folderId, auth.Authorization, fetcher);
       const url = `${base}/${encodeURIComponent(id)}?supportsAllDrives=true&fields=id,mimeType,size,md5Checksum,trashed,parents,appProperties,webViewLink`;
       const lookup = () => request(url, { headers: auth });
       const verified = async (response: Response) => {

@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         target: async booking => {
           const settings = await getDashboardQuoteSettingsForBooking(booking);
           const owner = resolveDriveOwner({ type: "oploc-workspace", oplocId: booking.service.oplocId! });
-          const configured = settings.googleQuoteFolderId || settings.googleDriveFolderId || owner.configuredRootFolderId || "";
+          const configured = process.env.FIKA_RUNTIME_MODE === "staging" ? owner.configuredRootFolderId || "" : settings.googleQuoteFolderId || settings.googleDriveFolderId || owner.configuredRootFolderId || "";
           const folderId = configured.match(/\/folders\/([A-Za-z0-9_-]+)/)?.[1] || configured.trim();
           return { folderId, oplocId: booking.service.oplocId! };
         },
