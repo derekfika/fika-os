@@ -20,8 +20,7 @@ export type BuffetPackage = {
   saladCount: number;
   dessertCount: number;
   mainMinimumPortions: number;
-  dessertMinimumPortions?: number;
-  dessertAllocation: "equal-split" | "unconfirmed";
+  dessertIntent: "equal-split" | "one-choice";
   /** True only when the server has approved this configuration for customer ordering. */
   orderingReady: boolean;
   pendingRules?: string[];
@@ -98,8 +97,6 @@ export function BuffetMenuDialog({ menu, guestCount, initialPackageId, selection
       const saladIssue = selectedCountMessage("salad", draft.saladIds.length, pkg.saladCount); if (saladIssue) next.push(saladIssue);
       const dessertIssue = selectedCountMessage("dessert", draft.dessertIds.length, pkg.dessertCount); if (dessertIssue) next.push(dessertIssue);
       if (draft.saladIds.some(id => dish(id)?.category !== "salad" || dish(id)?.selectionStatus === "review_required") || draft.dessertIds.some(id => dish(id)?.category !== "dessert" || dish(id)?.selectionStatus === "review_required")) next.push("Review choices that are no longer on the menu.");
-      const dessertPortions = pkg.dessertAllocation === "equal-split" && guestCount % 2 === 0 ? guestCount / 2 : undefined;
-      if (dessertPortions !== undefined && pkg.dessertMinimumPortions !== undefined && dessertPortions < pkg.dessertMinimumPortions) next.push(`Each selected dessert needs at least ${pkg.dessertMinimumPortions} portions.`);
     }
     setErrors(next);
     if (next.length) { window.setTimeout(() => dialogRef.current?.querySelector<HTMLElement>("[role=alert]")?.focus(), 0); return; }
@@ -115,14 +112,15 @@ export function BuffetMenuDialog({ menu, guestCount, initialPackageId, selection
       <header className={styles.header}><div><p className={styles.eyebrow}>Hot Fork Buffet</p><h2 ref={headingRef} tabIndex={-1} id="buffet-menu-title">Choose your menu</h2><p id="buffet-menu-intro">Choose dishes for {guestCount || "your"} guests. Dietary meals are included in your guest count. Sides are included with the mains. Saving sets the package quantity to the guest count.</p></div><button type="button" className={styles.close} onClick={onCancel} aria-label="Close menu selector">×</button></header>
       <fieldset className={styles.packageGroup}><legend>Package</legend>{menu.packages.map(item => <label className={styles.packageOption} key={item.id}><input type="radio" name="buffet-package" value={item.id} checked={draft.packageId === item.id} onChange={() => setDraft(current => ({ ...current, packageId: item.id, dessertIds: [] }))} /><span>{item.label}</span></label>)}</fieldset>
       {pkg && <>
-        {!pkg.orderingReady && <p className={styles.notice} role="status">This menu is a preview. Ordering is unavailable until the package rules are confirmed.{pkg.pendingRules?.length ? ` ${pkg.pendingRules.join(" ")}` : ""}</p>}
+        {!pkg.orderingReady && <p className={styles.notice} role="status">This menu is a preview. Live ordering is awaiting approval.{pkg.pendingRules?.length ? ` ${pkg.pendingRules.join(" ")}` : ""}</p>}
         {dishList(["meat", "fish"], "nonVegetarianMainId", "Choose one meat or fish main")}
         {dishList(["vegetarian", "vegan"], "vegetarianMainId", "Choose one vegetarian or vegan main")}
         <section className={styles.group} aria-labelledby="buffet-portions-title"><h3 id="buffet-portions-title">Main portions</h3><p>Allocate portions across the selected mains. Each selected main needs at least {pkg.mainMinimumPortions}.</p>{mains.map(id => <label className={styles.portion} key={id}><span>{dish(id)?.name || "Saved dish no longer available"}</span><input type="number" min="0" step="1" inputMode="numeric" value={draft.mainPortions[id] ?? ""} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, mainPortions: { ...current.mainPortions, [id]: value === "" ? 0 : Number(value) } })); }} /></label>)}<p className={styles.total} aria-live="polite">Main portions: {total} of {guestCount} guests</p></section>
         {choiceList("salad", "saladIds", pkg.saladCount)}
         {choiceList("dessert", "dessertIds", pkg.dessertCount)}
+        <p>{pkg.dessertIntent === "equal-split" ? "The two desserts are intended as a 50/50 split. The chef decides portions." : "The chef decides dessert portions."} Salad portions are also at the chef’s discretion.</p>
         <section className={styles.group} aria-labelledby="buffet-dietaries-title"><h3 id="buffet-dietaries-title">Dietary requirements and allergens</h3><p>Dietary meals are included in your guest count. Add allergy details in the Dietaries step; ask the hospitality team about allergens where information is not recorded.</p><label className={styles.dietaryField}>Dietary notes <small>(optional)</small><textarea rows={3} maxLength={4000} value={draftDietaryNotes} onChange={event => setDraftDietaryNotes(event.target.value)} /></label></section>
-        <section className={styles.summary} aria-labelledby="buffet-summary-title"><h3 id="buffet-summary-title">Your selection</h3><p>{pkg.label} · {guestCount} guests</p><ul>{mains.map(id => <li key={id}>{dish(id)?.name || "Saved dish no longer available"}: {draft.mainPortions[id] || 0} portions</li>)}{draft.saladIds.map(id => <li key={id}>{dish(id)?.name || "Saved salad no longer available"}</li>)}{draft.dessertIds.map(id => <li key={id}>{dish(id)?.name || "Saved dessert no longer available"}{pkg.dessertAllocation === "equal-split" && guestCount % 2 === 0 ? `: ${guestCount / 2} portions` : ": portions awaiting confirmation"}</li>)}</ul></section>
+        <section className={styles.summary} aria-labelledby="buffet-summary-title"><h3 id="buffet-summary-title">Your selection</h3><p>{pkg.label} · {guestCount} guests</p><ul>{mains.map(id => <li key={id}>{dish(id)?.name || "Saved dish no longer available"}: {draft.mainPortions[id] || 0} portions</li>)}{draft.saladIds.map(id => <li key={id}>{dish(id)?.name || "Saved salad no longer available"}</li>)}{draft.dessertIds.map(id => <li key={id}>{dish(id)?.name || "Saved dessert no longer available"}</li>)}</ul></section>
       </>}
       {errors.length > 0 && <div className={styles.error} role="alert" tabIndex={-1}><strong>Please review your menu</strong><ul>{errors.map(error => <li key={error}>{error}</li>)}</ul></div>}
       <footer className={styles.actions}><button type="button" className={styles.secondary} onClick={onCancel}>Cancel</button><button type="button" className={styles.primary} onClick={validate}>Save selection</button></footer>

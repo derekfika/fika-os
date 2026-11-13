@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { BuffetMenuDialog } from "./BuffetMenuDialog";
-import { buffetMenuView, buffetPackageForItem, loadBuffetConfig, parseBuffetPreview, type BuffetConfig, type BuffetPreview } from "../../lib/buffet-menu-client";
+import { buffetMenuView, buffetPackageForItem, buffetSubmissionEnabled, loadBuffetConfig, parseBuffetPreview, type BuffetConfig, type BuffetPreview } from "../../lib/buffet-menu-client";
 import type { PortalMenuItem } from "../../lib/mnk-contract";
 import styles from "./BuffetMenuDialog.module.css";
 
@@ -25,16 +25,17 @@ export function BuffetMenuPicker({ config, item, catalogue, selectedItemIds, gue
   const view = buffetMenuView(config, catalogue, selectedItemIds, item.id);
   const parsedPreview = parseBuffetPreview(preview);
   const validSelection = parsedPreview?.menuVersion === config.menuVersion ? parsedPreview.selection : undefined;
+  const needsResave = Boolean(validSelection && parsedPreview?.rulesVersion !== config.rulesVersion);
   return <div className={styles.picker} data-buffet-item-id={item.id}>
     {preview && !validSelection && <p role="alert">The menu has changed since this selection was saved. Please choose again.</p>}
+    {needsResave && <p role="status">The buffet rules have changed. Please review and save your selection again.</p>}
     {validSelection && <BuffetSelectionSummary config={config} preview={preview} />}
     <button type="button" className={styles.secondary} onClick={() => setOpen(true)}>{validSelection ? "Edit menu" : "Choose Menu"}</button>
     {open && <BuffetMenuDialog menu={view} guestCount={guestCount} initialPackageId={pkg.id} selection={validSelection} dietaryNotes={dietaryNotes} onCancel={() => setOpen(false)} onSave={(selection, notes) => {
       const target = config.packages.find(candidate => candidate.id === selection.packageId);
       const targetItem = catalogue.find(candidate => target?.canonicalItemIds.includes(candidate.id));
       if (!targetItem) return;
-      const dessertPortions = Object.fromEntries(selection.dessertIds.map(id => [id, target?.rules.dessertAllocation === "equal-split" && guestCount % 2 === 0 ? guestCount / 2 : null]));
-      onSave(targetItem, { menuVersion: config.menuVersion, selection, dessertPortions }, notes); setOpen(false);
+      onSave(targetItem, { menuVersion: config.menuVersion, rulesVersion: config.rulesVersion, selection }, notes); setOpen(false);
       if (targetItem.id !== item.id) window.setTimeout(() => {
         const picker = [...document.querySelectorAll<HTMLElement>("[data-buffet-item-id]")].find(element => element.dataset.buffetItemId === targetItem.id);
         picker?.querySelector<HTMLButtonElement>("button")?.focus();
@@ -49,5 +50,5 @@ export function BuffetSelectionSummary({ config, preview }: { config?: BuffetCon
   if (!config || !parsed || parsed.menuVersion !== config.menuVersion) return <p>Saved buffet selection needs review.</p>;
   const selection = parsed.selection;
   const ids = [selection.nonVegetarianMainId, selection.vegetarianMainId, ...selection.saladIds, ...selection.dessertIds];
-  return <div className={styles.picker}><strong>Menu selection</strong>{ids.map(id => { const item = config.dishes.find(dish => dish.id === id); const portions = selection.mainPortions[id] ?? parsed.dessertPortions?.[id]; return <span className={styles.summaryDish} key={id}>{item?.name || "Saved dish no longer available"}{portions ? ` · ${portions} portions` : selection.dessertIds.includes(id) ? " · portions awaiting confirmation" : ""}</span>; })}{!config.readiness.customerSubmission && <p>Preview only; ordering is unavailable until the package rules are confirmed.</p>}</div>;
+  return <div className={styles.picker}><strong>Menu selection</strong>{ids.map(id => { const item = config.dishes.find(dish => dish.id === id); const portions = selection.mainPortions[id]; return <span className={styles.summaryDish} key={id}>{item?.name || "Saved dish no longer available"}{portions ? ` · ${portions} portions` : ""}</span>; })}{!buffetSubmissionEnabled(config) && <p>Preview only; live ordering is awaiting approval.</p>}</div>;
 }

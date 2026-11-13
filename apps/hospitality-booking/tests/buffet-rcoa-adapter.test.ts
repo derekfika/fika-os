@@ -16,3 +16,10 @@ test("RCoA validates and preserves the structured buffet choice to Hub", () => {
   const malformed = structuredClone(request); (malformed.order.items[0].choices[0] as { value: unknown }).value = "forged";
   assert.equal(RcoaBookingRequestSchema.safeParse(malformed).success, false, "a buffet ID cannot use the ordinary string choice path");
 });
+
+test("RCoA preserves the final v2 buffet choice without dessert quantities", () => {
+  const v2 = { id: "hot-fork-buffet-selection", value: { contract: "fika.hot-fork-buffet-selection.v2", menuVersion: HOT_FORK_BUFFET_MENU_VERSION, rulesVersion: "sam-2026-11-13-final", packageId: "gold", mains: [{ dishId: "m", portions: 16 }, { dishId: "v", portions: 15 }], saladIds: ["s1", "s2", "s3"], dessertIds: ["d1", "d2"] } };
+  const v2Request = { ...request, event: { ...request.event, guestCount: 31 }, order: { ...request.order, items: [{ itemId: item.id, quantity: 31, choices: [v2] }] } };
+  assert.equal(RcoaBookingRequestSchema.safeParse(v2Request).success, true);
+  assert.deepEqual(buildTrustedRcoaHubPayload(v2Request, [item], seedVisibility).order.items[0].choices, [v2]);
+});

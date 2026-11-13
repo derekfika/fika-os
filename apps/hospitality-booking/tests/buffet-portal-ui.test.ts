@@ -18,10 +18,10 @@ const { cleanup, fireEvent, render, screen, waitFor } = await import("@testing-l
 const { default: BookingPortal } = await import("../app/ui/BookingPortal");
 const { default: RcoaBookingPortal } = await import("../app/ui/RcoaBookingPortal");
 const item = { id: "gold-id", canonicalId: "gold-id", name: "Fixture Gold", category: "Fork Buffet & Bowl Food", unitPrice: 28, vatRate: null, minimumQuantity: 12, dietaryInformation: [], allergenInformation: [] };
-const raw = { contract: "fika.hot-fork-buffet-menu.v1", menuVersion: "fixture-v1", readiness: { customerSubmission: false, status: "pending_rules", pendingRules: ["Salad portions"] }, packages: [{ id: "gold", canonicalItemIds: ["gold-id"], rules: { mainChoices: 2, mainMinimumPortions: 12, mainPortionsMustEqualGuests: true, saladChoices: 3, dessertChoices: 2, dessertAllocation: "equal-split", dessertMinimumPortions: "unconfirmed", oddGuestRounding: "unconfirmed" } }], dishes: [
+const raw = { contract: "fika.hot-fork-buffet-menu.v1", menuVersion: "fixture-v1", rulesVersion: "rules-final", readiness: { customerSubmission: false, stagingCustomerSubmission: false, status: "rules_confirmed", pendingRules: [], liveOrderingApprovalRequired: true }, packages: [{ id: "gold", canonicalItemIds: ["gold-id"], rules: { mainChoices: 2, mainMinimumPortions: 12, mainPortionsMustEqualGuests: true, saladChoices: 3, dessertChoices: 2, saladAllocation: "chef-discretion", dessertAllocation: "chef-discretion", dessertMinimumPortions: null, dessertIntent: "equal-split", sides: "included-in-mains", dietaryPortions: "within-guest-count" } }], dishes: [
   ["m", "meat", "Fixture meat"], ["v", "vegetarian", "Fixture vegetable"], ["s1", "salad", "Fixture salad one"], ["s2", "salad", "Fixture salad two"], ["s3", "salad", "Fixture salad three"], ["d1", "dessert", "Fixture dessert one"], ["d2", "dessert", "Fixture dessert two"],
 ].map(([id, category, name]) => ({ id, category, name, allergenStatus: "unrecorded", dietaryStatus: "unrecorded", selectionStatus: "source_listed" })) };
-const preview = { menuVersion: "fixture-v1", selection: { packageId: "gold", nonVegetarianMainId: "m", vegetarianMainId: "v", mainPortions: { m: 16, v: 14 }, saladIds: ["s1", "s2", "s3"], dessertIds: ["d1", "d2"] }, dessertPortions: { d1: 15, d2: 15 } };
+const preview = { menuVersion: "fixture-v1", rulesVersion: "rules-final", selection: { packageId: "gold", nonVegetarianMainId: "m", vegetarianMainId: "v", mainPortions: { m: 16, v: 14 }, saladIds: ["s1", "s2", "s3"], dessertIds: ["d1", "d2"] } };
 const line = { itemId: item.id, quantity: 30, choices: {}, buffetPreview: preview };
 const originalFetch = globalThis.fetch; const originalFlag = process.env.NEXT_PUBLIC_FIKA_HOT_FORK_BUFFET_ENABLED;
 let posts = 0;
@@ -57,4 +57,42 @@ test("RCoA keeps the saved preview visible and blocks sending", async () => {
   await waitFor(() => assert.ok(screen.getByRole("button", { name: "Send booking request" })));
   fireEvent.click(screen.getByRole("button", { name: "Send booking request" }));
   assert.match(screen.getAllByText(/preview.*remove it or wait/i)[0].textContent!, /preview/i); assert.equal(posts, 0);
+});
+
+test("MNK staging capability permits a structured buffet request", async () => {
+  let payload: any;
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method === "POST") { posts++; payload = JSON.parse(String(init.body)); return Response.json({ error: { message: "Fixture response" } }, { status: 503 }); }
+    return Response.json({ ...raw, readiness: { ...raw.readiness, stagingCustomerSubmission: true } });
+  };
+  const contact = { requesterName: "Fixture", requesterEmail: "test@example.invalid", requesterPhone: "1", requesterCompany: "Test", clientName: "", clientCompany: "", invoiceReference: "", specialInstructions: "" };
+  const details = { eventDate: "2027-01-20", startTime: "12:00", endTime: "13:00", guestCount: 30, floorLevel: "Ground", roomOrArea: "Room", deliveryPoint: "" };
+  const acks = { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true };
+  dom.window.localStorage.setItem("fika-hospitality-booking-draft:mnk", JSON.stringify({ occasion: "event_catering", category: "Fork Buffet & Bowl Food", step: 4, contact, details, lines: [line], acks }));
+  render(React.createElement(BookingPortal, { siteKey: "mnk" }));
+  await waitFor(() => assert.ok(screen.getAllByText(/Fixture meat · 16 portions/).length));
+  fireEvent.click(screen.getByRole("button", { name: "Send request" }));
+  await waitFor(() => assert.equal(posts, 1));
+  const choice = payload.order.items[0].choices.find((value: any) => value.id === "hot-fork-buffet-selection");
+  assert.equal(choice.value.contract, "fika.hot-fork-buffet-selection.v2");
+  assert.deepEqual(choice.value.dessertIds, ["d1", "d2"]);
+  assert.equal("desserts" in choice.value, false);
+});
+
+test("RCoA staging capability permits a structured buffet request", async () => {
+  let payload: any;
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method === "POST") { posts++; payload = JSON.parse(String(init.body)); return Response.json({ error: { message: "Fixture response" } }, { status: 503 }); }
+    return Response.json({ ...raw, readiness: { ...raw.readiness, stagingCustomerSubmission: true } });
+  };
+  const draft = { ...createEmptyRcoaDraft(), step: 5, occasion: "event_catering", lines: [line], event: { ...createEmptyRcoaDraft().event, eventDate: "2027-01-20", startTime: "12:00", guestCount: 30, floorLevel: "Ground Floor", roomOrArea: "Conference Suite" }, contact: { name: "Fixture", email: "test@example.invalid", phone: "1", companyName: "Test", invoiceReference: "" }, acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } };
+  dom.window.localStorage.setItem("fika-rcoa-booking-draft:v1", JSON.stringify(draft));
+  render(React.createElement(RcoaBookingPortal, { configured: true }));
+  await waitFor(() => assert.ok(screen.getAllByText(/Fixture meat · 16 portions/).length));
+  fireEvent.click(screen.getByRole("button", { name: "Send booking request" }));
+  await waitFor(() => assert.equal(posts, 1));
+  const choice = payload.order.items[0].choices.find((value: any) => value.id === "hot-fork-buffet-selection");
+  assert.equal(choice.value.contract, "fika.hot-fork-buffet-selection.v2");
+  assert.deepEqual(choice.value.dessertIds, ["d1", "d2"]);
+  assert.equal("desserts" in choice.value, false);
 });
