@@ -15,8 +15,8 @@ const { BuffetMenuPicker } = await import("../app/ui/BuffetMenuPicker");
 afterEach(cleanup); after(() => dom.window.close());
 
 const menu: BuffetMenu = { version: "fixture", packages: [
-  { id: "gold", label: "Gold", saladCount: 3, dessertCount: 2, mainMinimumPortions: 12, dessertAllocation: "equal-split", orderingReady: false, pendingRules: ["Some allocations need confirmation."] },
-  { id: "silver", label: "Silver", saladCount: 3, dessertCount: 1, mainMinimumPortions: 12, dessertAllocation: "unconfirmed", orderingReady: false },
+  { id: "gold", label: "Gold", saladCount: 3, dessertCount: 2, mainMinimumPortions: 12, dessertIntent: "equal-split", orderingReady: false, pendingRules: [] },
+  { id: "silver", label: "Silver", saladCount: 3, dessertCount: 1, mainMinimumPortions: 12, dessertIntent: "one-choice", orderingReady: false },
 ], dishes: [
   { id: "m", name: "Fixture meat", category: "meat" }, { id: "v", name: "Fixture vegetable", category: "vegetarian" },
   { id: "review", name: "Fixture under review", category: "vegan", selectionStatus: "review_required" },
@@ -33,7 +33,7 @@ const choose = () => {
 test("known choices validate, show live portions and save a draft that reopens", () => {
   let saved: BuffetSelection | undefined;
   const view = render(React.createElement(BuffetMenuDialog, { menu, guestCount: 30, initialPackageId: "gold", onSave: value => { saved = value; }, onCancel() {} }));
-  assert.match(screen.getByRole("status").textContent!, /preview.*unavailable/i);
+  assert.match(screen.getByRole("status").textContent!, /preview.*approval/i);
   assert.equal((screen.getByRole("radio", { name: /Fixture under review/ }) as HTMLInputElement).disabled, true);
   fireEvent.click(screen.getByRole("button", { name: "Save selection" }));
   assert.match(screen.getByRole("alert").textContent!, /Choose one meat or fish main/);
@@ -45,13 +45,14 @@ test("known choices validate, show live portions and save a draft that reopens",
   assert.deepEqual(saved!.saladIds, ["s1", "s2", "s3"]); assert.deepEqual(saved!.dessertIds, ["d1", "d2"]);
   view.unmount(); render(React.createElement(BuffetMenuDialog, { menu, guestCount: 30, initialPackageId: "gold", selection: saved, onSave() {}, onCancel() {} }));
   assert.equal((screen.getByRole("checkbox", { name: /Fixture salad one/ }) as HTMLInputElement).checked, true);
-  assert.match(within(screen.getByRole("dialog")).getByText(/Fixture dessert one: 15 portions/).textContent!, /15 portions/);
+  assert.match(within(screen.getByRole("dialog")).getByText(/50\/50 split/).textContent!, /chef decides/i);
+  assert.doesNotMatch(within(screen.getByRole("dialog")).getByRole("list", { name: "" }).textContent!, /dessert one:.*portions/i);
 });
 
 test("odd equal split stays unallocated; switching package resets desserts", () => {
   let saved = false;
   render(React.createElement(BuffetMenuDialog, { menu, guestCount: 31, initialPackageId: "gold", selection: { packageId: "gold", nonVegetarianMainId: "m", vegetarianMainId: "v", mainPortions: { m: 16, v: 15 }, saladIds: ["s1", "s2", "s3"], dessertIds: ["d1", "d2"] }, onSave() { saved = true; }, onCancel() {} }));
-  assert.match(screen.getByText(/Fixture dessert one: portions awaiting confirmation/).textContent!, /awaiting confirmation/);
+  assert.match(screen.getByText(/50\/50 split/).textContent!, /chef decides/i);
   fireEvent.click(screen.getByRole("button", { name: "Save selection" })); assert.equal(saved, true, "odd guest totals can be saved as a local preview");
   fireEvent.click(screen.getByRole("radio", { name: "Silver" }));
   assert.equal((screen.getByRole("checkbox", { name: /Fixture dessert one/ }) as HTMLInputElement).checked, false);
@@ -72,9 +73,9 @@ test("Escape cancels and focus returns to the trigger; Tab stays in the dialog",
 
 
 test("switching package keeps focus on the new basket item and saves notes", async () => {
-  const config = { contract: "fika.hot-fork-buffet-menu.v1", menuVersion: "fixture", readiness: { customerSubmission: false, status: "pending_rules", pendingRules: [] }, packages: [
-    { id: "gold", canonicalItemIds: ["gold-item"], rules: { mainChoices: 2, mainMinimumPortions: 12, mainPortionsMustEqualGuests: true, saladChoices: 3, dessertChoices: 2, dessertAllocation: "equal-split", dessertMinimumPortions: "unconfirmed", oddGuestRounding: "unconfirmed" } },
-    { id: "silver", canonicalItemIds: ["silver-item"], rules: { mainChoices: 2, mainMinimumPortions: 12, mainPortionsMustEqualGuests: true, saladChoices: 3, dessertChoices: 1, dessertAllocation: "unconfirmed", dessertMinimumPortions: "unconfirmed", oddGuestRounding: "not_applicable" } },
+  const config = { contract: "fika.hot-fork-buffet-menu.v1", menuVersion: "fixture", rulesVersion: "rules-final", readiness: { customerSubmission: false, stagingCustomerSubmission: false, status: "rules_confirmed", pendingRules: [], liveOrderingApprovalRequired: true }, packages: [
+    { id: "gold", canonicalItemIds: ["gold-item"], rules: { mainChoices: 2, mainMinimumPortions: 12, mainPortionsMustEqualGuests: true, saladChoices: 3, dessertChoices: 2, saladAllocation: "chef-discretion", dessertAllocation: "chef-discretion", dessertMinimumPortions: null, dessertIntent: "equal-split", sides: "included-in-mains", dietaryPortions: "within-guest-count" } },
+    { id: "silver", canonicalItemIds: ["silver-item"], rules: { mainChoices: 2, mainMinimumPortions: 12, mainPortionsMustEqualGuests: true, saladChoices: 3, dessertChoices: 1, saladAllocation: "chef-discretion", dessertAllocation: "chef-discretion", dessertMinimumPortions: null, dessertIntent: "one-choice", sides: "included-in-mains", dietaryPortions: "within-guest-count" } },
   ], dishes: menu.dishes.map(dish => ({ ...dish, allergenStatus: "unrecorded", dietaryStatus: "unrecorded", selectionStatus: dish.selectionStatus === "review_required" ? "review_required" : "source_listed" })) } as import("../lib/buffet-menu-client").BuffetConfig;
   const items = [{ id: "gold-item", canonicalId: "gold-item", name: "Gold", category: "Buffet", unitPrice: 28, vatRate: null, dietaryInformation: [], allergenInformation: [] }, { id: "silver-item", canonicalId: "silver-item", name: "Silver", category: "Buffet", unitPrice: 20, vatRate: null, dietaryInformation: [], allergenInformation: [] }];
   let savedNotes = "";
