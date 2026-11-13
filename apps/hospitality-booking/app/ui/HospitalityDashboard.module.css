@@ -16,6 +16,8 @@
     padding: 14px 0;
     border-bottom: 1px solid var(--line);
   }
+  :global(.amendment-line [data-buffet-item-id]) { grid-column: 1 / -1; min-width: 0; }
+  :global(.amendment-line [data-buffet-item-id] strong) { padding: 0; text-align: left; }
   :global(.amendment-line span) {
     display: grid;
     gap: 4px;
