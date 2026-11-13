@@ -10,6 +10,31 @@ env:
   - variable: FIREBASE_PROJECT_ID
     value: fika-os-dev
     availability: [BUILD, RUNTIME]
+  # All staging Drive work uses the isolated keyless staging service account.
+  - variable: FIKA_STAGING_DRIVE_ENABLED
+    value: "true"
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_AUTH_MODE
+    value: shared-drive
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_SHARED_DRIVE_ID
+    value: 0ALgY_Zkd_k3cUk9PVA
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_EMAIL
+    value: fika-staging-drive@fika-os-dev.iam.gserviceaccount.com
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_PERMISSION_ID
+    value: "110289228770833757986"
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_ROOT_ID
+    value: 1B3oV4dmb3UpwTPRDjJ4B0hES1rRL1M5z
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS
+    value: "110453433265748456567,110289228770833757986"
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_PRODUCTION_SENTINEL_IDS
+    value: "1uOdUgHQD7O3Op6DzgyslXG3-_aeYRm08,1go9l-3iDEY_g22C_EFsl0GzVIpX9tSyx,1-2Uo7Z3pYNlXvlIBby7qYGGZMtG2ABag,1b1hSZHJMcwCXXwG3wETO9sVcSayCfxVd"
+    availability: [RUNTIME]
   - variable: FIKA_ALLOWED_EMAIL_DOMAINS
     value: fikacatering.com
     availability: [BUILD, RUNTIME]
@@ -63,15 +88,6 @@ env:
     availability: [RUNTIME]
   - variable: GALLAGHER_SHEETS_IMPERSONATED_USER
     secret: GALLAGHER_SHEETS_IMPERSONATED_USER
-    availability: [RUNTIME]
-  - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
-    secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
-    availability: [RUNTIME]
-  # CPU allergen releases use the shared Drive adapter through this service.
-  # The owner is a governed Workspace identity; the DWD credential remains in
-  # Secret Manager and is never exposed in repository configuration.
-  - variable: GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION
-    value: derek@fikacatering.com
     availability: [RUNTIME]
   - variable: FIKA_PDF_RENDERER_URL
     value: https://fika-pdf-renderer-staging-6tc4airnza-ez.a.run.app
