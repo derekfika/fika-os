@@ -16,6 +16,7 @@ import { bookingNotificationId } from "../lib/booking-notifications";
 import { groupAmendmentCommand, groupChargesCommand, validLondonServiceTime, type GroupAmendmentCommand } from "../lib/hospitality-group-amendment";
 import { planServiceProduction } from "../../hospitality-booking/lib/cpu-production-plan";
 import type { CanonicalBooking as ClientBooking, ProductionOrder as ClientOrder } from "../../hospitality-booking/lib/canonical-types";
+import { HOT_FORK_BUFFET_CHOICE_ID, HOT_FORK_BUFFET_MENU_VERSION, HOT_FORK_BUFFET_RULES_VERSION, HOT_FORK_BUFFET_SELECTION_CONTRACT, hotForkBuffetMenu } from "@fika/server-shared/hospitality-buffet-selection";
 
 const enabled = process.env.FIKA_UAT_INTEGRATION_EMULATOR_TEST === "true";
 const actor = { uid: "test:group-amendment", name: "Isolated emulator fixture", role: "integration-admin" as const, synthetic: true };
@@ -83,7 +84,7 @@ test("group service date validation handles invalid dates, London DST gap and en
 test("an unchanged group save preserves every version and quote without new audit or handoff work", { skip: !enabled }, async () => {
   const f = await fixture(); await f.quote(0); const before = await f.read();
   const command = f.command(before);
-  command.services.forEach(s => { s.patch.service.endTime = ""; s.patch.service.floorLevel = ""; s.patch.service.deliveryPoint = ""; s.patch.service.onsiteContactName = ""; s.patch.service.onsiteContactPhone = ""; });
+  command.services.forEach(s => { s.patch.service.endTime = ""; s.patch.service.deliveryPoint = ""; s.patch.service.onsiteContactName = ""; s.patch.service.onsiteContactPhone = ""; });
   const result = await amendHospitalityBookingGroup(actor, command, async () => {});
   assert.deepEqual(await f.read(), before);
   assert.equal(result.projectionPropagation.results.length, 0);
@@ -327,6 +328,7 @@ test("atomic group amendment updates quantities/time/items/dietaries/notes and p
   assert.equal(saved.bookings.length, 3); assert.deepEqual(after.map(b => b.canonicalId), before.map(b => b.canonicalId));
   assert.deepEqual(after[2], before[2]); assert.equal(after[0].order.items[0].quantity, 12);
   assert.equal(after[0].order.items.length, 2); assert.equal(after[0].dietaries.vegan, 3); assert.equal(after[0].dietaries.nuts, "UNRECORDED");
+  assert.equal(after[0].order.items[1].unitPrice, 3, "non-buffet amendments retain their established pricing path");
   assert.equal(after[1].service.startTime, "14:00"); assert.equal(after[0].notes, "Amended operational notes");
   assert.ok(after[0].quoteState?.revisions.every(q => q.stale));
   const workspace = await bookingWorkspace();
@@ -335,6 +337,53 @@ test("atomic group amendment updates quantities/time/items/dietaries/notes and p
   const second = f.command(after); second.services[0].patch.order.items = [{ itemId: f.inHouse, itemName: "Site-produced", quantity: 12, unitPrice: 2 }];
   await amendHospitalityBookingGroup(actor, second, async () => {});
   assert.equal((await bookingWorkspace()).cpuRouting![after[0].canonicalId].status, "no_cpu_production");
+});
+test("buffet amendments bound dietaries and reprice forged lines in standalone and grouped bookings", { skip: !enabled }, async () => {
+  for (const grouped of [false, true]) {
+    const f = await fixture(true);
+    const goldId = "hospitality-menu-item:rcoa:hot_fork_buffet_gold";
+    const site = f.children[0].service.oplocId!;
+    const offeringId = `hospitality-menu-offering:buffet:${randomUUID()}`;
+    const canonical = db.collection("integrationHubCanonical");
+    const put = (id: string, entityType: string, record: object) => canonical.doc(stableDocumentId(id)).set({ canonicalId: id, entityType, lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active", ...record } });
+    await put(goldId, "Hospitality Menu Item", { name: "Hot Fork Buffet Gold", category: "Lunch", defaultMinimumQuantity: 1 });
+    await put(offeringId, "Hospitality Menu Offering", { hospitalityMenuItemId: goldId, oplocId: site, offeringMode: "standard" });
+    await put(`${offeringId}:price`, "Hospitality Menu Price", { hospitalityMenuOfferingId: offeringId, amount: 31, vatRate: 0.2, effectiveFrom: "2020-01-01" });
+    await db.collection("integrationHubHospitalityMenuProductionRouting").doc(stableDocumentId(goldId)).set({ menuItemId: goldId, workstreams: ["hospitality"] });
+    const dish = (category: string, index: number) => hotForkBuffetMenu.dishes.filter(entry => entry.category === category)[index].id;
+    const choice = { id: HOT_FORK_BUFFET_CHOICE_ID, value: { contract: HOT_FORK_BUFFET_SELECTION_CONTRACT, menuVersion: HOT_FORK_BUFFET_MENU_VERSION, rulesVersion: HOT_FORK_BUFFET_RULES_VERSION, packageId: "gold", mains: [{ dishId: dish("fish", 0), portions: 36 }, { dishId: dish("vegetarian", 0), portions: 24 }], saladIds: [dish("salad", 0), dish("salad", 1), dish("salad", 2)], dessertIds: [dish("dessert", 0), dish("dessert", 1)] } };
+    const buffet = structuredClone(f.children[0]);
+    if (!grouped) delete buffet.bookingGroup;
+    buffet.service.guestCount = 60;
+    buffet.order.items = [{ itemId: goldId, menuItemId: goldId, itemName: "Hot Fork Buffet Gold", category: "Lunch", unitPrice: 31, quantity: 60, lineTotal: 1860, choices: [choice] }];
+    buffet.order.netTotal = 1860; buffet.order.vatTotal = 0; buffet.order.grossTotal = 1860;
+    buffet.dietaries = { vegetarian: 24 };
+    await bookings().doc(buffet.canonicalId).set(buffet);
+    if (grouped) await f.quote(0);
+    const current = (await bookings().doc(buffet.canonicalId).get()).data() as CanonicalBooking;
+    const patch = { client: current.client, service: { eventDate: current.service.eventDate, startTime: current.service.startTime, guestCount: 60, floorLevel: current.service.floorLevel, roomOrArea: current.service.roomOrArea }, order: { eventType: current.order.eventType, items: [{ itemId: goldId, itemName: "Forged buffet price", quantity: 60, unitPrice: 999, choices: [choice] }] }, dietaries: { vegetarian: 24 } };
+    const rejected = { ...patch, dietaries: { vegetarian: 61 } };
+    if (grouped) {
+      const rows = await f.read();
+      const command = f.command(rows);
+      command.services[0].patch = rejected;
+      await assert.rejects(amendHospitalityBookingGroup(actor, command, async () => {}), /within the guest count/);
+    } else {
+      await assert.rejects(executeBookingWorkflow(actor, current.canonicalId, current.version, { action: "amend", reason: "Buffet dietary correction", patch: rejected }), /within the guest count/);
+    }
+    assert.equal((await bookings().doc(current.canonicalId).get()).data()!.version, current.version, "rejected amendment writes no booking revision");
+    if (grouped) {
+      const command = f.command(await f.read()); command.services[0].patch = patch;
+      await amendHospitalityBookingGroup(actor, command, async () => {});
+    } else {
+      await executeBookingWorkflow(actor, current.canonicalId, current.version, { action: "amend", reason: "Buffet price correction", patch });
+    }
+    const saved = (await bookings().doc(current.canonicalId).get()).data() as CanonicalBooking;
+    assert.equal(saved.order.items[0].unitPrice, 31, "current effective site price overrides the submitted amount");
+    assert.equal(saved.order.items[0].lineTotal, 1860);
+    assert.deepEqual(saved.order.items[0].choices, [choice]);
+    assert.equal(saved.dietaries.vegetarian, 24);
+  }
 });
 test("stale versions, unresolved routing, authorization failure, missing membership and inconsistent group dates roll back every service", { skip: !enabled }, async () => {
   const f = await fixture(true), before = await f.read();

@@ -14,6 +14,7 @@ import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { saveHospitalityKitchenNotes } from "@/lib/production-domain";
 import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
 import { redactHospitalityQuoteDriveLinks } from "@/lib/hospitality-quote-response";
+import { verifyStagingQuotePdfStatus } from "@/lib/hospitality-staging-quote-pdf";
 
 const Base = { canonicalId: z.string().min(8), expectedVersion: z.number().int().positive() };
 const Change = z.discriminatedUnion("action", [
@@ -76,8 +77,8 @@ export async function POST(request: NextRequest) { return withDataTrace({ app: "
   }
   const booking = await getBookingByCanonicalId(change.canonicalId);
   await assertHospitalityBookingMutationAccess(repository, principal, booking, actor.role === "integration-admin" || actor.role === "reviewer");
-  if (change.action === "quote-pdf-status" && await stagingDriveAccessBlocked()) return NextResponse.json({ error: { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED", message: "Quote PDF state cannot be changed until Drive isolation is verified for this environment." } }, { status: 404, headers: { "Cache-Control": "no-store, max-age=0" } });
   if (change.action === "save-kitchen-notes") return bookingJson(await saveHospitalityKitchenNotes(actor, change.canonicalId, change.expectedVersion, change.kitchenNotes));
   if (change.action === "production-handoff") return bookingJson(await createProductionOrder(actor, change.canonicalId, change.expectedVersion));
-  return bookingJson(await executeBookingWorkflow(actor, change.canonicalId, change.expectedVersion, change, "customer-cancellation"));
+  const verifiedChange = change.action === "quote-pdf-status" ? await verifyStagingQuotePdfStatus(change, booking) : change;
+  return bookingJson(await executeBookingWorkflow(actor, change.canonicalId, change.expectedVersion, verifiedChange, "customer-cancellation"));
 } catch (error) { return errorResponse(error); } }); }

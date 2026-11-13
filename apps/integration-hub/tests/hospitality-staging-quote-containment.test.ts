@@ -7,7 +7,8 @@ const source = (path: string) => readFileSync(new URL(path, import.meta.url), "u
 test("booking and group booking responses use runtime-scoped quote pointer redaction", () => {
   const bookingRoute = source("../app/api/hospitality-bookings/route.ts");
   assert.match(bookingRoute, /redactHospitalityQuoteDriveLinks\(value, await stagingDriveAccessBlocked\(\)\)/);
-  assert.match(bookingRoute, /if \(change\.action === "quote-pdf-status" && await stagingDriveAccessBlocked\(\)\)/);
+  assert.match(bookingRoute, /change\.action === "quote-pdf-status" \? await verifyStagingQuotePdfStatus\(change, booking\)/);
+  assert.match(bookingRoute, /executeBookingWorkflow\(actor, change\.canonicalId, change\.expectedVersion, verifiedChange/);
 
   for (const path of [
     "../app/api/hospitality-booking-groups/amend/route.ts",

@@ -12,7 +12,7 @@ import { trustedPublicOrder } from "./hospitality-price-trust";
 import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, loadRcoaBookingCatalogue, mnkBookingPricingRecords, rcoaBookingConstraintRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
 import { isHotForkBuffetBooking } from "../../shared/hot-fork-buffet";
-import { assertHotForkBuffetAmendment, hotForkBuffetChoice } from "@fika/server-shared/hospitality-buffet-selection";
+import { assertHotForkBuffetAmendment, buffetPackageForItem, hotForkBuffetChoice, validateBuffetDietaryCounts } from "@fika/server-shared/hospitality-buffet-selection";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
 import type { CanonicalRecord } from "./types";
@@ -1302,6 +1302,17 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
           (item.unitPrice * item.quantity + Number.EPSILON) * 100,
         ) / 100,
     }));
+  const buffetLines = (lines: typeof items) => lines.filter(item => buffetPackageForItem(item.menuItemId || item.itemId));
+  const beforeBuffet = buffetLines(current.order.items);
+  const afterBuffet = buffetLines(items);
+  const buffetCommercialChange = Boolean(beforeBuffet.length || afterBuffet.length) && (
+    current.service.guestCount !== patch.service.guestCount ||
+    groupHash(beforeBuffet.map(item => [item.menuItemId || item.itemId, item.quantity, item.unitPrice, item.choices])) !==
+      groupHash(afterBuffet.map(item => [item.menuItemId || item.itemId, item.quantity, item.unitPrice, item.choices]))
+  );
+  if (items.some(item => buffetPackageForItem(item.menuItemId || item.itemId))) {
+    validateBuffetDietaryCounts(patch.dietaries ?? current.dietaries, patch.service.guestCount);
+  }
   for (const item of items) {
     const prior = current.order.items.find(line => line.itemId === item.itemId);
     const selection = hotForkBuffetChoice(item.choices);
@@ -1361,6 +1372,14 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
       afterLines: next.order.items.map(item => ({ id: item.menuItemId || item.itemId, quantity: item.quantity })),
       downstream: "replacement-quote-and-explicit-resend",
     };
+  } else if (buffetCommercialChange) {
+    // A regular staff amendment has the same catalogue price authority for a
+    // changed buffet line, without inheriting Hospitality Admin's notice waiver.
+    if (!next.service.oplocId) throw conflict("The buffet booking needs a canonical OPLOC before it can be amended.");
+    const gallagher = isGallagherBooking({ companyName: next.client.clientCompany || next.client.companyName, email: next.client.email });
+    const priced = await prepareHospitalityAdminOrder(transaction, next, next.service.oplocId, now, gallagher);
+    if (priced.noticeOverridden) throw conflict("The buffet amendment requires the current booking notice.");
+    next.order = priced.order;
   }
   const verifiedCategories = admin ? undefined : await assertRcoaBookingServiceVisibility(transaction, next, [], current);
   if (verifiedCategories) next.order.items = next.order.items.map(item => verifiedCategories.has(item.itemId) ? { ...item, category: verifiedCategories.get(item.itemId) } : item);
