@@ -14,5 +14,5 @@ test("Hub CI keeps unit tests isolated and runs Firestore coverage in the emulat
   assert.match(packageJson.scripts.test, /--test-concurrency=1/);
   assert.match(packageJson.scripts["test:emulator"], /--test-name-pattern=emulator:/);
   assert.match(packageJson.scripts["test:emulator"], /verify-test-firestore-emulator\.mjs/);
-  assert.match(packageJson.scripts["test:emulator"], /booking-cutoffs\.emulator\.test\.ts tests\/booking-email-firestore\.test\.ts tests\/fulfilment-projection\.test\.ts tests\/logistics-event-identity\.test\.ts tests\/menu-order-delivery-window\.test\.ts tests\/ordered-quantity-backfill\.test\.ts tests\/production-domain\.test\.ts tests\/production-fulfilment-reconciliation\.test\.ts/);
+  assert.match(packageJson.scripts["test:emulator"], /booking-cutoffs\.emulator\.test\.ts tests\/booking-email-firestore\.test\.ts tests\/fulfilment-projection\.test\.ts tests\/hospitality-buffet-selection\.test\.ts tests\/logistics-event-identity\.test\.ts tests\/menu-order-delivery-window\.test\.ts tests\/ordered-quantity-backfill\.test\.ts tests\/production-domain\.test\.ts tests\/production-fulfilment-reconciliation\.test\.ts/);
 });

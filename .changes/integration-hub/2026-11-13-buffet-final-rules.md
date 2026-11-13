@@ -4,6 +4,6 @@ The Hub validates one meat or fish main plus one vegetarian or vegan main, at le
 
 The confirmed selector can submit customer bookings and material amendments only on the verified staging Hub (`FIKA_RUNTIME_MODE=staging`, `FIREBASE_PROJECT_ID=fika-os-dev`, cloud auth and the existing selector flag). The private menu provider reports `readiness.stagingCustomerSubmission` from that server runtime. Production and unverified runtimes still reject structured choices; legacy menu-on-request purchases remain available. `customerSubmission` stays false and live ordering still requires separate approval.
 
-Validation: focused rules, stage/prod gate, price, quote and legacy booking tests; isolated Firestore emulator handoff/replay test; Hub typecheck and build. No operational data write or migration.
+Validation: focused rules, stage/prod gate, price, quote and legacy booking tests; Hub CI emulator-routing assertion; isolated Firestore emulator handoff/replay test; Hub unit suite, typecheck and build. No operational data write or migration.
 
 Deployment: none.
