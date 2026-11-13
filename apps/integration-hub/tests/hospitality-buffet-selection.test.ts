@@ -12,6 +12,8 @@ import {
   assertHotForkBuffetAmendment,
   assertHotForkBuffetCustomerSubmission,
   hotForkBuffetMenu,
+  hotForkBuffetMenuForRuntime,
+  hotForkBuffetStagingCustomerSubmission,
   validateBuffetDietaryCounts,
   validateHotForkBuffetDraft,
   type BuffetSelection,
@@ -44,6 +46,18 @@ const gold = (): BuffetSelection => ({
   dessertIds: [id("dessert", 0), id("dessert", 1)],
 });
 const clone = <T>(value: T): T => structuredClone(value);
+const stageEnv = { FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED: "true", FIKA_RUNTIME_MODE: "staging", FIREBASE_PROJECT_ID: "fika-os-dev", FIRESTORE_EMULATOR_HOST: undefined, FIREBASE_AUTH_EMULATOR_HOST: undefined } as const;
+async function withRuntime<T>(changes: Record<string, string | undefined>, action: () => T | Promise<T>): Promise<T> {
+  const previous = Object.fromEntries(Object.keys(changes).map(key => [key, process.env[key]]));
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  }
+  try { return await action(); } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+}
 
 test("Sam's versioned menu retains all 44 source dishes and unknown safety states", () => {
   assert.equal(hotForkBuffetMenu.contract, "fika.hot-fork-buffet-menu.v1");
@@ -52,10 +66,27 @@ test("Sam's versioned menu retains all 44 source dishes and unknown safety state
   assert.ok(dishes.every(dish => dish.allergenStatus === "unrecorded" && dish.dietaryStatus === "unrecorded"));
   assert.match(dishes.find(dish => dish.selectionStatus === "review_required")?.name || "", /Feta Shakshuka/);
   assert.equal(hotForkBuffetMenu.readiness.customerSubmission, false);
+  assert.equal(hotForkBuffetMenu.readiness.stagingCustomerSubmission, false);
   assert.equal(hotForkBuffetMenu.readiness.status, "rules_confirmed");
   assert.deepEqual(hotForkBuffetMenu.readiness.pendingRules, []);
   assert.equal(hotForkBuffetMenu.rulesVersion, HOT_FORK_BUFFET_RULES_VERSION);
   assert.equal(hotForkBuffetMenu.readiness.liveOrderingApprovalRequired, true);
+});
+
+test("only the verified staging runtime advertises customer selector submission", () => {
+  assert.equal(hotForkBuffetStagingCustomerSubmission(stageEnv), true);
+  assert.equal(hotForkBuffetMenuForRuntime(stageEnv).readiness.stagingCustomerSubmission, true);
+  for (const changed of [
+    { FIKA_RUNTIME_MODE: "production", FIREBASE_PROJECT_ID: "fika-os" },
+    { FIKA_RUNTIME_MODE: "local" },
+    { FIREBASE_PROJECT_ID: "fika-os" },
+    { FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED: "false" },
+    { FIRESTORE_EMULATOR_HOST: "127.0.0.1:8292" },
+    { FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099" },
+    { GCLOUD_PROJECT: "fika-os" },
+  ]) assert.equal(hotForkBuffetStagingCustomerSubmission({ ...stageEnv, ...changed }), false, JSON.stringify(changed));
+  assert.equal(hotForkBuffetMenuForRuntime(stageEnv).readiness.customerSubmission, false);
+  assert.equal(hotForkBuffetMenuForRuntime(stageEnv).readiness.liveOrderingApprovalRequired, true);
 });
 
 test("menu provider remains private and requires the existing bridge token", async () => {
@@ -75,6 +106,24 @@ test("menu provider remains private and requires the existing bridge token", asy
     if (flag === undefined) delete process.env.FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED; else process.env.FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED = flag;
     if (token === undefined) delete process.env.MNK_CANON_BRIDGE_TOKEN; else process.env.MNK_CANON_BRIDGE_TOKEN = token;
   }
+});
+
+test("menu provider serves staging capability from the server runtime only", async () => {
+  await withRuntime({ ...stageEnv, MNK_CANON_BRIDGE_TOKEN: "buffet-test-bridge" }, async () => {
+    const url = "http://test/api/hospitality-buffet-selection";
+    const request = new NextRequest(url, { headers: { "x-fika-mnk-bridge-token": "buffet-test-bridge" } });
+    const staged = await menuGET(request);
+    assert.equal(staged.status, 200);
+    assert.equal((await staged.json()).readiness.stagingCustomerSubmission, true);
+    await withRuntime({ FIKA_RUNTIME_MODE: "production", FIREBASE_PROJECT_ID: "fika-os" }, async () => {
+      const produced = await menuGET(request);
+      assert.equal(produced.status, 200);
+      const readiness = (await produced.json()).readiness;
+      assert.equal(readiness.stagingCustomerSubmission, false);
+      assert.equal(readiness.customerSubmission, false);
+      assert.equal(readiness.liveOrderingApprovalRequired, true);
+    });
+  });
 });
 
 test("confirmed main, salad and dessert draft rules validate exact source IDs and portions", () => {
@@ -118,7 +167,7 @@ function bookingPayload(choices?: unknown[]): MnkBookingPayload {
   };
 }
 
-test("staging keeps menu-on-request ordering and rejects unapproved structured choices", () => {
+test("unverified runtime keeps menu-on-request ordering and rejects structured choices", () => {
   const previous = process.env.FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED;
   process.env.FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED = "true";
   try {
@@ -133,6 +182,21 @@ test("staging keeps menu-on-request ordering and rejects unapproved structured c
     if (previous === undefined) delete process.env.FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED;
     else process.env.FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED = previous;
   }
+});
+
+test("staging accepts a validated selector booking at the effective catalogue price; production denies it", async () => {
+  const choice = { id: HOT_FORK_BUFFET_CHOICE_ID, value: gold() } as const;
+  const record = { canonicalId: goldItem, entityType: "Hospitality Menu Item", lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active", providerMappings: [{ provider: "rcoa-hospitality-brochure", sourceItemId: goldItem }], name: "Hot Fork Buffet Gold", category: "Buffet", unitPrice: 31 } } as unknown as CanonicalRecord;
+  await withRuntime(stageEnv, () => {
+    const order = trustedPublicOrder(bookingPayload([choice]), [record], "rcoa");
+    assert.equal(order.items[0].unitPrice, 31);
+    assert.equal(order.items[0].lineTotal, 1860);
+    assert.deepEqual(order.items[0].choices?.find(item => (item as { id?: string }).id === HOT_FORK_BUFFET_CHOICE_ID), choice);
+    assert.throws(() => trustedPublicOrder(bookingPayload([{ ...choice, value: { ...gold(), mains: [] } }]), [record], "rcoa"), /malformed/);
+  });
+  await withRuntime({ ...stageEnv, FIKA_RUNTIME_MODE: "production", FIREBASE_PROJECT_ID: "fika-os" }, () => {
+    assert.throws(() => trustedPublicOrder(bookingPayload([choice]), [record], "rcoa"), /awaiting live customer-ordering approval/);
+  });
 });
 
 test("menu-on-request amendments remain available without accepting a new selector choice", () => {
@@ -153,6 +217,14 @@ test("amendment gate preserves a historical menu but requires approval for mater
   assert.throws(() => assertHotForkBuffetAmendment({ ...prior, quantity: 72 }), /quantity must equal the guest count/);
   const expanded = gold(); expanded.mains[1].portions = 36;
   assert.throws(() => assertHotForkBuffetAmendment({ ...prior, quantity: 72, guestCount: 72, selection: { id: HOT_FORK_BUFFET_CHOICE_ID, value: expanded } }), /awaiting live customer-ordering approval/);
+});
+
+test("material selector amendments are accepted in staging and denied in production", async () => {
+  const original = { id: HOT_FORK_BUFFET_CHOICE_ID, value: gold() } as const;
+  const expanded = gold(); expanded.mains[1].portions = 36;
+  const amendment = { itemId: goldItem, previousItemExists: true, quantity: 72, previousQuantity: 60, guestCount: 72, previousGuestCount: 60, selection: { id: HOT_FORK_BUFFET_CHOICE_ID, value: expanded } as const, priorSelection: original };
+  await withRuntime(stageEnv, () => assert.doesNotThrow(() => assertHotForkBuffetAmendment(amendment)));
+  await withRuntime({ ...stageEnv, FIKA_RUNTIME_MODE: "production", FIREBASE_PROJECT_ID: "fika-os" }, () => assert.throws(() => assertHotForkBuffetAmendment(amendment), /awaiting live customer-ordering approval/));
 });
 
 test("production-disabled selector preserves the old RCoA menu-on-request price path", () => {

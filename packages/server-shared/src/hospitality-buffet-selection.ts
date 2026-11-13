@@ -1,5 +1,6 @@
 import { z } from "zod";
 import source from "./hospitality-buffet-menu.v1.json";
+import { getFikaRuntimeConfig } from "./runtime-config";
 
 export const HOT_FORK_BUFFET_CHOICE_ID = "hot-fork-buffet-selection";
 export const HOT_FORK_BUFFET_SELECTION_CONTRACT = "fika.hot-fork-buffet-selection.v2";
@@ -66,6 +67,7 @@ export const hotForkBuffetMenu = {
   source: { documentUrl: source.source.documentUrl, revisionId: source.source.revisionId, dishCount: 44 },
   readiness: {
     customerSubmission: false,
+    stagingCustomerSubmission: false,
     status: "rules_confirmed",
     pendingRules: [],
     liveOrderingApprovalRequired: true,
@@ -73,6 +75,23 @@ export const hotForkBuffetMenu = {
   packages: [packageItems.gold, packageItems.silver],
   dishes: menuDishes,
 } as const;
+
+/** Only the existing staging backend can accept selector choices for customer UAT. */
+export function hotForkBuffetStagingCustomerSubmission(env: Record<string, string | undefined> = process.env): boolean {
+  if (env.FIKA_HOT_FORK_BUFFET_SELECTOR_ENABLED !== "true" || env.FIKA_RUNTIME_MODE !== "staging" || env.FIREBASE_PROJECT_ID !== "fika-os-dev") return false;
+  if ([env.GCLOUD_PROJECT, env.GOOGLE_CLOUD_PROJECT, env.NEXT_PUBLIC_FIREBASE_PROJECT_ID].some(project => project && project !== "fika-os-dev")) return false;
+  try {
+    const runtime = getFikaRuntimeConfig(env);
+    return runtime.mode === "staging" && runtime.projectId === "fika-os-dev" && runtime.authMode === "cloud";
+  } catch {
+    return false;
+  }
+}
+
+/** The served capability is computed on the Hub; clients cannot choose a runtime. */
+export function hotForkBuffetMenuForRuntime(env: Record<string, string | undefined> = process.env) {
+  return { ...hotForkBuffetMenu, readiness: { ...hotForkBuffetMenu.readiness, stagingCustomerSubmission: hotForkBuffetStagingCustomerSubmission(env) } };
+}
 
 const selectionCore = {
   menuVersion: z.string().trim().min(1).max(100),
@@ -157,10 +176,10 @@ export function validateBuffetDietaryCounts(dietaries: Record<string, unknown> |
   }
 }
 
-/** Confirmed package rules do not grant live customer-ordering activation. */
+/** Confirmed package rules permit staging UAT only; live ordering needs separate approval. */
 export function assertHotForkBuffetCustomerSubmission(raw: unknown, itemId: string, guestCount: number): BuffetSelection {
   const selection = validateHotForkBuffetDraft(raw, itemId, guestCount);
-  if (!hotForkBuffetMenu.readiness.customerSubmission) return invalid("Hot Fork Buffet menu ordering is awaiting live customer-ordering approval.");
+  if (!hotForkBuffetMenu.readiness.customerSubmission && !hotForkBuffetStagingCustomerSubmission()) return invalid("Hot Fork Buffet menu ordering is awaiting live customer-ordering approval.");
   return selection;
 }
 
