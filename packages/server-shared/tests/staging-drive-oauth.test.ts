@@ -49,6 +49,15 @@ test("wrong token user, scope, broad root ACL, nonwritable folder and accessible
     await assert.rejects(stagingDriveSession(config(), fake(changes).fetcher));
   }
 });
+test("wrong Drive permission ID logs only the bounded identity mismatch and fails closed", async () => {
+  const entries: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => entries.push(args);
+  try {
+    await assert.rejects(stagingDriveSession(config(), fake({ user: { permissionId: "actual-drive-user" } }).fetcher), /permission ID does not match/);
+  } finally { console.error = originalError; }
+  assert.deepEqual(entries, [["[FIKA_STAGING_DRIVE_PERMISSION_ID_MISMATCH]", JSON.stringify({ email: "sandbox@example.test", expectedPermissionId: "stage-user", actualPermissionId: "actual-drive-user" })]]);
+});
 test("file ancestry permits root descendants and rejects outside files, shortcuts and cycles", async () => {
   Object.assign(process.env, config());
   await assert.doesNotReject(assertStagingDriveResource("child", "Bearer token", fake().fetcher));

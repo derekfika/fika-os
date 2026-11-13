@@ -51,7 +51,14 @@ export async function stagingDriveSession(env: Readonly<Record<string, string | 
   }
   const headers = { authorization: `Bearer ${accessToken}` };
   const about = await json<{ user?: { emailAddress?: string; permissionId?: string } }>(await fetcher("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)", { ...options, headers }));
-  if (about.user?.emailAddress?.toLowerCase() !== settings.email || about.user?.permissionId !== settings.permissionId) throw Error("The OAuth grant belongs to a different Drive user.");
+  const actualEmail = about.user?.emailAddress?.toLowerCase();
+  if (actualEmail !== settings.email) throw Error("The staging Drive token email does not match its configured identity.");
+  if (about.user?.permissionId !== settings.permissionId) {
+    // Permission IDs are not credentials. Log this bounded diagnostic only on a mismatch so
+    // an operator can correct a staging binding without exposing either access token.
+    console.error("[FIKA_STAGING_DRIVE_PERMISSION_ID_MISMATCH]", JSON.stringify({ email: settings.email, expectedPermissionId: settings.permissionId, actualPermissionId: about.user?.permissionId || null }));
+    throw Error("The staging Drive identity permission ID does not match its configured identity.");
+  }
   const folder = await json<{ id?: string; mimeType?: string; trashed?: boolean; driveId?: string; capabilities?: { canAddChildren?: boolean }; permissions?: Array<{ id?: string; type?: string; role?: string; deleted?: boolean }> }>(await fetcher(`https://www.googleapis.com/drive/v3/files/${settings.root}?supportsAllDrives=true&fields=id,mimeType,trashed,driveId,capabilities(canAddChildren),permissions(id,type,role,deleted)`, { ...options, headers }));
   if (folder.id !== settings.root || folder.mimeType !== "application/vnd.google-apps.folder" || folder.trashed || !folder.capabilities?.canAddChildren) throw Error("The staging root is unavailable or not writable.");
   let permissions = folder.permissions;
