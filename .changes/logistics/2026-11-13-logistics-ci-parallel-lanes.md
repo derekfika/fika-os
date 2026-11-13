@@ -1,0 +1,5 @@
+# 2026-11-13 — Bound Logistics test concurrency
+
+Pin the normal Logistics unit suite to four isolated test-file processes after measuring its resource use. Keep shared Firestore emulator tests sequential. Add a routing check that protects both required Logistics CI lanes and the exact-source build gate. No production behavior or test cases changed.
+
+Validation: 10 recent CI runs had a 198s median Logistics job and 115s median test step. A local 719-case run passed at concurrency 2 in 154.8s; concurrency 4 passed in 107.5s before this change and 104.9s with the two routing checks added (721 cases). Typecheck passed in 12.8s and production build in 72.2s. One local concurrency-1 diagnostic was stopped after several minutes without a failure. The Firestore emulator and 306-case Playwright suites are outside the current validate.yml workflow. A six-case local browser sample took 39.4s with five passes and one unchanged-app date-isolation failure; the failed case also failed alone. Deployment: none.
