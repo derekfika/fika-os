@@ -10,10 +10,8 @@ test("CPU production forwards credentials only to the approved production Hub", 
   assert.throws(() => getHubBaseUrl({ FIKA_RUNTIME_MODE: "production", FIKA_HUB_BASE_URL: "https://staging-os.fikacatering.com" }), /not the approved production service/);
 });
 
-test("CPU staging cannot be pointed at the production Hub, and local development is unchanged", () => {
-  assert.equal(getHubBaseUrl({ FIKA_RUNTIME_MODE: "staging", FIKA_HUB_BASE_URL: "https://staging-os.fikacatering.com/" }), "https://staging-os.fikacatering.com");
+test("CPU staging cannot be pointed at the production Hub", () => {
   assert.throws(() => getHubBaseUrl({ FIKA_RUNTIME_MODE: "staging", FIKA_HUB_BASE_URL: prod }), /resolves to a production service/);
-  assert.equal(getHubBaseUrl({ FIKA_RUNTIME_MODE: "local" }), "http://localhost:3200");
 });
 
 test("cookie- and token-bearing CPU clients refuse redirects", () => {

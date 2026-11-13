@@ -1,0 +1,5 @@
+# 2026-11-13 — Isolate CPU emulator tests in CI
+
+Keep the complete local `npm test` command while exposing separate bounded four-worker unit and sequential Firestore emulator scripts for CI. The existing 30-case route-concurrency file is renamed so it runs once in the dedicated emulator lane. Remove two identical Hub URL assertions retained in `hub-url.test.ts`; no test case or operational protection is removed. A routing check protects affected selection and all required CI lanes.
+
+Validation: the original full suite passed 656 cases (650 passed, six skipped) in 59.8s. After the split, the full suite passed 658 cases (652 passed, six skipped) in 52.1s and 59.3s; the added two cases are CI routing checks. Unit tests passed with two workers in 46.5s and four workers in 27.1s and 26.6s. The isolated Firestore test passed 30 cases in 39.8s and 38.6s. All 27 shared contract cases, typecheck (12.7s) and production build (68.2s) passed locally. Exact-source GitHub Actions validation remains required. Deployment: none.
