@@ -5,7 +5,7 @@ import { productionOrderDetail } from "../../../lib/production-http-client";
 import { cpuDestinationAllowed, requireCpuActor, resolveCpuDestinationScope } from "../../../lib/cpu-access-client";
 import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
 import { isAdHocProductionOrder } from "../../../lib/ad-hoc-order";
-import { driveAccessToken, resolveDriveOwner, stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
+import { assertStagingDriveResource, driveAccessToken, resolveDriveOwner, stagingDriveOperationsBlocked } from "@fika/server-shared/drive-owner";
 import { signedAllergenDocumentForOrder } from "../../lib/signed-allergen-document";
 
 export const dynamic = "force-dynamic";
@@ -53,7 +53,7 @@ async function handleGet(request: NextRequest) {
     const order = await authorizeOrder(request, orderId);
     const plan = await repository.get(orderId);
     const result = signedAllergenDocumentForOrder(plan, order);
-    const driveBlocked = result.state === "ready" && await stagingDriveAccessBlocked();
+    const driveBlocked = result.state === "ready" && await stagingDriveOperationsBlocked();
     if (driveBlocked) return NextResponse.json({ state: "unavailable", message: "Signed PDF access is unavailable until this runtime's Drive isolation is verified." }, { headers: noStore });
     if (request.nextUrl.searchParams.get("download") !== "pdf") return NextResponse.json({ state: result.state, message: result.message, ...(result.state === "ready" ? { url: `/api/signed-allergen-pdf?orderId=${encodeURIComponent(orderId)}&download=pdf` } : {}) }, { headers: noStore });
     if (result.state !== "ready" || !result.artifact) return NextResponse.json({ error: { message: result.message }, state: result.state }, { status: result.state === "unsigned" || result.state === "pending" ? 409 : 404, headers: noStore });
@@ -65,6 +65,7 @@ async function handleGet(request: NextRequest) {
         : resolveDriveOwner({ type: "app-workspace", appId: "cpu-production" });
     if (!owner) return NextResponse.json({ error: { message: "The signed PDF's governed Drive workspace is unavailable." }, state: "unavailable" }, { status: 404, headers: noStore });
     const token = await driveAccessToken(owner);
+    await assertStagingDriveResource(result.artifact.driveFileId!, `Bearer ${token}`);
     const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(result.artifact.driveFileId!)}?alt=media&supportsAllDrives=true`, { headers: { authorization: `Bearer ${token}` }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(12_000) });
     if (!response.ok) throw Object.assign(new Error("The current signed PDF could not be retrieved from its governed Drive workspace."), { status: response.status === 404 ? 404 : 503 });
     const bytes = await boundedPdfBytes(response);

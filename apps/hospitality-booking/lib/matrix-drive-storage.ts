@@ -6,6 +6,12 @@ import { driveOwnerEnvKey, resolveDriveOwner, type DriveOwner } from "./drive-ow
  * An explicit site destination can never fall back to another owner's workspace. */
 export function resolveMatrixDriveStorage(context: HospitalityMatrixStorageContext) {
   if (!context || !["hospitality-site", "cpu-default"].includes(context.kind)) throw new Error("Hub matrix storage context is invalid.");
+  if (process.env.FIKA_RUNTIME_MODE === "staging" && process.env.FIKA_STAGING_DRIVE_ENABLED === "true") {
+    if (context.kind === "hospitality-site" && !context.oplocId?.startsWith("oploc:")) throw Error("Matrix storage requires a canonical site OPLOC.");
+    const owner: DriveOwner = context.kind === "hospitality-site" ? { type: "oploc-workspace", oplocId: context.oplocId } : { type: "app-workspace", appId: "cpu-production" };
+    const resolved = resolveDriveOwner(owner);
+    return { owner, folderId: resolved.configuredRootFolderId!, folderLabel: "STAGING CPU production" };
+  }
   if (context.kind === "hospitality-site") {
     if (!context.oplocId?.startsWith("oploc:")) throw new Error("Matrix storage requires a canonical site OPLOC.");
     const owner: DriveOwner = { type: "oploc-workspace", oplocId: context.oplocId };

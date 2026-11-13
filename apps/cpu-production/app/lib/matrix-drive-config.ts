@@ -1,5 +1,5 @@
 import type { ProductionOrder } from "../../lib/production-types";
-import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
+import { stagingDriveOperationsBlocked } from "@fika/server-shared/drive-owner";
 
 export type MatrixDriveConfiguration =
   | { enabled: true; ownerKey: string }
@@ -20,8 +20,9 @@ export function containedMatrixReviewStatus<T extends { matrixStatus?: string; m
 
 /** Server-only readiness gate. It never exposes configuration to browser code. */
 export async function matrixDriveConfiguration(order: ProductionOrder): Promise<MatrixDriveConfiguration> {
-  if (await stagingDriveAccessBlocked()) return { enabled: false, reason: "not_configured" };
+  if (await stagingDriveOperationsBlocked()) return { enabled: false, reason: "not_configured" };
   const key = ownerKey(order);
+  if (process.env.FIKA_RUNTIME_MODE === "staging") return { enabled: true, ownerKey: key };
   // Hospitality orders are persisted by the Hospitality service, which resolves the governed site OPLOC owner and folder from the Hub
   // and fails closed (with a specific message) if either is missing. CPU holds no Drive credentials for them, so CPU's own
   // app-workspace owner/folder must not gate them; it only needs the Hospitality service to be configured.

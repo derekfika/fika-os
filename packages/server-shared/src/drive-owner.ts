@@ -1,13 +1,19 @@
 import crypto from "node:crypto";
+import { stagingDriveSession, stagingDriveSettings } from "./staging-drive";
+export { assertStagingDriveResource } from "./staging-drive";
 import { promises as fs } from "node:fs";
 
 export type DriveOwner = { type: "oploc-workspace"; oplocId: string } | { type: "app-workspace"; appId: "cpu-production" | "delivered-in" };
-export type ResolvedDriveOwner = DriveOwner & { workspaceEmail?: string; configuredRootFolderId?: string; authMode: "dwd" | "local-oauth" };
+export type ResolvedDriveOwner = DriveOwner & { workspaceEmail?: string; configuredRootFolderId?: string; authMode: "dwd" | "local-oauth" | "staging-oauth" };
 const hosted = () => process.env.FIKA_RUNTIME_MODE !== "local" && process.env.NODE_ENV === "production";
 const key = (owner: DriveOwner) => (owner.type === "oploc-workspace" ? owner.oplocId : owner.appId).replace(/^oploc:/, "").replace(/[^A-Za-z0-9]+/g, "_").toUpperCase();
 export function driveOwnerEnvKey(owner: DriveOwner) { return owner.type === "oploc-workspace" ? `OPLOC_${key(owner)}` : `APP_${key(owner)}`; }
 export function driveOwnerLabel(owner: DriveOwner) { return owner.type === "oploc-workspace" ? owner.oplocId : owner.appId; }
 export function resolveDriveOwner(owner: DriveOwner): ResolvedDriveOwner {
+  if (process.env.FIKA_RUNTIME_MODE === "staging" && process.env.FIKA_STAGING_DRIVE_ENABLED === "true") {
+    const config = stagingDriveSettings();
+    return { ...owner, workspaceEmail: config.email, configuredRootFolderId: config.root, authMode: "staging-oauth" };
+  }
   const ownerKey = driveOwnerEnvKey(owner);
   const workspaceEmail = process.env[`GOOGLE_DRIVE_OWNER_EMAIL_${ownerKey}`]?.trim();
   const configuredRootFolderId = process.env[`GOOGLE_DRIVE_ROOT_FOLDER_ID_${ownerKey}`]?.trim() || (!hosted() ? process.env.GOOGLE_MENU_OUTPUT_FOLDER_ID?.trim() : undefined);
@@ -72,7 +78,21 @@ async function verifyHostedProduction(): Promise<boolean> {
 export async function stagingDriveAccessBlocked() {
   return !explicitLocal() && !(await verifyHostedProduction());
 }
+/** Only routes with artifact ancestry checks may opt into verified staging operations.
+ * Generic stored-link responses remain masked even with an isolated staging principal. */
+export async function stagingDriveOperationsBlocked() {
+  if (process.env.FIKA_RUNTIME_MODE === "staging") {
+    try { await stagingDriveSession(); return false; } catch { return true; }
+  }
+  return stagingDriveAccessBlocked();
+}
 export async function driveAccessToken(owner: ResolvedDriveOwner) {
+  if (process.env.FIKA_RUNTIME_MODE === "staging") {
+    if (owner.authMode !== "staging-oauth") throw Object.assign(new Error("Staging cannot use DWD or local OAuth."), { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED" });
+    const session = await stagingDriveSession();
+    if (owner.workspaceEmail !== session.email || owner.configuredRootFolderId !== session.root) throw Error("Staging Drive owner does not match the verified identity.");
+    return session.token;
+  }
   const local = explicitLocal();
   if ((local ? owner.authMode !== "local-oauth" : owner.authMode !== "dwd") || await stagingDriveAccessBlocked()) {
     throw Object.assign(new Error("Drive access is disabled until runtime identity and destination isolation are verified."), { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED" });
