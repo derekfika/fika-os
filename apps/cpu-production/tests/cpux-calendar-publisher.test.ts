@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ProductionOrder } from "../lib/production-types";
-import { applyCpuXCalendarOrder, boundedBackfillDates, buildCpuXCalendarEventResource, claimCpuXCalendarOrder, cpuXCalendarOrderIdentity, cpuXCalendarBackfillEnabled, cpuXCalendarWritesEnabled, cpuxCalendarEventId, enqueueCpuXCalendarOrder, finishCpuXCalendarOrder, releaseCpuXCalendarOrderClaim, previewCpuXCalendarBackfill, scanCpuXCalendarBackfill, shouldQueueCpuXCalendarOrder, stageCpuXCalendarOrder } from "../lib/cpux-calendar-publisher";
+import { applyCpuXCalendarOrder, boundedBackfillDates, buildCpuXCalendarEventResource, claimCpuXCalendarOrder, cpuXCalendarOrderIdentity, cpuXCalendarBackfillEnabled, cpuXCalendarWritesEnabled, cpuxCalendarEventId, enqueueCpuXCalendarOrder, finishCpuXCalendarOrder, isCpuXCalendarOrderEligible, releaseCpuXCalendarOrderClaim, previewCpuXCalendarBackfill, scanCpuXCalendarBackfill, shouldQueueCpuXCalendarOrder, stageCpuXCalendarOrder } from "../lib/cpux-calendar-publisher";
+import { HOT_FORK_BUFFET_CHOICE_ID, HOT_FORK_BUFFET_SELECTION_CONTRACT, HOT_FORK_BUFFET_MENU_VERSION, HOT_FORK_BUFFET_RULES_VERSION } from "@fika/server-shared/hospitality-buffet-selection";
 
 const productionEnvironment = {
   FIKA_RUNTIME_MODE: "production",
@@ -25,6 +26,15 @@ function order(overrides: Partial<ProductionOrder> = {}): ProductionOrder {
     clientName: "Example Customer", guestCount: 12, destinationLabel: "FIKA Kitchen", ...overrides,
   };
 }
+
+test("buffet hospitality handoffs do not queue sandwich Calendar mirror intents on replay", () => {
+  const selected = { id: HOT_FORK_BUFFET_CHOICE_ID, value: { contract: HOT_FORK_BUFFET_SELECTION_CONTRACT, menuVersion: HOT_FORK_BUFFET_MENU_VERSION, rulesVersion: HOT_FORK_BUFFET_RULES_VERSION, packageId: "gold", mains: [{ dishId: "main:1", portions: 24 }, { dishId: "main:2", portions: 12 }], saladIds: ["salad:1", "salad:2", "salad:3"], dessertIds: ["dessert:1", "dessert:2"] } };
+  const buffet = order({ canonicalId: "production-order:v1:booking:buffet", sourceBookingId: "booking:buffet", lines: [{ ...order().lines[0], workstream: "hospitality", choices: [selected] }] });
+  assert.equal(isCpuXCalendarOrderEligible(buffet), false);
+  assert.equal(shouldQueueCpuXCalendarOrder(undefined, buffet), false);
+  assert.equal(shouldQueueCpuXCalendarOrder({ desiredVersion: buffet.version }, buffet), false);
+  assert.equal(cpuXCalendarOrderIdentity(buffet).canonicalId, cpuXCalendarOrderIdentity({ ...buffet, canonicalId: `${buffet.canonicalId}:r8` }).canonicalId);
+});
 
 test("CPU X Calendar event uses one deterministic ID, only sandwich lines, and no attendees or attachments", () => {
   const first = order({ serviceDate: "2026-01-15" });
