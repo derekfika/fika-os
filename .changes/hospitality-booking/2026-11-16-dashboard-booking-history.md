@@ -4,6 +4,6 @@ Added Upcoming, Previous and All bookings views to the internal Hospitality oper
 
 The Hub archive remains bounded to a rolling 365-day lookback and 200 documents. The dashboard now displays that boundary and the Hub truncation signal instead of implying the archive is complete.
 
-Validation: Hospitality `npm test` (487 tests), `npm run typecheck`, `npm run build`, `fika affected`, workspace check, and `git diff --check` passed. Hospitality `npm run lint` is currently blocked because ESLint 9 finds no `eslint.config.*` file in the app; no lint configuration was added for this dashboard-only change. Repository `fika validate` is still running.
+Validation: Hospitality `npm test` (487 tests), `npm run typecheck`, `npm run build`, `fika affected`, workspace check, and `git diff --check` passed. Exact-source GitHub `Workflow / merge-gate` passed, including required Hospitality validation. Local repository `fika validate` did not complete after repeatedly entering a workspace fixture; the exact merge-gate workflow completed successfully. Hospitality `npm run lint` is currently blocked because ESLint 9 finds no `eslint.config.*` file in the app; no lint configuration was added for this dashboard-only change.
 Deployment: none.
 Style Guide compliance: PASS; the view controls and archive/evidence surfaces use shared semantic FIKA tokens and accessible native controls.
