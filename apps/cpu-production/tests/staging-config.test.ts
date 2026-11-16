@@ -42,9 +42,9 @@ test("CPU and Delivered-In staging configs converge on shared runtime contracts"
   assert.match(cpuStaging, /FIKA_STAGING_DRIVE_AUTH_MODE[\s\S]*value: shared-drive/);
   assert.match(cpuStaging, /FIKA_STAGING_DRIVE_SHARED_DRIVE_ID[\s\S]*value: 0ALgY_Zkd_k3cUk9PVA/);
   assert.match(cpuStaging, /FIKA_STAGING_DRIVE_EMAIL[\s\S]*value: fika-staging-drive@fika-os-dev\.iam\.gserviceaccount\.com/);
-  assert.match(cpuStaging, /FIKA_STAGING_DRIVE_PERMISSION_ID[\s\S]*value: "110289228770833757986"/);
+  assert.match(cpuStaging, /FIKA_STAGING_DRIVE_PERMISSION_ID[\s\S]*value: "08677769820296169060"/);
   assert.match(cpuStaging, /FIKA_STAGING_DRIVE_ROOT_ID[\s\S]*value: 1B3oV4dmb3UpwTPRDjJ4B0hES1rRL1M5z/);
-  assert.match(cpuStaging, /FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS[\s\S]*value: "110453433265748456567,110289228770833757986"/);
+  assert.match(cpuStaging, /FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS[\s\S]*value: "110453433265748456567,08677769820296169060"/);
   assert.match(cpuStaging, /FIKA_STAGING_DRIVE_PRODUCTION_SENTINEL_IDS[\s\S]*value: "1uOdUgHQD7O3Op6DzgyslXG3-_aeYRm08,/);
   assert.doesNotMatch(cpuStaging, /GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON|GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION/);
 });

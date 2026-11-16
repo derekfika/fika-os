@@ -26,9 +26,9 @@ test("staging config uses the Logistics API base and shared internal token secre
   assert.match(config, /FIKA_STAGING_DRIVE_AUTH_MODE[\s\S]*?value: shared-drive/);
   assert.match(config, /FIKA_STAGING_DRIVE_SHARED_DRIVE_ID[\s\S]*?value: 0ALgY_Zkd_k3cUk9PVA/);
   assert.match(config, /FIKA_STAGING_DRIVE_EMAIL[\s\S]*?value: fika-staging-drive@fika-os-dev\.iam\.gserviceaccount\.com/);
-  assert.match(config, /FIKA_STAGING_DRIVE_PERMISSION_ID[\s\S]*?value: "110289228770833757986"/);
+  assert.match(config, /FIKA_STAGING_DRIVE_PERMISSION_ID[\s\S]*?value: "08677769820296169060"/);
   assert.match(config, /FIKA_STAGING_DRIVE_ROOT_ID[\s\S]*?value: 1B3oV4dmb3UpwTPRDjJ4B0hES1rRL1M5z/);
-  assert.match(config, /FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS[\s\S]*?value: "110453433265748456567,110289228770833757986"/);
+  assert.match(config, /FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS[\s\S]*?value: "110453433265748456567,08677769820296169060"/);
   assert.match(config, /FIKA_STAGING_DRIVE_PRODUCTION_SENTINEL_IDS[\s\S]*?value: "1uOdUgHQD7O3Op6DzgyslXG3-_aeYRm08,/);
   assert.doesNotMatch(config, /GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON/);
   assert.match(config, /variable:\s*CPU_PRODUCTION_BASE_URL[\s\S]*?value:\s*https:\/\/cpu-staging\.fikacatering\.com/);
