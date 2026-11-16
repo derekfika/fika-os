@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { APPS, MAIN_CHECK, REPO, target } from './policy.mjs';
 import { appendRecord, deploy, releaseRecord, rollbackSelection, rolloutArguments } from './releases.mjs';
-import { backendPath, git, jsonFile, save, scopeHash, stateDir, withRepository } from './runtime.mjs';
+import { backendPath, git, jsonFile, resolveAppHostingOperation, save, scopeHash, stateDir, withRepository } from './runtime.mjs';
 
 async function fixture(run) {
   const temporary = mkdtempSync(path.join(os.tmpdir(), 'fika-release-execution-'));
@@ -157,6 +157,27 @@ test('configuration-only deployment is a no-op for an unchanged override value',
   appendRecord(t,{schema:'fika.release.v1',...t,kind:'baseline',sourceSha:baseline,rollout:'rollout-1',state:'SUCCEEDED',percent:100,scopeHash:scopeHash(t.app,baseline),observedAt:'2026-11-01T00:00:00.000Z'});
   const result=await deploy(t.app,t.environment,{'config-only':true,sha:baseline,'config-value':'a'.repeat(64),execute:true},f.io);
   assert.equal(result.alreadyConfigured,true); assert.equal(f.submitted.length,0); assert.equal(f.backend.etag,'backend-etag-1');
+}));
+
+test('App Hosting configuration update resolves its long-running operation response',async()=>{
+  const name='projects/fika-os/locations/europe-west4/operations/op-1',backend={name:'projects/fika-os/locations/europe-west4/backends/fika-os-prod-hub'};
+  let reads=0;
+  const result=await resolveAppHostingOperation({name,done:false},async resource=>{assert.equal(resource,name);reads++;return {name,done:true,response:backend};},{pollMs:0});
+  assert.deepEqual(result,backend);assert.equal(reads,1);
+  await assert.rejects(resolveAppHostingOperation({name,done:true,error:{code:9,message:'etag conflict'}}),/etag conflict/);
+});
+
+test('configuration-only resume completes the exact approved intent after a lost successful patch response without patching twice',()=>fixture(async({baseline})=>{
+  const t=target('hub','prod'),f=releaseIO(t,baseline);
+  appendRecord(t,{schema:'fika.release.v1',...t,kind:'baseline',sourceSha:baseline,rollout:'rollout-1',state:'SUCCEEDED',percent:100,scopeHash:scopeHash(t.app,baseline),observedAt:'2026-11-01T00:00:00.000Z'});
+  const options={'config-only':true,sha:baseline,'config-value':'c'.repeat(64)},prepared=await deploy(t.app,t.environment,options,f.io);
+  let patchCount=0;
+  const interruptedIO={...f.io,patch(...args){patchCount++;f.io.patch(...args);throw Error('simulated response loss after accepted patch');}};
+  await assert.rejects(deploy(t.app,t.environment,{...options,execute:true,'approve-hash':prepared.approvalHash},interruptedIO),/outcome requires read-only reconciliation/);
+  assert.equal(patchCount,1);assert.equal(f.submitted.length,0);
+  const resumed=await deploy(t.app,t.environment,{...options,execute:true,resume:true,'approve-hash':prepared.approvalHash},f.io);
+  assert.equal(resumed.recoveredPendingPatch,true);assert.equal(patchCount,1);assert.equal(f.submitted.length,1);
+  assert.equal(resumed.record.sourceSha,baseline);assert.equal(resumed.record.configuration.nextOverride,'c'.repeat(64));
 }));
 
 test('application-source rollback cannot silently undo a configuration-only release',()=>{
