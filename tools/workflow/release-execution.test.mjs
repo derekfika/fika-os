@@ -135,7 +135,7 @@ test('configuration-only rollout requires the exact approved plan hash, preserve
   const t=target('hub','prod'), f=releaseIO(t,baseline), current=f.rollouts[0];
   f.backend.overrideEnv=[{variable:'UNRELATED_SECRET_SETTING',value:'never-show-this-runtime-value'}];
   appendRecord(t,{schema:'fika.release.v1',...t,kind:'baseline',sourceSha:baseline,rollout:'rollout-1',state:'SUCCEEDED',percent:100,scopeHash:scopeHash(t.app,baseline),observedAt:'2026-11-01T00:00:00.000Z'});
-  const options={configOnly:true,sha:baseline,'config-value':'a'.repeat(64)};
+  const options={'config-only':true,sha:baseline,'config-value':'a'.repeat(64)};
   const prepared=await deploy(t.app,t.environment,options,f.io);
   assert.equal(prepared.dryRun,true); assert.match(prepared.approvalHash,/^[a-f0-9]{64}$/); assert.equal(f.submitted.length,0);
   assert.equal(JSON.stringify(prepared).includes('never-show-this-runtime-value'),false);
@@ -155,7 +155,7 @@ test('configuration-only deployment is a no-op for an unchanged override value',
   f.backend.overrideEnv=[{variable:'FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH',value:'a'.repeat(64)}];
   f.builds[0].effectiveEnv=[{variable:'FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH',value:'a'.repeat(64)}];
   appendRecord(t,{schema:'fika.release.v1',...t,kind:'baseline',sourceSha:baseline,rollout:'rollout-1',state:'SUCCEEDED',percent:100,scopeHash:scopeHash(t.app,baseline),observedAt:'2026-11-01T00:00:00.000Z'});
-  const result=await deploy(t.app,t.environment,{configOnly:true,sha:baseline,'config-value':'a'.repeat(64),execute:true},f.io);
+  const result=await deploy(t.app,t.environment,{'config-only':true,sha:baseline,'config-value':'a'.repeat(64),execute:true},f.io);
   assert.equal(result.alreadyConfigured,true); assert.equal(f.submitted.length,0); assert.equal(f.backend.etag,'backend-etag-1');
 }));
 
