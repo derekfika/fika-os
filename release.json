@@ -31,22 +31,22 @@
     "sourceSha": "7f7d2faf201ed620c6a1550d2a1d03c9f54a7d9b",
     "serving": {
       "sourceSha": "7f7d2faf201ed620c6a1550d2a1d03c9f54a7d9b",
-      "rollout": "build-2026-11-16-002",
+      "rollout": "build-2026-11-16-003",
       "state": "SUCCEEDED",
       "percent": 100
     },
     "variable": "FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH",
     "action": "set",
-    "previousOverride": "c514521d906203172ddef2a6ddad3d8295dd652024d8a3593c3a3cfc0697e42b",
-    "nextOverride": "1a9d4ddd0c022acf3e6906a22ece8ce2813010a3da9f9db89524930302a5b118",
-    "effectiveValue": "1a9d4ddd0c022acf3e6906a22ece8ce2813010a3da9f9db89524930302a5b118",
-    "servingEffectiveValue": "c514521d906203172ddef2a6ddad3d8295dd652024d8a3593c3a3cfc0697e42b",
-    "backendEtag": "vQJfBOKhUbsH0DuovfXVLoHIGMlGeMZFcf09Ctnxr4c",
-    "approvalHash": "5f49769912ba2bc882fba5aec2409893eb7e3d238baf68b18b9bb42e554562b0",
+    "previousOverride": "1a9d4ddd0c022acf3e6906a22ece8ce2813010a3da9f9db89524930302a5b118",
+    "nextOverride": "9b7387c69dda85ca23897c6a5eb0c4548b430bc5c54252602dcfcd1b3fe5d307",
+    "effectiveValue": "9b7387c69dda85ca23897c6a5eb0c4548b430bc5c54252602dcfcd1b3fe5d307",
+    "servingEffectiveValue": "1a9d4ddd0c022acf3e6906a22ece8ce2813010a3da9f9db89524930302a5b118",
+    "backendEtag": "deFjeVxgi4FnZdaVtgMJUySbYDb4DV7ZeN7jNflCdAA",
+    "approvalHash": "6230b2931fc49238a02b6871d62d363382180f6f519203b2dd27519598d6dd8e",
     "patchRequired": true,
     "changed": true,
-    "previousOverrideSetHash": "b590e75bfc46442becce46e79e3aa2e361d277b1aeb01b603f92154333d9bd72",
-    "nextOverrideSetHash": "345f40fe49d540f1213be6be6bdeba192f1c464a353df56d94e16bce65fa6c51"
+    "previousOverrideSetHash": "345f40fe49d540f1213be6be6bdeba192f1c464a353df56d94e16bce65fa6c51",
+    "nextOverrideSetHash": "b5a90172380e5898b1e9697d770cea0d47262e0c41e1316651081286df68726e"
   },
   "approval": {
     "actor": "derekfika",
@@ -55,40 +55,22 @@
     "environment": "prod",
     "sourceSha": "7f7d2faf201ed620c6a1550d2a1d03c9f54a7d9b",
     "action": "configuration-only-rollout",
-    "instruction": "RCoA approved recovery manifest page 3",
+    "instruction": "RCoA approved recovery manifest page 4",
     "releaseId": null,
-    "id": "04d74a46f7267d49981fee6c6ef4c7e4788e077c112fc6f17b7ac5941fc3db7a",
+    "id": "ef5b00215c7989cff5b548502c21c68a09a5a9ac00078897ce1f823cb759ea25",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-16T19:26:58.160Z",
-    "configurationHash": "5f49769912ba2bc882fba5aec2409893eb7e3d238baf68b18b9bb42e554562b0"
+    "authorisedAt": "2026-11-16T19:33:53.687Z",
+    "configurationHash": "6230b2931fc49238a02b6871d62d363382180f6f519203b2dd27519598d6dd8e"
   },
-  "rollout": "build-2026-11-16-003",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "2339030c-2e46-48ef-82fc-8b43a374c0d6",
   "previousGood": {
     "sourceSha": "7f7d2faf201ed620c6a1550d2a1d03c9f54a7d9b",
-    "rollout": "build-2026-11-16-002",
+    "rollout": "build-2026-11-16-003",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "9a1080464e6b150cc466f0365de21f803c152733",
-  "releaseId": "3b9be25f-f60d-46df-90b1-152c2f234f51",
-  "completedAt": "2026-11-16T19:32:02.695Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-prod-hub--fika-os.europe-west4.hosted.app/"
-  },
-  "configurationOnly": true,
-  "configuration": {
-    "variable": "FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH",
-    "action": "set",
-    "previousOverride": "c514521d906203172ddef2a6ddad3d8295dd652024d8a3593c3a3cfc0697e42b",
-    "nextOverride": "1a9d4ddd0c022acf3e6906a22ece8ce2813010a3da9f9db89524930302a5b118",
-    "approvalHash": "5f49769912ba2bc882fba5aec2409893eb7e3d238baf68b18b9bb42e554562b0",
-    "effectiveRevisionVerified": true,
-    "backendEtagBefore": "vQJfBOKhUbsH0DuovfXVLoHIGMlGeMZFcf09Ctnxr4c",
-    "backendEtagAfter": "deFjeVxgi4FnZdaVtgMJUySbYDb4DV7ZeN7jNflCdAA"
-  }
+  "previousGoodRecord": "ee1c29f5d750db5af94317a9424ec7c7b4f47381",
+  "createdAt": "2026-11-16T19:33:57.818Z"
 }
