@@ -534,7 +534,7 @@ export async function deploy(app, environment, options, {
   return asyncLock(`release-${app}-${environment}`, async () => {
     const t = target(app, environment);
     assertClean(git('status', '--porcelain')); git('fetch', 'origin');
-    if (options.configOnly) return deployConfigurationOnly(t,options,{read,github,env,smoke,preflight,audit,patch,submit});
+    if (options['config-only']) return deployConfigurationOnly(t,options,{read,github,env,smoke,preflight,audit,patch,submit});
     const journalFile = path.join(stateDir(), `release-${app}-${environment}.json`);
     let journal = existsSync(journalFile) ? jsonFile(journalFile) : undefined;
     let pointer = releaseRecord(t.branch), plan;
