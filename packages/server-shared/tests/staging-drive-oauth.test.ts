@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { APPROVED_STAGING_DRIVE_ROOT as root, stagingDriveSession, assertStagingDriveResource } from "../src/staging-drive";
+import { APPROVED_STAGING_DRIVE_ROOT as root, stagingDriveSession, stagingDriveAclDiagnostic, assertStagingDriveResource } from "../src/staging-drive";
 import { driveAccessToken, resolveDriveOwner, stagingDriveAccessBlocked, stagingDriveOperationsBlocked } from "../src/drive-owner";
 const original = { ...process.env };
 const originalFetch = globalThis.fetch;
@@ -91,4 +91,34 @@ test("Shared Drive service-account mode is keyless, has no Workspace subject, an
   assert.equal((await stagingDriveSession(env, fetcher)).token, "direct-sa-token"); assert.equal(minted, 1);
   await assert.rejects(stagingDriveSession({ ...env, FIKA_STAGING_DRIVE_SHARED_DRIVE_ID: "other-drive" }, fetcher));
   await assert.rejects(stagingDriveSession({ ...env, FIKA_STAGING_DRIVE_EMAIL: "production@fika-os.iam.gserviceaccount.com" }, fetcher));
+});
+
+test("read-only ACL diagnostic reports the exact unexpected permission and inheritance source after production denial", async () => {
+  const env = { ...config(), FIKA_STAGING_DRIVE_AUTH_MODE: "shared-drive", FIKA_STAGING_DRIVE_SHARED_DRIVE_ID: "staging-drive", FIKA_STAGING_DRIVE_EMAIL: "drive-stage@fika-os-dev.iam.gserviceaccount.com", FIKA_STAGING_DRIVE_OAUTH_JSON: undefined };
+  const requests: string[] = [];
+  const fetcher = (async (input: unknown, init?: RequestInit) => {
+    const url = String(input); requests.push(url);
+    if (url.includes("metadata.google.internal/computeMetadata/v1/project/project-id")) return new Response("fika-os-dev", { headers: { "Metadata-Flavor": "Google" } });
+    if (url.endsWith("/default/token")) return Response.json({ access_token: "runtime-secret-token" });
+    if (url.includes("iamcredentials.googleapis.com")) return Response.json({ accessToken: "staging-secret-token" });
+    if (url.includes("/about?")) return Response.json({ user: { emailAddress: env.FIKA_STAGING_DRIVE_EMAIL, permissionId: "stage-user" } });
+    if (url.includes(`/files/${root}?`)) return Response.json({ id: root, mimeType: "application/vnd.google-apps.folder", driveId: "staging-drive", capabilities: { canAddChildren: true } });
+    if (url.includes("production-sentinel")) return new Response(null, { status: 404 });
+    if (url.includes("staging-drive/permissions?")) return Response.json({ permissions: [{ id: "owner", type: "user", role: "organizer" }, { id: "stage-user", type: "user", role: "fileOrganizer" }] });
+    if (url.includes(`${root}/permissions?`)) return Response.json({ permissions: [
+      { id: "owner", type: "user", role: "organizer", permissionDetails: [{ permissionType: "member", role: "organizer", inherited: true, inheritedFrom: "staging-drive" }] },
+      { id: "stage-user", type: "user", role: "fileOrganizer", permissionDetails: [{ permissionType: "member", role: "fileOrganizer", inherited: true, inheritedFrom: "staging-drive" }] },
+      { id: "unexpected-group", type: "group", role: "reader", permissionDetails: [{ permissionType: "member", role: "reader", inherited: true, inheritedFrom: "staging-drive" }] },
+    ] });
+    throw Error(`Unexpected request ${url} ${String(init?.method || "GET")}`);
+  }) as typeof fetch;
+  const result = await stagingDriveAclDiagnostic(env, fetcher);
+  assert.equal(result.runtime.projectVerified, true);
+  assert.equal(result.identity.permissionIdVerified, true);
+  assert.equal(result.sharedDriveAcl.approved, true);
+  assert.equal(result.rootAcl.approved, false);
+  assert.deepEqual(result.rootAcl.unexpectedPermissions, [{ id: "unexpected-group", type: "group", role: "reader", deleted: false, details: [{ permissionType: "member", role: "reader", inherited: true, inheritedFrom: "staging-drive" }] }]);
+  assert.equal(result.rootAcl.missingAllowedIds.length, 0);
+  assert.ok(requests.findIndex(url => url.includes("production-sentinel")) < requests.findIndex(url => url.includes(`${root}/permissions?`)), "production denial must be verified before ACL disclosure");
+  assert.doesNotMatch(JSON.stringify(result), /runtime-secret-token|staging-secret-token|client_secret|refresh_token/);
 });
