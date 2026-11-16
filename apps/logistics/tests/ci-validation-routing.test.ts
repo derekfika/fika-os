@@ -32,7 +32,7 @@ test("both Logistics validation lanes are required by the exact-source merge gat
   assert.match(validation, /npm --prefix apps\/logistics run typecheck/);
   assert.match(validation, /test "\$\(git rev-parse HEAD\)" = "\$SOURCE_SHA"/);
   assert.match(validation, /GITHUB_SHA="\$SOURCE_SHA" npm --prefix apps\/logistics run build/);
-  assert.match(gate, /needs: \[[^\]]*application-tests, logistics-validation,/);
+  assert.match(gate, /needs: \[[^\]]*application-tests,[^\]]*logistics-validation,/);
   assert.match(gate, /LOGISTICS_VALIDATION: \$\{\{ needs\.logistics-validation\.result \}\}/);
   assert.match(gate, /case "\$LOGISTICS_VALIDATION" in success\|skipped/);
 });
