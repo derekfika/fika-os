@@ -86,7 +86,22 @@ export async function cloudPatch(resource, updateMask, body) {
   url.searchParams.set('updateMask', updateMask);
   const response = await fetch(url, { method:'PATCH', headers:{ Authorization:`Bearer ${tokenCache.value}`, 'Content-Type':'application/json' }, body:JSON.stringify(body), signal:AbortSignal.timeout(45000) });
   if (!response.ok) { const error = Error(`App Hosting configuration update failed: HTTP ${response.status}`); error.status = response.status; throw error; }
-  return response.json();
+  return resolveAppHostingOperation(await response.json());
+}
+/** App Hosting update methods return Operations, not the mutated resource. Polling is read-only and
+ * bounded; a failed/ambiguous update is left for the release journal's explicit reconciliation. */
+export async function resolveAppHostingOperation(result, read = cloud, { timeoutMs = 300000, pollMs = 1000 } = {}) {
+  let operation = result;
+  if (!operation || typeof operation !== 'object' || typeof operation.name !== 'string' || !operation.name.includes('/operations/') || typeof operation.done !== 'boolean') return operation;
+  const deadline=Date.now()+timeoutMs;
+  while (!operation.done && Date.now()<deadline) {
+    await new Promise(resolve=>setTimeout(resolve,pollMs));
+    operation=await read(operation.name);
+  }
+  if (!operation.done) throw Error('App Hosting configuration operation did not finish before the verification deadline');
+  if (operation.error) throw Error(`App Hosting configuration operation failed: ${operation.error.message || operation.error.code || 'unknown operation error'}`);
+  if (!operation.response || typeof operation.response !== 'object') throw Error('App Hosting configuration operation completed without a backend response');
+  return operation.response;
 }
 export const backendPath = t => `projects/${t.project}/locations/${t.region}/backends/${t.backend}`;
 const servingRolloutNames = new WeakMap();

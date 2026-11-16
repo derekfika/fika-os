@@ -450,11 +450,72 @@ function effectiveOverrideMatches(build, plan) {
   const matches = env.filter(row => (row.variable || row.name) === plan.variable);
   return matches.length === 1 && matches[0].value === plan.effectiveValue;
 }
+function effectiveVariableValue(build, variable) {
+  const env=build?.config?.effectiveEnv ?? build?.effectiveEnv;
+  if (!Array.isArray(env)) return null;
+  const matches=env.filter(row=>(row.variable||row.name)===variable);
+  return matches.length===1?matches[0].value:null;
+}
+async function resumeConfigurationOnly(t, options, io, pointer) {
+  const journalFile=path.join(stateDir(),`release-${t.app}-${t.environment}.json`);
+  if (!existsSync(journalFile)) throw Error('Configuration-only intent has no matching journal; restore evidence before recovery');
+  const journal=jsonFile(journalFile), plan=journal.plan, change=plan?.configurationChange;
+  if (!journal.configurationOnly || journal.state!=='pending' || pointer.record.kind!=='intent' || pointer.record.releaseId!==journal.releaseId ||
+      pointer.record.configurationChange?.approvalHash!==change?.approvalHash || plan?.approval?.configurationHash!==change?.approvalHash) throw Error('Pending release is not the exact configuration-only intent and journal');
+  if (options.rollback || options.record || options['approve-hash']!==change.approvalHash || exactSha(options.sha||'')!==plan.sourceSha ||
+      (change.action==='set' ? options['config-value']!==change.nextOverride || options['clear-config'] : !options['clear-config'] || options['config-value']!==undefined)) {
+    throw Error('Resume must repeat the exact pinned source, configuration action and approved intent hash');
+  }
+  const backend=await releaseBackend(t,io.read), before=await releasePrestate(t,io.read);
+  if (digest(before)!==digest(journal.before) || before.sourceSha!==plan.sourceSha ||
+      digest(backend.overrideEnv||[])!==change.nextOverrideSetHash || catchUpOverride(backend)!==change.nextOverride) {
+    throw Error('Current serving source or backend override differs from the approved pending intent; stop for a new plan');
+  }
+  const servingRollout=await io.read(`${backendPath(t)}/rollouts/${before.rollout}`), servingBuild=await io.read(servingRollout.build);
+  if (effectiveVariableValue(servingBuild,change.variable)!==change.servingEffectiveValue) throw Error('Serving effective configuration changed since the approved intent; stop for a new plan');
+  if (!journal.configurationPatchStartedAt) throw Error('The approved configuration patch was never recorded as started; do not resume this intent');
+  const provenance=mergedSource(plan.sourceSha,io.github);
+  if (provenance.validation.sha!==plan.validation.sha || provenance.provenance.number!==plan.provenance.number || provenance.provenance.head!==plan.provenance.head) throw Error('Merged source provenance differs from the approved pending intent');
+  io.preflight(t); authenticatedOperator(t,{github:io.github,env:io.env});
+  const expectedChange={...change,nextOverrideEnv:structuredClone(backend.overrideEnv||[])};
+  if (!journal.submissionStartedAt) {
+    journal.configurationPatchReconciledAt=new Date().toISOString(); journal.reconciledBackendEtag=backend.etag||null;
+    journal.submissionStartedAt=new Date().toISOString(); save(journalFile,journal);
+    try { io.submit(plan); }
+    catch (error) { journal.submissionFailure={exitStatus:error?.status??null,message:String(error?.message||error).slice(0,300)}; throw Error(`Configuration rollout submission/completion uncertain. Journal ${journalFile}; do not resubmit until reconciled.`); }
+    journal.submissionFinishedAt=new Date().toISOString(); save(journalFile,journal);
+  }
+  const deadline=Date.now()+Number(options['timeout-ms']||1200000); let verified;
+  while(Date.now()<deadline){
+    try{const snapshot=await verifiedReleaseServing(t,io.read);if(snapshot.sourceSha===plan.sourceSha&&snapshot.rollout!==journal.before.rollout){verified=snapshot;break;}}catch{/* wait for App Hosting to settle */}
+    await new Promise(resolve=>setTimeout(resolve,15000));
+  }
+  if(!verified)throw Error(`Configuration-only intent remains pending; preserve ${journalFile} and do not submit again`);
+  const health=await io.smoke(t.app,backend.uri,plan.sourceSha,fetch,t.environment);
+  if(!health.ok)throw Error(`Configuration rollout smoke probe failed (${health.reason||health.status}); preserve journal for recovery`);
+  const stable=await verifiedReleaseServing(t,io.read);
+  if(digest(stable)!==digest(verified))throw Error('Serving revision changed during configuration rollout verification');
+  const rollout=await io.read(`${backendPath(t)}/rollouts/${verified.rollout}`),build=await io.read(rollout.build),currentBackend=await releaseBackend(t,io.read);
+  if(build.source?.codebase?.hash!==plan.sourceSha || !overrideMatches(currentBackend,expectedChange) || !effectiveOverrideMatches(build,change)) throw Error('Serving build source or effective configuration does not match the approved pending change');
+  git('fetch','origin');const latest=releaseRecord(t.branch);
+  if(latest?.record.releaseId!==journal.releaseId||latest.record.kind!=='intent')throw Error('Configuration release intent changed unexpectedly');
+  const record={schema:'fika.release.v1',...plan,...verified,kind:'deploy',previousGood:journal.before,previousGoodRecord:journal.previousGoodRecord,
+    releaseId:journal.releaseId,completedAt:new Date().toISOString(),smoke:health,configurationOnly:true,
+    configuration:{variable:change.variable,action:change.action,previousOverride:change.previousOverride,nextOverride:change.nextOverride,approvalHash:change.approvalHash,
+      effectiveRevisionVerified:true,backendEtagBefore:change.backendEtag,backendEtagAfter:currentBackend.etag||null,recoveredPendingPatch:true}};
+  validateRecord(record,t);const commit=appendRecord(t,record,latest.commit);save(journalFile,{...journal,state:'completed',record,commit});
+  return {commit,record,recoveredPendingPatch:true};
+}
 async function deployConfigurationOnly(t, options, io) {
-  if (options.rollback || options.resume || options.record) throw Error('Configuration-only rollouts do not support rollback/source selection flags');
+  if (options.rollback || options.record) throw Error('Configuration-only rollouts do not support application source rollback/selection flags');
+  const pointer=releaseRecord(t.branch);
+  if(pointer?.record.kind==='intent'){
+    if(!options.resume)throw Error('Pending configuration-only release intent: use --resume with the exact approved source, value and hash');
+    return resumeConfigurationOnly(t,options,io,pointer);
+  }
+  if(options.resume)throw Error('No pending configuration-only release to resume');
   const backend = await releaseBackend(t, io.read);
   const before = await releasePrestate(t, io.read);
-  const pointer = releaseRecord(t.branch);
   if (pointer) {
     validateRecord(pointer.record,t);
     if (!matchesServing(pointer.record,before) || pointer.record.kind === 'intent') throw Error('Release ledger does not match the verified serving state; reconcile it before configuration rollout');
