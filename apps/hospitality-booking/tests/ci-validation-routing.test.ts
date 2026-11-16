@@ -36,7 +36,9 @@ test("Hospitality unit, typecheck and exact-source build lanes remain required",
   assert.match(validation, /npm --prefix apps\/hospitality-booking run typecheck/);
   assert.match(validation, /test "\$\(git rev-parse HEAD\)" = "\$SOURCE_SHA"/);
   assert.match(validation, /GITHUB_SHA="\$SOURCE_SHA" npm --prefix apps\/hospitality-booking run build/);
-  assert.match(gate, /needs: \[[^\]]*application-tests, hospitality-validation,/);
+  // Other app validation jobs may appear between these required dependencies.
+  assert.match(gate, /needs: \[[^\]]*application-tests,/);
+  assert.match(gate, /needs: \[[^\]]*hospitality-validation,/);
   assert.match(gate, /HOSPITALITY_VALIDATION: \$\{\{ needs\.hospitality-validation\.result \}\}/);
   assert.match(gate, /case "\$HOSPITALITY_VALIDATION" in success\|skipped/);
 });

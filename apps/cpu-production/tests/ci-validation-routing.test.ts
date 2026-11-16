@@ -43,7 +43,10 @@ test("CPU unit, shared-contract, emulator, typecheck and exact-source build all 
   assert.match(emulator, /actions\/setup-java@/);
   assert.match(emulator, /npm install --global firebase-tools@15\.30\.2/);
   assert.match(emulator, /npm --prefix apps\/cpu-production run test:emulator/);
-  assert.match(gate, /needs: \[[^\]]*application-tests, cpu-validation, cpu-emulator,/);
+  // Other app validation jobs may appear between these required dependencies.
+  assert.match(gate, /needs: \[[^\]]*application-tests,/);
+  assert.match(gate, /needs: \[[^\]]*cpu-validation,/);
+  assert.match(gate, /needs: \[[^\]]*cpu-emulator,/);
   assert.match(gate, /CPU_VALIDATION: \$\{\{ needs\.cpu-validation\.result \}\}/);
   assert.match(gate, /CPU_EMULATOR: \$\{\{ needs\.cpu-emulator\.result \}\}/);
   assert.match(gate, /case "\$CPU_VALIDATION" in success\|skipped/);
