@@ -48,14 +48,14 @@ test("historical choice stays intact until a deliberate menu edit", () => {
 
 test("edit saved selection, switch package, and retain unrelated choices and dietaries", () => {
   let result: typeof line | undefined; let notes = "";
-  render(React.createElement(BuffetAmendmentSelector, { config, line, catalogue: [item(gold, "Gold", 28), item(silver, "Silver", 20)], selectedItemIds: [], guestCount: 31, dietaryNotes: "Original", onSave(next, value) { result = next as typeof line; notes = value; } }));
+  render(React.createElement(BuffetAmendmentSelector, { fullScreen: true, config, line, catalogue: [item(gold, "Gold", 28), item(silver, "Silver", 20)], selectedItemIds: [], guestCount: 31, dietaryNotes: "Original", onSave(next, value) { result = next as typeof line; notes = value; } }));
   assert.equal(storedBuffetPreview(line)?.selection.nonVegetarianMainId, meat.id);
   fireEvent.click(screen.getByRole("button", { name: "Edit menu" }));
   fireEvent.click(screen.getByRole("radio", { name: /Silver ·/ }));
   fireEvent.change(screen.getByRole("spinbutton", { name: veg.name }), { target: { value: "15" } });
   fireEvent.click(screen.getByRole("checkbox", { name: new RegExp(eligible("dessert")[0].name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) }));
   fireEvent.change(screen.getByLabelText(/Dietary notes/), { target: { value: "Updated dietaries" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save selection" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save menu" }));
   assert.ok(result); assert.equal(result!.itemId, silver); assert.equal(result!.quantity, 31); assert.equal(notes, "Updated dietaries");
   assert.deepEqual(result!.choices[0], { id: "ordinary", value: "kept" });
   assert.deepEqual((result!.choices[1] as { value: { dessertIds: string[] } }).value.dessertIds, [desserts[0]]);
@@ -77,14 +77,14 @@ test("All Day amendment sends the edited menu within its original service identi
     render(React.createElement(GroupAmendmentEditor, { group: { id: "group-1" } as never, site: "rcoa", oplocId: "oploc:test", onCancel() { cancelled = true; }, onSaved: async () => {}, onBusyChange() {} }));
     await screen.findByRole("button", { name: "Edit menu" });
     fireEvent.click(screen.getByRole("button", { name: "Edit menu" }));
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-    assert.equal(screen.queryByRole("dialog"), null); assert.equal(cancelled, false);
+    fireEvent.click(screen.getByRole("button", { name: "Back to booking" }));
+    assert.equal(screen.queryByTestId("buffet-menu-screen"), null); assert.equal(cancelled, false);
     fireEvent.change(screen.getByRole("spinbutton", { name: "Guests" }), { target: { value: "31" } });
     assert.equal((screen.getByRole("spinbutton", { name: "Guests" }) as HTMLInputElement).value, "31");
     fireEvent.click(screen.getByRole("button", { name: "Edit menu" }));
     fireEvent.change(screen.getByRole("spinbutton", { name: veg.name }), { target: { value: "15" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save selection" }));
-    assert.equal(screen.queryByRole("dialog"), null);
+    fireEvent.click(screen.getByRole("button", { name: "Save menu" }));
+    assert.equal(screen.queryByTestId("buffet-menu-screen"), null);
     const vegetarian = screen.getByRole("spinbutton", { name: "Vegetarian" }) as HTMLInputElement; vegetarian.focus();
     fireEvent.change(vegetarian, { target: { value: "1" } });
     fireEvent.change(vegetarian, { target: { value: "12" } });
@@ -117,8 +117,8 @@ test("standalone amendment requires allocation review and saves edited buffet de
     fireEvent.click(screen.getByRole("button", { name: "Edit menu" }));
     fireEvent.change(screen.getByRole("spinbutton", { name: veg.name }), { target: { value: "15" } });
     fireEvent.change(screen.getByLabelText(/Dietary notes/), { target: { value: "Updated dietaries" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save selection" }));
-    assert.equal(screen.queryByRole("dialog"), null);
+    fireEvent.click(screen.getByRole("button", { name: "Save menu" }));
+    assert.equal(screen.queryByTestId("buffet-menu-screen"), null);
     fireEvent.submit(screen.getByRole("button", { name: /Save amendment/ }).closest("form")!);
     assert.equal(saved.order.items[0].quantity, 31); assert.equal(saved.dietaries.freeText, "Updated dietaries");
   } finally { globalThis.fetch = originalFetch; if (oldFlag === undefined) delete process.env.NEXT_PUBLIC_FIKA_HOT_FORK_BUFFET_ENABLED; else process.env.NEXT_PUBLIC_FIKA_HOT_FORK_BUFFET_ENABLED = oldFlag; }

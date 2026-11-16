@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { BuffetMenuDialog } from "./BuffetMenuDialog";
+import { BuffetMenuBuilder } from "./BuffetMenuBuilder";
 import { buffetMenuView, buffetPackageForItem, buffetSubmissionEnabled, loadBuffetConfig, parseBuffetPreview, type BuffetConfig, type BuffetPreview } from "../../lib/buffet-menu-client";
 import type { PortalMenuItem } from "../../lib/mnk-contract";
 import styles from "./BuffetMenuDialog.module.css";
@@ -17,7 +18,7 @@ export function useBuffetConfig(enabled = true) {
   return { config, error };
 }
 
-export function BuffetMenuPicker({ config, item, catalogue, selectedItemIds, guestCount, preview, dietaryNotes, onSave }: { config?: BuffetConfig; item: PortalMenuItem; catalogue: readonly PortalMenuItem[]; selectedItemIds: readonly string[]; guestCount: number; preview?: BuffetPreview; dietaryNotes: string; onSave: (item: PortalMenuItem, preview: BuffetPreview, dietaryNotes: string) => void }) {
+export function BuffetMenuPicker({ config, item, catalogue, selectedItemIds, guestCount, preview, dietaryNotes, fullScreen = false, onSave }: { config?: BuffetConfig; item: PortalMenuItem; catalogue: readonly PortalMenuItem[]; selectedItemIds: readonly string[]; guestCount: number; preview?: BuffetPreview; dietaryNotes: string; fullScreen?: boolean; onSave: (item: PortalMenuItem, preview: BuffetPreview, dietaryNotes: string) => void }) {
   const [open, setOpen] = useState(false);
   if (!config) return null;
   const pkg = buffetPackageForItem(config, item.id);
@@ -31,7 +32,7 @@ export function BuffetMenuPicker({ config, item, catalogue, selectedItemIds, gue
     {needsResave && <p role="status">The buffet rules have changed. Please review and save your selection again.</p>}
     {validSelection && <BuffetSelectionSummary config={config} preview={preview} />}
     <button type="button" className={styles.secondary} onClick={() => setOpen(true)}>{validSelection ? "Edit menu" : "Choose Menu"}</button>
-    {open && <BuffetMenuDialog menu={view} guestCount={guestCount} initialPackageId={pkg.id} selection={validSelection} dietaryNotes={dietaryNotes} onCancel={() => setOpen(false)} onSave={(selection, notes) => {
+    {open && (fullScreen ? <BuffetMenuBuilder menu={view} guestCount={guestCount} initialPackageId={pkg.id} selection={validSelection} dietaryNotes={dietaryNotes} onCancel={() => setOpen(false)} onSave={(selection, notes) => {
       const target = config.packages.find(candidate => candidate.id === selection.packageId);
       const targetItem = catalogue.find(candidate => target?.canonicalItemIds.includes(candidate.id));
       if (!targetItem) return;
@@ -40,7 +41,12 @@ export function BuffetMenuPicker({ config, item, catalogue, selectedItemIds, gue
         const picker = [...document.querySelectorAll<HTMLElement>("[data-buffet-item-id]")].find(element => element.dataset.buffetItemId === targetItem.id);
         picker?.querySelector<HTMLButtonElement>("button")?.focus();
       }, 0);
-    }} />}
+    }} /> : <BuffetMenuDialog menu={view} guestCount={guestCount} initialPackageId={pkg.id} selection={validSelection} dietaryNotes={dietaryNotes} onCancel={() => setOpen(false)} onSave={(selection, notes) => {
+      const target = config.packages.find(candidate => candidate.id === selection.packageId);
+      const targetItem = catalogue.find(candidate => target?.canonicalItemIds.includes(candidate.id));
+      if (!targetItem) return;
+      onSave(targetItem, { menuVersion: config.menuVersion, rulesVersion: config.rulesVersion, selection }, notes); setOpen(false);
+    }} />)}
   </div>;
 }
 
