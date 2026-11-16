@@ -31,22 +31,22 @@
     "sourceSha": "7f7d2faf201ed620c6a1550d2a1d03c9f54a7d9b",
     "serving": {
       "sourceSha": "7f7d2faf201ed620c6a1550d2a1d03c9f54a7d9b",
-      "rollout": "build-2026-11-13-001",
+      "rollout": "build-2026-11-16-001",
       "state": "SUCCEEDED",
       "percent": 100
     },
     "variable": "FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH",
     "action": "set",
-    "previousOverride": null,
-    "nextOverride": "2913ccdfc3253edac5f539d41b9bb62c5478346f2e45246a94d2e521975a7bf4",
-    "effectiveValue": "2913ccdfc3253edac5f539d41b9bb62c5478346f2e45246a94d2e521975a7bf4",
-    "servingEffectiveValue": "10c4c257637b4a691cae9db710e1940b780fb9ab2b3ea89678ed879ac57ba6ee",
-    "backendEtag": "nwm7W4siF05MLcgE61iogEyJ1a3pqVw8_H0Fn-mgZYA",
-    "approvalHash": "3060dd7a0faeab61a928f35e989e873e4fa4d3e5ef71cc3c616d904f17e6065f",
+    "previousOverride": "2913ccdfc3253edac5f539d41b9bb62c5478346f2e45246a94d2e521975a7bf4",
+    "nextOverride": "c514521d906203172ddef2a6ddad3d8295dd652024d8a3593c3a3cfc0697e42b",
+    "effectiveValue": "c514521d906203172ddef2a6ddad3d8295dd652024d8a3593c3a3cfc0697e42b",
+    "servingEffectiveValue": "2913ccdfc3253edac5f539d41b9bb62c5478346f2e45246a94d2e521975a7bf4",
+    "backendEtag": "MroW-LWyj5h4DlARc1phULJnpF6u_CstdLqn0ZlsBbs",
+    "approvalHash": "2f9f9112f44182b611ba32665063ea7ee8b38cd293bea3caf50279854cca4ada",
     "patchRequired": true,
     "changed": true,
-    "previousOverrideSetHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-    "nextOverrideSetHash": "06b91459b6a7a0a550cf6373ce36be455dc7b63e21f10fe1f7463a2616c773ab"
+    "previousOverrideSetHash": "06b91459b6a7a0a550cf6373ce36be455dc7b63e21f10fe1f7463a2616c773ab",
+    "nextOverrideSetHash": "b590e75bfc46442becce46e79e3aa2e361d277b1aeb01b603f92154333d9bd72"
   },
   "approval": {
     "actor": "derekfika",
@@ -55,41 +55,22 @@
     "environment": "prod",
     "sourceSha": "7f7d2faf201ed620c6a1550d2a1d03c9f54a7d9b",
     "action": "configuration-only-rollout",
-    "instruction": "Execute configuration-only-rollout",
+    "instruction": "RCoA approved recovery manifest page 2",
     "releaseId": null,
-    "id": "143ea5393a3284a0b4a13bbd543ce0a37348c22d64c41b254f90e361908ffcd3",
+    "id": "e63ef2244617651c87dfd50af3cdec9b1044b968376493fe820763ab53e4b5d7",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-16T18:00:34.437Z",
-    "configurationHash": "3060dd7a0faeab61a928f35e989e873e4fa4d3e5ef71cc3c616d904f17e6065f"
+    "authorisedAt": "2026-11-16T19:19:39.843Z",
+    "configurationHash": "2f9f9112f44182b611ba32665063ea7ee8b38cd293bea3caf50279854cca4ada"
   },
-  "rollout": "build-2026-11-16-001",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "e556045a-ede1-4542-a734-cb79476e37b7",
   "previousGood": {
     "sourceSha": "7f7d2faf201ed620c6a1550d2a1d03c9f54a7d9b",
-    "rollout": "build-2026-11-13-001",
+    "rollout": "build-2026-11-16-001",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "31536eaccc290ef7feb534654f6f7b72a89bcb8b",
-  "releaseId": "88c8fd84-ffd4-47a4-9803-dc5256d6d47c",
-  "completedAt": "2026-11-16T18:41:12.710Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-prod-hub--fika-os.europe-west4.hosted.app/"
-  },
-  "configurationOnly": true,
-  "configuration": {
-    "variable": "FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH",
-    "action": "set",
-    "previousOverride": null,
-    "nextOverride": "2913ccdfc3253edac5f539d41b9bb62c5478346f2e45246a94d2e521975a7bf4",
-    "approvalHash": "3060dd7a0faeab61a928f35e989e873e4fa4d3e5ef71cc3c616d904f17e6065f",
-    "effectiveRevisionVerified": true,
-    "backendEtagBefore": "nwm7W4siF05MLcgE61iogEyJ1a3pqVw8_H0Fn-mgZYA",
-    "backendEtagAfter": "MroW-LWyj5h4DlARc1phULJnpF6u_CstdLqn0ZlsBbs",
-    "recoveredPendingPatch": true
-  }
+  "previousGoodRecord": "61f16c73cfd883320e6988f78de14c077ba36855",
+  "createdAt": "2026-11-16T19:19:44.147Z"
 }
