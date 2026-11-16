@@ -19,12 +19,14 @@ test("booking and group booking responses use runtime-scoped quote pointer redac
   }
 });
 
-test("staging refuses group quote generation and replay before workflow side effects", () => {
+test("group quote generation uses the verified staging operation gate before workflow side effects", () => {
   const route = source("../app/api/hospitality-booking-groups/quote/route.ts");
-  const guard = route.indexOf("if (await stagingDriveAccessBlocked())");
+  const guard = route.indexOf("if (await stagingDriveOperationsBlocked())");
   const generate = route.indexOf("generateHospitalityGroupQuote(command");
   const reconcile = route.indexOf("queueGroupConfirmation(command.bookingGroupId)");
   assert.notEqual(guard, -1);
   assert.ok(generate > guard, "the Drive-isolation guard must run before quote persistence or replay");
   assert.ok(reconcile > guard, "the Drive-isolation guard must run before reconciliation side effects");
+  assert.match(route, /resolveGroupQuoteTarget\(booking, settings\)/);
+  assert.match(route, /redactHospitalityQuoteDriveLinks\([\s\S]*?await stagingDriveAccessBlocked\(\)/, "staging Drive URLs remain redacted from generic responses");
 });
