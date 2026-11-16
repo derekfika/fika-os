@@ -2,7 +2,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { APPS, REPO, MAIN_CHECK, target, exactSha, assertClean, validateRecord, assertResume, assertServingLineage, digest } from './policy.mjs';
-import { git, command, ancestor, ref, ghApi, scopeHash, asyncLock, save, stateDir, jsonFile, serving, cloud, backendPath } from './runtime.mjs';
+import { git, command, ancestor, ref, ghApi, scopeHash, asyncLock, save, stateDir, jsonFile, serving, cloud, cloudPatch, backendPath } from './runtime.mjs';
 import { assertHostedContext } from './hosted.mjs';
 import { discover } from './discovery.mjs';
 import { releaseBackend, verifiedReleaseServing, releasePrestate } from './release-prestate.mjs';
@@ -321,10 +321,12 @@ function mergedSource(sha, github, { historicalRollback = false } = {}) {
 export function rollbackSelection(t, current, options = {}, before) {
   if (!current) throw Error('No verified release history for rollback');
   const { record } = current;
+  if (record.configurationOnly) throw Error('The current release changed only backend configuration; prepare a separately approved configuration-only restore instead of rolling back application source');
   const isPrevious = ['baseline', 'deploy', 'rollback'].includes(record.kind) && record.sourceSha !== before?.sourceSha;
   const requested = options.record || (before && isPrevious ? current.commit : record.previousGoodRecord);
   if (requested) {
     const record = validateRecord(JSON.parse(git('show', `${exactSha(requested)}:release.json`)), t);
+    if (record.configurationOnly) throw Error('A configuration-only release cannot be selected as an application source rollback target');
     return { record:requested, sha:options.sha || record.sourceSha };
   }
   // Compatibility with release records written before previousGoodRecord was stored.
@@ -394,6 +396,130 @@ function matchesServing(record, before) {
   return record?.sourceSha === before.sourceSha && record?.rollout === before.rollout;
 }
 
+const CATCH_UP_APPROVAL_VARIABLE = 'FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH';
+function catchUpOverride(backend) {
+  const all = backend?.overrideEnv || [];
+  const matches = all.filter(row => row?.variable === CATCH_UP_APPROVAL_VARIABLE);
+  if (matches.length > 1 || matches.some(row => typeof row.value !== 'string' || row.secret)) throw Error('Catch-up approval override is duplicated or not a plain value');
+  return matches[0]?.value ?? null;
+}
+async function configurationChangePlan(t, sourceSha, before, backend, options, read) {
+  if (t.app !== 'hub' || t.environment !== 'prod' || t.project !== 'fika-os' || t.backend !== 'fika-os-prod-hub') throw Error('Configuration-only rollout is restricted to the production Hub catch-up approval binding');
+  if (options.rollback || options.resume || !sourceSha || before.sourceSha !== sourceSha) throw Error('Configuration-only rollout requires the exact currently serving source SHA and cannot be a rollback or resume');
+  if (!backend.etag) throw Error('App Hosting did not provide an ETag; configuration-only rollout requires optimistic concurrency');
+  const hasValue = typeof options['config-value'] === 'string';
+  const clear = options['clear-config'] === true;
+  if (hasValue === clear) throw Error('Choose exactly one of --config-value <64-character hash> or --clear-config');
+  if (hasValue && !/^[a-f0-9]{64}$/.test(options['config-value'])) throw Error('The catch-up approval binding must be a 64-character lowercase SHA-256 hash');
+  const current = catchUpOverride(backend);
+  const value = clear ? null : options['config-value'];
+  let effectiveValue = value;
+  if (clear) {
+    const yaml = git('show',`${sourceSha}:apps/integration-hub/apphosting.production.yaml`);
+    const match = yaml.match(new RegExp(`- variable: ${CATCH_UP_APPROVAL_VARIABLE}\\s+value: ([a-f0-9]{64})`));
+    if (!match) throw Error('Pinned Hub source does not declare a verifiable catch-up approval hash for clearing the override');
+    effectiveValue = match[1];
+  }
+  const base=backendPath(t), rollout=await read(`${base}/rollouts/${before.rollout}`), build=await read(rollout.build);
+  const servingVars=Array.isArray(build?.effectiveEnv)?build.effectiveEnv.filter(row=>(row.variable||row.name)===CATCH_UP_APPROVAL_VARIABLE):[];
+  const servingEffectiveValue=servingVars.length===1?servingVars[0].value:null;
+  const action = clear ? 'clear' : 'set';
+  const expected = structuredClone(backend.overrideEnv || []);
+  const next = expected.filter(row => row?.variable !== CATCH_UP_APPROVAL_VARIABLE);
+  if (value !== null) next.push({ variable:CATCH_UP_APPROVAL_VARIABLE, value });
+  const approvalHash = digest({ target:t, sourceSha, serving:{sourceSha:before.sourceSha,rollout:before.rollout}, backendEtag:backend.etag || null,
+    previousOverride:current, nextOverride:value, servingEffectiveValue, previousOverrideSet:digest(expected), nextOverrideSet:digest(next), action, variable:CATCH_UP_APPROVAL_VARIABLE });
+  const patchRequired=digest(expected)!==digest(next);
+  return { target:t, sourceSha, serving:before, variable:CATCH_UP_APPROVAL_VARIABLE, action, previousOverride:current, nextOverride:value,
+    previousOverrideEnv:expected, nextOverrideEnv:next, effectiveValue, servingEffectiveValue, backendEtag:backend.etag || null, approvalHash, patchRequired,
+    changed:current !== value || servingEffectiveValue !== effectiveValue };
+}
+function publicConfigurationChange(change) {
+  const { previousOverrideEnv:_previous, nextOverrideEnv:_next, ...safe } = change;
+  return { ...safe, previousOverrideSetHash:digest(_previous), nextOverrideSetHash:digest(_next) };
+}
+function overrideMatches(backend, plan) {
+  const expected = plan.nextOverrideEnv;
+  const actual = backend.overrideEnv || [];
+  return digest(actual) === digest(expected);
+}
+function effectiveOverrideMatches(build, plan) {
+  const env = build?.effectiveEnv;
+  if (!Array.isArray(env)) return false;
+  const matches = env.filter(row => (row.variable || row.name) === plan.variable);
+  return matches.length === 1 && matches[0].value === plan.effectiveValue;
+}
+async function deployConfigurationOnly(t, options, io) {
+  if (options.rollback || options.resume || options.record) throw Error('Configuration-only rollouts do not support rollback/source selection flags');
+  const backend = await releaseBackend(t, io.read);
+  const before = await releasePrestate(t, io.read);
+  const pointer = releaseRecord(t.branch);
+  if (pointer) {
+    validateRecord(pointer.record,t);
+    if (!matchesServing(pointer.record,before) || pointer.record.kind === 'intent') throw Error('Release ledger does not match the verified serving state; reconcile it before configuration rollout');
+  } else throw Error('A verified release ledger is required before a configuration-only rollout');
+  const sha = exactSha(options.sha || '');
+  const provenance = mergedSource(sha,io.github);
+  if (sha !== before.sourceSha) throw Error('Configuration-only rollout source must exactly match the current serving source');
+  const change = await configurationChangePlan(t,sha,before,backend,options,io.read);
+  const plan = { ...t, ...provenance, sourceSha:sha, scopeHash:scopeHash(t.app,sha), rollback:false, configurationChange:publicConfigurationChange(change) };
+  if (!change.changed) return { alreadyConfigured:true, dryRun:!options.execute, plan, before, next:'The approved runtime value is already active; no patch or rollout is required.' };
+  if (!options.execute) return { dryRun:true, configurationOnly:true, plan, approvalHash:change.approvalHash, before,
+    next:'Review the exact backend configuration delta, then rerun with --execute --approve-hash <approvalHash>.' };
+  if (options['approve-hash'] !== change.approvalHash) throw Error(`Configuration approval hash mismatch. Review and approve exact hash ${change.approvalHash}; no release state or backend configuration was changed.`);
+  plan.approval = executionEvidence(t,sha,{...options,action:'configuration-only-rollout'}, { github:io.github,env:io.env });
+  plan.approval.configurationHash = change.approvalHash;
+  io.preflight(t);
+  const freshBackend = await releaseBackend(t,io.read), freshBefore = await releasePrestate(t,io.read);
+  if (digest(freshBefore)!==digest(before) || freshBackend.etag !== backend.etag || !overrideMatches(freshBackend,{nextOverrideEnv:change.previousOverrideEnv})) throw Error('Backend configuration or serving source changed after approval; prepare a fresh plan');
+  const previousGoodRecord = pointer.commit;
+  const releaseId = randomUUID(), journalFile = path.join(stateDir(),`release-${t.app}-${t.environment}.json`);
+  const journal = { releaseId, plan, before, observedBefore:before, previousGoodRecord, state:'pending', createdAt:new Date().toISOString(), configurationOnly:true };
+  save(journalFile,journal);
+  const intent = { schema:'fika.release.v1', ...plan, kind:'intent', state:'PENDING', releaseId, previousGood:before, previousGoodRecord, createdAt:journal.createdAt };
+  journal.intentCommit = appendRecord(t,intent,pointer.commit); save(journalFile,journal);
+  if (change.patchRequired) {
+    journal.configurationPatchStartedAt = new Date().toISOString(); save(journalFile,journal);
+    try {
+      const patched = await io.patch(backendPath(t),'overrideEnv',{ name:backendPath(t), etag:backend.etag, overrideEnv:change.nextOverrideEnv });
+      if (patched?.name !== backendPath(t) || !overrideMatches(patched,{nextOverrideEnv:change.nextOverrideEnv})) throw Error('Configuration patch response did not match the exact approved override set');
+      journal.configurationPatchedAt = new Date().toISOString(); save(journalFile,journal);
+    } catch (error) {
+      throw Error(`Configuration patch outcome requires read-only reconciliation; preserve ${journalFile}. ${String(error.message || error).slice(0,250)}`);
+    }
+  }
+  const postPatchBackend=await releaseBackend(t,io.read), postPatchServing=await releasePrestate(t,io.read);
+  if (!overrideMatches(postPatchBackend,{nextOverrideEnv:change.nextOverrideEnv}) || digest(postPatchServing)!==digest(before)) throw Error(`Backend configuration was patched but no rollout was submitted because post-patch serving state changed; preserve ${journalFile} for reconciliation`);
+  journal.submissionStartedAt = new Date().toISOString(); save(journalFile,journal);
+  try { io.submit(plan); }
+  catch (error) { journal.submissionFailure = { exitStatus:error?.status ?? null, message:String(error?.message || error).slice(0,300) }; throw Error(`Configuration rollout submission/completion uncertain. Journal ${journalFile}; do not resubmit until reconciled.`); }
+  journal.submissionFinishedAt = new Date().toISOString(); save(journalFile,journal);
+  const deadline = Date.now() + Number(options['timeout-ms'] || 1200000);
+  let verified;
+  while (Date.now()<deadline) {
+    try { const snapshot = await verifiedReleaseServing(t,io.read); if (snapshot.sourceSha===sha && snapshot.rollout!==before.rollout) { verified=snapshot; break; } } catch { /* wait for App Hosting to settle */ }
+    await new Promise(resolve=>setTimeout(resolve,15000));
+  }
+  if (!verified) throw Error(`Configuration rollout is not verified; preserve pending intent and ${journalFile}`);
+  const health = await io.smoke(t.app,backend.uri,sha,fetch,t.environment);
+  if (!health.ok) throw Error(`Configuration rollout smoke probe failed (${health.reason || health.status}); preserve journal for recovery`);
+  const stable = await verifiedReleaseServing(t,io.read);
+  if (digest(stable)!==digest(verified)) throw Error('Serving revision changed during configuration rollout verification');
+  const servingRollout = await io.read(`${backendPath(t)}/rollouts/${verified.rollout}`);
+  const build = await io.read(servingRollout.build);
+  const currentBackend = await releaseBackend(t,io.read);
+  if (build.source?.codebase?.hash!==sha || !overrideMatches(currentBackend,{nextOverrideEnv:change.nextOverrideEnv}) || !effectiveOverrideMatches(build,change)) throw Error('Serving build source or effective configuration does not match the approved change');
+  git('fetch','origin'); const latest=releaseRecord(t.branch);
+  if (latest?.record.releaseId!==releaseId || latest.record.kind!=='intent') throw Error('Configuration release intent changed unexpectedly');
+  const record = { schema:'fika.release.v1', ...plan, ...verified, kind:'deploy', previousGood:before, previousGoodRecord,
+    releaseId, completedAt:new Date().toISOString(), smoke:health, configurationOnly:true,
+    configuration:{variable:change.variable,action:change.action,previousOverride:change.previousOverride,nextOverride:change.nextOverride,approvalHash:change.approvalHash,
+      effectiveRevisionVerified:true,backendEtagBefore:change.backendEtag,backendEtagAfter:currentBackend.etag || null} };
+  validateRecord(record,t); const commit=appendRecord(t,record,latest.commit);
+  save(journalFile,{...journal,state:'completed',record,commit});
+  return { commit, record };
+}
+
 function archiveJournal(journal) {
   const archive = path.join(stateDir(), 'archives', `release-${digest(journal.releaseId)}.json`);
   if (existsSync(archive) && digest(jsonFile(archive)) !== digest(journal)) throw Error('Recovery journal archive differs; preserve both and investigate');
@@ -402,12 +528,13 @@ function archiveJournal(journal) {
 
 export async function deploy(app, environment, options, {
   read = cloud, github = ghApi, env = process.env, smoke = releaseHealthProbe,
-  preflight = firebaseAuthPreflight, audit = auditCreateEvents,
+  preflight = firebaseAuthPreflight, audit = auditCreateEvents, patch = cloudPatch,
   submit = plan => command('firebase', rolloutArguments(plan), { stdio: ['ignore', 'inherit', 'inherit'] }),
 } = {}) {
   return asyncLock(`release-${app}-${environment}`, async () => {
     const t = target(app, environment);
     assertClean(git('status', '--porcelain')); git('fetch', 'origin');
+    if (options.configOnly) return deployConfigurationOnly(t,options,{read,github,env,smoke,preflight,audit,patch,submit});
     const journalFile = path.join(stateDir(), `release-${app}-${environment}.json`);
     let journal = existsSync(journalFile) ? jsonFile(journalFile) : undefined;
     let pointer = releaseRecord(t.branch), plan;

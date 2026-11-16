@@ -78,6 +78,16 @@ export async function cloud(resource) {
     }
   }
 }
+/** One-shot App Hosting mutation. Unlike inspection, a write is never retried here: the caller
+ * must record intent first and reconcile any ambiguous response before attempting another write. */
+export async function cloudPatch(resource, updateMask, body) {
+  if (!tokenCache || Date.now() > tokenCache.until) tokenCache = { value: command('gcloud', ['auth', 'print-access-token', '--quiet']), until: Date.now() + 40 * 60000 };
+  const url = new URL(`https://firebaseapphosting.googleapis.com/v1beta/${resource}`);
+  url.searchParams.set('updateMask', updateMask);
+  const response = await fetch(url, { method:'PATCH', headers:{ Authorization:`Bearer ${tokenCache.value}`, 'Content-Type':'application/json' }, body:JSON.stringify(body), signal:AbortSignal.timeout(45000) });
+  if (!response.ok) { const error = Error(`App Hosting configuration update failed: HTTP ${response.status}`); error.status = response.status; throw error; }
+  return response.json();
+}
 export const backendPath = t => `projects/${t.project}/locations/${t.region}/backends/${t.backend}`;
 const servingRolloutNames = new WeakMap();
 export async function serving(t, read = cloud, { projectNumber, repository } = {}) {

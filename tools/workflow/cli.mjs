@@ -16,8 +16,8 @@ import { installWorkspaceFences } from './workspace-fencing.mjs';
 
 export function parse(args) {
   const positional = []; const options = {};
-  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'preserve']);
-  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement', 'confirm', 'pr', 'port', 'lease-id', 'predecessor', 'predecessor-lease-id']);
+  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'preserve', 'config-only', 'clear-config']);
+  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement', 'confirm', 'pr', 'port', 'lease-id', 'predecessor', 'predecessor-lease-id', 'config-value']);
   for (let i = 0; i < args.length; i++) {
     if (!args[i].startsWith('--')) { positional.push(args[i]); continue; }
     const key = args[i].slice(2); if (Object.hasOwn(options, key)) throw Error(`Duplicate --${key}`);
@@ -27,6 +27,8 @@ export function parse(args) {
   }
   if (options.staging && options.prod) throw Error('Choose exactly one environment');
   if (options.execute && options['dry-run']) throw Error('Choose either --dry-run or --execute');
+  if ((options['config-value'] !== undefined || options['clear-config']) && !options['config-only']) throw Error('Configuration values require the explicit --config-only action');
+  if (options['config-value'] !== undefined && options['clear-config']) throw Error('Choose one configuration operation');
   return { positional, options };
 }
 function changePaths(options) {
@@ -145,6 +147,8 @@ async function main() {
       'fika integrate --workspace <task> --pr <number>',
       'fika deploy cpu --staging [--sha <merged SHA>] [--execute]',
       'fika deploy cpu --prod [--sha <merged SHA>] [--execute] [--reason <note>]',
+      'fika deploy hub --prod --config-only --sha <current serving SHA> --config-value <SHA-256> [--execute --approve-hash <plan hash>]',
+      'fika deploy hub --prod --config-only --sha <current serving SHA> --clear-config [--execute --approve-hash <plan hash>]',
       'fika rollback cpu --prod [--execute] [--reason <note>]',
       'fika reconcile cpu --staging|--prod [--resolution abandon|complete --rollout <ID> --execute] [--reason <note>]',
       'fika reconcile-serving-baseline hub --staging --sha <exact SHA> --rollout <rollout ID> [--execute] [--reason <note>]',
