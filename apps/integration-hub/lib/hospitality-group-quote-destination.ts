@@ -1,6 +1,7 @@
 import { assertStagingDriveResource, driveAccessToken, resolveDriveOwner } from "@fika/server-shared/drive-owner";
 import type { CanonicalBooking } from "./hospitality-booking-service";
 import type { DashboardQuoteSettings } from "./quote-engine";
+import { RCOA_HOSPITALITY_OPLOC_ID } from "./booking-email-site-identities";
 
 const base = "https://www.googleapis.com/drive/v3/files";
 const folderIdFrom = (value: string | undefined) => {
@@ -17,9 +18,12 @@ export async function resolveGroupQuoteTarget(
   const oplocId = booking.service.oplocId;
   if (!oplocId) throw new Error("The quote has no canonical OPLOC.");
   const staging = process.env.FIKA_RUNTIME_MODE === "staging";
-  const configured = staging
-    ? settings.googleQuoteFolderId
-    : settings.googleQuoteFolderId || settings.googleDriveFolderId || resolveDriveOwner({ type: "oploc-workspace", oplocId }).configuredRootFolderId;
+  const isCanonicalRcoa = booking.service.portalSiteId === "rcoa" && oplocId === RCOA_HOSPITALITY_OPLOC_ID;
+  const configured = staging && isCanonicalRcoa
+    ? process.env.FIKA_STAGING_RCOA_QUOTE_FOLDER_ID
+    : staging
+      ? settings.googleQuoteFolderId
+      : settings.googleQuoteFolderId || settings.googleDriveFolderId || resolveDriveOwner({ type: "oploc-workspace", oplocId }).configuredRootFolderId;
   const folderId = folderIdFrom(configured);
   if (!folderId) throw new Error("Configure the location's quote Drive folder before generating a group quote.");
 
