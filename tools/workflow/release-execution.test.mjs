@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { APPS, MAIN_CHECK, REPO, target } from './policy.mjs';
-import { appendRecord, deploy, releaseRecord, rolloutArguments } from './releases.mjs';
+import { appendRecord, deploy, releaseRecord, rollbackSelection, rolloutArguments } from './releases.mjs';
 import { backendPath, git, jsonFile, save, scopeHash, stateDir, withRepository } from './runtime.mjs';
 
 async function fixture(run) {
@@ -45,12 +45,14 @@ function releaseIO(t, sourceSha) {
   const projectNumber = t.environment === 'prod' ? '397503564317' : '594727519934';
   const backend = { name:base, environment:t.environment === 'prod' ? 'production' : 'staging', reconciling:false,
     uri:`${t.backend}--${t.project}.${t.region}.hosted.app`,
+    etag:'backend-etag-1', overrideEnv:[],
     codebase:{rootDirectory:APPS[t.app].path,repository:`projects/${t.project}/locations/${t.region}/connections/fixture/gitRepositoryLinks/derekfika-fika-os`} };
   const traffic = { rolloutPolicy:{disabled:true}, reconciling:false };
   const operations = [];
   const setServing = sha => {
     const build = { name:`${base.replace(t.project, projectNumber)}/builds/build-${builds.length+1}`, state:'READY', createTime:'2026-10-30T10:00:00Z',
-      source:{codebase:{hash:sha,commit:sha,uri:`https://github.com/${REPO}/commit/${sha}`}} };
+      source:{codebase:{hash:sha,commit:sha,uri:`https://github.com/${REPO}/commit/${sha}`}},
+      effectiveEnv:(backend.overrideEnv||[]).map(row=>({...row,origin:'BACKEND_OVERRIDE'})) };
     const rollout = { name:`${base}/rollouts/rollout-${rollouts.length+1}`, state:'SUCCEEDED', build:build.name, createTime:build.createTime };
     builds.push(build); rollouts.push(rollout);
     traffic.current = { splits:[{build:build.name,percent:100}] };
@@ -92,6 +94,11 @@ function releaseIO(t, sourceSha) {
       setServing(plan.sourceSha);
       if (state.interrupt) throw Error('Simulated CLI interruption after Firebase accepted the rollout');
     },
+    patch(resource,mask,body) {
+      assert.equal(resource,base); assert.equal(mask,'overrideEnv'); assert.equal(body.etag,backend.etag);
+      backend.overrideEnv=structuredClone(body.overrideEnv); backend.etag=`backend-etag-${Number(backend.etag.split('-').at(-1))+1}`;
+      return structuredClone(backend);
+    },
   };
   return { io, state, backend, traffic, operations, builds, rollouts, submitted, setServing, calls };
 }
@@ -123,6 +130,39 @@ test('AUTHMOD and shared/backend merged sources deploy directly to production wi
   assert.equal(releaseRecord(target('hub','staging').branch),undefined);
   assert.ok(f.calls.every(resource=>!resource.includes('fika-os-dev')));
 }));
+
+test('configuration-only rollout requires the exact approved plan hash, preserves source, and verifies effective serving config', () => fixture(async ({baseline}) => {
+  const t=target('hub','prod'), f=releaseIO(t,baseline), current=f.rollouts[0];
+  f.backend.overrideEnv=[{variable:'UNRELATED_SECRET_SETTING',value:'never-show-this-runtime-value'}];
+  appendRecord(t,{schema:'fika.release.v1',...t,kind:'baseline',sourceSha:baseline,rollout:'rollout-1',state:'SUCCEEDED',percent:100,scopeHash:scopeHash(t.app,baseline),observedAt:'2026-11-01T00:00:00.000Z'});
+  const options={configOnly:true,sha:baseline,'config-value':'a'.repeat(64)};
+  const prepared=await deploy(t.app,t.environment,options,f.io);
+  assert.equal(prepared.dryRun,true); assert.match(prepared.approvalHash,/^[a-f0-9]{64}$/); assert.equal(f.submitted.length,0);
+  assert.equal(JSON.stringify(prepared).includes('never-show-this-runtime-value'),false);
+  await assert.rejects(deploy(t.app,t.environment,{...options,execute:true,'approve-hash':'f'.repeat(64)},f.io),/approval hash mismatch/);
+  assert.equal(f.io.patch instanceof Function,true); assert.equal(f.submitted.length,0);
+  const done=await deploy(t.app,t.environment,{...options,execute:true,'approve-hash':prepared.approvalHash},f.io);
+  assert.equal(done.record.sourceSha,baseline); assert.equal(done.record.configurationOnly,true);
+  assert.equal(done.record.configuration.effectiveRevisionVerified,true); assert.equal(done.record.configuration.nextOverride,'a'.repeat(64));
+  assert.equal(f.submitted.length,1); assert.equal(f.submitted[0][f.submitted[0].indexOf('--git-commit')+1],baseline);
+  assert.equal(f.backend.overrideEnv.find(row=>row.variable==='FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH')?.value,'a'.repeat(64));
+  assert.equal(f.backend.overrideEnv.some(row=>row.value==='never-show-this-runtime-value'),true);
+  assert.notEqual(f.rollouts.at(-1).name,current.name);
+}));
+
+test('configuration-only deployment is a no-op for an unchanged override value', () => fixture(async ({baseline}) => {
+  const t=target('hub','prod'), f=releaseIO(t,baseline);
+  f.backend.overrideEnv=[{variable:'FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH',value:'a'.repeat(64)}];
+  f.builds[0].effectiveEnv=[{variable:'FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH',value:'a'.repeat(64)}];
+  appendRecord(t,{schema:'fika.release.v1',...t,kind:'baseline',sourceSha:baseline,rollout:'rollout-1',state:'SUCCEEDED',percent:100,scopeHash:scopeHash(t.app,baseline),observedAt:'2026-11-01T00:00:00.000Z'});
+  const result=await deploy(t.app,t.environment,{configOnly:true,sha:baseline,'config-value':'a'.repeat(64),execute:true},f.io);
+  assert.equal(result.alreadyConfigured,true); assert.equal(f.submitted.length,0); assert.equal(f.backend.etag,'backend-etag-1');
+}));
+
+test('application-source rollback cannot silently undo a configuration-only release',()=>{
+  const t=target('hub','prod');
+  assert.throws(()=>rollbackSelection(t,{commit:'a'.repeat(40),record:{configurationOnly:true,sourceSha:'b'.repeat(40)}},{}, {sourceSha:'b'.repeat(40)}),/separately approved configuration-only restore/);
+});
 
 test('stale ledger is appended to without erasing history, and interrupted rollout resumes without another submission', () => fixture(async ({baseline,authmod,shared}) => {
   const t = target('hub','prod');
