@@ -61,6 +61,11 @@ env:
   - variable: FIKA_STAGING_DRIVE_ROOT_ID
     value: 1B3oV4dmb3UpwTPRDjJ4B0hES1rRL1M5z
     availability: [RUNTIME]
+  # Only Hub staging group quotes use this child; ancestry and writer capability
+  # are still verified against the isolated Shared Drive before persistence.
+  - variable: FIKA_STAGING_RCOA_QUOTE_FOLDER_ID
+    value: 1ba16ycYD2KcGPyRlNhb55NQvvXEh_enG
+    availability: [RUNTIME]
   - variable: FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS
     value: "110453433265748456567,08677769820296169060"
     availability: [RUNTIME]
