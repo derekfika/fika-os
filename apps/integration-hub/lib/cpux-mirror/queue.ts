@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { FieldPath, type Transaction } from "firebase-admin/firestore";
+import { FieldPath, type DocumentReference, type Transaction } from "firebase-admin/firestore";
 import { claimEvent, eventIsDue, markEventDelivered, markEventFailed, outboxRecord, type DurableDomainEvent } from "@fika/server-shared/durable-outbox";
 import { db } from "../firebase-admin";
 import type { ProductionOrder } from "../production-domain";
 import type { CanonicalBooking } from "../hospitality-booking-service";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
+import { domainEventId } from "../../../shared/domain-events";
 import { backfillDates, digest, londonServiceDate, mirrorEventId, mirrorRecipients } from "../../../shared/cpux-calendar/contract";
 import { mirrorEnabled, mirrorPreviewEnabled, openMirrorClient } from "../../../shared/cpux-calendar/google";
 import { hospitalityCalendarSiteEnabled, resolveHospitalityCalendarTarget } from "../hospitality-calendar-integration";
@@ -16,6 +17,21 @@ import { dueHospitalityMirrorQuery } from "./outbox-query";
 const queue = () => db.collection("fikaCpuXHospitalityMirrorOutboxV1");
 type Intent = { bookingId: string; orderId: string };
 type Event = DurableDomainEvent<Intent>;
+export function hospitalityProductionEventId(orderId: string, version: number, changeType: "created" | "amended" | "withdrawn") {
+  const eventType = changeType === "created" ? "production.order.created" : changeType === "withdrawn" ? "production.order.cancelled" : "production.order.amended";
+  return domainEventId(eventType, orderId, version);
+}
+
+export async function triggerHospitalityMirrorEvent(eventId: string, replay = replayHospitalityMirrorEvent) {
+  try {
+    return await replay(eventId);
+  } catch {
+    // The transactionally staged obligation remains available to Scheduler retries.
+    console.warn("cpux.calendar.hospitality.immediate_delivery_deferred", { eventId, status: "pending" });
+    return { eventId, status: "pending" };
+  }
+}
+
 export function stageHospitalityMirrorIntent(transaction: Transaction, event: DurableDomainEvent) {
   if (!mirrorEnabled() || !["production.order.created", "production.order.amended", "production.order.withdrawn", "production.order.cancelled"].includes(event.eventType)) return;
   const order = (event.payload as { productionOrder?: ProductionOrder }).productionOrder;
@@ -103,32 +119,46 @@ export async function replayHospitalityMirror(limit: number) {
   const candidates = await dueHospitalityMirrorQuery(queue(), new Date().toISOString(), limit).get();
   const results: Array<{ eventId: string; status: string }> = [];
   for (const { ref, id } of candidates.docs) {
-    const claimId = randomUUID();
-    const claimed = await db.runTransaction(async tx => {
-      const row = (await tx.get(ref)).data() as Event | undefined;
-      if (!row || !eventIsDue(row)) return;
-      const next = claimEvent(row, claimId, new Date().toISOString(), 180_000);
-      tx.set(ref, outboxRecord(next));
-      return next;
-    });
-    if (!claimed) continue;
-    let next: Event;
-    try {
-      const row = await db.collection("fikaBookings").doc(claimed.payload.bookingId).get();
-      if (!row.exists) throw new Error("The source booking is unavailable.");
-      const pending = await prepare(row.data() as CanonicalBooking);
-      if (pending) await pending.apply();
-      next = markEventDelivered(claimed, new Date().toISOString());
-    } catch {
-      // Provider errors can contain booking data. Keep only an operational failure code.
-      next = markEventFailed(claimed, "CPUX_HOSPITALITY_MIRROR_FAILED", new Date().toISOString());
-    }
-    await db.runTransaction(async tx => {
-      if ((await tx.get(ref)).get("delivery.claimId") === claimId) tx.set(ref, outboxRecord(next));
-    });
-    results.push({ eventId: id, status: next.delivery.status });
+    const result = await deliverHospitalityMirrorEvent(ref, id);
+    if (result) results.push(result);
   }
   return results;
+}
+
+/** Immediately process one already-committed Hospitality obligation through the same worker used by Scheduler. */
+export async function replayHospitalityMirrorEvent(eventId: string) {
+  const ref = queue().doc(eventId);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) return { eventId, status: "missing" };
+  if (!mirrorEnabled()) throw new Error("Calendar mirror delivery is disabled.");
+  return await deliverHospitalityMirrorEvent(ref, eventId) || { eventId, status: "not_due" };
+}
+
+async function deliverHospitalityMirrorEvent(ref: DocumentReference, eventId: string) {
+  const claimId = randomUUID();
+  const claimed = await db.runTransaction(async tx => {
+    const row = (await tx.get(ref)).data() as Event | undefined;
+    if (!row || !eventIsDue(row)) return;
+    const next = claimEvent(row, claimId, new Date().toISOString(), 180_000);
+    tx.set(ref, outboxRecord(next));
+    return next;
+  });
+  if (!claimed) return;
+  let next: Event;
+  try {
+    const row = await db.collection("fikaBookings").doc(claimed.payload.bookingId).get();
+    if (!row.exists) throw new Error("The source booking is unavailable.");
+    const pending = await prepare(row.data() as CanonicalBooking);
+    if (pending) await pending.apply();
+    next = markEventDelivered(claimed, new Date().toISOString());
+  } catch {
+    // Provider errors can contain booking data. Keep only an operational failure code.
+    next = markEventFailed(claimed, "CPUX_HOSPITALITY_MIRROR_FAILED", new Date().toISOString());
+  }
+  await db.runTransaction(async tx => {
+    if ((await tx.get(ref)).get("delivery.claimId") === claimId) tx.set(ref, outboxRecord(next));
+  });
+  return { eventId, status: next.delivery.status };
 }
 
 export type CatchUpCursor = { serviceDate: string; bookingId: string };

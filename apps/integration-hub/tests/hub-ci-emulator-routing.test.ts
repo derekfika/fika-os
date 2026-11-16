@@ -7,7 +7,8 @@ test("Hub CI keeps unit tests isolated and runs Firestore coverage in the emulat
   const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
   const applicationTests = workflow.match(/  application-tests:[\s\S]*?(?=\n  hub-validation:)/)?.[0];
   assert.ok(applicationTests, "the affected-application test lane must remain present");
-  assert.match(applicationTests, /- run: npm --prefix '\$\{\{ steps\.app\.outputs\.path \}\}' test\r?\n      - name: Shared contract tests/);
+  assert.match(applicationTests, /- run: npm --prefix '\$\{\{ steps\.app\.outputs\.path \}\}' test\r?\n        if: matrix\.app != 'cpu'/);
+  assert.match(applicationTests, /- name: Shared contract tests \(apps\/shared\/\*\.test\.ts\)\r?\n        if: matrix\.app == 'cpu'[\s\S]*?run: find apps\/shared/);
   assert.match(workflow, /firebase emulators:exec --only firestore --project demo-fika-os[^\n]+cd apps\/integration-hub && npm run test:emulator/);
   assert.match(workflow, /FIRESTORE_EMULATOR_HOST: 127\.0\.0\.1:8292/);
   assert.match(workflow, /Resolve pinned platform specs gitlink[\s\S]*?git ls-tree HEAD fika-platform-specs/);
