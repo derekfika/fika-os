@@ -26,7 +26,12 @@ async function json<T>(response: Response): Promise<T> {
   if (!response.ok) throw Error(`Staging Drive verification failed (${response.status}).`);
   return response.json() as Promise<T>;
 }
-export async function stagingDriveSession(env: Readonly<Record<string, string | undefined>> = process.env, fetcher: typeof fetch = fetch) {
+type StagingDrivePrincipal = {
+  settings: ReturnType<typeof stagingDriveSettings>;
+  token: string;
+  headers: { authorization: string };
+};
+async function stagingDrivePrincipal(env: Readonly<Record<string, string | undefined>>, fetcher: typeof fetch): Promise<StagingDrivePrincipal> {
   const settings = stagingDriveSettings(env);
   const options = { redirect: "error" as const, signal: AbortSignal.timeout(5000), cache: "no-store" as const };
   const metadata = await fetcher("http://metadata.google.internal/computeMetadata/v1/project/project-id", { ...options, headers: { "Metadata-Flavor": "Google" } });
@@ -59,6 +64,92 @@ export async function stagingDriveSession(env: Readonly<Record<string, string | 
     console.error("[FIKA_STAGING_DRIVE_PERMISSION_ID_MISMATCH]", JSON.stringify({ email: settings.email, expectedPermissionId: settings.permissionId, actualPermissionId: about.user?.permissionId || null }));
     throw Error("The staging Drive identity permission ID does not match its configured identity.");
   }
+  return { settings, token: accessToken, headers };
+}
+type SafeDrivePermission = {
+  id?: string;
+  type?: string;
+  role?: string;
+  deleted?: boolean;
+  permissionDetails?: Array<{ permissionType?: string; role?: string; inherited?: boolean; inheritedFrom?: string }>;
+};
+function safeDrivePermission(permission: SafeDrivePermission) {
+  return {
+    id: permission.id || null,
+    type: permission.type || null,
+    role: permission.role || null,
+    deleted: permission.deleted === true,
+    details: (permission.permissionDetails || []).map(detail => ({
+      permissionType: detail.permissionType || null,
+      role: detail.role || null,
+      inherited: detail.inherited === true,
+      inheritedFrom: detail.inheritedFrom || null,
+    })),
+  };
+}
+/** Read-only, bounded ACL evidence for the fixed staging root. It returns no token, email address, or file content. */
+export async function stagingDriveAclDiagnostic(env: Readonly<Record<string, string | undefined>> = process.env, fetcher: typeof fetch = fetch) {
+  const { settings, token, headers } = await stagingDrivePrincipal(env, fetcher);
+  const options = { redirect: "error" as const, signal: AbortSignal.timeout(5000), cache: "no-store" as const };
+  const folder = await json<{ id?: string; mimeType?: string; trashed?: boolean; driveId?: string; capabilities?: { canAddChildren?: boolean } }>(await fetcher(
+    `https://www.googleapis.com/drive/v3/files/${settings.root}?supportsAllDrives=true&fields=id,mimeType,trashed,driveId,capabilities(canAddChildren)`, { ...options, headers },
+  ));
+  if (folder.id !== settings.root || folder.mimeType !== "application/vnd.google-apps.folder" || folder.trashed || !folder.capabilities?.canAddChildren) throw Error("The staging root is unavailable or not writable.");
+  if (settings.mode !== "shared-drive" || folder.driveId !== settings.sharedDriveId) throw Error("The staging root is not on the approved Shared Drive.");
+
+  // Verify production denial before disclosing any ACL details to the operator.
+  for (const sentinel of settings.sentinels) {
+    const denied = await fetcher(`https://www.googleapis.com/drive/v3/files/${sentinel}?supportsAllDrives=true&fields=id`, { ...options, headers });
+    if (denied.status === 403) {
+      const error = await denied.json() as { error?: { errors?: Array<{ reason?: string }> } };
+      if (!error.error?.errors?.some(item => item.reason === "insufficientFilePermissions" || item.reason === "forbidden")) throw Error("Production denial probe was inconclusive.");
+    } else if (denied.status !== 404) {
+      await denied.body?.cancel();
+      throw Error("The staging principal did not prove denial of production file access.");
+    } else await denied.body?.cancel();
+  }
+
+  type PermissionResponse = { permissions?: SafeDrivePermission[]; nextPageToken?: string };
+  const fields = "permissions(id,type,role,deleted,permissionDetails(permissionType,role,inherited,inheritedFrom)),nextPageToken";
+  const [driveAcl, rootAcl] = await Promise.all([
+    json<PermissionResponse>(await fetcher(`https://www.googleapis.com/drive/v3/files/${settings.sharedDriveId}/permissions?supportsAllDrives=true&pageSize=100&fields=${encodeURIComponent(fields)}`, { ...options, headers })),
+    json<PermissionResponse>(await fetcher(`https://www.googleapis.com/drive/v3/files/${settings.root}/permissions?supportsAllDrives=true&pageSize=100&fields=${encodeURIComponent(fields)}`, { ...options, headers })),
+  ]);
+  const permissions = rootAcl.permissions || [];
+  const drivePermissions = driveAcl.permissions || [];
+  const unexpected = permissions.filter(permission => permission.deleted || permission.type !== "user" || !permission.id || !settings.allowed.includes(permission.id));
+  const driveUnexpected = drivePermissions.filter(permission => permission.deleted || permission.type !== "user" || !permission.id || !settings.allowed.includes(permission.id));
+  const missingAllowedIds = settings.allowed.filter(id => !permissions.some(permission => permission.id === id && !permission.deleted));
+  const missingDriveAllowedIds = settings.allowed.filter(id => !drivePermissions.some(permission => permission.id === id && !permission.deleted));
+  const driveRolesApproved = drivePermissions.some(permission => permission.id !== settings.permissionId && permission.role === "organizer") && drivePermissions.some(permission => permission.id === settings.permissionId && permission.role === "fileOrganizer");
+  return {
+    runtime: { projectVerified: true, projectId: "fika-os-dev" },
+    identity: { email: settings.email, permissionId: settings.permissionId, permissionIdVerified: true, authentication: "dedicated-staging-service-account" },
+    root: { id: settings.root, driveId: folder.driveId, approvedRoot: true, writable: true },
+    productionDenial: { verified: true, sentinelCount: settings.sentinels.length },
+    allowedPermissionIds: [...settings.allowed],
+    sharedDriveAcl: {
+      permissionCount: drivePermissions.length,
+      truncated: Boolean(driveAcl.nextPageToken),
+      permissions: drivePermissions.map(safeDrivePermission),
+      unexpectedPermissions: driveUnexpected.map(safeDrivePermission),
+      missingAllowedIds: missingDriveAllowedIds,
+      rolesApproved: driveRolesApproved,
+      approved: !driveAcl.nextPageToken && drivePermissions.length > 0 && driveUnexpected.length === 0 && missingDriveAllowedIds.length === 0 && driveRolesApproved,
+    },
+    rootAcl: {
+      permissionCount: permissions.length,
+      truncated: Boolean(rootAcl.nextPageToken),
+      permissions: permissions.map(safeDrivePermission),
+      unexpectedPermissions: unexpected.map(safeDrivePermission),
+      missingAllowedIds,
+      approved: !rootAcl.nextPageToken && !driveAcl.nextPageToken && permissions.length > 0 && unexpected.length === 0 && missingAllowedIds.length === 0 && driveUnexpected.length === 0 && missingDriveAllowedIds.length === 0 && driveRolesApproved,
+    },
+  };
+}
+export async function stagingDriveSession(env: Readonly<Record<string, string | undefined>> = process.env, fetcher: typeof fetch = fetch) {
+  const { settings, token: accessToken, headers } = await stagingDrivePrincipal(env, fetcher);
+  const options = { redirect: "error" as const, signal: AbortSignal.timeout(5000), cache: "no-store" as const };
   const folder = await json<{ id?: string; mimeType?: string; trashed?: boolean; driveId?: string; capabilities?: { canAddChildren?: boolean }; permissions?: Array<{ id?: string; type?: string; role?: string; deleted?: boolean }> }>(await fetcher(`https://www.googleapis.com/drive/v3/files/${settings.root}?supportsAllDrives=true&fields=id,mimeType,trashed,driveId,capabilities(canAddChildren),permissions(id,type,role,deleted)`, { ...options, headers }));
   if (folder.id !== settings.root || folder.mimeType !== "application/vnd.google-apps.folder" || folder.trashed || !folder.capabilities?.canAddChildren) throw Error("The staging root is unavailable or not writable.");
   let permissions = folder.permissions;
