@@ -52,7 +52,7 @@ function releaseIO(t, sourceSha) {
   const setServing = sha => {
     const build = { name:`${base.replace(t.project, projectNumber)}/builds/build-${builds.length+1}`, state:'READY', createTime:'2026-10-30T10:00:00Z',
       source:{codebase:{hash:sha,commit:sha,uri:`https://github.com/${REPO}/commit/${sha}`}},
-      effectiveEnv:(backend.overrideEnv||[]).map(row=>({...row,origin:'BACKEND_OVERRIDE'})) };
+      config:{effectiveEnv:(backend.overrideEnv||[]).map(row=>({...row,origin:'BACKEND_OVERRIDES'}))} };
     const rollout = { name:`${base}/rollouts/rollout-${rollouts.length+1}`, state:'SUCCEEDED', build:build.name, createTime:build.createTime };
     builds.push(build); rollouts.push(rollout);
     traffic.current = { splits:[{build:build.name,percent:100}] };
@@ -153,7 +153,7 @@ test('configuration-only rollout requires the exact approved plan hash, preserve
 test('configuration-only deployment is a no-op for an unchanged override value', () => fixture(async ({baseline}) => {
   const t=target('hub','prod'), f=releaseIO(t,baseline);
   f.backend.overrideEnv=[{variable:'FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH',value:'a'.repeat(64)}];
-  f.builds[0].effectiveEnv=[{variable:'FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH',value:'a'.repeat(64)}];
+  f.builds[0].config.effectiveEnv=[{variable:'FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH',value:'a'.repeat(64)}];
   appendRecord(t,{schema:'fika.release.v1',...t,kind:'baseline',sourceSha:baseline,rollout:'rollout-1',state:'SUCCEEDED',percent:100,scopeHash:scopeHash(t.app,baseline),observedAt:'2026-11-01T00:00:00.000Z'});
   const result=await deploy(t.app,t.environment,{'config-only':true,sha:baseline,'config-value':'a'.repeat(64),execute:true},f.io);
   assert.equal(result.alreadyConfigured,true); assert.equal(f.submitted.length,0); assert.equal(f.backend.etag,'backend-etag-1');
