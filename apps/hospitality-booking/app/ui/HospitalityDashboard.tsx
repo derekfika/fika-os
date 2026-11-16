@@ -36,7 +36,7 @@ import type { HospitalityBookingGroup } from "../../../shared/hospitality-group-
 import { hospitalitySiteThemeStyle, portalSite, type PortalSiteKey } from "@/lib/portal-sites";
 import { hospitalityWorkspacePath } from "@/lib/hospitality-workspace";
 import { DashboardQueueFilters } from "./DashboardQueueFilters";
-import { availableStatuses, emptyQueueFilters, filterQueue, hasActiveFilters, type QueueFilters } from "../../lib/dashboard-queue-filters";
+import { archiveCoverageNotice, availableStatuses, emptyQueueFilters, filterQueue, hasActiveFilters, hospitalityBusinessDate, type BookingView, type QueueFilters } from "../../lib/dashboard-queue-filters";
 
 const statuses = [
   "New",
@@ -136,9 +136,11 @@ export default function HospitalityDashboard({
     Record<string, ProductionOrder | undefined>
   >({});
   const [selected, setSelected] = useState<CanonicalBooking | null>(null);
+  const [bookingView, setBookingView] = useState<BookingView>("upcoming");
   const [queueFilters, setQueueFilters] = useState<QueueFilters>(emptyQueueFilters);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [archiveNotice, setArchiveNotice] = useState("");
   const [pending, setPending] = useState<WorkflowAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const actionInFlight = useRef(false);
@@ -215,7 +217,7 @@ export default function HospitalityDashboard({
     setLoading(true);
     try {
       const response = await fetch(
-        `/api/dashboard-bookings?site=${encodeURIComponent(site.key)}${oplocId ? `&oploc=${encodeURIComponent(oplocId)}` : ""}`,
+        `/api/dashboard-bookings?site=${encodeURIComponent(site.key)}${oplocId ? `&oploc=${encodeURIComponent(oplocId)}` : ""}${bookingView === "upcoming" ? "" : "&archive=true"}`,
         { cache: "no-store" },
       );
       const body = await response.json();
@@ -226,6 +228,7 @@ export default function HospitalityDashboard({
       setGroups(body.bookingGroups || []);
       setStandaloneIds(new Set((body.dashboardBookings || body.bookings).map((item: CanonicalBooking) => item.canonicalId)));
       if (body.groupWarnings?.length) setNotice(body.groupWarnings.map((w: { message: string }) => w.message).join(" "));
+      setArchiveNotice(bookingView === "upcoming" ? "" : archiveCoverageNotice(Boolean(body.truncated)));
       setProductionOrders(body.productionOrders || {});
       setMatrixRefreshTick((current) => current + 1);
       setQuoteSettings(body.quoteSettings || null);
@@ -264,7 +267,7 @@ export default function HospitalityDashboard({
 
   useEffect(() => {
     void load();
-  }, [site.key]);
+  }, [site.key, bookingView]);
 
   useEffect(() => {
     if (site.key !== "angel-court") return;
@@ -418,6 +421,14 @@ export default function HospitalityDashboard({
     }
     await load();
   };
+  const changeBookingView = (view: BookingView) => {
+    if (view === bookingView) return;
+    setBookingView(view);
+    setSelected(null);
+    setSelectedGroupId(null);
+    setAmendment(null);
+    setQueueFilters(current => ({ ...current, sort: view === "upcoming" ? "service-asc" : "service-desc" }));
+  };
 
   const queueBookings = useMemo(
     () => bookings.map((booking) => ({
@@ -427,8 +438,8 @@ export default function HospitalityDashboard({
     [bookings, productionOrders],
   );
   const queue = useMemo(
-    () => filterQueue({ bookings: queueBookings, groups, standaloneIds, filters: queueFilters }),
-    [queueBookings, groups, standaloneIds, queueFilters],
+    () => filterQueue({ bookings: queueBookings, groups, standaloneIds, filters: queueFilters, view: bookingView, today: hospitalityBusinessDate() }),
+    [queueBookings, groups, standaloneIds, queueFilters, bookingView],
   );
   const queueStatuses = useMemo(() => availableStatuses({ bookings: queueBookings, groups, standaloneIds }), [queueBookings, groups, standaloneIds]);
   const visible = queue.bookings as CanonicalBooking[];
@@ -1189,18 +1200,18 @@ export default function HospitalityDashboard({
               keep the next operational action clear.
             </p>
           </div>
-          <div
+          {bookingView === "upcoming" && <div
             className="hospitality-dashboard__metrics"
             aria-label="Filtered booking summary"
           >
             <Metric value={newCount} label="New requests" tone="mint" />
             <Metric value={attentionCount} label="Need review" tone="violet" />
             <Metric value={readyForCpuCount} label="Ready for CPU" tone="paper" />
-          </div>
+          </div>}
         </section>
 
         <section className="hospitality-dashboard__workspace">
-          <CalendarView
+          {bookingView === "upcoming" && <CalendarView
             bookings={visible}
             week={calendarWeek}
             onWeekChange={setCalendarWeek}
@@ -1209,23 +1220,27 @@ export default function HospitalityDashboard({
             onSelectGroup={selectGroup}
             busy={actionBusy}
             selectedId={selected?.canonicalId}
-          />
+          />}
           <div className="hospitality-dashboard__controls">
             <div>
               <p className="eyebrow">Booking queue</p>
-              <h2>Upcoming bookings</h2>
+              <h2>{bookingView === "previous" ? "Previous bookings" : bookingView === "all" ? "All bookings" : "Upcoming bookings"}</h2>
             </div>
             <div className="hospitality-dashboard__control-actions">
-              <button
+              <div className={styles.bookingViewTabs} role="group" aria-label="Booking views">
+                {(["upcoming", "previous", "all"] as const).map(view => <button key={view} type="button" aria-pressed={bookingView === view} onClick={() => changeBookingView(view)}>{view === "upcoming" ? "Upcoming" : view === "previous" ? "Previous" : "All bookings"}</button>)}
+              </div>
+              {bookingView === "upcoming" && <button
                 type="button"
                 className="hospitality-dashboard__run-sheet-trigger"
                 onClick={openRunSheetRange}
               >
                 Run sheet
-              </button>
+              </button>}
             </div>
           </div>
           {notice && <div className="hospitality-dashboard__notice" role="status">{notice}</div>}
+          {archiveNotice && bookingView !== "upcoming" && <div className={styles.archiveNotice} role="status">{archiveNotice}</div>}
           {error && (
             <div className="hospitality-dashboard__error" role="alert">
               <span>{error}</span>
@@ -1315,9 +1330,10 @@ export default function HospitalityDashboard({
                   </p>
                 )}
               </div>
-              {selectedGroup && <>{selectedGroup.services.map(service => { const booking = bookings.find(candidate => candidate.canonicalId === service.bookingId); return booking ? <ProductionReplacementNotice key={service.bookingId} booking={booking} serviceLabel={`${service.time} · ${service.serviceType.replaceAll("_", " ")}`} /> : null; })}<HospitalityGroupDetail group={selectedGroup} onBusyChange={busy => { actionInFlight.current = busy; setActionBusy(busy); }} site={site.key} oplocId={bookings.find(b => b.canonicalId === selectedGroup.services[0]?.bookingId)?.service.oplocId || ""} hospitalityAdmin={Boolean(adminOplocId)} onAmended={async () => { setServiceResults({}); setMatrixArtifacts({}); setMenuReadiness({}); await load(); }} busy={actionBusy} production={productionPanel} onQuote={() => void generateGroupQuote()} /></>}
+              {selectedGroup && <>{selectedGroup.services.map(service => { const booking = bookings.find(candidate => candidate.canonicalId === service.bookingId); return booking ? <ProductionReplacementNotice key={service.bookingId} booking={booking} serviceLabel={`${service.time} · ${service.serviceType.replaceAll("_", " ")}`} /> : null; })}{selectedGroup.eventDate < hospitalityBusinessDate() && <HistoricalGroupEvidence group={selectedGroup} bookings={bookings} />}<HospitalityGroupDetail group={selectedGroup} onBusyChange={busy => { actionInFlight.current = busy; setActionBusy(busy); }} site={site.key} oplocId={bookings.find(b => b.canonicalId === selectedGroup.services[0]?.bookingId)?.service.oplocId || ""} hospitalityAdmin={Boolean(adminOplocId)} onAmended={async () => { setServiceResults({}); setMatrixArtifacts({}); setMenuReadiness({}); await load(); }} busy={actionBusy} production={productionPanel} onQuote={() => void generateGroupQuote()} /></>}
               {selected ? (
                 <fieldset className={styles.actionControls} disabled={actionBusy} aria-busy={actionBusy} aria-label="Booking details and actions">
+                {selected.service.eventDate < hospitalityBusinessDate() && <HistoricalQuoteHistory booking={selected} />}
                 <BookingPane
                   booking={selected}
                   siteKey={site.key}
@@ -1556,6 +1572,42 @@ export default function HospitalityDashboard({
       </main>
     </div>
   );
+}
+
+function HistoricalQuoteHistory({ booking }: { booking: CanonicalBooking }) {
+  const revisions = [...(booking.quoteState?.revisions || [])].sort((left, right) => (left.revision || 0) - (right.revision || 0));
+  return <section className={styles.historyEvidence} aria-label="Saved quote history">
+    <p className="eyebrow">Historical evidence</p>
+    <h3>Saved quote PDFs</h3>
+    {!revisions.length ? <p>No quote revisions are recorded for this booking.</p> : <ul>{revisions.map((revision, index) => <li key={revision.id}>
+      <span>Quote revision {revision.revision || index + 1} · {revision.createdAt ? formatDate(revision.createdAt.slice(0, 10)) : "date not recorded"}</span>
+      {revision.pdfStatus === "saved" && revision.driveUrl
+        ? <a href={revision.driveUrl} target="_blank" rel="noreferrer">Open saved PDF</a>
+        : <span>{revision.pdfStatus === "saved" ? "PDF saved; link unavailable" : "No saved PDF for this revision"}</span>}
+    </li>)}</ul>}
+  </section>;
+}
+
+function HistoricalGroupEvidence({ group, bookings }: { group: HospitalityBookingGroup; bookings: readonly CanonicalBooking[] }) {
+  const bookingById = new Map(bookings.map(booking => [booking.canonicalId, booking]));
+  return <section className={styles.historyEvidence} aria-label="Historical group evidence">
+    <p className="eyebrow">Historical evidence · {group.reference}</p>
+    <h3>Saved group quote and service history</h3>
+    {group.quote?.driveUrl
+      ? <p><a href={group.quote.driveUrl} target="_blank" rel="noreferrer">Open saved group quote PDF</a> · Revision {group.quote.revision}{group.quote.stale ? " · Superseded by a later booking change" : ""}</p>
+      : <p>No saved group quote PDF is linked to this revision.</p>}
+    <div className={styles.historyAuditList}>{group.services.map(service => {
+      const booking = bookingById.get(service.bookingId);
+      return <details key={service.bookingId}>
+        <summary>{service.time} · {service.serviceType.replaceAll("_", " ")} · {service.lifecycleStatus}</summary>
+        {booking ? <>
+          <p>{booking.service.eventDate} · {booking.service.guestCount} guests · {booking.client.clientCompany || booking.client.companyName} · {booking.source.sourceBookingId}</p>
+          <RequestedItemsList rows={bookingRequestedItems(booking)} />
+          <details><summary>Submitted intent and audit history</summary><pre>{JSON.stringify({ source: booking.source, statusHistory: booking.statusHistory, audit: booking.audit }, null, 2)}</pre></details>
+        </> : <p>This service is not present in the loaded archive response.</p>}
+      </details>;
+    })}</div>
+  </section>;
 }
 
 function BookingPane({
