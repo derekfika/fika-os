@@ -421,7 +421,8 @@ async function configurationChangePlan(t, sourceSha, before, backend, options, r
     effectiveValue = match[1];
   }
   const base=backendPath(t), rollout=await read(`${base}/rollouts/${before.rollout}`), build=await read(rollout.build);
-  const servingVars=Array.isArray(build?.effectiveEnv)?build.effectiveEnv.filter(row=>(row.variable||row.name)===CATCH_UP_APPROVAL_VARIABLE):[];
+  const effectiveEnv=build?.config?.effectiveEnv ?? build?.effectiveEnv;
+  const servingVars=Array.isArray(effectiveEnv)?effectiveEnv.filter(row=>(row.variable||row.name)===CATCH_UP_APPROVAL_VARIABLE):[];
   const servingEffectiveValue=servingVars.length===1?servingVars[0].value:null;
   const action = clear ? 'clear' : 'set';
   const expected = structuredClone(backend.overrideEnv || []);
@@ -444,7 +445,7 @@ function overrideMatches(backend, plan) {
   return digest(actual) === digest(expected);
 }
 function effectiveOverrideMatches(build, plan) {
-  const env = build?.effectiveEnv;
+  const env = build?.config?.effectiveEnv ?? build?.effectiveEnv;
   if (!Array.isArray(env)) return false;
   const matches = env.filter(row => (row.variable || row.name) === plan.variable);
   return matches.length === 1 && matches[0].value === plan.effectiveValue;
