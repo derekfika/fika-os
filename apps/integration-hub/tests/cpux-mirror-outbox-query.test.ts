@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { CollectionReference, DocumentData } from "firebase-admin/firestore";
-import { eventIsDue, markEventDelivered, outboxRecord, type DurableDomainEvent } from "@fika/server-shared/durable-outbox";
+import { eventIsDue, markEventDelivered, markEventFailed, outboxRecord, type DurableDomainEvent } from "@fika/server-shared/durable-outbox";
 import { dueHospitalityMirrorQuery } from "../lib/cpux-mirror/outbox-query";
 
 const asOf = "2026-11-12T13:00:00.000Z";
@@ -95,6 +95,19 @@ test("empty Calendar outbox query resolves to an empty batch", async () => {
   const result = await dueHospitalityMirrorQuery(fake.collection, asOf, batchLimit).get();
   assert.deepEqual(result.docs, []);
   assert.equal(fake.batch, batchLimit);
+});
+
+test("a failed immediate Calendar publication becomes eligible for the existing Scheduler retry", async () => {
+  const failed = markEventFailed(event("immediate-failure", "pending", asOf), "Calendar unavailable", asOf);
+  const row = { id: failed.eventId, data: outboxRecord(failed) as RecordData };
+  assert.equal(row.data.outboxStatus, "failed");
+  assert.equal(eventIsDue(failed, new Date(asOf)), false);
+  assert.equal(eventIsDue(failed, new Date(failed.delivery.nextEligibleAt!)), true);
+
+  const beforeRetry = await dueHospitalityMirrorQuery(fixtureCollection([row]).collection, asOf, batchLimit).get();
+  const afterRetry = await dueHospitalityMirrorQuery(fixtureCollection([row]).collection, failed.delivery.nextEligibleAt!, batchLimit).get();
+  assert.deepEqual(beforeRetry.docs, []);
+  assert.deepEqual(afterRetry.docs.map(candidate => candidate.id), ["immediate-failure"]);
 });
 
 test("Firestore config contains the exact composite index for the Calendar scheduler query", () => {

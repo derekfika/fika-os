@@ -62,6 +62,7 @@ import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { Transaction } from "firebase-admin/firestore";
 import { createDomainEvent } from "../../shared/domain-events";
 import { stageDomainEvent } from "./domain-event-outbox";
+import { hospitalityProductionEventId, triggerHospitalityMirrorEvent } from "./cpux-mirror/queue";
 import { prepareFulfilmentEvent } from "./fulfilment-projection";
 import { cancellationDeliveryStatus, deliverHospitalityCancellation, ensureHospitalityCancellationEvent, hospitalityCancellationEventId, stageHospitalityCancellation } from "./hospitality-cancellation-outbox";
 import { readBookingServiceLayout } from "./hospitality-service-layout";
@@ -1046,10 +1047,17 @@ async function propagateProductionChanges(changes: ProductionProjectionChange[],
   for (const change of changes) {
     try {
       const cancellationEventId = cancellationEventIds.get(change.order.canonicalId);
-      const [cpuProjection, logisticsProjection] = await Promise.all([cancellationEventId ? deliverHospitalityCancellation(cancellationEventId) : notifyCpuProjection(change.order, change.changeType, change.idempotencyKey), change.changeType === "created" ? Promise.resolve(undefined) : deliverLogisticsProjectionForProductionOrder(change.order)]);
+      const cpuProjectionPromise = cancellationEventId ? deliverHospitalityCancellation(cancellationEventId) : notifyCpuProjection(change.order, change.changeType, change.idempotencyKey);
+      const calendarEventId = hospitalityProductionEventId(change.order.canonicalId, change.order.version, change.changeType);
+      const calendarMirrorPromise = cpuProjectionPromise.then(async cpuProjection => {
+        const cpuStatus = cancellationEventId && cpuProjection && "delivery" in cpuProjection ? cpuProjection.delivery.status : "delivered";
+        if (cpuStatus !== "delivered") return { eventId: calendarEventId, status: "pending" };
+        return await triggerHospitalityMirrorEvent(calendarEventId);
+      });
+      const [cpuProjection, logisticsProjection, calendarMirror] = await Promise.all([cpuProjectionPromise, change.changeType === "created" ? Promise.resolve(undefined) : deliverLogisticsProjectionForProductionOrder(change.order), calendarMirrorPromise]);
       const cpuStatus = cancellationEventId && cpuProjection && "delivery" in cpuProjection ? cpuProjection.delivery.status : "delivered";
       const logisticsRequired = Boolean(cancellationEventId && change.order.requiresDelivery !== false && change.order.serviceDate && change.order.destinationOplocId);
-      results.push({ canonicalId: change.order.canonicalId, ...(cancellationEventId ? { cpuOutbox: cpuProjection } : cpuProjection), ...(logisticsProjection ? { logisticsProjection } : {}), status: cpuStatus !== "delivered" || logisticsRequired && logisticsProjection?.outboxStatus !== "delivered" || logisticsProjection && logisticsProjection.outboxStatus !== "delivered" ? "pending" as const : "delivered" as const });
+      results.push({ canonicalId: change.order.canonicalId, ...(cancellationEventId ? { cpuOutbox: cpuProjection } : cpuProjection), calendarMirror, ...(logisticsProjection ? { logisticsProjection } : {}), status: cpuStatus !== "delivered" || logisticsRequired && logisticsProjection?.outboxStatus !== "delivered" || logisticsProjection && logisticsProjection.outboxStatus !== "delivered" ? "pending" as const : "delivered" as const });
     } catch (error) {
       results.push({ canonicalId: change.order.canonicalId, status: "pending" as const, reason: error instanceof Error ? error.message : "CPU projection handoff failed." });
     }
