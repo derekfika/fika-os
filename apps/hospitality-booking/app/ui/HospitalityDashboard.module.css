@@ -2120,6 +2120,59 @@
   gap: 10px;
 }
 
+.scope {
+  .bookingViewTabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 4px;
+    border: 1px solid var(--fika-border-default);
+    border-radius: 10px;
+    background: var(--fika-surface-subtle);
+  }
+  .bookingViewTabs button {
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--fika-text-secondary);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .bookingViewTabs button[aria-pressed="true"] {
+    border-color: var(--fika-action-primary);
+    background: var(--fika-action-primary);
+    color: var(--fika-surface-card);
+  }
+  .bookingViewTabs button:focus-visible {
+    outline: 3px solid var(--fika-focus-ring);
+    outline-offset: 2px;
+  }
+  .archiveNotice,
+  .historyEvidence {
+    margin: 0 0 16px;
+    padding: 16px;
+    border: 1px solid var(--fika-border-default);
+    border-left: 4px solid var(--fika-status-info);
+    border-radius: 10px;
+    background: var(--fika-status-info-surface);
+    color: var(--fika-text-primary);
+    line-height: 1.5;
+  }
+  .archiveNotice { font-weight: 600; }
+  .historyEvidence h3 { margin: 2px 0 10px; font-size: 18px; }
+  .historyEvidence p { margin: 6px 0; }
+  .historyEvidence ul { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+  .historyEvidence li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding-top: 8px; border-top: 1px solid var(--fika-border-default); }
+  .historyEvidence a { color: var(--fika-action-primary); font-weight: 700; }
+  .historyAuditList { display: grid; gap: 8px; margin-top: 12px; }
+  .historyAuditList > details { padding: 10px; border: 1px solid var(--fika-border-default); border-radius: 8px; background: var(--fika-surface-card); }
+  .historyAuditList summary { min-height: 32px; color: var(--fika-text-primary); font-weight: 700; cursor: pointer; }
+  .historyAuditList pre { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+}
+
 @media (max-width: 620px) {
   .scope :global(.additional-charges-backdrop) { align-items: flex-start; padding: 8px; }
   .scope :global(.additional-charges-modal) { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 18px; }

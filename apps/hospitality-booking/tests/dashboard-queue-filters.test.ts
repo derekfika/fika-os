@@ -3,10 +3,12 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   availableStatuses,
+  archiveCoverageNotice,
   describeFilters,
   emptyQueueFilters,
   filterQueue,
   hasActiveFilters,
+  hospitalityBusinessDate,
   queueStatusLabel,
   type QueueBooking,
   type QueueFilters,
@@ -120,6 +122,33 @@ test("a booking with no service date is only visible when no date range is activ
   assert.deepEqual(ids(run([undated], [], { dateTo: "2030-01-01" })), []);
 });
 
+test("Previous includes last week's completed, cancelled and All Day bookings; Upcoming and All use service-date boundaries", () => {
+  const previousWeek = booking("old-ref", { date: "2026-11-09", time: "09:00", lifecycleStatus: "Completed", source: { sourceBookingId: "RCOA-OLD-42" } });
+  const cancelled = booking("cancelled-ref", { date: "2026-11-15", time: "10:00", lifecycleStatus: "Cancelled" });
+  const today = booking("today-ref", { date: "2026-11-16", time: "11:00" });
+  const upcoming = booking("future-ref", { date: "2026-11-17", time: "12:00" });
+  const grouped = group("group:previous", { eventDate: "2026-11-10", status: "Completed", services: [{ bookingId: "service-1", sourceReference: "RCOA-GROUP-1" }, { bookingId: "service-2", sourceReference: "RCOA-GROUP-2" }] });
+  const input = { bookings: [previousWeek, cancelled, today, upcoming], groups: [grouped], standaloneIds: new Set([previousWeek.canonicalId, cancelled.canonicalId, today.canonicalId, upcoming.canonicalId]), filters: filters({ sort: "service-desc" }), today: "2026-11-16" };
+  assert.deepEqual(filterQueue({ ...input, view: "previous" }).rows.map(row => row.id), ["cancelled-ref", "group:previous", "old-ref"]);
+  assert.deepEqual(filterQueue({ ...input, view: "upcoming", filters: filters({ sort: "service-asc" }) }).rows.map(row => row.id), ["today-ref", "future-ref"]);
+  assert.deepEqual(filterQueue({ ...input, view: "all" }).rows.map(row => row.id), ["future-ref", "today-ref", "cancelled-ref", "group:previous", "old-ref"]);
+});
+
+test("Previous retains search, inclusive date and status filters, with explicit archive coverage", () => {
+  const rows = [
+    booking("ref-1", { date: "2026-11-09", lifecycleStatus: "Cancelled", source: { sourceBookingId: "RCOA-2026-009" } }),
+    booking("ref-2", { date: "2026-11-08", lifecycleStatus: "Completed", source: { sourceBookingId: "RCOA-2026-008" } }),
+  ];
+  const result = filterQueue({ bookings: rows, groups: [], standaloneIds: new Set(rows.map(row => row.canonicalId)), today: "2026-11-16", view: "previous", filters: filters({ search: "rcoa-2026-009", dateFrom: "2026-11-09", dateTo: "2026-11-09", statuses: ["Cancelled"], sort: "service-desc" }) });
+  assert.deepEqual(ids(result), ["ref-1"]);
+  assert.match(archiveCoverageNotice(false), /last 365 days/);
+  assert.match(archiveCoverageNotice(true), /first 200 bookings/);
+});
+
+test("dashboard business-date comparison uses Europe/London at the UTC day boundary", () => {
+  assert.equal(hospitalityBusinessDate(new Date("2026-11-16T00:30:00.000Z")), "2026-11-16");
+});
+
 test("grouped child bookings stay out of the standalone queue", () => {
   const child = booking("child-1", { date: "2026-11-02" });
   const standalone = booking("solo", { date: "2026-11-02" });
@@ -203,7 +232,7 @@ const filterCss = readFileSync(new URL("../app/ui/DashboardQueueFilters.module.c
 
 test("the dashboard feeds the same filtered rows to the calendar and the queue, with one reset-able filter bar", () => {
   assert.match(dashboard, /statusLabel: standaloneStatusLabel\(booking, productionOrders\[booking\.canonicalId\]\)/);
-  assert.match(dashboard, /filterQueue\(\{ bookings: queueBookings, groups, standaloneIds, filters: queueFilters \}\)/);
+  assert.match(dashboard, /filterQueue\(\{ bookings: queueBookings, groups, standaloneIds, filters: queueFilters, view: bookingView, today: hospitalityBusinessDate\(\) \}\)/);
   assert.match(dashboard, /availableStatuses\(\{ bookings: queueBookings, groups, standaloneIds \}\)/);
   assert.match(dashboard, /bookings=\{visible\}/);
   assert.match(dashboard, /groups=\{visibleGroups\}/);
@@ -212,6 +241,14 @@ test("the dashboard feeds the same filtered rows to the calendar and the queue, 
   assert.doesNotMatch(dashboard, /availableSites|onSiteChange|Hospitality site/, "the dashboard stays site-locked");
   assert.doesNotMatch(dashboard, /setFilter\(/);
   assert.match(dashboard, /No bookings match these filters/);
+});
+
+test("Previous and All expose prior canonical results through the archive API and queue", () => {
+  assert.match(dashboard, /bookingView === "upcoming" \? "" : "&archive=true"/);
+  assert.match(dashboard, /role="group" aria-label="Booking views"/);
+  assert.match(dashboard, /view === "previous" \? "Previous" : "All bookings"/);
+  assert.match(dashboard, /<HistoricalQuoteHistory booking=\{selected\} \/>/);
+  assert.match(dashboard, /<HistoricalGroupEvidence group=\{selectedGroup\} bookings=\{bookings\} \/>/);
 });
 
 test("the filter bar is labelled, keyboard operable, announces counts and offers reset", () => {

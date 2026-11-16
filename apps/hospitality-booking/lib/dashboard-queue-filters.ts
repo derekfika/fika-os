@@ -38,6 +38,7 @@ export type QueueGroup = {
 };
 
 export type QueueSort = "service-asc" | "service-desc" | "updated-desc" | "created-desc" | "status-asc";
+export type BookingView = "upcoming" | "previous" | "all";
 
 export const queueSortOptions: ReadonlyArray<{ value: QueueSort; label: string }> = [
   { value: "service-asc", label: "Service date, earliest first" },
@@ -182,6 +183,20 @@ export type QueueResult = {
   shown: number;
 };
 
+/** Europe/London business date for comparing date-only Hospitality service dates. */
+export function hospitalityBusinessDate(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+/** The Hub archive is intentionally bounded. Keep that boundary visible in the dashboard. */
+export function archiveCoverageNotice(truncated: boolean) {
+  return truncated
+    ? "The Hub returned its first 200 bookings from the rolling archive window. Some matching bookings are not shown."
+    : "Previous and All bookings cover the last 365 days of service dates. Older bookings are outside the current archive window.";
+}
+
 /**
  * Apply the filters and sort to the standalone bookings and booking groups the
  * dashboard has loaded. `standaloneIds` keeps grouped child bookings out of the
@@ -192,6 +207,8 @@ export function filterQueue(input: {
   groups: readonly QueueGroup[];
   standaloneIds: ReadonlySet<string>;
   filters: QueueFilters;
+  view?: BookingView;
+  today?: string;
 }): QueueResult {
   const bookingById = new Map(input.bookings.map(booking => [booking.canonicalId, booking]));
   const createdByBooking = new Map(input.bookings.flatMap((booking) => (booking.createdAt ? [[booking.canonicalId, booking.createdAt] as const] : [])));
@@ -200,7 +217,15 @@ export function filterQueue(input: {
     ...input.groups.map((group): QueueRow => ({ kind: "group", id: group.id, group })),
     ...input.bookings.filter((booking) => input.standaloneIds.has(booking.canonicalId)).map((booking): QueueRow => ({ kind: "booking", id: booking.canonicalId, booking })),
   ];
-  const rows = sortRows(all.filter((row) => rowMatches(row, input.filters, bookingById)), input.filters.sort, updatedByBooking, createdByBooking);
+  const view = input.view || "all";
+  const today = input.today || hospitalityBusinessDate();
+  const inView = (row: QueueRow) => {
+    if (view === "all") return true;
+    const date = rowDate(row);
+    if (!date) return false;
+    return view === "previous" ? date < today : date >= today;
+  };
+  const rows = sortRows(all.filter((row) => inView(row) && rowMatches(row, input.filters, bookingById)), input.filters.sort, updatedByBooking, createdByBooking);
   return {
     rows,
     bookings: rows.flatMap((row) => (row.kind === "booking" ? [row.booking] : [])),
