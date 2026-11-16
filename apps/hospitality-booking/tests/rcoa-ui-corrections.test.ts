@@ -48,7 +48,7 @@ test("dietary counts never show leading zeroes and can be cleared while editing"
 
 // ---- 3. acknowledgement warning timing
 test("the send button is a distinct element and a submit only counts when the person pressed it, so arriving on the review step shows no warning", () => {
-  assert.match(portal, /<button key="continue" type="button"/);
+  assert.match(portal, /<button key="continue"[^>]*type="button"/);
   assert.match(portal, /<button key="send" type="submit" onClick=\{\(\) => \{ submitIntentRef\.current = true; \}\}/);
   assert.match(portal, /if \(!submitIntentRef\.current\) return;\s*\r?\n\s*submitIntentRef\.current = false;/);
 });
