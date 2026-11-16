@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { BuffetMenuDialog } from "./BuffetMenuDialog";
-import { BuffetMenuBuilder } from "./BuffetMenuBuilder";
+import { BuffetMenuBuilder, type BuffetBookingChrome } from "./BuffetMenuBuilder";
 import { buffetMenuView, buffetPackageForItem, buffetSubmissionEnabled, loadBuffetConfig, parseBuffetPreview, type BuffetConfig, type BuffetPreview } from "../../lib/buffet-menu-client";
 import type { PortalMenuItem } from "../../lib/mnk-contract";
 import styles from "./BuffetMenuDialog.module.css";
@@ -18,7 +18,7 @@ export function useBuffetConfig(enabled = true) {
   return { config, error };
 }
 
-export function BuffetMenuPicker({ config, item, catalogue, selectedItemIds, guestCount, preview, dietaryNotes, fullScreen = false, onSave }: { config?: BuffetConfig; item: PortalMenuItem; catalogue: readonly PortalMenuItem[]; selectedItemIds: readonly string[]; guestCount: number; preview?: BuffetPreview; dietaryNotes: string; fullScreen?: boolean; onSave: (item: PortalMenuItem, preview: BuffetPreview, dietaryNotes: string) => void }) {
+export function BuffetMenuPicker({ config, item, catalogue, selectedItemIds, guestCount, preview, dietaryNotes, fullScreen = false, bookingChrome, onContinue, onSave }: { config?: BuffetConfig; item: PortalMenuItem; catalogue: readonly PortalMenuItem[]; selectedItemIds: readonly string[]; guestCount: number; preview?: BuffetPreview; dietaryNotes: string; fullScreen?: boolean; bookingChrome?: BuffetBookingChrome; onContinue?: () => void; onSave: (item: PortalMenuItem, preview: BuffetPreview, dietaryNotes: string) => void }) {
   const [open, setOpen] = useState(false);
   if (!config) return null;
   const pkg = buffetPackageForItem(config, item.id);
@@ -27,21 +27,24 @@ export function BuffetMenuPicker({ config, item, catalogue, selectedItemIds, gue
   const parsedPreview = parseBuffetPreview(preview);
   const validSelection = parsedPreview?.menuVersion === config.menuVersion ? parsedPreview.selection : undefined;
   const needsResave = Boolean(validSelection && parsedPreview?.rulesVersion !== config.rulesVersion);
+  const priceByPackageId = Object.fromEntries(config.packages.map(candidate => [candidate.id, catalogue.find(value => candidate.canonicalItemIds.includes(value.canonicalId || value.id))?.unitPrice || 0]));
+  const saveChoice = (selection: import("./BuffetMenuBuilder").BuffetSelection, notes: string, stayOpen = false) => {
+    const target = config.packages.find(candidate => candidate.id === selection.packageId);
+    const targetItem = catalogue.find(candidate => target?.canonicalItemIds.includes(candidate.canonicalId || candidate.id));
+    if (!targetItem) return;
+    onSave(targetItem, { menuVersion: config.menuVersion, rulesVersion: config.rulesVersion, selection }, notes);
+    if (!stayOpen) setOpen(false);
+    if (!stayOpen && targetItem.id !== item.id) window.setTimeout(() => {
+      const picker = [...document.querySelectorAll<HTMLElement>("[data-buffet-item-id]")].find(element => element.dataset.buffetItemId === targetItem.id);
+      picker?.querySelector<HTMLButtonElement>("button")?.focus();
+    }, 0);
+  };
   return <div className={styles.picker} data-buffet-item-id={item.id}>
     {preview && !validSelection && <p role="alert">The menu has changed since this selection was saved. Please choose again.</p>}
     {needsResave && <p role="status">The buffet rules have changed. Please review and save your selection again.</p>}
     {validSelection && <BuffetSelectionSummary config={config} preview={preview} />}
     <button type="button" className={styles.secondary} onClick={() => setOpen(true)}>{validSelection ? "Edit menu" : "Choose Menu"}</button>
-    {open && (fullScreen ? <BuffetMenuBuilder menu={view} guestCount={guestCount} initialPackageId={pkg.id} selection={validSelection} dietaryNotes={dietaryNotes} onCancel={() => setOpen(false)} onSave={(selection, notes) => {
-      const target = config.packages.find(candidate => candidate.id === selection.packageId);
-      const targetItem = catalogue.find(candidate => target?.canonicalItemIds.includes(candidate.id));
-      if (!targetItem) return;
-      onSave(targetItem, { menuVersion: config.menuVersion, rulesVersion: config.rulesVersion, selection }, notes); setOpen(false);
-      if (targetItem.id !== item.id) window.setTimeout(() => {
-        const picker = [...document.querySelectorAll<HTMLElement>("[data-buffet-item-id]")].find(element => element.dataset.buffetItemId === targetItem.id);
-        picker?.querySelector<HTMLButtonElement>("button")?.focus();
-      }, 0);
-    }} /> : <BuffetMenuDialog menu={view} guestCount={guestCount} initialPackageId={pkg.id} selection={validSelection} dietaryNotes={dietaryNotes} onCancel={() => setOpen(false)} onSave={(selection, notes) => {
+    {open && (fullScreen ? <BuffetMenuBuilder menu={view} guestCount={guestCount} initialPackageId={pkg.id} priceByPackageId={priceByPackageId} bookingChrome={bookingChrome} selection={validSelection} dietaryNotes={dietaryNotes} onCancel={() => setOpen(false)} onContinue={() => window.setTimeout(() => onContinue?.(), 0)} onSave={(selection, notes, stayOpen) => saveChoice(selection, notes, stayOpen)} /> : <BuffetMenuDialog menu={view} guestCount={guestCount} initialPackageId={pkg.id} selection={validSelection} dietaryNotes={dietaryNotes} onCancel={() => setOpen(false)} onSave={(selection, notes) => {
       const target = config.packages.find(candidate => candidate.id === selection.packageId);
       const targetItem = catalogue.find(candidate => target?.canonicalItemIds.includes(candidate.id));
       if (!targetItem) return;

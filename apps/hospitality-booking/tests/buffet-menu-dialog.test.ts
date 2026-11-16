@@ -34,17 +34,20 @@ const choose = () => {
 test("known choices validate, show live portions and save a draft that reopens", () => {
   let saved: BuffetSelection | undefined;
   const view = render(React.createElement(BuffetMenuBuilder, { menu, guestCount: 30, initialPackageId: "gold", onSave: value => { saved = value; }, onCancel() {} }));
-  assert.match(screen.getByRole("status").textContent!, /preview.*disabled/i);
+  assert.match(screen.getByText(/Preview only.*disabled/i).textContent!, /preview.*disabled/i);
   assert.equal((screen.getByRole("radio", { name: /Fixture under review/ }) as HTMLInputElement).disabled, true);
   assert.equal(screen.queryByRole("dialog"), null, "the builder is a booking screen, not a modal");
   assert.ok(screen.getByTestId("buffet-menu-screen"));
-  fireEvent.click(screen.getByRole("button", { name: "Save menu" }));
+  assert.equal(screen.getByRole("heading", { name: "CHOOSE YOUR MENU" }).textContent, "CHOOSE YOUR MENU");
+  assert.ok(screen.getByRole("heading", { name: "Your request" }));
+  assert.ok(screen.getByRole("heading", { name: "Your selection summary" }));
+  fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
   assert.match(screen.getByRole("alert").textContent!, /Choose one meat or fish main/);
-  choose(); assert.match(screen.getByText("Main portions: 30 of 30 guests").textContent!, /30 of 30/);
+  choose(); assert.match(screen.getByText("30 / 30").textContent!, /30 \/ 30/);
   fireEvent.change(screen.getByRole("spinbutton", { name: "Fixture meat" }), { target: { value: "11" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save menu" })); assert.match(screen.getByRole("alert").textContent!, /at least 12 portions/); assert.equal(Boolean(saved), false);
+  fireEvent.click(screen.getByRole("button", { name: /Continue/ })); assert.match(screen.getByRole("alert").textContent!, /at least 12 portions/); assert.equal(Boolean(saved), false);
   fireEvent.change(screen.getByRole("spinbutton", { name: "Fixture meat" }), { target: { value: "16" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save menu" })); assert.ok(saved);
+  fireEvent.click(screen.getByRole("button", { name: /Continue/ })); assert.ok(saved);
   assert.deepEqual(saved!.saladIds, ["s1", "s2", "s3"]); assert.deepEqual(saved!.dessertIds, ["d1", "d2"]);
   view.unmount(); render(React.createElement(BuffetMenuBuilder, { menu, guestCount: 30, initialPackageId: "gold", selection: saved, onSave() {}, onCancel() {} }));
   assert.equal((screen.getByRole("checkbox", { name: /Fixture salad one/ }) as HTMLInputElement).checked, true);
@@ -55,21 +58,21 @@ test("known choices validate, show live portions and save a draft that reopens",
 test("odd equal split stays unallocated; switching package resets desserts", () => {
   let saved = false;
   render(React.createElement(BuffetMenuBuilder, { menu, guestCount: 31, initialPackageId: "gold", selection: { packageId: "gold", nonVegetarianMainId: "m", vegetarianMainId: "v", mainPortions: { m: 16, v: 15 }, saladIds: ["s1", "s2", "s3"], dessertIds: ["d1", "d2"] }, onSave() { saved = true; }, onCancel() {} }));
-  assert.match(screen.getByText(/50\/50 preference/).textContent!, /chefs decide/i);
-  fireEvent.click(screen.getByRole("button", { name: "Save menu" })); assert.equal(saved, true, "odd guest totals can be saved as a local preview");
+  assert.match(screen.getByText(/50\/50 preference/).textContent!, /chef decides/i);
+  fireEvent.click(screen.getByRole("button", { name: /Continue/ })); assert.equal(saved, true, "odd guest totals can be saved as a local preview");
   fireEvent.click(screen.getByRole("radio", { name: /Silver/ }));
   assert.equal((screen.getByRole("checkbox", { name: /Fixture dessert one/ }) as HTMLInputElement).checked, false);
-  assert.ok(screen.getByRole("group", { name: /Desserts \(choose 1\)/ }));
+  assert.ok(screen.getByRole("group", { name: /Choose 1 desserts/ }));
 });
 
 test("the full-screen builder provides a back action, preserves keyboard focus, and is not a dialog", async () => {
   const user = userEvent.setup({ document: dom.window.document });
   function Harness() { const [open, setOpen] = React.useState(false); return React.createElement(React.Fragment, null, React.createElement("button", { onClick: () => setOpen(true) }, "Choose Menu"), open && React.createElement(BuffetMenuBuilder, { menu, guestCount: 30, initialPackageId: "gold", onSave: () => setOpen(false), onCancel: () => setOpen(false) })); }
   render(React.createElement(Harness)); const trigger = screen.getByRole("button", { name: "Choose Menu" }); await user.click(trigger);
-  assert.equal(document.activeElement, screen.getByRole("heading", { name: "Build your menu" }));
+  assert.equal(document.activeElement, screen.getByRole("heading", { name: "CHOOSE YOUR MENU" }));
   assert.equal(screen.queryByRole("dialog"), null);
   assert.equal((document.body.firstElementChild as HTMLElement).inert, true);
-  await user.click(screen.getByRole("button", { name: "Back to booking" }));
+  await user.click(screen.getByRole("button", { name: /Back to booking/ }));
   assert.equal(screen.queryByTestId("buffet-menu-screen"), null); assert.equal(document.activeElement, trigger);
 });
 
@@ -77,14 +80,31 @@ test("leaving an edited menu requires an explicit discard choice", () => {
   let cancelled = false;
   render(React.createElement(BuffetMenuBuilder, { menu, guestCount: 30, initialPackageId: "gold", onSave() {}, onCancel() { cancelled = true; } }));
   fireEvent.click(screen.getByRole("radio", { name: /Silver/ }));
-  fireEvent.click(screen.getByRole("button", { name: "Back to booking" }));
+  fireEvent.click(screen.getByRole("button", { name: /Back to menu/ }));
   assert.equal(cancelled, false);
   assert.match(screen.getByRole("alert").textContent!, /Discard these menu edits/);
   fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
   assert.equal(screen.queryByRole("alert"), null);
-  fireEvent.click(screen.getByRole("button", { name: "Back to booking" }));
+  fireEvent.click(screen.getByRole("button", { name: /Back to menu/ }));
   fireEvent.click(screen.getByRole("button", { name: "Discard and go back" }));
   assert.equal(cancelled, true);
+});
+
+test("RCoA booking chrome, package pricing, portion steppers and Save selection are present", () => {
+  let savedStayOpen = false;
+  const chrome = { logoPath: "/brand/rcoa/logo.svg", logoAlt: "Royal College of Anaesthetists", background: "var(--color-brand-dark)", steps: ["Occasion", "Contact", "Event", "Menu", "Dietaries", "Review"], activeStep: 3 };
+  render(React.createElement(BuffetMenuBuilder, { menu, guestCount: 30, initialPackageId: "gold", bookingChrome: chrome, priceByPackageId: { gold: 28, silver: 20 }, onSave(_value, _notes, stayOpen) { savedStayOpen = Boolean(stayOpen); }, onCancel() {} }));
+  assert.ok(screen.getByRole("img", { name: "Royal College of Anaesthetists" }));
+  assert.equal(screen.getByRole("navigation", { name: "Booking progress" }).querySelector('[aria-current="step"]')?.textContent?.trim(), "04Menu");
+  assert.match(screen.getByText(/£28\.00 per guest excluding VAT/).textContent!, /£28\.00/);
+  fireEvent.click(screen.getByRole("radio", { name: /Fixture meat/ }));
+  const portions = screen.getByRole("spinbutton", { name: "Fixture meat" }) as HTMLInputElement;
+  fireEvent.click(screen.getByRole("button", { name: "Add one Fixture meat portion" }));
+  assert.equal(portions.value, "1");
+  choose();
+  fireEvent.click(screen.getByRole("button", { name: "Save selection" }));
+  assert.equal(savedStayOpen, true);
+  assert.ok(screen.getByTestId("buffet-menu-screen"), "saving the draft keeps the selector open");
 });
 
 
@@ -103,7 +123,7 @@ test("switching package keeps focus on the new basket item and saves notes", asy
   fireEvent.click(screen.getByRole("radio", { name: /Fixture meat/ })); fireEvent.click(screen.getByRole("radio", { name: /Fixture vegetable/ }));
   fireEvent.change(screen.getByRole("spinbutton", { name: "Fixture meat" }), { target: { value: "16" } }); fireEvent.change(screen.getByRole("spinbutton", { name: "Fixture vegetable" }), { target: { value: "14" } });
   for (const name of ["Fixture salad one", "Fixture salad two", "Fixture salad three", "Fixture dessert one"]) fireEvent.click(screen.getByRole("checkbox", { name: new RegExp(name) }));
-  fireEvent.change(screen.getByLabelText(/Dietary notes/), { target: { value: "One dairy-free guest" } }); fireEvent.click(screen.getByRole("button", { name: "Save menu" }));
+  fireEvent.change(screen.getByLabelText("Dietary notes"), { target: { value: "One dairy-free guest" } }); fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
   await waitFor(() => assert.equal(document.activeElement === screen.getByRole("button", { name: "Edit menu" }), true));
   assert.equal(savedNotes, "One dairy-free guest"); assert.ok(document.querySelector('[data-buffet-item-id="silver-item"]'));
 });

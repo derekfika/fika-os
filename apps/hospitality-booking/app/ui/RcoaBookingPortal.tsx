@@ -794,7 +794,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
                             {item.unitPrice > 0 ? <strong>{money.format(item.unitPrice)} <small>{item.priceType === "per_item" ? "per item / stated serving" : ""}</small></strong> : <strong>Price on request</strong>}
                           </div>
                           <div className={styles.menuItemActions}>
-                            {line && line.quantity > 0 && <BuffetMenuPicker fullScreen config={buffet.config} item={item} catalogue={menu} selectedItemIds={draft.lines.filter(value => value.quantity > 0).map(value => value.itemId)} guestCount={draft.event.guestCount} preview={line.buffetPreview} dietaryNotes={draft.dietaries.freeText} onSave={(target, preview, notes) => { setDraft(current => ({ ...current, lines: current.lines.map(value => value.itemId === item.id ? { ...value, itemId: target.id, quantity: current.event.guestCount, choices: item.id === target.id ? value.choices : {}, buffetPreview: preview } : value), dietaries: { ...current.dietaries, freeText: notes, hasDietaries: current.dietaries.hasDietaries || Boolean(notes.trim()) } })); if (flow === "all-day") setAllDay(current => ({ ...current, dietaries: { ...current.dietaries, freeText: notes, hasDietaries: current.dietaries.hasDietaries || Boolean(notes.trim()) } })); }} />}
+                            {line && line.quantity > 0 && <BuffetMenuPicker fullScreen bookingChrome={{ logoPath: site.logoPath, logoAlt: site.displayName, background: site.theme.heroBackground, steps: labels, activeStep: step }} onContinue={() => { window.setTimeout(() => document.querySelector<HTMLButtonElement>(editingServiceId ? "[data-rcoa-buffet-save-items]" : "[data-rcoa-buffet-continue]")?.click(), 0); }} config={buffet.config} item={item} catalogue={menu} selectedItemIds={draft.lines.filter(value => value.quantity > 0).map(value => value.itemId)} guestCount={draft.event.guestCount} preview={line.buffetPreview} dietaryNotes={draft.dietaries.freeText} onSave={(target, preview, notes) => { setDraft(current => ({ ...current, lines: current.lines.map(value => value.itemId === item.id ? { ...value, itemId: target.id, quantity: current.event.guestCount, choices: item.id === target.id ? value.choices : {}, buffetPreview: preview } : value), dietaries: { ...current.dietaries, freeText: notes, hasDietaries: current.dietaries.hasDietaries || Boolean(notes.trim()) } })); if (flow === "all-day") setAllDay(current => ({ ...current, dietaries: { ...current.dietaries, freeText: notes, hasDietaries: current.dietaries.hasDietaries || Boolean(notes.trim()) } })); }} />}
                             {item.optionGroups?.map((group) => {
                               if (!line) return null;
                               const value = line.choices[group.id];
@@ -917,13 +917,13 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
             {editingServiceId ? (
               <footer className={styles.formActions}>
                 <button type="button" className={styles.secondaryButton} onClick={() => closeItems(false)}>Back to your day</button>
-                <button type="button" className={styles.primaryButton} onClick={() => closeItems(true)}>Save items</button>
+                <button type="button" data-rcoa-buffet-save-items className={styles.primaryButton} onClick={() => closeItems(true)}>Save items</button>
               </footer>
             ) : (
             <footer className={styles.formActions}>
               <button type="button" className={styles.secondaryButton} disabled={step === 0 || sending} onClick={() => goToStep(step - 1)}>Back</button>
               {step < labels.length - 1
-                ? <button key="continue" type="button" className={styles.primaryButton} disabled={menuLoading || !visibility} onClick={() => goToStep(step + 1)}>Continue</button>
+                ? <button key="continue" data-rcoa-buffet-continue type="button" className={styles.primaryButton} disabled={menuLoading || !visibility} onClick={() => goToStep(step + 1)}>Continue</button>
                 : <button key="send" type="submit" onClick={() => { submitIntentRef.current = true; }} className={styles.primaryButton} disabled={sending || !bookingId || !rcoaConfigured || !visibility} aria-busy={sending ? true : undefined}>{sending ? <><span className="fika-spinner" aria-hidden="true" />Sending request…</> : "Send booking request"}</button>}
             </footer>
             )}
