@@ -8,12 +8,13 @@ import { getDashboardQuoteSettingsForBooking } from "@/lib/hospitality-booking-s
 import { generateHospitalityGroupQuote } from "@/lib/hospitality-group-quote-workflow";
 import { firestoreGroupQuoteStore } from "@/lib/hospitality-group-quote-store";
 import { groupQuoteDriveArtifact } from "@/lib/hospitality-group-quote-artifact";
-import { resolveDriveOwner } from "@fika/server-shared/drive-owner";
+import { stagingDriveOperationsBlocked } from "@fika/server-shared/drive-owner";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { errorResponse } from "@/lib/api";
 import { queueGroupConfirmation } from "@/lib/booking-group-confirmation";
 import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
 import { redactHospitalityQuoteDriveLinks } from "@/lib/hospitality-quote-response";
+import { resolveGroupQuoteTarget } from "@/lib/hospitality-group-quote-destination";
 
 const Command = z.object({ bookingGroupId: z.string().trim().min(1).max(160), expectedVersion: z.number().int().nonnegative(), expectedSourceHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 export async function POST(request: NextRequest) {
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
     try {
       const actor = await requireActor(request);
       const session = await requireFikaSession(request);
-      if (await stagingDriveAccessBlocked()) return NextResponse.json({ error: { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED", message: "Group quote artifacts are unavailable until Drive isolation is verified for this environment." } }, { status: 404, headers: { "Cache-Control": "no-store, max-age=0" } });
+      if (await stagingDriveOperationsBlocked()) return NextResponse.json({ error: { code: "FIKA_STAGING_DRIVE_ISOLATION_UNVERIFIED", message: "Group quote artifacts are unavailable until Drive isolation is verified for this environment." } }, { status: 404, headers: { "Cache-Control": "no-store, max-age=0" } });
       const command = Command.parse(await request.json());
       const repository = new FirestoreAuthModRepository();
       const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
@@ -34,10 +35,7 @@ export async function POST(request: NextRequest) {
         },
         target: async booking => {
           const settings = await getDashboardQuoteSettingsForBooking(booking);
-          const owner = resolveDriveOwner({ type: "oploc-workspace", oplocId: booking.service.oplocId! });
-          const configured = process.env.FIKA_RUNTIME_MODE === "staging" ? owner.configuredRootFolderId || "" : settings.googleQuoteFolderId || settings.googleDriveFolderId || owner.configuredRootFolderId || "";
-          const folderId = configured.match(/\/folders\/([A-Za-z0-9_-]+)/)?.[1] || configured.trim();
-          return { folderId, oplocId: booking.service.oplocId! };
+          return resolveGroupQuoteTarget(booking, settings);
         },
       });
       // Reconciliation trigger: a completed group quote can be what makes the last in-house service eligible. Idempotent; never fails the quote.

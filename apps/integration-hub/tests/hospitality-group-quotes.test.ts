@@ -106,6 +106,16 @@ test("stale intent/version or denied access produces no quote or external writes
   assert.equal(h.quotes().length, 0); assert.equal(h.files.size, 0);
 });
 
+test("an unverified destination is rejected before a quote intent, Drive ID, or artifact write", async () => {
+  const h = harness();
+  await assert.rejects(generateHospitalityGroupQuote(h.command(), { ...h.context, target: async () => { throw Error("The staging quote destination is outside the approved writable Drive root."); } }), /outside the approved writable Drive root/);
+  assert.equal(h.quotes().length, 0);
+  assert.equal(h.heads().length, 0);
+  assert.equal(h.counts().reserveCalls, 0);
+  assert.equal(h.counts().uploads, 0);
+  assert.equal(h.events().length, 0);
+});
+
 test("an expired lease can be recovered; late completion cannot duplicate or overwrite the recovered quote", async () => {
   const h = harness(); let time = new Date(at); let release!: () => void; let entered!: () => void;
   const waiting = new Promise<void>(resolve => release = resolve); const started = new Promise<void>(resolve => entered = resolve);
