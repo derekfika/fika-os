@@ -10,6 +10,7 @@ import { createProductionPlanRepository } from "./production-plan-repository";
 import type { MatrixArtifact, PlannedMenuItem } from "../app/lib/production-plan";
 import { planRevisionToken } from "../app/lib/production-plan-state";
 import { cpuMasterReviewId, cpuMasterReviewSemanticHash, saveCpuMasterReview, type CpuMasterReviewMember } from "./cpu-master-review";
+import { isCpuWithdrawn } from "./production-presentation";
 
 export type CpuPostCommitJob = { action: "master-sign"; commandId: string; serviceDate: string; orderIds: string[] };
 export const CPU_POST_COMMIT_CONCURRENCY = 4;
@@ -35,7 +36,7 @@ function memberFor(orderId: string, plan: Awaited<ReturnType<typeof loadPlansFor
 /** Critical release work starts before derived projection housekeeping. */
 export async function processCpuPostCommitJob(request: NextRequest, job: CpuPostCommitJob) {
   const startedAt = Date.now();
-  const orders = (await productionQueue(request, job.serviceDate)).filter(order => job.orderIds.includes(order.canonicalId) && order.origin === "menu_planning" && !order.supersededBy && (order.serviceDate || order.requiredBy.slice(0, 10)) === job.serviceDate);
+  const orders = (await productionQueue(request, job.serviceDate)).filter(order => job.orderIds.includes(order.canonicalId) && order.origin === "menu_planning" && !isCpuWithdrawn(order) && (order.serviceDate || order.requiredBy.slice(0, 10)) === job.serviceDate);
   const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const planByOrderId = new Map(plans.map(plan => [plan.orderId, plan]));
   const members = orders.map(order => memberFor(order.canonicalId, planByOrderId.get(order.canonicalId)));
@@ -84,7 +85,7 @@ export async function processCpuPostCommitJob(request: NextRequest, job: CpuPost
 
   const housekeepingStartedAt = Date.now();
   const projectionWork = Promise.all([rebuildCpuDayProjection(request, job.serviceDate, sourceSequence), rebuildCpuWeekProjection(request, week, weekSourceSequence)]);
-  const oplocIds = [...new Set(orders.map(order => order.destinationOplocId).filter((value): value is string => Boolean(value)))];
+  const oplocIds = [...new Set(orders.filter(order => order.destination?.kind !== "one-off" && !order.destinationOplocId?.includes(":one-off:")).map(order => order.destinationOplocId).filter((value): value is string => Boolean(value)))];
   const reviewWork = mapWithConcurrency(oplocIds, CPU_POST_COMMIT_CONCURRENCY, oplocId => rebuildCpuReviewPackage(request, job.serviceDate, oplocId, sourceSequence));
   await Promise.all([projectionWork, reviewWork]);
   const housekeepingMs = Date.now() - housekeepingStartedAt;

@@ -39,7 +39,7 @@ export type MatrixSignatureScope = {
   sourceContentHash: string;
   matrixContentHash: string;
 };
-export type InternalMatrixSignature = { role: "production_chef" | "head_chef_site_manager"; printedName: string; signedAt: string; actor: string; attestation: string; signatureDataUrl?: string; scope?: MatrixSignatureScope };
+export type InternalMatrixSignature = { role: "production_chef" | "head_chef_site_manager"; printedName: string; signedAt: string; actor: string; actorId?: string; attestation: string; signatureDataUrl?: string; scope?: MatrixSignatureScope };
 export type MatrixArtifact = { id: string; bookingId: string; fileName: string; createdAt: string; createdBy: string; contentHash: string; html?: string; pdfPath?: string; localUrl?: string; pdfStatus: "generated" | "unavailable"; driveFileId?: string; driveUrl?: string; driveStatus: "saved" | "not_configured" | "failed"; bundleId?: string; packetContentHash?: string; packetObjectName?: string; sourceRevision?: number; sourceContentHash?: string };
 export type CpuAllergenRelease = import("../../lib/cpu-allergen-release").CpuAllergenRelease;
 /** A production menu item may contain several separately checked sub-items. */
@@ -118,6 +118,11 @@ export function sameMatrixSignatureScope(left: MatrixSignatureScope | undefined,
 
 export function signatureMatchesScope(signature: InternalMatrixSignature, scope: MatrixSignatureScope | undefined) {
   return sameMatrixSignatureScope(scope, signature.scope);
+}
+
+/** Exact retries require the same stable actor, role, and full matrix/source lineage. */
+export function hasExactMatrixSignatureForActor(signatures: readonly InternalMatrixSignature[] | undefined, role: InternalMatrixSignature["role"], actorId: string, scope: MatrixSignatureScope | undefined) {
+  return Boolean(scope && signatures?.some(signature => signature.role === role && signature.actorId === actorId && signatureMatchesScope(signature, scope)));
 }
 
 /** Human signatures remain authoritative while their exact release is pending materialisation. */

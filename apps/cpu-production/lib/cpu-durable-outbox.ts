@@ -1,4 +1,5 @@
 import { db } from "./firebase-admin";
+import { createHash } from "node:crypto";
 import type { Transaction } from "firebase-admin/firestore";
 import {
   claimEvent,
@@ -19,7 +20,7 @@ export type CpuConsumerInvalidationInput = {
   sourceVersion: number;
   changedAt: string;
   changeType: string;
-  order?: { origin?: string; destinationOplocId?: string };
+  order?: { origin?: string; destinationOplocId?: string; destination?: { kind?: "governed" | "one-off" } };
   logistics?: boolean;
   reviewManifest?: { sourceVersion?: string; contentHash?: string };
 };
@@ -52,6 +53,7 @@ export const CPU_DELIVERY_TIMEOUT_MS = {
   materialization: 60_000,
   postCommit: 120_000,
 } as const;
+export const MAX_CPU_CONSUMER_EVENT_ID_LENGTH = 200;
 
 const memoryOutbox = new Map<string, CpuOutboxEvent>();
 const memoryEligible = new Map<string, string>();
@@ -66,6 +68,11 @@ function trackMemoryEligibility(event: CpuOutboxEvent) {
 
 function deliveryId(eventId: string, consumer: CpuPropagationConsumer, scope: string) {
   return `${eventId}:${consumer}:${scope}`.replace(/[^A-Za-z0-9:_-]+/g, "_");
+}
+
+function boundedConsumerEventId(eventId: string) {
+  if (eventId.length <= MAX_CPU_CONSUMER_EVENT_ID_LENGTH) return eventId;
+  return `cpu-event:${createHash("sha256").update(eventId).digest("hex")}`;
 }
 
 function bodyFor(input: CpuConsumerInvalidationInput, consumer: CpuPropagationConsumer, oplocId?: string) {
@@ -95,10 +102,14 @@ function bodyFor(input: CpuConsumerInvalidationInput, consumer: CpuPropagationCo
 }
 
 export function buildCpuPropagationEvents(input: CpuConsumerInvalidationInput): CpuOutboxEvent[] {
-  const sourceEventId = input.eventId || `cpu-change:${input.sourceEntityId}:v${input.sourceVersion}`;
+  const sourceEventId = boundedConsumerEventId(input.eventId || `cpu-change:${input.sourceEntityId}:v${input.sourceVersion}`);
   const events: CpuOutboxEvent[] = [];
-  if (input.order?.origin === "menu_planning" && input.order.destinationOplocId) {
-    const scope = `${input.serviceDate}:${input.order.destinationOplocId}`;
+  // One-off destinations retain an order-scoped identity. Delivered-In's
+  // site projection is OPLOC-scoped, so never publish one-off IDs as OPLOCs.
+  const destinationId = input.order?.destinationOplocId;
+  const oneOff = input.order?.destination?.kind === "one-off" || Boolean(destinationId?.includes(":one-off:"));
+  if (input.order?.origin === "menu_planning" && !oneOff && destinationId) {
+    const scope = `${input.serviceDate}:${destinationId}`;
     const id = deliveryId(sourceEventId, "delivered-in", scope);
     events.push({
       eventId: id,
@@ -107,7 +118,7 @@ export function buildCpuPropagationEvents(input: CpuConsumerInvalidationInput): 
       sourceVersion: input.sourceVersion,
       occurredAt: input.changedAt,
       schemaVersion: "0.1.0",
-      payload: { deliveryId: id, sourceEventId, consumer: "delivered-in", route: "/api/delivered-in/invalidate", body: { ...bodyFor(input, "delivered-in", input.order.destinationOplocId)!, eventId: sourceEventId } },
+      payload: { deliveryId: id, sourceEventId, consumer: "delivered-in", route: "/api/delivered-in/invalidate", body: { ...bodyFor(input, "delivered-in", destinationId)!, eventId: sourceEventId } },
       delivery: { status: "pending", attempts: 0, nextAttemptAt: input.changedAt, nextEligibleAt: input.changedAt },
     });
   }

@@ -38,8 +38,11 @@ export function cpuMasterReviewSemanticHash(members: CpuMasterReviewMember[]) {
 export async function saveCpuMasterReview(review: CpuMasterReview) {
   const replace = (current: CpuMasterReview | undefined) => {
     if (!current) return true;
-    if (current.finalization.state === "completed" && review.finalization.state !== "completed") return false;
-    if (current.status === "signed" && review.status !== "signed" && current.finalization.state !== "failed") return false;
+    // A first-role worker may finish while the review is still pending. A
+    // later role has the same exact review ID and must be allowed to advance
+    // its post-commit state, including recording retryable delivery failure.
+    // Once the review is signed, stale pending updates cannot roll it back.
+    if (current.status === "signed" && review.status !== "signed") return false;
     return true;
   };
   if (inMemory()) {

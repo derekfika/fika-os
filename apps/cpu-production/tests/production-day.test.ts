@@ -204,6 +204,14 @@ test("superseded Menu Planning orders are excluded from the release review scope
   assert.deepEqual(deliveredInMenuOrdersForServiceDate([superseded, current], "2026-08-24").map(item => item.canonicalId), [current.canonicalId]);
 });
 
+test("master review membership excludes withdrawn history but retains an order-scoped one-off destination", () => {
+  const governed = order("Commerzbank", 10);
+  const withdrawn = { ...order("Withdrawn site", 20), status: "cancelled" as const };
+  const oneOff = { ...order("Asana one-off", 4), destinationOplocId: "rolling-week:2026-11-16:day:2:one-off:asana", destination: { kind: "one-off" as const, id: "rolling-week:2026-11-16:day:2:one-off:asana", sourceDayId: "rolling-week:2026-11-16:day:2", label: "Asana", address: "" } };
+  assert.deepEqual(deliveredInMenuOrdersForServiceDate([withdrawn, oneOff, governed], "2026-08-24").map(item => item.canonicalId), [oneOff.canonicalId, governed.canonicalId]);
+  assert.equal(oneOff.destination?.kind, "one-off", "one-off membership keeps its request-scoped identity");
+});
+
 test("conflicting published snapshots block the consolidated review instead of being merged", () => {
   const make = (state: string) => ({ ...order("Haleon", 10), sourcePublicationDayId: "menu-publication: monday:v1", lines: [{ ...order("Haleon", 10).lines[0], sourceMenuItemId: "dish:shared", approvedAllergenSnapshot: { allergens: { mustard: state }, sourcePublicationDayId: "menu-publication: monday:v1", sourceVersion: 1, sourceContentHash: "hash:monday:v1" }, allergenEvidenceStatus: "confirmed" as const }] });
   const rows = buildAllergenReviewRows([make("contains"), { ...make("may_contain"), canonicalId: "production-order:xchange", destinationLabel: "FIKA Xchange" }]);
