@@ -21,6 +21,7 @@ import { stableDocumentId } from "./canonical-editor";
 import { isValidRcoaLocationPair } from "@fika/server-shared/rcoa-locations";
 import { sha256 } from "./profiler";
 import { parseCanonical } from "./schemas";
+import { stagingStandaloneQuoteDestination } from "./hospitality-standalone-quote-destination";
 import {
   applyBookingAdditionalCharges,
   hospitalityCancellationRequiresCpuReview,
@@ -312,7 +313,8 @@ export async function getBookingByCanonicalId(canonicalId: string) {
 }
 
 export async function getDashboardQuoteSettingsForBooking(booking: Pick<CanonicalBooking, "service">) {
-  return getDashboardQuoteSettings(dashboardIdForSite(booking.service.portalSiteId));
+  const settings = await getDashboardQuoteSettings(dashboardIdForSite(booking.service.portalSiteId));
+  return stagingStandaloneQuoteDestination(booking, settings);
 }
 const sourceMappings = () => db.collection("integrationHubSourceMappings");
 const bookingAudit = () => db.collection("fikaBookingAudit");
