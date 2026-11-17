@@ -2,5 +2,5 @@
 
 Clear a booking's cached CPU handoff result after its amendment is accepted so the replacement handoff state is shown without requiring a page refresh. Other booking results remain intact.
 
-Validation: Hospitality test suite (489 passed), typecheck and build passed; governed validation passed for the Hospitality-only source scope.
-Deployment: staging validation pending; production unchanged.
+Validation: PR #575 merge gate passed (Hospitality suite: 489 passed; typecheck and build passed). Staging UAT saved and reopened the buffet menu, persisted quote r3 with the expected £707 net, £141.40 VAT and £848.40 total, and completed explicit Send to CPU. The current canonical Production Order and Fulfilment Requirement were verified; superseded records are withdrawn. Focused Hub tests passed (51 passed, 4 emulator-only skipped); the full Hub suite had one unrelated missing `fika-platform-specs` document fixture. CPU focused runs passed (8 and 57 tests); the broad CPU suite encountered a long consumer-notification test failure, although that test file passed when isolated. The authenticated browser remained fixed at about 545px, so desktop and tablet UAT remain unverified.
+Deployment: staging source `78ba406a353ad981454d3a2c304b078a4b63b8d4`, rollout `build-2026-11-17-003`, 100% traffic and smoke check 200. Production unchanged; Calendar writes and production notifications were not triggered.
