@@ -1987,6 +1987,27 @@
   font-size: 0.88rem;
   font-weight: 700;
 }
+.scope :global(.additional-charge-editor__reason) {
+  display: grid;
+  gap: 6px;
+  color: var(--fika-text-primary);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+.scope :global(.additional-charge-editor__reason textarea) {
+  width: 100%;
+  min-height: 88px;
+  padding: 9px 11px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--fika-surface-card);
+  color: var(--fika-text-primary);
+  font: inherit;
+}
+.scope :global(.additional-charge-editor__reason textarea:focus-visible) {
+  outline: 3px solid var(--fika-focus-ring);
+  outline-offset: 2px;
+}
 .scope :global(.additional-charge-editor input),
 .scope :global(.additional-charge-editor select),
 .scope :global(.hospitality-labour-rates input) {

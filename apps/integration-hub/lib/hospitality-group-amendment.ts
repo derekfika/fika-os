@@ -33,6 +33,7 @@ export const groupChargesCommand = z.object({
   bookingId: z.string().min(8),
   expectedVersion: z.number().int().positive(),
   expectedSourceHash: z.string().regex(/^[a-f0-9]{64}$/),
+  reason: z.string().trim().min(3).max(1000),
   charges: bookingAdditionalChargesSchema,
 }).strict();
 export type GroupChargesCommand = z.infer<typeof groupChargesCommand>;

@@ -52,10 +52,11 @@ export function AdditionalChargesModal({
   context?: string;
   busy: boolean;
   onCancel: () => void;
-  onSave: (charges: BookingAdditionalChargeInput[]) => Promise<void>;
+  onSave: (charges: BookingAdditionalChargeInput[], reason: string) => Promise<void>;
 }) {
   const initialCharges = (booking.additionalCharges || []).map(storedChargeInput);
   const [charges, setCharges] = useState<BookingAdditionalChargeInput[]>(initialCharges);
+  const [reason, setReason] = useState("");
   const original = useRef(JSON.stringify(initialCharges));
   const [editor, setEditor] = useState<ChargeEditor | null>(null);
   const [error, setError] = useState("");
@@ -154,9 +155,13 @@ export function AdditionalChargesModal({
   };
   const saveChanges = async () => {
     setError("");
+    if (hasChanges && reason.trim().length < 3) {
+      setError("Enter a reason of at least three characters before saving charges.");
+      return;
+    }
     setSaving(true);
     try {
-      await onSave(charges);
+      await onSave(charges, reason.trim());
     } catch (cause) {
       setError((cause as Error).message || "Could not save Booking charges.");
     } finally {
@@ -177,6 +182,7 @@ export function AdditionalChargesModal({
           <button type="button" aria-label="Close additional charges" onClick={onCancel} disabled={busy || saving}>×</button>
         </header>
         <p>These net charges are saved to the Booking and included in its next quote revision. VAT is applied by the quote settings.</p>
+        <label className="additional-charge-editor__reason">Reason for charge change<textarea required minLength={3} maxLength={1000} value={reason} disabled={busy || saving} onChange={event => setReason(event.target.value)} /></label>
         <div className="additional-charges-modal__actions">
           <button type="button" onClick={() => openManualEditor()}>Add charge</button>
           <button type="button" onClick={() => openLabourEditor()}>Labour calculator</button>
@@ -233,7 +239,7 @@ export function AdditionalChargesModal({
         {error && <p className="additional-charges-modal__error" role="alert">{error}</p>}
         <footer className="additional-charges-modal__footer">
           <span>Additional charges subtotal · <strong>£{subtotal.toFixed(2)} net</strong></span>
-          <div><button type="button" onClick={onCancel} disabled={busy || saving}>Cancel</button><button type="button" className="primary" onClick={() => void saveChanges()} disabled={!hasChanges || busy || saving}>{busy || saving ? "Saving charges…" : "Save changes"}</button></div>
+          <div><button type="button" onClick={onCancel} disabled={busy || saving}>Cancel</button><button type="button" className="primary" onClick={() => void saveChanges()} disabled={!hasChanges || reason.trim().length < 3 || busy || saving}>{busy || saving ? "Saving charges…" : "Save changes"}</button></div>
         </footer>
       </section>
     </div>

@@ -79,6 +79,36 @@ export async function assertHospitalityBookingDate(transaction: Transaction, boo
   assertDate(booking, items.map(item => item.cutoff), now);
 }
 
+/** Historical RCoA corrections reuse the event-date-effective catalogue price, without creating delivery intent. */
+export async function priceHistoricalRcoaCommercialOrder(transaction: Transaction, booking: CanonicalBooking, current: CanonicalBooking, allowAdminPriceOverride: boolean) {
+  const items = await resolveBookingItems(transaction, booking);
+  let vatTotal = 0;
+  const lines = items.map(({ line, offering, record }) => {
+    const previous = current.order.items.find(candidate => candidate.itemId === line.itemId);
+    if (!record || !offering) throw Object.assign(new Error("Every corrected item needs an offering at the original booking site."), { status: 422, code: "HISTORICAL_COMMERCIAL_PRICE_UNAVAILABLE" });
+    const suppliedOverride = allowAdminPriceOverride && Number.isFinite(line.unitPrice) && line.unitPrice >= 0;
+    const unitPrice = previous
+      ? suppliedOverride && line.unitPrice !== previous.unitPrice ? line.unitPrice : previous.unitPrice
+      : suppliedOverride && line.unitPrice !== (offering.price?.amount ?? line.unitPrice) ? line.unitPrice : offering.price?.amount;
+    if (unitPrice === undefined || !Number.isFinite(unitPrice) || unitPrice < 0 || (offering.price && (offering.price.vatRate < 0 || offering.price.vatRate > 1))) {
+      throw Object.assign(new Error("A new item needs an authoritative price effective on the original service date, or an authorised price override."), { status: 422, code: "HISTORICAL_COMMERCIAL_PRICE_UNAVAILABLE" });
+    }
+    const lineTotal = money(unitPrice * line.quantity);
+    if (!Number.isFinite(lineTotal)) throw Object.assign(new Error("The ordered quantity is outside the supported price range."), { status: 422 });
+    vatTotal += money(lineTotal * (offering.price?.vatRate ?? 0));
+    return {
+      ...line,
+      menuItemId: offering.itemId,
+      itemName: previous?.itemName || offering.name,
+      category: previous?.category || offering.category,
+      unitPrice,
+      lineTotal,
+    };
+  });
+  const netTotal = money(lines.reduce((total, line) => total + line.lineTotal, 0));
+  return { ...booking.order, items: lines, netTotal, vatTotal: money(vatTotal), grossTotal: money(netTotal + vatTotal) };
+}
+
 const money = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
 /** The staff exception skips notice only. Resolve and price all selected lines from current OPLOC offerings. */
