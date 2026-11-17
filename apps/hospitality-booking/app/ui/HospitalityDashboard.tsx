@@ -18,6 +18,7 @@ import { bookingLocation } from "../../lib/booking-location";
 import { quoteHtml } from "../../lib/quote-document";
 import { fetchQuoteRequest } from "../../lib/quote-request";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
+import { clearServiceResult } from "../../lib/service-result-state";
 import { mnkMenuHtml } from "../../lib/mnk-menu-output";
 import type { MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";
@@ -894,8 +895,10 @@ export default function HospitalityDashboard({
         ...(staffOverride ? { hospitalityAdmin: true } : {}),
         patch: { ...amendmentPatchDto(amendment), ...(amendment.dietaries ? { dietaries: amendment.dietaries } : {}) },
       });
-      if (!amended.booking) throw new Error("The amendment was saved but no updated booking was returned.");
-      setSelected(amended.booking);
+      const amendedBooking = amended.booking;
+      if (!amendedBooking) throw new Error("The amendment was saved but no updated booking was returned.");
+      if (!amended.unchanged) setServiceResults((current) => clearServiceResult(current, amendedBooking.canonicalId));
+      setSelected(amendedBooking);
       setStep(0, "complete");
       if (staffOverride || manualBuffetHandoff) {
         setStep(0, "complete", amended.unchanged ? "No changes were needed." : amended.projectionPropagation?.status === "pending" ? "The booking was saved. A downstream update is still pending." : undefined);
@@ -907,8 +910,8 @@ export default function HospitalityDashboard({
 
       setStep(1, "active");
       const quoted = await post({
-        canonicalId: amended.booking.canonicalId,
-        expectedVersion: amended.booking.version,
+        canonicalId: amendedBooking.canonicalId,
+        expectedVersion: amendedBooking.version,
         action: "quote",
         regenerate: true,
       });
