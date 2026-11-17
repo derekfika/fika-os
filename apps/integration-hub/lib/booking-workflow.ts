@@ -9,7 +9,7 @@ export type WorkflowCommand =
   | { action: "review"; checks: Partial<ReviewChecks>; notes?: string }
   | { action: "quote"; regenerate?: boolean }
   | { action: "quote-pdf-status"; revisionId: string; status: QuotePdfStatus; driveFileId?: string; driveUrl?: string; error?: string }
-  | { action: "set-additional-charges"; charges: BookingAdditionalChargeInput[] }
+  | { action: "set-additional-charges"; reason: string; charges: BookingAdditionalChargeInput[] }
   | { action: "amend"; reason: string; patch: { client: { name: string; email: string; phone?: string; companyName: string; requester?: { name: string; email: string; phone?: string; companyName: string }; clientName?: string; clientCompany?: string; invoiceReference?: string }; service: { eventDate: string; startTime: string; endTime?: string; guestCount: number; floorLevel?: string; roomOrArea?: string; deliveryPoint?: string; onsiteContactName?: string; onsiteContactPhone?: string }; order: { eventType?: string; items: Array<{ itemId: string; itemName?: string; category?: string; description?: string; servingInfo?: string; unitPrice: number; quantity: number; choices?: unknown[]; comments?: string }> }; notes?: string; dietaries?: Record<string, unknown>; deliveryChargeRequired?: boolean } }
   | { action: "approve"; quoteRevisionId: string }
   | { action: "complete"; notes?: string }
@@ -86,6 +86,7 @@ export function assertWorkflowCommand(booking: { lifecycleStatus: BookingStatus;
   if (command.action === "quote" && !isCommerciallyEditable(booking.lifecycleStatus) && !("bookingGroup" in booking && booking.bookingGroup && booking.lifecycleStatus === "Sent to CPU")) throw workflowError("Generate a quote only for a new, active or completed Booking.");
   if (command.action === "set-additional-charges" && !isCommerciallyEditable(booking.lifecycleStatus))
     throw workflowError("Additional charges can be changed directly before CPU hand-off and on a completed Booking. Reopen the Booking through its governed amendment workflow to change commercial intent in any other state.");
+  if (command.action === "set-additional-charges" && command.reason.trim().length < 3) throw workflowError("A reason is required when changing Booking charges.");
   if (command.action === "amend" && !command.reason.trim()) throw workflowError("An amendment reason is required.");
   if (command.action === "approve") throw workflowError("Quote approval has been removed. Send the current quote to CPU instead.");
   if (command.action === "complete") {

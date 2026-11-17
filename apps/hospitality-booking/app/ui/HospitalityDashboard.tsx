@@ -986,7 +986,7 @@ export default function HospitalityDashboard({
     setSettingsOpen(false);
   };
 
-  const saveAdditionalCharges = async (charges: BookingAdditionalChargeInput[]) => {
+  const saveAdditionalCharges = async (charges: BookingAdditionalChargeInput[], reason: string) => {
     if (!selected) throw new Error("Select a Booking before saving charges.");
     setAdditionalChargeBusy(true);
     try {
@@ -997,6 +997,7 @@ export default function HospitalityDashboard({
           canonicalId: selected.canonicalId,
           expectedVersion: selected.version,
           action: "set-additional-charges",
+          reason,
           charges,
         }),
       }, "Saving charges timed out. Check the booking before retrying.");
@@ -1673,7 +1674,7 @@ function BookingPane({
   onCancelAmendment: () => void;
   onSaveAmendment: () => Promise<void>;
   onOpenQuote: (booking: CanonicalBooking) => void;
-  onSaveAdditionalCharges: (charges: BookingAdditionalChargeInput[]) => Promise<void>;
+  onSaveAdditionalCharges: (charges: BookingAdditionalChargeInput[], reason: string) => Promise<void>;
   additionalChargeBusy: boolean;
   onAction: (action: WorkflowAction) => void;
   onGenerateMenu: (booking: CanonicalBooking) => Promise<void>;
@@ -1781,7 +1782,7 @@ function BookingDetail({
   setPending: (status: WorkflowAction) => void;
   onAmend: (booking: CanonicalBooking) => void;
   onOpenQuote: (booking: CanonicalBooking) => void;
-  onSaveAdditionalCharges: (charges: BookingAdditionalChargeInput[]) => Promise<void>;
+  onSaveAdditionalCharges: (charges: BookingAdditionalChargeInput[], reason: string) => Promise<void>;
   additionalChargeBusy: boolean;
   onAction: (action: WorkflowAction) => void;
   onGenerateMenu: (booking: CanonicalBooking) => Promise<void>;
@@ -2206,8 +2207,8 @@ function BookingDetail({
           booking={booking}
           busy={additionalChargeBusy}
           onCancel={() => setAdditionalChargesOpen(false)}
-          onSave={async (charges) => {
-            await onSaveAdditionalCharges(charges);
+          onSave={async (charges, reason) => {
+            await onSaveAdditionalCharges(charges, reason);
             setAdditionalChargesOpen(false);
           }}
         />
