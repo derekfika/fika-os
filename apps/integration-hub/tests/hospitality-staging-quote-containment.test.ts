@@ -4,11 +4,16 @@ import test from "node:test";
 
 const source = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
-test("booking and group booking responses use runtime-scoped quote pointer redaction", () => {
+test("generic booking responses stay redacted while authorized scoped reads can restore verified staging links", () => {
   const bookingRoute = source("../app/api/hospitality-bookings/route.ts");
-  assert.match(bookingRoute, /redactHospitalityQuoteDriveLinks\(value, await stagingDriveAccessBlocked\(\)\)/);
+  assert.match(bookingRoute, /allowScopedQuoteLinks\s*\?\s*await stagingDriveOperationsBlocked\(\)\s*:\s*await stagingDriveAccessBlocked\(\)/);
+  assert.match(bookingRoute, /bookingWorkspace\(site, oploc, includeArchive\), hospitalityAdminAuthority \}, Boolean\(site && oploc\)\)/);
+  assert.match(bookingRoute, /change\.action === "quote-pdf-status" && change\.status === "saved"/);
   assert.match(bookingRoute, /change\.action === "quote-pdf-status" \? await verifyStagingQuotePdfStatus\(change, booking\)/);
   assert.match(bookingRoute, /executeBookingWorkflow\(actor, change\.canonicalId, change\.expectedVersion, verifiedChange/);
+  const genericDetailBranch = bookingRoute.slice(bookingRoute.indexOf("if (canonicalId)"), bookingRoute.indexOf("const site ="));
+  assert.match(genericDetailBranch, /return bookingJson\(\{ booking, quoteSettings: await getDashboardQuoteSettingsForBooking\(booking\) \}\);/);
+  assert.doesNotMatch(genericDetailBranch, /bookingJson\([^\n]+,\s*true\)/, "unscoped canonical detail reads remain redacted");
 
   for (const path of [
     "../app/api/hospitality-booking-groups/amend/route.ts",
@@ -28,5 +33,5 @@ test("group quote generation uses the verified staging operation gate before wor
   assert.ok(generate > guard, "the Drive-isolation guard must run before quote persistence or replay");
   assert.ok(reconcile > guard, "the Drive-isolation guard must run before reconciliation side effects");
   assert.match(route, /resolveGroupQuoteTarget\(booking, settings\)/);
-  assert.match(route, /redactHospitalityQuoteDriveLinks\([\s\S]*?await stagingDriveAccessBlocked\(\)/, "staging Drive URLs remain redacted from generic responses");
+  assert.match(route, /redactHospitalityQuoteDriveLinks\([\s\S]*?await stagingDriveAccessBlocked\(\)/, "group staging Drive URLs remain redacted from generic responses");
 });
