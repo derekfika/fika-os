@@ -71,7 +71,7 @@ test('normalizes only the exact protected hotfix branch pattern and complete act
   const ruleset={id:42,target:'branch',enforcement:'active',conditions:{ref_name:{include:['refs/heads/hotfix/prod/hub/*'],exclude:[]}},bypass_actors:[],rules:[
     {type:'pull_request',parameters:{required_approving_review_count:1,dismiss_stale_reviews_on_push:true}},
     {type:'required_status_checks',parameters:{strict_required_status_checks_policy:true,required_status_checks:[{context:MAIN_CHECK,integration_id:15368}]}},
-    {type:'workflows',parameters:{workflows:[{path:'.github/workflows/validate.yml',repository_id:1297704019,ref:'refs/heads/main'}]}},
+    {type:'workflows',parameters:{do_not_enforce_on_create:true,workflows:[{path:'.github/workflows/validate.yml',repository_id:1297704019,ref:'refs/heads/main'}]}},
     {type:'deletion'}, {type:'non_fast_forward'}]};
   const effectiveRules=ruleset.rules.map(({type})=>({type}));
   assert.equal(normalizeHotfixProtection({app:'hub',releaseId,branch,rulesets:[ruleset],effectiveRules}).required_pull_request_reviews.required_approving_review_count,1);

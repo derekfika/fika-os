@@ -67,11 +67,12 @@ export function normalizeHotfixProtection({ app, releaseId, branch, classic, rul
   const checkParameters = rules.get('required_status_checks');
   const checks = checkParameters?.required_status_checks || [];
   const exactCheck = checks.some(check => check.context === MAIN_CHECK && check.integration_id === 15368);
-  const requiredWorkflows = rules.get('workflows')?.workflows || [];
+  const workflowParameters = rules.get('workflows');
+  const requiredWorkflows = workflowParameters?.workflows || [];
   const exactWorkflow = requiredWorkflows.some(workflow => workflow.path === '.github/workflows/validate.yml' &&
     workflow.repository_id === 1297704019 && ['main', 'refs/heads/main'].includes(workflow.ref));
   const effectiveTypes = new Set(effectiveRules.map(rule => rule.type));
-  if (approvals < 1 || staleReviews !== true || checkParameters?.strict_required_status_checks_policy !== true || !exactCheck || !exactWorkflow ||
+  if (approvals < 1 || staleReviews !== true || checkParameters?.strict_required_status_checks_policy !== true || !exactCheck || !exactWorkflow || workflowParameters?.do_not_enforce_on_create !== true ||
       !rules.has('deletion') || !rules.has('non_fast_forward') ||
       !['pull_request', 'required_status_checks', 'workflows', 'deletion', 'non_fast_forward'].every(type => effectiveTypes.has(type))) return null;
   return {
