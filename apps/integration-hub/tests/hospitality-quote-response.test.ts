@@ -21,7 +21,9 @@ test("staging response redaction hides standalone and grouped quote pointers wit
   assert.deepEqual(result.groups[0].quote, { id: "group-quote:1", status: "complete", artifact: {} });
 });
 
-test("redaction is response-scoped and does not rewrite production quote state", () => {
-  const booking = { quoteState: { revisions: [{ id: "quote:1", driveFileId: "production-file-id", driveUrl: "https://drive.google.com/file/d/production-file-id/view" }] } };
-  assert.deepEqual(redactHospitalityQuoteDriveLinks(booking, false), booking);
+test("verified scoped responses retain only the existing quote pointers for the authorised UI", () => {
+  const booking = { quoteState: { currentRevisionId: "quote:1", revisions: [{ id: "quote:1", pdfStatus: "saved", driveFileId: "staging-file-id", driveUrl: "https://drive.google.com/file/d/staging-file-id/view" }] } };
+  const response = redactHospitalityQuoteDriveLinks(booking, false);
+  assert.deepEqual(response, booking);
+  assert.equal(response.quoteState.revisions[0]?.driveFileId, "staging-file-id");
 });
