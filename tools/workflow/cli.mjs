@@ -7,7 +7,7 @@ import { git, command, ghApi, save, jsonFile } from './runtime.mjs';
 import { workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
 import { checkSourceWorkspace, completeSourceWorkspace, createSourceWorkspace, devSourceWorkspace, integrateSourceWorkspace, sourceWorkspaceStatus } from './source-workspaces.mjs';
 import { migrateSourceHistory } from './source-migration.mjs';
-import { bootstrap, deploy, reconcile, reconcileServingBaseline } from './releases.mjs';
+import { bootstrap, deploy, inspectHotfixBaseline, reconcile, reconcileServingBaseline } from './releases.mjs';
 import { hostedTrust, assertHostedContext } from './hosted.mjs';
 import { assertChangelogs, assertChangelogContent } from './changelog.mjs';
 import { governedReleaseOperation } from './workspace-state.mjs';
@@ -16,7 +16,7 @@ import { installWorkspaceFences } from './workspace-fencing.mjs';
 
 export function parse(args) {
   const positional = []; const options = {};
-  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'preserve', 'config-only', 'clear-config']);
+  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'preserve', 'config-only', 'clear-config', 'activate-hotfix']);
   const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement', 'confirm', 'pr', 'port', 'lease-id', 'predecessor', 'predecessor-lease-id', 'config-value']);
   for (let i = 0; i < args.length; i++) {
     if (!args[i].startsWith('--')) { positional.push(args[i]); continue; }
@@ -61,6 +61,7 @@ export function protection(t) {
 }
 async function main() {
   const { positional: [verb, arg, name], options } = parse(process.argv.slice(2));
+  if (options['activate-hotfix'] && (verb !== 'hotfix' || !options.execute)) throw Error('--activate-hotfix is valid only on an explicit hotfix execution');
   let result;
   if (verb === 'affected') {
     const paths = changePaths(options); result = { ...changeScope(paths, options), paths };
@@ -108,6 +109,15 @@ async function main() {
     if (!options.staging && !options.prod) throw Error('Specify --staging or --prod');
     result = await (verb === 'reconcile' ? reconcile : deploy)(arg, options.prod ? 'prod' : 'staging', {...options,rollback:verb === 'rollback'});
     if (options.output) save(options.output, result);
+  } else if (verb === 'hotfix') {
+    if (!options.prod || options.staging) throw Error('Hotfix releases are restricted to the explicit production target');
+    if (arg === 'inspect' && name) {
+      if (options.execute || options['activate-hotfix'] || options.sha || options['approve-hash']) throw Error('Hotfix inspect is read-only and does not accept execution or approval flags');
+      result = await inspectHotfixBaseline(name,options['release-id']);
+    } else if (arg === 'deploy' && name) {
+      result = await deploy(name, 'prod', { ...options, hotfix:true });
+    } else throw Error('Use fika hotfix inspect <app> --prod --release-id <id>, or fika hotfix deploy <app> --prod --release-id <id> --sha <exact merged hotfix PR SHA>');
+    if (options.output) save(options.output, result);
   } else if (verb === 'reconcile-serving-baseline') {
     if (!options.staging || options.prod) throw Error('Serving baseline reconciliation is restricted to --staging');
     result = await reconcileServingBaseline(arg, 'staging', options);
@@ -149,6 +159,8 @@ async function main() {
       'fika deploy cpu --prod [--sha <merged SHA>] [--execute] [--reason <note>]',
       'fika deploy hub --prod --config-only --sha <current serving SHA> --config-value <SHA-256> [--execute --approve-hash <plan hash>]',
       'fika deploy hub --prod --config-only --sha <current serving SHA> --clear-config [--execute --approve-hash <plan hash>]',
+      'fika hotfix inspect <app> --prod --release-id <id>',
+      'fika hotfix deploy <app> --prod --release-id <id> --sha <exact hotfix PR merge SHA> [--execute --activate-hotfix --approve-hash <plan hash> --reason <approval>]',
       'fika rollback cpu --prod [--execute] [--reason <note>]',
       'fika reconcile cpu --staging|--prod [--resolution abandon|complete --rollout <ID> --execute] [--reason <note>]',
       'fika reconcile-serving-baseline hub --staging --sha <exact SHA> --rollout <rollout ID> [--execute] [--reason <note>]',
@@ -160,6 +172,6 @@ async function main() {
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const verb = process.argv[2];
-  const action = ['deploy','rollback','reconcile','reconcile-serving-baseline','bootstrap'].includes(verb) ? () => governedReleaseOperation(verb, main) : main;
+  const action = ['deploy','hotfix','rollback','reconcile','reconcile-serving-baseline','bootstrap'].includes(verb) ? () => governedReleaseOperation(verb, main) : main;
   action().catch(error => { console.error(`FIKA HOLD: ${error.message}`); process.exitCode = 1; });
 }

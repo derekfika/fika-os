@@ -46,7 +46,7 @@ For either environment, the CLI defaults to fetched `origin/main`. Use `--sha` t
 
 The production serving-to-candidate diff is informational. Staging and manual UAT are optional for all change categories, including security, shared contracts and backend changes. A security hotfix follows the same PR, CI, merge and deploy steps. Forward production releases preserve deployed source lineage. Use the explicit rollback command to select an earlier verified release.
 
-The proposed baseline-derived, application-specific production hotfix model is documented in [hotfix releases](hotfix-releases.md). It is not part of the active deploy path; do not use a production-baseline candidate until the required protected branch/ruleset and owner-approved deploy integration are in place.
+The baseline-derived, application-specific production hotfix route is integrated and documented in [hotfix releases](hotfix-releases.md). Ordinary `fika deploy` remains main-only. A hotfix execution additionally requires the exact active branch/ruleset evidence, a source-bound reviewed candidate, a fresh SHA-bound operator approval, and the explicit `--activate-hotfix` flag; until those gates pass, the route fails closed.
 
 Exactly one mapped backend is deployed in region `europe-west4`:
 

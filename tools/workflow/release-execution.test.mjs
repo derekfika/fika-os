@@ -131,6 +131,25 @@ test('AUTHMOD and shared/backend merged sources deploy directly to production wi
   assert.ok(f.calls.every(resource=>!resource.includes('fika-os-dev')));
 }));
 
+test('a verified hotfix record remains an explicit rollback source while main reconciliation is pending',()=>fixture(async({baseline,authmod})=>{
+  const t=target('hub','prod'),f=releaseIO(t,baseline);
+  const baselineRecord={schema:'fika.release.v1',...t,kind:'baseline',sourceSha:baseline,rollout:'rollout-1',state:'SUCCEEDED',percent:100,
+    scopeHash:scopeHash(t.app,baseline),observedAt:'2026-11-01T00:00:00.000Z'};
+  const baselineCommit=appendRecord(t,baselineRecord);
+  const hotfixServing=f.setServing(authmod).rollout;
+  const hotfixRecord={schema:'fika.release.v1',...t,kind:'hotfix',sourceSha:authmod,rollout:hotfixServing.name.split('/').at(-1),
+    state:'SUCCEEDED',percent:100,scopeHash:scopeHash(t.app,authmod),hotfix:{sourceSha:authmod,diffHash:'d'.repeat(64)},
+    mainReconciliation:{status:'pending',required:true,sourceSha:authmod,diffHash:'d'.repeat(64)},
+    approval:{sourceSha:authmod,approvalSourceSha:authmod,approvalHash:'e'.repeat(64)},
+    previousGood:{sourceSha:baseline,rollout:'rollout-1',state:'SUCCEEDED',percent:100},previousGoodRecord:baselineCommit,completedAt:'2026-11-17T12:00:00Z'};
+  const hotfixCommit=appendRecord(t,hotfixRecord,baselineCommit);
+  const result=await deploy(t.app,t.environment,{rollback:true,execute:true},f.io);
+  assert.equal(result.record.kind,'rollback');assert.equal(result.record.sourceSha,baseline);
+  assert.deepEqual(f.submitted.map(args=>args[args.indexOf('--git-commit')+1]),[baseline]);
+  assert.equal(releaseRecord(t.branch).record.sourceSha,baseline);
+  assert.equal(releaseRecord(t.branch).record.previousGoodRecord,hotfixCommit);
+}));
+
 test('configuration-only rollout requires the exact approved plan hash, preserves source, and verifies effective serving config', () => fixture(async ({baseline}) => {
   const t=target('hub','prod'), f=releaseIO(t,baseline), current=f.rollouts[0];
   f.backend.overrideEnv=[{variable:'UNRELATED_SECRET_SETTING',value:'never-show-this-runtime-value'}];
