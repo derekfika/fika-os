@@ -27,7 +27,10 @@ export function mergeMissingProductionOrderLines(plan: ProductionPlan, orderId: 
   const sameName = (left: string, right: string) => left.trim().toLocaleLowerCase("en-GB") === right.trim().toLocaleLowerCase("en-GB");
   // A reviewed dish whose Production Order line was renamed is a different dish: it takes the new source name and every row is
   // reopened (unrecorded, unconfirmed). The baseline is server-owned; an item with no baseline simply adopts the current name.
-  const reconciled = plan.menuItems.filter(item => !item.sourceLineId || lineById.has(item.sourceLineId)).map((item) => {
+  const reconciled = plan.menuItems.filter(item => {
+    const sourceOwned = Boolean(item.sourceEntryId || item.sourceCanonicalDishId || item.sourceLineId?.startsWith(`${orderId}:line:`));
+    return !sourceOwned || !item.sourceLineId || lineById.has(item.sourceLineId);
+  }).map((item) => {
     const line = item.sourceLineId ? lineById.get(item.sourceLineId) : undefined;
     const current = line ? sourceName.get(line.canonicalId) : undefined;
     if (!line || current === undefined) return item;

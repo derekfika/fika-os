@@ -76,6 +76,10 @@ test("source reconciliation removes withdrawn and zero-portion dishes from the c
   const plan = { menuItems: [item], status: "planned" } as unknown as ProductionPlan;
   const removed = mergeMissingProductionOrderLines(plan, "order:bank", []);
   assert.equal(removed.menuItems.length, 0);
+  const legacySource = mergeMissingProductionOrderLines({ ...plan, menuItems: [{ ...item, sourceEntryId: undefined, sourceCanonicalDishId: undefined, sourceLineId: "order:bank:line:1" }] } as ProductionPlan, "order:bank", []);
+  assert.equal(legacySource.menuItems.length, 0, "legacy Hub canonical line identities are still recognized as source-owned");
+  const authored = mergeMissingProductionOrderLines({ ...plan, menuItems: [{ ...item, sourceEntryId: undefined, sourceCanonicalDishId: undefined, sourceLineId: "cpu-custom:1" }] } as ProductionPlan, "order:bank", []);
+  assert.equal(authored.menuItems.length, 1, "unmatched authored CPU rows remain available for review");
   const zero = mergeMissingProductionOrderLines(plan, "order:bank", [{ canonicalId: "hub-line:1", itemName: "Soup", customerQuantity: 0 }]);
   assert.equal(zero.menuItems.length, 0);
 });
