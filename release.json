@@ -7,49 +7,40 @@
   "region": "europe-west4",
   "branch": "release/staging/menu",
   "validation": {
-    "id": 131920684583,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/43435594843/job/131920684583",
-    "sha": "590d319e64633eda175da92bc25a5784ebe4efe3"
+    "id": 134059124962,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/44088566888/job/134059124962",
+    "sha": "edaff51cf1a5c3f80eacff6a336abcacd27d49e4"
   },
   "provenance": {
-    "number": 540,
-    "url": "https://github.com/derekfika/fika-os/pull/540",
-    "head": "fe0303b8c7fd7f99d049c59d45afa9351626c926"
+    "number": 573,
+    "url": "https://github.com/derekfika/fika-os/pull/573",
+    "head": "d75d4bee7189877e67c3255c77676880aea716d3"
   },
-  "sourceSha": "590d319e64633eda175da92bc25a5784ebe4efe3",
-  "scopeHash": "3bf797ea26c90701dc1f12453d70e07e5894f155059bc2004e27f7930671b3e9",
+  "sourceSha": "edaff51cf1a5c3f80eacff6a336abcacd27d49e4",
+  "scopeHash": "30d72145a3eda3d3b444766fe8924f25a6229385210a990e6afcb017fea2a75d",
   "rollback": false,
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "menu",
     "environment": "staging",
-    "sourceSha": "590d319e64633eda175da92bc25a5784ebe4efe3",
+    "sourceSha": "edaff51cf1a5c3f80eacff6a336abcacd27d49e4",
     "action": "deploy",
     "instruction": "Execute deploy",
     "releaseId": null,
-    "id": "0822d4af0a05ed77a1dc77b4312a618abe2dab14e01fccb28e6cf03b8f82da31",
+    "id": "a9a8bd0660dca757909703695a1a97bd1285a3f7cda0d8586b4752c95ac0d9ae",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-13T13:52:49.178Z"
+    "authorisedAt": "2026-11-17T13:59:01.487Z"
   },
-  "rollout": "build-2026-11-13-001",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "04574bb6-88e0-4104-8d15-e0e7e69d54c7",
   "previousGood": {
-    "sourceSha": "ea7f535a5d978ec154d19ffd1ed42af79321a264",
-    "rollout": "build-2026-11-12-002",
+    "sourceSha": "590d319e64633eda175da92bc25a5784ebe4efe3",
+    "rollout": "build-2026-11-13-001",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "41dd6087825bf211a609a3ed580d23ef545e048f",
-  "releaseId": "e501a0de-de85-406e-a80c-9dd6b73442ef",
-  "completedAt": "2026-11-13T13:56:11.059Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-menu-planning-staging--fika-os-dev.europe-west4.hosted.app/api/build-info",
-    "appId": "menu-planning",
-    "buildSha": "590d319e64633eda175da92bc25a5784ebe4efe3"
-  }
+  "previousGoodRecord": "9e631a88d353379483cfa65beb8d39574571e58f",
+  "createdAt": "2026-11-17T13:59:06.568Z"
 }
