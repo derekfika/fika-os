@@ -28,7 +28,7 @@ test("staging config uses the Logistics API base and shared internal token secre
   assert.match(config, /FIKA_STAGING_DRIVE_EMAIL[\s\S]*?value: fika-staging-drive@fika-os-dev\.iam\.gserviceaccount\.com/);
   assert.match(config, /FIKA_STAGING_DRIVE_PERMISSION_ID[\s\S]*?value: "08677769820296169060"/);
   assert.match(config, /FIKA_STAGING_DRIVE_ROOT_ID[\s\S]*?value: 1B3oV4dmb3UpwTPRDjJ4B0hES1rRL1M5z/);
-  assert.match(config, /FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS[\s\S]*?value: "110453433265748456567,08677769820296169060"/);
+  assert.match(config, /FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS[\s\S]*?value: "13815538875660772973,08677769820296169060"/);
   assert.match(config, /FIKA_STAGING_DRIVE_PRODUCTION_SENTINEL_IDS[\s\S]*?value: "1uOdUgHQD7O3Op6DzgyslXG3-_aeYRm08,/);
   assert.doesNotMatch(config, /GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON/);
   assert.match(config, /variable:\s*CPU_PRODUCTION_BASE_URL[\s\S]*?value:\s*https:\/\/cpu-staging\.fikacatering\.com/);
@@ -38,6 +38,7 @@ test("staging config uses the Logistics API base and shared internal token secre
   assert.match(config, /FIKA_ALLOWED_APP_ORIGINS[\s\S]*https:\/\/cpu-staging\.fikacatering\.com[\s\S]*https:\/\/logistics-staging\.fikacatering\.com[\s\S]*https:\/\/menu-planning-staging\.fikacatering\.com[\s\S]*https:\/\/hospitality-staging\.fikacatering\.com[\s\S]*https:\/\/delivered-in-staging\.fikacatering\.com[\s\S]*https:\/\/adhoc-staging\.fikacatering\.com[\s\S]*https:\/\/fika-hospitality-staging--fika-os-dev\.europe-west4\.hosted\.app[\s\S]*https:\/\/fika-cpu-production-staging--fika-os-dev\.europe-west4\.hosted\.app[\s\S]*https:\/\/fika-delivered-in-staging--fika-os-dev\.europe-west4\.hosted\.app/);
   assert.match(config, /variable:\s*FIKA_INTERNAL_API_TOKEN[\s\S]*?secret:\s*FIKA_INTERNAL_API_TOKEN@3/);
   const productionConfig = readFileSync(new URL("../apphosting.production.yaml", import.meta.url), "utf8");
+  assert.doesNotMatch(productionConfig, /FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS|13815538875660772973|08677769820296169060/);
   assert.match(productionConfig, /variable:\s*FIKA_APP_AD_HOC_URL\s*\n\s*value:\s*https:\/\/adhoc\.fikacatering\.com\s*\n\s*availability:\s*\[BUILD, RUNTIME\]/);
   assert.match(productionConfig, /FIKA_ALLOWED_APP_ORIGINS[\s\S]*?value:[^\n]*https:\/\/adhoc\.fikacatering\.com/);
   assert.doesNotMatch(productionConfig, /https:\/\/adhoc-staging\.fikacatering\.com/);
