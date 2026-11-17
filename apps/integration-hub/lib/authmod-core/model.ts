@@ -30,6 +30,11 @@ export type SiteAssignment = EffectivePeriod & {
   id: string; identityId: string; oplocId: string; status: RecordStatus; source: Provenance; accessType?: AccessType; reason?: string;
   grantedBy?: string; revokedBy?: string; version: number; createdAt: string; updatedAt: string;
 };
+/** Application-specific coverage of every currently active canonical OPLOC. */
+export type AppOplocScope = EffectivePeriod & {
+  id: string; identityId: string; appId: string; kind: "all-active-oplocs"; status: RecordStatus;
+  accessType?: AccessType; reason?: string; grantedBy: string; revokedBy?: string; version: number; createdAt: string; updatedAt: string;
+};
 export type AppAssignment = EffectivePeriod & {
   id: string; identityId: string; appId: string; status: RecordStatus; bundleId?: string; source: Provenance; accessType?: AccessType;
   reason?: string; grantedBy?: string; revokedBy?: string; version: number; createdAt: string; updatedAt: string;
@@ -77,7 +82,7 @@ export type ServicePrincipalIdentity = { type: "service"; id: string; displayNam
 export type AuthPrincipal = InteractivePrincipal | ServicePrincipalIdentity;
 export type AuthorizationDecision = {
   allowed: boolean; principalId: string; principalType: PrincipalType; appId?: string; action?: AuthModAction;
-  scope?: Scope; matchedGrantIds: string[];
+  scope?: Scope; matchedGrantIds: string[]; matchedAccessScopeIds?: string[];
   validUntil?: string;
   reasonCode: "allowed" | "unauthenticated" | "identity-inactive" | "service-inactive" | "app-disabled" |
   "app-not-assigned" | "oploc-not-assigned" | "authority-not-granted" | "scope-not-authorized" | "invalid-request" | "store-unavailable";

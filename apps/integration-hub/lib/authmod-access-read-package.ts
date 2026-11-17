@@ -2,7 +2,7 @@ import { encodeReadPackage, publishReadPackage, retrieveReadPackage, type ReadPa
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { db } from "./firebase-admin";
 import { oplocPackageStore } from "./oploc-read-package";
-import type { AppAssignment, AuthIdentity, AuthorityGrant, CustodianAssignment, DelegationRecord, SiteAssignment } from "./authmod-core/model";
+import type { AppAssignment, AppOplocScope, AuthIdentity, AuthorityGrant, CustodianAssignment, DelegationRecord, SiteAssignment } from "./authmod-core/model";
 
 export const AUTHMOD_ACCESS_DATASET = "integration-hub/authmod-access";
 export const authmodAccessManifestKey = (identityId: string) => `${AUTHMOD_ACCESS_DATASET}/${encodeURIComponent(identityId)}`;
@@ -10,6 +10,7 @@ export type AuthmodAccessReadPackage = {
   identity: AuthIdentity;
   appAssignments: AppAssignment[];
   siteAssignments: SiteAssignment[];
+  appOplocScopes?: AppOplocScope[];
   authorityGrants: AuthorityGrant[];
   delegations: DelegationRecord[];
   custodians: CustodianAssignment[];
@@ -19,6 +20,7 @@ export type AuthmodAccessReadPackage = {
 export function validateAuthmodAccessReadPackage(value: AuthmodAccessReadPackage) {
   if (!value || !value.identity?.id || !Number.isSafeInteger(value.securityVersion) || value.securityVersion < 0) throw Object.assign(new Error("AUTHMOD access package is invalid."), { status: 503, code: "AUTHMOD_ACCESS_PACKAGE_INVALID" });
   for (const field of ["appAssignments", "siteAssignments", "authorityGrants", "delegations", "custodians"] as const) if (!Array.isArray(value[field])) throw Object.assign(new Error(`AUTHMOD access package ${field} is invalid.`), { status: 503, code: "AUTHMOD_ACCESS_PACKAGE_INVALID" });
+  if (value.appOplocScopes !== undefined && !Array.isArray(value.appOplocScopes)) throw Object.assign(new Error("AUTHMOD access package appOplocScopes is invalid."), { status: 503, code: "AUTHMOD_ACCESS_PACKAGE_INVALID" });
   return value;
 }
 
@@ -38,10 +40,11 @@ export function bumpAuthmodAccessHead(transaction: FirebaseFirestore.Transaction
 }
 
 export async function rebuildAuthmodAccessReadPackage(identityId: string): Promise<ReadPackageManifest> {
-  const [identity, apps, sites, grants, delegations, custodians] = await Promise.all([
+  const [identity, apps, sites, appScopes, grants, delegations, custodians] = await Promise.all([
     db.collection("authmodIdentities").doc(identityId).get(),
     db.collection("authmodAppAssignments").where("identityId", "==", identityId).get(),
     db.collection("authmodSiteAssignments").where("identityId", "==", identityId).get(),
+    db.collection("authmodAppOplocScopes").where("identityId", "==", identityId).get(),
     db.collection("authmodAuthorityGrants").where("subjectId", "==", identityId).get(),
     db.collection("authmodDelegations").where("delegateId", "==", identityId).get(),
     db.collection("authmodCustodianAssignments").where("operationalIdentityId", "==", identityId).get(),
@@ -53,6 +56,7 @@ export async function rebuildAuthmodAccessReadPackage(identityId: string): Promi
     identity: identity.data() as AuthIdentity,
     appAssignments: apps.docs.map(value => value.data() as AppAssignment),
     siteAssignments: sites.docs.map(value => value.data() as SiteAssignment),
+    appOplocScopes: appScopes.docs.map(value => value.data() as AppOplocScope),
     authorityGrants: grants.docs.map(value => value.data() as AuthorityGrant),
     delegations: delegations.docs.map(value => value.data() as DelegationRecord),
     custodians: custodians.docs.map(value => value.data() as CustodianAssignment),
@@ -60,10 +64,10 @@ export async function rebuildAuthmodAccessReadPackage(identityId: string): Promi
   };
   const store = oplocPackageStore();
   const previous = await store.getManifest(authmodAccessManifestKey(identityId));
-  const encoded = encodeReadPackage(AUTHMOD_ACCESS_DATASET, (previous?.packageVersion || 0) + 1, value, apps.size + sites.size + grants.size + delegations.size + custodians.size + 1, { contractVersion: "integration-hub.authmod-access.v1", sourceVersion: `authmod-security:${securityVersion}`, scope: identityId });
+  const encoded = encodeReadPackage(AUTHMOD_ACCESS_DATASET, (previous?.packageVersion || 0) + 1, value, apps.size + sites.size + appScopes.size + grants.size + delegations.size + custodians.size + 1, { contractVersion: "integration-hub.authmod-access.v1", sourceVersion: `authmod-security:${securityVersion}`, scope: identityId });
   const manifest = await publishReadPackage<AuthmodAccessReadPackage>(store, authmodAccessManifestKey(identityId), encoded);
   entries.set(identityId, { version: securityVersion, value });
-  recordDataAccess({ app: "integration-hub", operation: "authmod.package.rebuild", source: "FIRESTORE", documents: apps.size + sites.size + grants.size + delegations.size + custodians.size + 1, cacheHit: false });
+  recordDataAccess({ app: "integration-hub", operation: "authmod.package.rebuild", source: "FIRESTORE", documents: apps.size + sites.size + appScopes.size + grants.size + delegations.size + custodians.size + 1, cacheHit: false });
   return manifest;
 }
 

@@ -10,7 +10,7 @@ import { canonicalProductionFailureKind, productionOrderDetail, productionQueue,
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
 import { rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
-import { requireCpuActor } from "../../../lib/cpu-access-client";
+import { cpuDestinationAllowed, requireCpuActor, requireCpuDestinationScope } from "../../../lib/cpu-access-client";
 import { hubJson } from "../../../lib/production-http-client";
 import { containedMatrixReviewStatus, containedMatrixStatus, matrixDriveConfiguration, containArtifactLinks } from "../../lib/matrix-drive-config";
 import { loadDeliveredInReviewStatuses, parseDeliveredInReviewOrderIds } from "../../../lib/delivered-in-review";
@@ -301,6 +301,10 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
   const startedAt = Date.now();
   const auditActor = actor.name || actor.uid;
   const sourceOrders = (await productionQueue(request, command.serviceDate)).filter(order => order.origin === "menu_planning" && !order.supersededBy && (order.serviceDate || order.requiredBy.slice(0, 10)) === command.serviceDate);
+  const destinationScope = await requireCpuDestinationScope(request);
+  if (sourceOrders.some(order => !cpuDestinationAllowed(destinationScope, order.destinationOplocId, order.destination))) {
+    throw Object.assign(new Error("Your CPU Production site access does not cover every OPLOC in this service-date master matrix. Ask an AUTHMOD Administrator to review your CPU Production site scope, then reload the matrix."), { status: 403, code: "AUTHMOD_OPLOC_SCOPE_INCOMPLETE" });
+  }
   const orderIds = [...new Set(command.orderIds)];
   const expectedByOrderId = new Map(command.expectedLineages.map(lineage => [lineage.productionOrderId, lineage]));
   const reviewByOrderId = new Map(command.reviewOperations.map(operation => [operation.orderId, operation]));

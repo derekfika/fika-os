@@ -12,6 +12,7 @@ export class AuthModEvaluationContext {
   private grantsPromise?: Promise<Awaited<ReturnType<AuthModRepository["listAuthorityGrants"]>>>;
   private appAssignmentsPromise?: Promise<Awaited<ReturnType<AuthModRepository["listAppAssignments"]>>>;
   private siteAssignmentsPromise?: Promise<Awaited<ReturnType<AuthModRepository["listSiteAssignments"]>>>;
+  private appOplocScopesPromise?: Promise<Awaited<ReturnType<AuthModRepository["listAppOplocScopes"]>>>;
   private applicationPromises = new Map<string, Promise<Awaited<ReturnType<AuthModRepository["getApplication"]>>>>();
   private oplocPromises = new Map<string, Promise<Awaited<ReturnType<AuthModRepository["getActiveOploc"]>>>>();
   private delegationsPromise?: Promise<Awaited<ReturnType<AuthModRepository["listDelegations"]>>>;
@@ -23,6 +24,7 @@ export class AuthModEvaluationContext {
   grants() { return this.grantsPromise ||= this.repository.getRuntimeAccessPackage ? this.runtimePackage().then(value => value?.authorityGrants || []) : this.principal.type === "interactive" ? this.repository.listAuthorityGrants(this.principal.id, "interactive") : Promise.resolve([]); }
   appAssignments() { return this.appAssignmentsPromise ||= this.repository.getRuntimeAccessPackage ? this.runtimePackage().then(value => value?.appAssignments || []) : this.identity().then(identity => identity ? this.repository.listAppAssignments(identity.id) : []); }
   siteAssignments() { return this.siteAssignmentsPromise ||= this.repository.getRuntimeAccessPackage ? this.runtimePackage().then(value => value?.siteAssignments || []) : this.identity().then(identity => identity ? this.repository.listSiteAssignments(identity.id) : []); }
+  appOplocScopes() { return this.appOplocScopesPromise ||= this.repository.getRuntimeAccessPackage ? this.runtimePackage().then(value => value?.appOplocScopes || []) : this.identity().then(identity => identity ? this.repository.listAppOplocScopes(identity.id) : []); }
   application(appId: string) { let result = this.applicationPromises.get(appId); if (!result) { result = this.repository.getApplication(appId); this.applicationPromises.set(appId, result); } return result; }
   activeOploc(oplocId: string) { const seeded = this.seededOplocs.get(oplocId); if (seeded) return Promise.resolve(seeded); let result = this.oplocPromises.get(oplocId); if (!result) { result = this.repository.getActiveOploc(oplocId); this.oplocPromises.set(oplocId, result); } return result; }
   activeOplocs() { return this.activeOplocsPromise ||= this.repository.listActiveOplocs(); }
@@ -71,16 +73,18 @@ export async function resolveUserAccess(repository: AuthModRepository, input: { 
     const assignment = (await context.appAssignments()).find(value => value.appId === input.appId && isEffective(value));
     if (!assignment && !hasFullAccess) return deny(input.principal, "app-not-assigned", { appId: input.appId });
     const requestedOplocIds = input.oplocIds || (input.oplocId ? [input.oplocId] : []);
+    const appOplocScopes = await context.appOplocScopes();
+    const allActiveScope = appOplocScopes.find(value => value.appId === input.appId && value.kind === "all-active-oplocs" && isEffective(value));
     if (app.scopeModel !== "none" && requestedOplocIds.length) {
       const siteAssignments = await context.siteAssignments();
       const activeOplocs = await Promise.all(requestedOplocIds.map(oplocId => context.activeOploc(oplocId)));
-      const siteAllowed = requestedOplocIds.every((oplocId, index) => Boolean(activeOplocs[index]) && (hasFullAccess || siteAssignments.some(value => value.oplocId === oplocId && isEffective(value))));
+      const siteAllowed = requestedOplocIds.every((oplocId, index) => Boolean(activeOplocs[index]) && (hasFullAccess || Boolean(allActiveScope) || siteAssignments.some(value => value.oplocId === oplocId && isEffective(value))));
       if (!siteAllowed) return deny(input.principal, "oploc-not-assigned", { appId: input.appId, scope: { kind: "oploc", ids: requestedOplocIds } });
     }
     const normalGrantIds = grants.filter(value => value.appId === input.appId && value.provenance === "standard-app-access" && isEffective(value)).map(value => value.id);
     const selectedSiteAssignments = requestedOplocIds.length ? await context.siteAssignments() : [];
-    const validUntil = earliestExpiry(identity, assignment, ...requestedOplocIds.map(id => selectedSiteAssignments.find(value => value.oplocId === id && isEffective(value))));
-    return { allowed: true, principalId: identity.id, principalType: "interactive", appId: input.appId, scope: input.oplocId ? { kind: "oploc", ids: [input.oplocId] } : undefined, matchedGrantIds: normalGrantIds, reasonCode: "allowed", ...(validUntil ? { validUntil } : {}) };
+    const validUntil = earliestExpiry(identity, assignment, ...(allActiveScope && requestedOplocIds.length ? [allActiveScope] : []), ...requestedOplocIds.map(id => selectedSiteAssignments.find(value => value.oplocId === id && isEffective(value))));
+    return { allowed: true, principalId: identity.id, principalType: "interactive", appId: input.appId, scope: input.oplocId ? { kind: "oploc", ids: [input.oplocId] } : undefined, matchedGrantIds: normalGrantIds, ...(allActiveScope && requestedOplocIds.length && !hasFullAccess ? { matchedAccessScopeIds: [allActiveScope.id] } : {}), reasonCode: "allowed", ...(validUntil ? { validUntil } : {}) };
   } catch { return deny(input.principal, "store-unavailable"); }
 }
 export async function evaluateAuthority(repository: AuthModRepository, input: { principal: AuthPrincipal; appId: string; resource: string; action: AuthModAction; scope?: Scope }, context = createAuthModEvaluationContext(repository, input.principal)): Promise<AuthorizationDecision> {

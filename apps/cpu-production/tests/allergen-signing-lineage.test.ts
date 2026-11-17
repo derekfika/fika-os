@@ -202,6 +202,11 @@ test("master signing commits the latest reviewed matrix with its signature", asy
   assert.match(route, /role: command\.role/);
   assert.match(route, /fullySigned/);
   assert.match(route, /postCommitStatus: "queued"/);
+  const master = extractSourceBetween(route, "async function applyMasterSignatureBatch", "async function applyMatrixOperation");
+  assert.match(master, /requireCpuDestinationScope/);
+  assert.match(master, /cpuDestinationAllowed/);
+  assert.match(master, /status: 403, code: "AUTHMOD_OPLOC_SCOPE_INCOMPLETE"/);
+  assert.ok(master.indexOf("AUTHMOD_OPLOC_SCOPE_INCOMPLETE") < master.indexOf("CPU_MASTER_SIGN_MEMBERSHIP_CONFLICT"), "site authorization must fail explicitly before matrix membership validation");
 });
 
 test("master signing queues durable post-commit work after the authoritative commit", async () => {
