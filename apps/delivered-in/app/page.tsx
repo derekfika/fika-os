@@ -14,6 +14,8 @@ import {
 } from "./lib/delivered-in-indexeddb";
 import { deliveredInHref, readDeliveredInLocation } from "../lib/navigation";
 import AllergenSafetyNotice from "./allergen-safety-notice";
+import HospitalityBuffetOrders from "./hospitality-buffet-orders";
+import "./hospitality-buffet-orders.css";
 import { cpuReviewStatusLabel } from "./lib/cpu-review-status";
 import { currentAllergenDocument } from "../lib/allergen-documentation";
 import { publicHubBase } from "../lib/upstream-config";
@@ -419,16 +421,19 @@ function Sidebar({ day }: { day: ProjectedDay }) {
 function TodayView({
   site,
   day,
+  serviceDate,
   onGenerated,
 }: {
   site: Site;
   day?: ProjectedDay;
+  serviceDate: string;
   onGenerated: () => void;
 }) {
   if (!day)
     return (
       <>
         <Header site={site} />
+        <HospitalityBuffetOrders site={site} serviceDate={serviceDate} />
         <div className="ops-empty">
           <h2>No published Delivered-In menu for today.</h2>
           <p>There is no published operational menu for this service date.</p>
@@ -439,6 +444,7 @@ function TodayView({
     return (
       <>
         <Header site={site} day={day} />
+        <HospitalityBuffetOrders site={site} serviceDate={serviceDate} />
         <div className="ops-empty">
           <h2>Published — No service / no menu items.</h2>
           <p>This service day was intentionally published blank.</p>
@@ -449,6 +455,7 @@ function TodayView({
     <>
       <AllergenSafetyNotice day={day} site={site} />
       <Header site={site} day={day} />
+      <HospitalityBuffetOrders site={site} serviceDate={serviceDate} />
       <div className="ops-layout">
         <div>
           <DishTable day={day} />
@@ -895,6 +902,7 @@ export default function Page() {
               <TodayView
                 site={selectedSite}
                 day={selectedDay}
+                serviceDate={selectedDayDate || selectedDay?.date || todayKey()}
                 onGenerated={refresh}
               />
             )}

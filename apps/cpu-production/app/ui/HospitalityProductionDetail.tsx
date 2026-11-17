@@ -1,11 +1,10 @@
 "use client";
-import { formatCatalogueChoices } from "@fika/server-shared/hospitality-effective-offering";
-
 import type { ProductionOrder } from "../../lib/production-types";
 import { eventGuestCountLabel, orderedQuantityLabel } from "../../lib/ordered-quantity";
 import "./hospitality-production-detail.css";
 import BookingContext from "./BookingContext";
 import SignedAllergenPdfAction from "./SignedAllergenPdfAction";
+import { ProductionOrderChoices } from "./BuffetOrderChoice";
 
 function dateLabel(order: ProductionOrder) {
   const date = order.serviceDate || order.requiredBy.slice(0, 10);
@@ -48,7 +47,7 @@ export default function HospitalityProductionDetail({
           {order.lines.map((line) => (
             <div key={line.canonicalId}>
               <strong>{orderedQuantityLabel(line)}</strong>
-              <span>{line.itemName}<small>Customer ordered</small>{line.choices?.length ? <small>{formatCatalogueChoices(line.choices).join(" · ")}</small> : null}</span>
+              <span>{line.itemName}<small>Customer ordered</small><ProductionOrderChoices choices={line.choices} /></span>
             </div>
           ))}
         </div>
@@ -60,6 +59,7 @@ export default function HospitalityProductionDetail({
           <div><dt>Required ready</dt><dd>{order.requiredBy?.replace("T", " · ") || "Time TBC"}</dd></div>
           <div><dt>Production lines</dt><dd>{order.lines.length}</dd></div>
           <div><dt>Destination</dt><dd>{order.destinationLabel || order.destinationOplocId || "Not assigned"}</dd></div>
+          <div><dt>Event location</dt><dd>{[order.serviceLocation?.floorLevel, order.serviceLocation?.roomOrArea].filter(Boolean).join(" · ") || "Not assigned"}</dd></div>
         </dl>
       </section>
       <SignedAllergenPdfAction orderId={order.canonicalId} />
