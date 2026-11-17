@@ -23,6 +23,7 @@ type MatrixLineage = {
   sourcePublicationDayId: string;
   sourceVersion: number;
   sourceContentHash: string;
+  allergenEvidenceHash?: string;
   matrixContentHash: string;
 };
 type MatrixStatus = { orderId: string; signatureRoles: SignatureRole[]; matrixStatus?: string; sourceLineage?: MatrixLineage };
@@ -30,7 +31,7 @@ const MATERIALIZATION_GRACE_MS = 15_000;
 const MAX_PARALLEL_RETRIES = 4;
 
 function sameLineage(left: MatrixLineage | undefined, right: MatrixLineage | undefined) {
-  return Boolean(left && right && left.productionOrderId === right.productionOrderId && left.serviceDate === right.serviceDate && left.sourceDayId === right.sourceDayId && left.sourcePublicationId === right.sourcePublicationId && left.sourcePublicationDayId === right.sourcePublicationDayId && left.sourceVersion === right.sourceVersion && left.sourceContentHash === right.sourceContentHash && left.matrixContentHash === right.matrixContentHash);
+  return Boolean(left && right && left.productionOrderId === right.productionOrderId && left.serviceDate === right.serviceDate && left.sourceDayId === right.sourceDayId && left.sourcePublicationId === right.sourcePublicationId && left.sourcePublicationDayId === right.sourcePublicationDayId && left.sourceVersion === right.sourceVersion && left.sourceContentHash === right.sourceContentHash && left.allergenEvidenceHash === right.allergenEvidenceHash && left.matrixContentHash === right.matrixContentHash);
 }
 
 function formatDate(date: string) {

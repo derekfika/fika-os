@@ -7,7 +7,7 @@ import { hospitalityArchiveBase } from "./hospitality-archive-url";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { CanonicalAllergenMap } from "./fika-contracts";
+import { CANONICAL_ALLERGEN_KEYS, type CanonicalAllergenMap } from "./fika-contracts";
 import type {
   RollingDay,
   RollingEntry,
@@ -101,6 +101,12 @@ export type PublishedMenuEntry = {
   /** Legacy snapshots may omit this; all newly published entries write it. */
   allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting";
   allergenEvidenceReason?: string;
+  /** Stable semantic fingerprint of canonical ingredients, recipe inputs and complete allergen evidence. */
+  allergenEvidenceHash?: string;
+  /** Hash of the authoritative canonical ingredient/yield revision used in the evidence fingerprint. */
+  canonicalIngredientRecipeHash?: string;
+  /** False/absent means equivalence cannot be proven and an amendment requires fresh review. */
+  allergenEvidenceComplete?: boolean;
   mayContainNotes?: string; allergenDetailNotes?: string;
 };
 export type CompiledPublishedWeekSnapshot = {
@@ -177,6 +183,7 @@ export type MenuPublication = {
     publicationDayId?: string;
     requestId?: string;
     changeSetHash?: string;
+    impactSummary?: PublishedWeekAmendmentImpactSummary;
     sourceWeekVersion?: number;
     handoffEventIds?: string[];
   }>;
@@ -283,6 +290,36 @@ const publishedEntry = (
     throw Object.assign(new Error(`${day?.dayName || "Menu day"}: ${entry.itemLabel || entry.slot} cannot be published because governed allergen evidence is unresolved (${resolved.unresolved.join(", ")}).`), { status: 422, code: "PUBLICATION_ALLERGEN_UNRESOLVED" });
   }
   const mayContainNotes = entry.mayContainNotes ?? resolved.mayContainNotes;
+  const allergenEvidenceComplete = Boolean(
+    canonicalDish && canonicalDish.ingredients?.length && canonicalDish.allergenEvidence.length > 0 && canonicalDish.mayContainReviewed &&
+    canonicalDish.allergenEvidence.every(evidence => evidence.value === "contains" || evidence.value === "free_from" || evidence.value === "may_contain") &&
+    resolved.evidenceStatus === "confirmed" && CANONICAL_ALLERGEN_KEYS.every(key => ["clear", "contains", "may_contain"].includes(resolved.allergens[key] || "")),
+  );
+  const canonicalIngredientRecipeHash = canonicalDish ? contentHash({
+    canonicalDishId: canonicalDish.canonicalId,
+    ingredients: (canonicalDish.ingredients || []).map(ingredient => ({
+      name: ingredient.name.trim().normalize("NFKC").toLocaleLowerCase("en-GB"),
+      ...(ingredient.quantity !== undefined ? { quantity: ingredient.quantity } : {}),
+      ...(ingredient.unit ? { unit: ingredient.unit.trim().normalize("NFKC").toLocaleLowerCase("en-GB") } : {}),
+      ...(ingredient.rawText ? { rawText: ingredient.rawText.trim().normalize("NFKC").toLocaleLowerCase("en-GB") } : {}),
+    })),
+    yield: canonicalDish.yield ?? null,
+    yieldUnit: canonicalDish.yieldUnit?.trim().normalize("NFKC").toLocaleLowerCase("en-GB") || null,
+  }) : undefined;
+  const allergenEvidenceHash = canonicalDish ? contentHash({
+    canonicalIngredientRecipeHash,
+    evidence: canonicalDish.allergenEvidence.map(evidence => ({
+      allergen: evidence.allergen.trim().normalize("NFKC").toLocaleLowerCase("en-GB"),
+      value: evidence.value,
+      source: evidence.source.trim().normalize("NFKC"),
+      notes: evidence.notes?.trim().normalize("NFKC") || "",
+    })).sort((left, right) => compareStableText(left.allergen, right.allergen) || compareStableText(left.value, right.value) || compareStableText(left.source, right.source)),
+    mayContainReviewed: canonicalDish.mayContainReviewed,
+    operationalAllergens: resolved.allergens,
+    mayContainNotes: mayContainNotes?.trim().normalize("NFKC") || "",
+    allergenDetailNotes: entry.allergenDetailNotes?.trim().normalize("NFKC") || "",
+    allergenEvidenceStatus: resolved.evidenceStatus,
+  }) : undefined;
   const canonicalSlotId = canonicalMenuSlotIdFor(entry.slot);
   const canonicalOrderIndex = canonicalSlotId
     ? CANONICAL_MENU_SLOTS.findIndex(item => item.id === canonicalSlotId)
@@ -315,6 +352,7 @@ const publishedEntry = (
     ...(entry.allergenReview ? { allergenReview: clone(entry.allergenReview) } : {}),
     ...(entry.noKeyDeclaration ? { noKeyDeclaration: clone(entry.noKeyDeclaration) } : {}),
     allergenEvidenceStatus: resolved.evidenceStatus,
+    ...(allergenEvidenceHash ? { allergenEvidenceHash, allergenEvidenceComplete, canonicalIngredientRecipeHash } : {}),
     ...(resolved.evidenceReason ? { allergenEvidenceReason: resolved.evidenceReason } : {}),
     ...(mayContainNotes !== undefined ? { mayContainNotes } : {}),
     ...(entry.allergenDetailNotes !== undefined ? { allergenDetailNotes: entry.allergenDetailNotes } : {}),
@@ -670,6 +708,9 @@ function appendPublicationEvents(
                         noKeyDeclaration: entry.noKeyDeclaration,
                         allergenDetailNotes: entry.allergenDetailNotes,
                         allergenEvidenceStatus: entry.allergenEvidenceStatus,
+                        ...(entry.allergenEvidenceHash ? { allergenEvidenceHash: entry.allergenEvidenceHash } : {}),
+                        ...(entry.canonicalIngredientRecipeHash ? { canonicalIngredientRecipeHash: entry.canonicalIngredientRecipeHash } : {}),
+                        ...(entry.allergenEvidenceComplete !== undefined ? { allergenEvidenceComplete: entry.allergenEvidenceComplete } : {}),
                         ...(entry.mayContainNotes !== undefined
                           ? { mayContainNotes: entry.mayContainNotes }
                           : {}),
@@ -762,11 +803,12 @@ export type WorkingPublicationComparison = {
   hasUnpublishedChanges: boolean;
   dayHasUnpublishedChanges: Record<string, boolean>;
   changeSet: PublishedWeekDemandChangeSet;
+  impactSummary: PublishedWeekAmendmentImpactSummary;
 };
 export type PublishedDemandEvidence = Pick<PublishedMenuEntry,
   "sourceEntryId" | "canonicalDishId" | "dishName" | "allergens" | "allergenReview" |
   "noKeyDeclaration" | "allergenEvidenceStatus" | "allergenEvidenceReason" |
-  "mayContainNotes" | "allergenDetailNotes"
+  "mayContainNotes" | "allergenDetailNotes" | "allergenEvidenceHash" | "canonicalIngredientRecipeHash" | "allergenEvidenceComplete"
 >;
 export type PublishedWeekDemandOperation = {
   kind: "added" | "removed" | "replaced" | "quantity_changed" | "details_changed";
@@ -776,8 +818,8 @@ export type PublishedWeekDemandOperation = {
   siteId: string;
   siteLabel: string;
   slot: string;
-  before?: { dishId: string; dishName: string; quantity: number; entries: PublishedDemandEvidence[] };
-  after?: { dishId: string; dishName: string; quantity: number; entries: PublishedDemandEvidence[] };
+  before?: { date: string; dayName: string; dishId: string; dishName: string; quantity: number; entries: PublishedDemandEvidence[] };
+  after?: { date: string; dayName: string; dishId: string; dishName: string; quantity: number; entries: PublishedDemandEvidence[] };
 };
 /** A read-only, source-version-pinned description for a future scoped publisher. */
 export type PublishedWeekDemandChangeSet = {
@@ -787,6 +829,22 @@ export type PublishedWeekDemandChangeSet = {
   sourceWeekVersion: number;
   days: Array<{ sourceDayId: string; publicationDayId: string; publicationDayVersion: number; contentHash: string }>;
   operations: PublishedWeekDemandOperation[];
+};
+export type PublishedWeekAmendmentImpact = {
+  sourceDayId: string;
+  date: string;
+  dayName: string;
+  siteId: string;
+  siteLabel: string;
+  productionDemand: "unchanged" | "quantity_only" | "operational_details" | "service_date_changed" | "dish_set_changed" | "new_allocation" | "withdrawal";
+  allergenApproval: "preserved" | "fresh_review_required" | "withdrawn";
+  reason: string;
+};
+export type PublishedWeekAmendmentImpactSummary = {
+  destinations: PublishedWeekAmendmentImpact[];
+  freshAllergenReviewCount: number;
+  approvalPreservationCount: number;
+  withdrawnDestinationCount: number;
 };
 type DemandLine = {
   sourceDayId: string; date: string; dayName: string; siteId: string; siteLabel: string;
@@ -816,6 +874,9 @@ function demandLines(sourceDayId: string, date: string, dayName: string, entries
       ...(entry.allergenReview ? { allergenReview: entry.allergenReview } : {}),
       ...(entry.noKeyDeclaration ? { noKeyDeclaration: entry.noKeyDeclaration } : {}),
       ...(entry.allergenEvidenceStatus ? { allergenEvidenceStatus: entry.allergenEvidenceStatus } : {}),
+      ...(entry.allergenEvidenceHash ? { allergenEvidenceHash: entry.allergenEvidenceHash } : {}),
+      ...(entry.canonicalIngredientRecipeHash ? { canonicalIngredientRecipeHash: entry.canonicalIngredientRecipeHash } : {}),
+      ...(entry.allergenEvidenceComplete !== undefined ? { allergenEvidenceComplete: entry.allergenEvidenceComplete } : {}),
       ...(entry.allergenEvidenceReason ? { allergenEvidenceReason: entry.allergenEvidenceReason } : {}),
       ...(entry.mayContainNotes !== undefined ? { mayContainNotes: entry.mayContainNotes } : {}),
       ...(entry.allergenDetailNotes !== undefined ? { allergenDetailNotes: entry.allergenDetailNotes } : {}),
@@ -825,7 +886,7 @@ function demandLines(sourceDayId: string, date: string, dayName: string, entries
   }
   return [...grouped.values()].map(line => ({ ...line, entries: line.entries.sort((a, b) => compareStableText(a.sourceEntryId, b.sourceEntryId)) })).sort(demandSort);
 }
-function demandPayload(line: DemandLine) { return { dishId: line.dishId, dishName: line.dishName, quantity: line.quantity, entries: line.entries }; }
+function demandPayload(line: DemandLine) { return { date: line.date, dayName: line.dayName, dishId: line.dishId, dishName: line.dishName, quantity: line.quantity, entries: line.entries }; }
 function makeDemandOperations(before: DemandLine[], after: DemandLine[]): PublishedWeekDemandOperation[] {
   const oldByKey = new Map(before.map(line => [JSON.stringify([line.sourceDayId, line.siteId, line.slot, line.dishId]), line]));
   const newByKey = new Map(after.map(line => [JSON.stringify([line.sourceDayId, line.siteId, line.slot, line.dishId]), line]));
@@ -848,7 +909,7 @@ function makeDemandOperations(before: DemandLine[], after: DemandLine[]): Publis
   for (const [key, oldLine] of oldByKey) {
     const next = newByKey.get(key);
     if (next && oldLine.quantity !== next.quantity) operations.push({ kind: "quantity_changed", sourceDayId: next.sourceDayId, date: next.date, dayName: next.dayName, siteId: next.siteId, siteLabel: next.siteLabel, slot: next.slot, before: demandPayload(oldLine), after: demandPayload(next) });
-    else if (next && contentHash({ siteLabel: oldLine.siteLabel, destination: oldLine.destination, destinationAddress: oldLine.destinationAddress, dishName: oldLine.dishName, entries: oldLine.entries }) !== contentHash({ siteLabel: next.siteLabel, destination: next.destination, destinationAddress: next.destinationAddress, dishName: next.dishName, entries: next.entries }))
+    else if (next && contentHash({ date: oldLine.date, dayName: oldLine.dayName, siteLabel: oldLine.siteLabel, destination: oldLine.destination, destinationAddress: oldLine.destinationAddress, dishName: oldLine.dishName, entries: oldLine.entries }) !== contentHash({ date: next.date, dayName: next.dayName, siteLabel: next.siteLabel, destination: next.destination, destinationAddress: next.destinationAddress, dishName: next.dishName, entries: next.entries }))
       operations.push({ kind: "details_changed", sourceDayId: next.sourceDayId, date: next.date, dayName: next.dayName, siteId: next.siteId, siteLabel: next.siteLabel, slot: next.slot, before: demandPayload(oldLine), after: demandPayload(next) });
   }
   for (const line of removed) if (!replacedOld.has(line)) {
@@ -856,6 +917,85 @@ function makeDemandOperations(before: DemandLine[], after: DemandLine[]): Publis
   }
   for (const line of added) if (!replacedNew.has(line)) operations.push({ kind: "added", sourceDayId: line.sourceDayId, date: line.date, dayName: line.dayName, siteId: line.siteId, siteLabel: line.siteLabel, slot: line.slot, after: demandPayload(line) });
   return operations.sort((a, b) => compareStableText(a.sourceDayId, b.sourceDayId) || compareStableText(a.siteId, b.siteId) || compareStableText(a.slot, b.slot) || compareStableText(a.kind, b.kind) || compareStableText(a.after?.dishId || a.before?.dishId || "", b.after?.dishId || b.before?.dishId || ""));
+}
+export function amendmentImpactForDays(beforeDays: readonly Pick<PublishedMenuDay, "sourceDayId" | "date" | "dayName" | "contentHash" | "entries">[], afterDays: readonly Pick<PublishedMenuDay, "sourceDayId" | "date" | "dayName" | "contentHash" | "entries">[]): PublishedWeekAmendmentImpactSummary {
+  type ImpactDay = Pick<PublishedMenuDay, "sourceDayId" | "date" | "dayName" | "contentHash" | "entries">;
+  const grouped = (days: readonly ImpactDay[]) => {
+    type ImpactEntry = { entry: PublishedMenuEntry; quantity: number; allocation: PublishedMenuEntry["allocations"][number] };
+    type SiteImpactGroup = { day: ImpactDay; siteId: string; siteLabel: string; entries: ImpactEntry[] };
+    const result = new Map<string, SiteImpactGroup>();
+    for (const day of days) for (const entry of day.entries || []) for (const allocation of entry.allocations || []) {
+      if (!Number.isFinite(allocation.quantity) || allocation.quantity <= 0) continue;
+      const siteId = publishedSiteIdentity(allocation);
+      const key = JSON.stringify([day.sourceDayId, siteId]);
+      const current: SiteImpactGroup = result.get(key) || { day, siteId, siteLabel: allocation.destinationLabel, entries: [] };
+      current.entries.push({ entry, quantity: allocation.quantity, allocation });
+      result.set(key, current);
+    }
+    return result;
+  };
+  const before = grouped(beforeDays), after = grouped(afterDays);
+  const destinations: PublishedWeekAmendmentImpact[] = [];
+  for (const key of [...new Set([...before.keys(), ...after.keys()])].sort()) {
+    const prior = before.get(key), next = after.get(key);
+    const current = next || prior!;
+    const priorIdentities = (prior?.entries || []).map(({ entry }) => `${entry.sourceEntryId}|${entry.canonicalDishId || "legacy"}`).sort();
+    const nextIdentities = (next?.entries || []).map(({ entry }) => `${entry.sourceEntryId}|${entry.canonicalDishId || "legacy"}`).sort();
+    const sameDishes = JSON.stringify(priorIdentities) === JSON.stringify(nextIdentities);
+    const quantityByIdentity = (value: typeof prior) => new Map((value?.entries || []).map(({ entry, quantity }) => [`${entry.sourceEntryId}|${entry.canonicalDishId || "legacy"}`, quantity]));
+    const priorQuantities = quantityByIdentity(prior), nextQuantities = quantityByIdentity(next);
+    const demandQuantityChanged = JSON.stringify([...priorQuantities].sort(([left], [right]) => compareStableText(left, right))) !== JSON.stringify([...nextQuantities].sort(([left], [right]) => compareStableText(left, right)));
+    const demandDetails = (value: typeof prior) => ({
+      date: value?.day.date, dayName: value?.day.dayName,
+      entries: (value?.entries || []).map(({ entry, allocation }) => ({
+      sourceEntryId: entry.sourceEntryId, canonicalDishId: entry.canonicalDishId || "", slot: entry.slot,
+      dishName: entry.dishName, destination: allocation.destination, destinationLabel: allocation.destinationLabel,
+      destinationAddress: allocation.destinationAddress || "",
+      })).sort((left, right) => compareStableText(left.sourceEntryId, right.sourceEntryId)),
+    });
+    let productionDemand: PublishedWeekAmendmentImpact["productionDemand"] = "unchanged";
+    if (prior && !next) productionDemand = "withdrawal";
+    else if (!prior && next) productionDemand = "new_allocation";
+    else if (prior && next && !sameDishes) productionDemand = "dish_set_changed";
+    else if (prior && next && prior.day.date !== next.day.date) productionDemand = "service_date_changed";
+    else if (prior && next && demandQuantityChanged) productionDemand = "quantity_only";
+    else if (prior && next && contentHash(demandDetails(prior)) !== contentHash(demandDetails(next))) productionDemand = "operational_details";
+
+    let allergenApproval: PublishedWeekAmendmentImpact["allergenApproval"];
+    let reason: string;
+    if (prior && !next) {
+      allergenApproval = "withdrawn";
+      reason = "This destination has no positive-portion dishes in the amended publication; withdraw its current service evidence.";
+    } else if (prior && next && prior.day.date !== next.day.date) {
+      allergenApproval = "fresh_review_required";
+      reason = "The service date changed, so prior dated approval cannot be carried forward.";
+    } else {
+      const beforeByIdentity = new Map((prior?.entries || []).map(value => [`${value.entry.sourceEntryId}|${value.entry.canonicalDishId || "legacy"}`, value.entry]));
+      const afterByIdentity = new Map((next?.entries || []).map(value => [`${value.entry.sourceEntryId}|${value.entry.canonicalDishId || "legacy"}`, value.entry]));
+      const equivalent = Boolean(prior && next && sameDishes && priorIdentities.length > 0 && priorIdentities.every(identity => {
+        const previousEntry = beforeByIdentity.get(identity), nextEntry = afterByIdentity.get(identity);
+        return Boolean(previousEntry?.allergenEvidenceComplete && nextEntry?.allergenEvidenceComplete && previousEntry.allergenEvidenceHash && previousEntry.allergenEvidenceHash === nextEntry.allergenEvidenceHash);
+      }));
+      if (equivalent) {
+        allergenApproval = "preserved";
+        reason = "The served dish identities and complete canonical ingredient and allergen evidence fingerprints are unchanged.";
+      } else {
+        allergenApproval = "fresh_review_required";
+        reason = !prior ? "A new destination allocation has no prior signed allergen approval." : !sameDishes
+          ? "The set of dishes served at this destination changed. Review the new matrix before signing."
+          : "Complete equivalent canonical ingredient and allergen evidence could not be proven for every served dish.";
+      }
+    }
+    if (productionDemand !== "unchanged" || allergenApproval === "fresh_review_required") {
+      destinations.push({ sourceDayId: current.day.sourceDayId, date: current.day.date, dayName: current.day.dayName, siteId: current.siteId, siteLabel: current.siteLabel, productionDemand, allergenApproval, reason });
+    }
+  }
+  return {
+    destinations,
+    freshAllergenReviewCount: destinations.filter(value => value.allergenApproval === "fresh_review_required").length,
+    approvalPreservationCount: destinations.filter(value => value.allergenApproval === "preserved").length,
+    withdrawnDestinationCount: destinations.filter(value => value.allergenApproval === "withdrawn").length,
+  };
 }
 /** Compare the exact normalized publication preview used by both reads and writes. */
 export function compareWorkingWeekToPublication(
@@ -895,10 +1035,15 @@ export function compareWorkingWeekToPublication(
     days: baselineDays.map(day => ({ sourceDayId: day.sourceDayId, publicationDayId: day.publicationDayId, publicationDayVersion: day.version, contentHash: day.contentHash })),
     operations: makeDemandOperations(before, after),
   };
+  const impactSummary = amendmentImpactForDays(
+    baselineDays,
+    candidateDays.map(({ day, preview }) => ({ sourceDayId: day.id, date: preview.date, dayName: preview.dayName, contentHash: preview.contentHash, entries: preview.entries })),
+  );
   return {
     hasUnpublishedChanges: Object.values(dayHasUnpublishedChanges).some(Boolean),
     dayHasUnpublishedChanges,
     changeSet,
+    impactSummary,
   };
 }
 export async function publicationState(
@@ -949,6 +1094,7 @@ export async function publicationState(
 
 export type PublishedWeekAmendmentPreview = {
   changeSet: PublishedWeekDemandChangeSet;
+  impactSummary: PublishedWeekAmendmentImpactSummary;
   changeSetHash: string;
   sourceWeekVersion: number;
   publicationVersion: number;
@@ -975,7 +1121,7 @@ export async function previewPublishedWeekAmendment(
   if (changedDays.some(dayId => !hasCurrentPublishedWorkingDraft(snapshot.week, publication, dayId)))
     throw conflict("Save the published working draft before reviewing its amendment.");
   const changeSet = comparison.changeSet;
-  return { changeSet, changeSetHash: contentHash(changeSet), sourceWeekVersion: snapshot.week.version, publicationVersion: publication.publicationVersion || 1 };
+  return { changeSet, impactSummary: comparison.impactSummary, changeSetHash: contentHash(changeSet), sourceWeekVersion: snapshot.week.version, publicationVersion: publication.publicationVersion || 1 };
 }
 
 export async function publishScopedPublishedWeekAmendment(
@@ -1033,6 +1179,7 @@ export async function publishScopedPublishedWeekAmendment(
         entries: clone(preview.entries),
       });
     });
+    const impactSummary = amendmentImpactForDays([...currentDays.values()], changedDays);
     publication.days = publication.days.map(day => changedDayIds.includes(day.sourceDayId) && day.status === "published" ? { ...day, status: "superseded" as const } : day).concat(changedDays);
     publication.publicationVersion = (publication.publicationVersion || 1) + 1;
     publication.publicationStatus = "published";
@@ -1047,7 +1194,7 @@ export async function publishScopedPublishedWeekAmendment(
       handoffEventIds.push(...appendPublicationEvents(stored, publication, day, "amended", actor, { siteIdentities }));
     }
     const uniqueHandoffIds = [...new Set(handoffEventIds)];
-    publication.audit.push({ action: "menu-week-scoped-amendment-published", at: publishedAt, by: actor, requestId: input.requestId, changeSetHash: input.changeSetHash, sourceWeekVersion: input.sourceWeekVersion, handoffEventIds: uniqueHandoffIds });
+    publication.audit.push({ action: "menu-week-scoped-amendment-published", at: publishedAt, by: actor, requestId: input.requestId, changeSetHash: input.changeSetHash, impactSummary, sourceWeekVersion: input.sourceWeekVersion, handoffEventIds: uniqueHandoffIds });
     snapshot.week.dayStatuses = { ...(snapshot.week.dayStatuses || {}), ...Object.fromEntries(changedDayIds.map(dayId => [dayId, "published"])) };
     snapshot.week.version += 1;
     snapshot.week.audit.push({ action: "menu-week-scoped-amendment-published", at: publishedAt, by: actor });

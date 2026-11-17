@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { captureSigningLineage, signingLineageUnavailableMessage, type MatrixLineage } from "../app/allergens/signing-lineage";
-import { hasExactMatrixSignatureForActor, type MatrixSignatureScope } from "../app/lib/production-plan";
+import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, hasExactMatrixSignatureForActor, matrixSignatureScope, mergeMissingProductionOrderLines, sameMatrixSignatureScope, signedAllergenReviewMatchesOrder, type MatrixSignatureScope, type PlannedMenuItem, type ProductionPlan } from "../app/lib/production-plan";
+import { buildCpuAllergenRelease, allergenMatrixContentHash } from "../lib/cpu-allergen-release";
+import { CANONICAL_ALLERGEN_KEYS } from "../../shared/allergen-contract";
 
 const lineage = (orderId: string, matrixContentHash: string): MatrixLineage => ({
   productionOrderId: orderId,
@@ -22,6 +24,60 @@ test("master signature retries require the same actor, role, and full source and
   assert.equal(hasExactMatrixSignatureForActor([signature], "production_chef", "authid:chef-2", scope), false);
   assert.equal(hasExactMatrixSignatureForActor([signature], "head_chef_site_manager", "authid:chef-1", scope), false);
   assert.equal(hasExactMatrixSignatureForActor([signature], "production_chef", "authid:chef-1", { ...scope, sourceVersion: 6 }), false, "same menu hash on a new source version is not the same signature lineage");
+});
+
+test("same-evidence Menu publication revisions preserve current approvals without changing signature records", () => {
+  const items: PlannedMenuItem[] = [{ id: "item:1", sourceLineId: "hub-line:1", sourceEntryId: "entry:soup", sourceCanonicalDishId: "dish:soup", sourceAllergenEvidenceHash: "f".repeat(64), name: "Leek soup", note: "", subItems: [{ id: "sub:1", name: "Soup", quantity: 10, allergens: Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(key => [key, "clear"])), note: "", evidenceStatus: "completed" }] }];
+  const matrixHash = allergenMatrixContentHash(items);
+  const line = { canonicalId: "hub-line:1", sourceBookingLineId: "entry:soup", sourceMenuItemId: "dish:soup", allergenEvidenceStatus: "confirmed", approvedAllergenSnapshot: { allergenEvidenceHash: "f".repeat(64), allergenEvidenceComplete: true, allergenEvidenceStatus: "confirmed" } };
+  const oldOrder = { canonicalId: "order:bank", origin: "menu_planning", serviceDate: "2026-11-17", requiredBy: "2026-11-17T09:00:00Z", sourceEntityId: "menu-day:2026-11-17", sourcePublicationId: "publication:week", sourcePublicationDayId: "publication:week:v7:day:1", sourceVersion: 7, sourceContentHash: "a".repeat(64), lines: [{ ...line, customerQuantity: 10 }] };
+  const oldScope = matrixSignatureScope(oldOrder, matrixHash)!;
+  const signatures = (["production_chef", "head_chef_site_manager"] as const).map((role, index) => ({ role, printedName: `Reviewer ${index + 1}`, signedAt: "2026-11-17T08:22:00.000Z", actor: `Reviewer ${index + 1}`, actorId: `actor:${index + 1}`, attestation: "Reviewed the current allergen matrix", scope: oldScope }));
+  const artifact = { id: "artifact:1", bookingId: "order:bank", fileName: "matrix.pdf", createdAt: "2026-11-17T08:23:00.000Z", createdBy: "cpu", contentHash: "c".repeat(64), pdfStatus: "generated" as const, driveFileId: "drive:1", driveUrl: "https://drive.example/matrix.pdf", driveStatus: "saved" as const };
+  const release = buildCpuAllergenRelease({ serviceDate: oldScope.serviceDate, sourceDayId: oldScope.sourceDayId, sourcePublicationId: oldScope.sourcePublicationId, sourcePublicationDayId: oldScope.sourcePublicationDayId, sourceVersion: oldScope.sourceVersion, sourceContentHash: oldScope.sourceContentHash, allergenEvidenceHash: oldScope.allergenEvidenceHash, version: 1, signedAt: "2026-11-17T08:23:00.000Z", signatures, items, masterArtifact: artifact, derivedArtifacts: [artifact], packetArtifacts: [artifact] });
+  const amendedOrder = { ...oldOrder, sourcePublicationDayId: "publication:week:v9:day:1", sourceVersion: 9, sourceContentHash: "b".repeat(64), lines: [{ ...line, customerQuantity: 14 }] };
+  const amendedScope = matrixSignatureScope(amendedOrder, matrixHash)!;
+  assert.equal(sameMatrixSignatureScope(oldScope, amendedScope), true);
+  assert.equal(currentAllergenReleaseMatchesOrder(release, amendedOrder, items), true);
+  assert.equal(signedAllergenReviewMatchesOrder({ signatures, signedSignatures: signatures, signedMenuContentHash: matrixHash, currentAllergenRelease: release }, amendedOrder, items), true);
+  assert.equal(allergenAuthorityMatchesOrder({ signatures, signedSignatures: signatures, signedMenuContentHash: matrixHash, currentAllergenRelease: release }, amendedOrder, items), true);
+  assert.equal(release.signatures[0].scope?.sourceContentHash, "a".repeat(64), "the historical signature scope remains immutable");
+});
+
+test("semantic carry-forward fails for changed dish evidence, incomplete evidence and other source domains", () => {
+  const baseOrder = { canonicalId: "order:bank", origin: "menu_planning", serviceDate: "2026-11-17", requiredBy: "2026-11-17T09:00:00Z", sourceEntityId: "menu-day:2026-11-17", sourcePublicationId: "publication:week", sourcePublicationDayId: "publication:week:v7:day:1", sourceVersion: 7, sourceContentHash: "a".repeat(64), lines: [{ canonicalId: "hub-line:1", sourceBookingLineId: "entry:soup", sourceMenuItemId: "dish:soup", allergenEvidenceStatus: "confirmed", approvedAllergenSnapshot: { allergenEvidenceHash: "f".repeat(64), allergenEvidenceComplete: true, allergenEvidenceStatus: "confirmed" } }] };
+  const orderScope = matrixSignatureScope(baseOrder, "e".repeat(64))!;
+  const changedDish = { ...baseOrder, sourcePublicationDayId: "publication:week:v10:day:1", sourceVersion: 10, sourceContentHash: "b".repeat(64), lines: [{ ...baseOrder.lines[0], sourceBookingLineId: "entry:fish", sourceMenuItemId: "dish:fish", approvedAllergenSnapshot: { allergenEvidenceHash: "0".repeat(64), allergenEvidenceComplete: true, allergenEvidenceStatus: "confirmed" } }] };
+  const incomplete = { ...baseOrder, sourceVersion: 10, sourcePublicationDayId: "publication:week:v10:day:1", sourceContentHash: "b".repeat(64), lines: [{ ...baseOrder.lines[0], approvedAllergenSnapshot: { allergenEvidenceComplete: false, allergenEvidenceStatus: "confirmed" } }] };
+  const otherApp = { ...baseOrder, origin: "grab_and_go" };
+  const hospitality = { ...baseOrder, origin: "hospitality_booking", sourceBookingId: "booking:1", sourceQuoteRevisionId: "quote:1", currentRevision: 1, lines: undefined };
+  assert.equal(sameMatrixSignatureScope(orderScope, matrixSignatureScope(changedDish, "e".repeat(64))), false);
+  assert.equal(matrixSignatureScope(incomplete, "e".repeat(64))?.allergenEvidenceHash, undefined);
+  assert.equal(matrixSignatureScope(otherApp, "e".repeat(64))?.allergenEvidenceHash, undefined);
+  assert.equal(sameMatrixSignatureScope(orderScope, matrixSignatureScope(hospitality, "e".repeat(64))), false);
+});
+
+test("source reconciliation carries quantity and a canonical rename without reopening equivalent allergen rows", () => {
+  const plan = { id: "plan:1", orderId: "order:bank", status: "planned", menuItems: [{ id: "item:1", sourceLineId: "hub-line:1", sourceEntryId: "entry:soup", sourceCanonicalDishId: "dish:soup", sourceAllergenEvidenceHash: "f".repeat(64), sourceItemName: "Leek soup", name: "Leek soup", note: "", subItems: [{ id: "sub:1", name: "Soup", quantity: 10, allergens: Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(key => [key, "clear"])), note: "", evidenceStatus: "completed" }] }], planningNotes: "", updatedAt: "2026-11-17T08:00:00.000Z", updatedBy: "cpu", audit: [] } as unknown as ProductionPlan;
+  const sameEvidence = mergeMissingProductionOrderLines(plan, "order:bank", [{ canonicalId: "hub-line:1", sourceBookingLineId: "entry:soup", sourceMenuItemId: "dish:soup", itemName: "Leek and potato soup", customerQuantity: 14, approvedAllergenSnapshot: { allergenEvidenceHash: "f".repeat(64), allergenEvidenceComplete: true } }]);
+  assert.equal(sameEvidence.menuItems[0].name, "Leek soup", "the signed matrix label remains frozen for its existing hash");
+  assert.equal(sameEvidence.menuItems[0].sourceItemName, "Leek and potato soup", "the current source label is tracked separately");
+  assert.equal(sameEvidence.menuItems[0].subItems[0].quantity, 10, "CPU review rows do not own production demand quantities");
+  assert.equal(sameEvidence.menuItems[0].subItems[0].evidenceStatus, "completed");
+  assert.equal(sameEvidence.menuItems[0].sourceAllergenEvidenceHash, "f".repeat(64));
+
+  const changedEvidence = mergeMissingProductionOrderLines(plan, "order:bank", [{ canonicalId: "hub-line:1", sourceBookingLineId: "entry:soup", sourceMenuItemId: "dish:soup", itemName: "Leek soup", customerQuantity: 14, approvedAllergenSnapshot: { allergenEvidenceHash: "0".repeat(64), allergenEvidenceComplete: true } }]);
+  assert.equal(changedEvidence.menuItems[0].subItems[0].evidenceStatus, "not_completed");
+  assert.deepEqual(changedEvidence.menuItems[0].subItems[0].allergens, {});
+});
+
+test("source reconciliation removes withdrawn and zero-portion dishes from the current matrix", () => {
+  const item = { id: "cpu-item:1", sourceLineId: "hub-line:1", sourceEntryId: "entry:soup", sourceCanonicalDishId: "dish:soup", sourceAllergenEvidenceHash: "f".repeat(64), name: "Soup", sourceItemName: "Soup", note: "", subItems: [{ id: "sub:1", name: "Soup", quantity: 4, allergens: { milk: "clear" }, note: "", evidenceStatus: "completed" as const }] };
+  const plan = { menuItems: [item], status: "planned" } as unknown as ProductionPlan;
+  const removed = mergeMissingProductionOrderLines(plan, "order:bank", []);
+  assert.equal(removed.menuItems.length, 0);
+  const zero = mergeMissingProductionOrderLines(plan, "order:bank", [{ canonicalId: "hub-line:1", itemName: "Soup", customerQuantity: 0 }]);
+  assert.equal(zero.menuItems.length, 0);
 });
 
 function extractSourceBetween(source: string, startMarker: string, endMarker: string): string {

@@ -20,6 +20,7 @@ export type CpuAllergenRelease = {
   sourceRevision?: number;
   sourceVersion: number;
   sourceContentHash: string;
+  allergenEvidenceHash?: string;
   version: number;
   matrixContentHash: string;
   signedAt: string;
@@ -34,7 +35,7 @@ export type CpuAllergenRelease = {
   masterArtifact: MatrixArtifact;
   derivedArtifacts: MatrixArtifact[];
   packetArtifacts: MatrixArtifact[];
-  matrix: Array<{ menuItemId: string; dishName: string; allergens: Record<string, string>; allergenDetailNotes?: string; mayContainNotes?: string }>;
+  matrix: Array<{ menuItemId: string; dishName: string; allergens: Record<string, string>; allergenEvidenceHash?: string; allergenDetailNotes?: string; mayContainNotes?: string }>;
   deltaFromPrevious: CpuReleaseDelta[];
   noteChangesFromPrevious?: CpuReleaseNoteDelta[];
 };
@@ -51,7 +52,7 @@ const jsonHash = (value: unknown) => createHash("sha256").update(JSON.stringify(
 export function allergenMatrixContentHash(items: PlannedMenuItem[]) { return jsonHash(canonicalAllergenMatrixForHash(items)); }
 
 export function releaseMatrix(items: PlannedMenuItem[]) {
-  return items.flatMap(item => item.subItems.map((sub, index) => ({ menuItemId: `${item.id}:${sub.id || index}`, dishName: sub.name || item.name, allergens: { ...sub.allergens }, ...(sub.allergenDetailNotes?.trim() ? { allergenDetailNotes: sub.allergenDetailNotes.trim() } : {}), ...(sub.mayContainNotes?.trim() ? { mayContainNotes: sub.mayContainNotes.trim() } : {}) })));
+  return items.flatMap(item => item.subItems.map((sub, index) => ({ menuItemId: `${item.id}:${sub.id || index}`, dishName: sub.name || item.name, allergens: { ...sub.allergens }, ...(item.sourceAllergenEvidenceHash ? { allergenEvidenceHash: item.sourceAllergenEvidenceHash } : {}), ...(sub.allergenDetailNotes?.trim() ? { allergenDetailNotes: sub.allergenDetailNotes.trim() } : {}), ...(sub.mayContainNotes?.trim() ? { mayContainNotes: sub.mayContainNotes.trim() } : {}) })));
 }
 
 /** Prose evidence is separate from the allergen-state delta consumed by Delivered-In. */
@@ -90,7 +91,7 @@ function requireHash(value: string, field: string) { if (!HASH.test(value)) thro
 function requireArtifact(artifact: MatrixArtifact, field: string) { requireHash(artifact.contentHash, `${field}.contentHash`); if (!artifact.driveFileId && !artifact.localUrl) throw new Error(`${field} must have a durable identity.`); }
 
 export function buildCpuAllergenRelease(input: {
-  serviceDate: string; sourceOrigin?: "menu_planning" | "hospitality_booking" | "ad_hoc_production"; sourceDayId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string; sourceRevision?: number; sourceVersion: number; sourceContentHash: string; version: number; signedAt: string; signatures: InternalMatrixSignature[]; items: PlannedMenuItem[]; masterArtifact: MatrixArtifact; derivedArtifacts: MatrixArtifact[]; packetArtifacts: MatrixArtifact[]; previous?: CpuAllergenRelease; status?: "pending" | "current";
+  serviceDate: string; sourceOrigin?: "menu_planning" | "hospitality_booking" | "ad_hoc_production"; sourceDayId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string; sourceRevision?: number; sourceVersion: number; sourceContentHash: string; allergenEvidenceHash?: string; version: number; signedAt: string; signatures: InternalMatrixSignature[]; items: PlannedMenuItem[]; masterArtifact: MatrixArtifact; derivedArtifacts: MatrixArtifact[]; packetArtifacts: MatrixArtifact[]; previous?: CpuAllergenRelease; status?: "pending" | "current";
 }): CpuAllergenRelease {
   if (!Number.isInteger(input.version) || input.version < 1) throw new Error("A release version is required.");
   const roles = new Set(input.signatures.map(signature => signature.role));
@@ -115,7 +116,7 @@ export function buildCpuAllergenRelease(input: {
   const expectedPlanHash = allergenMatrixContentHash(input.items);
   if (input.signatures.some(signature => !signature.scope || signature.scope.matrixContentHash !== expectedPlanHash)) throw new Error("Every release signature must be bound to the exact current publication-day matrix.");
   return {
-    contractVersion: "cpu-production.signed-allergen-release.v1", releaseId: `cpu-allergen-release:${input.serviceDate}:${input.sourcePublicationDayId || `${input.sourceBookingId}:${input.sourceQuoteRevisionId}`}:v${input.version}`, serviceDate: input.serviceDate, ...(input.sourceOrigin ? { sourceOrigin: input.sourceOrigin } : {}), ...(input.sourceDayId ? { sourceDayId: input.sourceDayId } : {}), ...(input.sourcePublicationId ? { sourcePublicationId: input.sourcePublicationId } : {}), ...(input.sourcePublicationDayId ? { sourcePublicationDayId: input.sourcePublicationDayId } : {}), ...(input.sourceBookingId ? { sourceBookingId: input.sourceBookingId } : {}), ...(input.sourceQuoteRevisionId ? { sourceQuoteRevisionId: input.sourceQuoteRevisionId } : {}), ...(input.sourceRevision ? { sourceRevision: input.sourceRevision } : {}), sourceVersion: input.sourceVersion, sourceContentHash: input.sourceContentHash, version: input.version, matrixContentHash, signedAt: input.signedAt,
+    contractVersion: "cpu-production.signed-allergen-release.v1", releaseId: `cpu-allergen-release:${input.serviceDate}:${input.sourcePublicationDayId || `${input.sourceBookingId}:${input.sourceQuoteRevisionId}`}:v${input.version}`, serviceDate: input.serviceDate, ...(input.sourceOrigin ? { sourceOrigin: input.sourceOrigin } : {}), ...(input.sourceDayId ? { sourceDayId: input.sourceDayId } : {}), ...(input.sourcePublicationId ? { sourcePublicationId: input.sourcePublicationId } : {}), ...(input.sourcePublicationDayId ? { sourcePublicationDayId: input.sourcePublicationDayId } : {}), ...(input.sourceBookingId ? { sourceBookingId: input.sourceBookingId } : {}), ...(input.sourceQuoteRevisionId ? { sourceQuoteRevisionId: input.sourceQuoteRevisionId } : {}), ...(input.sourceRevision ? { sourceRevision: input.sourceRevision } : {}), sourceVersion: input.sourceVersion, sourceContentHash: input.sourceContentHash, ...(input.allergenEvidenceHash ? { allergenEvidenceHash: input.allergenEvidenceHash } : {}), version: input.version, matrixContentHash, signedAt: input.signedAt,
     signatures: input.signatures.map(signature => ({ ...signature, valid: true })), ...(input.previous ? { previousReleaseId: input.previous.releaseId } : {}), status: input.status || "current", materializationStatus: input.status === "pending" ? "pending" : "ready", masterArtifact: input.masterArtifact, derivedArtifacts: [...input.derivedArtifacts], packetArtifacts: [...input.packetArtifacts], matrix, deltaFromPrevious: allergenReleaseDelta(input.previous, input.items), ...(noteChanges.length ? { noteChangesFromPrevious: noteChanges } : {}),
   };
 }

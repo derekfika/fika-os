@@ -6,6 +6,7 @@ export type MatrixLineage = {
   sourcePublicationDayId: string;
   sourceVersion: number;
   sourceContentHash: string;
+  allergenEvidenceHash?: string;
   matrixContentHash: string;
 };
 
