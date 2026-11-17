@@ -22,6 +22,8 @@ export type PlannedSubItem = {
 };
 export type PlannedMenuItem = {
   id: string; sourceLineId?: string; name: string; note: string; subItems: PlannedSubItem[];
+  /** Source-owned identities/fingerprint copied from the canonical Menu Production Order. */
+  sourceEntryId?: string; sourceCanonicalDishId?: string; sourceAllergenEvidenceHash?: string;
   /** Server-owned: the Production Order line name this item was last reconciled with. A different present name means the source dish changed. */
   sourceItemName?: string;
 };
@@ -37,6 +39,8 @@ export type MatrixSignatureScope = {
   sourceRevision?: number;
   sourceVersion: number;
   sourceContentHash: string;
+  /** Complete, stable served-dish allergen evidence; permits safe same-evidence Menu amendments. */
+  allergenEvidenceHash?: string;
   matrixContentHash: string;
 };
 export type InternalMatrixSignature = { role: "production_chef" | "head_chef_site_manager"; printedName: string; signedAt: string; actor: string; actorId?: string; attestation: string; signatureDataUrl?: string; scope?: MatrixSignatureScope };
@@ -49,7 +53,7 @@ export type ProductionPlan = { id: string; orderId: string; status: PlanStatus; 
 
 export { effectiveProductionPlanStatus, hasAllergenAuthority, planRevisionToken, reviewRevisionConflict, nextPlanRevisionStamp, isProductionPlanMatrixComplete, mergeMissingProductionOrderLines } from "./production-plan-state";
 
-export type SigningLineageOrder = { canonicalId: string; serviceDate?: string; requiredBy: string; origin?: string; status?: string; workflowStatus?: string; supersededBy?: string; version?: number; currentRevision?: number; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string };
+export type SigningLineageOrder = { canonicalId: string; serviceDate?: string; requiredBy: string; origin?: string; status?: string; workflowStatus?: string; supersededBy?: string; version?: number; currentRevision?: number; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string; lines?: Array<{ canonicalId: string; sourceBookingLineId?: string; sourceMenuItemId?: string; allergenEvidenceStatus?: string; approvedAllergenSnapshot?: { allergenEvidenceHash?: string; allergenEvidenceComplete?: boolean; allergenEvidenceStatus?: string } }> };
 
 const sourceHash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
@@ -94,16 +98,22 @@ export function signingLineageForOrder(order: SigningLineageOrder, matrixContent
     return { productionOrderId: order.canonicalId, serviceDate, sourceOrigin: "hospitality_booking", sourceBookingId: order.sourceBookingId, sourceQuoteRevisionId: order.sourceQuoteRevisionId, sourceRevision, sourceVersion: sourceRevision, sourceContentHash, matrixContentHash };
   }
   if (!order.sourceEntityId || !order.sourcePublicationDayId || !order.sourceVersion || !order.sourceContentHash) return undefined;
-  return { productionOrderId: order.canonicalId, serviceDate, sourceDayId: order.sourceEntityId, ...(order.sourcePublicationId ? { sourcePublicationId: order.sourcePublicationId } : {}), sourcePublicationDayId: order.sourcePublicationDayId, sourceVersion: order.sourceVersion, sourceContentHash: order.sourceContentHash, matrixContentHash };
+  const evidenceLines = order.lines || [];
+  const allergenEvidenceHash = order.origin === "menu_planning" && evidenceLines.length && evidenceLines.every(line =>
+    line.sourceMenuItemId && line.sourceBookingLineId && line.allergenEvidenceStatus === "confirmed" &&
+    line.approvedAllergenSnapshot?.allergenEvidenceStatus === "confirmed" && line.approvedAllergenSnapshot.allergenEvidenceComplete === true &&
+    /^[a-f0-9]{64}$/i.test(line.approvedAllergenSnapshot.allergenEvidenceHash || ""),
+  ) ? sourceHash({ sourceDayId: order.sourceEntityId, serviceDate, dishes: evidenceLines.map(line => ({ sourceEntryId: line.sourceBookingLineId, canonicalDishId: line.sourceMenuItemId, evidenceHash: line.approvedAllergenSnapshot!.allergenEvidenceHash })).sort((left, right) => String(left.sourceEntryId).localeCompare(String(right.sourceEntryId))) }) : undefined;
+  return { productionOrderId: order.canonicalId, serviceDate, sourceDayId: order.sourceEntityId, ...(order.sourcePublicationId ? { sourcePublicationId: order.sourcePublicationId } : {}), sourcePublicationDayId: order.sourcePublicationDayId, sourceVersion: order.sourceVersion, sourceContentHash: order.sourceContentHash, ...(allergenEvidenceHash ? { allergenEvidenceHash } : {}), matrixContentHash };
 }
 
 /** Backwards-compatible name used by CPU materialisation/review consumers. */
 export const matrixSignatureScope = signingLineageForOrder;
 
 export function sameMatrixSignatureScope(left: MatrixSignatureScope | undefined, right: Partial<MatrixSignatureScope> | undefined, includeMatrix = true) {
-  return Boolean(left && right
-    && left.productionOrderId === right.productionOrderId
-    && left.serviceDate === right.serviceDate
+  if (!left || !right) return false;
+  const sameOrder = left.productionOrderId === right.productionOrderId && left.serviceDate === right.serviceDate;
+  const exactLineage = sameOrder
     && left.sourceOrigin === right.sourceOrigin
     && left.sourceDayId === right.sourceDayId
     && left.sourcePublicationId === right.sourcePublicationId
@@ -112,7 +122,11 @@ export function sameMatrixSignatureScope(left: MatrixSignatureScope | undefined,
     && left.sourceQuoteRevisionId === right.sourceQuoteRevisionId
     && left.sourceRevision === right.sourceRevision
     && left.sourceVersion === right.sourceVersion
-    && left.sourceContentHash === right.sourceContentHash
+    && left.sourceContentHash === right.sourceContentHash;
+  const isMenuLineage = (value: Partial<MatrixSignatureScope>) => Boolean(value.sourceDayId && !value.sourceBookingId && !value.sourceQuoteRevisionId && (value.sourceOrigin === undefined || value.sourceOrigin === "menu_planning"));
+  const equivalentMenuLineage = sameOrder && isMenuLineage(left) && isMenuLineage(right)
+    && Boolean(left.sourceDayId === right.sourceDayId && left.allergenEvidenceHash && left.allergenEvidenceHash === right.allergenEvidenceHash);
+  return Boolean((exactLineage || equivalentMenuLineage)
     && (!includeMatrix || left.matrixContentHash === right.matrixContentHash));
 }
 
@@ -139,7 +153,7 @@ export function currentAllergenReleaseMatchesOrder(release: CpuAllergenRelease |
   if (!release || release.status !== "current" || release.materializationStatus !== "ready" || !scope) return false;
   const roles = new Set(release.signatures.map(signature => signature.role));
   if (!roles.has("production_chef") || !roles.has("head_chef_site_manager")) return false;
-  const lineageMatches = sameMatrixSignatureScope(scope, { ...release, productionOrderId: scope.productionOrderId, matrixContentHash: scope.matrixContentHash }, false);
+  const lineageMatches = sameMatrixSignatureScope(scope, { ...release, productionOrderId: scope.productionOrderId, allergenEvidenceHash: release.allergenEvidenceHash || release.signatures?.[0]?.scope?.allergenEvidenceHash, matrixContentHash: scope.matrixContentHash }, false);
   return lineageMatches && release.signatures.every(signature => signature.valid && signatureMatchesScope(signature, scope));
 }
 
@@ -147,7 +161,7 @@ export function currentAllergenReleaseMatchesOrder(release: CpuAllergenRelease |
 export function allergenReleaseLineageMatchesOrder(release: CpuAllergenRelease | undefined, order: SigningLineageOrder, menuItems: PlannedMenuItem[]) {
   const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
   if (!release || !scope) return false;
-  return sameMatrixSignatureScope(scope, { ...release, productionOrderId: scope.productionOrderId, matrixContentHash: scope.matrixContentHash }, false);
+  return sameMatrixSignatureScope(scope, { ...release, productionOrderId: scope.productionOrderId, allergenEvidenceHash: release.allergenEvidenceHash || release.signatures?.[0]?.scope?.allergenEvidenceHash, matrixContentHash: scope.matrixContentHash }, false);
 }
 
 export function signedAllergenCheckpointMatchesOrder(plan: Pick<ProductionPlan, "signedMenuContentHash" | "signedSignatures" | "currentAllergenRelease">, order: SigningLineageOrder, menuItems: PlannedMenuItem[]) {
@@ -178,6 +192,6 @@ export function allergenAuthorityMatchesOrder(plan: Pick<ProductionPlan, "signat
   const release = plan.currentAllergenRelease;
   if (!release) return true;
   return (release.status === "pending" || release.status === "current")
-    && sameMatrixSignatureScope(scope, { ...release, productionOrderId: scope.productionOrderId, matrixContentHash: scope.matrixContentHash }, false)
+    && sameMatrixSignatureScope(scope, { ...release, productionOrderId: scope.productionOrderId, allergenEvidenceHash: release.allergenEvidenceHash || release.signatures?.[0]?.scope?.allergenEvidenceHash, matrixContentHash: scope.matrixContentHash }, false)
     && release.signatures.every(signature => signature.valid && signatureMatchesScope(signature, scope));
 }

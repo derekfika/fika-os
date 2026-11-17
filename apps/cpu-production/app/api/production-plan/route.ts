@@ -200,7 +200,7 @@ function pendingReleaseFor(plan: ProductionPlan, order: ProductionOrder, timesta
   const source = matrixSignatureScope(order, menuContentHash(plan.menuItems));
   if (!source) throw Object.assign(new Error("The current source lineage is unavailable; the matrix cannot be signed."), { status: 503 });
   const previous = [...(plan.allergenReleaseHistory || [])].at(-1);
-  return buildCpuAllergenRelease({ serviceDate: source.serviceDate, sourceOrigin: source.sourceOrigin, sourceDayId: source.sourceDayId, sourcePublicationId: source.sourcePublicationId, sourcePublicationDayId: source.sourcePublicationDayId, sourceBookingId: source.sourceBookingId, sourceQuoteRevisionId: source.sourceQuoteRevisionId, sourceRevision: source.sourceRevision, sourceVersion: source.sourceVersion, sourceContentHash: source.sourceContentHash, version: Math.max(1, ...((plan.allergenReleaseHistory || []).map(item => item.version + 1))), signedAt: timestamp, signatures: plan.signatures || [], items: plan.menuItems, masterArtifact: pendingReleaseArtifact(plan, order, timestamp), derivedArtifacts: [], packetArtifacts: [], previous, status: "pending" });
+  return buildCpuAllergenRelease({ serviceDate: source.serviceDate, sourceOrigin: source.sourceOrigin, sourceDayId: source.sourceDayId, sourcePublicationId: source.sourcePublicationId, sourcePublicationDayId: source.sourcePublicationDayId, sourceBookingId: source.sourceBookingId, sourceQuoteRevisionId: source.sourceQuoteRevisionId, sourceRevision: source.sourceRevision, sourceVersion: source.sourceVersion, sourceContentHash: source.sourceContentHash, allergenEvidenceHash: source.allergenEvidenceHash, version: Math.max(1, ...((plan.allergenReleaseHistory || []).map(item => item.version + 1))), signedAt: timestamp, signatures: plan.signatures || [], items: plan.menuItems, masterArtifact: pendingReleaseArtifact(plan, order, timestamp), derivedArtifacts: [], packetArtifacts: [], previous, status: "pending" });
 }
 // Artifact creation is intentionally no longer part of the sign command:
 // release materialization runs from the committed outbox obligation after
@@ -266,7 +266,11 @@ async function isVisibleForCpu(request: NextRequest, orderId: string) {
 }
 function initialPlan(orderId: string, order?: Awaited<ReturnType<typeof productionOrderDetail>> | ProductionOrder): ProductionPlan {
   const timestamp = now();
-  return { id: `production-plan:${orderId}`, orderId, status: "draft", menuItems: (order?.lines || []).map((line, index) => ({ id: `menu-item:${orderId}:${index + 1}`, sourceLineId: line.canonicalId, name: line.itemName, sourceItemName: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:${index + 1}:1`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" }] })), planningNotes: "", updatedAt: timestamp, updatedBy: "local-fixture", audit: [{ action: "plan-created", at: timestamp, by: "local-fixture" }] };
+  return { id: `production-plan:${orderId}`, orderId, status: "draft", menuItems: (order?.lines || []).map((line, index) => {
+    const stableSourceId = line.sourceBookingLineId || line.canonicalId || String(index + 1);
+    const itemId = `menu-item:${orderId}:${index + 1}`;
+    return { id: itemId, sourceLineId: line.canonicalId, ...(line.sourceBookingLineId ? { sourceEntryId: line.sourceBookingLineId } : {}), ...(line.sourceMenuItemId ? { sourceCanonicalDishId: line.sourceMenuItemId } : {}), ...(line.approvedAllergenSnapshot?.allergenEvidenceComplete && line.approvedAllergenSnapshot.allergenEvidenceHash ? { sourceAllergenEvidenceHash: line.approvedAllergenSnapshot.allergenEvidenceHash } : {}), name: line.itemName, sourceItemName: line.itemName, note: "", subItems: [{ id: `sub-item:${stableSourceId}:1`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" as const }] };
+  }), planningNotes: "", updatedAt: timestamp, updatedBy: "local-fixture", audit: [{ action: "plan-created", at: timestamp, by: "local-fixture" }] };
 }
 async function getPlan(request: NextRequest, orderId: string, knownPlan?: ProductionPlan) {
   if (knownPlan) { const normalized = normalisePlanAllergens(knownPlan); plans.set(orderId, { ...normalized, status: effectiveProductionPlanStatus(normalized) }); }
@@ -720,7 +724,7 @@ async function handlePost(request: NextRequest) {
       if (matchesSignedCheckpoint && plan.currentAllergenRelease?.status === "current") {
         plan.signatures = plan.signedSignatures;
         plan.matrixArtifact = plan.signedMatrixArtifact;
-      } else if (contentChanged || ((plan.currentAllergenRelease || plan.signatures?.length) && !authorityMatches)) {
+      } else if ((plan.currentAllergenRelease || plan.signatures?.length || plan.signedSignatures?.length) && !authorityMatches) {
         const releaseBeforeSave = plan.currentAllergenRelease;
         invalidateSignedAllergenAuthorityForNewSourceLineage(plan, auditActor, timestamp, "The allergen matrix or source lineage changed after signed release.");
         revokedReleaseForEvent = plan.allergenReleaseHistory?.at(-1) || releaseBeforeSave;
@@ -747,7 +751,7 @@ async function handlePost(request: NextRequest) {
       if (matchesSignedCheckpoint && plan.currentAllergenRelease?.status === "current") {
         plan.signatures = plan.signedSignatures;
         plan.matrixArtifact = plan.signedMatrixArtifact;
-      } else if (contentChanged || ((plan.currentAllergenRelease || plan.signatures?.length) && !authorityMatches)) {
+      } else if ((plan.currentAllergenRelease || plan.signatures?.length || plan.signedSignatures?.length) && !authorityMatches) {
         const releaseBeforeSave = plan.currentAllergenRelease;
         invalidateSignedAllergenAuthorityForNewSourceLineage(plan, auditActor, timestamp, "The allergen matrix or source lineage changed after signed release.");
         revokedReleaseForEvent = plan.allergenReleaseHistory?.at(-1) || releaseBeforeSave;
