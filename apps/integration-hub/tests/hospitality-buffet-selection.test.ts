@@ -298,7 +298,7 @@ test("emulator: explicit buffet handoff freezes choice, quote, dietaries and one
     createdAt: now, createdBy: actor.uid, updatedAt: now, updatedBy: actor.uid,
     source: { provider: "rcoa-booking-platform", sourceBookingId: suffix },
     client: { name: "Test Host", email: "host@example.test", companyName: "Test Client" },
-    service: { eventDate: "2026-12-03", startTime: "12:00", guestCount: 60, portalSiteId: "rcoa", portalSiteLabel: "RCoA", oplocId: `oploc:buffet-test:${suffix}` },
+    service: { eventDate: "2026-12-03", startTime: "12:00", guestCount: 60, portalSiteId: "rcoa", portalSiteLabel: "RCoA", oplocId: `oploc:buffet-test:${suffix}`, floorLevel: "First Floor", roomOrArea: "Boardroom 1" },
     order: { eventType: "Hot Fork Buffet", items: [{ itemId: goldItem, menuItemId: goldItem, itemName: "Hot Fork Buffet Gold", quantity: 60, unitPrice: 31, lineTotal: 1860, choices: [selected] }], netTotal: 1860, vatTotal: 372, grossTotal: 2232 },
     dietaries: { vegetarian: 24, allergyDetails: "Test review note" }, acknowledgements: {}, notes: "", attachments: [], statusHistory: [], audit: [], deliveryChargeRequired: true,
     quoteState: { currentRevisionId: quoteId, revisions: [{ id: quoteId, revision: 1, createdAt: now, createdBy: actor.uid, commercialVersion: 1, snapshot: { order: { lines: [{ choices: [selected], unitNet: { amount: 31 } }] } }, stale: false, pdfStatus: "saved", driveFileId: `test-quote:${suffix}` }] },
@@ -311,6 +311,7 @@ test("emulator: explicit buffet handoff freezes choice, quote, dietaries and one
     assert.equal(first.order?.canonicalId, orderId);
     assert.deepEqual(first.order?.lines[0].choices, [selected]);
     assert.deepEqual(first.order?.bookingDietaries, booking.dietaries);
+    assert.deepEqual(first.order?.serviceLocation, { floorLevel: "First Floor", roomOrArea: "Boardroom 1" });
     assert.equal(first.order?.lines[0].productionQuantity, undefined);
     assert.equal(first.order?.lines[0].workstream, "hospitality");
     assert.equal(first.requirement?.sourceBookingRevision, 4);

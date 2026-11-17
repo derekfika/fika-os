@@ -13,20 +13,21 @@ export default function BuffetOrderChoice({ choices }: { choices: readonly unkno
   const parsed = HotForkBuffetChoiceSchema.safeParse(buffetChoices[0]);
   if (!parsed.success) return <small role="status">Buffet menu selection needs review: stored choice is invalid.</small>;
   const selection = parsed.data.value;
-  const current = selection.menuVersion === HOT_FORK_BUFFET_MENU_VERSION;
-  const dishName = (id: string) => current ? `${hotForkBuffetDish(id)?.name || id} [${id}]` : id;
+  const dishName = (id: string) => (selection.menuVersion === HOT_FORK_BUFFET_MENU_VERSION ? hotForkBuffetDish(id)?.name : undefined) || `${id} (name unavailable for saved menu version)`;
   const mains = selection.mains.map(main => `${main.portions} × ${dishName(main.dishId)}`).join("; ");
   const salads = selection.saladIds.map(dishName).join("; ");
   const currentRules = selection.contract === HOT_FORK_BUFFET_SELECTION_CONTRACT;
   const desserts = currentRules ? selection.dessertIds.map(dishName).join("; ") : selection.desserts.map(dessert => `${dishName(dessert.dishId)} · ${dessert.portions === null ? "portions to confirm" : `${dessert.portions} portions`}`).join("; ");
-  return <>
+  const selectedIds = [...selection.mains.map(main => main.dishId), ...selection.saladIds, ...(currentRules ? selection.dessertIds : selection.desserts.map(dessert => dessert.dishId))];
+  const namesAvailable = selectedIds.every(id => selection.menuVersion === HOT_FORK_BUFFET_MENU_VERSION && hotForkBuffetDish(id));
+  return <div className="buffet-order-choice">
     <small>Selected Hot Fork Buffet {selection.packageId} menu · version {selection.menuVersion}{currentRules ? ` · rules ${selection.rulesVersion}` : " · historical rules"}</small>
     <small>Main choices: {mains}</small>
     <small>Salad choices (chef allocates portions): {salads}</small>
     <small>Dessert choices{currentRules ? selection.packageId === "gold" ? " (50/50 intent; chef allocates portions)" : " (chef allocates portions)" : ""}: {desserts}</small>
-    {!current && <small role="status">Historical menu names need review against the original version.</small>}
+    {!namesAvailable && <small role="status">Historical menu names need review against the original version; no newer menu names have been substituted.</small>}
     <small>Dish allergen and dietary information is unrecorded; verify before production.</small>
-  </>;
+  </div>;
 }
 
 export function ProductionOrderChoices({ choices }: { choices?: readonly unknown[] }) {
