@@ -1,4 +1,4 @@
-import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, DelegationRecord, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
+import type { AccessAuditEvent, AppAssignment, AppOplocScope, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, DelegationRecord, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
 export type OplocReference = { id: string; label: string; active: boolean };
 export type AuthmodRuntimeAccessPackage = import("../authmod-access-read-package").AuthmodAccessReadPackage;
 export type AuthModRepository = {
@@ -13,12 +13,14 @@ export type AuthModRepository = {
   saveApplication(application: ApplicationRegistryEntry, expectedVersion?: number): Promise<void>; listActiveOplocs(): Promise<OplocReference[]>; listOplocRedirects(): Promise<Record<string, string>>; getActiveOploc(oplocId: string): Promise<OplocReference | undefined>;
   listSiteAssignments(identityId: string): Promise<SiteAssignment[]>; getSiteAssignment(id: string): Promise<SiteAssignment | undefined>;
   saveSiteAssignment(assignment: SiteAssignment, expectedVersion?: number): Promise<void>; saveSiteAssignmentWithAudit(assignment: SiteAssignment, audit: AccessAuditEvent, expectedVersion?: number): Promise<void>;
+  listAppOplocScopes(identityId: string): Promise<AppOplocScope[]>; getAppOplocScope(id: string): Promise<AppOplocScope | undefined>;
+  saveAppOplocScopeWithAudit(scope: AppOplocScope, audit: AccessAuditEvent, expectedVersion?: number): Promise<void>;
   listAppAssignments(identityId: string): Promise<AppAssignment[]>; getAppAssignment(id: string): Promise<AppAssignment | undefined>;
   saveAppAssignment(assignment: AppAssignment, expectedVersion?: number): Promise<void>;
   listAuthorityGrants(subjectId: string, subjectType?: "interactive" | "service"): Promise<AuthorityGrant[]>; getAuthorityGrant(id: string): Promise<AuthorityGrant | undefined>; listAuthorityGrantsForDecision(input: { subjectId: string; subjectType: "interactive" | "service"; appId: string; resource: string; action: AuthorityGrant["action"] }): Promise<AuthorityGrant[]>; saveAuthorityGrant(grant: AuthorityGrant, expectedVersion?: number): Promise<void>; saveAuthorityGrantWithAudit(grant: AuthorityGrant, audit: AccessAuditEvent, expectedVersion?: number): Promise<void>;
   getDelegation(id: string): Promise<DelegationRecord | undefined>; listDelegations(delegateId?: string): Promise<DelegationRecord[]>; saveDelegationWithGrant(input: { delegation: DelegationRecord; grant: AuthorityGrant; audit: AccessAuditEvent }): Promise<void>;
   saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }): Promise<void>;
-  revokeStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }): Promise<void>;
+  revokeStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; appOplocScopes?: AppOplocScope[]; audit?: AccessAuditEvent; additionalAudits?: AccessAuditEvent[]; expectedAssignmentVersion?: number }): Promise<void>;
   getServicePrincipal(id: string): Promise<ServicePrincipal | undefined>; listServicePrincipals(): Promise<ServicePrincipal[]>;
   saveServicePrincipal(principal: ServicePrincipal, expectedVersion?: number): Promise<void>; saveServicePrincipalWithAudit(principal: ServicePrincipal, audit: AccessAuditEvent, expectedVersion?: number): Promise<void>;
   getImport(id: string): Promise<ImportRecord | undefined>; listImports(limit?: number): Promise<ImportRecord[]>; saveImport(record: ImportRecord, expectedVersion?: number): Promise<void>; saveImportResolution(resolution: ImportRowResolution, expectedVersion?: number): Promise<void>;

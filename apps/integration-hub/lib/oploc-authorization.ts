@@ -31,6 +31,8 @@ export async function resolvePermittedOplocIds(input: PermittedOplocInput): Prom
     if (appAccess.reasonCode === "store-unavailable") throw authmodUnavailable();
     if (!appAccess.allowed) continue;
     if (identity.identityKind === "person" && identity.fullAccess) return { all: true, ids: permitted };
+    const allActiveScope = (await context.appOplocScopes()).find(value => value.appId === application.appId && value.kind === "all-active-oplocs" && isEffective(value));
+    if (allActiveScope && input.appId) return { all: true, ids: permitted };
     const decisions = await Promise.all(assignedOplocIds.map((oplocId) => resolveUserAccess(input.repository, { principal: input.principal, appId: application.appId, oplocId }, context)));
     decisions.forEach((decision, index) => {
       if (decision.reasonCode === "store-unavailable") throw authmodUnavailable();

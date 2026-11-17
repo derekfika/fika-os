@@ -1,4 +1,4 @@
-import type { AuthPrincipal, AppAssignment, ApplicationRegistryEntry, AuthorityGrant, EffectivePeriod, SiteAssignment } from "./model";
+import type { AuthPrincipal, AppAssignment, AppOplocScope, ApplicationRegistryEntry, AuthorityGrant, EffectivePeriod, SiteAssignment } from "./model";
 import { assertValidEffectivePeriod, idempotentId, isEffective, now } from "./model";
 import { auditEvent } from "./audit";
 import type { AuthModRepository } from "./repository";
@@ -31,8 +31,11 @@ export async function revokeStandardApplicationAccess(repository: AuthModReposit
   const grants = await repository.listAuthorityGrants(input.identityId, "interactive");
   const standard = grants.filter(value => value.appId === input.appId && value.provenance === "standard-app-access" && value.bundleId === assignment.bundleId && isEffective(value));
   const revoked = standard.map(grant => ({ ...grant, status: "revoked" as const, revokedBy: input.actor.id, reason: input.reason, version: grant.version + 1, updatedAt: timestamp }));
+  const appOplocScopes = (await repository.listAppOplocScopes(input.identityId)).filter(value => value.appId === input.appId && isEffective(value));
+  const revokedScopes = appOplocScopes.map(scope => ({ ...scope, status: "revoked" as const, revokedBy: input.actor.id, reason: input.reason, version: scope.version + 1, updatedAt: timestamp }));
   const audit = auditEvent({ actor: input.actor, targetType: "AppAssignment", targetId: assignment.id, action: "standard-application-access-revoked", beforeState: assignment, afterState: { assignment: nextAssignment, revokedGrantIds: standard.map(value => value.id) }, provenance: "standard-app-access", outcome: "revoked", scope: { kind: "organisation", ids: [] }, idempotencyKey: input.idempotencyKey });
-  await repository.revokeStandardApplicationBundle({ assignment: nextAssignment, grants: revoked, audit, expectedAssignmentVersion: assignment.version });
+  const scopeAudits = revokedScopes.map(scope => auditEvent({ actor: input.actor, targetType: "AppOplocScope", targetId: scope.id, action: "all-active-oploc-access-revoked-with-app-access", beforeState: appOplocScopes.find(value => value.id === scope.id), afterState: scope, provenance: "manual-override", outcome: "revoked", scope: { kind: "oploc", ids: [] }, idempotencyKey: input.idempotencyKey }));
+  await repository.revokeStandardApplicationBundle({ assignment: nextAssignment, grants: revoked, appOplocScopes: revokedScopes, audit, additionalAudits: scopeAudits, expectedAssignmentVersion: assignment.version });
   return { revoked: true, grantIds: standard.map(value => value.id) };
 }
 export async function assignSite(repository: AuthModRepository, input: { identityId: string; oplocId: string; actor: AuthPrincipal; effectivePeriod?: EffectivePeriod; accessType?: "permanent" | "temporary" | "cover"; reason?: string; source?: SiteAssignment["source"] }) {
@@ -50,4 +53,32 @@ export async function revokeSite(repository: AuthModRepository, input: { identit
   const audit = auditEvent({ actor: input.actor, targetType: "SiteAssignment", targetId: id, action: "site-assignment-revoked", beforeState: prior, afterState: next, provenance: prior.source, outcome: "revoked", scope: { kind: "oploc", ids: [input.oplocId] } });
   await repository.saveSiteAssignmentWithAudit(next, audit, prior.version);
   return { revoked: true, assignment: next };
+}
+export async function grantAllActiveOplocAccess(repository: AuthModRepository, input: { identityId: string; appId: string; actor: AuthPrincipal; effectivePeriod?: EffectivePeriod; accessType?: "permanent" | "temporary" | "cover"; reason?: string }) {
+  const identity = await repository.getIdentity(input.identityId);
+  if (!identity || identity.status !== "active") throw Object.assign(new Error("Only an active AUTHMOD identity can receive OPLOC scope."), { status: 422, code: "AUTHMOD_IDENTITY_INACTIVE" });
+  if (identity.identityKind !== "operational") throw Object.assign(new Error("All Sites Access is available to operational accounts only."), { status: 422, code: "AUTHMOD_ALL_SITES_OPERATIONAL_ONLY" });
+  const app = await repository.getApplication(input.appId);
+  if (!app || !app.enabled || app.scopeModel === "none") throw Object.assign(new Error("All Sites Access requires an enabled OPLOC-scoped application."), { status: 422, code: "AUTHMOD_ALL_SITES_APP_INVALID" });
+  const assignment = (await repository.listAppAssignments(input.identityId)).find(value => value.appId === input.appId && isEffective(value));
+  if (!assignment) throw Object.assign(new Error("Grant application access before granting All Sites Access."), { status: 422, code: "AUTHMOD_APP_ASSIGNMENT_REQUIRED" });
+  const accessType = input.accessType || (input.effectivePeriod?.effectiveTo ? "temporary" : "permanent");
+  assertValidEffectivePeriod(input.effectivePeriod, accessType !== "permanent");
+  if (accessType !== "permanent" && !input.reason?.trim()) throw Object.assign(new Error("A reason is required for temporary or cover access."), { status: 422, code: "AUTHMOD_REASON_REQUIRED" });
+  const id = idempotentId("app-oploc-scope", input.identityId, input.appId);
+  const prior = await repository.getAppOplocScope(id);
+  const timestamp = now();
+  const scope: AppOplocScope = { id, identityId: input.identityId, appId: input.appId, kind: "all-active-oplocs", status: "active", accessType, ...period(input.effectivePeriod), reason: input.reason || "All active OPLOCs in this application", grantedBy: input.actor.id, version: (prior?.version || 0) + 1, createdAt: prior?.createdAt || timestamp, updatedAt: timestamp };
+  const audit = auditEvent({ actor: input.actor, targetType: "AppOplocScope", targetId: id, action: "all-active-oploc-access-granted", beforeState: prior, afterState: scope, provenance: "manual-override", outcome: "committed", scope: { kind: "oploc", ids: [] } });
+  await repository.saveAppOplocScopeWithAudit(scope, audit, prior?.version);
+  return scope;
+}
+export async function revokeAllActiveOplocAccess(repository: AuthModRepository, input: { identityId: string; appId: string; actor: AuthPrincipal; reason?: string }) {
+  const id = idempotentId("app-oploc-scope", input.identityId, input.appId);
+  const prior = await repository.getAppOplocScope(id);
+  if (!prior) return { revoked: false };
+  const next = { ...prior, status: "revoked" as const, revokedBy: input.actor.id, reason: input.reason, version: prior.version + 1, updatedAt: now() };
+  const audit = auditEvent({ actor: input.actor, targetType: "AppOplocScope", targetId: id, action: "all-active-oploc-access-revoked", beforeState: prior, afterState: next, provenance: "manual-override", outcome: "revoked", scope: { kind: "oploc", ids: [] } });
+  await repository.saveAppOplocScopeWithAudit(next, audit, prior.version);
+  return { revoked: true, scope: next };
 }

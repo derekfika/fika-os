@@ -1,9 +1,10 @@
-import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, DelegationRecord, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
+import type { AccessAuditEvent, AppAssignment, AppOplocScope, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, DelegationRecord, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
 import { assertExpectedVersion, type AuthModRepository, type OplocReference } from "./repository";
 export class MemoryAuthModRepository implements AuthModRepository {
   async listLogisticsDriverGrants() { return [...this.grants.values()].filter(value => value.resource === "logistics.driver" && value.status === "active"); }
   identities = new Map<string, AuthIdentity>(); applications = new Map<string, ApplicationRegistryEntry>(); oplocs = new Map<string, OplocReference>();
   siteAssignments = new Map<string, SiteAssignment>(); appAssignments = new Map<string, AppAssignment>(); grants = new Map<string, AuthorityGrant>(); custodians = new Map<string, CustodianAssignment>();
+  appOplocScopes = new Map<string, AppOplocScope>();
   principals = new Map<string, ServicePrincipal>(); delegations = new Map<string, DelegationRecord>(); imports = new Map<string, ImportRecord>(); resolutions = new Map<string, ImportRowResolution>(); audits: AccessAuditEvent[] = [];
   constructor(seed: { applications?: ApplicationRegistryEntry[]; oplocs?: OplocReference[] } = {}) {
     for (const application of seed.applications || []) this.applications.set(application.appId, application);
@@ -29,6 +30,9 @@ export class MemoryAuthModRepository implements AuthModRepository {
   async getSiteAssignment(id: string) { return this.siteAssignments.get(id); }
   async saveSiteAssignment(value: SiteAssignment, expectedVersion?: number) { assertExpectedVersion(this.siteAssignments.get(value.id)?.version, expectedVersion); this.siteAssignments.set(value.id, value); }
   async saveSiteAssignmentWithAudit(value: SiteAssignment, audit: AccessAuditEvent, expectedVersion?: number) { assertExpectedVersion(this.siteAssignments.get(value.id)?.version, expectedVersion); this.siteAssignments.set(value.id, value); this.audits.push(audit); }
+  async listAppOplocScopes(identityId: string) { return [...this.appOplocScopes.values()].filter(value => value.identityId === identityId); }
+  async getAppOplocScope(id: string) { return this.appOplocScopes.get(id); }
+  async saveAppOplocScopeWithAudit(value: AppOplocScope, audit: AccessAuditEvent, expectedVersion?: number) { assertExpectedVersion(this.appOplocScopes.get(value.id)?.version, expectedVersion); this.appOplocScopes.set(value.id, value); this.audits.push(audit); }
   async listAppAssignments(identityId: string) { return [...this.appAssignments.values()].filter(value => value.identityId === identityId); }
   async getAppAssignment(id: string) { return this.appAssignments.get(id); }
   async saveAppAssignment(value: AppAssignment, expectedVersion?: number) { assertExpectedVersion(this.appAssignments.get(value.id)?.version, expectedVersion); this.appAssignments.set(value.id, value); }
@@ -45,11 +49,13 @@ export class MemoryAuthModRepository implements AuthModRepository {
     for (const grant of input.grants) this.grants.set(grant.id, grant);
     if (input.audit) this.audits.push(input.audit);
   }
-  async revokeStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }) {
+  async revokeStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; appOplocScopes?: AppOplocScope[]; audit?: AccessAuditEvent; additionalAudits?: AccessAuditEvent[]; expectedAssignmentVersion?: number }) {
     assertExpectedVersion(this.appAssignments.get(input.assignment.id)?.version, input.expectedAssignmentVersion);
     this.appAssignments.set(input.assignment.id, input.assignment);
     for (const grant of input.grants) this.grants.set(grant.id, grant);
+    for (const scope of input.appOplocScopes || []) this.appOplocScopes.set(scope.id, scope);
     if (input.audit) this.audits.push(input.audit);
+    this.audits.push(...(input.additionalAudits || []));
   }
   async getServicePrincipal(id: string) { return this.principals.get(id); } async listServicePrincipals() { return [...this.principals.values()]; }
   async saveServicePrincipal(value: ServicePrincipal, expectedVersion?: number) { assertExpectedVersion(this.principals.get(value.id)?.version, expectedVersion); this.principals.set(value.id, value); }
