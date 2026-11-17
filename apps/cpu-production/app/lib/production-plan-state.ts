@@ -18,20 +18,33 @@ export function effectiveProductionPlanStatus(plan: Pick<ProductionPlan, "status
   return plan.status === "planned" && !isProductionPlanMatrixComplete(plan.menuItems) ? "planning" : plan.status;
 }
 
-export function mergeMissingProductionOrderLines(plan: ProductionPlan, orderId: string, lines: Array<{ canonicalId: string; itemName: string; customerQuantity: number }>) {
+export function mergeMissingProductionOrderLines(plan: ProductionPlan, orderId: string, lines: Array<{ canonicalId: string; sourceBookingLineId?: string; sourceMenuItemId?: string; itemName: string; customerQuantity: number; approvedAllergenSnapshot?: { allergenEvidenceHash?: string; allergenEvidenceComplete?: boolean } }>) {
+  const activeLines = lines.filter(line => line.customerQuantity > 0);
+  const lineById = new Map(activeLines.map(line => [line.canonicalId, line]));
   const existing = new Set(plan.menuItems.map((item) => item.sourceLineId || item.id));
-  const missing = lines.filter((line) => !existing.has(line.canonicalId)).map((line, index) => ({ id: `menu-item:${orderId}:original:${index}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:original:${index}`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" as const }] }));
+  const missing = activeLines.filter((line) => !existing.has(line.canonicalId)).map((line, index) => ({ id: `menu-item:${orderId}:original:${index}`, sourceLineId: line.canonicalId, ...(line.sourceBookingLineId ? { sourceEntryId: line.sourceBookingLineId } : {}), ...(line.sourceMenuItemId ? { sourceCanonicalDishId: line.sourceMenuItemId } : {}), ...(line.approvedAllergenSnapshot?.allergenEvidenceHash && line.approvedAllergenSnapshot.allergenEvidenceComplete ? { sourceAllergenEvidenceHash: line.approvedAllergenSnapshot.allergenEvidenceHash } : {}), name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:original:${index}`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" as const }] }));
   const sourceName = new Map(lines.map((line) => [line.canonicalId, line.itemName] as const));
   const sameName = (left: string, right: string) => left.trim().toLocaleLowerCase("en-GB") === right.trim().toLocaleLowerCase("en-GB");
   // A reviewed dish whose Production Order line was renamed is a different dish: it takes the new source name and every row is
   // reopened (unrecorded, unconfirmed). The baseline is server-owned; an item with no baseline simply adopts the current name.
-  const reconciled = plan.menuItems.map((item) => {
-    const current = item.sourceLineId ? sourceName.get(item.sourceLineId) : undefined;
-    if (current === undefined) return item;
-    if (item.sourceItemName === undefined || sameName(item.sourceItemName, current)) return item.sourceItemName === current ? item : { ...item, sourceItemName: current };
-    return { ...item, name: current, sourceItemName: current, subItems: item.subItems.map(({ allergenReview: _dropped, noKeyDeclaration: _droppedDeclaration, ...sub }) => ({ ...sub, allergens: {}, mayContainNotes: "", allergenDetailNotes: "", evidenceStatus: "not_completed" as const })) };
+  const reconciled = plan.menuItems.filter(item => {
+    const sourceOwned = Boolean(item.sourceEntryId || item.sourceCanonicalDishId || item.sourceLineId?.startsWith(`${orderId}:line:`));
+    return !sourceOwned || !item.sourceLineId || lineById.has(item.sourceLineId);
+  }).map((item) => {
+    const line = item.sourceLineId ? lineById.get(item.sourceLineId) : undefined;
+    const current = line ? sourceName.get(line.canonicalId) : undefined;
+    if (!line || current === undefined) return item;
+    const nextEvidenceHash = line.approvedAllergenSnapshot?.allergenEvidenceComplete ? line.approvedAllergenSnapshot.allergenEvidenceHash : undefined;
+    const evidenceChanged = item.sourceAllergenEvidenceHash !== nextEvidenceHash || item.sourceCanonicalDishId !== line.sourceMenuItemId;
+    const sameCanonicalDish = Boolean(item.sourceCanonicalDishId && item.sourceCanonicalDishId === line.sourceMenuItemId);
+    const { sourceAllergenEvidenceHash: _oldEvidenceHash, ...withoutEvidenceHash } = item;
+    const sourceFields = { ...(line.sourceBookingLineId ? { sourceEntryId: line.sourceBookingLineId } : {}), ...(line.sourceMenuItemId ? { sourceCanonicalDishId: line.sourceMenuItemId } : {}), ...(nextEvidenceHash ? { sourceAllergenEvidenceHash: nextEvidenceHash } : {}) };
+    if (evidenceChanged) return { ...withoutEvidenceHash, ...sourceFields, name: current, sourceItemName: current, subItems: item.subItems.map(({ allergenReview: _dropped, noKeyDeclaration: _droppedDeclaration, ...sub }) => ({ ...sub, allergens: {}, mayContainNotes: "", allergenDetailNotes: "", evidenceStatus: "not_completed" as const })) };
+    if (item.sourceItemName === undefined || sameName(item.sourceItemName, current)) return { ...withoutEvidenceHash, ...sourceFields, ...(nextEvidenceHash ? { sourceAllergenEvidenceHash: nextEvidenceHash } : {}), ...(item.sourceItemName === current ? {} : { sourceItemName: current }) };
+    if (sameCanonicalDish) return { ...withoutEvidenceHash, ...sourceFields, ...(nextEvidenceHash ? { sourceAllergenEvidenceHash: nextEvidenceHash } : {}), sourceItemName: current };
+    return { ...withoutEvidenceHash, ...sourceFields, ...(nextEvidenceHash ? { sourceAllergenEvidenceHash: nextEvidenceHash } : {}), name: current, sourceItemName: current, subItems: item.subItems.map(({ allergenReview: _dropped, noKeyDeclaration: _droppedDeclaration, ...sub }) => ({ ...sub, allergens: {}, mayContainNotes: "", allergenDetailNotes: "", evidenceStatus: "not_completed" as const })) };
   });
-  const changed = reconciled.some((item, index) => item !== plan.menuItems[index]);
+  const changed = reconciled.length !== plan.menuItems.length || reconciled.some((item, index) => item !== plan.menuItems[index]);
   const base = changed ? { ...plan, menuItems: reconciled } : plan;
   const next = missing.length ? { ...base, menuItems: [...base.menuItems, ...missing.map((item) => ({ ...item, sourceItemName: item.name }))] } : base;
   return { ...next, status: effectiveProductionPlanStatus(next) };

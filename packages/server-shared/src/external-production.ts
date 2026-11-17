@@ -43,6 +43,10 @@ export type ExternalProductionMaterialisation = {
     isCoreSalad?: boolean;
     approvedAllergenSnapshot?: {
       allergens: Record<string, string>;
+      /** Optional source-authored semantic fingerprint; absent on pre-equivalence publications. */
+      allergenEvidenceHash?: string;
+      canonicalIngredientRecipeHash?: string;
+      allergenEvidenceComplete?: boolean;
       allergenReview?: { status: "confirmed"; semantics: 2 | 3; confirmedBy: string; confirmedAt: string; statement: "recipe-ingredients-allergens-verified"; inputFingerprint: string };
       noKeyDeclaration?: { declared: true; declaredBy: string; declaredAt: string };
       allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting";
@@ -58,6 +62,9 @@ export type SourceAllergenSnapshot = NonNullable<ExternalProductionMaterialisati
 
 export const approvedAllergenSnapshotSchema = z.object({
   allergens: z.record(z.string(), z.enum(OPERATIONAL_ALLERGEN_STATES)),
+  allergenEvidenceHash: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
+  canonicalIngredientRecipeHash: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
+  allergenEvidenceComplete: z.boolean().optional(),
   allergenEvidenceStatus: z.enum(["confirmed", "unreviewed", "missing", "conflicting"]).optional(),
   mayContainNotes: z.string().optional(),
   allergenDetailNotes: z.string().optional(),

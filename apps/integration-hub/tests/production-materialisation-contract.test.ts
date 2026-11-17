@@ -29,6 +29,9 @@ test("the Menu Planning publisher payload, including publicationId, is accepted 
       workstream: "delivered_in" as const,
       approvedAllergenSnapshot: {
         allergens: { milk: "clear" },
+        allergenEvidenceHash: "d".repeat(64),
+        canonicalIngredientRecipeHash: "e".repeat(64),
+        allergenEvidenceComplete: true,
         sourcePublicationDayId: "menu-publication:2026-09-07:day:0:v1",
         sourceVersion: 1,
         sourceContentHash: "a".repeat(64),
@@ -44,6 +47,8 @@ test("the Menu Planning publisher payload, including publicationId, is accepted 
   assert.deepEqual([productionLine.menuOrderVersion, productionLine.slot, productionLine.canonicalSlotId, productionLine.canonicalOrderIndex, productionLine.sortOrder], ["fika.menu-order.v1", "SALAD 1", "SALAD 1", 0, 0]);
   assert.equal(productionLine.isCoreSalad, true);
   assert.deepEqual(productionLine.approvedAllergenSnapshot?.allergens, { milk: "clear" }, "Core metadata does not alter allergen evidence");
+  assert.deepEqual([productionLine.approvedAllergenSnapshot?.allergenEvidenceHash, productionLine.approvedAllergenSnapshot?.allergenEvidenceComplete], ["d".repeat(64), true], "source evidence lineage survives the Hub canonical handoff");
+  assert.equal(productionLine.approvedAllergenSnapshot?.canonicalIngredientRecipeHash, "e".repeat(64));
   const legacy = { ...payload, lines: [{ ...payload.lines[0], isCoreSalad: undefined }] };
   assert.equal(projectExternalProductionLine(parseExternalProductionMaterialisation(legacy), "production-order:legacy", 0, "menu_available").isCoreSalad, undefined);
 });

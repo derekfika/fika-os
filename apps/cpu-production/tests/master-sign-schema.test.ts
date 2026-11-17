@@ -41,7 +41,7 @@ function payload() {
     attestation: "I reviewed the complete service-date matrix and the recorded evidence is accurate.",
     signatureDataUrl: "data:image/png;base64,c2lnbmF0dXJl",
     orderIds: [orderId],
-    expectedLineages: [{ productionOrderId: orderId, serviceDate, sourceDayId: "source-day:test", sourcePublicationId: "publication:test", sourcePublicationDayId: "publication-day:test", sourceVersion: 1, sourceContentHash: "a".repeat(64), matrixContentHash: "b".repeat(64) }],
+    expectedLineages: [{ productionOrderId: orderId, serviceDate, sourceDayId: "source-day:test", sourcePublicationId: "publication:test", sourcePublicationDayId: "publication-day:test", sourceVersion: 1, sourceContentHash: "a".repeat(64), allergenEvidenceHash: "c".repeat(64), matrixContentHash: "b".repeat(64) }],
     reviewOperations: [{ action: "mark-planned" as const, orderId, planningNotes: "CPU Delivered-In allergen review", menuItems }],
     commandId: "cpu-master-sign:test",
   };
