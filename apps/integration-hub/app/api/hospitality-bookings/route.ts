@@ -20,7 +20,7 @@ const Base = { canonicalId: z.string().min(8), expectedVersion: z.number().int()
 const Change = z.discriminatedUnion("action", [
   z.object({ ...Base, action: z.literal("review"), checks: z.object({ commercialIntent: z.boolean().optional(), serviceTiming: z.boolean().optional(), deliveryContext: z.boolean().optional(), dietaryRequirements: z.boolean().optional() }).default({}), notes: z.string().trim().max(1000).optional() }).strict(),
   z.object({ ...Base, action: z.literal("quote"), regenerate: z.boolean().optional() }).strict(),
-  z.object({ ...Base, action: z.literal("set-additional-charges"), charges: bookingAdditionalChargesSchema }).strict(),
+  z.object({ ...Base, action: z.literal("set-additional-charges"), reason: z.string().trim().min(3).max(1000), charges: bookingAdditionalChargesSchema }).strict(),
   z.object({ ...Base, action: z.literal("quote-pdf-status"), revisionId: z.string().min(8), status: z.enum(["pending", "saved", "failed"]), driveFileId: z.string().trim().min(1).optional(), driveUrl: z.string().url().optional(), error: z.string().trim().max(1000).optional() }).strict(),
   z.object({ ...Base, action: z.literal("amend"), reason: z.string().trim().min(3).max(1000), patch: bookingAmendmentPatch, hospitalityAdmin: z.literal(true).optional() }).strict(),
   z.object({ ...Base, action: z.literal("approve"), quoteRevisionId: z.string().min(8) }).strict(),
