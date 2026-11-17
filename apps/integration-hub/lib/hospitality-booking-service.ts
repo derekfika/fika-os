@@ -1216,20 +1216,21 @@ export async function bookingWorkspace(siteId?: string, authorisedOplocId?: stri
 }
 
 /** Contact/notes/location edits and reductions retain historical lines. New demand or changed service context uses current rules. */
-export function rcoaVisibilityAmendmentLines(current: CanonicalBooking, next: CanonicalBooking) {
+export function rcoaVisibilityAmendmentLines(current: CanonicalBooking, next: CanonicalBooking, historicalCommercial = false) {
   const contextChanged = current.order.eventType !== next.order.eventType || current.service.oplocId !== next.service.oplocId;
   if (contextChanged) return next.order.items;
   return next.order.items.filter(line => {
     const prior = current.order.items.find(item => item.itemId === line.itemId);
+    if (historicalCommercial && prior) return false;
     return !prior || line.quantity > prior.quantity || line.category !== prior.category ||
       groupHash(line.choices || []) !== groupHash(prior.choices || []);
   });
 }
 
 /** Authority is read before writes; category text supplied by a client is never eligibility evidence. */
-export async function assertRcoaBookingServiceVisibility(transaction: Transaction, booking: CanonicalBooking, records: CanonicalRecord[] = [], current?: CanonicalBooking) {
+export async function assertRcoaBookingServiceVisibility(transaction: Transaction, booking: CanonicalBooking, records: CanonicalRecord[] = [], current?: CanonicalBooking, historicalCommercial = false) {
   if (booking.service.portalSiteId !== "rcoa") return;
-  const lines = current ? rcoaVisibilityAmendmentLines(current, booking) : booking.order.items;
+  const lines = current ? rcoaVisibilityAmendmentLines(current, booking, historicalCommercial) : booking.order.items;
   if (current && !lines.length && current.order.eventType === booking.order.eventType && current.service.oplocId === booking.service.oplocId) return;
   const oplocId = booking.service.oplocId;
   if (!oplocId) throw conflict("RCoA service settings require a canonical destination OPLOC.");
@@ -1384,7 +1385,7 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
     if (new Set(items.map(line => line.itemId)).size !== items.length) throw conflict("Each corrected menu item may appear only once.");
     const hasNewItems = items.some(line => !previousLineIds.has(line.itemId));
     next.order = await priceHistoricalRcoaCommercialOrder(transaction, next, current, Boolean(admin));
-    const verifiedCategories = await assertRcoaBookingServiceVisibility(transaction, next, [], current);
+    const verifiedCategories = await assertRcoaBookingServiceVisibility(transaction, next, [], current, true);
     if (verifiedCategories) next.order.items = next.order.items.map(item => verifiedCategories.has(item.itemId) ? { ...item, category: verifiedCategories.get(item.itemId) } : item);
     next.notes = optional(patch.notes);
     next.deliveryChargeRequired = current.deliveryChargeRequired ?? true;

@@ -89,6 +89,9 @@ test("historical RCoA commercial corrections preserve service and quote evidence
     const canonical = db.collection("integrationHubCanonical");
     const put = (id: string, entityType: string, record: object) => canonical.doc(stableDocumentId(id)).set({ canonicalId: id, entityType, lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active", ...record } });
     for (const menuId of [f.item, f.other, f.inHouse]) {
+      // These original lines have no current offering; historical quantity
+      // corrections must use their saved agreed prices.
+      if (menuId === f.inHouse || menuId === f.item) continue;
       const offeringId = `hospitality-menu-offering:historical:${randomUUID()}`;
       await put(offeringId, "Hospitality Menu Offering", { hospitalityMenuItemId: menuId, oplocId: f.children[0].service.oplocId, offeringMode: "standard" });
       await put(`${offeringId}:price`, "Hospitality Menu Price", { hospitalityMenuOfferingId: offeringId, amount: 2.5, vatRate: 0.2, effectiveFrom: "2020-01-01" });

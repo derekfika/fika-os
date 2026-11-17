@@ -12,7 +12,7 @@ import type { CanonicalBooking } from "./hospitality-booking-service";
 const canonical = () => db.collection("integrationHubCanonical");
 
 /** Read current bounded catalogue relations inside the mutation transaction, never trust saved/client notice fields. */
-async function resolveBookingItems(transaction: Transaction, booking: CanonicalBooking, knownItems?: CanonicalRecord[], operationalAreaId?: string) {
+async function resolveBookingItems(transaction: Transaction, booking: CanonicalBooking, knownItems?: CanonicalRecord[], operationalAreaId?: string, allowMissingOffering = false) {
   const site = booking.service.portalSiteId || "mnk";
   const local = hospitalityCatalogues[site as keyof typeof hospitalityCatalogues]?.items || [];
   const mergeCache = new Map<string, Promise<string>>();
@@ -62,7 +62,7 @@ async function resolveBookingItems(transaction: Transaction, booking: CanonicalB
     const fallback = local.find(i => i.canonicalId === line.itemId || i.source.sourceItemId === line.itemId);
     if (!record && !fallback) throw Object.assign(new Error("This booking item has no verified current catalogue identity."), { status: 422 });
     const offering = effective.find(o => o.itemId === record?.canonicalId);
-    if (record && !offering) throw Object.assign(new Error("This item has no available current catalogue Offering at the booking site."), { status: 422 });
+    if (record && !offering && !allowMissingOffering) throw Object.assign(new Error("This item has no available current catalogue Offering at the booking site."), { status: 422 });
     const aliases = [line.itemId, line.menuItemId || "", ...(Array.isArray(record?.record.providerMappings) ? record.record.providerMappings.flatMap(raw => typeof (raw as { sourceItemId?: unknown })?.sourceItemId === "string" ? [(raw as { sourceItemId: string }).sourceItemId] : []) : [])];
     const id = record?.canonicalId || fallback?.canonicalId || line.itemId;
     const cutoff: CutoffItem = { id, bookingPolicy: bookingPolicyFor(id, (routes[id] || routes[line.itemId] || []).includes("sandwiches") ? "sandwiches" : undefined, aliases), noticeRequiredDays: offering?.constraints.noticeRequiredDays ?? fallback?.orderingConstraints.noticeRequiredDays, configuration: offering?.configuration as CutoffItem["configuration"] };
@@ -81,26 +81,28 @@ export async function assertHospitalityBookingDate(transaction: Transaction, boo
 
 /** Historical RCoA corrections reuse the event-date-effective catalogue price, without creating delivery intent. */
 export async function priceHistoricalRcoaCommercialOrder(transaction: Transaction, booking: CanonicalBooking, current: CanonicalBooking, allowAdminPriceOverride: boolean) {
-  const items = await resolveBookingItems(transaction, booking);
+  // Existing lines are commercial history, not new delivery demand. A retired or
+  // expired offering must not block correcting their actual quantities.
+  const items = await resolveBookingItems(transaction, booking, undefined, undefined, true);
   let vatTotal = 0;
   const lines = items.map(({ line, offering, record }) => {
-    const previous = current.order.items.find(candidate => candidate.itemId === line.itemId);
-    if (!record || !offering) throw Object.assign(new Error("Every corrected item needs an offering at the original booking site."), { status: 422, code: "HISTORICAL_COMMERCIAL_PRICE_UNAVAILABLE" });
+    const previous = current.order.items.find(candidate => candidate.itemId === line.itemId || Boolean(line.menuItemId && (candidate.itemId === line.menuItemId || candidate.menuItemId === line.menuItemId)));
+    if (!record || (!offering && !previous)) throw Object.assign(new Error("Every new item needs an offering at the original booking site."), { status: 422, code: "HISTORICAL_COMMERCIAL_PRICE_UNAVAILABLE" });
     const suppliedOverride = allowAdminPriceOverride && Number.isFinite(line.unitPrice) && line.unitPrice >= 0;
     const unitPrice = previous
       ? suppliedOverride && line.unitPrice !== previous.unitPrice ? line.unitPrice : previous.unitPrice
-      : suppliedOverride && line.unitPrice !== (offering.price?.amount ?? line.unitPrice) ? line.unitPrice : offering.price?.amount;
-    if (unitPrice === undefined || !Number.isFinite(unitPrice) || unitPrice < 0 || (offering.price && (offering.price.vatRate < 0 || offering.price.vatRate > 1))) {
+      : suppliedOverride && line.unitPrice !== (offering?.price?.amount ?? line.unitPrice) ? line.unitPrice : offering?.price?.amount;
+    if (unitPrice === undefined || !Number.isFinite(unitPrice) || unitPrice < 0 || (offering?.price && (offering.price.vatRate < 0 || offering.price.vatRate > 1))) {
       throw Object.assign(new Error("A new item needs an authoritative price effective on the original service date, or an authorised price override."), { status: 422, code: "HISTORICAL_COMMERCIAL_PRICE_UNAVAILABLE" });
     }
     const lineTotal = money(unitPrice * line.quantity);
     if (!Number.isFinite(lineTotal)) throw Object.assign(new Error("The ordered quantity is outside the supported price range."), { status: 422 });
-    vatTotal += money(lineTotal * (offering.price?.vatRate ?? 0));
+    vatTotal += money(lineTotal * (offering?.price?.vatRate ?? 0));
     return {
       ...line,
-      menuItemId: offering.itemId,
-      itemName: previous?.itemName || offering.name,
-      category: previous?.category || offering.category,
+      menuItemId: offering?.itemId || record.canonicalId,
+      itemName: previous?.itemName || offering?.name || line.itemName,
+      category: previous?.category || offering?.category || line.category,
       unitPrice,
       lineTotal,
     };

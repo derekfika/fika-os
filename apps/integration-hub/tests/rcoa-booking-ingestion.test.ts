@@ -148,6 +148,9 @@ test("unchanged historical lines survive non-line amendments; added/increased li
   const authority = [{ canonicalId: current.order.items[0].itemId, entityType: "Hospitality Menu Item", lifecycleStatus: "published", dataHash: "fixture", record: { lifecycleState: "active", category: "Wine" } }] as CanonicalRecord[];
   next.order.items[0].quantity = 3;
   await assert.rejects(assertRcoaBookingServiceVisibility(layoutTransaction([company(["Drinks"]), undefined]).transaction, next, authority, current), /not offered/);
+  const historicalVisibility = layoutTransaction();
+  await assertRcoaBookingServiceVisibility(historicalVisibility.transaction, next, authority, current, true);
+  assert.deepEqual(historicalVisibility.reads, [], "historical quantity corrections to an originally ordered item do not require a current service offering");
   next.order.items[0].quantity = 1;
   assert.deepEqual(rcoaVisibilityAmendmentLines(current, next), [], "reducing an old line is permitted without enabling more demand");
   next.order.items.push({ ...next.order.items[0], itemId: "new-item" });
