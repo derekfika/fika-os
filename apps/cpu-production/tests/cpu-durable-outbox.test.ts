@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { buildCpuPropagationEvents, CPU_DELIVERY_TIMEOUT_MS, cpuDeliveryTimeoutMs, deliverCpuPropagation, enqueueCpuDelivery, enqueueCpuPropagation, listCpuOutboxForTests, normaliseCpuBaseUrl, replayCpuPropagation, resetCpuOutboxForTests, recoverCpuPropagation, seedCpuOutboxForTests } from "../lib/cpu-durable-outbox";
+import { buildCpuPropagationEvents, CPU_DELIVERY_TIMEOUT_MS, MAX_CPU_CONSUMER_EVENT_ID_LENGTH, cpuDeliveryTimeoutMs, deliverCpuPropagation, enqueueCpuDelivery, enqueueCpuPropagation, listCpuOutboxForTests, normaliseCpuBaseUrl, replayCpuPropagation, resetCpuOutboxForTests, recoverCpuPropagation, seedCpuOutboxForTests } from "../lib/cpu-durable-outbox";
 import { cpuReleaseMaterializationEventId } from "../lib/cpu-release-fanout";
 
 const input = {
@@ -174,6 +174,17 @@ test("CPU creates one durable obligation per independent consumer and stable sco
   await enqueueCpuPropagation(input);
   assert.equal(listCpuOutboxForTests().length, 2, "retrying the command must not duplicate obligations");
   assert.equal(listCpuOutboxForTests()[0].payload.sourceEventId, input.eventId);
+});
+
+test("long master command IDs are compacted for consumers and one-off destinations never become Delivered-In OPLOCs", () => {
+  const longEventId = `cpu-master-sign:${"x".repeat(190)}`;
+  const governed = buildCpuPropagationEvents({ ...input, eventId: longEventId, order: { origin: "menu_planning", destinationOplocId: "oploc:site", destination: { kind: "governed" } }, logistics: false });
+  assert.equal(governed.length, 1);
+  assert.ok(String(governed[0].payload.body.eventId).length <= MAX_CPU_CONSUMER_EVENT_ID_LENGTH);
+  assert.equal(governed[0].payload.body.eventId, buildCpuPropagationEvents({ ...input, eventId: longEventId, order: { origin: "menu_planning", destinationOplocId: "oploc:site", destination: { kind: "governed" } }, logistics: false })[0].payload.body.eventId, "retry event identity is deterministic");
+
+  const oneOff = buildCpuPropagationEvents({ ...input, eventId: longEventId, order: { origin: "menu_planning", destinationOplocId: "week:day:one-off:asana", destination: { kind: "one-off" } }, logistics: false });
+  assert.deepEqual(oneOff, [], "a request-scoped destination is not a governed Delivered-In OPLOC");
 });
 
 test("failed CPU delivery remains observable and bounded recovery retries it", async (context) => {

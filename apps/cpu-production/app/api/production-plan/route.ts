@@ -3,7 +3,7 @@ import { errorResponse } from "../../../lib/api";
 import { z } from "zod";
 import { existsSync, promises as fs } from "node:fs";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
-import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, effectiveProductionPlanStatus, hasAllergenAuthority, planRevisionToken, nextPlanRevisionStamp, reviewRevisionConflict, isProductionPlanMatrixComplete, matrixSignatureScope, mergeMissingProductionOrderLines, sameMatrixSignatureScope, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, signedAllergenReviewMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
+import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, effectiveProductionPlanStatus, hasAllergenAuthority, hasExactMatrixSignatureForActor, planRevisionToken, nextPlanRevisionStamp, reviewRevisionConflict, isProductionPlanMatrixComplete, matrixSignatureScope, mergeMissingProductionOrderLines, sameMatrixSignatureScope, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, signedAllergenReviewMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
 import { readExplicitAllergens } from "../../../../shared/allergen-declaration";
 import { allergenReviewProblems, describeAllergenReviewProblem } from "../../lib/production-plan-state";
 import { canonicalProductionFailureKind, productionOrderDetail, productionQueue, transitionProductionOrder, type CanonicalProductionFailure } from "../../../lib/production-http-client";
@@ -24,6 +24,7 @@ import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRe
 import { releaseMaterializationDelivery, retryCommittedCpuMaterialization } from "../../../lib/cpu-retry-materialization";
 import { cpuMasterReviewId } from "../../../lib/cpu-master-review";
 import { ExpectedLineage, MasterReviewOperation, MasterSignCommand, MenuItem, SubItem } from "../../../lib/production-plan-command-schema";
+import { isCpuWithdrawn } from "../../../lib/production-presentation";
 import { stagingDriveAccessBlocked } from "@fika/server-shared/drive-owner";
 import { allergenMatrixHtml } from "../../ui/allergen-matrix";
 
@@ -188,8 +189,8 @@ function sameLineage(left: ReturnType<typeof matrixSignatureScope>, right: Retur
 function samePublishedLineage(left: ReturnType<typeof matrixSignatureScope>, right: ReturnType<typeof matrixSignatureScope>) {
   return sameMatrixSignatureScope(left, right, false);
 }
-function hasExactSignature(plan: ProductionPlan, role: InternalMatrixSignature["role"], scope: ReturnType<typeof matrixSignatureScope>) {
-  return Boolean(scope && plan.signatures?.some(signature => signature.role === role && signatureMatchesScope(signature, scope)));
+function hasExactSignature(plan: ProductionPlan, role: InternalMatrixSignature["role"], actorId: string, scope: ReturnType<typeof matrixSignatureScope>) {
+  return hasExactMatrixSignatureForActor(plan.signatures, role, actorId, scope);
 }
 function pendingReleaseArtifact(plan: ProductionPlan, order: ProductionOrder, timestamp: string): MatrixArtifact {
   const contentHash = menuContentHash(plan.menuItems);
@@ -251,6 +252,7 @@ async function loadOrderUncached(request: NextRequest, orderId: string) {
   } catch (cause) {
     if (isLocalRuntime()) return localFixtureOrders().find(item => item.canonicalId === orderId);
     const failure = cause as CanonicalProductionFailure;
+    if (failure.code === "CPU_DESTINATION_SCOPE_DENIED") throw Object.assign(new Error("AUTHMOD denied access to this one-off destination. The matrix was not checked or changed."), { status: 403, code: "AUTHMOD_ONE_OFF_DESTINATION_DENIED", orderId, destinationId: orderId });
     const kind = canonicalProductionFailureKind(failure);
     if (kind === "not_found") throw Object.assign(new Error("The canonical Production Order is no longer current."), { status: 409, code: "CPU_CANONICAL_ORDER_NOT_FOUND", cause });
     if (kind === "authority_failure") throw Object.assign(new Error("Canonical Production authorisation failed."), { status: 503, code: "CPU_CANONICAL_AUTHORITY_FAILURE", cause });
@@ -300,10 +302,13 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
   // to satisfy the CPU signing contract.
   const startedAt = Date.now();
   const auditActor = actor.name || actor.uid;
-  const sourceOrders = (await productionQueue(request, command.serviceDate)).filter(order => order.origin === "menu_planning" && !order.supersededBy && (order.serviceDate || order.requiredBy.slice(0, 10)) === command.serviceDate);
+  const sourceOrders = (await productionQueue(request, command.serviceDate)).filter(order => order.origin === "menu_planning" && !isCpuWithdrawn(order) && (order.serviceDate || order.requiredBy.slice(0, 10)) === command.serviceDate);
   const destinationScope = await requireCpuDestinationScope(request);
-  if (sourceOrders.some(order => !cpuDestinationAllowed(destinationScope, order.destinationOplocId, order.destination))) {
-    throw Object.assign(new Error("Your CPU Production site access does not cover every OPLOC in this service-date master matrix. Ask an AUTHMOD Administrator to review your CPU Production site scope, then reload the matrix."), { status: 403, code: "AUTHMOD_OPLOC_SCOPE_INCOMPLETE" });
+  const deniedOrder = sourceOrders.find(order => !cpuDestinationAllowed(destinationScope, order.destinationOplocId, order.destination));
+  if (deniedOrder) {
+    const oneOff = deniedOrder.destination?.kind === "one-off";
+    const destination = oneOff ? `one-off destination ${deniedOrder.destination?.id}` : deniedOrder.destinationOplocId || "unassigned destination";
+    throw Object.assign(new Error(`AUTHMOD did not authorize ${destination} for source order ${deniedOrder.canonicalId}. The master matrix was not checked or changed.`), { status: 403, code: oneOff ? "AUTHMOD_ONE_OFF_DESTINATION_DENIED" : "AUTHMOD_OPLOC_SCOPE_INCOMPLETE", orderId: deniedOrder.canonicalId, destinationId: deniedOrder.destination?.id || deniedOrder.destinationOplocId });
   }
   const orderIds = [...new Set(command.orderIds)];
   const expectedByOrderId = new Map(command.expectedLineages.map(lineage => [lineage.productionOrderId, lineage]));
@@ -319,27 +324,39 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
     const plan = await getPlan(request, order.canonicalId, storedPlan);
     const reviewOperation = reviewByOrderId.get(order.canonicalId)!;
     const expectedLineage = expectedByOrderId.get(order.canonicalId)!;
-    if (plan.status !== "planned" && plan.status !== "planning") throw Object.assign(new Error(`The allergen matrix for ${order.destinationLabel || order.canonicalId} is not available for signing.`), { status: 422 });
+    const destinationIdentity = order.destination?.kind === "one-off" ? `one-off destination ${order.destination.id}` : order.destinationOplocId || "destination not assigned";
+    const withOrderContext = (error: unknown) => {
+      const failure = error as { status?: number; code?: string; message?: string };
+      const message = failure.message || "The allergen matrix could not be verified.";
+      return Object.assign(new Error(`${message} Source order ${order.canonicalId}; ${destinationIdentity}.`), { status: failure.status || 409, code: failure.code || "CPU_MASTER_SIGN_ORDER_FAILED", orderId: order.canonicalId, destinationId: order.destination?.id || order.destinationOplocId });
+    };
+    if (plan.status !== "planned" && plan.status !== "planning") throw withOrderContext(Object.assign(new Error("The allergen matrix is not available for signing."), { status: 422, code: "CPU_MASTER_SIGN_ORDER_NOT_READY" }));
     const reviewedPlan = await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: reviewOperation.menuItems }, { items: plan.menuItems, actor: auditActor }).menuItems }, order.canonicalId, order);
-    if (hasAllergenAuthority(plan) && !allergenAuthorityMatchesOrder(plan, order, reviewedPlan.menuItems)) throw Object.assign(new Error("Reopen the allergen review before changing a signed matrix."), { status: 409, code: "CPU_REVIEW_REOPEN_REQUIRED" });
     const currentMenuContentHash = menuContentHash(plan.menuItems);
     const reviewedMenuContentHash = menuContentHash(reviewedPlan.menuItems);
     const currentScope = matrixSignatureScope(order, reviewedMenuContentHash);
     const persistedScope = matrixSignatureScope(order, currentMenuContentHash);
-    if (!currentScope || !samePublishedLineage(currentScope, expectedLineage) || (plan.menuItems.length > 0 && currentMenuContentHash !== expectedLineage.matrixContentHash && currentMenuContentHash !== reviewedMenuContentHash)) throw Object.assign(new Error("The reviewed source lineage or matrix content has changed. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
+    if (!currentScope || !samePublishedLineage(currentScope, expectedLineage) || (plan.menuItems.length > 0 && currentMenuContentHash !== expectedLineage.matrixContentHash && currentMenuContentHash !== reviewedMenuContentHash)) throw withOrderContext(Object.assign(new Error("The reviewed source lineage or matrix content has changed. Reload and review this source order before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" }));
     const subItems = reviewedPlan.menuItems.flatMap(item => item.subItems);
-    if (!subItems.length || reviewedPlan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error(`Complete every named sub-item and allergen checker before signing ${order.destinationLabel || order.canonicalId}.`), { status: 422 });
-    assertAllergenMatrixComplete(reviewedPlan.menuItems, `signing ${order.destinationLabel || order.canonicalId}`);
+    if (!subItems.length || reviewedPlan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw withOrderContext(Object.assign(new Error("Complete every named sub-item and allergen checker before signing."), { status: 422, code: "CPU_ALLERGEN_REVIEW_INCOMPLETE" }));
+    try { assertAllergenMatrixComplete(reviewedPlan.menuItems, "the source order"); } catch (error) { throw withOrderContext(error); }
     const signatures = (plan.signatures || []).filter(signature => signatureMatchesScope(signature, persistedScope) || signatureMatchesScope(signature, currentScope));
-    const alreadyApplied = signatures.some(signature => signature.role === command.role);
-    if (!alreadyApplied && signatures.length > 0 && plan.signedMenuContentHash && plan.signedMenuContentHash !== reviewedMenuContentHash) throw Object.assign(new Error("The allergen matrix changed after the first signature. Re-review the matrix before signing again."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
+    const sameRoleSignature = signatures.find(signature => signature.role === command.role && signatureMatchesScope(signature, currentScope));
+    if (sameRoleSignature && sameRoleSignature.actorId !== actor.uid) throw withOrderContext(Object.assign(new Error("This signature role is already committed for this exact matrix lineage by a different or unverifiable actor."), { status: 409, code: "CPU_SIGN_ACTOR_CONFLICT" }));
+    const alreadyApplied = hasExactSignature(plan, command.role, actor.uid, currentScope);
+    if (alreadyApplied) {
+      prepared.push({ order, storedPlan, plan, expectedRevision: planRevisionToken(storedPlan), alreadyApplied: true, scope: currentScope });
+      continue;
+    }
+    if (hasAllergenAuthority(plan) && !allergenAuthorityMatchesOrder(plan, order, reviewedPlan.menuItems)) throw withOrderContext(Object.assign(new Error("This source order has a signed matrix on a different source or matrix lineage. Reopen the allergen review before making any change."), { status: 409, code: "CPU_REVIEW_REOPEN_REQUIRED" }));
+    if (signatures.length > 0 && plan.signedMenuContentHash && plan.signedMenuContentHash !== reviewedMenuContentHash) throw withOrderContext(Object.assign(new Error("The allergen matrix changed after the first signature. Re-review this source order before signing again."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" }));
     const candidate = structuredClone(reviewedPlan);
     candidate.status = "planned";
     candidate.planningNotes = reviewOperation.planningNotes;
     candidate.audit.push({ action: "plan-marked-planned", at: timestamp, by: auditActor, reason: "The complete reviewed matrix was committed with the master signature." });
     candidate.signatures = signatures;
     if (!alreadyApplied) {
-      const signature: InternalMatrixSignature = { role: command.role, printedName: command.printedName, signedAt: timestamp, actor: auditActor, attestation: command.attestation, signatureDataUrl: command.signatureDataUrl, scope: currentScope };
+      const signature: InternalMatrixSignature = { role: command.role, printedName: command.printedName, signedAt: timestamp, actor: auditActor, actorId: actor.uid, attestation: command.attestation, signatureDataUrl: command.signatureDataUrl, scope: currentScope };
       candidate.signatures = [...signatures, signature];
       if (!signatures.length) candidate.signedMenuContentHash = reviewedMenuContentHash;
       candidate.audit.push({ action: "allergen-matrix-signed", at: timestamp, by: auditActor, reason: `${command.role}: ${command.attestation}` });
@@ -370,7 +387,7 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
   });
   for (const item of prepared) item.plan.masterReviewId = masterReviewId;
 
-  const results: Array<{ orderId: string; ok: boolean; alreadyApplied?: boolean; planStatus?: ProductionPlan["status"]; error?: string }> = [];
+  const results: Array<{ orderId: string; ok: boolean; code?: string; alreadyApplied?: boolean; planStatus?: ProductionPlan["status"]; error?: string }> = [];
   const committed: Array<{ sequence: number }> = [];
   for (const item of prepared) {
     if (item.alreadyApplied) {
@@ -397,13 +414,17 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
       const committedPlan = event.plan || item.plan;
       if (event.duplicate) {
         const currentScope = matrixSignatureScope(item.order, menuContentHash(committedPlan.menuItems));
-        if (!hasExactSignature(committedPlan, command.role, currentScope)) throw Object.assign(new Error("This signing attempt was already used, but the requested exact-lineage signature is not authoritative."), { status: 409, code: "CPU_SIGN_IDEMPOTENCY_CONFLICT" });
+        if (!hasExactSignature(committedPlan, command.role, actor.uid, currentScope)) throw Object.assign(new Error(`The signing attempt for source order ${item.order.canonicalId} was already used, but this actor's exact-lineage signature is not authoritative.`), { status: 409, code: "CPU_SIGN_IDEMPOTENCY_CONFLICT", orderId: item.order.canonicalId });
       } else {
         committed.push({ sequence: event.sequence });
       }
       results.push({ orderId: item.order.canonicalId, ok: true, planStatus: committedPlan.status });
     } catch (error) {
-      results.push({ orderId: item.order.canonicalId, ok: false, error: error instanceof Error ? error.message : "The master matrix signature could not be committed." });
+      const failure = error as { code?: string; status?: number; message?: string };
+      const code = failure.code || (failure.status === 409 ? "CPU_MASTER_SIGN_REVISION_CONFLICT" : "CPU_MASTER_SIGN_PERSISTENCE_FAILURE");
+      const message = failure.message || "The master matrix signature could not be committed.";
+      const destination = item.order.destination?.kind === "one-off" ? `one-off destination ${item.order.destination.id}` : item.order.destinationOplocId || "destination not assigned";
+      results.push({ orderId: item.order.canonicalId, ok: false, code, error: `${message} Source order ${item.order.canonicalId}; ${destination}.` });
     }
   }
 
@@ -812,7 +833,7 @@ async function handlePost(request: NextRequest) {
       Object.assign(plan, event.plan);
       if (command.action === "sign-matrix") {
         const currentScope = matrixSignatureScope(changedOrder || currentOrder, menuContentHash(plan.menuItems));
-        if (!hasExactSignature(plan, command.role, currentScope)) {
+        if (!hasExactSignature(plan, command.role, actor.uid, currentScope)) {
           throw Object.assign(new Error("This signing attempt was already used, but the requested exact-lineage signature is not authoritative. Start a new signing attempt after reviewing the current matrix."), { status: 409, code: "CPU_SIGN_IDEMPOTENCY_CONFLICT" });
         }
       }

@@ -62,6 +62,6 @@ test("signing still needs an authenticated CPU actor from the Hub: anonymous or 
 
 test("signature evidence keeps timestamp, actor, scope and the frozen matrix lineage", () => {
   const route = readFileSync(join(appRoot, "app/api/production-plan/route.ts"), "utf8");
-  assert.match(route, /const signature: InternalMatrixSignature = \{ role: command\.role, printedName: command\.printedName, signedAt: timestamp, actor: auditActor, attestation: command\.attestation, signatureDataUrl: command\.signatureDataUrl, scope: currentScope \}/);
+  assert.match(route, /const signature: InternalMatrixSignature = \{ role: command\.role, printedName: command\.printedName, signedAt: timestamp, actor: auditActor, actorId: actor\.uid, attestation: command\.attestation, signatureDataUrl: command\.signatureDataUrl, scope: currentScope \}/);
   assert.match(route, /allergen-release-revoked/);
 });

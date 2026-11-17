@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { captureSigningLineage, signingLineageUnavailableMessage, type MatrixLineage } from "../app/allergens/signing-lineage";
+import { hasExactMatrixSignatureForActor, type MatrixSignatureScope } from "../app/lib/production-plan";
 
 const lineage = (orderId: string, matrixContentHash: string): MatrixLineage => ({
   productionOrderId: orderId,
@@ -12,6 +13,15 @@ const lineage = (orderId: string, matrixContentHash: string): MatrixLineage => (
   sourceVersion: 7,
   sourceContentHash: "a".repeat(64),
   matrixContentHash,
+});
+
+test("master signature retries require the same actor, role, and full source and matrix lineage", () => {
+  const scope: MatrixSignatureScope = { productionOrderId: "order:site", serviceDate: "2026-09-14", sourceOrigin: "menu_planning", sourceDayId: "day:1", sourcePublicationId: "publication:week", sourcePublicationDayId: "publication:week:v7:day:1", sourceVersion: 5, sourceContentHash: "a".repeat(64), matrixContentHash: "b".repeat(64) };
+  const signature = { role: "production_chef" as const, printedName: "Chef", signedAt: "2026-09-14T10:00:00.000Z", actor: "Chef", actorId: "authid:chef-1", attestation: "Reviewed", scope };
+  assert.equal(hasExactMatrixSignatureForActor([signature], "production_chef", "authid:chef-1", scope), true);
+  assert.equal(hasExactMatrixSignatureForActor([signature], "production_chef", "authid:chef-2", scope), false);
+  assert.equal(hasExactMatrixSignatureForActor([signature], "head_chef_site_manager", "authid:chef-1", scope), false);
+  assert.equal(hasExactMatrixSignatureForActor([signature], "production_chef", "authid:chef-1", { ...scope, sourceVersion: 6 }), false, "same menu hash on a new source version is not the same signature lineage");
 });
 
 function extractSourceBetween(source: string, startMarker: string, endMarker: string): string {
@@ -186,8 +196,12 @@ test("signing uses one attempt-scoped master command and confirms every member",
   assert.match(route, /MasterSignCommand/);
   assert.match(route, /CPU_MASTER_SIGN_MEMBERSHIP_CONFLICT/);
   assert.match(route, /idempotencyKey: `\$\{command\.commandId\}:\$\{item\.order\.canonicalId\}`/);
-  assert.match(route, /hasExactSignature\(plan, command\.role, currentScope\)/);
+  assert.match(route, /hasExactSignature\(plan, command\.role, actor\.uid, currentScope\)/);
   assert.match(route, /!event\.duplicate/);
+  const master = route.slice(route.indexOf("async function applyMasterSignatureBatch"), route.indexOf("async function applyMatrixOperation"));
+  assert.ok(master.indexOf("samePublishedLineage(currentScope, expectedLineage)") < master.indexOf("hasAllergenAuthority(plan)"), "stale lineage is reported before a signed-matrix edit lock");
+  assert.match(master, /isCpuWithdrawn\(order\)/);
+  assert.match(master, /AUTHMOD_ONE_OFF_DESTINATION_DENIED/);
 });
 
 test("master signing commits the latest reviewed matrix with its signature", async () => {
@@ -202,10 +216,13 @@ test("master signing commits the latest reviewed matrix with its signature", asy
   assert.match(route, /role: command\.role/);
   assert.match(route, /fullySigned/);
   assert.match(route, /postCommitStatus: "queued"/);
+  assert.match(route, /CPU_MASTER_SIGN_PERSISTENCE_FAILURE/);
+  assert.match(route, /Source order \$\{item\.order\.canonicalId\}/);
+  assert.match(page, /\[\$\{result\.code \|\| "CPU_MASTER_SIGN_ORDER_FAILED"\}\]/);
   const master = extractSourceBetween(route, "async function applyMasterSignatureBatch", "async function applyMatrixOperation");
   assert.match(master, /requireCpuDestinationScope/);
   assert.match(master, /cpuDestinationAllowed/);
-  assert.match(master, /status: 403, code: "AUTHMOD_OPLOC_SCOPE_INCOMPLETE"/);
+  assert.match(master, /status: 403, code: oneOff \? "AUTHMOD_ONE_OFF_DESTINATION_DENIED" : "AUTHMOD_OPLOC_SCOPE_INCOMPLETE"/);
   assert.ok(master.indexOf("AUTHMOD_OPLOC_SCOPE_INCOMPLETE") < master.indexOf("CPU_MASTER_SIGN_MEMBERSHIP_CONFLICT"), "site authorization must fail explicitly before matrix membership validation");
 });
 

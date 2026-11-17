@@ -410,13 +410,13 @@ export default function CpuAllergenReviewPage() {
       });
       const body = await response.json() as {
         error?: { message?: string };
-        results?: Array<{ orderId: string; ok: boolean; error?: string }>;
+        results?: Array<{ orderId: string; ok: boolean; code?: string; error?: string }>;
       };
       if (!response.ok) {
         failures.push(body.error?.message || "The master matrix could not be signed.");
       } else {
         for (const result of body.results || []) {
-          if (!result.ok) failures.push(`${destination(masterOrders.find(order => order.canonicalId === result.orderId) || masterOrders[0])}: ${result.error || "The matrix could not be signed."}`);
+          if (!result.ok) failures.push(`${destination(masterOrders.find(order => order.canonicalId === result.orderId) || masterOrders[0])} [${result.code || "CPU_MASTER_SIGN_ORDER_FAILED"}]: ${result.error || "The matrix could not be signed."}`);
         }
       }
 
