@@ -100,7 +100,7 @@ test("authenticated hosted worker delivers real consumer calls and honours the r
   let invalidations = 0;
   globalThis.fetch = (async input => {
     const url = String(input);
-    if (url.endsWith("/api/production/materialise")) { materialisations += 1; return Response.json({ cpuHandoff: "delivered" }); }
+    if (url.endsWith("/api/production/materialise")) { materialisations += 1; return Response.json({ cpuHandoff: "delivered", logisticsHandoff: "delivered" }); }
     if (url.endsWith("/api/delivered-in/invalidate")) { invalidations += 1; return Response.json({}); }
     throw new Error(`Unexpected consumer URL: ${url}`);
   }) as typeof fetch;
