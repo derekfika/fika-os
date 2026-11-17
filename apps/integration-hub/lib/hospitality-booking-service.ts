@@ -6,7 +6,7 @@ import { hospitalityGroupProjection } from "./hospitality-group-projection";
 import { explicitMenuProductionRouting } from "./connections-service";
 import { LEGACY_HOSPITALITY_MENU_ROUTING } from "./hospitality-routing-suggestions";
 import { BOOKING_LABELS, hospitalityPlatformOf, isGovernedRoutingPlatform, LINE_LABELS, planHospitalityCpuRouting, routingKeys } from "./hospitality-cpu-routing";
-import { assertHospitalityBookingDate, prepareHospitalityAdminOrder } from "./hospitality-booking-cutoffs";
+import { assertHospitalityBookingDate, prepareHospitalityAdminOrder, priceHistoricalRcoaCommercialOrder } from "./hospitality-booking-cutoffs";
 import type { HospitalityAdminAuthority } from "./hospitality-booking-authorization";
 import { trustedPublicOrder } from "./hospitality-price-trust";
 import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, loadRcoaBookingCatalogue, mnkBookingPricingRecords, rcoaBookingConstraintRecords } from "./mnk-booking-catalogue";
@@ -57,7 +57,7 @@ import {
 import { notifyCpuProjection } from "./cpu-projection-client";
 import { deliverLogisticsProjectionForProductionOrder } from "./logistics-projection-outbox";
 import { localBookingFixtures } from "./local-booking-fixtures";
-import { bookingServiceInstant, catalogueMinimums, effectiveProductMinimum, bookingPolicyFor, type RuleItem } from "@fika/server-shared/hospitality-effective-offering";
+import { bookingServiceInstant, ukBookingClock, catalogueMinimums, effectiveProductMinimum, bookingPolicyFor, type RuleItem } from "@fika/server-shared/hospitality-effective-offering";
 import { GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { Transaction } from "firebase-admin/firestore";
@@ -1269,6 +1269,17 @@ function unchangedAmendment(current: CanonicalBooking, patch: Extract<WorkflowCo
   return comparable(current) === comparable(proposed as CanonicalBooking);
 }
 
+function historicalCommercialCorrectionEvidence(before: CanonicalBooking, after: CanonicalBooking) {
+  const snapshot = (booking: CanonicalBooking) => ({
+    guestCount: booking.service.guestCount,
+    client: structuredClone(booking.client),
+    items: structuredClone(booking.order.items),
+    additionalCharges: structuredClone(booking.additionalCharges || []),
+    notes: booking.notes || "",
+  });
+  return { original: snapshot(before), corrected: snapshot(after) };
+}
+
 function futureService(service: CanonicalBooking["service"], now: string) {
   try {
     const start = bookingServiceInstant(service.eventDate, service.startTime);
@@ -1301,6 +1312,7 @@ function validateStaffDietaries(current: CanonicalBooking, patch: Record<string,
 async function prepareBookingAmendment(transaction: Transaction, actor: Actor, canonicalId: string, current: CanonicalBooking, next: CanonicalBooking, command: Extract<WorkflowCommand, { action: "amend" }>, now: string, projectionChanges: ProductionProjectionChange[], grouped = false, admin?: HospitalityAdminAuthority) {
   if (current.lifecycleStatus === "Cancelled") throw conflict("Cancelled bookings cannot be reopened through an amendment.");
   const patch = command.patch;
+  const historicalRcoaCorrection = current.service.portalSiteId === "rcoa" && current.service.eventDate < ukBookingClock(now).date;
   const items = patch.order.items
     .filter((item) => item.quantity > 0)
     .map((item) => ({
@@ -1320,10 +1332,10 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
     groupHash(beforeBuffet.map(item => [item.menuItemId || item.itemId, item.quantity, item.unitPrice, item.choices])) !==
       groupHash(afterBuffet.map(item => [item.menuItemId || item.itemId, item.quantity, item.unitPrice, item.choices]))
   );
-  if (items.some(item => buffetPackageForItem(item.menuItemId || item.itemId))) {
+  if (!historicalRcoaCorrection && items.some(item => buffetPackageForItem(item.menuItemId || item.itemId))) {
     validateBuffetDietaryCounts(patch.dietaries ?? current.dietaries, patch.service.guestCount);
   }
-  for (const item of items) {
+  for (const item of historicalRcoaCorrection ? [] : items) {
     const prior = current.order.items.find(line => line.itemId === item.itemId);
     const selection = hotForkBuffetChoice(item.choices);
     const priorSelection = hotForkBuffetChoice(prior?.choices);
@@ -1333,14 +1345,14 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
       guestCount: patch.service.guestCount, previousGuestCount: current.service.guestCount,
     });
   }
-  if (!items.length && current.order.items.length > 0)
+  if (!historicalRcoaCorrection && !items.length && current.order.items.length > 0)
     throw conflict("Keep at least one menu line on the Booking.");
   const ricePaperLine = items.find((item) => /rice paper rolls?/i.test(String(item.itemName || "")) && item.quantity < 3);
-  if (ricePaperLine) throw conflict("Rice paper rolls require a minimum quantity of 3 boxes.");
+  if (ricePaperLine && !historicalRcoaCorrection) throw conflict("Rice paper rolls require a minimum quantity of 3 boxes.");
   next.client = structuredClone(patch.client);
   next.service = { ...next.service, ...structuredClone(patch.service) };
   const rcoaLocationChanged = (current.service.floorLevel || "") !== (next.service.floorLevel || "") || (current.service.roomOrArea || "") !== (next.service.roomOrArea || "");
-  if (current.service.portalSiteId === "rcoa" && rcoaLocationChanged && !isValidRcoaLocationPair(next.service.floorLevel, next.service.roomOrArea)) throw Object.assign(new Error("Choose a listed RCoA floor and a location on that floor, or leave both fields blank for an existing unassigned booking."), { status: 422, code: "RCOA_LOCATION_INVALID" });
+  if (!historicalRcoaCorrection && current.service.portalSiteId === "rcoa" && rcoaLocationChanged && !isValidRcoaLocationPair(next.service.floorLevel, next.service.roomOrArea)) throw Object.assign(new Error("Choose a listed RCoA floor and a location on that floor, or leave both fields blank for an existing unassigned booking."), { status: 422, code: "RCOA_LOCATION_INVALID" });
   if (
     next.service.portalSiteId === "angel-court" &&
     next.service.guestCount >= 100 &&
@@ -1357,6 +1369,33 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
     vatTotal: 0,
     grossTotal: items.reduce((total, item) => total + item.lineTotal, 0),
   };
+  if (historicalRcoaCorrection) {
+    const serviceKeys = ["eventDate", "startTime", "endTime", "oplocId", "portalSiteId", "portalSiteLabel", "operationalAreaId", "serviceArrangementId", "floorLevel", "roomOrArea", "deliveryPoint", "onsiteContactName", "onsiteContactPhone"] as const;
+    if (serviceKeys.some(key => (current.service[key] ?? "") !== (next.service[key] ?? "")) || current.order.eventType !== next.order.eventType) {
+      throw Object.assign(new Error("Historical commercial corrections must preserve the original event date, service and destination."), { status: 422, code: "HISTORICAL_SERVICE_IMMUTABLE" });
+    }
+    if ((patch.deliveryChargeRequired ?? current.deliveryChargeRequired ?? true) !== (current.deliveryChargeRequired ?? true)) {
+      throw Object.assign(new Error("Historical commercial corrections cannot change delivery responsibility."), { status: 422, code: "HISTORICAL_SERVICE_IMMUTABLE" });
+    }
+    if (groupHash(current.dietaries) !== groupHash(patch.dietaries ?? current.dietaries)) {
+      throw Object.assign(new Error("Historical commercial corrections cannot change dietary or allergen evidence."), { status: 422, code: "HISTORICAL_SAFETY_EVIDENCE_IMMUTABLE" });
+    }
+    const previousLineIds = new Set(current.order.items.map(line => line.itemId));
+    if (new Set(items.map(line => line.itemId)).size !== items.length) throw conflict("Each corrected menu item may appear only once.");
+    const hasNewItems = items.some(line => !previousLineIds.has(line.itemId));
+    next.order = await priceHistoricalRcoaCommercialOrder(transaction, next, current, Boolean(admin));
+    const verifiedCategories = await assertRcoaBookingServiceVisibility(transaction, next, [], current);
+    if (verifiedCategories) next.order.items = next.order.items.map(item => verifiedCategories.has(item.itemId) ? { ...item, category: verifiedCategories.get(item.itemId) } : item);
+    next.notes = optional(patch.notes);
+    next.deliveryChargeRequired = current.deliveryChargeRequired ?? true;
+    next.dietaries = structuredClone(current.dietaries);
+    next.commercialVersion = (current.commercialVersion || 1) + 1;
+    // Keep old quote revisions byte-for-byte; the commercial version makes the current quote stale.
+    next.quoteState = structuredClone(current.quoteState || { revisions: [] });
+    next.lifecycleStatus = current.lifecycleStatus;
+    const priceOverride = Boolean(admin && items.some(line => line.unitPrice !== current.order.items.find(previous => previous.itemId === line.itemId)?.unitPrice && previousLineIds.has(line.itemId)));
+    return { stage: () => {}, override: admin && (priceOverride || hasNewItems) ? { ...admin, noticeOverridden: false, beforePax: current.service.guestCount, afterPax: next.service.guestCount, beforeLines: current.order.items.map(item => ({ id: item.menuItemId || item.itemId, quantity: item.quantity })), afterLines: next.order.items.map(item => ({ id: item.menuItemId || item.itemId, quantity: item.quantity })), downstream: "historical-commercial-only" } : undefined, historicalCommercial: true };
+  }
   let override;
   if (admin) {
     if ((patch.deliveryChargeRequired ?? current.deliveryChargeRequired ?? true) !== (current.deliveryChargeRequired ?? true)) throw conflict("Change production or delivery responsibility through its existing review action.");
@@ -1498,7 +1537,7 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
       );
     }
   };
-  return { stage, override };
+  return { stage, override, historicalCommercial: false };
 }
 
 export async function executeBookingWorkflow(
@@ -1542,6 +1581,7 @@ export async function executeBookingWorkflow(
     };
     const projectionChanges: ProductionProjectionChange[] = [];
     let override: Awaited<ReturnType<typeof prepareBookingAmendment>>["override"];
+    let historicalCommercialCorrection = false;
     if (command.action === "review") {
       next.lifecycleStatus = "Reviewed";
       next.dashboardWorkflow = {
@@ -1564,6 +1604,7 @@ export async function executeBookingWorkflow(
     if (command.action === "amend") {
       const prepared = await prepareBookingAmendment(transaction, actor, canonicalId, current, next, command, now, projectionChanges, false, admin);
       override = prepared.override;
+      historicalCommercialCorrection = prepared.historicalCommercial;
       const { stage } = prepared;
       stage();
     }
@@ -1580,6 +1621,7 @@ export async function executeBookingWorkflow(
         now,
       );
       Object.assign(next, applyBookingAdditionalCharges(current, normalizedCharges));
+      next.audit = [...current.audit, { action: "workflow-set-additional-charges", at: now, by: actor.uid, reason: command.reason }];
     }
     if (command.action === "quote") {
       const revisions = next.quoteState!.revisions;
@@ -1637,7 +1679,7 @@ export async function executeBookingWorkflow(
       };
     }
     let notificationKind: BookingNotificationKind | undefined;
-    if (command.action === "amend") notificationKind = "amended";
+    if (command.action === "amend" && !historicalCommercialCorrection) notificationKind = "amended";
     if (command.action === "approve") {
       next.lifecycleStatus = "Approved";
       notificationKind = "confirmed";
@@ -1702,7 +1744,7 @@ export async function executeBookingWorkflow(
       };
     }
     const reason =
-      command.action === "cancel" || command.action === "amend"
+      command.action === "cancel" || command.action === "amend" || command.action === "set-additional-charges"
         ? command.reason
         : command.action === "quote-pdf-status"
           ? `${command.status === "saved" ? "Quote PDF saved to Drive" : "Quote PDF persistence failed"}${command.error ? `: ${command.error}` : ""}`
@@ -1731,6 +1773,7 @@ export async function executeBookingWorkflow(
         at: now,
         actorId: actor.uid,
         ...(override ? { reason, version: next.version, hospitalityAdmin: override } : { command }),
+        ...(historicalCommercialCorrection ? { commercialCorrection: historicalCommercialCorrectionEvidence(current, next) } : {}),
         ...(command.action === "cancel" ? { cancellationEvent } : {}),
       },
     );
@@ -2100,7 +2143,7 @@ export async function amendHospitalityBookingGroup(actor: Actor, input: GroupAme
     if (groupCommercialState(command.bookingGroupId, children).sourceHash !== command.expectedSourceHash) throw Object.assign(new Error("Booking changed elsewhere. Refresh before amending."), { status: 409 });
     if (command.services.length !== children.length || new Set(command.services.map(s => s.bookingId)).size !== children.length || command.services.some(s => !children.some(b => b.canonicalId === s.bookingId))) throw conflict("The amendment must include exactly the current booking services.");
     const now = new Date().toISOString();
-    const prepared: Array<{ next: CanonicalBooking; stage: () => void; changes: ProductionProjectionChange[]; override: Awaited<ReturnType<typeof prepareBookingAmendment>>["override"] }> = [];
+    const prepared: Array<{ next: CanonicalBooking; stage: () => void; changes: ProductionProjectionChange[]; override: Awaited<ReturnType<typeof prepareBookingAmendment>>["override"]; historicalCommercial: boolean }> = [];
     const nextChildren: CanonicalBooking[] = [];
     for (const child of children) {
       const service = command.services.find(s => s.bookingId === child.canonicalId)!;
@@ -2112,24 +2155,28 @@ export async function amendHospitalityBookingGroup(actor: Actor, input: GroupAme
       assertWorkflowCommand(child, action);
       const next: CanonicalBooking = structuredClone({ ...child, quoteState: child.quoteState || { revisions: [] }, version: child.version + 1, updatedAt: now, updatedBy: actor.uid });
       const changes: ProductionProjectionChange[] = [];
-      const { stage, override } = await prepareBookingAmendment(transaction, actor, child.canonicalId, child, next, action, now, changes, true, admin);
+      const { stage, override, historicalCommercial } = await prepareBookingAmendment(transaction, actor, child.canonicalId, child, next, action, now, changes, true, admin);
+      if (historicalCommercial && children.some(sibling => sibling.canonicalId !== child.canonicalId && sibling.service.eventDate >= ukBookingClock(now).date)) {
+        throw Object.assign(new Error("A grouped historical correction requires every service in the group to have already taken place."), { status: 422, code: "HISTORICAL_GROUP_NOT_COMPLETE" });
+      }
       const platform = hospitalityPlatformOf(next);
-      if (platform && isGovernedRoutingPlatform(platform)) {
+      if (!historicalCommercial && platform && isGovernedRoutingPlatform(platform)) {
         const routes = await explicitMenuProductionRouting(next.order.items.flatMap(item => routingKeys(item, platform)), transaction);
         const plan = planHospitalityCpuRouting(next.order.items, platform, routes);
         if (["routing_required", "routing_conflict"].includes(plan.status)) throw conflict("Resolve production routing for all amended items before saving this booking.");
       }
       next.statusHistory = [...child.statusHistory, { status: next.lifecycleStatus, changedAt: now, changedBy: actor.uid, reason: command.reason }];
       next.audit = [...child.audit, { action: "workflow-amend", at: now, by: actor.uid, reason: command.reason }];
-      prepared.push({ next, stage, changes, override }); nextChildren.push(next);
+      prepared.push({ next, stage, changes, override, historicalCommercial }); nextChildren.push(next);
     }
     validateBookingGroup(command.bookingGroupId, nextChildren);
     // All authorization, membership, routing and downstream reads complete before the first write.
-    for (const { next, stage, override } of prepared) {
+    for (const { next, stage, override, historicalCommercial } of prepared) {
       stage(); transaction.set(bookings().doc(next.canonicalId), next);
-      transaction.create(bookingAudit().doc(`${next.canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${next.version}`), { canonicalId: next.canonicalId, bookingGroupId: command.bookingGroupId, action: "workflow-amend", actorId: actor.uid, at: now, reason: command.reason, version: next.version, ...(override ? { hospitalityAdmin: override } : {}) });
+      const previous = children.find(existing => existing.canonicalId === next.canonicalId)!;
+      transaction.create(bookingAudit().doc(`${next.canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${next.version}`), { canonicalId: next.canonicalId, bookingGroupId: command.bookingGroupId, action: "workflow-amend", actorId: actor.uid, at: now, reason: command.reason, version: next.version, ...(override ? { hospitalityAdmin: override } : {}), ...(historicalCommercial ? { commercialCorrection: historicalCommercialCorrectionEvidence(previous, next) } : {}) });
     }
-    if (prepared.length) {
+    if (prepared.length && !prepared.every(item => item.historicalCommercial)) {
       const changed = prepared.map(item => item.next);
       const notification = groupNotificationRecord({ kind: "amended", children: nextChildren, affected: changed.map(child => child.canonicalId), previous: Object.fromEntries(changed.map(child => [child.canonicalId, children.find(existing => existing.canonicalId === child.canonicalId)!])), anchor: changed[0], eventKey: groupEventKey([command.bookingGroupId, changed.map(child => [child.canonicalId, child.version])]), createdAt: now });
       transaction.create(db.collection("fikaBookingNotifications").doc(notification.notificationId), notification);
@@ -2272,18 +2319,18 @@ export async function setHospitalityGroupServiceCharges(actor: Actor, input: Gro
     const current = children.find(child => child.canonicalId === command.bookingId);
     if (!current) throw conflict("That service is not part of this booking group.");
     assertBookingExpectedVersion(current.version, command.expectedVersion, "set-additional-charges");
-    assertWorkflowCommand(current, { action: "set-additional-charges", charges: command.charges });
+    assertWorkflowCommand(current, { action: "set-additional-charges", reason: command.reason, charges: command.charges });
     const settings = await getQuoteSettingsInTransaction(transaction, dashboardIdForSite(current.service.portalSiteId));
     const now = new Date().toISOString();
     const normalized = normalizeBookingAdditionalCharges(command.charges, current.additionalCharges || [], settings.labourRates ?? defaultDashboardQuoteSettings(settings.dashboardId).labourRates ?? [], actor.uid, now);
     // Replay-safe: re-submitting the saved charges changes nothing (no version, quote or audit churn).
     if (JSON.stringify(normalized) === JSON.stringify(current.additionalCharges || [])) return { booking: current, bookings: children, changed: false as const };
-    const reason = "Group additional charges updated";
+    const reason = command.reason;
     const next: CanonicalBooking = { ...structuredClone(current), ...applyBookingAdditionalCharges(current, normalized), updatedAt: now, updatedBy: actor.uid };
     next.statusHistory = [...current.statusHistory, { status: next.lifecycleStatus, changedAt: now, changedBy: actor.uid, reason }];
     next.audit = [...current.audit, { action: "workflow-set-additional-charges", at: now, by: actor.uid, reason }];
     transaction.set(bookings().doc(next.canonicalId), next);
-    transaction.create(bookingAudit().doc(`${next.canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${next.version}`), { canonicalId: next.canonicalId, bookingGroupId: command.bookingGroupId, action: "workflow-set-additional-charges", at: now, actorId: actor.uid, command: { action: "set-additional-charges", charges: command.charges }, version: next.version, chargeIds: normalized.map(c => c.id) });
+    transaction.create(bookingAudit().doc(`${next.canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${next.version}`), { canonicalId: next.canonicalId, bookingGroupId: command.bookingGroupId, action: "workflow-set-additional-charges", at: now, actorId: actor.uid, reason, command: { action: "set-additional-charges", reason, charges: command.charges }, version: next.version, chargeIds: normalized.map(c => c.id) });
     return { booking: next, bookings: children.map(child => child.canonicalId === next.canonicalId ? next : child), changed: true as const };
   });
 }

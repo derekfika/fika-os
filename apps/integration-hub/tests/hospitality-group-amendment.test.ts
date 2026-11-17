@@ -17,6 +17,7 @@ import { groupAmendmentCommand, groupChargesCommand, validLondonServiceTime, typ
 import { planServiceProduction } from "../../hospitality-booking/lib/cpu-production-plan";
 import type { CanonicalBooking as ClientBooking, ProductionOrder as ClientOrder } from "../../hospitality-booking/lib/canonical-types";
 import { HOT_FORK_BUFFET_CHOICE_ID, HOT_FORK_BUFFET_MENU_VERSION, HOT_FORK_BUFFET_RULES_VERSION, HOT_FORK_BUFFET_SELECTION_CONTRACT, hotForkBuffetMenu } from "@fika/server-shared/hospitality-buffet-selection";
+import { assertHospitalityBookingDate } from "../lib/hospitality-booking-cutoffs";
 
 const enabled = process.env.FIKA_UAT_INTEGRATION_EMULATOR_TEST === "true";
 const actor = { uid: "test:group-amendment", name: "Isolated emulator fixture", role: "integration-admin" as const, synthetic: true };
@@ -80,6 +81,103 @@ test("group service date validation handles invalid dates, London DST gap and en
   assert.equal(groupAmendmentCommand.safeParse(command).success, true);
   patch.order.items.push({ ...patch.order.items[0] });
   assert.equal(groupAmendmentCommand.safeParse(command).success, false);
+});
+test("historical RCoA commercial corrections preserve service and quote evidence without downstream work", { skip: !enabled }, async () => {
+  for (const grouped of [false, true]) {
+    const f = await fixture(true);
+    const pastDate = "2025-11-17";
+    const canonical = db.collection("integrationHubCanonical");
+    const put = (id: string, entityType: string, record: object) => canonical.doc(stableDocumentId(id)).set({ canonicalId: id, entityType, lifecycleStatus: "published", publicationStatus: "published", record: { lifecycleState: "active", ...record } });
+    for (const menuId of [f.item, f.other, f.inHouse]) {
+      const offeringId = `hospitality-menu-offering:historical:${randomUUID()}`;
+      await put(offeringId, "Hospitality Menu Offering", { hospitalityMenuItemId: menuId, oplocId: f.children[0].service.oplocId, offeringMode: "standard" });
+      await put(`${offeringId}:price`, "Hospitality Menu Price", { hospitalityMenuOfferingId: offeringId, amount: 2.5, vatRate: 0.2, effectiveFrom: "2020-01-01" });
+    }
+    let rows = await f.read();
+    for (const row of rows) {
+      row.service.eventDate = pastDate;
+      row.service.guestCount += 1;
+      row.lifecycleStatus = "Completed";
+      row.client = { ...row.client, name: "Corrected contact", invoiceReference: "PO-HIST-042" };
+      row.source.originalPayload = { ...row.source.originalPayload, order: { ...row.source.originalPayload.order, items: structuredClone(row.order.items), netTotal: row.order.netTotal } };
+      row.quoteState = { currentRevisionId: `quote:${row.canonicalId}:r1`, revisions: [{ id: `quote:${row.canonicalId}:r1`, revision: 1, createdAt: row.createdAt, createdBy: actor.uid, commercialVersion: 1, snapshot: { amount: 20 }, documentReference: `quote:${row.canonicalId}:r1`, stale: false, pdfStatus: "saved", driveFileId: `file:${row.canonicalId}` }] };
+      await bookings().doc(row.canonicalId).set(row);
+    }
+    const target = rows[0];
+    const production = { canonicalId: `production:${target.canonicalId}`, sourceBookingId: target.canonicalId, status: "completed", version: 4, audit: [{ action: "completed" }] };
+    const productionRef = db.collection("fikaProductionOrdersV1").doc(stableDocumentId(production.canonicalId));
+    await productionRef.set(production);
+    const requirement = { canonicalId: `requirement:${target.canonicalId}`, sourceBookingId: target.canonicalId, status: "active", version: 3, audit: [{ action: "fulfilled" }] };
+    const requirementRef = db.collection("fikaProductionRequirements").doc(stableDocumentId(requirement.canonicalId));
+    await requirementRef.set(requirement);
+    if (!grouped) { delete target.bookingGroup; await bookings().doc(target.canonicalId).set(target); }
+    const beforeCalendarFailure = (await bookings().doc(target.canonicalId).get()).data() as CanonicalBooking;
+    await assert.rejects(db.runTransaction(transaction => assertHospitalityBookingDate(transaction, beforeCalendarFailure, new Date().toISOString())), (error: any) => error.code === "PAST_DELIVERY_DATE" && error.message === "Choose a current or future delivery date.");
+    const patchFor = (booking: CanonicalBooking) => ({ client: { ...structuredClone(booking.client), invoiceReference: "PO-HIST-CORRECTED" }, service: { eventDate: booking.service.eventDate, startTime: booking.service.startTime, guestCount: booking.service.guestCount + 2, floorLevel: booking.service.floorLevel, roomOrArea: booking.service.roomOrArea }, order: { eventType: booking.order.eventType, items: [...booking.order.items.map(({ lineTotal: _lineTotal, ...line }) => ({ ...line, unitPrice: 999, quantity: 3 })), { itemId: f.other, itemName: "Corrected food selection", unitPrice: 999, quantity: 2 }] }, notes: "Corrected final quantities and food selection for invoicing", dietaries: structuredClone(booking.dietaries), deliveryChargeRequired: true });
+    if (grouped) {
+      rows = await f.read();
+      const command = f.command(rows);
+      command.services.forEach(service => { service.patch = patchFor(rows.find(row => row.canonicalId === service.bookingId)!); });
+      command.reason = "Correct actual drinks consumed";
+      const invalidTime = structuredClone(command); invalidTime.services[0].patch.service.startTime = "10:00";
+      await assert.rejects(amendHospitalityBookingGroup(actor, invalidTime, async () => {}), { code: "HISTORICAL_SERVICE_IMMUTABLE" });
+      const result = await amendHospitalityBookingGroup(actor, command, async () => {});
+      assert.equal(result.bookings[0].service.eventDate, pastDate);
+      assert.equal(result.bookings[0].service.guestCount, rows[0].service.guestCount + 2);
+      assert.equal(result.bookings[0].service.startTime, rows[0].service.startTime);
+      assert.equal(result.bookings[0].client.invoiceReference, "PO-HIST-CORRECTED");
+      assert.equal(result.bookings[0].lifecycleStatus, "Completed");
+      assert.equal(result.bookings[0].order.items[0].unitPrice, 2, "previously agreed unit prices are preserved");
+      assert.equal(result.bookings[0].order.items[0].lineTotal, 6);
+      assert.equal(result.bookings[0].order.items[1].unitPrice, 2.5, "new items use the historical effective catalogue price");
+      assert.equal(result.bookings[0].order.items[1].lineTotal, 5);
+      assert.deepEqual(result.bookings[0].quoteState, rows[0].quoteState, "prior group quote revisions remain immutable");
+      assert.deepEqual(result.bookings[0].source.originalPayload, rows[0].source.originalPayload, "original submission remains distinct from the corrected commercial order");
+      const amendmentAudit = (await db.collection("fikaBookingAudit").doc(`${result.bookings[0].canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${result.bookings[0].version}`).get()).data();
+      assert.equal(amendmentAudit?.reason, command.reason);
+      assert.equal(amendmentAudit?.commercialCorrection.original.items[0].quantity, 10);
+      assert.equal(amendmentAudit?.commercialCorrection.corrected.items[1].itemId, f.other);
+      assert.equal(result.projectionPropagation.results.length, 0);
+      assert.equal((await db.collection("fikaBookingNotifications").where("bookingGroupId", "==", f.id).get()).size, 0);
+      assert.deepEqual((await productionRef.get()).data(), production, "completed production authority is untouched");
+      assert.deepEqual((await requirementRef.get()).data(), requirement, "fulfilment authority is untouched");
+      const charge = { id: `charge_${randomUUID()}`, kind: "manual" as const, category: "equipment" as const, label: "Linen hire", quantity: 2, unitNet: 12.5 };
+      await setHospitalityGroupServiceCharges(actor, { bookingGroupId: f.id, bookingId: result.bookings[0].canonicalId, expectedVersion: result.bookings[0].version, expectedSourceHash: groupCommercialState(f.id, result.bookings).sourceHash, reason: "Correct retrospective linen hire", charges: [charge] }, async () => {});
+      const chargeAudit = (await db.collection("fikaBookingAudit").doc(`${result.bookings[0].canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${result.bookings[0].version + 1}`).get()).data();
+      assert.equal(chargeAudit?.reason, "Correct retrospective linen hire");
+      assert.deepEqual((await productionRef.get()).data(), production, "commercial charge corrections do not alter completed production authority");
+      assert.deepEqual((await requirementRef.get()).data(), requirement, "commercial charge corrections do not alter fulfilment authority");
+    } else {
+      const before = (await bookings().doc(target.canonicalId).get()).data() as CanonicalBooking;
+      const invalidTime = patchFor(before); invalidTime.service.roomOrArea = "Retrospective destination change";
+      await assert.rejects(executeBookingWorkflow(actor, before.canonicalId, before.version, { action: "amend", reason: "Correction", patch: invalidTime }), { code: "HISTORICAL_SERVICE_IMMUTABLE" });
+      const result = await executeBookingWorkflow(actor, before.canonicalId, before.version, { action: "amend", reason: "Correct actual drinks consumed", patch: patchFor(before) });
+      assert.equal(result.booking.service.eventDate, pastDate);
+      assert.equal(result.booking.service.guestCount, before.service.guestCount + 2);
+      assert.equal(result.booking.service.startTime, before.service.startTime);
+      assert.equal(result.booking.client.invoiceReference, "PO-HIST-CORRECTED");
+      assert.equal(result.booking.lifecycleStatus, "Completed");
+      assert.equal(result.booking.order.items[0].unitPrice, 2, "previously agreed unit prices are preserved");
+      assert.equal(result.booking.order.items[0].lineTotal, 6);
+      assert.equal(result.booking.order.items[1].unitPrice, 2.5, "new items use the historical effective catalogue price");
+      assert.equal(result.booking.order.items[1].lineTotal, 5);
+      assert.deepEqual(result.booking.quoteState, before.quoteState, "prior quote revisions remain immutable");
+      assert.deepEqual(result.booking.source.originalPayload, before.source.originalPayload, "original submission remains distinct from the corrected commercial order");
+      const amendmentAudit = (await db.collection("fikaBookingAudit").doc(`${result.booking.canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:${result.booking.version}`).get()).data();
+      assert.equal(amendmentAudit?.command.reason, "Correct actual drinks consumed");
+      assert.equal(amendmentAudit?.commercialCorrection.original.items[0].quantity, 10);
+      assert.equal(amendmentAudit?.commercialCorrection.corrected.items[1].itemId, f.other);
+      assert.equal(result.projectionPropagation.results.length, 0);
+      assert.equal((await db.collection("fikaBookingNotifications").doc(bookingNotificationId(result.booking, "amended", result.booking.version)).get()).exists, false);
+      assert.deepEqual((await productionRef.get()).data(), production, "completed production authority is untouched");
+      assert.deepEqual((await requirementRef.get()).data(), requirement, "fulfilment authority is untouched");
+      const charge = { id: `charge_${randomUUID()}`, kind: "manual" as const, category: "equipment" as const, label: "Linen hire", quantity: 2, unitNet: 12.5 };
+      const savedCharges = await executeBookingWorkflow(actor, result.booking.canonicalId, result.booking.version, { action: "set-additional-charges", reason: "Correct retrospective linen hire", charges: [charge] });
+      assert.equal(savedCharges.booking.additionalCharges?.[0].netTotal, 25);
+      assert.deepEqual((await productionRef.get()).data(), production, "commercial charge corrections do not alter completed production authority");
+      assert.deepEqual((await requirementRef.get()).data(), requirement, "commercial charge corrections do not alter fulfilment authority");
+    }
+  }
 });
 test("an unchanged group save preserves every version and quote without new audit or handoff work", { skip: !enabled }, async () => {
   const f = await fixture(); await f.quote(0); const before = await f.read();
@@ -442,20 +540,22 @@ test("after-CPU amendment retires only changed work, preserves immutable quote h
 });
 
 test("group charges command accepts only stable-ID manual/labour lines and no client totals", () => {
-  const base = { bookingGroupId: "group:test", bookingId: "booking:test", expectedVersion: 1, expectedSourceHash: "a".repeat(64) };
+  const base = { bookingGroupId: "group:test", bookingId: "booking:test", expectedVersion: 1, expectedSourceHash: "a".repeat(64), reason: "Invoice correction" };
   const line = { id: "charge_12345678", kind: "manual", category: "equipment", label: "Hire", quantity: 2, unitNet: 10 };
   assert.equal(groupChargesCommand.safeParse({ ...base, charges: [line] }).success, true);
   assert.equal(groupChargesCommand.safeParse({ ...base, charges: [] }).success, true);
   assert.equal(groupChargesCommand.safeParse({ ...base, charges: [{ ...line, netTotal: 1 }] }).success, false);
   assert.equal(groupChargesCommand.safeParse({ ...base, charges: [{ ...line, id: "x" }] }).success, false);
   assert.equal(groupChargesCommand.safeParse({ ...base, charges: [line], extra: true }).success, false);
+  const { reason: _reason, ...missingReason } = base;
+  assert.equal(groupChargesCommand.safeParse({ ...missingReason, charges: [line] }).success, false);
 });
 test("group charges change only the targeted service, reprice the group, stale its quote, replay safely and reload", { skip: !enabled }, async () => {
   const f = await fixture(); await f.quote(0); const before = await f.read();
   const oldQuote = before[1].quoteState!.revisions.find(revision => revision.id === before[1].quoteState!.currentRevisionId)!;
   const oldQuoteSnapshot = structuredClone(oldQuote.snapshot);
   const normalLabour = { id: `charge_${randomUUID()}`, kind: "labour" as const, category: "labour" as const, label: "KP labour", labour: { roleId: "kp", roleLabel: "KP", staffCount: 2, hoursPerPerson: 5, hourlyRate: 17.7, multiplier: 1, rateSource: "governed" as const } };
-  const command = { bookingGroupId: f.id, bookingId: before[1].canonicalId, expectedVersion: before[1].version, expectedSourceHash: groupCommercialState(f.id, before).sourceHash };
+  const command = { bookingGroupId: f.id, bookingId: before[1].canonicalId, expectedVersion: before[1].version, expectedSourceHash: groupCommercialState(f.id, before).sourceHash, reason: "Correct final staffing and equipment charges" };
   await assert.rejects(setHospitalityGroupServiceCharges(actor, { ...command, charges: [normalLabour] }, async () => {}), /Agency \/ overtime rate/);
   assert.deepEqual(await f.read(), before, "a rejected Normal line leaves bookings and quote history untouched");
   const charges = [
@@ -493,7 +593,7 @@ test("wave integration: a charge save invalidates stale cancellation and cancell
   const f = await fixture(); await f.quote(0); const before = await f.read();
   const beforeHash = groupCommercialState(f.id, before).sourceHash;
   const charge = { id: `charge_${randomUUID()}`, kind: "manual" as const, category: "equipment" as const, label: "Group integration charge", quantity: 2, unitNet: 15.5 };
-  await setHospitalityGroupServiceCharges(actor, { bookingGroupId: f.id, bookingId: before[1].canonicalId, expectedVersion: before[1].version, expectedSourceHash: beforeHash, charges: [charge] }, async () => {});
+  await setHospitalityGroupServiceCharges(actor, { bookingGroupId: f.id, bookingId: before[1].canonicalId, expectedVersion: before[1].version, expectedSourceHash: beforeHash, reason: "Correct equipment hire charge", charges: [charge] }, async () => {});
   const charged = await f.read();
   await assert.rejects(cancelHospitalityBookingGroup(actor, { bookingGroupId: f.id, expectedSourceHash: beforeHash, reason: "Stale cancellation" }, async () => {}, "customer-cancellation"), /changed elsewhere/);
   assert.deepEqual(await f.read(), charged);
@@ -502,7 +602,7 @@ test("wave integration: a charge save invalidates stale cancellation and cancell
   assert.ok(cancelled.bookings.every(child => child.lifecycleStatus === "Cancelled" && child.dashboardWorkflow?.cancellation?.notificationOutcome === "queued"));
   const saved = await f.read();
   assert.deepEqual(saved[1].additionalCharges, charged[1].additionalCharges, "cancellation preserves approved commercial history");
-  await assert.rejects(setHospitalityGroupServiceCharges(actor, { bookingGroupId: f.id, bookingId: saved[1].canonicalId, expectedVersion: saved[1].version, expectedSourceHash: groupCommercialState(f.id, saved).sourceHash, charges: [] }, async () => {}), /cancelled|additional charges/i);
+  await assert.rejects(setHospitalityGroupServiceCharges(actor, { bookingGroupId: f.id, bookingId: saved[1].canonicalId, expectedVersion: saved[1].version, expectedSourceHash: groupCommercialState(f.id, saved).sourceHash, reason: "Remove cancelled charge", charges: [] }, async () => {}), /cancelled|additional charges/i);
   assert.deepEqual(await f.read(), saved);
 });
 

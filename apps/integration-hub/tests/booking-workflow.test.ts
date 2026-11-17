@@ -41,11 +41,12 @@ test("an amendment can reopen a completed or cancelled Booking while retaining c
 
 test("additional charges are directly editable in the active quoting lifecycle and on Completed bookings", () => {
   for (const lifecycleStatus of ["New", "Reviewed", "Quoted", "Completed"] as const) {
-    assert.doesNotThrow(() => assertWorkflowCommand({ lifecycleStatus }, { action: "set-additional-charges", charges: [] }));
+    assert.doesNotThrow(() => assertWorkflowCommand({ lifecycleStatus }, { action: "set-additional-charges", reason: "Invoice correction", charges: [] }));
   }
   for (const lifecycleStatus of ["Sent to CPU", "Cancelled"] as const) {
-    assert.throws(() => assertWorkflowCommand({ lifecycleStatus }, { action: "set-additional-charges", charges: [] }), /governed amendment workflow/);
+    assert.throws(() => assertWorkflowCommand({ lifecycleStatus }, { action: "set-additional-charges", reason: "Invoice correction", charges: [] }), /governed amendment workflow/);
   }
+  assert.throws(() => assertWorkflowCommand({ lifecycleStatus: "Completed" }, { action: "set-additional-charges", reason: "  ", charges: [] }), /reason is required/);
 });
 
 test("stale expected versions return 409 for charge saves before transaction writes", () => {

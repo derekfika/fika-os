@@ -98,11 +98,11 @@ export function HospitalityGroupDetail({ group, busy, onQuote, production, site,
     } catch (cause) { setChargeError(cause instanceof Error ? cause.message : "The current booking could not be loaded."); }
     finally { lock.current = false; setChargeLoading(undefined); setChargeStatus(""); onBusyChange(false); }
   };
-  const saveCharges = async (charges: BookingAdditionalChargeInput[]) => {
+  const saveCharges = async (charges: BookingAdditionalChargeInput[], reason: string) => {
     if (!chargeTarget || lock.current) return;
     lock.current = true; setChargeStatus("Saving charges…"); onBusyChange(true);
     try {
-      const response = await fetch("/api/booking-groups/charges", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookingGroupId: group.id, bookingId: chargeTarget.booking.canonicalId, expectedVersion: chargeTarget.booking.version, expectedSourceHash: chargeTarget.sourceHash, charges }) });
+      const response = await fetch("/api/booking-groups/charges", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookingGroupId: group.id, bookingId: chargeTarget.booking.canonicalId, expectedVersion: chargeTarget.booking.version, expectedSourceHash: chargeTarget.sourceHash, reason, charges }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message || "Could not save the additional charges.");
       await onAmended();
