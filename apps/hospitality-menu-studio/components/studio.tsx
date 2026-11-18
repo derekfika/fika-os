@@ -14,8 +14,14 @@ import { kitchenQuantities } from "../lib/review";
 import styles from "./studio.module.css";
 import {
   assortmentTotal,
+  checkerHandoff,
+  dishReviewStatus,
+  ReviewResponseGuard,
+  type DishReviewStatus,
   localDraftKey as localKey,
-  moveDish,
+  groupSelectedDishes,
+  moveGroupedDish,
+  planningTarget,
   retainedDraftMatchesRequest,
 } from "./studio-model";
 
@@ -340,6 +346,64 @@ function SaveNotice({
   );
 }
 
+function DishSafetyReview({ dish, saved, canManage }: { dish: Dish; saved: boolean; canManage: boolean }) {
+  const key = saved && dish.version > 0 ? `${dish.id}:${dish.version}` : "";
+  const current = useRef(new ReviewResponseGuard());
+  current.current.select(key);
+  const busyRef = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [result, setResult] = useState<{ key: string; status?: DishReviewStatus; message?: string; url?: string }>({ key: "" });
+  useEffect(() => {
+    setConfirmed(false);
+    setResult({ key: "" });
+    return () => { current.current.invalidate(); };
+  }, [key]);
+  const shown = result.key === key ? result : null;
+  async function check() {
+    if (!key || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    const generation = current.current.start();
+    try {
+      const response = await request(undefined, `?dishId=${encodeURIComponent(dish.id)}&reviewVersion=${dish.version}`);
+      if (current.current.matches(key, generation)) setResult((previous) => ({ key, status: dishReviewStatus(response), url: previous.key === key ? previous.url : undefined }));
+    } catch {
+      if (current.current.matches(key, generation)) setResult({ key, status: "unavailable", message: "Status could not be checked. Reload the saved dish if it changed elsewhere, then try again." });
+    } finally { busyRef.current = false; setBusy(false); }
+  }
+  async function submit() {
+    if (!key || !confirmed || !canManage || busyRef.current || !shown?.status || shown.status === "unavailable") return;
+    busyRef.current = true;
+    setBusy(true);
+    const generation = current.current.start();
+    try {
+      const response = await request({ action: "submit-dish-review", dishId: dish.id, version: dish.version, confirmed: true });
+      if (!current.current.matches(key, generation)) return;
+      const handoff = checkerHandoff(response, dish.id, dish.version);
+      if (!handoff.acknowledged) throw new Error("Invalid checker handoff");
+      setConfirmed(false);
+      setResult({ key, message: "Review request acknowledged for this saved version. Check status for current evidence.", url: handoff.url });
+    } catch {
+      if (current.current.matches(key, generation)) setResult({ key, status: "unavailable", message: "Review could not be requested. The checker may be unavailable or this dish may have changed; reload and try again." });
+    } finally { busyRef.current = false; setBusy(false); }
+  }
+  const labels: Record<DishReviewStatus, string> = { unverified: "Unverified", in_review: "In review", verified: "Verified", revoked: "Revoked", unavailable: "Unavailable" };
+  return <section className="fika-card">
+    <h2>Food-safety review</h2>
+    <p>Review and signing use the existing FIKA allergen checker. The last checked status applies only to the saved dish version and may change; check again for current evidence.</p>
+    {!key ? <p>Save the current changes before checking or requesting review.</p> : <>
+      <Button disabled={busy} onClick={() => void check()}>{busy ? "Working…" : "Check review status"}</Button>
+      <div role="status" aria-live="polite">{shown?.status && <p>Last checked status: {labels[shown.status]} · Version {dish.version}</p>}{shown?.message && <p>{shown.message}</p>}</div>
+      {shown?.url && <p><a href={shown.url}>Open the existing allergen checker</a></p>}
+      {shown?.status && shown.status !== "unavailable" && canManage && <>
+        <label className="fika-choice"><input type="checkbox" checked={confirmed} disabled={busy} onChange={(e) => setConfirmed(e.target.checked)} /> I confirm requesting review of saved version {dish.version}.</label>
+        <Button disabled={busy || !confirmed} onClick={() => void submit()}>Request food-safety review</Button>
+      </>}
+    </>}
+  </section>;
+}
+
 export default function Studio({ actor }: { actor: StudioActor }) {
   const [page, setPage] = useState<Page>("home");
   const [menus, setMenus] = useState<Menu[]>([]);
@@ -375,6 +439,10 @@ export default function Studio({ actor }: { actor: StudioActor }) {
     }[]
   >([]);
   const [draftVersion, setDraftVersion] = useState("");
+  const [compareFrom, setCompareFrom] = useState("");
+  const [compareTo, setCompareTo] = useState("");
+  const [comparison, setComparison] = useState<string[] | null>(null);
+  const comparisonGeneration = useRef(0);
   const [restoreConfirmed, setRestoreConfirmed] = useState(false);
   const [scopeSection, setScopeSection] = useState("");
   const [scopeWeek, setScopeWeek] = useState("");
@@ -484,6 +552,10 @@ export default function Studio({ actor }: { actor: StudioActor }) {
     setHistory([]);
     setDraftVersions([]);
     setDraftVersion("");
+    setCompareFrom("");
+    setCompareTo("");
+    setComparison(null);
+    comparisonGeneration.current++;
     setRestoreConfirmed(false);
     setActivationId("");
     setActivationConfirmed(false);
@@ -685,6 +757,27 @@ export default function Studio({ actor }: { actor: StudioActor }) {
     } finally {
       setActionBusy(false);
     }
+  }
+  async function compareDraftVersions() {
+    if (!menu || !compareFrom || !compareTo) return;
+    const generation = ++comparisonGeneration.current;
+    setComparison(null);
+    setActionError("");
+    setActionBusy(true);
+    try {
+      const result = await request(undefined, `?menuId=${encodeURIComponent(menu.id)}&fromVersion=${encodeURIComponent(compareFrom)}&toVersion=${encodeURIComponent(compareTo)}`);
+      if (!Array.isArray(result.changes) || !result.changes.every((change: unknown) => typeof change === "string")) throw new Error("Comparison is unavailable.");
+      if (generation === comparisonGeneration.current) setComparison(result.changes);
+    } catch {
+      if (generation === comparisonGeneration.current) setActionError("Draft comparison is unavailable. Try again.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+  function changeComparison(setter: (value: string) => void, value: string) {
+    comparisonGeneration.current++;
+    setComparison(null);
+    setter(value);
   }
   const nav: [Page, string][] = [
     ["home", "Home"],
@@ -1140,6 +1233,12 @@ export default function Studio({ actor }: { actor: StudioActor }) {
                       </button>
                       <h1>{section.name}</h1>
                       <p>Edit one section at a time.</p>
+                      <label className="fika-field">
+                        Selected section
+                        <select className="fika-select" value={sectionId} onChange={(e) => { setSectionId(e.target.value); setWeek(0); }}>
+                          {menu.sections.map((s) => <option key={s.id} value={s.id}>{s.name || "Untitled section"}</option>)}
+                        </select>
+                      </label>
                     </div>
                     <SaveNotice
                       state={menuDraft.state}
@@ -1297,53 +1396,28 @@ export default function Studio({ actor }: { actor: StudioActor }) {
                         : "All season"}{" "}
                       · {selected.length} dishes
                     </h2>
-                    {selected.map((id, index) => {
-                      const item = dishes.find((d) => d.id === id);
-                      return (
-                        <div className={styles.row} key={id}>
-                          <span>
-                            <strong>{item?.name || "Dish unavailable"}</strong>{" "}
-                            <small>
-                              {item
-                                ? `${title(item.category)}${item.temperature ? ` · ${title(item.temperature)}` : ""}`
-                                : id}
-                            </small>
-                          </span>
-                          <div className={styles.actions}>
-                            <Button
-                              label={`Move ${item?.name || "dish"} up`}
-                              disabled={!actor.canManage || index === 0}
-                              onClick={() => {
-                                updateSelected(moveDish(selected, index, -1));
-                              }}
-                            >
-                              Move up
-                            </Button>
-                            <Button
-                              label={`Move ${item?.name || "dish"} down`}
-                              disabled={
-                                !actor.canManage ||
-                                index === selected.length - 1
-                              }
-                              onClick={() => {
-                                updateSelected(moveDish(selected, index, 1));
-                              }}
-                            >
-                              Move down
-                            </Button>
-                            <Button
-                              label={`Remove ${item?.name || "dish"} from section`}
-                              disabled={!actor.canManage}
-                              onClick={() =>
-                                updateSelected(selected.filter((x) => x !== id))
-                              }
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {planningTarget(section.name) && (
+                      <p className="fika-notice">Planning guide: {planningTarget(section.name)}. These are suggestions, not limits. Veggie / Vegan combines two distinct classifications.</p>
+                    )}
+                    <p className="fika-help">Dishes are grouped here by classification. Move controls reorder within each group; saved menu order is retained across groups. Load more dishes to resolve selections not yet loaded.</p>
+                    {groupSelectedDishes(selected, dishes).map((group) => (
+                      <div key={group.label} className={styles.dishGroup}>
+                        <h3>{group.label} · {group.ids.length}</h3>
+                        {group.ids.map((id, index) => {
+                          const item = dishes.find((d) => d.id === id);
+                          return (
+                            <div className={styles.row} key={id}>
+                              <span><strong>{item?.name || "Dish not loaded"}</strong><small>{item ? `${title(item.category)}${item.temperature ? ` · ${title(item.temperature)}` : ""}` : id}</small></span>
+                              <div className={styles.actions}>
+                                <Button label={`Move ${item?.name || "dish"} up within ${group.label}`} disabled={!actor.canManage || index === 0} onClick={() => updateSelected(moveGroupedDish(selected, group.ids, id, -1))}>Move up</Button>
+                                <Button label={`Move ${item?.name || "dish"} down within ${group.label}`} disabled={!actor.canManage || index === group.ids.length - 1} onClick={() => updateSelected(moveGroupedDish(selected, group.ids, id, 1))}>Move down</Button>
+                                <Button label={`Remove ${item?.name || "dish"} from section`} disabled={!actor.canManage} onClick={() => updateSelected(selected.filter((x) => x !== id))}>Remove</Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
                     {!selected.length && <p>No dishes in this section yet.</p>}
                     <div className={styles.formGrid}>
                       <label className="fika-field">
@@ -1614,11 +1688,8 @@ export default function Studio({ actor }: { actor: StudioActor }) {
                         </span>
                       </label>
                     </div>
-                    <p className="fika-notice">
-                      Food-safety verification is unavailable here. Review and
-                      signing use the existing FIKA allergen process.
-                    </p>
                   </section>
+                  <DishSafetyReview dish={dish} saved={dishDraft.state === "saved"} canManage={actor.canManage} />
                   <section className="fika-card">
                     <div className={styles.heading}>
                       <div>
@@ -2148,6 +2219,28 @@ export default function Studio({ actor }: { actor: StudioActor }) {
                       </Button>
                       {draftVersions.length > 0 && (
                         <>
+                          <ul aria-label="Saved draft history">
+                            {draftVersions.map((v) => <li key={v.version}>Version {v.version} · {v.savedAt} · Saved by {v.actorId}{v.restoredFromVersion !== undefined ? ` · Restored from version ${v.restoredFromVersion}` : ""}</li>)}
+                          </ul>
+                          <h3>Compare saved drafts</h3>
+                          <p>Compare saved menu structure. This is not a published revision comparison and does not include changes to independently saved dish details.</p>
+                          <div className={styles.formGrid}>
+                            <label className="fika-field">From version
+                              <select className="fika-select" value={compareFrom} onChange={(e) => changeComparison(setCompareFrom, e.target.value)}>
+                                <option value="">Select a version</option>
+                                {draftVersions.map((v) => <option key={v.version} value={v.version}>Version {v.version} · {v.savedAt}</option>)}
+                              </select>
+                            </label>
+                            <label className="fika-field">To version
+                              <select className="fika-select" value={compareTo} onChange={(e) => changeComparison(setCompareTo, e.target.value)}>
+                                <option value="">Select a version</option>
+                                {draftVersions.map((v) => <option key={v.version} value={v.version}>Version {v.version} · {v.savedAt}</option>)}
+                              </select>
+                            </label>
+                          </div>
+                          <Button disabled={actionBusy || !compareFrom || !compareTo} onClick={() => void compareDraftVersions()}>Compare saved drafts</Button>
+                          {comparison && <div role="status"><h3>Version {compareFrom} to {compareTo}</h3>{comparison.length ? <ul>{comparison.map((change, i) => <li key={i}>{change}</li>)}</ul> : <p>No structural differences found.</p>}</div>}
+                          <h3>Restore a draft</h3>
                           <label className="fika-field">
                             Saved draft version
                             <select
