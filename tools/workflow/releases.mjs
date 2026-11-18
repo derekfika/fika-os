@@ -10,7 +10,7 @@ import { recoverySnapshot, isDomainOperationTarget, isReleaseRelevantOperation, 
 import { readCreateAuditEvents } from './audit.mjs';
 import { assertCpuAdoptionTarget, observeCpuAdoption, adoptCompletedCpu } from './cpu-prod-adoption.mjs';
 import { configurationDigest, prepareHotfixRelease } from './hotfix-release.mjs';
-import { assertMainReconciled, hotfixBranch } from './hotfix.mjs';
+import { assertHotfixFilesReconciled, assertMainReconciled, hotfixBranch } from './hotfix.mjs';
 
 export function releaseRecord(branch) {
   const sha = ref(`refs/remotes/origin/${branch}`);
@@ -409,11 +409,7 @@ function planRelease(t, options, pointer, before, access) {
   if (!rollback && pointer?.record.kind === 'hotfix' && pointer.record.mainReconciliation?.status === 'pending') {
     const priorHotfix = pointer.record.hotfix;
     if (!priorHotfix || !ancestor(priorHotfix.sourceSha, sourceSha)) throw Error('Production promotion is held until the hotfix source is merged through a protected, green main PR');
-    const identicalFiles = (priorHotfix.paths || []).every(file => {
-      try { return git('rev-parse', `${priorHotfix.sourceSha}:${file}`) === git('rev-parse', `${sourceSha}:${file}`); }
-      catch { return false; }
-    });
-    if (!identicalFiles) throw Error('Main source does not contain the exact reviewed hotfix file contents; reconcile the hotfix in a protected main PR first');
+    assertHotfixFilesReconciled(priorHotfix, sourceSha, (sha, file) => git('rev-parse', `${sha}:${file}`));
     plan.mainReconciliation = { hotfixSourceSha:priorHotfix.sourceSha, diffHash:priorHotfix.diffHash,
       mainPrMerged:true, mainCheckGreen:true, recordCommit:sourceSha };
     assertMainReconciled(pointer.record, plan.mainReconciliation);

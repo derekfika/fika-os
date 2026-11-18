@@ -51,9 +51,10 @@ async function fixture(run) {
     const protection={enforce_admins:{enabled:true},allow_force_pushes:{enabled:false},allow_deletions:{enabled:false},
       required_pull_request_reviews:{required_approving_review_count:1,dismiss_stale_reviews:true},
       required_status_checks:{strict:true,contexts:[MAIN_CHECK],checks:[{context:MAIN_CHECK,app_id:15368}]}};
+    const effectiveWorkflows=[{type:'workflows',parameters:{workflows:[{path:'.github/workflows/validate.yml',repository_id:1297704019,ref:'refs/heads/main'}]}}];
     const github=endpoint=>{
       if(endpoint.includes('/branches/')&&endpoint.endsWith('/protection'))return protection;
-      if(endpoint.includes('/rules/branches/'))return [];
+      if(endpoint.includes('/rules/branches/'))return effectiveWorkflows;
       if(endpoint.includes('/rulesets?'))return [];
       if(endpoint.endsWith(`/commits/${finalSource}/pulls?per_page=100`))return [pr];
       if(endpoint.includes('/commits/')&&endpoint.endsWith('/pulls?per_page=100'))return [];
@@ -85,6 +86,10 @@ test('prepares a hotfix release only from its exact protected PR, source baselin
 
 test('rejects effective protection gaps, stale approval, configuration drift and source mismatch',()=>fixture(async f=>{
   const original=f.github;
+  f.github=endpoint=>endpoint.includes('/rules/branches/') ? [] : original(endpoint);
+  await assert.rejects(prepareHotfixRelease({app:'hub',releaseId,sourceSha:f.sourceSha,serving:f.serving,backend:f.backend,github:f.github,read:f.read}),/no verifiable protected-PR/);
+  f.github=endpoint=>endpoint.includes('/rules/branches/') ? [{type:'workflows',parameters:{workflows:[{path:'.github/workflows/other.yml',repository_id:1297704019,ref:'refs/heads/main'}]}}] : original(endpoint);
+  await assert.rejects(prepareHotfixRelease({app:'hub',releaseId,sourceSha:f.sourceSha,serving:f.serving,backend:f.backend,github:f.github,read:f.read}),/no verifiable protected-PR/);
   f.github=endpoint=>endpoint.includes('/branches/')&&endpoint.endsWith('/protection')
     ? {...f.protection,required_pull_request_reviews:{required_approving_review_count:0}} : original(endpoint);
   await assert.rejects(prepareHotfixRelease({app:'hub',releaseId,sourceSha:f.sourceSha,serving:f.serving,backend:f.backend,github:f.github,read:f.read}),/no verifiable protected-PR/);

@@ -44,6 +44,9 @@ export function normalizeHotfixProtection({ app, releaseId, branch, classic, rul
     (set.conditions?.ref_name?.include || []).some(pattern => patternMatches(pattern, branchRef)) &&
     !(set.conditions?.ref_name?.exclude || []).some(pattern => patternMatches(pattern, branchRef)));
   if (targetingRulesets.some(set => (set.bypass_actors || []).length > 0)) return null;
+  const effectiveWorkflow = effectiveRules.some(rule => rule.type === 'workflows' &&
+    (rule.parameters?.workflows || []).some(workflow => workflow.path === '.github/workflows/validate.yml' &&
+      workflow.repository_id === 1297704019 && ['main', 'refs/heads/main'].includes(workflow.ref)));
   if (classic) {
     const normalized = {
       required_status_checks: classic.required_status_checks,
@@ -54,7 +57,7 @@ export function normalizeHotfixProtection({ app, releaseId, branch, classic, rul
       bypass_actors: [],
       source: 'classic-branch-protection',
     };
-    if (protectedBranchIsSafe(normalized)) return normalized;
+    if (effectiveWorkflow && protectedBranchIsSafe(normalized)) return normalized;
   }
   const safe = targetingRulesets.find(set => {
     const include = set.conditions?.ref_name?.include || [];
@@ -81,6 +84,21 @@ export function normalizeHotfixProtection({ app, releaseId, branch, classic, rul
     enforce_admins: { enabled: true }, allow_force_pushes: { enabled: false }, allow_deletions: { enabled: false },
     bypass_actors: [], source: `ruleset:${safe.id}`,
   };
+}
+
+/** Confirm that a descendant main source retains every persisted, reviewed hotfix file. */
+export function assertHotfixFilesReconciled(hotfix, sourceSha, blobAt) {
+  const paths = hotfix?.manifest?.paths;
+  if (!Array.isArray(paths) || paths.length === 0 || paths.some(file => typeof file !== 'string' || !file)) {
+    throw Error('Persisted hotfix manifest paths are unavailable; reconcile the hotfix in a protected main PR first');
+  }
+  for (const file of paths) {
+    let original, reconciled;
+    try { original = blobAt(hotfix.sourceSha, file); reconciled = blobAt(sourceSha, file); }
+    catch { throw Error('Main source does not contain the exact reviewed hotfix file contents; reconcile the hotfix in a protected main PR first'); }
+    if (!original || original !== reconciled) throw Error('Main source does not contain the exact reviewed hotfix file contents; reconcile the hotfix in a protected main PR first');
+  }
+  return true;
 }
 
 function hasCurrentIndependentApprovals(reviews, author, headSha, required) {

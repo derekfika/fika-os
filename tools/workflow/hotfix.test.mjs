@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MAIN_CHECK, REPO, digest } from './policy.mjs';
-import { assertMainReconciled, hotfixBranch, hotfixDiffHash, normalizeHotfixProtection, validateHotfixCandidate } from './hotfix.mjs';
+import { assertHotfixFilesReconciled, assertMainReconciled, hotfixBranch, hotfixDiffHash, normalizeHotfixProtection, validateHotfixCandidate } from './hotfix.mjs';
 
 const baseline = 'a'.repeat(40), source = 'b'.repeat(40), head = 'c'.repeat(40), rollout = 'build-serving-1';
 function fixture(overrides = {}) {
@@ -78,7 +78,11 @@ test('normalizes only the exact protected hotfix branch pattern and complete act
   const classic={enforce_admins:{enabled:true},allow_force_pushes:{enabled:false},allow_deletions:{enabled:false},
     required_pull_request_reviews:{required_approving_review_count:1,dismiss_stale_reviews:true},
     required_status_checks:{strict:true,contexts:[MAIN_CHECK],checks:[{context:MAIN_CHECK,app_id:15368}]}};
-  assert.ok(normalizeHotfixProtection({app:'hub',releaseId,branch,classic,rulesets:[],effectiveRules:[]}));
+  const workflowEvidence={type:'workflows',parameters:{workflows:[{path:'.github/workflows/validate.yml',repository_id:1297704019,ref:'refs/heads/main'}]}};
+  assert.equal(normalizeHotfixProtection({app:'hub',releaseId,branch,classic,rulesets:[],effectiveRules:[]}),null);
+  assert.equal(normalizeHotfixProtection({app:'hub',releaseId,branch,classic,rulesets:[],effectiveRules:[{...workflowEvidence,parameters:{workflows:[{path:'.github/workflows/other.yml',repository_id:1297704019,ref:'refs/heads/main'}]}}]}),null);
+  assert.equal(normalizeHotfixProtection({app:'hub',releaseId,branch,classic,rulesets:[],effectiveRules:[{...workflowEvidence,parameters:{workflows:[{path:'.github/workflows/validate.yml',repository_id:7,ref:'refs/heads/main'}]}}]}),null);
+  assert.ok(normalizeHotfixProtection({app:'hub',releaseId,branch,classic,rulesets:[],effectiveRules:[workflowEvidence]}));
   assert.equal(normalizeHotfixProtection({app:'hub',releaseId,branch,classic,rulesets:[{...ruleset,bypass_actors:[{actor_id:1}]}],effectiveRules}),null);
   assert.equal(normalizeHotfixProtection({app:'hub',releaseId,branch,classic,rulesets:[{target:'branch',enforcement:'active',conditions:{ref_name:{include:['refs/heads/hotfix/prod/*/*'],exclude:[]}},bypass_actors:[{actor_id:1}]}],effectiveRules}),null);
   assert.equal(normalizeHotfixProtection({app:'hub',releaseId,branch:branch.replace('hub','cpu'),rulesets:[ruleset],effectiveRules}),null);
@@ -104,4 +108,13 @@ test('blocks future promotion until a merged, green main reconciliation records 
   const hotfixRecord={kind:'hotfix',sourceSha:source,diffHash:digest('patch')};
   assert.throws(()=>assertMainReconciled(hotfixRecord,{}),/not fully reconciled/);
   assert.equal(assertMainReconciled(hotfixRecord,{hotfixSourceSha:source,diffHash:digest('patch'),mainPrMerged:true,mainCheckGreen:true,recordCommit:'e'.repeat(40)}),true);
+});
+test('main reconciliation requires nonempty persisted manifest paths and exact blobs', () => {
+  const hotfix={sourceSha:source,manifest:{paths:['apps/integration-hub/lib/hospitality-booking-service.ts']}};
+  const blobs=new Map([[`${source}:${hotfix.manifest.paths[0]}`,'reviewed-blob'],[`e${'e'.repeat(39)}:${hotfix.manifest.paths[0]}`,'reviewed-blob']]);
+  const blobAt=(sha,file)=>blobs.get(`${sha}:${file}`) || null;
+  assert.equal(assertHotfixFilesReconciled(hotfix,'e'.repeat(40),blobAt),true);
+  assert.throws(()=>assertHotfixFilesReconciled({sourceSha:source,paths:hotfix.manifest.paths},'e'.repeat(40),blobAt),/manifest paths are unavailable/);
+  assert.throws(()=>assertHotfixFilesReconciled({...hotfix,manifest:{paths:[]}},'e'.repeat(40),blobAt),/manifest paths are unavailable/);
+  assert.throws(()=>assertHotfixFilesReconciled(hotfix,'e'.repeat(40),(sha,file)=>sha===source?'reviewed-blob':'changed-blob'),/exact reviewed hotfix file contents/);
 });
