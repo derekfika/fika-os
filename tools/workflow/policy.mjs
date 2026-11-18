@@ -10,6 +10,8 @@ export const APPS = {
   adhoc: { path: 'apps/ad-hoc-production', staging: 'fika-os-staging-adhoc', prod: 'fika-os-prod-adhoc' },
   // Restricted no-write Beverage preview. There is deliberately no production target.
   beverage: { path: 'apps/beverage-innovation', staging: 'fika-beverage-staging', prod: null },
+  // Local development and CI while Studio's dedicated backends are unprovisioned.
+  'menu-studio': { path: 'apps/hospitality-menu-studio', staging: null, prod: null },
 };
 export const REPO = 'derekfika/fika-os';
 export const MAIN_CHECK = 'Workflow / merge-gate';

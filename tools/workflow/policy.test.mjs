@@ -16,6 +16,10 @@ test('exact SHA cannot be branch, abbreviation, option injection or uppercase', 
 test('dirty workspaces cannot release', () => { assert.throws(() => assertClean('?? .env.local')); assertClean(''); });
 test('app change affects only selected app', () => { assert.deepEqual(affected(['apps/cpu-production/app/styles.css']).apps,['cpu']); });
 test('Ad-Hoc app paths select exactly one canonical matrix entry', () => { assert.deepEqual(affected(['apps/ad-hoc-production/app/page.tsx']).apps,['adhoc']); });
+test('Menu Studio is validated independently and has no provisioned deployment target', () => {
+  assert.deepEqual(affected(['apps/hospitality-menu-studio/app/page.tsx']).apps, ['menu-studio']);
+  assert.deepEqual(supportedEnvironments('menu-studio'), []);
+});
 test('shared contract validates every registered consumer conservatively', () => { assert.equal(affected(['packages/server-shared/src/foo.ts']).apps.length,Object.keys(APPS).length); assert.equal(affected(['apps/shared/orders.ts']).apps.length,Object.keys(APPS).length); });
 test('root dependency changes affect all registered apps; docs/tooling alone do not force app builds', () => { assert.equal(affected(['package-lock.json']).apps.length,Object.keys(APPS).length); assert.deepEqual(affected(['docs/deployment/workflow.md','tools/workflow/cli.mjs']).apps,[]); });
 test('operational source defaults Standard; CSS/docs qualify Fast', () => { assert.equal(risk(['apps/cpu-production/app/styles.css','CHANGELOG.md']),'fast'); for (const p of ['apps/cpu-production/app/page.tsx','packages/server-shared/x.ts','.github/workflows/release.yml']) assert.equal(risk([p]),'standard'); });
