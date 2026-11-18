@@ -1,10 +1,16 @@
 import { getApps, initializeApp } from "firebase-admin/app";
 import { FieldPath, getFirestore, type DocumentReference, type Firestore, type Transaction } from "firebase-admin/firestore";
 import { isDeepStrictEqual } from "node:util";
+import {
+  matchesStudioDishRelease, matchesStudioDishSignatureEvent, sameStudioDishReviewSubject, studioDishReleaseVersion, studioDishReviewKey, studioDishReviewRecords,
+  studioDishReviewRequests, studioDishReviewSubject, studioDishSafetyFences, validStudioDishSafetyFence,
+  type StudioDishReleaseHeader, type StudioDishReviewRequest, type StudioDishSafetyFence, type StudioDishSafetyStatus,
+} from "../../shared/hospitality-menu-studio-safety";
 import type { Dish, DraftVersion, Menu, Publication, Section } from "./contract";
 import { StudioProblem } from "./problem";
 import { studioRuntime } from "./runtime";
-import { menuSchema } from "./schema";
+import { dishSchema, menuSchema } from "./schema";
+import { assortmentIsComplete } from "./review";
 
 const root = "fikaHospitalityMenuStudioV1";
 const pageSize = 50;
@@ -82,6 +88,89 @@ export class StudioStore {
       for (const document of documents) if (document.exists) dishes.push(decodeDraft<Dish>(document.data() as StoredDraft).item);
     }
     return dishes;
+  }
+
+  async requestDishReview(dishId: string, version: number, actorId: string) {
+    const head = this.draftHead("dishes", dishId);
+    const key = studioDishReviewKey(dishId, version);
+    const requestRef = this.db.collection(studioDishReviewRequests).doc(key);
+    return this.db.runTransaction(async transaction => {
+      const [current, revision, existing] = await transaction.getAll(head, head.collection("revisions").doc(String(version)), requestRef);
+      const draft = dishSchema.safeParse(current.data()?.item);
+      if (!draft.success || draft.data.id !== dishId || draft.data.version !== version) throw conflict();
+      const archived = dishSchema.safeParse(revision.data()?.item);
+      if (!archived.success || !isDeepStrictEqual(archived.data, draft.data)) {
+        throw new StudioProblem(503, "DRAFT_REVISION_INTEGRITY", "The saved dish revision could not be verified.");
+      }
+      const dish = archived.data;
+      if (!dish.name || !dish.kitchenDescription || !assortmentIsComplete(dish)) {
+        throw new StudioProblem(422, "DISH_REVIEW_INCOMPLETE", "Add a dish name, kitchen description and complete fixed assortment before requesting review.");
+      }
+      const subject = studioDishReviewSubject(dish);
+      if (existing.exists) {
+        const saved = existing.data() as StudioDishReviewRequest;
+        if (saved.contract !== "hospitality-menu-studio.dish-review-request.v1" || !sameStudioDishReviewSubject(saved.subject, subject)) {
+          throw new StudioProblem(503, "DISH_REVIEW_INTEGRITY", "The checker request could not be verified.");
+        }
+      } else {
+        transaction.create(requestRef, {
+          contract: "hospitality-menu-studio.dish-review-request.v1", subject, dish,
+          requestedBy: actorId, requestedAt: this.now().toISOString(),
+        } satisfies StudioDishReviewRequest);
+      }
+      return subject;
+    });
+  }
+
+  async dishSafety(dishes: Dish[]) {
+    const result = new Map<string, { status: StudioDishSafetyStatus; fence?: StudioDishSafetyFence }>();
+    for (let offset = 0; offset < dishes.length; offset += 50) {
+      const batch = dishes.slice(offset, offset + 50);
+      const states = await this.db.runTransaction(transaction => this.readDishSafetyBatch(transaction, batch), { readOnly: true });
+      for (const [id, state] of states) result.set(id, state);
+    }
+    return result;
+  }
+
+  private async readDishSafetyBatch(transaction: Transaction, dishes: Dish[]) {
+    const subjects = dishes.map(studioDishReviewSubject);
+    const refs = subjects.flatMap(subject => {
+      const key = studioDishReviewKey(subject.dishId, subject.revision);
+      return [this.db.collection(studioDishReviewRequests).doc(key), this.db.collection(studioDishSafetyFences).doc(key)];
+    });
+    const records = await transaction.getAll(...refs, { fieldMask: ["contract", "subject", "status", "releaseId", "matrixHash", "changedAt"] });
+    const states = new Map<string, { status: StudioDishSafetyStatus; fence?: StudioDishSafetyFence }>();
+    const active: { dishId: string; fence: StudioDishSafetyFence; head: DocumentReference }[] = [];
+    for (const [index, subject] of subjects.entries()) {
+      const request = records[index * 2].data() as StudioDishReviewRequest | undefined;
+      const fence = records[index * 2 + 1].data() as StudioDishSafetyFence | undefined;
+      if (request?.contract !== "hospitality-menu-studio.dish-review-request.v1" || !sameStudioDishReviewSubject(request.subject, subject)) {
+        states.set(subject.dishId, { status: request || fence ? "unavailable" : "unverified" });
+      } else if (!fence) states.set(subject.dishId, { status: "in_review" });
+      else if (!validStudioDishSafetyFence(fence, subject)) states.set(subject.dishId, { status: "unavailable" });
+      else if (fence.status === "revoked") states.set(subject.dishId, { status: "revoked", fence });
+      else active.push({ dishId: subject.dishId, fence, head: this.db.collection(studioDishReviewRecords).doc(refs[index * 2].id) });
+    }
+    if (!active.length) return states;
+    const releases = await transaction.getAll(...active.map(row => row.head.collection("releases").doc(studioDishReleaseVersion(row.fence))), {
+      fieldMask: ["contract", "subject", "status", "releaseId", "matrixHash", "changedAt", "signatures"],
+    });
+    const candidates = active.flatMap((row, index) => {
+      const header = releases[index].data() as StudioDishReleaseHeader | undefined;
+      if (header && matchesStudioDishRelease(header, row.fence)) return [{ ...row, signatures: header.signatures }];
+      states.set(row.dishId, { status: "unavailable" });
+      return [];
+    });
+    if (!candidates.length) return states;
+    const signatures = await transaction.getAll(...candidates.flatMap(row => row.signatures.map(signature => row.head.collection("events").doc(signature.eventId))), {
+      fieldMask: ["action", "source", "role", "actorId", "eventId", "signedAt", "matrixHash", "sourceHash", "signatureHash"],
+    });
+    for (const [index, { dishId, fence, signatures: expected }] of candidates.entries()) {
+      const complete = expected.every((signature, slot) => matchesStudioDishSignatureEvent(
+        signatures[index * 2 + slot].data() as Parameters<typeof matchesStudioDishSignatureEvent>[0], signature));
+      states.set(dishId, complete ? { status: "verified", fence } : { status: "unavailable" });
+    }
+    return states;
   }
 
   async save<T extends Draft>(kind: DraftCollection, actorId: string, draft: T): Promise<T> {

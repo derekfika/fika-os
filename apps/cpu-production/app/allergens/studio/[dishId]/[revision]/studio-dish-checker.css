@@ -1,0 +1,16 @@
+.studio-dish-checker {
+  display: grid;
+  gap: 16px;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 24px 16px;
+  background: var(--fika-surface-page);
+}
+.studio-dish-checker section > .fika-button { margin-top: 12px; }
+.studio-dish-checker :is(h1, h2, h3, p) { margin-block: 0 8px; }
+.studio-dish-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.studio-dish-edit { display: grid; gap: 12px; margin-top: 16px; }
+.studio-dish-edit label:has(textarea) { display: grid; gap: 4px; }
+.studio-dish-edit :is(textarea, label:has(input)) { min-height: var(--fika-control-height); }
+.studio-dish-edit label:has(input) { display: flex; align-items: center; gap: 8px; }
+.studio-dish-actions, .studio-dish-allergens { display: flex; flex-wrap: wrap; gap: 8px; }

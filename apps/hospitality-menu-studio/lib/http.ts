@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { CatalogueLoadResult } from "@fika/server-shared/hospitality-catalogue-client";
 import { catalogueUnavailable, siteOfferings, studioCatalogueOptions } from "./catalogue";
-import type { Menu, StudioActor } from "./contract";
+import { londonDate, type Dish, type Menu, type StudioActor } from "./contract";
 import { StudioProblem } from "./problem";
 import { draftCustomerChoices, draftReadiness, menuDishIds } from "./review";
 import { commandSchema, dateSchema, idSchema, versionQuerySchema } from "./schema";
@@ -21,6 +21,7 @@ const readSchema = z.union([
   z.object({ menuId: idSchema, eventDate: dateSchema, siteId: idSchema.optional() }).strict(),
   z.object({ menuId: idSchema, publicationId: idSchema, kitchenDishId: idSchema }).strict(),
   z.object({ menuId: idSchema }).strict(),
+  z.object({ dishId: idSchema, reviewVersion: versionQuerySchema }).strict(),
   z.object({ dishId: idSchema }).strict(),
 ]);
 
@@ -29,6 +30,7 @@ export function studioHandlers(
   store: () => StudioStore,
   assertOrigin: (request: Request) => void,
   readCatalogue?: (request: Request) => Promise<CatalogueLoadResult>,
+  safetyAvailable: () => boolean = () => false,
 ) {
   const respond = async (operation: () => Promise<unknown>) => {
     try {
@@ -65,7 +67,13 @@ export function studioHandlers(
         ]);
         return { changes: compareMenuDrafts(before, after) };
       }
-      if ("dishId" in query) return { item: await db.read("dishes", query.dishId) };
+      if ("dishId" in query) {
+        const dish = await db.read<Dish>("dishes", query.dishId);
+        if (!("reviewVersion" in query)) return { item: dish };
+        if (dish.version !== query.reviewVersion) throw new StudioProblem(409, "DRAFT_CONFLICT", "The dish changed. Reload its latest saved revision.");
+        if (!safetyAvailable()) return { status: "unavailable" };
+        return (await db.dishSafety([dish])).get(dish.id);
+      }
       if ("kitchenDishId" in query) throw blocked("Current signed kitchen specifications are unavailable.");
       const menu = await db.read<Menu>("menus", query.menuId);
       if ("eventDate" in query) {
@@ -108,13 +116,24 @@ export function studioHandlers(
         if (menu.version !== command.version) {
           throw new StudioProblem(409, "DRAFT_CONFLICT", "The draft changed. Review the latest saved version.");
         }
-        return draftReadiness(menu, await db.dishes(menuDishIds(menu)), command.effectiveDate, command.scope);
+        const ids = menuDishIds(menu);
+        const dishes = await db.dishes(ids);
+        if (!safetyAvailable()) return draftReadiness(menu, dishes, command.effectiveDate, command.scope);
+        const evidence = await db.dishSafety(dishes);
+        const states = ids.map(id => evidence.get(id)?.status);
+        const status = states.includes("unavailable") ? "unavailable" : states.length && states.every(state => state === "verified") ? "verified" : "unverified";
+        return draftReadiness(menu, dishes, command.effectiveDate, command.scope, londonDate(), { status });
       }
       if (command.action === "publish" || command.action === "activate-collection") {
         if (!actor.canPublish) throw denied("You do not have Studio publication access.");
         throw blocked("Signed dish evidence, catalogue eligibility and booking impact must be verified before proceeding.");
       }
       if (!actor.canManage) throw denied("Studio authoring is read-only for this environment or account.");
+      if (command.action === "submit-dish-review") {
+        if (!safetyAvailable()) throw blocked("The CPU allergen checker connection is unavailable.");
+        const subject = await store().requestDishReview(command.dishId, command.version, actor.id);
+        return { subject, checkerPath: `/allergens/studio/${encodeURIComponent(subject.dishId)}/${subject.revision}` };
+      }
       if (command.action === "restore-menu") throw blocked("Published revision restoration is unavailable.");
       if (command.action === "restore-draft") {
         return store().restoreMenuDraft(actor.id, command.menuId, command.version, command.sourceVersion);

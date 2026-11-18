@@ -60,6 +60,7 @@ const candidate = {
 export const commandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("save-menu"), item: menuSchema }),
   z.object({ action: z.literal("save-dish"), item: dishSchema }),
+  z.object({ action: z.literal("submit-dish-review"), dishId: idSchema, version: revisionSchema, confirmed: z.literal(true) }).strict(),
   z.object({ action: z.literal("review"), ...candidate }),
   z.object({ action: z.literal("publish"), ...candidate, reviewToken: z.string().min(1).max(256), confirmed: z.literal(true) }),
   z.object({ action: z.literal("restore-menu"), menuId: idSchema, version: versionSchema.positive(), publicationId: idSchema }),

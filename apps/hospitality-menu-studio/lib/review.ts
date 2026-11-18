@@ -23,6 +23,7 @@ export function menuDishIds(menu: Menu, eventDate?: string): string[] {
 
 export function draftReadiness(
   menu: Menu, dishes: Dish[], effectiveDate: string, scope: PublicationScope, today = londonDate(),
+  safety: Review["safety"] = { status: "unavailable" },
 ): Review {
   const issues: string[] = [];
   if (!menu.name.trim()) issues.push("Enter a menu name.");
@@ -73,10 +74,12 @@ export function draftReadiness(
 
   return {
     canPublish: false,
-    issues: [...issues, "Signed dish verification, catalogue eligibility and booking impact are unavailable."],
+    issues: [...issues, ...(safety.status === "unavailable" ? ["Signed dish verification is unavailable."]
+      : safety.status === "unverified" ? ["Every dish revision requires current signed allergen verification."] : []),
+    "Publication requires verified catalogue eligibility and a booking impact review."],
     changes,
     reviewToken: null,
-    safety: { status: "unavailable" },
+    safety,
     impact: { status: "unavailable" },
   };
 }
